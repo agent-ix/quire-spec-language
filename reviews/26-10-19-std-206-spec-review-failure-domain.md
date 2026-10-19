@@ -40,3 +40,22 @@ Ticket: STD-206. Unstated failure modes and identity confusion in the new FR-140
 ## Verdict
 
 Findings: 4 medium.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The first-Undefined-wins order is sound and fixes replay, but it keeps evaluating after a Stopped (broken invariant), QSpec FR-377 states no precedence and STD-211 has no ask, and AC-9's 'original items row' case names no state. An undefined row refutes a reachable state whatever other rows give, so letting Undefined outrank Undetermined is sound. Two things are left open: whether rows are still evaluated after an evaluator Stopped (an internal fault), and the QSpec FR-377 counterpart. FR-140-AC-9's last clause needs its state (head, size) for the original row to be defined. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:155-163 |
+
+## Dispositions
+
+Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | still-open | The rule now separates `T?` (absent on None) from `Option<T>` (explicit None), but a nullable field and a `null` row value (the grammar has `null` as a primary, distinct from `none` under QSpec FR-149) are still unmapped; one sentence closes it. |
+| FND-004 | fixed | - |
+
+Disposition pass 1 (head 72d04b1dc): FND-001, FND-002 and FND-004 fixed; FND-003 still open (nullable fields). New: FND-005 (low). Not mergeable while FND-003 is open.

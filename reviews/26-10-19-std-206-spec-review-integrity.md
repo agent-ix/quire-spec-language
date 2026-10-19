@@ -41,3 +41,14 @@ Ticket: STD-206. Consistency and completeness across the changed artifacts at 65
 ## Verdict
 
 Findings: 1 medium, 1 low. The base SR's FND-001 to FND-003 are also cross-artifact contradictions and are not repeated here.
+
+## Dispositions
+
+Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+
+Disposition pass 1 (head 72d04b1dc): both fixed. No new findings.

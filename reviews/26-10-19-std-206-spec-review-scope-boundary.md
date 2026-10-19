@@ -42,3 +42,21 @@ Ticket: STD-206. Allocation of the new rules to requirements and of the new ACs 
 ## Verdict
 
 Findings: 2 medium, 1 low.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The correction names no ticket for FR-135-AC-6/7 (the S3 follow-up is not filed) or FR-120-AC-14, and misses that FR-144-AC-6 and TC-555 step 3 now need RegisterHistory history rows (QSL-545). File the S3 follow-up ticket and name the owner of FR-120-AC-14. Move FR-144-AC-6's refuted half to QSL-545, or give it a source that does not need a history row (base SR FND-014). | Linear STD-206 comment 6714e134:- |
+
+## Dispositions
+
+Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+
+Disposition pass 1 (head 72d04b1dc): all three fixed. New: FND-004 (low).

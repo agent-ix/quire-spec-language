@@ -41,3 +41,13 @@ Ticket: STD-206. EARS conformance of the new requirement statements at 651a86903
 ## Verdict
 
 Findings: 1 low.
+
+## Dispositions
+
+Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+
+Disposition pass 1 (head 72d04b1dc): fixed. No new findings.

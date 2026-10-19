@@ -134,18 +134,17 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
 - The checker SHALL lift references: a field of declared type
   `Reference<T_A>` SHALL accept an expression of type `Reference<T_C>`
   exactly when an object row maps `T_A` from `T_C`.
-- The checker SHALL lift a reference only at the top level of a row's type.
-  A field row whose type holds a `Reference<T_C>` inside an option, record,
-  union or collection type SHALL refuse
-  `unsupported_construct`/`not-yet-implemented` at `e`'s span; lifting
-  inside a nested value is not built (ADR-020 RM-3 states the top-level
-  rule only).
-- The checker SHALL refuse a refinement whose abstract model declares a
-  relationship with `unsupported_construct`/`not-yet-implemented` at the
-  abstract alias's span in the declaration header: no row maps a
-  relationship (ADR-020 RM-2 to RM-4), so its links could never hold in a
-  mapped state and every abstract clause that reads one would pass or refute
-  by accident.
+- The checker SHALL lift a reference only at the top level of a row's type,
+  and SHALL admit a whole-population reference row (`Set<Reference<T_C>>[0,
+  n]`, FR-139) as FR-139 types it. A field row whose type holds a
+  `Reference<T_C>` nested inside an option, record, union or collection type
+  that is not such a population reference SHALL use the feature
+  `nested-reference-row` (below), because lifting inside a nested value is not
+  built (ADR-020 RM-3 states the top-level rule only).
+- A refinement whose abstract model declares a relationship SHALL use the
+  feature `abstract-relationships` (below): no row maps a relationship
+  (ADR-020 RM-2 to RM-4), so its links could never hold in a mapped state and
+  every abstract clause that reads one would pass or refute by accident.
 - The checker SHALL check `e`'s type against the abstract field's declared
   type, after reference lifting, with `TypeEnvironment::conforms` (ADR-016
   SC-2), and SHALL refuse `ill_typed`/`type-mismatch` at `e`'s span when it
@@ -178,6 +177,13 @@ non-empty resolved list reaches this refusal (FR-147).
 - The refusal is decided before the feature's own checks, so no other
   diagnostic about that row is reported; the rest of the declaration is
   checked as usual and its own refusals are reported beside it.
+- `nested-reference-row` is spelled by a field row of the first kind above,
+  with the span of the row's expression. `abstract-relationships` is spelled
+  by an abstract model that declares a relationship, with the span of the
+  abstract alias in the declaration header. Both names are QSL-proposed:
+  QSpec FR-375's closed set holds only the three features above, and the
+  QSpec asks add them. `abstract-relationships` is a gap in QSpec, which
+  defines no mapping of links, not a feature this build has left unbuilt.
 - A feature in the support set is checked by its own requirement.
 
 `unknown_required_feature` is not used: a source refusal, which FR-341
@@ -206,8 +212,8 @@ standing.
 | FR-135-AC-3 | `value = self.busyA` refuses `ill_typed`/`type-mismatch` at the expression's span. In ADR-020 §8's `RingIsQueue`, a field of type `Reference<Q::Queue>` mapped by `self.ring` (of type `Reference<R::Ring>`) checks, and the same field mapped by an expression of type `Reference<R::Slot>` refuses `ill_typed`/`type-mismatch`. | Test (TC-540) |
 | FR-135-AC-4 | With the `value` row removed, `CasRefinesCounter` checks with `value` in `hidden`. Changing the `value` row to `value = self.tmpA` changes the refinement's node identity and the `package_id`. | Test (TC-540) |
 | FR-135-AC-5 | A declaration with one `history` row (`RegisterHistory`, FR-138), in a build whose support set omits `history-row`, refuses `unsupported_construct`/`not-yet-implemented` at the `history` keyword of that row naming `history-row`, `RegisterHistory` and the profile identity, with no other diagnostic for the row and no `CheckedRefinement`; two such rows give two refusals. A declaration whose abstract side is a protocol (`CasTwice`, FR-147), in a build whose support set omits `protocol-abstract-side`, refuses the same pair at the span of `Twice`, naming `protocol-abstract-side`. Both classify `unsupported` (FR-341-AC-5). A refinement given a non-empty resolved internal list refuses the same pair naming `refinement-internal-list` at the first token of the name after `abstract`, and a list with a resolution defect reports the defect and not this pair (FR-147-AC-7, AC-11). `CasRefinesCounter`, which uses none of the three features, checks as FR-135-AC-1 states. The vector refuses a row that uses a feature the build has not built; it does not select a support set. | Test (TC-540) |
-| FR-135-AC-6 | `RingIsQueue` with a `Sequence<Reference<Queue>>[0, 2]` field mapped by a row of type `Sequence<Reference<Ring>>[0, 2]` refuses `unsupported_construct`/`not-yet-implemented` at the row's expression; the same field as a plain `Reference<Queue>` mapped by `self` checks. | Test (TC-540) |
-| FR-135-AC-7 | `RingIsQueue` with the abstract `Queue` declaring a relationship refuses `unsupported_construct`/`not-yet-implemented` at the abstract alias `Q` of the declaration header, and no `CheckedRefinement`. | Test (TC-540) |
+| FR-135-AC-6 | `RingIsQueue` with a `Sequence<Reference<Queue>>[0, 2]` field mapped by a row of type `Sequence<Reference<Ring>>[0, 2]` refuses `unsupported_construct`/`not-yet-implemented` naming `nested-reference-row` at the row's expression; a population-reference row `cells = R::slots` checks, as does the same field as a plain `Reference<Queue>` mapped by `self`. | Test (TC-540) |
+| FR-135-AC-7 | `RingIsQueue` with the abstract `Queue` declaring a relationship refuses `unsupported_construct`/`not-yet-implemented` naming `abstract-relationships` at the abstract alias `Q` of the declaration header, and no `CheckedRefinement`. | Test (TC-540) |
 
 ## Dependencies
 

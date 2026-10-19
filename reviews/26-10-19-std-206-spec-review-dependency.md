@@ -42,3 +42,15 @@ Ticket: STD-206. Dependency analysis of the new normative references and the QSp
 ## Verdict
 
 Findings: 1 medium, 2 low. Fix the QSpec prerequisite tickets before the code lanes build on these rules.
+
+## Dispositions
+
+Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+
+Disposition pass 1 (head 72d04b1dc): all three fixed. No new findings.

@@ -84,3 +84,33 @@ Not verified by the author and probed here: (1) `=` between `Int[lo,hi]` and `In
 ## Verdict
 
 Not mergeable: 3 high, 7 medium, 1 low. The ADR-020 section 8 guard is right and engine-verified, and FR-139's sum bound and only-not-one are correct (PR #1035 already builds only-not-one). But FR-135's new equality rule contradicts QSpec FR-149. FR-141-AC-7's `div` argument does not type. FR-140-AC-6 depends on lifting that S3 does not admit. TC-1083 collides with #1036.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | high | The new S3 refusal of any row whose type nests a Reference also refuses a population-reference row (Set<Reference<T_C>>), which FR-139 admits and PR #1035 builds (`cells = R::slots`). FR-139 S3: 'SHALL record each bound that does (a count or sum result, or a population reference, against the type of its use)', and QSpec FR-376 types `C::p` as `Set<Reference<T>>[0, n]` in row position. PR #1035 (QSL-546) has the row `cells = R::slots` mapped to `Q::Queue.cells` with `population Q::cells from R::slots`. Under the new bullet that row refuses unsupported_construct/not-yet-implemented. Either exempt the population reference, where each element is lifted by key (the FR-139 case), or say FR-139's population-reference row is refused too and remove it from FR-139 and #1035. | spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:137-142 |
+| FND-013 | high | The fix swaps the untypeable step argument for FR-138's `inv` update `1 / x`, which is the same `/` against an integer target that FR-141-AC-7 now says does not type. FR-138-AC-5 declares `inv: Int[0, 1] = 0 { on Impl::Register::write: 1 / x; }`. FR-141-AC-7 says '/ is refused against an integer target'; the review-pass probe agrees (a row `2 / self.tmpA` against Int[0,2] refuses Check(IllTyped(TypeMismatch))). FR-144-AC-6 (now FR-142-AC-8's `inv` update), TC-555 step 3 and FR-141-AC-7's 'FR-141-AC-6's undefined history update covers the engine-written Undefined' all now rest on it. History rows are outside the build's support set, so I could not probe the update directly. Use a source that types, such as the pure-function `mod` form in FND-014, or record the dependency on QSL-545 and STD-211. | spec/functional/FR-144-request-and-settle-a-refinement-item.md:133 |
+| FND-014 | medium | A typeable undefined argument exists, contrary to FR-141-AC-7's 'pending' text and STD-211 item 8 ('no conforming source exists'): a pure function with a `mod` by its Int argument. Engine probe (scratch clone of qsl-544 at 11a735627, CasRefinesCounter): with `function f using v(x: Int[0, 2]): Int[0, 2] pure { if 1 mod x = 0 then 0 else 1 }` the row `value = f(self.tmpA)` checks with no division law selected, and map_state returns MappingFailure::Undefined naming the `value` row and object c, cause Kernel(DivisionByZero), at tmpA = 0, and maps at tmpA = 1. For FR-141-AC-7: `function g using v(i: Int[0, 1]): Int[0, 1] pure { if 1 mod i = 0 then 0 else 1 }` and `put -> enq(self.ring, g(self.index))` give division-by-zero at index 0, with no division law (mod is always Euclidean, QSpec FR-147). Restore the vector with that spelling, naming the receiver slot s0 and the empty state, and correct STD-211 item 8. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:187 |
+| FND-015 | medium | FR-140-AC-11's Verification cell 'Pending (TC-1086 step 7)' is the only such cell among about 2,400 FR ACs; the AC states it has no vector, though its None half is writable in the grammar. Every other FR AC is Test, Inspection or Analysis. An AC whose own text says 'No vector exists' cannot fail, and the matrix lists TC-1086 step 7 as covering it. The shared grammar has `none` as a primary, so a `head = none` row is writable. Only the engine's S2 refuses it today (probe: S2 UnrepresentedConstruct{Primary} at `none`). Either make AC-11 a Test of the None half for both `T?` and `Option<T>`, or drop the AC and record the rule under 'Remaining work:' with STD-211. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:205 |
+| FND-016 | medium | The two new unsupported_construct/not-yet-implemented refusals bypass FR-135's own support-set mechanism: no feature name, not in the closed set, and not QSpec FR-375 features. FR-135 'Refinement features the build does not check': 'QSpec FR-375 owns the closed set of feature names ... It names three features', and the refusal 'names the feature, the refinement's name and the exact selected profile identity (QSpec FR-272's payload)'. The new refusals name no feature and are not in the set. FR-341-AC-5 classifies this pair `unsupported` (a QSL implementation gap), but a relationship refusal is a gap in QSpec, which defines no link mapping. Add feature names to the support set (and STD-211), or use a refusal that does not claim an unbuilt QSpec feature. | spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:143-148 |
+
+## Dispositions
+
+Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |
+| FND-009 | fixed | - |
+| FND-010 | fixed | - |
+| FND-011 | fixed | - |
+
+Disposition pass 1 (head 72d04b1dc): FND-001 to FND-011 fixed. New: FND-012 (high), FND-013 (high), FND-014 (medium), FND-015 (medium), FND-016 (medium). Not mergeable.
