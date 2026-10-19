@@ -470,6 +470,25 @@ impl AdmittedModel {
         self.population_bounds.get(population)
     }
 
+    /// The effective identity of `key` when it declares an object type.
+    pub(crate) fn object_type_id(&self, key: &DeclarationKey) -> Option<EffectiveId> {
+        matches!(
+            self.records.get(key),
+            Some(DomainPackageRecord::ObjectType(_))
+        )
+        .then(|| self.effective_id(key))
+        .flatten()
+    }
+
+    /// The export whose artifact id is `artifact`: the record keyed
+    /// `ix://<package>/<artifact>`, as a model name `M::<artifact>` names it.
+    pub(crate) fn export(&self, artifact: &str) -> Option<&DomainPackageRecord> {
+        self.records.iter().find_map(|(key, record)| {
+            (crate::model::intake::type_identity_segment(&key.package, &key.node) == Some(artifact))
+                .then_some(record)
+        })
+    }
+
     /// The alias of the `model` declaration this package is admitted for,
     /// if any.
     pub(crate) fn alias(&self) -> Option<&str> {

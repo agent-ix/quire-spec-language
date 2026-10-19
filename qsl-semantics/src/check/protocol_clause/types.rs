@@ -96,6 +96,14 @@ pub struct CheckedProtocol {
     /// Every `await` with its clock and window, in source order (QSpec
     /// FR-466 `await` layout).
     pub awaits: Vec<CheckedAwait>,
+    /// Every `requires temporal` requirement, each bound to its temporal
+    /// clause, once per clause in the order of its first requirement
+    /// (FR-218 "Requirements"), filled in by `check::mod`'s own pipeline.
+    pub requirements: Vec<crate::check::protocol_requirement::CheckedRequirement>,
+    /// Every `relationship` member, bound to its model relationship, in
+    /// source order (FR-218 "Relationships"), filled in by `check::mod`'s
+    /// own pipeline before the slots, whose `related by` ends read it.
+    pub relationships: Vec<crate::check::protocol_relationship::CheckedRelationship>,
 }
 
 /// One checked `await` (QSpec FR-466 `await` layout): its node, the clock
