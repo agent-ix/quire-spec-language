@@ -628,7 +628,7 @@ fn each_outcome_settles_its_row_of_the_map() {
 /// settles `refuted`, `decisive-counterexample`, `Refuted`, violation, only
 /// through its replay, and the record carries the counterexample with `kind:
 /// Deadlock`.
-#[trace("TC-522")]
+#[trace("TC-522", "FR-127-AC-1")]
 #[test]
 fn a_deadlock_violation_settles_refuted_through_its_replay() {
     let case = case(CONTRACT, &[0]);

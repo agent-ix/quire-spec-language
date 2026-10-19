@@ -697,12 +697,12 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
     );
 }
 
-/// FR-125-AC-4 and AC-7 (QSpec FR-361-AC-8, TC-294, cited only): a clause
-/// with zero instances is `Undecided(NoInstance)` before any state is
-/// explored; the same clause over a population with no universe is refused
-/// `RequiresBound`, never `NoInstance`; a subject with no initial state is
-/// `NoInitialState`.
-#[trace("TC-520", "FR-125-AC-7")]
+/// QSpec FR-361-AC-8 (QSpec TC-294): a clause with zero instances is
+/// `Undecided(NoInstance)` before any state is explored; the same clause
+/// over a population with no universe is refused `RequiresBound` naming that
+/// population, never `NoInstance`. The zero instances are made by clearing
+/// `Letters.bindings`; deriving them from the universes is QSL-886's.
+#[trace("TC-520", "QSpec-FR-361-AC-8")]
 #[test]
 fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     let world = self::world("", &[&[("c", 0)]]);
@@ -749,16 +749,43 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
         &Cancel::new(),
     )
     .expect_err("no universe");
-    assert!(
-        matches!(refusal, ModelCheckRefusal::RequiresBound(_)),
-        "{refusal:?}"
+    let roots = unbounded_roots(&refusal);
+    assert_eq!(roots.len(), 1, "{roots:?}");
+    assert_eq!(roots[0].1, DomainKind::Population);
+    let held: Vec<_> = system_without_universe(&world)
+        .domains()
+        .into_iter()
+        .filter(|(_, value_type)| matches!(value_type, ValueType::Population(_)))
+        .collect();
+    let [(population, _)] = held.as_slice() else {
+        panic!("one population root: {held:?}");
+    };
+    assert_eq!(
+        roots[0].0,
+        DomainKey::Node {
+            node: *population,
+            path: Vec::new()
+        }
     );
+}
 
-    let none = self::world("", &[]);
+/// FR-125-AC-4: a subject whose `initial` list is empty is `NoInitialState`
+/// before any state is explored, for a clause item.
+#[trace("TC-520", "FR-125-AC-4")]
+#[test]
+fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
+    let world = self::world("", &[]);
+    let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
+    let bound = letters(&world, &["c"], |_| Some(true));
+    let ident = identity();
     let outcome = run(
-        &none,
+        &world,
         &["c"],
-        item(),
+        ModelCheckItem::Clause {
+            clause: &clause,
+            letters: &bound,
+            identity: &ident,
+        },
         None,
         ModelCheckLimits::default(),
         UNLIMITED,
@@ -768,8 +795,8 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
         outcome,
         ModelCheckOutcome::Undecided {
             cause: UndecidedCause::NoInitialState,
-            ..
-        }
+            stats,
+        } if stats.product_states == 0
     ));
 }
 

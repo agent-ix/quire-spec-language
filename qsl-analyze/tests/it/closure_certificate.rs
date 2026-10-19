@@ -469,7 +469,7 @@ fn a_certificate_of_another_item_is_not_admitted() {
 /// `CertificateRejected{SuccessorMissing, at}`, never `proved`; settled
 /// against another `package_id` than the request's package it is
 /// `ReplayRefused(stale_dependency)`, never `proved`.
-#[trace("TC-525")]
+#[trace("TC-525", "FR-127-AC-1")]
 #[test]
 fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
     let world = world(CONTRACT, &[("c", 0)]);
@@ -660,12 +660,12 @@ fn a_clause_with_no_instance_is_never_certified() {
     ));
 }
 
-/// FR-125-AC-7 and FR-127 (QSpec FR-361-AC-8, TC-294, cited only): a clause
+/// QSpec FR-361-AC-8 (QSpec TC-294) and FR-127: a clause
 /// whose empty universe gives it zero instances settles `inconclusive` with
 /// the wire cause `no-instance` and basis `unsettled`, never `proved` or
-/// `refuted`. The instances come from `Letters.bindings`; deriving them from
-/// the subject's universes is not covered here.
-#[trace("TC-520", "FR-125-AC-7")]
+/// `refuted`. The zero instances are made by clearing `Letters.bindings`;
+/// deriving them from the universes is QSL-886's.
+#[trace("TC-520", "QSpec-FR-361-AC-8")]
 #[test]
 fn a_clause_with_no_instance_settles_inconclusive_never_proved_or_refuted() {
     let world = world(CONTRACT, &[("c", 0)]);
