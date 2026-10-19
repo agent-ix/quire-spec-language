@@ -2456,7 +2456,16 @@ impl PackageDeclarations {
                     .collect();
                 for claimed in temporal_clause::TemporalTraceFamily::requirements(&checked) {
                     let extent = claimed
-                        .requirements(claims::wire(lowered.key), &[claims::wire(lowered.over)])
+                        .population()
+                        .map(|domain| population_domain_key(&object_types, &object_nodes, domain))
+                        .transpose()
+                        .and_then(|population| {
+                            claimed.requirements(
+                                claims::wire(lowered.key),
+                                &[claims::wire(lowered.over)],
+                                population,
+                            )
+                        })
                         .map_err(|fault| {
                             vec![CheckRefusal {
                                 location: location.clone(),
@@ -2821,6 +2830,28 @@ fn population_key_table(
         .collect()
 }
 
+/// ADR-012 §15.7: the domain key of `domain` from the admitted models'
+/// object types and their `model`/`object_type` nodes: the one place a
+/// checked graph's `population_key` and the emitted `temporal-satisfaction`
+/// record build it.
+fn population_domain_key(
+    object_types: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_nodes: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::NodeKey>,
+    domain: state_clause::PopulationDomain,
+) -> Result<qsl_foundation::bound::DomainKey, qsl_foundation::InternalFault> {
+    let node = object_types
+        .iter()
+        .find_map(|(declaration, id)| (*id == domain.object).then_some(declaration))
+        .and_then(|declaration| object_nodes.get(declaration))
+        .ok_or_else(|| {
+            qsl_foundation::InternalFault::new(
+                "check.population-domain",
+                "member-type-has-a-model-node",
+            )
+        })?;
+    state_clause::population_key(&domain, *node)
+}
+
 impl CheckedGraph {
     /// FR-380: every `bound` declaration of the unit, ascending by label.
     pub fn population_bounds(&self) -> &[CheckedPopulationBound] {
@@ -3165,18 +3196,7 @@ impl CheckedGraph {
         &self,
         domain: state_clause::PopulationDomain,
     ) -> Result<qsl_foundation::bound::DomainKey, qsl_foundation::InternalFault> {
-        let node = self
-            .object_types
-            .iter()
-            .find_map(|(declaration, id)| (*id == domain.object).then_some(declaration))
-            .and_then(|declaration| self.object_nodes.get(declaration))
-            .ok_or_else(|| {
-                qsl_foundation::InternalFault::new(
-                    "check.population-domain",
-                    "member-type-has-a-model-node",
-                )
-            })?;
-        state_clause::population_key(&domain, *node)
+        population_domain_key(&self.object_types, &self.object_nodes, domain)
     }
 
     /// FR-115: the frame of the operation `selection` names, and its object

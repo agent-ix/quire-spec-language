@@ -681,3 +681,72 @@ fn a_foreign_clause_root_is_unresolved_at_its_triple() {
         "clause-root-unresolved"
     );
 }
+
+/// The checked graph of `unit`, with its one temporal clause and that
+/// clause's `temporal-satisfaction` record.
+fn record_of(
+    unit: &str,
+) -> (
+    qsl_semantics::check::CheckedGraph,
+    qsl_foundation::bound::DomainKey,
+    qsl_semantics::family::Requirements,
+) {
+    let packages = qsl_semantics::model::intake::package_input([document()]);
+    let graph = assemble_with_models(unit.as_bytes(), &packages)
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("the package checks: {refusals:?}"));
+    let [checked] = graph.temporal_clauses() else {
+        panic!("one emitted clause");
+    };
+    let clause = qsl_foundation::bound::DomainKey::Node {
+        node: wire_id(checked.identity()),
+        path: Vec::new(),
+    };
+    let key = OccurrenceKey::new(wire_id(checked.identity()), checked.claim().clone());
+    let record = graph.requirements().get(&key).expect("the clause's record");
+    let requirements = record.requirements().clone();
+    (graph, clause, requirements)
+}
+
+/// FR-336-AC-1 through the real emission: the compiled `ReachesTwo`'s
+/// `temporal-satisfaction` record is `Unbounded` with exactly the
+/// population's domain and the formula's infinite-trace domain, no domain
+/// of any universe; the unit's `bound` on `config_history` takes the
+/// population out.
+#[trace("TC-846", "FR-336-AC-1")]
+#[test]
+fn the_emitted_record_carries_the_population_domain_and_no_universe() {
+    use qsl_foundation::bound::DomainKind;
+    use qsl_semantics::family::ClaimExtent;
+
+    let text = unit(INFINITE, &reaches_two(""));
+    let (graph, clause, requirements) = record_of(&text);
+    let population = graph
+        .population_domain(
+            &Identifier::new("Config").expect("an identifier"),
+            &Identifier::new("config_history").expect("an identifier"),
+        )
+        .expect("keyed")
+        .expect("config_history resolves");
+    assert_eq!(requirements.kind(), qsl_semantics::check::Capability::TemporalSatisfaction);
+    let ClaimExtent::Unbounded(domains) = requirements.extent() else {
+        panic!("unbounded: {:?}", requirements.extent());
+    };
+    assert_eq!(domains.len(), 2);
+    assert_eq!(domains.kind(&population), Some(DomainKind::Population));
+    assert_eq!(domains.kind(&clause), Some(DomainKind::InfiniteTrace));
+
+    let bounded = unit(
+        INFINITE,
+        &format!(
+            "bound Cap on Config::config_history [3]\n{}",
+            reaches_two("")
+        ),
+    );
+    let (_, _, requirements) = record_of(&bounded);
+    let ClaimExtent::Unbounded(domains) = requirements.extent() else {
+        panic!("the formula is infinite-trace");
+    };
+    assert_eq!(domains.len(), 1);
+}
