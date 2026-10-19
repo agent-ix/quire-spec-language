@@ -29,3 +29,16 @@ Commit dominance, stated plainly: the author's reading is correct and the labels
 ## Verdict
 
 Fix FND-001 before merge; FND-002 should land in the same round. The rule's direction is correct and the labels in TC-1058 rows 19a and 19b are not inverted. A commit sequenced between an attempt and its effect (row 19), one in a `join all` branch before the effect (19a) and one before a `choice` that holds the effect in every case all dominate under the new text; a commit in one `case` (20a), in a sibling of the effect's branch (20), in a `join any` branch (19b) and after the effect do not.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | Two new TC-1058 fixtures are not in QSpec's grammar, so they fail at the parser before S3. Row 19d writes `join predicate [a, b]`, but `join-policy` is `'predicate', '(', ident, ')'`. Row 19e writes `repeat Again max 2 while { true }`, but `repetition` is `'repeat', ident, 'by', ident, visibility, ( 'max', uint, [loop-proof], 'while', block, control, 'exhausted', control | ... )`, so `by R`, `visible(...)` and, with `max`, the `exhausted` control are required. Row 19e also contradicts its own rationale. With the constant guard `true` and `max 2`, no execution skips the body: every execution reaching `Applied` has passed `Committed`, which FR-381's definition ('every execution that reaches the effect has passed the commit') calls dominating. The row and the FR's blanket clause ('a guard can skip a `repeat`') say it checks. Fix the fixtures: name the predicate function, and write the full repeat with a non-constant guard over a listed fact. Then either state that S3 classifies every `repeat` as skippable whatever its guard (a static rule, as QSpec FR-464's progress rule does), or carve out constant-true guards. As written, an implementer following the definition and one following the clause disagree on this exact row. The anchor `Main::Again::Committed` itself resolves: `Again` declares its body, `Committed`, directly. | spec/test-cases/TC-1058-s3-checks-compensation-registration-retry-commit-and-recovery.md:59-60 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The join rule is restated by the settle condition, covers `join any [a]`, says an unlisted branch is never required, and classifies `join predicate`. (a17a5c9d6, FR-381:231-243) |
+| FND-002 | fixed | AC-11 and TC-1058 rows 19c-19e add the quorum, single-label `any`, predicate and `repeat` cases, and 'that may run zero times' is gone. The new row 19e has its own defect, recorded as FND-003. (a17a5c9d6, FR-381:279) |

@@ -240,7 +240,9 @@ node `E` (QSpec FR-056).
   branch, because its settle condition is not evaluated statically; a branch
   the join does not list is never required. A commit in one `case` of a
   `choice`, or in the body of a `repeat`, is not passed by every execution,
-  because a `choice` takes one case and a guard can skip a `repeat`. The refusal is
+  because a `choice` takes one case and S3 treats every `repeat` as
+  skippable whatever its guard, a constant-true guard included, so that the
+  rule never depends on evaluating a guard. The refusal is
   `unsupported_construct`/`declaration-form` at the commit anchor, as QSpec
   FR-052 refuses a structurally prohibited form, retaining the selected
   protocol profile that prohibits it, `compensation`, `member` (`commit`),

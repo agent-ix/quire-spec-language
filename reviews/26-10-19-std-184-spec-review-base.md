@@ -35,3 +35,12 @@ Commit dominance, stated plainly: the author's reading is correct and the labels
 ## Verdict
 
 Not mergeable as is: fix FND-001 and FND-002 (medium); FND-003 and FND-004 are low and should be fixed in the same round. Defect 3 is fixed exactly. Defect 1's rule now has the right direction (see Summary). Defect 2 is resolved by admitting non-Boolean individual facts, which agrees with QSpec FR-466 ('a decision fact is an expression node that reads exactly one field of one record binder', no Boolean restriction). Defect 4's ordering claim matches QSpec FR-464 'Reader order' step 6 and FR-464-AC-12, and each AC-17 refusal other than the out-of-scope-and-unlisted clause now has its own TC-1056 fixture: undeclared owner (27), other-role (29), send (30), effect (46), commit (47), activation binder (48), unlisted (31), composite (32), discarded let (33), over (34), capture (41), finish (49).
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Row 19a now states `attempt Tried`, gives branch `b` a `check` body, and names the anchor `Main::P::a::Committed`. That path resolves under FR-113 as the author reads it: FR-113 Inputs say each named control declares 'the names of its direct child controls and event nodes', and FR-112-AC-2 records a branch label as an enclosing named control (scope `[Main, Both, left]`), so `Main` declares `P`, `P` declares branch `a`, and `a` declares `Committed`. Rows 19b-19d inherit it. (a17a5c9d6, TC-1058:56) |
+| FND-002 | fixed | New TC-1056 row 50 is an out-of-scope read that is also unlisted and expects only the scope refusal. (a17a5c9d6, TC-1056:99) |
+| FND-003 | fixed | AC-2's Verification now names TC-663 and TC-1056. (a17a5c9d6, FR-218:389) |
+| FND-004 | fixed | Fixture P now states the one activation and the one finish; rows 48 and 49 are written as replacement and reuse. (a17a5c9d6, TC-1056:27,97-98) |

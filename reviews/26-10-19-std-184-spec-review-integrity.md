@@ -26,3 +26,9 @@ Ticket: STD-184. This review checks that the FR-218 edits are consistent within 
 ## Verdict
 
 Fix FND-001 before merge. Everything else examined is consistent: the decision-fact definition, the two entry kinds, the reduced eligibility table and its new note, and the refusal order agree with QSpec FR-466 and FR-464, and TC-1056 rows 45 to 49 follow from the FR text.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | The partition bullet is restated over guard atoms, atom identity is syntactic with `not` the only negation, and the contradicting sentence in the earlier bullet is removed. AC-2, AC-19 and TC-1056 rows 37-40 and 45 agree with it. (a17a5c9d6, FR-218:323-330) |
