@@ -48,6 +48,8 @@ mod model_relationship;
 #[cfg(feature = "test-support")]
 mod model_state;
 #[cfg(feature = "test-support")]
+mod model_subject_bound;
+#[cfg(feature = "test-support")]
 mod model_systems;
 #[cfg(feature = "test-support")]
 mod model_systems_resolve;
