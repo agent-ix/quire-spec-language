@@ -59,6 +59,7 @@ mod operation_bodies;
 mod operation_clauses;
 #[cfg(feature = "test-support")]
 mod population_bound;
+mod probabilistic_declarations;
 mod quantities;
 #[cfg(feature = "test-support")]
 mod relationship_extents;

@@ -13,6 +13,7 @@
 
 pub mod accounting;
 pub mod admitted;
+pub mod clause_observation;
 pub mod conformance;
 pub mod dispatch;
 pub mod domain_package;

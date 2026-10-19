@@ -382,6 +382,7 @@ pub(crate) fn type_condition(
                 }
             }
             ExprNode::Case(_)
+            | ExprNode::Quantity(_)
             | ExprNode::Call { .. }
             | ExprNode::Present(_)
             | ExprNode::Value(_)

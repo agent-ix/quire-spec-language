@@ -656,9 +656,13 @@ impl<'a> ClauseSetup<'a> {
         // post side (FR-104, FR-106), whether selected by `PreCall` or by
         // `Invocation`.
         let current = match declaration.observation() {
-            qsl_semantics::check::Observation::Current => observations.current.as_ref(),
-            qsl_semantics::check::Observation::Post => observations.post.as_ref(),
-            qsl_semantics::check::Observation::Pre => observations.pre.as_ref(),
+            qsl_semantics::model::clause_observation::Observation::Current => {
+                observations.current.as_ref()
+            }
+            qsl_semantics::model::clause_observation::Observation::Post => {
+                observations.post.as_ref()
+            }
+            qsl_semantics::model::clause_observation::Observation::Pre => observations.pre.as_ref(),
         }
         .ok_or_else(|| {
             CallFailure::Fault(InternalFault::new(
@@ -1000,7 +1004,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         };
         let reads: std::collections::BTreeMap<
             quire_semantic_value::location::Location,
-            qsl_semantics::check::Observation,
+            qsl_semantics::model::clause_observation::Observation,
         > = declaration
             .reads()
             .map(|(location, observation)| (location.clone(), observation))

@@ -320,6 +320,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ProtocolReference(_)
         | CheckCause::ProtocolObligation(_)
         | CheckCause::TerminalNotEmitted { .. }
+        | CheckCause::Probabilistic(_)
         | CheckCause::Temporal(_)
         | CheckCause::Hyper(_)
         | CheckCause::StateGraph(_) => None,

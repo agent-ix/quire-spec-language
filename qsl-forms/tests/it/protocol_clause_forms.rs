@@ -116,6 +116,10 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::HyperBehaviours(_)
         | DeclarationForm::HyperFinite(_)
         | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
         | DeclarationForm::StateGraphClaim(_) => panic!("a state clause form, not {form:?}"),
     }
 }
@@ -139,6 +143,10 @@ fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
         | DeclarationForm::HyperBehaviours(_)
         | DeclarationForm::HyperFinite(_)
         | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
         | DeclarationForm::StateGraphClaim(_) => panic!("an operation body form, not {form:?}"),
     }
 }
@@ -162,6 +170,10 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::HyperBehaviours(_)
         | DeclarationForm::HyperFinite(_)
         | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
         | DeclarationForm::StateGraphClaim(_) => panic!("a protocol form, not {form:?}"),
     }
 }

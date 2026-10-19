@@ -32,8 +32,8 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProfileRefusal, ProtocolAnchorCause,
-    ShadowedDeclaration, TemporalCause,
+    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause, ProfileRefusal,
+    ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -855,6 +855,63 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         }
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
+        }
+        // FR-185, FR-186: name what the `Probabilistic` check refused.
+        CheckCause::Probabilistic(cause) => {
+            message = match cause.as_ref() {
+                ProbabilisticCause::InvalidWeight { owner, .. } => {
+                    format!(
+                        "{message}: {owner:?} has a weight that is not a positive exact rational"
+                    )
+                }
+                ProbabilisticCause::ZeroDenominator { .. } => {
+                    format!("{message}: a rational has the denominator 0")
+                }
+                ProbabilisticCause::RepeatedSupportValue {
+                    operation,
+                    parameter,
+                    ..
+                } => format!(
+                    "{message}: `{operation}({parameter})` lists a value twice in its distribution"
+                ),
+                ProbabilisticCause::DuplicateDistribution {
+                    operation,
+                    parameter,
+                    ..
+                } => format!("{message}: `{operation}({parameter})` already has a distribution"),
+                ProbabilisticCause::DuplicateWeight {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` weights `{operation}` twice"),
+                ProbabilisticCause::DuplicateReward {
+                    reward, operation, ..
+                } => format!("{message}: reward `{reward}` is already declared on `{operation}`"),
+                ProbabilisticCause::QuantileOverFraction { claim, .. } => format!(
+                    "{message}: claim `{claim}` takes a quantile of a fraction, which has none"
+                ),
+                ProbabilisticCause::StateReadInReward {
+                    reward, operation, ..
+                } => format!(
+                    "{message}: reward `{reward}` on `{operation}` reads state or an ambient value"
+                ),
+                ProbabilisticCause::QualitativeThreshold { claim, .. } => format!(
+                    "{message}: a threshold of claim `{claim}` is not strictly between 0 and 1"
+                ),
+                ProbabilisticCause::PartialConfidence { claim, fault, .. } => format!(
+                    "{message}: the confidence of claim `{claim}` must state alpha, beta and \
+                     indifference once each ({fault:?})"
+                ),
+                ProbabilisticCause::InvalidConfidence {
+                    claim, parameter, ..
+                } => format!("{message}: `{parameter}` of claim `{claim}` is out of range"),
+                ProbabilisticCause::QuantityLiteral => {
+                    format!("{message}: a quantity literal is not checked in this position yet")
+                }
+                ProbabilisticCause::NotYetImplemented {
+                    construct, name, ..
+                } => format!("{message}: `{construct} {name}` is not checked or emitted yet"),
+            };
         }
         // FR-326: name what the `TemporalTrace` check refused.
         CheckCause::Temporal(cause) => {

@@ -18,12 +18,13 @@ use quire_exact::ValueType;
 use super::CheckedTemporalClause;
 use crate::check::check::{bind_parameters, Scope, StateContext, Typer};
 use crate::check::facts::Definedness;
-use crate::check::ir::{CheckedBody, Observation};
+use crate::check::ir::CheckedBody;
 use crate::check::lowering::{temporal_location, TemporalSite};
 use crate::check::observation::Observations;
 use crate::check::refusal::{CheckCause, CheckRefusal};
 use crate::check::state_clause::ClauseDeclarations;
 use crate::family::CheckContext;
+use crate::model::clause_observation::Observation;
 
 /// A slot no local carries: a condition has no `self`.
 const NO_SLOT: usize = usize::MAX;
