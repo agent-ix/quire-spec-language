@@ -322,9 +322,7 @@ mod tests {
         use SolverMethod::{
             DeltaComplete as D, FlowpipeOutwardRounded as O, FlowpipeUnrounded as U,
         };
-        use SolverOutcome::{
-            DeltaSat, EnclosureDisjoint as Disjoint, EnclosureMeetsUnsafe as Meets,
-        };
+        use SolverOutcome::{DeltaSat, EnclosureDisjoint, EnclosureMeetsUnsafe};
         use SolverOutcome::{Unknown, Unsat};
         #[derive(Clone, Copy)]
         enum Expect {
@@ -340,20 +338,20 @@ mod tests {
         let table = [
             (D, Unsat, Proved),
             (D, DeltaSat, Inconclusive),
-            (D, Disjoint, Inconclusive),
-            (D, Meets, Inconclusive),
+            (D, EnclosureDisjoint, Inconclusive),
+            (D, EnclosureMeetsUnsafe, Inconclusive),
             (D, Unknown, Inconclusive),
             (D, stop, Incomplete),
             (O, Unsat, Inconclusive),
             (O, DeltaSat, Inconclusive),
-            (O, Disjoint, Proved),
-            (O, Meets, Inconclusive),
+            (O, EnclosureDisjoint, Proved),
+            (O, EnclosureMeetsUnsafe, Inconclusive),
             (O, Unknown, Inconclusive),
             (O, stop, Incomplete),
             (U, Unsat, Inconclusive),
             (U, DeltaSat, Inconclusive),
-            (U, Disjoint, Inconclusive),
-            (U, Meets, Inconclusive),
+            (U, EnclosureDisjoint, Inconclusive),
+            (U, EnclosureMeetsUnsafe, Inconclusive),
             (U, Unknown, Inconclusive),
             (U, stop, Incomplete),
         ];
