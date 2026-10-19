@@ -24,7 +24,7 @@ overlap that passes because the guards are constant.
 
 Fixture **P**: a domain package `M` with the object types `Node{total: Total,
 tally: Int[0, 3], n: Int[0, 9], ok: Boolean}` with the operation `Node::step`, and `Peer{id: Int[0, 9]}`; the record value type
-`Plain{ready: Boolean, count: Int[0, 9], peer: Reference<Peer>}`; a relationship `pipe` whose
+`Plain{ready: Boolean, count: Int[0, 9], peer: Reference<Peer>}`; the base protocol's one activation is `activation on origin` and its one `finish` is `finish Closed as (closed: M::Plain) { true };`; a relationship `pipe` whose
 first end is `Peer` and second end is `Node`; a relationship `owns` between the
 same two types; a port `out`; model alias `M`, profile alias
 `P`, a temporal clause `Due` and a predicate `Accept` in the unit. The base
@@ -94,8 +94,9 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 45 | row 28 with `visible (got.count)` and guards `got.count > 0` and `not got.count > 0`; then with guards `got.count > 0` and `got.count > 1` | the first checks: an individual entry may be a non-Boolean fact, and two guards over one atom and its negation partition; the second `undefined_expression`/`unproved-exhaustiveness`, `failed` `[missing-arm, duplicate-arm]` (FR-218-AC-2) |
 | 46 | before the choice `effect Done of Main::Tried as (done: M::Plain) { true };` (with row 43's `attempt Tried`), and the choice `by Seller visible (done.ready)` reading `done.ready` | `wrong_snapshot`/`wrong-observation` at `done.ready`; `reason` `ineligible-kind` (an `effect` record) |
 | 47 | before the choice `commit Fixed by Seller as (fixed: M::Plain) { true };`, and the choice `by Seller visible (fixed.ready)` reading `fixed.ready` | the same refusal with `reason` `ineligible-kind` (a `commit` record) |
-| 48 | `activation on each (x: M::Plain)` added and the choice `by Buyer visible (x.ready)` reading `x.ready` | the same refusal with `reason` `ineligible-kind` (the protocol's activation binder) |
-| 49 | `finish Closed as (closed: M::Plain) { true };` after the run and the choice in the run reading `closed.ready`, listed in `visible` | `missing_declaration`/`missing-name` at each read of `closed`, as an out-of-scope read, and no `wrong-observation` refusal: no decision reaches a `finish` record (FR-218-AC-17) |
+| 48 | the base's activation replaced by `activation on each (x: M::Plain)` and the choice `by Buyer visible (x.ready)` reading `x.ready` | the same refusal with `reason` `ineligible-kind` (the protocol's activation binder) |
+| 49 | the base's `finish Closed` kept and a choice in the run reading `closed.ready`, listed in `visible` | `missing_declaration`/`missing-name` at each read of `closed`, as an out-of-scope read, and no `wrong-observation` refusal: no decision reaches a `finish` record (FR-218-AC-17) |
+| 50 | row 35's first case (the receive in `branch left`, the choice in `branch right`) with `visible (true)` | `missing_declaration`/`missing-name` at each read of `got` and no `wrong-observation` refusal: the read is out of scope and also unlisted, and the scope refusal precedes the decision-fact refusal (FR-218-AC-17) |
 
 ## Expected Results
 

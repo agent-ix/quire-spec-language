@@ -308,9 +308,7 @@ none of its operands.
 - Each `visible` entry and each guard (a `case when`, a `repeat while`) SHALL
   read decision facts of eligible binders, protocol captures and constants
   only. A guard SHALL read a fact only when the fact is an individual `visible`
-  entry. The partition of a `choice` treats each comparison or Boolean fact a
-  guard reads as an independent atom, so guards over a non-Boolean fact such
-  as `m.n > 0` and `m.n > 1` are checked as the two atoms they are. S3 SHALL count
+  entry. S3 SHALL count
   a read inside a discarded `let` initializer as a read.
 - S3 SHALL refuse a read of a fact that is not an eligible, individually listed
   fact of the owner with `wrong_snapshot`/`wrong-observation` at the read, retaining `node`,
@@ -322,8 +320,14 @@ none of its operands.
   an optional branch's record, an `await` match read outside its `then` path or
   a record bound inside the `repeat` body, refuses as an out-of-scope read
   (Scopes).
-- The partition of a `choice` SHALL be proved over the visible facts as
-  independent Booleans (QSpec FR-053). S3 SHALL refuse a gap or an overlap,
+- The partition of a `choice` SHALL be proved over the atoms of its guards as
+  independent Booleans (QSpec FR-053). An atom is a Boolean fact, or a
+  comparison or other Boolean-typed term over non-Boolean facts; two atoms are
+  equal exactly when their checked terms are syntactically identical, and `not`
+  is the only negation recognised. So `got.count > 0` and `not got.count > 0`
+  partition, while `m.n > 0` and `m.n > 1`, or `m.n > 0` and `m.n <= 0`, are
+  two independent atoms that leave a valuation uncovered and an overlap, and
+  the check does not relate atoms by arithmetic. S3 SHALL refuse a gap or an overlap,
   including a gap or overlap between constant guards, with `undefined_expression`/
   `unproved-exhaustiveness` at the choice, retaining the choice's node identity
   in place of a `union-decl`, the names of the cases involved and `failed`, the
@@ -382,7 +386,7 @@ one protocol declared in the same unit. It carries no package selector.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-218-AC-1 | ADR-027 §7's `Fill`, §7.1's `Pay`, FR-212's `Chatter` and FR-208-AC-1's replicated-role protocol each check to a `CheckedProtocolClause`; none refuses `unsupported_construct`/`not-yet-implemented`. `Fill`'s edge relation holds in → `A`, in → `B`, `A` → join and `B` → join; `Chatter`'s holds `Tx`.out → `Rx`.in. | Test (TC-663) |
-| FR-218-AC-2 | A `choice` guard that reads `k.v` refuses `ill_typed`/`operator-ineligible` at the read. A two-case `choice` whose `visible` entry `m.n` is an individual non-Boolean fact, admitted as a decision fact, and whose guards are `m.n > 0` and `m.n > 1`, refuses `undefined_expression`/`unproved-exhaustiveness`. `join all [left, middle]` in `Fill` refuses `missing_declaration`/`missing-name` at `middle`. | Test (TC-663) |
+| FR-218-AC-2 | A `choice` guard that reads `k.v` refuses `ill_typed`/`operator-ineligible` at the read. A two-case `choice` whose `visible` entry `m.n` is an individual non-Boolean fact, admitted as a decision fact, and whose guards are `m.n > 0` and `m.n > 1`, refuses `undefined_expression`/`unproved-exhaustiveness`. `join all [left, middle]` in `Fill` refuses `missing_declaration`/`missing-name` at `middle`. | Test (TC-663, TC-1056) |
 | FR-218-AC-3 | In a variant of `Fill` where a `check` after the join reads binder `a`, the checked clause records that `check` as `a`'s only reader; a node in branch `right` that reads `a` refuses as FR-113 refuses an unresolved name. In FR-208-AC-1's protocol with lifetime `scope`, the recorded region is the smallest control holding `Work`. | Test (TC-663) |
 | FR-218-AC-4 | A `parallel` nested inside a `repeat` inside a branch of another `parallel`, three levels deep, checks; its checked tree holds all three levels with their paths. | Test (TC-663) |
 | FR-218-AC-5 | A `repeat` whose body is one attempt checks with a maximum, with an invariant and variant and no maximum, with both, and with neither, and the checked clause records the maximum, invariant and variant each has. A `repeat` whose body is only a `check` refuses `unsupported_construct`/`declaration-form` at the `repeat`, naming it, and so does a `repeat` whose body is a `choice` with one attempt in one case and an empty `sequence` in the other. | Test (TC-663) |
