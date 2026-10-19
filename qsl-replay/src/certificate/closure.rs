@@ -76,13 +76,7 @@ impl Serialize for ProductStateRef {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use base64::Engine as _;
         let mut object = serializer.serialize_struct("ProductStateRef", 2)?;
-        object.serialize_field(
-            "model_state",
-            &DigestWire {
-                domain: self.model_state.domain().as_str(),
-                digest: self.model_state.hex(),
-            },
-        )?;
+        object.serialize_field("model_state", &DigestWire::of(&self.model_state))?;
         let octets = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(self.automaton_state.as_bytes());
         object.serialize_field("automaton_state", &octets)?;
@@ -90,10 +84,20 @@ impl Serialize for ProductStateRef {
     }
 }
 
+/// A digest record's wire object: `{"domain", "digest"}`.
 #[derive(Serialize)]
-struct DigestWire {
+pub(crate) struct DigestWire {
     domain: &'static str,
     digest: String,
+}
+
+impl DigestWire {
+    pub(crate) fn of(record: &DigestRecord) -> Self {
+        Self {
+            domain: record.domain().as_str(),
+            digest: record.hex(),
+        }
+    }
 }
 
 /// FR-338's closure certificate: the product states EN-1 explored.
@@ -567,26 +571,41 @@ impl Check<'_, '_> {
     }
 
     fn expansion_stop(&self, stop: ExpansionStop) -> Halt {
-        match stop.limit {
-            Some(ExpansionLimit::EvaluationMeter) => {
-                Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units)
-            }
-            Some(ExpansionLimit::MaxCandidates) => {
-                Self::stopped(ModelCheckLimit::MaxCandidates, self.max_candidates)
-            }
-            None if stop.is_internal_failure() => fault("model-expansion-invariant").into(),
-            None => Halt::Check(TemporalCertificateCheck::Stopped(
-                IncompleteCause::ResourceExhausted,
-            )),
+        match expansion_halt(&stop, self.meter.work_units, self.max_candidates) {
+            Ok(check) => Halt::Check(check),
+            Err(refusal) => Halt::Refusal(refusal),
         }
     }
 }
 
-fn fault(invariant: &'static str) -> ClosureRefusal {
+/// The check an expansion or predicate stop ends: a named budget stops it
+/// naming the budget's value, any other stop stops it with no named limit,
+/// and a broken invariant refuses.
+pub(super) fn expansion_halt(
+    stop: &ExpansionStop,
+    meter: u64,
+    max_candidates: u64,
+) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    let limit = |limit, value| {
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached { limit, value })
+    };
+    match stop.limit {
+        Some(ExpansionLimit::EvaluationMeter) => Ok(limit(ModelCheckLimit::EvaluationMeter, meter)),
+        Some(ExpansionLimit::MaxCandidates) => {
+            Ok(limit(ModelCheckLimit::MaxCandidates, max_candidates))
+        }
+        None if stop.is_internal_failure() => Err(fault("model-expansion-invariant")),
+        None => Ok(TemporalCertificateCheck::Stopped(
+            IncompleteCause::ResourceExhausted,
+        )),
+    }
+}
+
+pub(super) fn fault(invariant: &'static str) -> ClosureRefusal {
     ClosureRefusal::Fault(InternalFault::new("closure-check", invariant))
 }
 
-fn widen(value: usize) -> u64 {
+pub(super) fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 

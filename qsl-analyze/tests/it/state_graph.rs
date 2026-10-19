@@ -147,7 +147,7 @@ fn edge_names(run: &StateGraphRun, node: NodeIndex) -> Vec<String> {
 
 fn witnesses(outcome: &StateGraphOutcome) -> &[GraphWitness] {
     match outcome {
-        StateGraphOutcome::Witnessed { paths }
+        StateGraphOutcome::Witnessed { paths, .. }
         | StateGraphOutcome::WitnessedUnchecked { paths, .. } => paths,
         other => panic!("expected witnesses, got {other:?}"),
     }
@@ -684,7 +684,7 @@ fn a_sampled_witness_never_hides_an_undefined_target() {
     assert!(result.graph.open.is_empty());
     assert_eq!(result.graph.end, RunEnd::Completed);
     for instance in &result.items[0] {
-        let StateGraphOutcome::Witnessed { paths } = &instance.outcome else {
+        let StateGraphOutcome::Witnessed { paths, .. } = &instance.outcome else {
             panic!("witnessed: {:?}", instance.outcome);
         };
         assert!(matches!(paths[0].source, WitnessSource::Sampled(_)));
@@ -867,7 +867,7 @@ fn explored_witnesses_and_an_initial_trap() {
         no_samples(),
     ));
     for (instance, key) in result.items[0].iter().zip(["a", "b"]) {
-        let StateGraphOutcome::Witnessed { paths } = &instance.outcome else {
+        let StateGraphOutcome::Witnessed { paths, .. } = &instance.outcome else {
             panic!("witnessed: {:?}", instance.outcome);
         };
         let expected = expected_steps(
@@ -927,14 +927,14 @@ fn always_possible_traps_and_holds() {
 
     let guarded = "always possible Guarded using v over (x: G::Game) from (x.phase != 2) \
                    { x.phase = 3 }\n";
-    assert_eq!(
+    assert!(matches!(
         decide(false, guarded, "Guarded").1,
-        StateGraphOutcome::Holds
-    );
-    assert_eq!(
+        StateGraphOutcome::Holds { .. }
+    ));
+    assert!(matches!(
         decide(true, CAN_STILL_WIN, "CanStillWin").1,
-        StateGraphOutcome::Holds
-    );
+        StateGraphOutcome::Holds { .. }
+    ));
 }
 
 /// FR-168-AC-3: §7.3's `InOneWay` returns `PathPair` with an empty stem,
@@ -960,7 +960,10 @@ fn unique_path_counts_paths() {
     assert!(stem.steps.is_empty());
     assert_eq!(names(&first), ["stepA", "stepB", "finish"]);
     assert_eq!(names(&second), ["stepB", "stepA", "finish"]);
-    assert_eq!(decide(true, false), StateGraphOutcome::Holds);
+    assert!(matches!(
+        decide(true, false),
+        StateGraphOutcome::Holds { .. }
+    ));
     let StateGraphOutcome::PathPair {
         stem,
         first,
@@ -1144,7 +1147,7 @@ fn phase_zero_changes_the_source_never_the_outcome_kind() {
     for (limits, sampled) in [(ModelCheckLimits::default(), true), (no_samples(), false)] {
         let result = run(world.request(AB, vec![world.item("ReachesTwo")], limits));
         for instance in &result.items[0] {
-            let StateGraphOutcome::Witnessed { paths } = &instance.outcome else {
+            let StateGraphOutcome::Witnessed { paths, .. } = &instance.outcome else {
                 panic!("witnessed: {:?}", instance.outcome);
             };
             assert_eq!(
