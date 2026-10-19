@@ -3,13 +3,15 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::CatalogCode;
 use qsl_replay::{map_state, EvalFailure, HiddenSlot, MappingFailure, MappingRowRef, ObjectKey};
 use qsl_semantics::model::observation::AdmissionFailure;
 use qsl_semantics::model::state::ModelState;
 use quire_exact::ScalarLimits;
 
 use crate::refinement_fixture::{
-    cas_refines_counter, cas_state, key, mutated, spec_state, World, CAS, SPEC, UNLIMITED, ZERO,
+    cas_refines_counter, cas_state, key, mutated, spec_state, Variant, World, CAS, SPEC, THIRD,
+    UNLIMITED, ZERO,
 };
 
 /// The state key of the abstract state `concrete` maps to, under a clause
@@ -159,9 +161,10 @@ fn an_object_of_an_unmapped_type_is_reported_not_dropped() {
     );
 }
 
-/// `ModelSystem::over_model` refuses a model the unit does not select with
-/// `invalid_runtime_input`/`wrong-role-mapping`. No TC covers `over_model`
-/// yet, so the test carries no tag.
+/// FR-120-AC-14 (TC-1086 step 6): `ModelSystem::over_model` refuses a model
+/// the unit does not select with `invalid_runtime_input`/`wrong-role-mapping`
+/// naming it, and a system over each selected model reports that model.
+#[trace("TC-1086", "FR-120-AC-14")]
 #[test]
 fn a_system_over_an_unselected_model_is_refused() {
     let world = World::new(&cas_refines_counter());
@@ -171,4 +174,83 @@ fn a_system_over_an_unselected_model_is_refused() {
     };
     assert_eq!(record.code, Code::InvalidRuntimeInput);
     assert_eq!(record.cause, "wrong-role-mapping");
+    assert_eq!(record.fields["model"], "example/not-selected");
+    assert_eq!(world.concrete_system(UNLIMITED).model(), Some(CAS));
+    assert_eq!(world.abstract_system(UNLIMITED).model(), Some(SPEC));
+    assert_eq!(world.third_system().model(), Some(THIRD));
+}
+
+/// FR-140-AC-7 (TC-1086 step 2): an object of a subtype that `counters`
+/// admits and no object row names is an unmapped type, never dropped.
+#[trace("TC-1086", "FR-140-AC-7")]
+#[test]
+fn an_object_of_an_admitted_subtype_with_no_object_row_is_undetermined() {
+    let world = World::with(
+        Variant {
+            sub_counter: true,
+            ..Variant::CAS
+        },
+        &cas_refines_counter(),
+    );
+    let mut state = cas_state(1, 0, false, 0, true);
+    let sub = key(CAS, "SubCounter");
+    for object in state.populations.values_mut().flat_map(|o| o.values_mut()) {
+        object.type_identity = sub.clone();
+    }
+    let MappingFailure::Undetermined(undetermined) = failure(&world, UNLIMITED, &state) else {
+        panic!("the mapping is undetermined");
+    };
+    assert_eq!(undetermined.cause, EvalFailure::UnmappedType(sub.clone()));
+    assert_eq!(
+        undetermined.row,
+        MappingRowRef::Object { concrete_type: sub }
+    );
+    assert_eq!(undetermined.object.expect("an object").key, "c");
+}
+
+/// FR-140-AC-8 (TC-1086 step 3): the two systems passed swapped, or a system
+/// over a third model, are `WrongSystem` with `wrong-role-mapping`.
+#[trace("TC-1086", "FR-140-AC-8")]
+#[test]
+fn a_system_over_another_model_than_the_refinements_is_a_wrong_system() {
+    let world = World::new(&cas_refines_counter());
+    let state = cas_state(1, 0, false, 0, true);
+    let refinement = world.refinement();
+    let concrete = world.concrete_system(UNLIMITED);
+    let abstracted = world.abstract_system(UNLIMITED);
+    let third = world.third_system();
+    for (concrete, abstracted) in [
+        (&abstracted, &concrete),
+        (&concrete, &third),
+        (&third, &abstracted),
+    ] {
+        let Err(MappingFailure::WrongSystem(code)) =
+            map_state(refinement, concrete, abstracted, &state)
+        else {
+            panic!("the systems are not the refinement's");
+        };
+        assert_eq!(
+            code,
+            CatalogCode::new("invalid_runtime_input", "wrong-role-mapping")
+        );
+    }
+}
+
+/// FR-140-AC-14 (TC-1086 step 9): a concrete state its own system cannot
+/// observe is an internal fault, which is no row's outcome.
+#[trace("TC-1086", "FR-140-AC-14")]
+#[test]
+fn a_state_the_evaluator_cannot_observe_is_a_fault() {
+    let world = World::new(&cas_refines_counter());
+    let mut state = cas_state(1, 0, false, 0, true);
+    for object in state.populations.values_mut().flat_map(|o| o.values_mut()) {
+        object.fields.remove(&key(CAS, "Counter/value"));
+    }
+    let MappingFailure::Fault(code) = failure(&world, UNLIMITED, &state) else {
+        panic!("the mapping faults");
+    };
+    assert_eq!(
+        code,
+        CatalogCode::new("runtime_invariant", "established-invariant-broken")
+    );
 }
