@@ -329,3 +329,150 @@ fn a_malformed_step_row_is_refused_at_its_token() {
         assert_eq!(refused_at(&declaration), offending, "{row}");
     }
 }
+
+fn refinement(rows: &str) -> String {
+    format!("refinement R using Complete abstract Spec concrete Impl {{\n{rows}\n}}")
+}
+
+/// Verifies the parse only and claims no criterion.
+/// A refinement declaration holds `population`, `object` (with field rows),
+/// `history` (with updates) and `assume`/`ensure` fairness rows beside its
+/// `step` rows, in any order, and each row is one node of its own production.
+#[test]
+fn a_refinement_parses_population_object_history_and_fairness_rows() {
+    let population = "population Spec::Counters from Impl::Counters;";
+    let object = "object Spec::Counter from Impl::Counter {\n\
+        value = self.cells;\n\
+        owner = self.owner;\n\
+        }";
+    let empty_object = "object Spec::Empty from Impl::Empty { }";
+    let step = "step Impl::Counter::peek -> stutter;";
+    let history = "history Impl::Counter.prev : Option<Int[0, 4]> = none {\n\
+        on Impl::Counter::write : pre(self.value);\n\
+        on Impl::Counter::reset : none;\n\
+        }";
+    let bare_history = "history Impl::Counter.seen : Boolean = false { }";
+    let fairness = [
+        "assume fair weak Impl::Counter::write;",
+        "assume fair weak each Impl::Counter::write;",
+        "ensure fair weak whole Spec::Counter::inc;",
+    ];
+    let rows = [
+        population,
+        object,
+        empty_object,
+        step,
+        history,
+        bare_history,
+        fairness[0],
+        fairness[1],
+        fairness[2],
+    ];
+    let declaration = refinement(&rows.join("\n"));
+    let (text, parsed) = parse_admitted(&declaration);
+    assert_eq!(
+        texts(&text, &parsed, Production::Refinement),
+        [declaration.as_str()]
+    );
+    assert_eq!(
+        texts(&text, &parsed, Production::PopulationRow),
+        [population]
+    );
+    assert_eq!(
+        texts(&text, &parsed, Production::ObjectRow),
+        [object, empty_object]
+    );
+    assert_eq!(
+        texts(&text, &parsed, Production::FieldRow),
+        ["value = self.cells;", "owner = self.owner;"]
+    );
+    assert_eq!(texts(&text, &parsed, Production::StepRow), [step]);
+    assert_eq!(
+        texts(&text, &parsed, Production::HistoryRow),
+        [history, bare_history]
+    );
+    assert_eq!(
+        texts(&text, &parsed, Production::HistoryUpdate),
+        [
+            "on Impl::Counter::write : pre(self.value);",
+            "on Impl::Counter::reset : none;"
+        ]
+    );
+    assert_eq!(texts(&text, &parsed, Production::FairnessRow), fairness);
+}
+
+/// Verifies the parse only and claims no criterion.
+/// A history row's initial value is a closed list of constant spellings:
+/// a negative or non-negative integer, `true`, `false`, `none`, a string, an
+/// exact number or a full-path enum member, each read as one `HistoryLiteral`.
+#[test]
+fn a_history_row_parses_each_initial_literal_spelling() {
+    let literals = [
+        "0",
+        "-3",
+        "true",
+        "false",
+        "none",
+        "\"idle\"",
+        "rational(1, 2)",
+        "decimal(15, 1)",
+        "Impl::Mode::idle",
+    ];
+    let rows: Vec<String> = literals
+        .iter()
+        .enumerate()
+        .map(|(index, literal)| format!("history Impl::T.h{index} : Int[0, 4] = {literal} {{ }}"))
+        .collect();
+    let (text, parsed) = parse_admitted(&refinement(&rows.join("\n")));
+    assert_eq!(texts(&text, &parsed, Production::HistoryLiteral), literals);
+}
+
+/// Verifies the parse only and claims no criterion.
+/// A collection, record, float or other non-constant initial value is refused
+/// at its first token as a syntax error.
+#[test]
+fn a_history_row_refuses_a_non_literal_initial_value_at_its_first_token() {
+    for (initial, offending) in [
+        ("[1, 2]", "["),
+        ("set[1]", "["),
+        ("float64(bits: 0x3FF0000000000000)", "float64"),
+        ("self.x", "self"),
+        ("1 + 2", "+"),
+    ] {
+        let declaration = refinement(&format!("history Impl::T.h : Int[0, 4] = {initial} {{ }}"));
+        assert_eq!(refused_at(&declaration), offending, "{initial}");
+    }
+}
+
+/// Verifies the parse only and claims no criterion.
+/// A fairness row takes only `weak`, a granularity only before the operation,
+/// and a row that is neither `assume` nor `ensure` is refused at its word.
+#[test]
+fn a_malformed_fairness_row_is_refused_at_its_token() {
+    for (row, offending) in [
+        ("assume fair strong Impl::T::op;", "strong"),
+        ("assume fair Impl::T::op;", "Impl"),
+        ("ensure fair weak Spec::T::op each;", "each"),
+        ("require fair weak Impl::T::op;", "require"),
+    ] {
+        assert_eq!(refused_at(&refinement(row)), offending, "{row}");
+    }
+}
+
+/// Verifies the parse only and claims no criterion.
+/// A population row needs both model names and its `from`; an object row
+/// needs its braces and each field row its `=`.
+#[test]
+fn a_malformed_population_object_or_field_row_is_refused_at_its_token() {
+    for (row, offending) in [
+        ("population Spec::P;", ";"),
+        ("population Spec::P Impl::P;", "Impl"),
+        ("object Spec::T from Impl::T;", ";"),
+        ("object Spec::T from Impl::T { value self.v; }", "self"),
+        ("object Spec::T from Impl::T { value = ; }", ";"),
+        ("history Impl::T.h : Boolean = false;", ";"),
+        ("history Impl::T : Boolean = false { }", ":"),
+    ] {
+        assert_eq!(refused_at(&refinement(row)), offending, "{row}");
+    }
+}

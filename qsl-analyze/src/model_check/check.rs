@@ -41,7 +41,7 @@ use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::{
-    EncodingRefusal, ExpansionLimit, ExpansionStop, NotSimulated, TransitionSystem,
+    EncodingRefusal, ExpansionLimit, ExpansionStop, NotSimulated, RequiresBound, TransitionSystem,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
@@ -53,6 +53,7 @@ use qsl_replay::{
     UndefinedSite,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
+use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ObjectReference};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
@@ -79,10 +80,15 @@ pub enum ModelCheckRefusal {
     /// FR-106's admission of the subject's `ModelSystem` failed.
     #[error("the subject's model system did not admit: {0:?}")]
     Admission(Box<AdmissionFailure>),
-    /// FR-101's pre-check: a root of the subject is unbounded, or its
-    /// extent could not be classified.
-    #[error(transparent)]
-    NotSimulated(Box<NotSimulated>),
+    /// FR-336: a root of the subject is unbounded under its universes. The
+    /// refusal names each unbounded root's `WireNodeId` (as the key of
+    /// [`RequiresBound::domains`]) and is returned before any state is
+    /// explored. A `ProofBound` never makes a root finite here.
+    #[error("the subject has an unbounded root and requires a bound")]
+    RequiresBound(RequiresBound),
+    /// FR-101's pre-check could not classify the subject's extent.
+    #[error("the subject's extent could not be classified: {0:?}")]
+    Extent(Box<ClassifyFailure>),
     /// The clause's property form is not one this engine decides yet.
     #[error("EN-1 does not decide the property form {form:?} yet")]
     FormNotDecided {
@@ -230,8 +236,11 @@ pub fn check_model(
     let no_initial = request.subject.simulation.initial.is_empty();
     let system = ModelSystem::new(request.subject.simulation)
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
-    check_model_bounds(&system, BOUND_POSITIONS)
-        .map_err(|refusal| ModelCheckRefusal::NotSimulated(Box::new(refusal)))?;
+    check_model_bounds(&system, BOUND_POSITIONS).map_err(|refusal| match refusal {
+        NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
+        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
+        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
+    })?;
     let mut run = Run {
         system: &system,
         item: &item,
