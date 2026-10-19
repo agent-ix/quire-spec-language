@@ -23,8 +23,8 @@ use super::protocol_control::{
 };
 use super::spans::DeclarationSpans;
 use super::syntax::{
-    AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind, ClockForm,
-    CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
+    ActivationForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind,
+    ClockForm, CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
     CompensationRetry, DeclarationForm, DeclaredName, ExpressionForm, OperationBodyForm,
     ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
     ProtocolNodeDeclaration, ProtocolNodeKind, RelatedForm, RelationshipForm, RequirementForm,
@@ -261,6 +261,16 @@ pub(crate) fn protocol_declaration(
     // present.
     let activation = only(&clause_items, Production::Activation, node)?;
     let activation_items = items(cst, activation);
+    let activation_form = match nodes_of(&activation_items, Production::Parameter).first() {
+        None => ActivationForm::Origin,
+        Some(parameter) => ActivationForm::Each {
+            parameter: parameter_form(cst, parameter)?,
+            when: nodes_of(&activation_items, Production::Expression)
+                .first()
+                .map(|condition| expression_form(cst, condition))
+                .transpose()?,
+        },
+    };
     if let Some(&activation_parameter) = nodes_of(&activation_items, Production::Parameter).first()
     {
         constructs.push(ProtocolConstructForm {
@@ -376,27 +386,30 @@ pub(crate) fn protocol_declaration(
     constructs.sort_by_key(|construct| construct.span.start);
     bodies.sort_by_key(|body| body.span.start);
 
-    Ok(DeclarationForm::Protocol(ProtocolDeclarationForm {
-        name,
-        using,
-        roles,
-        bodies,
-        constructs,
-        scopes,
-        scoped_anchors,
-        declarations,
-        binders,
-        attempts,
-        captures,
-        relationships,
-        requirements,
-        compensations,
-        channels,
-        parallels,
-        repeats,
-        awaits,
-        members,
-    }))
+    Ok(DeclarationForm::Protocol(Box::new(
+        ProtocolDeclarationForm {
+            name,
+            using,
+            roles,
+            bodies,
+            constructs,
+            scopes,
+            scoped_anchors,
+            declarations,
+            binders,
+            attempts,
+            activation: activation_form,
+            captures,
+            relationships,
+            requirements,
+            compensations,
+            channels,
+            parallels,
+            repeats,
+            awaits,
+            members,
+        },
+    )))
 }
 
 impl Collector<'_> {

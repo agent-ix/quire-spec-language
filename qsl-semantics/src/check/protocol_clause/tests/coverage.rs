@@ -8,10 +8,10 @@ use crate::check::refusal::ProtocolAnchorCause;
 
 /// SR-770 FND-001: a protocol whose anchors (FR-113) and
 /// attempt bindings (FR-114) all resolve, but which holds content no
-/// checker reads yet (here a `compensate` template, an `effect`, an
-/// `event` and a `commit`), still refuses
+/// checker reads yet (here an `effect`, an `event` and a `commit`; a
+/// `compensate` template is checked by `protocol_obligation`), still refuses
 /// `unsupported_construct`/`not-yet-implemented` once, at the earliest
-/// such construct -- the `compensate` template -- rather than compiling
+/// such construct -- the `effect` -- rather than compiling
 /// with that content unchecked and silently missing from the emitted
 /// package.
 #[trace("TC-511", "FR-113")]
@@ -30,9 +30,9 @@ fn a_resolving_protocol_with_unchecked_content_still_refuses() {
             span,
         } => {
             assert_eq!(name, "RecoveryFlow");
-            assert_eq!(construct, "compensate");
+            assert_eq!(construct, "effect");
             let (text, _) = assemble(&source);
-            assert!(text[span.start..].starts_with("Undo"), "{span:?}");
+            assert!(text[span.start..].starts_with("Applied"), "{span:?}");
         }
         other => panic!("an Unimplemented cause, got {other:?}"),
     }

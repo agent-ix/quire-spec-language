@@ -127,7 +127,7 @@ subject's `ModelSystem`, or FR-101's `NotSimulated::RequiresBound`.
   including one whose `kind` is `UndefinedEvaluation{where, cause}`;
 - `BoundReached { depth }`: the run completed its search horizon
   `max_depth`, `depth` being that horizon, with no counterexample (V-5);
-- `Undecided(InconclusiveCause)`: `UndecidedSuccessor` or `NoInitialState`
+- `Undecided(InconclusiveCause)`: `UndecidedSuccessor`, `NoInitialState` or `NoInstance`
   (V-6);
 - `Stopped { cause: IncompleteCause, limit: Option<ReachedLimit> }`: a run
   budget or cancellation stopped the run before it completed its method
