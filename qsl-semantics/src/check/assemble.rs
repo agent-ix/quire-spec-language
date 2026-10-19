@@ -731,7 +731,7 @@ impl Unit {
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
                 DeclarationForm::OperationBody(body) => unit.operation_bodies.push(*body),
                 DeclarationForm::PopulationBound(bound) => unit.population_bounds.push(bound),
-                DeclarationForm::Protocol(protocol) => unit.protocols.push(protocol),
+                DeclarationForm::Protocol(protocol) => unit.protocols.push(*protocol),
                 DeclarationForm::Union(union) => {
                     unit.declare(&union.name, Declared::Composite);
                     unit.composites.push(Composite {
@@ -880,6 +880,9 @@ struct ModelTypes {
     objects: Vec<ObjectTypeDeclaration>,
     composites: Vec<CompositeDeclaration>,
     variant_types: Vec<VariantTypeDeclaration>,
+    /// Each scalar type's `alias::T` name and its `Int[lower, upper]`, text
+    /// or native type.
+    scalars: Vec<(String, ValueType)>,
     model_records: ModelRecords,
     relationships: Vec<RelationshipDeclaration>,
     /// Each record value type's and event type's composite declaration node.
@@ -1184,11 +1187,39 @@ fn model_object_types(
         }
     }
     let relationships = relationship_declarations(package, identities, &declarations);
+    // A scalar type is a declared type name too; one with no kernel type is
+    // not nameable and is left out.
+    let one_one = Multiplicity {
+        lower: 1,
+        upper: Some(1),
+        ordered: false,
+        unique: true,
+    };
+    let scalars: Vec<(String, ValueType)> = package
+        .records
+        .iter()
+        .filter(|record| matches!(record, DomainPackageRecord::ScalarType(_)))
+        .filter_map(|record| {
+            let key = record.key();
+            let artifact = type_identity_segment(&key.package, &key.node)?;
+            let value_type = model_value_type(
+                &ValueTypeRef::Package(key.clone()),
+                one_one,
+                &records,
+                identities,
+                &meaning_handles,
+                &variant_shapes,
+            )
+            .ok()?;
+            Some((format!("{alias}::{artifact}"), value_type))
+        })
+        .collect();
     if errors.is_empty() {
         Ok(ModelTypes {
             objects: declarations,
             composites,
             variant_types,
+            scalars,
             model_records,
             relationships,
             handles: meaning_handles,
@@ -2322,6 +2353,7 @@ impl PackageDeclarations {
         let mut object_types = Vec::new();
         let mut model_composites = Vec::new();
         let mut model_variant_types = Vec::new();
+        let mut model_scalars = Vec::new();
         let mut model_records = ModelRecords::default();
         let mut model_relationships = Vec::new();
         let mut operations = OperationTable::default();
@@ -2352,6 +2384,7 @@ impl PackageDeclarations {
                     object_types.extend(types.objects);
                     model_composites.extend(types.composites);
                     model_variant_types.extend(types.variant_types);
+                    model_scalars.extend(types.scalars);
                     model_records.extend(types.model_records);
                     model_relationships.extend(types.relationships);
                     let handles = types.handles;
@@ -2388,6 +2421,7 @@ impl PackageDeclarations {
                     .iter()
                     .map(|declared| declared.name().to_owned()),
             )
+            .chain(model_scalars.iter().map(|(name, _)| name.clone()))
             .collect();
 
         // Selection aliases are unique within a unit, and a `using` alias
@@ -2693,6 +2727,13 @@ impl PackageDeclarations {
                 .entry(declared.name().to_owned())
                 .or_default()
                 .push(ValueType::Enum(declared.shape()));
+        }
+        for (name, value_type) in &model_scalars {
+            names
+                .types
+                .entry(name.clone())
+                .or_default()
+                .push(value_type.clone());
         }
         // Each enum, admitted under the unit's owner: its declaration key
         // and its members' keys are minted here (FB-13).
@@ -3024,6 +3065,9 @@ impl PackageDeclarations {
             .iter()
             .zip(resolved)
             .filter_map(|(alias, value_type)| Some((alias.name.name.clone(), value_type?)))
+            // A model scalar is named like an alias: it has a type and no
+            // declaration identity.
+            .chain(model_scalars)
             .collect();
         package.alias_names = selections
             .profiles

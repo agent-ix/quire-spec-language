@@ -137,7 +137,7 @@ fn a_trigger_parameter_shadowing_a_native_function_declaration_refuses() {
 fn a_retry_parameter_shadowing_its_declarations_own_record_binder_refuses() {
     let source = recovery_flow("Main::Committed", "")
         .replacen("as (failure: Boolean)", "as (shared: Boolean)", 1)
-        .replacen("current_attempt: Boolean", "shared: Boolean", 1);
+        .replacen("current_attempt: M::Try", "shared: M::Try", 1);
     let (_, found) = refusals(&source);
     assert_eq!(found.len(), 1, "{found:?}");
     let (name, shadowed) = shadow_cause(&found);

@@ -278,6 +278,9 @@ enum PeerForm<'e, 'r> {
     },
 }
 
+/// A typed `=` operand and the equality operand it compares as.
+type TypedOperand = (Node, EqualityOperand);
+
 /// A form over one operand whose node it finishes once the operand is
 /// typed.
 struct UnaryFrame<'r> {
@@ -2088,12 +2091,48 @@ impl<'a> Typer<'a> {
                     }
                     Pair::Second(first) => {
                         let (left, right) = ordered(right_first, first, (typed, compared));
+                        let (left, right) = self.admit_sum_into_peer(left, right)?;
                         self.equality(operator, left, right, &location)
                             .map(Step::Typed)
                     }
                 }
             }
         }
+    }
+
+    /// FR-381-AC-10: an `Integer`-typed arithmetic operand of `=` against an
+    /// unconverted `Int[..]` operand is admitted into that interval through
+    /// a range-obligated coercion, so `x = y + 1` over `Int[0, 3]` operands
+    /// proves `y + 1` a member or refuses `unproved-range`. Any other
+    /// `Int[..]`-against-`Integer` pair is left for the equality matrix.
+    fn admit_sum_into_peer(
+        &mut self,
+        left: TypedOperand,
+        right: TypedOperand,
+    ) -> Result<(TypedOperand, TypedOperand), CheckRefusal> {
+        let is_sum = |(node, operand): &TypedOperand| {
+            node.value_type == ValueType::Integer
+                && matches!(node.kind, NodeKind::Arithmetic(..))
+                && operand.target().is_none()
+        };
+        let interval = |(node, operand): &TypedOperand| match &node.value_type {
+            ValueType::Int(_) if operand.target().is_none() => Some(node.value_type.clone()),
+            _ => None,
+        };
+        let admit = |typer: &mut Self, sum: TypedOperand, into: &ValueType| {
+            typer
+                .coerce(sum.0, into)
+                .map(|node| (node, EqualityOperand::typed(into.clone())))
+        };
+        if let (true, Some(into)) = (is_sum(&right), interval(&left)) {
+            let right = admit(self, right, &into)?;
+            return Ok((left, right));
+        }
+        if let (true, Some(into)) = (is_sum(&left), interval(&right)) {
+            let left = admit(self, left, &into)?;
+            return Ok((left, right));
+        }
+        Ok((left, right))
     }
 
     fn accept_unary(&mut self, frame: UnaryFrame<'_>, operand: Node) -> Result<Node, CheckRefusal> {
