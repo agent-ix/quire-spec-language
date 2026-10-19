@@ -101,3 +101,19 @@ clause; only `probability >= 1/2` refused.
 Examined and clean: ADR-024 §7.1 and §7.3, ADR-028 §15.4 to §15.6,
 FR-187-AC-2, FR-196-AC-5, FR-198-AC-5, TC-633 step 5. Also clean: the PR's
 reading that FR-189-AC-2's `α = β = 1/100` is mathematical notation.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | ADR-026 §11 still states the model for a parameter `T`. The timeout guard is `x >= T`, and the prose and seven TCs (TC-686, TC-688, TC-689, TC-692, TC-696, TC-698, TC-699) instantiate it at `T = 3 ms` and `T = 4 ms`. The block now writes `ClientDeadline … { self.x <= 3 ms }`, with the comment "client deadline T, written for T = 3 ms". The `T = 4 ms` instance needs `self.x <= 4 ms`, and the text does not say so. No stated verdict changes even if the instance is misread. `Waiting` implies in flight (`send` sets both, and `reply` leaves `Waiting`), so `ServerDeadline`'s `x <= 3 ms` already bounds every `Waiting` state, and the client invariant is redundant under either `T`. So this is wording only. Change the comment to "client deadline `x <= T`; 3 ms here, 4 ms in the `T = 4 ms` instance". | spec/decisions/ADR-026-dense-time.md:269 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | d747c6b40: FR-193-AC-3 reads `probability <= 0.01 [eventually[0,1000] holds(not n.healthy)]`. An S1 probe of the full claim with its confidence clause is admissible, and S3 refuses only `not-yet-implemented`. `1/100` and `0.01` are the same exact rational. |
+| FND-002 | fixed | d747c6b40: FR-199-AC-2 reads `repair_fast(ok: Boolean)` with `random Server::repair_fast(ok) ~ { true: 9, false: 1 };`, and likewise `repair_slow` with `{ true: 1, false: 1 }`. Both declarations are admissible at S1 and refuse only `not-yet-implemented` at S3. The weights are unchanged. |
+| FND-003 | fixed | d747c6b40: every concrete quantile claim (ADR-024 PF-4, FR-189-AC-4, FR-197-AC-4, FR-201-AC-5, FR-202-AC-6, TC-624, TC-632, TC-636) reads `quantile 0.5 of (M)`, and FR-202-AC-6 reads `quantile 0.9 of (M)`. Each says `M` is a placeholder for the claim's parenthesised measure. `quantile 0.5 of (M) >= 3` with a bare `M` still refuses at S1, as a placeholder should. With a real measure (`steps … within 10`, `accumulate …`), `0.5` and `0.9` at `>= 3` and `<= 1` are admissible, and S3 refuses only `not-yet-implemented`. `1/2` = `0.5` and `9/10` = `0.9`. No quantile with a rational `q` remains under `spec/`. |
+| FND-004 | fixed | d747c6b40: ADR-028 §15.4 to §15.6 now read `terminal Done using ev on Link when { … };`, `using timed on Retx`, `using inf on Coin`, `time t dense unit ms;` and `time invariant Deadline when { not self.delivered } { self.x <= 2 ms }`. ADR-026 §11 reads `time t dense unit ms;`, `ServerDeadline` and `ClientDeadline`. S1 admits every line, and the §11 `temporal` and `RareLate` clauses as well. At S3, `terminal … when { true }` passes the form check (`not-yet-implemented`). Over the TC-458 fixture `self.delivered` and `self.done` refuse `type-mismatch`, because that fixture's model has no such fields. `time` and `time invariant` stop at assembly with `TimedNotChecked`, since S3 does not check timed declarations yet. Neither is a defect of the spelling. The remaining `terminal when P` / `time dense unit u` mentions (ADR-018, ADR-020, ADR-021, ADR-026 CK-1/CK-6, TC-537, TC-685) name the construct in prose. They are not examples. The `T` handling is FND-006. |
+| FND-005 | fixed | d747c6b40: ADR-026 §11 (`inflight: Boolean, late: Boolean`), FR-126-AC-4 (`healthy: Boolean`) and ADR-022's `Job` fixture ("all `Boolean`") are respelled. A sweep of `spec/` finds `Bool` only as Rust `Value::Bool` and the SMT sort (FR-315). |

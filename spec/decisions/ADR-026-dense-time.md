@@ -266,7 +266,7 @@ operation Call::reset
   post self.phase = Idle;
 
 time invariant ServerDeadline when { self.inflight }        { self.x <= 3 ms }   // server deadline
-time invariant ClientDeadline when { self.phase = Waiting } { self.x <= 3 ms }   // client deadline T, written for T = 3 ms
+time invariant ClientDeadline when { self.phase = Waiting } { self.x <= 3 ms }   // client deadline x <= T: 3 ms here, 4 ms in the T = 4 ms instance
 
 temporal NoLateReply using inf over (k: Rpc::Call) clock "model-steps" on origin {
   always holds(not k.late)
