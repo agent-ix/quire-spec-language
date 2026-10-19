@@ -93,3 +93,32 @@ bindings:
 | an_empty_or_unbounded_subject_explores_nothing | TC-521 / FR-126-AC-6 | correct |
 | a_terminal_state_closes_a_bounded_monitor_with_false_letters | TC-521 | wrong |
 | a_terminal_state_stutters_under_infinite_trace | TC-521 | wrong |
+
+## Dispositions
+
+Round 1, reviewed at d883b9c85b6ebab8735218f76c6fca416bca2adc (fix commit
+4e9c2ff03).
+
+- FND-001: `a_discharged_infinite_trace_claim_still_reads_every_atom` (the
+  release row) and
+  `a_decided_bounded_claim_still_reads_every_atom_up_to_its_horizon` (TP-2
+  `on origin` within `h = 3`). Each asserts `UndefinedEvaluation`, cause
+  division by zero, at position 2 with the re-executed prefix `0, 1, 2`.
+  Both fail against 64ba23327, which returned `Holds`.
+- FND-002: `#[trace("TC-521")]` is removed from both terminal tests, and no
+  other tag in the diff changed.
+- FND-003: `a_safety_proof_with_an_empty_certificate_settles_failed_never_proved`
+  runs a TP-3 claim (`always eventually[0,1] holds(c.value <= 3)`), asserts
+  the certificate is empty, and asserts `Failed`/`Failed`/`Failed` from
+  `settle_model_check`. It fails if the empty certificate ever settles
+  `Proved`.
+- The new SR-12189 FND-002 test,
+  `a_horizon_at_a_terminal_state_whose_stutter_coalesces_still_holds`, is
+  untagged. It fails against 64ba23327, which returned `BoundReached` at
+  horizon 3.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4e9c2ff03 |
+| FND-002 | fixed | 4e9c2ff03 |
+| FND-003 | fixed | 4e9c2ff03 |

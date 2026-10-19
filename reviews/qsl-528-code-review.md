@@ -106,3 +106,42 @@ FND-002 to FND-004 are recorded, not blocking.
 | FND-002 | low | The horizon check sets `horizon_cut` whenever `steps` is non-empty, and `steps` now includes the terminal stutter step. A TP-1 or TP-3 run whose deepest state is terminal at depth `k = max_depth` returns `BoundReached`, even when that stutter would coalesce with the terminal product state itself (same key, same monitor state), so no product state is left unexplored. For TP-1 this regresses from `Holds` before this PR. The answer is weaker, not wrong. Fix: count a stutter step toward the cut only when it would create a new product state. | qsl-analyze/src/model_check/check.rs:548-556 |
 | FND-003 | low | When an atom is undefined, `create` pushes the undefined instance's `from` state and breaks, so `node.monitor` is shorter than the instance count. This is safe only because a bad node is never expanded (`first_bad` returns before `successors`). It is a fragile, unstated invariant: `close()` and the stutter path would index a short vector if that order ever changed. Fix: say so on `Node::monitor`, or fill the remaining instances with `from`. | qsl-analyze/src/model_check/check.rs:603-618 |
 | FND-004 | low | Every `Monitor::row` call clones the cached `Vec<Transition>`, and `step`, `reads` and each `viable` iteration all call it. `viable` also rescans the whole row for `closes` on every loop turn. Each product-state creation runs `reads` and then `step` over the same member rows, so each row is cloned at least twice per instance per state. Fix: return `&[Transition]` from the cache (for example, read and cache first, then borrow), and test `closes` once per pushed frame. | qsl-eval/src/automaton/monitor.rs:200-232; qsl-eval/src/automaton/monitor.rs:271-327 |
+
+## Dispositions
+
+Round 1, reviewed at d883b9c85b6ebab8735218f76c6fca416bca2adc: fix commit
+4e9c2ff03, merge e5c575817 of origin/main (it does not touch the PR's
+files), and the clippy type alias d883b9c85.
+
+- `Run::read` now evaluates every clause atom when the claim reads the
+  position. `Item::Clause::last_read` is `clause.horizon()` for a bounded
+  `on origin` clause and `None` otherwise, which is UE-1's read set.
+  `Monitor::reads` and `Guard::literals` are deleted, and no caller is left.
+  Past `h`, a TP-2 `on origin` monitor steps on an all-false letter. That
+  is sound: a bounded formula's truth is fixed by positions 0 to `h`, so the
+  deterministic monitor has already rejected or can no longer reject.
+- Both new UE-1 tests fail without the fix. In
+  `a_discharged_infinite_trace_claim_still_reads_every_atom`, `reads` was 0
+  after the release is discharged, so the old code returned `Holds` and
+  `violated()` panics. In
+  `a_decided_bounded_claim_still_reads_every_atom_up_to_its_horizon`, the
+  antecedent is false at 0, so the old code read nothing at positions 1 to 3.
+  With the fix, both expect `UndefinedEvaluation` at position 2 with the
+  prefix `0, 1, 2`.
+- UE-5 parity: every product state on a counterexample's path is now
+  created with its whole UE-1 letter read, so no position before `where`
+  can hold an unevaluated undefined atom. Parity holds by construction. It
+  cannot be exercised end to end yet: `replay_model_trace` refuses an
+  authored clause (`content-mismatch`, FR-337, no temporal clause node in a
+  recompiled package), so only deadlock-freedom replays today.
+- The `viable` change (test for a closing edge only at `cursor == 0`) is
+  sound. On a later visit the path prefix is the same, and no target can
+  have become viable, because a closing child returns at once after marking
+  the whole path.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4e9c2ff03 |
+| FND-002 | fixed | 4e9c2ff03 |
+| FND-003 | fixed | 4e9c2ff03 |
+| FND-004 | fixed | 4e9c2ff03 |
