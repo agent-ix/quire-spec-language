@@ -472,7 +472,7 @@ pub enum CheckedHyper {
     /// A hyper clause over `behaviours`.
     Behaviours(Box<CheckedHyperClause>),
     /// A relation over model executions.
-    Relation(CheckedModelRelation),
+    Relation(Box<CheckedModelRelation>),
 }
 
 impl FamilyContract for HyperTraceFamily {
@@ -831,9 +831,8 @@ fn check_declaration(
         HyperDeclaration::Behaviours(form) => check_behaviours(form, declarations)
             .map(|clause| CheckedHyper::Behaviours(Box::new(clause))),
         HyperDeclaration::Finite(form) => Err(check_finite(form)),
-        HyperDeclaration::Relation(form) => {
-            check_relation(form, declarations).map(CheckedHyper::Relation)
-        }
+        HyperDeclaration::Relation(form) => check_relation(form, declarations)
+            .map(|relation| CheckedHyper::Relation(Box::new(relation))),
     }
 }
 
@@ -2284,6 +2283,7 @@ pub fn check_hyper_clauses(
             source: &package.source,
             embedding: None,
             position_limit: 10_000,
+            models: &package.models,
         },
         models: &package.models,
         // The helper checks clauses over no declared function.
