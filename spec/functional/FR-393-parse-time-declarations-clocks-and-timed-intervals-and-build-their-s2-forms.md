@@ -102,9 +102,16 @@ pub enum OperatorInterval {
 }
 ```
 
-`ExactValue` is the exact rational that a `uint`, a `decimal-literal` or an
-`exact-number` (`rational(n, d)` or `decimal(n, s)`) denotes, held as a
-numerator and a denominator; FR-311 uses the same type.
+`ExactValue` is the `exact-value` that a `uint`, a `decimal-literal` or an
+`exact-number` spells, held as written: a spelling kind (`uint`,
+`decimal-literal`, `rational(n, d)` or `decimal(c, s)`) and two integers whose
+meaning the kind fixes (the integer and 1; the digits without the point and
+the count of fraction digits; `n` and `d`; the coefficient and the scale).
+S2 neither reduces it nor raises ten to a scale, so a scale of any size costs
+nothing at S2, and the form keeps what was written. S3 reduces it to a
+numerator and denominator in lowest terms under its own limits (FR-185,
+FR-186).
+FR-311 uses the same type.
 
 `Expression` gains a `Quantity(QuantityForm)` variant. The type builder maps
 the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
@@ -141,8 +148,9 @@ the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
   interval whose upper end is a bare `uint` or `*`, and a step interval whose
   upper end is a `quantity-literal`, SHALL fail at S1 with a parse
   diagnostic located at the upper bound's span, and S2 SHALL build no form.
-- S2 SHALL keep `decimal-literal` and `exact-number` magnitudes exactly
-  (`0.0005` is `1/2000`) and SHALL record each interval end's openness from
+- S2 SHALL keep `decimal-literal` and `exact-number` magnitudes exactly as
+  written (`0.0005` is held as digits `5` and `4` fraction digits, which S3
+  reduces to `1/2000`) and SHALL record each interval end's openness from
   its bracket.
 - S2 SHALL leave unchecked for S3: time-source uniqueness, unit dimension,
   clock typing, the negativity of a constant, interval ordering and

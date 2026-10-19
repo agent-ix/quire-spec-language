@@ -62,16 +62,27 @@ integers in lowest terms.
 
 ## Behavior
 
+Every refusal below is an `invalid_probabilistic_model` diagnostic (QSpec
+FR-405, FR-407) whose cause is the string in brackets, and it retains the
+declaration locus and the parameter, reward, workload or operation it names.
+A refusal that the grammar already makes at S1 is not repeated at S3: a
+weight is an `exact-value`, so a signed weight is `invalid_syntax`.
+
 ### Random parameters
 
 - S3 SHALL admit a distribution on an operation parameter as a finite list
   of (value, weight) pairs. Each weight SHALL be a positive exact rational;
   each value SHALL be of the parameter's type; the values SHALL be pairwise
-  distinct.
+  distinct. A weight that is not positive SHALL be refused
+  [`invalid-weight`], a value of another type [`value-outside-type`], a
+  repeated value [`repeated-support-value`], and a second distribution on
+  one parameter [`duplicate-distribution`].
+
 - S3 SHALL record the probability of each value as its weight over the sum
   of the weights, as an exact rational in lowest terms.
 - When an operation's precondition reads a random parameter, S3 SHALL refuse
-  it, naming the parameter and the precondition.
+  it [`random-read-in-precondition`], naming the parameter and the
+  precondition.
 - S3 SHALL let postconditions and rewards read random parameters.
 
 ### Workloads
@@ -81,7 +92,8 @@ integers in lowest terms.
 - When a workload omits an operation of its model, names an operation that
   is not in the model, gives one operation two weights, or gives a weight
   that is not positive, S3 SHALL refuse it, naming the workload and the
-  operation.
+  operation: [`incomplete-workload`], [`unknown-operation`],
+  [`duplicate-weight`] and [`invalid-weight`] respectively.
 - A workload SHALL be a named, checked node with an identity, so a claim can
   name it and the obligation identity can bind it (FR-186).
 
@@ -91,11 +103,11 @@ integers in lowest terms.
   integer type or a quantity type (QSpec FR-142).
 - When a reward's expression reads a state field, an ambient value or
   anything other than the operation's parameters and constants, S3 SHALL
-  refuse it, naming the reward and the read.
+  refuse it [`state-read-in-reward`], naming the reward and the read.
 - When a reward's value type is neither an integer nor a quantity type, S3
-  SHALL refuse it.
+  SHALL refuse it [`reward-type`].
 - When an operation declares two rewards of one name, S3 SHALL refuse the
-  second, naming the operation and the reward.
+  second [`duplicate-reward`], naming the operation and the reward.
 - S3 SHALL leave the non-negativity check to model admission, which runs
   it over the parameters' finite domains (FR-187).
 
@@ -104,9 +116,9 @@ integers in lowest terms.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-185-AC-1 | ADR-024 §7.2's `Service` model checks. `Server::attempt` records `d` with support `1 ms`, `3 ms`, `12 ms` and probabilities `9/10`, `7/100`, `3/100`, and `outcome` with `Ok` at `49/50` and `Fail` at `1/50`; the reward `duration` has value type `Quantity<Time>`; the workload `Steady` records weight 1 for each of the three operations. | Test (TC-620) |
-| FR-185-AC-2 | Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter: a weight `0`; a weight `-1`; the value `1 ms` listed twice; the value `true` on a `Quantity<Time>` parameter; a precondition `pre self.phase = Busy and d < 5 ms` reading `d`. | Test (TC-620) |
-| FR-185-AC-3 | Each of these workload variants is refused at S3 naming the workload and the operation: `Steady` without `Server::reset`; a weight for an operation not in `Service`; two weights for `Server::request`; a weight `0` for `Server::request`. | Test (TC-620) |
-| FR-185-AC-4 | Each of these reward variants is refused at S3 naming the reward: `reward duration = self.attempts` (reads state); `reward ok = (outcome = Ok)` (Boolean type); two rewards named `duration` on `attempt`. `reward cost = 2` on `Server::request` checks. | Test (TC-620) |
+| FR-185-AC-2 | Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter and carrying the cause: a weight `0` (`invalid-weight`); the value `1 ms` listed twice (`repeated-support-value`); the value `true` on a `Quantity<Time>` parameter (`value-outside-type`); a precondition `pre self.phase = Busy and d < 5 ms` reading `d` (`random-read-in-precondition`); a second `random Server::attempt(d) ~ …` (`duplicate-distribution`). A weight `-1` is not an `exact-value`, so S1 refuses it `invalid_syntax` and S3 never sees it. | Test (TC-620) |
+| FR-185-AC-3 | Each of these workload variants is refused at S3 naming the workload and the operation and carrying the cause: `Steady` without `Server::reset` (`incomplete-workload`); a weight for an operation not in `Service` (`unknown-operation`); two weights for `Server::request` (`duplicate-weight`); a weight `0` for `Server::request` (`invalid-weight`). | Test (TC-620) |
+| FR-185-AC-4 | Each of these reward variants is refused at S3 naming the reward and carrying the cause: `reward duration on Server::attempt = self.attempts` (`state-read-in-reward`); `reward ok on Server::attempt = (outcome = Ok)` (`reward-type`); a second `reward duration on Server::attempt = …` (`duplicate-reward`). `reward cost on Server::request = 2` checks. | Test (TC-620) |
 
 ## Dependencies
 

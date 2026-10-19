@@ -19,8 +19,8 @@ Scope: FR-186-AC-1 to FR-186-AC-4.
 Fixtures: ADR-024 §7's models and claims `NoFault`, `P95`, `LongRun`, `Monthly`; a second workload `Burst` on `Health`; a trace subject.
 
 1. Check the four claims and read back each `CheckedProbabilisticClaim`.
-2. Check `P95` at `0.005 s` and at `5 m`; `probability >= 1` and `>= 0`; `quantile 0.95 of (fraction …)`.
-3. Check the unbounded event, the windowed recovery event, a claim over the trace subject, and `NoFault` with a fairness set.
+2. Check `P95` at `0.005 s` and at `5 m`; `probability >= 1` and `>= 0`; `quantile 0.95 of (fraction holds(v.up) over [0, 10]) <= rational(1, 2)`.
+3. Check the unbounded event, the windowed recovery event, a claim over the trace subject, a claim naming a workload of another model, `under every scheduler fair weak Node::tick`, and `under Steady fair weak Node::tick`.
 4. Check `NoFault` with `indifference 0.002`, with only `alpha`, with none; compare obligation identities across confidences and workloads.
 
 Tag the tests `#[trace("TC-621", "FR-186-AC-n")]`.
@@ -28,6 +28,6 @@ Tag the tests `#[trace("TC-621", "FR-186-AC-n")]`.
 ## Expected Results
 
 - Step 1: the forms, schedulers and confidences of FR-186-AC-1.
-- Step 2: `5 ms` recorded; the others refused as FR-186-AC-2 states.
-- Step 3: refused, horizon 110, refused naming window aggregates, refused naming PM-7.
-- Step 4: refused, refused, `confidence: None`; identities differ for each pair.
+- Step 2: `5 ms` recorded; `ill_typed`/`unit-mismatch`, `qualitative-threshold` and `quantile-over-fraction` as FR-186-AC-2 states.
+- Step 3: refused, horizon 110, refused naming window aggregates, `foreign-workload`, checks with the fairness set, `invalid_syntax` at S1.
+- Step 4: `invalid-confidence`, `partial-confidence`, `confidence: None`; identities differ for each pair.

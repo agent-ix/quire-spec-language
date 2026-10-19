@@ -312,7 +312,7 @@ probabilistic LongRun using ev on Avail under Steady on origin
 }
 probabilistic Monthly using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.005 {
-  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= 0.999 ]
+  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= rational(999, 1000) ]
 }
 ```
 
