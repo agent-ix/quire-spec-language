@@ -2017,7 +2017,7 @@ fn protocol(g: &mut Grammar) {
         s(vec![
             c(vec![literal("assume"), literal("ensure")]),
             x("fair"),
-            x("weak"),
+            c(vec![x("weak"), x("strong")]),
             opt(c(vec![x("each"), x("whole")])),
             r(P::OperationName),
             x(";"),
