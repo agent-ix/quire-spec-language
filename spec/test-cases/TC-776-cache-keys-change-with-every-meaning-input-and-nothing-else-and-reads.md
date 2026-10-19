@@ -16,7 +16,7 @@ Scope: FR-292-AC-1 to FR-292-AC-3.
 
 ## Test Procedure
 
-1. Serialize the key members of TC-762's `analyze` request, then of requests that each change exactly one claim bound, one result-affecting option or the state budget; then of requests that each change only the request file path, the working directory, the wall-clock deadline or the execution backend.
+1. Serialize the key members of TC-762's `analyze` request, then of requests that each change exactly one claim bound, one result-affecting option or the state budget; then of requests that each change only the request file path, the working directory, the wall-clock deadline, `max_solver_time` or the execution backend.
 2. Run TC-762's `analyze` request twice from different working directories and request file paths, and serialize the records to RFC 8785 bytes.
 3. Read each step 2 record back with the typed reader; then read the same bytes with whitespace inserted between two members, and with two members swapped.
 
