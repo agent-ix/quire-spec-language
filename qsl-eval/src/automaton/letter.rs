@@ -109,6 +109,12 @@ impl Guard {
         self.required & self.forbidden == 0
     }
 
+    /// The atoms the guard constrains, as letter bits (atom `i` is bit `i`):
+    /// a letter's other atoms never change whether the guard admits it.
+    pub const fn literals(self) -> u64 {
+        self.required | self.forbidden
+    }
+
     /// Whether `letter` satisfies the guard.
     pub const fn admits(self, letter: Letter) -> bool {
         letter.0 & self.required == self.required && letter.0 & self.forbidden == 0

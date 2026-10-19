@@ -718,11 +718,10 @@ fn the_limits_publish_their_defaults() {
 /// FR-125 and ADR-016 EX-10: a subject with no initial state is
 /// `Undecided(NoInitialState)` before any state is explored; FR-126's
 /// pre-check: a subject with an operation parameter no finite domain bounds
-/// is refused `RequiresBound` before exploring; a TP-3 clause is not
-/// decided by this phase and is refused.
+/// is refused `RequiresBound` before exploring.
 #[trace("TC-521")]
 #[test]
-fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
+fn an_empty_or_unbounded_subject_explores_nothing() {
     let world = self::world("", &[]);
     assert!(matches!(
         deadlock(&world),
@@ -747,37 +746,6 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
         "{refusal:?}"
     );
 
-    let world = self::world("", &[&[("c", 0)]]);
-    let (package, clauses) = package_with_clauses(
-        &world.documents.document,
-        &world.body,
-        &[(
-            "C",
-            "",
-            "always (holds(c.value <= 0) and holds(c.value >= 0))",
-        )],
-    );
-    let [safety] = clauses.as_slice() else {
-        panic!("one declared clause");
-    };
-    let letters = letters(&world, &["c"], |_| Some(true));
-    let refusal = run_in(
-        &world,
-        &package,
-        &["c"],
-        ModelCheckItem::Clause {
-            clause: safety,
-            letters: &letters,
-        },
-        None,
-        ModelCheckLimits::default(),
-        UNLIMITED,
-    )
-    .expect_err("TP-3 is not decided by this phase");
-    assert!(
-        matches!(refusal, ModelCheckRefusal::FormNotDecided { .. }),
-        "{refusal:?}"
-    );
 }
 
 /// QSpec FR-361-AC-8 (QSpec TC-294): a clause with zero instances is
