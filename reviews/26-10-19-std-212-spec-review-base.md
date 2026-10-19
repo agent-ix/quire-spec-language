@@ -64,3 +64,20 @@ Ticket: STD-212. Base spec review of `git diff origin/main...HEAD` at c5407fabd 
 ## Verdict
 
 Findings: 1 high, 3 medium. Clean units: the rejected-certificate and Uncertified settlement text (FR-146 lines 158-169, AC-8's outcome values) agrees with ADR-018 PC-2/PC-6 and with #1040's `BackendCertificate::Rejected` arm (inconclusive, unsettled, never proved). The hypotheses rule and its order agree with #1040. FR-146-AC-5/6/7 and TC-551 steps 5-8 trace one-to-one, as do FR-136-AC-5 and TC-541 step 5. Not mergeable until FND-002 is resolved or explicitly deferred with an ADR-013 ticket.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-146-AC-4 (on main) still requires `Proved{Inductive{depth: 1}, Certified}` 'with a certificate FR-314 verifies', while the new settlement bullet says a `Certified` RE-2 settlement is pending FR-315 and FR-146-AC-7 says `Certified` 'is not exercised until FR-315 encodes the RE-2 query'. The two ACs contradict each other, and AC-4's `Certified` half cannot be met. Restate that half the way AC-7 does: feed the settlement map the checker's `Verified` result directly, which is what #1040's `a_holding_record_settles_proved_with_the_certificates_standing` does. Or mark it pending with STD-217 item 5. AC-4 keeps its id. | spec/functional/FR-146-write-per-step-simulation-records-for-a-refinement.md:173 |
+
+## Dispositions
+
+Round 1, head 7cfb5530b (fix commit 7cfb5530b over merge 2b96e20e4).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

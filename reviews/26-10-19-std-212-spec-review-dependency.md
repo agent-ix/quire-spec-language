@@ -36,3 +36,11 @@ Ticket: STD-212. Dependency edges and the cross-repo follow-ups. FR-146 gains `d
 ## Verdict
 
 Findings: 1 medium. Edges FR-095 and FR-314 are correct and needed.
+
+## Dispositions
+
+Round 1, head 7cfb5530b (fix commit 7cfb5530b over merge 2b96e20e4).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |

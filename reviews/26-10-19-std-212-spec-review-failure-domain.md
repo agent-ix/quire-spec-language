@@ -37,3 +37,12 @@ Ticket: STD-212. Identity confusion, unstated cases and edge topology in the new
 ## Verdict
 
 Findings: 2 medium. The hypotheses rule is clean on the shared-type edge: 'abstract model only' keeps an invariant whose type both models admit.
+
+## Dispositions
+
+Round 1, head 7cfb5530b (fix commit 7cfb5530b over merge 2b96e20e4).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

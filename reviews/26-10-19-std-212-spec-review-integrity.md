@@ -55,3 +55,13 @@ Ticket: STD-212. Consistency and completeness across the changed artifacts at c5
 ## Verdict
 
 Findings: 1 medium, 2 low.
+
+## Dispositions
+
+Round 1, head 7cfb5530b (fix commit 7cfb5530b over merge 2b96e20e4).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

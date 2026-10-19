@@ -38,3 +38,12 @@ Ticket: STD-212. EARS grammar of the new and edited SHALL statements. The FR-136
 ## Verdict
 
 Findings: 2 low.
+
+## Dispositions
+
+Round 1, head 7cfb5530b (fix commit 7cfb5530b over merge 2b96e20e4).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

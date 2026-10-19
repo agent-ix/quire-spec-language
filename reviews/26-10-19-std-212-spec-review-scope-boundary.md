@@ -32,3 +32,11 @@ Ticket: STD-212. Ownership of the types and identities the new text defines. QSL
 ## Verdict
 
 Findings: 1 medium. The obligation-identity ownership problem (CG computes O-09's digest) is the base SR's FND-002 and is not repeated here.
+
+## Dispositions
+
+Round 1, head 7cfb5530b (fix commit 7cfb5530b over merge 2b96e20e4).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | FR-146 now names the disagreement and says QSV FR-123 is to change ('which still says "declaration order" and "the concrete package's invariant clauses"; it is to change to this requirement's wording'); the QSV FR-123 edit itself is STD-217 item 1, a cross-repo change outside this PR. |
