@@ -138,18 +138,22 @@ pub enum StepRead {
     },
     /// `t.step.O.p`: the argument `p` of operation `O`, of type `Option<T>`
     /// for `p: T`.
-    Argument {
-        /// The trace variable.
-        trace: String,
-        /// The operation `O`.
-        operation: OperationKey,
-        /// The parameter `p`.
-        parameter: String,
-        /// The parameter's type `T`; the read is `Option<T>`.
-        value_type: ValueType,
-    },
+    Argument(Box<ArgumentRead>),
     /// `stutter`.
     Stutter,
+}
+
+/// The argument of a step a `match` conjunct reads.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArgumentRead {
+    /// The trace variable.
+    pub trace: String,
+    /// The operation `O`.
+    pub operation: OperationKey,
+    /// The parameter `p`.
+    pub parameter: String,
+    /// The parameter's type `T`; the read is `Option<T>`.
+    pub value_type: ValueType,
 }
 
 /// One top-level conjunct of a `match` block (ADR-023 HM-3).
@@ -443,7 +447,7 @@ impl CheckedModelRelation {
 #[derive(Clone, Debug)]
 pub enum CheckedHyper {
     /// A hyper clause over `behaviours`.
-    Behaviours(CheckedHyperClause),
+    Behaviours(Box<CheckedHyperClause>),
     /// A relation over model executions.
     Relation(CheckedModelRelation),
 }
@@ -748,9 +752,8 @@ fn check_declaration(
     declarations: &HyperDeclarations<'_>,
 ) -> Result<CheckedHyper, StageFailure<CheckRefusal>> {
     match declaration {
-        HyperDeclaration::Behaviours(form) => {
-            check_behaviours(form, declarations).map(CheckedHyper::Behaviours)
-        }
+        HyperDeclaration::Behaviours(form) => check_behaviours(form, declarations)
+            .map(|clause| CheckedHyper::Behaviours(Box::new(clause))),
         HyperDeclaration::Finite(form) => Err(check_finite(form)),
         HyperDeclaration::Relation(form) => {
             check_relation(form, declarations).map(CheckedHyper::Relation)
@@ -1381,13 +1384,13 @@ fn step_read(
                 .iter()
                 .find(|(declared, _)| declared == parameter)
                 .ok_or_else(unresolved)?;
-            Ok(StepRead::Argument {
+            Ok(StepRead::Argument(Box::new(ArgumentRead {
                 trace: trace.to_owned(),
                 operation: operation_key(declarations.models, alias.as_str(), &resolved)
                     .ok_or_else(unresolved)?,
                 parameter: parameter.clone(),
                 value_type: value_type.clone(),
-            })
+            })))
         }
     }
 }

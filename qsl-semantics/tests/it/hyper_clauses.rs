@@ -146,7 +146,7 @@ fn check_under(aliases: &[&str], profile: &str, declaration: &str) -> (String, O
 
 fn clause_under(aliases: &[&str], profile: &str, declaration: &str) -> CheckedHyperClause {
     match check_under(aliases, profile, declaration) {
-        (_, Ok(CheckedHyper::Behaviours(clause))) => clause,
+        (_, Ok(CheckedHyper::Behaviours(clause))) => *clause,
         (_, other) => panic!("{declaration}: a checked hyper clause, not {other:?}"),
     }
 }
@@ -275,18 +275,15 @@ fn the_adr_clauses_bind_their_aliases_parameters_and_match_conjuncts() {
     );
     assert_eq!(noninterference.mu_universal().len(), 2);
     assert!(noninterference.mu_existential().is_empty());
-    let reads = noninterference.mu_universal()[1].reads();
-    assert!(
-        matches!(
-            reads,
-            [
-                StepRead::Argument { trace: first, parameter: first_parameter, .. },
-                StepRead::Argument { trace: second, parameter: second_parameter, .. },
-            ] if (first.as_str(), second.as_str()) == ("a", "b")
-                && (first_parameter.as_str(), second_parameter.as_str()) == ("i", "i")
-        ),
-        "typed argument reads: {reads:?}"
-    );
+    let reads: Vec<_> = noninterference.mu_universal()[1]
+        .reads()
+        .iter()
+        .map(|read| match read {
+            StepRead::Argument(argument) => (argument.trace.as_str(), argument.parameter.as_str()),
+            other => panic!("an argument read, not {other:?}"),
+        })
+        .collect();
+    assert_eq!(reads, [("a", "i"), ("b", "i")]);
 
     let power = clause(&["S", "N"], SAVES_POWER);
     let aliases: Vec<_> = power.aliases().iter().map(|a| a.as_str()).collect();
@@ -559,7 +556,7 @@ fn the_adr_clauses_classify_into_their_forms() {
         let checked = clause(&["V"], &declaration);
         assert_eq!(checked.form(), Some(&form), "{declaration}");
         assert!(
-            unbounded(&CheckedHyper::Behaviours(checked)),
+            unbounded(&CheckedHyper::Behaviours(Box::new(checked))),
             "{declaration}"
         );
     }
@@ -603,6 +600,12 @@ fn a_clause_outside_the_admitted_forms_names_its_rule() {
                 "forall trace a of V exists trace b of V align skip { V::ConfigVersion::mix }",
                 safe,
             ),
+            HyperUnsupported::ProjectionOutsideSafety,
+        ),
+        (
+            "hyper H using inf over behaviours (v: V::ConfigVersion) exists trace b of V \
+             align skip { V::ConfigVersion::mix } { holds(v.versionNumber @ b = 1) }"
+                .to_owned(),
             HyperUnsupported::ProjectionOutsideSafety,
         ),
     ] {
@@ -713,6 +716,17 @@ fn a_symmetric_clause_has_a_copy_group_and_an_asymmetric_one_has_none() {
         empty
     );
     assert_eq!(classes(&clause(&["S", "N"], SAVES_POWER)), empty);
+    // A symmetric body under a `match` that reads only one variable.
+    assert_eq!(
+        classes(&clause(
+            &["V"],
+            &format!(
+                "hyper H using inf over behaviours (v: V::ConfigVersion) {both} \
+                 match {{ a.step.op != stutter }} {{ {READ_A_B} }}"
+            )
+        )),
+        empty
+    );
     // A clause outside the universal forms has no group.
     assert_eq!(classes(&clause(&["V"], OPAQUE)), empty);
 }

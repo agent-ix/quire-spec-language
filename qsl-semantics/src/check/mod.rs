@@ -249,7 +249,7 @@ pub use field_refinement::RefinementObligation;
 #[cfg(any(test, feature = "test-support"))]
 pub use hyper_clause::check_hyper_clauses;
 pub use hyper_clause::{
-    CheckedHyper, CheckedHyperClause, CheckedModelRelation, CheckedQuantifier,
+    ArgumentRead, CheckedHyper, CheckedHyperClause, CheckedModelRelation, CheckedQuantifier,
     CheckedStepPredicate, CopyGroup, HyperCause, HyperDeclaration, HyperDeclarations, HyperForm,
     HyperIdentity, HyperTraceFamily, HyperUnsupported, ModelAlias, ObjectParameter,
     OperationContractClaim, StepRead,
