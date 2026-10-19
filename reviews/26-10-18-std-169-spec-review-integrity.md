@@ -63,3 +63,9 @@ Round 1, checked against fix commit 8b08289fa67a2707259bea9e7e0e83a0275d3ec2.
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | FR-214-AC-3 now states that QSpec (FR-432, TC-386) owns the path form for a node nested inside a sequence, parallel or branch. The upstream decision stays with QSpec. |
+
+Round 2, checked against fix commit 6b40998c141b78dc443b23158175ac81bb18072f.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | The ownership sentence has been removed from FR-214-AC-3 and now appears in the `## Dependencies` bullet that says QSpec owns the `step` row syntax. FND-001's resolution is unaffected: the ownership statement now sits under Dependencies. |
