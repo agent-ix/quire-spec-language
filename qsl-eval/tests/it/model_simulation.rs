@@ -154,6 +154,14 @@ pub(crate) fn increment() -> Json {
     operation("increment", &[], None, frame(&["value"], false, false))
 }
 
+pub(crate) fn acquire() -> Json {
+    operation("acquire", &[], None, frame(&["value"], false, false))
+}
+
+pub(crate) fn release() -> Json {
+    operation("release", &[], None, frame(&["value"], false, false))
+}
+
 pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> {
     let counter_identity = ident("Counter");
     let constructs = vec![
