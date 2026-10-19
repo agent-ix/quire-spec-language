@@ -2550,7 +2550,7 @@ impl<'a> Typer<'a> {
     /// it refuses `missing_declaration`/`missing-name`.
     fn self_reference(&self, location: &Location) -> Result<Node, CheckRefusal> {
         let Some(state) = &self.state else {
-            return Err(refuse(location, CheckCause::MissingName("self".to_owned())));
+            return Err(refuse(location, CheckCause::MissingSelf));
         };
         self.bound_slot(state.self_slot, location)
     }
