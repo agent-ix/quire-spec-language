@@ -83,3 +83,28 @@ in AC-5 is correct, AC-1 can now be tested through the `sampler` parameter, and
 `qsl-eval` is the right home. The gaps are in what the change leaves
 downstream (FR-189, FR-190, FR-193), in QSpec ownership of the new refusal, in
 one undefined type and in TC-623 fixtures. No compatibility layer was added.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | medium | AC-4 gives `Coin` "weights `(1, 3)`", but the fixture declares `{ true: 1, false: 3 }`, and in canonical value order (QSpec FR-144: `false` before `true`) that vector is `(3, 1)`. The draw `v mod 4 = 2` selects index 0 (`false`) under `(3, 1)` and index 1 under `(1, 3)`, so "`i` the index the generator selects" passes either ordering. Pin the literal `choices = [0]` and `random = [false]`, or reorder `Coin` to `{ false: 1, true: 3 }` and pin `choices = [1]` and `random = [true]`. | spec/functional/FR-188-draw-weighted-choices-with-the-qspec-sampler.md:140; spec/test-cases/TC-623-weighted-sampler-draws.md:19 |
+| FND-013 | low | The `Wide` fixture writes the weight `false: 2^256`. In the QSL grammar, `^` occurs only in a `DimensionTerm` exponent (`qsl-cst/src/grammar.rs:458-462`), so this is not a valid weight literal. Spell the decimal value. | spec/test-cases/TC-623-weighted-sampler-draws.md:19 |
+| FND-014 | low | AC-1, AC-4 and AC-5 observe "zero digests computed" through a counting generator wrapper, but `weighted_choice(at, weights)` and `sample_probabilistic` take no generator, so the Outputs give the wrapper nothing to attach to. State the test seam (for example a test-support digest counter), or observe the outcome another way. | spec/functional/FR-188-draw-weighted-choices-with-the-qspec-sampler.md:52-57,137-141 |
+| FND-015 | low | The fix left a broken sentence: "each by the rule above: so with several operations the operation is choice 0 …". | spec/functional/FR-188-draw-weighted-choices-with-the-qspec-sampler.md:109 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-189 maps `TotalAboveDrawRange` to `Unsupported(TotalAboveDrawRange{total})` and `GeneratorMismatch` to `StatisticalRefusal`. FR-190 maps every sampler stop as FR-189 does, and FR-192's `UnsupportedCause` gains the cause. |
+| FND-002 | fixed | FR-193 replay refuses a `TotalAboveDrawRange` from `weighted_choice` with `invalid_runtime_input`/`invalid-value`. |
+| FND-003 | fixed | QSpec ticket STD-223 is filed, and FR-188 states the refusal as QSL's own behaviour. FR-188 does not cite STD-223 by id. |
+| FND-004 | fixed | The field is now `total: Integer` (quire-exact). |
+| FND-005 | fixed | TC-623 adds the `Lone`, `Coin` and `Wide` fixtures and the counting wrapper; their remaining defects are FND-012 to FND-014. |
+| FND-006 | fixed | Acceptance is now stated as `v < N · ⌊2^256 / N⌋`, so `N = 2^256` accepts every draw. |
+| FND-007 | fixed | `choices` holds the selected item index of each choice that drew, in choice-index order. |
+| FND-008 | fixed | The build-log clause is gone, the rationale covers `SampleStop` only, and AC-6 verifies the home. |
+| FND-009 | fixed | The variant is now `SampleStop::GeneratorMismatch { supplied: DefinitionRef }`. |
+| FND-010 | fixed | References cite the sampler definition and TC-354 SM-05/SM-07. |
+| FND-011 | fixed | "Zero digests computed" through the counting wrapper is observable; the wrapper's seam is FND-014. |

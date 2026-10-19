@@ -33,3 +33,10 @@ Two low findings. Examined and clean for EARS form: the sampler-identity
 bullet (an unwanted-behaviour refusal with a named agent and outcome), the
 choice-index bullet, the step-order bullet and the crate-home bullet (a
 ubiquitous statement with a named subject; its content is SR-13342 FND-008).
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Split into two statements: "If the scaled total `N` exceeds 2^256, then `weighted_choice` SHALL refuse …" and "If a choice of a step reports `TotalAboveDrawRange`, then `sample_probabilistic` SHALL stop …". |
+| FND-002 | fixed | The one-item rule is now one statement ("The sampler SHALL treat a choice over one item …"), and the duplicate SHALL is removed. |

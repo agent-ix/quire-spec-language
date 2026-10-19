@@ -16,7 +16,7 @@ Scope: FR-188-AC-1 to FR-188-AC-6.
 
 ## Test Procedure
 
-Fixtures: the weighted-sampler conformance vectors of the generator definition; QSpec TC-210's uniform vectors and TC-354's one-item vectors (SM-05, SM-07); `Service` under `Steady`; the non-unique `Health` variant; a counting wrapper of the generator that reports digests computed; three models under a unit workload: `Lone` (object `m`, operation `ping`, no parameters), `Coin` (operation `flip` with `random heads: Bool ~ { true: 1, false: 3 }`) and `Wide` (operation `spin` with `random x: Bool ~ { true: 1, false: 2^256 }`).
+Fixtures: the weighted-sampler conformance vectors of the generator definition; QSpec TC-210's uniform vectors and TC-354's one-item vectors (SM-05, SM-07); `Service` under `Steady`; the non-unique `Health` variant; a test-only digest counter, incremented once per SHA-256 digest the sampler computes and read by the test; three models under a unit workload: `Lone` (object `m`, operation `ping`, no parameters), `Coin` (operation `flip` with `random heads: Bool ~ { true: 1, false: 3 }` (weights `(3, 1)` in canonical value order, `false` first)) and `Wide` (operation `spin` with `random x: Bool ~ { true: 1, false: 115792089237316195423570985008687907853269984665640564039457584007913129639936 }` (that decimal is 2^256)).
 
 1. Run every weighted vector and every TC-210 vector as unit weights at choice index 0; call `sample_probabilistic` with a `DefinitionRef` of another identity.
 2. Draw over weights `(1/3, 1/6, 1/2)` at 60,000 trace indices; draw choices 0 and 1 at the first 100 points.
@@ -27,7 +27,7 @@ Tag the tests `#[trace("TC-623", "FR-188-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: every selected index equals the vector's; the sample returns `SampleStop::GeneratorMismatch` with zero digests computed.
+- Step 1: every selected index equals the vector's; the sample returns `SampleStop::GeneratorMismatch` with the digest counter at zero.
 - Step 2: scaled `(2, 1, 3)`, `N = 6`; every selection equals the reference; choices 0 and 1 differ at some point.
-- Step 3: `Lone` selects item 0 with zero digests and `choices = []`; `Coin`'s choice has index 0, the TC-210 step-0 preimage and `choices = [i]`; one weight returns 0 with zero digests; the total `2^256` selects, `2^256 + 1` returns `TotalAboveDrawRange` with zero digests; `Wide` stops with `SampleStop::TotalAboveDrawRange`; the three types are `qsl-eval` items and no `quire-semantic-value` item.
+- Step 3: `Lone` selects item 0 with the digest counter at zero and `choices = []`; `Coin`'s choice has index 0, the TC-210 step-0 preimage and `choices = [0]` and `random = [false]`; one weight returns 0 with the digest counter at zero; the total `2^256` selects, `2^256 + 1` returns `TotalAboveDrawRange` with the digest counter at zero; `Wide` stops with `SampleStop::TotalAboveDrawRange`; the three types are `qsl-eval` items and no `quire-semantic-value` item.
 - Step 4: equal behaviours with recorded selected item indices, in-support values, FR-187 probabilities and rewards; `SampleStop::NotMarkov`.

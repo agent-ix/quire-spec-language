@@ -106,10 +106,10 @@ pub enum SampleStop {
   selecting the start, and at each step choose the operation by workload
   weight over the enabled operations, then the scheduled identity uniformly
   over the operation's enabled identities in canonical order, then the
-  random parameters in declared order, each by the rule above: so with several operations the operation is
-  choice 0 and the identity, when it has several candidates, choice 1,
-  whereas with one operation and one identity the first random parameter
-  with several values is choice 0.
+  random parameters in declared order, each by the rule above. With several operations the operation is choice 0
+  and the identity, when it has several candidates, choice 1; with one
+  operation and one identity the first random parameter with several values
+  is choice 0.
   It SHALL then take the step FR-187 gives for that identity and drawn
   vector, and record the step with the selected item index of each choice that drew,
   in choice-index order (a one-item choice records none), its
@@ -134,11 +134,11 @@ pub enum SampleStop {
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-188-AC-1 | Every weighted-sampler conformance vector of the generator definition reproduces exactly: for each (seed, trace, step, choice, weights) the selected index equals the vector's. Every QSpec TC-210 uniform vector, run as unit weights at choice index 0, selects the same index as FR-101.  `sample_probabilistic` given a sampler `DefinitionRef` with another identity returns `SampleStop::GeneratorMismatch` before any draw, observed as a counting generator wrapper reporting zero digests computed. | Test (TC-623) |
+| FR-188-AC-1 | Every weighted-sampler conformance vector of the generator definition reproduces exactly: for each (seed, trace, step, choice, weights) the selected index equals the vector's. Every QSpec TC-210 uniform vector, run as unit weights at choice index 0, selects the same index as FR-101.  `sample_probabilistic` given a sampler `DefinitionRef` with another identity returns `SampleStop::GeneratorMismatch` before any draw, observed as a test-only digest counter (incremented once per SHA-256 digest the sampler computes) reading zero. | Test (TC-623) |
 | FR-188-AC-2 | Over the weights `(1/3, 1/6, 1/2)` the scaled integers are `(2, 1, 3)` with `N = 6`. For one seed and 60,000 consecutive trace indices at step 0, choice 0, every index is selected and the selection at each point equals the reference computation of the generator definition. Choices 0 and 1 of the same step use different preimages, so their draws differ for at least one point among the first 100. | Test (TC-623) |
 | FR-188-AC-3 | Sampling `Service` under `Steady` from its initial state with seed 7, trace 12 and 11 positions twice gives equal behaviours. Every step records its selected item indices, its drawn values inside their supports, a step probability equal to FR-187's for that transition, and its `duration`. A sample that reaches `Done` and then `Idle` continues; the `Health` variant with a non-unique post-state stops with `SampleStop::NotMarkov`. | Test (TC-623) |
-| FR-188-AC-4 | QSpec TC-354's one-item vectors reproduce through `sample_probabilistic`, with a counting generator wrapper. On `Lone` (one operation, one identity, no random parameter) a step selects item 0 of each one-item choice, computes zero digests and records `choices = []`. On `Coin` (one operation, one identity, one random parameter with weights `(1, 3)`) at seed `424242`, trace 0, step 0 the parameter's choice is choice index 0 with preimage `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}` (the TC-210 step-0 digest), and the step records `choices = [i]` with `i` the index the generator definition selects. `weighted_choice` over one weight returns 0 and the wrapper reports zero digests computed. | Test (TC-623) |
-| FR-188-AC-5 | `weighted_choice` over weights whose scaled total is `2^256` accepts every draw and selects as the generator definition states. Over weights `(1, 2^256)` (scaled total `2^256 + 1`) it returns `TotalAboveDrawRange{total: 2^256 + 1}` and the counting wrapper reports zero digests computed. `sample_probabilistic` on `Wide` (an operation with a random parameter of weights `(1, 2^256)`) stops with `SampleStop::TotalAboveDrawRange` at that parameter's choice. | Test (TC-623) |
+| FR-188-AC-4 | QSpec TC-354's one-item vectors reproduce through `sample_probabilistic`, with the test-only digest counter. On `Lone` (one operation, one identity, no random parameter) a step selects item 0 of each one-item choice, leaves the digest counter at zero and records `choices = []`. On `Coin` (one operation, one identity, one random parameter whose support `false, true` in canonical value order has weights `(3, 1)`) at seed `424242`, trace 0, step 0 the parameter's choice is choice index 0 with preimage `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}` (the TC-210 step-0 digest), and the digest's `v mod 4` is 2, below the first weight 3, so the choice selects index 0, `false`: the step records `choices = [0]` and `random = [false]`. `weighted_choice` over one weight returns 0 and the digest counter reads zero. | Test (TC-623) |
+| FR-188-AC-5 | `weighted_choice` over weights whose scaled total is `2^256` accepts every draw and selects as the generator definition states. Over weights `(1, 2^256)` (scaled total `2^256 + 1`) it returns `TotalAboveDrawRange{total: 2^256 + 1}` and the digest counter reads zero. `sample_probabilistic` on `Wide` (an operation with a random parameter of weights `(1, 2^256)`) stops with `SampleStop::TotalAboveDrawRange` at that parameter's choice. | Test (TC-623) |
 | FR-188-AC-6 | `SampledStep`, `SampledBehaviour` and `SampleStop` resolve as public items of `qsl-eval`'s simulation module, and the public items of `quire-semantic-value` include none of them. | Test (TC-623) |
 
 ## Dependencies
