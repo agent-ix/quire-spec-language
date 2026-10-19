@@ -1,12 +1,12 @@
 ---
 id: TC-1082
-title: "The export result partitions the requested items into bound and refused, including when none is bound"
+title: "The export returns a bound result or a refusal for every requested item"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-307
     type: verifies
 ---
-# TC-1082: The export result partitions the requested items into bound and refused, including when none is bound
+# TC-1082: The export returns a bound result or a refusal for every requested item
 
 ## Description
 
