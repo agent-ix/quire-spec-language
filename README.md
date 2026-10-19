@@ -304,7 +304,7 @@ contract tools turn checked packages into code, proofs and runtime checks.
 
 | Repository | Role | Relation to QSL |
 | --- | --- | --- |
-| quire-specification (private) | The language standard: what each rule means, the profiles, the interchange formats and the conformance tests every implementation must pass. | QSL implements it and runs its conformance corpus. |
+| quire-specification (private) | The language standard: what each rule means, the profiles, the interchange formats and the conformance tests every implementation must pass. | QSL implements it; `make ci` checks QSL against the standard's test vectors. |
 | [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes, with no floating point; `no_std`. | QSL depends on it. |
 | [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, on top of quire-exact; `no_std`. | QSL depends on it. |
 | [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack instead of the call stack; `no_std`. | QSL depends on it. |
@@ -363,8 +363,8 @@ The rest of the tree:
 ## Contributing
 
 `make ci` is the full local gate: formatting, clippy, tests with every feature
-combination, docs and the architecture lints. It reads the standard's
-conformance corpus from a sibling `quire-specification` checkout (`QSPEC_DIR`).
+combination, docs and the architecture lints. It reads the standard's test
+vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`).
 Hosted CI runs only when dispatched by hand, so run the gate locally before
 opening a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and
 [AGENTS.md](AGENTS.md).
