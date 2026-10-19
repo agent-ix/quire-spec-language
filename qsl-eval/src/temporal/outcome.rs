@@ -58,6 +58,10 @@ impl TemporalOutcome {
     pub fn category(&self) -> Category {
         match self {
             Self::Holds => Category::Success,
+            Self::Undefined(UndefinedEvaluation {
+                cause: UndefinedCause::InsufficientData(_),
+                ..
+            }) => Category::Undefined,
             Self::Violated { .. } | Self::Undefined(_) => Category::Violation,
             Self::Pending => Category::Inconclusive,
             Self::MissingFairnessPremise { .. } => Category::Unsupported,

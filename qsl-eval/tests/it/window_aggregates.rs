@@ -7,8 +7,8 @@ use ix_trace_rs::trace;
 use qsl_eval::temporal::{
     evaluate, AggregateAtom, AggregateKind, AggregateTerm, AtomReading, InsufficientData,
     LetterStop, PastWindow, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace,
-    TermRefusal, UndefinedCause, WindowLimitReached, WindowRefusal, WindowSource, WindowTrace,
-    DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
+    TermRefusal, UndefinedCause, UndefinedEvaluation, WindowLimitReached, WindowRefusal,
+    WindowSource, WindowTrace, DEFAULT_MAX_WINDOW_VALUES, MAX_WINDOW_VALUES_SETTING,
 };
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::SourceIdentity;
@@ -633,7 +633,7 @@ fn an_atom_with_too_few_values_makes_the_clause_undefined() {
     );
     let (outcome, _) = settle(&needs_five, vec![true; 4]);
     match outcome {
-        TemporalOutcome::Undefined(undefined) => assert_eq!(
+        TemporalOutcome::Undefined(ref undefined) => assert_eq!(
             undefined.cause,
             UndefinedCause::InsufficientData(InsufficientData {
                 count: 1,
@@ -642,6 +642,18 @@ fn an_atom_with_too_few_values_makes_the_clause_undefined() {
         ),
         other => panic!("an undefined clause, not {other:?}"),
     }
+    // A window short of data is O-16 undefined, not a violation (FR-327).
+    assert_eq!(outcome.category(), Category::Undefined);
+}
+
+/// FR-327: any other undefined atom stays category violation.
+#[test]
+fn a_kernel_undefined_atom_is_a_violation() {
+    let outcome = TemporalOutcome::Undefined(UndefinedEvaluation {
+        at: TemporalPosition::new(0),
+        cause: UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero),
+    });
+    assert_eq!(outcome.category(), Category::Violation);
 }
 
 /// FR-194-AC-3: the stop for a window over `max_window_values` reaches the
