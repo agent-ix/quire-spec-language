@@ -30,3 +30,9 @@ Mergeable on this lens once the boundary is stated. The fix is a sentence
 plus a QSpec follow-up ticket; the design needs no rework. Examined and clean:
 the "outside a state clause body, unchanged" rule (AC-3's last case), which
 keeps functions on explicit `Population<T>[N]` parameters as QSpec requires.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5604034c5: the Description states that "QSpec unchanged" holds for syntax only, that the meaning is QSL's own, and that the binding comes from the admitted observation; it names the QSpec follow-up. Linear STD-172 (Backlog) tracks aligning QSpec FR-153 and FR-383-AC-13. |

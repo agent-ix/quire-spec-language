@@ -16,7 +16,7 @@ Catches a name resolved as an enum value or left unresolved, a population accept
 
 ## Test Procedure
 
-Fixture: the `Counter` unit of FR-155-AC-1 (model alias `M`, population `counters`, operation `bump()`), plus a second population `archive` of `Counter`, a type `Widget` covered only by a population `widgets`, and a `bound B on M::counters [3]` where a row says so. Compile one package per row and check it; evaluate at S6a where a row says so.
+Fixture: the `Counter` unit of FR-155-AC-1 (model alias `M`, population `counters`, operations `bump()` on `Counter` and `grow()` on `Widget`), plus a second population `archive` of `Counter`, a type `Widget` covered only by a population `widgets`, and a `bound B on M::counters [3]` where a row says so. Compile one package per row and check it; evaluate at S6a where a row says so.
 
 | # | Input | Expected |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ Fixture: the `Counter` unit of FR-155-AC-1 (model alias `M`, population `counter
 | 5 | row 1 with the bound | operand `Population<Counter>[3]`; result `Set<Reference<Counter>>[0,3]`; the record's `counters` domain `Population(Some(3))` |
 | 6 | row 1 with the second population `archive`; then `pre W using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` | `ambiguous_declaration`/`ambiguous-name` at the `on` of row 1; the second records `widgets` and `counters` as domains |
 | 7 | evaluate row 1 over `counters` holding `a`, `b`, `c` (complete); over an incomplete `counters`; `allInstances<M::Other>(M::counters)` with `Other` covered by no member type of `counters` | exactly `a`, `b`, `c` in canonical key order with one `population.visit` charge per member; `Incomplete` with `incomplete_population`/`incomplete-scope`; FR-084's typed incomplete result naming `Other`, `FamilyResult::Undefined` with reason `incomplete-closure`, and no collection |
-| 8 | row 1 with `archive` also present, and `allInstances<M::Counter>(M::counters)` against `allInstances<M::Counter>(M::archive)`; read footprints of the two preconditions | two different lowered terms, each carrying its own population's declaration key; `AnyMembership{counters}` and `AnyMembership{archive}` respectively, never both |
+| 8 | with `archive` present, `pre A using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` and `pre B` naming `M::archive` instead; their read footprints; then emit the package | two different checked terms, each carrying its own population's declaration key; `A` reads `AnyMembership{counters}` only and `B` `AnyMembership{archive}` only; emission refuses `unsupported_construct`/`not-yet-implemented` |
 
 Tag the tests `#[trace("TC-1076", "FR-391-AC-n")]`.
 

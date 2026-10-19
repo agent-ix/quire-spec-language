@@ -44,3 +44,18 @@ FR-104's ambiguity rule. On FR-084, leaving an uncovered `T` as the typed
 incomplete result with no static refusal is acceptable: it matches the
 parameter case and QSpec FR-153, although a static refusal would be
 decidable here.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The fix leaves "the FR-322 encoding of this operand term is a follow-up to IR". It names no ticket and states no S4 behaviour in the meantime. A coder implementing S4 either invents an encoding or falls back to the anonymous `Population<U>[N]` node, which is the identity defect FND-002 fixed. TC-1076 row 8 expects "two different lowered terms", which cannot be compared in IR until the encoding exists, while AC-6 says "checked terms". Name the IR ticket. State the interim: S4 refuses a clause naming a population as `unsupported_construct`, or the comparison stays at the checked term. Make row 8 and AC-6 agree on which level is compared. | spec/functional/FR-391-name-a-population-in-a-state-clause.md:116-124,167; spec/test-cases/TC-1076-a-state-clause-names-a-population.md:30 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5604034c5: a new FR-391 "Evaluation" section and an FR-107 bullet specify how a named population is evaluated. The binding is the row of the snapshot for the read's observation. FR-106 makes the named population required, so an incomplete one gives `Incomplete`, `incomplete_population`/`incomplete-scope`. Charges are FR-084's, one `population.visit` per member. |
+| FND-002 | fixed | 5604034c5: the operand lowers to a population-reference term that carries the declaration key, so the two populations of `Counter` lower differently (AC-6, TC-1076 row 8). The FR-322 encoding left as a follow-up is FND-005. |
+| FND-003 | fixed | 5604034c5: "Requirements" states the footprint holds `AnyMembership{P}` for the named `P` and no other population of the same member type; AC-6 and row 8 test it. PR #967's `footprint.rs` must follow, and the code lead routes that. |
+| FND-004 | accepted-no-change | Kept as `missing_declaration`/`missing-name`, and TC-1076 row 4 pins it. QSpec catalogues no distinct code for a bare type name, so a type name used as a value is a missing value name. The finding is low and the choice is reasonable. |

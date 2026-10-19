@@ -119,9 +119,13 @@ read that FR-155 derives `AnyMembership{counters}` from.
   named domain population has no binder to reference and the
   `Population<U>[N]` type node is anonymous, keyed by `(U, N)` alone (FR-094),
   so the type node cannot identify the population. `allInstances<Counter>(M::counters)`
-  and `allInstances<Counter>(M::archive)` therefore lower to different terms.
-  The FR-322 encoding of this operand term is a follow-up to IR; this
-  requirement fixes only that it carries the declaration key.
+  and `allInstances<Counter>(M::archive)` therefore check to different terms.
+  The IR encoding of the population-reference term (an FR-322 extension) is
+  tracked as a follow-up ticket; this requirement fixes only that the checked
+  term carries the declaration key. Until that encoding exists, package
+  emission (S4) SHALL refuse a unit whose checked clause contains the term
+  with `unsupported_construct`/`not-yet-implemented`, as for any other
+  form it does not yet emit.
 
 ### Evaluation
 
@@ -161,10 +165,10 @@ read that FR-155 derives `AnyMembership{counters}` from.
 |----|----------|--------------|
 | FR-391-AC-1 | Over the `Counter` unit (model alias `M`, `Counter` with `v: Int[0, 2]`, operation `bump()`, population `counters`), `pre Room using v on M::Counter::bump { forall(o in allInstances<M::Counter>(M::counters) : o.v < 2) }` checks as a `Precondition` with the population operand typed `Population<Counter>`, the `allInstances` result `Set<Reference<Counter>>` and every read at `pre`; the invariant `invariant Cap using v on M::Counter at current { count<M::Counter>(o in allInstances<M::Counter>(M::counters) : true) < 4 }` checks with reads at `current`. | Test (TC-1076) |
 | FR-391-AC-2 | `M::nothing` as the operand refuses `missing_declaration`/`missing-name` at `nothing`; an alias `M` that is also an enum name refuses `ambiguous_declaration`/`ambiguous-name` at the name. | Test (TC-1076) |
-| FR-391-AC-3 | `M::counters = M::counters`, `let q = M::counters in allInstances<M::Counter>(q)`, `size(M::counters)` and a clause body that is `M::counters` each refuse `ill_typed`/`operator-ineligible` at the name; in a function body `allInstances<M::Counter>(M::counters)` names no population and refuses as an unresolved name did before. | Test (TC-1076) |
+| FR-391-AC-3 | `M::counters = M::counters`, `let q = M::counters in allInstances<M::Counter>(q)`, `size(M::counters)` and a clause body that is `M::counters` each refuse `ill_typed`/`operator-ineligible` at the name; in a function body `allInstances<M::Counter>(M::counters)` names no population and refuses `missing_declaration`/`missing-name`, as does a type name `M::Counter` used as a value, because only populations resolve as a two-segment name there. | Test (TC-1076) |
 | FR-391-AC-4 | With `bound B on M::counters [3]` the operand is `Population<Counter>[3]` and `allInstances<M::Counter>(M::counters)` is `Set<Reference<Counter>>[0,3]`; the record's `counters` domain is `Population(Some(3))`. With a second population `archive` of `Counter`, a clause on `M::Counter` refuses `ambiguous_declaration`/`ambiguous-name` at its `on` (FR-104-AC-5) whichever population its body names. With a type `Widget` that only a population `widgets` covers, a clause on `M::Widget` whose body names `M::counters` records `widgets` (the context population) and `counters` as its two domains. | Test (TC-1076) |
 | FR-391-AC-5 | Evaluated at S6a over a snapshot whose `counters` holds `a`, `b` and `c`, the precondition of AC-1 decides over exactly those three, in canonical reference-key order; over a snapshot in which `counters` is not marked `complete`, it returns `Incomplete` with `incomplete_population`/`incomplete-scope`, as for a parameter operand; `allInstances<M::Other>(M::counters)` with `Other` uncovered by the population is FR-084's typed incomplete result. | Test (TC-1076) |
-| FR-391-AC-6 | With populations `counters` and `archive` of `Counter`, `allInstances<M::Counter>(M::counters)` and `allInstances<M::Counter>(M::archive)` lower to two different checked terms, each carrying its own population's declaration key, and the footprint of a precondition naming `M::counters` holds `AnyMembership{counters}` and not `AnyMembership{archive}`; the precondition of FR-155-AC-2 over `counters` holds `AnyField{v}` and `AnyMembership{counters}`. | Test (TC-1076) |
+| FR-391-AC-6 | With populations `counters` and `archive` of `Counter` and an operation `grow` on `Widget`, a type covered only by `widgets`, the preconditions `pre A using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` and `pre B using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::archive) : true) }` check to two different terms, each carrying its own population's declaration key, and the footprint of `A` holds `AnyMembership{counters}` and not `AnyMembership{archive}`, and `B`'s the reverse; the precondition of FR-155-AC-2 over `counters` holds `AnyField{v}` and `AnyMembership{counters}`. A package with such a clause refuses at emission with `unsupported_construct`/`not-yet-implemented` until the IR encoding exists. | Test (TC-1076) |
 
 ## Dependencies
 

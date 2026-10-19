@@ -48,3 +48,19 @@ first two cases, the FR-155-AC-2 respelling (the footprint is right under
 FR-383 and PR #967's derivation for a one-population fixture), the FR-104
 bullet and `references` edge (no `depends_on` cycle: FR-391 depends_on
 FR-104, FR-104 only references FR-391), and the spec index row.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The new FR-391-AC-6 and TC-1076 row 8 repeat the fixture contradiction FND-002 fixed for AC-4. Row 8 is "row 1 with `archive` also present", so its preconditions are on `M::Counter::bump`, and with two populations of `Counter`, FR-104-AC-5 and row 6 refuse every such clause `ambiguous_declaration`/`ambiguous-name` at its `on`. That clause has no checked term or footprint to compare. The footprint example under "Requirements" reads the same way. Put the two preconditions on `M::Widget::grow`, which the fixture already covers only by `widgets`, and keep `counters`/`archive` in the body. | spec/functional/FR-391-name-a-population-in-a-state-clause.md:151-156,167; spec/test-cases/TC-1076-a-state-clause-names-a-population.md:30 |
+| FND-006 | low | FR-391-AC-3 still says the function-body case "refuses as an unresolved name did before" and does not list `M::Counter` as a value, while TC-1076 row 4 now pins both to `missing_declaration`/`missing-name`. The TC is stronger than its AC. TC-1076 row 6 uses `M::Widget::grow`, but the fixture declares no operation `grow`. | spec/functional/FR-391-name-a-population-in-a-state-clause.md:164; spec/test-cases/TC-1076-a-state-clause-names-a-population.md:19,26,28 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5604034c5: AC-6 now names Test (TC-1076), and TC-1076's scope is FR-391-AC-1 to FR-391-AC-6 with row 8. |
+| FND-002 | fixed | 5604034c5: AC-4 and TC-1076 row 6 use a type `Widget` covered only by `widgets`; the case can now be built. |
+| FND-003 | fixed | 5604034c5: TC-1076 row 4 names `missing_declaration`/`missing-name`, and row 7 names `FamilyResult::Undefined` with reason `incomplete-closure`, naming `Other`, with no collection. AC-3's residual wording is FND-006. |
+| FND-004 | fixed | 5604034c5: the Description now reads "a state clause has no such operand: the clause checker and the clause evaluator admit neither form today". |

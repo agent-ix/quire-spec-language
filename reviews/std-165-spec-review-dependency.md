@@ -31,3 +31,9 @@ premise. One edge is missing.
 Mergeable on this lens after the edges are added along with the evaluation
 rule. Examined and clean: the FR-155 `depends_on FR-391` edge and the FR-104
 `references FR-391` edge.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5604034c5: FR-391 now has `depends_on` FR-106 and FR-107 and `traces_to` FR-155; FR-107 `references` FR-391; FR-106's required-population sentence includes the populations a clause names by `M::P`. |
