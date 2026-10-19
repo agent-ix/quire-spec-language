@@ -23,7 +23,8 @@ FR-147's `CasTwice`.
 
 1. Build the S2 form of `CasRefinesCounter`.
 2. Build the forms of `RingIsQueue` and `CasTwice`, and a refinement with
-   the step row `step Impl::P::a::S -> stutter;`.
+   the step rows `step Impl::P::a::S -> stutter;`
+   and `step memory flush -> stutter;`.
 3. Build a declaration with history rows whose initial values are `-3`,
    `true`, `none`, `"a"`, `rational(1, 2)` and `Impl::Mode::idle`, and a
    fairness row `assume fair strong Impl::Counter::retryA;`.
