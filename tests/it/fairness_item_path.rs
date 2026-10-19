@@ -14,15 +14,9 @@ use qsl_route::{
 use qsl_semantics::check::{Capability, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
 
-// The datum is shared with the example and the corpus; this test reads only
-// the domain package.
-#[allow(dead_code)]
-#[path = "../../examples/config-version/spine_unit.rs"]
-mod config_version_unit;
-
 /// The ConfigVersion unit with one infinite-trace clause whose body is `body`.
 fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
-    let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+    let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
     let packages = qsl_semantics::model::intake::package_input([document]);
     let digest = packages.keys().next().expect("one package");
     let text = format!(

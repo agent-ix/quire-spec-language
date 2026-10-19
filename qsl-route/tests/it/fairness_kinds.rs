@@ -236,10 +236,7 @@ fn v4_v5_v6_v11_v14_an_unknown_element_is_refused_naming_the_first() {
         (vec![Text("weak"), Other("1")], "1"),
         (vec![Text("x"), Text("y")], "x"),
     ] {
-        assert_eq!(
-            refused(listed(&labels)),
-            (unknown.clone(), named.to_owned())
-        );
+        assert_eq!(refused(listed(&labels)), (unknown, named.to_owned()));
     }
 }
 
@@ -274,10 +271,7 @@ fn v7_v8_v10_v15_a_repeat_is_refused_and_an_unknown_element_wins() {
         vec![Text("weak"), Text("strong"), Text("weak")],
         vec![Text("strong"), Text("weak"), Text("weak"), Text("strong")],
     ] {
-        assert_eq!(
-            refused(listed(&labels)),
-            (duplicate.clone(), "weak".to_owned())
-        );
+        assert_eq!(refused(listed(&labels)), (duplicate, "weak".to_owned()));
     }
     assert_eq!(
         refused(listed(&[Text("weak"), Text("weak"), Text("eventual")])).0,
