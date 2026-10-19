@@ -71,7 +71,7 @@ pub struct GainBias { pub gain: Rational, pub bias: Vec<(ProductStateId, Rationa
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-199-AC-1 | `LongRun` under `Steady` has one BSCC `{up, down}` with `π = (1800/1801, 1/1801)` and value `1800/1801`; its gain–bias pair is gain `1800/1801` at both states, bias 0 at `up` and `−2000/1801` at `down`. | Test (TC-634) |
-| FR-199-AC-2 | An `Avail2` variant with two repairs, `repair_fast(ok ~ {true: 9, false: 1})` and `repair_slow(ok ~ {true: 1, false: 1})`, has over every scheduler the minimum `1000/1001` (always `repair_slow`) and the maximum `1800/1801`; under a workload weighting both repairs 1 its value is `1400/1401`. | Test (TC-634) |
+| FR-199-AC-2 | An `Avail2` variant with two repairs, `repair_fast(ok: Boolean)` with `random Server::repair_fast(ok) ~ { true: 9, false: 1 };` and `repair_slow(ok: Boolean)` with `random Server::repair_slow(ok) ~ { true: 1, false: 1 };`, has over every scheduler the minimum `1000/1001` (always `repair_slow`) and the maximum `1800/1801`; under a workload weighting both repairs 1 its value is `1400/1401`. | Test (TC-634) |
 | FR-199-AC-3 | `long-run fraction holds(v.up) weighted by duration >= 0.999` over a variant of `Avail` with `duration` 1 on `tick` and 3 on `repair` weights each position by the step that leaves it, giving `π_up / (π_up + 3 π_down)`, exact. A variant whose only reachable cycle carries `duration` 0 settles `Unsupported(ZeroWeightComponent)`. | Test (TC-634) |
 
 ## Dependencies
