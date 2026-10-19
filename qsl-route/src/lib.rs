@@ -48,6 +48,7 @@
 //! both of those.
 
 pub mod deadlock;
+pub mod model_request;
 pub mod request;
 pub mod routing;
 

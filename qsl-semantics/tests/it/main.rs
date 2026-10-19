@@ -39,6 +39,8 @@ mod model_intake;
 mod model_normalization;
 mod model_operations;
 #[cfg(feature = "test-support")]
+mod model_subject_bound;
+#[cfg(feature = "test-support")]
 mod model_population;
 mod model_receiver_frames;
 #[cfg(feature = "test-support")]
