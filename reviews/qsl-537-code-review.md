@@ -104,3 +104,35 @@ blocks.
 | FND-001 | medium | No test can fail on the `below` half of the tie rule. Delete `&& !current.below` and every test stays green: `Ladder` has both deviations ranked above (`below = false`), and AC-3 has no equal-length tie. The case the conjunct exists for is not tested: an earlier deviation by an edge ranked *below* the first path's edge, tied in length with a later one. Such an edge cannot lead one step nearer, or `first` would have taken it, so the tie needs a sideways edge. Example: node 0 at `d=2` with edges `s` (rank 0, to a node X at `d=2`) and `t` (rank 1, to Y at `d=1`); `first = t, …`. A deviation `s, …` has length 3, and a sideways edge out of Y to another `d=1` node also gives length 3. The correct answer is the `s` deviation; "later always wins" picks the other. Add a world of that shape, such as a second `moves_world` fixture. | qsl-analyze/src/model_check/state_graph/decide.rs:500-505; qsl-analyze/tests/it/state_graph.rs:980-1023 |
 | FND-002 | low | A pure performance refactor ships without an equivalence check against the algorithm it replaces. Only two worlds (Ladder, and job with and without reset) exercise `path_pair`. Keeping the old build-every-candidate `(len, ranks)` comparison as a `#[cfg(test)]` oracle, and checking it against the new scan on the existing worlds plus a few hand-built `ExploredStateGraph`s (as the `decide.rs` unit tests already build), would have caught FND-001 and any later drift. | qsl-analyze/src/model_check/state_graph/decide.rs:471-519; qsl-analyze/src/model_check/state_graph/decide.rs:680 |
 | FND-003 | low | The new `Ladder` test carries no `#[trace]`, while every neighbouring FR-168 test does. FR-168's Behavior states the second-path rule ("least, by length and then canonical edge order, of the paths that first deviate"), but no AC states the tie, so there is nothing for the test to bind to. See SR-12196 FND-001. | qsl-analyze/tests/it/state_graph.rs:984-985 |
+
+## Dispositions
+
+Round 1, reviewed at 2ce5815f31f5368bfe7552953bf2ea4573c9e20e: fix commit
+2ce5815f3 on top of merge f95dcdef0 of origin/main. The PR's diff against
+main is still the three Rust files, FR-168, TC-593 and these reviews.
+Checked by reading only. No build or test run (reviewer-only brief).
+
+- FND-001: the `Detour` world. Its `d` is 2/2/1/1/0 for pos 0/1/2/4/5,
+  and `first = t, w`. At position 0, `s` ranks below `t` and gives
+  `s, u, x` (length 3). At position 1, `y` gives `t, y, x` (length 3). With
+  `&& !current.below` deleted, the later deviation replaces the earlier one
+  and the test fails. `Ladder` still fails under an "earliest wins" rule.
+  Between them, both halves of the tie rule can now fail.
+- FND-002: `by_candidates` matches the deleted code line for line: the same
+  candidate filter, the same `first[..position] ++ edge ++ descend_edges`,
+  and the same `(len, ranks)` strict `<`. The one change is that `ranks`
+  uses `expect` in place of the dead `unwrap_or(usize::MAX)`. Ties are
+  covered deterministically, because the oracle runs on the job, `Ladder`
+  and `Detour` shapes, with `outgoing` in list order. In `Detour`, node 0
+  has the below-ranked tie and node 2 the above-ranked one. The 2,000
+  seeded random graphs (2 to 7 nodes, self-loops and parallel edges) add
+  breadth. Whether they contain ties is not counted, which is fine given
+  the fixed shapes.
+- FND-003: both integration tests carry `#[trace("TC-593",
+  "FR-168-AC-10")]`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2ce5815f3 |
+| FND-002 | fixed | 2ce5815f3 |
+| FND-003 | fixed | 2ce5815f3 |

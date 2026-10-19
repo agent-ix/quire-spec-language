@@ -59,3 +59,22 @@ evidence. One low spec gap: the tie rule has no AC.
 - Semantic review: the intent, test and code for the path-pair rule were
   read in SR-12195. No separate semantic fan-out was run.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, reviewed at 2ce5815f31f5368bfe7552953bf2ea4573c9e20e (fix commit
+2ce5815f3). FR-168-AC-10 states both fixtures and both outcomes. TC-593
+adds it to its scope and adds step 6 with expected results. Each tagged
+test can fail on its half of the AC:
+
+- `an_equal_length_later_deviation_wins_over_an_earlier_one_ranked_above`
+  (`Ladder`) fails under "earliest deviation wins".
+- `an_equal_length_earlier_deviation_ranked_below_wins` (`Detour`) fails
+  under "later deviation wins".
+
+Both tests assert the premise canonical order at `pos = 0`, and that each
+path ends at the `to` value. Both bindings are correct.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2ce5815f3 |
