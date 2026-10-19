@@ -41,7 +41,7 @@ think about is a compile error and never passes the check unexamined.
 
 - A parsed refinement declaration whose concrete subject names a protocol,
   with its `step` rows and, for an abstract protocol, the refinement
-  profile's explicit list of internal abstract steps.
+  refinement's internal list of abstract steps.
 - The concrete protocol's checked clause (FR-218) and its memory model's
   internal step kinds (FR-215).
 
@@ -62,7 +62,7 @@ think about is a compile error and never passes the check unexamined.
   arguments give); `Internal` for a `stutter` target; and `Either` for an
   `any` target.
 - For an abstract protocol, an abstract step SHALL be internal exactly when
-  the refinement profile's explicit list names it.
+  the refinement's internal list names it.
 - Each concrete initial protocol state SHALL pair with the abstract initial
   model state its mapping gives, with the abstract root settled from its
   `run`.
@@ -76,7 +76,7 @@ think about is a compile error and never passes the check unexamined.
 | FR-214-AC-1 | A refinement of an abstract model `Abs`, whose object type `Acc` has operation `add()`, by ADR-027 §7's `Fill` over model `M`, with FR-135's population row for `Abs`'s population and object row mapping `Acc` from `Cell` (which let FR-136 type the `self` receiver against `Abs::Acc`), and with step rows `step M::Cell::inc -> Abs::Acc::add(self)`, `step M::Cell::setTwo -> Abs::Acc::add(self)`, `step fork M::Fill::Both -> stutter`, `step join M::Fill::Both -> stutter` and `step M::Fill::Done -> stutter`, checks; every concrete step class has exactly one row, the attempts are `Visible` with `add`'s label and the control steps `Internal`. | Test (TC-659) |
 | FR-214-AC-2 | Removing the `join` row refuses `missing_declaration`/`missing-name` naming `Both`'s join; removing the `finish` row refuses naming `Done`. Adding a second `step M::Cell::inc -> …` row refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-659) |
 | FR-214-AC-3 | Adding `step M::Fill::A -> stutter` beside `step M::Cell::inc -> Abs::Acc::add(self)` maps `A`'s steps by the node row (`Internal`) and leaves the `inc` operation row unused by `A`. Over ADR-027 §7.1, omitting the `Refund` template's `cend` row refuses naming the template; over `Chatter` (FR-212), omitting either of `ch`'s two channel rows (`duplicate` and `lose`, since its delivery is `unknown`) refuses naming `ch`. | Test (TC-659) |
-| FR-214-AC-4 | A row `-> any` gives `Either`. An abstract protocol whose profile lists `fork` as internal gives that abstract step internal, and its other abstract steps visible. | Test (TC-659) |
+| FR-214-AC-4 | A row `-> any` gives `Either`. An abstract protocol whose internal list names `fork` as internal gives that abstract step internal, and its other abstract steps visible. | Test (TC-659) |
 
 ## Dependencies
 

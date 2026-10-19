@@ -36,7 +36,7 @@ mod compile;
 // and Kani harnesses exercise it directly.
 #[allow(
     dead_code,
-    reason = "the zone certificate checker is its first caller and has not landed yet"
+    reason = "the zone certificate checker and the FR-339 component certificate check are its first callers and have not landed yet"
 )]
 mod certificate;
 mod composite;
@@ -73,6 +73,7 @@ pub use certificate::closure::{
     check_closure, CertificateRejection, CertificateRequest, ClosureCertificate, ClosureRefusal,
     ProductStateRef, TemporalCertificateCheck,
 };
+pub use certificate::scc::{Component, ComponentWitness};
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{

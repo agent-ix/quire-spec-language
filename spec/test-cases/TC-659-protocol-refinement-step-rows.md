@@ -27,7 +27,7 @@ refuses cannot pass.
    row; add a second `step M::Cell::inc` row.
 3. Add the node row `step M::Fill::A -> stutter`; check ADR-027 §7.1 without the `cend` row and
    `Chatter` without its `duplicate` row, then without its `lose` row.
-4. Check an `-> any` row, and an abstract protocol whose profile lists
+4. Check an `-> any` row, and an abstract protocol whose internal list names
    `fork` as internal.
 
 Tag the tests `#[trace("TC-659", "FR-214-AC-n")]`.
