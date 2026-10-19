@@ -123,6 +123,7 @@ pub fn settle_state_graph(
     cancel: &Cancel,
     replay: impl FnOnce(&StateGraphInstanceOutcome) -> Result<GraphReplayResult, ReplayRefusal>,
 ) -> StateGraphRecord {
+    let initial = subject.simulation.initial.len();
     let check = Certified {
         request: StateGraphCertificateRequest {
             subject,
@@ -136,6 +137,14 @@ pub fn settle_state_graph(
     let mut end = None;
     let mut undefined = None;
     let row = match &instance.outcome {
+        // FR-168 returns one witness per initial state, in order; any other
+        // shape is the engine's broken invariant, never a proof.
+        StateGraphOutcome::Witnessed { paths, .. }
+        | StateGraphOutcome::WitnessedUnchecked { paths, .. }
+            if !one_per_initial(paths, initial) =>
+        {
+            Row::failed()
+        }
         StateGraphOutcome::Witnessed { paths, certificate } => check.row(certificate, || {
             replayed(replay(instance), package_id, || {
                 Row::proved(
@@ -153,23 +162,20 @@ pub fn settle_state_graph(
             paths,
             end: run_end,
             ..
-        } => {
+        } => replayed(replay(instance), package_id, || {
+            // Only a `WellDefinednessUnchecked` record states the run's end
+            // and the limit that stopped it.
             end = Some(run_end.clone());
-            let row = replayed(replay(instance), package_id, || {
-                Row::inconclusive(InconclusiveCause::WellDefinednessUnchecked {
+            Row {
+                limit_reached: match run_end {
+                    RunEnd::Stopped { limit, .. } => *limit,
+                    RunEnd::Completed => None,
+                },
+                ..Row::inconclusive(InconclusiveCause::WellDefinednessUnchecked {
                     sources: sources(paths),
                 })
-            });
-            // The record names the limit that stopped the run, unless the
-            // replay itself stopped at one.
-            match run_end {
-                RunEnd::Stopped { limit, .. } if row.limit_reached.is_none() => Row {
-                    limit_reached: *limit,
-                    ..row
-                },
-                RunEnd::Stopped { .. } | RunEnd::Completed => row,
             }
-        }
+        }),
         StateGraphOutcome::Trapped { .. } => replayed(replay(instance), package_id, || {
             Row::refuted(SettlementBasis::ClosedScope)
         }),
@@ -284,4 +290,13 @@ fn replayed(
 /// Each witness's source, in initial-state order.
 fn sources(paths: &[GraphWitness]) -> Vec<WitnessSource> {
     paths.iter().map(|witness| witness.source.clone()).collect()
+}
+
+/// Whether `paths` holds exactly one witness per initial state of a subject
+/// with `initial` states, in initial-state order.
+fn one_per_initial(paths: &[GraphWitness], initial: usize) -> bool {
+    paths.len() == initial
+        && paths.iter().enumerate().all(|(index, witness)| {
+            usize::try_from(witness.path.initial).is_ok_and(|at| at == index)
+        })
 }
