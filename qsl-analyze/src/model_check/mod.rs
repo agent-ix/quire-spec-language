@@ -14,6 +14,7 @@ mod graph;
 mod liveness;
 mod product;
 mod scc;
+mod state_graph;
 
 pub use check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 pub use graph::{
@@ -25,3 +26,7 @@ pub use product::{
     Product, ProductFinding, ProductKey, ProductState, ProductTransition, PropertyComponent,
 };
 pub use scc::Component;
+pub use state_graph::{
+    check_state_graph, ExploredStateGraph, GraphEdge, GraphNode, GraphStats, NodeIndex,
+    PredicateLabel, StateGraphItem, StateGraphRequest, StateGraphRun,
+};
