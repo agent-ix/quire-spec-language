@@ -81,3 +81,21 @@ across populations does not make the closure check unsound: the automaton
 states of a holding run are the same whatever the instance, and a shared
 context can at worst make the checker reject. AC-7, AC-9, AC-11 and AC-12
 are untagged. #1017 overlaps this PR.
+
+## Dispositions
+
+Round 1, reviewed at d38c0c83b. The fix round is merge commit 2e6feb746
+(main plus #1017, and the fixes), followed by d38c0c83b. The #1017
+behaviour is kept. `ModelCheckItem::instances(&subject, &system, cancel)`
+still resolves `ClauseIdentity` from the subject's package. A cancelled
+handle still gives `Stopped{Cancelled, None}` in `check_model` and
+`Stopped(Cancelled)` in `check_closure`. The resolution now runs after
+admission and the bounds pre-check, and the #1017 tests are unchanged
+apart from the `Letters` constructor. No conflict markers remain, and
+`make check-spec-validation` passes.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2e6feb746: `ModelSystem::new` refuses an empty universe key `invalid_runtime_input`/`invalid-value` (FR-120 check 1 updated). `bound_reference` returns `Result<_, InternalFault>`, not `.ok()`. `an_empty_universe_key_is_refused_as_invalid_input_not_a_fault` covers `check_model` and `check_closure`. The remaining `ItemRefusal::Fault` path (no selected model declares `over`, or an admitted key has no reference) is unreachable through the public API: S3 resolves `over` to a model type, and admission refuses the only key `object_reference` refuses. So it stays untested, which is accepted. |
+| FND-002 | fixed | 2e6feb746: the `item.rs` module doc now says two admitting populations that hold the same key give two instances with one key context, and it is rewrapped. |
+| FND-003 | fixed | 2e6feb746: the `Check::atom` parameter is `instance: &ModelInstance`, its doc says "the bound `instance`", and the caller's local is `bound`. |

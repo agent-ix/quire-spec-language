@@ -79,3 +79,19 @@ AC-4) can each fail on their AC's behaviour, so nothing is over-tagged.
 The two QSpec-FR-361-AC-8 tests now exercise the real derivation. The
 empty-universe-key misclassification is recorded in SR-12181 FND-001. It
 has no test either.
+
+## Dispositions
+
+Round 1, reviewed at d38c0c83b. The rewritten `model_instances.rs` tests
+still fail on their tagged ACs. The AC-8 and AC-10 tests are unchanged in
+substance: they now build the package with `with_unwritten_terminals`,
+and #1017 resolves the clause identity from that package.
+`the_closure_checker_requires_a_bound_for_an_unbounded_admitting_population`
+(FR-125-AC-8) fails if `check_closure` maps instancing's RequiresBound to
+anything else or names another root. `an_empty_universe_key_is_refused_...`
+is tagged TC-520 only, which is correct. FR-125-AC-4's binding is unchanged.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2e6feb746: `the_closure_checker_requires_a_bound_for_an_unbounded_admitting_population` covers `ItemRefusal::Unbounded` to `ClosureRefusal::NotSimulated(RequiresBound)` with root `P2`. The empty-key test covers the closure admission path. The `ItemRefusal::Fault` mapping has no public-API path, as recorded in SR-12181 FND-001, so it is accepted untested. |
+| FND-002 | fixed | d38c0c83b: the bullet states that it departs from the Instancing rule (2e6feb746), drops the self-reference, and names "Remaining work: QSL-890". QSL-890 exists in Linear (Backlog). |
