@@ -37,7 +37,7 @@
 //! computed from the package, never accepted from a caller).
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use qsl_foundation::Code;
 use qsl_semantics::check::{
@@ -53,7 +53,7 @@ use qsl_semantics::library::{LibraryName, PackageId};
 /// setting to raise.
 pub(crate) const EMIT_LIMITS: quire_canonical::Limits = quire_canonical::Limits::new(u64::MAX);
 
-use crate::emit::{emit_checked, EmitRefusal};
+use crate::emit::{emit_checked, Emission, EmitRefusal};
 
 /// S4 in-process checked package (ADR-013 T-1): this package's own checked
 /// declarations (a [`CheckedGraph`], S3's stage output) plus the checked
@@ -154,6 +154,11 @@ pub struct CheckedPackage {
     /// FR-304, FR-306: this package's checked abstraction relation, when it
     /// declares one. The checked package is its only authority.
     abstraction: Option<CheckedAbstractionRelation>,
+    /// This package's checked emission, set only by the emitter
+    /// ([`Self::remember_emission`]; the `package_id` stays the emitter's own
+    /// output, ADR-013 O-02) so a package reached again, as a dependency or
+    /// by another emit, is not emitted again. Reset when the package changes.
+    emission: OnceLock<Emission>,
 }
 
 /// One library identity's selection in a package's resolved closure, and the
@@ -162,10 +167,67 @@ pub struct CheckedPackage {
 pub struct ResolvedDependency {
     /// The selected `package_id`.
     pub package_id: PackageId,
+    /// How the first dependency path reached this selection: its first hop
+    /// and the package that hop imports, which holds the rest of the path.
+    path: DependencyPath,
+}
+
+impl ResolvedDependency {
     /// The library identities from the linking package's direct import down
-    /// to this one, this one last. The linking package itself is the
-    /// implicit first step of every path.
-    pub path: Vec<LibraryName>,
+    /// to `identity` (the library this selection is of), `identity` last.
+    /// The linking package itself is the implicit first step of every path.
+    /// Rebuilt from the dependency closure on each call: a closure retains
+    /// one first hop per selection, never a copy of the whole path.
+    pub fn path(&self, identity: &LibraryName) -> Vec<LibraryName> {
+        let mut path = Vec::new();
+        let mut step = &self.path;
+        while let DependencyPath::Via { first, package } = step {
+            path.push(first.clone());
+            match package.selections.get(identity) {
+                Some(next) => step = &next.path,
+                None => return path,
+            }
+        }
+        path.push(identity.clone());
+        path
+    }
+}
+
+/// How a selection's first dependency path reaches its library.
+#[derive(Clone)]
+enum DependencyPath {
+    /// The linking package imports the library itself.
+    Direct,
+    /// The linking package's import `first` reaches the library through
+    /// `package`'s own selection of it.
+    Via {
+        first: LibraryName,
+        package: Arc<CheckedPackage>,
+    },
+}
+
+/// Two paths are equal when they leave through the same first hop: the rest
+/// of each path is the equal selection of the package that hop imports,
+/// compared with that package.
+impl PartialEq for DependencyPath {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Direct, Self::Direct) => true,
+            (Self::Via { first, .. }, Self::Via { first: other, .. }) => first == other,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for DependencyPath {}
+
+impl std::fmt::Debug for DependencyPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Direct => f.write_str("Direct"),
+            Self::Via { first, .. } => f.debug_struct("Via").field("first", first).finish(),
+        }
+    }
 }
 
 /// One import the E4 link step binds (ADR-011 §4 dependency binding): the
@@ -188,8 +250,8 @@ pub enum LinkRefusal {
     /// (`invalid_package`/`conflicting-definition`), listing both paths.
     #[error(
         "invalid_package/conflicting-definition: {} and {} select {identity} differently",
-        display_path(&.selections[0].path),
-        display_path(&.selections[1].path)
+        display_path(&.selections[0].path(.identity)),
+        display_path(&.selections[1].path(.identity))
     )]
     ConflictingDefinition {
         /// The library identity.
@@ -235,18 +297,28 @@ impl LinkRefusal {
 /// would recurse once per link.
 impl Drop for CheckedPackage {
     fn drop(&mut self) {
-        let mut pending: Vec<Arc<CheckedPackage>> = std::mem::take(&mut self.dependencies)
-            .into_values()
-            .collect();
+        let mut pending = Vec::new();
+        self.release_into(&mut pending);
         while let Some(package) = pending.pop() {
             if let Ok(mut owned) = Arc::try_unwrap(package) {
-                pending.extend(std::mem::take(&mut owned.dependencies).into_values());
+                owned.release_into(&mut pending);
             }
         }
     }
 }
 
 impl CheckedPackage {
+    /// Moves every package this one holds, as a dependency or as a selection's
+    /// path hop, into `pending` for [`Drop`]'s explicit stack.
+    fn release_into(&mut self, pending: &mut Vec<Arc<CheckedPackage>>) {
+        pending.extend(std::mem::take(&mut self.dependencies).into_values());
+        for resolved in std::mem::take(&mut self.selections).into_values() {
+            if let DependencyPath::Via { package, .. } = resolved.path {
+                pending.push(package);
+            }
+        }
+    }
+
     /// The S4 link step (ADR-013 T-1): the sole conversion from
     /// `CheckedGraph` to `CheckedPackage`. Fed only by already-checked
     /// typestate -- a `CheckedGraph` -- never by an unchecked or
@@ -309,6 +381,7 @@ impl CheckedPackage {
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
             abstraction: None,
+            emission: OnceLock::new(),
         }
     }
 
@@ -328,21 +401,21 @@ impl CheckedPackage {
             let recompiled = recomputed_package_id(&import)?;
             let direct = ResolvedDependency {
                 package_id: recompiled,
-                path: vec![import.identity.clone()],
+                path: DependencyPath::Direct,
             };
             let transitive = import
                 .package
                 .selections
                 .iter()
                 .map(|(identity, resolved)| {
-                    let mut path = Vec::with_capacity(resolved.path.len().saturating_add(1));
-                    path.push(import.identity.clone());
-                    path.extend(resolved.path.iter().cloned());
                     (
                         identity.clone(),
                         ResolvedDependency {
                             package_id: resolved.package_id,
-                            path,
+                            path: DependencyPath::Via {
+                                first: import.identity.clone(),
+                                package: Arc::clone(&import.package),
+                            },
                         },
                     )
                 });
@@ -360,6 +433,7 @@ impl CheckedPackage {
             dependencies,
             selections,
             abstraction: None,
+            emission: OnceLock::new(),
         })
     }
 
@@ -375,6 +449,7 @@ impl CheckedPackage {
         bindings: &[AuthoredBinding],
     ) -> Result<(), Vec<AbstractionRefusal>> {
         self.abstraction = Some(self.graph.check_abstraction(bindings)?);
+        self.emission = OnceLock::new();
         Ok(())
     }
 
@@ -382,6 +457,17 @@ impl CheckedPackage {
     /// one.
     pub fn abstraction(&self) -> Option<&CheckedAbstractionRelation> {
         self.abstraction.as_ref()
+    }
+
+    /// Records `emission`, the emitter's output for this package. Only the
+    /// emitter calls this (ADR-013 O-02).
+    pub(crate) fn remember_emission(&self, emission: &Emission) {
+        let _ = self.emission.set(emission.clone());
+    }
+
+    /// This package's emission, if it has been emitted.
+    pub(crate) fn remembered_emission(&self) -> Option<&Emission> {
+        self.emission.get()
     }
 
     /// This package's own checked declarations (S3's stage output) -- the
@@ -412,13 +498,23 @@ impl CheckedPackage {
     }
 }
 
-/// `import`'s dependency `package_id`, recomputed by emitting its package.
+/// `import`'s dependency `package_id`, taken from the emitter's output for
+/// its package: the remembered emission when it has been emitted, else a
+/// fresh `emit_checked`, which remembers its result.
 fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
-    let emission =
-        emit_checked(&import.package).map_err(|refusal| LinkRefusal::DependencyEmission {
-            identity: import.identity.clone(),
-            refusal: Some(refusal),
-        })?;
+    let fresh;
+    let emission = match import.package.remembered_emission() {
+        Some(emission) => emission,
+        None => {
+            fresh = emit_checked(&import.package).map_err(|refusal| {
+                LinkRefusal::DependencyEmission {
+                    identity: import.identity.clone(),
+                    refusal: Some(refusal),
+                }
+            })?;
+            &fresh
+        }
+    };
     if !emission.omitted().is_empty() {
         return Err(LinkRefusal::DependencyEmission {
             identity: import.identity.clone(),
@@ -550,6 +646,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
             abstraction: None,
+            emission: OnceLock::new(),
         },
         |dependency, link| CheckedPackage {
             graph: Arc::clone(&graph),
@@ -559,8 +656,36 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             )]),
             selections: BTreeMap::new(),
             abstraction: None,
+            emission: OnceLock::new(),
         },
     )
+}
+
+/// As [`dependency_chain`], but every package also carries a selection of the
+/// package below it, whose path hop holds that package.
+#[cfg(test)]
+pub(crate) fn dependency_chain_with_selections(length: usize) -> CheckedPackage {
+    let mut chain = dependency_chain(0);
+    for link in 0..length {
+        let below = Arc::new(chain);
+        let mut package = dependency_chain(0);
+        package.dependencies = BTreeMap::from([(
+            PackageId::of_preimage(&link.to_le_bytes()),
+            Arc::clone(&below),
+        )]);
+        package.selections = BTreeMap::from([(
+            LibraryName::new("test/below").expect("a library identity"),
+            ResolvedDependency {
+                package_id: PackageId::of_preimage(&link.to_le_bytes()),
+                path: DependencyPath::Via {
+                    first: LibraryName::new("test/below").expect("a library identity"),
+                    package: below,
+                },
+            },
+        )]);
+        chain = package;
+    }
+    chain
 }
 
 #[cfg(test)]
@@ -576,6 +701,21 @@ mod tests {
     #[test]
     fn a_dependency_chain_of_any_length_drops_on_a_small_stack() {
         let chain = dependency_chain(100_000);
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(move || drop(chain))
+            .expect("spawn a 128 KiB thread")
+            .join()
+            .expect("the drop must not overflow a 128 KiB stack");
+    }
+
+    /// ADR-030: the packages a selection's path hop holds drop on the same
+    /// explicit stack; without that release the chain drops recursively
+    /// through the selections.
+    #[trace("FR-099-AC-7", "TC-446")]
+    #[test]
+    fn a_chain_of_selection_hops_of_any_length_drops_on_a_small_stack() {
+        let chain = dependency_chain_with_selections(100_000);
         std::thread::Builder::new()
             .stack_size(128 * 1024)
             .spawn(move || drop(chain))
