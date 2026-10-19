@@ -53,3 +53,15 @@ operator) and #968's behaviour. The parameter rule (`missing-name`, resolved
 against the claim's own scope) needs no QSpec change: FR-390 lists only
 anchor and pre-state reads as `expression-form`, so a parameter falls to
 ordinary name resolution.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2fbe63ee5: FR-165 Parsing now defines the widening concretely: unary and binary temporal operators, each with an optional interval, at any operand position, and fairness constraints at body start, recognition only, with the refusal in QSpec FR-390. It names the missing QSpec `graph-predicate` production, and the QSpec follow-up is filed as STD-171. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-002 | medium | FR-165:95-97 says that until QSpec's `graph-predicate` lands "QSL cannot reach the S3 refusal below from source text". That contradicts FR-165-AC-2 and AC-4 ("none is an S1 refusal"; S3 refuses at `eventually`) and the Parsing bullet's own SHALL. PR #968 already parses these predicates in QSL's S1 (`StateGraphPredicate`/`StateGraphFormula`/`StateGraphTerm`) and tests the S3 refusal. Failure: a test author reads AC-2 and AC-4 as unreachable and skips them, or a coder removes #968's widening to match "QSpec's production". Fix: say QSL's S1 implements this widening now, ahead of QSpec, and that STD-171 brings QSpec's shared grammar and FR-390 in line. Also cite STD-171 by id; it is in no spec file today. | spec/functional/FR-165-check-state-graph-claims-at-s3.md:87-97 | wrong-requirement |

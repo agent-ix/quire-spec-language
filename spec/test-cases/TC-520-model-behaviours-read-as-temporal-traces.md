@@ -53,4 +53,5 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
   `ReachesThree`; one instance with no bound object for the claim with no
   `over`; the same checked claims give `a` alone over `{a}`, with no re-check; a
   subtype population contributes its objects; the universe-less population
-  is `RequiresBound`; the empty universe gives zero instances.
+  is `RequiresBound`; the empty universe gives zero instances and `NoInstance`, settled
+  `inconclusive`.

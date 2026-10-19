@@ -67,3 +67,12 @@ requires `over` in all three forms (`x("over"), bound_parameter()`) and
 stores `over: OverParameter`, not an `Option`. #968 must make `over`
 optional to satisfy FR-165-AC-4. FR-165 merges cleanly with #968's own
 FR-165 edit (git merge-tree).
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2fbe63ee5: the TC-590 fixture adds `setVersion(newVersion: Int)`, and FR-165-AC-5 refuses `c.versionNumber = newVersion` with `missing-name` while `pre(...)` stays `expression-form`, so an S3 that looks up operation parameters now fails the test. |
+| FND-002 | fixed | 2fbe63ee5: FR-125-AC-7 now says "`ReachesTwo`, checked once, yields `a`, `b` over `{a, b}` and `a` over a subject whose universe is `{a}`, without being re-checked", and TC-520 step 6 reuses the same checked claims. |
+| FND-003 | fixed | 2fbe63ee5: FR-166:77 and FR-168:46 now cite FR-125 for the instances. |
+| FND-004 | fixed | 2fbe63ee5: FR-165-AC-4 spells out all three predicates in full. |

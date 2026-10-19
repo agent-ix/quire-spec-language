@@ -89,12 +89,11 @@ pub enum StateGraphForm {
   section): a clause expression in which unary and binary temporal operators,
   each with an optional interval, may stand at any operand position, with
   fairness constraints admitted at the start of the body. The production is
-  recognition only; QSpec FR-390 refuses at admission. Today QSpec's
-  state-graph productions take a block of plain `expr`, which has no
-  temporal operators, so a temporal operator in a predicate is a syntax error
-  there. The `graph-predicate` production is owned by QSpec and tracked as a
-  follow-up; until it lands, QSL cannot reach the S3 refusal below from
-  source text.
+  recognition only; QSpec FR-390 refuses at admission. QSpec's
+  state-graph productions today take a block of plain `expr`, which has no
+  temporal operators. QSL's S1 implements the `graph-predicate` widening now,
+  ahead of QSpec, so the S3 refusal below is reachable from source text; the
+  production is owned by QSpec, and STD-171 aligns QSpec's grammar with it.
 - S1 SHALL NOT refuse a predicate for holding a temporal operator; S3 does
   (see Predicates).
 

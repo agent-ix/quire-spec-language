@@ -68,6 +68,8 @@ reports.
   observation with an anchor, read by the TemporalTrace evaluator.
 - `NoInitialState` (ADR-016 EX-10) for a subject with no initial state,
   which FR-127 settles `inconclusive`.
+- `NoInstance` for an item with zero instances (Instancing), which FR-127
+  settles `inconclusive`.
 
 ## Behavior
 
@@ -105,11 +107,14 @@ reports.
   objects conforming to `T`, the instances are the objects of all of them;
   instances are ordered by population declaration identity text, then by
   the order of the population's universe list, which is the canonical order.
-- When a population holding objects conforming to `T` has no universe, QSL
+- When a population whose member type conforms to `T` has no universe, QSL
   SHALL return `NotSimulated::RequiresBound` naming it (FR-120), before
   instantiating.
 - When the universes hold no object conforming to `T`, including an empty
   universe and a type no population holds, the claim has zero instances.
+  QSL SHALL then report `NoInstance` for the item before it explores any
+  state, and FR-127 settles it `inconclusive`, so an item that was never
+  evaluated is never read as holding.
 - QSL SHALL give a clause or claim with no `over` parameter one instance, with
   no bound object.
 
@@ -169,7 +174,7 @@ reports.
 | FR-125-AC-4 | Over ADR-018 §6's subject, a clause with `over (c: Config::ConfigVersion)` yields one instance per object of `{a, b}`. A subject whose `initial` list is empty is `NoInitialState` before any state is explored. | Test (TC-520) |
 | FR-125-AC-5 | On the same lasso, `always eventually (holds(a.versionNumber = 0) and once[1,1] holds(a.versionNumber = 2))` has past reach 1 and is evaluated over `m = 2` loop copies, 6 positions: the conjunction is `false` at position 0, which has no previous position, and `true` at position 3, whose previous position holds version 2, and the formula evaluates `true`. The same conjunction read at position 9 by congruence is `true`. | Test (TC-520) |
 | FR-125-AC-6 | Over the `Counter` subject, the letter of `always holds(6 / (2 - c.value) >= 0)` under infinite-trace is defined at positions 0 and 1 and undefined at position 2, cause `division-by-zero`. `eventually[0,1] holds(6 / (2 - c.value) = 6)` under event-position false-extension, `on origin`, reads positions 0 and 1 only and evaluates `true`. | Test (TC-537) |
-| FR-125-AC-7 | Over ADR-018 §6's subject (universe `{a, b}`), the state-graph claims `ReachesTwo` and `ReachesThree` (`over (c: Config::ConfigVersion)`) each yield two instances, `a` then `b`; `possible Anything using v { true }` with no `over` yields one instance with no bound object. `ReachesTwo`, checked once, yields `a`, `b` over `{a, b}` and `a` over a subject whose universe is `{a}`, without being re-checked. A claim over a subtype-conforming population yields its objects; a universe-less population is `RequiresBound`; an empty universe yields zero instances. | Test (TC-520) |
+| FR-125-AC-7 | Over ADR-018 §6's subject (universe `{a, b}`), the state-graph claims `ReachesTwo` and `ReachesThree` (`over (c: Config::ConfigVersion)`) each yield two instances, `a` then `b`; `possible Anything using v { true }` with no `over` yields one instance with no bound object. `ReachesTwo`, checked once, yields `a`, `b` over `{a, b}` and `a` over a subject whose universe is `{a}`, without being re-checked. A claim over a subtype-conforming population yields its objects; a universe-less population is `RequiresBound`; an empty universe yields zero instances and the item reports `NoInstance`, settled `inconclusive`, never proved. | Test (TC-520) |
 
 ## Dependencies
 

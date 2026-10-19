@@ -60,3 +60,17 @@ and calls `self`, `result` and `pre(...)` "caller-side anchor operations"
 therefore a separate syntactic form, not a name, and FR-165 is right to
 refuse it with `expression-form` beside the anchor and pre-state reads, not
 with `missing-name`.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2fbe63ee5: FR-125 Instancing now covers conformance including subtypes (QSpec FR-361), the union of several populations ordered by declaration identity text and then universe list order, `RequiresBound` for a missing universe (FR-120), and zero instances for an empty universe or an unheld type. FR-125-AC-7 and TC-520 step 6 carry vectors for each case. |
+| FND-002 | fixed | 2fbe63ee5: ADR-022:99 now cites SG-4's no-temporal-operator rule. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs | Escape Cause |
+| --- | --- | --- | --- | --- |
+| FND-003 | medium | FR-125 now states that a claim can have zero instances (an empty universe, or a type no population holds), but nothing says what the request reports for it. FR-127/FR-168 settle per instance, and QSpec FR-390-AC-7 makes one item per key, so a zero-instance item produces no result at all. QSpec FR-361's "holds when it holds for every binding" makes it vacuously true. Failure: an operator who requests `possible ReachesTwo` over a subject that lists no config objects gets no `refuted` and no `inconclusive`, and sees nothing that says the claim was never evaluated. That is the vacuous-pass risk the ADR-016 failure-domain review (FND-006) raised for zero-object universes. Fix: state the outcome. For example: the request carries the item with zero instances, and FR-127 settles it `inconclusive` with a named cause such as `NoInstance`, or the report shows the instance count. Or defer to a ticket linked from STD-162. | spec/functional/FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md:111-112 | missing-requirement |
+| FND-004 | low | FR-125:108, "a population holding objects conforming to `T` has no universe": a population without a universe holds no known objects. Say "a population whose member type conforms to `T`". | spec/functional/FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md:108-110 | wrong-requirement |
