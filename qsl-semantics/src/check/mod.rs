@@ -77,6 +77,7 @@ mod check;
 mod checked_dispatch;
 mod claims;
 mod dispatch_link;
+pub mod footprint;
 pub use abstraction::{
     AbstractionKey, AbstractionRefusal, AuthoredBinding, CheckedAbstractionRelation,
     CheckedBinding, CheckedFrameBinding, FrameBinding, FrameNodes, MalformedEntry, ObjectBinding,
@@ -213,8 +214,8 @@ pub use family::fixtures::{
 };
 pub use ir::{
     Arithmetic, CaseArm, CheckedBody, CheckedLiteral, CheckedNode, Connective,
-    IntegerDivisionOperator, Node, NodeId, NodeKind, Observation, OrderedKind, RecordField,
-    RecordSlot, Slot, Visit,
+    IntegerDivisionOperator, Node, NodeId, NodeKind, OrderedKind, RecordField, RecordSlot, Slot,
+    Visit,
 };
 
 pub use assemble::{
