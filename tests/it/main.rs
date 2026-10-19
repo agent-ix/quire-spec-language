@@ -105,6 +105,7 @@ mod parser;
 mod protocol_artifact;
 mod protocol_number;
 mod request_builder;
+mod requirement_item_proof_bounds;
 mod runtime_evaluation;
 mod runtime_execution;
 mod runtime_inputs;
