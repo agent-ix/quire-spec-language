@@ -55,3 +55,4 @@ and the ADR-017 AR-4 pointer are correct.
 | --- | --- | --- |
 | FND-001 | fixed | 095366db6: the Per-item results bullet now says the export SHALL return each item as a bound result (an empty binding set when the item references no element) or a refusal. AC-6 adds "A requested item that references no model element returns a bound result with an empty binding set, not a refusal", and TC-1082 step 2 tests it. The residual wording in Dependencies is FND-003. |
 | FND-002 | fixed | 095366db6: TC-1081 step 1 builds with poisoned source bytes, no clause argument, and atom-callback and RT-translation hooks that fail the test if invoked. The expected result asserts that none is read or invoked. |
+| FND-003 | fixed | ccf9e015c: FR-307 Downstream now says the driver "puts only the bound items in the QSpec FR-331 request", which matches ADR-017 AR-4. No "carry bindings" wording remains in FR-307, ADR-017 or TC-1082. |
