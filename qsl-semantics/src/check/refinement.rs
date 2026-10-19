@@ -477,6 +477,7 @@ pub(crate) fn check_refinement<'a, 'c>(
         findings,
         nodes: &mut nodes,
         lifting: BTreeMap::new(),
+        maps_complete: true,
     };
     let populations = checker.populations(form);
     let objects = checker.objects(form, cx);
@@ -512,6 +513,10 @@ struct Checker<'c, 'a> {
     /// Each abstract object type an object row maps, with the concrete type
     /// it is mapped from.
     lifting: BTreeMap<EffectiveId, EffectiveId>,
+    /// Whether the population and object maps checked without a refusal.
+    /// Typing a step's receiver and arguments is meaningful only against a
+    /// complete map: a type no row maps cannot be lifted.
+    maps_complete: bool,
 }
 
 impl<'c, 'a> Checker<'c, 'a> {
@@ -550,18 +555,31 @@ impl<'c, 'a> Checker<'c, 'a> {
                     (target.is_none(), &row.target, &concrete_populations),
                     (source.is_none(), &row.source, &abstract_populations),
                 ];
+                let mut reported_malformed = false;
                 for (unresolved, written, others) in sides {
                     if !unresolved {
                         continue;
                     }
                     if wrong_side(written, others) {
-                        self.findings.malformed(&written.name, row.span);
+                        // One refusal for a row with its sides swapped.
+                        if !reported_malformed {
+                            self.findings.malformed(&written.name, row.span);
+                            reported_malformed = true;
+                        }
                     } else {
                         self.findings.unresolved(&written.name, written.span, None);
                     }
                 }
             }
             let Some(target) = target else {
+                // A row with its sides swapped still names the abstract
+                // population it was written for.
+                if let Some(swapped) = abstract_populations
+                    .iter()
+                    .find(|population| population.name == row.source.name)
+                {
+                    named.entry(&swapped.record.key).or_insert(row.span);
+                }
                 continue;
             };
             match named.get(&target.record.key) {
@@ -653,7 +671,12 @@ impl<'c, 'a> Checker<'c, 'a> {
             .iter()
             .filter(|population| {
                 form.rows.iter().any(|row| {
-                    matches!(row, RefinementRowForm::Population(row) if row.target.name == population.name)
+                    matches!(
+                        row,
+                        RefinementRowForm::Population(row)
+                            if row.target.name == population.name
+                                || row.source.name == population.name
+                    )
                 })
             })
             .collect();
@@ -739,6 +762,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             }
         }
 
+        self.maps_complete = self.findings.refusals.is_empty();
         let mut objects = Vec::new();
         for (row, target, source) in resolved {
             if let Some(object) = self.object_row(row, target, source, cx) {
@@ -1069,6 +1093,9 @@ impl<'c, 'a> Checker<'c, 'a> {
                 row_span,
                 RefinementCause::Check(CheckCause::IllTyped(IllTypedCause::OperatorIneligible)),
             );
+            return None;
+        }
+        if !self.maps_complete {
             return None;
         }
         let key = self.abstract_side.model.operation_key(&ClauseOperation {

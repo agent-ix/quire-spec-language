@@ -777,6 +777,12 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
         }
+        CheckCause::RefinementNotEmitted { name, .. } => {
+            message = format!("{message}: `refinement {name}` checks but is not emitted yet");
+        }
+        CheckCause::Refinement(refusal) => {
+            message = format!("{message}: in `refinement {}`", refusal.refinement);
+        }
         // FR-326: name what the `TemporalTrace` check refused.
         CheckCause::Temporal(cause) => {
             message = match cause.as_ref() {
