@@ -30,3 +30,15 @@ bullet and the `max_solver_steps` bullet. The repository grammar linter
 One low finding. Examined and clean for EARS form: the `TimedOut` bullet
 (ubiquitous, subject "a solver ... and a provider", one outcome per event),
 the frontend-deadline sentence, and the `max_solver_steps` bullet.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The repository grammar linter now flags the new refusal bullet at FR-250 line 98 with `ears:unclassifiable` and `ears:missing-subject`. Its compound condition ("an empty `hybrid` or `limits`, a zero budget, or a `hybrid.limits` member other than these two, then") keeps the linter from finding the subject. The parallel fractional-time bullet at line 106 passes. Split the condition or reword it, for example "If a hybrid item's `hybrid` or `limits` is empty, ...". | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:96-99 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | Both obligations now name the agent, the hybrid provider, in their own "If ..., then the hybrid provider SHALL refuse the request before consumption" bullets. AC-3 says "refused by the hybrid provider". The mis-cited FR-331 in those bullets is SR-13340 FND-008. |

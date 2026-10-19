@@ -56,3 +56,23 @@ bullet, the `max_solver_time`-outside-the-key statement and AC-3's equal-key
 clause, the `TimedOut` vs `Cancelled{source: deadline}` split in the bullets,
 AC-3 and TC-705, the step-stop `LimitReached` spelling in the bullet, AC-2,
 AC-3 and TC-705, and the "positive" wording for steps (was "non-negative").
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The two new refusal bullets say the hybrid provider refuses "as FR-331 refuses any out-of-domain value". In a QSL file a bare FR id is a QSL artifact, and QSL FR-331 is "Replay a temporal counterexample over an observed trace", so the citation points at the wrong requirement. Write "QSpec FR-331". | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:98,107 |
+| FND-009 | low | The new Inputs bullet says the host "observes it as the provider's deadline event on the call", and TC-705's fixture repeats "the provider deadline event". QSpec FR-462 has no such event: the host enforces `deadline_ms`, ends the provider process and settles each open item `incomplete`, `timed-out`. "the provider's deadline event" reads as something the provider emits, and "that item" understates "each open item". Say the host ends the provider at `deadline_ms` (QSpec FR-462) and settles each item still open `TimedOut`. | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:53-55; spec/test-cases/TC-705-hybrid-solver-results-map-to-verdicts.md:19 |
+| FND-010 | low | TC-705 step 3 writes "an empty `hybrid` and `limits`" and expects "the empty `hybrid` and `limits`" refused, which reads as one request. AC-3 says "an empty `hybrid` or `limits` are each refused", which needs two requests (an empty `hybrid`, and a `hybrid` with an empty `limits`). Name both requests. | spec/test-cases/TC-705-hybrid-solver-results-map-to-verdicts.md:23,31 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | `Cancelled(Deadline)` is gone and the bullet now states `incomplete`, execution `resource-incomplete`, but the new frontend-deadline row sits after a blank line (line 82), so it is not part of the verdict-map table. Markdown ends a table at a blank line, so the row renders as a separate paragraph and no table parser sees it. Delete the blank line at line 81. |
+| FND-002 | fixed | AC-3 and TC-705 step 3 now cover a zero budget, an unknown `hybrid.limits` member and an empty `hybrid` or `limits`, each refused by the hybrid provider before consumption, and a new bullet states the refusal. |
+| FND-003 | fixed | Inputs now says a `deadline_ms` overrun is not a `SolverOutcome`, that the host observes it on the call, and that no `SolverResult` is read. TC-705 adds a fixture that overruns. This agrees with QSpec FR-462 (the host ends the process and settles the item `timed-out`); the wording nit is FND-009. |
+| FND-004 | fixed | A `depends_on` edge to ix://agent-ix/quire-specification/FR-331 and a "QSpec FR-331" Dependencies entry were added. |
+| FND-005 | fixed | The bullet now reads "with the cause `IncompleteCause::TimedOut`". |
+| FND-006 | fixed | A new bullet states that the writer omits an unset budget, that the provider applies its descriptor `bounds`, and that 60 s and 1,000,000 steps are QSL's built-in solver bounds. AC-3 and TC-705 check the omission. |
+| FND-007 | fixed | The Behavior bullets are rewrapped within 80 columns; only table rows exceed it. |

@@ -51,8 +51,8 @@ the claim inconclusive, because no solver witness replays exactly.
   where `SolverOutcome` is `Unsat`, `DeltaSat`, `EnclosureDisjoint`,
   `EnclosureMeetsUnsafe`, `Unknown` or `Stopped(limit)`.
 - A provider overrun of its `deadline_ms` (QSpec FR-462) is not a
-  `SolverOutcome`: the host observes it as the provider's deadline event on
-  the call, and no `SolverResult` is read for that item.
+  `SolverOutcome`: the host ends the provider at `deadline_ms` and settles
+  each item still open as `TimedOut`, and no `SolverResult` is read.
 
 ## Outputs
 
@@ -78,7 +78,6 @@ The FR-331 terminal record of the claim.
 | `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or a result from a method not sound for its outcome | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive)` | inconclusive |
 | `Stopped(max_solver_steps)`, or any deterministic budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
 | `Stopped(max_solver_time)`, or a provider overrun of its `deadline_ms` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)` (FR-293) | incomplete |
-
 | A run the caller's frontend ends at its own deadline (FR-276) | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source: deadline})`, never `TimedOut` | incomplete |
 
 - A horizon SHALL be a non-negative exact rational number of seconds, and
@@ -93,10 +92,10 @@ The FR-331 terminal record of the claim.
   and `hybrid.limits.max_solver_time`, each a whole positive count, and their
   setting names are `hybrid.max_solver_steps` and `hybrid.max_solver_time`
   (QSpec FR-331).
-- If a hybrid item has an empty `hybrid` or `limits`, a zero budget, or a
-  `hybrid.limits` member other than these two, then the hybrid provider
-  SHALL refuse the request before consumption as FR-331 refuses any
-  out-of-domain value.
+- If a hybrid item has an empty `hybrid`, a `hybrid` with an empty `limits`,
+  a zero budget, or a `hybrid.limits` member other than these two, then the
+  hybrid provider SHALL refuse the request before consumption, as QSpec
+  FR-331 refuses any out-of-domain value.
 - `max_solver_time` SHALL be a request setting of its own, independent of
   FR-276's deadline, that the caller may give as a possibly fractional
   duration in seconds. When a request is admitted with a fractional
@@ -104,8 +103,8 @@ The FR-331 terminal record of the claim.
   second and write that whole-second integer as the wire value; the run uses
   the rounded value.
 - If a wire `max_solver_time` is fractional, then the hybrid provider SHALL
-  refuse the request before consumption as FR-331 refuses any out-of-domain
-  value.
+  refuse the request before consumption, as QSpec FR-331 refuses any
+  out-of-domain value.
 - `max_solver_time` is a wall-clock setting, so it SHALL be outside the
   canonical request key (FR-292), no member of a stored record SHALL record
   wall time, and a result it limits SHALL NOT be stored.
@@ -135,7 +134,7 @@ The FR-331 terminal record of the claim.
 |----|----------|--------------|
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
 | FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; a `max_solver_steps` stop settles `incomplete`, `LimitReached{limit: max_solver_steps, ...}`; a `max_solver_time` stop and a provider `deadline_ms` overrun each settle `incomplete`, `TimedOut`; a frontend deadline settles `incomplete`, `Cancelled{source: deadline}`. No fixture result settles `refuted`. | Test (TC-705) |
-| FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled{source: deadline}` raised on a run whose frontend FR-276 deadline fires; a wire `max_solver_time` of 1.5, a zero budget, an unknown `hybrid.limits` member and an empty `hybrid` or `limits` are each refused by the hybrid provider before consumption; a request that sets no budget omits both members; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes, a `TimedOut` result of the shorter one being stored by neither. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: max_solver_steps, value: 1000, setting: hybrid.max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
+| FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled{source: deadline}` raised on a run whose frontend FR-276 deadline fires; a wire `max_solver_time` of 1.5, a zero budget, an unknown `hybrid.limits` member, an empty `hybrid` and a `hybrid` with an empty `limits` are each refused by the hybrid provider before consumption; a request that sets no budget omits both members; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes, a `TimedOut` result of the shorter one being stored by neither. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: max_solver_steps, value: 1000, setting: hybrid.max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
 
 ## Dependencies
 
