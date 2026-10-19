@@ -20,6 +20,7 @@ use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{DomainPackageRecord, DomainPackageRef};
 use crate::model::index::ModelIndex;
 use crate::model::key::DeclarationKey;
+use crate::model::normalize::EffectiveView;
 use crate::model::observation::{
     admit_initial_state, model_views, observe_state, state_fields, state_reference,
     AdmissionFailure, DocumentRef, ModelView, Observation, ObservationLimits, SelectedAnchor,
@@ -100,6 +101,21 @@ impl StateModel {
             types: types.clone(),
             limits,
         })
+    }
+
+    /// The model of a package still being checked, over the effective views
+    /// its `model` declarations admitted. The views stand for the same
+    /// packages [`Self::new`] re-admits from their bytes.
+    pub(crate) fn from_views(
+        views: impl IntoIterator<Item = EffectiveView>,
+        types: &TypeEnvironment,
+        limits: ModelNormalizationLimits,
+    ) -> Self {
+        Self {
+            views: views.into_iter().map(ModelView::new).collect(),
+            types: types.clone(),
+            limits,
+        }
     }
 
     /// Admit the `quire.state.snapshot/v1` document `selected` names in

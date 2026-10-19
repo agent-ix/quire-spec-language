@@ -18,9 +18,9 @@ use std::ops::ControlFlow;
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::protocol_control::{
-    await_form, channel_form, choice_form, member_forms, parallel_form, repeat_form, role_form,
-    AwaitForm, ChannelOrdering, JoinPolicy, ParallelForm, ProtocolMemberForm, RepeatForm,
-    TerminalForm,
+    access_ordering, await_form, channel_form, choice_form, member_forms, parallel_form,
+    repeat_form, role_form, AwaitForm, ChannelOrdering, FenceForm, JoinPolicy, ParallelForm,
+    ProtocolMemberForm, RepeatForm, TerminalForm,
 };
 use super::spans::DeclarationSpans;
 use super::syntax::{
@@ -62,6 +62,8 @@ struct Collector<'a> {
     constructs: &'a mut Vec<ProtocolConstructForm>,
     /// Every `parallel` control, in source order.
     parallels: &'a mut Vec<ParallelForm>,
+    /// Every `fence` control, in source order.
+    fences: &'a mut Vec<FenceForm>,
     /// Every `repeat` control, in source order.
     repeats: &'a mut Vec<RepeatForm>,
     /// Every `await` control, in source order.
@@ -231,6 +233,7 @@ pub(crate) fn protocol_declaration(
     let mut bodies = Vec::new();
     let mut constructs = Vec::new();
     let mut parallels = Vec::new();
+    let mut fences = Vec::new();
     let mut repeats = Vec::new();
     let mut awaits = Vec::new();
     let mut choices = Vec::new();
@@ -360,6 +363,7 @@ pub(crate) fn protocol_declaration(
             bodies: &mut bodies,
             constructs: &mut constructs,
             parallels: &mut parallels,
+            fences: &mut fences,
             repeats: &mut repeats,
             awaits: &mut awaits,
             choices: &mut choices,
@@ -411,6 +415,7 @@ pub(crate) fn protocol_declaration(
             compensations,
             channels,
             parallels,
+            fences,
             repeats,
             awaits,
             choices,
@@ -931,12 +936,6 @@ impl<'c> ControlWalk<'c, '_, '_> {
                         span: form.join.span,
                     });
                 }
-                if let Some(memory) = nodes_of(&matched_items, Production::MemoryClause).first() {
-                    self.collector.constructs.push(ProtocolConstructForm {
-                        kind: ProtocolConstructKind::MemoryClause,
-                        span: memory.span(),
-                    });
-                }
                 self.collector.parallels.push(form);
                 declare(self.collector.declarations, kind, name.clone(), self.scope);
                 self.open(name);
@@ -978,6 +977,12 @@ impl<'c> ControlWalk<'c, '_, '_> {
                     name: text(token, matched)?,
                     span: token.span(),
                 };
+                let order = only(&matched_items, Production::FenceOrder, matched)?;
+                self.collector.fences.push(FenceForm {
+                    declaration: self.collector.declarations.len(),
+                    name: name.clone(),
+                    ordering: access_ordering(cst, order)?,
+                });
                 declare(
                     self.collector.declarations,
                     ProtocolNodeKind::Fence,
@@ -1194,12 +1199,6 @@ fn event_node_anchors(
             span: related.span(),
         });
     }
-    for ordering in nodes_of(&event_items, Production::MemoryOrder) {
-        collector.constructs.push(ProtocolConstructForm {
-            kind: ProtocolConstructKind::AccessOrdering,
-            span: ordering.span(),
-        });
-    }
     // `attempt`'s own `on M::T::op` operation name and `contracts [...]`
     // list (FR-114 "Inputs"): kept spelled and unresolved here, the same
     // contract `state_clause`'s own `operation` capture keeps (FR-102) --
@@ -1302,6 +1301,10 @@ fn attempt_form(
         context,
         operation,
         contracts,
+        ordering: nodes_of(event_items, Production::MemoryOrder)
+            .first()
+            .map(|order| access_ordering(cst, order))
+            .transpose()?,
     })
 }
 
