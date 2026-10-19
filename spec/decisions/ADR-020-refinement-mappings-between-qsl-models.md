@@ -344,12 +344,12 @@ model Spec = "example/counter-spec" …;
 model Impl = "example/counter-cas" …;
 
 pre  CanInc     using v on Spec::Counter::inc     { self.value < 2 }
-post Inc        using v on Spec::Counter::inc     { self.value = pre(self.value) + 1 }
+post Inc        using v on Spec::Counter::inc     { pre(self.value) < 2 and self.value = pre(self.value) + 1 }
 
 pre  BeginAPre  using v on Impl::Counter::beginA  { not self.busyA }
 post BeginAPost using v on Impl::Counter::beginA  { self.busyA and self.tmpA = pre(self.value) }
 pre  CommitAPre using v on Impl::Counter::commitA { self.busyA and self.tmpA = self.value and self.value < 2 }
-post CommitAPost using v on Impl::Counter::commitA { self.value = pre(self.tmpA) + 1 and not self.busyA }
+post CommitAPost using v on Impl::Counter::commitA { pre(self.tmpA) < 2 and self.value = pre(self.tmpA) + 1 and not self.busyA }
 pre  RetryAPre  using v on Impl::Counter::retryA  { self.busyA and self.tmpA != self.value }
 post RetryAPost using v on Impl::Counter::retryA  { not self.busyA }
 // the same six clauses for B over tmpB and busyB
@@ -370,6 +370,15 @@ refinement CasRefinesCounter using inf abstract Spec concrete Impl {   // illust
   ensure fair weak each Spec::Counter::inc;
 }
 ```
+
+The postconditions carry the guard `pre(...) < 2`. S3's range prover types
+`pre(self.value) + 1` over `Int[0, 2]` as `[1, 3]`, which does not conform to
+`self.value`'s declared `Int[0, 2]`, so an unguarded `self.value = pre(self.value) + 1`
+refuses `Unproved(Range{required: [0, 2], proved: [1, 3]})`. The guard narrows
+the operand to `[0, 1]` inside the conjunction, and the clause checks. The
+guard also states what the unguarded clause left implicit: an increment from
+`value` 2 has no successor. `CanInc` rules that pre-state out, so no
+reachable step is lost.
 
 Every fairness row spells `each`, the granularity meant. With one receiver
 and no parameters each operation has one transition identity, so `whole`
@@ -471,7 +480,7 @@ refinement RingIsQueue using inf abstract Q concrete R {   // illustrative spell
   population Q::queues from R::rings;
   object Q::Queue from R::Ring {
     items = seq(i in 0 .. self.size - 1:
-              only(s in R::slots where s.ring = self and s.index = (self.head + i) mod 2: s.value));
+              only(s in R::slots where s.ring = self and convert<Integer>(s.index) = (self.head + i) mod 2: s.value));
   }
   step R::Slot::put  -> Q::Queue::enq(self.ring, x);
   step R::Slot::take -> Q::Queue::deq(self.ring);
@@ -479,6 +488,8 @@ refinement RingIsQueue using inf abstract Q concrete R {   // illustrative spell
 ```
 
 `slots` is concrete-only state (RM-2), read as a whole population by `only`.
+The `mod` result is an `Integer`, which QSpec FR-149 does not compare with an
+`Int[0, 1]` operand, so the row converts the index explicitly.
 The receiver `self.ring` is a `Reference<Ring>`, lifted to the abstract
 `Queue` with the same key (RM-3). With universes `rings = {r}` and `slots =
 {s0, s1}` (indices 0 and 1), the state `head = 1`, `size = 2`, `s1.value =
