@@ -3,38 +3,35 @@
 //! declarations -- the `random`, `reward` and `workload` forms of FR-311 and
 //! the `probabilistic` claim of FR-392.
 //!
-//! This stage checks what QSpec FR-405 and FR-407 let it refuse from the
-//! forms alone, and refuses everything else `unsupported_construct`/
-//! `not-yet-implemented`, so nothing probabilistic compiles unchecked:
+//! FR-185's three declarations are resolved, typed and recorded on the
+//! checked graph ([`model`]): a random parameter's operation, parameter,
+//! typed support and probabilities; a reward's operation and its integer or
+//! quantity expression over the operation's parameters; a workload's model
+//! and one positive weight per operation of it. Each refusal is the
+//! `invalid_probabilistic_model` cause FR-185 names, a `missing_declaration`
+//! or `ambiguous_declaration` for a name that resolves to no single
+//! declaration, or the typer's own refusal.
 //!
-//! - a random parameter's weights (`invalid-weight`), a repeated support
-//!   value (`repeated-support-value`) and a second distribution of one
-//!   parameter (`duplicate-distribution`);
-//! - a workload's weights (`invalid-weight`) and a repeated operation
-//!   (`duplicate-weight`);
-//! - a reward that reads state or an ambient value (`state-read-in-reward`);
-//! - a claim's probability threshold, quantile level, mean threshold and
-//!   long-run threshold outside `(0, 1)` (`qualitative-threshold`), a
-//!   confidence clause that omits or repeats a parameter
-//!   (`partial-confidence`) or whose parameters leave no indifference region
-//!   (`invalid-confidence`);
-//! - a second `reward` of one name on one operation (`duplicate-reward`) and
-//!   a `quantile` over a `fraction` measure (`quantile-over-fraction`).
+//! An exact value is measured as written and bounded before it is reduced
+//! ([`exact`]). The bound's limit refusal and its setting wait on QSL-883, so
+//! a value past the default ceiling refuses `not-yet-implemented`.
 //!
-//! An exact value is read as written and never reduced: a magnitude is
-//! decided from digit counts and a comparison of the written integers, so
-//! `decimal(1, 4294967295)` and `rational(n, n)` cost nothing to read. The
-//! dedicated rational-bits ceiling waits on QSL-883.
-//!
-//! Resolving a model, an operation, a parameter, a profile or a workload,
-//! typing a support value, a reward or a threshold, reading preconditions,
-//! the units of a quantity and the checked claim with its obligation
-//! identity are not checked yet, so a declaration that passes the checks
-//! above still refuses `not-yet-implemented`.
+//! A `probabilistic` claim is checked only as far as its form lets S3 refuse
+//! it (thresholds, confidence parameters, a quantile over a fraction); one
+//! that passes refuses `not-yet-implemented`, so no claim compiles unchecked.
+
+mod exact;
+mod model;
+
+pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput};
+pub use model::{
+    CheckedProbabilisticModel, PreconditionSite, ProbabilisticOperation, RandomParameter, Reward,
+    SupportValue, Workload,
+};
 
 use qsl_forms::{
-    ConfidenceItemForm, ConfidenceKey, ExactValueForm, ExactValueKind, ExprNode, Expression,
-    MeasureForm, ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, WorkloadForm,
+    ConfidenceItemForm, ConfidenceKey, ExactValueForm, ExactValueKind, ExprNode, MeasureForm,
+    ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, WorkloadForm,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
@@ -198,25 +195,122 @@ pub enum ProbabilisticCause {
         /// The parameter's span.
         span: Span,
     },
-    /// A quantity literal in a position no checker reads yet.
+    /// A `random` or `reward` operation name that names no operation of a
+    /// selected model (a workload weight's is [`Self::UnknownOperation`]).
+    /// `missing_declaration`/`missing-name`.
+    UnresolvedOperation {
+        /// The operation, as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// An operation name that names operations of several models or
+    /// several declarations none of which is more derived.
+    /// `ambiguous_declaration`/`ambiguous-name`.
+    AmbiguousOperation {
+        /// The operation, as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// A `random` declaration naming no parameter of its operation.
+    /// `missing_declaration`/`missing-name`.
+    UnresolvedParameter {
+        /// The operation, as written.
+        operation: String,
+        /// The parameter, as written.
+        parameter: String,
+        /// The parameter's span.
+        span: Span,
+    },
+    /// A workload on a name no `model` declaration binds.
+    /// `missing_declaration`/`missing-name`.
+    UnresolvedModel {
+        /// The workload.
+        workload: String,
+        /// The model alias, as written.
+        model: String,
+        /// The alias's span.
+        span: Span,
+    },
+    /// A support value that is not a literal of the parameter's type.
+    /// `invalid_probabilistic_model`/`value-outside-type`.
+    ValueOutsideType {
+        /// The operation, as written.
+        operation: String,
+        /// The parameter.
+        parameter: String,
+        /// The value's span.
+        span: Span,
+    },
+    /// A precondition of an operation that reads one of its random
+    /// parameters, located at the read.
+    /// `invalid_probabilistic_model`/`random-read-in-precondition`.
+    RandomReadInPrecondition {
+        /// The operation's name.
+        operation: String,
+        /// The random parameter read.
+        parameter: String,
+        /// The precondition that reads it.
+        precondition: PreconditionSite,
+    },
+    /// A workload that gives an operation of its model no weight.
+    /// `invalid_probabilistic_model`/`incomplete-workload`.
+    IncompleteWorkload {
+        /// The workload.
+        workload: String,
+        /// The omitted operation, `Type::op`.
+        operation: String,
+        /// The workload's span.
+        span: Span,
+    },
+    /// A workload weight for an operation that is not in the workload's
+    /// model. `invalid_probabilistic_model`/`unknown-operation`.
+    UnknownOperation {
+        /// The workload.
+        workload: String,
+        /// The operation, as written.
+        operation: String,
+        /// The operation's span.
+        span: Span,
+    },
+    /// A reward whose value type is neither an integer nor a quantity type.
+    /// `invalid_probabilistic_model`/`reward-type`.
+    RewardType {
+        /// The reward.
+        reward: String,
+        /// The operation, as written.
+        operation: String,
+        /// The expression's span.
+        span: Span,
+    },
+    /// An exact value past the default rational-bits ceiling, as written
+    /// (FR-185 "Exact values"). Its limit refusal and setting wait on
+    /// QSL-883. `unsupported_construct`/`not-yet-implemented`.
+    ExactValueAboveCeiling {
+        /// The value's measure.
+        bits: u64,
+        /// The value's span.
+        span: Span,
+    },
+    /// A quantity literal in a function body or clause: it types, but the
+    /// checked package has no literal form for a quantity to emit it as.
     /// `unsupported_construct`/`not-yet-implemented`.
     QuantityLiteral,
-    /// A declaration that passed every check above but that no resolution,
-    /// typing or emission covers yet. `unsupported_construct`/
-    /// `not-yet-implemented`.
+    /// A `probabilistic` claim that passed its form checks: it is not
+    /// resolved, typed or emitted yet (FR-186).
+    /// `unsupported_construct`/`not-yet-implemented`.
     NotYetImplemented {
-        /// The declaration's keyword.
-        construct: &'static str,
-        /// The declaration's name.
-        name: String,
-        /// The whole declaration's span.
+        /// The claim's name.
+        claim: String,
+        /// The whole claim's span.
         span: Span,
     },
 }
 
 impl ProbabilisticCause {
-    /// The refusal's own span, when it has one; a quantity literal is located
-    /// through its `Location`.
+    /// The refusal's own span, when it has one; a quantity literal and a
+    /// precondition read are located through their `Location`.
     pub fn span(&self) -> Option<Span> {
         match self {
             Self::InvalidWeight { span, .. }
@@ -230,8 +324,17 @@ impl ProbabilisticCause {
             | Self::QualitativeThreshold { span, .. }
             | Self::PartialConfidence { span, .. }
             | Self::InvalidConfidence { span, .. }
+            | Self::UnresolvedOperation { span, .. }
+            | Self::AmbiguousOperation { span, .. }
+            | Self::UnresolvedParameter { span, .. }
+            | Self::UnresolvedModel { span, .. }
+            | Self::ValueOutsideType { span, .. }
+            | Self::IncompleteWorkload { span, .. }
+            | Self::UnknownOperation { span, .. }
+            | Self::RewardType { span, .. }
+            | Self::ExactValueAboveCeiling { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
-            Self::QuantityLiteral => None,
+            Self::QuantityLiteral | Self::RandomReadInPrecondition { .. } => None,
         }
     }
 
@@ -247,9 +350,20 @@ impl ProbabilisticCause {
             | Self::StateReadInReward { .. }
             | Self::QualitativeThreshold { .. }
             | Self::PartialConfidence { .. }
-            | Self::InvalidConfidence { .. } => Code::InvalidProbabilisticModel,
+            | Self::InvalidConfidence { .. }
+            | Self::ValueOutsideType { .. }
+            | Self::RandomReadInPrecondition { .. }
+            | Self::IncompleteWorkload { .. }
+            | Self::UnknownOperation { .. }
+            | Self::RewardType { .. } => Code::InvalidProbabilisticModel,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
-            Self::QuantityLiteral | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
+            Self::UnresolvedOperation { .. }
+            | Self::UnresolvedParameter { .. }
+            | Self::UnresolvedModel { .. } => Code::MissingDeclaration,
+            Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
+            Self::ExactValueAboveCeiling { .. }
+            | Self::QuantityLiteral
+            | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -267,13 +381,41 @@ impl ProbabilisticCause {
             Self::QualitativeThreshold { .. } => "qualitative-threshold",
             Self::PartialConfidence { .. } => "partial-confidence",
             Self::InvalidConfidence { .. } => "invalid-confidence",
-            Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",
+            Self::ValueOutsideType { .. } => "value-outside-type",
+            Self::RandomReadInPrecondition { .. } => "random-read-in-precondition",
+            Self::IncompleteWorkload { .. } => "incomplete-workload",
+            Self::UnknownOperation { .. } => "unknown-operation",
+            Self::RewardType { .. } => "reward-type",
+            Self::UnresolvedOperation { .. }
+            | Self::UnresolvedParameter { .. }
+            | Self::UnresolvedModel { .. } => "missing-name",
+            Self::AmbiguousOperation { .. } => "ambiguous-name",
+            Self::ExactValueAboveCeiling { .. }
+            | Self::QuantityLiteral
+            | Self::NotYetImplemented { .. } => "not-yet-implemented",
         }
     }
 }
 
-/// The refusal of a quantity literal in a position no checker reads yet
-/// (FR-393 is checked by a later requirement).
+/// The cause an exact value at `span` refuses with.
+fn exact_cause(fault: exact::ExactFault, span: Span) -> ProbabilisticCause {
+    match fault {
+        exact::ExactFault::ZeroDenominator => ProbabilisticCause::ZeroDenominator { span },
+        exact::ExactFault::AboveCeiling { bits } => {
+            ProbabilisticCause::ExactValueAboveCeiling { bits, span }
+        }
+    }
+}
+
+/// A quantity literal's magnitude, reduced, or the refusal it is (FR-185
+/// "Exact values").
+pub(crate) fn quantity_magnitude(
+    magnitude: &ExactValueForm,
+) -> Result<quire_exact::Rational, CheckRefusal> {
+    exact::value(magnitude).map_err(|fault| refusal(exact_cause(fault, magnitude.span)))
+}
+
+/// The refusal of a quantity literal S4 cannot emit, at `location`.
 pub(crate) fn quantity_literal(location: Location) -> CheckRefusal {
     CheckRefusal {
         location,
@@ -289,69 +431,6 @@ fn refusal(cause: ProbabilisticCause) -> CheckRefusal {
         location: Location::root(Origin::Expression),
         cause: CheckCause::Probabilistic(Box::new(cause)),
     }
-}
-
-/// Checks `declarations`: every refusal their forms give, and for a
-/// declaration that gives none, one `not-yet-implemented` refusal.
-pub(crate) fn check(declarations: &[ProbabilisticDeclaration]) -> Vec<CheckRefusal> {
-    let mut refusals = Vec::new();
-    let mut distributions: Vec<(&str, &str)> = Vec::new();
-    let mut rewards: Vec<(&str, &str)> = Vec::new();
-    for declaration in declarations {
-        let (mut causes, construct, name, span) = match declaration {
-            ProbabilisticDeclaration::Random(form) => {
-                let key = (form.operation.name.as_str(), form.parameter.name.as_str());
-                let mut causes = random(form);
-                if distributions.contains(&key) {
-                    causes.insert(
-                        0,
-                        ProbabilisticCause::DuplicateDistribution {
-                            operation: key.0.to_owned(),
-                            parameter: key.1.to_owned(),
-                            span: form.span,
-                        },
-                    );
-                }
-                distributions.push(key);
-                (causes, "random", format!("{}({})", key.0, key.1), form.span)
-            }
-            ProbabilisticDeclaration::Reward(form) => {
-                let key = (form.operation.name.as_str(), form.name.name.as_str());
-                let mut causes = Vec::new();
-                if rewards.contains(&key) {
-                    causes.push(ProbabilisticCause::DuplicateReward {
-                        reward: key.1.to_owned(),
-                        operation: key.0.to_owned(),
-                        span: form.span,
-                    });
-                }
-                rewards.push(key);
-                causes.extend(reward(form));
-                (causes, "reward", form.name.name.clone(), form.span)
-            }
-            ProbabilisticDeclaration::Workload(form) => (
-                workload(form),
-                "workload",
-                form.name.name.clone(),
-                form.span,
-            ),
-            ProbabilisticDeclaration::Claim(form) => (
-                claim(form),
-                "probabilistic",
-                form.name.name.clone(),
-                form.span,
-            ),
-        };
-        if causes.is_empty() {
-            causes.push(ProbabilisticCause::NotYetImplemented {
-                construct,
-                name,
-                span,
-            });
-        }
-        refusals.extend(causes.into_iter().map(refusal));
-    }
-    refusals
 }
 
 /// Whether an exact value is a weight or threshold in `(0, 1)`, `[1, ∞)`, or
@@ -433,90 +512,6 @@ fn ratio(value: &ExactValueForm) -> Option<(Integer, Integer)> {
             }
         }
     }
-}
-
-/// A weight: a positive exact rational.
-fn weight(
-    value: &ExactValueForm,
-    owner: impl FnOnce() -> WeightOwner,
-) -> Option<ProbabilisticCause> {
-    match magnitude(value) {
-        Magnitude::UnitInterval | Magnitude::AtLeastOne => None,
-        Magnitude::NonPositive => Some(ProbabilisticCause::InvalidWeight {
-            owner: owner(),
-            span: value.span,
-        }),
-        Magnitude::ZeroDenominator => {
-            Some(ProbabilisticCause::ZeroDenominator { span: value.span })
-        }
-    }
-}
-
-fn random(form: &RandomForm) -> Vec<ProbabilisticCause> {
-    let mut causes = Vec::new();
-    let operation = &form.operation.name;
-    let parameter = &form.parameter.name;
-    for (index, pair) in form.support.iter().enumerate() {
-        causes.extend(weight(&pair.weight, || WeightOwner::Parameter {
-            operation: operation.clone(),
-            parameter: parameter.clone(),
-        }));
-        let repeated = form.support[..index]
-            .iter()
-            .any(|earlier| same_literal(&earlier.value.expression, &pair.value.expression));
-        if repeated {
-            causes.push(ProbabilisticCause::RepeatedSupportValue {
-                operation: operation.clone(),
-                parameter: parameter.clone(),
-                span: pair.value.spans.at(&[]).unwrap_or(pair.span),
-            });
-        }
-    }
-    causes
-}
-
-/// Whether two support values are the same literal, ignoring where they are
-/// written. Only a leaf literal is compared: any other pair of expressions
-/// is taken as different.
-fn same_literal(left: &Expression, right: &Expression) -> bool {
-    match (left.root().node(), right.root().node()) {
-        (ExprNode::Quantity(left), ExprNode::Quantity(right)) => {
-            left.magnitude.kind == right.magnitude.kind
-                && left.magnitude.first == right.magnitude.first
-                && left.magnitude.second == right.magnitude.second
-                && left.unit.name == right.unit.name
-        }
-        (ExprNode::Boolean(left), ExprNode::Boolean(right)) => left == right,
-        (ExprNode::Integer(left), ExprNode::Integer(right)) => left == right,
-        (ExprNode::Rational(left_n, left_d), ExprNode::Rational(right_n, right_d)) => {
-            left_n == right_n && left_d == right_d
-        }
-        (ExprNode::String(left), ExprNode::String(right)) => left == right,
-        (ExprNode::Name(left), ExprNode::Name(right)) => left == right,
-        _ => false,
-    }
-}
-
-fn workload(form: &WorkloadForm) -> Vec<ProbabilisticCause> {
-    let mut causes = Vec::new();
-    for (index, weight_form) in form.weights.iter().enumerate() {
-        let operation = &weight_form.operation.name;
-        causes.extend(weight(&weight_form.weight, || WeightOwner::Workload {
-            workload: form.name.name.clone(),
-            operation: operation.clone(),
-        }));
-        if form.weights[..index]
-            .iter()
-            .any(|earlier| earlier.operation.name == *operation)
-        {
-            causes.push(ProbabilisticCause::DuplicateWeight {
-                workload: form.name.name.clone(),
-                operation: operation.clone(),
-                span: weight_form.span,
-            });
-        }
-    }
-    causes
 }
 
 /// A reward reads the operation's parameters and constants only: `self`, a

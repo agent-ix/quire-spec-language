@@ -783,10 +783,24 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
-            // FR-393: a quantity literal is parsed and built, and no checker
-            // reads one yet.
-            ExprNode::Quantity(_) => {
-                return Err(super::super::probabilistic::quantity_literal(location))
+            // FR-185: a quantity literal is its magnitude, measured and
+            // reduced as an exact value, in the unit its name declares.
+            ExprNode::Quantity(quantity) => {
+                let magnitude =
+                    super::super::probabilistic::quantity_magnitude(&quantity.magnitude)?;
+                let Some(unit) = self.scope.unit_named(&quantity.unit.name) else {
+                    return Err(CheckRefusal {
+                        location,
+                        cause: CheckCause::MissingName(quantity.unit.name.clone()),
+                    });
+                };
+                node(
+                    NodeKind::Literal(CheckedLiteral(Value::Quantity(quire_exact::Quantity::new(
+                        magnitude, unit,
+                    )))),
+                    ValueType::Quantity(unit),
+                    &location,
+                )
             }
             ExprNode::Name(name) => match resolve_target(self, name, &location, || Ok(()))? {
                 ResolvedTarget::UnionMember(member) => {

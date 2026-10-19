@@ -4402,9 +4402,15 @@ impl<'a> Lowering<'a> {
                 self.record(key, OccurrenceRole::Expression, node.location().clone());
                 return Ok(LeafTerm::reference(key));
             }
+            // FR-185: a quantity literal types, and the checked package has
+            // no literal form to emit it as.
+            Value::Quantity(_) => {
+                return Err(super::probabilistic::quantity_literal(
+                    node.location().clone(),
+                ))
+            }
             Value::Decimal(_)
             | Value::Float(_)
-            | Value::Quantity(_)
             | Value::Text(_)
             | Value::Option(_)
             | Value::Composite(_)

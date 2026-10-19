@@ -995,12 +995,60 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProbabilisticCause::InvalidConfidence {
                     claim, parameter, ..
                 } => format!("{message}: `{parameter}` of claim `{claim}` is out of range"),
-                ProbabilisticCause::QuantityLiteral => {
-                    format!("{message}: a quantity literal is not checked in this position yet")
+                ProbabilisticCause::UnresolvedOperation { name, .. } => {
+                    format!("{message}: `{name}` names no operation of a selected model")
                 }
-                ProbabilisticCause::NotYetImplemented {
-                    construct, name, ..
-                } => format!("{message}: `{construct} {name}` is not checked or emitted yet"),
+                ProbabilisticCause::AmbiguousOperation { name, .. } => {
+                    format!("{message}: `{name}` names more than one operation")
+                }
+                ProbabilisticCause::UnresolvedParameter {
+                    operation,
+                    parameter,
+                    ..
+                } => format!("{message}: `{operation}` has no parameter `{parameter}`"),
+                ProbabilisticCause::UnresolvedModel {
+                    workload, model, ..
+                } => format!("{message}: workload `{workload}` names no model `{model}`"),
+                ProbabilisticCause::ValueOutsideType {
+                    operation,
+                    parameter,
+                    ..
+                } => format!(
+                    "{message}: a value of `{operation}({parameter})` is not a literal of its type"
+                ),
+                ProbabilisticCause::RandomReadInPrecondition {
+                    operation,
+                    parameter,
+                    precondition,
+                } => format!(
+                    "{message}: precondition {precondition:?} of `{operation}` reads its random \
+                     parameter `{parameter}`"
+                ),
+                ProbabilisticCause::IncompleteWorkload {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` gives `{operation}` no weight"),
+                ProbabilisticCause::UnknownOperation {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` weights `{operation}`, which is not in its model"),
+                ProbabilisticCause::RewardType {
+                    reward, operation, ..
+                } => format!(
+                    "{message}: reward `{reward}` on `{operation}` is neither an integer nor a quantity"
+                ),
+                ProbabilisticCause::ExactValueAboveCeiling { bits, .. } => format!(
+                    "{message}: an exact value of {bits} bits as written is past the rational-bits \
+                     ceiling"
+                ),
+                ProbabilisticCause::QuantityLiteral => {
+                    format!("{message}: a quantity literal is not emitted in this position yet")
+                }
+                ProbabilisticCause::NotYetImplemented { claim, .. } => {
+                    format!("{message}: `probabilistic {claim}` is not checked or emitted yet")
+                }
             };
         }
         // FR-326: name what the `TemporalTrace` check refused.
