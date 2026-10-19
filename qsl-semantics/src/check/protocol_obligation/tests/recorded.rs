@@ -461,7 +461,7 @@ fn a_commit_ordered_across_branches_is_admitted() {
          branch s sequence S { commit C by Service as (c: M::Flag) { true }; \
          send Tx via Ch as (tx: M::Flag) { true }; }\n\
          branch r sequence R { attempt T by Service on M::Node::step contracts [] \
-         as (t: M::Flag) { true }; \
+         as (taken: M::Flag) { true }; \
          receive Rx via Ch of Main::P::s::S::Tx as (rx: M::Flag) { true }; \
          effect E of Main::P::r::R::T as (e: M::Receipt) { true }; }\n\
          } join all [s, r];\n}";

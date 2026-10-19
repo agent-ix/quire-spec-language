@@ -3359,7 +3359,8 @@ fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
 /// or binder type as a missing name. SR-773 FND-002 adds the rest of
 /// the content `protocol_clause::content` checks rather than refuses (a
 /// `using` naming no profile, a `by` naming no role, two roles of one name)
-/// and the one refused construct no other test writes (`relationship`).
+/// and a `relationship` naming an object type, which refuses as a wrong
+/// export (FR-218 "Relationships").
 #[trace("TC-513", "FR-114")]
 #[test]
 fn a_valid_attempt_does_not_let_garbage_content_through() {
@@ -3399,7 +3400,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
         (
             "role R on Config::ConfigVersion;",
             "role R on Config::ConfigVersion;\nrelationship rel = Config::ConfigVersion;",
-            "unsupported_construct",
+            "invalid_model_binding",
         ),
     ] {
         let unit = valid.replacen(from, to, 1);

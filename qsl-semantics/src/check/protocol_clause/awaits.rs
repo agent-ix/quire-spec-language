@@ -2,7 +2,8 @@
 //! 6, QSpec FR-464 "Profiles and laws"): the awaited event is a `receive`,
 //! an `effect` or an `event`; `within` is a closed interval with
 //! `lower <= upper`; and, since an `await` reads a clock role, the unit
-//! selects a `temporal_profile`.
+//! selects a `temporal_profile`. A `compensate` template reads a clock
+//! role too, so it needs the same selection.
 
 use qsl_forms::{IntervalUpper, ProtocolDeclarationForm, ProtocolNodeKind};
 use qsl_foundation::Span;
@@ -23,7 +24,8 @@ pub struct Selections<'a> {
     pub temporal: bool,
 }
 
-/// Every `await` of `protocol` checked, in source order, or the refusals
+/// Every `await` of `protocol` checked, in source order, with each
+/// `compensate` template's temporal-profile selection, or the refusals
 /// of the ones that are not, each with its span.
 pub(super) fn check(
     protocol: &ProtocolDeclarationForm,
@@ -38,6 +40,7 @@ pub(super) fn check(
             refusals.push((
                 at,
                 refusal(ProtocolAnchorCause::MissingTemporalProfile {
+                    construct: "await",
                     node: name.clone(),
                     span: at,
                 }),
@@ -87,6 +90,19 @@ pub(super) fn check(
                 clock: form.clock.text.clone(),
                 within,
             });
+        }
+    }
+    if !selections.temporal {
+        for template in &protocol.compensations {
+            let at = template.name.span;
+            refusals.push((
+                at,
+                refusal(ProtocolAnchorCause::MissingTemporalProfile {
+                    construct: "compensate",
+                    node: template.name.name.clone(),
+                    span: at,
+                }),
+            ));
         }
     }
     if refusals.is_empty() {

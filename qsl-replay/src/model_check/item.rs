@@ -8,28 +8,18 @@
 //! context and its own translation. The deadlock-freedom item has one
 //! instance with the binding `[]`.
 //!
-//! The clause's checked occurrence and `over` parameter node are part of the
-//! item because S4 emits no temporal clause node yet (FR-337): the checker
-//! cannot resolve them in the recompiled package, so the request names them.
+//! A clause's key contexts name its identity, which the item does not carry:
+//! [`ClauseIdentity::resolve`] reads it from the request's package
+//! (FR-337-AC-5), so no caller names an occurrence or an `over` node.
 
 use qsl_eval::automaton::{
     ContextBinding, SafetyTranslation, StateContext, TranslationRefusal, MAX_ATOMS,
 };
-use qsl_eval::model_subject::ModelLetters;
-use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_eval::model_subject::{ModelLetters, ModelSubject};
 use qsl_semantics::check::CheckedTemporalClause;
-use quire_exact::{ObjectReference, Value};
+use quire_exact::{Cancel, ObjectReference, Value};
 
-/// A clause's identity in its package: the checked occurrence and the node of
-/// its `over` parameter, `None` for a clause with no `over`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClauseIdentity {
-    /// The clause's O-07 occurrence: node, role and ordinal.
-    pub occurrence: OccurrenceKey,
-    /// The `over` parameter's checked node.
-    pub over: Option<WireNodeId>,
-}
+use crate::model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 
 /// What an EN-1 run decides (FR-126 Inputs) and a certificate request
 /// checks (FR-338 Inputs).
@@ -42,8 +32,6 @@ pub enum ModelCheckItem<'a> {
         clause: &'a CheckedTemporalClause,
         /// The seam to the one clause evaluator for its `holds` atoms.
         letters: &'a dyn ModelLetters,
-        /// The clause's identity, which every key context names.
-        identity: &'a ClauseIdentity,
     },
     /// FR-124's derived deadlock-freedom item.
     DeadlockFreedom,
@@ -73,29 +61,40 @@ pub enum ItemRefusal {
         /// The atoms one letter holds.
         max: usize,
     },
+    /// The package gives the clause no root (`clause-root-unresolved`).
+    #[error(transparent)]
+    ClauseRoot(#[from] ClauseRootRefusal),
     /// The deadlock-freedom item's context did not encode.
     #[error("the deadlock-freedom context does not encode")]
     DeadlockContext,
 }
 
 impl ModelCheckItem<'_> {
-    /// Each instance of the item with its translation, in binding order.
+    /// Each instance of the item with its translation, in binding order. A
+    /// clause's identity is resolved from `subject`'s package.
     ///
     /// # Errors
     ///
-    /// [`ItemRefusal`] when the item has no canonical translation.
-    pub fn instances(&self) -> Result<Vec<Instance>, ItemRefusal> {
+    /// [`ItemRefusal`] when the item has no canonical translation, or the
+    /// package gives the clause no root.
+    pub fn instances(
+        &self,
+        subject: &ModelSubject<'_>,
+        cancel: &Cancel,
+    ) -> Result<Vec<Instance>, ItemRefusal> {
         match self {
             Self::DeadlockFreedom => Ok(vec![Instance {
                 binding: None,
                 translation: SafetyTranslation::deadlock_freedom()
                     .map_err(|_| ItemRefusal::DeadlockContext)?,
             }]),
-            Self::Clause {
-                clause,
-                letters,
-                identity,
-            } => {
+            Self::Clause { clause, letters } => {
+                let identity = ClauseIdentity::resolve(
+                    subject.simulation.package,
+                    subject.simulation.packages,
+                    clause,
+                    cancel,
+                )?;
                 let bindings = letters.bindings();
                 if bindings.len() > MAX_ATOMS {
                     return Err(ItemRefusal::TooManyBindings {
@@ -107,7 +106,7 @@ impl ModelCheckItem<'_> {
                     .into_iter()
                     .map(|object| {
                         let binding = identity
-                            .over
+                            .over()
                             .map(|parameter| ContextBinding {
                                 parameter,
                                 value: Value::Reference(object.clone()),
@@ -115,7 +114,7 @@ impl ModelCheckItem<'_> {
                             .into_iter()
                             .collect();
                         let context =
-                            StateContext::clause(clause, identity.occurrence.clone(), binding);
+                            StateContext::clause(clause, identity.occurrence().clone(), binding);
                         let translation = SafetyTranslation::reachable_invariant(clause, &context)?;
                         Ok(Instance {
                             binding: Some(object),
