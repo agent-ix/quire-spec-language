@@ -39,6 +39,7 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 /// The index of each `Queue` field row, in `all_rows` order.
 const ITEMS: usize = 0;
 const USED: usize = 1;
+const BUSY: usize = 2;
 const CELLS: usize = 3;
 const LONE: usize = 4;
 const GHOST: usize = 5;
@@ -208,6 +209,14 @@ fn the_ring_rows_evaluate_over_the_slots_in_the_observed_state() {
     );
     assert!(elements(&world.value(&world.state(0, 0, [0, 1]), ITEMS)).is_empty());
     assert_eq!(render(&world.value(&full, USED)), render(&integer(2)));
+    assert_eq!(
+        render(&world.value(&full, BUSY)),
+        render(&Value::Boolean(true))
+    );
+    assert_eq!(
+        render(&world.value(&world.state(0, 0, [0, 0]), BUSY)),
+        render(&Value::Boolean(false))
+    );
     assert_eq!(
         render(&world.value(&full, SOLID)),
         render(&Value::Boolean(false))

@@ -148,3 +148,11 @@ FND-002/FND-003). No compatibility shim was found.
 | FND-008 | deferred | Spec gap: posted in the planner note on QSL-546 (amend QSpec FR-376's `sum` bound to `[min(0, n*lo), max(0, n*hi)]`). The PR's test cites it as a pending FR-139 AC. |
 | FND-009 | deferred | Spec gap: posted in the planner note on QSL-546 (ADR-020 §8 row that checks, and a value-profile rule for refinement rows). |
 | FND-010 | deferred | Spec gap: posted in the planner note on QSL-546 (QSpec shared-grammar.md productions and `..`). |
+| FND-002 | fixed | - |
+| FND-011 | deferred | Spec gap: posted as the planner addendum on QSL-546 (FR-139-AC-4 and TC-544 step 4 expression text, or a rule for an out-of-range comparison operand). |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | low | `exists` is never evaluated by any test. Of the `Queue` rows, the eval tests evaluate `items`, `used`, `cells`, `lone`, `ghost`, `solid` and `total`, but never `busy` (`exists(s in R::slots where s.value = 1)`). The rows FR-139 Behavior requires ("Each form SHALL be evaluated through the one clause evaluator") and the `exists` row of QSpec FR-376-AC-1's table ("`S` is non-empty") therefore have no value assertion. That is the last table entry the `QSpec-FR-376-AC-1` tag set does not cover. Otherwise the tag on the two ring tests is truthful as a partial contributor: the S3 test asserts the population, `seq`/`only`, `count` and `exists` types, and the eval test asserts the `seq`/`only`, `count` and `all` values. Add a `busy` value assertion, true and false, to the ring eval test. | qsl-eval/tests/it/refinement_populations.rs:192-219 |

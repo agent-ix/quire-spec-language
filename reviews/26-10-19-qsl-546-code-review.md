@@ -97,3 +97,4 @@ The rest is sound:
 | FND-005 | deferred | Planner re-plan: QSL-544 (#1032) lands first. After it lands, #1035 must rebase and delete `evaluate_row` in favour of `evaluate_refinement_row`, or the reverse. At e8a43b6e6, `git merge-tree origin/qsl-544 HEAD` still reports content conflicts, in `qsl-eval/src/value/expression/mod.rs` and now also `qsl-eval/src/simulation/model.rs`. |
 | FND-006 | fixed | - |
 | FND-007 | fixed | - |
+| FND-002 | fixed | - |
