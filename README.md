@@ -201,9 +201,9 @@ grouped into nine families. QSL checks a package against that whole list, so
   <img alt="The complete 1-draft language is a closed list of capabilities in nine families: source, types, expressions, temporal, protocol, runtime, backend, evidence and tooling." src="docs/images/capabilities-light.svg">
 </picture>
 
-**Editions.** `1-draft` is the complete language and the one to write new rules
-in. `0-draft` is the original finite-state profile (`state-finite/0-draft`). It
-still compiles, for older fixtures, and is scheduled for removal.
+**Editions.** Everything here is the `1-draft` edition, the complete version-1
+language. An older `0-draft` edition is still in the tree for historical
+fixtures and is being deleted; don't write new rules in it.
 
 ## How it works
 
@@ -241,20 +241,13 @@ cd quire-spec-language
 cargo build --locked --bin quire-spec
 ```
 
-**Format and parse.** `format` prints the canonically formatted source; `parse`
-prints a JSON summary of the parsed unit. Neither changes the file. The four
-labels before the path are the source's identity (authority, id, revision
-namespace, revision); every diagnostic carries them.
+**Format.** `format` prints the canonically formatted source and leaves the
+file unchanged. The four labels before the path are the source's identity
+(authority, id, revision namespace, revision); every diagnostic carries them.
 
 ```sh
 target/debug/quire-spec format agent-ix test:spine fixture fixture:1 tests/fixtures/spine-compile.native
-target/debug/quire-spec parse  agent-ix test:parent fixture fixture:1 tests/fixtures/parent.native
 ```
-
-`format` reads both editions. The `parse` command still reads only `0-draft`
-sources: given a `1-draft` file it refuses with exit 20 and
-`"code":"unknown_edition"`. `1-draft` sources are parsed and checked by
-`compile` and `run`.
 
 **Run a rule against data.** The ConfigVersion example writes one directory
 per case: the `1-draft` unit from [A first rule](#a-first-rule), its domain

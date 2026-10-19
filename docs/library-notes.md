@@ -26,8 +26,7 @@ The default ceilings are:
 | Syntax nodes | 50,000 |
 | Nested delimiters and parser frames | 64 |
 
-Callers can lower any of them; `parse` takes `--source-bytes`, `--tokens` and
-`--nodes`. Hitting a ceiling gives *incomplete*, never a partial unit.
+Callers can lower any of them. Hitting a ceiling gives *incomplete*, never a partial unit.
 Malformed tokens and delimiters are syntax errors. Recovery never manufactures
 a successful partial unit.
 
