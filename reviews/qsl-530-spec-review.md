@@ -49,3 +49,13 @@ Ticket: QSL-530. Base spec review of `git diff refs/remotes/origin/main...7fe9aa
 ## Verdict
 
 Findings: 2 medium, 2 low. Clean units: FR-133-AC-2 and TC-534 step 2 now agree with FR-126-AC-1 and with ADR-018 CX-5 (re-derived and run); TC-534's scope and step 4 trace AC-4 one to one. On the author's open concern: the spec wording (declaring type) is the right rule and should stay; PR #1047's `ModelSystem::operations()` orders by admitting type and needs the fix, and AC-4 needs an inherited-operation leg so a test can catch it (FND-001). FND-002 should be fixed before merge, since the order key is otherwise implementer's choice. PR #1047's test `hints_come_in_the_models_operation_order` says the order 'is not defined further'; that comment goes stale with this PR. Mergeable after FND-001 and FND-002; FND-003/004 may be fixed in the same round or accepted.
+## Dispositions
+
+Round 1, head b06e8c607 (fix commit b06e8c607). `make check-spec-validation` exit 0 with no warning on FR-133 or TC-534; `tools/check-index-completeness.sh` exit 0. Step 5 re-derived by hand: declaring-type order puts `U` (`U < S`) first with `m`, `tick` by name, then `S` with `a`; `tick` is taken, `m` and `a` are enabled and untaken, so the hints are `U.m`, `S.a` (both `Whole`). An admitting-type order, which PR #1047's `ModelSystem::operations()` uses, lists `a`, `m`, `tick` under `U` and gives `a`, `m`, so the leg fails against it. Implication for PR #1047: sort `operations()` by (declaring `EffectiveId`, name).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

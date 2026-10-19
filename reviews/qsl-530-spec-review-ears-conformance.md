@@ -33,3 +33,10 @@ Ticket: QSL-530. EARS conformance of the requirement text PR #1068 changes in FR
 ## Verdict
 
 Findings: 1 low. AC-2 and AC-4 are direct assertions with one outcome each and no given-when-then shape; the changed bullet keeps one subject (the executor) and one modal verb. Mergeable as far as this method goes.
+## Dispositions
+
+Round 1, head b06e8c607 (fix commit b06e8c607).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
