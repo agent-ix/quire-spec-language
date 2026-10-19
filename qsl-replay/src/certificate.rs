@@ -5,7 +5,8 @@
 //! (ADR-026 CF-3, CF-6; FR-245): separate code from the zone engine's DBM in
 //! `qsl-analyze`, so a fault in one cannot hide a fault in the other.
 //! [`closure`] holds FR-338's closure certificate and its checker (ADR-018
-//! PC-3). FR-338 and FR-314's rejection vocabulary retains the failing rule
+//! PC-3); [`scc`] holds FR-339's component certificate witnesses and the
+//! partition check of them (ADR-018 PC-4). FR-338 and FR-314's rejection vocabulary retains the failing rule
 //! and product-state, query or proof-step locus independently of any checker
 //! implementation.
 
@@ -94,4 +95,5 @@ impl Serialize for CertificateLocus {
 
 pub mod closed_form;
 pub mod closure;
+pub mod scc;
 pub mod zone;

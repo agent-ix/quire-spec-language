@@ -73,6 +73,7 @@ pub use certificate::closure::{
     check_closure, CertificateRejection, CertificateRequest, ClosureCertificate, ClosureRefusal,
     ProductStateRef, TemporalCertificateCheck,
 };
+pub use certificate::scc::{Component, ComponentWitness};
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
