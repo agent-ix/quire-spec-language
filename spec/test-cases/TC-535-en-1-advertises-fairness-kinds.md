@@ -43,8 +43,8 @@ Scope: FR-134-AC-1, FR-134-AC-2, FR-134-AC-3, FR-134-AC-4, FR-134-AC-5, FR-134-A
    | V12 | `null` | refused `unknown-fairness-kind`, names `null` |
    | V13 | `"weak"` (a string, not a list) | refused `unknown-fairness-kind`, names `"weak"` |
    | V14 | `["x","y"]` | refused `unknown-fairness-kind`, names `x` (first in member order) |
-   | V15 | `["strong","weak","weak","strong"]` | refused `duplicate-fairness-kind`, names `weak` (first repeated label in member order) |
-   | V16 | `["Weak"]` with an unknown kind `Foo` in the advertised pair | refused `invalid_capability`/`unknown-kind` (the pair cause wins) |
+   | V15 | `["strong","weak","weak","strong"]` | refused `duplicate-fairness-kind`, names `weak` (the first element that repeats an earlier element) |
+   | V16 | `["Weak"]`, advertising (`temporal-satisfaction`, `unbounded`) and (`Foo`, `unbounded`) | refused `invalid_capability`/`unknown-kind` (the pair cause wins) |
    | V17 | member absent, with a (`temporal-satisfaction`, `bounded`) pair and no `domains` | refused `invalid-domains` (the `domains` cause wins) |
 
 4. For each of V4, V7 and V9, register the manifest under an identity that

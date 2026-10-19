@@ -34,3 +34,11 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 Not mergeable as is: FND-001 is medium. FND-002 and FND-003 are low; FND-003 is an input for the STD-194 ruling, not a blocker.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed at 494a5eeca. |
+| FND-002 | fixed | Fixed at 494a5eeca. |
+| FND-003 | fixed | Fixed at 494a5eeca. |

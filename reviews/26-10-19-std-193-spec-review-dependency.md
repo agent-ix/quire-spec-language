@@ -32,3 +32,9 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 Mergeable for this lens; one low finding.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed at 494a5eeca. |

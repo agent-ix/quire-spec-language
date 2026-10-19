@@ -99,8 +99,8 @@ that are QSL-proposed pending a QSpec catalog ruling (Remaining work):
   No refusal carries a replacement kind.
 - If a list `fairness_kinds` of such a backend holds a label more than once and
   no element is unknown, then the registry SHALL refuse the registration with
-  `invalid_capability`/`duplicate-fairness-kind`, naming the first repeated
-  label in member order. The member is a set, so a repeat is an authoring
+  `invalid_capability`/`duplicate-fairness-kind`, naming the first element
+  that repeats an earlier element. The member is a set, so a repeat is an authoring
   defect and is never collapsed to one.
 - If a backend advertises a `temporal-satisfaction` pair and its manifest has
   no `fairness_kinds` member, then the registry SHALL refuse the registration
@@ -128,7 +128,7 @@ above therefore sees only admitted kinds.
 | FR-134-AC-1 | With EN-1 and a test temporal backend advertising only `Weak` registered, the candidates for an (`temporal-satisfaction`, `unbounded`) item with a weak constraint are EN-1 with fairness kinds `{Weak, Strong}` and the test backend with `{Weak}`; for the same item with a `strong` constraint the only candidate is EN-1. | Test (TC-535) |
 | FR-134-AC-2 | With only the `Weak` test backend registered, an item with a `strong` constraint has an empty candidate set, reported as FR-075 reports one and naming the missing `strong` fairness capability; the item settles `Unsupported`, `unsupported-requested-capability`. | Test (TC-535) |
 | FR-134-AC-3 | (QSL-proposed cause, STD-194) A manifest advertising `temporal-satisfaction` whose `fairness_kinds` is not a list (`null`, a string, an object) or holds an element not byte-equal to `weak` or `strong` (such as `Weak`, `""`, `eventual` or a non-string) is refused `invalid_capability`/`unknown-fairness-kind`, keyed by backend identity and naming the received value, and for several unknown elements the first in member order; it is never refused as `unknown-kind`, never read as a nearest kind, and contributes no candidate. | Test (TC-535) |
-| FR-134-AC-4 | (QSL-proposed cause, STD-194) A manifest advertising `temporal-satisfaction` whose `fairness_kinds` repeats a label (`["weak","weak"]`, or `["weak","strong","weak"]`) and holds no unknown element is refused `invalid_capability`/`duplicate-fairness-kind` naming the first repeated label; it is not collapsed to a set. A manifest holding each of `weak` and `strong` once is admitted. A manifest with both an unknown element and a repeat is refused `unknown-fairness-kind`. | Test (TC-535) |
+| FR-134-AC-4 | (QSL-proposed cause, STD-194) A manifest advertising `temporal-satisfaction` whose `fairness_kinds` repeats a label (`["weak","weak"]`, or `["weak","strong","weak"]`) and holds no unknown element is refused `invalid_capability`/`duplicate-fairness-kind` naming the first element that repeats an earlier element; it is not collapsed to a set. A manifest holding each of `weak` and `strong` once is admitted. A manifest with both an unknown element and a repeat is refused `unknown-fairness-kind`. | Test (TC-535) |
 | FR-134-AC-5 | (QSL-proposed cause, STD-194) A manifest advertising a `temporal-satisfaction` pair with no `fairness_kinds` member is refused `invalid_capability`/`absent-fairness-kinds`; the same manifest with `fairness_kinds` present and empty is admitted, advertises no fairness kind and is not a candidate for an item with a `weak` or `strong` constraint; a manifest with no `temporal-satisfaction` pair is admitted whether `fairness_kinds` is absent, empty or defective, and its member is not validated. A refusal under AC-3 to AC-5 leaves an earlier registration under that identity standing. | Test (TC-535) |
 | FR-134-AC-6 | A manifest with both a capability-pair or `domains` defect (FR-057) and a defective or absent `fairness_kinds` is refused with the pair or `domains` cause, not a fairness cause. | Test (TC-535) |
 

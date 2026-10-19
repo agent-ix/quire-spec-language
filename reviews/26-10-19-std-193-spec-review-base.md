@@ -34,3 +34,17 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 Not mergeable as is: FND-001 is medium. No high finding; the QSL-proposed approach is sound and honestly marked. Add a precedence clause to an AC with two vectors, and the missing vectors, in the fix round.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | V16 cannot fail on the precedence it is there to test. Its pair has the unknown kind `Foo` instead of `temporal-satisfaction` (step 3 says 'advertising (`temporal-satisfaction`, `unbounded`) unless stated'), so the manifest advertises no temporal pair. Under FR-134's new ignore rule (AC-5) its `fairness_kinds` is never validated, so an implementation that judges `fairness_kinds` before the pairs still refuses it `unknown-kind`. AC-6's pair half therefore has no discriminating vector; only V17 (the `domains` half) discriminates. Fix: keep a (`temporal-satisfaction`, `unbounded`) pair and add a second pair (`Foo`, `unbounded`), or use (`temporal-satisfaction`, `forever`) for `unknown-mode`. | spec/test-cases/TC-535-en-1-advertises-fairness-kinds.md:47; spec/functional/FR-134-advertise-the-fairness-kinds-en-1-decides.md (AC-6) |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed at 494a5eeca. |
+| FND-002 | fixed | Fixed at 494a5eeca. |
+| FND-003 | fixed | Fixed at 494a5eeca. |

@@ -34,3 +34,17 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 Not mergeable as is: FND-001 and FND-002 are medium. Each needs one sentence and one vector in FR-134; neither changes the approach.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | 'The first repeated label in member order' has two readings for `["strong","weak","weak","strong"]`: the first label (by first occurrence) that is repeated, `strong`, or the first element that repeats an earlier one, `weak`. V15 pins `weak`, but AC-4 and the Behavior bullet alone do not, and a test written from the AC can expect `strong`. Fix: say 'the first element that repeats an earlier element'. | spec/functional/FR-134-advertise-the-fairness-kinds-en-1-decides.md:131; spec/test-cases/TC-535-en-1-advertises-fairness-kinds.md:46 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed at 494a5eeca. |
+| FND-002 | fixed | Fixed at 494a5eeca. |
+| FND-003 | fixed | Fixed at 494a5eeca. |
