@@ -44,6 +44,9 @@ num-integer = "0.1.47"
 # `sha256-jcs` digest (FR-056's digest-first rule), which the test fixtures
 # compute over the same RFC 8785 implementation.
 quire-canonical = { workspace = true }
+# FR-338: a product-state locus carries its automaton key's octets as
+# FR-331's base64url transport.
+base64 = "0.22"
 # FR-269: the `DisagreementCause` wire codec and its strict reader.
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
