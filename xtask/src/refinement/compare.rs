@@ -15,6 +15,9 @@ pub enum SelectionKind {
     Function,
     /// An operation frame.
     Frame,
+    /// A temporal clause. A refinement check selects none, so a case that
+    /// does is a broken case (a tool failure).
+    Temporal,
 }
 
 impl SelectionKind {
@@ -22,6 +25,7 @@ impl SelectionKind {
     pub fn of(selection: &ClauseRunSelection) -> Self {
         match selection {
             ClauseRunSelection::Clause(_) => Self::Clause,
+            ClauseRunSelection::Temporal { .. } => Self::Temporal,
             ClauseRunSelection::Function { .. } => Self::Function,
             ClauseRunSelection::Frame { .. } => Self::Frame,
         }
@@ -82,6 +86,7 @@ pub fn compare(prior: Side, superseding: Side, kind: SelectionKind) -> CaseResul
         (Admitted, Absent) => match kind {
             SelectionKind::Clause | SelectionKind::Frame => Holds,
             SelectionKind::Function => Regression,
+            SelectionKind::Temporal => ToolFailure,
         },
         (Admitted, Refused | Prohibited) => Regression,
         (Admitted, Unsupported) => UnresolvedUnsupported,
@@ -206,6 +211,7 @@ mod tests {
         match kind {
             SelectionKind::Clause | SelectionKind::Frame => H,
             SelectionKind::Function => R,
+            SelectionKind::Temporal => T,
         }
     }
 

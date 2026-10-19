@@ -30,8 +30,9 @@ use quire_exact::{Cancel, CancelCause};
 
 use crate::counter::UNLIMITED;
 use crate::graph_world::{
-    config_version, config_world, config_world_over, fork_world, game_world, job_world, Field,
-    Model, Operation, World, CAN_STILL_WIN, DIVIDES, REACHES_THREE, REACHES_TWO,
+    config_version, config_world, config_world_over, detour_world, fork_world, game_world,
+    job_world, ladder_world, Field, Model, Operation, World, CAN_STILL_WIN, DIVIDES, REACHES_THREE,
+    REACHES_TWO,
 };
 
 const AB: &[&str] = &["a", "b"];
@@ -974,6 +975,72 @@ fn unique_path_counts_paths() {
         names(&second),
         ["stepA", "reset", "stepA", "stepB", "finish"]
     );
+}
+
+/// The path pair `unique path Once from (x.pos = 0) to (x.pos = <to>)`
+/// returns over `world`'s object `f`, with `f`'s state after the second
+/// path, after checking the premise that canonical order out of `pos = 0`
+/// is `order`.
+fn second_path_choice(world: &World, to: i64, order: [&str; 2]) -> (Vec<String>, Vec<String>) {
+    let result = run(world.request(&["f"], vec![world.item("Once")], no_samples()));
+    let root = node_of(
+        &result,
+        digest_where(world, &["f"], |state| world.value(state, "f", "pos") == 0),
+    );
+    assert_eq!(edge_names(&result, root), order, "the premise");
+    let StateGraphOutcome::PathPair {
+        stem,
+        first,
+        second,
+    } = &result.items[0][0].outcome
+    else {
+        panic!("a path pair: {:?}", result.items[0][0].outcome);
+    };
+    assert!(stem.steps.is_empty());
+    for path in [first, second] {
+        let last = positions(
+            world,
+            &["f"],
+            &ModelPath {
+                initial: 0,
+                steps: path.clone(),
+            },
+        )
+        .pop()
+        .expect("a state");
+        assert_eq!(world.value(&last, "f", "pos"), to);
+    }
+    (names(first), names(second))
+}
+
+/// FR-168-AC-10, `Ladder`: the first path is `a, c`; the deviations `b, e`
+/// (position 0) and `a, d` (position 1) are as short, and each takes an
+/// edge ranked above the first path's, so the later one, `a, d`, is the
+/// lesser by canonical edge order.
+#[trace("TC-593", "FR-168-AC-10")]
+#[test]
+fn an_equal_length_later_deviation_wins_over_an_earlier_one_ranked_above() {
+    let world = ladder_world(
+        "unique path Once using v over (x: L::Ladder) from (x.pos = 0) to (x.pos = 3);\n",
+    );
+    let (first, second) = second_path_choice(&world, 3, ["a", "b"]);
+    assert_eq!(first, ["a", "c"]);
+    assert_eq!(second, ["a", "d"]);
+}
+
+/// FR-168-AC-10, `Detour`: the first path is `t, w`; the deviations
+/// `s, u, x` (position 0, by `s`, ranked below `t`) and `t, y, x`
+/// (position 1) both take three steps, so the earlier one, `s, u, x`, is
+/// the lesser by canonical edge order.
+#[trace("TC-593", "FR-168-AC-10")]
+#[test]
+fn an_equal_length_earlier_deviation_ranked_below_wins() {
+    let world = detour_world(
+        "unique path Once using v over (x: D::Detour) from (x.pos = 0) to (x.pos = 5);\n",
+    );
+    let (first, second) = second_path_choice(&world, 5, ["s", "t"]);
+    assert_eq!(first, ["t", "w"]);
+    assert_eq!(second, ["s", "u", "x"]);
 }
 
 /// A `unique path` item under a horizon: §7.3's jobs under `max_depth` 1

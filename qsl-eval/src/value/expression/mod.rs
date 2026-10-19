@@ -547,6 +547,23 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
+    /// FR-327 "Bounded-profile evaluation": evaluate the condition of the
+    /// `holds` atom `atom` of the temporal clause `clause` over `objects`,
+    /// the observation at one position, with `over` the clause's `over`
+    /// parameter. Every read observes `objects`; a temporal condition has no
+    /// `pre` observation. The result is S6a's, unchanged, as
+    /// [`Self::evaluate`] returns it.
+    ///
+    /// A node that is no `holds` atom of `clause` is an `Err` fault.
+    fn evaluate_holds(
+        &self,
+        clause: &qsl_semantics::check::TemporalClauseNode,
+        atom: qsl_semantics::check::FormulaNodeId,
+        over: Value,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
+
     /// FR-107: evaluate one checked state clause over `observations`
     /// (FR-106's `AdmittedObservations`), the `ProtocolClause` S6a family's
     /// entry point beside [`Self::call`]'s `Value` one.
@@ -941,6 +958,28 @@ impl CheckedPackageEvaluation for CheckedPackage {
             self.graph().dispatch_tables(),
         )
         .run(expression.root(), expression.slots(), arguments)
+        .map_err(CallFailure::Fault)
+    }
+
+    fn evaluate_holds(
+        &self,
+        clause: &qsl_semantics::check::TemporalClauseNode,
+        atom: qsl_semantics::check::FormulaNodeId,
+        over: Value,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure> {
+        let (condition, slots) = clause.condition(atom).ok_or_else(|| {
+            CallFailure::Fault(InternalFault::new("S6a", "holds-atom-resolved-by-clause"))
+        })?;
+        Machine::new(
+            self.graph().scope(),
+            self.graph(),
+            objects,
+            meter,
+            self.graph().dispatch_tables(),
+        )
+        .run(condition, slots, vec![over])
         .map_err(CallFailure::Fault)
     }
 

@@ -277,7 +277,8 @@ impl ItemCause {
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
-                | InconclusiveCause::SufficientTestFailed,
+                | InconclusiveCause::SufficientTestFailed
+                | InconclusiveCause::SolverInconclusive,
             ) => {}
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
@@ -370,7 +371,7 @@ impl OutcomeItem {
                 certification,
             } => {
                 if result == ItemLabel::Proved {
-                    (Some(*basis), Some(*certification))
+                    (Some(basis.clone()), Some(*certification))
                 } else {
                     (None, None)
                 }
@@ -1306,7 +1307,7 @@ mod tests {
                     vec![record(
                         6,
                         TerminalValue::Proved {
-                            basis,
+                            basis: basis.clone(),
                             certification,
                         },
                     )],

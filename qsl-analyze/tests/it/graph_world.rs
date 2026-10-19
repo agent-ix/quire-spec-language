@@ -6,7 +6,8 @@
 //!
 //! ADR-022 §7's worked examples are built here: §7.1's `ConfigVersion`
 //! ([`config_version`]), §7.2's game ([`game`]), §7.3's job ([`job`]) and
-//! FR-168-AC-9's `Fork` ([`fork`]).
+//! FR-168-AC-9's `Fork` ([`fork_world`]); FR-168-AC-10's `Ladder`
+//! ([`ladder_world`]) and `Detour` ([`detour_world`]).
 
 use std::collections::BTreeMap;
 
@@ -664,38 +665,92 @@ pub(crate) fn job_world(sequenced: bool, reset: bool) -> World {
 
 /// FR-168-AC-9's `Fork`: `pos: Int[0, 4]`, initially 0.
 pub(crate) fn fork_world(body: &str) -> World {
+    moves_world(
+        ["test/fork", "F", "Fork", "forks"],
+        4,
+        &[
+            ("toA", 0, 1),
+            ("toB", 0, 2),
+            ("fromA", 1, 3),
+            ("fromB", 2, 4),
+            ("back", 3, 0),
+        ],
+        body,
+    )
+}
+
+/// FR-168-AC-10's `Ladder`: `pos: Int[0, 3]`, initially 0;
+/// `a` (0 to 1), `b` (0 to 2), `c` and `d` (each 1 to 3) and `e` (2 to 3).
+pub(crate) fn ladder_world(body: &str) -> World {
+    moves_world(
+        ["test/ladder", "L", "Ladder", "ladders"],
+        3,
+        &[
+            ("a", 0, 1),
+            ("b", 0, 2),
+            ("c", 1, 3),
+            ("d", 1, 3),
+            ("e", 2, 3),
+        ],
+        body,
+    )
+}
+
+/// FR-168-AC-10's `Detour`: `pos: Int[0, 5]`, initially 0;
+/// `s` (0 to 1), `t` (0 to 2), `u` (1 to 4), `w` (2 to 5), `y` (2 to 4)
+/// and `x` (4 to 5).
+pub(crate) fn detour_world(body: &str) -> World {
+    moves_world(
+        ["test/detour", "D", "Detour", "detours"],
+        5,
+        &[
+            ("s", 0, 1),
+            ("t", 0, 2),
+            ("u", 1, 4),
+            ("w", 2, 5),
+            ("y", 2, 4),
+            ("x", 4, 5),
+        ],
+        body,
+    )
+}
+
+/// A world over the one object `f` of `[package, alias, object,
+/// population]`, with `pos: Int[0, high]`, initially 0, and one operation
+/// per `(name, from, to)`: pre `pos = from`, post `pos = to`, each framed
+/// `modifies self.pos`.
+fn moves_world(
+    [package, alias, object, population]: [&'static str; 4],
+    high: i64,
+    moves: &[(&'static str, i64, i64)],
+    body: &str,
+) -> World {
     let model = Model {
-        package: "test/fork",
-        alias: "F",
-        object: "Fork",
-        population: "forks",
+        package,
+        alias,
+        object,
+        population,
         fields: vec![Field {
             name: "pos",
-            range: Some((0, 4)),
+            range: Some((0, high)),
         }],
-        operations: ["toA", "toB", "fromA", "fromB", "back"]
-            .into_iter()
-            .map(|name| Operation {
+        operations: moves
+            .iter()
+            .map(|&(name, _, _)| Operation {
                 name,
                 modifies: &["pos"],
             })
             .collect(),
     };
-    let contract = [
-        ("toA", 0, 1),
-        ("toB", 0, 2),
-        ("fromA", 1, 3),
-        ("fromB", 2, 4),
-        ("back", 3, 0),
-    ]
-    .into_iter()
-    .map(|(name, from, to)| {
-        format!(
-            "pre Can{name} using v on F::Fork::{name} {{ self.pos = {from} }}\n\
-             post Did{name} using v on F::Fork::{name} {{ self.pos = {to} }}\n"
-        )
-    })
-    .collect::<String>();
+    let contract = moves
+        .iter()
+        .map(|(name, from, to)| {
+            format!(
+                "pre Can{name} using v on {alias}::{object}::{name} {{ self.pos = {from} }}\n\
+                 post Did{name} using v on {alias}::{object}::{name} {{ self.pos = {to} }}\n"
+            )
+        })
+        .collect::<String>();
     World::new(
         model,
         &format!("{contract}{body}"),

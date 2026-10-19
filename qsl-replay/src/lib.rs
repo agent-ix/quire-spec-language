@@ -41,6 +41,7 @@ mod compile;
 mod certificate;
 mod composite;
 mod execute;
+mod hybrid;
 mod identity;
 mod limits;
 mod model_check;
@@ -89,13 +90,16 @@ pub use execute::{
     IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal, ParityPreimage,
     ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
 };
+pub use hybrid::{
+    NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+};
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
     RawSourceRef, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, CounterexampleKind, ModelStep, TemporalCounterexample,
+    deadlock_freedom_clause, CounterexampleKind, Lasso, ModelStep, TemporalCounterexample,
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};

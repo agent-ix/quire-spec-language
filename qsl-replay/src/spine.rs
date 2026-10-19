@@ -55,8 +55,8 @@ pub(crate) use lifecycle::{compose, ComposedUnit};
 
 mod bind;
 pub use bind::{
-    bind_scalar_operands, BindIdentityCause, BindOutcome, BindPackage, BindRefusal, BoundOperand,
-    BoundScalarOperands, OperandSource, ScalarOccurrence,
+    admission_evidence, bind_scalar_operands, BindIdentityCause, BindOutcome, BindRefusal,
+    BoundOperand, BoundScalarOperands, OperandSource, ScalarOccurrence,
 };
 
 mod call;
@@ -69,7 +69,8 @@ mod clause;
 pub use clause::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
-    OperationName,
+    OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
 };
 mod refinement;
 pub use refinement::{

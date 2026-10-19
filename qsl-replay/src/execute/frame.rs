@@ -281,6 +281,8 @@ pub fn replay_frame(
         | ClauseDisposition::StalePackage { .. }
         | ClauseDisposition::MissingName { .. }
         | ClauseDisposition::NotAPredicate { .. }
+        | ClauseDisposition::Temporal(_)
+        | ClauseDisposition::TemporalRefusal(_)
         | ClauseDisposition::ArgumentRefusal(_) => {
             return Err(ReplayRefusal::Fault(InternalFault::new(
                 "replay",
