@@ -10,16 +10,16 @@ relationships:
 
 ## Description
 
-Verify that the items carrying bindings are exactly the bound items, so a driver can select them for the CG request, and that a request with no bound item succeeds with one refusal per item.
+Verify that the export returns a bound result or a refusal for every requested item, including a request in which nothing is bound and an item that references no element.
 
 Scope: FR-307-AC-6.
 
 ## Test Procedure
 
 1. With no element bound, request a clause item reading only ConfigVersion fields and an item whose extent domain ranges over the ConfigVersion population.
-2. Bind the ConfigVersion object type and repeat the request.
+2. Request an item that references no model element.
 
 ## Expected Results
 
-1. The export succeeds and returns two `missing_declaration`/`missing-name` refusals, one per item, each with no bindings; no item carries bindings.
-2. The clause item carries its `ObjectBinding`; the extent-domain item is still refused with no bindings. The items carrying bindings are exactly the one bound item.
+1. The export succeeds and returns two `missing_declaration`/`missing-name` refusals, one per item, each with no bindings.
+2. The item returns a bound result with an empty binding set, not a refusal.

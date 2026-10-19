@@ -76,10 +76,11 @@ An item references:
   bindings.
 - A bound item SHALL return every binding it references.
 - Each item's result depends only on the checked package and that item.
-- The bound items are exactly the items whose result carries bindings, so the
-  driver can select them from the results without reading any refusal. When
-  every requested item is refused, the export still returns one refusal per
-  item, and the set of bound items is empty.
+- The export SHALL return each item as one of two result kinds: a bound
+  result, which carries the item's bindings (an empty set when the item
+  references no element), or a refusal. An item that references no element is
+  bound with an empty binding set. When every requested item is refused, the
+  export SHALL still return one refusal per item.
 
 ## Acceptance Criteria
 
@@ -90,7 +91,7 @@ An item references:
 | FR-307-AC-3 | A requested occurrence key that names no requirement record refuses `missing_declaration`/`missing-name` naming the key, and the other requested items' results are unchanged. | Test (TC-806) |
 | FR-307-AC-4 | An item reading a member that `Base` declares through a receiver of static type `Sub` references `Sub`: with only `Base` bound it refuses naming `Sub`, and with `Sub` bound it returns `Sub`'s binding. | Test (TC-807) |
 | FR-307-AC-5 | A frame item and a postcondition item of `attemptUpdate` each reference `OperationKey { ConfigVersion, attemptUpdate }`: with the frame bound each returns that `FrameBinding`, and without it each refuses naming that key. | Test (TC-807) |
-| FR-307-AC-6 | With no element bound, a request for a clause item and an extent-domain item returns two `missing_declaration`/`missing-name` refusals, one per item, each with no bindings, and the export itself succeeds with no bound item. With the ConfigVersion object type then bound, the same request returns the clause item with its binding and still refuses the extent-domain item, so the items carrying bindings are exactly the bound items. | Test (TC-1082) |
+| FR-307-AC-6 | With no element bound, a request for a clause item and an extent-domain item returns two `missing_declaration`/`missing-name` refusals, one per item, each with no bindings, and the export itself succeeds. A requested item that references no model element returns a bound result with an empty binding set, not a refusal. | Test (TC-1082) |
 
 ## Dependencies
 
@@ -101,7 +102,7 @@ An item references:
   keep their own unbound guard (ADR-017 AR-4). The orchestrating driver
   (ADR-011 T-13, in agent-ix/quire-driver) puts only the items that carry
   bindings in the QSpec FR-331 request (ADR-017 AR-6); this FR owns the
-  partition the driver reads (AC-6), not the driver's request building.
+  bound-or-refused result kinds the driver reads (AC-6), not the driver's request building.
 
 ## References
 
