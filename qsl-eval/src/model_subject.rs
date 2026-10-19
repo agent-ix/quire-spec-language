@@ -34,12 +34,22 @@ pub struct ModelSubject<'a> {
 /// value of each `holds` atom for one binding of the clause's `over`
 /// parameter (ADR-018 UE-1, QSpec FR-361's `over` binding).
 pub trait ModelLetters {
-    /// The objects the clause's `over` parameter binds to, one instance per
-    /// object of its population's universe, in ascending reference order.
+    /// The instances of the clause's `over` parameter: one per key of each
+    /// population that admits the parameter's type `T` (a member type that is
+    /// `T`, a subtype or a supertype of `T`), in
+    /// FR-125's canonical order: population declaration identity text, then
+    /// the population's universe-list order. A binding names its instance by
+    /// population and key; its object type only completes the reference and
+    /// is not compared.
     fn bindings(&self) -> Vec<ObjectReference>;
 
     /// The `holds` atom `atom` for the instance `binding` at `state`,
-    /// charging `meter`. An exhausted meter is `Err(Incomplete)`, never a
+    /// charging `meter`. The implementation matches the state's object to
+    /// `binding` by population and key, never by comparing the whole
+    /// reference, and reads the bound parameter as the state's own reference
+    /// to that object (FR-125 Instancing); where the population has no object
+    /// under the key conforming to the parameter's type, the read is
+    /// `absent-key` undefined. An exhausted meter is `Err(Incomplete)`, never a
     /// reading.
     fn atom(
         &self,

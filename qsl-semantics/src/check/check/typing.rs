@@ -781,6 +781,11 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
+            // FR-393: a quantity literal is parsed and built, and no checker
+            // reads one yet.
+            ExprNode::Quantity(_) => {
+                return Err(super::super::probabilistic::quantity_literal(location))
+            }
             ExprNode::Name(name) => match resolve_target(self, name, &location, || Ok(()))? {
                 ResolvedTarget::UnionMember(member) => {
                     member.admit_shape(None, &location)?;
@@ -789,6 +794,16 @@ impl<'a> Typer<'a> {
                 ResolvedTarget::Value(()) => self.name(name, hint.as_deref(), &location)?,
             },
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
+            // A `hyper` clause's reads and labels have a meaning only inside
+            // the clause; S2 builds them nowhere else.
+            ExprNode::Indexed { .. } | ExprNode::StepLabel { .. } | ExprNode::Stutter => {
+                return Err(CheckRefusal {
+                    location,
+                    cause: CheckCause::Hyper(Box::new(
+                        crate::check::hyper_clause::HyperCause::OutsideHyperClause,
+                    )),
+                })
+            }
             ExprNode::Case(case) => {
                 return Ok(Self::case(
                     Branches::Inferred(hint),

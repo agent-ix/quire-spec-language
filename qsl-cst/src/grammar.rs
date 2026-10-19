@@ -13,9 +13,18 @@ pub(super) enum Terminal {
     Text,
     TextValue(&'static str),
     UnsignedInteger,
+    /// A `decimal-literal`: digits, a point and digits, with no exponent.
+    DecimalLiteral,
     /// An unsigned integer that fits `u64`: an interval bound or a
     /// compensation's `attempts` count.
     Bound,
+    /// The built-in `Clock` type: the unqualified word `Clock` not followed
+    /// by `::`, so `Clock::T` stays a qualified name (FR-393).
+    ClockType,
+    /// An identifier that may name a declared type: any identifier but
+    /// `Clock`, which an unqualified type position always reads as the
+    /// built-in (FR-393).
+    TypeIdentifier,
     End,
     /// Matches without consuming when the next token is one of these
     /// spellings: a lookahead that lets a production end where its caller
@@ -104,8 +113,14 @@ fn text() -> Rule {
 fn uint() -> Rule {
     Rule::Terminal(Terminal::UnsignedInteger)
 }
+fn decimal_literal() -> Rule {
+    Rule::Terminal(Terminal::DecimalLiteral)
+}
 fn bound() -> Rule {
     Rule::Terminal(Terminal::Bound)
+}
+fn type_ident() -> Rule {
+    Rule::Terminal(Terminal::TypeIdentifier)
 }
 fn r(production: P) -> Rule {
     Rule::Production(production)
@@ -170,6 +185,7 @@ pub(super) fn complete_v1() -> Grammar {
     temporal(&mut grammar);
     protocol(&mut grammar);
     analysis(&mut grammar);
+    probabilistic(&mut grammar);
     grammar
 }
 
@@ -303,6 +319,13 @@ fn source_and_types(g: &mut Grammar) {
         r(P::PopulationBound),
         r(P::TemporalClause),
         r(P::TerminalDeclaration),
+        r(P::TimeInvariant),
+        r(P::TimeDeclaration),
+        r(P::UrgentDeclaration),
+        r(P::RandomDeclaration),
+        r(P::RewardDeclaration),
+        r(P::WorkloadDeclaration),
+        r(P::ProbabilisticClause),
         r(P::StateGraphClaim),
         r(P::ProtocolClause),
         r(P::Refinement),
@@ -412,6 +435,7 @@ fn source_and_types(g: &mut Grammar) {
                 x(">"),
                 opt(s(vec![x("["), uint(), x("]")])),
             ]),
+            Rule::Terminal(Terminal::ClockType),
             r(P::QualifiedName),
         ]),
     );
@@ -459,7 +483,7 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![
             opt(x("ordered")),
             x("enum"),
-            ident(),
+            type_ident(),
             x("{"),
             list(|| r(P::EnumMember)),
             opt(x(",")),
@@ -480,7 +504,7 @@ fn source_and_types(g: &mut Grammar) {
         P::RecordDeclaration,
         s(vec![
             x("record"),
-            ident(),
+            type_ident(),
             x("{"),
             plus(r(P::Field)),
             x("}"),
@@ -490,7 +514,7 @@ fn source_and_types(g: &mut Grammar) {
         P::TupleDeclaration,
         s(vec![
             x("tuple"),
-            ident(),
+            type_ident(),
             x("("),
             list(|| r(P::TypeReference)),
             x(")"),
@@ -501,7 +525,7 @@ fn source_and_types(g: &mut Grammar) {
         P::UnionDeclaration,
         s(vec![
             x("union"),
-            ident(),
+            type_ident(),
             x("{"),
             list(|| r(P::UnionMember)),
             opt(x(",")),
@@ -519,7 +543,7 @@ fn source_and_types(g: &mut Grammar) {
         P::AliasDeclaration,
         s(vec![
             x("type"),
-            ident(),
+            type_ident(),
             x("="),
             r(P::TypeReference),
             x(";"),
@@ -914,6 +938,7 @@ fn expressions(g: &mut Grammar) {
             x("self"),
             x("result"),
             s(vec![x("protocol"), r(P::QualifiedName)]),
+            r(P::QuantityLiteral),
             uint(),
             text(),
             r(P::ExactNumber),
@@ -986,6 +1011,7 @@ fn expressions(g: &mut Grammar) {
         ]),
     );
     scrutinee_rules(g);
+    hyper_expression_rules(g);
 }
 
 /// Derive the scrutinee precedence tree from the ordinary expression rules.
@@ -1006,35 +1032,6 @@ fn scrutinee_rules(g: &mut Grammar) {
         (P::Postfix, P::ScrutineePostfix),
         (P::Primary, P::ScrutineePrimary),
     ];
-    fn copy(rule: &Rule, delimited: bool) -> Rule {
-        match rule {
-            Rule::Terminal(terminal) => Rule::Terminal(terminal.clone()),
-            Rule::Production(production) => r(if delimited {
-                *production
-            } else {
-                PAIRS
-                    .iter()
-                    .find_map(|(base, restricted)| (base == production).then_some(*restricted))
-                    .unwrap_or(*production)
-            }),
-            Rule::Sequence(rules) => s(rules.iter().map(|rule| copy(rule, delimited)).collect()),
-            Rule::Choice(rules) => c(rules
-                .iter()
-                .filter(|rule| !matches!(rule, Rule::Production(P::RecordValue)))
-                .map(|rule| copy(rule, delimited))
-                .collect()),
-            Rule::Optional(rule) => opt(copy(rule, delimited)),
-            Rule::Repeat {
-                rule,
-                minimum,
-                commit_on_progress,
-            } => Rule::Repeat {
-                rule: Box::new(copy(rule, delimited)),
-                minimum: *minimum,
-                commit_on_progress: *commit_on_progress,
-            },
-        }
-    }
     for &(base, restricted) in PAIRS {
         let rule = g.get(&base).expect("expression rule was installed");
         // Postfix's Primary edge is unbracketed; its later Expression
@@ -1046,12 +1043,88 @@ fn scrutinee_rules(g: &mut Grammar) {
             s(rules
                 .iter()
                 .enumerate()
-                .map(|(index, rule)| copy(rule, index != 0))
+                .map(|(index, rule)| copy_rule(rule, PAIRS, index != 0, true))
                 .collect())
         } else {
-            copy(rule, base == P::Primary)
+            copy_rule(rule, PAIRS, base == P::Primary, true)
         };
         g.insert(restricted, restricted_rule);
+    }
+}
+
+/// Copy `rule`, replacing each reference to a base production in `pairs` by
+/// its counterpart. A `delimited` copy keeps every reference as written, and
+/// `drop_records` leaves record constructors out of a choice.
+fn copy_rule(rule: &Rule, pairs: &[(P, P)], delimited: bool, drop_records: bool) -> Rule {
+    match rule {
+        Rule::Terminal(terminal) => Rule::Terminal(terminal.clone()),
+        Rule::Production(production) => r(if delimited {
+            *production
+        } else {
+            pairs
+                .iter()
+                .find_map(|(base, restricted)| (base == production).then_some(*restricted))
+                .unwrap_or(*production)
+        }),
+        Rule::Sequence(rules) => s(rules
+            .iter()
+            .map(|rule| copy_rule(rule, pairs, delimited, drop_records))
+            .collect()),
+        Rule::Choice(rules) => c(rules
+            .iter()
+            .filter(|rule| !(drop_records && matches!(rule, Rule::Production(P::RecordValue))))
+            .map(|rule| copy_rule(rule, pairs, delimited, drop_records))
+            .collect()),
+        Rule::Optional(rule) => opt(copy_rule(rule, pairs, delimited, drop_records)),
+        Rule::Repeat {
+            rule,
+            minimum,
+            commit_on_progress,
+        } => Rule::Repeat {
+            rule: Box::new(copy_rule(rule, pairs, delimited, drop_records)),
+            minimum: *minimum,
+            commit_on_progress: *commit_on_progress,
+        },
+    }
+}
+
+/// Derive the expression tree a `hyper` clause reads its `match` block and
+/// its `holds` conditions with. It is the ordinary expression tree with two
+/// additions: an indexed read `e @ t` binds tighter than every operator and
+/// looser than member navigation, and a step label `t.step.op` and the
+/// `stutter` label are primaries.
+/// Every reference inside the copy, including a bracketed operand, stays in
+/// the copy, so a read or label is admitted wherever the ordinary tree admits
+/// a postfix or a primary.
+fn hyper_expression_rules(g: &mut Grammar) {
+    const PAIRS: &[(P, P)] = &[
+        (P::Expression, P::HyperExpression),
+        (P::Implication, P::HyperImplication),
+        (P::Disjunction, P::HyperDisjunction),
+        (P::Conjunction, P::HyperConjunction),
+        (P::Comparison, P::HyperComparison),
+        (P::Sum, P::HyperSum),
+        (P::Product, P::HyperProduct),
+        (P::Unary, P::HyperUnary),
+        (P::Postfix, P::HyperPostfix),
+        (P::Primary, P::HyperPrimary),
+    ];
+    for &(base, hyper) in PAIRS {
+        let rule = g.get(&base).expect("expression rule was installed");
+        let copied = copy_rule(rule, PAIRS, false, false);
+        let rule = match (base, copied) {
+            (P::Unary, Rule::Choice(mut alternatives)) => {
+                alternatives.insert(alternatives.len() - 1, r(P::IndexedRead));
+                c(alternatives)
+            }
+            (P::Primary, Rule::Choice(mut alternatives)) => {
+                alternatives.insert(0, literal("stutter"));
+                alternatives.insert(0, r(P::StepLabel));
+                c(alternatives)
+            }
+            (_, copied) => copied,
+        };
+        g.insert(hyper, rule);
     }
 }
 
@@ -1101,6 +1174,12 @@ fn temporal(g: &mut Grammar) {
             x(";"),
         ]),
     );
+    // A bracketed interval uses one kind of bound at both ends (FR-393),
+    // and a step bound fits `u64` (FR-325). The grammar admits any unsigned
+    // integer and, at the upper end, the other kind's bound, so that the
+    // parser's interval check refuses each at that bound's own span
+    // (`parser::interval_bounds`), rather than wherever the ordered choice
+    // happened to stop.
     g.insert(
         P::StateGraphClaim,
         c(vec![
@@ -1236,10 +1315,76 @@ fn temporal(g: &mut Grammar) {
         P::Interval,
         s(vec![
             x("["),
-            bound(),
+            uint(),
             x(","),
-            c(vec![bound(), x("*")]),
+            c(vec![r(P::QuantityLiteral), uint(), x("*")]),
             x("]"),
+        ]),
+    );
+    // `timed-interval = ( '[' | '(' ), quantity-literal, ',',
+    // quantity-literal, ( ']' | ')' )`. A `(` opens one only when a
+    // quantity literal follows it (the shared grammar's second-token rule).
+    g.insert(
+        P::TimedInterval,
+        s(vec![
+            c(vec![x("["), x("(")]),
+            r(P::QuantityLiteral),
+            x(","),
+            c(vec![r(P::QuantityLiteral), uint(), x("*")]),
+            c(vec![x("]"), x(")")]),
+        ]),
+    );
+    // `time-decl`, `time-invariant`, `clock-bound` and `urgent-decl`. The
+    // words `time`, `urgent`, `dense`, `tick` and `period` are contextual:
+    // reserved nowhere, so they stay identifiers outside these heads.
+    g.insert(
+        P::TimeDeclaration,
+        s(vec![
+            literal("time"),
+            ident(),
+            c(vec![
+                literal("dense"),
+                s(vec![
+                    literal("tick"),
+                    r(P::QualifiedName),
+                    literal("period"),
+                    r(P::QuantityLiteral),
+                ]),
+            ]),
+            x("unit"),
+            r(P::QualifiedName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::TimeInvariant,
+        s(vec![
+            literal("time"),
+            x("invariant"),
+            ident(),
+            x("when"),
+            r(P::Block),
+            x("{"),
+            r(P::ClockBound),
+            star(s(vec![x("and"), r(P::ClockBound)])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::ClockBound,
+        s(vec![
+            r(P::Postfix),
+            c(vec![x("<"), x("<=")]),
+            r(P::QuantityLiteral),
+        ]),
+    );
+    g.insert(
+        P::UrgentDeclaration,
+        s(vec![
+            literal("urgent"),
+            ident(),
+            c(vec![s(vec![x("when"), r(P::Block)]), r(P::QualifiedName)]),
+            x(";"),
         ]),
     );
     g.insert(
@@ -1283,14 +1428,26 @@ fn temporal(g: &mut Grammar) {
             star(s(vec![x("and"), r(P::TemporalRelation)])),
         ]),
     );
+    // An operator's interval is a choice, not an option: a `(` after an
+    // operator either opens a timed interval or is its parenthesized
+    // operand, and only the whole alternative can tell (FR-393).
+    let interval = || c(vec![r(P::Interval), r(P::TimedInterval)]);
+    let binary = || c(vec![x("until"), x("release"), x("since"), x("triggered")]);
+    let unary = || {
+        c(vec![
+            x("eventually"),
+            x("always"),
+            x("once"),
+            x("historically"),
+        ])
+    };
     g.insert(
         P::TemporalRelation,
         s(vec![
             r(P::TemporalUnary),
-            opt(s(vec![
-                c(vec![x("until"), x("release"), x("since"), x("triggered")]),
-                opt(r(P::Interval)),
-                r(P::TemporalUnary),
+            opt(c(vec![
+                s(vec![binary(), interval(), r(P::TemporalUnary)]),
+                s(vec![binary(), r(P::TemporalUnary)]),
             ])),
         ]),
     );
@@ -1298,16 +1455,8 @@ fn temporal(g: &mut Grammar) {
         P::TemporalUnary,
         c(vec![
             s(vec![x("not"), r(P::TemporalUnary)]),
-            s(vec![
-                c(vec![
-                    x("eventually"),
-                    x("always"),
-                    x("once"),
-                    x("historically"),
-                ]),
-                opt(r(P::Interval)),
-                r(P::TemporalUnary),
-            ]),
+            s(vec![unary(), interval(), r(P::TemporalUnary)]),
+            s(vec![unary(), r(P::TemporalUnary)]),
             r(P::TemporalPrimary),
         ]),
     );
@@ -1318,6 +1467,7 @@ fn temporal(g: &mut Grammar) {
             x("false"),
             s(vec![x("("), r(P::TemporalExpression), x(")")]),
             s(vec![x("holds"), x("("), r(P::Expression), x(")")]),
+            s(vec![x("holds"), x("("), r(P::HyperExpression), x(")")]),
         ]),
     );
 }
@@ -1982,9 +2132,55 @@ fn analysis(g: &mut Grammar) {
         ]),
     );
     g.insert(
-        P::Quantifier,
-        s(vec![c(vec![x("forall"), x("exists")]), x("trace"), ident()]),
+        P::BehavioursDomain,
+        s(vec![
+            literal("behaviours"),
+            opt(s(vec![
+                x("("),
+                r(P::Parameter),
+                star(s(vec![x(","), r(P::Parameter)])),
+                x(")"),
+            ])),
+        ]),
     );
+    g.insert(
+        P::Quantifier,
+        s(vec![
+            c(vec![x("forall"), x("exists")]),
+            x("trace"),
+            ident(),
+            opt(s(vec![x("of"), ident(), star(r(P::Fairness))])),
+        ]),
+    );
+    g.insert(
+        P::AlignSkip,
+        s(vec![
+            literal("align"),
+            literal("skip"),
+            x("{"),
+            opt(list(|| r(P::QualifiedName))),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::MatchBlock,
+        s(vec![x("match"), x("{"), r(P::HyperExpression), x("}")]),
+    );
+    g.insert(
+        P::StepLabel,
+        s(vec![
+            ident(),
+            x("."),
+            literal("step"),
+            x("."),
+            c(vec![
+                literal("op"),
+                literal("receiver"),
+                s(vec![r(P::QualifiedName), x("."), member()]),
+            ]),
+        ]),
+    );
+    g.insert(P::IndexedRead, s(vec![r(P::HyperPostfix), x("@"), ident()]));
     g.insert(
         P::HyperClause,
         s(vec![
@@ -1993,9 +2189,18 @@ fn analysis(g: &mut Grammar) {
             x("using"),
             ident(),
             x("over"),
-            r(P::TraceDomain),
-            plus(r(P::Quantifier)),
-            r(P::Block),
+            c(vec![
+                s(vec![
+                    r(P::BehavioursDomain),
+                    plus(r(P::Quantifier)),
+                    opt(r(P::AlignSkip)),
+                    opt(r(P::MatchBlock)),
+                    x("{"),
+                    r(P::TemporalExpression),
+                    x("}"),
+                ]),
+                s(vec![r(P::TraceDomain), plus(r(P::Quantifier)), r(P::Block)]),
+            ]),
         ]),
     );
     g.insert(
@@ -2087,6 +2292,237 @@ fn analysis(g: &mut Grammar) {
             x("}"),
         ]),
     );
+}
+
+/// The probabilistic family: random parameters, workloads, rewards and
+/// the `probabilistic` claim (QSpec `random-decl`, `reward-decl`,
+/// `workload-decl` and `probabilistic-clause`). Every word they introduce
+/// is contextual, so no new keyword is reserved.
+fn probabilistic(g: &mut Grammar) {
+    let bound_op = || c(vec![x("<="), x(">=")]);
+    g.insert(
+        P::ExactValue,
+        c(vec![r(P::ExactNumber), decimal_literal(), uint()]),
+    );
+    g.insert(
+        P::QuantityLiteral,
+        s(vec![r(P::ExactValue), r(P::QualifiedName)]),
+    );
+    g.insert(
+        P::RandomDeclaration,
+        s(vec![
+            literal("random"),
+            r(P::QualifiedName),
+            x("("),
+            ident(),
+            x(")"),
+            x("~"),
+            x("{"),
+            list(|| r(P::WeightedValue)),
+            opt(x(",")),
+            x("}"),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::WeightedValue,
+        s(vec![r(P::Expression), x(":"), r(P::ExactValue)]),
+    );
+    g.insert(
+        P::RewardDeclaration,
+        s(vec![
+            literal("reward"),
+            ident(),
+            x("on"),
+            r(P::QualifiedName),
+            x("="),
+            r(P::Expression),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::WorkloadDeclaration,
+        s(vec![
+            literal("workload"),
+            ident(),
+            x("on"),
+            ident(),
+            x("{"),
+            plus(r(P::WorkloadWeight)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::WorkloadWeight,
+        s(vec![
+            literal("weight"),
+            r(P::QualifiedName),
+            x("="),
+            r(P::ExactValue),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ProbabilisticClause,
+        s(vec![
+            literal("probabilistic"),
+            ident(),
+            x("using"),
+            ident(),
+            x("on"),
+            ident(),
+            opt(s(vec![x("over"), bound_parameter()])),
+            r(P::SchedulerClause),
+            r(P::Activation),
+            opt(r(P::Confidence)),
+            x("{"),
+            r(P::ProbabilisticForm),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::SchedulerClause,
+        c(vec![
+            s(vec![
+                literal("under"),
+                literal("every"),
+                literal("scheduler"),
+                star(r(P::FairnessItem)),
+            ]),
+            s(vec![literal("under"), ident()]),
+        ]),
+    );
+    g.insert(
+        P::FairnessItem,
+        s(vec![
+            x("fair"),
+            c(vec![x("weak"), x("strong")]),
+            opt(x("each")),
+            r(P::QualifiedName),
+        ]),
+    );
+    g.insert(
+        P::Confidence,
+        s(vec![literal("with"), list(|| r(P::ConfidenceItem))]),
+    );
+    g.insert(
+        P::ConfidenceItem,
+        s(vec![
+            c(vec![
+                literal("alpha"),
+                literal("beta"),
+                literal("indifference"),
+            ]),
+            r(P::ExactValue),
+        ]),
+    );
+    g.insert(
+        P::ProbabilisticForm,
+        c(vec![
+            s(vec![
+                literal("probability"),
+                bound_op(),
+                r(P::ExactValue),
+                x("["),
+                r(P::Event),
+                x("]"),
+            ]),
+            s(vec![
+                literal("quantile"),
+                r(P::ExactValue),
+                x("of"),
+                x("("),
+                r(P::Measure),
+                x(")"),
+                bound_op(),
+                r(P::Expression),
+            ]),
+            s(vec![
+                literal("mean"),
+                x("of"),
+                x("("),
+                r(P::Fraction),
+                x(")"),
+                bound_op(),
+                r(P::ExactValue),
+            ]),
+            s(vec![
+                literal("long_run_fraction"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                opt(r(P::Weighting)),
+                bound_op(),
+                r(P::ExactValue),
+            ]),
+            s(vec![
+                literal("expected"),
+                c(vec![
+                    s(vec![literal("accumulate"), ident()]),
+                    literal("elapsed"),
+                ]),
+                x("until"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                bound_op(),
+                r(P::Expression),
+            ]),
+        ]),
+    );
+    g.insert(
+        P::Event,
+        c(vec![
+            s(vec![r(P::Measure), bound_op(), r(P::Expression)]),
+            r(P::TemporalExpression),
+        ]),
+    );
+    g.insert(
+        P::Measure,
+        c(vec![
+            s(vec![
+                c(vec![
+                    s(vec![literal("accumulate"), ident()]),
+                    literal("steps"),
+                    literal("elapsed"),
+                ]),
+                x("from"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                x("until"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                x("within"),
+                r(P::Horizon),
+            ]),
+            r(P::Fraction),
+        ]),
+    );
+    g.insert(
+        P::Fraction,
+        s(vec![
+            literal("fraction"),
+            x("holds"),
+            x("("),
+            r(P::Expression),
+            x(")"),
+            x("over"),
+            x("["),
+            literal("0"),
+            x(","),
+            r(P::Horizon),
+            x("]"),
+            opt(r(P::Weighting)),
+        ]),
+    );
+    g.insert(P::Weighting, s(vec![literal("weighted"), x("by"), ident()]));
+    g.insert(P::Horizon, c(vec![r(P::QuantityLiteral), bound()]));
 }
 
 #[cfg(test)]

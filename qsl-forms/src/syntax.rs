@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::Span;
+use qsl_foundation::{Span, Spanned};
 use quire_exact::{CollectionKind, Integer};
 
 use super::protocol_control::{
@@ -50,6 +50,9 @@ pub enum BuiltinType {
     Option,
     /// `Reference<T>`.
     Reference,
+    /// `Clock`, the built-in clock type: only an unqualified `Clock`
+    /// (FR-393). Whether a unit admits it is S3's decision (FR-230).
+    Clock,
 }
 
 /// A [`TypeForm`]'s head.
@@ -478,6 +481,23 @@ impl fmt::Debug for ExprId {
     }
 }
 
+/// Which label of a step a `trace.step.<label>` read names (FR-171).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StepLabelForm {
+    /// `trace.step.op`: the operation of the step into the current position.
+    Operation,
+    /// `trace.step.receiver`: the step's receiver key.
+    Receiver,
+    /// `trace.step.Operation::name.parameter`: one argument of the step, as
+    /// the qualified operation name and the parameter name were written.
+    Argument {
+        /// The operation's qualified name, segments joined by `::`.
+        operation: String,
+        /// The parameter name.
+        parameter: String,
+    },
+}
+
 /// One node of a value expression: its payload, with each subexpression
 /// named by its [`ExprId`] in the same [`Expression`] arena.
 ///
@@ -495,6 +515,9 @@ pub enum ExprNode {
     Integer(Integer),
     /// `rational(n, d)`; it takes its unique expected `Rational[..]` type.
     Rational(Integer, Integer),
+    /// A quantity literal such as `5 ms` (FR-393): the magnitude and the
+    /// spelled unit. S2 resolves neither.
+    Quantity(QuantityForm),
     /// A quoted text literal (FR-091 "Native scalar literals"): the decoded
     /// Unicode scalar sequence, kept exactly. It is always a `String`.
     String(String),
@@ -720,6 +743,27 @@ pub enum ExprNode {
         /// The written qualified name, segments joined by `::`.
         target: String,
     },
+    /// `read @ trace` (FR-171): a model member read taken from one trace
+    /// variable of a `hyper` clause. S3 binds `trace` to its quantifier.
+    Indexed {
+        /// The member read, as written.
+        read: ExprId,
+        /// The trace variable's name.
+        trace: String,
+    },
+    /// `trace.step.op`, `trace.step.receiver` or
+    /// `trace.step.Operation::name.parameter` (FR-171): one label of the step
+    /// into a trace's current position, read in a `hyper` clause's `match`
+    /// block.
+    StepLabel {
+        /// The trace variable's name.
+        trace: String,
+        /// Which label.
+        label: StepLabelForm,
+    },
+    /// `stutter` (FR-171): the step label of a terminal stutter step, read in
+    /// a `hyper` clause's `match` block.
+    Stutter,
     /// FR-063/S2: exists only so `--cfg seam_probe` makes every
     /// match over `ExprNode` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -738,11 +782,14 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
-            | Self::ProtocolReference { .. } => Vec::new(),
+            | Self::ProtocolReference { .. }
+            | Self::Stutter
+            | Self::StepLabel { .. } => Vec::new(),
             Self::Let { value, body, .. } => vec![*value, *body],
             Self::If {
                 condition,
@@ -759,6 +806,7 @@ impl ExprNode {
             | Self::Size(operand)
             | Self::Field { operand, .. }
             | Self::Convert { operand, .. }
+            | Self::Indexed { read: operand, .. }
             | Self::Pre(operand) => vec![*operand],
             Self::Call { arguments, .. } => arguments.clone(),
             Self::Record { fields, .. } => fields
@@ -831,6 +879,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
@@ -855,6 +904,9 @@ impl ExprNode {
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
             | Self::Reaches { .. }
+            | Self::Indexed { .. }
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => Vec::new(),
             #[cfg(seam_probe)]
             Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
@@ -897,6 +949,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::Quantity(_)
             | Self::String(_)
             | Self::SelfRef
             | Self::Result
@@ -920,6 +973,9 @@ impl ExprNode {
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
             | Self::Reaches { .. }
+            | Self::Indexed { .. }
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => Spellings {
                 reference: None,
                 binders: Vec::new(),
@@ -942,10 +998,13 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => {}
             Self::Negate(operand)
             | Self::Not(operand)
@@ -960,6 +1019,7 @@ impl ExprNode {
                 population: operand,
                 ..
             }
+            | Self::Indexed { read: operand, .. }
             | Self::Pre(operand) => one(operand),
             Self::Let {
                 value: first,
@@ -1111,6 +1171,31 @@ impl<'a> ExprRef<'a> {
             .map(|id| self.at(id))
             .collect()
     }
+
+    /// Whether this subtree and `other`, of any arena, are the same
+    /// expression: equal node payloads, child for child. The nodes'
+    /// positions in their arenas play no part; a payload that records the
+    /// span of a type it names (a conversion's target, an accumulation's or
+    /// a count's result type) compares that span as part of the payload.
+    /// Runs on an explicit stack, so a deep tree compares in constant
+    /// native stack.
+    pub fn same_tree(self, other: ExprRef<'_>) -> bool {
+        let mut pending = vec![(self, other)];
+        while let Some((left, right)) = pending.pop() {
+            let (mut left_node, mut right_node) = (left.node.clone(), right.node.clone());
+            left_node.shift_children(|_| ExprId(0));
+            right_node.shift_children(|_| ExprId(0));
+            if left_node != right_node {
+                return false;
+            }
+            let (left_children, right_children) = (left.children(), right.children());
+            if left_children.len() != right_children.len() {
+                return false;
+            }
+            pending.extend(left_children.into_iter().zip(right_children));
+        }
+        true
+    }
 }
 
 impl fmt::Debug for ExprRef<'_> {
@@ -1143,6 +1228,11 @@ impl Expression {
     /// `rational(numerator, denominator)`.
     pub fn rational(numerator: Integer, denominator: Integer) -> Self {
         Self::single(ExprNode::Rational(numerator, denominator))
+    }
+
+    /// A quantity literal such as `5 ms` (FR-393).
+    pub fn quantity(quantity: QuantityForm) -> Self {
+        Self::single(ExprNode::Quantity(quantity))
     }
 
     /// A name.
@@ -1225,6 +1315,25 @@ impl Expression {
     /// `pre(operand)`.
     pub fn pre(operand: Self) -> Self {
         Self::compose([operand], |[operand]| ExprNode::Pre(operand))
+    }
+
+    /// `read @ trace`.
+    pub fn indexed(read: Self, trace: impl Into<String>) -> Self {
+        let trace = trace.into();
+        Self::compose([read], |[read]| ExprNode::Indexed { read, trace })
+    }
+
+    /// `stutter`.
+    pub fn stutter() -> Self {
+        Self::single(ExprNode::Stutter)
+    }
+
+    /// `trace.step.<label>`.
+    pub fn step_label(trace: impl Into<String>, label: StepLabelForm) -> Self {
+        Self::single(ExprNode::StepLabel {
+            trace: trace.into(),
+            label,
+        })
     }
 
     /// `flatten(operand)`.
@@ -2365,6 +2474,11 @@ pub struct ScopedAnchorForm {
     /// `receive-of` anchor (FR-113's channel-mismatch check); `None` for
     /// every other site.
     pub channel: Option<String>,
+    /// The index into [`ProtocolDeclarationForm::declarations`] of the node
+    /// that writes the reference: the `receive`, `effect`, `event` or
+    /// `await` for a site of the `run` tree, the `compensate` template for
+    /// a template's `for` and `commit` references.
+    pub owner: usize,
 }
 
 /// The kind of static protocol node a [`ProtocolNodeDeclaration`] names, or
@@ -2453,13 +2567,16 @@ pub struct ProtocolNodeDeclaration {
     /// The innermost named control enclosing this declaration; `None` at
     /// the top level.
     pub scope: Option<ScopeId>,
-    /// The channel a `send` or `receive` is written `via`; `None` for
-    /// every other kind.
-    pub channel: Option<String>,
+    /// The channel a `send` or `receive` is written `via`, with its span;
+    /// `None` for every other kind.
+    pub channel: Option<DeclaredName>,
     /// The `related by` clauses of a `send`, `receive`, `attempt`, `effect`
     /// or `event` node, one per clause in source order (FR-308); empty for
     /// every other kind.
     pub related: Vec<RelatedForm>,
+    /// The role an `attempt`, `event` or `commit` is written `by`; `None`
+    /// for every other kind.
+    pub role: Option<DeclaredName>,
 }
 
 /// A binder's syntactic role (FR-113 "Refusals": a record binder, a
@@ -2536,6 +2653,77 @@ pub struct RoleForm {
     pub name: DeclaredName,
     /// The `M::T` object type the role is `on` or `each`, as spelled.
     pub context: NameForm,
+    /// The population, maximum and lifetime of a replicated `each` role;
+    /// `None` for a static `on` role (FR-308 `RoleForm::Replicated`).
+    pub replicated: Option<ReplicatedRoleForm>,
+    /// The span of the whole member, `;` included.
+    pub span: Span,
+}
+
+/// The replicated part of `role R each M::T from population max n lifetime
+/// l;` (FR-308), as written and unresolved.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplicatedRoleForm {
+    /// The population the instances are drawn `from`.
+    pub population: DeclaredName,
+    /// The authored maximum number of live instances.
+    pub max: u64,
+    /// The span of the maximum.
+    pub max_span: Span,
+    /// The lifetime of one instance.
+    pub lifetime: RoleLifetime,
+}
+
+/// A replicated role's `lifetime` (FR-308).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RoleLifetime {
+    /// `lifetime workflow`, with the span of `workflow`.
+    Workflow(Span),
+    /// `lifetime scope`, with the span of `scope`.
+    Scope(Span),
+    /// `lifetime until(e)`, with the condition expression.
+    Until(ExpressionForm),
+}
+
+/// One `case N when { guard } control` of a `choice` (FR-308): its label
+/// and its guard expression, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceCaseForm {
+    /// The case label.
+    pub name: DeclaredName,
+    /// The guard expression.
+    pub guard: ExpressionForm,
+}
+
+/// `choice N by R visible (..) { case ..; case ..; }` (FR-308): the owner,
+/// the visible facts and each case's guard, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceForm {
+    /// The index of the control's own declaration.
+    pub declaration: usize,
+    /// The control's name.
+    pub name: DeclaredName,
+    /// The owning role, as written.
+    pub owner: DeclaredName,
+    /// The `visible` entries, in source order.
+    pub visible: Vec<ExpressionForm>,
+    /// The span of the whole `visible(..)` list.
+    pub visible_span: Span,
+    /// The cases, in source order.
+    pub cases: Vec<ChoiceCaseForm>,
+    /// The span of the whole control.
+    pub span: Span,
+}
+
+/// `check N using p { e };` (FR-308): the profile alias the check is
+/// written `using`. Its body is the [`ProtocolBodyForm`] its declaration
+/// owns.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckForm {
+    /// The index of the control's own declaration.
+    pub declaration: usize,
+    /// The `using` profile alias.
+    pub using: UsingAlias,
 }
 
 /// A part of a protocol declaration that is neither a static node (a
@@ -2718,17 +2906,15 @@ pub struct CompensationForm {
 }
 
 /// The `{ e }` body block of an event node, a `commit`, a `check` or the
-/// `finish` node, recorded by the index of the static declaration
-/// that owns it. `constant` is `Some(b)` exactly when the body is the bare
-/// Boolean literal `b` (`{ true }` or `{ false }`), `None` for any other
-/// body; S2 builds no expression tree for it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// `finish` node, recorded by the index of the static declaration that owns
+/// it, with its expression as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolBodyForm {
     /// The index into [`ProtocolDeclarationForm::declarations`] of the node
     /// that owns this body.
     pub owner: usize,
-    /// The literal the body consists of, when it is a bare Boolean literal.
-    pub constant: Option<bool>,
+    /// The body's expression.
+    pub expression: ExpressionForm,
     /// The span of the body's expression.
     pub span: Span,
 }
@@ -2821,6 +3007,12 @@ pub struct ProtocolDeclarationForm {
     /// Every `await` control of the `run` tree, in source order of the
     /// controls (FR-308).
     pub awaits: Vec<AwaitForm>,
+    /// Every `choice` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub choices: Vec<ChoiceForm>,
+    /// Every `check` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub checks: Vec<CheckForm>,
     /// Every `terminal` and `scheduling` member, in source order (FR-308).
     pub members: Vec<ProtocolMemberForm>,
 }
@@ -2903,6 +3095,44 @@ pub struct IntervalForm {
     pub span: Span,
 }
 
+/// A `timed-interval` as written (FR-393): each end's quantity and whether
+/// its bracket closes it. S2 checks neither its order, its punctuality nor
+/// which profile admits it; S3 does (FR-234).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimedIntervalForm {
+    /// The lower end's quantity.
+    pub lower: QuantityForm,
+    /// Whether the lower end is closed: `[` (true) or `(` (false).
+    pub lower_closed: bool,
+    /// The upper end's quantity.
+    pub upper: QuantityForm,
+    /// Whether the upper end is closed: `]` (true) or `)` (false).
+    pub upper_closed: bool,
+    /// The span of the whole bracketed interval.
+    pub span: Span,
+}
+
+/// A temporal operator's interval (FR-325 as amended by FR-393): one member
+/// that holds a step interval or a timed interval.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OperatorInterval {
+    /// FR-325's `[a, b]` or `[a, *]`.
+    Steps(IntervalForm),
+    /// FR-393's timed interval, boxed: it is several times a step
+    /// interval's size.
+    Timed(Box<TimedIntervalForm>),
+}
+
+impl OperatorInterval {
+    /// The span of the whole bracketed interval.
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Steps(interval) => interval.span,
+            Self::Timed(interval) => interval.span,
+        }
+    }
+}
+
 /// The index of one node of a [`TemporalFormulaForm`] arena. Minted only by
 /// the arena that holds the node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -2931,7 +3161,7 @@ pub struct TemporalOperatorForm {
     /// Which operator.
     pub operator: TemporalOperator,
     /// The operator's interval; `None` when it is written with none.
-    pub interval: Option<IntervalForm>,
+    pub interval: Option<OperatorInterval>,
     /// The operands in source order: one for a unary operator, two for a
     /// binary one.
     pub operands: Vec<TemporalNodeId>,
@@ -3130,6 +3360,336 @@ pub struct TerminalDeclarationForm {
     pub span: Span,
 }
 
+/// How an [`ExactValueForm`] was spelled, which fixes what its two integers
+/// hold.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExactValueKind {
+    /// A `uint`: `first` is the integer and `second` is 1.
+    Natural,
+    /// A `decimal-literal` such as `0.95`: `first` is the digits with the
+    /// point removed (`95`) and `second` is the count of digits after the
+    /// point (`2`).
+    DecimalLiteral,
+    /// `rational(n, d)`: `first` is `n` and `second` is `d`.
+    Rational,
+    /// `decimal(c, s)`: `first` is the coefficient and `second` is the scale.
+    Decimal,
+}
+
+/// An `exact-value` as written (QSpec's shared grammar, FR-311, FR-393): a
+/// `uint`, a `decimal-literal` or an exact number. S2 neither reduces it nor
+/// raises ten to a scale, so a huge scale costs nothing here; S3 reduces it
+/// under its own limits.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExactValueForm {
+    /// The spelling kind.
+    pub kind: ExactValueKind,
+    /// The numerator, the digits or the coefficient.
+    pub first: Integer,
+    /// The denominator, the count of fraction digits or the scale.
+    pub second: Integer,
+    /// The span of the whole value.
+    pub span: Span,
+}
+
+/// A `quantity-literal` as written: an exact magnitude and the unit name
+/// that follows it (FR-393). S2 resolves neither.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QuantityForm {
+    /// The magnitude.
+    pub magnitude: ExactValueForm,
+    /// The unit name, spelled.
+    pub unit: NameForm,
+    /// The span of the whole literal.
+    pub span: Span,
+}
+
+/// One `expr : exact-value` of a `random` declaration's distribution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightedValueForm {
+    /// The value.
+    pub value: ExpressionForm,
+    /// Its weight.
+    pub weight: ExactValueForm,
+    /// The span of the pair.
+    pub span: Span,
+}
+
+/// A `random Op(p) ~ { value: weight, ... };` declaration (FR-311). The
+/// support keeps declared order; S2 checks no type, weight or repeat.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RandomForm {
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// The parameter name.
+    pub parameter: DeclaredName,
+    /// The weighted values, in declared order.
+    pub support: Vec<WeightedValueForm>,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
+/// A `reward name on Op = expr;` declaration (FR-311).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RewardForm {
+    /// The reward name.
+    pub name: DeclaredName,
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// The reward expression, as written.
+    pub expression: ExpressionForm,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
+/// One `weight Op = exact-value;` of a workload (FR-311).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkloadWeightForm {
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// Its weight.
+    pub weight: ExactValueForm,
+    /// The span of the weight, `;` included.
+    pub span: Span,
+}
+
+/// A `workload Name on Model { weight ...; }` declaration (FR-311).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkloadForm {
+    /// The workload name.
+    pub name: DeclaredName,
+    /// The model alias, spelled.
+    pub model: DeclaredName,
+    /// The weights, in declared order.
+    pub weights: Vec<WorkloadWeightForm>,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
+/// `<=` or `>=` in a probabilistic claim (`bound-op`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BoundOp {
+    /// `<=`.
+    AtMost,
+    /// `>=`.
+    AtLeast,
+}
+
+/// A confidence parameter's name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConfidenceKey {
+    /// `alpha`.
+    Alpha,
+    /// `beta`.
+    Beta,
+    /// `indifference`.
+    Indifference,
+}
+
+/// One `alpha|beta|indifference exact-value` item, as written. A repeat
+/// stays a second item (FR-392).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfidenceItemForm {
+    /// Which parameter.
+    pub key: ConfidenceKey,
+    /// The span of the parameter's name.
+    pub key_span: Span,
+    /// Its value.
+    pub value: ExactValueForm,
+}
+
+/// A probabilistic claim's scheduler (`scheduler-clause`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SchedulerForm {
+    /// `under W`: the workload, spelled.
+    Workload(DeclaredName),
+    /// `under every scheduler`, with its fairness items in declared order.
+    Every {
+        /// The `fair (weak | strong) [each] Op` items.
+        fairness: Vec<FairnessConstraintForm>,
+    },
+}
+
+/// A measure or event window: a `steps` count or a time quantity (`horizon`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HorizonForm {
+    /// A step count.
+    Steps(Spanned<u64>),
+    /// A time quantity.
+    Quantity(QuantityForm),
+}
+
+/// `weighted by name` (`weighting`). `delay` stays the spelled name `delay`;
+/// S3 reads it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightingForm {
+    /// The reward, or `delay`, as written.
+    pub name: DeclaredName,
+    /// The span of `weighted by name`.
+    pub span: Span,
+}
+
+/// `fraction holds(P) over [0, h] [weighted by R]` (`fraction`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FractionForm {
+    /// The predicate.
+    pub predicate: ExpressionForm,
+    /// The window's upper end.
+    pub horizon: HorizonForm,
+    /// The weighting, when written.
+    pub weighting: Option<WeightingForm>,
+    /// The span of the whole fraction.
+    pub span: Span,
+}
+
+/// The window of `from holds(A) until holds(B) within h`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MeasureWindowForm {
+    /// `A`.
+    pub from: ExpressionForm,
+    /// `B`.
+    pub until: ExpressionForm,
+    /// `h`.
+    pub within: HorizonForm,
+}
+
+/// A bounded measure (`measure`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MeasureForm {
+    /// `accumulate R from ... until ... within h`.
+    Accumulate {
+        /// The reward, spelled.
+        reward: DeclaredName,
+        /// The window.
+        window: MeasureWindowForm,
+        /// The span of the measure.
+        span: Span,
+    },
+    /// `steps from ... until ... within h`.
+    Steps {
+        /// The window.
+        window: MeasureWindowForm,
+        /// The span of the measure.
+        span: Span,
+    },
+    /// `elapsed from ... until ... within h`.
+    Elapsed {
+        /// The window.
+        window: MeasureWindowForm,
+        /// The span of the measure.
+        span: Span,
+    },
+    /// `fraction holds(P) over [0, h]`.
+    Fraction(FractionForm),
+}
+
+/// A `probability` claim's event (`event`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventForm {
+    /// A temporal formula, built as FR-325's.
+    Temporal(TemporalFormulaForm),
+    /// `M <= c` or `M >= c`.
+    Compare {
+        /// The measure.
+        measure: Box<MeasureForm>,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold, as written.
+        threshold: ExpressionForm,
+    },
+}
+
+/// What an `expected` claim sums (`accumulate R` or `elapsed`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExpectedQuantity {
+    /// `accumulate R`, with the reward spelled.
+    Accumulate(DeclaredName),
+    /// `elapsed`.
+    Elapsed,
+}
+
+/// The body of a `probabilistic` claim (`probabilistic-form`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProbabilisticBody {
+    /// `probability op threshold [event]`.
+    Probability {
+        /// The comparison.
+        op: BoundOp,
+        /// The probability threshold.
+        threshold: ExactValueForm,
+        /// The event.
+        event: EventForm,
+    },
+    /// `quantile q of (measure) op threshold`.
+    Quantile {
+        /// The level `q`.
+        level: ExactValueForm,
+        /// The measure.
+        measure: MeasureForm,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold, as written.
+        threshold: ExpressionForm,
+    },
+    /// `mean of (fraction) op threshold`.
+    MeanOfFraction {
+        /// The fraction.
+        fraction: FractionForm,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold.
+        threshold: ExactValueForm,
+    },
+    /// `long_run_fraction holds(P) [weighted by R] op threshold`.
+    LongRunFraction {
+        /// The predicate.
+        predicate: ExpressionForm,
+        /// The weighting, when written.
+        weighting: Option<WeightingForm>,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold.
+        threshold: ExactValueForm,
+    },
+    /// `expected (accumulate R | elapsed) until holds(B) op threshold`.
+    ExpectedUntil {
+        /// What is summed.
+        quantity: ExpectedQuantity,
+        /// `B`.
+        target: ExpressionForm,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold, as written.
+        threshold: ExpressionForm,
+    },
+}
+
+/// A `probabilistic Name using p on Subject ... { form }` claim (FR-392). S2
+/// resolves no name and fills no default: the profile, subject, workload,
+/// rewards, predicates and fairness operations stay as written, and each
+/// stated confidence item stays, in order, repeats included.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProbabilisticForm {
+    /// The claim name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `on` subject alias, spelled.
+    pub subject: DeclaredName,
+    /// The `over (p: T)` parameter, when written.
+    pub over: Option<ParameterForm>,
+    /// The scheduler.
+    pub scheduler: SchedulerForm,
+    /// The activation.
+    pub activation: ActivationForm,
+    /// The confidence items, in declared order.
+    pub confidence: Vec<ConfidenceItemForm>,
+    /// The claim body.
+    pub body: ProbabilisticBody,
+    /// The span of the whole claim, closing `}` included.
+    pub span: Span,
+}
+
 /// One temporal operator written inside a state-graph claim's predicate. S1
 /// admits the spelling so that S3 can refuse it at this span (FR-165).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3200,6 +3760,80 @@ pub struct StateGraphClaimForm {
     pub span: Span,
 }
 
+/// A `time-decl`'s time source as written (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TimeSourceSyntax {
+    /// `dense`: real-valued clocks.
+    Dense,
+    /// `tick O period p`: digital time counted by occurrences of `O`.
+    Tick {
+        /// The counted operation's qualified name.
+        operation: NameForm,
+        /// The period quantity, boxed so the variant stays near `Dense`'s size.
+        period: Box<QuantityForm>,
+    },
+}
+
+/// `time Model (dense | tick O period p) unit u;` (FR-393). S2 checks
+/// neither uniqueness nor the unit's dimension (FR-230).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimeSourceForm {
+    /// The model alias the declaration names.
+    pub model: DeclaredName,
+    /// The time source.
+    pub source: TimeSourceSyntax,
+    /// The unit's qualified name.
+    pub unit: NameForm,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
+/// One `clock-bound`, `clock (< | <=) quantity` (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClockBoundForm {
+    /// The clock operand as written (a `postfix` expression).
+    pub clock: ExpressionForm,
+    /// `<` (true) or `<=` (false).
+    pub strict: bool,
+    /// The bound.
+    pub bound: QuantityForm,
+    /// The span of the whole bound.
+    pub span: Span,
+}
+
+/// `time invariant Name when { P } { bound (and bound)* }` (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimeInvariantForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The `when` block's expression.
+    pub guard: ExpressionForm,
+    /// The clock bounds, in declared order.
+    pub bounds: Vec<ClockBoundForm>,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
+/// What an `urgent` declaration makes urgent (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UrgentTarget {
+    /// `when { P }`: the states where the predicate holds.
+    When(ExpressionForm),
+    /// `O`: the states where operation `O` is enabled.
+    Operation(NameForm),
+}
+
+/// `urgent Name (when { P } | O);` (FR-393).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UrgentForm {
+    /// The declared name.
+    pub name: DeclaredName,
+    /// The urgency target.
+    pub target: UrgentTarget,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -3237,9 +3871,33 @@ pub enum DeclarationForm {
     /// A `terminal` declaration (FR-382), boxed for the same reason as
     /// [`Self::Function`].
     Terminal(Box<TerminalDeclarationForm>),
+    /// A `hyper` clause over `behaviours` (FR-171), boxed for the same
+    /// reason as [`Self::Function`].
+    HyperBehaviours(Box<crate::hyper_clause::HyperBehavioursForm>),
+    /// A `hyper` clause over a finite trace domain, boxed for the same
+    /// reason as [`Self::Function`].
+    HyperFinite(Box<crate::hyper_clause::HyperFiniteForm>),
+    /// A `relation` clause (FR-171), boxed for the same reason as
+    /// [`Self::Function`].
+    ModelRelation(Box<crate::hyper_clause::ModelRelationForm>),
+    /// A `random` declaration (FR-311), boxed for the same reason as
+    /// [`Self::Function`].
+    Random(Box<RandomForm>),
+    /// A `reward` declaration (FR-311), boxed for the same reason.
+    Reward(Box<RewardForm>),
+    /// A `workload` declaration (FR-311), boxed for the same reason.
+    Workload(Box<WorkloadForm>),
+    /// A `probabilistic` claim (FR-392), boxed for the same reason.
+    Probabilistic(Box<ProbabilisticForm>),
     /// A `possible`, `always possible` or `unique path` claim (FR-165),
     /// boxed for the same reason as [`Self::Function`].
     StateGraphClaim(Box<StateGraphClaimForm>),
+    /// A `time` declaration (FR-393).
+    TimeSource(Box<TimeSourceForm>),
+    /// A `time invariant` declaration (FR-393).
+    TimeInvariant(Box<TimeInvariantForm>),
+    /// An `urgent` declaration (FR-393).
+    Urgent(Box<UrgentForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

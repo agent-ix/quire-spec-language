@@ -31,7 +31,7 @@ use qsl_foundation::diagnostic::{StageFailure, Staged};
 /// FR-108's ConfigVersion unit text and domain package (TC-469), the datum
 /// `examples/config-version/spine.rs` writes its spine files from.
 #[path = "../../../../examples/config-version/spine_unit.rs"]
-mod config_version_unit;
+pub(super) mod config_version_unit;
 
 /// An emit fixture the corpus emits. Each reuses an emit-test fixture or
 /// helper; [`FORMS_UNIT`], [`CYCLIC_EQUALITY`] and the systems-interface
@@ -90,11 +90,14 @@ enum Fixture {
     NativeScalars,
     /// TC-827: [`UNION_NODES`], a union, a construction and a `case`.
     UnionNodes,
+    /// TC-524: ADR-018 §6's [`TEMPORAL_CLAUSE`] over the ConfigVersion
+    /// domain package.
+    TemporalClause,
 }
 
 impl Fixture {
     /// Every fixture; each must back at least one row.
-    const ALL: [Self; 21] = [
+    const ALL: [Self; 22] = [
         Self::Tc416Functions,
         Self::RecursiveF,
         Self::Tree,
@@ -116,6 +119,7 @@ impl Fixture {
         Self::ProtocolReference,
         Self::NativeScalars,
         Self::UnionNodes,
+        Self::TemporalClause,
     ];
 }
 
@@ -146,6 +150,17 @@ const UNION_NODES: &str =
     "union Shape { Empty, Circle(Integer), Rect(Integer, Integer) }\n\
      function area using v(s: Shape): Integer pure { case s { Empty: 0; Circle(r): r; Rect(w, h): w * h; } }\n\
      function rect using v(): Shape pure { Shape::Rect(2, 3) }\n";
+
+/// TC-524: ADR-018 §6's liveness clause under weak fairness, after the
+/// infinite-trace profile `t` and the ConfigVersion model selection: the
+/// `temporal`/`temporal_clause`, `temporal`/`formula` and
+/// `temporal`/`fairness` families FR-337 emits.
+const TEMPORAL_CLAUSE: &str = "profile t = \"quire.temporal.infinite-trace/v1\";\n\
+     model Config = \"example/config-version\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+     temporal ReachesTwo using t over (c: Config::ConfigVersion) clock \"model-steps\" on origin {\n\
+     fair weak each Config::ConfigVersion::attemptUpdate;\n\
+     always eventually holds(c.versionNumber = 2)\n\
+     }\n";
 
 /// Structural equality over TC-416's recursive `Tree`, the STD-129 case: a
 /// recursive compared type that reaches no `Text`, so it has no leaves
@@ -267,6 +282,14 @@ impl Fixture {
                     modelled(&unit, SYSTEMS_DOCUMENT, Vec::new()),
                     vec![SYSTEMS_DOCUMENT],
                 )
+            }
+            Self::TemporalClause => {
+                let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
+                let unit = format!(
+                    "{COMPLETE_V1_HEADER}{}",
+                    TEMPORAL_CLAUSE.replace("{}", &document_digest(document))
+                );
+                Emitted::placed(modelled(&unit, document, Vec::new()), vec![document])
             }
             Self::ConfigVersion => {
                 let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();
@@ -441,6 +464,9 @@ fn rows() -> Vec<Row> {
             K::Protocol(ProtocolForm::ProtocolReference),
             F::ProtocolReference,
         ),
+        row(K::Temporal(TemporalForm::TemporalClause), F::TemporalClause),
+        row(K::Temporal(TemporalForm::Formula), F::TemporalClause),
+        row(K::Temporal(TemporalForm::Fairness), F::TemporalClause),
     ]
 }
 
@@ -484,9 +510,6 @@ const NOT_EMITTED_BY_QSL: &[(CheckedNodeKind, &str)] = {
         (K::Relation(RelationForm::CausalRelation), NO_RECORD_FORM),
         (K::State(StateForm::Transition), NO_TAG),
         (K::State(StateForm::Snapshot), NO_TAG),
-        (K::Temporal(TemporalForm::TemporalClause), NO_TAG),
-        (K::Temporal(TemporalForm::Formula), NO_TAG),
-        (K::Temporal(TemporalForm::Fairness), NO_TAG),
         (K::Temporal(TemporalForm::Clock), NO_TAG),
         (K::Temporal(TemporalForm::Window), NO_TAG),
         (K::Temporal(TemporalForm::Activation), NO_TAG),
