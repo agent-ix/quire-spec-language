@@ -498,7 +498,9 @@ impl CheckedPackage {
     }
 }
 
-/// `import`'s dependency `package_id`, recomputed by emitting its package.
+/// `import`'s dependency `package_id`, taken from the emitter's output for
+/// its package: the remembered emission when it has been emitted, else a
+/// fresh `emit_checked`, which remembers its result.
 fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
     let fresh;
     let emission = match import.package.remembered_emission() {
@@ -659,6 +661,33 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
     )
 }
 
+/// As [`dependency_chain`], but every package also carries a selection of the
+/// package below it, whose path hop holds that package.
+#[cfg(test)]
+pub(crate) fn dependency_chain_with_selections(length: usize) -> CheckedPackage {
+    let mut chain = dependency_chain(0);
+    for link in 0..length {
+        let below = Arc::new(chain);
+        let mut package = dependency_chain(0);
+        package.dependencies = BTreeMap::from([(
+            PackageId::of_preimage(&link.to_le_bytes()),
+            Arc::clone(&below),
+        )]);
+        package.selections = BTreeMap::from([(
+            LibraryName::new("test/below").expect("a library identity"),
+            ResolvedDependency {
+                package_id: PackageId::of_preimage(&link.to_le_bytes()),
+                path: DependencyPath::Via {
+                    first: LibraryName::new("test/below").expect("a library identity"),
+                    package: below,
+                },
+            },
+        )]);
+        chain = package;
+    }
+    chain
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -672,6 +701,21 @@ mod tests {
     #[test]
     fn a_dependency_chain_of_any_length_drops_on_a_small_stack() {
         let chain = dependency_chain(100_000);
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(move || drop(chain))
+            .expect("spawn a 128 KiB thread")
+            .join()
+            .expect("the drop must not overflow a 128 KiB stack");
+    }
+
+    /// ADR-030: the packages a selection's path hop holds drop on the same
+    /// explicit stack; without that release the chain drops recursively
+    /// through the selections.
+    #[trace("FR-099-AC-7", "TC-446")]
+    #[test]
+    fn a_chain_of_selection_hops_of_any_length_drops_on_a_small_stack() {
+        let chain = dependency_chain_with_selections(100_000);
         std::thread::Builder::new()
             .stack_size(128 * 1024)
             .spawn(move || drop(chain))

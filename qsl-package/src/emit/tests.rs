@@ -3730,3 +3730,41 @@ fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
         ["1 < 2"]
     );
 }
+
+/// ADR-013 O-02: the emission a package remembers is the emitter's own, and a
+/// repeat emit and a `link_with` reuse it rather than emitting again.
+#[test]
+fn a_package_remembers_its_emission_and_link_with_reuses_it() {
+    let shared = Arc::new(dependency());
+    assert!(shared.remembered_emission().is_none());
+    let first = emit_checked(&shared).expect("the dependency emits");
+    let remembered = shared
+        .remembered_emission()
+        .expect("the emit remembers its emission");
+    assert_eq!(remembered.package(), first.package());
+    let again = emit_checked(&shared).expect("a repeat emit");
+    assert_eq!(again.package(), first.package());
+    let linked = CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: Arc::clone(&shared),
+        }],
+    )
+    .expect("the root links");
+    assert_eq!(
+        linked.dependency_selections()[&lib("test/units")].package_id,
+        first.package().package_id()
+    );
+
+    let unemitted = Arc::new(dependency());
+    CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: Arc::clone(&unemitted),
+        }],
+    )
+    .expect("the root links");
+    assert!(unemitted.remembered_emission().is_some());
+}
