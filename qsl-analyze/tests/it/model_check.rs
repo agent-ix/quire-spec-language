@@ -697,6 +697,109 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
     );
 }
 
+/// QSpec FR-361-AC-8 (QSpec TC-294): a clause with zero instances is
+/// `Undecided(NoInstance)` before any state is explored; the same clause
+/// over a population with no universe is refused `RequiresBound` naming that
+/// population, never `NoInstance`. The zero instances are made by clearing
+/// `Letters.bindings`; deriving them from the universes is QSL-886's.
+#[trace("TC-520", "QSpec-FR-361-AC-8")]
+#[test]
+fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
+    let world = self::world("", &[&[("c", 0)]]);
+    let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
+    let empty = letters(&world, &[], |_| Some(true));
+    let ident = identity();
+    let item = || ModelCheckItem::Clause {
+        clause: &clause,
+        letters: &empty,
+        identity: &ident,
+    };
+    let outcome = run(
+        &world,
+        &["c"],
+        item(),
+        None,
+        ModelCheckLimits::default(),
+        UNLIMITED,
+    )
+    .expect("checked");
+    assert!(matches!(
+        outcome,
+        ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInstance,
+            stats,
+        } if stats.product_states == 0
+    ));
+
+    let mut no_universe = subject(
+        &world.package,
+        &world.documents,
+        world.initial.clone(),
+        &["c"],
+        UNLIMITED,
+    );
+    no_universe.simulation.universes = Vec::new();
+    let refusal = check_model(
+        ModelCheckRequest {
+            subject: no_universe,
+            item: item(),
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("no universe");
+    let roots = unbounded_roots(&refusal);
+    assert_eq!(roots.len(), 1, "{roots:?}");
+    assert_eq!(roots[0].1, DomainKind::Population);
+    let held: Vec<_> = system_without_universe(&world)
+        .domains()
+        .into_iter()
+        .filter(|(_, value_type)| matches!(value_type, ValueType::Population(_)))
+        .collect();
+    let [(population, _)] = held.as_slice() else {
+        panic!("one population root: {held:?}");
+    };
+    assert_eq!(
+        roots[0].0,
+        DomainKey::Node {
+            node: *population,
+            path: Vec::new()
+        }
+    );
+}
+
+/// FR-125 Instancing (AC-4 stays untagged: its first sentence is QSL-886): a subject whose `initial` list is empty is `NoInitialState`
+/// before any state is explored, for a clause item.
+#[trace("TC-520")]
+#[test]
+fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
+    let world = self::world("", &[]);
+    let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
+    let bound = letters(&world, &["c"], |_| Some(true));
+    let ident = identity();
+    let outcome = run(
+        &world,
+        &["c"],
+        ModelCheckItem::Clause {
+            clause: &clause,
+            letters: &bound,
+            identity: &ident,
+        },
+        None,
+        ModelCheckLimits::default(),
+        UNLIMITED,
+    )
+    .expect("checked");
+    assert!(matches!(
+        outcome,
+        ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInitialState,
+            stats,
+        } if stats.product_states == 0
+    ));
+}
+
 /// FR-126 "Determinism": two runs of one request give equal outcomes and
 /// equal counterexamples.
 #[trace("TC-521")]
