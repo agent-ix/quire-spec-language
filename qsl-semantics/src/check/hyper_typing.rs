@@ -4,20 +4,27 @@
 //!
 //! A body is typed in one forward pass over its expression arena, in which
 //! every node follows its children, so no walk recurses. The types are the
-//! ones a body can compare: Booleans, numbers, text, the operation and
-//! receiver labels of a step, the `Option<T>` argument of a step and any other
-//! model value, which compares only with its own type. The pass reads the
-//! member `p` of an execution `x` as its parameter, `x.result` as its result
-//! and `x.self.f` as a field of its receiver, and a member of an object
-//! parameter as a field of the parameter's object type. A form outside that
-//! set is refused as unsupported, not skipped.
+//! ones a body can compare: Booleans, numbers of one kind (integers, rationals,
+//! decimals, floats and quantities of one unit compare only with their own
+//! kind), text, the operation and receiver labels of a step, the `Option<T>`
+//! argument of a step and any other model value, which compares only with its
+//! own type. The pass reads the member `p` of an execution `x` as its
+//! parameter, `x.result` as its result and `x.self.f` as a field of its
+//! receiver, a member of an object parameter as a field of the parameter's
+//! object type, `E::m` as a member of a declared enum, `f(args)` as a call of
+//! a declared function and `let n = v in b` as `b` with `n` bound to the type
+//! of `v`. The value typer of the declarations (`check::check::typing`) binds
+//! slots of declared types and has no execution, trace-read or step-label
+//! root to bind, so this pass types the roots a hyper clause adds and
+//! delegates nothing; any other form is refused as unsupported, not skipped.
 
 use std::collections::BTreeMap;
 
 use qsl_forms::{BinaryOperator, ExprNode, Expression, ExpressionSpans, StepLabelForm};
 use qsl_foundation::Span;
-use quire_exact::{EffectiveId, ValueType};
+use quire_exact::{EffectiveId, UnitId, ValueType};
 
+use super::check::Signatures;
 use super::hyper_clause::walk;
 use super::Scope;
 
@@ -43,7 +50,12 @@ pub(crate) struct ExecutionRoot {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Ty {
     Boolean,
-    Numeric,
+    Integer,
+    Rational,
+    Decimal,
+    Float,
+    /// A quantity in exactly one unit.
+    Quantity(UnitId),
     Text,
     /// The operation of a step, or `stutter`.
     Label,
@@ -66,12 +78,11 @@ impl Ty {
     pub(crate) fn of(value_type: &ValueType) -> Self {
         match value_type {
             ValueType::Boolean => Self::Boolean,
-            ValueType::Integer
-            | ValueType::Int(_)
-            | ValueType::Rational(_)
-            | ValueType::Decimal(_)
-            | ValueType::Float(_)
-            | ValueType::Quantity(_) => Self::Numeric,
+            ValueType::Integer | ValueType::Int(_) => Self::Integer,
+            ValueType::Rational(_) => Self::Rational,
+            ValueType::Decimal(_) => Self::Decimal,
+            ValueType::Float(_) => Self::Float,
+            ValueType::Quantity(unit) => Self::Quantity(*unit),
             ValueType::Text(_) | ValueType::String => Self::Text,
             other => Self::Value(other.clone()),
         }
@@ -84,11 +95,23 @@ impl Ty {
                 Self::of(left).compares_with(&Self::of(right))
             }
             (Self::Value(left), Self::Value(right)) => left == right,
+            (Self::Quantity(left), Self::Quantity(right)) => left == right,
             (left, right) => {
                 std::mem::discriminant(left) == std::mem::discriminant(right)
-                    && !matches!(left, Self::Execution(_) | Self::ExecutionSelf(_))
+                    && !matches!(
+                        left,
+                        Self::Execution(_) | Self::ExecutionSelf(_) | Self::Quantity(_)
+                    )
             }
         }
+    }
+
+    /// Whether this is a number of some kind.
+    fn is_number(&self) -> bool {
+        matches!(
+            self,
+            Self::Integer | Self::Rational | Self::Decimal | Self::Float | Self::Quantity(_)
+        )
     }
 }
 
@@ -114,6 +137,8 @@ pub(crate) enum BodyFault {
 /// What a body is typed against.
 pub(crate) struct Env<'a> {
     pub(crate) scope: &'a Scope,
+    /// The unit's declared functions, which a call resolves against.
+    pub(crate) signatures: &'a Signatures,
     pub(crate) roots: BTreeMap<&'a str, Root>,
     pub(crate) site: Site,
     /// The type of a step label; `None` when the label is refused elsewhere.
@@ -139,9 +164,36 @@ pub(crate) fn type_condition(
             .flatten()
             .unwrap_or(Span { start: 0, end: 0 })
     };
-    let mut faults = Vec::new();
-    let mut types: Vec<Ty> = Vec::with_capacity(expression.len());
+    // Each node's subtree is the arena run `starts[i]..=i`, since a node
+    // follows its children; a `let`'s body run is where its binder is in
+    // scope.
+    let mut starts: Vec<usize> = Vec::with_capacity(expression.len());
+    let mut lets: Vec<Binding> = Vec::new();
     for node in expression.iter() {
+        let index = node.id().index();
+        let children = node.node().children();
+        let start_of = |starts: &[usize], id: &qsl_forms::ExprId| {
+            starts.get(id.index()).copied().unwrap_or(index)
+        };
+        if let ExprNode::Let { name, value, body } = node.node() {
+            lets.push(Binding {
+                name: name.clone(),
+                value: value.index(),
+                body_start: start_of(&starts, body),
+                body: body.index(),
+            });
+        }
+        let start = children
+            .iter()
+            .map(|id| start_of(&starts, id))
+            .min()
+            .unwrap_or(index);
+        starts.push(start);
+    }
+    let mut faults = Vec::new();
+    let mut types: Vec<Ty> = vec![Ty::Unknown; expression.len()];
+    for id in evaluation_order(expression) {
+        let node = expression.at(id);
         let at = span_of(node.id().index());
         let child = |id: qsl_forms::ExprId| types.get(id.index()).cloned().unwrap_or(Ty::Unknown);
         let ill = |faults: &mut Vec<BodyFault>| {
@@ -158,7 +210,8 @@ pub(crate) fn type_condition(
         let silent = matches!(env.site, Site::Match);
         let ty = match node.node() {
             ExprNode::Boolean(_) => Ty::Boolean,
-            ExprNode::Integer(_) | ExprNode::Rational(..) => Ty::Numeric,
+            ExprNode::Integer(_) => Ty::Integer,
+            ExprNode::Rational(..) => Ty::Rational,
             ExprNode::String(_) => Ty::Text,
             ExprNode::Stutter => Ty::Label,
             ExprNode::StepLabel { trace, label } => {
@@ -173,10 +226,43 @@ pub(crate) fn type_condition(
             {
                 Ty::Unknown
             }
-            ExprNode::Name(name) => match env.roots.get(name.as_str()) {
-                Some(Root::Object(object)) => Ty::Value(ValueType::Reference(*object)),
-                Some(Root::Execution(_)) => Ty::Execution(name.clone()),
+            ExprNode::Name(name) => {
+                let index = node.id().index();
+                let binder = lets
+                    .iter()
+                    .filter(|bound| {
+                        bound.name == *name && bound.body_start <= index && index <= bound.body
+                    })
+                    .max_by_key(|bound| bound.body_start);
+                if let Some(bound) = binder {
+                    types.get(bound.value).cloned().unwrap_or(Ty::Unknown)
+                } else if let Some(root) = env.roots.get(name.as_str()) {
+                    match root {
+                        Root::Object(object) => Ty::Value(ValueType::Reference(*object)),
+                        Root::Execution(_) => Ty::Execution(name.clone()),
+                    }
+                } else if let Some((binding, _)) = env.scope.enum_members_named(name).next() {
+                    Ty::Value(ValueType::Enum(binding.shape()))
+                } else {
+                    missing(&mut faults, name)
+                }
+            }
+            ExprNode::Let { body, .. } => child(*body),
+            ExprNode::Call { name, arguments } if !silent => match env.signatures.callable(name) {
                 None => missing(&mut faults, name),
+                Some((_, signature)) => {
+                    let accepted = signature.parameters.len() == arguments.len()
+                        && signature.parameters.iter().zip(arguments).all(
+                            |((_, declared), argument)| {
+                                Ty::of(declared).compares_with(&child(*argument))
+                            },
+                        );
+                    if accepted {
+                        Ty::of(&signature.result)
+                    } else {
+                        ill(&mut faults)
+                    }
+                }
             },
             ExprNode::Indexed { read, .. } | ExprNode::Pre(read) => child(*read),
             ExprNode::Field { operand, field } => match field_type(env, &child(*operand), field) {
@@ -193,8 +279,9 @@ pub(crate) fn type_condition(
                 }
             }
             ExprNode::Negate(operand) => {
-                if numeric(&child(*operand)) {
-                    Ty::Numeric
+                let operand = child(*operand);
+                if operand.is_number() || operand == Ty::Unknown {
+                    operand
                 } else {
                     ill(&mut faults)
                 }
@@ -236,21 +323,40 @@ pub(crate) fn type_condition(
                     | BinaryOperator::LessOrEqual
                     | BinaryOperator::Greater
                     | BinaryOperator::GreaterOrEqual => {
-                        if numeric(&left) && numeric(&right) {
+                        if numbers(&left, &right) {
                             Ty::Boolean
                         } else {
                             ill(&mut faults)
                         }
                     }
-                    BinaryOperator::Add
-                    | BinaryOperator::Subtract
-                    | BinaryOperator::Multiply
-                    | BinaryOperator::Divide
-                    | BinaryOperator::IntegerDiv
+                    BinaryOperator::Add | BinaryOperator::Subtract => {
+                        if numbers(&left, &right) {
+                            known(left, right)
+                        } else {
+                            ill(&mut faults)
+                        }
+                    }
+                    BinaryOperator::Multiply | BinaryOperator::Divide => {
+                        if !numbers(&left, &right) {
+                            ill(&mut faults)
+                        } else if matches!(left, Ty::Quantity(_))
+                            || matches!(right, Ty::Quantity(_))
+                        {
+                            // A product of units has no type here.
+                            faults.push(BodyFault::Unsupported { span: at });
+                            Ty::Unknown
+                        } else {
+                            known(left, right)
+                        }
+                    }
+                    BinaryOperator::IntegerDiv
                     | BinaryOperator::IntegerRem
                     | BinaryOperator::IntegerMod => {
-                        if numeric(&left) && numeric(&right) {
-                            Ty::Numeric
+                        if [&left, &right]
+                            .iter()
+                            .all(|side| matches!(side, Ty::Integer | Ty::Unknown))
+                        {
+                            Ty::Integer
                         } else {
                             ill(&mut faults)
                         }
@@ -258,11 +364,10 @@ pub(crate) fn type_condition(
                 }
             }
             ExprNode::Case(_)
-            | ExprNode::Let { .. }
+            | ExprNode::Call { .. }
             | ExprNode::Present(_)
             | ExprNode::Value(_)
             | ExprNode::Deref(_)
-            | ExprNode::Call { .. }
             | ExprNode::Record { .. }
             | ExprNode::Collection { .. }
             | ExprNode::Convert { .. }
@@ -288,9 +393,14 @@ pub(crate) fn type_condition(
             #[cfg(seam_probe)]
             ExprNode::__SeamProbe => Ty::Unknown,
         };
-        types.push(ty);
+        if let Some(slot) = types.get_mut(id.index()) {
+            *slot = ty;
+        }
     }
-    if !types.last().is_none_or(boolean) {
+    if !types
+        .get(expression.root().id().index())
+        .is_none_or(boolean)
+    {
         faults.push(BodyFault::IllTyped {
             span: span_of(expression.root().id().index()),
         });
@@ -298,12 +408,57 @@ pub(crate) fn type_condition(
     faults
 }
 
+/// The nodes of `expression` with every node after its operands and a
+/// `let`'s value before its body, so a binder's type is known where its body
+/// reads it. The arena order does neither: it stores a node's later operands
+/// first.
+fn evaluation_order(expression: &Expression) -> Vec<qsl_forms::ExprId> {
+    let mut order = Vec::with_capacity(expression.len());
+    let mut pending = vec![(expression.root().id(), false)];
+    while let Some((id, expanded)) = pending.pop() {
+        if expanded {
+            order.push(id);
+            continue;
+        }
+        pending.push((id, true));
+        let node = expression.at(id);
+        let mut operands = node.node().children();
+        if let ExprNode::Let { value, body, .. } = node.node() {
+            operands = vec![*value, *body];
+        }
+        // Popped last-first, so the first operand is typed first.
+        pending.extend(operands.into_iter().rev().map(|operand| (operand, false)));
+    }
+    order
+}
+
 fn boolean(ty: &Ty) -> bool {
     matches!(ty, Ty::Boolean | Ty::Unknown)
 }
 
-fn numeric(ty: &Ty) -> bool {
-    matches!(ty, Ty::Numeric | Ty::Unknown)
+/// Whether `left` and `right` are numbers of one kind.
+fn numbers(left: &Ty, right: &Ty) -> bool {
+    let number = |ty: &Ty| ty.is_number() || *ty == Ty::Unknown;
+    number(left) && number(right) && left.compares_with(right)
+}
+
+/// The type of an operation over two numbers of one kind: the one that is
+/// not unknown.
+fn known(left: Ty, right: Ty) -> Ty {
+    if left == Ty::Unknown {
+        right
+    } else {
+        left
+    }
+}
+
+/// A `let`'s binder, the arena index of its value and the arena run of its
+/// body, in which the binder is in scope.
+struct Binding {
+    name: String,
+    value: usize,
+    body_start: usize,
+    body: usize,
 }
 
 enum Field {
@@ -347,5 +502,24 @@ fn field_type(env: &Env<'_>, operand: &Ty, field: &str) -> Field {
             _ => Field::IllTyped,
         },
         _ => Field::IllTyped,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A quantity compares only with a quantity of its own unit, never with a
+    /// bare number.
+    #[test]
+    fn a_quantity_compares_only_with_its_own_unit() {
+        let metre = Ty::Quantity(UnitId::compound([1; 32]));
+        let second = Ty::Quantity(UnitId::compound([2; 32]));
+        assert!(metre.compares_with(&metre.clone()));
+        assert!(!metre.compares_with(&second));
+        assert!(!metre.compares_with(&Ty::Integer));
+        assert!(!Ty::Rational.compares_with(&Ty::Integer));
+        assert!(Ty::Integer.compares_with(&Ty::Integer));
+        assert!(!numbers(&metre, &Ty::Integer));
     }
 }

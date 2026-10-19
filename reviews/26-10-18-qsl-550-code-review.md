@@ -78,3 +78,20 @@ scope:
 ## Coverage
 
 Not applicable to this method; see SR-12817 (gap-analysis).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The new body typer is a second, hand-written typer that is narrower than the value profile FR-172 names ("the body SHALL check under the value profile"), and at one point wider. It refuses valid bodies. With `enum Phase { OPEN, SHUT }` in the unit, `holds(Phase::OPEN = Phase::OPEN)` in a hyper body and `{ Phase::OPEN != Phase::SHUT }` in a relation body both refuse `missing_declaration` naming `Phase::OPEN`, because a qualified enum member is an `ExprNode::Name` that is not among the typer's roots. The cause is wrong too: a declared name is reported as missing. With a declared `function f`, `f(x.i) = f(y.i)` refuses `BodyUnsupported`, as do `abs(...)` and `let k = x.i in k = y.i`. In the other direction, `Ty::of` folds Integer, Int, Rational, Decimal, Float and Quantity into one `Numeric`, so a quantity can be compared with a bare integer, which the value typer would refuse. Fix: type the body through the existing value `Typer` (`check/check/typing.rs`), with the execution variables and object parameters bound as roots. Or admit enum members, declared calls and `let`, and keep numeric kinds and dimensions apart. | qsl-semantics/src/check/hyper_typing.rs:62-76, 150-157, 251-276 |
+| FND-007 | low | `CheckedModelRelation::body()` returns the S2 `Expression`, not the `CheckedExpression` that FR-172's Outputs name, and the doc says S4 lowers it to FR-322 terms. That is acceptable while every clause is refused NotEmitted, but the Outputs now disagree with the code. Record the S4 typing as remaining work in FR-172, or amend the Outputs. | qsl-semantics/src/check/hyper_clause.rs:364, 427-432 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | check_relation types form.body through hyper_typing::type_condition and keeps it (CheckedModelRelation::body). Probe `{ x.nonexistent = zzz and q.r = 3 }` now refuses BodyMissing `nonexistent`; Det checks (26a263afd). |
+| FND-002 | fixed | Duplicate trace variables, object parameters and execution variables refuse DuplicateName (conflicting_declaration/duplicate-declaration) at the second name. Probes `forall trace a ... exists trace a`, `(v: ..., v: ...)` and `(x: ..., x: ...)` all refuse (26a263afd). |
+| FND-003 | fixed | Atoms and match conjuncts are typed. All six probes refuse: `w.versionNumber` and `zzz` BodyMissing, `v.nope @ a` BodyMissing, non-Boolean `holds(v.versionNumber @ a)` BodyIllTyped, `match { a.step.op = a.step.receiver }` and `match { a.step.op }` BodyIllTyped. Valid arithmetic, `if`, `not`, `stutter` and argument-pair bodies still check. The over-strict side is FND-006 (26a263afd). |
+| FND-004 | fixed | The refusal is now at form.match_span, the whole `match { ... }` block (26a263afd). |
+| FND-005 | fixed | The field is renamed `parameter_type`, and `ArgumentRead::read_type()` returns `ValueType::Option(T)`. The match typer types the label `Ty::Argument(T)`, which compares only with another argument, so `a.step.O.i = 1` refuses BodyIllTyped (26a263afd). |

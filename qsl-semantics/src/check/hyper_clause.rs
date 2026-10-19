@@ -33,6 +33,7 @@ use quire_semantic_value::fairness::{FairnessConstraint, FairnessOperation};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::abstraction::{AbstractionKey, CheckedAbstractionRelation, OperationKey};
+use super::check::Signatures;
 use super::hyper_typing::{type_condition, BodyFault, Env, ExecutionRoot, Root, Site, Ty};
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
@@ -79,6 +80,8 @@ impl HyperDeclaration {
 pub struct HyperDeclarations<'a> {
     pub(crate) temporal: TemporalDeclarations<'a>,
     pub(crate) models: &'a [AdmittedModel],
+    /// The unit's declared functions, which a body's calls resolve against.
+    pub(crate) signatures: &'a Signatures,
 }
 
 /// The `TemporalTrace` family's `hyper` and `relation` productions (ADR-023
@@ -361,6 +364,8 @@ pub struct CheckedModelRelation {
     name: String,
     span: Span,
     executions: Vec<(String, OperationKey)>,
+    /// The typed body as S2 built it. FR-172 names a `CheckedExpression`;
+    /// lowering the typed body to the checked node is S4 work and remains.
     body: Expression,
     claim: TemporalClaim,
     code_domains: BTreeMap<(usize, Vec<u32>), DomainKind>,
@@ -899,6 +904,7 @@ fn check_behaviours(
             );
             let env = Env {
                 scope,
+                signatures: declarations.signatures,
                 roots: atom_roots(),
                 site: Site::Body,
                 label: &no_label,
@@ -928,6 +934,7 @@ fn check_behaviours(
             };
             let env = Env {
                 scope,
+                signatures: declarations.signatures,
                 roots: BTreeMap::new(),
                 site: Site::Match,
                 label: &label,
@@ -2182,6 +2189,7 @@ fn check_relation(
     let no_label = |_: &str, _: &StepLabelForm| None;
     let env = Env {
         scope,
+        signatures: declarations.signatures,
         roots: body_roots,
         site: Site::Body,
         label: &no_label,
@@ -2253,6 +2261,8 @@ pub fn check_hyper_clauses(
             position_limit: 10_000,
         },
         models: &package.models,
+        // The helper checks clauses over no declared function.
+        signatures: &Signatures::default(),
     };
     package
         .hyper_clauses

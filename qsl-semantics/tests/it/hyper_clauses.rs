@@ -1013,3 +1013,142 @@ fn a_name_used_twice_refuses_at_the_second() {
         }
     );
 }
+
+/// What the unit's check says of the clauses of `declarations` over the
+/// vault: `Ok` when each is refused only as not emitted (every body typed),
+/// otherwise the hyper causes found.
+fn body_outcome(declarations: &str) -> Result<(), Vec<HyperCause>> {
+    let (_, package) = assemble(&["V"], INFINITE, declarations);
+    let refusals = package
+        .check(CheckingLimits::default())
+        .expect_err("a checked clause is refused as not emitted");
+    let mut faults = Vec::new();
+    for refusal in refusals {
+        match refusal.cause {
+            CheckCause::Temporal(cause) if matches!(*cause, TemporalCause::NotEmitted { .. }) => {}
+            CheckCause::Hyper(cause) => faults.push(*cause),
+            other => panic!("{declarations}: neither a body fault nor not-emitted: {other:?}"),
+        }
+    }
+    if faults.is_empty() {
+        Ok(())
+    } else {
+        Err(faults)
+    }
+}
+
+const PHASE: &str = "enum Phase { OPEN, SHUT }\n";
+const FUNCTIONS: &str = "function f using v(n: Integer): Integer pure { n }\n\
+     function abs using v(n: Integer): Integer pure { if n < 0 then -n else n }\n";
+
+fn relation_over(body: &str) -> String {
+    format!(
+        "relation R using inf over (x: V::ConfigVersion::step, y: V::ConfigVersion::step) \
+         {{ {body} }}"
+    )
+}
+
+fn atom_over(condition: &str) -> String {
+    format!(
+        "hyper H using inf over behaviours (v: V::ConfigVersion) forall trace a of V \
+         forall trace b of V {{ always holds({condition}) }}"
+    )
+}
+
+/// FR-172 "Relations over model executions", "Indexed atoms and step labels":
+/// a body is typed under the value profile, so the value forms a body may
+/// use check: the members of a declared enum, calls of declared functions and
+/// `let`.
+#[trace("TC-597")]
+#[test]
+fn a_body_may_use_enum_members_declared_functions_and_let() {
+    for (declarations, label) in [
+        (
+            format!("{PHASE}{}", relation_over("Phase::OPEN != Phase::SHUT")),
+            "enum member in a relation",
+        ),
+        (
+            format!("{PHASE}{}", atom_over("Phase::OPEN = Phase::OPEN")),
+            "enum member in an atom",
+        ),
+        (
+            format!("{FUNCTIONS}{}", relation_over("f(x.i) = f(y.i)")),
+            "declared function",
+        ),
+        (
+            format!("{FUNCTIONS}{}", relation_over("abs(x.i) >= 0")),
+            "declared function with a conditional body",
+        ),
+        (relation_over("let n = x.i in n = y.i"), "let in a relation"),
+        (
+            atom_over("let n = v.versionNumber @ a in n = v.versionNumber @ b"),
+            "let over an indexed read",
+        ),
+    ] {
+        assert_eq!(body_outcome(&declarations), Ok(()), "{label}");
+    }
+}
+
+/// The same forms refuse when they are misused: a member of no enum, an enum
+/// compared with an integer, a call of no function or with the wrong
+/// arguments, and a `let` binder used past its body.
+#[trace("TC-597")]
+#[test]
+fn misused_enum_members_calls_and_let_binders_refuse() {
+    let missing = |declarations: String| match body_outcome(&declarations) {
+        Err(faults) => faults,
+        Ok(()) => panic!("{declarations}: a refusal"),
+    };
+    for (declarations, code) in [
+        (
+            format!("{PHASE}{}", relation_over("Phase::NONE = Phase::OPEN")),
+            Code::MissingDeclaration,
+        ),
+        (
+            format!("{PHASE}{}", relation_over("Phase::OPEN = 1")),
+            Code::IllTyped,
+        ),
+        (
+            format!("{FUNCTIONS}{}", relation_over("g(x.i) = 1")),
+            Code::MissingDeclaration,
+        ),
+        (
+            format!("{FUNCTIONS}{}", relation_over("f(x.i, y.i) = 1")),
+            Code::IllTyped,
+        ),
+        (
+            format!("{FUNCTIONS}{}", relation_over("f(true) = 1")),
+            Code::IllTyped,
+        ),
+        (
+            relation_over("(let n = x.i in n = 1) and n = 1"),
+            Code::MissingDeclaration,
+        ),
+        (relation_over("let n = true in n = x.i"), Code::IllTyped),
+    ] {
+        let faults = missing(declarations.clone());
+        assert_eq!(faults.len(), 1, "{declarations}: {faults:?}");
+        assert_eq!(faults[0].code(), code, "{declarations}: {faults:?}");
+    }
+}
+
+/// Numbers of different kinds do not compare: an integer is not a rational,
+/// and a number is not a quantity.
+#[trace("TC-597")]
+#[test]
+fn numbers_of_different_kinds_do_not_compare() {
+    for body in [
+        "x.i = rational(1, 2)",
+        "x.i + rational(1, 2) = x.i",
+        "rational(1, 2) < x.i",
+        "x.i div rational(1, 2) = 1",
+    ] {
+        let faults = body_outcome(&relation_over(body)).expect_err(body);
+        assert_eq!(faults.len(), 1, "{body}: {faults:?}");
+        assert_eq!(faults[0].code(), Code::IllTyped, "{body}");
+    }
+    body_outcome(&relation_over(
+        "rational(1, 2) < rational(3, 4) and x.i + 1 = y.i",
+    ))
+    .expect("same kinds compare");
+}

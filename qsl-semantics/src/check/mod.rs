@@ -1634,6 +1634,7 @@ impl PackageDeclarations {
                 position_limit: limits.nodes(),
             },
             models: &models,
+            signatures: &signatures,
         };
         for clause in &self.hyper_clauses {
             let mut contract_cx = crate::family::CheckContext::new(

@@ -81,3 +81,13 @@ bindings:
 Planless review over the PR diff; tags read from the diff's `#[trace]`
 attributes. Plan completion: not assessed. A `quoin matrix` run was not
 needed to judge the diff's own tags.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `a_clause_names_one_subject_alias_per_distinct_model` now carries only `TC-598`; the FR-173-AC-4 tag is dropped (26a263afd). |
+| FND-002 | fixed | The FR-180-AC-1 tag is narrowed to `TC-605` (26a263afd). |
+| FND-003 | fixed | The FR-172-AC-1, FR-173-AC-2 and FR-173-AC-3 tags are narrowed to their TC ids, so the matrix no longer reports the unbuilt halves as backed (26a263afd). |
+| FND-004 | fixed | The new test `an_examined_body_refuses_by_its_own_fault_under_either_profile` shows that the relation and hyper bodies are examined: an ill-typed body refuses BodyMissing under both layers, never a layer refusal. The existing ungated test still admits valid Det and NonInterference under both (26a263afd). |
+| FND-005 | still-open | The fix round changed no spec file. FR-362-AC-7 (lines 67 and 96) and TC-1026 step 5 still say a relation or hyper clause is refused at S2. Retire those sentences, since the families have moved, or record them as remaining work. |
