@@ -47,7 +47,9 @@ fairness constraint, at the offending span.
 ## Inputs
 
 - Parsed state-graph claim syntax (S1), in the spellings QSpec's shared
-  grammar gives the three forms.
+  grammar gives the three forms. The `over` parameter is optional in all
+  three, and a predicate may contain a temporal operator at any position
+  (see Parsing).
 - The admitted domain packages and the unit's state models (FR-103).
 - For the request writer: the request's temporal and state-graph items with
   their model subjects (FR-125).
@@ -77,6 +79,24 @@ pub enum StateGraphForm {
 
 ## Behavior
 
+### Parsing (S1)
+
+- S1 SHALL parse each of the three forms with the `over (x: T)` parameter
+  present or absent. A claim without `over` parses to a claim with no `over`
+  binding.
+- S1 SHALL parse a predicate of a state-graph claim through a
+  `graph-predicate` production of QSpec's shared grammar (state-graph
+  section): a clause expression in which unary and binary temporal operators,
+  each with an optional interval, may stand at any operand position, with
+  fairness constraints admitted at the start of the body. The production is
+  recognition only; QSpec FR-390 refuses at admission. QSpec's
+  state-graph productions today take a block of plain `expr`, which has no
+  temporal operators. QSL's S1 implements the `graph-predicate` widening now,
+  ahead of QSpec, so the S3 refusal below is reachable from source text; the
+  production is owned by QSpec, and STD-171 aligns QSpec's grammar with it.
+- S1 SHALL NOT refuse a predicate for holding a temporal operator; S3 does
+  (see Predicates).
+
 ### Forms
 
 - S2 SHALL build one state-graph claim form for each parsed `possible`,
@@ -86,9 +106,11 @@ pub enum StateGraphForm {
   `AlwaysPossible`, and `unique path` to `UniquePath`.
 - An `always possible` claim written without `from` SHALL check with `from`
   as the constant `true` predicate.
-- A claim with an `over` parameter SHALL check to one instance per object of
-  the parameter's population universe, as FR-125 instantiates a temporal
-  clause. A claim with no `over` parameter has one instance.
+- S3 SHALL record a claim's `over` binding (`Some` when written, `None`
+  when absent) and SHALL NOT instantiate it. A population universe is a
+  request-time input (`ModelSubject.universes`, FR-125), not an S3 input, so
+  FR-125 instantiates the claim: one instance per object of the parameter's
+  universe, or one instance when the claim has no `over` binding.
 - The form and every predicate SHALL be part of the claim's checked
   identity, so two claims that differ only in form have different node
   identities.
@@ -98,11 +120,17 @@ pub enum StateGraphForm {
 - S3 SHALL check each predicate (`target`, `from`, `to`) as a Boolean state
   clause under the unit's value profile, through the clause checker that
   invariants use (FR-104).
-- If a predicate reads an operation anchor, a parameter, a result or a
-  pre-state, then S3 SHALL refuse `unsupported_construct`/`expression-form`
-  located at the read (ADR-022 GM-3).
-- If a predicate contains a temporal operator, then S3 SHALL refuse
-  `unsupported_construct`/`expression-form` located at the operator.
+- If a predicate reads an operation anchor, a result or a pre-state, then S3
+  SHALL refuse `unsupported_construct`/`expression-form` located at the read
+  (ADR-022 GM-3). These are the forms that name an operation context.
+- A claim has no operation context, so S3 resolves a predicate's names
+  against the `over` binding and the unit's state alone. If a predicate
+  names an operation parameter, which no claim scope binds, then S3 SHALL
+  refuse `missing-name` located at the name. S3 is the only stage that
+  refuses a parameter read.
+- If a predicate contains a temporal operator at any position, then S3 SHALL
+  refuse `unsupported_construct`/`expression-form` located at the operator.
+  S1 has already parsed it through `graph-predicate` (see Parsing).
 - If the claim carries a fairness constraint, then S3 SHALL refuse
   `unsupported_construct`/`expression-form` located at the constraint
   (ADR-022 GM-7).
@@ -129,9 +157,11 @@ pub enum StateGraphForm {
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-165-AC-1 | Over ADR-022 §7's units: `ReachesTwo` and `ReachesThree` check to `Possible`, each with two instances over universe `{a, b}`; `CanStillWin` without `from` checks to `AlwaysPossible` with `from` the constant `true`, and with `from (x.phase != Lost)` to `AlwaysPossible` with that predicate; `InOneWay` checks to `UniquePath`. Each records (`temporal-satisfaction`, `Unbounded`) with its form beside it. `possible P` and `always possible P` over the same `P` have different node identities. | Test (TC-590) |
+| FR-165-AC-1 | Over ADR-022 §7's units: `ReachesTwo` and `ReachesThree` check to `Possible`, each with its `over` binding recorded; `CanStillWin` without `from` checks to `AlwaysPossible` with `from` the constant `true`, and with `from (x.phase != Lost)` to `AlwaysPossible` with that predicate; `InOneWay` checks to `UniquePath`. Each records (`temporal-satisfaction`, `Unbounded`) with its form beside it. `possible P` and `always possible P` over the same `P` have different node identities. | Test (TC-590) |
 | FR-165-AC-2 | Refusals, each `unsupported_construct`/`expression-form` at the named span, with no checked claim: `possible` whose predicate reads `pre(c.versionNumber)` (at the read); `possible` whose predicate is `eventually c.versionNumber = 2` (at `eventually`); `always possible` carrying `fair weak attemptUpdate` (at the constraint). | Test (TC-590) |
 | FR-165-AC-3 | A request whose only items are `CanStillWin` and `InOneWay` carries one `DeadlockFreedom` item for each of their two subjects; a request with `ReachesTwo` and a temporal claim over the same subject carries one; the §7.2 game with `terminal any` carries none. | Test (TC-590) |
+| FR-165-AC-4 | S1 parses `possible Anything using v { true }` (no `over`) to a claim with no `over` binding, and parses `possible R using v over (c: Config::ConfigVersion) { c.versionNumber = 2 and eventually c.versionNumber = 3 }`, `possible N using v over (c: Config::ConfigVersion) { not eventually c.versionNumber = 2 }` and `possible P using v over (c: Config::ConfigVersion) { (eventually c.versionNumber = 2) }` to claims; none is an S1 refusal. S3 checks the first with `over` recorded as `None`, and refuses each of the other three `unsupported_construct`/`expression-form` at `eventually`, with no checked claim. | Test (TC-590) |
+| FR-165-AC-5 | Over a fixture unit whose operation `setVersion` takes parameter `newVersion: Int`, S3 refuses a `possible` claim whose predicate is `c.versionNumber = newVersion` with `missing-name` at `newVersion`, not `expression-form`; the same claim with `pre(c.versionNumber)` still refuses `expression-form`, with no checked claim. | Test (TC-590) |
 
 ## Dependencies
 

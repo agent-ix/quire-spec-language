@@ -89,7 +89,7 @@ pub enum Certification { Certified, Uncertified, Trusted }   // ADR-018 PC-1
 // TerminalValue::Proved { basis: ProofBasis, certification: Certification }
 // InconclusiveCause gains:
 //   BoundReached { depth: u64 }, InductionNotClosed { depth: u64 },
-//   UndecidedSuccessor, NoInitialState,
+//   UndecidedSuccessor, NoInitialState, NoInstance,
 //   CertificateRejected { rule: CertificateRule, at: CertificateLocus },
 //   written certificate-rejected{rule, at} (QSpec FR-331)
 
@@ -122,7 +122,7 @@ and the QSpec FR-331 terminal record carrying the value, its QSpec FR-360 label,
 | V-4 | `Violated` whose replay settles `reproduced-with-evaluated-witness` | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-4 | `Violated` with `kind: UndefinedEvaluation{where, cause}` whose replay reproduces the undefined value at `where` (FR-128) | `refuted`, cause `UndefinedEvaluation{where, cause}` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | `BoundReached{depth}` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth})` | inconclusive |
-| V-6 | `Undecided(UndecidedSuccessor)` (a refused contract conjunction) or `Undecided(NoInitialState)` | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-6 | `Undecided(UndecidedSuccessor)` (a refused contract conjunction), `Undecided(NoInitialState)` or `Undecided(NoInstance)` (an item with zero instances, FR-125) | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-6 | `Violated` whose replay settles `inconclusive` (`Verdicts` or `NoValue`) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
 | V-6 | `Violated` whose replay refuses with `ReplayRefusal::UnfairLasso` (FR-131), an unfair lasso, which EN-1 never builds (ADR-019 SV-4) | `inconclusive` | `unsettled` | `Inconclusive(ReplayParity)` | inconclusive |
 | V-6 | `Violated` whose replay refuses with any other `ReplayRefusal` variant except an internal fault | `inconclusive` | `unsettled` | `Inconclusive(ReplayRefused)` | inconclusive |

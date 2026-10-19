@@ -57,9 +57,10 @@ every later refusal points at the text the operator wrote.
 In crate `qsl-forms`, the protocol form is `ProtocolDeclarationForm`. The
 fields below name its members, written `ProtocolClauseForm` where they are
 the target model. Today it builds `roles` (`RoleForm{name, context}`),
-`captures`, `relationships`, `requirements`, `compensations`, and `related`
-on each node declaration; the control constructs, channels, replicated roles
-and activation forms below are the target for their owning slices:
+`activation` (`ActivationForm::{Origin, Each{parameter, when}}`), `captures`,
+`relationships`, `requirements`, `compensations`, and `related` on each node
+declaration; the control constructs, channels and replicated roles below are
+the target for their owning slices:
 
 - `ProtocolClauseForm` with its activation (`OnOrigin` or `OnEach{binder,
   guard}`), roles, channels, compensations, an ordered list of

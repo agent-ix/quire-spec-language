@@ -23,7 +23,8 @@ Fixture: `Register` and `RegisterHistory` (FR-138).
 
 1. Check `RegisterHistory`; compare the concrete model's state nodes, clause
    node identities and initial successors with and without the history row.
-2. Check each refusal variant of FR-138-AC-2.
+2. Check each refusal variant of FR-138-AC-2, including the out-of-range
+   literal `5`.
 3. Compute history along `write(r, 1)`, `write(r, 0)`, `write(r, 1)`.
 4. Add the `writes` history field and compute along `write(r, 0)`, `write(r,
    0)`.
@@ -33,7 +34,8 @@ Tag the tests `#[trace("TC-543", "FR-138-AC-n")]`.
 ## Expected Results
 
 - Step 1: one `HistoryRow`; equal nodes, identities and successors.
-- Step 2: each variant refuses with FR-138-AC-2's code and subcode.
+- Step 2: each variant refuses with FR-138-AC-2's code and subcode, and the
+  literal variants (`true`, `5`) refuse at the literal's span.
 - Step 3: `last` = 0, 1, 0.
 - Step 4: `writes` 1, then `MappingUndetermined` naming `writes`, `r` and
   the second step, whose post-state is the concrete successor.
