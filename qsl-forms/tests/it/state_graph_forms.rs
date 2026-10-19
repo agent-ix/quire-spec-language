@@ -195,21 +195,6 @@ fn each_form_parses_without_over() {
     ));
 }
 
-/// The S1 diagnostic offset of `declaration`, when it is a syntax error.
-fn syntax_error(declaration: &str) -> Option<(String, usize)> {
-    let text = format!("{HEADER}{declaration}\n");
-    let parsed = qsl_cst::parse(
-        SourceIdentity::new("a", "u", "git", "1"),
-        "unit.native",
-        text.as_bytes(),
-        qsl_cst::Limits::default(),
-    )
-    .expect("S1 reads the unit");
-    let first = parsed.diagnostics().first()?;
-    let at = first.byte_span()?.start;
-    Some((text, at))
-}
-
 /// The operator spellings S2 kept for `declaration`, in source order.
 fn operators(declaration: &str) -> Vec<(TemporalOperator, String)> {
     let (text, claim) = build(declaration);
@@ -303,36 +288,196 @@ fn a_predicate_that_derives_as_an_expression_is_read_as_one() {
     assert_eq!(target.operands.len(), 1);
 }
 
-/// SG-R18: a binary temporal operator chain is a syntax error at the second
-/// operator; the parenthesised chain parses and keeps the first operator
-/// first.
-#[trace("TC-590", "FR-165-AC-4")]
-#[test]
-fn a_flat_binary_temporal_chain_is_a_syntax_error_at_the_second_operator() {
-    let declaration = "possible C using v over (c: C::Cfg) { c.a until c.b until c.c }";
-    let (text, at) = syntax_error(declaration).expect("a syntax error");
-    assert_eq!(at, text.rfind("until").expect("second until"));
-    let ops = operators("possible C using v over (c: C::Cfg) { (c.a until c.b) until c.c }");
-    assert_eq!(ops.len(), 2);
-    assert_eq!(ops[0].0, TemporalOperator::Until);
+/// The S1 syntax error of `declaration`: the diagnostic code and the byte
+/// offset, relative to the declaration's first byte.
+fn error_offset(declaration: &str) -> (String, usize) {
+    let text = format!("{HEADER}{declaration}\n");
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    assert!(!parsed.is_admissible(), "{declaration} must not parse");
+    let first = &parsed.diagnostics()[0];
+    let start = text.find(declaration).expect("the declaration");
+    let at = first.byte_span().expect("located").start - start;
+    (first.code.as_str().to_owned(), at)
 }
 
-/// SG-R13, SG-R15: a fairness constraint after the predicate, in a `from`
-/// operand or on a clause with no body, and a temporal operator in an `if`
-/// condition, a `let` binding or a call argument, are syntax errors.
+/// Asserts `declaration` is an `invalid_syntax` error at the `nth` (0-based)
+/// occurrence of `token` in it.
+fn refused_at(declaration: &str, token: &str, nth: usize) {
+    let (code, at) = error_offset(declaration);
+    let expected = declaration
+        .match_indices(token)
+        .nth(nth)
+        .map(|(index, _)| index)
+        .expect("the token occurs");
+    assert_eq!(code, "invalid_syntax", "{declaration}");
+    assert_eq!(
+        at, expected,
+        "{declaration}: the error is at `{token}` #{nth}"
+    );
+}
+
+const OVER: &str = "over (c: Config::ConfigVersion)";
+const STEP: &str = "fair weak Config::ConfigVersion::attemptUpdate";
+
+/// FR-165-AC-6: a temporal operator in an `if` condition, a `let` binding, a
+/// call argument, a quantifier body or a comparison operand is
+/// `invalid_syntax` at the operator.
+#[trace("TC-590", "FR-165-AC-6")]
+#[test]
+fn a_temporal_operator_outside_a_graph_position_is_refused_at_the_operator() {
+    for body in [
+        "if eventually c.versionNumber = 1 then c.versionNumber = 2 else c.versionNumber = 3",
+        "let n = eventually c.versionNumber = 1 in n = 2",
+        "exists(d in c.versionNumber: eventually d = 2)",
+        "f(c.versionNumber, eventually c.versionNumber = 1)",
+        "c.versionNumber = eventually c.versionNumber = 2",
+    ] {
+        refused_at(
+            &format!("possible P using v {OVER} {{ {body} }}"),
+            "eventually",
+            0,
+        );
+    }
+}
+
+/// FR-165-AC-6: a fairness constraint after the predicate of a body is
+/// refused at the `;` that follows the predicate.
+#[trace("TC-590", "FR-165-AC-6")]
+#[test]
+fn fairness_after_the_body_predicate_is_refused_at_the_semicolon() {
+    refused_at(
+        &format!("possible P using v {OVER} {{ c.versionNumber = 1; {STEP} }}"),
+        ";",
+        0,
+    );
+}
+
+/// FR-165-AC-6: in a `from` operand a fairness constraint is refused at the
+/// `;` after the predicate, or at `fair` before it.
+#[trace("TC-590", "FR-165-AC-6")]
+#[test]
+fn fairness_in_a_from_operand_is_refused_at_the_stated_token() {
+    refused_at(
+        &format!("always possible P using v {OVER} from (c.versionNumber = 1; {STEP}) {{ true }}"),
+        ";",
+        0,
+    );
+    refused_at(
+        &format!("always possible P using v {OVER} from ({STEP}; c.versionNumber = 1) {{ true }}"),
+        "fair",
+        0,
+    );
+}
+
+/// FR-165-AC-6: a fairness constraint on a clause with no body is refused at
+/// `fair`, and so is one in a `to` operand at its `;`.
+#[trace("TC-590", "FR-165-AC-6")]
+#[test]
+fn fairness_on_unique_path_is_refused_at_fair() {
+    refused_at(
+        &format!(
+            "unique path P using v {OVER} from (c.versionNumber = 1) \
+             to (c.versionNumber = 2); {STEP}"
+        ),
+        "fair",
+        0,
+    );
+    refused_at(
+        &format!(
+            "unique path P using v {OVER} from (c.versionNumber = 1) \
+             to (c.versionNumber = 2; {STEP});"
+        ),
+        ";",
+        0,
+    );
+}
+
+/// FR-165-AC-6: a flat chain of binary temporal operators is refused at the
+/// second operator; the parenthesised chain parses and keeps the first
+/// operator first.
+#[trace("TC-590", "FR-165-AC-6")]
+#[test]
+fn a_flat_binary_temporal_chain_is_refused_at_the_second_operator() {
+    refused_at(
+        &format!(
+            "possible P using v {OVER} {{ c.versionNumber = 1 until c.versionNumber = 2 \
+             until c.versionNumber = 3 }}"
+        ),
+        "until",
+        1,
+    );
+    let chain = format!(
+        "possible P using v {OVER} {{ (c.versionNumber = 1 until c.versionNumber = 2) \
+         until c.versionNumber = 3 }}"
+    );
+    let (text, claim) = build(&chain);
+    let StateGraphClaimKind::Possible { target } = &claim.kind else {
+        panic!("possible");
+    };
+    let starts: Vec<usize> = target
+        .temporal_operators
+        .iter()
+        .map(|operator| operator.span.start)
+        .collect();
+    let first = text.find("until").expect("inner until");
+    assert_eq!(starts, [first, text.rfind("until").expect("outer until")]);
+}
+
+/// FR-165-AC-4: operators are kept in source order, a leading unary one
+/// before the binary one it leads.
 #[trace("TC-590", "FR-165-AC-4")]
 #[test]
-fn fairness_and_temporal_operators_are_confined_to_their_positions() {
-    for declaration in [
-        "possible P using v over (c: C::Cfg) { c.done; fair weak C::Cfg::step }",
-        "possible B using v over (c: C::Cfg) { if eventually c.a then c.b else c.c }",
-        "always possible F using v over (c: C::Cfg) from (c.a; fair weak C::Cfg::step) { c.done }",
-        "unique path One using v from (c.a) to (c.d); fair weak C::Cfg::step",
-        "possible L using v over (c: C::Cfg) { let n = eventually c.a in c.b }",
-        "possible A using v over (c: C::Cfg) { f(eventually c.a) }",
+fn temporal_operators_are_kept_in_source_order() {
+    let ops = operators(&format!(
+        "possible P using v {OVER} {{ eventually c.versionNumber = 1 until c.versionNumber = 2 }}"
+    ));
+    let kinds: Vec<_> = ops.iter().map(|(operator, _)| *operator).collect();
+    assert_eq!(
+        kinds,
+        [TemporalOperator::Eventually, TemporalOperator::Until]
+    );
+}
+
+/// FR-165-AC-4: the recognised placements parse, with an interval or not,
+/// leading fairness and a `let` body.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn recognised_placements_parse() {
+    for body in [
+        "not eventually[0,5] c.versionNumber = 2",
+        "eventually[1,*] c.versionNumber = 2",
+        "let n = c.versionNumber in eventually n = 2",
+        "(c.versionNumber = 1 until c.versionNumber = 2)",
     ] {
-        assert!(syntax_error(declaration).is_some(), "{declaration}");
+        let (_, claim) = build(&format!("possible P using v {OVER} {{ {body} }}"));
+        let StateGraphClaimKind::Possible { target } = &claim.kind else {
+            panic!("possible");
+        };
+        assert!(!target.temporal_operators.is_empty(), "{body}");
     }
+    let (_, claim) = build(&format!(
+        "possible P using v {OVER} {{ {STEP}; c.versionNumber = 1 }}"
+    ));
+    assert_eq!(claim.fairness.len(), 1);
+}
+
+/// FR-165-AC-4: `let` names are kept for S3 to resolve.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn let_bindings_are_kept() {
+    let (_, claim) = build(&format!(
+        "possible P using v {OVER} {{ let n = c.versionNumber in eventually n = 2 }}"
+    ));
+    let StateGraphClaimKind::Possible { target } = &claim.kind else {
+        panic!("possible");
+    };
+    assert_eq!(target.bindings, ["n"]);
 }
 
 /// SG-R08: `possible`, `unique` and `path` are reserved words, refused where
@@ -340,9 +485,6 @@ fn fairness_and_temporal_operators_are_confined_to_their_positions() {
 #[trace("TC-590", "FR-165-AC-4")]
 #[test]
 fn the_claim_words_are_reserved() {
-    let (text, at) = syntax_error("possible possible using v { true }").expect("a syntax error");
-    assert_eq!(at, text.rfind("possible").expect("second possible"));
-    let (text, at) =
-        syntax_error("predicate unique using v (): Boolean { true }").expect("a syntax error");
-    assert_eq!(at, text.rfind("unique").expect("unique"));
+    refused_at("possible possible using v { true }", "possible", 1);
+    refused_at("predicate unique using v (): Boolean { true }", "unique", 0);
 }

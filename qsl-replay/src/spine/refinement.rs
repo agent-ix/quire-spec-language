@@ -259,7 +259,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::AmbiguousTerminal { .. }
         | AssemblyCause::AmbiguousTerminalState { .. }
         | AssemblyCause::AmbiguousPopulation { .. }
-        | AssemblyCause::UnsupportedLayerForm { .. } => None,
+        | AssemblyCause::UnsupportedLayerForm { .. }
+        | AssemblyCause::UnselectedModelConstruct(_) => None,
     }
 }
 

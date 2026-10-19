@@ -3140,6 +3140,9 @@ pub struct StateGraphPredicateForm {
     pub operands: Vec<ExpressionForm>,
     /// Every temporal operator written, in source order.
     pub temporal_operators: Vec<TemporalOperatorUse>,
+    /// The names the predicate's `let` forms bind, which the operands may
+    /// read.
+    pub bindings: Vec<String>,
 }
 
 /// Which of the three state-graph claim forms was written, with its

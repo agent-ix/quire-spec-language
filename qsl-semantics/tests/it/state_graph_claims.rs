@@ -556,3 +556,39 @@ fn the_first_temporal_operator_in_source_order_is_refused() {
         assert_eq!(named.as_deref(), Some(operator), "{predicate}");
     }
 }
+
+/// FR-165-AC-4: each recognised placement checks to a refusal at the first
+/// temporal operator in source order, the interval cases with no profile
+/// refusal, and a body led by fairness at the constraint.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn recognised_placements_are_refused_at_the_first_operator_or_constraint() {
+    let v = "c.versionNumber";
+    for (claim, at) in [
+        (format!("possible P using v over (c: Config::ConfigVersion) {{ not eventually[0,5] {v} = 2 }}"), "eventually"),
+        (format!("possible P using v over (c: Config::ConfigVersion) {{ eventually[1,*] {v} = 2 }}"), "eventually"),
+        (format!("possible P using v over (c: Config::ConfigVersion) {{ let n = {v} in eventually n = 2 }}"), "eventually"),
+        (format!("possible P using v over (c: Config::ConfigVersion) {{ ({v} = 1 until {v} = 2) }}"), "until"),
+        (format!("always possible P using v over (c: Config::ConfigVersion) from (always {v} = 1) {{ {v} = 2 }}"), "always"),
+        (format!("unique path P using v over (c: Config::ConfigVersion) from ({v} = 1) to (eventually {v} = 2);"), "eventually"),
+        (format!("possible P using v over (c: Config::ConfigVersion) {{ fair weak attemptUpdate; {v} = 1 }}"), "fair weak attemptUpdate;"),
+    ] {
+        let (code, cause, named, _) = sole_refusal(&format!("{claim}\n"));
+        assert_eq!(code, Code::UnsupportedConstruct, "{claim}");
+        assert_eq!(cause, Some("expression-form"), "{claim}");
+        assert_eq!(named.as_deref(), Some(at), "{claim}");
+    }
+}
+
+/// FR-165-AC-5: an unknown name beside a recognised operator refuses
+/// `missing-name` at the name, not `expression-form` at the operator.
+#[trace("TC-590", "FR-165-AC-5")]
+#[test]
+fn an_unknown_name_beside_an_operator_refuses_as_a_missing_name() {
+    let (code, cause, named, _) = sole_refusal(
+        "possible P using v over (c: Config::ConfigVersion) { eventually c.versionNumber = newName }\n",
+    );
+    assert_eq!(code, Code::MissingDeclaration);
+    assert_eq!(cause, Some("missing-name"));
+    assert_eq!(named.as_deref(), Some("newName"));
+}

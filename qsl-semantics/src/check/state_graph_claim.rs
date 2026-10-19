@@ -332,6 +332,73 @@ fn span_at(operand: &ExpressionForm, location: &Location) -> Option<Span> {
     spans.span(node)
 }
 
+/// The view the clause checker reads of a predicate operand under the claim's
+/// `over` binding.
+fn view_of<'v>(declaration: &'v StateGraphDeclaration, body: &'v Expression) -> ClauseView<'v> {
+    ClauseView {
+        kind: StateClauseKind::Invariant,
+        complete_value: super::state_clause::is_complete_value(&declaration.selection),
+        context: declaration.context,
+        receiver: declaration
+            .form
+            .over
+            .as_ref()
+            .zip(declaration.context)
+            .map(|(over, context)| (over.name.name.as_str(), ValueType::Reference(context))),
+        operation: None,
+        context_population: declaration.context_population,
+        frame_population: None,
+        body,
+    }
+}
+
+/// The first name of a predicate's operands that resolves to nothing: a name
+/// refusal outranks a temporal operator or fairness constraint, so a claim
+/// that holds both reports the name. Only a missing name counts, since an
+/// operand read alone may lack the context its operator supplies; a name a
+/// `let` of the predicate binds, and `self` (refused as an anchor read),
+/// resolve.
+fn unresolved_name<'a>(
+    declaration: &StateGraphDeclaration,
+    declarations: &ClauseDeclarations<'a>,
+    cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+) -> Option<StateGraphCause> {
+    let mut earliest: Option<(usize, StateGraphCause)> = None;
+    for (role, predicate) in predicates(&declaration.form.kind) {
+        for operand in &predicate.operands {
+            let view = view_of(declaration, &operand.expression);
+            let Err(inner) =
+                check_clause(&view, declarations, &mut cx.reborrow(declarations.scope))
+            else {
+                continue;
+            };
+            let CheckCause::MissingName(name) = &inner.cause else {
+                continue;
+            };
+            if name == "self" || predicate.bindings.contains(name) {
+                continue;
+            }
+            let span = span_at(operand, &inner.location)
+                .or_else(|| operand.spans.span(operand.spans.root()))
+                .unwrap_or(declaration.form.span);
+            if earliest
+                .as_ref()
+                .is_none_or(|(start, _)| span.start < *start)
+            {
+                earliest = Some((
+                    span.start,
+                    StateGraphCause::Predicate {
+                        role,
+                        span,
+                        cause: Box::new(inner.cause),
+                    },
+                ));
+            }
+        }
+    }
+    earliest.map(|(_, cause)| cause)
+}
+
 fn check_predicate<'a>(
     role: PredicateRole,
     predicate: &StateGraphPredicateForm,
@@ -361,21 +428,7 @@ fn check_predicate<'a>(
         cancel: declarations.cancel,
         staged: declarations.staged,
     };
-    let view = ClauseView {
-        kind: StateClauseKind::Invariant,
-        complete_value: super::state_clause::is_complete_value(&declaration.selection),
-        context: declaration.context,
-        receiver: declaration
-            .form
-            .over
-            .as_ref()
-            .zip(declaration.context)
-            .map(|(over, context)| (over.name.name.as_str(), ValueType::Reference(context))),
-        operation: None,
-        context_population: declaration.context_population,
-        frame_population: None,
-        body,
-    };
+    let view = view_of(declaration, body);
     let typed = check_clause(&view, declarations, &mut cx.reborrow(declarations.scope)).map_err(
         |inner| {
             let span = span_at(operand, &inner.location)
@@ -407,6 +460,7 @@ fn check_claim<'a>(
 ) -> Result<CheckedStateGraphClaim, StageFailure<CheckRefusal>> {
     let form = &declaration.form;
     if let Some(cause) = syntactic_refusal(form) {
+        let cause = unresolved_name(declaration, declarations, cx).unwrap_or(cause);
         return Err(refuse(cause));
     }
     let mut nodes_used = declarations.nodes_used;

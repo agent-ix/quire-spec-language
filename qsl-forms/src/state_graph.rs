@@ -132,12 +132,19 @@ fn predicate_form(
 ) -> Result<StateGraphPredicateForm, FormsRefusal> {
     let mut operands = Vec::new();
     let mut temporal_operators = Vec::new();
+    let mut bindings = Vec::new();
     // Source order: the next node to read is the last one pushed, so each
     // node's children go back in reverse.
     let mut pending = vec![predicate];
     while let Some(node) = pending.pop() {
         let mut nested = Vec::new();
-        for item in items(cst, node) {
+        let node_items = items(cst, node);
+        if let [Item::Token(first), Item::Token(name), ..] = node_items[..] {
+            if first.spelling() == b"let" {
+                bindings.push(text(name, node)?);
+            }
+        }
+        for item in node_items {
             match item {
                 Item::Token(token) => {
                     if let Some(operator) = operator_of(token.spelling()) {
@@ -164,8 +171,12 @@ fn predicate_form(
         }
         pending.extend(nested.into_iter().rev());
     }
+    // The walk reads a node's own tokens before its children, so a binary
+    // operator precedes the operator inside its left operand.
+    temporal_operators.sort_by_key(|operator| operator.span.start);
     Ok(StateGraphPredicateForm {
         operands,
         temporal_operators,
+        bindings,
     })
 }
