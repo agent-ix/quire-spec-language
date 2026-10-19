@@ -28,14 +28,14 @@ charge. The ceilings are stage limits, not a caller work budget
 ## Scope
 
 One `PackageDeclarations::check` call under one `CheckingLimits`, which
-applies all three ceilings. One standalone expression check
+applies its node, byte and work ceilings and its rational-bits ceiling. One standalone expression check
 (`CheckedGraph::check_expression` and its clause variants) applies the node
 ceiling of its `CheckingLimits`; it encodes no declaration and charges no
 work. The ceilings are inclusive unsigned counts supplied by the
 caller. The values below are the default ceilings a caller gets when it
 configures none. A caller may set each ceiling independently, above or below
 its default, through its setting (`s3.nodes`, `s3.input_bytes`,
-`s3.work_units`;
+`s3.work_units`, `s3.rational_bits`;
 [FR-255](../functional/FR-255-name-the-setting-that-raises-a-reached-limit.md)),
 and the ceiling is used as given. Every checking walk runs over an explicit
 heap stack whose growth these ceilings charge, so an expression's or a
@@ -72,6 +72,16 @@ domain bound (NFR-001).
   `position:<n>`, `inner`) along its path, plus `recursion:<d>` for a
   recursion leaf. Union entry is a composite charge under the same rule;
   each member segment contributes its literal UTF-8 byte length.
+
+- **Rational bit.** The bit length of one exact value as written, before it
+  is reduced or expanded: the largest of the bit lengths of its written
+  integers' magnitudes, and for `decimal(m, s)` and a decimal literal the bit
+  length `⌊s · log₂ 10⌋ + 1` of `10^s`, computed in exact integer arithmetic
+  (FR-185). The ceiling `s3.rational_bits` defaults to 65,536 bits and is
+  checked per exact value, not summed over the package; reaching it is a
+  stage limit of kind rational bits, which is QSL-proposed pending QSpec
+  (STD-188). It is a different limit from `max_rational_bits` (FR-203), the
+  exact engine's own budget.
 
 ## Default derivation
 

@@ -98,7 +98,7 @@ such as an event comparison's `>= rational(999, 1000)`, is written
 `rational(n, d)` or `decimal(n, s)`; a quantity threshold such as `5 ms` or
 `0.005 s` is a `quantity-literal` and keeps its decimal magnitude. S3 reduces
 every `exact-value` under the written-value bound and limit outcome that
-FR-185 states (`max_rational_bits`).
+FR-185 states (`s3.rational_bits`).
 
 ### Kind and subject
 

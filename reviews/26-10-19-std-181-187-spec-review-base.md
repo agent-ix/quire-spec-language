@@ -71,3 +71,9 @@ PR. No high.
 | FND-001 | fixed | 81277341b removes the untestable SHALL. FR-186 now reads "QSL has no producer of a workload scheduler with a fairness set, so S3 has no `fairness-under-workload` check; QSpec FR-407 defines that cause, and STD-188 asks QSpec to settle whether the grammar or the cause changes." AC-3 keeps the S1 `invalid_syntax` vector. |
 | FND-002 | fixed | 81277341b adds "a weight `rational(-1, 1)` (`invalid-weight`)" to FR-185-AC-2 and the matching TC-620 step 2 result, and keeps the bare `-1` as the S1 case. |
 | FND-003 | fixed | 81277341b: TC-620 step 4 now reads "Check each reward variant of FR-185-AC-4, and `reward cost on Server::request = 2`." |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | FR-185-AC-2 opens with "Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter and carrying the cause", but its list now includes `decimal(25, 3)` "(admitted, `1/40`)" and two rational-bits limit outcomes, which carry no `invalid_probabilistic_model` cause. TC-620 step 2 also lost a separator: "`decimal(1, 4294967295)` `rational(n, n)` with `n` of 70,000 bits". Fix: move the admitted case and the limit outcomes into their own sentence of AC-2, and add "and" to TC-620 step 2. | spec/functional/FR-185-declare-random-parameters-workloads-and-rewards.md:150; spec/test-cases/TC-620-s3-admits-random-parameters-workloads-and-rewards.md:22 |
