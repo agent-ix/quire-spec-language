@@ -67,3 +67,13 @@ never read are all present and backed (AC-3 fully, AC-2's refusal half). The
 blocking trace issue is recorded once, in SR-12157 FND-001. FND-001 here is a
 ticket-ownership gap to resolve before QSL-589 closes. It does not block this
 PR.
+
+## Dispositions
+
+Round 1, reviewed at `2021e91d26af61bd6bbe7b226fbb0f04089af2a7`. Static
+review only; no build was run.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-876 (Backlog) now owns FR-336-AC-1 (the clause record writes no `DomainKey::Population` domain, independent of the universe), FR-336-AC-4 (the obligation identity binds the universes, with a per-request result join in qsl-replay), and AC-2's explores half. |
+| FND-002 | deferred | Low, recorded only (only majors block). The silent root skip in `ModelSystem::domains` predates this PR and is likely unreachable under `CanonicalLimits::new(u64::MAX)`. |

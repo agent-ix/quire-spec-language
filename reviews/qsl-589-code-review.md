@@ -70,3 +70,16 @@ What holds:
   does not trip `large_enum_variant`. No new panic surface outside test
   helpers, and no `unsafe`, integer conversion or lock. `thiserror` message
   style matches the enum.
+
+## Dispositions
+
+Round 1, reviewed at `2021e91d26af61bd6bbe7b226fbb0f04089af2a7`. The fix
+commit is `de1fe9017`. Static review only; no build was run.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | de1fe9017: the test is tagged `#[trace("TC-846")]` only. Its doc comment says it covers the refusal half of FR-336-AC-2, and that the FR-126-AC-1 explores half waits on EN-1 deciding `always eventually`. QSL-876 owns that half. |
+| FND-002 | fixed | de1fe9017: `NotSimulated(Box<NotSimulated>)` is replaced by `Extent(Box<ClassifyFailure>)`. Any other `NotSimulated` from the pre-check is now an `InternalFault` (`bounds-precheck-returns-only-requires-bound-or-extent`). No `ModelCheckRefusal::NotSimulated` is left in the tree. |
+| FND-003 | deferred | Low, recorded only (only majors block). The universe case still runs on `UNLIMITED`. Reading `check_model` shows the ordering is sound: the pre-check runs before `Run` is built. |
+| FND-004 | fixed | de1fe9017: the refused root's key must equal `DomainKey::Node { node, path: [] }` for the one `Population` root that `ModelSystem::domains` lists for the subject without a universe. |
+| FND-005 | fixed | de1fe9017: the `operation` doc now says "with `parameter` (name, type reference) an operation `setTo` taking that one parameter". |
