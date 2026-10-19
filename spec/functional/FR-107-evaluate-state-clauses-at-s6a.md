@@ -15,6 +15,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-106
     type: traces_to
+  - target: ix://agent-ix/quire-spec-language/FR-391
+    type: references
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-207
@@ -85,6 +87,11 @@ object environment.
   complete population (FR-106 check 8), so if a read meets a missing object,
   the evaluator SHALL return `CallFailure::Fault(InternalFault)`, never a
   truth value.
+- The evaluator SHALL evaluate `allInstances<T>(P)` and `lookup<T>(P, r)` whose
+  operand names a domain-package population ([FR-391](FR-391-name-a-population-in-a-state-clause.md))
+  by reading that population's row from the snapshot of the read's
+  observation and charging as FR-084 and `value-accounting.md` state; the
+  clause evaluator no longer refuses them as unsupported in a state clause.
 - The evaluator SHALL compare references by (universe, object type, key),
   ignoring the observation, so a pre and a post reference to one object are
   equal.
