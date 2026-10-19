@@ -478,6 +478,23 @@ impl fmt::Debug for ExprId {
     }
 }
 
+/// Which label of a step a `trace.step.<label>` read names (FR-171).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StepLabelForm {
+    /// `trace.step.op`: the operation of the step into the current position.
+    Operation,
+    /// `trace.step.receiver`: the step's receiver key.
+    Receiver,
+    /// `trace.step.Operation::name.parameter`: one argument of the step, as
+    /// the qualified operation name and the parameter name were written.
+    Argument {
+        /// The operation's qualified name, segments joined by `::`.
+        operation: String,
+        /// The parameter name.
+        parameter: String,
+    },
+}
+
 /// One node of a value expression: its payload, with each subexpression
 /// named by its [`ExprId`] in the same [`Expression`] arena.
 ///
@@ -723,6 +740,27 @@ pub enum ExprNode {
         /// The written qualified name, segments joined by `::`.
         target: String,
     },
+    /// `read @ trace` (FR-171): a model member read taken from one trace
+    /// variable of a `hyper` clause. S3 binds `trace` to its quantifier.
+    Indexed {
+        /// The member read, as written.
+        read: ExprId,
+        /// The trace variable's name.
+        trace: String,
+    },
+    /// `trace.step.op`, `trace.step.receiver` or
+    /// `trace.step.Operation::name.parameter` (FR-171): one label of the step
+    /// into a trace's current position, read in a `hyper` clause's `match`
+    /// block.
+    StepLabel {
+        /// The trace variable's name.
+        trace: String,
+        /// Which label.
+        label: StepLabelForm,
+    },
+    /// `stutter` (FR-171): the step label of a terminal stutter step, read in
+    /// a `hyper` clause's `match` block.
+    Stutter,
     /// FR-063/S2: exists only so `--cfg seam_probe` makes every
     /// match over `ExprNode` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
@@ -746,7 +784,9 @@ impl ExprNode {
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
-            | Self::ProtocolReference { .. } => Vec::new(),
+            | Self::ProtocolReference { .. }
+            | Self::Stutter
+            | Self::StepLabel { .. } => Vec::new(),
             Self::Let { value, body, .. } => vec![*value, *body],
             Self::If {
                 condition,
@@ -763,6 +803,7 @@ impl ExprNode {
             | Self::Size(operand)
             | Self::Field { operand, .. }
             | Self::Convert { operand, .. }
+            | Self::Indexed { read: operand, .. }
             | Self::Pre(operand) => vec![*operand],
             Self::Call { arguments, .. } => arguments.clone(),
             Self::Record { fields, .. } => fields
@@ -860,6 +901,9 @@ impl ExprNode {
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
             | Self::Reaches { .. }
+            | Self::Indexed { .. }
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => Vec::new(),
             #[cfg(seam_probe)]
             Self::__SeamProbe => unreachable!("never constructed outside the probe build"),
@@ -926,6 +970,9 @@ impl ExprNode {
             | Self::Lookup { .. }
             | Self::Dispatch { .. }
             | Self::Reaches { .. }
+            | Self::Indexed { .. }
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => Spellings {
                 reference: None,
                 binders: Vec::new(),
@@ -953,6 +1000,8 @@ impl ExprNode {
             | Self::Name(_)
             | Self::SelfRef
             | Self::Result
+            | Self::StepLabel { .. }
+            | Self::Stutter
             | Self::ProtocolReference { .. } => {}
             Self::Negate(operand)
             | Self::Not(operand)
@@ -967,6 +1016,7 @@ impl ExprNode {
                 population: operand,
                 ..
             }
+            | Self::Indexed { read: operand, .. }
             | Self::Pre(operand) => one(operand),
             Self::Let {
                 value: first,
@@ -1262,6 +1312,25 @@ impl Expression {
     /// `pre(operand)`.
     pub fn pre(operand: Self) -> Self {
         Self::compose([operand], |[operand]| ExprNode::Pre(operand))
+    }
+
+    /// `read @ trace`.
+    pub fn indexed(read: Self, trace: impl Into<String>) -> Self {
+        let trace = trace.into();
+        Self::compose([read], |[read]| ExprNode::Indexed { read, trace })
+    }
+
+    /// `stutter`.
+    pub fn stutter() -> Self {
+        Self::single(ExprNode::Stutter)
+    }
+
+    /// `trace.step.<label>`.
+    pub fn step_label(trace: impl Into<String>, label: StepLabelForm) -> Self {
+        Self::single(ExprNode::StepLabel {
+            trace: trace.into(),
+            label,
+        })
     }
 
     /// `flatten(operand)`.
@@ -3687,6 +3756,15 @@ pub enum DeclarationForm {
     /// A `terminal` declaration (FR-382), boxed for the same reason as
     /// [`Self::Function`].
     Terminal(Box<TerminalDeclarationForm>),
+    /// A `hyper` clause over `behaviours` (FR-171), boxed for the same
+    /// reason as [`Self::Function`].
+    HyperBehaviours(Box<crate::hyper_clause::HyperBehavioursForm>),
+    /// A `hyper` clause over a finite trace domain, boxed for the same
+    /// reason as [`Self::Function`].
+    HyperFinite(Box<crate::hyper_clause::HyperFiniteForm>),
+    /// A `relation` clause (FR-171), boxed for the same reason as
+    /// [`Self::Function`].
+    ModelRelation(Box<crate::hyper_clause::ModelRelationForm>),
     /// A `random` declaration (FR-311), boxed for the same reason as
     /// [`Self::Function`].
     Random(Box<RandomForm>),

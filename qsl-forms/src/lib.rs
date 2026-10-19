@@ -30,6 +30,7 @@
 
 mod clause_text;
 mod dispatch;
+mod hyper_clause;
 mod probabilistic;
 mod protocol_clause;
 mod protocol_control;
@@ -45,6 +46,10 @@ mod value;
 pub use clause_text::{parse_clause_text, ClauseTextRefusal};
 pub use dispatch::{
     build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
+};
+pub use hyper_clause::{
+    AlignSkipForm, ExecutionBindingForm, HyperBehavioursForm, HyperFiniteForm, ModelRelationForm,
+    QuantifierForm, QuantifierKind, TraceDomainForm,
 };
 pub use protocol_control::{
     AwaitForm, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering, ChannelOverflow,
@@ -69,11 +74,12 @@ pub use syntax::{
     RecordFieldForm, RecordForm, RelatedForm, RelationshipForm, ReplicatedRoleForm,
     RequirementForm, RewardForm, RoleForm, RoleLifetime, SchedulerForm, ScopeEntry, ScopeId,
     ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm, StateClauseKind,
-    StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm, TemporalClauseForm,
-    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
-    TemporalOperatorUse, TermOperator, TerminalDeclarationForm, TerminalDeclarationKind,
-    TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm,
-    UsingAlias, WeightedValueForm, WeightingForm, WorkloadForm, WorkloadWeightForm,
+    StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm, StepLabelForm,
+    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
+    TemporalOperatorForm, TemporalOperatorUse, TermOperator, TerminalDeclarationForm,
+    TerminalDeclarationKind, TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm,
+    UnionMemberForm, UnitForm, UsingAlias, WeightedValueForm, WeightingForm, WorkloadForm,
+    WorkloadWeightForm,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

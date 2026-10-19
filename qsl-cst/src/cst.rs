@@ -226,7 +226,21 @@ productions! {
     #[doc = "`related by <identifier> ( <expression>, <expression> )`: attached to an event node to correlate it with another by a named relation."]
     Related,
     EventNode, Check, Commit, Finish,
-    RelationClause, ExecutionBinding, HyperClause, TraceDomain, Quantifier,
+    RelationClause, ExecutionBinding, HyperClause, TraceDomain,
+    #[doc = "`behaviours [( <parameter> {, <parameter>} )]`: a `hyper` clause whose trace variables range over behaviours of model subjects."]
+    BehavioursDomain,
+    #[doc = "`(forall | exists) trace <identifier> [of <identifier> <fairness>*]`: one trace quantifier of a `hyper` clause."]
+    Quantifier,
+    #[doc = "`align skip { <qualified-name> {, <qualified-name>} }`: the operations whose steps a `hyper` clause skips when it aligns its traces."]
+    AlignSkip,
+    #[doc = "`match <block>`: the step labels a `hyper` clause's traces must agree on."]
+    MatchBlock,
+    #[doc = "`<identifier> . step . (op | receiver | <qualified-name> . <member>)`: one trace's step label, read in a `hyper` clause's `match` block."]
+    StepLabel,
+    #[doc = "`<postfix> @ <identifier>`: a model member read from the named trace of a `hyper` clause."]
+    IndexedRead,
+    HyperExpression, HyperImplication, HyperDisjunction, HyperConjunction,
+    HyperComparison, HyperSum, HyperProduct, HyperUnary, HyperPostfix, HyperPrimary,
     HybridDeclaration, HybridMode, Equation, SynthesisDeclaration,
     VerificationPlan, VerificationStep,
 }
