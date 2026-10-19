@@ -460,16 +460,17 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
             );
         }
         if crate_name == "qsl-route" {
-            // Layer R: `route` names layer 3's `Capability`, F's
-            // `ByteDigest` and `CatalogCode`, and `thiserror` for
-            // `RegistrationRefusal`, and nothing of layer 4, K or the root
-            // crate. The whole `[dependencies]` table is checked, so a
+            // Layer R (ADR-011 §6.1 row "4, 3, F, SV, K"): `route` names
+            // layer 3's `Capability`, F's `ByteDigest` and `CatalogCode`,
+            // SV's `PropertyForm` for the FR-124 deadlock-freedom item, and
+            // `thiserror` for `RegistrationRefusal`, and nothing of layer 4,
+            // K or the root crate. The whole `[dependencies]` table is checked, so a
             // planted third-party crate fails it too.
             let mut normal: Vec<&str> = package.normal.iter().map(String::as_str).collect();
             normal.sort_unstable();
             assert_eq!(
                 normal,
-                ["qsl-foundation", "qsl-semantics", "thiserror"],
+                ["qsl-foundation", "qsl-semantics", "quire-semantic-value", "thiserror"],
                 "{crate_name}'s [dependencies]"
             );
             assert!(

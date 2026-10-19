@@ -1372,6 +1372,7 @@ dependencies = [
  "qsl-foundation",
  "qsl-package",
  "qsl-replay",
+ "qsl-route",
  "qsl-semantics",
  "quire-canonical",
  "quire-exact",
@@ -1517,6 +1518,7 @@ dependencies = [
  "qsl-foundation",
  "qsl-semantics",
  "quire-exact",
+ "quire-semantic-value",
  "tempfile",
  "thiserror",
 ]
