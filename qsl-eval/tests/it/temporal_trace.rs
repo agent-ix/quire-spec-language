@@ -1020,7 +1020,14 @@ fn a_fairness_constraint_over_a_supplied_lasso_names_the_first_constraint() {
             (kind, "acquire", granularity),
             "{constraints}"
         );
-        assert_eq!(Some(constraint), fixture.clause.fairness().first());
+        // Built from the kind and granularity the case writes, on the
+        // operation the clause's first constraint names.
+        let expected = quire_semantic_value::fairness::FairnessConstraint::new(
+            kind,
+            fixture.clause.fairness()[0].operation().clone(),
+            granularity,
+        );
+        assert_eq!(constraint, &expected, "{constraints}");
         assert_eq!(settled.category(), Category::Unsupported);
     }
 }
