@@ -12,6 +12,7 @@ use crate::call_site::CallSiteRefusal;
 use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
+use crate::model_check::limits::ModelCheckLimit;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
 use qsl_eval::temporal::TemporalOutcome;
@@ -143,6 +144,15 @@ pub enum IncompleteCause {
     },
     /// The run exhausted a configured resource bound before completing.
     ResourceExhausted,
+    /// FR-127: an EN-1 run reached one of its named limits before it
+    /// completed its method: the limit, the value it was set to, and so the
+    /// request member that raises it ([`ModelCheckLimit::setting`]).
+    LimitReached {
+        /// The limit reached.
+        limit: ModelCheckLimit,
+        /// The value the run used for it.
+        value: u64,
+    },
 }
 
 impl IncompleteCause {
@@ -151,7 +161,7 @@ impl IncompleteCause {
         match self {
             Self::TimedOut => "timed-out",
             Self::Cancelled { .. } => "cancelled",
-            Self::ResourceExhausted => "limit-reached",
+            Self::ResourceExhausted | Self::LimitReached { .. } => "limit-reached",
         }
     }
 }

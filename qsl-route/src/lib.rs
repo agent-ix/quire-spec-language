@@ -2,8 +2,9 @@
 //! `qsl-route`: the ADR-011 §6.1 layer **R** crate (ADR-011 §7.3
 //! X-9) -- the `#185` capability-backend registry and router (ADR-012 §6,
 //! §7). Among the workspace crates it depends only on `qsl-semantics`
-//! (layer 3) and `qsl-foundation` (layer F); its one other dependency is
-//! `thiserror`.
+//! (layer 3) and `qsl-foundation` (layer F), and on the layer-SV leaf
+//! `quire-semantic-value` for the [`deadlock`] item's property form; its one
+//! other dependency is `thiserror`.
 //!
 //! `route` answers one question -- **which registered backends, if any,
 //! advertise the capability kind a requested item needs** -- and nothing
@@ -44,6 +45,7 @@
 //! records the gates (`make route-lint`, `cargo deny check bans`) that hold
 //! both of those.
 
+pub mod deadlock;
 pub mod request;
 pub mod routing;
 
