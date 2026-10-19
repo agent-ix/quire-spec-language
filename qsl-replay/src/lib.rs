@@ -97,7 +97,8 @@ pub use model_check::counterexample::{
     deadlock_freedom_clause, CounterexampleKind, ModelStep, TemporalCounterexample,
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
-pub use model_check::item::{ClauseIdentity, Instance, ItemRefusal, ModelCheckItem};
+pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
+pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
 };

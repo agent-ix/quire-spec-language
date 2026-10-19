@@ -208,9 +208,7 @@ pub fn check_model(
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     let item = match request.item {
-        ModelCheckItem::Clause {
-            clause, letters, ..
-        } => {
+        ModelCheckItem::Clause { clause, letters } => {
             let form = clause.property_form();
             let atom = reachable_invariant_atom(clause)
                 .ok_or(ModelCheckRefusal::FormNotDecided { form })?;
@@ -230,7 +228,10 @@ pub fn check_model(
         }
         ModelCheckItem::DeadlockFreedom => Item::Deadlock,
     };
-    let instances = request.item.instances().map_err(ModelCheckRefusal::Item)?;
+    let instances = request
+        .item
+        .instances(&request.subject, cancel)
+        .map_err(ModelCheckRefusal::Item)?;
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();

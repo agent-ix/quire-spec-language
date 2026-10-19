@@ -34,7 +34,7 @@ use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_exact::{Integer, ValueType};
 
 use crate::counter::{
-    clause, document, document_with_ranged_parameter, identity, package, reference, subject,
+    document, document_with_ranged_parameter, package, package_with_clauses, reference, subject,
     universe, value, Documents, Letters, CONTRACT, UNLIMITED, ZERO,
 };
 
@@ -44,6 +44,7 @@ const ANY: &str = "terminal Halt using v on M any;\n";
 /// The Counter world: its package with `terminal`, the documents and the
 /// initial snapshots of `starts`, each a list of `(key, value)`.
 struct World {
+    body: String,
     package: CheckedPackage,
     documents: Documents,
     initial: Vec<DocumentRef>,
@@ -62,6 +63,7 @@ fn world_with(document: Vec<u8>, body: &str, starts: &[&[(&str, i64)]]) -> World
         .map(|(index, objects)| documents.start(&format!("s{index}"), objects))
         .collect();
     World {
+        body: body.to_owned(),
         package,
         documents,
         initial,
@@ -76,10 +78,23 @@ fn run(
     limits: ModelCheckLimits,
     meter: ScalarLimits,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+    run_in(world, &world.package, keys, item, max_depth, limits, meter)
+}
+
+/// [`run`] over `package`, the world's package with a clause declared.
+fn run_in(
+    world: &World,
+    package: &CheckedPackage,
+    keys: &[&str],
+    item: ModelCheckItem<'_>,
+    max_depth: Option<usize>,
+    limits: ModelCheckLimits,
+    meter: ScalarLimits,
+) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     check_model(
         ModelCheckRequest {
             subject: subject(
-                &world.package,
+                package,
                 &world.documents,
                 world.initial.clone(),
                 keys,
@@ -344,15 +359,22 @@ fn invariant(
     formula: &str,
     atom: fn(i64) -> Option<bool>,
 ) -> ModelCheckOutcome {
-    let clause = clause(&world.documents.document, "", formula);
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", formula)],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
     let letters = letters(world, keys, atom);
-    run(
+    run_in(
         world,
+        &package,
         keys,
         ModelCheckItem::Clause {
-            clause: &clause,
+            clause,
             letters: &letters,
-            identity: &identity(),
         },
         None,
         ModelCheckLimits::default(),
@@ -423,9 +445,9 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
 #[test]
 fn an_undefined_atom_refutes_at_the_first_position_it_is_undefined() {
     let world = self::world("", &[&[("c", 0)]]);
-    let formula = "always holds(6 / (2 - c.value) >= 0)";
+    let formula = "always holds(c.value / (2 - c.value) >= 0)";
     let outcome = invariant(&world, &["c"], formula, |v| {
-        (v != 2).then(|| 6 / (2 - v) >= 0)
+        (v != 2).then(|| v / (2 - v) >= 0)
     });
     let counterexample = violated(&outcome);
     assert_eq!(values(&world, counterexample, "c"), [0, 1, 2]);
@@ -672,19 +694,26 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
     );
 
     let world = self::world("", &[&[("c", 0)]]);
-    let safety = clause(
+    let (package, clauses) = package_with_clauses(
         &world.documents.document,
-        "",
-        "always (holds(c.value <= 0) and holds(c.value >= 0))",
+        &world.body,
+        &[(
+            "C",
+            "",
+            "always (holds(c.value <= 0) and holds(c.value >= 0))",
+        )],
     );
+    let [safety] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
     let letters = letters(&world, &["c"], |_| Some(true));
-    let refusal = run(
+    let refusal = run_in(
         &world,
+        &package,
         &["c"],
         ModelCheckItem::Clause {
-            clause: &safety,
+            clause: safety,
             letters: &letters,
-            identity: &identity(),
         },
         None,
         ModelCheckLimits::default(),
