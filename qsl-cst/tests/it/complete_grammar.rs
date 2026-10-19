@@ -170,7 +170,22 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::ExecutionBinding,
     Production::HyperClause,
     Production::TraceDomain,
+    Production::BehavioursDomain,
     Production::Quantifier,
+    Production::AlignSkip,
+    Production::MatchBlock,
+    Production::StepLabel,
+    Production::IndexedRead,
+    Production::HyperExpression,
+    Production::HyperImplication,
+    Production::HyperDisjunction,
+    Production::HyperConjunction,
+    Production::HyperComparison,
+    Production::HyperSum,
+    Production::HyperProduct,
+    Production::HyperUnary,
+    Production::HyperPostfix,
+    Production::HyperPrimary,
     Production::HybridDeclaration,
     Production::HybridMode,
     Production::Equation,
@@ -258,6 +273,17 @@ fn corpus() -> Vec<(&'static str, String)> {
                 "urgent stalled when { self.waiting };\n",
                 "record Call { x: Clock; }\n",
                 "temporal Deadline using Complete over (k: M::Call) clock \"model-time\" on origin { eventually[0 ms, 3 ms) holds(k.done) and once(1 ms, 2 ms] holds(k.done) }",
+            )),
+        ),
+        (
+            "hyper-behaviours",
+            source(concat!(
+                "hyper NonInterference using Complete over behaviours (v: M::Vault)\n",
+                "forall trace a of M fair weak M::Vault::step;\n",
+                "exists trace b of M\n",
+                "align skip { M::Vault::mix }\n",
+                "match { a.step.op = b.step.op and a.step.M::Vault::step.i = b.step.M::Vault::step.i and (a.step.receiver = b.step.receiver) and b.step.op != stutter }\n",
+                "{ always holds(not (v.l @ a = v.l @ b)) }",
             )),
         ),
         (
@@ -392,7 +418,7 @@ fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
         let (id, source, span) = occurrences.get(production).unwrap();
         assert!(span.start < source.len(), "{production:?} must own a token");
         let mut invalid = source.clone().into_bytes();
-        invalid[span.start] = b'@';
+        invalid[span.start] = b'#';
         let invalid = String::from_utf8(invalid).unwrap();
         let parsed = parse(id, &invalid);
         assert!(!parsed.is_admissible(), "{production:?} mutation admitted");
@@ -404,7 +430,7 @@ fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
 
         let boundary = span.end - 1;
         let mut invalid = source.clone().into_bytes();
-        invalid[boundary] = b'@';
+        invalid[boundary] = b'#';
         let invalid = String::from_utf8(invalid).unwrap();
         let parsed = parse(id, &invalid);
         assert!(

@@ -23,6 +23,7 @@ use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recove
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
+use super::hyper_clause;
 use super::probabilistic;
 use super::protocol_clause;
 use super::state_graph;
@@ -196,6 +197,11 @@ pub enum LeadingTokenKind {
     /// `urgent`: an urgency declaration (FR-393), a declaration-head
     /// spelling only.
     Urgent,
+    /// `hyper`: the `TemporalTrace` hyper clause form, over `behaviours` or
+    /// over a finite trace domain (FR-171).
+    Hyper,
+    /// `relation`: the `TemporalTrace` relation clause form (FR-171).
+    Relation,
     /// `random`: the `Probabilistic` random-parameter form (FR-311).
     Random,
     /// `reward`: the `Probabilistic` reward form (FR-311).
@@ -416,6 +422,8 @@ fn dispatch(
         LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
         LeadingTokenKind::Time => time_model::time_member(construct),
         LeadingTokenKind::Urgent => time_model::urgent_declaration(construct),
+        LeadingTokenKind::Hyper => hyper_clause::hyper_clause(construct),
+        LeadingTokenKind::Relation => hyper_clause::relation_clause(construct),
         LeadingTokenKind::Random => probabilistic::random_declaration(construct),
         LeadingTokenKind::Reward => probabilistic::reward_declaration(construct),
         LeadingTokenKind::Workload => probabilistic::workload_declaration(construct),
@@ -463,6 +471,8 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"terminal" => Some(LeadingTokenKind::Terminal),
         b"time" => Some(LeadingTokenKind::Time),
         b"urgent" => Some(LeadingTokenKind::Urgent),
+        b"hyper" => Some(LeadingTokenKind::Hyper),
+        b"relation" => Some(LeadingTokenKind::Relation),
         b"random" => Some(LeadingTokenKind::Random),
         b"reward" => Some(LeadingTokenKind::Reward),
         b"workload" => Some(LeadingTokenKind::Workload),

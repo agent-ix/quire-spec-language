@@ -22,13 +22,14 @@ mod persistent;
 use self::persistent::PersistentMap;
 use super::check::DispatchOperation;
 use super::ir::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, Observation,
-    OrderedKind, RecordField, Slot, Visit,
+    Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, OrderedKind,
+    RecordField, Slot, Visit,
 };
 use super::observation::Observations;
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Obligation, ProvedInterval,
 };
+use crate::model::clause_observation::Observation;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{Integer, IntegerInterval};

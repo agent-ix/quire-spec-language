@@ -38,13 +38,14 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::check::{bind_parameters, Scope, StateContext, Typer};
 use super::facts::Definedness;
-use super::ir::{CheckedBody, NodeKind, Observation};
+use super::ir::{CheckedBody, NodeKind};
 use super::observation::Observations;
 use super::protocol_clause::{CheckedProtocol, ProtocolNodeId};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::state_clause::{population_of, ClauseDeclarations, ClauseOperation, PopulationDomain};
 use super::type_form::resolve_form;
 use crate::family::CheckContext;
+use crate::model::clause_observation::Observation;
 use crate::model::operation::OperationLookup;
 
 /// A slot no local carries: a protocol has no `self`, so a `self` written in

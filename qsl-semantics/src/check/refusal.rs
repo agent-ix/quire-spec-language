@@ -1477,6 +1477,9 @@ pub enum CheckCause {
     /// FR-326: the `TemporalTrace` family refused a `temporal` clause.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     Temporal(Box<TemporalCause>),
+    /// FR-172: the `TemporalTrace` family refused a `hyper` clause or a
+    /// `relation`. Boxed for the same reason as `ProtocolAnchor` above.
+    Hyper(Box<super::hyper_clause::HyperCause>),
     /// FR-165: the `StateGraph` family refused a state-graph claim. Boxed
     /// for the same reason as `ProtocolAnchor` above.
     StateGraph(Box<StateGraphCause>),
@@ -1820,6 +1823,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => cause.code(),
             Self::ProtocolReference(cause) => cause.code(),
             Self::Temporal(cause) => cause.code(),
+            Self::Hyper(cause) => cause.code(),
             Self::StateGraph(cause) => cause.code(),
             Self::ProtocolObligation(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
@@ -1895,6 +1899,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
             Self::ProtocolReference(cause) => Some(cause.tag()),
             Self::Temporal(cause) => Some(cause.tag()),
+            Self::Hyper(cause) => Some(cause.tag()),
             Self::StateGraph(cause) => cause.tag(),
             Self::ProtocolObligation(cause) => cause.tag(),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),

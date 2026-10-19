@@ -1843,6 +1843,9 @@ mod tests {
             ExprNode::Result => "Result",
             ExprNode::Reaches { .. } => "Reaches",
             ExprNode::ProtocolReference { .. } => "ProtocolReference",
+            ExprNode::Indexed { .. } => "Indexed",
+            ExprNode::StepLabel { .. } => "StepLabel",
+            ExprNode::Stutter => "Stutter",
         }
     }
 

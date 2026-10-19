@@ -115,8 +115,11 @@ fn state_clause(form: &DeclarationForm) -> &StateClauseForm {
         | DeclarationForm::Terminal(_)
         | DeclarationForm::TimeSource(_)
         | DeclarationForm::TimeInvariant(_)
-        | DeclarationForm::Urgent(_) => panic!("a state clause form, not {form:?}"),
-        DeclarationForm::Random(_)
+        | DeclarationForm::Urgent(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
         | DeclarationForm::Reward(_)
         | DeclarationForm::Workload(_)
         | DeclarationForm::Probabilistic(_)
@@ -142,8 +145,11 @@ fn operation_body(form: &DeclarationForm) -> &OperationBodyForm {
         | DeclarationForm::Terminal(_)
         | DeclarationForm::TimeSource(_)
         | DeclarationForm::TimeInvariant(_)
-        | DeclarationForm::Urgent(_) => panic!("an operation body form, not {form:?}"),
-        DeclarationForm::Random(_)
+        | DeclarationForm::Urgent(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
         | DeclarationForm::Reward(_)
         | DeclarationForm::Workload(_)
         | DeclarationForm::Probabilistic(_)
@@ -169,8 +175,11 @@ fn protocol_form(form: &DeclarationForm) -> &ProtocolDeclarationForm {
         | DeclarationForm::Terminal(_)
         | DeclarationForm::TimeSource(_)
         | DeclarationForm::TimeInvariant(_)
-        | DeclarationForm::Urgent(_) => panic!("a protocol form, not {form:?}"),
-        DeclarationForm::Random(_)
+        | DeclarationForm::Urgent(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_)
+        | DeclarationForm::Random(_)
         | DeclarationForm::Reward(_)
         | DeclarationForm::Workload(_)
         | DeclarationForm::Probabilistic(_)
@@ -947,6 +956,8 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
         ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
+        ExprNode::Indexed { trace, .. } => format!("Indexed[{trace}]"),
+        ExprNode::StepLabel { trace, label } => format!("StepLabel[{trace},{label:?}]"),
         other => panic!("this fixture's bodies use no other form: {other:?}"),
     };
     if children.is_empty() {
