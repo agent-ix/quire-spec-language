@@ -66,6 +66,7 @@ FR-104, FR-104 only references FR-391), and the spec index row.
 | FND-004 | fixed | 5604034c5: the Description now reads "a state clause has no such operand: the clause checker and the clause evaluator admit neither form today". |
 | FND-005 | fixed | 4895e29c1 (round 2): AC-6 and TC-1076 row 8 put A (`M::counters`) and B (`M::archive`) on `M::Widget::grow`. `Widget` is covered only by `widgets`, so neither clause hits FR-104-AC-5's ambiguity, and both check. |
 | FND-006 | fixed | 4895e29c1 (round 2): AC-3 names `missing_declaration`/`missing-name` for the function-body case and for `M::Counter` used as a value, matching TC-1076 row 4. The fixture declares `grow()` on `Widget`. |
+| FND-007 | fixed | 9d4eb6241 (round 3): TC-1076 row 8 now matches AC-6. Of the populations, A reads `AnyMembership{counters}` and not `AnyMembership{archive}`, and B the reverse; each footprint also holds the receiver's own `Membership` per FR-155, so no exact equality is implied. |
 
 ## New findings (disposition pass 2)
 
