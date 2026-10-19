@@ -29,8 +29,10 @@ vector, a nested application operand bound by guess, a wrapped or saturated
 ## Test Procedure
 
 Every unit starts with the complete-V1 header and one profile selection `v`.
-Compile and emit each unit as FR-100's `run` does, then call
-`bind_scalar_operands` with the stated `Call` and `ScalarOccurrence`.
+Compile and emit each unit as FR-100's `run` does, admit the emitted bytes
+once with `read_checked_package` under `admission_evidence`, then call
+`bind_scalar_operands` over that admitted package with the stated `Call` and
+`ScalarOccurrence`.
 
 1. `function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] pure { a - b }`:
    bind arguments listed `b = 2, a = 7`, then `a = 7, b = 2`; compile
@@ -65,6 +67,12 @@ Compile and emit each unit as FR-100's `run` does, then call
    ieee-not-finite.
 8. Bind step 1's request twice, and the FR-357 claim for the same occurrence;
    compare `values()` with the claim's operand values.
+9. For `sub`: admit the emitted bytes, drop the emitted unit and its bytes,
+   then bind `b = 2, a = 7` over the admitted package.
+10. Admit `sub`'s emitted bytes and bind `a = 7, b = 2` over that admission
+    with the `CheckedUnit` of a second unit, `sub` plus
+    `function neg using v(a: Int[0, 9]): Int[-9, 0] pure { -a }`; then bind
+    the same call over the second unit's own admission.
 
 ## Expected Results
 
@@ -96,3 +104,7 @@ Compile and emit each unit as FR-100's `run` does, then call
   `Refused(OperandNotNative)` at their ordinals.
 - Step 7: `Bound` with `[4, 1]` though `run` is `Incomplete` at `work_units`.
 - Step 8: equal results; `values()` equals the claim's ordered operand values.
+- Step 9: `[7, 2]`, bound with no emitted byte left to read.
+- Step 10: `Refused(AdmittedPackage)` with the first unit's and the second
+  unit's `package_id` digests, `stale_dependency`/`content-mismatch`; then
+  `[7, 2]`.
