@@ -10,6 +10,7 @@
 use std::collections::BTreeSet;
 
 use quire_exact::{EffectiveId, ValueType};
+use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::check::{CheckedGraph, CheckedNode, CheckedStateClause, NodeKind};
 use crate::model::clause_observation::Observation;
@@ -127,8 +128,31 @@ pub fn derive_footprint(
     operation: &OperationDeclaration,
     arguments: &[(String, EffectiveId)],
 ) -> Result<SymbolicFootprint, FootprintRefusal> {
+    derive_from(
+        graph.scope().types(),
+        graph.state_clauses(),
+        model,
+        receiver_type,
+        declaring,
+        operation,
+        arguments,
+    )
+}
+
+/// [`derive_footprint`] over the type environment and checked state clauses
+/// of a package that is still being checked.
+pub(crate) fn derive_from(
+    types: &TypeEnvironment,
+    clauses: &[CheckedStateClause],
+    model: &StateModel,
+    receiver_type: EffectiveId,
+    declaring: EffectiveId,
+    operation: &OperationDeclaration,
+    arguments: &[(String, EffectiveId)],
+) -> Result<SymbolicFootprint, FootprintRefusal> {
     let derivation = Derivation {
-        graph,
+        types,
+        clauses,
         model,
         receiver_type,
         declaring,
@@ -195,7 +219,7 @@ fn referenced_types(value_type: &ValueType, found: &mut Vec<EffectiveId>) {
 }
 
 /// The object type a reference or optional-reference parameter binds.
-fn parameter_target(value_type: &ValueType) -> Option<EffectiveId> {
+pub(crate) fn parameter_target(value_type: &ValueType) -> Option<EffectiveId> {
     match value_type {
         ValueType::Reference(target) => Some(*target),
         ValueType::Option(payload) => parameter_target(payload),
@@ -204,7 +228,8 @@ fn parameter_target(value_type: &ValueType) -> Option<EffectiveId> {
 }
 
 struct Derivation<'a> {
-    graph: &'a CheckedGraph,
+    types: &'a TypeEnvironment,
+    clauses: &'a [CheckedStateClause],
     model: &'a StateModel,
     receiver_type: EffectiveId,
     declaring: EffectiveId,
@@ -215,7 +240,7 @@ struct Derivation<'a> {
 
 impl Derivation<'_> {
     fn conforms(&self, sub: EffectiveId, sup: EffectiveId) -> bool {
-        self.graph.scope().types().conforms(sub, sup)
+        self.types.conforms(sub, sup)
     }
 
     /// The populations whose member type `object` conforms to.
@@ -398,7 +423,7 @@ impl Derivation<'_> {
         }
 
         // The clause bodies.
-        for clause in self.graph.state_clauses() {
+        for clause in self.clauses {
             let Some(owner) = clause.operation() else {
                 continue;
             };
@@ -453,7 +478,7 @@ impl Derivation<'_> {
         holder: Option<EffectiveId>,
     ) -> Result<Vec<(DeclarationKey, Vec<EffectiveId>)>, FootprintRefusal> {
         let mut found = Vec::new();
-        for declaration in self.graph.scope().types().object_types() {
+        for declaration in self.types.object_types() {
             let identity = declaration.key();
             if holder.is_some_and(|holder| !self.conforms(identity, holder)) {
                 continue;

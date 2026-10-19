@@ -221,6 +221,7 @@ pub fn check(
             awaits,
             requirements: Vec::new(),
             relationships: Vec::new(),
+            memory: crate::check::protocol_memory::CheckedMemory::default(),
         },
         bound_attempts,
     ))

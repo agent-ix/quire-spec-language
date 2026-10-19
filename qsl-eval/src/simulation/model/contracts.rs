@@ -52,7 +52,7 @@ pub(super) fn verdict(outcome: &FamilyOutcome<Value>) -> Verdict {
 }
 
 /// The observations of an invariant over one object of the state.
-fn invariant_observations(
+pub(super) fn invariant_observations(
     walk: &Walk<'_, '_>,
     clause: &ClauseInfo,
     row: usize,
