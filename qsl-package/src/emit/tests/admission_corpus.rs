@@ -31,7 +31,7 @@ use qsl_foundation::diagnostic::{StageFailure, Staged};
 /// FR-108's ConfigVersion unit text and domain package (TC-469), the datum
 /// `examples/config-version/spine.rs` writes its spine files from.
 #[path = "../../../../examples/config-version/spine_unit.rs"]
-mod config_version_unit;
+pub(super) mod config_version_unit;
 
 /// An emit fixture the corpus emits. Each reuses an emit-test fixture or
 /// helper; [`FORMS_UNIT`], [`CYCLIC_EQUALITY`] and the systems-interface

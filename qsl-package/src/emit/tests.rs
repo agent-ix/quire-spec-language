@@ -44,6 +44,7 @@ mod population_bound;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;
+mod temporal_clause;
 mod union_nodes;
 mod variant_types;
 
