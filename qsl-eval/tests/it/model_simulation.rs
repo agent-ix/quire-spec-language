@@ -29,7 +29,7 @@ use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
-const PACKAGE: &str = "test/counters";
+pub(crate) const PACKAGE: &str = "test/counters";
 
 fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
@@ -150,11 +150,11 @@ fn frame(modifies: &[&str], creates: bool, deletes: bool) -> Json {
     })
 }
 
-fn increment() -> Json {
+pub(crate) fn increment() -> Json {
     operation("increment", &[], None, frame(&["value"], false, false))
 }
 
-fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> {
+pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> {
     let counter_identity = ident("Counter");
     let constructs = vec![
         ("object_type", meaning::OBJECT_TYPE),

@@ -3,9 +3,8 @@
 //! what `qsl-analyze`'s model checker and the layer-6 certificate checkers
 //! both build on, so neither depends on the other.
 //!
-//! This module owns the automaton data and the algorithms over it, never a
-//! formula: translating a checked temporal clause into these automata is the
-//! property-automaton translation that builds on this module.
+//! This module owns the automaton data, the algorithms over it and the
+//! translation of a checked temporal clause into these automata.
 //!
 //! - [`Gba`] is a generalized Büchi automaton over [`Letter`]s: state 0 is
 //!   the automaton's initial state, a transition carries a [`Guard`], and
@@ -21,6 +20,12 @@
 //!   the `max_automaton_states` bound (ADR-018 IV-6), with checked
 //!   arithmetic. The number is storage local to one explored graph and never
 //!   a state's identity (ADR-018 §12).
+//! - [`translate`] builds a [`PropertyAutomaton`] from a checked temporal
+//!   clause (ADR-018 SM-6): a deterministic finite monitor for a bounded
+//!   clause, the automaton of an infinite-trace safety formula for the
+//!   bad-prefix monitor, and a [`Gba`] of the negation of a liveness formula.
+//!   Past operators are tracked as automaton state, and an interval operator
+//!   keeps the counters below (IV-3).
 //! - The counters ([`DeadlineCounter`], [`ExtentCounter`], [`PastAgeCounter`],
 //!   [`ShiftCounter`], [`EventuallyWindows`], [`AlwaysOffsets`]) are ADR-018
 //!   IV-3's counter construction for interval operators: one counter per
@@ -28,12 +33,16 @@
 //!   otherwise.
 
 mod counters;
+mod dnf;
 mod error;
+mod formula;
 mod gba;
 mod letter;
 mod monitor;
 mod numbering;
+mod past;
 mod state;
+mod translate;
 
 pub use counters::{
     AlwaysOffsets, DeadlineCounter, EventuallyWindows, Expired, ExtentCounter, PastAgeCounter,
@@ -45,3 +54,4 @@ pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::Monitor;
 pub use numbering::{Interned, Numbering};
 pub use state::StateId;
+pub use translate::{translate, AutomatonKind, PropertyAutomaton};
