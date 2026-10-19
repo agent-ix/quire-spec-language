@@ -72,3 +72,15 @@ end to end.
 | a_backend_without_the_requested_kind_is_not_a_candidate | FR-134-AC-1 | correct (registry half) |
 | every_kind_in_the_fairness_set_must_be_advertised | FR-134-AC-1 | correct |
 | an_emptied_set_names_the_missing_fairness_kind | FR-134-AC-2 | wrong: overclaims the settle clause (FND-001) |
+
+## Dispositions
+
+Round 1, reviewed at `53720be0333dde1d33cb483ee3ffa3810adb7168`. The fix
+commit is `68dbe87c0`. The merge of `main` (`53720be03`) touches no
+`qsl-route` file. Static review only; no build was run.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 68dbe87c0: `an_emptied_set_names_the_missing_fairness_kind` is now tagged `#[trace("TC-535")]` only, and its doc says why. No test in the tree names FR-134-AC-2 any more, so the matrix honestly reports AC-2 as untested until the settle half has a test. |
+| FND-002 | deferred | QSL-877 (Backlog, QSL V1 Architecture Spine) owns carrying the fairness set through `Requirements` into `items_from_requirements` and calling `candidates_for_fairness`. Its expiry: a strong-fairness item negotiates end to end against a manifest-registered backend. |
+| FND-003 | deferred | QSL-877 also owns FR-134 Behavior bullet 1, the EN-1 provider registering with `Weak` and `Strong`, together with the manifest `fairness_kinds` read. |

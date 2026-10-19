@@ -68,3 +68,14 @@ PASS, no major finding. The filter is sound and the API shape is right:
   on carrying kinds unchanged. The FR-134-AC-2 tag overclaims (the brief said
   AC-2 was untagged; it is tagged). That is recorded in SR-12160 FND-001 and
   not repeated here.
+
+## Dispositions
+
+Round 1, reviewed at `53720be0333dde1d33cb483ee3ffa3810adb7168`. The fix
+commit is `68dbe87c0`. The merge of `main` (`53720be03`) touches no
+`qsl-route` file. Static review only; no build was run.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 68dbe87c0: the `descriptor_from_manifest` doc now says the manifest's `fairness_kinds` are not read, that the descriptor is built with none, and that `with_fairness_kinds` is the only way to set them. That is the minimum fix the finding named. QSL-877 (Backlog) owns the real manifest read, which must land no later than the item-path wiring. |
+| FND-002 | fixed | 68dbe87c0: the `register` doc's equal-repeat definition now reads "same identity, manifest digest, advertised pairs and fairness kinds". |
