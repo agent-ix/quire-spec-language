@@ -23,13 +23,13 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use qsl_eval::automaton::SafetyState;
+use qsl_eval::automaton::{SafetyState, SafetyTranslation};
 use qsl_eval::simulation::model::{
     ModelFinding, ModelSimState, ModelSystem, PredicateReading, TerminalClass,
 };
 use qsl_eval::simulation::TransitionSystem;
 use qsl_replay::{
-    ClosureCertificate, CounterexampleKind, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
+    ClosureCertificate, CounterexampleKind, ItemRefusal, ModelCheckLimit, ModelCheckLimits,
     ModelCheckOutcome, ModelStep, OpenCause, ProductStateRef, RunEnd, RunStats,
     TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
@@ -429,17 +429,17 @@ impl Exploration<'_, '_, '_> {
 fn deadlock_certificate(
     graph: &ExploredStateGraph,
 ) -> Result<ClosureCertificate, ModelCheckRefusal> {
-    let instances = ModelCheckItem::DeadlockFreedom
-        .instances()
-        .map_err(ModelCheckRefusal::Item)?;
-    let mut states = Vec::with_capacity(graph.nodes.len());
-    for instance in &instances {
-        let key = instance.translation.key(SafetyState::Carried)?;
-        states.extend(graph.nodes.iter().map(|node| ProductStateRef {
+    let key = SafetyTranslation::deadlock_freedom()
+        .map_err(|_| ModelCheckRefusal::Item(ItemRefusal::DeadlockContext))?
+        .key(SafetyState::Carried)?;
+    let mut states: Vec<ProductStateRef> = graph
+        .nodes
+        .iter()
+        .map(|node| ProductStateRef {
             model_state: node.key,
             automaton_state: key.clone(),
-        }));
-    }
+        })
+        .collect();
     states.sort();
     states.dedup();
     Ok(ClosureCertificate { states })

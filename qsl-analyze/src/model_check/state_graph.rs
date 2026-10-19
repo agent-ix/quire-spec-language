@@ -323,8 +323,8 @@ fn cancelled(cancel: &Cancel) -> Option<Halt> {
 }
 
 /// FR-166 to FR-168: run phase 0, explore the subject once and decide each
-/// item instance, polling `cancel` before every walk, every expansion and
-/// every predicate evaluation.
+/// item instance, polling `cancel` before every walk, at every state a walk
+/// visits and before every node is labelled and expanded.
 ///
 /// # Errors
 ///

@@ -133,8 +133,12 @@ impl Phase<'_, '_> {
         }
         for initial in 0..count {
             let mut pending: Vec<usize> = (0..instances.len()).collect();
-            // `initial < count` and the greatest index fits, so these do.
-            let base = u64::try_from(initial).unwrap_or(u64::MAX) * samples;
+            // `initial < count` and the greatest index fits, so every
+            // index of this initial state does.
+            let base = u64::try_from(initial)
+                .ok()
+                .and_then(|initial| initial.checked_mul(samples))
+                .ok_or_else(|| fault("trace-index-fits"))?;
             let mut walk_index = 0;
             while walk_index < samples && !pending.is_empty() {
                 if let Some(halt) = cancelled(self.cancel) {

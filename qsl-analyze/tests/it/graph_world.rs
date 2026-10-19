@@ -202,6 +202,9 @@ impl Model {
     }
 }
 
+/// One object of a snapshot: its key and its `(field, value)` pairs.
+pub(crate) type Object<'a> = (&'a str, &'a [(&'a str, i64)]);
+
 /// A checked world: the model, its package with `body`'s contract and
 /// claims, and the provisioned documents and initial snapshots.
 pub(crate) struct World {
@@ -221,7 +224,7 @@ impl World {
     /// The world of `model` with `body` after the unit header, and one
     /// initial snapshot per entry of `starts`, each `(key, [(field,
     /// value)])` per object.
-    pub(crate) fn new(model: Model, body: &str, starts: &[&[(&str, &[(&str, i64)])]]) -> Self {
+    pub(crate) fn new(model: Model, body: &str, starts: &[&[Object<'_>]]) -> Self {
         let document = model.document();
         let packages = package_input([document.as_slice()]);
         let text = format!(
@@ -291,7 +294,7 @@ impl World {
         world
     }
 
-    fn start(&mut self, name: &str, objects: &[(&str, &[(&str, i64)])]) -> DocumentRef {
+    fn start(&mut self, name: &str, objects: &[Object<'_>]) -> DocumentRef {
         let object_type = self.model.ident(self.model.object);
         let objects: Vec<Json> = objects
             .iter()
@@ -475,7 +478,7 @@ pub(crate) fn config_world_over(
                 .collect()
         })
         .collect();
-    let objects: Vec<Vec<(&str, &[(&str, i64)])>> = fields
+    let objects: Vec<Vec<Object<'_>>> = fields
         .iter()
         .map(|values| {
             keys.iter()
@@ -484,7 +487,7 @@ pub(crate) fn config_world_over(
                 .collect()
         })
         .collect();
-    let starts: Vec<&[(&str, &[(&str, i64)])]> = objects.iter().map(Vec::as_slice).collect();
+    let starts: Vec<&[Object<'_>]> = objects.iter().map(Vec::as_slice).collect();
     World::new(
         config_version(),
         &format!("{CONFIG_CONTRACT}{extra}{claims}"),
