@@ -37,3 +37,12 @@ TC-1053 step 9 and its Expected Result match the test. The procedure preamble ma
 ## Verdict
 
 PASS (no major). Every FR-367 AC has a correctly tagged test, and every test binds through a single admission. Both findings are spec precision issues, not missing behaviour in the delivered code.
+
+## Dispositions
+
+Reviewed at 50f6bceac. New binding: `tc_1053_step_10_a_mismatched_admission_refuses` → FR-367-AC-12 (TC-1053 step 10). Correct. It asserts the refusal value, code and cause, and the control binding `[7, 2]`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 50f6bceac: FR-367 Inputs now says "The caller SHALL pass the admission of the bytes emitted from that `CheckedUnit`; the entry checks the pairing by `package_id` and refuses a mismatch (Behavior 1)". Behavior 1 puts the check first. The refusal table has an `AdmittedPackage` row. FR-367-AC-12 and TC-1053 step 10 cover it, and the test fails without the check. |
+| FND-002 | fixed | 50f6bceac: AC-11 now reads "so by signature it can neither read nor admit the emitted package a second time; the compiler enforces this, and the test observes the binding only." |

@@ -32,3 +32,18 @@ The following are sound:
 - **The deletions are complete.** `BindPackage`, `BindPackage::read`, `BindPackage::package_id` and `BoundScalarOperands::package_id` are gone, with no fallback. A repo-wide grep (code, `spec/`, `docs/`, `examples/`, every crate) finds `BindPackage` only in the historical review artifact `reviews/qsl-818-code-review.md`. QSpec and the local quire-driver checkout have no references. The `PackageId` import was removed.
 - **Error mapping is unchanged.** The `Halt` routing to `Ok(Refused)` or `Err` is byte-identical apart from the input struct. The private `Package<'a>` is `Copy` and holds only borrows. The public signature has 7 parameters, which does not exceed clippy's `too_many_arguments` threshold.
 - **Rust idioms.** No new `unsafe`, panics or `unwrap` in production code. The test helper `admit` panics on a fixture precondition, which is correct for a fixture.
+
+## New findings (disposition pass 1)
+
+Reviewed at 50f6bceac. The fix commit is the only PR change since 26faf36ec. The merge 1d66d0f1b brings in main and touches no PR file.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The rustdoc of `CheckedPackage::emitted_package_id` says it returns the id "if it has been emitted", and `BindRefusal::AdmittedPackage { emitted: None }` reads "the unit was never emitted". Only `emit_checked` and `emit_checked_with_cancel` call `remember_emission`, though. A package emitted through the public `qsl_package::emit_package` (custom regions) is not remembered, so it reports `None` even though it was emitted. The spine's package stage (`lifecycle.rs:725`, `emit_checked_with_cancel`) does remember, so FR-367's spine path is sound. Fix: change the doc wording to "emitted by `emit_checked`/`emit_checked_with_cancel`". | qsl-package/src/checked.rs:473-480, qsl-package/src/emit.rs:1034-1039 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 50f6bceac: before anything else, `bind_scalar_operands` compares `checked.package().emitted_package_id()` (hex) with `admitted.package_id().digest`, and returns `Ok(Refused(BindRefusal::AdmittedPackage { admitted, emitted }))`, coded `stale_dependency`/`content-mismatch`. The memoised id is sound. It is the emitter's own `package_id`, recorded by `emit_checked_with_cancel`, which the spine's package stage calls. The package is immutable except through `bind_abstraction`, which resets the `OnceLock`. The new accessor returns the already-public `PackageId` and exposes nothing new. `tc_1053_step_10_a_mismatched_admission_refuses` would fail without the check: it asserts that the `sub` node is in both packages, so the unchecked path would return `Bound([7, 2])`. |
+| FND-002 | fixed | 50f6bceac: the `admission_evidence` paragraph now follows the `Incomplete` paragraph. "The entry is shaped as FR-100's `run`…" and the `Ok`/`Err` arm list now describe `bind_scalar_operands` again. |
