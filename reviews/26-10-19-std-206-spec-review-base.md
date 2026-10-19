@@ -119,6 +119,12 @@ Not mergeable: 3 high, 7 medium, 1 low. The ADR-020 section 8 guard is right and
 | FND-024 | low | The rationale 'check_step and check_initial pass the refinement's own systems, so a WrongSystem arising inside them is an internal fault, not a caller error' contradicts the signature (the caller supplies abstract_system) and FR-141-AC-8 ('a WrongSystem from a swapped system passed to it'). Settling `failed` is a reasonable outcome, but the stated reason does not hold. Say instead that check_step's callers (FR-142, FR-145) pass the refinement's systems, so a WrongSystem means that engine code passed the wrong one, which is an internal fault. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:169-174 |
 | FND-025 | low | AC-13's 'two undefined rows on objects a and b' and 'two fields of one object' are not in AC-9's variant, which has one ring r and one undefined items row. Name the fixture: for example rings = {a, b} with the AC-3 `only` row undefined at both, and a second Queue field whose row is undefined, with the two field names. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:214 |
 
+## New findings (disposition pass 5)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-026 | low | TwoRings names the rings universe {a, b} but not the slots universe or each slot's ring and index, and both of AC-13's claims depend on it. With one slot per ring, the AC-3 condition `s.ring = self` finds exactly one slot, so `items` is defined, not 'undefined on both rings'. With the original row, each ring needs a slot of index 0 for `items` to be defined at head = 0, size = 1. Name the slots, for example {a0, a1, b0, b1} with rings a, a, b, b and indices 0, 1, 0, 1. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:214 |
+
 ## Dispositions
 
 Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
@@ -147,6 +153,9 @@ Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
 | FND-020 | fixed | - |
 | FND-021 | fixed | - |
 | FND-022 | fixed | - |
+| FND-023 | fixed | - |
+| FND-024 | fixed | - |
+| FND-025 | fixed | - |
 
 Disposition pass 1 (head 72d04b1dc): FND-001 to FND-011 fixed. New: FND-012 (high), FND-013 (high), FND-014 (medium), FND-015 (medium), FND-016 (medium). Not mergeable.
 
@@ -161,3 +170,7 @@ Disposition pass 3 (head c76e918bc, fix commits 7a4057061 and c76e918bc): FND-01
 Round 4, head 600543dbc (fix commit 600543dbc): rows after round 3's.
 
 Disposition pass 4 (head 600543dbc, fix commit 600543dbc): FND-020 to FND-022 fixed. New: FND-023 (medium), FND-024 (low), FND-025 (low). Not mergeable while FND-023 is open.
+
+Round 5, head bbdea205d (fix commits 578e80257, bbdea205d): rows after round 4's.
+
+Disposition pass 5 (head bbdea205d, fix commits 578e80257 and bbdea205d): FND-023 to FND-025 fixed. New: FND-026 (low), a fixture gap with no blocking defect.
