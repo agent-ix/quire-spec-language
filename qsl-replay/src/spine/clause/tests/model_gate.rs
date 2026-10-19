@@ -457,3 +457,37 @@ fn forms_no_gate_covers_stay_ungated() {
             .unwrap_or_else(|refusal| panic!("{identity} refuses an ungated form: {refusal:?}"));
     }
 }
+
+/// FR-361-AC-13: `deref` and `reaches` are `state.graph`'s. Under an alias
+/// that resolves to `quire.value.complete/v1` each is refused once by
+/// FR-110's layer rule naming that layer and retaining no model family, also
+/// in a unit whose header selects `quire.state.graph/v1` through a second
+/// alias; under a graph or model alias each compiles.
+#[trace("FR-361-AC-13", "TC-1015")]
+#[test]
+fn object_navigation_is_not_a_value_layer_form() {
+    let deref = "invariant D using a on Config::ConfigVersion at current \
+                 { present(self.parent) implies deref(value(self.parent)).versionNumber >= 0 }";
+    let reaches = "invariant R using a on Config::ConfigVersion at current \
+                   { not reaches(self, self, parent) }";
+    for declaration in [deref, reaches] {
+        for profiles in [vec![("a", VALUE)], vec![("a", VALUE), ("g", GRAPH)]] {
+            let found = refusals(&profiles, declaration);
+            let [(error, _)] = found.as_slice() else {
+                panic!("one refusal, not {found:?}");
+            };
+            assert_eq!(
+                error.cause,
+                AssemblyCause::UnsupportedLayerForm {
+                    layer: HeaderLayer::ValueComplete,
+                    form: LayerForm::ObjectNavigation,
+                }
+            );
+        }
+        for identity in [GRAPH, MODEL] {
+            compile(&[("a", identity)], declaration)
+                .1
+                .unwrap_or_else(|refusal| panic!("{identity} refuses navigation: {refusal:?}"));
+        }
+    }
+}

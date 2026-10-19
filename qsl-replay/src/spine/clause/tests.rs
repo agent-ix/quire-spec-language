@@ -258,7 +258,7 @@ fn unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     let digest = hex(digest);
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model M = {PACKAGE_IDENTITY:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
          invariant NoCycle using v on M::Node at current {{ not reaches(self, self, next) }}\n\
          function isPositive using v(n: Integer): Boolean pure {{ n > 0 }}\n\
@@ -1795,7 +1795,7 @@ fn config_version_unit_and_packages_for(
     let digest = hex(digest);
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          invariant ParentOrder using v on Config::ConfigVersion at current {{ \
@@ -3058,7 +3058,7 @@ fn config_version_step3_unit_and_packages() -> (String, BTreeMap<[u8; 32], Vec<u
     let digest = config_version_step3_model_digest_hex();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {CONFIG_VERSION_PACKAGE_IDENTITY:?} version \"1.0.0\" \
          digest \"sha256-jcs:{digest}\";\n\
          pre ReachesTarget using v on Config::ConfigVersion::probe {{ \

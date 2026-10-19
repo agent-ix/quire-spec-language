@@ -47,7 +47,7 @@ fn declarations_of(
     let digest = qsl_semantics::model::key::hex(digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model {alias} = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
          function keep using v(): Boolean pure {{ true }}\n\
          {declarations}\n",
@@ -181,7 +181,7 @@ fn intake_refusals(document: &Value) -> Vec<qsl_semantics::model::normalize::Mod
     let digest = qsl_semantics::model::key::hex(digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
          function keep using v(): Boolean pure {{ true }}\n",
         package = fixture::PACKAGE,
@@ -615,7 +615,7 @@ fn an_unknown_variant_type_name_in_a_type_position_refuses_at_the_assembler() {
         let digest = qsl_semantics::model::key::hex(digest);
         let source = format!(
             "language \"ix:native\" edition \"1-draft\";\n\
-             profile v = \"quire.value.complete/v1\";\n\
+             profile v = \"quire.model.complete/v1\";\n\
              model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
              {declarations}\n",
             package = fixture::PACKAGE,
@@ -1340,7 +1340,7 @@ fn parsed_with_body(body: &str) -> (String, qsl_cst::ParsedSource) {
     let digest = qsl_semantics::model::key::hex(digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {package:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
          function f using v(t: Config::Tier): Boolean pure {{ {body} }}\n",
         package = fixture::PACKAGE,

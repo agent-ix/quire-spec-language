@@ -222,13 +222,8 @@ pub(super) const LAYER_ROWS: [LayerRow; 5] = [
     // `value.complete` adds complete values and pure functions to state core.
     // A predicate is a pure Boolean function and the ordered queries are
     // collection operations, so its set holds them although it does not
-    // require `state.queries`. It also holds `ObjectNavigation` although it
-    // does not require `state.graph`: every unit that writes an object-typed
-    // state clause selects `value.complete` today. This is a TEMPORARY
-    // exception, the one place this table admits a form under a layer wider
-    // than the spec's. It expires when QSL-750 (model-profile selection and
-    // gating in QSL, FR-361) lands; that work deletes the `ObjectNavigation`
-    // entry below and moves those units to `quire.model.complete/v1`.
+    // require `state.queries`. It holds no object navigation: `deref` and
+    // `reaches` are `state.graph`'s (FR-361 item 17).
     LayerRow {
         layer: HeaderLayer::ValueComplete,
         requires: &[HeaderLayer::StateCore],
@@ -240,7 +235,6 @@ pub(super) const LAYER_ROWS: [LayerRow; 5] = [
             LayerForm::PredicateDeclaration,
             LayerForm::NamedPredicateCall,
             LayerForm::SequenceQuery,
-            LayerForm::ObjectNavigation,
         ],
     },
     // The model constructs (FR-361 item 5): an `operation-body`, a dispatched

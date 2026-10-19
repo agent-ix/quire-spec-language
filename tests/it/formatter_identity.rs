@@ -1550,9 +1550,17 @@ fn replay_composite_and_model_units_keep_format_identity() {
         "tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value",
         "function ",
     );
+    let model_profile = source_literal(
+        include_str!("../../qsl-replay/src/execute/tests.rs"),
+        "MODEL_PROFILE",
+    );
     let source = fixture_text(
         function_literal(fixture, "model_fixture", "language "),
-        &[("PROFILE", &profile), ("hex", &digest), ("body", &body)],
+        &[
+            ("MODEL_PROFILE", &model_profile),
+            ("hex", &digest),
+            ("body", &body),
+        ],
     );
     emitted(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),
