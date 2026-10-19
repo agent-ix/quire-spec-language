@@ -72,3 +72,16 @@ FR-168's Outputs, to route to the FR-169 ticket and the spec owner.
 | FND-001 | medium | FR-168 "Partial runs" is tested for `possible` (AC-8, AC-9) and `always possible` (AC-4), but not for `unique path`. No test runs a `unique path` item with an open node. That is exactly where the engine returns an unsound `Trapped` (SR-12183 FND-001). Add a test with the §7.3 job under a horizon: `NoDecision` for the sequenced job, and no `Trapped` for either job. | qsl-analyze/tests/it/state_graph.rs:855-889; spec/functional/FR-168-decide-state-graph-claims-over-the-explored-graph.md:155-163 |
 | FND-002 | medium | FR-168 Outputs require a `StateGraphCertificate` beside `Witnessed` and `Holds{Exhaustive}`: the explored states and the distances or path counts (ADR-022 GC-1). `StateGraphOutcome::Witnessed`/`Holds` carry none, and the PR does not declare this departure. FR-169 checks the certificate, so route it to the FR-169 ticket. | qsl-replay/src/model_check/state_graph.rs:96-149; spec/functional/FR-168-decide-state-graph-claims-over-the-explored-graph.md:72-75 |
 | FND-003 | medium | QSpec FR-391-AC-14: an undefined guard, `terminal when` predicate or state constraint at an explored node refutes every state-graph item over the subject (`undefined-evaluation`). QSL FR-168 "Undefined evaluation" covers only the claim's own predicates. The engine marks such a node open, `UndecidedSuccessor`, so the items get `NoDecision` or `WitnessedUnchecked` instead of a refutation. That is safe, never a wrong `proved`, but it departs from QSpec. This is a spec gap for the QSL spec owner. | qsl-analyze/src/model_check/state_graph/explore.rs:230-242; spec/functional/FR-168-decide-state-graph-claims-over-the-explored-graph.md:139-153 |
+
+## Dispositions
+
+Round 1, reviewed at 8ed0af489ea63d039ad0c10f6db88d763bb214ea (fix commit
+8ed0af489). The new `unique path` horizon test fails on the pre-fix trap
+rule (see SR-12183 Dispositions). The PR body now declares FND-002 and
+FND-003.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8ed0af489 |
+| FND-002 | deferred | Declared in the PR body: the certificate is FR-169's, built and checked with the settlement. Remaining work: QSL-891 (E11 remainder: FR-169 state-graph settlement). |
+| FND-003 | deferred | Declared in the PR body as a spec gap (QSpec FR-391-AC-14 has no counterpart in QSL FR-168). The engine is safe here: it never returns a wrong `proved`. Route it to the QSL spec owner. The PR names no ticket for it yet. |

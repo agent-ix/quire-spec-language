@@ -108,3 +108,51 @@ lane's major-only rule.
 | FND-007 | low | The FR-167-AC-2 "undecided contract conjunction" test uses `2 div (2 - v)`, which is undefined. It only takes the `undefined_contract` branch. The refused (undecided, not undefined) `ContractUndetermined` branch and the refused-predicate branch that also set `UndecidedSuccessor` are untested. | qsl-analyze/tests/it/state_graph.rs:365-391; qsl-analyze/src/model_check/state_graph/explore.rs:230-242 |
 | FND-008 | low | FR-168-AC-9's test does not assert the AC's premise that `toA` precedes `toB` in canonical transition order, or that `pos = 1` and `pos = 2` both have `d` 1. If `toB` sorted first, descending `E⁺` toward the open node would also give `toB, fromB`, and the test could not tell the two rules apart. | qsl-analyze/tests/it/state_graph.rs:984-1007 |
 | FND-009 | low | `sample`'s doc still says "Every state on the trace is expanded, the last included". That is no longer true for a `Reached` trace, whose last state is never expanded. | qsl-eval/src/simulation/sample.rs:195-198 |
+
+## Dispositions
+
+Round 1, reviewed at 8ed0af489ea63d039ad0c10f6db88d763bb214ea (fix commit
+8ed0af489). Read-only, nothing built. I read each new test against the
+pre-fix code to check that it can fail without its fix:
+
+- `a_unique_path_under_a_horizon_is_never_trapped_by_open_nodes`: at
+  c45344443, the root counts 0 while it is closed, so both jobs returned
+  `Trapped`. The test expects `NoDecision{Completed, {MaxDepth}}`, so it
+  fails there. It also asserts its premise: the root is closed and some
+  node is open.
+- `a_state_limit_below_the_initial_states_decides_nothing`: the old code
+  returned `WitnessedUnchecked{paths: []}`, and the test fails on that.
+- `each_sampled_witness_records_that_its_walk_reached_the_target`: the
+  `ReachesThree` instances keep the shared walk going to the 32-step limit,
+  which the test asserts as a premise. The old witness therefore recorded
+  `StepLimit`, and the test fails on that.
+- The horizon half of TC-618: under horizon 1, `ReachesTwo` must get no
+  sampled witness. A walk that ignored the horizon would reach
+  `versionNumber` 2 in two steps, so the test can now fail on walk length.
+- `qsl-eval` `an_end_condition_ends_the_trace_at_a_prefix_of_the_sampled_trace`
+  and `replay_skips_the_unexpanded_last_state_of_a_reached_trace`: the
+  first fails if `end` is read after `expand` (the planted finding at
+  `0-1-3-3` would be recorded) or if the draws differ. The second fails
+  without the skip, because state `2` stops on expansion.
+- The decide unit test for FND-006 fails on the old `decide`, which saw no
+  open node and returned `Witnessed` for item 0. Its fixture (a
+  `ConstantTrue` target that carries a `Refused` label) cannot arise from
+  checked source, but it does exercise the per-instance rule.
+
+The `unique path` trap is now `reaches_open[node] == FAR && from && counts
+== 0`. That is a node outside `H`, so it is closed and reaches no `to` node
+and no open node. Every open-node consumer in `decide`
+(`E⁺`, `d_P`, `H`, `reaches_open`, `complete`, `open_causes`) now uses the
+per-instance `is_open`. I found no regression.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8ed0af489 |
+| FND-002 | fixed | 8ed0af489 |
+| FND-003 | fixed | 8ed0af489 |
+| FND-004 | fixed | 8ed0af489 |
+| FND-005 | fixed | 8ed0af489 |
+| FND-006 | fixed | 8ed0af489 |
+| FND-007 | accepted-no-change | The refused-predicate branch moved to `decide` and is now unit-tested (FND-006). The refused-contract branch (`is_refused_contract`, a `ContractUndetermined` whose evaluation has no undefined cause) has no source-level fixture: a checked Boolean contract that is not undefined does not come back undecided, and the branch is the one FR-126's engine already reads. The finding is low, so it is recorded with no change. |
+| FND-008 | fixed | 8ed0af489 |
+| FND-009 | fixed | 8ed0af489 |
