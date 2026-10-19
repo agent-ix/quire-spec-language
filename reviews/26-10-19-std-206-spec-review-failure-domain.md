@@ -66,9 +66,15 @@ Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
 | FND-004 | fixed | - |
 | FND-003 | fixed | - |
 | FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
 
 Disposition pass 1 (head 72d04b1dc): FND-001, FND-002 and FND-004 fixed; FND-003 still open (nullable fields). New: FND-005 (low). Not mergeable while FND-003 is open.
 
 Round 2, head f0b08808e (fix commit f0b08808e): rows after round 1's.
 
 Disposition pass 2 (head f0b08808e): FND-003 and FND-005 fixed. New: FND-006 (medium), FND-007 (medium). Not mergeable.
+
+Round 3, head c76e918bc (fix commits 7a4057061, c76e918bc): rows after round 2's.
+
+Disposition pass 3 (head c76e918bc): FND-006 and FND-007 fixed. No new findings.

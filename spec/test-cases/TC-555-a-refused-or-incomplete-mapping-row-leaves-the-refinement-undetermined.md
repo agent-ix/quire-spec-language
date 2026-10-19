@@ -19,7 +19,7 @@ arguments: a row or argument whose evaluation is incomplete settles
 `inconclusive`, `MappingUndetermined`, and a step-row argument that
 evaluates undefined refutes with an `Undefined` refinement counterexample.
 
-Scope: FR-140-AC-5, FR-141-AC-7, FR-144-AC-6.
+Scope: FR-140-AC-5, FR-141-AC-7, FR-141-AC-8, FR-144-AC-6.
 
 ## Test Procedure
 
@@ -33,6 +33,7 @@ the row `put -> enq(self.ring, g(self.index))` of FR-141-AC-7.
    for the argument `self.ring`.
 3. Settle the refinement item for step 1's run and for the variant, the
    variant after FR-145 replay.
+4. Inject a fault into `check_step`'s mapping, and pass it a swapped system.
 
 Tag the tests `#[trace("TC-555", "<AC id>")]`.
 
@@ -45,3 +46,4 @@ Tag the tests `#[trace("TC-555", "<AC id>")]`.
   1, row: put}`; then `Undetermined(MappingUndetermined)`.
 - Step 3: `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`;
   `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`.
+- Step 4: `StepVerdict::Fault` for each; the item settles `failed`.

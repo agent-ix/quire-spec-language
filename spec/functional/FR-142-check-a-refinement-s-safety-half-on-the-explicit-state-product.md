@@ -82,6 +82,8 @@ pub fn check_refinement(
 
 ## Behavior
 
+- A `StepVerdict::Fault` from FR-141 SHALL end the run with a fault outcome that FR-144 settles `failed` (QSpec FR-383), and writes no counterexample for it.
+
 ### Subjects and pre-check
 
 - The checker SHALL build the abstract subject from `abstract_package`, its

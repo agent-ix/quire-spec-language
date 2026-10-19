@@ -103,6 +103,14 @@ Not mergeable: 3 high, 7 medium, 1 low. The ADR-020 section 8 guard is right and
 | FND-018 | medium | 'with receiver s1 (index 1) the argument is 1' is wrong: g(1) = 0, because 1 mod 1 = 0 takes the `then 0` branch. Engine probe (qsl-544 scratch clone, CasRefinesCounter): with `function g using v(i: Int[0, 1]): Int[0, 1] pure { if 1 mod i = 0 then 0 else 1 }`, the rows `value = g(0)` and `value = g(1)` check with no division law selected; map_state gives MappingFailure::Undefined (division by zero) for g(0), and maps value 0 for g(1). So with receiver s1 the step maps to `enq(r, 0)`, and RS-4 compares it with put(1)'s post-state (which holds value 1), so the step fails rather than passing. Correct the value to 0 and say what RS-4 returns, or swap the branches (`then 1 else 0`) so that g(1) = 1. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:185 |
 | FND-019 | low | STD-211 is stale against the PR body: item 8 says no conforming undefined source exists, which FR-141-AC-7's mod function now disproves, and it lacks the FR-375 feature-name ask and an FR-377 failure-precedence ask. Correct item 8 (keep the division-law-in-source part). Add 'FR-375 closed set: nested-reference-row and abstract-relationships' from the PR body. Add 'FR-377: when a state has both an undefined and an undetermined row, the undefined one wins, except after an evaluator stop', which FR-140 now states and QSpec does not. | Linear STD-211:- |
 
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-020 | medium | FR-140's new MappingFailure::Fault (and WrongSystem) has no consumer: FR-141's StepVerdict and its map_state bullet handle only Undefined and Undetermined, so check_step's result for a fault is unstated. FR-140 says a fault makes 'the item settle failed (QSpec FR-383)', but the path runs through check_step, whose StepVerdict is Passes / Fails / Undefined / Undetermined. FR-142 and FR-144 read only those. A build must either invent a verdict or panic. Add a StepVerdict arm (or a typed error) for MappingFailure::Fault, carried to FR-144's `failed`, and say that WrongSystem from check_step is an internal fault, since FR-140 says check_step never produces it. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:125-129 |
+| FND-021 | low | The new reading order's 'does not depend on the order they were written in' (field rows by name bytes) and the Fault arm have no AC; QSpec FR-377-AC-9 tests both. FR-140-AC-9 tests only object-key order (SubRing before r). Add a vector with two failing field rows written in the reverse of name order (the same row is reported either way), and a Fault vector or a stated reason why none is possible. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:158-168 |
+| FND-022 | low | TC-1086 step 8 maps 'size = 1', but FR-140-AC-11's Some case is head = 1, size = 2, and step 8 gives no head for its state. Use AC-11's states (head = 1, size = 2, then size = 0), or give head for the size = 1 state. | spec/test-cases/TC-1086-the-refinement-mapping-reports-what-it-cannot-map.md:39,58 |
+
 ## Dispositions
 
 Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
@@ -125,9 +133,16 @@ Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
 | FND-014 | fixed | - |
 | FND-015 | fixed | - |
 | FND-016 | fixed | - |
+| FND-017 | fixed | - |
+| FND-018 | fixed | - |
+| FND-019 | fixed | - |
 
 Disposition pass 1 (head 72d04b1dc): FND-001 to FND-011 fixed. New: FND-012 (high), FND-013 (high), FND-014 (medium), FND-015 (medium), FND-016 (medium). Not mergeable.
 
 Round 2, head f0b08808e (fix commit f0b08808e): rows after round 1's.
 
 Disposition pass 2 (head f0b08808e): FND-012 to FND-016 fixed. New: FND-017 (high), FND-018 (medium), FND-019 (low). Not mergeable.
+
+Round 3, head c76e918bc (fix commits 7a4057061, c76e918bc): rows after round 2's.
+
+Disposition pass 3 (head c76e918bc, fix commits 7a4057061 and c76e918bc): FND-017 to FND-019 fixed. New: FND-020 (medium), FND-021 (low), FND-022 (low). Not mergeable while FND-020 is open.

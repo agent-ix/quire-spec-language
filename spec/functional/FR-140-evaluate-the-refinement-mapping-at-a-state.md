@@ -211,6 +211,8 @@ step row, or a history update.
 | FR-140-AC-10 | The mapped state of AC-2 lists no relationship extent. | Test (TC-1086) |
 | FR-140-AC-11 | With the abstract `Queue` declaring `head: Int[0, 1]?` and the row `head = if self.size >= 1 then Some(self.head) else none`: at `head = 1`, `size = 2` the mapped `head` is 1; at `size = 0` the mapped `head` is unset, is not in `hidden`, and the key equals the key of the abstract state with `head` unset. With the field declared `head: Option<Int[0, 1]>` and the same row, `size = 0` maps `head` to an explicit `none` and the field is set. | Test (TC-1086) |
 | FR-140-AC-12 | Over `RingIsQueue` with the abstract `Queue` also declaring `cells: Set<Reference<Cell>>[0, 2]`, an object row `Cell` from `Slot`, `population Q::cells from R::slots` and the row `cells = R::slots`, the state of AC-2 maps `cells` to the two `Cell` references with keys `s0` and `s1`, in key order, each of type `Cell`, not `Slot`. | Test (TC-1086) |
+| FR-140-AC-13 | Writing the rows of AC-9's variant in another source order (object rows, field rows and population rows permuted) changes neither the reading order nor the reported row, object or cause; with two undefined rows on objects `a` and `b`, the one on `a` is reported, and between two fields of one object the one whose name is first in UTF-8 bytes. | Test (TC-1086) |
+| FR-140-AC-14 | A broken evaluator invariant while reading a row returns `MappingFailure::Fault` with its catalog code at once, even when an earlier row was undefined, and never `Undefined` or `Undetermined`. | Test (TC-1086) |
 
 ## Dependencies
 
