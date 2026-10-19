@@ -56,3 +56,10 @@ The author's scope call, checked per enumeration:
   pick up this PR's V-6 note.
 - ADR-022 GV-5: real gap (FND-001).
 - ADR-023 HV-4: real gap (FND-002).
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | GV-5 now reads "Amended by FR-125 and FR-169: a claim with zero instances settles V-6 `NoInstance` before any state is explored (wire cause `no-instance`, QSpec FR-331)." (bf1ee0ba7). FR-169 is the right source, not FR-127: GV-5 is the state-graph map, FR-169 settles state-graph verdicts (it cites ADR-022 GV-1 to GV-6) and its V-6 row (line 128) maps `NoInstance (FR-125)`, while FR-127 settles temporal model checks. |
+| FND-002 | deferred | STD-175 (QSpec #281 / QSL #987) states the zero-instance hyperproperty outcome in both repos. |

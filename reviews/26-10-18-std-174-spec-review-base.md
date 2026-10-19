@@ -46,3 +46,9 @@ Checked and clean:
 - No contradiction with ADR-018's decisions: SM-5's verdict and the V-6 row's
   `inconclusive` mapping are unchanged, and an item that was never evaluated
   is never read as holding, which matches V-6's intent.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Both ADR-018 notes now cite "FR-125 and FR-127", and the causes-paragraph note names `InconclusiveCause`: "Amended by FR-125 and FR-127: `InconclusiveCause` also gains `NoInstance`, written `no-instance` on the wire (QSpec FR-331)." (bf1ee0ba7) |
