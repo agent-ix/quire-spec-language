@@ -1320,12 +1320,11 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
 fn deep_source_generator_keeps_format_identity(label: &str) {
     let fixture = include_str!("../../qsl-package/src/emit/tests/deep_bodies.rs");
     let header = source_literal(fixture, "HEADER");
-    let start = fixture_text(
+    let mut source = fixture_text(
         function_literal(fixture, "deep_source", "{HEADER}"),
         &[("HEADER", &header)],
     );
     let end = function_literal(fixture, "deep_source", "x }");
-    let mut source = start.clone();
     for level in 0..100_000 {
         match label {
             "sum" if level == 0 => {}

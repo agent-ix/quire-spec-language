@@ -222,8 +222,11 @@ ci-all-features:
 # executables that lane already built are reused. `--tests` selects the test
 # targets implicitly, so a target whose required features are off (qsl-source's
 # `it`) is skipped as in that lane; naming `--test it` would make it an error.
-# Nothing is recompiled in a directory of its own. The five tests run concurrently in one process
-# (`--test-threads=2`, one thread per case); each name must still select exactly one ignored test.
+# Nothing is recompiled in a directory of its own. Each name must still select exactly one ignored test.
+# `locked-build.sh` caps a build's memory at 12 to 20 GiB depending on the
+# other lanes, so the memory peaks set the schedule: the four light cases (about
+# 3.5 GB each) run two at a time, and the dependency-chain case (about 16 GB
+# alone) runs by itself in its own invocation.
 test-deep-format:
 	@set -eu; \
 	for test in \
@@ -243,7 +246,8 @@ test-deep-format:
 		formatter_identity::deep_sum_source_generator_keeps_format_identity \
 		formatter_identity::deep_else_if_source_generator_keeps_format_identity \
 		formatter_identity::deep_let_source_generator_keeps_format_identity \
-		formatter_identity::replay_large_source_generator_keeps_format_identity \
+		formatter_identity::replay_large_source_generator_keeps_format_identity; \
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=1 \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
