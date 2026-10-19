@@ -1297,11 +1297,7 @@ impl Run<'_, '_> {
     /// π⁻¹`. Each concrete step is checked against an expansion of the
     /// concrete source. An undefined evaluation's site is concretised with
     /// the last `σ`.
-    fn concretise(
-        &self,
-        path: &[usize],
-        kind: &mut CounterexampleKind,
-    ) -> Step<Vec<ModelStep>> {
+    fn concretise(&self, path: &[usize], kind: &mut CounterexampleKind) -> Step<Vec<ModelStep>> {
         let first = &self.nodes[*path.first().ok_or_else(|| fault("a-path-has-a-root"))?];
         let mut sigma = first.permutation.inverse();
         let mut concrete = self.system.permute(&first.state, &sigma);

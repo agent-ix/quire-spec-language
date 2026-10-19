@@ -28,9 +28,8 @@ use qsl_replay::{
     settle_model_check, AppliedReduction, CertificateRequest, Certification, CounterexampleKind,
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue,
-    ProofBasis, ReachedLimit, ReductionCause,
-    ReductionKind, ResultLabel, RunStats, SettlementBasis, SymmetryBrokenCause, TerminalValue,
-    UndefinedLocus,
+    ProofBasis, ReachedLimit, ReductionCause, ReductionKind, ResultLabel, RunStats,
+    SettlementBasis, SymmetryBrokenCause, TerminalValue, UndefinedLocus,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::fairness::PropertyForm;
