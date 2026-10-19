@@ -34,6 +34,7 @@ use quire_exact::CancelCause;
 use serde::{Serialize, Serializer};
 
 use crate::certificate::{CertificateLocus, CertificateRule};
+use crate::model_check::state_graph::WitnessSource;
 use crate::proof_result::{
     Certification, DeclineCode, IncompleteCause, InconclusiveCause, ProofBasis,
     ReportedInconclusiveCause, SymmetryBrokenCause, TerminalRecord, TerminalValue,
@@ -230,6 +231,10 @@ pub struct ItemCause {
     /// The generator's moved keys, each `[from, to]`.
     #[serde(skip_serializing_if = "Option::is_none")]
     generator: Option<Vec<(String, String)>>,
+    /// A `well-definedness-unchecked` cause's witness source per initial
+    /// state, in initial-state order (QSpec FR-391).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sources: Option<Vec<WitnessSource>>,
 }
 
 /// A property form's spelling on the outcome wire.
@@ -274,6 +279,7 @@ impl ItemCause {
             population: None,
             initial: None,
             generator: None,
+            sources: None,
         }
     }
 
@@ -351,6 +357,11 @@ impl ItemCause {
             // The kind alone: the claim identity and outcome stay on the
             // typed cause, which holds them for the caller.
             ReportedInconclusiveCause::Cause(InconclusiveCause::ScalarAgrees(_)) => {}
+            ReportedInconclusiveCause::Cause(InconclusiveCause::WellDefinednessUnchecked {
+                sources,
+            }) => {
+                item.sources = Some(sources.clone());
+            }
         }
         item
     }
@@ -1451,6 +1462,25 @@ mod tests {
                 serde_json::to_value(record(0, TerminalValue::Inconclusive(value))).unwrap();
             assert_eq!(written["cause"], cause, "{written}");
         }
+    }
+
+    /// FR-169-AC-8 on the wire (QSpec FR-391): a `well-definedness-unchecked`
+    /// cause carries its witness source per initial state.
+    #[trace("TC-614", "FR-169-AC-8")]
+    #[test]
+    fn well_definedness_unchecked_wire_keeps_its_sources() {
+        use crate::model_check::state_graph::WitnessSource;
+
+        let value = TerminalValue::Inconclusive(InconclusiveCause::WellDefinednessUnchecked {
+            sources: vec![WitnessSource::Explored, WitnessSource::Explored],
+        });
+        let written = serde_json::to_value(record(0, value)).unwrap();
+        assert_eq!(
+            written["cause"],
+            json!({"kind": "well-definedness-unchecked",
+                "sources": [{"type": "explored"}, {"type": "explored"}]}),
+            "{written}"
+        );
     }
 
     #[trace("TC-522", "FR-127-AC-2", "FR-127-AC-4")]

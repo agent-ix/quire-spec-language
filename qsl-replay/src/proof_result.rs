@@ -14,6 +14,7 @@ use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
 use crate::hybrid::{SolverHorizon, SolverMethod};
 use crate::model_check::limits::ModelCheckLimit;
+use crate::model_check::state_graph::WitnessSource;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
 use qsl_eval::simulation::{Permutation, SymmetryClass};
@@ -69,6 +70,14 @@ pub enum ProofBasis {
         horizon: SolverHorizon,
         /// The jump bound the proof covers.
         jumps: u64,
+    },
+    /// FR-169 (ADR-022 GV-1): a replayed witness for every initial state of
+    /// a state-graph `possible` item, from a run that completed with no open
+    /// node, and how each was found; QSpec FR-391's `witnessed{sources}`.
+    #[serde(rename = "witnessed")]
+    Witness {
+        /// One source per initial state, in initial-state order.
+        sources: Vec<WitnessSource>,
     },
     /// ADR-021 RV-1 (FR-160): a model check that completed with a reduction
     /// applied and found no counterexample, a technique of its own and never
@@ -393,6 +402,14 @@ pub enum InconclusiveCause {
     /// flowpipe meeting the unsafe set, `unknown`, or a method not sound for
     /// its outcome).
     SolverInconclusive,
+    /// FR-169 (ADR-022 GV-1, RU-5): every initial state of a state-graph
+    /// `possible` item has a replayed witness, but the run a limit stopped,
+    /// or that ended with open nodes, did not rule out a reachable undefined
+    /// evaluation of the target.
+    WellDefinednessUnchecked {
+        /// Each witness's source, in initial-state order.
+        sources: Vec<WitnessSource>,
+    },
     /// ADR-021 RV-2: a selected reduction's preservation-table row reads
     /// "no" for the claim's form.
     ReductionNotPreserving {
@@ -432,6 +449,7 @@ impl InconclusiveCause {
             Self::ScalarAgrees(_) => "scalar-agrees",
             Self::SolverInconclusive => "solver-inconclusive",
             Self::SufficientTestFailed => "sufficient-test-failed",
+            Self::WellDefinednessUnchecked { .. } => "well-definedness-unchecked",
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
             Self::SymmetryBroken { .. } => "symmetry-broken",
             Self::ConstraintReached { .. } => "constraint-reached",
@@ -469,6 +487,7 @@ impl InconclusiveCause {
                     .saturating_add(population.node.len())
                     .saturating_add(moved)
             }
+            Self::WellDefinednessUnchecked { .. } => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
             Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
@@ -576,6 +595,7 @@ impl TerminalValue {
                     | ProofBasis::Inductive { .. }
                     | ProofBasis::ClosedForm { .. }
                     | ProofBasis::BoundedSolver { .. }
+                    | ProofBasis::Witness { .. }
                     | ProofBasis::Reduced { .. },
                 ..
             }

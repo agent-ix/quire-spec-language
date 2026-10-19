@@ -20,6 +20,7 @@ use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::ModelCheckLimits;
 use qsl_semantics::check::{CheckedStateGraphClaim, PackageDeclarations};
+use qsl_semantics::library::PackageId;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
@@ -356,6 +357,14 @@ impl World {
             },
             proof_bounds: Vec::new(),
         }
+    }
+
+    /// The `package_id` of the world's checked package, as FR-322 emits it.
+    pub(crate) fn package_id(&self) -> PackageId {
+        qsl_package::emit_checked(&self.package)
+            .expect("the package emits")
+            .package()
+            .package_id()
     }
 
     /// The reference of the object `key` of the world's type.

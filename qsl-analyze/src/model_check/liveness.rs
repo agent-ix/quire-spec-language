@@ -20,8 +20,18 @@
 //! state already covers, ranks its findings with the first phase's by depth.
 //! Those states are not product states and count toward no limit or total.
 //!
-//! The second phase runs only when no binding's first phase ended the run.
-//! It decomposes the retained graph into strongly connected components in
+//! The bindings are ranked across (FR-126 "Bindings and ranking"): the first
+//! phase runs over every binding in canonical instance order and the finding
+//! that ranks first by depth wins, a tie going to the earlier binding. Once a
+//! binding has a finding at depth `d`, each later binding is explored only
+//! through depth `d - 1`, since it wins only with a strictly shallower one; a
+//! later binding that stops before it completes that depth answers with its
+//! stop.
+//!
+//! The second phase runs only when no binding's first phase ended the run; it
+//! then runs over every binding and the shortest lasso, stem and loop together,
+//! wins, a tie again going to the earlier binding. Each binding's second phase
+//! decomposes the retained graph into strongly connected components in
 //! `qsl-eval`'s fairness kernels, passes a component that is non-trivial,
 //! holds a state of every acceptance set and satisfies every weak
 //! constraint (FA-4), and builds the canonical lasso (CX-5): the stem is the
@@ -46,7 +56,7 @@
 //! concrete entry. A state constraint on a liveness clause is refused
 //! ([`ModelCheckRefusal::ReducedLiveness`]).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
@@ -76,7 +86,9 @@ use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits}
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::check::{not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest};
+use super::check::{
+    not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
+};
 use super::concretise::{Lift, LiftStop};
 use super::graph::{retain_reduced, ProductStateId, RetainedEdge, RetainedGraph};
 use super::product::{ProductKey, ProductTransition};
@@ -85,9 +97,6 @@ use super::quotient::{
     QuotientStop,
 };
 use super::reduce;
-
-/// The type positions the requires-bound pre-check may visit.
-const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// `resource_exhausted`/`insufficient-next-charge`, the code of an expansion
 /// that stopped; [`Halt`] records which budget it was.
@@ -463,6 +472,10 @@ struct LassoSystem<'r, 'a> {
     meter: ScalarLimits,
     cancel: &'r Cancel,
     max_depth: Option<usize>,
+    /// The depth of the first-phase finding the exploration has met: a
+    /// state that would sit there or deeper ranks after it, so none is
+    /// created (FR-126 ends the first phase at its finding).
+    found: Cell<Option<usize>>,
     halt: RefCell<Option<Halt>>,
 }
 
@@ -478,6 +491,13 @@ impl LassoSystem<'_, '_> {
             cause: STOPPED,
             limit: None,
         }
+    }
+
+    /// Note a first-phase finding at `depth`.
+    fn found_at(&self, depth: usize) {
+        self.found.set(Some(
+            self.found.get().map_or(depth, |known| known.min(depth)),
+        ));
     }
 
     fn poll(&self) -> Result<(), ExpansionStop> {
@@ -642,7 +662,17 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
         enabled.sort();
         enabled.dedup();
         findings.push(Finding::Enabled(enabled));
-        if self.max_depth.is_some_and(|horizon| state.depth >= horizon) {
+        if findings.iter().any(|finding| {
+            matches!(finding, Finding::Contract(contract)
+                if contract.undefined_contract().is_some() || contract.is_refused_contract())
+        }) {
+            self.found_at(state.depth);
+        }
+        let met_finding = self
+            .found
+            .get()
+            .is_some_and(|found| state.depth.saturating_add(1) >= found);
+        if met_finding || self.max_depth.is_some_and(|horizon| state.depth >= horizon) {
             // Every product state has an edge under infinite-trace: a
             // terminal model state steps by its stutter edge.
             findings.push(Finding::HorizonCut);
@@ -670,6 +700,12 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
                     model: model.clone(),
                     depth: state.depth.saturating_add(1),
                 });
+            }
+            if properties
+                .iter()
+                .any(|property| matches!(property, Property::Undefined { .. }))
+            {
+                self.found_at(state.depth.saturating_add(1));
             }
             for property in properties {
                 successors.push((
@@ -885,39 +921,92 @@ struct Run<'r, 'a> {
 impl<'r, 'a> Run<'r, 'a> {
     fn decide(&self, mut totals: Totals) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
         let mut explored = Vec::with_capacity(self.bindings.len());
-        for binding in self.bindings {
-            let mut run = match self.explore(binding, &mut totals)? {
+        // The finding that ranks first so far, with its depth: a later
+        // binding replaces it only with a strictly shallower one (a tie goes
+        // to the earlier binding), so it is explored through `depth - 1`
+        // alone and not at all past a finding at depth 0.
+        let mut best: Option<(usize, FirstHit)> = None;
+        for (index, binding) in self.bindings.iter().enumerate() {
+            let cap = match best {
+                Some((0, _)) => break,
+                Some((depth, _)) => Some(depth - 1),
+                None => None,
+            };
+            let mut run = match self.explore(binding, cap, &mut totals)? {
                 Ok(run) => run,
                 Err(outcome) => return Ok(outcome),
             };
             let live = self.first_phase(&run)?;
             if let Ending::Stopped(cause, limit) = &run.ending {
-                return Ok(match live {
-                    Some((_, hit)) => hit.outcome(totals.stats()),
-                    None => stopped(*cause, *limit, totals.stats()),
+                // A binding that stops answers with its stop, unless it holds
+                // a finding that is canonical (every shallower state was
+                // expanded) with no earlier finding to rank against: that
+                // finding then bounds the later bindings, which stop in turn
+                // when the budget is spent (FR-126 "Bindings and ranking").
+                let canonical = live.as_ref().is_some_and(|(depth, _)| {
+                    run.graph.states().iter().all(|state| {
+                        state.state.depth >= *depth
+                            || state
+                                .findings
+                                .iter()
+                                .any(|finding| matches!(finding, Finding::Enabled(_)))
+                    })
                 });
+                match live {
+                    Some((depth, hit)) if best.is_none() && canonical => {
+                        // The binding's model-only pass has not run: a dead
+                        // root below the finding may hold a shallower one.
+                        let dead = self.dead_phase(&run, Some(depth), &mut totals)?;
+                        if let Some(Ending::Stopped(cause, limit)) = dead.stopped {
+                            return Ok(stopped(cause, limit, totals.stats()));
+                        }
+                        let (depth, hit) = match dead.hit {
+                            Some((dead_depth, dead_hit)) if dead_depth < depth => {
+                                (dead_depth, dead_hit)
+                            }
+                            _ => (depth, hit),
+                        };
+                        let last = index + 1 == self.bindings.len();
+                        if depth == 0 || last {
+                            return Ok(hit.outcome(totals.stats()));
+                        }
+                        best = Some((depth, hit));
+                        continue;
+                    }
+                    _ => return Ok(stopped(*cause, *limit, totals.stats())),
+                }
             }
-            let dead =
-                self.dead_phase(&run, live.as_ref().map(|(depth, _)| *depth), &mut totals)?;
+            let bound = [
+                live.as_ref().map(|(depth, _)| *depth),
+                cap.map(|cap| cap + 1),
+            ]
+            .into_iter()
+            .flatten()
+            .min();
+            let dead = self.dead_phase(&run, bound, &mut totals)?;
             run.dead_cut = dead.cut;
             if let Some(Ending::Stopped(cause, limit)) = dead.stopped {
-                return Ok(match live {
-                    Some((_, hit)) => hit.outcome(totals.stats()),
-                    None => stopped(cause, limit, totals.stats()),
-                });
+                // The pass did not finish, so a shallower finding may be
+                // hidden: the stop is the answer.
+                return Ok(stopped(cause, limit, totals.stats()));
             }
             match (live, dead.hit) {
                 (Some((live_depth, _)), Some((dead_depth, hit))) if dead_depth < live_depth => {
-                    return Ok(hit.outcome(totals.stats()))
+                    best = Some((dead_depth, hit));
                 }
-                (Some((_, hit)), _) | (None, Some((_, hit))) => {
-                    return Ok(hit.outcome(totals.stats()))
-                }
+                (Some(found), _) | (None, Some(found)) => best = Some(found),
                 (None, None) => {}
             }
             explored.push(run);
         }
+        if let Some((_, hit)) = best {
+            return Ok(hit.outcome(totals.stats()));
+        }
+        // No binding's first phase ended: the shortest lasso across the
+        // bindings, measured in transitions, the earlier binding winning a
+        // tie.
         let mut cut = false;
+        let mut shortest: Option<Box<TemporalCounterexample>> = None;
         for run in &explored {
             cut |= run.dead_cut
                 || run
@@ -927,10 +1016,12 @@ impl<'r, 'a> Run<'r, 'a> {
                     .any(|state| state.findings.contains(&Finding::HorizonCut));
             match self.second_phase(run)? {
                 Second::Lasso(counterexample) => {
-                    return Ok(ModelCheckOutcome::Violated {
-                        counterexample,
-                        stats: totals.stats(),
-                    })
+                    if shortest
+                        .as_ref()
+                        .is_none_or(|known| counterexample.len() < known.len())
+                    {
+                        shortest = Some(counterexample);
+                    }
                 }
                 Second::Cancelled(source) => {
                     return Ok(stopped(
@@ -942,6 +1033,12 @@ impl<'r, 'a> Run<'r, 'a> {
                 Second::Stopped(cause, limit) => return Ok(stopped(cause, limit, totals.stats())),
                 Second::NoneFair => {}
             }
+        }
+        if let Some(counterexample) = shortest {
+            return Ok(ModelCheckOutcome::Violated {
+                counterexample,
+                stats: totals.stats(),
+            });
         }
         let applied: Option<Vec<AppliedReduction>> = self
             .bindings
@@ -969,11 +1066,13 @@ impl<'r, 'a> Run<'r, 'a> {
         }
     }
 
-    /// Explore `binding`'s product. `Err(outcome)` is a run that ended
-    /// before it had a graph to examine.
+    /// Explore `binding`'s product, through depth `cap` when there is one
+    /// (and no deeper than the request's own horizon). `Err(outcome)` is a
+    /// run that ended before it had a graph to examine.
     fn explore(
         &self,
         binding: &'r Binding,
+        cap: Option<usize>,
         totals: &mut Totals,
     ) -> Result<Result<Explored<'r, 'a>, ModelCheckOutcome>, ModelCheckRefusal> {
         let mut automaton = translate(self.clause, self.request.limits.max_automaton_states)
@@ -1007,7 +1106,8 @@ impl<'r, 'a> Run<'r, 'a> {
             dead: RefCell::new(Vec::new()),
             meter: self.request.meter,
             cancel: self.cancel,
-            max_depth: self.request.max_depth,
+            max_depth: [self.request.max_depth, cap].into_iter().flatten().min(),
+            found: Cell::new(None),
             halt: RefCell::new(None),
         };
         if product.start_states().is_err() {
@@ -1246,6 +1346,9 @@ impl<'r, 'a> Run<'r, 'a> {
         let mut nodes: Vec<DeadNode> = Vec::new();
         let mut frontier: BTreeSet<(usize, usize)> = BTreeSet::new();
         for (root, entry) in roots.iter().enumerate() {
+            if bound.is_some_and(|bound| entry.depth >= bound) {
+                continue;
+            }
             if examined.reach(self.digest(&entry.model)?, entry.depth) {
                 if *states_left == 0 {
                     phase.stopped = out_of(ModelCheckLimit::MaxStates, limits.max_states);
@@ -1260,6 +1363,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 });
             }
         }
+        let mut found: Option<usize> = None;
         let stop = |phase: &mut DeadPhase| -> Result<(), ModelCheckRefusal> {
             phase.stopped = self.halt_ending(&run.product)?;
             Ok(())
@@ -1339,6 +1443,18 @@ impl<'r, 'a> Run<'r, 'a> {
                 phase.cut = true;
                 continue;
             }
+            // A state at the bound ranks no better than the finding that set
+            // it, so the successors that would sit there are neither created
+            // nor charged.
+            // The same holds below the depth of an undefined letter the pass
+            // has met at a state's creation: the first phase ends at it.
+            if [bound, found]
+                .into_iter()
+                .flatten()
+                .any(|limit| depth.saturating_add(1) >= limit)
+            {
+                continue;
+            }
             let root = nodes.get(index).map_or(0, |node| node.root);
             for (transition, next) in expansion.successors {
                 if *edges_left == 0 {
@@ -1352,12 +1468,23 @@ impl<'r, 'a> Run<'r, 'a> {
                         return Ok(phase);
                     }
                     *states_left -= 1;
+                    let undefined = match run.product.reading(&next) {
+                        Ok(reading) => matches!(reading, Reading::Undefined { .. }),
+                        Err(_) => {
+                            stop(&mut phase)?;
+                            return Ok(phase);
+                        }
+                    };
                     frontier.insert((depth.saturating_add(1), nodes.len()));
                     nodes.push(DeadNode {
                         model: next,
                         parent: Some((index, transition)),
                         root,
                     });
+                    if undefined {
+                        found = Some(depth.saturating_add(1));
+                        break;
+                    }
                 }
             }
         }
