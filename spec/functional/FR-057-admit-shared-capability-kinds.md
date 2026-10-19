@@ -87,12 +87,14 @@ abbreviation or extra member.
 The QSL composed linker SHALL report every label refusal and carrier refusal
 with code `invalid_capability` and exactly one cause from the closed set
 `absent-kind`, `unknown-kind` and `unsupported-version`. Registration refusals
-carry the registry causes below, and family-checker refusals carry their own
-catalog codes.
+carry the registry causes below, including the QSL-proposed
+`unknown-fairness-kind`, `duplicate-fairness-kind` and `absent-fairness-kinds`
+(FR-134), and family-checker refusals carry their own catalog codes.
 
 `invalid_capability` and its causes are catalogued in
 `quire.native.diagnostics/v1` (quire-specification FR-271
-and FR-272). It is a refusal of the request, not an unsupported backend
+and FR-272), except the three QSL-proposed fairness-kind causes, which QSpec
+does not yet catalog (FR-134 Remaining work). It is a refusal of the request, not an unsupported backend
 result, so `unsupported_projection` and `unimplemented_capability` are never
 produced at admission.
 
@@ -246,8 +248,10 @@ consumes this type and defines no second capability vocabulary.
 QSL reads no provider-manifest bytes. The driver reads a backend's FR-331
 provider manifest, writes the FR-331 `manifest`, and registers the backend
 with the backend identity, the advertised (kind, mode) labels, the manifest's
-`domains`, present or absent, and its evidence-kind labels when it advertises
-`probabilistic-satisfaction` (ADR-013 C-28).
+`domains`, present or absent, its evidence-kind labels when it advertises
+`probabilistic-satisfaction`, and its `fairness_kinds` member exactly as
+supplied, present or absent, labels and non-string values included, when it
+advertises `temporal-satisfaction` (ADR-013 C-28; FR-134).
 
 When a backend registers, the registry SHALL admit each advertised kind under
 the same rules as a requested pair.
@@ -258,6 +262,9 @@ registration with `invalid_capability` (`absent-kind`, `unknown-kind` or
 `unknown-mode`), keyed by backend identity; the refused registration
 contributes nothing, and any registration already held under that identity
 stands.
+
+The registry SHALL judge `fairness_kinds` after every advertised pair and
+`domains`; FR-134 owns its refusals.
 
 If a backend's `domains` is present and malformed, then the registry SHALL
 refuse that backend's registration with `invalid_capability`/`invalid-domains`,

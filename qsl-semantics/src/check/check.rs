@@ -445,6 +445,10 @@ pub struct PackageDeclarations {
     /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
     /// each as S2 built it, for the `TemporalTrace` family's `check`.
     pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
+    /// `probabilistic` declarations in declaration order, each as S2 built
+    /// it, for the `Probabilistic` family's check (FR-185, FR-186).
+    pub probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// FR-165: the unit's state-graph claims in declaration order, each with
     /// its profile and `over` type resolved, for the `StateGraph` family's
     /// `check`.
@@ -576,6 +580,7 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),
+            probabilistic: Vec::new(),
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
             operation_clauses: Vec::new(),

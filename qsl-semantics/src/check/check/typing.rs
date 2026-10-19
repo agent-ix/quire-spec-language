@@ -781,6 +781,11 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
+            // FR-393: a quantity literal is parsed and built, and no checker
+            // reads one yet.
+            ExprNode::Quantity(_) => {
+                return Err(super::super::probabilistic::quantity_literal(location))
+            }
             ExprNode::Name(name) => match resolve_target(self, name, &location, || Ok(()))? {
                 ResolvedTarget::UnionMember(member) => {
                     member.admit_shape(None, &location)?;
