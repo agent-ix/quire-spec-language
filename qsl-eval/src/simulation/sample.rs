@@ -39,6 +39,9 @@ pub(crate) struct PinnedSampler {
     seed: u64,
     trace: u64,
     step: u64,
+    /// The last step's uniform weights, kept while the successor count
+    /// stays the same, so a step does not recompute `⌊2^256 / n⌋`.
+    uniform: Option<Weights>,
     /// How many draw digests this sampler has computed so far (TC-454
     /// step 3b): `n = 1` never computes one, so this is the observable
     /// signal that a call actually drew rather than taking the no-digest
@@ -54,6 +57,7 @@ impl PinnedSampler {
             seed,
             trace,
             step: 0,
+            uniform: None,
             #[cfg(test)]
             digests_computed: 0,
         }
@@ -70,9 +74,9 @@ impl Sampler for PinnedSampler {
     fn next_index(&mut self, n: usize) -> usize {
         let step = self.step;
         self.step = self.step.wrapping_add(1);
-        let Ok(weights) = Weights::uniform(n) else {
-            // `n` is at least 1 by this trait's contract.
-            return 0;
+        let weights = match self.uniform.take() {
+            Some(weights) if weights.len() == n => weights,
+            _ => Weights::uniform(n).expect("next_index is called with n >= 1"),
         };
         let at = ChoicePoint {
             seed: self.seed,
@@ -81,6 +85,7 @@ impl Sampler for PinnedSampler {
             choice: 0,
         };
         let (index, _digests) = choose(at, &weights);
+        self.uniform = Some(weights);
         #[cfg(test)]
         {
             self.digests_computed += _digests;

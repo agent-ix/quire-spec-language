@@ -81,11 +81,31 @@ pub enum WeightsRefusal {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Weights {
     /// `w_0, …, w_{k−1}`, in the caller's order.
-    scaled: Vec<Integer>,
-    /// `n`, the sum of `scaled`; at least 1.
+    items: Items,
+    /// `n`, the sum of the scaled weights; at least 1.
     total: Integer,
     /// `n · ⌊2^256 / n⌋`: a draw below it is accepted.
     accept_below: Integer,
+}
+
+/// The scaled weights of a choice. Unit weights are held as their count, so
+/// a uniform choice selects `v mod n` directly: the least index whose
+/// running sum of ones exceeds `v mod n` is `v mod n` itself.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Items {
+    /// `count` weights of 1.
+    Unit(usize),
+    /// Any other positive integer weights.
+    Scaled(Vec<Integer>),
+}
+
+impl Items {
+    fn len(&self) -> usize {
+        match self {
+            Self::Unit(count) => *count,
+            Self::Scaled(scaled) => scaled.len(),
+        }
+    }
 }
 
 impl Weights {
@@ -121,6 +141,17 @@ impl Weights {
         Self::from_scaled(scaled)
     }
 
+    fn from_scaled(scaled: Vec<Integer>) -> Result<Self, WeightsRefusal> {
+        let one = Integer::one();
+        if scaled.iter().all(|weight| *weight == one) {
+            return Self::uniform(scaled.len());
+        }
+        let total = scaled
+            .iter()
+            .fold(Integer::zero(), |total, weight| total.add(weight));
+        Self::with_total(Items::Scaled(scaled), total)
+    }
+
     /// `count` unit weights: the uniform choice over `count` items.
     ///
     /// # Errors
@@ -129,14 +160,11 @@ impl Weights {
     /// [`WeightsRefusal::TotalAboveDrawRange`] cannot arise, since `count`
     /// fits a `usize`.
     pub fn uniform(count: usize) -> Result<Self, WeightsRefusal> {
-        Self::from_scaled(vec![Integer::one(); count])
+        Self::with_total(Items::Unit(count), Integer::from(count))
     }
 
-    fn from_scaled(scaled: Vec<Integer>) -> Result<Self, WeightsRefusal> {
-        let total = scaled
-            .iter()
-            .fold(Integer::zero(), |total, weight| total.add(weight));
-        if scaled.is_empty() {
+    fn with_total(items: Items, total: Integer) -> Result<Self, WeightsRefusal> {
+        if items.len() == 0 {
             return Err(WeightsRefusal::Empty);
         }
         // Every scaled weight is positive, so a non-empty total is too.
@@ -148,15 +176,23 @@ impl Weights {
         }
         let accept_below = quotient.mul(&total);
         Ok(Self {
-            scaled,
+            items,
             total,
             accept_below,
         })
     }
 
     /// The scaled integer weights, in the caller's order.
-    pub fn scaled(&self) -> &[Integer] {
-        &self.scaled
+    pub fn scaled(&self) -> Vec<Integer> {
+        match &self.items {
+            Items::Unit(count) => vec![Integer::one(); *count],
+            Items::Scaled(scaled) => scaled.clone(),
+        }
+    }
+
+    /// How many items the choice is over.
+    pub(crate) fn len(&self) -> usize {
+        self.items.len()
     }
 
     /// Their total `n`.
@@ -171,15 +207,24 @@ impl Weights {
 
     /// The least index `i` with `remainder < w_0 + … + w_i`.
     fn select(&self, remainder: &Integer) -> usize {
+        let scaled = match &self.items {
+            Items::Unit(_) => {
+                return remainder
+                    .to_u64()
+                    .and_then(|index| usize::try_from(index).ok())
+                    .expect("a remainder below a usize count fits a usize");
+            }
+            Items::Scaled(scaled) => scaled,
+        };
         let mut cumulative = Integer::zero();
-        for (index, weight) in self.scaled.iter().enumerate() {
+        for (index, weight) in scaled.iter().enumerate() {
             cumulative = cumulative.add(weight);
             if *remainder < cumulative {
                 return index;
             }
         }
         // `remainder < total`, the last cumulative sum, so the loop returns.
-        self.scaled.len() - 1
+        scaled.len() - 1
     }
 }
 
@@ -187,8 +232,7 @@ impl Weights {
 /// positive, as `quire_exact`'s own reduction does; a zero here is a defect
 /// of this module, never a property of the input.
 fn proven_positive(value: &Integer) -> NonZeroInteger<'_> {
-    NonZeroInteger::try_from(value)
-        .unwrap_or_else(|_| panic!("a weight denominator, gcd or total is positive"))
+    NonZeroInteger::try_from(value).expect("a weight denominator, gcd or total is positive")
 }
 
 /// A draw digest read as a big-endian unsigned 256-bit integer.
@@ -201,7 +245,7 @@ fn big_endian(digest: [u8; 32]) -> Integer {
 /// The index `weights` selects at `at`, and how many draw digests the
 /// selection computed: none for a one-item choice.
 pub(crate) fn choose(at: ChoicePoint, weights: &Weights) -> (usize, u64) {
-    if weights.scaled.len() == 1 {
+    if weights.items.len() == 1 {
         return (0, 0);
     }
     let modulus = proven_positive(&weights.total);
@@ -295,5 +339,29 @@ mod tests {
         };
         assert_eq!(choose(at, &Weights::uniform(1).expect("one")), (0, 0));
         assert!(choose(at, &Weights::uniform(2).expect("two")).1 >= 1);
+    }
+
+    /// The unit-weight fast path selects exactly what the running-sum
+    /// selection over the same ones selects.
+    #[trace("TC-623", "FR-188-AC-2")]
+    #[test]
+    fn unit_weights_select_as_the_running_sum_over_ones() {
+        for count in [2usize, 3, 5, 7] {
+            let fast = Weights::uniform(count).expect("items");
+            let slow = Weights::with_total(
+                Items::Scaled(vec![Integer::one(); count]),
+                Integer::from(count),
+            )
+            .expect("items");
+            for trace in 0..200 {
+                let at = ChoicePoint {
+                    seed: 424_242,
+                    trace,
+                    step: 0,
+                    choice: 0,
+                };
+                assert_eq!(choose(at, &fast), choose(at, &slow), "n = {count}");
+            }
+        }
     }
 }
