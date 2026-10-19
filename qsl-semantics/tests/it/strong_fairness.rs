@@ -232,7 +232,10 @@ fn an_unmarked_kind_is_weak_and_the_kind_enters_the_identity() {
 
     let unmarked = fairness_of(&format!("fair {ACQUIRE};"));
     assert_eq!(members(&unmarked), [(Weak, "acquire", Whole)]);
-    assert_eq!(unmarked, fairness_of(&format!("fair weak whole {ACQUIRE};")));
+    assert_eq!(
+        unmarked,
+        fairness_of(&format!("fair weak whole {ACQUIRE};"))
+    );
     assert_eq!(
         members(&fairness_of(&format!("fair strong {ACQUIRE};"))),
         [(Strong, "acquire", Whole)]
@@ -294,7 +297,9 @@ fn weak_and_strong_stay_apart_and_strong_needs_an_infinite_trace() {
     else {
         panic!("{body}: a temporal refusal, not {outcome:?}");
     };
-    let start = text.find(&constraint).expect("the constraint is in the unit");
+    let start = text
+        .find(&constraint)
+        .expect("the constraint is in the unit");
     assert_eq!(
         *cause,
         TemporalCause::FairnessUnderBoundedProfile {
