@@ -294,6 +294,10 @@ impl ItemCause {
             // The kind alone: the claim identity and outcome stay on the
             // typed cause, which holds them for the caller.
             ReportedInconclusiveCause::Cause(InconclusiveCause::ScalarAgrees(_)) => {}
+            // The kind alone: the witness sources stay on the typed cause.
+            ReportedInconclusiveCause::Cause(InconclusiveCause::WellDefinednessUnchecked {
+                ..
+            }) => {}
         }
         item
     }

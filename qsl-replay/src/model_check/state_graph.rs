@@ -13,6 +13,7 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_semantics::check::PredicateRole;
 use quire_exact::ObjectReference;
 use quire_semantic_value::location::Location;
+use serde::{Serialize, Serializer};
 
 use crate::certificate::state_graph::StateGraphCertificate;
 use crate::model_check::counterexample::ModelStep;
@@ -36,6 +37,28 @@ pub enum WitnessSource {
     Sampled(SampleProvenance),
     /// Phase 1's canonical shortest path over the explored graph (FR-168).
     Explored,
+}
+
+/// QSpec FR-393's witness source on the wire: a sampled source names its
+/// seed and trace index as decimal strings.
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
+enum WitnessSourceWire {
+    Sampled { seed: String, trace_index: String },
+    Explored,
+}
+
+impl Serialize for WitnessSource {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Sampled(provenance) => WitnessSourceWire::Sampled {
+                seed: provenance.seed.to_string(),
+                trace_index: provenance.trace.to_string(),
+            },
+            Self::Explored => WitnessSourceWire::Explored,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// One initial state's witness: a path ending at a node where the target

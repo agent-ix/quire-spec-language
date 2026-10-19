@@ -105,6 +105,10 @@ pub use model_check::counterexample::{
     deadlock_freedom_clause, CounterexampleKind, Lasso, ModelStep, TemporalCounterexample,
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
+pub use model_check::graph_settle::{
+    settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
+    StateGraphRecord,
+};
 pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 pub use model_check::limits::{

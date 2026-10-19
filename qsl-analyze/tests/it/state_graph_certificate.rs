@@ -9,8 +9,9 @@
 //! (`crate::state_graph::reachable`) and each world's arithmetic, not read
 //! from the engine.
 //!
-//! Not covered here: the terminal record each check settles to (FR-169's
-//! map) and the reduced-run `Uncertified` proof.
+//! The terminal record each check settles to (FR-169's map) is
+//! `state_graph_settle`'s. Not covered: the reduced-run `Uncertified` proof,
+//! since no reduction exists yet.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -78,7 +79,7 @@ fn rejected(rule: CertificateRule, at: DigestRecord) -> TemporalCertificateCheck
 }
 
 /// The digest of the one reachable state where `select` holds.
-fn state_where(
+pub(crate) fn state_where(
     world: &World,
     keys: &[&str],
     select: impl Fn(&ModelSimState) -> bool,
@@ -94,7 +95,7 @@ fn state_where(
 }
 
 /// §7.1's state `(va, vb)`.
-fn config(world: &World, va: i64, vb: i64) -> DigestRecord {
+pub(crate) fn config(world: &World, va: i64, vb: i64) -> DigestRecord {
     state_where(world, AB, |state| {
         world.value(state, "a", "versionNumber") == va
             && world.value(state, "b", "versionNumber") == vb
@@ -102,7 +103,7 @@ fn config(world: &World, va: i64, vb: i64) -> DigestRecord {
 }
 
 /// A certificate's ranks by state.
-fn ranks_of(certificate: &StateGraphCertificate) -> BTreeMap<DigestRecord, u32> {
+pub(crate) fn ranks_of(certificate: &StateGraphCertificate) -> BTreeMap<DigestRecord, u32> {
     certificate
         .ranks
         .iter()
@@ -115,7 +116,7 @@ fn ranks_of(certificate: &StateGraphCertificate) -> BTreeMap<DigestRecord, u32> 
 
 /// The certificate over `closure` with `ranks`, re-indexed; a rank of a
 /// state outside `closure` is dropped.
-fn with_ranks(
+pub(crate) fn with_ranks(
     closure: Vec<DigestRecord>,
     ranks: &BTreeMap<DigestRecord, u32>,
 ) -> StateGraphCertificate {
@@ -146,7 +147,7 @@ fn reaches_two(world: &World) -> (Option<ObjectReference>, StateGraphCertificate
     (instance.over.clone(), certificate.clone())
 }
 
-const GUARDED: &str =
+pub(crate) const GUARDED: &str =
     "always possible Guarded using v over (x: G::Game) from (x.phase != 2) { x.phase = 3 }\n";
 
 /// FR-169-AC-9 (check half): `ReachesTwo` for `c = a` returns a certificate
