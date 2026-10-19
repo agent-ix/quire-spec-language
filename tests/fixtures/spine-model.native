@@ -3,7 +3,7 @@
 // `model M` selects `spine-model.semantic-ir.json` by its sha256-jcs digest.
 // The profile is the `root` row of the DefinitionLock catalog (FR-110).
 language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "quire.model.complete/v1";
 model M = "acme/orders" version "1.0.0" digest "sha256-jcs:876d1b2d9e3f825763f6e301cca5c6d6462f4cc0daacb501f7a68a8b3089e114";
 function keep using v(g: M::Gadget): M::Gadget pure { g }
 function held using v(w: Reference<M::Widget>): Boolean pure { true }

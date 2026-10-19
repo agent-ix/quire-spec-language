@@ -196,7 +196,7 @@ fn graph() -> Graph {
     let packages = package_input([package.as_slice()]);
     let digest = qsl_semantics::model::key::hex(&sha256_jcs(&package));
     let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+        "language \"ix:native\" edition \"1-draft\";\n{MODEL_PROFILE}\
          model M = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
          function fa using v(n: Reference<M::Node>): Boolean pure \
          {{ forall(x in deref(n).items: x < 5) }}\n\

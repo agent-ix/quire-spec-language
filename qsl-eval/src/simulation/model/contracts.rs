@@ -7,13 +7,13 @@ use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::observation::{AdmissionUsage, AdmittedObservations, SelfKind};
 use quire_exact::{Meter, Outcome, Value};
 
-use super::walk::{stop, Walk};
-use super::{ClauseInfo, ClauseOutcome, ModelFinding, BROKEN, EXHAUSTED};
-use crate::simulation::expansion::ExpansionStop;
+use super::walk::{exhausted, stop, Walk};
+use super::{ClauseInfo, ClauseOutcome, ModelFinding, BROKEN};
+use crate::simulation::expansion::{ExpansionLimit, ExpansionStop};
 use crate::value::{CheckedPackageEvaluation, ClauseSetOutcome};
 
 /// How one clause evaluation decided.
-enum Verdict {
+pub(super) enum Verdict {
     True,
     False,
     Undecided(ClauseOutcome),
@@ -23,7 +23,7 @@ enum Verdict {
 ///
 /// A `match` over [`FamilyOutcome`] would have to name its probe-only variant
 /// (FR-063), so the two real arms are tested in turn.
-fn verdict(outcome: &FamilyOutcome<Value>) -> Verdict {
+pub(super) fn verdict(outcome: &FamilyOutcome<Value>) -> Verdict {
     if let FamilyOutcome::Evaluated(kernel) = outcome {
         return match kernel {
             Outcome::Completed(Value::Boolean(true)) => Verdict::True,
@@ -160,7 +160,7 @@ pub(super) fn conjunction(
         .evaluate_clause_set(&set, walk.system.meter)
         .map_err(|_| stop(BROKEN))?;
     match evaluation.outcome {
-        ClauseSetOutcome::Incomplete => Err(stop(EXHAUSTED)),
+        ClauseSetOutcome::Incomplete => Err(exhausted(ExpansionLimit::EvaluationMeter)),
         ClauseSetOutcome::True => Ok(Conjunction::True),
         ClauseSetOutcome::False => Ok(Conjunction::False),
         ClauseSetOutcome::Undecided => {

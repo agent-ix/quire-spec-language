@@ -73,6 +73,37 @@ pub fn evaluate_closed(
     .run(node, slots, Vec::new())
 }
 
+/// FR-124 (ADR-018 DL-1): evaluate the `terminal when` predicate
+/// `predicate` of `package` for the object `self_object` of the state whose
+/// objects are `current`, through the one clause evaluator (FR-107): the
+/// predicate is checked as an invariant is, so every read observes
+/// `current`.
+pub fn evaluate_terminal_predicate(
+    package: &CheckedPackage,
+    predicate: &qsl_semantics::check::CheckedTerminalPredicate,
+    current: &ObjectEnvironment,
+    self_object: quire_exact::ObjectReference,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    // An invariant's checked body reads no `pre(..)`, so every model read
+    // observes `current` (FR-104).
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(
+        predicate.body(),
+        predicate.slots(),
+        vec![Value::Reference(self_object)],
+    )
+}
+
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
 /// names the same code as a string ([`InputRefusal::code`]) but cannot name
