@@ -347,7 +347,9 @@ pub struct RequirementItem {
 }
 
 impl RequirementItem {
-    /// The item's request index: its position in record key order.
+    /// The item's request index: its position in record key order, or 0
+    /// for a follow-up [`RequirementItem::bounded`] writes, the single item
+    /// of its own request (ADR-014 §4, FR-075-AC-8).
     pub fn index(&self) -> RequestIndex {
         self.index
     }
@@ -368,7 +370,8 @@ impl RequirementItem {
     }
 
     /// The extent classification [`RequestWriter::item`] computes from the
-    /// record's extent.
+    /// record's extent; `bounded` for a follow-up
+    /// [`RequirementItem::bounded`] writes.
     pub fn extent(&self) -> ExtentClassification {
         self.extent
     }
@@ -396,13 +399,22 @@ impl RequirementItem {
     /// substitution as [`RequirementItem::proof_bounds`], since the request
     /// substitutes one set of proof bounds per item. `Some(&[])` is a
     /// temporal item with no substitution.
+    ///
+    /// Interim (STD-213): QSpec FR-331 also shows a temporal subject bounded
+    /// apart from its extent, an item whose extent stays `unbounded` while
+    /// its subject carries a population bound, and FR-368 gives a subject
+    /// only to an item over a model subject. QSL defines neither a
+    /// subject-only substitution nor which temporal record is over a model
+    /// subject, so this reads the extent substitution for every
+    /// `temporal-satisfaction` item until STD-213 settles both.
     pub fn temporal_proof_bounds(&self) -> Option<&[ProofBound]> {
         matches!(self.kind, Capability::TemporalSatisfaction)
             .then_some(self.proof_bounds.as_slice())
     }
 
     /// The bounded follow-up of this item (ADR-014 §4 "Bounded request"):
-    /// the same occurrence, index, record members and candidates, with
+    /// the single item of its own request, so its index is 0 (FR-075-AC-8),
+    /// with the same occurrence, record members and candidates, and
     /// `bounds` substituted for every unbounded domain, so its extent is
     /// `bounded` and [`RequirementItem::proof_bounds`] holds one
     /// [`ProofBound`] per domain with the kind QSL classified for it.
@@ -413,6 +425,7 @@ impl RequirementItem {
         }
         let proof_bounds = substitute(&self.unbounded, bounds)?;
         Ok(Self {
+            index: RequestIndex::new(0),
             extent: ExtentClassification::Bounded,
             unbounded: Vec::new(),
             proof_bounds,
