@@ -18,4 +18,5 @@ mod state_model_forms;
 mod sum_case_forms;
 mod temporal_clause_forms;
 mod terminal_declaration_forms;
+mod time_forms;
 mod value_forms;

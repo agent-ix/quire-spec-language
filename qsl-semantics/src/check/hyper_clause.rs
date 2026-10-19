@@ -21,8 +21,9 @@ use std::collections::BTreeMap;
 
 use qsl_forms::{
     BinaryOperator, ExprId, ExprNode, ExprRef, Expression, ExpressionSpans, HyperBehavioursForm,
-    HyperFiniteForm, IntervalUpper, ModelRelationForm, NameForm, QuantifierForm, QuantifierKind,
-    SpanId, StepLabelForm, TemporalFormulaForm, TemporalNodeForm, TemporalOperator, TypeFormHead,
+    HyperFiniteForm, IntervalUpper, ModelRelationForm, NameForm, OperatorInterval, QuantifierForm,
+    QuantifierKind, SpanId, StepLabelForm, TemporalFormulaForm, TemporalNodeForm, TemporalOperator,
+    TypeFormHead,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::{Code, StageFailure, Staged};
@@ -1986,15 +1987,23 @@ fn encode_formula(formula: &TemporalFormulaForm, swap: Swap<'_>) -> (Vec<u8>, bo
                     .filter_map(|operand| encoded.get_mut(operand.index()).and_then(Option::take))
                     .collect();
                 let tag = temporal_tag(operator.operator);
-                let interval = operator.interval.map_or_else(Vec::new, |interval| {
-                    let upper = match interval.upper {
-                        IntervalUpper::Finite(upper) => upper.to_be_bytes().to_vec(),
-                        IntervalUpper::Open => b"*".to_vec(),
-                    };
-                    let mut bytes = interval.lower.to_be_bytes().to_vec();
-                    bytes.extend(upper);
-                    bytes
-                });
+                let interval = operator
+                    .interval
+                    .as_ref()
+                    .map_or_else(Vec::new, |interval| match interval {
+                        OperatorInterval::Steps(interval) => {
+                            let upper = match interval.upper {
+                                IntervalUpper::Finite(upper) => upper.to_be_bytes().to_vec(),
+                                IntervalUpper::Open => b"*".to_vec(),
+                            };
+                            let mut bytes = interval.lower.to_be_bytes().to_vec();
+                            bytes.extend(upper);
+                            bytes
+                        }
+                        // A timed interval is refused when the clause is checked;
+                        // it never reaches a comparison as a step interval.
+                        OperatorInterval::Timed(_) => b"timed".to_vec(),
+                    });
                 match operator.operator {
                     TemporalOperator::And | TemporalOperator::Or => {
                         Encoded::Associative(tag, flatten(tag, operands))

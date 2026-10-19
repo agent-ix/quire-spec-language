@@ -41,8 +41,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     ActivationForm, FairnessConstraintForm, FairnessGranularity as FormGranularity,
-    FairnessKind as FormKind, IntervalForm, IntervalUpper, ParameterForm, TemporalClauseForm,
-    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
+    FairnessKind as FormKind, IntervalForm, IntervalUpper, OperatorInterval, ParameterForm,
+    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind, IntervalKey, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
@@ -537,7 +537,11 @@ pub(crate) fn checked_operators(
                 None
             }
             (None, _) => None,
-            (Some(written), true) => match build_interval(written) {
+            (Some(OperatorInterval::Timed(timed)), true) => {
+                refusals.push(TemporalCause::TimedIntervalNotChecked { span: timed.span });
+                None
+            }
+            (Some(OperatorInterval::Steps(written)), true) => match build_interval(written) {
                 Err(cause) => {
                     refusals.push(cause);
                     None
@@ -1021,9 +1025,14 @@ fn formula_horizon(
                     .ok_or_else(|| fault("operand-in-arena"))?,
             );
         }
-        let own = match operator.interval.map(|interval| interval.upper) {
-            Some(IntervalUpper::Finite(upper)) => upper,
-            Some(IntervalUpper::Open) | None => 0,
+        // A timed interval never reaches here: `check_clause` refuses it
+        // before the horizon is computed.
+        let own = match &operator.interval {
+            Some(OperatorInterval::Steps(IntervalForm {
+                upper: IntervalUpper::Finite(upper),
+                ..
+            })) => *upper,
+            Some(OperatorInterval::Steps(_) | OperatorInterval::Timed(_)) | None => 0,
         };
         let Some(total) = deepest.checked_add(own) else {
             let limit = LimitExceeded::new(

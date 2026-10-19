@@ -293,7 +293,7 @@ pub use refusal::{
     DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
     MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
     ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
-    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TemporalCause,
+    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimedConstruct,
     WrongSnapshotCause,
 };
 pub use state_graph_claim::{

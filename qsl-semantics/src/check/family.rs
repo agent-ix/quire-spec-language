@@ -694,6 +694,7 @@ fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) 
                 BuiltinType::Text => "Text",
                 BuiltinType::Option => "Option",
                 BuiltinType::Reference => "Reference",
+                BuiltinType::Clock => "Clock",
             },
         });
         out.write_u64(quire_exact::length_amount(form.arguments.len()));
