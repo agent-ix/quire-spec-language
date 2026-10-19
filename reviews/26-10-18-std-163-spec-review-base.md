@@ -88,3 +88,11 @@ Round 3 reviewed at `d6a9b2c2a` (#979) and `b825dda` (QSpec #277).
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-006 | low | AC-6 and TC-629 step 5 say "the clause-level charge is 3 units (1 at position 0, 2 at position 1)". That counts window-visit units only. The clause's meter also carries FR-327's per-node visit units and the letter read's own unit (#966 `letters.rs`), so a test reading the meter sees more than 3. Say "clause-level visit charge", as AC-3 does. Also, the parenthetical "a newest-first visit would ... stop `Incomplete`" holds only when the limit is checked before the value is read (#966's order). The 2-unit charge is the discriminator that does not depend on order. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:147; spec/test-cases/TC-629-window-aggregates-in-monitors.md:36; quire-specification:spec/test-cases/TC-366-window-aggregates.md:32 |
+
+## Dispositions (disposition pass 4)
+
+Round 4 reviewed at `e1a311c0a` (#979) and `10f2126` (QSpec #277).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-006 | fixed | AC-6 and TC-629 step 5 now say "clause-level visit charge (window-visit units only, excluding the clause's node-visit and letter-read units)". The order-dependent `Incomplete` remark is replaced by the 2-unit charge, and TC-366 WA-09 is changed the same way. Hand-checked: newest first visits 3, 2, 1 and charges 3 whether or not the limit stops it, because the charge comes before the limit check. |
