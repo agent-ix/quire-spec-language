@@ -153,8 +153,10 @@ operation and an anchor's handler name. This is QSL's choice; FR-181's
 in the given order, and returns the first failure:
 
 1. A universe population that is no population of the package refuses
-   `invalid_runtime_input`/`wrong-role-mapping`. A key repeated within one
-   universe refuses `invalid_runtime_input`/`conflicting-identity`.
+   `invalid_runtime_input`/`wrong-role-mapping`. An empty key, which names
+   no object (FR-035), refuses `invalid_runtime_input`/`invalid-value`. A
+   key repeated within one universe refuses
+   `invalid_runtime_input`/`conflicting-identity`.
 2. Each initial document is a `quire.state.snapshot/v1` snapshot (FR-106
    "Document forms"), admitted by `StateModel::admit_initial` (see "Frame
    and observation seam"), which runs FR-106 check 1 (read), check 3, check

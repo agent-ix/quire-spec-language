@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::automaton::translate;
-use qsl_eval::model_subject::{ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
@@ -26,10 +26,8 @@ use qsl_semantics::check::{
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
-use qsl_semantics::model::observation::{
-    declared_type_universe_for, DocumentRef, ObservationLimits,
-};
-use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, ScalarLimits, Value};
+use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use quire_exact::{Incomplete, Meter, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -378,19 +376,6 @@ impl World {
         }
     }
 
-    /// The reference of `object` in the package's universe rule.
-    pub(crate) fn reference(&self, object: &str) -> ObjectReference {
-        let (effective, universe) = declared_type_universe_for(
-            self.package.graph().model_selections(),
-            &self.packages,
-            ModelNormalizationLimits::default(),
-            &self.domain.key(self.domain.object),
-        )
-        .expect("the universe derives")
-        .expect("the object type is declared");
-        ObjectReference::new(universe, effective, ObjectId::new(object).expect("an id"))
-    }
-
     /// The model state at each position of `counterexample`, read by
     /// re-executing its steps: each step's post-state is the successor of its
     /// transition identity whose state-key digest it records.
@@ -427,42 +412,29 @@ pub(crate) type Atom = Box<dyn Fn(&ModelSimState, &str) -> Option<bool>>;
 /// The letters of one clause: each `holds` atom, in the formula's node
 /// order, read by its own predicate.
 pub(crate) struct Letters {
-    bindings: Vec<ObjectReference>,
     holds: Vec<FormulaNodeId>,
     atoms: Vec<Atom>,
 }
 
 impl Letters {
-    /// `clause`'s letters over the instances `bindings`, its `holds` atoms
-    /// read in node order by `atoms`. The atoms' node order is the
+    /// `clause`'s letters, its `holds` atoms read in node order by `atoms`
+    /// for the object under the instance's key. The atoms' node order is the
     /// translation's letter order (`PropertyAutomaton::atoms`).
-    pub(crate) fn new(
-        clause: &CheckedTemporalClause,
-        bindings: Vec<ObjectReference>,
-        atoms: Vec<Atom>,
-    ) -> Self {
+    pub(crate) fn new(clause: &CheckedTemporalClause, atoms: Vec<Atom>) -> Self {
         let holds = translate(clause, 1 << 20)
             .expect("the clause translates")
             .atoms()
             .to_vec();
         assert_eq!(holds.len(), atoms.len(), "one predicate per `holds` atom");
-        Self {
-            bindings,
-            holds,
-            atoms,
-        }
+        Self { holds, atoms }
     }
 }
 
 impl ModelLetters for Letters {
-    fn bindings(&self) -> Vec<ObjectReference> {
-        self.bindings.clone()
-    }
-
     fn atom(
         &self,
         atom: FormulaNodeId,
-        binding: &ObjectReference,
+        instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete> {
@@ -471,14 +443,12 @@ impl ModelLetters for Letters {
             .iter()
             .position(|node| *node == atom)
             .expect("the engine reads only the clause's atoms");
-        Ok(
-            match (self.atoms[index])(state, binding.object().as_str()) {
-                Some(true) => AtomReading::True,
-                Some(false) => AtomReading::False,
-                None => AtomReading::Undefined(UndefinedCause::Kernel(
-                    quire_exact::Undefined::DivisionByZero,
-                )),
-            },
-        )
+        Ok(match (self.atoms[index])(state, &instance.key) {
+            Some(true) => AtomReading::True,
+            Some(false) => AtomReading::False,
+            None => AtomReading::Undefined(UndefinedCause::Kernel(
+                quire_exact::Undefined::DivisionByZero,
+            )),
+        })
     }
 }

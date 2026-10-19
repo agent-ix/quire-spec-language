@@ -60,7 +60,7 @@ use qsl_eval::automaton::{
     translate, Atom, AutomatonError, AutomatonKind, Gba, GbaBuilder, Guard, KeyRefusal, Letter,
     Monitor, SafetyAutomaton, SafetyState, StateId,
 };
-use qsl_eval::model_subject::{ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
@@ -79,7 +79,7 @@ use qsl_replay::{
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
-use quire_exact::{Cancel, Meter, ObjectReference};
+use quire_exact::{Cancel, Meter};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -146,8 +146,9 @@ pub enum ModelCheckRefusal {
 /// The item as the run reads it.
 enum Item<'a> {
     Clause {
-        /// The `over` binding of each instance, in binding order.
-        bindings: Vec<ObjectReference>,
+        /// Each instance of the `over` binding, in FR-125's canonical
+        /// instance order.
+        bindings: Vec<ModelInstance>,
         letters: &'a dyn ModelLetters,
         fairness: Vec<FairnessConstraint>,
         /// The `holds` atom each letter atom reads: atom `i` is `atoms[i]`.
@@ -200,11 +201,11 @@ enum Finish {
 struct Violation {
     kind: CounterexampleKind,
     at: usize,
-    binding: Option<ObjectReference>,
+    binding: Option<ModelInstance>,
 }
 
 impl Finish {
-    fn violated(kind: CounterexampleKind, at: usize, binding: Option<ObjectReference>) -> Self {
+    fn violated(kind: CounterexampleKind, at: usize, binding: Option<ModelInstance>) -> Self {
         Self::Violated(Box::new(Violation { kind, at, binding }))
     }
 }
@@ -264,28 +265,40 @@ pub fn check_model(
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     let max_automaton_states = request.limits.max_automaton_states;
-    let (item, automaton, certified) = prepare(request.item, max_automaton_states)?;
+    // The form is refused before admission reads any snapshot.
+    let (mut item, automaton, certified) = prepare(request.item, max_automaton_states)?;
+    let meter = request.subject.simulation.meter;
+    let max_candidates = request.subject.simulation.expansion.max_candidates;
+    let no_initial = request.subject.simulation.initial.is_empty();
+    let system = ModelSystem::new(request.subject.simulation.clone())
+        .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
+    check_model_bounds(&system, BOUND_POSITIONS).map_err(not_simulated)?;
     let (instances, root_cancelled) = if certified {
-        match request.item.instances(&request.subject, cancel) {
+        match request.item.instances(&request.subject, &system, cancel) {
             Ok(instances) => (instances, None),
             Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
                 (Vec::new(), Some(cause))
             }
+            Err(ItemRefusal::Unbounded(refusal)) => return Err(not_simulated(refusal)),
             Err(refusal) => return Err(ModelCheckRefusal::Item(refusal)),
         }
     } else {
         (Vec::new(), None)
     };
-    let meter = request.subject.simulation.meter;
-    let max_candidates = request.subject.simulation.expansion.max_candidates;
-    let no_initial = request.subject.simulation.initial.is_empty();
-    let system = ModelSystem::new(request.subject.simulation)
-        .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
-    check_model_bounds(&system, BOUND_POSITIONS).map_err(|refusal| match refusal {
-        NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
-        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
-        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
-    })?;
+    if let (Item::Clause { bindings, .. }, ModelCheckItem::Clause { clause, .. }) =
+        (&mut item, request.item)
+    {
+        // FR-125: the instances come from the subject's universes; a
+        // certified proof's are those its certificate's translations carry.
+        *bindings = if certified {
+            instances
+                .iter()
+                .filter_map(|instance| instance.binding.clone())
+                .collect()
+        } else {
+            system.instances(&clause.over().1).map_err(not_simulated)?
+        };
+    }
     let mut run = Run {
         system: &system,
         item: &item,
@@ -355,6 +368,16 @@ pub fn check_model(
     }
 }
 
+/// FR-336 and FR-125: an unbounded root, or an admitting population with no
+/// universe, is `RequiresBound`; a stopped classification is `Extent`.
+fn not_simulated(refusal: NotSimulated) -> ModelCheckRefusal {
+    match refusal {
+        NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
+        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
+        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
+    }
+}
+
 /// Read the item: a TP-1, TP-2 or TP-3 clause's translation, or the
 /// deadlock-freedom item's monitor of `always holds(not deadlocked)`.
 fn prepare(
@@ -387,7 +410,7 @@ fn prepare(
         Activation::Origin | Activation::Each { .. } => None,
     };
     let prepared = Item::Clause {
-        bindings: letters.bindings(),
+        bindings: Vec::new(),
         letters,
         fairness: clause.fairness().to_vec(),
         atoms: automaton.atoms().to_vec(),
@@ -810,7 +833,7 @@ impl Run<'_, '_> {
     /// The `over` binding of a clause's instance `instance`, none for the
     /// deadlock-freedom item. A violation that is not a clause's own names
     /// the first instance.
-    fn binding_of(&self, instance: usize) -> Option<ObjectReference> {
+    fn binding_of(&self, instance: usize) -> Option<ModelInstance> {
         match self.item {
             Item::Clause { bindings, .. } => bindings.get(instance).cloned(),
             Item::Deadlock => None,
@@ -885,7 +908,7 @@ impl Run<'_, '_> {
         &self,
         kind: CounterexampleKind,
         at: usize,
-        over_binding: Option<ObjectReference>,
+        over_binding: Option<ModelInstance>,
     ) -> TemporalCounterexample {
         let mut prefix = Vec::new();
         let mut cursor = at;

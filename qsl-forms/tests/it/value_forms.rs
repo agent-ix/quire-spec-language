@@ -59,6 +59,7 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Protocol(_)
         | DeclarationForm::Temporal(_)
         | DeclarationForm::Terminal(_)
+        | DeclarationForm::Refinement(_)
         | DeclarationForm::TimeSource(_)
         | DeclarationForm::TimeInvariant(_)
         | DeclarationForm::Urgent(_)
@@ -219,6 +220,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Protocol(_) => "protocol",
             DeclarationForm::Temporal(_) => "temporal",
             DeclarationForm::Terminal(_) => "terminal",
+            DeclarationForm::Refinement(_) => "refinement",
             DeclarationForm::TimeSource(_) => "time",
             DeclarationForm::TimeInvariant(_) => "time invariant",
             DeclarationForm::Urgent(_) => "urgent",

@@ -13,7 +13,7 @@ use std::borrow::Borrow;
 use qsl_foundation::diagnostic::{LimitExceeded, StageFailure};
 use qsl_foundation::{Code, Setting, SyntaxLimit};
 use qsl_package::ImportViewRefusal;
-use qsl_semantics::check::{AssemblyCause, CheckCause};
+use qsl_semantics::check::{AssemblyCause, CheckCause, RefinementCause};
 use qsl_semantics::model::intake::UnitIntakeCause;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_semantic_value::semantic_node::IdentityRefusal;
@@ -283,6 +283,16 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         // A type invariant's wrapper classifies as the cause it wraps.
         CheckCause::TypeInvariant(refusal) => check_limit(&refusal.cause),
         CheckCause::Terminal(refusal) => check_limit(&refusal.cause),
+        CheckCause::Refinement(refusal) => match &refusal.cause {
+            RefinementCause::Check(cause) => check_limit(cause),
+            RefinementCause::WrongProfile { .. }
+            | RefinementCause::Unresolved { .. }
+            | RefinementCause::Ambiguous { .. }
+            | RefinementCause::MissingRow { .. }
+            | RefinementCause::Conflicting { .. }
+            | RefinementCause::Malformed { .. }
+            | RefinementCause::Unsupported { .. } => None,
+        },
         CheckCause::DispatchLink(link) => link
             .denial
             .as_ref()
@@ -321,6 +331,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ProtocolReference(_)
         | CheckCause::ProtocolObligation(_)
         | CheckCause::TerminalNotEmitted { .. }
+        | CheckCause::RefinementNotEmitted { .. }
         | CheckCause::Probabilistic(_)
         | CheckCause::TimedNotChecked { .. }
         | CheckCause::Temporal(_)

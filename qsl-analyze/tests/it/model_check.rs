@@ -34,7 +34,7 @@ use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_exact::{Integer, ValueType};
 
 use crate::counter::{
-    document, document_with_ranged_parameter, package, package_with_clauses, reference, subject,
+    document, document_with_ranged_parameter, instance, package, package_with_clauses, subject,
     universe, value, Documents, Letters, CONTRACT, UNLIMITED, ZERO,
 };
 
@@ -343,16 +343,6 @@ fn the_deadlock_path_and_counts_match_an_explicit_enumeration() {
     assert_eq!((stats.product_states, stats.product_edges), (16, 96));
 }
 
-fn letters(world: &World, keys: &[&str], atom: fn(i64) -> Option<bool>) -> Letters {
-    Letters {
-        bindings: keys
-            .iter()
-            .map(|key| reference(&world.package, &world.documents, key))
-            .collect(),
-        atom,
-    }
-}
-
 fn invariant(
     world: &World,
     keys: &[&str],
@@ -367,7 +357,7 @@ fn invariant(
     let [clause] = clauses.as_slice() else {
         panic!("one declared clause");
     };
-    let letters = letters(world, keys, atom);
+    let letters = Letters { atom };
     run_in(
         world,
         &package,
@@ -405,10 +395,7 @@ fn a_reachable_invariant_holds_or_is_violated_at_its_first_bad_state() {
     let counterexample = violated(&outcome);
     assert_eq!(counterexample.kind, CounterexampleKind::Formula);
     assert_eq!(values(&world, counterexample, "c"), [0, 1, 2]);
-    assert_eq!(
-        counterexample.over_binding,
-        Some(reference(&world.package, &world.documents, "c"))
-    );
+    assert_eq!(counterexample.over_binding, Some(instance("c")));
     assert_eq!(counterexample.trace_position(), Some(2));
 }
 
@@ -427,7 +414,9 @@ fn a_horizon_at_a_terminal_state_whose_stutter_coalesces_still_holds() {
     let [clause] = clauses.as_slice() else {
         panic!("one declared clause");
     };
-    let letters = letters(&world, &["c"], |v| Some(v <= 3));
+    let letters = Letters {
+        atom: |v| Some(v <= 3),
+    };
     let with = |max_depth| {
         run_in(
             &world,
@@ -471,10 +460,7 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
         .map(|state| (value(state, "a"), value(state, "b")))
         .expect("a state");
     assert_eq!(last, (3, 0));
-    assert_eq!(
-        counterexample.over_binding,
-        Some(reference(&world.package, &world.documents, "a"))
-    );
+    assert_eq!(counterexample.over_binding, Some(instance("a")));
 }
 
 /// Verifies the TP-1 half of FR-126-AC-9; its TP-4 claim, the `kind:
@@ -677,7 +663,9 @@ fn a_cancelled_handle_stops_a_tp1_clause_run_rather_than_refusing() {
     let [clause] = clauses.as_slice() else {
         panic!("one declared clause");
     };
-    let letters = letters(&world, &["c"], |v| Some(v <= 3));
+    let letters = Letters {
+        atom: |v| Some(v <= 3),
+    };
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
     let outcome = check_model(
@@ -792,11 +780,12 @@ fn an_empty_or_unbounded_subject_explores_nothing() {
 /// QSpec FR-361-AC-8 (QSpec TC-294): a clause with zero instances is
 /// `Undecided(NoInstance)` before any state is explored; the same clause
 /// over a population with no universe is refused `RequiresBound` naming that
-/// population, never `NoInstance`. The zero instances are made by clearing
-/// `Letters.bindings`; deriving them from the universes is QSL-886's.
+/// population, never `NoInstance`. The zero instances come from the
+/// subject's empty universe of `counters`.
 #[trace("TC-520", "QSpec-FR-361-AC-8")]
 #[test]
 fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
+    let empty = self::world("", &[&[]]);
     let world = self::world("", &[&[("c", 0)]]);
     let (package, clauses) = package_with_clauses(
         &world.documents.document,
@@ -806,15 +795,17 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     let [clause] = clauses.as_slice() else {
         panic!("one declared clause");
     };
-    let empty = letters(&world, &[], |_| Some(true));
+    let letters = Letters {
+        atom: |_| Some(true),
+    };
     let item = || ModelCheckItem::Clause {
         clause,
-        letters: &empty,
+        letters: &letters,
     };
     let outcome = run_in(
-        &world,
+        &empty,
         &package,
-        &["c"],
+        &[],
         item(),
         None,
         ModelCheckLimits::default(),
@@ -867,11 +858,31 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     );
 }
 
-/// FR-125 Instancing (AC-4 stays untagged: its first sentence is QSL-886): a subject whose `initial` list is empty is `NoInitialState`
-/// before any state is explored, for a clause item.
-#[trace("TC-520")]
+/// FR-125-AC-4, over the Counter subject: a clause `over (c: M::Counter)`,
+/// checked once, has one instance per key of the subject's universe, in
+/// universe order, `b` then `a` over `[b, a]` and `a` alone over `[a]`; a
+/// subject whose `initial` list is empty is `NoInitialState` before any
+/// state is explored, for a clause item.
+#[trace("TC-520", "FR-125-AC-4")]
 #[test]
 fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
+    let pair = self::world("", &[&[("a", 0), ("b", 1)]]);
+    let (_, clauses) = package_with_clauses(
+        &pair.documents.document,
+        &pair.body,
+        &[("C", "", "always holds(c.value <= 3)")],
+    );
+    let over = &clauses[0].over().1;
+    assert_eq!(
+        system(&pair, &["b", "a"]).instances(over),
+        Ok(vec![instance("b"), instance("a")])
+    );
+    let one = self::world("", &[&[("a", 0)]]);
+    assert_eq!(
+        system(&one, &["a"]).instances(over),
+        Ok(vec![instance("a")])
+    );
+
     let world = self::world("", &[]);
     let (package, clauses) = package_with_clauses(
         &world.documents.document,
@@ -881,7 +892,9 @@ fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
     let [clause] = clauses.as_slice() else {
         panic!("one declared clause");
     };
-    let bound = letters(&world, &["c"], |_| Some(true));
+    let bound = Letters {
+        atom: |_| Some(true),
+    };
     let outcome = run_in(
         &world,
         &package,

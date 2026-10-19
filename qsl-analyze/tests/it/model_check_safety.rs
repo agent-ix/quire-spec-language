@@ -47,11 +47,7 @@ fn run(
     limits: ModelCheckLimits,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     let clause = &world.clauses[index];
-    let letters = Letters::new(
-        clause,
-        keys.iter().map(|key| world.reference(key)).collect(),
-        atoms,
-    );
+    let letters = Letters::new(clause, atoms);
     check_model(
         ModelCheckRequest {
             subject: world.subject(keys, UNLIMITED),
