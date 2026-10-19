@@ -12,7 +12,7 @@ relationships:
 
 Verify the monitor plan's three-valued decisions under sound rounding, buffer capacity from the event rate, overflow settlement and counter faults, against QSL's reference evaluator.
 
-Scope: FR-251-AC-1 to FR-251-AC-3.
+Scope: FR-251-AC-1 to FR-251-AC-3. The executable-plan, admission, isolation, equivalence and failure criteria (FR-251-AC-4 to FR-251-AC-8) are TC-1081.
 
 ## Test Procedure
 
