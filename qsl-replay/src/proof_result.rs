@@ -27,7 +27,7 @@ use quire_semantic_value::fairness::FairnessConstraint;
 use serde::Serialize;
 
 /// FR-127: how a proof established its claim, independently of certification.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ProofBasis {
     /// Kani's completed SUCCESS checks; zero denotes a vacuous proof.
@@ -56,7 +56,10 @@ pub enum ProofBasis {
         analysis: ClosedFormAnalysis,
     },
     /// FR-250: a hybrid solver's sound result, holding for the claim within
-    /// its time horizon and jump bound.
+    /// its time horizon and jump bound. Always paired with
+    /// [`Certification::Uncertified`]: a solver QSL runs has no core
+    /// certificate checker, and `SolverResult::terminal_value` is the only
+    /// place that builds one.
     BoundedSolver {
         /// The kind of method that produced the result.
         method: SolverMethod,
@@ -1075,7 +1078,7 @@ mod tests {
         for (basis, category) in bases {
             for (certification, spelling) in certifications {
                 let value = TerminalValue::Proved {
-                    basis,
+                    basis: basis.clone(),
                     certification,
                 };
                 let source = BackendProviderSource {

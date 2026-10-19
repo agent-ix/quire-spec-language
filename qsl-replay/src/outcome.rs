@@ -277,7 +277,8 @@ impl ItemCause {
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
-                | InconclusiveCause::SufficientTestFailed,
+                | InconclusiveCause::SufficientTestFailed
+                | InconclusiveCause::SolverInconclusive,
             ) => {}
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
@@ -293,7 +294,6 @@ impl ItemCause {
             // The kind alone: the claim identity and outcome stay on the
             // typed cause, which holds them for the caller.
             ReportedInconclusiveCause::Cause(InconclusiveCause::ScalarAgrees(_)) => {}
-            ReportedInconclusiveCause::Cause(InconclusiveCause::SolverInconclusive) => {}
         }
         item
     }
@@ -371,7 +371,7 @@ impl OutcomeItem {
                 certification,
             } => {
                 if result == ItemLabel::Proved {
-                    (Some(*basis), Some(*certification))
+                    (Some(basis.clone()), Some(*certification))
                 } else {
                     (None, None)
                 }
@@ -1307,7 +1307,7 @@ mod tests {
                     vec![record(
                         6,
                         TerminalValue::Proved {
-                            basis,
+                            basis: basis.clone(),
                             certification,
                         },
                     )],

@@ -73,6 +73,12 @@ The FR-331 terminal record of the claim.
 | `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or a result from a method not sound for its outcome | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive)` | inconclusive |
 | `Stopped(limit)` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
 
+- A `Stopped(limit)` result SHALL name its budget as `solver-time` (the
+  request member `max_solver_time`, in whole seconds of solver wall time) or
+  `solver-steps` (`max_solver_steps`, in solver steps), and the record's
+  `value` SHALL be the budget's value for the run in that unit.
+- A horizon SHALL be a non-negative exact rational number of seconds, and
+  the record SHALL write it in the `ExactRational` wire form.
 - No provider result SHALL settle `refuted`.
 - A `BoundedSolver` proof SHALL carry the label `uncertified`: a solver
   QSL runs is a native engine with no core certificate checker (ADR-018

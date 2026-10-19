@@ -3,12 +3,12 @@
 //! terminal value. A result settles `proved` only where its method kind makes
 //! it sound for its outcome, and that proof is `uncertified`: a solver QSL
 //! runs has no core certificate checker (ADR-018 PC-1). Every other result is
-//! `inconclusive`, `incomplete` or, with no provider, `unsupported`. No
+//! `inconclusive` or `incomplete`. No
 //! solver result settles `refuted`, and a provider's own claim about its
 //! soundness is never read: [`SolverMethod`] has no such field.
 
-use std::num::NonZeroU64;
-
+use quire_exact::Rational;
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 use crate::model_check::limits::ReachedLimit;
@@ -74,45 +74,44 @@ pub enum SolverOutcome {
     Stopped(ReachedLimit),
 }
 
-/// A non-negative time horizon, an exact reduced fraction of seconds.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
-pub struct SolverHorizon {
-    numerator: u64,
-    denominator: NonZeroU64,
-}
+/// A non-negative time horizon, an exact rational number of seconds.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SolverHorizon(Rational);
+
+/// A negative horizon was offered.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NegativeHorizon;
 
 impl SolverHorizon {
-    /// `numerator/denominator` seconds, reduced; zero is `0/1`.
-    pub fn new(numerator: u64, denominator: NonZeroU64) -> Self {
-        let divisor = gcd(numerator, denominator.get());
-        // `divisor` is at least 1: `denominator` is non-zero.
-        let denominator = NonZeroU64::new(denominator.get() / divisor).unwrap_or(denominator);
-        Self {
-            numerator: numerator / divisor,
-            denominator,
+    /// `seconds` as a horizon; a negative number is refused.
+    pub fn new(seconds: Rational) -> Result<Self, NegativeHorizon> {
+        if seconds.numerator().is_negative() {
+            Err(NegativeHorizon)
+        } else {
+            Ok(Self(seconds))
         }
     }
 
-    /// The reduced numerator.
-    pub const fn numerator(self) -> u64 {
-        self.numerator
-    }
-
-    /// The reduced denominator.
-    pub const fn denominator(self) -> NonZeroU64 {
-        self.denominator
+    /// The horizon in seconds.
+    pub const fn seconds(&self) -> &Rational {
+        &self.0
     }
 }
 
-fn gcd(mut a: u64, mut b: u64) -> u64 {
-    while b != 0 {
-        (a, b) = (b, a % b);
+impl Serialize for SolverHorizon {
+    /// FR-250's `ExactRational` wire: decimal-string components, so a
+    /// numerator beyond 2^53 keeps its precision for JSON consumers.
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut object = serializer.serialize_struct("SolverHorizon", 3)?;
+        object.serialize_field("kind", "rational")?;
+        object.serialize_field("numerator", &self.0.numerator().to_string())?;
+        object.serialize_field("denominator", &self.0.denominator().to_string())?;
+        object.end()
     }
-    a
 }
 
 /// A provider's result (FR-250 Inputs).
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SolverResult {
     /// The kind of method that produced the outcome.
     pub method: SolverMethod,
@@ -128,6 +127,8 @@ impl SolverResult {
     /// FR-250's map. A sound `Unsat` or `EnclosureDisjoint` is `proved`,
     /// `uncertified`, over its horizon and jump bound; `Stopped` is
     /// `incomplete`; everything else is `inconclusive`. Never `refuted`.
+    /// This is the only place a `BoundedSolver` proof is built, and it is
+    /// always `Uncertified`.
     pub fn terminal_value(&self) -> TerminalValue {
         match self.outcome {
             SolverOutcome::Stopped(limit) => {
@@ -139,7 +140,7 @@ impl SolverResult {
             outcome if self.method.is_sound_for(&outcome) => TerminalValue::Proved {
                 basis: ProofBasis::BoundedSolver {
                     method: self.method,
-                    horizon: self.horizon,
+                    horizon: self.horizon.clone(),
                     jumps: self.jumps,
                 },
                 certification: Certification::Uncertified,
@@ -153,22 +154,19 @@ impl SolverResult {
             }
         }
     }
-}
 
-impl SolverResult {
     /// The QSpec FR-243 basis the result settles with: `closed-scope` for a
     /// proof within its horizon and jump bound, `unsettled` for an
     /// inconclusive result, `unavailable` for a stopped solver.
     pub fn basis(&self) -> SettlementBasis {
-        match self.terminal_value() {
-            TerminalValue::Proved { .. } => SettlementBasis::ClosedScope,
-            TerminalValue::Incomplete(_) => SettlementBasis::Unavailable,
-            TerminalValue::Inconclusive(_)
-            | TerminalValue::Tested
-            | TerminalValue::Refuted
-            | TerminalValue::Declined { .. }
-            | TerminalValue::Unsupported(_)
-            | TerminalValue::Failed => SettlementBasis::Unsettled,
+        match self.outcome {
+            SolverOutcome::Stopped(_) => SettlementBasis::Unavailable,
+            outcome if self.method.is_sound_for(&outcome) => SettlementBasis::ClosedScope,
+            SolverOutcome::Unsat
+            | SolverOutcome::DeltaSat
+            | SolverOutcome::EnclosureDisjoint
+            | SolverOutcome::EnclosureMeetsUnsafe
+            | SolverOutcome::Unknown => SettlementBasis::Unsettled,
         }
     }
 }
@@ -181,16 +179,11 @@ mod tests {
     use crate::proof_result::TerminalRecord;
     use ix_trace_rs::trace;
     use qsl_foundation::RequestIndex;
+    use quire_exact::Integer;
     use serde_json::json;
 
-    const METHODS: [SolverMethod; 3] = [
-        SolverMethod::DeltaComplete,
-        SolverMethod::FlowpipeOutwardRounded,
-        SolverMethod::FlowpipeUnrounded,
-    ];
-
     fn horizon(seconds: u64) -> SolverHorizon {
-        SolverHorizon::new(seconds, NonZeroU64::MIN)
+        SolverHorizon::new(Rational::from_integer(Integer::from(seconds))).expect("non-negative")
     }
 
     fn result(method: SolverMethod, outcome: SolverOutcome) -> SolverResult {
@@ -233,7 +226,7 @@ mod tests {
                 "basis": {
                     "type": "bounded-solver",
                     "method": "delta-complete",
-                    "horizon": {"numerator": 10, "denominator": 1},
+                    "horizon": {"kind": "rational", "numerator": "10", "denominator": "1"},
                     "jumps": 3,
                 },
                 "certification": "uncertified",
@@ -271,7 +264,7 @@ mod tests {
             result(SolverMethod::DeltaComplete, SolverOutcome::Unknown),
             result(SolverMethod::FlowpipeOutwardRounded, SolverOutcome::Unsat),
         ];
-        for result in unsound {
+        for result in &unsound {
             assert_eq!(result.basis(), SettlementBasis::Unsettled);
             assert_eq!(
                 result.terminal_value(),
@@ -319,43 +312,98 @@ mod tests {
         );
     }
 
-    /// No solver result settles `refuted`, and a proof is always
-    /// `uncertified`, over every method and outcome.
+    /// FR-250's table over every method and outcome, written out cell by
+    /// cell: only a delta-complete `Unsat` and an outward-rounded
+    /// `EnclosureDisjoint` prove, a stop is incomplete, the rest are
+    /// inconclusive, and none is `refuted` or `certified`.
     #[trace("TC-705", "FR-250-AC-2")]
     #[test]
-    fn no_solver_result_settles_refuted_or_certified() {
+    fn every_method_and_outcome_settles_as_the_table_states() {
+        use SolverMethod::{
+            DeltaComplete as D, FlowpipeOutwardRounded as O, FlowpipeUnrounded as U,
+        };
+        use SolverOutcome::{
+            DeltaSat, EnclosureDisjoint as Disjoint, EnclosureMeetsUnsafe as Meets,
+        };
+        use SolverOutcome::{Unknown, Unsat};
+        #[derive(Clone, Copy)]
+        enum Expect {
+            Proved,
+            Inconclusive,
+            Incomplete,
+        }
+        use Expect::{Incomplete, Inconclusive, Proved};
         let stop = SolverOutcome::Stopped(ReachedLimit {
             limit: ModelCheckLimit::SolverSteps,
             value: 1,
         });
-        for method in METHODS {
-            for outcome in [
-                SolverOutcome::Unsat,
-                SolverOutcome::DeltaSat,
-                SolverOutcome::EnclosureDisjoint,
-                SolverOutcome::EnclosureMeetsUnsafe,
-                SolverOutcome::Unknown,
-                stop,
-            ] {
-                match result(method, outcome).terminal_value() {
-                    TerminalValue::Proved { certification, .. } => {
-                        assert_eq!(certification, Certification::Uncertified);
-                    }
-                    TerminalValue::Inconclusive(_) | TerminalValue::Incomplete(_) => {}
-                    other => panic!("{method:?} {outcome:?} settled {other:?}"),
+        let table = [
+            (D, Unsat, Proved),
+            (D, DeltaSat, Inconclusive),
+            (D, Disjoint, Inconclusive),
+            (D, Meets, Inconclusive),
+            (D, Unknown, Inconclusive),
+            (D, stop, Incomplete),
+            (O, Unsat, Inconclusive),
+            (O, DeltaSat, Inconclusive),
+            (O, Disjoint, Proved),
+            (O, Meets, Inconclusive),
+            (O, Unknown, Inconclusive),
+            (O, stop, Incomplete),
+            (U, Unsat, Inconclusive),
+            (U, DeltaSat, Inconclusive),
+            (U, Disjoint, Inconclusive),
+            (U, Meets, Inconclusive),
+            (U, Unknown, Inconclusive),
+            (U, stop, Incomplete),
+        ];
+        for (method, outcome, expect) in table {
+            let settled = result(method, outcome);
+            let (value, basis) = (settled.terminal_value(), settled.basis());
+            match expect {
+                Proved => {
+                    assert_eq!(
+                        value,
+                        TerminalValue::Proved {
+                            basis: ProofBasis::BoundedSolver {
+                                method,
+                                horizon: horizon(10),
+                                jumps: 3,
+                            },
+                            certification: Certification::Uncertified,
+                        },
+                        "{method:?} {outcome:?}"
+                    );
+                    assert_eq!(basis, SettlementBasis::ClosedScope);
+                }
+                Inconclusive => {
+                    assert_eq!(
+                        value,
+                        TerminalValue::Inconclusive(InconclusiveCause::SolverInconclusive),
+                        "{method:?} {outcome:?}"
+                    );
+                    assert_eq!(basis, SettlementBasis::Unsettled);
+                }
+                Incomplete => {
+                    assert!(
+                        matches!(value, TerminalValue::Incomplete(_)),
+                        "{method:?} {outcome:?}"
+                    );
+                    assert_eq!(basis, SettlementBasis::Unavailable);
                 }
             }
         }
     }
 
     #[test]
-    fn a_horizon_is_reduced() {
-        let reduced = SolverHorizon::new(10, NonZeroU64::new(4).expect("non-zero"));
-        assert_eq!(reduced.numerator(), 5);
-        assert_eq!(reduced.denominator().get(), 2);
+    fn a_horizon_is_exact_non_negative_and_wires_its_components_as_strings() {
+        let negative = Rational::from_integer(Integer::from(-1_i64));
+        assert_eq!(SolverHorizon::new(negative), Err(NegativeHorizon));
+        let large = Integer::from(u64::MAX);
+        let half = Rational::new(large, Integer::from(2_i64)).expect("non-zero");
         assert_eq!(
-            horizon(0),
-            SolverHorizon::new(0, NonZeroU64::new(7).expect("non-zero"))
+            serde_json::to_value(SolverHorizon::new(half).expect("non-negative")).expect("wire"),
+            json!({"kind": "rational", "numerator": "18446744073709551615", "denominator": "2"})
         );
     }
 }
