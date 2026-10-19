@@ -90,12 +90,14 @@ use quire_semantic_value::quantity::UnitTable;
 mod model;
 mod protocol;
 mod state;
+mod temporal;
 mod wire;
 
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{bound_origin, record_node_key, variant_type_node_key, RecordKeyError};
 pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
 pub(crate) use protocol::{declaration_origin, ProtocolInput};
+pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
 pub(crate) use state::{
     AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
 };
