@@ -505,7 +505,7 @@ const LOAD: &str = "M::Core::read";
 /// the other thread's cell, whose own register is branch-local; without
 /// orderings the accesses are the same kinds, non-atomic; `flip` is a
 /// read-modify-write.
-#[trace("TC-665", "FR-220-AC-1", "TC-664", "FR-219-AC-1")]
+#[trace("TC-665", "TC-664")]
 #[test]
 fn store_buffering_classifies_stores_loads_and_read_modify_writes() {
     let sb_in = |memory: &str, store_order: &str, load_order: &str| {
@@ -709,4 +709,26 @@ fn a_two_field_access_refuses_under_a_weak_default_and_checks_under_sc() {
             ]
         );
     }
+}
+
+/// MA-1 shares nothing outside a `parallel`, so an attempt there is local
+/// and an `ordering` on it refuses `ill_typed`/`operator-ineligible` at the
+/// ordering; the same attempt without one checks.
+#[trace("TC-665")]
+#[test]
+fn an_ordering_on_an_attempt_outside_every_parallel_refuses() {
+    let run = |ordering: &str| {
+        protocol(&format!(
+            "sequence Main {{ attempt Lone by Seller on M::Actor::op {ordering} contracts [] \
+             as (lone: Boolean) {{ true }}; }}"
+        ))
+    };
+    checks(&run(""));
+    let (text, cause, code, tag) = only_refusal(&run("ordering seq_cst"));
+    assert_eq!((code, tag.as_str()), ("ill_typed", "operator-ineligible"));
+    let ProtocolAnchorCause::AccessOrdering { class, .. } = &cause else {
+        panic!("an AccessOrdering cause, got {cause:?}");
+    };
+    assert_eq!(*class, AccessClass::Local);
+    assert_eq!(located(&text, &cause), "seq_cst");
 }

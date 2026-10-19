@@ -32,8 +32,8 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause, ProfileRefusal,
-    ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
+    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -806,14 +806,27 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     class,
                     ordering,
                     ..
-                } => format!(
-                    "{message}: `{attempt}` is a {class:?} access and takes no `{}` ordering",
-                    ordering.map_or("absent", |ordering| ordering.label())
-                ),
+                } => {
+                    let kind = match class {
+                        AccessClass::Load => "load",
+                        AccessClass::Store => "store",
+                        AccessClass::Rmw => "read-modify-write",
+                        AccessClass::Local => "local",
+                    };
+                    match ordering {
+                        Some(ordering) => format!(
+                            "{message}: `{attempt}` is a {kind} access and takes no `{}` ordering",
+                            ordering.label()
+                        ),
+                        None => format!(
+                            "{message}: `{attempt}` is a {kind} access and needs an `ordering`"
+                        ),
+                    }
+                }
                 ProtocolAnchorCause::AccessShape {
                     attempt, locations, ..
                 } => format!(
-                    "{message}: `{attempt}` accesses more than one location ({})",
+                    "{message}: `{attempt}` is not one memory access ({})",
                     locations.join(", ")
                 ),
                 ProtocolAnchorCause::NodeRole { node, name, .. } => {

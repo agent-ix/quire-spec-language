@@ -92,6 +92,32 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
     }
 }
 
+/// Each control's parent in the tree.
+fn parent_map(tree: &CheckedControlTree) -> BTreeMap<ProtocolNodeId, ProtocolNodeId> {
+    let mut parent = BTreeMap::new();
+    for control in &tree.controls {
+        for child in &control.children {
+            parent.insert(*child, control.node);
+        }
+    }
+    parent
+}
+
+/// The ancestors of `node`, innermost first, each with the child of it that
+/// leads to `node`.
+fn ancestors(
+    parent: &BTreeMap<ProtocolNodeId, ProtocolNodeId>,
+    node: ProtocolNodeId,
+) -> Vec<(ProtocolNodeId, ProtocolNodeId)> {
+    let mut found = Vec::new();
+    let mut below = node;
+    while let Some(&above) = parent.get(&below) {
+        found.push((above, below));
+        below = above;
+    }
+    found
+}
+
 /// Record each `parallel`'s source default and each `fence`'s ordering, and
 /// refuse a nested default that differs from the outermost `parallel`'s and
 /// a weak default on a join other than `all` with no `outstanding` clause
@@ -100,27 +126,17 @@ pub(crate) fn check_models(
     protocol: &ProtocolDeclarationForm,
     tree: &CheckedControlTree,
 ) -> Result<CheckedMemory, Vec<(Span, CheckRefusal)>> {
-    let mut parent: BTreeMap<ProtocolNodeId, ProtocolNodeId> = BTreeMap::new();
-    for control in &tree.controls {
-        for child in &control.children {
-            parent.insert(*child, control.node);
-        }
-    }
+    let parent = parent_map(tree);
     let parallels: BTreeMap<ProtocolNodeId, &qsl_forms::ParallelForm> = protocol
         .parallels
         .iter()
         .map(|form| (ProtocolNodeId(form.declaration), form))
         .collect();
     let outermost = |node: ProtocolNodeId| {
-        let mut found = None;
-        let mut current = parent.get(&node).copied();
-        while let Some(ancestor) = current {
-            if parallels.contains_key(&ancestor) {
-                found = Some(ancestor);
-            }
-            current = parent.get(&ancestor).copied();
-        }
-        found
+        ancestors(&parent, node)
+            .into_iter()
+            .map(|(above, _)| above)
+            .rfind(|above| parallels.contains_key(above))
     };
 
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
@@ -296,13 +312,7 @@ pub(crate) fn classify(
     bound: &[BoundAttempt],
     footprint_of: impl Fn(&BoundAttempt) -> Result<SymbolicFootprint, FootprintRefusal>,
 ) -> Result<Vec<CheckedAccess>, Vec<(Span, CheckRefusal)>> {
-    let tree = &checked.controls;
-    let mut parent: BTreeMap<ProtocolNodeId, ProtocolNodeId> = BTreeMap::new();
-    for control in &tree.controls {
-        for child in &control.children {
-            parent.insert(*child, control.node);
-        }
-    }
+    let parent = parent_map(&checked.controls);
     let model_of: BTreeMap<ProtocolNodeId, MemoryModelName> = checked
         .memory
         .parallels
@@ -316,17 +326,27 @@ pub(crate) fn classify(
     let mut attempts: Vec<Held> = Vec::new();
     for form in &protocol.attempts {
         let node = ProtocolNodeId(form.declaration);
-        let mut holders = Vec::new();
-        let mut below = node;
-        let mut current = parent.get(&node).copied();
-        while let Some(ancestor) = current {
-            if model_of.contains_key(&ancestor) {
-                holders.push((ancestor, below));
-            }
-            below = ancestor;
-            current = parent.get(&ancestor).copied();
-        }
+        let holders: Vec<_> = ancestors(&parent, node)
+            .into_iter()
+            .filter(|(above, _)| model_of.contains_key(above))
+            .collect();
         if holders.is_empty() {
+            // MA-1 shares nothing outside a `parallel`, so by MA-3 the
+            // attempt is local and takes no ordering.
+            if let (Some(ordering), Some(declaration)) = (
+                form.ordering.as_ref(),
+                protocol.declarations.get(form.declaration),
+            ) {
+                refusals.push((
+                    ordering.span,
+                    refusal(ProtocolAnchorCause::AccessOrdering {
+                        attempt: declaration.name.name.clone(),
+                        class: AccessClass::Local,
+                        ordering: Some(ordering.value),
+                        span: ordering.span,
+                    }),
+                ));
+            }
             continue;
         }
         let Some(binding) = bound

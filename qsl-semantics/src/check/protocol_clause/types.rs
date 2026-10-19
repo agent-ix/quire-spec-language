@@ -27,6 +27,9 @@ pub struct BoundAttempt {
     pub declaration: usize,
     /// The resolved operation `on M::T::op` names.
     pub operation: ClauseOperation,
+    /// The object type `on M::T::op` names: the type of the attempt's
+    /// receiver.
+    pub receiver: quire_exact::EffectiveId,
     /// The population domain of the type declaring the operation.
     pub frame_population: Option<PopulationDomain>,
     /// Each `contracts` entry, resolved to the index of the unit's own

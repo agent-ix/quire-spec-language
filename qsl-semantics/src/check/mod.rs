@@ -1640,9 +1640,13 @@ impl PackageDeclarations {
         let access_views: Option<Vec<crate::model::normalize::EffectiveView>> = model_inputs
             .as_ref()
             .filter(|_| {
-                self.protocols
-                    .iter()
-                    .any(|protocol| !protocol.parallels.is_empty())
+                self.protocols.iter().any(|protocol| {
+                    !protocol.parallels.is_empty()
+                        || protocol
+                            .attempts
+                            .iter()
+                            .any(|attempt| attempt.ordering.is_some())
+                })
             })
             .map(|(selected, _)| selected.iter().map(|model| model.view.clone()).collect());
         if let Some((selected, mut model_meter)) = model_inputs {
@@ -2696,7 +2700,7 @@ impl PackageDeclarations {
                         scope.types(),
                         &state_clauses,
                         &model,
-                        declaring,
+                        binding.receiver,
                         declaring,
                         &binding.operation.declaration,
                         &arguments,

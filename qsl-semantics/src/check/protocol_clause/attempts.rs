@@ -113,6 +113,7 @@ pub(super) fn bind_attempts(
         bound.push(BoundAttempt {
             declaration: attempt_decl.declaration,
             operation: attempt_decl.operation.clone(),
+            receiver: attempt_decl.receiver,
             frame_population: attempt_decl.frame_population,
             contracts,
         });
