@@ -126,6 +126,9 @@ impl Lowering<'_> {
 
         let formula = self.temporal_formula(input, boolean, &scope)?;
 
+        if clause.fairness().len() != clause.fairness_sources().len() {
+            return Err(stage_fault(&claim, "fairness-member-has-a-source"));
+        }
         let mut fairness = Vec::with_capacity(clause.fairness().len());
         for (constraint, source) in clause.fairness().iter().zip(clause.fairness_sources()) {
             let location = at(TemporalSite::Fairness(*source));

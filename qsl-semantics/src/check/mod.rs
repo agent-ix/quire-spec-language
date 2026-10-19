@@ -2231,11 +2231,10 @@ impl PackageDeclarations {
                     .find(|(node, _, at)| *node == lowered.key && **at == location)
                     .map(|(_, origin, _)| origin)
                     .ok_or_else(unkeyable)?;
-                let objects = conditions
+                let objects: std::collections::BTreeSet<_> = conditions
                     .values()
                     .flat_map(|condition| references::body_objects(condition.body.root()))
                     .collect();
-                let mut references = Some(references::ModelReferences::new(objects, [], None));
                 for claimed in temporal_clause::TemporalTraceFamily::requirements(&checked) {
                     let extent = claimed
                         .requirements(claims::wire(lowered.key), &[claims::wire(lowered.over)])
@@ -2251,7 +2250,7 @@ impl PackageDeclarations {
                         extent,
                         ValueType::Boolean,
                         claims::wire(lowered.boolean),
-                        references.take().ok_or_else(unkeyable)?,
+                        references::ModelReferences::new(objects.clone(), [], None),
                     );
                     match requirements
                         .entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone()))
