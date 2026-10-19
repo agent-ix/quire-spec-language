@@ -26,7 +26,7 @@ use qsl_semantics::model::key::hex;
 use quire_exact::{ChargePoint, LimitKind, Meter, ScalarLimits, Undefined};
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
-use crate::model_simulation::{counters_document, increment, PACKAGE};
+use crate::model_simulation::{acquire, counters_document, increment, release, PACKAGE};
 
 pub(crate) const EVENT: &str = "quire.temporal.event-position.false-extension/v1";
 pub(crate) const INFINITE: &str = "quire.temporal.infinite-trace/v1";
@@ -76,7 +76,12 @@ pub(crate) fn fixture(profile: &str, over: &str, activation: &str, body: &str) -
 /// clause `C` over `c: M::Counter`, `on origin`, so a fairness constraint can
 /// name the model operation `M::Counter::increment`.
 fn modelled(body: &str) -> Fixture {
-    let document = counters_document(vec![increment()], false);
+    modelled_with(vec![increment()], body)
+}
+
+/// [`modelled`] over a model that declares `operations`.
+fn modelled_with(operations: Vec<serde_json::Value>, body: &str) -> Fixture {
+    let document = counters_document(operations, false);
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let text = format!(
@@ -960,4 +965,65 @@ fn an_open_since_requires_its_left_operand_up_to_the_lower_bound_back_from_the_a
         at("holds(a.versionNumber = 0) since[1,*] holds(a.versionNumber = 0)"),
         violated(2)
     );
+}
+
+/// The shape of one checked fairness constraint.
+fn shape(
+    constraint: &quire_semantic_value::fairness::FairnessConstraint,
+) -> (FairnessKind, &str, FairnessGranularity) {
+    (
+        constraint.kind(),
+        constraint.operation().name(),
+        constraint.granularity(),
+    )
+}
+
+/// The lasso `0 2 0` over a counter that two operations step, the supplied
+/// trace of FR-132, with the liveness clause none of its states meets.
+fn mutex_outcome(constraints: &str) -> (Fixture, TemporalOutcome) {
+    let clause = "always eventually holds(c.level = 1)";
+    let fixture = modelled_with(vec![acquire(), release()], &format!("{constraints}{clause}"));
+    let settled = outcome(&fixture, lasso(0, 3), counters(&[0, 2, 0]));
+    (fixture, settled)
+}
+
+/// FR-132-AC-1: a supplied lasso with a fairness constraint on `acquire`
+/// settles `MissingFairnessPremise` naming the first constraint of the
+/// fairness set, whatever its kind and granularity, O-16 unsupported.
+#[trace("TC-533", "FR-132-AC-1")]
+#[test]
+fn a_fairness_constraint_over_a_supplied_lasso_names_the_first_constraint() {
+    let cases = [
+        (
+            "fair weak each M::Counter::acquire; ",
+            (FairnessKind::Weak, FairnessGranularity::Each),
+        ),
+        (
+            "fair strong M::Counter::acquire; ",
+            (FairnessKind::Strong, FairnessGranularity::Whole),
+        ),
+        (
+            "fair strong each M::Counter::acquire; fair weak whole M::Counter::release; ",
+            (FairnessKind::Strong, FairnessGranularity::Each),
+        ),
+    ];
+    for (constraints, (kind, granularity)) in cases {
+        let (fixture, settled) = mutex_outcome(constraints);
+        let TemporalOutcome::MissingFairnessPremise { constraint } = &settled else {
+            panic!("{constraints}: not a missing premise: {settled:?}");
+        };
+        assert_eq!(shape(constraint), (kind, "acquire", granularity), "{constraints}");
+        assert_eq!(Some(constraint), fixture.clause.fairness().first());
+        assert_eq!(settled.category(), Category::Unsupported);
+    }
+}
+
+/// FR-132-AC-2: the same lasso and clause with an empty fairness set is
+/// false, a violation at position 0.
+#[trace("TC-533", "FR-132-AC-2")]
+#[test]
+fn an_empty_fairness_set_over_a_supplied_lasso_is_evaluated() {
+    let (_, settled) = mutex_outcome("");
+    assert_eq!(settled, violated(0));
+    assert_eq!(settled.category(), Category::Violation);
 }
