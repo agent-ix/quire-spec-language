@@ -132,10 +132,15 @@ impl Permutation {
         let moved: BTreeMap<String, String> =
             pairs.into_iter().filter(|(from, to)| from != to).collect();
         if !moved.is_empty() {
-            self.maps
-                .entry(population.clone())
-                .or_default()
-                .extend(moved);
+            let map = self.maps.entry(population.clone()).or_default();
+            debug_assert!(
+                moved.keys().all(|key| !map.contains_key(key))
+                    && moved
+                        .values()
+                        .all(|image| !map.values().any(|held| held == image)),
+                "the moves of one population are disjoint from those it holds"
+            );
+            map.extend(moved);
         }
     }
 
@@ -161,7 +166,8 @@ impl Permutation {
     #[must_use]
     pub fn compose(&self, other: &Self) -> Self {
         let mut result = Self::identity();
-        let populations = self.maps.keys().chain(other.maps.keys());
+        let populations: std::collections::BTreeSet<&DeclarationKey> =
+            self.maps.keys().chain(other.maps.keys()).collect();
         for population in populations {
             let keys = self
                 .maps

@@ -54,42 +54,60 @@ impl Renaming<'_> {
         })
     }
 
-    /// `value` with every reference renamed; a set or bag is re-sorted.
-    fn value(&self, value: &Value) -> Value {
-        match value {
+    /// `value` with every reference renamed; a set or bag is re-sorted into
+    /// its canonical-key order.
+    ///
+    /// # Errors
+    ///
+    /// `runtime_invariant`/`established-invariant-broken` when two elements
+    /// of a renamed set or bag have no canonical-key order.
+    fn value(&self, value: &Value) -> Result<Value, ExpansionStop> {
+        Ok(match value {
             Value::Reference(reference) => self
                 .reference(reference)
                 .map_or_else(|| value.clone(), Value::Reference),
             Value::Option(option) => OptionValue::from_admitted(
                 option.payload_type().clone(),
-                option.payload().map(|payload| self.value(payload)),
+                option
+                    .payload()
+                    .map(|payload| self.value(payload))
+                    .transpose()?,
             ),
             Value::Collection(collection) => {
-                let mut elements: Vec<Value> = collection
+                let mut elements = collection
                     .elements()
                     .iter()
                     .map(|element| self.value(element))
-                    .collect();
+                    .collect::<Result<Vec<Value>, _>>()?;
                 if matches!(
                     collection.collection_type().kind(),
                     CollectionKind::Set | CollectionKind::Bag
                 ) {
+                    let mut unordered = false;
                     elements.sort_by(|left, right| {
-                        compare_keys(left, right).unwrap_or(std::cmp::Ordering::Equal)
+                        compare_keys(left, right).unwrap_or_else(|| {
+                            unordered = true;
+                            std::cmp::Ordering::Equal
+                        })
                     });
+                    if unordered {
+                        return Err(stop(BROKEN));
+                    }
                 }
                 from_admitted(collection.collection_type().clone(), elements)
             }
             Value::Composite(composite) => {
-                let slots: Vec<FieldValue> = composite
+                let slots = composite
                     .slots()
                     .iter()
-                    .map(|slot| match slot {
-                        FieldValue::Present(value) => FieldValue::Present(self.value(value)),
-                        FieldValue::Absent => FieldValue::Absent,
-                        FieldValue::Null => FieldValue::Null,
+                    .map(|slot| {
+                        Ok(match slot {
+                            FieldValue::Present(value) => FieldValue::Present(self.value(value)?),
+                            FieldValue::Absent => FieldValue::Absent,
+                            FieldValue::Null => FieldValue::Null,
+                        })
                     })
-                    .collect();
+                    .collect::<Result<Vec<FieldValue>, ExpansionStop>>()?;
                 from_admitted_slots(composite.declaration(), slots.into_boxed_slice())
             }
             Value::Union(union) => UnionValue::from_admitted(
@@ -98,7 +116,7 @@ impl Renaming<'_> {
                     .payload()
                     .iter()
                     .map(|value| self.value(value))
-                    .collect(),
+                    .collect::<Result<Vec<Value>, _>>()?,
             ),
             Value::Boolean(_)
             | Value::Integer(_)
@@ -112,18 +130,18 @@ impl Renaming<'_> {
             | Value::Timestamp(_)
             | Value::Enum(_)
             | Value::Population(_) => value.clone(),
-        }
+        })
     }
 
-    fn object(&self, object: &StateObject) -> StateObject {
-        StateObject {
+    fn object(&self, object: &StateObject) -> Result<StateObject, ExpansionStop> {
+        Ok(StateObject {
             type_identity: object.type_identity.clone(),
             fields: object
                 .fields
                 .iter()
-                .map(|(field, value)| (field.clone(), self.value(value)))
-                .collect(),
-        }
+                .map(|(field, value)| Ok((field.clone(), self.value(value)?)))
+                .collect::<Result<_, ExpansionStop>>()?,
+        })
     }
 
     fn key<'k>(&'k self, population: &DeclarationKey, key: &'k str) -> &'k str {
@@ -187,13 +205,22 @@ impl ModelSystem<'_> {
     /// moved population moves to its key's image, and every reference whose
     /// key it moves is renamed, in every field, collection, record and
     /// relationship extent. The result has no reaching step.
-    pub fn permute(&self, state: &ModelSimState, permutation: &Permutation) -> ModelSimState {
+    ///
+    /// # Errors
+    ///
+    /// `runtime_invariant`/`established-invariant-broken` when a renamed set
+    /// or bag has no canonical-key order.
+    pub fn permute(
+        &self,
+        state: &ModelSimState,
+        permutation: &Permutation,
+    ) -> Result<ModelSimState, ExpansionStop> {
         if permutation.is_identity() {
-            return ModelSimState {
+            return Ok(ModelSimState {
                 state: state.state.clone(),
                 anchor: state.anchor.clone(),
                 reached_by: None,
-            };
+            });
         }
         let renaming = self.renaming(permutation);
         let populations = state
@@ -204,15 +231,15 @@ impl ModelSystem<'_> {
                 let objects = objects
                     .iter()
                     .map(|(key, object)| {
-                        (
+                        Ok((
                             renaming.key(population, key).to_owned(),
-                            renaming.object(object),
-                        )
+                            renaming.object(object)?,
+                        ))
                     })
-                    .collect();
-                (population.clone(), objects)
+                    .collect::<Result<_, ExpansionStop>>()?;
+                Ok((population.clone(), objects))
             })
-            .collect();
+            .collect::<Result<_, ExpansionStop>>()?;
         let extents = state
             .state
             .extents
@@ -230,14 +257,14 @@ impl ModelSystem<'_> {
                 extent
             })
             .collect();
-        ModelSimState {
+        Ok(ModelSimState {
             state: ModelState {
                 populations,
                 extents,
             },
             anchor: state.anchor.clone(),
             reached_by: None,
-        }
+        })
     }
 
     /// ADR-021 SYM-1: `permutation` applied to `transition`: its receiver
@@ -361,6 +388,6 @@ impl ModelSystem<'_> {
                 );
             }
         }
-        Ok((self.permute(state, &permutation), permutation))
+        Ok((self.permute(state, &permutation)?, permutation))
     }
 }

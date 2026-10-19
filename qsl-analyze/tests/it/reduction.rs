@@ -268,6 +268,27 @@ fn malformed_declarations_refuse_before_any_expansion() {
             key: "b".to_owned()
         }
     );
+    // Two declarations for one population whose classes share `a`.
+    let overlapping = Reductions {
+        symmetry: vec![
+            SymmetryDeclaration {
+                population: counters(),
+                classes: vec![keys(&["a", "b"])],
+            },
+            SymmetryDeclaration {
+                population: counters(),
+                classes: vec![keys(&["a", "c"])],
+            },
+        ],
+        ..Reductions::default()
+    };
+    assert_eq!(
+        refusal(&annotated, overlapping),
+        SymmetryRefusal::RepeatedKey {
+            declaration: 1,
+            key: "a".to_owned()
+        }
+    );
     let spare = Reductions {
         symmetry: vec![SymmetryDeclaration {
             population: spares(),
@@ -438,7 +459,7 @@ fn canonical_forms_coalesce_the_orbits_of_reachable_states() {
         for state in &states {
             let (canonical, permutation) = system.canonicalise(state, &classes).expect("canonical");
             let key = system.state_key(&canonical).expect("encodes").0;
-            let image = system.permute(state, &permutation);
+            let image = system.permute(state, &permutation).expect("permuted");
             assert_eq!(system.state_key(&image).expect("encodes").0, key);
             let (again, identity) = system
                 .canonicalise(&canonical, &classes)
@@ -515,7 +536,7 @@ fn objects_with_equal_sort_keys_canonicalise_into_their_orbit() {
         }
         permutations
             .iter()
-            .map(|permutation| key(&system.permute(state, permutation)))
+            .map(|permutation| key(&system.permute(state, permutation).expect("permuted")))
             .collect()
     };
     let orbit = orbit_of(first);
@@ -526,7 +547,10 @@ fn objects_with_equal_sort_keys_canonicalise_into_their_orbit() {
     for state in [first, second] {
         let (canonical, permutation) = system.canonicalise(state, &full).expect("canonical");
         assert!(orbit.contains(&key(&canonical)));
-        assert_eq!(key(&system.permute(state, &permutation)), key(&canonical));
+        assert_eq!(
+            key(&system.permute(state, &permutation).expect("permuted")),
+            key(&canonical)
+        );
     }
     let mut forms: BTreeMap<Vec<u8>, BTreeSet<Vec<u8>>> = BTreeMap::new();
     for state in &states {
@@ -625,7 +649,10 @@ fn a_constraint_reports_real_violations_and_never_proves_past_its_boundary() {
 }
 
 /// FR-158-AC-3: a constraint undefined at `v = 2` settles the item violated
-/// with `UndefinedEvaluation` at `(2,0,0)`, whose prefix re-executes; a
+/// with `UndefinedEvaluation` at `(2,0,0)`, whose prefix re-executes, and
+/// the deadlock-freedom item's such counterexample reproduces through
+/// FR-128's `replay_model_trace` (an authored clause's replay refuses until
+/// FR-337); a
 /// constraint name the package does not declare refuses
 /// `invalid_runtime_input`/`invalid-value` naming it; a constraint false at
 /// the initial state stores that one boundary state; with no universe, the
@@ -655,6 +682,24 @@ fn undefined_absent_and_initially_false_constraints_and_bounds() {
     assert_eq!(
         world.system().state_key(&last).expect("encodes").1,
         evaluation.site.state_key
+    );
+    // The deadlock-freedom item's refutation by the undefined constraint
+    // replays through FR-128, which re-evaluates the constraint.
+    let deadlock = run(&world, None, Vec::new(), constraint("Odd"));
+    let counterexample = violation(&deadlock).clone();
+    let CounterexampleKind::UndefinedEvaluation(claimed) = &counterexample.kind else {
+        panic!("expected an undefined evaluation: {deadlock:?}");
+    };
+    assert_eq!(
+        claimed.site.locus,
+        UndefinedLocus::Constraint("Odd".to_owned())
+    );
+    assert_eq!(
+        world.replay(counterexample.clone()),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Undefined(claimed.clone()),
+            trace_position: counterexample.trace_position(),
+        }
     );
     match world.run(
         Some(0),

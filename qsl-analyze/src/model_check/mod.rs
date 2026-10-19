@@ -28,7 +28,7 @@ pub use product::{
 };
 pub use reduce::{
     admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
-    InstanceGroup, Reductions, SymmetryDeclaration, SymmetryRefusal, TableForm,
+    ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, SymmetryRefusal, TableForm,
 };
 pub use scc::Component;
 pub use state_graph::{

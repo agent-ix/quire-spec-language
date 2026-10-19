@@ -108,6 +108,17 @@ pub enum ReductionKind {
     StateConstraint,
 }
 
+impl ReductionKind {
+    /// The reduction's advertised spelling (FR-159 "Capability").
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Symmetry => "symmetry",
+            Self::PartialOrder => "partial-order",
+            Self::StateConstraint => "state-constraint",
+        }
+    }
+}
+
 /// Why a symmetry declaration does not admit its subject (FR-160).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SymmetryBrokenCause {

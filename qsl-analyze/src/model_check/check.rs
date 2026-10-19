@@ -490,7 +490,11 @@ fn check_reduced(
     }
     let group =
         reduce::admit(&system, &reductions.symmetry).map_err(ModelCheckRefusal::Symmetry)?;
-    if let Some(cause) = reduce::closure(&system, &group)? {
+    let closed = reduce::closure(&system, &group).map_err(|refusal| match refusal {
+        reduce::ClosureRefusal::Encoding(refusal) => ModelCheckRefusal::Encoding(refusal),
+        reduce::ClosureRefusal::Unordered => fault("a-permuted-collection-is-ordered"),
+    })?;
+    if let Some(cause) = closed {
         return Ok(settled(cause));
     }
     if let Some(reduction) = reduce::unoffered(reductions, &system) {
@@ -1300,7 +1304,10 @@ impl Run<'_, '_> {
     fn concretise(&self, path: &[usize], kind: &mut CounterexampleKind) -> Step<Vec<ModelStep>> {
         let first = &self.nodes[*path.first().ok_or_else(|| fault("a-path-has-a-root"))?];
         let mut sigma = first.permutation.inverse();
-        let mut concrete = self.system.permute(&first.state, &sigma);
+        let mut concrete = self
+            .system
+            .permute(&first.state, &sigma)
+            .map_err(|stop| self.expansion_stop(stop))?;
         let mut digest = self.system.state_key(&concrete)?.1;
         let mut prefix = Vec::with_capacity(path.len());
         for index in path.iter().skip(1) {
@@ -1314,7 +1321,10 @@ impl Run<'_, '_> {
                 .permute_transition(transition, &sigma)
                 .map_err(|_| fault("a-concretised-step-encodes"))?;
             let next_sigma = sigma.compose(&node.permutation.inverse());
-            let next = self.system.permute(&node.state, &next_sigma);
+            let next = self
+                .system
+                .permute(&node.state, &next_sigma)
+                .map_err(|stop| self.expansion_stop(stop))?;
             let next_digest = self.system.state_key(&next)?.1;
             let expansion = self
                 .system
@@ -1341,11 +1351,25 @@ impl Run<'_, '_> {
         if let CounterexampleKind::UndefinedEvaluation(evaluation) = kind {
             evaluation.site.state_key = digest;
             if let Some(guard) = &evaluation.site.transition {
-                evaluation.site.transition = Some(
-                    self.system
-                        .permute_transition(guard, &sigma)
-                        .map_err(|_| fault("a-concretised-guard-encodes"))?,
-                );
+                let guard = self
+                    .system
+                    .permute_transition(guard, &sigma)
+                    .map_err(|_| fault("a-concretised-guard-encodes"))?;
+                // The concrete guard is checked against the concrete state's
+                // own expansion, as each step is.
+                let expansion = self
+                    .system
+                    .successors(&concrete)
+                    .map_err(|stop| self.expansion_stop(stop))?;
+                let found = expansion.findings.iter().any(|finding| {
+                    finding
+                        .undefined_contract()
+                        .is_some_and(|contract| contract.guard_of.as_ref() == Some(&guard))
+                });
+                if !found {
+                    return Err(fault("a-concretised-guard-is-a-subject-guard").into());
+                }
+                evaluation.site.transition = Some(guard);
             }
         }
         Ok(prefix)

@@ -11,7 +11,7 @@
 //! V-8 for the first selected reduction the system does not offer; (d)
 //! resolve the constraint. No state is expanded before it passes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::ModelSystem;
@@ -198,7 +198,8 @@ pub enum SymmetryRefusal {
         /// The key.
         key: String,
     },
-    /// A key appears in two classes, or twice in one.
+    /// A key appears in two classes of its population, in one declaration
+    /// or across two, or twice in one class.
     #[error("invalid_runtime_input/invalid-value: declaration {declaration}: key {key} is in two classes")]
     RepeatedKey {
         /// The declaration's index.
@@ -232,6 +233,10 @@ pub fn admit(
     declarations: &[SymmetryDeclaration],
 ) -> Result<SymmetryGroup, SymmetryRefusal> {
     let mut classes = Vec::new();
+    // A key is in at most one class of its population across every
+    // declaration: two classes sharing a key would make the group's classes
+    // overlap, and the canonicaliser's map no bijection.
+    let mut seen: BTreeMap<&DeclarationKey, BTreeSet<&String>> = BTreeMap::new();
     for (index, declaration) in declarations.iter().enumerate() {
         let population = &declaration.population;
         if system.is_symmetric(population) != Some(true) {
@@ -246,7 +251,7 @@ pub fn admit(
                 declaration: index,
                 population: population.clone(),
             })?;
-        let mut seen = BTreeSet::new();
+        let seen = seen.entry(population).or_default();
         for class in &declaration.classes {
             for key in class {
                 if !universe.contains(key) {
@@ -317,21 +322,29 @@ pub fn generators(group: &SymmetryGroup) -> Vec<(DeclarationKey, Permutation)> {
 ///
 /// # Errors
 ///
-/// [`EncodingRefusal`] when a state key has no canonical encoding.
+/// [`ClosureRefusal`] when a state key has no canonical encoding or a
+/// permuted set has no canonical-key order.
 pub fn closure(
     system: &ModelSystem<'_>,
     group: &SymmetryGroup,
-) -> Result<Option<ReductionCause>, EncodingRefusal> {
+) -> Result<Option<ReductionCause>, ClosureRefusal> {
     let initial = system.initial();
     let mut keys = BTreeSet::new();
     for state in &initial {
-        keys.insert(system.state_key(state)?.0);
+        keys.insert(system.state_key(state).map_err(ClosureRefusal::Encoding)?.0);
     }
     let generators = generators(group);
     for (index, state) in initial.iter().enumerate() {
         for (population, generator) in &generators {
-            let image = system.permute(state, generator);
-            if !keys.contains(&system.state_key(&image)?.0) {
+            let image = system
+                .permute(state, generator)
+                .map_err(|_| ClosureRefusal::Unordered)?;
+            if !keys.contains(
+                &system
+                    .state_key(&image)
+                    .map_err(ClosureRefusal::Encoding)?
+                    .0,
+            ) {
                 return Ok(Some(ReductionCause::SymmetryBroken {
                     population: population.clone(),
                     cause: SymmetryBrokenCause::InitialStatesNotClosed {
@@ -343,6 +356,17 @@ pub fn closure(
         }
     }
     Ok(None)
+}
+
+/// Why [`closure`] could not decide the initial states' closure.
+#[derive(Debug, thiserror::Error)]
+pub enum ClosureRefusal {
+    /// A state key has no canonical encoding.
+    #[error(transparent)]
+    Encoding(EncodingRefusal),
+    /// A permuted set or bag has no canonical-key order.
+    #[error("a permuted collection has no canonical-key order")]
+    Unordered,
 }
 
 /// One instance the run checks for its orbit (FR-151 "Instances"): the
