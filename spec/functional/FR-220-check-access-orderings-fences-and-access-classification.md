@@ -124,7 +124,7 @@ weak model corresponds to real accesses.
   (checked `parallel` and attempts, ADR-027), FR-219 (models).
 - QSpec owns the `ordering` member, the `fence` control and the catalog
   spelling of the refusals (QSpec FR-435), and QSpec FR-435-AC-6 states the S1 refusal of a `relaxed`
-  fence (quire-specification PR #276).
+  fence.
 
 ## References
 

@@ -51,3 +51,17 @@ Checked and clean:
 - PR #974 / QSL-557. Its parse test refuses a relaxed fence at `relaxed`, and
   its body named exactly this disagreement. The amended FR-220-AC-2 and TC-665
   now match that behaviour.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | FR-220's Dependencies now cites "(quire-specification PR #276)". That is a build-history pointer, and it goes stale once the PR merges. Citing QSpec FR-435-AC-6 alone is enough. | spec/functional/FR-220-check-access-orderings-fences-and-access-classification.md:125-127 |
+| FND-004 | low | QSpec PR #276's FR-435-AC-6 reads "refuses `refused { code: invalid_syntax, … }`", with the verb doubled. TC-188 R04 and TC-389's own row use the bare `refused { … }` form. | quire-specification spec/functional/memory/FR-435-classify-memory-accesses-and-orderings.md:131 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in the companion quire-specification#276 (bf1ceef). FR-435-AC-6 and TC-389 AC-10 now expect `refused { code: invalid_syntax, cause: unexpected-token }` at `relaxed`, and FR-220 cites FR-435-AC-6. The fix holds only if #276 merges with #976 or before it. |
+| FND-002 | fixed | Round 1, cf22f23a1: the S1 bullet now ends "as S2 refuses a recovering CST (FR-309-AC-3)". |

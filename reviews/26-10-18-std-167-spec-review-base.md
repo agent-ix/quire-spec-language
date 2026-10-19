@@ -53,3 +53,10 @@ Checked and clean:
   ordered fences.
 - FR-220-AC-4 (`SB` with every ordering `relaxed`) has no fences, so the
   change does not affect it.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Round 1, cf22f23a1: the fence clause moved to a new FR-220-AC-6 ("`fence F ordering relaxed;` refuses at S1 with `invalid_syntax` at the `relaxed` token and never reaches S3."). AC-2 now holds only S3 outcomes, TC-665's scope is AC-1 to AC-6, and step 2 names AC-6. |
+| FND-002 | fixed | Round 1, cf22f23a1: TC-665 lines 21 and 33 rewrapped, and FR-220 line 31 shortened. Lines of 86-87 characters remain, which is within this file's existing tolerance. |
