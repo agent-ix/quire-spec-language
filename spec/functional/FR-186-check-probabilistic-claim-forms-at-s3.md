@@ -84,7 +84,7 @@ pub struct Confidence { pub alpha: Rational, pub beta: Rational, pub indifferenc
 Each refusal below that carries a bracketed string is an
 `invalid_probabilistic_model` diagnostic with that cause; it retains the
 claim's locus and names the offending part. `qualitative-threshold`,
-`partial-confidence`, `foreign-workload` and `fairness-under-workload` are
+`partial-confidence` and `foreign-workload` are
 in QSpec FR-272's closed set for that code (QSpec FR-407).
 `invalid-confidence` and `quantile-over-fraction` are QSL-proposed causes
 that QSpec does not yet define; they are requested of QSpec in STD-188, and
@@ -97,8 +97,8 @@ quantile level, a confidence parameter and the magnitude of a
 such as an event comparison's `>= rational(999, 1000)`, is written
 `rational(n, d)` or `decimal(n, s)`; a quantity threshold such as `5 ms` or
 `0.005 s` is a `quantity-literal` and keeps its decimal magnitude. S3 reduces
-every `exact-value` under the ceiling and refusal that FR-185 states
-(`resource_exhausted`/`exact-value-bits-exceeded`).
+every `exact-value` under the written-value bound and limit outcome that
+FR-185 states (`max_rational_bits`).
 
 ### Kind and subject
 
@@ -182,7 +182,7 @@ every `exact-value` under the ceiling and refusal that FR-185 states
 | FR-186-AC-1 | ADR-024 §7's four claims check: `NoFault` as `Probability{AtLeast(999/1000), Formula{horizon: 1000}}`; `P95` as `Quantile{q: 19/20, Accumulate{duration, within: 10}, AtMost(5 ms)}`; `LongRun` as `LongRunFraction{AtLeast(999/1000)}`; `Monthly`, written with the threshold `rational(999, 1000)`, as `Probability` over `Compare{Fraction{window: 10000}, AtLeast(999/1000)}`; each with `Workload(Steady)` and its stated `Confidence`. | Test (TC-621) |
 | FR-186-AC-2 | `P95` with threshold `0.005 s` checks and records `5 ms`; with threshold `5 m` (length) it is refused `ill_typed`/`unit-mismatch` naming the dimension. `probability >= 1 [E]` and `probability >= 0 [E]` are refused `qualitative-threshold` naming the qualitative form. `quantile 0.95 of (fraction holds(v.up) over [0, 10]) <= rational(1, 2)` is refused `quantile-over-fraction` (QSL-proposed). | Test (TC-621) |
 | FR-186-AC-3 | `probability >= 0.99 [always holds(n.healthy)]` under event-position is refused as an unbounded event; `probability >= 0.99 [eventually[0,100] always[0,10] holds(n.healthy)]` checks with horizon 110. A `probabilistic` claim over a trace subject is refused, and its diagnostic names window aggregates. `NoFault` (on `Health`) with `under Throttle`, where `Throttle` is declared `on Service`, is refused `foreign-workload` naming `Throttle` and `Service`; `NoFault` with `under Steady`, `Steady` declared `on Health`, checks. `under every scheduler fair weak Node::tick` checks and carries the fairness set. `under Steady fair weak Node::tick` is refused at S1 `invalid_syntax`, because `under ident` takes no fairness items. | Test (TC-621) |
-| FR-186-AC-4 | `NoFault` with `indifference 0.002` is refused `invalid-confidence` (`θ + ι = 1.001`); with only `alpha` stated it is refused `partial-confidence`; with `alpha 0.01, alpha 0.05, beta 0.01, indifference 0.0005` it is refused `partial-confidence` naming `alpha`; with `alpha decimal(1, 4294967295)` it is refused `resource_exhausted`/`exact-value-bits-exceeded`; with none stated it checks with `confidence: None`. `NoFault` at `alpha 0.01` and at `alpha 0.05` have different obligation identities; `NoFault` under `Steady` and under a second workload `Burst` have different obligation identities. | Test (TC-621) |
+| FR-186-AC-4 | `NoFault` with `indifference 0.002` is refused `invalid-confidence` (`θ + ι = 1.001`); with only `alpha` stated it is refused `partial-confidence`; with `alpha 0.01, alpha 0.05, beta 0.01, indifference 0.0005` it is refused `partial-confidence` naming `alpha`; with `alpha decimal(1, 4294967295)` it is refused with the rational-bits limit outcome of FR-185; with none stated it checks with `confidence: None`. `NoFault` at `alpha 0.01` and at `alpha 0.05` have different obligation identities; `NoFault` under `Steady` and under a second workload `Burst` have different obligation identities. | Test (TC-621) |
 
 ## Dependencies
 

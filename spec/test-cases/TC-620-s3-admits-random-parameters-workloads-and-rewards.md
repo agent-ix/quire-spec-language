@@ -19,7 +19,7 @@ Scope: FR-185-AC-1 to FR-185-AC-4.
 Fixtures: ADR-024 §7.2's `Service` model and the variants FR-185-AC-2 to FR-185-AC-4 list.
 
 1. Check `Service` and read back `attempt`'s random parameters, the `duration` reward and the workload `Steady`.
-2. Check each random-parameter variant of FR-185-AC-2, including the weights `rational(-1, 1)` and `decimal(1, 4294967295)` and the bare weight `-1`.
+2. Check each random-parameter variant of FR-185-AC-2, including the weights `rational(-1, 1)` and `decimal(1, 4294967295)` `rational(n, n)` with `n` of 70,000 bits, `decimal(25, 3)` and the bare weight `-1`.
 3. Check each workload variant of FR-185-AC-3.
 4. Check each reward variant of FR-185-AC-4, and `reward cost on Server::request = 2`.
 
@@ -28,6 +28,6 @@ Tag the tests `#[trace("TC-620", "FR-185-AC-n")]`.
 ## Expected Results
 
 - Step 1: supports and probabilities `9/10`, `7/100`, `3/100` and `49/50`, `1/50`; `duration: Quantity<Time>`; weight 1 per operation.
-- Step 2: each variant refused with a diagnostic naming the parameter and carrying its FR-185-AC-2 cause; `rational(-1, 1)` refused `invalid-weight`, `decimal(1, 4294967295)` refused `resource_exhausted`/`exact-value-bits-exceeded`, the bare `-1` refused `invalid_syntax` at S1.
+- Step 2: each variant refused with a diagnostic naming the parameter and carrying its FR-185-AC-2 cause; `rational(-1, 1)` refused `invalid-weight`, `decimal(1, 4294967295)` and `rational(n, n)` (`n` of 70,000 bits) each refused with the rational-bits limit outcome without expanding or reducing, `decimal(25, 3)` admitted as `1/40`, the bare `-1` refused `invalid_syntax` at S1.
 - Step 3: each variant refused naming the workload and the operation, with its FR-185-AC-3 cause.
 - Step 4: the three variants refused naming the reward, with their FR-185-AC-4 causes (including `duplicate-reward`); `cost` checks.

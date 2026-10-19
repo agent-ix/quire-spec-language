@@ -109,9 +109,9 @@ meaning the kind fixes (the integer and 1; the digits without the point and
 the count of fraction digits; `n` and `d`; the coefficient and the scale).
 S2 neither reduces it nor raises ten to a scale, so a scale of any size costs
 nothing at S2, and the form keeps what was written. S3 reduces it to a
-numerator and denominator in lowest terms under the ceiling that FR-185
-states, and refuses a value past it `resource_exhausted`
-(`exact-value-bits-exceeded`).
+numerator and denominator in lowest terms, after bounding the value as
+written by `max_rational_bits` and refusing one past it with the limit
+outcome FR-185 states.
 FR-311 uses the same type.
 
 `Expression` gains a `Quantity(QuantityForm)` variant. The type builder maps

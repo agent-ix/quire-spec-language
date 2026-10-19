@@ -62,8 +62,8 @@ integers in lowest terms.
 
 ## Behavior
 
-Every refusal below is an `invalid_probabilistic_model` diagnostic whose
-cause is the string in brackets, and it retains the declaration locus and
+Every refusal below that carries a bracketed string is an
+`invalid_probabilistic_model` diagnostic whose cause is that string, and it retains the declaration locus and
 the parameter, reward, workload or operation it names. Every cause except
 `duplicate-reward` is in QSpec FR-272's closed set for that code (QSpec
 FR-405). `duplicate-reward` is a QSL-proposed cause that QSpec does not yet
@@ -76,13 +76,21 @@ not an `exact-value`, so S1 refuses it `invalid_syntax`.
 
 ### Exact values
 
-- S2 holds each weight as written (FR-393) with unbounded integers. When
-  S3 reduces a weight to lowest terms and the reduced numerator or
-  denominator would exceed the check's `max_exact_value_bits` ceiling
-  (default 4096), S3 SHALL refuse the declaration `resource_exhausted` with
-  cause `exact-value-bits-exceeded`, naming the ceiling and the declaration,
-  before computing the value. The same ceiling and refusal apply to every
-  `exact-value` that FR-186 reads.
+- S2 holds each weight as written (FR-393) with unbounded integers. Before
+  S3 reduces a weight to lowest terms, it SHALL measure the weight as
+  written: the bit length of each written integer, and for `decimal(m, s)`
+  and a `decimal-literal` the bit length of the denominator `10^s`, which is
+  `⌈s · log₂ 10⌉` bits computed from `s` without expanding it. The counter
+  is the largest of those bit lengths.
+- If that counter exceeds `max_rational_bits` (FR-203; default 65,536), S3
+  SHALL refuse the declaration with `stage_limit_exceeded`/`StageFailure::Limit(LimitExceeded)` of limit kind rational bits, the configured bound, the
+  counter and the setting that raises it (FR-255, FR-277), before reducing
+  or expanding the value. The bound is on the value as written, so
+  `rational(n, n)` with an over-limit `n` is refused although it reduces to
+  1, and `decimal(25, 3)` is within the bound and reduces to `1/40`.
+- The same measure, bound and refusal apply to every `exact-value` that
+  FR-186 reads. This refusal is a limit outcome, not an
+  `invalid_probabilistic_model` cause.
 
 ### Random parameters
 
@@ -139,7 +147,7 @@ not an `exact-value`, so S1 refuses it `invalid_syntax`.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-185-AC-1 | ADR-024 §7.2's `Service` model checks. `Server::attempt` records `d` with support `1 ms`, `3 ms`, `12 ms` and probabilities `9/10`, `7/100`, `3/100`, and `outcome` with `Ok` at `49/50` and `Fail` at `1/50`; the reward `duration` has value type `Quantity<Time>`; the workload `Steady` records weight 1 for each of the three operations. | Test (TC-620) |
-| FR-185-AC-2 | Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter and carrying the cause: a weight `0` and a weight `rational(-1, 1)` (`invalid-weight`); a weight `decimal(1, 4294967295)` (`resource_exhausted`/`exact-value-bits-exceeded`); the value `1 ms` listed twice (`repeated-support-value`); the value `true` on a `Quantity<Time>` parameter (`value-outside-type`); a precondition `pre self.phase = Busy and d < 5 ms` reading `d` (`random-read-in-precondition`); a second `random Server::attempt(d) ~ …` (`duplicate-distribution`). A bare weight `-1` is not an `exact-value`, so S1 refuses it `invalid_syntax` and S3 never sees it. | Test (TC-620) |
+| FR-185-AC-2 | Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter and carrying the cause: a weight `0` and a weight `rational(-1, 1)` (`invalid-weight`); a weight `decimal(1, 4294967295)` and a weight `rational(n, n)` with `n` of 70,000 bits (each a rational-bits limit outcome, the second although it reduces to `1`); a weight `decimal(25, 3)` (admitted, `1/40`); the value `1 ms` listed twice (`repeated-support-value`); the value `true` on a `Quantity<Time>` parameter (`value-outside-type`); a precondition `pre self.phase = Busy and d < 5 ms` reading `d` (`random-read-in-precondition`); a second `random Server::attempt(d) ~ …` (`duplicate-distribution`). A bare weight `-1` is not an `exact-value`, so S1 refuses it `invalid_syntax` and S3 never sees it. | Test (TC-620) |
 | FR-185-AC-3 | Each of these workload variants is refused at S3 naming the workload and the operation and carrying the cause: `Steady` without `Server::reset` (`incomplete-workload`); a weight for an operation not in `Service` (`unknown-operation`); two weights for `Server::request` (`duplicate-weight`); a weight `0` for `Server::request` (`invalid-weight`). | Test (TC-620) |
 | FR-185-AC-4 | Each of these reward variants is refused at S3 naming the reward and carrying the cause: `reward duration on Server::attempt = self.attempts` (`state-read-in-reward`); `reward ok on Server::attempt = (outcome = Ok)` (`reward-type`); a second `reward duration on Server::attempt = …` (`duplicate-reward`). `reward cost on Server::request = 2` checks. | Test (TC-620) |
 

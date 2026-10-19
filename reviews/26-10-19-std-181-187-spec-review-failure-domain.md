@@ -42,3 +42,17 @@ The rest of the edited refusals cover their failure domain:
 
 Not mergeable as is: FND-001 and FND-002 (medium) should be fixed in this
 PR. No high.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The new ceiling rule contradicts itself on when it runs. S3 refuses "When S3 reduces a weight to lowest terms and the reduced numerator or denominator would exceed the ... ceiling ... before computing the value". The size of the reduced value is known only after the gcd reduction it is meant to guard, and that reduction runs on an unreduced value of any size: `decimal(1, 4294967295)` has denominator 10^4294967295. A check made before the computation can only bound the value as written (its integers' bit lengths, and ten to the scale). Two implementations will also disagree on a value that is large as written but small reduced, such as `rational(n, n)` with `n` of 5,000 bits, which reduces to 1. Fix: say which value the ceiling measures. Bounding the as-written integers and the scale's expansion before reduction, as QSpec value-accounting charges `decimal.scale-expansion` before expanding, is the form that can run first. Add a vector whose reduced value fits and whose unreduced value does not. | spec/functional/FR-185-declare-random-parameters-workloads-and-rewards.md:79-85,142; spec/functional/FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md:110-114; quire-specification proposals/quire-v1/definitions/value-accounting.md:19-22,75 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 81277341b: "If a claim states a parameter more than once, S3 SHALL refuse it [`partial-confidence`], naming the repeated parameter." AC-4 and TC-621 step 4 add `alpha 0.01, alpha 0.05, beta 0.01, indifference 0.0005`, refused naming `alpha`. |
+| FND-002 | fixed | 81277341b states S2's integer domain ("S2 holds each weight as written (FR-393) with unbounded integers") and gives S3 a stated ceiling with a refusal and a vector (`decimal(1, 4294967295)` in FR-185-AC-2 and FR-186-AC-4). FR-393 now points at FR-185's ceiling instead of the undefined "its own limits". The ceiling's code, cause and limit type are new findings: SR-12910 FND-006, and FND-004 here. |
+| FND-003 | fixed | 81277341b: "A workload name is a package-wide identifier, so `W` resolves to the one workload of that name." AC-3's vector is now "`NoFault` (on `Health`) with `under Throttle`, where `Throttle` is declared `on Service`, is refused `foreign-workload` naming `Throttle` and `Service`; `NoFault` with `under Steady`, `Steady` declared `on Health`, checks." |

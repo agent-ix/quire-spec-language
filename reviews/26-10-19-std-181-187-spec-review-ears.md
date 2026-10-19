@@ -36,3 +36,10 @@ four conditions onto four causes in one sentence, but it predates the PR and
 the causes are unambiguous, so it is not a finding.
 
 Mergeable as far as this lens goes: two low findings, no medium or high.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 81277341b splits the bullet into four unwanted-behaviour statements: "If a weight is not positive, S3 SHALL refuse the distribution [`invalid-weight`], naming the parameter", and likewise for the other three. |
+| FND-002 | fixed | 81277341b: "If `under W` names a workload declared on another model than the claim's subject, S3 SHALL refuse the claim [`foreign-workload`], naming the workload and its model." The fairness SHALL is removed (S3 has no `fairness-under-workload` check). |
