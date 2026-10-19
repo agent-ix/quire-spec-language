@@ -27,5 +27,5 @@ Tag the tests `#[trace("TC-600", "FR-175-AC-n")]`.
 ## Expected Results
 
 - Step 1: `false` at joint position 1; `true`.
-- Step 2: `false` at the fifth position of the joint period of 6, with `trace_position` naming it; equal values at both positions.
+- Step 2: `false` at the fourth position (offset 3) of the joint period of 6, with `trace_position` naming it; for `a` = (0, 1) and `b` = (0, 1, 0) the outputs are equal at offsets 0 to 2 and differ at offset 3; equal values at both positions.
 - Step 3: `stutter` labels and terminal-state reads for `a`; the interval counts joint positions.
