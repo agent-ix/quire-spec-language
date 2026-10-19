@@ -234,28 +234,37 @@ pub fn dependency_fixture_identity(
     let packages = BTreeMap::new();
     let limits = SpineLimits::default();
     let lock = LockEvidence::default();
-    let original = checked_once(
-        &source,
-        path,
-        text.as_bytes(),
-        &packages,
-        &original_input,
-        limits,
-        &lock,
-    )
-    .expect("original fixture and its actual dependency closure check");
-    let mut formatted_source = source;
+    let mut formatted_source = source.clone();
     formatted_source.revision.push_str("-formatted");
-    let formatted = checked_once(
-        &formatted_source,
-        path,
-        formatted_text.as_bytes(),
-        &packages,
-        &formatted_input,
-        limits,
-        &lock,
-    )
-    .expect("formatted fixture and its actual dependency closure check");
+    // The two sides are independent: check them on two threads.
+    let (original, formatted) = std::thread::scope(|scope| {
+        let original = scope.spawn(|| {
+            checked_once(
+                &source,
+                path,
+                text.as_bytes(),
+                &packages,
+                &original_input,
+                limits,
+                &lock,
+            )
+            .expect("original fixture and its actual dependency closure check")
+        });
+        let formatted = checked_once(
+            &formatted_source,
+            path,
+            formatted_text.as_bytes(),
+            &packages,
+            &formatted_input,
+            limits,
+            &lock,
+        )
+        .expect("formatted fixture and its actual dependency closure check");
+        (
+            original.join().expect("the original check thread runs"),
+            formatted,
+        )
+    });
     let mut pending = vec![(original.package(), formatted.package())];
     let mut visited = std::collections::BTreeSet::new();
     while let Some((original, formatted)) = pending.pop() {

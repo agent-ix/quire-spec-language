@@ -69,6 +69,10 @@ pub use certificate::closed_form::task_set::{
     Arrival, Criticality, ScheduleClaim, ScheduleSubject, SchedulingPolicy, Task, TaskSet,
     TaskSetRefusal, TimeMember, Wcet,
 };
+pub use certificate::closure::{
+    check_closure, CertificateRejection, CertificateRequest, ClosureCertificate, ClosureRefusal,
+    ProductStateRef, TemporalCertificateCheck,
+};
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
@@ -93,6 +97,7 @@ pub use model_check::counterexample::{
     deadlock_freedom_clause, CounterexampleKind, ModelStep, TemporalCounterexample,
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
+pub use model_check::item::{ClauseIdentity, Instance, ItemRefusal, ModelCheckItem};
 pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
 };
