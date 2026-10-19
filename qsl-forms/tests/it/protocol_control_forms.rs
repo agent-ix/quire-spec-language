@@ -6,10 +6,10 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering, ChannelOverflow,
-    DeclarationForm, ExpressionForm, FormsCause, JoinPolicy, LossSelector, Outstanding, ParsedUnit,
-    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind,
-    SchedulingForm, TerminalForm,
+    build_unit, AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
+    ChannelOverflow, DeclarationForm, ExpressionForm, FormsCause, JoinPolicy, LossSelector,
+    MemoryModelName, Outstanding, ParsedUnit, ProtocolConstructKind, ProtocolDeclarationForm,
+    ProtocolMemberForm, ProtocolNodeKind, SchedulingForm, TerminalForm,
 };
 use qsl_foundation::{Code, SourceIdentity, Span};
 
@@ -624,4 +624,38 @@ fn a_fence_and_a_memory_clause_build_beside_their_controls() {
         .map(|declaration| declaration.name.name.as_str())
         .collect();
     assert_eq!(fences, ["Barrier"]);
+    assert_eq!(
+        parallel.memory.as_ref().map(|memory| memory.value),
+        Some(MemoryModelName::Tso)
+    );
+    let [fence] = &form.fences[..] else {
+        panic!("one fence: {:?}", form.fences);
+    };
+    assert_eq!(fence.ordering.value, AccessOrdering::SeqCst);
+    assert_eq!(slice(&text, fence.ordering.span), "seq_cst");
+}
+
+/// A `parallel` with no `memory` clause records none, and an attempt records
+/// the `ordering` it is written with and none when it has none.
+#[test]
+fn a_memory_default_and_an_attempt_ordering_are_built_as_written() {
+    let plain = source(
+        "",
+        &RUN.replacen("contracts", "ordering acq_rel contracts", 1),
+    );
+    let unit = build(&plain);
+    let form = protocol(&unit);
+    let [attempt] = &form.attempts[..] else {
+        panic!("one attempt: {:?}", form.attempts);
+    };
+    let ordering = attempt.ordering.as_ref().expect("an ordering");
+    assert_eq!(ordering.value, AccessOrdering::AcqRel);
+    assert_eq!(slice(&plain, ordering.span), "acq_rel");
+
+    let unit = build(&source("", RUN));
+    assert!(protocol(&unit).attempts[0].ordering.is_none());
+
+    let run = format!("sequence Main {{ parallel P {PARALLEL_BRANCHES} join all [a, b]; }}");
+    let unit = build(&source("", &run));
+    assert!(protocol(&unit).parallels[0].memory.is_none());
 }

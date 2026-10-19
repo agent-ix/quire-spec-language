@@ -209,6 +209,7 @@ fn population(name: &str, member: &str) -> DomainPackageRecord {
         key: key(name),
         member_types: vec![key(member)],
         extent: Extent::Closed,
+        symmetric: false,
     })
 }
 

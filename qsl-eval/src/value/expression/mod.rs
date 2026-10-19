@@ -104,6 +104,31 @@ pub fn evaluate_terminal_predicate(
     )
 }
 
+/// FR-140 (ADR-020 RM-7): evaluate one refinement row `row` of `package`
+/// through the one clause evaluator (FR-107), as a value-typed body over the
+/// observation whose objects are `current`. `bindings` fill the row's
+/// parameters in order, `self` first. Like an invariant's, the row's checked
+/// body reads no `pre(..)`, so every read observes `current`.
+pub fn evaluate_refinement_row(
+    package: &CheckedPackage,
+    row: &qsl_semantics::check::CheckedRow,
+    current: &ObjectEnvironment,
+    bindings: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(row.body(), row.slots(), bindings)
+}
+
 /// FR-167 (ADR-022 GM-3): evaluate the state-graph predicate `predicate` of
 /// `package` with its `over` parameter bound to `over` (`None` for a claim
 /// with no `over`) at the state whose objects are `current`, through the one
@@ -131,30 +156,6 @@ pub fn evaluate_state_predicate(
         predicate.slots(),
         over.map(Value::Reference).into_iter().collect(),
     )
-}
-
-/// FR-139, FR-140: evaluate `row`, a refinement row's checked expression, over
-/// the concrete observation `current`, through the one clause evaluator
-/// (FR-107). `arguments` bind the row's parameters in order, `self` first.
-/// Every read observes `current`: a row has no pre-state of its own.
-pub fn evaluate_row(
-    graph: &qsl_semantics::check::CheckedGraph,
-    row: &qsl_semantics::check::CheckedRow,
-    current: &ObjectEnvironment,
-    arguments: Vec<Value>,
-    meter: &mut Meter,
-) -> Result<Evaluation, InternalFault> {
-    let reads = std::collections::BTreeMap::new();
-    Machine::with_pre(
-        graph.scope(),
-        graph,
-        current,
-        None,
-        Some(&reads),
-        meter,
-        graph.dispatch_tables(),
-    )
-    .run(row.body(), row.slots(), arguments)
 }
 
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
@@ -571,6 +572,23 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
+    /// FR-327 "Bounded-profile evaluation": evaluate the condition of the
+    /// `holds` atom `atom` of the temporal clause `clause` over `objects`,
+    /// the observation at one position, with `over` the clause's `over`
+    /// parameter. Every read observes `objects`; a temporal condition has no
+    /// `pre` observation. The result is S6a's, unchanged, as
+    /// [`Self::evaluate`] returns it.
+    ///
+    /// A node that is no `holds` atom of `clause` is an `Err` fault.
+    fn evaluate_holds(
+        &self,
+        clause: &qsl_semantics::check::TemporalClauseNode,
+        atom: qsl_semantics::check::FormulaNodeId,
+        over: Value,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
+
     /// FR-107: evaluate one checked state clause over `observations`
     /// (FR-106's `AdmittedObservations`), the `ProtocolClause` S6a family's
     /// entry point beside [`Self::call`]'s `Value` one.
@@ -965,6 +983,28 @@ impl CheckedPackageEvaluation for CheckedPackage {
             self.graph().dispatch_tables(),
         )
         .run(expression.root(), expression.slots(), arguments)
+        .map_err(CallFailure::Fault)
+    }
+
+    fn evaluate_holds(
+        &self,
+        clause: &qsl_semantics::check::TemporalClauseNode,
+        atom: qsl_semantics::check::FormulaNodeId,
+        over: Value,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure> {
+        let (condition, slots) = clause.condition(atom).ok_or_else(|| {
+            CallFailure::Fault(InternalFault::new("S6a", "holds-atom-resolved-by-clause"))
+        })?;
+        Machine::new(
+            self.graph().scope(),
+            self.graph(),
+            objects,
+            meter,
+            self.graph().dispatch_tables(),
+        )
+        .run(condition, slots, vec![over])
         .map_err(CallFailure::Fault)
     }
 

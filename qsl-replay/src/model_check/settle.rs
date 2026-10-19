@@ -12,7 +12,7 @@
 //! `Inconclusive(CertificateRejected{rule, at})`, and a stopped check is
 //! `Incomplete` with its exact limit or cancellation source.
 
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::digest::DigestRecord;
 
 use quire_exact::Cancel;
@@ -24,10 +24,11 @@ use crate::certificate::closure::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::outcome::{ModelCheckOutcome, UndecidedCause};
+use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCause};
 use crate::model_check::replay::{ModelTraceReplayResult, ModelTraceSettlement};
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    UnavailabilityCause,
 };
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -42,8 +43,28 @@ pub enum ResultLabel {
     Refuted,
     /// `inconclusive`.
     Inconclusive,
+    /// `unsupported`.
+    Unsupported,
     /// `failed`.
     Failed,
+}
+
+impl ResultLabel {
+    /// The ADR-013 O-16 category a backend's result settles in (FR-332,
+    /// ADR-014 A-5): `proved` is success, `refuted` violation, `inconclusive`
+    /// inconclusive, `unsupported` unsupported, `failed` with execution
+    /// `resource-incomplete` incomplete, and every other `failed` an
+    /// internal failure.
+    pub fn category(self, execution: Execution) -> Category {
+        match (self, execution) {
+            (Self::Proved, _) => Category::Success,
+            (Self::Refuted, _) => Category::Violation,
+            (Self::Inconclusive, _) => Category::Inconclusive,
+            (Self::Unsupported, _) => Category::Unsupported,
+            (Self::Failed, Execution::ResourceIncomplete) => Category::Incomplete,
+            (Self::Failed, Execution::Completed | Execution::Failed) => Category::InternalFailure,
+        }
+    }
 }
 
 /// The record's execution status.
@@ -205,6 +226,52 @@ pub fn settle_model_check(
                 }
                 Err(_) => failed(),
             },
+        },
+        // ADR-021 RV-1: a reduced proof is its own technique, and a
+        // constraint-only proof explored the subject without a certificate.
+        ModelCheckOutcome::HoldsReduced { reductions, .. } => record(
+            TerminalValue::Proved {
+                basis: if reductions.is_empty() {
+                    ProofBasis::Exhaustive
+                } else {
+                    ProofBasis::Reduced {
+                        reductions: reductions.clone(),
+                    }
+                },
+                certification: Certification::Uncertified,
+            },
+            ResultLabel::Proved,
+            SettlementBasis::ClosedScope,
+            Execution::Completed,
+            Truth::Satisfied,
+        ),
+        ModelCheckOutcome::Reduction { cause, .. } => match cause {
+            ReductionCause::Unsupported { reduction } => record(
+                TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+                    reduction: *reduction,
+                }),
+                ResultLabel::Unsupported,
+                SettlementBasis::Unavailable,
+                Execution::Completed,
+                Truth::Unavailable,
+            ),
+            ReductionCause::NotPreserving { reduction, form } => {
+                inconclusive(InconclusiveCause::ReductionNotPreserving {
+                    reduction: *reduction,
+                    form: *form,
+                })
+            }
+            ReductionCause::SymmetryBroken { population, cause } => {
+                inconclusive(InconclusiveCause::SymmetryBroken {
+                    population: population.clone(),
+                    cause: cause.clone(),
+                })
+            }
+            ReductionCause::ConstraintReached { boundary_states } => {
+                inconclusive(InconclusiveCause::ConstraintReached {
+                    boundary_states: *boundary_states,
+                })
+            }
         },
         ModelCheckOutcome::BoundReached { depth, .. } => ModelCheckRecord {
             depth: Some(*depth),

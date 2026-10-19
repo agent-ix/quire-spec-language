@@ -10,12 +10,15 @@
 //! describes is data: a [`StepEffect`] holds the creations, deletions and field
 //! changes of one step, and nothing outside the returned values changes.
 
+mod constraint;
 mod contracts;
 mod domain;
 pub(crate) mod encode;
 mod footprints;
 mod frames;
+mod refine;
 mod state_predicate;
+mod symmetry;
 mod terminal;
 mod walk;
 
@@ -48,6 +51,9 @@ use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
+use crate::simulation::reduction::{
+    ConstraintValue, OfferedReductions, Permutation, SymmetryGroup,
+};
 use crate::simulation::sample::{sample_request, sample_request_until, SampleRequest};
 use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
@@ -55,6 +61,7 @@ use crate::value::QualifiedName;
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
+pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
 
@@ -381,14 +388,48 @@ impl<'a> ModelSystem<'a> {
     ///
     /// FR-106's [`AdmissionFailure`]: `Refused` or `Incomplete`, one record.
     pub fn new(request: ModelSimulationRequest<'a>) -> Result<Self, AdmissionFailure> {
+        let selections = request.package.graph().model_selections();
+        Self::over(request, selections)
+    }
+
+    /// [`Self::new`] over the one domain package `model` names, for a unit
+    /// that selects several models (ADR-020 RM-1: a refinement's abstract
+    /// and concrete subjects are two models of one checked package). The
+    /// system holds that model's populations only.
+    ///
+    /// # Errors
+    ///
+    /// `invalid_runtime_input`/`wrong-role-mapping` when the package selects
+    /// no model named `model`; otherwise as [`Self::new`].
+    pub fn over_model(
+        request: ModelSimulationRequest<'a>,
+        model: &str,
+    ) -> Result<Self, AdmissionFailure> {
+        let selected: Vec<_> = request
+            .package
+            .graph()
+            .model_selections()
+            .iter()
+            .filter(|selection| selection.identity == model)
+            .cloned()
+            .collect();
+        if selected.is_empty() {
+            return Err(refused(
+                Code::InvalidRuntimeInput,
+                "wrong-role-mapping",
+                &[("model", model.to_owned())],
+            ));
+        }
+        Self::over(request, &selected)
+    }
+
+    fn over(
+        request: ModelSimulationRequest<'a>,
+        selections: &[qsl_semantics::model::domain_package::DomainPackageRef],
+    ) -> Result<Self, AdmissionFailure> {
         let graph = request.package.graph();
         let types = graph.scope().types();
-        let model = StateModel::new(
-            graph.model_selections(),
-            types,
-            request.packages,
-            request.normalization,
-        )?;
+        let model = StateModel::new(selections, types, request.packages, request.normalization)?;
         let populations = model.populations();
 
         let mut universes = BTreeMap::new();
@@ -536,6 +577,20 @@ impl<'a> ModelSystem<'a> {
         transition: &ModelTransition,
     ) -> Result<Vec<u8>, crate::simulation::EncodingRefusal> {
         crate::simulation::key::canonical_bytes(transition, identity_limits())
+    }
+
+    /// The operation text a transition of `operation` carries (FR-181): the
+    /// declaration identity text of the operation `name` that `declaring`
+    /// declares, which [`ModelTransition::operation`] returns for each of its
+    /// applications. `None` when the subject's package declares no such
+    /// operation on a type the subject admits. A fairness constraint covers
+    /// the transitions that carry its operation's text (ADR-018 FA-1).
+    pub fn operation_text(&self, declaring: EffectiveId, name: &str) -> Option<&str> {
+        self.applications
+            .values()
+            .flatten()
+            .find(|application| application.declaring == declaring && application.name == name)
+            .map(|application| application.text.as_str())
     }
 
     /// The operations in `identity`'s effective view (FR-103, FR-081), by name.
@@ -850,6 +905,32 @@ impl TransitionSystem for ModelSystem<'_> {
         state: &Self::State,
     ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
         walk::expand_state(self, state, None)
+    }
+
+    /// FR-162: symmetry and state constraints. Partial-order reduction has
+    /// no hook on this trait yet, so it is not offered.
+    fn offered_reductions(&self) -> OfferedReductions {
+        OfferedReductions {
+            symmetry: true,
+            partial_order: false,
+            constraint: true,
+        }
+    }
+
+    fn canonical(
+        &self,
+        state: &Self::State,
+        group: &SymmetryGroup,
+    ) -> Option<Result<(Self::State, Permutation), ExpansionStop>> {
+        Some(self.canonicalise(state, group))
+    }
+
+    fn holds_constraint(
+        &self,
+        state: &Self::State,
+        constraint: &str,
+    ) -> Option<Result<ConstraintValue, ExpansionStop>> {
+        Some(self.constraint_value(state, constraint))
     }
 }
 

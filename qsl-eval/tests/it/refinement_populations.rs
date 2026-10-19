@@ -6,8 +6,9 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_eval::value::{evaluate_row, Evaluation};
+use qsl_eval::value::{evaluate_refinement_row, Evaluation};
 use qsl_foundation::diagnostic::UndefinedReason;
+use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -51,18 +52,21 @@ fn integer(value: i64) -> Value {
 }
 
 struct World {
-    checked: Checked,
+    package: CheckedPackage,
+    packages: std::collections::BTreeMap<[u8; 32], Vec<u8>>,
 }
 
 impl World {
     fn new() -> Self {
+        let Checked { graph, packages } = checked(&ring_is_queue(&all_rows()));
         Self {
-            checked: checked(&ring_is_queue(&all_rows())),
+            package: CheckedPackage::link(graph),
+            packages,
         }
     }
 
     fn refinement(&self) -> &CheckedRefinement {
-        let [refinement] = self.checked.graph.refinements() else {
+        let [refinement] = self.package.graph().refinements() else {
             panic!("one refinement");
         };
         refinement
@@ -70,8 +74,8 @@ impl World {
 
     fn reference(&self, object_type: &str, object: &str) -> ObjectReference {
         let (effective, universe) = declared_type_universe_for(
-            self.checked.graph.model_selections(),
-            &self.checked.packages,
+            self.package.graph().model_selections(),
+            &self.packages,
             ModelNormalizationLimits::default(),
             &key(RING, object_type),
         )
@@ -127,11 +131,11 @@ impl World {
     }
 
     fn observe(&self, state: &ModelState) -> ObjectEnvironment {
-        let graph = &self.checked.graph;
+        let graph = &self.package.graph();
         StateModel::new(
             graph.model_selections(),
             graph.scope().types(),
-            &self.checked.packages,
+            &self.packages,
             ModelNormalizationLimits::default(),
         )
         .expect("model views")
@@ -154,8 +158,8 @@ impl World {
         let [queue, _cell] = self.refinement().objects() else {
             panic!("the queue and the cell rows");
         };
-        evaluate_row(
-            &self.checked.graph,
+        evaluate_refinement_row(
+            &self.package,
             &queue.fields[index].expression,
             &self.observe(state),
             vec![Value::Reference(self.reference("Ring", "r"))],
@@ -281,8 +285,8 @@ fn a_form_charges_one_work_unit_per_object_visited() {
     let [queue, _cell] = world.refinement().objects() else {
         panic!("the queue and the cell rows");
     };
-    evaluate_row(
-        &world.checked.graph,
+    evaluate_refinement_row(
+        &world.package,
         &queue.fields[USED].expression,
         &environment,
         vec![Value::Reference(world.reference("Ring", "r"))],

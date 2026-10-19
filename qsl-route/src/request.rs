@@ -27,7 +27,11 @@
 //! a checked package, in the records' occurrence-key order, each with its
 //! candidate outcome. The driver writes a `requires-bound` item's bounded
 //! follow-up as a new request of one item, carrying the original item's
-//! occurrence key.
+//! occurrence key: [`RequirementItem::bounded`] substitutes the caller's
+//! bounds by the same rule as [`RequestWriter::bounded_item`], and the
+//! follow-up's [`RequirementItem::proof_bounds`] (and, for a temporal item,
+//! [`RequirementItem::temporal_proof_bounds`]) carry them with QSL's domain
+//! kinds.
 //!
 //! **Refusals.** Before any item is written, the writer refuses a bound for
 //! a key that names no unbounded domain of the item, a bound on a domain no
@@ -229,51 +233,11 @@ impl RequestWriter {
             // A bounded item needs no proof bound; it is written by `item`.
             return Err(BoundRefusal::NoUnboundedDomain);
         };
-        if let Some(domain) = bounds
-            .keys()
-            .find(|domain| unbounded.kind(domain).is_none())
-        {
-            return Err(BoundRefusal::UnknownDomain {
-                domain: domain.clone(),
-            });
-        }
-        // An item with a domain no finite bound can stand for can never be
-        // bounded, whatever else is supplied. Otherwise each domain's
-        // expected bound kind is known from here on.
-        let mut expected_kinds = Vec::with_capacity(unbounded.len());
-        for (domain, kind) in unbounded.iter() {
-            let Some(expected) = kind.finite_kind() else {
-                return Err(BoundRefusal::UnboundableDomain {
-                    domain: domain.clone(),
-                    kind,
-                });
-            };
-            expected_kinds.push((domain, kind, expected));
-        }
-        let mut domains = Vec::with_capacity(expected_kinds.len());
-        for (domain, kind, expected) in expected_kinds {
-            let Some(bound) = bounds.get(domain) else {
-                return Err(BoundRefusal::MissingDomain {
-                    domain: domain.clone(),
-                });
-            };
-            if bound.kind() != expected {
-                return Err(BoundRefusal::KindMismatch {
-                    domain: domain.clone(),
-                    expected,
-                    supplied: bound.kind(),
-                });
-            }
-            let proof =
-                ProofBound::new(domain.clone(), Some(kind), bound.clone()).map_err(|_| {
-                    BoundRefusal::KindMismatch {
-                        domain: domain.clone(),
-                        expected,
-                        supplied: bound.kind(),
-                    }
-                })?;
-            domains.push(proof);
-        }
+        let unbounded: Vec<_> = unbounded
+            .iter()
+            .map(|(domain, kind)| (domain.clone(), kind))
+            .collect();
+        let domains = substitute(&unbounded, &bounds)?;
         Ok(self.push(
             occurrence,
             requirements.kind(),
@@ -311,6 +275,59 @@ impl RequestWriter {
     }
 }
 
+/// ADR-014 §4 "Bounded request": the proof bounds that substitute `bounds`
+/// for an item's `unbounded` domains (in key order), each with its domain's
+/// QSL-classified kind, in [`DomainKey`] order. Refuses unless `bounds`
+/// names exactly those domains, every one boundable, each with a bound of
+/// its kind; refusals are checked in the order [`RequestWriter::bounded_item`]
+/// states.
+fn substitute(
+    unbounded: &[(DomainKey, DomainKind)],
+    bounds: &BTreeMap<DomainKey, FiniteBound>,
+) -> Result<Vec<ProofBound>, BoundRefusal> {
+    if let Some(domain) = bounds
+        .keys()
+        .find(|supplied| !unbounded.iter().any(|(domain, _)| domain == *supplied))
+    {
+        return Err(BoundRefusal::UnknownDomain {
+            domain: domain.clone(),
+        });
+    }
+    // An item with a domain no finite bound can stand for can never be
+    // bounded, whatever else is supplied. Otherwise each domain's expected
+    // bound kind is known from here on.
+    let mut expected_kinds = Vec::with_capacity(unbounded.len());
+    for (domain, kind) in unbounded {
+        let Some(expected) = kind.finite_kind() else {
+            return Err(BoundRefusal::UnboundableDomain {
+                domain: domain.clone(),
+                kind: *kind,
+            });
+        };
+        expected_kinds.push((domain, *kind, expected));
+    }
+    let mut domains = Vec::with_capacity(expected_kinds.len());
+    for (domain, kind, expected) in expected_kinds {
+        let Some(bound) = bounds.get(domain) else {
+            return Err(BoundRefusal::MissingDomain {
+                domain: domain.clone(),
+            });
+        };
+        let mismatch = || BoundRefusal::KindMismatch {
+            domain: domain.clone(),
+            expected,
+            supplied: bound.kind(),
+        };
+        if bound.kind() != expected {
+            return Err(mismatch());
+        }
+        domains.push(
+            ProofBound::new(domain.clone(), Some(kind), bound.clone()).map_err(|_| mismatch())?,
+        );
+    }
+    Ok(domains)
+}
+
 /// One requested item written from one requirement record (FR-075
 /// "Requested items from a package's requirement records"): everything the
 /// orchestrating driver reads about the item from QSL, including the
@@ -322,6 +339,7 @@ pub struct RequirementItem {
     kind: Capability,
     extent: ExtentClassification,
     unbounded: Vec<(DomainKey, DomainKind)>,
+    proof_bounds: Vec<ProofBound>,
     result_bound: WireNodeId,
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
@@ -329,7 +347,9 @@ pub struct RequirementItem {
 }
 
 impl RequirementItem {
-    /// The item's request index: its position in record key order.
+    /// The item's request index: its position in record key order, or 0
+    /// for a follow-up [`RequirementItem::bounded`] writes, the single item
+    /// of its own request (ADR-014 §4, FR-075-AC-8).
     pub fn index(&self) -> RequestIndex {
         self.index
     }
@@ -350,7 +370,8 @@ impl RequirementItem {
     }
 
     /// The extent classification [`RequestWriter::item`] computes from the
-    /// record's extent.
+    /// record's extent; `bounded` for a follow-up
+    /// [`RequirementItem::bounded`] writes.
     pub fn extent(&self) -> ExtentClassification {
         self.extent
     }
@@ -360,6 +381,56 @@ impl RequirementItem {
     /// a bounded extent.
     pub fn unbounded(&self) -> &[(DomainKey, DomainKind)] {
         &self.unbounded
+    }
+
+    /// The proof bounds substituted for this occurrence's unbounded domains,
+    /// in [`DomainKey`] order (QSpec FR-331 `extent.bounds`), each with the
+    /// domain kind QSL classified for the record. Empty for an item written
+    /// from a record: a checked record carries no substitution, since a
+    /// proof bound is supplied by the caller (ADR-014 B-4). Non-empty only
+    /// for the follow-up [`RequirementItem::bounded`] writes.
+    pub fn proof_bounds(&self) -> &[ProofBound] {
+        &self.proof_bounds
+    }
+
+    /// The temporal subject's proof bounds for this occurrence (QSpec FR-331
+    /// `temporal.subject.proof_bounds`, FR-361): `None` for an item that is
+    /// not `temporal-satisfaction`; for a temporal item, the same
+    /// substitution as [`RequirementItem::proof_bounds`], since the request
+    /// substitutes one set of proof bounds per item. `Some(&[])` is a
+    /// temporal item with no substitution.
+    ///
+    /// Interim (STD-213): QSpec FR-331 also shows a temporal subject bounded
+    /// apart from its extent, an item whose extent stays `unbounded` while
+    /// its subject carries a population bound, and FR-368 gives a subject
+    /// only to an item over a model subject. QSL defines neither a
+    /// subject-only substitution nor which temporal record is over a model
+    /// subject, so this reads the extent substitution for every
+    /// `temporal-satisfaction` item until STD-213 settles both.
+    pub fn temporal_proof_bounds(&self) -> Option<&[ProofBound]> {
+        matches!(self.kind, Capability::TemporalSatisfaction)
+            .then_some(self.proof_bounds.as_slice())
+    }
+
+    /// The bounded follow-up of this item (ADR-014 §4 "Bounded request"):
+    /// the single item of its own request, so its index is 0 (FR-075-AC-8),
+    /// with the same occurrence, record members and candidates, and
+    /// `bounds` substituted for every unbounded domain, so its extent is
+    /// `bounded` and [`RequirementItem::proof_bounds`] holds one
+    /// [`ProofBound`] per domain with the kind QSL classified for it.
+    /// Refuses like [`RequestWriter::bounded_item`], returning nothing.
+    pub fn bounded(&self, bounds: &BTreeMap<DomainKey, FiniteBound>) -> Result<Self, BoundRefusal> {
+        if self.extent == ExtentClassification::Bounded {
+            return Err(BoundRefusal::NoUnboundedDomain);
+        }
+        let proof_bounds = substitute(&self.unbounded, bounds)?;
+        Ok(Self {
+            index: RequestIndex::new(0),
+            extent: ExtentClassification::Bounded,
+            unbounded: Vec::new(),
+            proof_bounds,
+            ..self.clone()
+        })
     }
 
     /// The record's result bound, as its type node.
@@ -420,6 +491,7 @@ pub fn items_from_requirements(
                 kind: requirements.kind(),
                 extent,
                 unbounded,
+                proof_bounds: Vec::new(),
                 result_bound: record.result_bound().node(),
                 conversion_context: record.conversion_context().cloned(),
                 path_condition: record.path_condition().to_vec(),

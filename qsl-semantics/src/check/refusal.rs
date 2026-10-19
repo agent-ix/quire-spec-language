@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located checking refusals and their closed codes and causes.
 
+use super::protocol_memory::AccessClass;
+use qsl_forms::{AccessOrdering, MemoryModelName};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::Setting;
@@ -212,6 +214,61 @@ pub enum ProtocolAnchorCause {
         /// What is unsound.
         fault: JoinFault,
         /// The list's span, or the quorum count's.
+        span: Span,
+    },
+    /// FR-219: a nested `parallel` declares a memory default other than its
+    /// outermost `parallel`'s. `invalid_model_binding`/`conflicting-binding`,
+    /// at the nested control's `memory` clause, naming both controls.
+    MemoryConflict {
+        /// The outermost `parallel`'s declared name.
+        outermost: String,
+        /// The outermost `parallel`'s default.
+        outermost_model: MemoryModelName,
+        /// The nested `parallel`'s declared name.
+        nested: String,
+        /// The nested `parallel`'s default.
+        nested_model: MemoryModelName,
+        /// The nested control's `memory` clause.
+        span: Span,
+    },
+    /// FR-219: a `parallel` declaring a weak default joins another way than
+    /// `all` with no `outstanding` clause. `unsupported_construct`/
+    /// `declaration-form`, at the join.
+    WeakJoin {
+        /// The `parallel`'s declared name.
+        parallel: String,
+        /// The weak default declared.
+        model: MemoryModelName,
+        /// The join policy as written, with any `outstanding` clause.
+        policy: String,
+        /// The join policy's span.
+        span: Span,
+    },
+    /// FR-220: an access carries an ordering its kind does not take, or a
+    /// read-modify-write carries none. `ill_typed`/`operator-ineligible`,
+    /// at the ordering, or at the attempt when none is written.
+    AccessOrdering {
+        /// The attempt's declared name.
+        attempt: String,
+        /// The access kind the attempt classifies as.
+        class: AccessClass,
+        /// The ordering written, if any.
+        ordering: Option<AccessOrdering>,
+        /// The ordering's span, or the attempt's name.
+        span: Span,
+    },
+    /// FR-220: under a weak default an attempt's shared footprint holds two
+    /// or more locations, an any-object location or a population
+    /// membership. `unsupported_construct`/`declaration-form`, at the
+    /// attempt.
+    AccessShape {
+        /// The attempt's declared name.
+        attempt: String,
+        /// The weak default of the enclosing `parallel`.
+        model: MemoryModelName,
+        /// The locations, canonical text, in order.
+        locations: Vec<String>,
+        /// The attempt's name.
         span: Span,
     },
     /// FR-218 "Constructs": an `event` or `commit` written `by`, or a
@@ -774,6 +831,10 @@ impl ProtocolAnchorCause {
             | Self::ChannelCarriesObject { span, .. }
             | Self::RoleModel { span, .. }
             | Self::JoinList { span, .. }
+            | Self::MemoryConflict { span, .. }
+            | Self::WeakJoin { span, .. }
+            | Self::AccessOrdering { span, .. }
+            | Self::AccessShape { span, .. }
             | Self::NodeRole { span, .. }
             | Self::MissingChannel { span, .. }
             | Self::CarriesMismatch { span, .. }
@@ -824,14 +885,17 @@ impl ProtocolAnchorCause {
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. }
             | Self::RequirementKind { .. }
+            | Self::AccessOrdering { .. }
             | Self::RelatedEnd { .. }
             | Self::RoleMax { .. } => Code::IllTyped,
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
-            Self::Unimplemented { .. } | Self::NoProgress { .. } | Self::AwaitedForm { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::Unimplemented { .. }
+            | Self::NoProgress { .. }
+            | Self::AwaitedForm { .. }
+            | Self::WeakJoin { .. }
+            | Self::AccessShape { .. } => Code::UnsupportedConstruct,
             Self::CausalCycle { .. } | Self::RequirementCycle { .. } => Code::InvalidPackage,
             Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
@@ -839,6 +903,7 @@ impl ProtocolAnchorCause {
             }
             Self::ChannelCarriesObject { .. }
             | Self::RoleModel { .. }
+            | Self::MemoryConflict { .. }
             | Self::RelationshipExport { .. } => Code::InvalidModelBinding,
             Self::JoinList { .. } => Code::InvalidPackage,
         }
@@ -870,6 +935,7 @@ impl ProtocolAnchorCause {
             Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. }
+            | Self::AccessOrdering { .. }
             | Self::RequirementKind { .. } => "operator-ineligible",
             // Only a cause that has a tag is wrapped
             // (`protocol_controls::check_fifo`, `protocol_slots`).
@@ -879,7 +945,10 @@ impl ProtocolAnchorCause {
             Self::WrongObservation { .. } => "wrong-observation",
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
-            Self::NoProgress { .. } | Self::AwaitedForm { .. } => "declaration-form",
+            Self::NoProgress { .. }
+            | Self::AwaitedForm { .. }
+            | Self::WeakJoin { .. }
+            | Self::AccessShape { .. } => "declaration-form",
             Self::MissingTemporalProfile { .. } => "missing-selection",
             Self::CausalCycle { .. } | Self::RequirementCycle { .. } => "definition-cycle",
             Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
@@ -888,6 +957,7 @@ impl ProtocolAnchorCause {
             }
             Self::ChannelCarriesObject { .. } | Self::RoleModel { .. } => "malformed-declaration",
             Self::RelationshipExport { .. } => "wrong-export",
+            Self::MemoryConflict { .. } => "conflicting-binding",
             Self::JoinList { .. } => "invalid-value",
         }
     }
@@ -1553,6 +1623,10 @@ pub enum CheckCause {
         /// The argument text as written (decoded).
         argument: String,
     },
+    /// `ill_typed` / `identity-observing-form` (FR-150): a form that
+    /// observes the identity of a `symmetric` population's objects, at the
+    /// form's node. Boxed like the other payload-bearing causes.
+    IdentityObservingForm(Box<IdentityObserving>),
     /// `ill_typed` / `non-boolean-root` (FR-104): a state clause body whose
     /// type is not `Boolean`, at the body.
     NonBooleanRoot,
@@ -1992,6 +2066,7 @@ impl CheckCause {
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
             Self::IllTyped(_)
+            | Self::IdentityObservingForm(_)
             | Self::NonBooleanRoot
             | Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
@@ -2059,6 +2134,7 @@ impl CheckCause {
             Self::IllTyped(cause) => cause.tag(),
             Self::WrongSnapshot(cause) => Some(cause.as_str()),
             Self::NonBooleanRoot => Some("non-boolean-root"),
+            Self::IdentityObservingForm(_) => Some("identity-observing-form"),
             Self::IntegerOutsideI128(_) | Self::MalformedUuidLiteral { .. } => {
                 Some("type-mismatch")
             }
@@ -2112,6 +2188,41 @@ impl CheckCause {
             Self::__SeamProbe => None,
         }
     }
+}
+
+/// The form an `identity-observing-form` refusal names (FR-150, QSpec
+/// FR-381).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IdentityForm {
+    /// A `fold` or `reduce` whose result depends on the order of a `Set` or
+    /// `Bag` of references.
+    OrderSensitiveTraversal,
+    /// A conversion of a reference to a value of another type.
+    ReferenceConversion,
+}
+
+/// The kind of node an `identity-observing-form` refusal is at.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IdentityNode {
+    /// A `fold`.
+    Fold,
+    /// A `reduce`.
+    Reduce,
+    /// A `convert<T>(e)`.
+    Convert,
+}
+
+/// What an `identity-observing-form` refusal retains (FR-150): the refused
+/// node's kind and form, and the `symmetric` population whose identity the
+/// form observes.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct IdentityObserving {
+    /// The refused node's kind.
+    pub node: IdentityNode,
+    /// The form of identity observation.
+    pub form: IdentityForm,
+    /// The population's declaration key.
+    pub population: crate::model::key::DeclarationKey,
 }
 
 /// A located checking refusal, made before any charge.

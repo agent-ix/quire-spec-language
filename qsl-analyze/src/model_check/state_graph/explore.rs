@@ -393,6 +393,7 @@ impl Exploration<'_, '_, '_> {
                     over_binding: None,
                     fairness: Vec::new(),
                     kind: kind.clone(),
+                    lasso: None,
                 }),
                 stats,
             },

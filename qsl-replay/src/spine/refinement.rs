@@ -308,6 +308,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::PopulationFormNotChecked { .. }
         | CheckCause::ModelConformance(_)
         | CheckCause::IllTyped(_)
+        | CheckCause::IdentityObservingForm(_)
         | CheckCause::WrongSnapshot(_)
         | CheckCause::MissingName(_)
         | CheckCause::MissingSelf
@@ -527,6 +528,11 @@ fn classify_disposition(disposition: &ClauseDisposition) -> Classification {
             one(Refused, witness.code, Some(witness.cause))
         }
         ClauseDisposition::EvaluateFault(_) => one(ToolFailure, Code::RuntimeInvariant, None),
+        // A refinement check runs state clauses and functions; it selects no
+        // temporal clause, so a temporal disposition is a broken invariant.
+        ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_) => {
+            one(ToolFailure, Code::RuntimeInvariant, None)
+        }
     }
 }
 

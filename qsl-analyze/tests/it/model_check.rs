@@ -103,6 +103,7 @@ fn run_in(
             item,
             max_depth,
             limits,
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )
@@ -208,12 +209,13 @@ fn the_terminal_state_is_deadlocked_only_without_a_declaration_covering_it() {
     }
 }
 
-/// Verifies the deadlock half of FR-126-AC-3, not its terminal-stutter
-/// lasso, which needs EN-1's second phase: with no `terminal` declaration the
+/// Verifies the deadlock half of FR-126-AC-3 (its terminal-stutter lasso is
+/// `liveness::a_behaviour_that_ends_is_the_lasso_whose_loop_is_the_terminal_stutter_step`):
+/// with no `terminal` declaration the
 /// deadlock-freedom item is violated with `kind: Deadlock` and the prefix
 /// `0 -inc-> 1 -inc-> 2 -inc-> 3`; with a `When` declaration covering 3, or
 /// `Any`, it holds after exploring the four states.
-#[trace("TC-521")]
+#[trace("TC-521", "FR-126-AC-3")]
 #[test]
 fn deadlock_freedom_is_violated_at_the_unintended_terminal_state() {
     let world = self::world("", &[&[("c", 0)]]);
@@ -632,6 +634,7 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             limits: defaults,
+            reductions: Default::default(),
         },
         &cancel,
     )
@@ -683,6 +686,7 @@ fn a_cancelled_handle_stops_a_tp1_clause_run_rather_than_refusing() {
             },
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &cancel,
     )
@@ -834,6 +838,7 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
             item: item(),
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )
@@ -960,6 +965,7 @@ fn run_with(
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )
