@@ -66,3 +66,16 @@ Checked and clean:
 - **FR-165 AC-1, AC-2, AC-3 and AC-5.** They are unchanged and consistent
   with the new Parsing text. AC-2's `eventually c.versionNumber = 2` is a
   recognised placement.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The new name-first precedence rule is an S3 SHALL, but it sits under `### Parsing (S1)` rather than `### Predicates`, and its vector (`{ eventually c.versionNumber = newName }` refusing `missing-name`) sits in FR-165-AC-6, the S1 `invalid_syntax` criterion, rather than beside AC-5's `missing-name` case. The behaviour is correct; a reader looking for S3 refusal order under Predicates will miss it. | spec/functional/FR-165-check-state-graph-claims-at-s3.md:116-118,189 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0a710fa5e rewrites every AC-4 and AC-6 vector over `over (c: Config::ConfigVersion)` with `c.versionNumber` and `Config::ConfigVersion::attemptUpdate`, one fault per vector, and adds the S3 rule that names resolve first (an unresolved name plus a recognised operator refuses `missing-name`), with a vector in AC-6. The S3 oracle is now decidable over TC-590's fixture. |
+| FND-002 | fixed | 0a710fa5e adds `not eventually[0,5] ...`, `eventually[1,*] ...` (with "no profile refusal"), `unique path` with `to (eventually c.versionNumber = 2)`, `always possible` with `from (always ...)`, a `let` body and an `if` branch to AC-4, and TC-590 step 4 lists them. |

@@ -106,16 +106,15 @@ pub enum StateGraphForm {
   - a temporal operator in an operand of a primary or a comparison, at the
     operator (a call argument, a quantifier body such as `exists(d in
     c.items: eventually d.n = 2)`, or `c.x = eventually c.y`);
-  - a fairness constraint after the predicate of a body, inside a `from`
-    operand or inside a `to` operand, at the `;` that follows the predicate;
+  - a fairness constraint after the predicate of a body, at the `;` that
+    follows the predicate;
+  - a fairness constraint inside a `from` or `to` operand, at the `fair`
+    token itself;
   - a fairness constraint after a `unique path` clause, which has no body,
     at the `fair` token that follows the clause's `;`;
   - a second binary temporal operator in one `graph-relation`
     (`c.a until c.b until c.c`), at the second operator. A chain is written
     with parentheses, `(c.a until c.b) until c.c`, and parses.
-- Where a predicate holds both a name that does not resolve and a temporal
-  operator S1 recognised, S3 SHALL resolve names first: it refuses
-  `missing-name` at the name before it considers the operator.
 - A phrase that derives as an `expr` is read as that `expr`, so
   `not c.n = 2` is `(not c.n) = 2` and reaches the checker as an ordinary
   expression.
@@ -155,6 +154,9 @@ pub enum StateGraphForm {
   SHALL refuse `unsupported_construct`/`expression-form` located at the
   operator; where a predicate holds several, at the first in source order.
   A placement S1 does not recognise never reaches S3 (see Parsing).
+- Where a predicate holds both a name that does not resolve and a temporal
+  operator S1 recognised, S3 SHALL resolve names first: it refuses
+  `missing-name` at the name before it considers the operator.
 - If the claim carries a fairness constraint, then S3 SHALL refuse
   `unsupported_construct`/`expression-form` located at the constraint
   (ADR-022 GM-7).
@@ -185,8 +187,8 @@ pub enum StateGraphForm {
 | FR-165-AC-2 | Refusals, each `unsupported_construct`/`expression-form` at the named span, with no checked claim: `possible` whose predicate reads `pre(c.versionNumber)` (at the read); `possible` whose predicate is `eventually c.versionNumber = 2` (at `eventually`); `always possible` carrying `fair weak attemptUpdate` (at the constraint). | Test (TC-590) |
 | FR-165-AC-3 | A request whose only items are `CanStillWin` and `InOneWay` carries one `DeadlockFreedom` item for each of their two subjects; a request with `ReachesTwo` and a temporal claim over the same subject carries one; the §7.2 game with `terminal any` carries none. | Test (TC-590) |
 | FR-165-AC-4 | S1 parses `possible Anything using v { true }` (no `over`) to a claim with no `over` binding. Over `over (c: Config::ConfigVersion)`, S1 parses with no refusal the bodies `c.versionNumber = 2 and eventually c.versionNumber = 3`, `not eventually c.versionNumber = 2`, `not eventually[0,5] c.versionNumber = 2`, `eventually[1,*] c.versionNumber = 2`, `(c.versionNumber = 1 until c.versionNumber = 2)`, `(c.versionNumber = 1 until c.versionNumber = 2) until c.versionNumber = 3`, `if c.versionNumber = 1 then eventually c.versionNumber = 2 else c.versionNumber = 3`, `let n = c.versionNumber in eventually n = 2`, and `(eventually c.versionNumber = 2)`; `always possible` with `from (always c.versionNumber = 1)`; `unique path` with `to (eventually c.versionNumber = 2)`; and a body led by `fair weak Config::ConfigVersion::attemptUpdate;`. S3 checks the first with `over` recorded as `None` and refuses each other claim `unsupported_construct`/`expression-form`, with no checked claim and no profile refusal, at the first temporal operator in source order or at the constraint. | Test (TC-590) |
-| FR-165-AC-5 | Over a fixture unit whose operation `setVersion` takes parameter `newVersion: Int`, S3 refuses a `possible` claim whose predicate is `c.versionNumber = newVersion` with `missing-name` at `newVersion`, not `expression-form`; the same claim with `pre(c.versionNumber)` still refuses `expression-form`, with no checked claim. | Test (TC-590) |
-| FR-165-AC-6 | Over the same `over (c: Config::ConfigVersion)`, S1 refuses `invalid_syntax`, with no claim, at the named token: `{ if eventually c.versionNumber = 1 then c.versionNumber = 2 else c.versionNumber = 3 }` and `{ let n = eventually c.versionNumber = 1 in n = 2 }` at `eventually`; `{ exists(d in c.versionNumber: eventually d = 2) }`, `{ f(c.versionNumber, eventually c.versionNumber = 1) }` and `{ c.versionNumber = eventually c.versionNumber = 2 }` at `eventually`; `{ c.versionNumber = 1; fair weak Config::ConfigVersion::attemptUpdate }` and `from (c.versionNumber = 1; fair weak Config::ConfigVersion::attemptUpdate)` at the `;` after the predicate; `unique path ... to (c.versionNumber = 2); fair weak Config::ConfigVersion::attemptUpdate` at `fair`; `{ c.versionNumber = 1 until c.versionNumber = 2 until c.versionNumber = 3 }` at the second `until`. A claim with an unknown name and a recognised operator, `{ eventually c.versionNumber = newName }`, refuses `missing-name` at `newName`, not `expression-form`. | Test (TC-590) |
+| FR-165-AC-5 | Over a fixture unit whose operation `setVersion` takes parameter `newVersion: Int`, S3 refuses a `possible` claim whose predicate is `c.versionNumber = newVersion` with `missing-name` at `newVersion`, not `expression-form`; the same claim with `pre(c.versionNumber)` still refuses `expression-form`, with no checked claim. A predicate with an unknown name and a recognised operator, `{ eventually c.versionNumber = newName }`, refuses `missing-name` at `newName`, not `expression-form`. | Test (TC-590) |
+| FR-165-AC-6 | Over the same `over (c: Config::ConfigVersion)`, S1 refuses `invalid_syntax`, with no claim, at the named token: `{ if eventually c.versionNumber = 1 then c.versionNumber = 2 else c.versionNumber = 3 }` and `{ let n = eventually c.versionNumber = 1 in n = 2 }` at `eventually`; `{ exists(d in c.versionNumber: eventually d = 2) }`, `{ f(c.versionNumber, eventually c.versionNumber = 1) }` and `{ c.versionNumber = eventually c.versionNumber = 2 }` at `eventually`; `{ c.versionNumber = 1; fair weak Config::ConfigVersion::attemptUpdate }` at the `;` after the predicate; `from (fair weak Config::ConfigVersion::attemptUpdate; c.versionNumber = 1)` at `fair`; `unique path ... to (c.versionNumber = 2); fair weak Config::ConfigVersion::attemptUpdate` at `fair`; `{ c.versionNumber = 1 until c.versionNumber = 2 until c.versionNumber = 3 }` at the second `until`. | Test (TC-590) |
 
 ## Dependencies
 

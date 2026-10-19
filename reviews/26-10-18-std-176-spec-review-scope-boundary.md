@@ -32,3 +32,9 @@ production, FR-390 and SG-R09 to SG-R18 as the reference. S3 keeps only the
 admission refusals that FR-390 assigns to the checker. ADR-022 SG-4 and QS-1
 agree. The single low concerns how the restated list is worded, not who
 owns the rule.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0a710fa5e reads "S1 SHALL refuse with `invalid_syntax` everything `graph-predicate` does not recognise, including:", and adds the comparison-operand case `c.x = eventually c.y` (AC-6 vector `{ c.versionNumber = eventually c.versionNumber = 2 }`). |

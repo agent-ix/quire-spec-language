@@ -53,3 +53,16 @@ FR-390 lines 130-131. The general rule matches shared-grammar.md lines
 group" with no change in meaning. ADR-022 SG-4 now agrees with FR-390. The
 old line saying S1 parses an operator "at any position" is gone. The
 interval and `to` coverage gaps are recorded in the base review.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The location rule for a fairness constraint inside a `from` or `to` operand is "at the `;` that follows the predicate". That holds for `from (c.versionNumber = 1; fair weak ...)`, but a constraint written first, `from (fair weak Config::ConfigVersion::attemptUpdate; c.versionNumber = 1)`, has no predicate before it; a parser fails at `fair` there, and the rule names no token. QSpec is silent on this placement. | spec/functional/FR-165-check-state-graph-claims-at-s3.md:109-110 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0a710fa5e names the token for every S1 case. Fairness after a body predicate or inside `from`/`to` is at the `;` after the predicate, matching QSpec TC-330 SG-R13. AC-6 and TC-590 step 5 now say "at the token FR-165-AC-6 names". |
+| FND-002 | fixed | 0a710fa5e reads "an operand of `and`, `or` or `implies`, of a binary temporal operator, of a unary operator, of a parenthesised group or of a branch of an `if` or the body of a `let`" in FR-165, and ADR-022 line 98 matches. |

@@ -40,8 +40,9 @@ game unit, with and without `terminal any`; §7.3's job unit.
    operand, a `to` operand, and a leading fairness constraint; check
    `possible Q using v over (c: Config::ConfigVersion) { c.versionNumber = newVersion }`
    against `setVersion`'s `newVersion`.
-5. Parse the claims of FR-165-AC-6, including the claim that holds an unknown
-   name and a recognised operator.
+5. Parse the claims of FR-165-AC-6.
+6. Check the claim of FR-165-AC-5 that holds an unknown name and a recognised
+   operator.
 
 Tag the tests `#[trace("TC-590", "FR-165-AC-n")]`.
 
@@ -62,4 +63,5 @@ Tag the tests `#[trace("TC-590", "FR-165-AC-n")]`.
   constraint, with no profile refusal; the parameter claim refuses
   `missing-name` at the name; no checked claim for any refusal.
 - Step 5: each refuses `invalid_syntax` at the token FR-165-AC-6 names,
-  with no claim; the unknown-name claim refuses `missing-name` at the name.
+  with no claim.
+- Step 6: `missing-name` at the name, not `expression-form`.
