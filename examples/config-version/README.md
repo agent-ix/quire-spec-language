@@ -7,13 +7,27 @@ reference carrier and `config_history` universe belong to this native realizatio
 They are not renamed historical Filament artifacts or a conversion of SemVer to
 an IR revision. Historical standard/producer fixtures remain unchanged.
 
-Generate inputs locally:
+Generate inputs locally, then check one rule from the `1-draft` unit:
 
 ```sh
-nice -n 10 cargo run --locked --offline --target-dir target-codex-backends -j 1 --example config_version_fixtures -- /tmp/config-version
-nice -n 10 cargo run --locked --offline --target-dir target-codex-backends -j 1 -- run /tmp/config-version/healthy-parent/request.json
-nice -n 10 cargo run --locked --offline --target-dir target-codex-backends -j 1 --features quire-extraction -- run /tmp/config-version/healthy-parent/markdown-run.json
+cargo run --locked --example config_version_fixtures -- /tmp/config-version
+examples/config-version/requests.sh /tmp/config-version/healthy-parent ParentOrder
+cargo run --locked -- run /tmp/config-version/healthy-parent/run.json
+cargo run --locked -- compile /tmp/config-version/healthy-parent/compile.json
 ```
+
+`requests.sh` writes `run.json` and `compile.json` beside the generated files.
+They select `spine-unit.native` and `spine-model.semantic-ir.json` by digest,
+and `run.json` checks the named clause for the object keyed `child` in
+`spine-snapshot.json`. Through this path `healthy-parent` exits 0,
+`violating-parent` 10, `dangling-parent` 20 and `incomplete-population` 22;
+`cycle` with `NoCycle` exits 10.
+
+The generated `request.json` and `markdown-run.json` select the historical
+`0-draft` `program.native`. The `run` command now refuses those as retired
+(exit 20), so the table below describes the native fixtures' intended
+outcomes; the spine tests in `tests/it/config_version_spine.rs` check the
+`1-draft` path.
 
 Each directory contains `model.json`, `program.native`, `rules.md`, the applicable
 snapshot/invocation files, and `request.json`, `markdown-run.json`, `compile.json`.

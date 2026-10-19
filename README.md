@@ -96,7 +96,8 @@ With the optional `quire-extraction` feature, QSL takes the block's exact bytes
 from the Markdown file (the extraction is done by
 [quire-rs](https://github.com/agent-ix/quire-rs)) and keeps a map back to the
 original document. An error in the rule is reported at its line and column in
-the Markdown file, not in some temporary copy.
+the Markdown file, not in some temporary copy. This is a library API today;
+the `run` command does not yet take Markdown for `1-draft` rules.
 
 ## Five answers, not two
 
@@ -255,29 +256,42 @@ sources: given a `1-draft` file it refuses with exit 20 and
 `"code":"unknown_edition"`. `1-draft` sources are parsed and checked by
 `compile` and `run`.
 
-**Run a rule against data.** The `standalone_fixtures` example writes four
-small, complete workflows: a model, a rule, a snapshot of objects and a
-`request.json` that ties them together. Each one ends differently:
+**Run a rule against data.** The ConfigVersion example writes one directory
+per case: the `1-draft` unit from [A first rule](#a-first-rule), its domain
+model and a snapshot of `ConfigVersion` objects. A small script then writes a
+`run.json` request that selects one rule, checked for the object keyed `child`:
 
 ```sh
-cargo run --locked --example standalone_fixtures -- /tmp/qsl-example
-target/debug/quire-spec run /tmp/qsl-example/healthy/request.json    # rule holds        → exit 0
-target/debug/quire-spec run /tmp/qsl-example/violating/request.json  # rule broken       → exit 10
-target/debug/quire-spec run /tmp/qsl-example/operation/request.json  # post rule holds   → exit 0
-target/debug/quire-spec run /tmp/qsl-example/refused/request.json    # bad input frame   → exit 20
+cargo run --locked --example config_version_fixtures -- /tmp/config-version
+for case in healthy-parent violating-parent dangling-parent incomplete-population; do
+  examples/config-version/requests.sh /tmp/config-version/$case ParentOrder
+  target/debug/quire-spec run /tmp/config-version/$case/run.json; echo "exit $?"
+done
 ```
 
-**Compile a package.** `compile` writes the checked package to stdout, for
-another tool to read:
+| Case | Data | Outcome | Exit |
+| --- | --- | --- | --- |
+| `healthy-parent` | parent version 1, child version 2 | the rule holds | 0 |
+| `violating-parent` | parent version 3, child version 2 | the rule is broken | 10 |
+| `dangling-parent` | the parent is not in the snapshot | refused | 20 |
+| `incomplete-population` | the snapshot's population is not complete | incomplete | 22 |
+
+`requests.sh /tmp/config-version/cycle NoCycle` checks the other invariant,
+which the `cycle` case breaks (exit 10). Each result is one JSON document on
+stdout that names the source, model and snapshot it was computed from.
+
+**Compile a package.** The same script writes `compile.json`. `compile` prints
+the checked package as `quire.checked-package/v2` JSON, for other tools to read:
 
 ```sh
-target/debug/quire-spec compile /tmp/qsl-example/healthy/compile.json > package.json
+target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
 ```
 
-The [ConfigVersion example](examples/config-version/README.md) goes further:
-seventeen named cases covering parents, cycles, object identity, operation
-frames, and refused and incomplete runs, each runnable from plain `.native`
-source or from a Markdown spec.
+The [ConfigVersion example](examples/config-version/README.md) lists all
+seventeen cases, covering parents, cycles, object identity, operation frames,
+and refused and incomplete runs. `run` also evaluates a single pure function
+from a unit; [`tests/it/spine_run.rs`](tests/it/spine_run.rs) shows that
+request.
 
 **Optional features.**
 
