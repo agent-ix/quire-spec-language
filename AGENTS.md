@@ -12,7 +12,7 @@ identity digest that binds a proof to the exact content it proved. Package versi
 live in Cargo.toml / package.json and their lockfiles only; reports name the app
 version they ran.
 
-Read README.md, LICENSE-DECISION.md and the owning issue before editing. This is a private bootstrap repository, not a released implementation.
+Read README.md, LICENSE-DECISION.md and the owning issue before editing. This is a public prerelease repository, not a released implementation.
 
 Current ownership (owner clarification, 2026-09-08): `contract-agent-core` is
 retired; remaining non-temporal work belongs to the current `quire-agent-a/b/c`

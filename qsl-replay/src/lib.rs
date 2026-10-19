@@ -48,6 +48,7 @@ mod model_check;
 mod object_environment;
 mod outcome;
 mod proof_result;
+mod refinement;
 mod request;
 mod result;
 mod scalar;
@@ -126,6 +127,10 @@ pub use model_check::settle::{
 pub use model_check::state_graph::{
     GraphUndefined, GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome,
     StateGraphOutcome, WitnessSource,
+};
+pub use refinement::{
+    map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingFeature, MappingRowRef,
+    MappingUndetermined, ObjectKey,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
