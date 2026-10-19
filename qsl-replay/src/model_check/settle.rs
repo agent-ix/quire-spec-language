@@ -24,12 +24,13 @@ use crate::certificate::closure::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::outcome::{ModelCheckOutcome, UndecidedCause};
+use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCause};
 use crate::model_check::replay::{
     ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
 };
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    UnavailabilityCause,
 };
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -233,6 +234,52 @@ pub fn settle_model_check(
                 }
                 Err(_) => failed(),
             },
+        },
+        // ADR-021 RV-1: a reduced proof is its own technique, and a
+        // constraint-only proof explored the subject without a certificate.
+        ModelCheckOutcome::HoldsReduced { reductions, .. } => record(
+            TerminalValue::Proved {
+                basis: if reductions.is_empty() {
+                    ProofBasis::Exhaustive
+                } else {
+                    ProofBasis::Reduced {
+                        reductions: reductions.clone(),
+                    }
+                },
+                certification: Certification::Uncertified,
+            },
+            ResultLabel::Proved,
+            SettlementBasis::ClosedScope,
+            Execution::Completed,
+            Truth::Satisfied,
+        ),
+        ModelCheckOutcome::Reduction { cause, .. } => match cause {
+            ReductionCause::Unsupported { reduction } => record(
+                TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+                    reduction: *reduction,
+                }),
+                ResultLabel::Unsupported,
+                SettlementBasis::Unavailable,
+                Execution::Completed,
+                Truth::Unavailable,
+            ),
+            ReductionCause::NotPreserving { reduction, form } => {
+                inconclusive(InconclusiveCause::ReductionNotPreserving {
+                    reduction: *reduction,
+                    form: *form,
+                })
+            }
+            ReductionCause::SymmetryBroken { population, cause } => {
+                inconclusive(InconclusiveCause::SymmetryBroken {
+                    population: population.clone(),
+                    cause: cause.clone(),
+                })
+            }
+            ReductionCause::ConstraintReached { boundary_states } => {
+                inconclusive(InconclusiveCause::ConstraintReached {
+                    boundary_states: *boundary_states,
+                })
+            }
         },
         ModelCheckOutcome::BoundReached { depth, .. } => ModelCheckRecord {
             depth: Some(*depth),

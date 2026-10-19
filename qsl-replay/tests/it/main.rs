@@ -6,3 +6,5 @@ mod compile_protocol_profile;
 mod format_outcome_facade;
 mod outcome_facade;
 mod parse_outcome_facade;
+mod refinement_fixture;
+mod refinement_mapping;

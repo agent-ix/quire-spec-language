@@ -82,6 +82,7 @@ count.
 - Along the trace the executor SHALL recompute history values (FR-138),
   mapped states (FR-140) and candidate sets by `check_initial` and
   `check_step` (FR-141).
+- **Systems.** Replay SHALL build the concrete `ModelSystem` and the abstract system from the counterexample's subjects and pass both to `check_initial` and `check_step` (FR-141).
 - **Prefix.** For a safety failure it SHALL run `check_step` (or
   `check_initial` for `InitialNotAbstract`) at each position and stop at
   the first failure. A failure equal in kind and position to the recorded

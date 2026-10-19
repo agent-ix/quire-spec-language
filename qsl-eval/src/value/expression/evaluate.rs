@@ -365,6 +365,24 @@ fn charge_call(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::FunctionCall))?)
 }
 
+/// The declaration identity of the concrete population a refinement row's
+/// `only` ranges over, for the undefined cause's payload: the population
+/// under any `where` filter of `source`.
+fn population_of(source: CheckedNode<'_>) -> Result<String, Halt> {
+    let mut node = source;
+    loop {
+        match node.kind() {
+            NodeKind::PopulationObjects { population } => return Ok(population.node.clone()),
+            NodeKind::Query {
+                visit: Visit::Filter,
+                source,
+                ..
+            } => node = node.at(*source),
+            _ => return Err(invariant("only-source-is-a-population")),
+        }
+    }
+}
+
 /// A visit: one `collection.visit` work unit.
 fn charge_visit(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::CollectionVisit))?)
@@ -452,6 +470,8 @@ enum Task<'a> {
     ChargeElement(CheckedNode<'a>),
     Return,
     Iterate(Box<Iteration<'a>>),
+    /// FR-139: a `seq(i in low .. high: e)` in progress.
+    IterateSeq(Box<SeqIteration<'a>>),
     /// FR-151 (TC-196 D06): the pushed frame's own effective-precondition
     /// body has just evaluated; decide it, then continue to the selected
     /// candidate's own body.
@@ -517,6 +537,17 @@ struct Iteration<'a> {
     sources: Vec<usize>,
     accumulator: Option<Value>,
     count: Integer,
+}
+
+/// A `seq(i in low .. high: e)` in progress (FR-139).
+struct SeqIteration<'a> {
+    node: CheckedNode<'a>,
+    /// The integer the next element binds.
+    next: Integer,
+    /// The last integer.
+    high: Integer,
+    awaiting: bool,
+    results: Vec<Value>,
 }
 
 /// The selection a recorded read evaluated (FR-107 "Read paths").
@@ -803,6 +834,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 | Task::Retain(node)
                 | Task::ChargeElement(node) => *node,
                 Task::Iterate(iteration) => iteration.node,
+                Task::IterateSeq(iteration) => iteration.node,
                 Task::DispatchGuard(guard) => guard.node,
                 Task::Bind(_) | Task::Return | Task::RestoreAnchor(_) | Task::RestorePackage(_) => {
                     root
@@ -903,7 +935,9 @@ impl<'a, 'm> Machine<'a, 'm> {
             Ok(Value::Boolean(holds)) => match visit {
                 Visit::Forall => !holds,
                 Visit::Exists => holds,
-                Visit::Map | Visit::Filter | Visit::Count | Visit::Sum => return Err(fault()),
+                Visit::Map | Visit::Filter | Visit::Count | Visit::Sum | Visit::Only => {
+                    return Err(fault())
+                }
             },
             Ok(_) => return Err(fault()),
             Err(stopped) => return Ok(Separation::Stopped(SeparationStep::Body, stopped)),
@@ -1248,6 +1282,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Ok(())
             }
             Task::Iterate(iteration) => self.iterate(iteration),
+            Task::IterateSeq(iteration) => self.iterate_seq(iteration),
             Task::RestoreAnchor(previous) => {
                 self.anchor = previous;
                 Ok(())
@@ -1301,6 +1336,14 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Query { source, .. } => {
                 self.tasks.push(Task::Apply(node));
                 self.tasks.push(Task::Eval(node.at(*source)));
+                return Ok(());
+            }
+            // FR-139: only the bounds are children to evaluate now; the
+            // body is reached once per integer through `Task::IterateSeq`.
+            NodeKind::Seq { low, high, .. } => {
+                self.tasks.push(Task::Apply(node));
+                self.tasks.push(Task::Eval(node.at(*high)));
+                self.tasks.push(Task::Eval(node.at(*low)));
                 return Ok(());
             }
             // FR-322: only the scrutinee is a child to evaluate now; the arm
@@ -1951,6 +1994,10 @@ impl<'a, 'm> Machine<'a, 'm> {
             NodeKind::Query { .. } | NodeKind::Fold { .. } => {
                 return self.start_iteration(node);
             }
+            NodeKind::Seq { .. } => return self.start_seq(node),
+            NodeKind::PopulationObjects { population } => {
+                self.population_objects(node, population)?
+            }
             NodeKind::Flatten(_) => {
                 let ValueType::Collection(result_type) = node.value_type() else {
                     return Err(invariant("flatten-collection-result-expected"));
@@ -2233,6 +2280,12 @@ impl<'a, 'm> Machine<'a, 'm> {
     /// Records the read of `binding`'s population, at the anchor the
     /// evaluation selected, in the read log of the evaluation's objects.
     fn log_membership_read(&self, binding: &PopulationBinding, object: Option<ObjectReference>) {
+        self.log_membership_of(binding.population_key(), object);
+    }
+
+    /// Records the read of the population `key`'s membership, at the anchor
+    /// the evaluation selected.
+    fn log_membership_of(&self, key: &DeclarationKey, object: Option<ObjectReference>) {
         let Some(log) = self.objects.read_log() else {
             return;
         };
@@ -2241,9 +2294,74 @@ impl<'a, 'm> Machine<'a, 'm> {
                 Anchor::Pre => qsl_semantics::model::clause_observation::Observation::Pre,
                 Anchor::Post => qsl_semantics::model::clause_observation::Observation::Post,
             },
-            population: binding.population_key().clone(),
+            population: key.clone(),
             object,
         });
+    }
+
+    /// FR-139: the objects of the concrete population `population` in the
+    /// observed state, in ascending key order, as the set a refinement row
+    /// reads.
+    fn population_objects(
+        &mut self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+    ) -> Result<Value, Halt> {
+        let objects = self.objects_for(node)?;
+        let members = objects
+            .population_members(&population.node)
+            .ok_or_else(|| invariant("population-members-unobserved"))?;
+        let ValueType::Collection(result_type) = node.value_type() else {
+            return Err(invariant("population-objects-collection-result-expected"));
+        };
+        self.log_membership_of(population, None);
+        let elements = members.iter().cloned().map(Value::Reference).collect();
+        Ok(outcome_into_stop(form(result_type, elements, self.meter))?)
+    }
+
+    /// FR-139: start `seq(i in low .. high: e)` over its evaluated bounds.
+    fn start_seq(&mut self, node: CheckedNode<'a>) -> Result<(), Halt> {
+        let (Value::Integer(high), Value::Integer(low)) = (self.pop()?, self.pop()?) else {
+            return Err(invariant("seq-integer-bounds-expected"));
+        };
+        self.iterations = self.iterations.saturating_add(1);
+        self.iterate_seq(Box::new(SeqIteration {
+            node,
+            next: low,
+            high,
+            awaiting: false,
+            results: Vec::new(),
+        }))
+    }
+
+    /// FR-139: bind the next integer and evaluate the element, charging one
+    /// work unit per element; the sequence is empty when `high < low`.
+    fn iterate_seq(&mut self, mut iteration: Box<SeqIteration<'a>>) -> Result<(), Halt> {
+        let node = iteration.node;
+        let NodeKind::Seq { slot, body, .. } = node.kind() else {
+            return Err(invariant("seq-node-expected"));
+        };
+        if iteration.awaiting {
+            iteration.awaiting = false;
+            let element = self.pop()?;
+            iteration.results.push(element);
+        }
+        if iteration.next > iteration.high {
+            self.iterations = self.iterations.saturating_sub(1);
+            let ValueType::Collection(result_type) = node.value_type() else {
+                return Err(invariant("seq-collection-result-expected"));
+            };
+            let value = outcome_into_stop(form(result_type, iteration.results, self.meter))?;
+            self.values.push(value);
+            return Ok(());
+        }
+        charge_visit(self.meter)?;
+        *self.slot(*slot)? = Some(Value::Integer(iteration.next.clone()));
+        iteration.next = iteration.next.add(&Integer::one());
+        iteration.awaiting = true;
+        self.tasks.push(Task::IterateSeq(iteration));
+        self.tasks.push(Task::Eval(node.at(*body)));
+        Ok(())
     }
 
     /// FR-364 "Runtime navigation reads only the extent of its relationship":
@@ -2652,6 +2770,26 @@ impl<'a, 'm> Machine<'a, 'm> {
             _ => return Err(invariant("iteration-node-invalid")),
         };
         let source = self.pop_collection()?;
+        if let NodeKind::Query {
+            visit: Visit::Only,
+            source: operand,
+            ..
+        } = node.kind()
+        {
+            // FR-139: `only` is `e` for the one object satisfying the
+            // condition, and undefined for none or several, before `e`
+            // reads any object.
+            let found = u64::try_from(source.elements().len()).unwrap_or(u64::MAX);
+            if found != 1 {
+                self.iterations = self.iterations.saturating_sub(1);
+                return Err(Halt::Family(FamilyResult::Undefined(Box::new(
+                    StateModelUndefined::OnlyNotOne {
+                        population: population_of(node.at(*operand))?,
+                        found,
+                    },
+                ))));
+            }
+        }
         let mut iteration = Box::new(Iteration {
             node,
             source,
@@ -2747,6 +2885,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                         }
                         false
                     }
+                    (Visit::Only, value) => {
+                        iteration.results.push(value);
+                        false
+                    }
                     _ => return Err(invariant("query-body-value-invalid")),
                 },
                 NodeKind::Fold { .. } => {
@@ -2773,7 +2915,15 @@ impl<'a, 'm> Machine<'a, 'm> {
         let Some(element) = iteration.source.elements().get(iteration.next).cloned() else {
             return self.finish(*iteration);
         };
-        charge_visit(self.meter)?;
+        // An `only` over a `where` filter already visited the one object that
+        // passed it (FR-139).
+        if !matches!(
+            node.kind(),
+            NodeKind::Query { visit: Visit::Only, source, .. }
+                if matches!(node.at(*source).kind(), NodeKind::Query { visit: Visit::Filter, .. })
+        ) {
+            charge_visit(self.meter)?;
+        }
         iteration.next = iteration.next.saturating_add(1);
         let position = iteration.next.saturating_sub(1);
         let body = match node.kind() {
@@ -3271,6 +3421,11 @@ impl<'a, 'm> Machine<'a, 'm> {
                     };
                     retain_scalar(Value::Integer(total), self.meter)?
                 }
+                Visit::Only => iteration
+                    .results
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| invariant("only-element-missing"))?,
                 Visit::Count => {
                     if let ValueType::Int(domain) = node.value_type() {
                         if !domain.contains(&iteration.count) {

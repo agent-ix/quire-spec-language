@@ -181,6 +181,16 @@ fn binary_operator_tag(operator: BinaryOperator) -> &'static str {
     }
 }
 
+fn population_form_tag(form: qsl_forms::PopulationForm) -> &'static str {
+    match form {
+        qsl_forms::PopulationForm::Count => "count",
+        qsl_forms::PopulationForm::Sum => "sum",
+        qsl_forms::PopulationForm::Exists => "exists",
+        qsl_forms::PopulationForm::All => "all",
+        qsl_forms::PopulationForm::Only => "only",
+    }
+}
+
 fn binder_query_tag(query: BinderQuery) -> &'static str {
     match query {
         BinderQuery::Map => "map",
@@ -582,6 +592,32 @@ fn encode_expression(
                 out.write_str(result_type);
                 out.write_str(binder);
                 pending.extend([expr.at(*source), expr.at(*summand)]);
+            }
+            ExprNode::Population {
+                form,
+                binder,
+                population,
+                population_span: _,
+                condition,
+                body,
+            } => {
+                out.write_str("population");
+                out.write_str(population_form_tag(*form));
+                out.write_str(binder);
+                out.write_str(population);
+                out.write_bool(condition.is_some());
+                out.write_bool(body.is_some());
+                pending.extend(condition.iter().chain(body.iter()).map(|id| expr.at(*id)));
+            }
+            ExprNode::Seq {
+                binder,
+                low,
+                high,
+                body,
+            } => {
+                out.write_str("seq");
+                out.write_str(binder);
+                pending.extend([expr.at(*low), expr.at(*high), expr.at(*body)]);
             }
             ExprNode::Size(operand) => {
                 out.write_str("size");

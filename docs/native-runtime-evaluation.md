@@ -1,5 +1,9 @@
 # Native reference execution and accounting
 
+> **Historical: `0-draft` edition.** This page describes the original `0-draft`
+> native path, which is being deleted. For `1-draft`, start from the
+> [README](../README.md) and the [run request reference](native-standalone.md).
+
 Draft LC03 contract under FR-008 and NFR-006. The existing adopted
 state-finite/0-draft semantics govern values and order.
 The selected reference accounting label is native-ref-cost/1-draft. Qualification

@@ -68,3 +68,4 @@ Disposition pass 1 at head 79cf36a47. The fix commit changes no spec file and do
 | FND-005 | deferred | Spec gap, sent to the planner (Linear planner note of the review pass). The code now refuses `PrefixShort`, but FR-128 still has no rule; see FND-008 for the rule's shape. |
 | FND-006 | deferred | Spec gap, sent to the planner. The code evaluates a fair clause's prefix on the formula alone; FR-128 and FR-125 still do not say so. |
 | FND-007 | deferred | Spec gap, sent to the planner: FR-128's Inputs still omit the `ModelLetters` seam. |
+| FND-008 | deferred | Spec gap, sent to the planner (round-1 planner note): ADR-018 CX-1 still says a bounded prefix covers the horizon. The code now follows rule (a), a prefix that decides the formula or ends at a terminal state; the spec should say so. |

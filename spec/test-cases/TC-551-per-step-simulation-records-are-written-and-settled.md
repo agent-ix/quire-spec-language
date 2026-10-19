@@ -13,7 +13,7 @@ relationships:
 Verify which `operation-contract` records the refinement's `requirements`
 hook writes, their hypotheses, and how their backend outcomes settle.
 
-Scope: FR-146-AC-1 to FR-146-AC-4.
+Scope: FR-146-AC-1 to FR-146-AC-7.
 
 ## Test Procedure
 
@@ -28,6 +28,12 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
 4. Settle a backend "holds" for the `commitA` record, a backend
    counterexample for the lost-update `commitB` record from `(1, 0, f, 0,
    t)`, and each record with no SMT candidate registered.
+5. Write the requests for `CasRefinesCounter` with its seven `step` rows in
+   reverse source order.
+6. Add `AbsInv` on `Spec::Counter` beside `CasInv`, write the request, then
+   write the clauses in the opposite source order.
+7. Feed the settlement map the checker's `Rejected` and `Unverifiable`
+   results for the `commitA` record's "holds" outcome.
 
 Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 
@@ -36,8 +42,11 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 - Step 1: eight records (one `Initial`, seven `Step`) with empty hypotheses;
   none with `commitB -> any`.
 - Step 2: no `StepSimulationRecord`; one refinement record each.
-- Step 3: every record lists `CasInv`; `CasInv`'s own record is present; the
-  `Initial` identity differs from step 1's.
+- Step 3: every record lists `CasInv`; `CasInv`'s own record is present.
 - Step 4: `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate;
   `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`;
   `unsupported`.
+- Step 5: the same eight records with the same `StepRowRef`s as step 1.
+- Step 6: `CasInv` listed and `AbsInv` not; unchanged by clause order.
+- Step 7: `inconclusive`, `CertificateRejected{rule, at}` for `Rejected`;
+  `proved`, `Uncertified` for `Unverifiable`.

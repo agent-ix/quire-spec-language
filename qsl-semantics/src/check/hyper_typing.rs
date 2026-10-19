@@ -395,6 +395,8 @@ pub(crate) fn type_condition(
             | ExprNode::Accumulate { .. }
             | ExprNode::Count { .. }
             | ExprNode::Sum { .. }
+            | ExprNode::Population { .. }
+            | ExprNode::Seq { .. }
             | ExprNode::Size(_)
             | ExprNode::Contains { .. }
             | ExprNode::AllInstances { .. }

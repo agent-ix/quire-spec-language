@@ -243,7 +243,7 @@ set holds both sides, and the concrete `reveal` prunes it to the one shown.
 | ID | Engine | Checks | Verdicts |
 | --- | --- | --- | --- |
 | RE-1 | **EN-1, refinement product.** The product `TransitionSystem` (ADR-018 EN-1) whose state is (concrete state, history values, monitor state), plus the AX-2 set when hidden fields exist; its key adds the history values and the set's sorted abstract state keys. Phase 1 runs `check_step` on each retained edge (CO-1). Phase 2 runs SCC decomposition on the retained graph when `F_A` is non-empty, with the Büchi automaton for the negation of `F_A` read through the mapping (CO-2, carrying RS-7) and the `F_C` filter. | the whole refinement, RS-8 | V-1, V-4, V-5, V-6, V-7; V-8 for AX-5 |
-| RE-2 | **SMT per-step simulation.** One `operation-contract` obligation per `step` row and one for RS-2, as QSpec FR-290's state-model refinement row states. For a step row of operation `o`: the concrete invariants, `o`'s effective precondition, its frame and its postcondition over `(s, s')` imply RS-3 or RS-4 over `(map(s), map(s'))`. The concrete package's invariant clauses are the induction hypothesis; each is its own `operation-contract` record. | safety half of a declaration with no hidden field, no history field and no `any` row (QSpec FR-377 Engines, FR-377-AC-7) | V-3 with `Inductive{depth: 1}` and basis `decisive-witness`; V-6 `InductionNotClosed{depth: 1}` when a step obligation fails from a pre-state that satisfies the invariants |
+| RE-2 | **SMT per-step simulation.** One `operation-contract` obligation per `step` row and one for RS-2, as QSpec FR-290's state-model refinement row states. For a step row of operation `o`: the concrete invariants, `o`'s effective precondition, its frame and its postcondition over `(s, s')` imply RS-3 or RS-4 over `(map(s), map(s'))`. The invariant clauses whose context is an object type of the concrete model are the induction hypothesis (the declaring package can also hold the abstract model, RM-1); each is its own `operation-contract` record. | safety half of a declaration with no hidden field, no history field and no `any` row (QSpec FR-377 Engines, FR-377-AC-7) | V-3 with `Inductive{depth: 1}` and basis `decisive-witness`; V-6 `InductionNotClosed{depth: 1}` when a step obligation fails from a pre-state that satisfies the invariants |
 | RE-3 | **SMT unrolling (ADR-018 EN-2)** with the RS-1 edge monitor | safety half refutation, liveness half lasso refutation | V-4, V-5 |
 | RE-4 | **Verdict causes.** `InconclusiveCause` gains `MappingUndetermined`, wire cause `mapping-undetermined`: a mapping row, an argument expression or a history update was refused or incomplete, or a history update left its declared type, at a reachable state. `UndecidedSuccessor` (ADR-018 V-6) covers an undecided contract conjunction of either subject during expansion or `check_step`. | | V-6 |
 | RE-5 | **Undefined evaluation.** ADR-018 UE-1 to UE-6 apply to the mapping. When a mapping row, an argument expression or a history update evaluates undefined at a reachable state, the refinement settles `refuted`, V-4, with cause `UndefinedEvaluation{where, cause}`. `where` names the position of the step's post-state (0 for an initial state), the row, argument or update, and the object; `cause` is the evaluator's undefined cause. The counterexample is a refinement counterexample (RC-1) ending at that step, its `kind` the `UndefinedEvaluation`, and it ranks like any other failure: the first in canonical breadth-first order. | | V-4 |
@@ -344,12 +344,12 @@ model Spec = "example/counter-spec" …;
 model Impl = "example/counter-cas" …;
 
 pre  CanInc     using v on Spec::Counter::inc     { self.value < 2 }
-post Inc        using v on Spec::Counter::inc     { self.value = pre(self.value) + 1 }
+post Inc        using v on Spec::Counter::inc     { pre(self.value) < 2 and self.value = pre(self.value) + 1 }
 
 pre  BeginAPre  using v on Impl::Counter::beginA  { not self.busyA }
 post BeginAPost using v on Impl::Counter::beginA  { self.busyA and self.tmpA = pre(self.value) }
 pre  CommitAPre using v on Impl::Counter::commitA { self.busyA and self.tmpA = self.value and self.value < 2 }
-post CommitAPost using v on Impl::Counter::commitA { self.value = pre(self.tmpA) + 1 and not self.busyA }
+post CommitAPost using v on Impl::Counter::commitA { pre(self.tmpA) < 2 and self.value = pre(self.tmpA) + 1 and not self.busyA }
 pre  RetryAPre  using v on Impl::Counter::retryA  { self.busyA and self.tmpA != self.value }
 post RetryAPost using v on Impl::Counter::retryA  { not self.busyA }
 // the same six clauses for B over tmpB and busyB
@@ -370,6 +370,15 @@ refinement CasRefinesCounter using inf abstract Spec concrete Impl {   // illust
   ensure fair weak each Spec::Counter::inc;
 }
 ```
+
+The postconditions carry the guard `pre(...) < 2`. S3's range prover types
+`pre(self.value) + 1` over `Int[0, 2]` as `[1, 3]`, which does not conform to
+`self.value`'s declared `Int[0, 2]`, so an unguarded `self.value = pre(self.value) + 1`
+refuses `Unproved(Range{required: [0, 2], proved: [1, 3]})`. The guard narrows
+the operand to `[0, 1]` inside the conjunction, and the clause checks. The
+guard also states what the unguarded clause left implicit: an increment from
+`value` 2 has no successor. `CanInc` rules that pre-state out, so no
+reachable step is lost.
 
 Every fairness row spells `each`, the granularity meant. With one receiver
 and no parameters each operation has one transition identity, so `whole`
@@ -471,7 +480,7 @@ refinement RingIsQueue using inf abstract Q concrete R {   // illustrative spell
   population Q::queues from R::rings;
   object Q::Queue from R::Ring {
     items = seq(i in 0 .. self.size - 1:
-              only(s in R::slots where s.ring = self and s.index = (self.head + i) mod 2: s.value));
+              only(s in R::slots where s.ring = self and convert<Integer>(s.index) = (self.head + i) mod 2: s.value));
   }
   step R::Slot::put  -> Q::Queue::enq(self.ring, x);
   step R::Slot::take -> Q::Queue::deq(self.ring);
@@ -479,6 +488,8 @@ refinement RingIsQueue using inf abstract Q concrete R {   // illustrative spell
 ```
 
 `slots` is concrete-only state (RM-2), read as a whole population by `only`.
+The `mod` result is an `Integer`, which QSpec FR-149 does not compare with an
+`Int[0, 1]` operand, so the row converts the index explicitly.
 The receiver `self.ring` is a `Reference<Ring>`, lifted to the abstract
 `Queue` with the same key (RM-3). With universes `rings = {r}` and `slots =
 {s0, s1}` (indices 0 and 1), the state `head = 1`, `size = 2`, `s1.value =

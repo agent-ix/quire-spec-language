@@ -13,8 +13,8 @@ use crate::check::Scope;
 
 /// Whether this checker covers a static node of `kind`: every node kind of
 /// the `run` tree is checked (`graph`, `protocol_controls`, `protocol_slots`,
-/// `protocol_obligation`) except a `fence`, whose memory semantics nothing
-/// checks yet. Exhaustive, so a new node kind must be classified here.
+/// `protocol_obligation`, `protocol_memory`). Exhaustive, so a new node kind
+/// must be classified here.
 fn covered_kind(kind: ProtocolNodeKind) -> bool {
     use ProtocolNodeKind as K;
     match kind {
@@ -33,8 +33,8 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
         | K::Repeat
         | K::Case
         | K::Await
-        | K::Check => true,
-        K::Fence => false,
+        | K::Check
+        | K::Fence => true,
     }
 }
 
@@ -58,7 +58,7 @@ fn covered_construct(kind: ProtocolConstructKind) -> bool {
         | K::Relationship
         | K::Related
         | K::ReplicatedRole => true,
-        K::JoinPredicate | K::MemoryClause | K::AccessOrdering => false,
+        K::JoinPredicate => false,
     }
 }
 
@@ -66,10 +66,10 @@ fn covered_construct(kind: ProtocolConstructKind) -> bool {
 /// [`check`](super::check) has resolved its anchors, binders and attempt
 /// bindings and compiled its control tree.
 ///
-/// Every node kind and expression slot of the `run` tree but a `fence` is
-/// checked (`graph`, `protocol_controls`, `protocol_slots`,
-/// `protocol_obligation`).
-/// A protocol holding a node kind [`covered_kind`] rejects (a `fence`) or
+/// Every node kind and expression slot of the `run` tree is checked
+/// (`graph`, `protocol_controls`, `protocol_slots`, `protocol_obligation`,
+/// `protocol_memory`).
+/// A protocol holding a node kind [`covered_kind`] rejects or
 /// a [`qsl_forms::ProtocolConstructKind`] that no checker reads yet
 /// ([`covered_construct`] says which are checked) refuses
 /// `unsupported_construct`/`not-yet-implemented` once, at the earliest such
