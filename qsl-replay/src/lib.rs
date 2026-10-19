@@ -90,7 +90,9 @@ pub use execute::{
     IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal, ParityPreimage,
     ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
 };
-pub use hybrid::{NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult};
+pub use hybrid::{
+    NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+};
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
     RawSourceRef, TracePosition,

@@ -11,7 +11,7 @@ use quire_exact::Rational;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
-use crate::model_check::limits::ReachedLimit;
+use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
 };
@@ -57,6 +57,17 @@ impl Serialize for SolverMethod {
     }
 }
 
+/// The budget that stopped a solver. A time stop carries no seconds, so a
+/// stored record never depends on the requested limit.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SolverStop {
+    /// The wall-clock budget ran out: settles `incomplete`, `timed-out`.
+    Time,
+    /// The step budget ran out after this many steps: settles `incomplete`,
+    /// `limit-reached` naming `solver-steps`.
+    Steps(u64),
+}
+
 /// A provider's outcome (FR-250 Inputs).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SolverOutcome {
@@ -71,7 +82,7 @@ pub enum SolverOutcome {
     /// The solver could not decide.
     Unknown,
     /// A budget stopped the solver.
-    Stopped(ReachedLimit),
+    Stopped(SolverStop),
 }
 
 /// A non-negative time horizon, an exact rational number of seconds.
@@ -131,10 +142,13 @@ impl SolverResult {
     /// always `Uncertified`.
     pub fn terminal_value(&self) -> TerminalValue {
         match self.outcome {
-            SolverOutcome::Stopped(limit) => {
+            SolverOutcome::Stopped(SolverStop::Time) => {
+                TerminalValue::Incomplete(IncompleteCause::TimedOut)
+            }
+            SolverOutcome::Stopped(SolverStop::Steps(value)) => {
                 TerminalValue::Incomplete(IncompleteCause::LimitReached {
-                    limit: limit.limit,
-                    value: limit.value,
+                    limit: ModelCheckLimit::SolverSteps,
+                    value,
                 })
             }
             outcome if self.method.is_sound_for(&outcome) => TerminalValue::Proved {
@@ -283,29 +297,41 @@ mod tests {
         );
     }
 
-    /// A stopped solver is `incomplete`, `limit-reached` naming the budget,
-    /// its value and the setting that raises it.
+    /// A solver stopped by its time budget settles `incomplete`,
+    /// `timed-out`, carrying no seconds; one stopped by its step budget
+    /// settles `incomplete`, `limit-reached` naming `solver-steps`.
     #[trace("TC-705", "FR-250-AC-2")]
     #[test]
-    fn a_stopped_solver_settles_incomplete_naming_the_budget() {
-        let stopped = result(
+    fn a_stopped_solver_settles_incomplete_by_the_budget_that_stopped_it() {
+        let timed = result(
             SolverMethod::DeltaComplete,
-            SolverOutcome::Stopped(ReachedLimit {
-                limit: ModelCheckLimit::SolverTime,
-                value: 30,
-            }),
+            SolverOutcome::Stopped(SolverStop::Time),
         );
-        assert_eq!(stopped.basis(), SettlementBasis::Unavailable);
+        assert_eq!(timed.basis(), SettlementBasis::Unavailable);
         assert_eq!(
-            item(&stopped),
+            item(&timed),
+            json!({
+                "request_index": 0,
+                "result": "incomplete",
+                "cause": {"kind": "timed-out"},
+                "category": "incomplete",
+            })
+        );
+        let stepped = result(
+            SolverMethod::DeltaComplete,
+            SolverOutcome::Stopped(SolverStop::Steps(1000)),
+        );
+        assert_eq!(stepped.basis(), SettlementBasis::Unavailable);
+        assert_eq!(
+            item(&stepped),
             json!({
                 "request_index": 0,
                 "result": "incomplete",
                 "cause": {
                     "kind": "limit-reached",
-                    "limit": "solver-time",
-                    "value": 30,
-                    "setting": "max_solver_time",
+                    "limit": "solver-steps",
+                    "value": 1000,
+                    "setting": "max_solver_steps",
                 },
                 "category": "incomplete",
             })
@@ -314,7 +340,8 @@ mod tests {
 
     /// FR-250's table over every method and outcome, written out cell by
     /// cell: only a delta-complete `Unsat` and an outward-rounded
-    /// `EnclosureDisjoint` prove, a stop is incomplete, the rest are
+    /// `EnclosureDisjoint` prove, a stop is incomplete (a time stop `timed-out`, a step stop
+    /// `limit-reached`), the rest are
     /// inconclusive, and none is `refuted` or `certified`.
     #[trace("TC-705", "FR-250-AC-2")]
     #[test]
@@ -328,32 +355,34 @@ mod tests {
         enum Expect {
             Proved,
             Inconclusive,
-            Incomplete,
+            TimedOut,
+            StepsReached,
         }
-        use Expect::{Incomplete, Inconclusive, Proved};
-        let stop = SolverOutcome::Stopped(ReachedLimit {
-            limit: ModelCheckLimit::SolverSteps,
-            value: 1,
-        });
+        use Expect::{Inconclusive, Proved, StepsReached, TimedOut};
+        let time = SolverOutcome::Stopped(SolverStop::Time);
+        let steps = SolverOutcome::Stopped(SolverStop::Steps(1));
         let table = [
             (D, Unsat, Proved),
             (D, DeltaSat, Inconclusive),
             (D, EnclosureDisjoint, Inconclusive),
             (D, EnclosureMeetsUnsafe, Inconclusive),
             (D, Unknown, Inconclusive),
-            (D, stop, Incomplete),
+            (D, time, TimedOut),
+            (D, steps, StepsReached),
             (O, Unsat, Inconclusive),
             (O, DeltaSat, Inconclusive),
             (O, EnclosureDisjoint, Proved),
             (O, EnclosureMeetsUnsafe, Inconclusive),
             (O, Unknown, Inconclusive),
-            (O, stop, Incomplete),
+            (O, time, TimedOut),
+            (O, steps, StepsReached),
             (U, Unsat, Inconclusive),
             (U, DeltaSat, Inconclusive),
             (U, EnclosureDisjoint, Inconclusive),
             (U, EnclosureMeetsUnsafe, Inconclusive),
             (U, Unknown, Inconclusive),
-            (U, stop, Incomplete),
+            (U, time, TimedOut),
+            (U, steps, StepsReached),
         ];
         for (method, outcome, expect) in table {
             let settled = result(method, outcome);
@@ -382,9 +411,21 @@ mod tests {
                     );
                     assert_eq!(basis, SettlementBasis::Unsettled);
                 }
-                Incomplete => {
-                    assert!(
-                        matches!(value, TerminalValue::Incomplete(_)),
+                TimedOut => {
+                    assert_eq!(
+                        value,
+                        TerminalValue::Incomplete(IncompleteCause::TimedOut),
+                        "{method:?} {outcome:?}"
+                    );
+                    assert_eq!(basis, SettlementBasis::Unavailable);
+                }
+                StepsReached => {
+                    assert_eq!(
+                        value,
+                        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                            limit: ModelCheckLimit::SolverSteps,
+                            value: 1,
+                        }),
                         "{method:?} {outcome:?}"
                     );
                     assert_eq!(basis, SettlementBasis::Unavailable);
