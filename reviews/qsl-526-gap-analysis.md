@@ -41,3 +41,15 @@ The PR's later-phase list (FR-126-AC-1/4/5/6, the TP-2/TP-4/lasso/interval halve
 - Deliberately deferred (PR body): FR-126-AC-1/4/5/6/7, FR-127-AC-1/3/4/6-9, FR-128-AC-1/3/6, and the TP-2/TP-4/lasso/interval halves.
 - Reverse gap: none. Every new public item traces to FR-124 to FR-128 or to ADR-018.
 - Stubs: none. No `todo!`, `unimplemented!` or placeholder returns in the diff.
+
+## Dispositions
+
+Round 1, reviewed at 72346678bf8568550ea3362a10a53f53960c293a. `quire matrix --scope .` was re-run at this sha.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 72346678b. The doc comments of the partly covering tests now start with "Verifies the ... half of FR-x-AC-y, not ..." and no longer lead with the criterion id. The recomputed matrix shows FR-126-AC-2, FR-126-AC-3, FR-126-AC-8, FR-126-AC-9, FR-127-AC-5, FR-128-AC-2 and FR-128-AC-3 as `untagged`. The tests remain bound to their TCs. |
+| FND-002 | fixed | 72346678b. The PR body now separates "Covered in full" (FR-124-AC-2, FR-124-AC-3, FR-127-AC-10) from "Covered in part", with the uncovered halves named. The FR-128-AC-4 `clause_node` clause is implemented and tested for the derived item (SR-12143 FND-001). The guard test's doc says it is the deadlock item's analogue of FR-128-AC-5, which waits on FR-337, and not that criterion. |
+| FND-003 | deferred | Low. The engine paths to `Undecided(UndecidedSuccessor)` remain untested here. The vector is FR-126-AC-6, which is deferred to a later phase. |
+| FND-004 | deferred | Low. FR-124-AC-3's fairness clause is still argued from the classifier's signature. Recorded under the review policy (only major bugs block). |
+| FND-005 | deferred | Low. FR-125-AC-1/2/4 remain untagged. The PR body lists FR-125 as covered in part ("subject and letters seam"), so nothing over-claims. Recorded under the review policy. |
