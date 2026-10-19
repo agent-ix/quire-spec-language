@@ -1504,6 +1504,10 @@ impl<'a> Engine<'a> {
                         matches!(&token.kind, Some(Kind::Text(value)) if value == expected)
                     }
                     Terminal::UnsignedInteger => matches!(token.kind, Some(Kind::Integer(_))),
+                    Terminal::DecimalLiteral => {
+                        matches!(token.kind, Some(Kind::Fractional))
+                            && !token.spelling.contains(['e', 'E'])
+                    }
                     Terminal::Peek(spellings) => {
                         return if spellings.contains(&token.spelling.as_ref()) {
                             Outcome::Match(position)
@@ -1536,6 +1540,7 @@ impl Terminal {
             Self::Text => "quoted string".into(),
             Self::TextValue(value) => format!("`\"{value}\"`"),
             Self::UnsignedInteger => "unsigned integer".into(),
+            Self::DecimalLiteral => "decimal literal".into(),
             Self::Peek(spellings) => format!("one of `{}`", spellings.join("`, `")),
             Self::Bound => "unsigned 64-bit integer".into(),
             Self::End => "end of source".into(),

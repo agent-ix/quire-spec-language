@@ -181,7 +181,10 @@ pub(crate) fn interval_form(
 
 /// A formula CST node (`TemporalExpression` or any production under it) as
 /// a formula arena.
-fn formula_form(cst: &LosslessCst, root: &CstNode) -> Result<TemporalFormulaForm, FormsRefusal> {
+pub(crate) fn formula_form(
+    cst: &LosslessCst,
+    root: &CstNode,
+) -> Result<TemporalFormulaForm, FormsRefusal> {
     let mut build = Formula {
         cst,
         nodes: Vec::new(),
