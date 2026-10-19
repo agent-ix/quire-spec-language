@@ -10,23 +10,23 @@
 //! refuses), one over a unit with a `terminal` declaration (S4 refuses the
 //! declaration as not emitted, so the recompile refuses), the
 //! `ReplaySource::ModelTrace` arm (the envelope carries a witness source
-//! the model-trace replay does not read), and a `Proved{Exhaustive,
-//! Certified}` settlement, which waits on the closure certificate's core
-//! checker.
+//! the model-trace replay does not read). A `Holds` outcome's settlement
+//! through the closure checker is `crate::closure_certificate`'s.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{check_model, ModelCheckItem, ModelCheckRequest};
+use qsl_analyze::model_check::{check_model, ModelCheckRequest};
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
+use qsl_package::CheckedPackage;
 use qsl_replay::{
     compile_package, deadlock_freedom_clause, replay_model_trace, settle_model_check,
-    Certification, CounterexampleKind, DependencyInput, DigestDomain, DigestRecord,
+    CertificateRequest, CounterexampleKind, DependencyInput, DigestDomain, DigestRecord,
     DisagreementCause, Execution, IncompleteCause, InconclusiveCause, InternalFault,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
-    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProofBasis,
+    ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
+    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue,
     QualifiedName, ReachedLimit, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplaySource,
     ResultLabel, RunStats, SettlementBasis, StateEnvironment, TemporalCounterexample,
     TerminalValue, Truth, UndecidedCause, UndefinedLocus, WireNodeId, Witness, WitnessEnvelope,
@@ -50,7 +50,25 @@ struct Case {
     documents: Documents,
     initial: Vec<DocumentRef>,
     package_id: DigestRecord,
+    checked: CheckedPackage,
     outcome: ModelCheckOutcome,
+}
+
+impl Case {
+    /// The deadlock-freedom item's certificate request over the case's
+    /// subject.
+    fn request(&self) -> CertificateRequest<'_> {
+        CertificateRequest {
+            subject: subject(
+                &self.checked,
+                &self.documents,
+                self.initial.clone(),
+                &["c"],
+                UNLIMITED,
+            ),
+            item: ModelCheckItem::DeadlockFreedom,
+        }
+    }
 }
 
 fn case(body: &str, values: &[i64]) -> Case {
@@ -89,6 +107,7 @@ fn case(body: &str, values: &[i64]) -> Case {
         documents,
         initial,
         package_id,
+        checked,
         outcome,
     }
 }
@@ -479,17 +498,21 @@ fn unchecked() -> DigestRecord {
     DigestRecord::mint(DigestDomain::PackageSemanticV2, [0; 32])
 }
 
-fn settle(outcome: &ModelCheckOutcome) -> qsl_replay::ModelCheckRecord {
-    settle_model_check(outcome, &ModelCheckLimits::default(), &unchecked(), |_| {
-        panic!("only a violation is replayed")
-    })
+fn settle(case: &Case, outcome: &ModelCheckOutcome) -> qsl_replay::ModelCheckRecord {
+    settle_model_check(
+        outcome,
+        &ModelCheckLimits::default(),
+        &unchecked(),
+        &case.request(),
+        &Cancel::new(),
+        |_| panic!("only a violation is replayed"),
+    )
 }
 
-/// FR-127's map for the outcomes that need no replay: `Holds` settles
-/// `proved`, `closed-scope`, `Proved{Exhaustive, Uncertified}` (EN-1 has no
-/// core certificate checker yet, ADR-018 PC-1), success; `BoundReached{2}`
+/// FR-127's map for the outcomes that need no replay or certificate check:
+/// `BoundReached{2}`
 /// settles `inconclusive`, `unsettled`, execution `completed`, truth
-/// `pending`, depth 2; `UndecidedSuccessor` and `NoInitialState` settle
+/// `pending`, depth 2; `UndecidedSuccessor`, `NoInitialState` and `NoInstance` settle
 /// `inconclusive` with their causes; `Stopped` at `max_states` 2 settles
 /// `failed`, `resource-incomplete`, `unavailable`,
 /// `Incomplete(LimitReached{MaxStates, 2})` naming `max_states`; a
@@ -498,26 +521,9 @@ fn settle(outcome: &ModelCheckOutcome) -> qsl_replay::ModelCheckRecord {
 #[trace("TC-522")]
 #[test]
 fn each_outcome_settles_its_row_of_the_map() {
+    let case = case(CONTRACT, &[0]);
+    let settle = |outcome: &ModelCheckOutcome| settle(&case, outcome);
     let stats = RunStats::default();
-    let holds = settle(&ModelCheckOutcome::Holds { stats });
-    assert_eq!(
-        holds.value,
-        TerminalValue::Proved {
-            basis: ProofBasis::Exhaustive,
-            certification: Certification::Uncertified,
-        }
-    );
-    assert_eq!(
-        (holds.label, holds.basis, holds.execution, holds.truth),
-        (
-            ResultLabel::Proved,
-            SettlementBasis::ClosedScope,
-            Execution::Completed,
-            Truth::Satisfied
-        )
-    );
-    assert_eq!(holds.value.category(), Category::Success);
-
     let bound = settle(&ModelCheckOutcome::BoundReached { depth: 2, stats });
     assert_eq!(
         bound.value,
@@ -550,6 +556,7 @@ fn each_outcome_settles_its_row_of_the_map() {
             UndecidedCause::NoInitialState,
             InconclusiveCause::NoInitialState,
         ),
+        (UndecidedCause::NoInstance, InconclusiveCause::NoInstance),
     ] {
         let record = settle(&ModelCheckOutcome::Undecided { cause, stats });
         assert_eq!(record.value, TerminalValue::Inconclusive(expected));
@@ -609,7 +616,7 @@ fn each_outcome_settles_its_row_of_the_map() {
         (ModelCheckLimit::MaxTransitions, 100_000_000),
         (ModelCheckLimit::MaxAutomatonStates, 1_048_576),
     ];
-    for record in [holds, bound, stopped] {
+    for record in [bound, stopped] {
         assert_eq!(record.method, EXPLICIT_STATE);
         assert_eq!(record.limits, used);
     }
@@ -630,6 +637,8 @@ fn a_deadlock_violation_settles_refuted_through_its_replay() {
         &case.outcome,
         &ModelCheckLimits::default(),
         &case.package_id,
+        &case.request(),
+        &Cancel::new(),
         |payload| {
             replayed = true;
             replay(&case, payload.clone())
@@ -675,6 +684,8 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
         &violated(truncated),
         &ModelCheckLimits::default(),
         &case.package_id,
+        &case.request(),
+        &Cancel::new(),
         |payload| replay(&case, payload.clone()),
     );
     let TerminalValue::Inconclusive(cause) = &parity.value else {
@@ -696,6 +707,8 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
         &violated(altered),
         &ModelCheckLimits::default(),
         &case.package_id,
+        &case.request(),
+        &Cancel::new(),
         |payload| replay(&case, payload.clone()),
     );
     assert_eq!(
@@ -708,6 +721,8 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
         &violated(counterexample(&case)),
         &ModelCheckLimits::default(),
         &elsewhere,
+        &case.request(),
+        &Cancel::new(),
         |payload| replay(&case, payload.clone()),
     );
     assert_eq!(
@@ -719,6 +734,8 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
         &violated(counterexample(&case)),
         &ModelCheckLimits::default(),
         &case.package_id,
+        &case.request(),
+        &Cancel::new(),
         |_| {
             Err(ReplayRefusal::Fault(InternalFault::new(
                 "test",

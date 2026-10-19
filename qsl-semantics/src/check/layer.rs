@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 
 use qsl_forms::{
     BinaryOperator, BinderQuery, DeclarationKind, ExprNode, Expression, ExpressionSpans,
-    FunctionDeclaration, OperationBodyForm, StateClauseForm,
+    FunctionDeclaration, OperationBodyForm, StateClauseForm, StateGraphClaimForm,
 };
 use qsl_foundation::Span;
 
@@ -102,6 +102,21 @@ impl<'a> LayerAdmission<'a> {
         let whole = clause.spans.declaration;
         self.declaration(LayerForm::StateClause, whole)
             .or_else(|| self.expression(&clause.body, &clause.spans.body, whole))
+    }
+
+    /// The refusal of the first form of a state-graph claim outside the set,
+    /// if any: as a state clause is admitted, then each predicate's
+    /// expression forms in source order.
+    pub(crate) fn state_graph_claim(&self, claim: &StateGraphClaimForm) -> Option<AssemblyError> {
+        self.declaration(LayerForm::StateClause, claim.span)
+            .or_else(|| {
+                super::state_graph_claim::predicates(&claim.kind)
+                    .into_iter()
+                    .flat_map(|(_, predicate)| &predicate.operands)
+                    .find_map(|operand| {
+                        self.expression(&operand.expression, &operand.spans, claim.span)
+                    })
+            })
     }
 
     fn declaration(&self, form: LayerForm, span: Span) -> Option<AssemblyError> {

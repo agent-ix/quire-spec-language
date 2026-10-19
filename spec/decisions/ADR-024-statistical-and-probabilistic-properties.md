@@ -217,9 +217,10 @@ approximate expected values, which ignore overshoot.
 profile ev = "quire.temporal.event-position.false-extension/v1" …;
 model Health = "example/health" …;     // object n: Node { healthy: Bool }, initially healthy
 
-operation Node::tick(random fault: Bool ~ { true: 1, false: 9999999 })
+operation Node::tick(fault: Bool)
   post self.healthy = (pre(self.healthy) and not fault);
 
+random Node::tick(fault) ~ { true: 1, false: 9999999 };
 workload Steady on Health { weight Node::tick = 1; }
 
 probabilistic NoFault using ev on Health under Steady on origin
@@ -253,15 +254,17 @@ model Service = "example/service" …;   // object s: Server { phase: Phase, att
 operation Server::request
   pre  self.phase = Idle
   post self.phase = Busy and self.attempts = 0;
-operation Server::attempt(random d: Quantity<Time> ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 },
-                          random outcome: Outcome ~ { Ok: 98, Fail: 2 })
+operation Server::attempt(d: Quantity<Time>, outcome: Outcome)
   pre  self.phase = Busy
   post self.attempts = pre(self.attempts) + 1 and
-       self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy)
-  reward duration = d;
+       self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy);
 operation Server::reset
   pre  self.phase = Done
   post self.phase = Idle;
+
+random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 };
+random Server::attempt(outcome) ~ { Ok: 98, Fail: 2 };
+reward duration on Server::attempt = d;
 
 workload Steady on Service { weight Server::request = 1; weight Server::attempt = 1; weight Server::reset = 1; }
 
@@ -297,22 +300,24 @@ latency is the sum of two durations.
 ```text
 model Avail = "example/avail" …;       // object v: Server { up: Bool }, initially up
 
-operation Server::tick(random fail: Bool ~ { true: 1, false: 1999 })
+operation Server::tick(fail: Bool)
   pre  self.up
   post self.up = not fail;
-operation Server::repair(random ok: Bool ~ { true: 9, false: 1 })
+operation Server::repair(ok: Bool)
   pre  not self.up
   post self.up = ok;
 
+random Server::tick(fail) ~ { true: 1, false: 1999 };
+random Server::repair(ok) ~ { true: 9, false: 1 };
 workload Steady on Avail { weight Server::tick = 1; weight Server::repair = 1; }
 
 probabilistic LongRun using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.0002 {
-  long-run fraction holds(v.up) >= 0.999
+  long_run_fraction holds(v.up) >= 0.999
 }
 probabilistic Monthly using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.005 {
-  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= 0.999 ]
+  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= rational(999, 1000) ]
 }
 ```
 

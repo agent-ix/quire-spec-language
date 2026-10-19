@@ -2,6 +2,7 @@
 //! FR-126 Outputs (ADR-018 LA-3, LA-5): what an EN-1 run returns, which
 //! FR-127's settlement map settles.
 
+use crate::certificate::closure::ClosureCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::IncompleteCause;
@@ -28,13 +29,19 @@ pub enum UndecidedCause {
     UndecidedSuccessor,
     /// The subject has no initial state (ADR-016 EX-10).
     NoInitialState,
+    /// The item has zero instances (FR-125).
+    NoInstance,
 }
 
 /// One EN-1 run's outcome (FR-126 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelCheckOutcome {
-    /// Every reachable product state was examined and none is bad (V-1).
+    /// Every reachable product state was examined and none is bad (V-1),
+    /// with the closure certificate the core checks before the proof
+    /// settles (ADR-018 PC-3).
     Holds {
+        /// The explored product states.
+        certificate: ClosureCertificate,
         /// The run's counts.
         stats: RunStats,
     },
@@ -75,7 +82,7 @@ impl ModelCheckOutcome {
     /// The run's counts.
     pub fn stats(&self) -> RunStats {
         match self {
-            Self::Holds { stats }
+            Self::Holds { stats, .. }
             | Self::Violated { stats, .. }
             | Self::BoundReached { stats, .. }
             | Self::Undecided { stats, .. }

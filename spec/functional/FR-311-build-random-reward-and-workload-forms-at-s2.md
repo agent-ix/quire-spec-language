@@ -58,6 +58,10 @@ pub struct WorkloadForm {               // workload-decl
 }
 ```
 
+`ExactValue` is the type FR-393 defines: an `exact-value` held as written
+(its spelling kind and two integers), not as a reduced numerator and
+denominator. S3 reduces each weight (FR-185).
+
 ## Behavior
 
 - `LeadingTokenKind` SHALL gain `Random`, `Reward` and `Workload`, each
