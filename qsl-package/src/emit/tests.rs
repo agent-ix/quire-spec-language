@@ -256,6 +256,28 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     }
 }
 
+/// The small checked producer's canonical envelope and identity are fixed by
+/// the owned-projection emission, then admitted by the independent V2 reader.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn emitted_package_preserves_the_owned_projection_golden() {
+    let emission = emit(&package(vec![f()]));
+    assert_eq!(
+        emission.package.bytes(),
+        include_bytes!("tests/fixtures/owned_projection_wire.json")
+    );
+    assert_eq!(
+        emission.package.package_id().hex(),
+        "f2332c7edc46df9efb27d7d7da73a9af1464a46c5a1b28996118754fb0678e3c"
+    );
+    match read_back(&emission) {
+        Read::Verified { package, .. } => {
+            assert_eq!(package.package_id(), emission.package.package_id());
+        }
+        other => panic!("the golden envelope must be reader-admitted: {other:?}"),
+    }
+}
+
 pub(super) fn nodes(wire: &Value) -> &[Value] {
     wire["semantic_graph"]["nodes"].as_array().unwrap()
 }
