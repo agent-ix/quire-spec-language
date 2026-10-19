@@ -50,8 +50,9 @@ pub struct StateGraphDeclaration {
     pub form: StateGraphClaimForm,
     /// The profile selection the claim's `using` alias resolved to.
     pub selection: ProfileSelection,
-    /// The object type the `over` parameter ranges over.
-    pub context: EffectiveId,
+    /// The object type the `over` parameter ranges over; `None` for a claim
+    /// with no `over` binding.
+    pub context: Option<EffectiveId>,
     /// The population the `over` type is a member of, when exactly one is.
     pub context_population: Option<PopulationDomain>,
 }
@@ -174,7 +175,7 @@ impl StateGraphClaim {
 pub struct CheckedStateGraphClaim {
     name: String,
     span: Span,
-    over: OverParameter,
+    over: Option<OverParameter>,
     form: StateGraphForm,
     claim: StateGraphClaim,
     /// The package's running expression-node total after this claim.
@@ -192,9 +193,10 @@ impl CheckedStateGraphClaim {
         self.span
     }
 
-    /// The `over` parameter.
-    pub fn over(&self) -> &OverParameter {
-        &self.over
+    /// The `over` binding: `Some` when written, `None` when absent. S3 does
+    /// not instantiate it; FR-125 does.
+    pub fn over(&self) -> Option<&OverParameter> {
+        self.over.as_ref()
     }
 
     /// The form the claim checked to, with its checked predicates.
@@ -363,8 +365,12 @@ fn check_predicate<'a>(
         kind: StateClauseKind::Invariant,
         complete_value: super::state_clause::is_complete_value(&declaration.selection),
         context: declaration.context,
-        receiver_name: &declaration.form.over.name.name,
-        receiver: ValueType::Reference(declaration.context),
+        receiver: declaration
+            .form
+            .over
+            .as_ref()
+            .zip(declaration.context)
+            .map(|(over, context)| (over.name.name.as_str(), ValueType::Reference(context))),
         operation: None,
         context_population: declaration.context_population,
         frame_population: None,
@@ -429,10 +435,14 @@ fn check_claim<'a>(
     Ok(CheckedStateGraphClaim {
         name: form.name.name.clone(),
         span: form.span,
-        over: OverParameter {
-            name: form.over.name.name.clone(),
-            object: declaration.context,
-        },
+        over: form
+            .over
+            .as_ref()
+            .zip(declaration.context)
+            .map(|(over, object)| OverParameter {
+                name: over.name.name.clone(),
+                object,
+            }),
         form: checked_form,
         claim: StateGraphClaim {
             kind: Capability::TemporalSatisfaction,

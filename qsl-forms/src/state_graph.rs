@@ -79,7 +79,11 @@ pub(crate) fn state_graph_claim(construct: Construct<'_>) -> Result<DeclarationF
                 alias: text(alias, node)?,
                 span: alias.span(),
             },
-            over: parameter_form(cst, only(&claim_items, Production::Parameter, node)?)?,
+            over: match nodes_of(&claim_items, Production::Parameter)[..] {
+                [] => None,
+                [parameter] => Some(parameter_form(cst, parameter)?),
+                _ => return Err(unexpected(node)),
+            },
             fairness,
             kind,
             span: node.span(),

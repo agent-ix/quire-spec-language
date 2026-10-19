@@ -20,7 +20,7 @@ use serde_json::json;
 
 use crate::model_operations::{
     admit_and_assemble_with_body, attempt_update_modifies_version_number, config_unit_with_body,
-    config_version_document,
+    config_version_document, tc464_integer_argument_source,
 };
 
 fn document() -> Vec<u8> {
@@ -126,7 +126,7 @@ fn possible_checks_to_the_possible_form() {
     let graph = check(&format!("{REACHES_TWO}{REACHES_THREE}")).expect("both claims check");
     for name in ["ReachesTwo", "ReachesThree"] {
         let checked = claim(&graph, name);
-        assert_eq!(checked.over().name, "c");
+        assert_eq!(checked.over().expect("over recorded").name, "c");
         let StateGraphForm::Possible { target } = checked.form() else {
             panic!("{name} is Possible: {:?}", checked.form());
         };
@@ -431,4 +431,102 @@ fn an_over_type_that_is_not_an_object_type_refuses_at_the_type() {
     assert_eq!(error.cause.code(), Code::IllTyped);
     assert_eq!(error.cause.catalog_code().cause(), "type-mismatch");
     assert_eq!(&unit[error.span.start..error.span.end], "Integer");
+}
+
+/// FR-165-AC-4 (S3 half): each of the three forms written without `over`
+/// checks to its form and records no `over` binding; with `over` the binding
+/// is recorded.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn a_claim_without_over_checks_and_records_no_binding() {
+    let graph = check(concat!(
+        "possible Anything using v { true }\n",
+        "always possible Still using v from (true) { true }\n",
+        "unique path One using v from (true) to (false)\n",
+    ))
+    .expect("the claims check");
+    assert!(matches!(
+        claim(&graph, "Anything").form(),
+        StateGraphForm::Possible { .. }
+    ));
+    assert!(matches!(
+        claim(&graph, "Still").form(),
+        StateGraphForm::AlwaysPossible { .. }
+    ));
+    assert!(matches!(
+        claim(&graph, "One").form(),
+        StateGraphForm::UniquePath { .. }
+    ));
+    for name in ["Anything", "Still", "One"] {
+        assert!(claim(&graph, name).over().is_none(), "{name}");
+    }
+
+    let graph = check(REACHES_TWO).expect("the claim checks");
+    let over = claim(&graph, "ReachesTwo").over().expect("over recorded");
+    assert_eq!(over.name, "c");
+}
+
+/// FR-165-AC-4: a claim with no `over` has no object to name, so a predicate
+/// that names one refuses as a missing name.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn a_claim_without_over_binds_no_object_name() {
+    let (code, cause, named, _) = sole_refusal("possible P using v { c.versionNumber = 2 }\n");
+    assert_eq!(code, Code::MissingDeclaration);
+    assert_eq!(cause, Some("missing-name"));
+    assert_eq!(named.as_deref(), Some("c"));
+}
+
+/// FR-165-AC-4: the three formula shapes S1 reads are each refused at
+/// `eventually`, and the claim without `over` checks.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn ac4_claims_check_or_refuse_at_eventually() {
+    check("possible Anything using v { true }\n").expect("the first claim checks");
+    for predicate in [
+        "c.versionNumber = 2 and eventually c.versionNumber = 3",
+        "not eventually c.versionNumber = 2",
+        "(eventually c.versionNumber = 2)",
+    ] {
+        let (code, cause, named, _) = sole_refusal(&format!(
+            "possible R using v over (c: Config::ConfigVersion) {{ {predicate} }}\n"
+        ));
+        assert_eq!(code, Code::UnsupportedConstruct, "{predicate}");
+        assert_eq!(cause, Some("expression-form"), "{predicate}");
+        assert_eq!(named.as_deref(), Some("eventually"), "{predicate}");
+    }
+}
+
+/// FR-165-AC-5: a predicate naming an operation parameter refuses
+/// `missing-name` at the name; the same claim reading `pre(...)` still
+/// refuses `expression-form`.
+#[trace("TC-590", "FR-165-AC-5")]
+#[test]
+fn an_operation_parameter_read_refuses_as_a_missing_name() {
+    let (document, _) = tc464_integer_argument_source();
+    let body = "possible P using v over (c: Config::ConfigVersion) { c.versionNumber = amount }\n";
+    let (unit, _) = config_unit_with_body(&document, body);
+    let declarations = admit_and_assemble_with_body(&document, body)
+        .expect("the unit assembles")
+        .with_unwritten_state_graph_claims();
+    let regions = declarations.regions();
+    let refusals = declarations
+        .check(CheckingLimits::default())
+        .expect_err("the parameter is not in scope");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
+    };
+    assert_eq!(refusal.cause.code(), Code::MissingDeclaration);
+    assert_eq!(refusal.cause.cause(), Some("missing-name"));
+    let region = regions.refusal_region(refusal).expect("located");
+    assert_eq!(
+        &unit[region.start() as usize..region.end() as usize],
+        "amount"
+    );
+
+    let (code, cause, _, _) = sole_refusal(
+        "possible P using v over (c: Config::ConfigVersion) { pre(c.versionNumber) = 2 }\n",
+    );
+    assert_eq!(code, Code::UnsupportedConstruct);
+    assert_eq!(cause, Some("expression-form"));
 }

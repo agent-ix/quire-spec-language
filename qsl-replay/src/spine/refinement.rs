@@ -316,6 +316,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::NodePreimage(_)
         | CheckCause::ProtocolAnchor(_)
         | CheckCause::ProtocolReference(_)
+        | CheckCause::ProtocolObligation(_)
         | CheckCause::TerminalNotEmitted { .. }
         | CheckCause::Temporal(_)
         | CheckCause::StateGraph(_) => None,

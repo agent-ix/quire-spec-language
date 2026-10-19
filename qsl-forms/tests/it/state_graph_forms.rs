@@ -69,7 +69,7 @@ fn possible_builds_its_name_alias_over_parameter_and_predicate() {
     assert_eq!(slice(&text, claim.name.span), "ReachesTwo");
     assert_eq!(claim.profile.alias, "v");
     assert_eq!(slice(&text, claim.profile.span), "v");
-    assert_eq!(claim.over.name.name, "c");
+    assert_eq!(claim.over.as_ref().expect("over written").name.name, "c");
     assert!(claim.fairness.is_empty());
     let StateGraphClaimKind::Possible { target } = &claim.kind else {
         panic!("possible: {:?}", claim.kind);
@@ -151,7 +151,7 @@ fn temporal_operators_and_fairness_are_kept_at_their_spans() {
 fn the_claim_words_stay_usable_as_names() {
     let (_, claim) = build("possible possible using v over (path: M::Job) { path.unique }");
     assert_eq!(claim.name.name, "possible");
-    assert_eq!(claim.over.name.name, "path");
+    assert_eq!(claim.over.as_ref().expect("over written").name.name, "path");
 }
 
 /// FR-165-AC-2: a temporal operator inside a connective, a negation or
@@ -180,4 +180,26 @@ fn a_temporal_operator_inside_a_formula_is_kept_at_its_span() {
         );
         assert_eq!(slice(&text, operator.span), "eventually", "{predicate}");
     }
+}
+
+/// FR-165-AC-4: each of the three forms parses with `over` absent, to a claim
+/// with no `over` binding.
+#[trace("TC-590", "FR-165-AC-4")]
+#[test]
+fn each_form_parses_without_over() {
+    let (_, possible) = build("possible Anything using v { true }");
+    let (_, always) = build("always possible Still using v from (true) { true }");
+    let (_, bare_always) = build("always possible Bare using v { true }");
+    let (_, unique) = build("unique path One using v from (true) to (false)");
+    for claim in [&possible, &always, &bare_always, &unique] {
+        assert!(claim.over.is_none(), "{:?}", claim.name);
+    }
+    assert!(matches!(
+        possible.kind,
+        StateGraphClaimKind::Possible { .. }
+    ));
+    assert!(matches!(
+        unique.kind,
+        StateGraphClaimKind::UniquePath { .. }
+    ));
 }

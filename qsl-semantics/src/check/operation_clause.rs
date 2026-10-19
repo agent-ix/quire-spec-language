@@ -55,14 +55,13 @@ impl OperationClauseDeclaration {
     /// `ensures` a postcondition, with no profile selected.
     pub(crate) fn view(&self) -> ClauseView<'_> {
         ClauseView {
-            receiver_name: "self",
             kind: match self.clause.kind {
                 OperationClauseKind::Requires => StateClauseKind::Precondition,
                 OperationClauseKind::Ensures => StateClauseKind::Postcondition,
             },
             complete_value: false,
-            context: self.context,
-            receiver: quire_exact::ValueType::Reference(self.context),
+            context: Some(self.context),
+            receiver: Some(("self", quire_exact::ValueType::Reference(self.context))),
             operation: Some(&self.operation),
             context_population: None,
             frame_population: None,

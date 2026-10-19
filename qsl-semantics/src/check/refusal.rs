@@ -108,10 +108,9 @@ pub enum ProtocolAnchorCause {
     },
     /// A protocol whose anchors, binders and attempt bindings all
     /// check, but which holds a construct no checker reads yet (a node kind
-    /// other than `sequence`, `attempt` and `finish`, a channel, a
-    /// relationship, a requirement, a capture, an `activation on each`, a
-    /// replicated role, a `related by` clause, or a body other than a bare
-    /// Boolean literal). Refused rather than compiled with unchecked content
+    /// other than `sequence`, `attempt`, `finish` and `compensate`, a
+    /// channel, a relationship, a requirement, a replicated role, a
+    /// `related by` clause, or a body other than a bare Boolean literal). Refused rather than compiled with unchecked content
     /// and silently missing from the emitted package (SR-753 FND-002,
     /// SR-761 FND-001, SR-770 FND-001).
     Unimplemented {
@@ -298,7 +297,7 @@ impl ProtocolReferenceCause {
 /// The catalog code and tag a [`ProtocolAnchorCause::BinderType`] refuses
 /// with: the same classes `type_form::TypeFormError`'s own refusal uses
 /// (a missing or ambiguous name, else a type mismatch).
-fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code, &'static str) {
+pub(super) fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code, &'static str) {
     use super::type_form::TypeFormFault as F;
     match fault {
         F::MissingName(_) => (Code::MissingDeclaration, "missing-name"),
@@ -1129,6 +1128,10 @@ pub enum CheckCause {
     /// FR-165: the `StateGraph` family refused a state-graph claim. Boxed
     /// for the same reason as `ProtocolAnchor` above.
     StateGraph(Box<StateGraphCause>),
+    /// FR-381, FR-218: S3 refused a protocol's role, activation, capture or
+    /// compensation template. Boxed for the same reason as `ProtocolAnchor`
+    /// above.
+    ProtocolObligation(Box<super::protocol_obligation::ObligationCause>),
     /// FR-302: a called operation's dispatch family did not link at S3.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     DispatchLink(Box<DispatchLinkCause>),
@@ -1463,6 +1466,7 @@ impl CheckCause {
             Self::ProtocolReference(cause) => cause.code(),
             Self::Temporal(cause) => cause.code(),
             Self::StateGraph(cause) => cause.code(),
+            Self::ProtocolObligation(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
             // have their own real seams over other enums, probed in the
@@ -1534,6 +1538,7 @@ impl CheckCause {
             Self::ProtocolReference(cause) => Some(cause.tag()),
             Self::Temporal(cause) => Some(cause.tag()),
             Self::StateGraph(cause) => cause.tag(),
+            Self::ProtocolObligation(cause) => cause.tag(),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
             // deliberately left non-exhaustive there): this arm keeps

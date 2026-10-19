@@ -147,11 +147,10 @@ pub(crate) fn check_terminal<'a>(
         return Ok((TerminalDeclaration::Any, declarations.nodes_used));
     };
     let view = ClauseView {
-        receiver_name: "self",
         kind: StateClauseKind::Invariant,
         complete_value: super::state_clause::is_complete_value(&declaration.selection),
-        context: *context,
-        receiver: ValueType::Reference(*context),
+        context: Some(*context),
+        receiver: Some(("self", ValueType::Reference(*context))),
         operation: None,
         context_population: *population,
         frame_population: None,

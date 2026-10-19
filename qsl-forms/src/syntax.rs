@@ -2789,6 +2789,9 @@ pub struct ProtocolDeclarationForm {
     /// Every `attempt`'s operation name and `contracts` list, in source
     /// order (FR-114 "Inputs").
     pub attempts: Vec<AttemptForm>,
+    /// The protocol's `activation`: `on origin`, or `on each (p: T) [when
+    /// (e)]` with its binder and optional guard (FR-308).
+    pub activation: ActivationForm,
     /// The protocol's own captures, written before its roles, in source
     /// order (FR-308).
     pub captures: Vec<CaptureForm>,
@@ -3174,8 +3177,8 @@ pub struct StateGraphClaimForm {
     pub name: DeclaredName,
     /// The `using` alias.
     pub profile: UsingAlias,
-    /// The `over (x: T)` parameter.
-    pub over: ParameterForm,
+    /// The `over (x: T)` parameter, when written.
+    pub over: Option<ParameterForm>,
     /// The fairness constraints written in the claim's braces, in source
     /// order.
     pub fairness: Vec<FairnessConstraintForm>,
@@ -3214,8 +3217,8 @@ pub enum DeclarationForm {
     OperationBody(Box<OperationBodyForm>),
     /// A `bound` population-bound declaration (FR-380).
     PopulationBound(PopulationBoundForm),
-    /// A `protocol` declaration (FR-112).
-    Protocol(ProtocolDeclarationForm),
+    /// A `protocol` declaration (FR-112), boxed for the same reason as `Function`.
+    Protocol(Box<ProtocolDeclarationForm>),
     /// A `temporal` clause (FR-325), boxed for the same reason as
     /// [`Self::Function`].
     Temporal(Box<TemporalClauseForm>),
