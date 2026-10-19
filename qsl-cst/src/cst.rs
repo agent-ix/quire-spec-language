@@ -147,8 +147,22 @@ productions! {
     FenceOrder,
     #[doc = "`fence <identifier> ordering <fence-order> ;`: a memory fence control."]
     Fence,
-    #[doc = "`refinement <identifier> using <identifier> abstract <identifier> concrete <identifier> { <step-row>* }`: a refinement declaration and its step rows."]
+    #[doc = "`refinement <identifier> using <identifier> abstract <identifier> concrete <identifier> { <refinement-row>* }`: a refinement declaration and its population, object, step, history and fairness rows."]
     Refinement,
+    #[doc = "`population <model-name> from <model-name> ;`: maps one abstract population from a concrete one."]
+    PopulationRow,
+    #[doc = "`object <type-name> from <type-name> { <field-row>* }`: maps one abstract object type from a concrete one."]
+    ObjectRow,
+    #[doc = "`<member-name> = <expression> ;`: defines one abstract field in an object row."]
+    FieldRow,
+    #[doc = "`history <type-name> . <member-name> : <type-reference> = <history-literal> { <history-update>* }`: adds an auxiliary field to a concrete object type."]
+    HistoryRow,
+    #[doc = "`on <operation-name> : <expression> ;`: one concrete operation's update of a history field."]
+    HistoryUpdate,
+    #[doc = "An integer, `true`, `false`, `none`, a string, an exact number or a qualified name: a history row's initial value."]
+    HistoryLiteral,
+    #[doc = "`(assume | ensure) fair weak [each | whole] <operation-name> ;`: one member of a refinement's concrete or abstract fairness set."]
+    FairnessRow,
     #[doc = "`step <step-source> -> <step-target> ;`: one explicit refinement row for a concrete step class."]
     StepRow,
     #[doc = "The concrete side of a step row: an operation, or a protocol node, template, channel, role, trigger or `memory` step kind."]
