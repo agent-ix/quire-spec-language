@@ -7,8 +7,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_model::{
-    read_checked_package, CheckedOccurrence, CheckedPackageDispatchResult,
-    CheckedPackageReadLimits,
+    read_checked_package, CheckedOccurrence, CheckedPackageDispatchResult, CheckedPackageReadLimits,
 };
 use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
 
