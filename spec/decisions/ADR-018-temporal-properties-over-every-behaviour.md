@@ -164,7 +164,7 @@ member; it settles as `TerminalValue::Measured`, which is never `Proved`. `Incon
 `InductionNotClosed{depth}`, `UndecidedSuccessor`, `NoInitialState` and
 `CertificateRejected{rule, at}`; amended by ADR-022 RU-5, it also gains
 `WellDefinednessUnchecked{sources}`, witnesses found on a run that did not
-check well-definedness everywhere. Amended by FR-125: it also gains `NoInstance`, written `no-instance` on the wire (QSpec FR-331). `IncompleteCause` gains `LimitReached{limit, value,
+check well-definedness everywhere. Amended by FR-125 and FR-127: `InconclusiveCause` also gains `NoInstance`, written `no-instance` on the wire (QSpec FR-331). `IncompleteCause` gains `LimitReached{limit, value,
 setting}`, QSpec FR-331's `limit-reached`, and `Cancelled{source}`, written
 `cancelled{source}` (V-7). `TerminalValue::Proved` carries
 `certification: Certification`, `Certification::{Certified,
