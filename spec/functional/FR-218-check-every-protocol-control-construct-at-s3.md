@@ -324,7 +324,7 @@ none of its operands.
   independent Booleans (QSpec FR-053). An atom is a Boolean fact, or a
   comparison or other Boolean-typed term over non-Boolean facts; two atoms are
   equal exactly when their checked terms are syntactically identical, and `not`
-  is the only negation recognised. So `got.count > 0` and `not got.count > 0`
+  is the only negation recognised. So `got.count > 0` and `not (got.count > 0)`
   partition, while `m.n > 0` and `m.n > 1`, or `m.n > 0` and `m.n <= 0`, are
   two independent atoms that leave a valuation uncovered and an overlap, and
   the check does not relate atoms by arithmetic. S3 SHALL refuse a gap or an overlap,
