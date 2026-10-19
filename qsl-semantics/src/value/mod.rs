@@ -166,7 +166,7 @@ pub(crate) mod unit;
 // import them from there, not through a re-export here.
 pub use definition::{
     divide, modulo, AdmittedIeeeProfile, AdmittedIntegerDivision, AdmittedSelection, CatalogEntry,
-    CatalogRole, DefinitionLock, DefinitionReference, Trigger,
+    CatalogRole, DefinitionLock, DefinitionReference, ModelEntry, ModelRole, Trigger,
 };
 pub use diagnostics_catalog::{native_diagnostics_catalog, NATIVE_DIAGNOSTICS_IDENTITY};
 pub use layer::{HeaderLayer, LayerForm, LayerRow, WitnessKind, WitnessRequest};
