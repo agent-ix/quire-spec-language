@@ -15,7 +15,7 @@ object rows into a `CheckedRefinement`, refuses each missing, duplicated,
 misplaced or ill-typed row at its span, lifts references, records hidden
 fields and puts the declaration in the package identity.
 
-Scope: FR-135-AC-1 to FR-135-AC-5.
+Scope: FR-135-AC-1 to FR-135-AC-6.
 
 ## Test Procedure
 
@@ -36,6 +36,9 @@ Fixtures: ADR-020 §8's `CasRefinesCounter` unit, with `Spec` local and with
    feature the build has not built. The step does not choose a support set; it
    runs only while a feature is unbuilt, and is rewritten when the feature
    lands.
+6. Check `RingIsQueue` with the unit selecting only the infinite-trace
+   profile and the refinement's `mod` row, then with the complete-value
+   profile selected.
 
 Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
 
@@ -55,3 +58,4 @@ Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
   (two rows, two refusals); `CasTwice` refuses the same pair at `Twice` naming
   `protocol-abstract-side`; each classifies `unsupported`; no
   `CheckedRefinement`; `CasRefinesCounter` checks.
+- Step 6: `unknown_profile`/`wrong-selection-role` at the alias; then the row checks.

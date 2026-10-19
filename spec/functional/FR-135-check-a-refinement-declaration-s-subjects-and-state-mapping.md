@@ -131,6 +131,18 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
   and the concrete model's fields, functions, history fields (FR-138) and
   population-valued forms (FR-139) in scope, admitting the forms a state
   clause body admits (ADR-016 FE-4).
+- The checker SHALL type every field row, step-row argument and history
+  update (FR-136, FR-138) under the unit's complete-value profile
+  (`quire.value.complete/v1`) and any integer-division law the unit
+  selects, whether or not a function or state clause of the unit selects it.
+  The refinement declaration's own profile selection names only the
+  infinite-trace profile and does not change that. A unit that selects no
+  complete-value profile refuses a refinement with
+  `unknown_profile`/`wrong-selection-role` at the alias, as it refuses a
+  missing infinite-trace profile.
+- The checker SHALL compare an `Int[lo, hi]` operand with an `Integer`
+  operand by `=` and `!=` as integers, so ADR-020 §8's
+  `s.index = (self.head + i) mod 2` checks without an added `+ 0`.
 - The checker SHALL lift references: a field of declared type
   `Reference<T_A>` SHALL accept an expression of type `Reference<T_C>`
   exactly when an object row maps `T_A` from `T_C`.
@@ -194,6 +206,7 @@ standing.
 | FR-135-AC-3 | `value = self.busyA` refuses `ill_typed`/`type-mismatch` at the expression's span. In ADR-020 §8's `RingIsQueue`, a field of type `Reference<Q::Queue>` mapped by `self.ring` (of type `Reference<R::Ring>`) checks, and the same field mapped by an expression of type `Reference<R::Slot>` refuses `ill_typed`/`type-mismatch`. | Test (TC-540) |
 | FR-135-AC-4 | With the `value` row removed, `CasRefinesCounter` checks with `value` in `hidden`. Changing the `value` row to `value = self.tmpA` changes the refinement's node identity and the `package_id`. | Test (TC-540) |
 | FR-135-AC-5 | A declaration with one `history` row (`RegisterHistory`, FR-138), in a build whose support set omits `history-row`, refuses `unsupported_construct`/`not-yet-implemented` at the `history` keyword of that row naming `history-row`, `RegisterHistory` and the profile identity, with no other diagnostic for the row and no `CheckedRefinement`; two such rows give two refusals. A declaration whose abstract side is a protocol (`CasTwice`, FR-147), in a build whose support set omits `protocol-abstract-side`, refuses the same pair at the span of `Twice`, naming `protocol-abstract-side`. Both classify `unsupported` (FR-341-AC-5). A refinement given a non-empty resolved internal list refuses the same pair naming `refinement-internal-list` at the first token of the name after `abstract`, and a list with a resolution defect reports the defect and not this pair (FR-147-AC-7, AC-11). `CasRefinesCounter`, which uses none of the three features, checks as FR-135-AC-1 states. The vector refuses a row that uses a feature the build has not built; it does not select a support set. | Test (TC-540) |
+| FR-135-AC-6 | `RingIsQueue`'s `items` row, whose `only` condition reads `s.index = (self.head + i) mod 2`, checks in a unit whose only complete-value use is the refinement; the same unit with no complete-value profile selected refuses `unknown_profile`/`wrong-selection-role` at the alias, naming the missing profile. | Test (TC-540) |
 
 ## Dependencies
 

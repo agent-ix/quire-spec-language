@@ -24,7 +24,7 @@ Scope: FR-140-AC-5, FR-141-AC-7, FR-144-AC-6.
 ## Test Procedure
 
 Fixture: FR-139's `RingIsQueue`, and its variant with the row
-`put -> enq(self.ring, 2 / self.size)`.
+`put -> enq(self.ring, 1 div self.index)`, with the unit selecting the floor integer-division law.
 
 1. Run `map_state` at `head = 1`, `size = 2` with a per-evaluation meter
    budget of zero.
