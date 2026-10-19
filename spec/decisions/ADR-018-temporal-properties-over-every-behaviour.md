@@ -359,14 +359,26 @@ only (ADR-016 §6).
 The subject uses the ConfigVersion domain package from
 `examples/config-version` (FR-108): object type `ConfigVersion` with
 `versionNumber: Int[0, 1000]` and optional `parent`, population
-`config_history`, and operation `attemptUpdate` with frame `modifies
-[versionNumber]`, no parameters and a Boolean result.
+`config_history`, and operation `attemptUpdate` with no parameters and a
+Boolean result.
+
+**Frame.** The shipped package frames `attemptUpdate` as `modifies
+[versionNumber]`, which FR-120 reads as the field of every object of the
+population. With two objects over `Int[0, 1000]` one expansion would then
+enumerate 1001 x 1001 candidates, and the run would stop at `max_candidates`
+(FR-126). The example, and the shipped unit as this section uses it, frame
+`attemptUpdate` as `modifies_receiver [versionNumber]` (FR-154) instead: an
+update writes the receiver's `versionNumber` and leaves the other object
+as it is, so a state has exactly one successor per receiver and result
+choice.
 
 The shipped unit's post clause `VersionUnchanged` keeps `versionNumber`
 fixed, so every transition is a self-loop. The example unit keeps the two
 invariants and replaces that post clause with one that advances the version
-modulo 3. The fairness clause spelling is illustrative; QSpec's shared
-grammar owns it (QS-4).
+modulo 3. The post clause spells the wrap out, because `(pre(self.versionNumber)
++ 1) mod 3` is an unbounded `Int` and does not type-check against the bounded
+field. The fairness clause spelling is illustrative; QSpec's shared grammar
+owns it (QS-4).
 
 ```text
 profile v   = "quire.value.complete/v1" …;
@@ -376,7 +388,8 @@ model Config = "example/config-version" …;
 invariant ParentOrder using v on Config::ConfigVersion at current { … }   // unchanged
 invariant NoCycle     using v on Config::ConfigVersion at current { … }   // unchanged
 post Cycles using v on Config::ConfigVersion::attemptUpdate {
-  self.versionNumber = (pre(self.versionNumber) + 1) mod 3
+  (pre(self.versionNumber) < 2 and self.versionNumber = pre(self.versionNumber) + 1)
+  or (pre(self.versionNumber) = 2 and self.versionNumber = 0)
 }
 
 temporal ReachesTwo using inf over (c: Config::ConfigVersion) clock "model-steps" on origin {
@@ -390,7 +403,11 @@ and `b` both at version 0 with `parent` absent. Write a state as
 `(va, vb)` and the transition `attemptUpdate` with receiver `a` as `upd(a)`.
 The result value is not in the state key, so both result choices reach the
 same successor. The model has 9 reachable states, each with two successors,
-`upd(a)` and `upd(b)`, both always enabled.
+`upd(a)` and `upd(b)`, both always enabled. Both instances are symmetric: the
+rows below name the instance the loop updates as `a` and the bound instance
+as `b`, and hold with the two names exchanged. Which instance `over` binds
+first is the order the engine ranks `over` instances in, not a property of
+the model.
 
 **Product.** The form is TP-4. For `c = b`, the negation is `eventually
 always (b.versionNumber != 2)`, a two-state Büchi automaton: `q0` loops on
@@ -401,7 +418,9 @@ on such states. The reachable product has 15 states: 9 with `q0` and 6 with
 
 **Verdict under `fair weak each`.** `upd(b)` is enabled at every state of
 both SCCs and taken in neither, so FA-4 rejects both. No fair accepting cycle
-exists for `c = b`; `c = a` is symmetric. The item settles `proved`, basis
+exists for `c = b`; `c = a` is symmetric. Exploring the product for one
+instance reaches 15 states, and for both instances 30 (the two products
+are explored separately). The item settles `proved`, basis
 `closed-scope`, `TerminalValue::Proved{basis: Exhaustive, certification: Certified}` (V-1), over this
 subject.
 
@@ -426,7 +445,7 @@ formula is false at position 0, `trace_position` `0`. Under `each` the same
 lasso is unfair (`upd(b)` is enabled throughout and never taken) and replay
 refuses it.
 
-**The shipped unit.** With `VersionUnchanged` the only reachable state is
+**The shipped unit.** With `VersionUnchanged` and the receiver-scoped frame the only reachable state is
 `(0, 0)`. Under `fair weak each` the item settles `refuted` with the lasso
 whose loop is `(0, 0) -upd(a)-> (0, 0) -upd(b)-> (0, 0)`. Fairness makes
 every operation instance run, and the post clause still prevents progress.

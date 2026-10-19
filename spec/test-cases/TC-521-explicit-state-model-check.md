@@ -20,6 +20,7 @@ Scope: FR-126-AC-1 to FR-126-AC-7.
 ## Test Procedure
 
 Fixtures: ADR-018 §6's ConfigVersion example unit and its shipped unit,
+both with `attemptUpdate` framed `modifies_receiver [versionNumber]` (FR-154),
 universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
 `Health` unit and its `Restless` variant (FR-126-AC-4).
 
@@ -46,7 +47,8 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `Holds{Exhaustive}` with 15 product states; `Violated` with an
+- Step 1: `Holds{Exhaustive}` with 15 product states for one bound
+  instance and 30 for both; `Violated` with an
   empty stem and the three-step `upd(a)` loop for `c = b`; `Violated` with
   the loop `(0,0) -upd(a)-> (0,0) -upd(b)-> (0,0)`.
 - Step 2: `Violated` with a five-step prefix on which `vb` is never 2;
