@@ -15,7 +15,7 @@ use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::Span;
+use qsl_foundation::{Span, Spanned};
 use quire_exact::{CollectionKind, Integer};
 
 use super::protocol_control::{
@@ -495,6 +495,9 @@ pub enum ExprNode {
     Integer(Integer),
     /// `rational(n, d)`; it takes its unique expected `Rational[..]` type.
     Rational(Integer, Integer),
+    /// A quantity literal such as `5 ms` (FR-393): the magnitude and the
+    /// spelled unit. S2 resolves neither.
+    Quantity(QuantityForm),
     /// A quoted text literal (FR-091 "Native scalar literals"): the decoded
     /// Unicode scalar sequence, kept exactly. It is always a `String`.
     String(String),
@@ -738,6 +741,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
@@ -831,6 +835,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
@@ -897,6 +902,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::Quantity(_)
             | Self::String(_)
             | Self::SelfRef
             | Self::Result
@@ -942,6 +948,7 @@ impl ExprNode {
             Self::Boolean(_)
             | Self::Integer(_)
             | Self::Rational(..)
+            | Self::Quantity(_)
             | Self::String(_)
             | Self::Name(_)
             | Self::SelfRef
@@ -1168,6 +1175,11 @@ impl Expression {
     /// `rational(numerator, denominator)`.
     pub fn rational(numerator: Integer, denominator: Integer) -> Self {
         Self::single(ExprNode::Rational(numerator, denominator))
+    }
+
+    /// A quantity literal such as `5 ms` (FR-393).
+    pub fn quantity(quantity: QuantityForm) -> Self {
+        Self::single(ExprNode::Quantity(quantity))
     }
 
     /// A name.
@@ -3238,6 +3250,336 @@ pub struct TerminalDeclarationForm {
     pub span: Span,
 }
 
+/// How an [`ExactValueForm`] was spelled, which fixes what its two integers
+/// hold.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExactValueKind {
+    /// A `uint`: `first` is the integer and `second` is 1.
+    Natural,
+    /// A `decimal-literal` such as `0.95`: `first` is the digits with the
+    /// point removed (`95`) and `second` is the count of digits after the
+    /// point (`2`).
+    DecimalLiteral,
+    /// `rational(n, d)`: `first` is `n` and `second` is `d`.
+    Rational,
+    /// `decimal(c, s)`: `first` is the coefficient and `second` is the scale.
+    Decimal,
+}
+
+/// An `exact-value` as written (QSpec's shared grammar, FR-311, FR-393): a
+/// `uint`, a `decimal-literal` or an exact number. S2 neither reduces it nor
+/// raises ten to a scale, so a huge scale costs nothing here; S3 reduces it
+/// under its own limits.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExactValueForm {
+    /// The spelling kind.
+    pub kind: ExactValueKind,
+    /// The numerator, the digits or the coefficient.
+    pub first: Integer,
+    /// The denominator, the count of fraction digits or the scale.
+    pub second: Integer,
+    /// The span of the whole value.
+    pub span: Span,
+}
+
+/// A `quantity-literal` as written: an exact magnitude and the unit name
+/// that follows it (FR-393). S2 resolves neither.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QuantityForm {
+    /// The magnitude.
+    pub magnitude: ExactValueForm,
+    /// The unit name, spelled.
+    pub unit: NameForm,
+    /// The span of the whole literal.
+    pub span: Span,
+}
+
+/// One `expr : exact-value` of a `random` declaration's distribution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightedValueForm {
+    /// The value.
+    pub value: ExpressionForm,
+    /// Its weight.
+    pub weight: ExactValueForm,
+    /// The span of the pair.
+    pub span: Span,
+}
+
+/// A `random Op(p) ~ { value: weight, ... };` declaration (FR-311). The
+/// support keeps declared order; S2 checks no type, weight or repeat.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RandomForm {
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// The parameter name.
+    pub parameter: DeclaredName,
+    /// The weighted values, in declared order.
+    pub support: Vec<WeightedValueForm>,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
+/// A `reward name on Op = expr;` declaration (FR-311).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RewardForm {
+    /// The reward name.
+    pub name: DeclaredName,
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// The reward expression, as written.
+    pub expression: ExpressionForm,
+    /// The span of the whole declaration, `;` included.
+    pub span: Span,
+}
+
+/// One `weight Op = exact-value;` of a workload (FR-311).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkloadWeightForm {
+    /// The operation, spelled.
+    pub operation: NameForm,
+    /// Its weight.
+    pub weight: ExactValueForm,
+    /// The span of the weight, `;` included.
+    pub span: Span,
+}
+
+/// A `workload Name on Model { weight ...; }` declaration (FR-311).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkloadForm {
+    /// The workload name.
+    pub name: DeclaredName,
+    /// The model alias, spelled.
+    pub model: DeclaredName,
+    /// The weights, in declared order.
+    pub weights: Vec<WorkloadWeightForm>,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
+/// `<=` or `>=` in a probabilistic claim (`bound-op`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BoundOp {
+    /// `<=`.
+    AtMost,
+    /// `>=`.
+    AtLeast,
+}
+
+/// A confidence parameter's name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConfidenceKey {
+    /// `alpha`.
+    Alpha,
+    /// `beta`.
+    Beta,
+    /// `indifference`.
+    Indifference,
+}
+
+/// One `alpha|beta|indifference exact-value` item, as written. A repeat
+/// stays a second item (FR-392).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfidenceItemForm {
+    /// Which parameter.
+    pub key: ConfidenceKey,
+    /// The span of the parameter's name.
+    pub key_span: Span,
+    /// Its value.
+    pub value: ExactValueForm,
+}
+
+/// A probabilistic claim's scheduler (`scheduler-clause`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SchedulerForm {
+    /// `under W`: the workload, spelled.
+    Workload(DeclaredName),
+    /// `under every scheduler`, with its fairness items in declared order.
+    Every {
+        /// The `fair (weak | strong) [each] Op` items.
+        fairness: Vec<FairnessConstraintForm>,
+    },
+}
+
+/// A measure or event window: a `steps` count or a time quantity (`horizon`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HorizonForm {
+    /// A step count.
+    Steps(Spanned<u64>),
+    /// A time quantity.
+    Quantity(QuantityForm),
+}
+
+/// `weighted by name` (`weighting`). `delay` stays the spelled name `delay`;
+/// S3 reads it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightingForm {
+    /// The reward, or `delay`, as written.
+    pub name: DeclaredName,
+    /// The span of `weighted by name`.
+    pub span: Span,
+}
+
+/// `fraction holds(P) over [0, h] [weighted by R]` (`fraction`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FractionForm {
+    /// The predicate.
+    pub predicate: ExpressionForm,
+    /// The window's upper end.
+    pub horizon: HorizonForm,
+    /// The weighting, when written.
+    pub weighting: Option<WeightingForm>,
+    /// The span of the whole fraction.
+    pub span: Span,
+}
+
+/// The window of `from holds(A) until holds(B) within h`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MeasureWindowForm {
+    /// `A`.
+    pub from: ExpressionForm,
+    /// `B`.
+    pub until: ExpressionForm,
+    /// `h`.
+    pub within: HorizonForm,
+}
+
+/// A bounded measure (`measure`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MeasureForm {
+    /// `accumulate R from ... until ... within h`.
+    Accumulate {
+        /// The reward, spelled.
+        reward: DeclaredName,
+        /// The window.
+        window: MeasureWindowForm,
+        /// The span of the measure.
+        span: Span,
+    },
+    /// `steps from ... until ... within h`.
+    Steps {
+        /// The window.
+        window: MeasureWindowForm,
+        /// The span of the measure.
+        span: Span,
+    },
+    /// `elapsed from ... until ... within h`.
+    Elapsed {
+        /// The window.
+        window: MeasureWindowForm,
+        /// The span of the measure.
+        span: Span,
+    },
+    /// `fraction holds(P) over [0, h]`.
+    Fraction(FractionForm),
+}
+
+/// A `probability` claim's event (`event`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventForm {
+    /// A temporal formula, built as FR-325's.
+    Temporal(TemporalFormulaForm),
+    /// `M <= c` or `M >= c`.
+    Compare {
+        /// The measure.
+        measure: Box<MeasureForm>,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold, as written.
+        threshold: ExpressionForm,
+    },
+}
+
+/// What an `expected` claim sums (`accumulate R` or `elapsed`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExpectedQuantity {
+    /// `accumulate R`, with the reward spelled.
+    Accumulate(DeclaredName),
+    /// `elapsed`.
+    Elapsed,
+}
+
+/// The body of a `probabilistic` claim (`probabilistic-form`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProbabilisticBody {
+    /// `probability op threshold [event]`.
+    Probability {
+        /// The comparison.
+        op: BoundOp,
+        /// The probability threshold.
+        threshold: ExactValueForm,
+        /// The event.
+        event: EventForm,
+    },
+    /// `quantile q of (measure) op threshold`.
+    Quantile {
+        /// The level `q`.
+        level: ExactValueForm,
+        /// The measure.
+        measure: MeasureForm,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold, as written.
+        threshold: ExpressionForm,
+    },
+    /// `mean of (fraction) op threshold`.
+    MeanOfFraction {
+        /// The fraction.
+        fraction: FractionForm,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold.
+        threshold: ExactValueForm,
+    },
+    /// `long_run_fraction holds(P) [weighted by R] op threshold`.
+    LongRunFraction {
+        /// The predicate.
+        predicate: ExpressionForm,
+        /// The weighting, when written.
+        weighting: Option<WeightingForm>,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold.
+        threshold: ExactValueForm,
+    },
+    /// `expected (accumulate R | elapsed) until holds(B) op threshold`.
+    ExpectedUntil {
+        /// What is summed.
+        quantity: ExpectedQuantity,
+        /// `B`.
+        target: ExpressionForm,
+        /// The comparison.
+        op: BoundOp,
+        /// The threshold, as written.
+        threshold: ExpressionForm,
+    },
+}
+
+/// A `probabilistic Name using p on Subject ... { form }` claim (FR-392). S2
+/// resolves no name and fills no default: the profile, subject, workload,
+/// rewards, predicates and fairness operations stay as written, and each
+/// stated confidence item stays, in order, repeats included.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProbabilisticForm {
+    /// The claim name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `on` subject alias, spelled.
+    pub subject: DeclaredName,
+    /// The `over (p: T)` parameter, when written.
+    pub over: Option<ParameterForm>,
+    /// The scheduler.
+    pub scheduler: SchedulerForm,
+    /// The activation.
+    pub activation: ActivationForm,
+    /// The confidence items, in declared order.
+    pub confidence: Vec<ConfidenceItemForm>,
+    /// The claim body.
+    pub body: ProbabilisticBody,
+    /// The span of the whole claim, closing `}` included.
+    pub span: Span,
+}
+
 /// One temporal operator written inside a state-graph claim's predicate. S1
 /// admits the spelling so that S3 can refuse it at this span (FR-165).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3348,6 +3690,15 @@ pub enum DeclarationForm {
     /// A `refinement` declaration (FR-310), boxed for the same reason as
     /// [`Self::Function`].
     Refinement(Box<super::refinement::RefinementForm>),
+    /// A `random` declaration (FR-311), boxed for the same reason as
+    /// [`Self::Function`].
+    Random(Box<RandomForm>),
+    /// A `reward` declaration (FR-311), boxed for the same reason.
+    Reward(Box<RewardForm>),
+    /// A `workload` declaration (FR-311), boxed for the same reason.
+    Workload(Box<WorkloadForm>),
+    /// A `probabilistic` claim (FR-392), boxed for the same reason.
+    Probabilistic(Box<ProbabilisticForm>),
     /// A `possible`, `always possible` or `unique path` claim (FR-165),
     /// boxed for the same reason as [`Self::Function`].
     StateGraphClaim(Box<StateGraphClaimForm>),

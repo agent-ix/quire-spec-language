@@ -704,6 +704,7 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// Each `terminal` declaration's form, in source order, resolved by the
     /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
     terminals: Vec<TerminalDeclarationForm>,
@@ -730,6 +731,7 @@ impl Unit {
             population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
+            probabilistic: Vec::new(),
             terminals: Vec::new(),
             refinements: Vec::new(),
             state_graph_claims: Vec::new(),
@@ -775,6 +777,18 @@ impl Unit {
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
                 DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
+                DeclarationForm::Random(random) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Random(random)),
+                DeclarationForm::Reward(reward) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Reward(reward)),
+                DeclarationForm::Workload(workload) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Workload(workload)),
+                DeclarationForm::Probabilistic(claim) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Claim(claim)),
                 DeclarationForm::StateGraphClaim(claim) => unit.state_graph_claims.push(*claim),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
@@ -1756,6 +1770,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
                 | ExprNode::Rational(..)
+                | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Name(_)
                 | ExprNode::Let { .. }
@@ -3236,6 +3251,7 @@ impl PackageDeclarations {
             .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        package.probabilistic = unit.probabilistic;
         package.temporal_selections = selections
             .profiles
             .iter()

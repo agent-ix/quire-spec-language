@@ -331,6 +331,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ProtocolObligation(_)
         | CheckCause::TerminalNotEmitted { .. }
         | CheckCause::RefinementNotEmitted { .. }
+        | CheckCause::Probabilistic(_)
         | CheckCause::Temporal(_)
         | CheckCause::StateGraph(_) => None,
         #[cfg(seam_probe)]

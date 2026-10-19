@@ -113,9 +113,10 @@ pub enum RefinementCause {
         /// The name as written.
         name: String,
     },
-    /// A row or header spelling the S2 form carries but S3 does not check
-    /// yet: `unknown_required_feature`/`unsupported-feature`. A declaration
-    /// holding one is refused rather than checked with the row ignored.
+    /// A row or header spelling the S2 form carries but S3 has no checker
+    /// for yet: `unsupported_construct`/`not-yet-implemented` (FR-341-AC-5,
+    /// which the spine classifies `unsupported`). A declaration holding one
+    /// is refused rather than checked with the row ignored.
     Unsupported {
         /// What the declaration spells.
         construct: &'static str,
@@ -144,7 +145,7 @@ impl RefinementCause {
             Self::Unresolved { .. } | Self::MissingRow { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
             Self::Conflicting { .. } | Self::Malformed { .. } => Code::InvalidModelBinding,
-            Self::Unsupported { .. } => Code::UnknownRequiredFeature,
+            Self::Unsupported { .. } => Code::UnsupportedConstruct,
             Self::Check(cause) => cause.code(),
         }
     }
@@ -157,7 +158,7 @@ impl RefinementCause {
             Self::Ambiguous { .. } => Some("ambiguous-name"),
             Self::Conflicting { .. } => Some("conflicting-binding"),
             Self::Malformed { .. } => Some("malformed-declaration"),
-            Self::Unsupported { .. } => Some("unsupported-feature"),
+            Self::Unsupported { .. } => Some("not-yet-implemented"),
             Self::Check(cause) => cause.cause(),
         }
     }
@@ -484,7 +485,7 @@ pub(crate) fn check_refinement<'a, 'c>(
     }
     let abstract_alias = match &form.abstract_side {
         AbstractSideForm::Model(alias) => alias,
-        AbstractSideForm::Protocol { alias, clause } => {
+        AbstractSideForm::Protocol { clause, .. } => {
             // FR-147: QSpec has no production for the protocol side yet
             // (Linear STD-182), so the checker has no source to check it
             // against.
@@ -494,7 +495,8 @@ pub(crate) fn check_refinement<'a, 'c>(
                     construct: "an abstract protocol side (waits on QSpec STD-182, FR-147)",
                 },
             );
-            alias
+            // Nothing more is checked against a side that cannot be built.
+            return Err((findings.refusals, nodes));
         }
     };
     let side = |alias: &'c qsl_forms::DeclaredName| {

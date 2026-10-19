@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_forms::{AbstractSideForm, DeclaredName};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     AssemblyRefusal, CheckCause, CheckRefusal, CheckedGraph, CheckedRefinement,
@@ -468,9 +469,16 @@ fn check_with(
     body: &str,
 ) -> Result<CheckedGraph, Vec<Refused>> {
     let (text, declarations) = assemble(profiles, models, body);
-    let declarations = declarations
-        .unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"))
-        .with_unwritten_refinements();
+    let declarations =
+        declarations.unwrap_or_else(|refusal| panic!("{body}: the unit assembles: {refusal:?}"));
+    check_declarations(&text, declarations)
+}
+
+fn check_declarations(
+    text: &str,
+    declarations: PackageDeclarations,
+) -> Result<CheckedGraph, Vec<Refused>> {
+    let declarations = declarations.with_unwritten_refinements();
     let regions = declarations.regions();
     declarations
         .check(CheckingLimits::default())
@@ -487,7 +495,7 @@ fn check_with(
                     );
                     Refused {
                         at: text[start..end].to_owned(),
-                        unit: text.clone(),
+                        unit: text.to_owned(),
                         refusal,
                     }
                 })
@@ -1202,11 +1210,13 @@ fn two_identical_fairness_rows_conflict() {
     );
 }
 
-/// FR-136-AC-1, FR-147-AC-2 (TC-541, TC-552): over a model subject a step
-/// row's left side names a concrete operation, so a step-class keyword or a
-/// `memory` kind names none and refuses `missing-name`; a `node` right side
-/// refuses `malformed-declaration`. The row is refused, not ignored.
-#[trace("TC-552", "FR-147-AC-2")]
+/// Over a model subject a step row's left side names a concrete operation,
+/// so a step-class keyword or a `memory` kind names none and refuses
+/// `missing-name` (FR-136, "a row whose left side names no concrete
+/// operation"); a `node` right side refuses `malformed-declaration` (the
+/// model-subject case of FR-147-AC-2, whose other four refusals need the
+/// protocol side). The row is refused, not ignored.
+#[trace("TC-552")]
 #[test]
 fn protocol_step_rows_refuse_over_a_model_subject() {
     let base = cas_refines_counter();
@@ -1255,9 +1265,10 @@ fn protocol_step_rows_refuse_over_a_model_subject() {
 }
 
 /// FR-138: a history row is not checked yet, so a declaration that writes
-/// one refuses `unsupported-feature` rather than checking with the row
-/// ignored.
-#[trace("TC-889")]
+/// one refuses `unsupported_construct`/`not-yet-implemented` (FR-341-AC-5:
+/// S3's refusal of a construct it has no checker for) rather than checking
+/// with the row ignored.
+#[trace("TC-540")]
 #[test]
 fn a_history_row_is_refused_until_it_is_checked() {
     let base = cas_refines_counter();
@@ -1267,9 +1278,68 @@ fn a_history_row_is_refused_until_it_is_checked() {
     let refused = only(&found);
     assert_eq!(
         refused.code_and_cause(),
-        (Code::UnknownRequiredFeature, Some("unsupported-feature"))
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
     );
     assert_eq!(refused.at, history);
+}
+
+/// FR-147: an abstract protocol side is a form QSpec has no production for
+/// (STD-182), so S2 never builds it from source; built by hand, S3 refuses it
+/// `unsupported_construct`/`not-yet-implemented` at the clause name and
+/// checks nothing else against it.
+#[trace("TC-540")]
+#[test]
+fn a_protocol_abstract_side_is_the_only_refusal() {
+    let (spec, cas) = counters();
+    let (text, declarations) = assemble(
+        "",
+        &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)],
+        &cas_refines_counter(),
+    );
+    let mut declarations = declarations.expect("the unit assembles");
+    let [declaration] = &mut declarations.refinements[..] else {
+        panic!("one refinement");
+    };
+    let AbstractSideForm::Model(alias) = declaration.form.abstract_side.clone() else {
+        panic!("a model side as written");
+    };
+    // Rows that would otherwise refuse against the protocol side stay.
+    let clause = DeclaredName {
+        name: "Twice".to_owned(),
+        span: alias.span,
+    };
+    declaration.form.abstract_side = AbstractSideForm::Protocol { alias, clause };
+    let found = check_declarations(&text, declarations).expect_err("the protocol side refuses");
+    let refused = only(&found);
+    assert_eq!(
+        refused.code_and_cause(),
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
+    );
+    assert!(matches!(
+        refused.refinement(),
+        RefinementCause::Unsupported { .. }
+    ));
+}
+
+/// FR-361-AC-4 (TC-1015), the refinement half: the same refinement unit that
+/// checks under the value profile checks with the model profile selected, so
+/// a refinement is not refused by the model-profile gate.
+#[trace("TC-1015", "FR-361-AC-4")]
+#[test]
+fn a_refinement_is_not_refused_by_the_model_profile_gate() {
+    let (spec, cas) = counters();
+    let graph = check_with(
+        "profile m = \"quire.model.complete/v1\";\n",
+        &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)],
+        &cas_refines_counter(),
+    )
+    .unwrap_or_else(|refusals| {
+        panic!(
+            "{:?}",
+            refusals.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+        )
+    });
+    assert_eq!(graph.refinements().len(), 1);
 }
 
 /// FR-137-AC-4 (TC-542 step 4): a `strong` row checks as `Strong`, with its

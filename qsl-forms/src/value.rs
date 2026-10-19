@@ -23,9 +23,10 @@ use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
     Accumulation, AliasForm, ArmForm, BinaryOperator, BinderQuery, BuiltinType, CaseForm,
     DeclarationForm, DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm,
-    EnumMemberForm, ExactNumberForm, ExactNumberKind, ExprId, ExprNode, Expression,
-    ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm, RecordFieldForm,
-    RecordForm, TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
+    EnumMemberForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind, ExprId,
+    ExprNode, Expression, ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm,
+    QuantityForm, RecordFieldForm, RecordForm, TermOperator, TupleForm, TypeForm, TypeFormHead,
+    UnitForm, UsingAlias,
 };
 
 /// One significant child of a CST node: a token or a node.
@@ -367,6 +368,71 @@ pub(crate) fn exact_number(
     })
 }
 
+/// A `QuantityLiteral` node: a magnitude and a unit name.
+pub(crate) fn quantity_form(
+    cst: &LosslessCst,
+    quantity: &CstNode,
+) -> Result<QuantityForm, FormsRefusal> {
+    let quantity_items = items(cst, quantity);
+    Ok(QuantityForm {
+        magnitude: exact_value(
+            cst,
+            only(&quantity_items, Production::ExactValue, quantity)?,
+        )?,
+        unit: name_form(
+            cst,
+            only(&quantity_items, Production::QualifiedName, quantity)?,
+        )?,
+        span: quantity.span(),
+    })
+}
+
+/// An `ExactValue` node as written: a `uint`, a decimal literal or an exact
+/// number.
+pub(crate) fn exact_value(
+    cst: &LosslessCst,
+    value: &CstNode,
+) -> Result<ExactValueForm, FormsRefusal> {
+    let span = value.span();
+    match items(cst, value)[..] {
+        [Item::Node(number)] if number.production() == Production::ExactNumber => {
+            let number = exact_number(cst, number)?;
+            Ok(ExactValueForm {
+                kind: match number.kind {
+                    ExactNumberKind::Rational => ExactValueKind::Rational,
+                    ExactNumberKind::Decimal => ExactValueKind::Decimal,
+                },
+                first: number.first,
+                second: number.second,
+                span,
+            })
+        }
+        [Item::Token(token)] if token.kind() == TokenKind::Integer => Ok(ExactValueForm {
+            kind: ExactValueKind::Natural,
+            first: integer(&text(token, value)?, value)?,
+            second: integer("1", value)?,
+            span,
+        }),
+        [Item::Token(token)] => {
+            // A decimal literal `a.b`: the digits without the point over
+            // the count of digits after it.
+            let spelling = text(token, value)?;
+            let Some((whole, fraction)) = spelling.split_once('.') else {
+                return Err(unexpected(value));
+            };
+            let digits = format!("{whole}{fraction}");
+            let digits = digits.trim_start_matches('0');
+            Ok(ExactValueForm {
+                kind: ExactValueKind::DecimalLiteral,
+                first: integer(if digits.is_empty() { "0" } else { digits }, value)?,
+                second: integer(&fraction.len().to_string(), value)?,
+                span,
+            })
+        }
+        _ => Err(unexpected(value)),
+    }
+}
+
 /// `unit name : Dimension = scale [* target] [+ offset];` (FR-091 "Unit
 /// form").
 pub(crate) fn unit(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
@@ -574,6 +640,7 @@ enum Shape {
     Boolean(bool),
     Integer(Integer),
     Rational(Integer, Integer),
+    Quantity(QuantityForm),
     String(String),
     Name(String),
     Let(String),
@@ -658,6 +725,10 @@ impl Shape {
             Self::Rational(numerator, denominator) => {
                 arity(0)?;
                 ExprNode::Rational(numerator, denominator)
+            }
+            Self::Quantity(quantity) => {
+                arity(0)?;
+                ExprNode::Quantity(quantity)
             }
             Self::String(text) => {
                 arity(0)?;
@@ -1051,6 +1122,24 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
+            | Production::RandomDeclaration
+            | Production::WeightedValue
+            | Production::RewardDeclaration
+            | Production::WorkloadDeclaration
+            | Production::WorkloadWeight
+            | Production::ProbabilisticClause
+            | Production::SchedulerClause
+            | Production::FairnessItem
+            | Production::Confidence
+            | Production::ConfidenceItem
+            | Production::ProbabilisticForm
+            | Production::Event
+            | Production::Measure
+            | Production::Fraction
+            | Production::Weighting
+            | Production::Horizon
+            | Production::ExactValue
+            | Production::QuantityLiteral
             | Production::StateGraphClaim
             | Production::StateGraphBody
             | Production::StateGraphPredicate
@@ -1540,6 +1629,10 @@ impl<'c> Mapping<'c> {
                 self.leaf(Shape::Rational(numerator, denominator), &task)
             }
             Production::FloatValue => Err(unrepresented(Production::FloatValue, child.span())),
+            Production::QuantityLiteral => {
+                let quantity = quantity_form(self.cst, child)?;
+                self.leaf(Shape::Quantity(quantity), &task)
+            }
             Production::CollectionValue => {
                 let kind = match items.first() {
                     Some(Item::Token(token)) => match token.spelling() {
@@ -1651,6 +1744,23 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
+            | Production::RandomDeclaration
+            | Production::WeightedValue
+            | Production::RewardDeclaration
+            | Production::WorkloadDeclaration
+            | Production::WorkloadWeight
+            | Production::ProbabilisticClause
+            | Production::SchedulerClause
+            | Production::FairnessItem
+            | Production::Confidence
+            | Production::ConfidenceItem
+            | Production::ProbabilisticForm
+            | Production::Event
+            | Production::Measure
+            | Production::Fraction
+            | Production::Weighting
+            | Production::Horizon
+            | Production::ExactValue
             | Production::StateGraphClaim
             | Production::StateGraphBody
             | Production::StateGraphPredicate

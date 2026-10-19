@@ -1242,6 +1242,10 @@ pub enum CheckCause {
     /// FR-366: a refusal in a type-level invariant clause, with the clause
     /// it is about.
     TypeInvariant(Box<super::type_invariant::TypeInvariantRefusal>),
+    /// FR-185, FR-186: the `Probabilistic` family's check refused a
+    /// declaration, or a quantity literal reached a position no checker
+    /// reads yet.
+    Probabilistic(Box<super::probabilistic::ProbabilisticCause>),
     /// A `terminal when` predicate's checking refused (FR-124), with the
     /// declaration it is about.
     Terminal(Box<super::terminal::TerminalRefusal>),
@@ -1758,6 +1762,7 @@ impl CheckCause {
                 Code::UnsupportedConstruct
             }
             Self::Refinement(cause) => cause.cause.code(),
+            Self::Probabilistic(cause) => cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
@@ -1818,6 +1823,7 @@ impl CheckCause {
                 Some("not-yet-implemented")
             }
             Self::Refinement(cause) => cause.cause.cause(),
+            Self::Probabilistic(cause) => Some(cause.tag()),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied
             // charge is an insufficient next charge, never a stage limit.

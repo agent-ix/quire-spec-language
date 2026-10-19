@@ -6,9 +6,9 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, AbstractSideForm, ArgumentForm, DeclarationForm, ExprNode, FairnessGranularity,
-    FairnessKind, FairnessSide, FormsCause, HistoryLiteralForm, ParsedUnit, RefinementForm,
-    RefinementRowForm, StepClassKeyword, StepSourceForm, StepTargetForm,
+    build_unit, AbstractSideForm, ArgumentForm, DeclarationForm, ExactNumberKind, ExprNode,
+    FairnessGranularity, FairnessKind, FairnessSide, FormsCause, HistoryLiteralForm, ParsedUnit,
+    RefinementForm, RefinementRowForm, StepClassKeyword, StepSourceForm, StepTargetForm,
 };
 use qsl_foundation::{SourceIdentity, Span};
 use quire_exact::Integer;
@@ -30,8 +30,13 @@ const CAS_REFINES_COUNTER: &str =
      step Impl::Counter::beginB -> stutter;\n\
      step Impl::Counter::retryA -> stutter;\n\
      step Impl::Counter::retryB -> stutter;\n\
-     step Impl::Counter::peek -> any;\n\
+     step Impl::Counter::peek -> stutter;\n\
      assume fair weak each Impl::Counter::beginA;\n\
+     assume fair weak each Impl::Counter::beginB;\n\
+     assume fair weak each Impl::Counter::commitA;\n\
+     assume fair weak each Impl::Counter::commitB;\n\
+     assume fair weak each Impl::Counter::retryA;\n\
+     assume fair weak each Impl::Counter::retryB;\n\
      ensure fair weak each Spec::Counter::inc;\n\
      }";
 
@@ -127,6 +132,11 @@ fn the_counter_refinement_builds_every_row_in_source_order() {
             "step",
             "fairness",
             "fairness",
+            "fairness",
+            "fairness",
+            "fairness",
+            "fairness",
+            "fairness",
         ]
     );
 
@@ -190,7 +200,7 @@ fn the_counter_refinement_builds_every_row_in_source_order() {
     };
     assert!(matches!(receiver.expression.root_node(), ExprNode::SelfRef));
     assert!(matches!(steps[2].1, StepTargetForm::Stutter { .. }));
-    assert!(matches!(steps[6].1, StepTargetForm::Any { .. }));
+    assert!(matches!(steps[6].1, StepTargetForm::Stutter { .. }));
 
     let RefinementRowForm::Fairness(assume) = &form.rows[9] else {
         panic!("an assume row");
@@ -202,7 +212,7 @@ fn the_counter_refinement_builds_every_row_in_source_order() {
         Some(FairnessGranularity::Each)
     );
     assert_eq!(assume.constraint.operation.name, "Impl::Counter::beginA");
-    let RefinementRowForm::Fairness(ensure) = &form.rows[10] else {
+    let RefinementRowForm::Fairness(ensure) = &form.rows[15] else {
         panic!("an ensure row");
     };
     assert_eq!(ensure.side, FairnessSide::Ensure);
@@ -216,9 +226,10 @@ fn the_counter_refinement_builds_every_row_in_source_order() {
     );
 }
 
-/// FR-310-AC-2 (TC-889 step 2): an open argument builds as `Open` beside the
+/// Part of FR-310-AC-2 (TC-889 step 2; tagged TC-only while the `seq` and
+/// `only` forms and `Protocol(Spec, Twice)` are unbuilt): an open argument builds as `Open` beside the
 /// receiver expression and an expression argument.
-#[trace("TC-889", "FR-310-AC-2")]
+#[trace("TC-889")]
 #[test]
 fn an_open_argument_builds_open() {
     let (text, unit) = build(
@@ -249,14 +260,15 @@ fn an_open_argument_builds_open() {
     );
 }
 
-/// FR-310-AC-2 (TC-889 step 2): a step source builds as `Named` with the
+/// Part of FR-310-AC-2 (TC-889 step 2; tagged TC-only while the `seq` and
+/// `only` forms and `Protocol(Spec, Twice)` are unbuilt): a step source builds as `Named` with the
 /// keyword exactly as written -- `fork` for a protocol step row, none for a
 /// bare name whichever class it later resolves to -- or as `Memory`; a
 /// protocol step row's `node` target builds as `Node` with its binder
 /// expressions. The abstract protocol side (`abstract Spec::Twice`) has no
 /// QSpec production yet (Linear STD-182), so its form is not built from
 /// source here.
-#[trace("TC-889", "FR-310-AC-2")]
+#[trace("TC-889")]
 #[test]
 fn step_sources_and_node_targets_build_as_written() {
     let (_, unit) = build(
@@ -348,7 +360,12 @@ fn history_literals_and_a_strong_fairness_row_build_as_written() {
     assert_eq!(*boolean, &HistoryLiteralForm::Boolean(true));
     assert_eq!(*none, &HistoryLiteralForm::None);
     assert_eq!(*string, &HistoryLiteralForm::Text("a".to_owned()));
-    assert!(matches!(exact, HistoryLiteralForm::Exact(_)));
+    let HistoryLiteralForm::Exact(exact) = exact else {
+        panic!("an exact literal: {exact:?}");
+    };
+    assert_eq!(exact.kind, ExactNumberKind::Rational);
+    assert_eq!(exact.first, Integer::from(1_i64));
+    assert_eq!(exact.second, Integer::from(2_i64));
     assert!(
         matches!(member, HistoryLiteralForm::EnumMember(name) if name.name == "Impl::Mode::idle")
     );
