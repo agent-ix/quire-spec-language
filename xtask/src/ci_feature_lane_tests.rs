@@ -224,6 +224,8 @@ fn expected(root: &str, commands: &[&[&str]]) -> String {
         .collect()
 }
 
+const DEEP_THREADS: &str = "--test-threads=3";
+
 const DEEP_CASES: [&str; 5] = [
     "formatter_identity::deep_sum_source_generator_keeps_format_identity",
     "formatter_identity::deep_else_if_source_generator_keeps_format_identity",
@@ -233,7 +235,7 @@ const DEEP_CASES: [&str; 5] = [
 ];
 
 /// The deep-format calls in recipe order: one exact listing per case, then the
-/// four light cases two at a time, then the dependency chain alone, all in the default lane's directory.
+/// all five cases in one run at `DEEP_THREADS`, all in the default lane's directory.
 fn deep_calls(directory: &str) -> String {
     let listings: Vec<Vec<&str>> = DEEP_CASES
         .iter()
@@ -251,26 +253,19 @@ fn deep_calls(directory: &str) -> String {
             ]
         })
         .collect();
-    let argv = |threads: &'static str, cases: &[&'static str]| {
-        let mut run = vec![
-            "test",
-            "--locked",
-            "--workspace",
-            "--tests",
-            "--",
-            "--ignored",
-            "--exact",
-            threads,
-        ];
-        run.extend(cases);
-        run
-    };
-    let (chain, light) = DEEP_CASES.split_last().unwrap();
-    let light_run = argv("--test-threads=2", light);
-    let chain_run = argv("--test-threads=1", &[*chain]);
+    let mut run = vec![
+        "test",
+        "--locked",
+        "--workspace",
+        "--tests",
+        "--",
+        "--ignored",
+        "--exact",
+        DEEP_THREADS,
+    ];
+    run.extend(DEEP_CASES);
     let mut commands: Vec<&[&str]> = listings.iter().map(Vec::as_slice).collect();
-    commands.push(&light_run);
-    commands.push(&chain_run);
+    commands.push(&run);
     expected(directory, &commands)
 }
 
