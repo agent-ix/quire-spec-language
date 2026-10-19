@@ -6,11 +6,10 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering, ChannelOverflow,
-    DeclarationForm, ExpressionForm, FormsCause, JoinPolicy, LossSelector, MemoryModelName,
-    Outstanding, ParsedUnit,
-    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind,
-    SchedulingForm, TerminalForm,
+    build_unit, AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
+    ChannelOverflow, DeclarationForm, ExpressionForm, FormsCause, JoinPolicy, LossSelector,
+    MemoryModelName, Outstanding, ParsedUnit, ProtocolConstructKind, ProtocolDeclarationForm,
+    ProtocolMemberForm, ProtocolNodeKind, SchedulingForm, TerminalForm,
 };
 use qsl_foundation::{Code, SourceIdentity, Span};
 
@@ -640,7 +639,10 @@ fn a_fence_and_a_memory_clause_build_beside_their_controls() {
 /// the `ordering` it is written with and none when it has none.
 #[test]
 fn a_memory_default_and_an_attempt_ordering_are_built_as_written() {
-    let plain = source("", &RUN.replacen("contracts", "ordering acq_rel contracts", 1));
+    let plain = source(
+        "",
+        &RUN.replacen("contracts", "ordering acq_rel contracts", 1),
+    );
     let unit = build(&plain);
     let form = protocol(&unit);
     let [attempt] = &form.attempts[..] else {

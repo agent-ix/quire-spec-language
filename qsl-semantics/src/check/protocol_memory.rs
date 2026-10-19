@@ -133,8 +133,10 @@ pub(crate) fn check_models(
             node,
             memory: model,
         });
-        if let (Some(declared), Some(outer)) = (declared, outermost(node)) {
-            let outer_form = parallels[&outer];
+        if let (Some(declared), Some(outer_form)) = (
+            declared,
+            outermost(node).and_then(|outer| parallels.get(&outer)),
+        ) {
             let outer_model = outer_form
                 .memory
                 .as_ref()
@@ -269,6 +271,14 @@ impl Accesses {
     }
 }
 
+/// One attempt inside a `parallel`: its accesses and the `(parallel,
+/// branch)` pairs that hold it, innermost first.
+struct Held<'a> {
+    form: &'a AttemptForm,
+    accesses: Accesses,
+    holders: Vec<(ProtocolNodeId, ProtocolNodeId)>,
+}
+
 /// Classify every attempt inside a `parallel` over the places its enclosing
 /// `parallel` controls share, and refuse an ordering its kind does not take
 /// and, under a weak default, an access that is not one location (FR-220,
@@ -303,11 +313,7 @@ pub(crate) fn classify(
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
     // Each attempt inside a `parallel`, with its accesses and the branches
     // that hold it: (parallel, branch) from the innermost out.
-    let mut attempts: Vec<(
-        &AttemptForm,
-        Accesses,
-        Vec<(ProtocolNodeId, ProtocolNodeId)>,
-    )> = Vec::new();
+    let mut attempts: Vec<Held> = Vec::new();
     for form in &protocol.attempts {
         let node = ProtocolNodeId(form.declaration);
         let mut holders = Vec::new();
@@ -330,7 +336,11 @@ pub(crate) fn classify(
             continue;
         };
         match footprint_of(binding) {
-            Ok(footprint) => attempts.push((form, Accesses::of(&footprint), holders)),
+            Ok(footprint) => attempts.push(Held {
+                form,
+                accesses: Accesses::of(&footprint),
+                holders,
+            }),
             Err(_) => refusals.push((
                 form.operation.span,
                 refusal(ProtocolAnchorCause::Unimplemented {
@@ -345,8 +355,9 @@ pub(crate) fn classify(
     // Per `parallel` and place: the branches that read it and that write it.
     type Touch = (BTreeSet<ProtocolNodeId>, BTreeSet<ProtocolNodeId>);
     let mut touched: BTreeMap<(ProtocolNodeId, Place), Touch> = BTreeMap::new();
-    for (_, accesses, holders) in &attempts {
-        for &(parallel, branch) in holders {
+    for held in &attempts {
+        let accesses = &held.accesses;
+        for &(parallel, branch) in &held.holders {
             for place in accesses.places() {
                 let entry = touched.entry((parallel, place.clone())).or_default();
                 if accesses.reads.contains(place) {
@@ -367,8 +378,19 @@ pub(crate) fn classify(
     };
 
     let mut accesses = Vec::with_capacity(attempts.len());
-    for (form, found, holders) in &attempts {
-        let name = &protocol.declarations[form.declaration].name;
+    for Held {
+        form,
+        accesses: found,
+        holders,
+    } in &attempts
+    {
+        let Some(name) = protocol
+            .declarations
+            .get(form.declaration)
+            .map(|declaration| &declaration.name)
+        else {
+            continue;
+        };
         let shared_places: BTreeSet<&Place> = found
             .places()
             .filter(|place| holders.iter().any(|&(parallel, _)| shared(parallel, place)))
