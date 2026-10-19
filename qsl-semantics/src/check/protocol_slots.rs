@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     ActivationForm, BinaryOperator, BinderKind, ExprNode, ExprRef, ExpressionForm,
-    ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind, TerminalForm,
+    ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind, RoleLifetime, TerminalForm,
 };
 use qsl_foundation::Span;
 use quire_exact::ValueType;
@@ -109,6 +109,36 @@ pub struct CheckedNodeBody {
     pub body: CheckedBody,
 }
 
+/// A checked replicated role's lifetime (FR-218 "Scopes", QSpec FR-428).
+#[derive(Clone, Debug, PartialEq)]
+pub enum CheckedLifetime {
+    /// `lifetime workflow`: the instance retires when its protocol
+    /// instance finishes.
+    Workflow,
+    /// `lifetime scope`: the smallest control of the `run` tree that holds
+    /// every node `by` the role, strictly (a node is not its own region);
+    /// `None` when no node of the tree is `by` the role.
+    Scope(Option<ProtocolNodeId>),
+    /// `lifetime until(p)`: the checked Boolean `p`, over `C0` and the
+    /// role's binder.
+    Until(CheckedBody),
+}
+
+/// One checked replicated role `role r each T from pop max n lifetime L`
+/// (FR-218 "Outputs", QSpec FR-465 "Role").
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckedReplicatedRole {
+    /// The index of the role among the protocol's roles; its binder is
+    /// named by the role and typed `Reference` to its object type.
+    pub role: usize,
+    /// The population the instances are drawn from, as written.
+    pub population: String,
+    /// The authored limit on live instances at once, at least 1.
+    pub max: u64,
+    /// The lifetime of one instance.
+    pub lifetime: CheckedLifetime,
+}
+
 /// One checked `related by r (a, b)` clause of an event node (FR-218
 /// "Relationships").
 #[derive(Clone, Debug, PartialEq)]
@@ -156,6 +186,8 @@ pub struct CheckedSlots {
     pub choices: Vec<CheckedChoice>,
     /// The repeats.
     pub repeats: Vec<CheckedRepeat>,
+    /// Every replicated role, in source order.
+    pub roles: Vec<CheckedReplicatedRole>,
     /// Every `related by` clause, by node in declaration order and each
     /// node's clauses in source order.
     pub related: Vec<CheckedRelated>,
@@ -227,6 +259,9 @@ enum SlotOwner {
     Node(usize),
     /// The protocol clause.
     Clause,
+    /// The role of this index: its `until` predicate, read over `C0` and
+    /// the role's own binder only (QSpec FR-464 stage `role-lifetime`).
+    Role(usize),
 }
 
 /// One slot to check: what holds it, which slot, its form, its goal, the
@@ -249,6 +284,12 @@ struct Checker<'c, 'a> {
     nodes: u64,
     readers: Vec<BTreeSet<usize>>,
     refusals: Vec<(Span, CheckRefusal)>,
+    /// The number of `C0` binders: the `over` input, the activation binder
+    /// and the protocol captures, the first entries of `binders`.
+    roots: usize,
+    /// Each replicated role's own binder, by role index: its name and
+    /// `Reference` to the role's object type.
+    role_binders: BTreeMap<usize, (String, ValueType)>,
 }
 
 impl Checker<'_, '_> {
@@ -270,11 +311,30 @@ impl Checker<'_, '_> {
         let node_name = match slot.owner {
             SlotOwner::Node(node) => self.name(node),
             SlotOwner::Clause => self.protocol.name.name.clone(),
+            SlotOwner::Role(role) => self
+                .protocol
+                .roles
+                .get(role)
+                .map(|role| role.name.name.clone())
+                .unwrap_or_default(),
+        };
+        // A role's `until` is typed over `C0` and the role's binder alone,
+        // so every name it binds is readable there.
+        let role_bound: Option<Vec<(String, ValueType)>> = match slot.owner {
+            SlotOwner::Role(role) => Some(
+                self.bound
+                    .iter()
+                    .take(self.roots)
+                    .chain(self.role_binders.get(&role))
+                    .cloned()
+                    .collect(),
+            ),
+            SlotOwner::Node(_) | SlotOwner::Clause => None,
         };
         let mut nodes = self.nodes;
         let typed = type_body(
             slot.form,
-            &self.bound,
+            role_bound.as_deref().unwrap_or(&self.bound),
             slot.goal,
             self.declarations,
             &mut nodes,
@@ -316,6 +376,9 @@ impl Checker<'_, '_> {
                 }
                 return None;
             }
+        }
+        if role_bound.is_some() {
+            return Some(body);
         }
         let mut out_of_scope = Vec::new();
         let mut read = BTreeSet::new();
@@ -674,6 +737,22 @@ pub(crate) fn check(
     }
 
     let flow = Flow::of(protocol, checked, &node_binder, (0..roots).collect());
+    // A replicated role whose type is no object type is refused by
+    // `protocol_clause::content` (no type) or `protocol_controls` (another
+    // kind of type), so it has no binder here.
+    let role_binders = protocol
+        .roles
+        .iter()
+        .enumerate()
+        .filter(|(_, role)| role.replicated.is_some())
+        .filter_map(|(index, role)| {
+            let object = scope.object_type_named(&role.context.name)?;
+            Some((
+                index,
+                (role.name.name.clone(), ValueType::Reference(object)),
+            ))
+        })
+        .collect();
     let mut checker = Checker {
         protocol,
         declarations,
@@ -690,6 +769,8 @@ pub(crate) fn check(
         binders,
         nodes: declarations.nodes_used,
         refusals: Vec::new(),
+        roots,
+        role_binders,
     };
     let mut slots = CheckedSlots::default();
 
@@ -970,6 +1051,55 @@ pub(crate) fn check(
         });
     }
 
+    // FR-218 "Scopes", QSpec FR-465 "Role": each replicated role's
+    // authored `max` is at least 1, and its lifetime is recorded: the
+    // `scope` region, or the `until` predicate over `C0` and the role's
+    // binder.
+    let no_reads = BTreeSet::new();
+    for (index, role) in protocol.roles.iter().enumerate() {
+        let Some(replicated) = &role.replicated else {
+            continue;
+        };
+        if replicated.max == 0 {
+            checker.refuse(ProtocolAnchorCause::RoleMax {
+                role: role.name.name.clone(),
+                minimum: 1,
+                actual: replicated.max,
+                span: replicated.max_span,
+            });
+        }
+        let lifetime = match &replicated.lifetime {
+            RoleLifetime::Workflow(_) => Some(CheckedLifetime::Workflow),
+            RoleLifetime::Scope(_) => Some(CheckedLifetime::Scope(region(
+                protocol,
+                checked,
+                &role.name.name,
+            ))),
+            RoleLifetime::Until(predicate) if checker.role_binders.contains_key(&index) => checker
+                .slot(
+                    &Slot {
+                        owner: SlotOwner::Role(index),
+                        kind: SlotKind::Lifetime,
+                        form: predicate,
+                        goal: Goal::Boolean,
+                        readable: &no_reads,
+                        bars_model_state: false,
+                    },
+                    &mut cx,
+                )
+                .map(CheckedLifetime::Until),
+            RoleLifetime::Until(_) => None,
+        };
+        if let (Some(lifetime), true) = (lifetime, replicated.max > 0) {
+            slots.roles.push(CheckedReplicatedRole {
+                role: index,
+                population: replicated.population.name.clone(),
+                max: replicated.max,
+                lifetime,
+            });
+        }
+    }
+
     // FR-211 "The `terminal` member": `terminal when { P }` is a Boolean
     // predicate over the model observation (the `over` input) and, under
     // `on origin`, the protocol captures (QSpec FR-464 stage `terminal`,
@@ -1033,6 +1163,77 @@ pub(crate) fn check(
         })
         .collect();
     Slots::Checked(slots, checker.nodes)
+}
+
+/// FR-218 "Scopes": the smallest control of `checked`'s `run` tree that
+/// strictly holds every node `by` the role `role` (an `attempt`, `event` or
+/// `commit` written `by` it, a `choice` or `repeat` it owns): the lowest
+/// common ancestor of those nodes' parents, the root standing for itself.
+fn region(
+    protocol: &ProtocolDeclarationForm,
+    checked: &CheckedProtocol,
+    role: &str,
+) -> Option<ProtocolNodeId> {
+    let tree = &checked.controls;
+    let mut parents: BTreeMap<ProtocolNodeId, ProtocolNodeId> = BTreeMap::new();
+    for control in &tree.controls {
+        for child in &control.children {
+            parents.insert(*child, control.node);
+        }
+    }
+    let members = protocol
+        .declarations
+        .iter()
+        .enumerate()
+        .filter(|(_, declaration)| {
+            declaration
+                .role
+                .as_ref()
+                .is_some_and(|written| written.name == role)
+        })
+        .map(|(index, _)| index)
+        .chain(
+            protocol
+                .choices
+                .iter()
+                .filter(|choice| choice.owner.name == role)
+                .map(|choice| choice.declaration),
+        )
+        .chain(
+            protocol
+                .repeats
+                .iter()
+                .filter(|repeat| repeat.owner.name == role)
+                .map(|repeat| repeat.declaration),
+        )
+        .map(ProtocolNodeId)
+        .filter(|node| tree.control(*node).is_some());
+    // Each container's chain of ancestors, root first.
+    let chain = |node: ProtocolNodeId| {
+        let mut chain = vec![node];
+        let mut at = node;
+        while let Some(parent) = parents.get(&at) {
+            chain.push(*parent);
+            at = *parent;
+        }
+        chain.reverse();
+        chain
+    };
+    let mut common: Option<Vec<ProtocolNodeId>> = None;
+    for member in members {
+        let container = parents.get(&member).copied().unwrap_or(member);
+        let path = chain(container);
+        common = Some(match common {
+            None => path,
+            Some(shared) => shared
+                .into_iter()
+                .zip(path)
+                .take_while(|(left, right)| left == right)
+                .map(|(left, _)| left)
+                .collect(),
+        });
+    }
+    common?.last().copied()
 }
 
 /// The index of the role `name` among `protocol`'s roles.

@@ -1,5 +1,6 @@
 //! The C1b3 protocol members over fixture R of the protocol obligation
-//! tests (FR-211, FR-218): the `terminal when` predicate.
+//! tests (FR-211, FR-218): the `terminal when` predicate, replicated roles
+//! and the binder reader sets with the `scope` region.
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
@@ -7,7 +8,8 @@ use qsl_foundation::SourceIdentity;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 
-use super::CheckedTerminalMember;
+use super::{CheckedLifetime, CheckedTerminalMember};
+use crate::check::protocol_clause::ProtocolNodeId;
 use crate::check::refusal::{ProtocolAnchorCause, SlotKind};
 use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 
@@ -167,4 +169,160 @@ fn an_on_each_terminal_predicate_reads_no_capture_and_no_activation_binder() {
         assert_eq!(**cause, CheckCause::MissingName(name.to_owned()));
         assert_eq!(at, name);
     }
+}
+
+/// FR-208-AC-1's protocol over fixture R: a replicated role `r` drawn from
+/// `nodes`, with `lifetime`, and an `event Work by r` inside `sequence S`,
+/// followed by a `check` outside it.
+fn workers(lifetime: &str) -> String {
+    format!(
+        "{HEADER}protocol Workers using v over (k: M::Node) on origin {{\n\
+         capture start: M::Total = k.total;\n\
+         role w on M::Node;\n\
+         role r each M::Node from nodes max 1 lifetime {lifetime};\n\
+         run sequence Main {{\n\
+         sequence S {{ event Work by r as (worked: M::Flag) {{ true }}; }}\n\
+         check After using v {{ true }};\n\
+         }}\n\
+         finish Done as (d: M::Receipt) {{ true }};\n\
+         }}\n"
+    )
+}
+
+/// The id of the node `name` of the one protocol `text` declares.
+fn node_id(text: &str, name: &str) -> ProtocolNodeId {
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 reads the unit");
+    let unit = build_unit(&parsed).expect("S2 builds the unit");
+    let assembled = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        unit,
+        vec![obligation_model()],
+        Vec::new(),
+    )
+    .expect("the assembler admits the unit");
+    let index = assembled.protocols[0]
+        .declarations
+        .iter()
+        .position(|declaration| declaration.name.name == name)
+        .unwrap_or_else(|| panic!("a node {name}"));
+    ProtocolNodeId(index)
+}
+
+/// FR-218 "Scopes" and QSpec FR-465 "Role": FR-208-AC-1's replicated role
+/// checks with each lifetime and records its population, maximum and
+/// lifetime; its `until(p)` is a Boolean over `C0` and the role's own
+/// binder, typed `Reference` to its object type, so a read of the instance
+/// and of the `over` input checks, a read of a `run`-tree binder refuses
+/// `missing_declaration`/`missing-name` at the read and a non-Boolean
+/// predicate `non-boolean-root`; `max 0` refuses `ill_typed`/`type-mismatch`
+/// at the maximum.
+#[trace("TC-653")]
+#[test]
+fn a_replicated_role_records_its_population_maximum_and_lifetime() {
+    let graph = checks(&workers("until(r.total > 0 and k.total >= start)"));
+    let protocol = graph.protocol("Workers").expect("checked");
+    let [role] = protocol.slots.roles.as_slice() else {
+        panic!("one replicated role");
+    };
+    assert_eq!(
+        (role.role, role.population.as_str(), role.max),
+        (1, "nodes", 1)
+    );
+    let CheckedLifetime::Until(until) = &role.lifetime else {
+        panic!("an until lifetime, got {:?}", role.lifetime);
+    };
+    assert_eq!(until.root().value_type(), &ValueType::Boolean);
+    let graph = checks(&workers("workflow"));
+    assert_eq!(
+        graph.protocol("Workers").expect("checked").slots.roles[0].lifetime,
+        CheckedLifetime::Workflow
+    );
+
+    let text = workers("until(worked.ready)");
+    let (cause, pair, at) = only(&text);
+    assert_eq!(pair, ("missing_declaration", Some("missing-name")));
+    let ProtocolAnchorCause::SlotClause {
+        node, slot, cause, ..
+    } = &cause
+    else {
+        panic!("a slot refusal, got {cause:?}");
+    };
+    assert_eq!((node.as_str(), *slot), ("r", SlotKind::Lifetime));
+    assert_eq!(**cause, CheckCause::MissingName("worked".to_owned()));
+    assert_eq!(at, "worked");
+
+    let (_, pair, _) = only(&workers("until(r.total)"));
+    assert_eq!(pair, ("ill_typed", Some("non-boolean-root")));
+
+    let text = workers("workflow").replacen("max 1", "max 0", 1);
+    let (cause, pair, at) = only(&text);
+    assert_eq!(pair, ("ill_typed", Some("type-mismatch")));
+    assert_eq!(
+        cause,
+        ProtocolAnchorCause::RoleMax {
+            role: "r".to_owned(),
+            minimum: 1,
+            actual: 0,
+            span: cause.span(),
+        }
+    );
+    assert_eq!(at, "0");
+}
+
+/// FR-218-AC-3: in `Fill` with a `check` after the join that reads `a`, the
+/// checked clause records that `check` as `a`'s only reader, and a node in
+/// branch `right` that reads `a` refuses `missing_declaration`/
+/// `missing-name` as FR-113 refuses an unresolved name; in FR-208-AC-1's
+/// protocol with lifetime `scope`, the recorded region is `S`, the
+/// smallest control holding `Work`, and with a second `by r` node after `S`
+/// it is `Main`.
+#[trace("TC-663", "FR-218-AC-3")]
+#[test]
+fn readers_are_recorded_and_a_scope_role_records_its_region() {
+    let read_after = fill(ORIGIN, "").replacen(
+        "} join all [left, right];\n",
+        "} join all [left, right];\ncheck Read using v { a.ready };\n",
+        1,
+    );
+    let graph = checks(&read_after);
+    let readers = &graph.protocol("Fill").expect("checked").slots.readers;
+    let a = readers
+        .iter()
+        .find(|readers| readers.binder == "a")
+        .expect("a's readers");
+    assert_eq!(a.readers, [node_id(&read_after, "Read")]);
+
+    let text =
+        fill(ORIGIN, "").replacen("as (b: M::Flag) { true }", "as (b: M::Flag) { a.ready }", 1);
+    let (cause, pair, at) = only(&text);
+    assert_eq!(pair, ("missing_declaration", Some("missing-name")));
+    let ProtocolAnchorCause::SlotClause { node, cause, .. } = &cause else {
+        panic!("a slot refusal, got {cause:?}");
+    };
+    assert_eq!(node, "B");
+    assert_eq!(**cause, CheckCause::MissingName("a".to_owned()));
+    assert_eq!(at, "a");
+
+    let text = workers("scope");
+    let graph = checks(&text);
+    assert_eq!(
+        graph.protocol("Workers").expect("checked").slots.roles[0].lifetime,
+        CheckedLifetime::Scope(Some(node_id(&text, "S")))
+    );
+    let text = workers("scope").replacen(
+        "check After using v { true };",
+        "event Again by r as (again: M::Flag) { true };",
+        1,
+    );
+    let graph = checks(&text);
+    assert_eq!(
+        graph.protocol("Workers").expect("checked").slots.roles[0].lifetime,
+        CheckedLifetime::Scope(Some(node_id(&text, "Main")))
+    );
 }

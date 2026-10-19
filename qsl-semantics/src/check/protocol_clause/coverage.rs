@@ -43,8 +43,8 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
 /// a `channel` with its `fifo` key is (FR-218, `protocol_controls`), a
 /// `terminal when` predicate is (FR-211, `protocol_slots`), a `requires
 /// temporal` requirement is (FR-218, `protocol_requirement`), a
-/// `relationship` is (FR-218, `protocol_relationship`) and a `related by`
-/// clause is (FR-218, `protocol_slots`). Exhaustive, so a new construct kind
+/// `relationship` is (FR-218, `protocol_relationship`), and a `related by`
+/// clause and a replicated role are (FR-218, `protocol_slots`). Exhaustive, so a new construct kind
 /// must be classified here.
 fn covered_construct(kind: ProtocolConstructKind) -> bool {
     use ProtocolConstructKind as K;
@@ -56,8 +56,9 @@ fn covered_construct(kind: ProtocolConstructKind) -> bool {
         | K::TerminalWhen
         | K::Requirement
         | K::Relationship
-        | K::Related => true,
-        K::ReplicatedRole | K::JoinPredicate | K::MemoryClause | K::AccessOrdering => false,
+        | K::Related
+        | K::ReplicatedRole => true,
+        K::JoinPredicate | K::MemoryClause | K::AccessOrdering => false,
     }
 }
 

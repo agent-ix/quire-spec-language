@@ -400,6 +400,18 @@ pub enum ProtocolAnchorCause {
         /// The `await`'s name span.
         span: Span,
     },
+    /// QSpec FR-465 "Role" 2: a replicated role whose authored `max` is
+    /// below 1. `ill_typed`/`type-mismatch`, at the maximum.
+    RoleMax {
+        /// The role's declared name.
+        role: String,
+        /// The least admitted maximum, 1.
+        minimum: u64,
+        /// The maximum as written.
+        actual: u64,
+        /// The maximum's span.
+        span: Span,
+    },
     /// FR-218 "Relationships": a `relationship r = M::R;` whose `M::R` is no
     /// export of a selected model. `missing_declaration`/`missing-name`, at
     /// the name.
@@ -508,6 +520,9 @@ pub enum SlotKind {
     Terminal,
     /// An end of an event node's `related by` clause (FR-218).
     RelatedEnd,
+    /// A replicated role's `until` predicate (QSpec FR-464 stage
+    /// `role-lifetime`).
+    Lifetime,
 }
 
 /// Which end of a relationship a `related by` end fills (FR-218
@@ -744,6 +759,7 @@ impl ProtocolAnchorCause {
             | Self::MissingTemporalProfile { span, .. }
             | Self::MissingRequirement { span, .. }
             | Self::MissingRelationship { span, .. }
+            | Self::RoleMax { span, .. }
             | Self::RelationshipExport { span, .. }
             | Self::MissingRelated { span, .. }
             | Self::RelatedEnd { span, .. }
@@ -776,7 +792,8 @@ impl ProtocolAnchorCause {
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. }
             | Self::RequirementKind { .. }
-            | Self::RelatedEnd { .. } => Code::IllTyped,
+            | Self::RelatedEnd { .. }
+            | Self::RoleMax { .. } => Code::IllTyped,
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
@@ -816,7 +833,8 @@ impl ProtocolAnchorCause {
             | Self::ChannelMismatch { .. }
             | Self::CarriesMismatch { .. }
             | Self::AwaitWindow { .. }
-            | Self::RelatedEnd { .. } => "type-mismatch",
+            | Self::RelatedEnd { .. }
+            | Self::RoleMax { .. } => "type-mismatch",
             Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. }

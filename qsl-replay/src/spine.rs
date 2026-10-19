@@ -851,6 +851,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `await {node}` reads a clock, but the unit selects no temporal \
                      profile"
                 ),
+                ProtocolAnchorCause::RoleMax { role, actual, .. } => format!(
+                    "{message}: replicated role `{role}` allows at most {actual} live instances; \
+                     at least 1 is required"
+                ),
                 ProtocolAnchorCause::MissingRelationship { name, .. } => {
                     format!("{message}: `{name}` names no export of a selected model")
                 }
