@@ -460,12 +460,8 @@ fn lift_field(
     field: &StateField,
     value: Value,
 ) -> Result<Option<Value>, Lifting> {
-    let value = match value {
-        Value::Option(option) if field.optional => match option.payload() {
-            Some(payload) => payload.clone(),
-            None => return Ok(None),
-        },
-        other => other,
+    let Some(value) = unwrap_optional(field, value) else {
+        return Ok(None);
     };
     match value {
         Value::Reference(reference) => {
@@ -499,6 +495,17 @@ fn lift_field(
             )))
         }
         plain => Ok(Some(plain)),
+    }
+}
+
+/// What `field` takes from the row value `value` before lifting: a field
+/// declared `T?` takes `v` from `Some(v)` and stays unset (`None`) for
+/// `none`; any other field takes the value unchanged, so a field declared
+/// `Option<T>` keeps an explicit `none` (FR-140-AC-11).
+fn unwrap_optional(field: &StateField, value: Value) -> Option<Value> {
+    match value {
+        Value::Option(option) if field.optional => option.payload().cloned(),
+        other => Some(other),
     }
 }
 
@@ -536,5 +543,119 @@ pub(super) fn lift_value(
                 .map(Value::Reference)
         }
         plain => Ok(plain),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::*;
+
+    fn field(optional: bool) -> StateField {
+        StateField {
+            key: DeclarationKey {
+                package: "p".to_owned(),
+                node: "head".to_owned(),
+            },
+            name: "head".to_owned(),
+            value_type: ValueType::Boolean,
+            optional,
+        }
+    }
+
+    /// FR-140-AC-11 (TC-1086 step 8): a field declared `T?` is unset for
+    /// `none` and takes `v` from `Some(v)`; a field declared `Option<T>`
+    /// keeps the option value unchanged, so `none` stays an explicit `none`.
+    /// The constructors `none` and `Some(e)` are not yet a spelling of a
+    /// refinement row (S2), so the rule is exercised on the values.
+    #[trace("TC-1086", "FR-140-AC-11")]
+    #[test]
+    fn an_optional_field_is_unset_for_none_and_takes_the_payload_of_some() {
+        let none = quire_exact::OptionValue::none(ValueType::Boolean);
+        let some = quire_exact::OptionValue::present(ValueType::Boolean, Value::Boolean(true))
+            .expect("a present option");
+        assert!(unwrap_optional(&field(true), none.clone()).is_none());
+        assert!(matches!(
+            unwrap_optional(&field(true), some.clone()),
+            Some(Value::Boolean(true))
+        ));
+        assert!(matches!(
+            unwrap_optional(&field(false), none),
+            Some(Value::Option(_))
+        ));
+        assert!(matches!(
+            unwrap_optional(&field(false), some),
+            Some(Value::Option(_))
+        ));
+    }
+
+    fn undefined(field: &str) -> MappingFailure {
+        MappingFailure::Undefined {
+            row: MappingRowRef::Object {
+                concrete_type: DeclarationKey {
+                    package: "p".to_owned(),
+                    node: field.to_owned(),
+                },
+            },
+            object: None,
+            cause: Box::new(UndefinedCause::InsufficientData(
+                qsl_eval::temporal::InsufficientData {
+                    count: 0,
+                    min_count: 1,
+                },
+            )),
+        }
+    }
+
+    fn undetermined(field: &str) -> MappingFailure {
+        unmapped(
+            &DeclarationKey {
+                package: "p".to_owned(),
+                node: field.to_owned(),
+            },
+            ObjectKey {
+                population: DeclarationKey {
+                    package: "p".to_owned(),
+                    node: "population".to_owned(),
+                },
+                key: "k".to_owned(),
+            },
+        )
+    }
+
+    /// FR-140-AC-13 (TC-1086 step 4): of the row outcomes read, the first
+    /// undefined one is reported even when an undetermined one was read
+    /// first, and a later outcome of a kind never replaces an earlier one.
+    #[trace("TC-1086", "FR-140-AC-13")]
+    #[test]
+    fn the_first_undefined_row_outranks_every_undetermined_one() {
+        let mut outcomes = Outcomes::default();
+        outcomes.record(undetermined("first-undetermined"));
+        outcomes.record(undefined("first-undefined"));
+        outcomes.record(undefined("second-undefined"));
+        outcomes.record(undetermined("second-undetermined"));
+        let Some(MappingFailure::Undefined {
+            row: MappingRowRef::Object { concrete_type },
+            ..
+        }) = outcomes.first()
+        else {
+            panic!("the first undefined row is reported");
+        };
+        assert_eq!(concrete_type.node, "first-undefined");
+
+        let mut outcomes = Outcomes::default();
+        outcomes.record(undetermined("first-undetermined"));
+        outcomes.record(undetermined("second-undetermined"));
+        let Some(MappingFailure::Undetermined(found)) = outcomes.first() else {
+            panic!("the first undetermined row is reported");
+        };
+        assert_eq!(
+            found.cause,
+            EvalFailure::UnmappedType(DeclarationKey {
+                package: "p".to_owned(),
+                node: "first-undetermined".to_owned()
+            })
+        );
     }
 }

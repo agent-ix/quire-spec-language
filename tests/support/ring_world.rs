@@ -75,6 +75,15 @@ pub struct Variant {
     /// The `items` row's `only` condition is `s.ring = self`, which two
     /// slots satisfy: undefined wherever the queue is not empty.
     pub only_ring: bool,
+    /// The concrete `Ring` also has `next: Reference<Ring>`, the abstract
+    /// `Queue` has `next: Reference<Queue>`, and `rings` admits a subtype
+    /// `SubRing` of `Ring` that no object row names (FR-140-AC-6).
+    pub next: bool,
+    /// `rings` admits the subtype `SubRing` of `Ring` (FR-140-AC-9).
+    pub sub_ring: bool,
+    /// The abstract `Queue` also has `x: Int[0, 1]` and `y: Int[0, 1]`
+    /// (FR-140-AC-13).
+    pub xy: bool,
 }
 
 /// `operation` with the frame that grants `modifies` on every object and
@@ -98,7 +107,7 @@ fn framed(
 }
 
 /// The abstract package: `Queue { items }` with `enq(x)` and `deq()`.
-fn queue_document() -> Vec<u8> {
+fn queue_document(variant: Variant) -> Vec<u8> {
     let digit = node(QUEUE, "Digit");
     let enq = framed(
         ring_queue::operation(QUEUE, "Queue", "enq", &[("x", &digit)], None, &[]),
@@ -116,26 +125,40 @@ fn queue_document() -> Vec<u8> {
         QUEUE,
         vec![
             ring_queue::bounded(QUEUE, "Digit", 1),
-            ring_queue::object_type(
-                QUEUE,
-                "Queue",
-                vec![ring_queue::field(
-                    QUEUE,
-                    "Queue",
-                    "items",
-                    &digit,
-                    (0, 2, true),
-                )],
-                vec![enq, deq],
-            ),
+            ring_queue::object_type(QUEUE, "Queue", queue_fields(variant), vec![enq, deq]),
         ],
         vec![ring_queue::population(QUEUE, "queues", "Queue")],
     )
 }
 
+/// The fields of the abstract `Queue` of `variant`.
+fn queue_fields(variant: Variant) -> Vec<Json> {
+    let digit = node(QUEUE, "Digit");
+    let mut fields = vec![ring_queue::field(
+        QUEUE,
+        "Queue",
+        "items",
+        &digit,
+        (0, 2, true),
+    )];
+    if variant.next {
+        fields.push(ring_queue::single(
+            QUEUE,
+            "Queue",
+            "next",
+            &node(QUEUE, "Queue"),
+        ));
+    }
+    if variant.xy {
+        fields.push(ring_queue::single(QUEUE, "Queue", "x", &digit));
+        fields.push(ring_queue::single(QUEUE, "Queue", "y", &digit));
+    }
+    fields
+}
+
 /// The concrete package: `Ring { head, size }` and `Slot { ring, index,
 /// value }` with `put(x)` and `take()`.
-fn ring_document() -> Vec<u8> {
+fn ring_document(variant: Variant) -> Vec<u8> {
     let digit = node(RING, "Digit");
     let put = framed(
         ring_queue::operation(RING, "Slot", "put", &[("x", &digit)], None, &[]),
@@ -154,15 +177,7 @@ fn ring_document() -> Vec<u8> {
         vec![
             ring_queue::bounded(RING, "Digit", 1),
             ring_queue::bounded(RING, "Two", 2),
-            ring_queue::object_type(
-                RING,
-                "Ring",
-                vec![
-                    ring_queue::single(RING, "Ring", "head", &digit),
-                    ring_queue::single(RING, "Ring", "size", &node(RING, "Two")),
-                ],
-                Vec::new(),
-            ),
+            ring_queue::object_type(RING, "Ring", ring_fields(variant), Vec::new()),
             ring_queue::object_type(
                 RING,
                 "Slot",
@@ -173,12 +188,48 @@ fn ring_document() -> Vec<u8> {
                 ],
                 vec![put, take],
             ),
-        ],
+        ]
+        .into_iter()
+        .chain((variant.next || variant.sub_ring).then(sub_ring))
+        .collect(),
         vec![
-            ring_queue::population(RING, "rings", "Ring"),
+            rings_population(variant),
             ring_queue::population(RING, "slots", "Slot"),
         ],
     )
+}
+
+/// The fields of the concrete `Ring` of `variant`.
+fn ring_fields(variant: Variant) -> Vec<Json> {
+    let mut fields = vec![
+        ring_queue::single(RING, "Ring", "head", &node(RING, "Digit")),
+        ring_queue::single(RING, "Ring", "size", &node(RING, "Two")),
+    ];
+    if variant.next {
+        fields.push(ring_queue::single(
+            RING,
+            "Ring",
+            "next",
+            &node(RING, "Ring"),
+        ));
+    }
+    fields
+}
+
+/// The population `rings`, admitting `SubRing` when `variant` declares it.
+fn rings_population(variant: Variant) -> Json {
+    let mut rings = ring_queue::population(RING, "rings", "Ring");
+    if variant.next || variant.sub_ring {
+        rings["members"] = json!([node(RING, "Ring"), node(RING, "SubRing")]);
+    }
+    rings
+}
+
+/// The object type `SubRing`, a subtype of `Ring`.
+fn sub_ring() -> Json {
+    let mut sub = ring_queue::object_type(RING, "SubRing", Vec::new(), Vec::new());
+    sub["supertypes"] = json!([node(RING, "Ring")]);
+    sub
 }
 
 /// The contracts of both models.
@@ -254,13 +305,16 @@ fn unit_text(
 }
 
 /// The two domain packages' documents, by digest.
-fn packages() -> BTreeMap<[u8; 32], Vec<u8>> {
-    package_input([queue_document().as_slice(), ring_document().as_slice()])
+fn packages(variant: Variant) -> BTreeMap<[u8; 32], Vec<u8>> {
+    package_input([
+        queue_document(variant).as_slice(),
+        ring_document(variant).as_slice(),
+    ])
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
 pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String> {
-    let documents = packages();
+    let documents = packages(variant);
     let text = unit_text(&documents, refinement, variant);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "ring", "git", "1"),
@@ -348,16 +402,30 @@ impl RingWorld {
             panic!("{refinement}: the unit checks: {refusals}");
         });
         let mut snapshots = BTreeMap::new();
+        let mut queue_fields = json!({"items": {"sequence": []}});
+        if variant.next {
+            queue_fields["next"] =
+                json!({"reference": {"population": node(QUEUE, "queues"), "key": "r"}});
+        }
+        if variant.xy {
+            queue_fields["x"] = json!({"integer": "0"});
+            queue_fields["y"] = json!({"integer": "0"});
+        }
         let queue_initial = snapshot(
             QUEUE,
-            &queue_document(),
+            &queue_document(variant),
             vec![
                 json!({"population": node(QUEUE, "queues"), "complete": true,
                 "objects": [{"key": "r", "type": node(QUEUE, "Queue"),
-                    "fields": {"items": {"sequence": []}}}]}),
+                    "fields": queue_fields}]}),
             ],
             &mut snapshots,
         );
+        let mut ring_fields = json!({"head": {"integer": "0"}, "size": {"integer": "0"}});
+        if variant.next {
+            ring_fields["next"] =
+                json!({"reference": {"population": node(RING, "rings"), "key": "r"}});
+        }
         let slot = |key: &str, index: u8| {
             json!({"key": key, "type": node(RING, "Slot"), "fields": {
                 "ring": {"reference": {"population": node(RING, "rings"), "key": "r"}},
@@ -366,11 +434,11 @@ impl RingWorld {
         };
         let ring_initial = snapshot(
             RING,
-            &ring_document(),
+            &ring_document(variant),
             vec![
                 json!({"population": node(RING, "rings"), "complete": true,
                     "objects": [{"key": "r", "type": node(RING, "Ring"),
-                        "fields": {"head": {"integer": "0"}, "size": {"integer": "0"}}}]}),
+                        "fields": ring_fields}]}),
                 json!({"population": node(RING, "slots"), "complete": true,
                     "objects": [slot("s0", 0), slot("s1", 1)]}),
             ],
@@ -378,7 +446,7 @@ impl RingWorld {
         );
         Self {
             package: CheckedPackage::link(graph),
-            packages: packages(),
+            packages: packages(variant),
             snapshots,
             queue_initial,
             ring_initial,
@@ -530,3 +598,169 @@ pub fn ring_state(system: &ModelSystem<'_>, head: i64, size: i64, values: [i64; 
         extents: Vec::new(),
     }
 }
+
+/// One ring of [`custom_state`].
+pub struct RingSpec<'a> {
+    /// The ring's key.
+    pub key: &'a str,
+    /// Its most-specific type, `Ring` or `SubRing`.
+    pub type_name: &'a str,
+    /// Its `head`.
+    pub head: i64,
+    /// Its `size`.
+    pub size: i64,
+    /// Its `next`, as the key and type name of the ring it references.
+    pub next: Option<(&'a str, &'a str)>,
+}
+
+/// The concrete state with `rings` and the slots `slots`, each as (key, the
+/// key of its ring, index, value).
+pub fn custom_state(
+    system: &ModelSystem<'_>,
+    rings: &[RingSpec<'_>],
+    slots: &[(&str, &str, i64, i64)],
+) -> ModelState {
+    let reference = |type_name: &str, key_text: &str| {
+        Value::Reference(
+            system
+                .object_reference(&key(RING, type_name), key_text)
+                .expect("the object is referenced"),
+        )
+    };
+    let ring_objects = rings
+        .iter()
+        .map(|ring| {
+            let mut fields = BTreeMap::from([
+                (key(RING, "Ring/head"), integer(ring.head)),
+                (key(RING, "Ring/size"), integer(ring.size)),
+            ]);
+            if let Some((target, type_name)) = ring.next {
+                fields.insert(key(RING, "Ring/next"), reference(type_name, target));
+            }
+            (
+                ring.key.to_owned(),
+                StateObject {
+                    type_identity: key(RING, ring.type_name),
+                    fields,
+                },
+            )
+        })
+        .collect();
+    let slot_objects = slots
+        .iter()
+        .map(|(slot, ring, index, value)| {
+            let type_name = rings
+                .iter()
+                .find(|candidate| candidate.key == *ring)
+                .map_or("Ring", |found| found.type_name);
+            (
+                (*slot).to_owned(),
+                StateObject {
+                    type_identity: key(RING, "Slot"),
+                    fields: BTreeMap::from([
+                        (key(RING, "Slot/ring"), reference(type_name, ring)),
+                        (key(RING, "Slot/index"), integer(*index)),
+                        (key(RING, "Slot/value"), integer(*value)),
+                    ]),
+                },
+            )
+        })
+        .collect();
+    ModelState {
+        populations: BTreeMap::from([
+            (key(RING, "rings"), ring_objects),
+            (key(RING, "slots"), slot_objects),
+        ]),
+        extents: Vec::new(),
+    }
+}
+
+/// The ring buffer and queue packages of `tests/support/ring_queue.rs`, whose
+/// abstract `Queue` declares every field FR-139 reads, with the refinement
+/// that maps only the rows given: the systems of a mapping test, which has no
+/// initial state.
+pub struct MapWorld {
+    package: CheckedPackage,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+}
+
+impl MapWorld {
+    /// The world of `RingIsQueue` whose `Queue` object row holds `rows`.
+    pub fn new(rows: &str) -> Self {
+        let checked = ring_queue::checked(&ring_queue::ring_is_queue(rows));
+        Self {
+            package: CheckedPackage::link(checked.graph),
+            packages: checked.packages,
+            snapshots: BTreeMap::new(),
+        }
+    }
+
+    /// The unit's one refinement.
+    pub fn refinement(&self) -> &CheckedRefinement {
+        let [refinement] = self.package.graph().refinements() else {
+            panic!("one refinement");
+        };
+        refinement
+    }
+
+    fn system(&self, model: &str, universes: Vec<PopulationUniverse>) -> ModelSystem<'_> {
+        ModelSystem::over_model(
+            ModelSimulationRequest {
+                package: &self.package,
+                packages: &self.packages,
+                normalization: ModelNormalizationLimits::default(),
+                snapshots: &self.snapshots,
+                initial: Vec::new(),
+                universes,
+                observation: ObservationLimits::default(),
+                expansion: ExpansionLimits {
+                    max_candidates: 1_000_000,
+                },
+                meter: UNLIMITED,
+            },
+            model,
+        )
+        .expect("the system admits")
+    }
+
+    /// The abstract subject's system.
+    pub fn abstract_system(&self) -> ModelSystem<'_> {
+        let keys = |names: &[&str]| names.iter().map(|name| (*name).to_owned()).collect();
+        self.system(
+            QUEUE,
+            vec![
+                PopulationUniverse {
+                    population: key(QUEUE, "queues"),
+                    keys: keys(&["r"]),
+                },
+                PopulationUniverse {
+                    population: key(QUEUE, "cells"),
+                    keys: keys(&["s0", "s1"]),
+                },
+            ],
+        )
+    }
+
+    /// The concrete subject's system.
+    pub fn concrete_system(&self) -> ModelSystem<'_> {
+        let keys = |names: &[&str]| names.iter().map(|name| (*name).to_owned()).collect();
+        self.system(
+            RING,
+            vec![
+                PopulationUniverse {
+                    population: key(RING, "rings"),
+                    keys: keys(&["r"]),
+                },
+                PopulationUniverse {
+                    population: key(RING, "slots"),
+                    keys: keys(&["s0", "s1"]),
+                },
+            ],
+        )
+    }
+}
+
+/// The `items` row of ADR-020 §8, for a [`MapWorld`] that adds rows of its
+/// own.
+pub use ring_queue::ITEMS;
