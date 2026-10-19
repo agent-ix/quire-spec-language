@@ -49,3 +49,9 @@ scope:
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | high | The "either type conforms to the other" relation does not give a superset of FR-383's locations when a type has several supertypes. Failure scenario: `C extends A, B`, with `A` and `B` unrelated. `A` declares `cancel()` framed `deletes self`. The populations are `as: A` and `bs: B`, and a holder field is `h: Reference<B>`. `B` declares `ping()` with pre `true`. For `c: C`, FR-383 gives `cancel(c)` writes `Membership{as,c}` and `Membership{bs,c}`, and reads `AnyField{Holder/h}`. The declared-type rule (declared `A`) gives only `Membership{as,c}`, because `A` and `B` are unrelated. So `cancel(c)` and `ping(c)`, which reads `Membership{bs,c}`, are judged independent although `cancel` disables `ping`. A transition that clears `h` is also left out of the candidate of the disabled `cancel(c)`, so a reduced run can miss a violation the unreduced run reaches (FR-383 agreement). Fix: key on the most-specific type that the transition identity's reference triple already carries (see SR-12813 FND-001). If declared-type keying is kept, relate `D` to `M` when some type of the package conforms to both, not when either conforms to the other. Add a multi-supertype vector to TC-1075. | spec/functional/FR-155-derive-and-enforce-read-and-write-footprints.md:105-114; quire-specification FR-383 items 4-5; spec/functional/FR-082-resolve-conformance-subsetting-and-redefinition.md:321 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-155 now keys on the identity's object_type, exactly FR-383 with no widening. AC-7 adds the `C extends A, B` vector, and its sets match FR-383 items 1-6: no clauses, so items 1-3 and 6 give nothing; item 4 gives the memberships; item 5 gives AnyField{Holder/h} only, because C conforms to B and not to Base or Sub (25695410f). |

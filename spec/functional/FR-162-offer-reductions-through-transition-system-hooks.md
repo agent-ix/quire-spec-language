@@ -77,7 +77,7 @@ pub struct RetainedEdge {
 - **State-free footprint hook.** The `footprint` hook takes a transition
   identity and no state, and SHALL return `Some` for every transition
   identity of the system, enabled or disabled and whether or not the objects
-  it names exist in any state (FR-155), and SHALL NOT take a state. `model_check` SHALL use it for the
+  it names exist in any state (FR-155). `model_check` SHALL use it for the
   enabled and the disabled members of a candidate (FR-156).
 - **Product delegation.** The product system SHALL answer
   `offered_reductions` with its model component's answer, and `canonical` by

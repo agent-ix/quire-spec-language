@@ -41,3 +41,19 @@ scope:
 | FND-002 | low | "Equal to the footprint it returns after `spawn` creates `d`" and "while it is disabled" are vacuous for a hook that takes no state: the call is identical either way. Name what changes, such as a `ModelSystem` built from a different initial document, or drop the clauses. | spec/functional/FR-162-offer-reductions-through-transition-system-hooks.md:122; spec/test-cases/TC-1075-footprints-are-state-free-and-cover-disabled-transitions.md:25-26,33-34 |
 | FND-003 | low | FR-162-AC-5's last sentence repeats FR-162-AC-1 and FR-156's Systems bullet and is unrelated to state-freedom. It is also unclear against the Offering bullet: a system that offers POR with an unimplemented hook settles `Failed`, not V-8. Say "does not offer" or drop it. | spec/functional/FR-162-offer-reductions-through-transition-system-hooks.md:71-76,122 |
 | FND-004 | low | "`spawn` is in the candidate of the disabled `bump(d)`" leaves the candidate's seed unnamed. FR-383 candidates are seeded by enabled transitions, and `bump(d)` joins one only through a dependent enabled member. Name the seed. | spec/functional/FR-155-derive-and-enforce-read-and-write-footprints.md:146; spec/test-cases/TC-1075-footprints-are-state-free-and-cover-disabled-transitions.md:33 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | AC-7 and TC-1075 check object_type only for the receiver. The State-free bullet also requires the reference arguments' object_type for `deletes p` writes and for the item-4 argument memberships, and no vector covers that path. Failure: PR #967 (9250483a0, qsl-semantics/src/model/footprint.rs:312,346-353) derives argument memberships with `populations_relating(declared parameter type)`, and TC-1075 would pass it. With `p: Reference<A>` and argument `c` of type `C extends A, B`, that code omits `Membership{bs, c}`. Fix: add an operation with a reference parameter (for example `drop(p: A)` framed `deletes p`) called with `c` of type `C`, with exact sets that include `Membership{bs, c}` and `AnyField{Holder/h}`. | spec/functional/FR-155-derive-and-enforce-read-and-write-footprints.md:147 |
+| FND-006 | low | The FR-162 State-free footprint hook bullet says 'takes a transition identity and no state' and then 'SHALL NOT take a state' in the same sentence, and the edited line is not rewrapped. Drop the second clause. | spec/functional/FR-162-offer-reductions-through-transition-system-hooks.md:77-81 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-7 and TC-1075 step 3 now give exact read and write sets per object_type, and the sets differ by type (25695410f, FR-155:147, TC-1075:27,35). |
+| FND-002 | fixed | The 'after spawn creates d' and 'while it is disabled' clauses are gone; AC-5 now says the hook is called with no state (25695410f, FR-162:122). |
+| FND-003 | fixed | The V-8 sentence is removed from FR-162-AC-5 (25695410f). |
+| FND-004 | fixed | The candidate is now seeded by the enabled `spawn` (25695410f, FR-155:147, TC-1075:25,33). |
