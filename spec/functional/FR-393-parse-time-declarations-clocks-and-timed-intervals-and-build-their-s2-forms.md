@@ -15,8 +15,6 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-233
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-361
-    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-230
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-234
@@ -37,7 +35,7 @@ S3 can check it (FR-230, FR-233, FR-234). QSpec owns the productions and
 their meaning; this requirement specifies the forms QSL builds. Parsing
 selects no meaning: whether a time member, a clock read or an interval is
 admitted is the S3 check's decision. S2 builds these forms whether or not the
-unit selects any facet; the facet gate is not enforced at S2 (FR-361 item 8).
+unit selects any facet. Whether a unit admits a `time-decl`, a `time-invariant`, an `urgent-decl` or the `Clock` type is decided after S2, by S3.
 
 This requirement amends FR-325: a temporal operator's interval is one member
 that holds either a step interval or a timed interval.
@@ -131,7 +129,7 @@ the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
   `urgent_decl`. Each selects exactly one production.
 - S2 SHALL build these forms under every facet selection, including none.
   It SHALL NOT refuse a form for its facet; whether the unit admits the form
-  is decided after S2 (FR-361 item 8).
+  is decided after S2, by S3.
 - S1 SHALL read a temporal operator's `(` followed by a `quantity-literal`
   as the opener of a `timed-interval`, and a `(` followed by anything else
   as a parenthesized operand (the shared grammar's second-token rule). A `[`
@@ -170,8 +168,6 @@ the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
   declaration-form precedent and `ExactValue`),
   [FR-325](FR-325-parse-temporal-operators-with-an-optional-interval.md) (the
   operator form this amends),
-  [FR-361](FR-361-gate-model-constructs-on-the-model-profile-selection.md) (item 8: S2 is
-  not facet-gated),
   [FR-230](FR-230-check-time-declarations-clocks-and-clock-constraints.md),
   [FR-233](FR-233-bind-a-model-claim-to-model-time-or-model-steps.md) and
   [FR-234](FR-234-check-timed-intervals-and-classify-timed-property-forms.md)

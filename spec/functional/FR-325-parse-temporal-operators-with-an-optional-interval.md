@@ -16,7 +16,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-090
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-393
-    type: depends_on
+    type: traces_to
 ---
 # FR-325: Parse temporal operators with an optional interval into S2 TemporalTrace forms
 

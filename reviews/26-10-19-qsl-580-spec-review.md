@@ -50,3 +50,23 @@ references to QSpec FR-392. FR-393 and TC-1078 are free on main and in
 every open PR (#990 holds FR-392/TC-1077, #992 touches FR-310/TC-889), and
 the spec.md index row and edge are present. FND-001 blocks merge, together
 with integrity FND-001.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The fix creates a `depends_on` cycle. FR-325 now has `depends_on` FR-393 (for `OperatorInterval`/`TimedIntervalForm`), and FR-393 has `depends_on` FR-325. One of the two edges should be `traces_to`, or carry an amends relation if the schema has one. | spec/functional/FR-325-parse-temporal-operators-with-an-optional-interval.md:18-19; spec/functional/FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md:14-15 |
+| FND-010 | low | The new rule "S1 SHALL refuse a unit declaration that would introduce an unqualified type named `Clock`" (and FR-393-AC-7) refuses source that QSpec's shared grammar admits. QSpec adds `type-ref =/ 'Clock'` but does not reserve `Clock` in any list. This is a defensible QSL disambiguation, but it is a grammar divergence QSpec should record (STD follow-up), or a QSpec conformance vector could fail. | spec/functional/FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md:123-127,163 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | AC-1 now uses grammatical fixtures: named invariants with braced `when` blocks, `urgent hurry Call::timeout;`, `urgent stalled when {...};`, and `time Rpc tick Call::send period rational(1,2) ms unit ms;`. The Use case is corrected as well. |
+| FND-002 | fixed | `TypeForm::Clock{span}` is named in the Outputs and asserted in AC-1 and AC-7. AC-7 also says `M::Clock` is a named type. |
+| FND-003 | still-open | QSL-580 now cites FR-393 and TC-1078, but its Implements line and Acceptance still say "FR-393-AC-1..AC-4 ... nothing beyond them". FR-393 now has AC-1..AC-7, so AC-5..AC-7 are excluded. This is a Linear edit only (change AC-4 to AC-7); the PR needs no change. |
+| FND-004 | fixed | `ExactValue` is now defined: an exact rational from `uint`, `decimal-literal` or `exact-number` (`rational(n,d)` or `decimal(n,s)`). |
+| FND-005 | fixed | AC-4 and TC-1078 step 4 now write full `eventually... holds(p)` claims. |
+| FND-006 | fixed | A new Behavior bullet and AC-5 refuse mixed bounds (`[0, 3 ms]`, `[0 ms, 3]`, `[0 ms, *]`) at S1, at the upper bound's span. TC-1078 step 5 tests this. |
+| FND-007 | fixed | Every form in the Outputs carries a whole-form `span`, and AC-1 asserts it. |
+| FND-008 | fixed | FR-325 is now `depends_on` (amended) and FR-233 has an edge. The new cycle this creates is FND-009. |

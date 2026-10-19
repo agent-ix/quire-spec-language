@@ -36,3 +36,17 @@ third token, and the Behavior states this correctly. The S3 deferrals
 (duplicate time source, unit dimension, clock typing, negative constant,
 interval order and punctuality, profile admission) agree with FR-230-AC-2
 and FR-234-AC-2. FND-001 blocks merge.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The facet fix cites FR-361 item 8 for "whether the unit admits the form is decided after S2". Item 8 covers protocol, memory and temporal forms, says "Neither is a model construct", and adds no gate. `time-decl`, `time-invariant`, `urgent-decl` and `Clock` are model declarations (ADR-026 CK-1), not in FR-361 item 5's families. So no QSL requirement owns QSpec's "A form whose facet is not selected receives `unsupported_construct`" for these forms after S2. The S1/S2 behaviour is now fully specified (AC-6). The post-S2 owner is outside this PR's scope and needs a follow-up on the S3 side (FR-230/FR-361). | spec/functional/FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md:39-40,132-134; spec/functional/FR-361-gate-model-constructs-on-the-model-profile-selection.md:133-142 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | There is now one member, `interval: Option<OperatorInterval{Steps(IntervalForm), Timed(TimedIntervalForm)}>`, and the second field is gone. FR-325's Description, Outputs, Behavior (the u64 rule is now limited to step intervals) and AC-1/AC-2 are amended, and TC-835 is amended to `Some(Steps{..})`. The qsl-forms struct follows in the QSL-580 code PR. |
+| FND-002 | fixed | A Behavior bullet makes `time`, `urgent`, `dense`, `tick` and `period` contextual and limits `Clock` to the unqualified type-ref. AC-2 tests that a field named `time` and a parameter named `period` still parse, and AC-7 covers `Clock`. |
+| FND-003 | fixed | "Timed facet" is removed. S2 now builds these forms under every facet selection, including none, and refuses nothing for facet (Behavior; AC-6 tests equal forms under no facet and under the complete facets). The question of the post-S2 owner is FND-004. |
