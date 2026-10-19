@@ -3159,7 +3159,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// A one-crate workspace: a library with neither unit tests nor doc
         /// examples, and one integration test whose outcome the caller picks.
         fn project(test_body: &str) -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let write = |path: &str, text: &str| {
                 let path = dir.path().join(path);
                 fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
@@ -3359,7 +3359,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
         /// Two packages: `a` with a feature-gated integration test, and `b`.
         fn workspace() -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,
@@ -3390,7 +3390,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// feature; `user` has no features but depends on `featured`. Each
         /// library has one unit test and one doc-test.
         fn feature_workspace() -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,
@@ -3466,7 +3466,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             kept_tail: &str,
             shared_default: &str,
         ) -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,
@@ -3593,7 +3593,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         #[test]
         #[trace("TC-915", "NFR-013-AC-5")]
         fn a_candidate_compiled_differently_by_the_default_lane_is_not_skipped() {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,
@@ -3736,7 +3736,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         #[trace("TC-950", "NFR-014-AC-1")]
         fn a_build_dir_outside_the_project_is_used_and_its_absolute_headers_resolve() {
             let dir = project("");
-            let elsewhere = tempfile::tempdir().expect("tempdir");
+            let elsewhere = crate::test_support::tempdir();
             run_lane(
                 dir.path(),
                 &lane(LIB_EMPTY),
@@ -3805,7 +3805,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         }
 
         fn doc_workspace(c_lib_options: &str) -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,

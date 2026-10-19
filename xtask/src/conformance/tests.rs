@@ -82,7 +82,7 @@ fn assert_calls(root: &Path, checkout: &Path, count: usize) {
 
 #[test]
 fn default_and_caller_checkouts_with_spaces_and_dollars_reach_every_child_absolute() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_support::tempdir();
     let workspace = root.path();
     let checkout_path = workspace.join("main clone parent with spaces/$qspec checkout");
     checkout(&checkout_path);
@@ -101,7 +101,7 @@ fn default_and_caller_checkouts_with_spaces_and_dollars_reach_every_child_absolu
 
 #[test]
 fn missing_empty_and_invalid_checkouts_refuse_before_cargo() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_support::tempdir();
     let workspace = root.path();
     let invalid = workspace.join("invalid");
     fs::create_dir(&invalid).unwrap();
@@ -123,7 +123,7 @@ fn missing_empty_and_invalid_checkouts_refuse_before_cargo() {
 fn each_selection_refuses_missing_evidence_or_failure() {
     for (index, _) in CHECKS.iter().enumerate() {
         for mode in ["zero-tests", "ignored", "skip", "no-summary", "nonzero"] {
-            let root = tempfile::tempdir().unwrap();
+            let root = crate::test_support::tempdir();
             let checkout_path = root.path().join("quire-specification");
             checkout(&checkout_path);
             assert!(matches!(
@@ -137,7 +137,7 @@ fn each_selection_refuses_missing_evidence_or_failure() {
 
 #[test]
 fn zero_operation_vectors_refuse() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_support::tempdir();
     let checkout_path = root.path().join("quire-specification");
     checkout(&checkout_path);
     assert!(matches!(
@@ -197,7 +197,7 @@ fn make_exports_raw_default_and_command_line_override() {
 
 #[test]
 fn make_exports_default_checkout_from_a_main_clone_parent_with_spaces() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_support::tempdir();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     fs::copy(source.join("Makefile"), root.path().join("Makefile")).unwrap();
     let siblings = root.path().join("main clone parent with spaces");
@@ -258,7 +258,7 @@ fn make_exports_default_checkout_from_a_main_clone_parent_with_spaces() {
 
 #[test]
 fn ordinary_ci_cargo_lane_inherits_canonical_checkout() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_support::tempdir();
     let workspace = root.path();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     fs::copy(source.join("Makefile"), workspace.join("Makefile")).unwrap();
