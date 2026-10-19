@@ -162,10 +162,75 @@ pub struct CheckedPackage {
 pub struct ResolvedDependency {
     /// The selected `package_id`.
     pub package_id: PackageId,
+    /// The first dependency path that reached this selection, as a shared
+    /// link chain: a transitive entry shares its tail with the dependency's
+    /// own entry, so a closure retains one link per entry, not one copy of
+    /// the whole path.
+    path: DependencyPath,
+}
+
+impl ResolvedDependency {
     /// The library identities from the linking package's direct import down
     /// to this one, this one last. The linking package itself is the
-    /// implicit first step of every path.
-    pub path: Vec<LibraryName>,
+    /// implicit first step of every path. Rebuilt from the shared links on
+    /// each call.
+    pub fn path(&self) -> Vec<LibraryName> {
+        self.path.identities().cloned().collect()
+    }
+}
+
+/// A dependency path stored as a shared, singly linked chain (first hop
+/// first); `None` is the empty path.
+#[derive(Clone, Default)]
+struct DependencyPath(Option<Arc<Hop>>);
+
+struct Hop {
+    identity: LibraryName,
+    rest: DependencyPath,
+}
+
+impl DependencyPath {
+    /// The identities first hop first, walked without recursion.
+    fn identities(&self) -> impl Iterator<Item = &LibraryName> {
+        std::iter::successors(self.0.as_deref(), |hop| hop.rest.0.as_deref())
+            .map(|hop| &hop.identity)
+    }
+
+    /// This path preceded by `identity`.
+    fn prepend(self, identity: LibraryName) -> Self {
+        Self(Some(Arc::new(Hop {
+            identity,
+            rest: self,
+        })))
+    }
+}
+
+impl PartialEq for DependencyPath {
+    fn eq(&self, other: &Self) -> bool {
+        self.identities().eq(other.identities())
+    }
+}
+
+impl Eq for DependencyPath {}
+
+impl std::fmt::Debug for DependencyPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.identities()).finish()
+    }
+}
+
+impl Drop for DependencyPath {
+    /// Unlinks a long chain iteratively, so dropping a deep path cannot
+    /// overflow the stack.
+    fn drop(&mut self) {
+        let mut next = self.0.take();
+        while let Some(hop) = next {
+            next = match Arc::try_unwrap(hop) {
+                Ok(mut hop) => hop.rest.0.take(),
+                Err(_) => None,
+            };
+        }
+    }
 }
 
 /// One import the E4 link step binds (ADR-011 §4 dependency binding): the
@@ -188,8 +253,8 @@ pub enum LinkRefusal {
     /// (`invalid_package`/`conflicting-definition`), listing both paths.
     #[error(
         "invalid_package/conflicting-definition: {} and {} select {identity} differently",
-        display_path(&.selections[0].path),
-        display_path(&.selections[1].path)
+        display_path(&.selections[0].path()),
+        display_path(&.selections[1].path())
     )]
     ConflictingDefinition {
         /// The library identity.
@@ -328,21 +393,18 @@ impl CheckedPackage {
             let recompiled = recomputed_package_id(&import)?;
             let direct = ResolvedDependency {
                 package_id: recompiled,
-                path: vec![import.identity.clone()],
+                path: DependencyPath::default().prepend(import.identity.clone()),
             };
             let transitive = import
                 .package
                 .selections
                 .iter()
                 .map(|(identity, resolved)| {
-                    let mut path = Vec::with_capacity(resolved.path.len().saturating_add(1));
-                    path.push(import.identity.clone());
-                    path.extend(resolved.path.iter().cloned());
                     (
                         identity.clone(),
                         ResolvedDependency {
                             package_id: resolved.package_id,
-                            path,
+                            path: resolved.path.clone().prepend(import.identity.clone()),
                         },
                     )
                 });

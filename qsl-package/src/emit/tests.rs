@@ -2763,7 +2763,7 @@ fn closure(package: &CheckedPackage) -> Vec<(LibraryName, PackageId, Vec<Library
     package
         .dependency_selections()
         .iter()
-        .map(|(identity, resolved)| (identity.clone(), resolved.package_id, resolved.path.clone()))
+        .map(|(identity, resolved)| (identity.clone(), resolved.package_id, resolved.path()))
         .collect()
 }
 
@@ -2854,7 +2854,7 @@ fn a_diamond_selecting_one_package_unifies() {
     .expect("one selection of test/units by two paths unifies");
     let units = &root.dependency_selections()[&lib("test/units")];
     assert_eq!(units.package_id, d);
-    assert_eq!(units.path, path(&["test/units"]));
+    assert_eq!(units.path(), path(&["test/units"]));
     read_linked(&root);
 }
 
@@ -2915,9 +2915,9 @@ fn e4_refuses_a_conflicting_diamond() {
     };
     assert_eq!(*identity, lib("test/units"));
     assert_eq!(selections[0].package_id, d);
-    assert_eq!(selections[0].path, path(&["test/mid", "test/units"]));
+    assert_eq!(selections[0].path(), path(&["test/mid", "test/units"]));
     assert_eq!(selections[1].package_id, another_id);
-    assert_eq!(selections[1].path, path(&["test/mid2", "test/units"]));
+    assert_eq!(selections[1].path(), path(&["test/mid2", "test/units"]));
 
     // A dependency whose occurrences have no source region does not emit,
     // so its `package_id` cannot be recomputed.
