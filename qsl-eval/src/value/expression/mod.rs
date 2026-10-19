@@ -104,6 +104,30 @@ pub fn evaluate_terminal_predicate(
     )
 }
 
+/// FR-139, FR-140: evaluate `row`, a refinement row's checked expression, over
+/// the concrete observation `current`, through the one clause evaluator
+/// (FR-107). `arguments` bind the row's parameters in order, `self` first.
+/// Every read observes `current`: a row has no pre-state of its own.
+pub fn evaluate_row(
+    graph: &qsl_semantics::check::CheckedGraph,
+    row: &qsl_semantics::check::CheckedRow,
+    current: &ObjectEnvironment,
+    arguments: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        graph.scope(),
+        graph,
+        current,
+        None,
+        Some(&reads),
+        meter,
+        graph.dispatch_tables(),
+    )
+    .run(row.body(), row.slots(), arguments)
+}
+
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
 /// names the same code as a string ([`InputRefusal::code`]) but cannot name
