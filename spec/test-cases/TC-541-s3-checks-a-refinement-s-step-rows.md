@@ -29,7 +29,7 @@ protocol subject over a model with operations `incA` and `incB`.
    `join` and `finish` rows, then with an extra attempt-node row, then with
    two `join` rows.
 5. Check `CasRefinesCounter` with its rows in reverse source order and
-   compare `steps`.
+   compare the emitted `steps` and each row's `StepRowRef`.
 
 Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 
@@ -45,4 +45,4 @@ Tag the tests `#[trace("TC-541", "FR-136-AC-n")]`.
 - Step 4: `missing_declaration`/`missing-name` naming the `fork` node;
   checks; checks with the node row recorded;
   `invalid_model_binding`/`conflicting-binding`.
-- Step 5: the same `steps`, in ascending node-key digest order.
+- Step 5: the same emitted `steps`, in ascending node-key digest order, and the same `StepRowRef`s.
