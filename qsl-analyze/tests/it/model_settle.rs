@@ -22,14 +22,15 @@ use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_replay::{
-    compile_package, replay_model_trace, settle_model_check, Certification, CounterexampleKind,
-    DependencyInput, DigestDomain, DigestRecord, DisagreementCause, Execution, IncompleteCause,
-    InconclusiveCause, InternalFault, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
-    ModelTraceValue, ProofBasis, QualifiedName, ReachedLimit, ReplayLimits, ReplayRefusal,
-    ReplayRequestWire, ReplaySource, ResultLabel, RunStats, SettlementBasis, StateEnvironment,
-    TemporalCounterexample, TerminalValue, Truth, UndecidedCause, UndefinedLocus, WireNodeId,
-    Witness, WitnessEnvelope, WitnessPacket, EXPLICIT_STATE,
+    compile_package, deadlock_freedom_clause, replay_model_trace, settle_model_check,
+    Certification, CounterexampleKind, DependencyInput, DigestDomain, DigestRecord,
+    DisagreementCause, Execution, IncompleteCause, InconclusiveCause, InternalFault,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal,
+    ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProofBasis,
+    QualifiedName, ReachedLimit, ReplayLimits, ReplayRefusal, ReplayRequestWire, ReplaySource,
+    ResultLabel, RunStats, SettlementBasis, StateEnvironment, TemporalCounterexample,
+    TerminalValue, Truth, UndecidedCause, UndefinedLocus, WireNodeId, Witness, WitnessEnvelope,
+    WitnessPacket, EXPLICIT_STATE,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, Identifier, Origin, Role};
@@ -170,20 +171,30 @@ fn request(case: &Case, unit: &[u8], package_id: DigestRecord) -> ReplayRequestW
     }
 }
 
-/// The envelope carrying `payload` at `package_id`, from `unit`.
+/// The envelope carrying `payload` at `package_id`, from `unit`, under the
+/// derived deadlock-freedom item's identity.
 fn envelope(
     unit: &[u8],
     package_id: DigestRecord,
     payload: TemporalCounterexample,
 ) -> WitnessEnvelope<TemporalCounterexample> {
-    let node = WireNodeId::from_digest([7; 32]);
+    let (node, occurrence) = deadlock_freedom_clause(&package_id);
+    envelope_at(unit, package_id, payload, node, occurrence)
+}
+
+/// The envelope carrying `payload` at `package_id`, from `unit`, naming the
+/// item by `node` and `occurrence`.
+fn envelope_at(
+    unit: &[u8],
+    package_id: DigestRecord,
+    payload: TemporalCounterexample,
+    node: WireNodeId,
+    occurrence: OccurrenceKey,
+) -> WitnessEnvelope<TemporalCounterexample> {
     WitnessEnvelope::reconstruct(
         WitnessPacket {
             obligation_identity: Some([3; 32]),
-            occurrence_key: Some(OccurrenceKey::new(
-                node,
-                Origin::new(Role::new("deadlock-freedom"), 0),
-            )),
+            occurrence_key: Some(occurrence),
             clause_node: Some(node),
             selected_function: Some(selected()),
             package_id: Some((
@@ -233,10 +244,13 @@ fn counterexample(case: &Case) -> TemporalCounterexample {
     }
 }
 
-/// FR-128-AC-2: FR-126-AC-3's deadlock counterexample reproduces, the
-/// item's value `false`; truncated to end at value 2, where `inc` is
-/// enabled, it settles `inconclusive` by `Verdicts`. Replaying one envelope
-/// twice gives equal results (FR-128-AC-4).
+/// Verifies part of FR-128-AC-2: FR-126-AC-3's deadlock counterexample, in
+/// the derived item's envelope, reproduces, the item's value `false`;
+/// truncated to end at value 2, where `inc` is enabled, it settles
+/// `inconclusive` by `Verdicts`. Replaying one envelope twice gives equal
+/// results (FR-128-AC-4's last clause). Not verified: the same payload
+/// under the `When`-declared unit settling `ReplayParity`, since S4 does not
+/// emit a `terminal` declaration and that unit does not recompile.
 #[trace("TC-523")]
 #[test]
 fn a_deadlock_counterexample_reproduces_and_a_truncated_one_disagrees() {
@@ -278,14 +292,15 @@ fn refusal(
     }
 }
 
-/// FR-128-AC-3 (prefix half): a post-state digest altered refuses
+/// Verifies the prefix refusals of FR-128-AC-3, not its lasso,
+/// fairness-set, interval, stutter or `observed` refusals: a post-state
+/// digest altered refuses
 /// `stale_dependency`/`content-mismatch` naming the step and the digest; a
 /// step appended past the terminal state is not enabled and refuses
 /// `invalid_runtime_input`/`invalid-value` naming the step; an
 /// `initial_state` of 1 over a one-snapshot subject refuses
-/// `invalid-value`; a `Formula` counterexample names an authored clause no
-/// recompiled package holds and refuses `content-mismatch`; and a source
-/// edit refuses by FR-098's stale-package rule (FR-128-AC-4).
+/// `invalid-value`; and a source edit refuses by FR-098's stale-package rule
+/// (FR-128-AC-4's second clause).
 #[trace("TC-523")]
 #[test]
 fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
@@ -321,15 +336,6 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     );
     assert_eq!(code, Code::InvalidRuntimeInput);
 
-    let mut formula = payload.clone();
-    formula.kind = CounterexampleKind::Formula;
-    let (cause, code, tag) = refusal(replay(&case, formula));
-    assert!(matches!(
-        cause,
-        ModelTraceRefusal::UnknownTemporalClause { .. }
-    ));
-    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
-
     let edited = unit_text(
         &case.documents.document,
         &format!("{CONTRACT}function Other using v(): Boolean pure {{ false }}\n"),
@@ -347,10 +353,82 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     );
 }
 
+/// FR-128 "resolve the clause by its `clause_node` and `occurrence_key`",
+/// for the derived deadlock-freedom item: its payload reproduces only under
+/// the item's own identity ([`deadlock_freedom_clause`] of the recompiled
+/// `package_id`). The same deadlock payload under an authored clause's
+/// identity, or under the item's node with another occurrence, refuses
+/// `stale_dependency`/`content-mismatch` naming both identities; a `Formula`
+/// payload under the item's identity refuses the same way; and a `Formula`
+/// payload under an authored identity names a clause no recompiled package
+/// holds (FR-337). Verifies FR-128-AC-4's `clause_node` clause for the
+/// derived item only, not its lasso over ADR-018 §6's subject.
+#[trace("TC-523")]
+#[test]
+fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
+    let case = case(CONTRACT, &[0]);
+    let payload = counterexample(&case);
+    let (node, occurrence) = deadlock_freedom_clause(&case.package_id);
+    let replay_at = |payload: TemporalCounterexample, node, occurrence| {
+        replay_model_trace(
+            request(&case, &case.unit, case.package_id),
+            &trace_subject(&case),
+            &envelope_at(&case.unit, case.package_id, payload, node, occurrence),
+            ReplayLimits::default(),
+        )
+    };
+    assert!(matches!(
+        replay_at(payload.clone(), node, occurrence.clone())
+            .expect("replays")
+            .settlement,
+        ModelTraceSettlement::Reproduced { .. }
+    ));
+
+    let authored = WireNodeId::from_digest([7; 32]);
+    let authored_key = OccurrenceKey::new(authored, Origin::new(Role::new("temporal"), 0));
+    let (cause, code, tag) = refusal(replay_at(payload.clone(), authored, authored_key.clone()));
+    assert_eq!(
+        cause,
+        ModelTraceRefusal::ItemIdentity {
+            clause_node: authored,
+            occurrence_key: Box::new(authored_key.clone()),
+            expected_node: node,
+            expected_key: Box::new(occurrence.clone()),
+        }
+    );
+    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
+
+    let other_key = OccurrenceKey::new(node, Origin::new(Role::new("deadlock-freedom"), 1));
+    let (cause, _, _) = refusal(replay_at(payload.clone(), node, other_key));
+    assert!(
+        matches!(cause, ModelTraceRefusal::ItemIdentity { .. }),
+        "{cause:?}"
+    );
+
+    let mut formula = payload;
+    formula.kind = CounterexampleKind::Formula;
+    let (cause, code, tag) = refusal(replay_at(formula.clone(), node, occurrence));
+    assert!(
+        matches!(cause, ModelTraceRefusal::ItemIdentity { .. }),
+        "{cause:?}"
+    );
+    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
+    let (cause, code, tag) = refusal(replay_at(formula, authored, authored_key));
+    assert_eq!(
+        cause,
+        ModelTraceRefusal::UnknownTemporalClause {
+            clause_node: authored
+        }
+    );
+    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
+}
+
 const GUARDED: &str = "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n\
                        post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n";
 
-/// FR-128-AC-5 for the deadlock-freedom item (ADR-018 UE-6): the
+/// The deadlock-freedom item's analogue of FR-128-AC-5 (ADR-018 UE-6),
+/// which is not that criterion: its TP-1 clause's replay waits on FR-337.
+/// The
 /// counterexample of an undefined precondition guard replays to
 /// `reproduced-with-evaluated-witness` with the undefined value at position
 /// 2; with `where` moved to position 1, with its locus naming another
@@ -396,8 +474,13 @@ fn an_undefined_guard_counterexample_reproduces_only_where_it_is_undefined() {
     assert!(disagrees(truncated), "truncated to value 1");
 }
 
+/// A package identity for a settlement that replays nothing.
+fn unchecked() -> DigestRecord {
+    DigestRecord::mint(DigestDomain::PackageSemanticV2, [0; 32])
+}
+
 fn settle(outcome: &ModelCheckOutcome) -> qsl_replay::ModelCheckRecord {
-    settle_model_check(outcome, &ModelCheckLimits::default(), |_| {
+    settle_model_check(outcome, &ModelCheckLimits::default(), &unchecked(), |_| {
         panic!("only a violation is replayed")
     })
 }
@@ -532,7 +615,9 @@ fn each_outcome_settles_its_row_of_the_map() {
     }
 }
 
-/// FR-127-AC-5 (settlement half): FR-126-AC-3's deadlock-freedom violation
+/// Verifies the settlement half of FR-127-AC-5, not its obligation-identity
+/// clause (the record carries no obligation identity): FR-126-AC-3's
+/// deadlock-freedom violation
 /// settles `refuted`, `decisive-counterexample`, `Refuted`, violation, only
 /// through its replay, and the record carries the counterexample with `kind:
 /// Deadlock`.
@@ -541,10 +626,15 @@ fn each_outcome_settles_its_row_of_the_map() {
 fn a_deadlock_violation_settles_refuted_through_its_replay() {
     let case = case(CONTRACT, &[0]);
     let mut replayed = false;
-    let record = settle_model_check(&case.outcome, &ModelCheckLimits::default(), |payload| {
-        replayed = true;
-        replay(&case, payload.clone())
-    });
+    let record = settle_model_check(
+        &case.outcome,
+        &ModelCheckLimits::default(),
+        &case.package_id,
+        |payload| {
+            replayed = true;
+            replay(&case, payload.clone())
+        },
+    );
     assert!(replayed, "the map replays the counterexample");
     assert_eq!(record.value, TerminalValue::Refuted);
     assert_eq!(
@@ -568,7 +658,9 @@ fn a_deadlock_violation_settles_refuted_through_its_replay() {
 /// that disagrees by `Verdicts` settles `inconclusive`, cause
 /// `ReplayParity`, spelled `replay-parity`; a replay refused for a
 /// post-state digest settles `inconclusive`, `ReplayRefused` with the
-/// refusal's code; a replay that faults settles `failed`, category failed.
+/// refusal's code; a replay reproduced against another package than the
+/// run's settles `ReplayRefused(stale_dependency)`; a replay that faults
+/// settles `failed`, category failed.
 #[trace("TC-522", "FR-127-AC-10")]
 #[test]
 fn a_disagreeing_or_refused_replay_never_settles_refuted() {
@@ -582,6 +674,7 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
     let parity = settle_model_check(
         &violated(truncated),
         &ModelCheckLimits::default(),
+        &case.package_id,
         |payload| replay(&case, payload.clone()),
     );
     let TerminalValue::Inconclusive(cause) = &parity.value else {
@@ -602,6 +695,7 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
     let refused = settle_model_check(
         &violated(altered),
         &ModelCheckLimits::default(),
+        &case.package_id,
         |payload| replay(&case, payload.clone()),
     );
     assert_eq!(
@@ -609,9 +703,22 @@ fn a_disagreeing_or_refused_replay_never_settles_refuted() {
         TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
     );
 
+    let elsewhere = DigestRecord::mint(DigestDomain::PackageSemanticV2, [9; 32]);
+    let stale = settle_model_check(
+        &violated(counterexample(&case)),
+        &ModelCheckLimits::default(),
+        &elsewhere,
+        |payload| replay(&case, payload.clone()),
+    );
+    assert_eq!(
+        stale.value,
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+    );
+
     let failed = settle_model_check(
         &violated(counterexample(&case)),
         &ModelCheckLimits::default(),
+        &case.package_id,
         |_| {
             Err(ReplayRefusal::Fault(InternalFault::new(
                 "test",

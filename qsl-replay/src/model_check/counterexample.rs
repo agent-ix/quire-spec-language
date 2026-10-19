@@ -9,13 +9,32 @@
 //! not carried yet: no engine in this crate's callers builds either.
 
 use qsl_eval::temporal::UndefinedCause;
-use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::digest::{DigestRecord, WireNodeId};
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::ObjectReference;
+use quire_exact::{ObjectReference, Origin, Role};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::witness::FamilyPayload;
+
+/// The occurrence role of the derived deadlock-freedom item.
+const DEADLOCK_FREEDOM_ROLE: &str = "deadlock-freedom";
+
+/// The envelope identity of the deadlock-freedom item of the package
+/// `package_id` (FR-128 "The envelope names the clause, or the
+/// deadlock-freedom item, by its clause node and occurrence key"): the
+/// item has no authored clause node, so its node is the package's own
+/// identity, and its occurrence key is that node with the role
+/// `deadlock-freedom` and ordinal 0. No authored clause has this node,
+/// since a clause node is the digest of a clause's checked content and
+/// never a `package_id`. The subject is bound by the envelope's obligation
+/// identity (FR-124), not here.
+pub fn deadlock_freedom_clause(package_id: &DigestRecord) -> (WireNodeId, OccurrenceKey) {
+    let node = WireNodeId::from_digest(*package_id.as_bytes());
+    let occurrence = OccurrenceKey::new(node, Origin::new(Role::new(DEADLOCK_FREEDOM_ROLE), 0));
+    (node, occurrence)
+}
 
 /// One step of a model behaviour: the FR-120 transition identity it took
 /// and its post-state's `quire.simulation.state-key/v1` digest, which

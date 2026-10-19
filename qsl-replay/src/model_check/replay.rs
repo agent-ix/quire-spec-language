@@ -16,10 +16,14 @@
 //!   conjunction or a `terminal when` predicate is undefined is the
 //!   payload's `where`, at its locus, with its cause.
 //!
-//! A counterexample of an authored clause names the clause by its node, and
-//! no recompiled package holds a temporal clause node yet (FR-337), so its
-//! replay refuses `stale_dependency`/`content-mismatch` before any
-//! admission. Replay needs no model checker and no solver, and reads no
+//! The envelope's `clause_node` and `occurrence_key` resolve the item
+//! before any admission. The deadlock-freedom item's identity is
+//! [`deadlock_freedom_clause`] of the recompiled `package_id`; a payload
+//! only that item has, under any other identity, or an authored payload
+//! under that identity, refuses `stale_dependency`/`content-mismatch`. Any
+//! other identity names an authored clause, and no recompiled package holds
+//! a temporal clause node yet (FR-337), so its replay refuses
+//! `stale_dependency`/`content-mismatch` too. Replay needs no model checker and no solver, and reads no
 //! path, environment variable or clock.
 
 use std::collections::BTreeMap;
@@ -31,6 +35,7 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::{ExpansionStop, TransitionSystem};
 use qsl_foundation::diagnostic::{Category, Code, InternalFault};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -38,7 +43,8 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    CounterexampleKind, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    deadlock_freedom_clause, CounterexampleKind, TemporalCounterexample, UndefinedEvaluation,
+    UndefinedLocus, UndefinedSite,
 };
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{DisagreementCause, Verdict};
@@ -75,6 +81,20 @@ pub enum ModelTraceRefusal {
         /// The subject's number of initial states.
         count: usize,
     },
+    /// The envelope's clause identity is not the one its payload's item
+    /// has: a deadlock-freedom payload under any identity but the derived
+    /// item's, or an authored clause's payload under the derived item's.
+    #[error("stale_dependency/content-mismatch: the envelope names clause {clause_node} at {occurrence_key}; the payload's item is {expected_node} at {expected_key}")]
+    ItemIdentity {
+        /// The envelope's clause node.
+        clause_node: WireNodeId,
+        /// The envelope's occurrence key.
+        occurrence_key: Box<OccurrenceKey>,
+        /// The clause node the payload's item has.
+        expected_node: WireNodeId,
+        /// The occurrence key the payload's item has.
+        expected_key: Box<OccurrenceKey>,
+    },
     /// A step's transition identity is not enabled at its pre-state.
     #[error("invalid_runtime_input/invalid-value: step {step} is not enabled")]
     NotEnabled {
@@ -98,7 +118,9 @@ impl ModelTraceRefusal {
     /// The refusal's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::UnknownTemporalClause { .. } | Self::PostState { .. } => Code::StaleDependency,
+            Self::UnknownTemporalClause { .. }
+            | Self::ItemIdentity { .. }
+            | Self::PostState { .. } => Code::StaleDependency,
             Self::InitialState { .. } | Self::NotEnabled { .. } => Code::InvalidRuntimeInput,
         }
     }
@@ -106,7 +128,9 @@ impl ModelTraceRefusal {
     /// The refusal's catalog cause.
     pub fn cause(&self) -> &'static str {
         match self {
-            Self::UnknownTemporalClause { .. } | Self::PostState { .. } => "content-mismatch",
+            Self::UnknownTemporalClause { .. }
+            | Self::ItemIdentity { .. }
+            | Self::PostState { .. } => "content-mismatch",
             Self::InitialState { .. } | Self::NotEnabled { .. } => "invalid-value",
         }
     }
@@ -200,11 +224,7 @@ pub fn replay_model_trace(
         });
     }
     let payload = envelope.family_payload();
-    if !names_deadlock_item(payload) {
-        return Err(refused(ModelTraceRefusal::UnknownTemporalClause {
-            clause_node: envelope.clause_node(),
-        }));
-    }
+    resolve_item(envelope, &package_id.record())?;
     let documents: BTreeMap<[u8; 32], Vec<u8>> = request
         .byte_provision()
         .entries()
@@ -234,9 +254,45 @@ fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
     ReplayRefusal::ModelTrace(Box::new(refusal))
 }
 
-/// Whether the payload refutes the deadlock-freedom item: a deadlock, or
-/// an undefined model-side expression with no `over` binding, which only
-/// the derived item lacks.
+/// FR-128: resolve the envelope's item by its `clause_node` and
+/// `occurrence_key` against the recompiled package `package_id`. The
+/// derived deadlock-freedom item's identity is [`deadlock_freedom_clause`];
+/// its payload must be one only that item has, and a payload of that shape
+/// under any other identity, or an authored payload under the derived
+/// identity, refuses [`ModelTraceRefusal::ItemIdentity`]. Any other
+/// identity names an authored clause, and the recompiled package holds no
+/// temporal clause node (FR-337).
+fn resolve_item(
+    envelope: &WitnessEnvelope<TemporalCounterexample>,
+    package_id: &DigestRecord,
+) -> Result<(), ReplayRefusal> {
+    let (node, occurrence) = deadlock_freedom_clause(package_id);
+    let derived = envelope.clause_node() == node && *envelope.occurrence_key() == occurrence;
+    let deadlock_payload = names_deadlock_item(envelope.family_payload());
+    if derived == deadlock_payload {
+        return if derived {
+            Ok(())
+        } else {
+            Err(refused(ModelTraceRefusal::UnknownTemporalClause {
+                clause_node: envelope.clause_node(),
+            }))
+        };
+    }
+    let (expected_node, expected_key) = if deadlock_payload {
+        (node, occurrence)
+    } else {
+        (envelope.clause_node(), envelope.occurrence_key().clone())
+    };
+    Err(refused(ModelTraceRefusal::ItemIdentity {
+        clause_node: envelope.clause_node(),
+        occurrence_key: Box::new(envelope.occurrence_key().clone()),
+        expected_node,
+        expected_key: Box::new(expected_key),
+    }))
+}
+
+/// Whether the payload's shape is one only the deadlock-freedom item has: a
+/// deadlock, or an undefined model-side expression with no `over` binding.
 fn names_deadlock_item(payload: &TemporalCounterexample) -> bool {
     match &payload.kind {
         CounterexampleKind::Deadlock => true,

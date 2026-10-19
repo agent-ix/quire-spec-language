@@ -191,7 +191,8 @@ fn the_terminal_state_is_deadlocked_only_without_a_declaration_covering_it() {
     }
 }
 
-/// FR-126-AC-3 (deadlock half): with no `terminal` declaration the
+/// Verifies the deadlock half of FR-126-AC-3, not its terminal-stutter
+/// lasso, which needs EN-1's second phase: with no `terminal` declaration the
 /// deadlock-freedom item is violated with `kind: Deadlock` and the prefix
 /// `0 -inc-> 1 -inc-> 2 -inc-> 3`; with a `When` declaration covering 3, or
 /// `Any`, it holds after exploring the four states.
@@ -357,7 +358,9 @@ fn invariant(
     .expect("checked")
 }
 
-/// FR-126-AC-2 (TP-1 half) over the Counter subject: `always holds(c.value
+/// Verifies the TP-1 half of FR-126-AC-2, over the Counter subject rather
+/// than ADR-018 §6's; its TP-2 `on each` rows are not verified, since this
+/// phase decides TP-1 alone. Over Counter: `always holds(c.value
 /// <= 3)` holds after every reachable state is examined; `always
 /// holds(c.value != 2)` is violated with `kind: Formula`, the prefix `0
 /// -inc-> 1 -inc-> 2` and `over_binding` `c`, its trace position 2.
@@ -407,7 +410,9 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
     );
 }
 
-/// FR-126-AC-9 (TP-1 half) over the Counter subject: `always holds(6 / (2 -
+/// Verifies the TP-1 half of FR-126-AC-9; its TP-4 claim, the `kind:
+/// Formula` conjunction and the TP-2 `Holds` are not verified. Over the
+/// Counter subject: `always holds(6 / (2 -
 /// c.value) >= 0)` is violated with the prefix `0 -inc-> 1 -inc-> 2` and
 /// `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`,
 /// at the clause's atom.
@@ -439,7 +444,8 @@ fn an_undefined_atom_refutes_at_the_first_position_it_is_undefined() {
     assert_eq!(counterexample.trace_position(), Some(2));
 }
 
-/// FR-126-AC-9 (deadlock half), its division written `mod`, which S3
+/// Verifies the deadlock half of FR-126-AC-9 (its other halves are listed
+/// above), its division written `mod`, which S3
 /// types over integers with no division law: with `terminal when 6 mod (3 -
 /// self.value) = 0`, the deadlock-freedom item is violated with the prefix to value 3 and
 /// `kind: UndefinedEvaluation{where: position 3, cause: division-by-zero}`
@@ -587,7 +593,8 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
     );
 }
 
-/// FR-126-AC-8 (limits half): `ModelCheckLimits::default()` is FR-101's
+/// Verifies the limits half of FR-126-AC-8, not all of it:
+/// `ModelCheckLimits::default()` is FR-101's
 /// `Limits::default()` (10,000,000 states, 100,000,000 transitions) and
 /// 1,048,576 automaton states; `max_automaton_states` 1 stops a run at the
 /// monitor's second state, naming the limit.

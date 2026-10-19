@@ -2,12 +2,17 @@
 //! FR-127 (ADR-018 V-1, V-4 to V-7, LA-3): the one settlement map from an
 //! EN-1 outcome to a QSpec FR-331 terminal record.
 //!
-//! The map replays a counterexample itself, so a `Violated` outcome settles
-//! `refuted` only through its replay (ADR-018 SM-7). A `Holds` outcome is an
+//! A `Violated` outcome settles `refuted` only on a replay result (ADR-018
+//! SM-7) that reproduced it against the package the run checked: the
+//! caller's `replay` (in production [`replay_model_trace`]) supplies the
+//! result, and the map checks its `package_id`. A `Holds` outcome is an
 //! exhaustive proof; EN-1 returns no certificate the core checks yet
 //! (ADR-018 PC-3), so it settles `Proved{Exhaustive, Uncertified}`, a
 //! first-party engine's proof with no core checker (PC-1), never
 //! `Certified`.
+
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::digest::DigestRecord;
 
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
@@ -83,14 +88,20 @@ pub struct ModelCheckRecord {
     pub counterexample: Option<TemporalCounterexample>,
 }
 
-/// FR-127: settle `outcome`, a run under `limits`, as one terminal record.
-/// A `Violated` outcome's counterexample is replayed by `replay` (FR-128)
-/// and settles by its result: reproduced is `Refuted`; a disagreement is
-/// `Inconclusive(ReplayParity)`; a refusal is `Inconclusive(ReplayRefused)`,
-/// except an internal fault, which is `Failed`.
+/// FR-127: settle `outcome`, a run under `limits` over the package
+/// `package_id`, as one terminal record. A `Violated` outcome's
+/// counterexample is handed to `replay` (FR-128) and settles by its result:
+/// reproduced against `package_id` is `Refuted`; a result settled against
+/// any other package is `Inconclusive(ReplayRefused(stale_dependency))`; a
+/// disagreement is `Inconclusive(ReplayParity)`; a refusal is
+/// `Inconclusive(ReplayRefused)`, except an internal fault, which is
+/// `Failed`.
+///
+/// [`replay_model_trace`]: crate::model_check::replay::replay_model_trace
 pub fn settle_model_check(
     outcome: &ModelCheckOutcome,
     limits: &ModelCheckLimits,
+    package_id: &DigestRecord,
     replay: impl FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ModelCheckRecord {
     let record = |value, label, basis, execution, truth| ModelCheckRecord {
@@ -155,6 +166,12 @@ pub fn settle_model_check(
             }
         }
         ModelCheckOutcome::Violated { counterexample, .. } => match replay(counterexample) {
+            Ok(ModelTraceReplayResult {
+                package_id: replayed,
+                ..
+            }) if !replayed.matches(package_id) => {
+                inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+            }
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Reproduced { .. },
                 ..

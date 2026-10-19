@@ -90,8 +90,8 @@ pub use identity::{
 };
 pub use limits::{AccountingLimits, CallerLimits};
 pub use model_check::counterexample::{
-    CounterexampleKind, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    deadlock_freedom_clause, CounterexampleKind, ModelStep, TemporalCounterexample,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
