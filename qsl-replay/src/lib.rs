@@ -99,7 +99,7 @@ pub use identity::{
 };
 pub use limits::{AccountingLimits, CallerLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, CounterexampleKind, ModelStep, TemporalCounterexample,
+    deadlock_freedom_clause, CounterexampleKind, Lasso, ModelStep, TemporalCounterexample,
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};

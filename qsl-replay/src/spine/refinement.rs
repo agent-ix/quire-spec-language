@@ -305,6 +305,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ObjectReadInValueInvariant
         | CheckCause::ModelConformance(_)
         | CheckCause::IllTyped(_)
+        | CheckCause::IdentityObservingForm(_)
         | CheckCause::WrongSnapshot(_)
         | CheckCause::MissingName(_)
         | CheckCause::MissingSelf
