@@ -50,6 +50,7 @@ members.
 | 15b | `attempts 3 of M::Total`, a scalar type, with `retry (earlier: M::Total, later: M::Total) { true }`; and `attempts 3 of M::Absent` | the first the refusal of row 15a at `M::Total`; the second `missing_declaration`/`missing-name` at `Absent` |
 | 15c | `attempts 3 of Set<M::Total>[0, 3]`, a composite type written inline, and `attempts 3 of M::Mode`, each with `retry (earlier: T, later: T) { true }`, `T` the attempt type as written | the refusal of row 15a at `Set<M::Total>[0, 3]` and at `M::Mode`, one each |
 | 16 | the retry relation without `earlier.tally < 3 and` | `undefined_expression`/`unproved-range` at `earlier.tally + 1` |
+| 16a | the retry relation `later.tally = -earlier.tally` | `ill_typed`/`type-mismatch` at `-earlier.tally` |
 | 17 | the retry relation `earlier.tally` | `ill_typed`/`non-boolean-root` at the relation |
 | 18 | `commit never` | checks; the clause holds `Never` |
 | 19 | the run holds `attempt Tried`, `commit Committed`, `effect Applied` in that order | `unsupported_construct`/`declaration-form` at `Main::Committed`, retaining the selected protocol profile; `compensation` `Refund`, `member` `commit`, `commit` `Committed`, `effect` `Applied`, `reason` `commit-precedes-effect` |
