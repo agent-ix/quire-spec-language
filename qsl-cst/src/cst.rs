@@ -133,6 +133,42 @@ productions! {
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
     TerminalDeclaration,
+    #[doc = "`random <qualified-name> ( <identifier> ) ~ { <weighted-value>, ... } ;`: a distribution on an operation parameter."]
+    RandomDeclaration,
+    #[doc = "`<expression> : <exact-value>`: one value of a random parameter's distribution and its weight."]
+    WeightedValue,
+    #[doc = "`reward <identifier> on <qualified-name> = <expression> ;`: a named reward on an operation."]
+    RewardDeclaration,
+    #[doc = "`workload <identifier> on <identifier> { <workload-weight>+ }`: a weight for each operation of a model."]
+    WorkloadDeclaration,
+    #[doc = "`weight <qualified-name> = <exact-value> ;`: one operation's weight in a workload."]
+    WorkloadWeight,
+    #[doc = "`probabilistic <identifier> using <identifier> on <identifier> [over (<parameter>)] <scheduler-clause> <activation> [<confidence>] { <probabilistic-form> }`: a statistical claim over a model."]
+    ProbabilisticClause,
+    #[doc = "`under <identifier>` or `under every scheduler <fairness-item>*`: the scheduler a probabilistic claim holds under."]
+    SchedulerClause,
+    #[doc = "`fair (weak | strong) [each] <qualified-name>`: one fairness item of `under every scheduler`."]
+    FairnessItem,
+    #[doc = "`with <confidence-item>, ...`: a probabilistic claim's confidence parameters."]
+    Confidence,
+    #[doc = "`(alpha | beta | indifference) <exact-value>`: one confidence parameter."]
+    ConfidenceItem,
+    #[doc = "`probability`, `quantile`, `mean of`, `long_run_fraction` or `expected`: the body of a probabilistic claim."]
+    ProbabilisticForm,
+    #[doc = "A temporal formula, or a measure compared with a threshold: a `probability` claim's event."]
+    Event,
+    #[doc = "`accumulate`, `steps` or `elapsed` from a predicate until a predicate within a horizon, or a fraction."]
+    Measure,
+    #[doc = "`fraction holds ( <expression> ) over [0, <horizon>] [<weighting>]`."]
+    Fraction,
+    #[doc = "`weighted by <identifier>`: weights a fraction or a long-run fraction."]
+    Weighting,
+    #[doc = "An unsigned integer or a quantity literal: a measure's window."]
+    Horizon,
+    #[doc = "An unsigned integer, a decimal literal or an exact number."]
+    ExactValue,
+    #[doc = "`<exact-value> <qualified-name>`: a magnitude and its unit."]
+    QuantityLiteral,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
     #[doc = "`terminal when <block>;` or `terminal any;`: a protocol clause's intended terminal states."]

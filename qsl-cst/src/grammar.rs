@@ -13,6 +13,8 @@ pub(super) enum Terminal {
     Text,
     TextValue(&'static str),
     UnsignedInteger,
+    /// A `decimal-literal`: digits, a point and digits, with no exponent.
+    DecimalLiteral,
     /// An unsigned integer that fits `u64`: an interval bound or a
     /// compensation's `attempts` count.
     Bound,
@@ -100,6 +102,9 @@ fn text() -> Rule {
 fn uint() -> Rule {
     Rule::Terminal(Terminal::UnsignedInteger)
 }
+fn decimal_literal() -> Rule {
+    Rule::Terminal(Terminal::DecimalLiteral)
+}
 fn bound() -> Rule {
     Rule::Terminal(Terminal::Bound)
 }
@@ -153,6 +158,7 @@ pub(super) fn complete_v1() -> Grammar {
     temporal(&mut grammar);
     protocol(&mut grammar);
     analysis(&mut grammar);
+    probabilistic(&mut grammar);
     grammar
 }
 
@@ -286,6 +292,10 @@ fn source_and_types(g: &mut Grammar) {
         r(P::PopulationBound),
         r(P::TemporalClause),
         r(P::TerminalDeclaration),
+        r(P::RandomDeclaration),
+        r(P::RewardDeclaration),
+        r(P::WorkloadDeclaration),
+        r(P::ProbabilisticClause),
         r(P::ProtocolClause),
         r(P::Refinement),
         r(P::RelationClause),
@@ -896,6 +906,7 @@ fn expressions(g: &mut Grammar) {
             x("self"),
             x("result"),
             s(vec![x("protocol"), r(P::QualifiedName)]),
+            r(P::QuantityLiteral),
             uint(),
             text(),
             r(P::ExactNumber),
@@ -2026,4 +2037,235 @@ mod tests {
             );
         }
     }
+}
+
+/// The probabilistic family: random parameters, workloads, rewards and
+/// the `probabilistic` claim (QSpec `random-decl`, `reward-decl`,
+/// `workload-decl` and `probabilistic-clause`). Every word they introduce
+/// is contextual, so no new keyword is reserved.
+fn probabilistic(g: &mut Grammar) {
+    let bound_op = || c(vec![x("<="), x(">=")]);
+    g.insert(
+        P::ExactValue,
+        c(vec![r(P::ExactNumber), decimal_literal(), uint()]),
+    );
+    g.insert(
+        P::QuantityLiteral,
+        s(vec![r(P::ExactValue), r(P::QualifiedName)]),
+    );
+    g.insert(
+        P::RandomDeclaration,
+        s(vec![
+            literal("random"),
+            r(P::QualifiedName),
+            x("("),
+            ident(),
+            x(")"),
+            x("~"),
+            x("{"),
+            list(|| r(P::WeightedValue)),
+            opt(x(",")),
+            x("}"),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::WeightedValue,
+        s(vec![r(P::Expression), x(":"), r(P::ExactValue)]),
+    );
+    g.insert(
+        P::RewardDeclaration,
+        s(vec![
+            literal("reward"),
+            ident(),
+            x("on"),
+            r(P::QualifiedName),
+            x("="),
+            r(P::Expression),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::WorkloadDeclaration,
+        s(vec![
+            literal("workload"),
+            ident(),
+            x("on"),
+            ident(),
+            x("{"),
+            plus(r(P::WorkloadWeight)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::WorkloadWeight,
+        s(vec![
+            literal("weight"),
+            r(P::QualifiedName),
+            x("="),
+            r(P::ExactValue),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ProbabilisticClause,
+        s(vec![
+            literal("probabilistic"),
+            ident(),
+            x("using"),
+            ident(),
+            x("on"),
+            ident(),
+            opt(s(vec![x("over"), bound_parameter()])),
+            r(P::SchedulerClause),
+            r(P::Activation),
+            opt(r(P::Confidence)),
+            x("{"),
+            r(P::ProbabilisticForm),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::SchedulerClause,
+        c(vec![
+            s(vec![
+                literal("under"),
+                literal("every"),
+                literal("scheduler"),
+                star(r(P::FairnessItem)),
+            ]),
+            s(vec![literal("under"), ident()]),
+        ]),
+    );
+    g.insert(
+        P::FairnessItem,
+        s(vec![
+            x("fair"),
+            c(vec![x("weak"), x("strong")]),
+            opt(x("each")),
+            r(P::QualifiedName),
+        ]),
+    );
+    g.insert(
+        P::Confidence,
+        s(vec![literal("with"), list(|| r(P::ConfidenceItem))]),
+    );
+    g.insert(
+        P::ConfidenceItem,
+        s(vec![
+            c(vec![
+                literal("alpha"),
+                literal("beta"),
+                literal("indifference"),
+            ]),
+            r(P::ExactValue),
+        ]),
+    );
+    g.insert(
+        P::ProbabilisticForm,
+        c(vec![
+            s(vec![
+                literal("probability"),
+                bound_op(),
+                r(P::ExactValue),
+                x("["),
+                r(P::Event),
+                x("]"),
+            ]),
+            s(vec![
+                literal("quantile"),
+                r(P::ExactValue),
+                x("of"),
+                x("("),
+                r(P::Measure),
+                x(")"),
+                bound_op(),
+                r(P::Expression),
+            ]),
+            s(vec![
+                literal("mean"),
+                x("of"),
+                x("("),
+                r(P::Fraction),
+                x(")"),
+                bound_op(),
+                r(P::ExactValue),
+            ]),
+            s(vec![
+                literal("long_run_fraction"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                opt(r(P::Weighting)),
+                bound_op(),
+                r(P::ExactValue),
+            ]),
+            s(vec![
+                literal("expected"),
+                c(vec![
+                    s(vec![literal("accumulate"), ident()]),
+                    literal("elapsed"),
+                ]),
+                x("until"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                bound_op(),
+                r(P::Expression),
+            ]),
+        ]),
+    );
+    g.insert(
+        P::Event,
+        c(vec![
+            s(vec![r(P::Measure), bound_op(), r(P::Expression)]),
+            r(P::TemporalExpression),
+        ]),
+    );
+    g.insert(
+        P::Measure,
+        c(vec![
+            s(vec![
+                c(vec![
+                    s(vec![literal("accumulate"), ident()]),
+                    literal("steps"),
+                    literal("elapsed"),
+                ]),
+                x("from"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                x("until"),
+                x("holds"),
+                x("("),
+                r(P::Expression),
+                x(")"),
+                x("within"),
+                r(P::Horizon),
+            ]),
+            r(P::Fraction),
+        ]),
+    );
+    g.insert(
+        P::Fraction,
+        s(vec![
+            literal("fraction"),
+            x("holds"),
+            x("("),
+            r(P::Expression),
+            x(")"),
+            x("over"),
+            x("["),
+            literal("0"),
+            x(","),
+            r(P::Horizon),
+            x("]"),
+            opt(r(P::Weighting)),
+        ]),
+    );
+    g.insert(P::Weighting, s(vec![literal("weighted"), x("by"), ident()]));
+    g.insert(P::Horizon, c(vec![r(P::QuantityLiteral), bound()]));
 }

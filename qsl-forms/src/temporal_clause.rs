@@ -119,7 +119,7 @@ pub(crate) fn expression_form(
 /// `fair [weak | strong] [whole | each] Operation ;`: an unwritten kind or
 /// granularity stays `None`, for S3 to read as `weak` (FR-129) or `whole`
 /// (FR-123).
-fn fairness_form(
+pub(crate) fn fairness_form(
     cst: &LosslessCst,
     constraint: &CstNode,
 ) -> Result<FairnessConstraintForm, FormsRefusal> {
@@ -181,7 +181,10 @@ pub(crate) fn interval_form(
 
 /// A formula CST node (`TemporalExpression` or any production under it) as
 /// a formula arena.
-fn formula_form(cst: &LosslessCst, root: &CstNode) -> Result<TemporalFormulaForm, FormsRefusal> {
+pub(crate) fn formula_form(
+    cst: &LosslessCst,
+    root: &CstNode,
+) -> Result<TemporalFormulaForm, FormsRefusal> {
     let mut build = Formula {
         cst,
         nodes: Vec::new(),
