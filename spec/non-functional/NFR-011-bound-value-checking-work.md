@@ -121,6 +121,13 @@ The largest recorded checker input by node units is FR-093's eight-record
 cluster (95904 units, 96% of the node ceiling). The largest by work is an
 8000-function call chain (160000 units, 1% of the work ceiling).
 
+The rational-bits ceiling defaults to 65,536 bits, the same figure as the
+exact engine's `max_rational_bits` default (FR-203), so a probability weight
+or threshold that S3 admits is no larger than a value that engine takes by
+default. A written value that long is far past any probability a modeller
+states by hand, and its reduction still costs one gcd over at most that many
+bits.
+
 ## Cost at the defaults
 
 Width, not depth, is the risk. FR-093's leaf list over `n` mutually
@@ -163,6 +170,10 @@ TC-423 covers the defaults:
 - `CheckingLimits::new` keeps the default byte and work ceilings.
 - A checked package and a checked expression record the default ceilings,
   and record a caller's ceilings as given, above or below the defaults.
+
+The rational-bits ceiling is covered by TC-620 (FR-185-AC-2): values at
+65,536 bits and `decimal(1, 19728)` are admitted, values at 65,537 bits and
+`decimal(1, 19729)` refuse naming `s3.rational_bits`.
 
 The refusal at a caller-selected bound is covered for nodes by TC-381 and
 FR-062-AC-7, and for preimage bytes and work by FR-062-AC-5 (TC-160). Deep
