@@ -248,8 +248,8 @@ A client sends a request and times out at `T`; the server replies at least
 1 ms after the request. Spelling is illustrative, as in ADR-018 §6.
 
 ```text
-model Rpc = "example/rpc" …;      // object Call { phase: Phase, inflight: Bool, late: Bool, x: Clock }
-time dense unit ms;
+model Rpc = "example/rpc" …;      // object Call { phase: Phase, inflight: Boolean, late: Boolean, x: Clock }
+time t dense unit ms;
 
 operation Call::send
   pre  self.phase = Idle
@@ -265,8 +265,8 @@ operation Call::reset
   pre  not self.inflight and (self.phase = Replied or self.phase = TimedOut)
   post self.phase = Idle;
 
-time invariant when self.inflight            { self.x <= 3 ms }   // server deadline
-time invariant when self.phase = Waiting     { self.x <= T }      // client deadline
+time invariant ServerDeadline when { self.inflight }        { self.x <= 3 ms }   // server deadline
+time invariant ClientDeadline when { self.phase = Waiting } { self.x <= 3 ms }   // client deadline x <= T: 3 ms here, 4 ms in the T = 4 ms instance
 
 temporal NoLateReply using inf over (k: Rpc::Call) clock "model-steps" on origin {
   always holds(not k.late)
