@@ -590,7 +590,7 @@ fn the_checker_resolves_each_clause_s_identity_from_the_package() {
 /// it does not reject a certificate, and the settlement is `Failed`: not
 /// `Certified`, not `Inconclusive`. The engine refuses it too, before any
 /// state is explored.
-#[trace("TC-1080")]
+#[trace("TC-1080", "FR-338-AC-8")]
 #[test]
 fn a_request_whose_clause_root_does_not_resolve_settles_failed() {
     let world = world(CONTRACT, &[("c", 0)]);
@@ -983,7 +983,7 @@ fn a_malformed_key_in_a_certificate_is_refused_before_membership() {
 /// refused key and its model state, and settles `CertificateRejected`, not
 /// `proved`; restored, it is accepted. With two states' keys refused, both
 /// orderings of `states` report the least refused `ProductStateRef`.
-#[trace("TC-1080")]
+#[trace("TC-1080", "FR-338-AC-8")]
 #[test]
 fn a_refused_key_rejects_the_certificate_at_the_least_refused_state() {
     let world = world(CONTRACT, &[("a", 0), ("b", 0)]);

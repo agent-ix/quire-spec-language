@@ -438,7 +438,8 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
 /// Verifies the TP-1 half of FR-126-AC-9; its TP-4 claim, the `kind:
 /// Formula` conjunction and the TP-2 `Holds` are not verified. Over the
 /// Counter subject: `always holds(6 mod (2 -
-/// c.value) >= 0)` is violated with the prefix `0 -inc-> 1 -inc-> 2` and
+/// c.value) >= 0)` (the spec writes the division `/`; S3 types `mod`, not
+/// `/`, over integers, so the test uses `mod`) is violated with the prefix `0 -inc-> 1 -inc-> 2` and
 /// `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`,
 /// at the clause's atom.
 #[trace("TC-537")]
@@ -615,6 +616,59 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
             },
             None
         )
+    );
+}
+
+/// Verifies the cancelled-handle row of FR-126-AC-5 over a TP-1 clause: the
+/// clause's root is resolved from the package, and a handle cancelled before
+/// the call stops that resolution, so the run returns `Stopped{Cancelled,
+/// None}` rather than refusing.
+#[trace("TC-521", "FR-126-AC-5")]
+#[test]
+fn a_cancelled_handle_stops_a_tp1_clause_run_rather_than_refusing() {
+    let world = self::world("", &[&[("c", 0)]]);
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", "always holds(c.value <= 3)")],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
+    let letters = letters(&world, &["c"], |v| Some(v <= 3));
+    let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Requested);
+    let outcome = check_model(
+        ModelCheckRequest {
+            subject: subject(
+                &package,
+                &world.documents,
+                world.initial.clone(),
+                &["c"],
+                UNLIMITED,
+            ),
+            item: ModelCheckItem::Clause {
+                clause,
+                letters: &letters,
+            },
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &cancel,
+    )
+    .expect("a cancelled handle is an outcome, not a refusal");
+    assert!(
+        matches!(
+            outcome,
+            ModelCheckOutcome::Stopped {
+                cause: IncompleteCause::Cancelled {
+                    source: CancelCause::Requested
+                },
+                limit: None,
+                ..
+            }
+        ),
+        "{outcome:?}"
     );
 }
 
