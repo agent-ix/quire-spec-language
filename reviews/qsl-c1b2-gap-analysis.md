@@ -83,5 +83,5 @@ memory-clause and access-ordering refusal tests, which are untagged.
 | --- | --- | --- |
 | FND-001 | fixed | 56c826467 |
 | FND-002 | fixed | 56c826467 |
-| FND-003 | fixed | 56c826467 |
+| FND-003 | deferred | Partly fixed in 56c826467, which now asserts the AC-19 case names and the AC-18 code. The await-`then` positive case that the comment at graph.rs:969-970 claims is still not written. It is low and does not block. |
 | FND-004 | deferred | Spec ambiguity. FR-218 says a decision fact is a Boolean field read, while AC-2's own example lists `m.n`. Nothing changed in the fix round, and it is low. Route it to the same FR-218 spec follow-up. |
