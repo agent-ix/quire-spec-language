@@ -170,3 +170,17 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(seam_probe)"] }
 
 [lints.clippy]
 all = "deny"
+
+# The 100,000-level formatter identity cases (`make test-deep-format`) spend
+# their time hashing and canonically encoding packages. These dependencies are
+# compiled optimized once and cached; the checks themselves are unchanged.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.serde_json]
+opt-level = 3
+[profile.dev.package.quire-canonical]
+opt-level = 3
+[profile.dev.package.quire-contract-model]
+opt-level = 3
+[profile.dev.package.quire-semantic-value]
+opt-level = 3
