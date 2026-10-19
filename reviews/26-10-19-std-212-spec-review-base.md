@@ -81,3 +81,9 @@ Round 1, head 7cfb5530b (fix commit 7cfb5530b over merge 2b96e20e4).
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
+
+Round 2, head 7d106f40a (fix commit 7d106f40a).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | - |
