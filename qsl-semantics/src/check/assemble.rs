@@ -55,7 +55,7 @@ use super::model_gate::{self, ModelGateRefusal};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
-use super::refusal::AliasKind;
+use super::refusal::{AliasKind, TimedConstruct};
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
 };
@@ -453,6 +453,10 @@ pub enum AssemblyCause {
     /// `quire.model.complete/v1` (FR-361): `unsupported_construct`/
     /// `declaration-form` or `expression-form`.
     UnselectedModelConstruct(ModelGateRefusal),
+    /// A timed declaration or the `Clock` type, which S2 builds (FR-393)
+    /// and no S3 check reads yet (FR-230): `unsupported_construct`/
+    /// `not-yet-implemented`, never compiled unchecked.
+    TimedNotChecked(super::refusal::TimedConstruct),
 }
 
 impl AssemblyCause {
@@ -513,9 +517,9 @@ impl AssemblyCause {
             | Self::StorageAllocation { .. }
             | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
-            Self::UnsupportedLayerForm { .. } | Self::UnselectedModelConstruct(_) => {
-                Code::UnsupportedConstruct
-            }
+            Self::UnsupportedLayerForm { .. }
+            | Self::UnselectedModelConstruct(_)
+            | Self::TimedNotChecked(_) => Code::UnsupportedConstruct,
         }
     }
 
@@ -601,6 +605,7 @@ impl AssemblyCause {
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
             Self::UnsupportedLayerForm { form, .. } => form.refusal_cause(),
             Self::UnselectedModelConstruct(refusal) => refusal.family.refusal_cause(),
+            Self::TimedNotChecked(_) => "not-yet-implemented",
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -711,6 +716,8 @@ struct Unit {
     /// Each `terminal` declaration's form, in source order, resolved by the
     /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
     terminals: Vec<TerminalDeclarationForm>,
+    /// The timed declarations (FR-393), refused until FR-230 checks them.
+    timed: Vec<(TimedConstruct, Span)>,
     /// Each state-graph claim's form, in source order, resolved by the
     /// caller into `StateGraphDeclaration`s (FR-165).
     state_graph_claims: Vec<qsl_forms::StateGraphClaimForm>,
@@ -734,6 +741,7 @@ impl Unit {
             hyper_clauses: Vec::new(),
             probabilistic: Vec::new(),
             terminals: Vec::new(),
+            timed: Vec::new(),
             state_graph_claims: Vec::new(),
         };
         for form in forms {
@@ -776,6 +784,16 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
+                DeclarationForm::TimeSource(time) => {
+                    unit.timed.push((TimedConstruct::TimeSource, time.span));
+                }
+                DeclarationForm::TimeInvariant(invariant) => {
+                    unit.timed
+                        .push((TimedConstruct::TimeInvariant, invariant.span));
+                }
+                DeclarationForm::Urgent(urgent) => {
+                    unit.timed.push((TimedConstruct::Urgent, urgent.span));
+                }
                 DeclarationForm::HyperBehaviours(clause) => unit
                     .hyper_clauses
                     .push(super::hyper_clause::HyperDeclaration::Behaviours(*clause)),
@@ -1851,6 +1869,10 @@ fn check_names(
                     }
                 }
             }
+            TypeFormHead::Builtin(BuiltinType::Clock) => errors.push(AssemblyError {
+                cause: AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
+                span: form.span,
+            }),
             TypeFormHead::Builtin(BuiltinType::Reference) => {
                 for target in &form.arguments {
                     let name = match &target.head {
@@ -1944,6 +1966,7 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         | TypeFormFault::MalformedDecimal
         | TypeFormFault::EmptyTextBounds
         | TypeFormFault::EmptyCardinality) => AssemblyCause::IllFormedBounds(fault),
+        TypeFormFault::ClockNotChecked => AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
     };
     AssemblyError {
         cause,
@@ -2391,7 +2414,16 @@ impl PackageDeclarations {
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
-        let mut errors = Vec::new();
+        // FR-393: the timed declarations build at S2; until FR-230's check
+        // reads them, each refuses here rather than compile unchecked.
+        let mut errors: Vec<AssemblyError> = unit
+            .timed
+            .iter()
+            .map(|(construct, span)| AssemblyError {
+                cause: AssemblyCause::TimedNotChecked(*construct),
+                span: *span,
+            })
+            .collect();
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.

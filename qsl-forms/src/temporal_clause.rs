@@ -16,12 +16,12 @@ use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
     ActivationForm, CaptureForm, ClockForm, DeclarationForm, ExpressionForm,
     FairnessConstraintForm, FairnessGranularity, FairnessKind, IntervalForm, IntervalUpper,
-    ParameterForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
-    TemporalOperator, TemporalOperatorForm, UsingAlias,
+    OperatorInterval, ParameterForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
+    TemporalNodeId, TemporalOperator, TemporalOperatorForm, TimedIntervalForm, UsingAlias,
 };
 use super::value::{
-    declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
-    tokens_of, type_form, unexpected, unrepresented, Item,
+    declared_name, expression, has_token, items, name_form, nodes_of, only, production_node,
+    quantity_form, text, tokens_of, type_form, unexpected, unrepresented, Item,
 };
 
 /// `temporal Name using p over (x: T) clock "c" activation { fairness*
@@ -253,7 +253,7 @@ impl<'c> Formula<'c> {
     fn operator_node(
         &mut self,
         operator: TemporalOperator,
-        interval: Option<IntervalForm>,
+        interval: Option<OperatorInterval>,
         span: Span,
         operator_span: Span,
         parent: Option<usize>,
@@ -426,19 +426,24 @@ impl<'c> Formula<'c> {
             })
             .ok_or_else(|| unexpected(node))?;
         let operator = operator_of(token.spelling()).ok_or_else(|| unexpected(node))?;
-        let interval = nodes_of(items, Production::Interval)
-            .first()
-            .map(|interval| interval_form(self.cst, interval))
-            .transpose()?;
-        let operands: Vec<&CstNode> = items
-            .iter()
-            .filter_map(|item| match item {
-                Item::Node(operand) if operand.production() != Production::Interval => {
-                    Some(*operand)
+        let mut interval = None;
+        let mut operands: Vec<&CstNode> = Vec::new();
+        for item in items {
+            let Item::Node(child) = item else { continue };
+            let built = match child.production() {
+                Production::Interval => OperatorInterval::Steps(interval_form(self.cst, child)?),
+                Production::TimedInterval => {
+                    OperatorInterval::Timed(Box::new(timed_interval_form(self.cst, child)?))
                 }
-                Item::Node(_) | Item::Token(_) => None,
-            })
-            .collect();
+                _ => {
+                    operands.push(child);
+                    continue;
+                }
+            };
+            if interval.replace(built).is_some() {
+                return Err(unexpected(node));
+            }
+        }
         if operands.len() != arity {
             return Err(unexpected(node));
         }
@@ -484,4 +489,38 @@ impl<'c> Formula<'c> {
             _ => Err(unexpected(node)),
         }
     }
+}
+
+/// One `TimedInterval` node: `( [ | ( ) lower , upper ( ] | ) )`. S1 refuses
+/// a timed interval whose upper end is not a quantity literal, so a missing
+/// quantity here is a broken invariant between the two stages.
+pub(crate) fn timed_interval_form(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<TimedIntervalForm, FormsRefusal> {
+    let interval_items = items(cst, node);
+    let (Some(Item::Token(open)), Some(Item::Token(close))) =
+        (interval_items.first(), interval_items.last())
+    else {
+        return Err(unexpected(node));
+    };
+    let closed = |spelling: &[u8], closed: &[u8], open: &[u8]| {
+        if spelling == closed {
+            Ok(true)
+        } else if spelling == open {
+            Ok(false)
+        } else {
+            Err(unexpected(node))
+        }
+    };
+    let [lower, upper] = nodes_of(&interval_items, Production::QuantityLiteral)[..] else {
+        return Err(unexpected(node));
+    };
+    Ok(TimedIntervalForm {
+        lower: quantity_form(cst, lower)?,
+        lower_closed: closed(open.spelling(), b"[", b"(")?,
+        upper: quantity_form(cst, upper)?,
+        upper_closed: closed(close.spelling(), b"]", b")")?,
+        span: node.span(),
+    })
 }

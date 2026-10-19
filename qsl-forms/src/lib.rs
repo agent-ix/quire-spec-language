@@ -41,6 +41,7 @@ mod sum_case;
 mod syntax;
 mod temporal_clause;
 mod terminal_declaration;
+mod time_model;
 mod value;
 
 pub use clause_text::{parse_clause_text, ClauseTextRefusal};
@@ -60,26 +61,27 @@ pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMis
 pub use syntax::{
     Accumulation, ActivationForm, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm,
     AttemptForm, BinaryOperator, BinderForm, BinderKind, BinderQuery, BoundOp, BuiltinType,
-    CaptureForm, CaseForm, CheckForm, ChoiceCaseForm, ChoiceForm, ClauseKind, ClockForm,
-    CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
+    CaptureForm, CaseForm, CheckForm, ChoiceCaseForm, ChoiceForm, ClauseKind, ClockBoundForm,
+    ClockForm, CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
     CompensationRetry, ConfidenceItemForm, ConfidenceKey, DeclarationForm, DeclarationKind,
     DeclaredClauseKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm,
     EventForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind, ExpectedQuantity,
     ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
     FairnessConstraintForm, FairnessGranularity, FairnessKind, FieldInitializer, FractionForm,
     FunctionDeclaration, HorizonForm, IntervalForm, IntervalUpper, MeasureForm, MeasureWindowForm,
-    NameForm, OperationBodyForm, ParameterForm, PopulationBoundForm, ProbabilisticBody,
-    ProbabilisticForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
-    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, QuantityForm, RandomForm,
-    RecordFieldForm, RecordForm, RelatedForm, RelationshipForm, ReplicatedRoleForm,
-    RequirementForm, RewardForm, RoleForm, RoleLifetime, SchedulerForm, ScopeEntry, ScopeId,
-    ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm, StateClauseKind,
-    StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm, StepLabelForm,
-    TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
-    TemporalOperatorForm, TemporalOperatorUse, TermOperator, TerminalDeclarationForm,
-    TerminalDeclarationKind, TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm,
-    UnionMemberForm, UnitForm, UsingAlias, WeightedValueForm, WeightingForm, WorkloadForm,
-    WorkloadWeightForm,
+    NameForm, OperationBodyForm, OperatorInterval, ParameterForm, PopulationBoundForm,
+    ProbabilisticBody, ProbabilisticForm, ProtocolBodyForm, ProtocolConstructForm,
+    ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
+    QuantityForm, RandomForm, RecordFieldForm, RecordForm, RelatedForm, RelationshipForm,
+    ReplicatedRoleForm, RequirementForm, RewardForm, RoleForm, RoleLifetime, SchedulerForm,
+    ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm,
+    StateClauseKind, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
+    StepLabelForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
+    TemporalOperator, TemporalOperatorForm, TemporalOperatorUse, TermOperator,
+    TerminalDeclarationForm, TerminalDeclarationKind, TimeInvariantForm, TimeSourceForm,
+    TimeSourceSyntax, TimedIntervalForm, TreeRefusal, TupleForm, TypeForm, TypeFormHead, UnionForm,
+    UnionMemberForm, UnitForm, UrgentForm, UrgentTarget, UsingAlias, WeightedValueForm,
+    WeightingForm, WorkloadForm, WorkloadWeightForm,
 };
 
 /// Each explicit heap stack S2 and the form traits keep grows by at most a

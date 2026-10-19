@@ -684,6 +684,35 @@ pub(super) fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code
         | F::MalformedDecimal
         | F::EmptyTextBounds
         | F::EmptyCardinality => (Code::IllTyped, "type-mismatch"),
+        F::ClockNotChecked => (Code::UnsupportedConstruct, "not-yet-implemented"),
+    }
+}
+
+/// A timed construct of FR-393 that S2 builds and S3 does not yet check.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TimedConstruct {
+    /// A `time` declaration (FR-230).
+    TimeSource,
+    /// A `time invariant` declaration (FR-230).
+    TimeInvariant,
+    /// An `urgent` declaration (FR-230).
+    Urgent,
+    /// The `Clock` type (FR-230).
+    Clock,
+    /// A temporal operator's timed interval (FR-233, FR-234).
+    TimedInterval,
+}
+
+impl TimedConstruct {
+    /// The construct as a reader names it.
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::TimeSource => "a `time` declaration",
+            Self::TimeInvariant => "a `time invariant` declaration",
+            Self::Urgent => "an `urgent` declaration",
+            Self::Clock => "the `Clock` type",
+            Self::TimedInterval => "a timed interval",
+        }
     }
 }
 
@@ -934,6 +963,13 @@ pub enum TemporalCause {
         /// The constraint's span.
         span: Span,
     },
+    /// A timed interval (FR-393), which no S3 check reads yet (FR-233,
+    /// FR-234): refused rather than checked as a step interval. Located at
+    /// the interval.
+    TimedIntervalNotChecked {
+        /// The interval's span.
+        span: Span,
+    },
     /// A clause whose checked parts all hold, but that no S4 emission
     /// writes yet (FR-337): refused rather than compiled and silently
     /// missing from the emitted package.
@@ -958,6 +994,7 @@ impl TemporalCause {
             | Self::UnresolvedFairnessOperation { span, .. }
             | Self::AmbiguousFairnessOperation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
+            | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. } => *span,
         }
     }
@@ -969,6 +1006,7 @@ impl TemporalCause {
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. }
+            | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
@@ -987,7 +1025,7 @@ impl TemporalCause {
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } => "type-mismatch",
-            Self::NotEmitted { .. } => "not-yet-implemented",
+            Self::TimedIntervalNotChecked { .. } | Self::NotEmitted { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
         }
     }
@@ -1404,6 +1442,15 @@ pub enum CheckCause {
         /// The declared name.
         name: String,
         /// The span of the whole declaration.
+        span: Span,
+    },
+    /// A timed construct S2 builds but no S3 check reads yet (FR-393;
+    /// FR-230, FR-233, FR-234 own the checks): refused rather than compiled
+    /// unchecked.
+    TimedNotChecked {
+        /// Which construct.
+        construct: TimedConstruct,
+        /// The construct's span.
         span: Span,
     },
     /// A completed model conformance stage retains every axis failure.
@@ -1889,7 +1936,9 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
-            Self::TerminalNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::TerminalNotEmitted { .. } | Self::TimedNotChecked { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::Probabilistic(cause) => cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
@@ -1948,7 +1997,9 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::Terminal(cause) => cause.cause.cause(),
-            Self::TerminalNotEmitted { .. } => Some("not-yet-implemented"),
+            Self::TerminalNotEmitted { .. } | Self::TimedNotChecked { .. } => {
+                Some("not-yet-implemented")
+            }
             Self::Probabilistic(cause) => Some(cause.tag()),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied

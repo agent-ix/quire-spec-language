@@ -596,6 +596,7 @@ fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsRefusal
         b"Text" => TypeFormHead::Builtin(BuiltinType::Text),
         b"Option" => TypeFormHead::Builtin(BuiltinType::Option),
         b"Reference" => TypeFormHead::Builtin(BuiltinType::Reference),
+        b"Clock" => TypeFormHead::Builtin(BuiltinType::Clock),
         b"Population" => TypeFormHead::Population,
         b"Sequence" => TypeFormHead::Collection(CollectionKind::Sequence),
         b"Set" => TypeFormHead::Collection(CollectionKind::Set),
@@ -1148,6 +1149,11 @@ impl<'c> Mapping<'c> {
             | Production::Capture
             | Production::Fairness
             | Production::Interval
+            | Production::TimedInterval
+            | Production::TimeDeclaration
+            | Production::TimeInvariant
+            | Production::ClockBound
+            | Production::UrgentDeclaration
             | Production::TemporalExpression
             | Production::TemporalImplication
             | Production::TemporalDisjunction
@@ -1798,6 +1804,11 @@ impl<'c> Mapping<'c> {
             | Production::Capture
             | Production::Fairness
             | Production::Interval
+            | Production::TimedInterval
+            | Production::TimeDeclaration
+            | Production::TimeInvariant
+            | Production::ClockBound
+            | Production::UrgentDeclaration
             | Production::TemporalExpression
             | Production::TemporalImplication
             | Production::TemporalDisjunction
