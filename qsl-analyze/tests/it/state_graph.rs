@@ -35,20 +35,23 @@ use crate::graph_world::{
     REACHES_TWO,
 };
 
-const AB: &[&str] = &["a", "b"];
+pub(crate) const AB: &[&str] = &["a", "b"];
 
-fn run(request: StateGraphRequest<'_>) -> StateGraphRun {
+pub(crate) fn run(request: StateGraphRequest<'_>) -> StateGraphRun {
     check_state_graph(request, &Cancel::new()).expect("the subject is checked")
 }
 
-fn system<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
+pub(crate) fn system<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
     ModelSystem::new(world.subject(keys, UNLIMITED).simulation).expect("admits")
 }
 
 /// Every reachable state of `world` over universe `keys`, by breadth-first
 /// enumeration of its `ModelSystem`, with its state-key digest, and the
 /// number of edges.
-fn reachable(world: &World, keys: &[&str]) -> (BTreeMap<DigestRecord, ModelSimState>, usize) {
+pub(crate) fn reachable(
+    world: &World,
+    keys: &[&str],
+) -> (BTreeMap<DigestRecord, ModelSimState>, usize) {
     let system = system(world, keys);
     let mut seen = BTreeMap::new();
     let mut edges = 0;
@@ -147,7 +150,7 @@ fn edge_names(run: &StateGraphRun, node: NodeIndex) -> Vec<String> {
 
 fn witnesses(outcome: &StateGraphOutcome) -> &[GraphWitness] {
     match outcome {
-        StateGraphOutcome::Witnessed { paths }
+        StateGraphOutcome::Witnessed { paths, .. }
         | StateGraphOutcome::WitnessedUnchecked { paths, .. } => paths,
         other => panic!("expected witnesses, got {other:?}"),
     }
@@ -213,7 +216,7 @@ fn max_states(limits: ModelCheckLimits, value: usize) -> ModelCheckLimits {
     limits
 }
 
-fn no_samples() -> ModelCheckLimits {
+pub(crate) fn no_samples() -> ModelCheckLimits {
     ModelCheckLimits {
         witness_samples: 0,
         ..ModelCheckLimits::default()
@@ -684,7 +687,7 @@ fn a_sampled_witness_never_hides_an_undefined_target() {
     assert!(result.graph.open.is_empty());
     assert_eq!(result.graph.end, RunEnd::Completed);
     for instance in &result.items[0] {
-        let StateGraphOutcome::Witnessed { paths } = &instance.outcome else {
+        let StateGraphOutcome::Witnessed { paths, .. } = &instance.outcome else {
             panic!("witnessed: {:?}", instance.outcome);
         };
         assert!(matches!(paths[0].source, WitnessSource::Sampled(_)));
@@ -867,7 +870,7 @@ fn explored_witnesses_and_an_initial_trap() {
         no_samples(),
     ));
     for (instance, key) in result.items[0].iter().zip(["a", "b"]) {
-        let StateGraphOutcome::Witnessed { paths } = &instance.outcome else {
+        let StateGraphOutcome::Witnessed { paths, .. } = &instance.outcome else {
             panic!("witnessed: {:?}", instance.outcome);
         };
         let expected = expected_steps(
@@ -927,14 +930,14 @@ fn always_possible_traps_and_holds() {
 
     let guarded = "always possible Guarded using v over (x: G::Game) from (x.phase != 2) \
                    { x.phase = 3 }\n";
-    assert_eq!(
+    assert!(matches!(
         decide(false, guarded, "Guarded").1,
-        StateGraphOutcome::Holds
-    );
-    assert_eq!(
+        StateGraphOutcome::Holds { .. }
+    ));
+    assert!(matches!(
         decide(true, CAN_STILL_WIN, "CanStillWin").1,
-        StateGraphOutcome::Holds
-    );
+        StateGraphOutcome::Holds { .. }
+    ));
 }
 
 /// FR-168-AC-3: §7.3's `InOneWay` returns `PathPair` with an empty stem,
@@ -960,7 +963,10 @@ fn unique_path_counts_paths() {
     assert!(stem.steps.is_empty());
     assert_eq!(names(&first), ["stepA", "stepB", "finish"]);
     assert_eq!(names(&second), ["stepB", "stepA", "finish"]);
-    assert_eq!(decide(true, false), StateGraphOutcome::Holds);
+    assert!(matches!(
+        decide(true, false),
+        StateGraphOutcome::Holds { .. }
+    ));
     let StateGraphOutcome::PathPair {
         stem,
         first,
@@ -1144,7 +1150,7 @@ fn phase_zero_changes_the_source_never_the_outcome_kind() {
     for (limits, sampled) in [(ModelCheckLimits::default(), true), (no_samples(), false)] {
         let result = run(world.request(AB, vec![world.item("ReachesTwo")], limits));
         for instance in &result.items[0] {
-            let StateGraphOutcome::Witnessed { paths } = &instance.outcome else {
+            let StateGraphOutcome::Witnessed { paths, .. } = &instance.outcome else {
                 panic!("witnessed: {:?}", instance.outcome);
             };
             assert_eq!(

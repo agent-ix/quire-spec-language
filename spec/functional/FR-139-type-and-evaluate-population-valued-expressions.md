@@ -75,6 +75,11 @@ one mapping row.
   an integer within the bounds of `lo` and `hi` (for `seq`), and SHALL check
   `c` as `Boolean` and `e` by its own type, refusing `ill_typed`/
   `type-mismatch` otherwise.
+- A `sum(x in P where c: e)` over a universe of `n` objects, with `e` bounded
+  by `[lo, hi]`, SHALL have the bound `[min(0, n*lo), max(0, n*hi)]`. The
+  population can be empty at a state, and an empty sum is 0, so the bound
+  includes 0 even when `lo` and `hi` are both positive or both negative.
+  The `count` bound is `[0, n]`.
 - `seq`'s declared maximum length SHALL be computed from the static bounds
   of `lo` and `hi`, as QSpec states it.
 - The form's result SHALL be checked against its use (an abstract field, a
@@ -91,6 +96,10 @@ one mapping row.
   object or more than one satisfies it, the form SHALL evaluate undefined,
   so the row that contains it evaluates undefined and the refinement settles
   `refuted` with `UndefinedEvaluation` (FR-140, FR-142; QSpec FR-376).
+- That undefined result SHALL carry the `UndefinedRecord` reason
+  `only-not-one`, for no object and for several alike, with a payload naming the population binding, the `only` locus and the enclosing row and no match count (QSpec native-diagnostics "Undefined reasons"), so FR-140's
+  `MappingFailure::Undefined` and the refinement counterexample's `cause`
+  name it.
 - `seq(i in lo .. hi: e)` SHALL evaluate to the sequence of `e` for each
   integer from `lo` to `hi` in ascending order, empty when `hi < lo`.
 
@@ -106,6 +115,8 @@ Fixture: ADR-020 §8's `RingIsQueue` with universes `rings = {r}` and `slots
 | FR-139-AC-3 | At the state `head = 1`, `size = 2`, `s0.value = 0`, `s1.value = 1`, `items` evaluates to `[1, 0]`; at `head = 0`, `size = 0` it evaluates to `[]`; `count(s in R::slots where s.ring = self)` evaluates to 2 and `all(s in R::slots where s.value = 1)` to `false`. | Test (TC-544) |
 | FR-139-AC-4 | `only(s in R::slots where s.ring = self: s.value)` is undefined at every state of the fixture (two slots satisfy it), and `only(s in R::slots where s.ring = self and s.index = self.head + 2: s.value)` is undefined (no slot satisfies it). | Test (TC-544) |
 | FR-139-AC-5 | A row `count(s in R::slots where s.ring = self)` mapped to an abstract field of type `Int[0, 2]` checks at S3 with `n` symbolic; a request whose subject admits `slots = {s0, s1}` admits it, and one that admits `slots = {s0, s1, s2}` refuses `ill_typed`/`type-mismatch` before exploration, naming the row, `R::slots` and universe size 3. | Test (TC-544) |
+| FR-139-AC-6 | `sum(s in R::slots where s.ring = self: s.value + 1)`, whose summand lies in `[1, 2]`, has the bound `[0, 4]` at `slots = {s0, s1}`, not `[2, 4]`; a row of it mapped to an abstract field of type `Int[0, 4]` is admitted at that universe, and one mapped to `Int[2, 4]` refuses `ill_typed`/`type-mismatch` naming the row, `R::slots` and universe size 2. At a state where no slot satisfies the condition it evaluates to 0. | Test (TC-544) |
+| FR-139-AC-7 | The undefined `only` of FR-139-AC-4, for two objects and for none, carries an `UndefinedRecord` with reason `only-not-one`. | Test (TC-544) |
 
 ## Dependencies
 
