@@ -37,7 +37,7 @@ fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
 }
 
-fn key(suffix: &str) -> DeclarationKey {
+pub(crate) fn key(suffix: &str) -> DeclarationKey {
     DeclarationKey {
         package: PACKAGE.to_owned(),
         node: ident(suffix),

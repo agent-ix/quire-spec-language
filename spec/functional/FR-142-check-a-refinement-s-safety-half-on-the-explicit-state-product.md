@@ -82,6 +82,9 @@ pub fn check_refinement(
 
 ## Behavior
 
+- The engine SHALL pass `check_initial` and `check_step` the refinement's concrete `ModelSystem` (the system whose states it explores) and its abstract system.
+- A `StepVerdict::Fault` from FR-141 SHALL end the run with a fault outcome that FR-144 settles `failed` (QSpec FR-383), and writes no counterexample for it.
+
 ### Subjects and pre-check
 
 - The checker SHALL build the abstract subject from `abstract_package`, its

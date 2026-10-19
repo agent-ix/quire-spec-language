@@ -214,7 +214,7 @@ subject.
 | UE-1 | **Rule.** At each position a claim reads, it reads a *letter*: the value of every atom of the claim there, a `holds` atom through the one clause evaluator (ADR-016 FE-3), and for the deadlock-freedom item DL-1's `P` at a terminal state. A TP-2 `on origin` claim reads positions 0 to `h`; every other form reads every position of the behaviour. A position that a bounded profile's closed-boundary rule supplies past a terminal state is read by that rule and evaluates no atom. When an atom evaluates `Undefined` (the kernel `Outcome::Undefined`, or a family's `FamilyResult::Undefined`) at a position the claim reads on an admitted behaviour, the claim evaluates undefined there, and the item settles `refuted`, basis `decisive-counterexample`, `TerminalValue::Refuted` (V-4), with cause `UndefinedEvaluation{where, cause}`. |
 | UE-2 | **Cause.** `where` is QSpec FR-363's site of the undefined evaluation; QSL records it as FR-363 states and keeps no field list of its own. Its position is the counterexample's `trace_position` (ADR-014 TR-2). `cause` is the evaluator's undefined cause as its `UndefinedRecord` (ADR-013 O-16), taken from the first atom in clause-node order that evaluated undefined at `where`. `UndefinedEvaluation{where, cause}` is a `TemporalCounterexample` `kind` (DL-4), so the refuted record carries it with its counterexample. No label, basis, `TerminalValue` variant or O-16 category is added: ADR-013 O-16 and QSpec FR-360 are unchanged. |
 | UE-3 | **Counterexample.** The counterexample is a finite prefix from an initial state to the position `where` (CX-1), for every form, safety and liveness alike. Weak fairness is machine-closed (§4), so the prefix extends to a fair behaviour, and the claim is undefined on an admitted behaviour. |
-| UE-4 | **First refuting evidence.** An engine reports the first refuting evidence in its canonical order, whether that is an undefined evaluation or a violation. EN-1 reads a position's letter when it creates the product state for that position, since the automaton steps on the letter. Its first phase ends at the first product state, in QSpec FR-181 canonical breadth-first order, whose letter is undefined or whose monitor state rejects: an undefined position ranks like any other violation, the shortest prefix first and canonical transition order after that. A TP-4 item's second phase runs only when the first phase found no undefined evaluation. With `max_depth = k`, EN-1 creates product states up to depth `k`, so V-5 still means no counterexample of length at most `k`. EN-2 and EN-3 conjoin the definedness of every atom the claim reads to the property they encode, so an undefined evaluation is a violation to them as well. |
+| UE-4 | **First refuting evidence.** An engine reports the first refuting evidence in its canonical order, whether that is an undefined evaluation or a violation. EN-1 reads a position's letter when it creates the product state for that position, since the automaton steps on the letter. Its first phase ends at the first product state, in QSpec FR-181 canonical breadth-first order, whose letter is undefined or whose monitor state rejects: an undefined position ranks like any other violation, the shortest prefix first and canonical transition order after that. For a TP-4 item the order across `over` bindings is the shallowest first, then the earlier binding in canonical order; the safety engines (TP-1 to TP-3) rank by depth, then canonical state order, then binding. A TP-4 item's second phase runs only when the first phase found no undefined evaluation. With `max_depth = k`, EN-1 creates product states up to depth `k`, so V-5 still means no counterexample of length at most `k`. EN-2 and EN-3 conjoin the definedness of every atom the claim reads to the property they encode, so an undefined evaluation is a violation to them as well. |
 | UE-5 | **Replay.** CX-3 replays the prefix unchanged, then evaluates the letters of the replayed positions in order. When the first position whose letter is undefined is `where`, with an undefined cause equal to the payload's `cause`, replay settles `reproduced-with-evaluated-witness` and the item `refuted`: reproducing the undefined value at `where` is what reproducing this counterexample means. A defined letter at `where`, an undefined letter before it, a `where` past the replayed positions, or a different cause is a disagreement and settles `inconclusive`, `ReplayParity`. No fairness check applies (UE-3). |
 | UE-6 | **Model-side expressions.** An undefined model-side expression at a reachable state refutes the item as an undefined claim does: a contract conjunction that evaluates undefined during expansion (FR-120 `ContractUndetermined` with an `Undefined` evaluation, an undefined precondition guard included) and DL-1's `terminal when P` that evaluates undefined at a terminal state settle `refuted`, cause `UndefinedEvaluation{where, cause}`, with a prefix to that state; it is never read as a disabled step. Replay re-executes the prefix and reproduces it when it evaluates the same expression undefined at `where` with an equal cause. A contract conjunction that is refused, with no clause false and none undefined, leaves the successor relation unknown and settles V-6 `UndecidedSuccessor`. Every engine that settles a claim over a model subject, a tuple of behaviours or a sample applies UE-1 to UE-5 with its own site, which its record names. |
 
@@ -410,44 +410,45 @@ and `b` both at version 0 with `parent` absent. Write a state as
 The result value is not in the state key, so the choice of result does not
 change the successor. The model has 9 reachable states, each with two successors,
 `upd(a)` and `upd(b)`, both always enabled. The two instances are symmetric.
-The rows below name the instance a loop updates `a` and the instance `c`
-is bound to `b`; they hold with the two names exchanged, and which instance
-the reported counterexample binds depends on how `over` bindings are ranked,
-which is not yet specified; it is not a property of the model.
+The reported counterexample is the shortest across the `over` bindings, and
+a tie goes to the first binding in canonical order (`a`); the same order
+decides which undefined letter is reported first. The two instances are
+symmetric, so the rows below bind `c` to `a`, whose loop updates `b`; with
+the names exchanged they describe the other binding.
 
-**Product.** The form is TP-4. For `c = b`, the negation is `eventually
-always (b.versionNumber != 2)`, a two-state Büchi automaton: `q0` loops on
-any state and moves to accepting `q1` on a state with `vb != 2`; `q1` loops
+**Product.** The form is TP-4. For `c = a`, the negation is `eventually
+always (a.versionNumber != 2)`, a two-state Büchi automaton: `q0` loops on
+any state and moves to accepting `q1` on a state with `va != 2`; `q1` loops
 on such states. The reachable product has 15 states: 9 with `q0` and 6 with
-`q1` (`vb` in `{0, 1}`). It has two accepting SCCs, `{(*, 0, q1)}` and
-`{(*, 1, q1)}`, three states each, whose internal edges are all `upd(a)`.
+`q1` (`va` in `{0, 1}`). It has two accepting SCCs, `{(0, *, q1)}` and
+`{(1, *, q1)}`, three states each, whose internal edges are all `upd(b)`.
 
-**Verdict under `fair weak each`.** `upd(b)` is enabled at every state of
+**Verdict under `fair weak each`.** `upd(a)` is enabled at every state of
 both SCCs and taken in neither, so FA-4 rejects both. No fair accepting cycle
-exists for `c = b`; `c = a` is symmetric. The request binds both instances
+exists for `c = a`; `c = b` is symmetric. The request binds both instances
 and explores the 15-state product of each, 30 product states in all. The item settles `proved`, basis
 `closed-scope`, `TerminalValue::Proved{basis: Exhaustive, certification: Certified}` (V-1), over this
 subject.
 
 **Verdict under `fair weak whole`.** The constraint is `attemptUpdate` as a
-whole, and `upd(a)` inside the SCC satisfies it. The unmarked spelling
+whole, and `upd(b)` inside the SCC satisfies it. The unmarked spelling
 `fair weak Config::ConfigVersion::attemptUpdate` is this variant (FA-6); the
 clause above writes `each` because its verdict relies on it. The first
 accepting SCC in canonical order contains the initial product state
-`(0, 0, q1)`, so the stem is empty. The item settles `refuted` (V-4) with this lasso, bound to the instance the loop leaves at version 0 (`b` here):
+`(0, 0, q1)`, so the stem is empty. The item settles `refuted` (V-4) with this lasso, bound to `a` (a tie of length 3 between the bindings, decided by canonical binding order):
 
 | Position | State | Step into the next position |
 | --- | --- | --- |
-| 0 (loop entry) | `(0, 0)` | `upd(a)` |
-| 1 | `(1, 0)` | `upd(a)` |
-| 2 | `(2, 0)` | `upd(a)`, back to position 0 |
+| 0 (loop entry) | `(0, 0)` | `upd(b)` |
+| 1 | `(0, 1)` | `upd(b)` |
+| 2 | `(0, 2)` | `upd(b)`, back to position 0 |
 
-Replay (CX-3) re-executes the three `upd(a)` steps from the initial snapshot,
+Replay (CX-3) re-executes the three `upd(b)` steps from the initial snapshot,
 checks the last post-state digest equals position 0's, checks the loop takes
 `attemptUpdate` (fair under `whole`), and evaluates `always eventually holds(
-b.versionNumber = 2)` over the lasso: `vb` is 0 at every position, so the
+a.versionNumber = 2)` over the lasso: `va` is 0 at every position, so the
 formula is false at position 0, `trace_position` `0`. Under `each` the same
-lasso is unfair (`upd(b)` is enabled throughout and never taken) and replay
+lasso is unfair (`upd(a)` is enabled throughout and never taken) and replay
 refuses it.
 
 **The shipped unit.** With `VersionUnchanged` and the receiver-scoped frame the only reachable state is
@@ -462,9 +463,9 @@ unit's one state has its two self-loops and settles the same way.
 
 **A bounded variant.** `eventually[0,5] holds(c.versionNumber = 2)` under
 event-position false-extension, `on origin`, is TP-2 with `h = 5`. It settles
-`refuted` under EN-1 with a six-position finite prefix for `c = b`, such as
-`(0,0) (1,0) (2,0) (0,0) (1,0) (2,0)` reached by five `upd(a)` steps, on
-which `vb` is never 2. EN-2 unrolled to 5 finds a counterexample of the same
+`refuted` under EN-1 with a six-position finite prefix for `c = a` (both bindings give five steps, and the tie goes to `a`), such as
+`(0,0) (0,1) (0,2) (0,0) (0,1) (0,2)` reached by five `upd(b)` steps, on
+which `va` is never 2. EN-2 unrolled to 5 finds a counterexample of the same
 length; with no counterexample at depth 5 it would settle V-2. Fairness is not admitted on it (§4).
 
 ### 7. Downstream impact and sequencing

@@ -1124,6 +1124,19 @@ pub(crate) struct ModelView {
 }
 
 impl ModelView {
+    /// The view with its reverse type-identity index.
+    pub(crate) fn new(view: EffectiveView) -> Self {
+        let by_effective_id = view
+            .type_identities()
+            .iter()
+            .map(|(key, effective)| (*effective, key.clone()))
+            .collect();
+        Self {
+            view,
+            by_effective_id,
+        }
+    }
+
     fn type_name(&self, effective: EffectiveId) -> Option<&str> {
         self.by_effective_id
             .get(&effective)
@@ -1181,15 +1194,7 @@ pub(crate) fn model_views(
                     .unwrap_or_else(|| fault("model-reconsistent-normalize")))
             }
         };
-        let by_effective_id = view
-            .type_identities()
-            .iter()
-            .map(|(key, effective)| (*effective, key.clone()))
-            .collect();
-        views.push(ModelView {
-            view,
-            by_effective_id,
-        });
+        views.push(ModelView::new(view));
     }
     Ok(views)
 }
