@@ -156,4 +156,6 @@ pub struct Confidence { pub alpha: Rational, pub beta: Rational, pub indifferenc
 
 - QSpec half, which owns the claim grammar, the forms and the FR-290 kind:
   QSpec FR-407 and FR-290 (Linear STD-137).
+- [FR-392](FR-392-build-the-probabilistic-claim-form-at-s2.md): the S2 form this
+  requirement checks.
 - Owning ticket: Linear QSL-371.
