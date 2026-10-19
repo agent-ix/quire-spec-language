@@ -763,4 +763,8 @@ impl MapWorld {
 
 /// The `items` row of ADR-020 §8, for a [`MapWorld`] that adds rows of its
 /// own.
+#[allow(
+    unused_imports,
+    reason = "each test binary uses the part of the fixture it needs"
+)]
 pub use ring_queue::ITEMS;
