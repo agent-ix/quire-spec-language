@@ -51,6 +51,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
 use crate::certificate::{CertificateLocus, CertificateRule};
+use crate::model_check::identity::ClauseRootRefusal;
 use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::proof_result::IncompleteCause;
@@ -189,13 +190,18 @@ pub fn check_closure(
         .map_err(|failure| ClosureRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
-    let instances = request
-        .item
-        .instances(&system)
-        .map_err(|refusal| match refusal {
-            ItemRefusal::Unbounded(refusal) => ClosureRefusal::NotSimulated(Box::new(refusal)),
-            other => ClosureRefusal::Item(other),
-        })?;
+    let instances = match request.item.instances(&request.subject, &system, cancel) {
+        Ok(instances) => instances,
+        Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
+            return Ok(TemporalCertificateCheck::Stopped(
+                IncompleteCause::Cancelled { source: cause },
+            ));
+        }
+        Err(ItemRefusal::Unbounded(refusal)) => {
+            return Err(ClosureRefusal::NotSimulated(Box::new(refusal)))
+        }
+        Err(refusal) => return Err(refusal.into()),
+    };
     if instances.is_empty() {
         return Err(ClosureRefusal::NoInstance);
     }
@@ -432,11 +438,11 @@ impl Check<'_, '_> {
                 let ModelCheckItem::Clause { letters, .. } = self.item else {
                     return Err(fault("clause-item-translation").into());
                 };
-                let object = instance
+                let bound = instance
                     .binding
                     .as_ref()
                     .ok_or_else(|| fault("clause-instance-binding"))?;
-                match self.atom(*letters, atom, object, &state)? {
+                match self.atom(*letters, atom, bound, &state)? {
                     Some(holds) => (translation.read(before, holds), None),
                     None => {
                         let at = self.product(instance, digest, SafetyState::Rejected)?;
@@ -538,18 +544,18 @@ impl Check<'_, '_> {
         })
     }
 
-    /// The `holds` atom `atom` for `object` at `state`: `None` when it is
-    /// undefined.
+    /// The `holds` atom `atom` for the bound `instance` at `state`: `None`
+    /// when it is undefined.
     fn atom(
         &self,
         letters: &dyn ModelLetters,
         atom: qsl_semantics::check::FormulaNodeId,
-        object: &qsl_eval::model_subject::ModelInstance,
+        instance: &qsl_eval::model_subject::ModelInstance,
         state: &ModelSimState,
     ) -> Step<Option<bool>> {
         self.poll()?;
         let mut meter = Meter::new(self.meter);
-        match letters.atom(atom, object, state, &mut meter) {
+        match letters.atom(atom, instance, state, &mut meter) {
             Ok(AtomReading::True) => Ok(Some(true)),
             Ok(AtomReading::False) => Ok(Some(false)),
             Ok(AtomReading::Undefined(_)) => Ok(None),

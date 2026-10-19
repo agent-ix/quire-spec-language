@@ -19,19 +19,21 @@ use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
+use qsl_eval::simulation::{NotSimulated, RequiresBound};
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::bound::{DomainKey, DomainKind};
+use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
-use qsl_replay::{ClauseIdentity, CounterexampleKind, ModelCheckItem, ModelCheckLimits};
+use qsl_replay::{check_closure, CertificateRequest, ClosureCertificate, ClosureRefusal};
+use qsl_replay::{CounterexampleKind, ModelCheckItem, ModelCheckLimits};
 use qsl_replay::{ModelCheckOutcome, UndecidedCause};
-use qsl_semantics::check::{check_clauses, CheckedTemporalClause, FormulaNodeId};
+use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
-use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
-use quire_exact::{Cancel, Incomplete, Meter, Origin, Role};
+use qsl_semantics::model::observation::{AdmissionFailure, DocumentRef, ObservationLimits};
+use quire_exact::{Cancel, Incomplete, Meter};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -187,10 +189,14 @@ fn universes(universes: &[(&str, &[&str])]) -> Vec<PopulationUniverse> {
 }
 
 impl World {
-    fn subject(&self, universes: Vec<PopulationUniverse>) -> ModelSubject<'_> {
+    fn subject<'w>(
+        &'w self,
+        package: &'w CheckedPackage,
+        universes: Vec<PopulationUniverse>,
+    ) -> ModelSubject<'w> {
         ModelSubject {
             simulation: ModelSimulationRequest {
-                package: &self.package,
+                package,
                 packages: &self.packages,
                 normalization: ModelNormalizationLimits::default(),
                 snapshots: &self.snapshots,
@@ -206,16 +212,21 @@ impl World {
         }
     }
 
-    /// The TP-1 clause `always holds(true)` over `x: M::<over>`.
-    fn clause(&self, over: &str) -> CheckedTemporalClause {
+    /// The package declaring the TP-1 clause `C`, `always holds(true)` over
+    /// `x: M::<over>`, and that clause.
+    fn clause(&self, over: &str) -> (CheckedPackage, CheckedTemporalClause) {
         let body = format!(
             "temporal C using t0 over (x: M::{over}) clock \"model-steps\" on origin {{ always holds(true) }}\n"
         );
-        let mut checked = check_clauses(&declarations_in(PACKAGE, &self.document, &body));
-        match checked.pop() {
-            Some(Ok(clause)) if checked.is_empty() => clause,
-            other => panic!("one checked clause, not {other:?}"),
-        }
+        let graph = declarations_in(PACKAGE, &self.document, &body)
+            .with_unwritten_terminals()
+            .check(CheckingLimits::default())
+            .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+        let [node] = graph.temporal_clauses() else {
+            panic!("one declared clause");
+        };
+        let clause = node.clause().clone();
+        (CheckedPackage::link(graph), clause)
     }
 
     /// The instances `ModelSystem` derives for `over` under `universes`.
@@ -223,9 +234,9 @@ impl World {
         &self,
         over: &str,
         universes: Vec<PopulationUniverse>,
-    ) -> Result<Vec<ModelInstance>, qsl_eval::simulation::NotSimulated> {
-        let clause = self.clause(over);
-        ModelSystem::new(self.subject(universes).simulation)
+    ) -> Result<Vec<ModelInstance>, NotSimulated> {
+        let (_, clause) = self.clause(over);
+        ModelSystem::new(self.subject(&self.package, universes).simulation)
             .expect("the subject admits")
             .instances(&clause.over().1)
     }
@@ -238,26 +249,41 @@ impl World {
         universes: Vec<PopulationUniverse>,
         holds: bool,
     ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
-        let clause = self.clause(over);
-        let identity = ClauseIdentity {
-            occurrence: OccurrenceKey::new(
-                WireNodeId::from_digest([0x51; 32]),
-                Origin::new(Role::new("temporal"), 0),
-            ),
-            over: Some(WireNodeId::from_digest([0x52; 32])),
-        };
+        let (package, clause) = self.clause(over);
         let letters = Constant(holds);
         check_model(
             ModelCheckRequest {
-                subject: self.subject(universes),
+                subject: self.subject(&package, universes),
                 item: ModelCheckItem::Clause {
                     clause: &clause,
                     letters: &letters,
-                    identity: &identity,
                 },
                 max_depth: None,
                 limits: ModelCheckLimits::default(),
             },
+            &Cancel::new(),
+        )
+    }
+
+    /// The core's closure check of `over`'s clause under `universes`, of an
+    /// empty certificate.
+    fn check(
+        &self,
+        over: &str,
+        universes: Vec<PopulationUniverse>,
+    ) -> Result<qsl_replay::TemporalCertificateCheck, ClosureRefusal> {
+        let (package, clause) = self.clause(over);
+        let letters = Constant(true);
+        check_closure(
+            &CertificateRequest {
+                subject: self.subject(&package, universes),
+                item: ModelCheckItem::Clause {
+                    clause: &clause,
+                    letters: &letters,
+                },
+            },
+            &ClosureCertificate::default(),
+            &ModelCheckLimits::default(),
             &Cancel::new(),
         )
     }
@@ -412,4 +438,55 @@ fn an_unbounded_admitting_population_requires_a_bound_and_no_key_is_no_instance(
             ..
         }
     ));
+}
+
+/// FR-125 and FR-338: the closure checker derives the same instances as
+/// EN-1, so a population that admits `T` and has no universe, held by no
+/// initial state, refuses the check `NotSimulated(RequiresBound)` naming that
+/// population, before any certificate state is read.
+#[trace("TC-520", "FR-125-AC-8")]
+#[test]
+fn the_closure_checker_requires_a_bound_for_an_unbounded_admitting_population() {
+    let world = world(&[P1, P2, Q], &[("P1", &[("d", "Lamp")])]);
+    let refusal = world
+        .check("Lamp", universes(&[("P1", &["d"])]))
+        .expect_err("P2 admits Lamp and has no universe");
+    let ClosureRefusal::NotSimulated(refusal) = &refusal else {
+        panic!("expected NotSimulated, got {refusal:?}");
+    };
+    let NotSimulated::RequiresBound(RequiresBound { domains }) = refusal.as_ref() else {
+        panic!("expected RequiresBound, got {refusal:?}");
+    };
+    let roots: Vec<_> = domains
+        .iter()
+        .map(|(key, kind)| (key.clone(), kind))
+        .collect();
+    assert_eq!(roots, [(population_root("P2"), DomainKind::Population)]);
+}
+
+/// A universe key is an object identity, so the empty key is a caller's
+/// invalid input: EN-1 and the closure checker both refuse the subject's
+/// admission `invalid_runtime_input`/`invalid-value` naming the population
+/// and the key, never an internal fault of instancing.
+#[trace("TC-520")]
+#[test]
+fn an_empty_universe_key_is_refused_as_invalid_input_not_a_fault() {
+    let world = world(&[P1], &[("P1", &[("d", "Lamp")])]);
+    let bad = || universes(&[("P1", &["d", ""])]);
+    let invalid = |failure: &AdmissionFailure| match failure {
+        AdmissionFailure::Refused(record) => {
+            assert_eq!(record.code, Code::InvalidRuntimeInput);
+            assert_eq!(record.cause, "invalid-value");
+            assert_eq!(record.fields.get("key").map(String::as_str), Some(""));
+        }
+        other => panic!("expected Refused, got {other:?}"),
+    };
+    match world.run("Lamp", bad(), true) {
+        Err(ModelCheckRefusal::Admission(failure)) => invalid(&failure),
+        other => panic!("expected an admission refusal, got {other:?}"),
+    }
+    match world.check("Lamp", bad()) {
+        Err(ClosureRefusal::Admission(failure)) => invalid(&failure),
+        other => panic!("expected an admission refusal, got {other:?}"),
+    }
 }

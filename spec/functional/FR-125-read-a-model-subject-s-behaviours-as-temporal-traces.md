@@ -245,8 +245,12 @@ reports.
   QSpec rules otherwise, its rule replaces these.
 - The FR-338 key context of an instance binds a typed value: the reference
   to the instance's key in the universe of the `over` parameter's declared
-  type. Two admitting populations that share a key therefore share a key
-  context (Remaining work).
+  type. That value carries the `over` type and no population, so it departs
+  from the Instancing rule that an instance is its population's declaration
+  identity text and its key, neither carrying an object type. Two admitting
+  populations that share a key therefore share a key context. Remaining
+  work: the key context binds the (population, key) pair; no ticket is filed
+  yet.
 - FR-169 (state-graph claims) instances under these rules. FR-182 (hyper
   clauses) instances by the hyper bullet above and takes the reference reading
   (the bound value is the state's own reference) and the `absent-key` rule;

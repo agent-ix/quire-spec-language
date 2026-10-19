@@ -403,6 +403,19 @@ impl<'a> ModelSystem<'a> {
             }
             let mut seen = BTreeSet::new();
             for key in &universe.keys {
+                // A key is an object identity (FR-035): the empty key names
+                // no object, so it is refused here, not where a key context
+                // binds it.
+                if quire_exact::ObjectId::new(key.as_str()).is_err() {
+                    return Err(refused(
+                        Code::InvalidRuntimeInput,
+                        "invalid-value",
+                        &[
+                            ("population", universe.population.node.clone()),
+                            ("key", key.clone()),
+                        ],
+                    ));
+                }
                 if !seen.insert(key) {
                     return Err(refused(
                         Code::InvalidRuntimeInput,
@@ -771,15 +784,24 @@ impl<'a> ModelSystem<'a> {
     /// The typed value an FR-338 key context binds for `instance` of a
     /// parameter of object type `over`: the reference to its key in the
     /// universe of `over`'s declared type. It is a function of the instance
-    /// and the parameter alone, never of a state's object; `None` when no
-    /// selected model declares `over`.
+    /// and the parameter alone, never of a state's object.
+    ///
+    /// # Errors
+    ///
+    /// An [`InternalFault`] when no selected model declares `over`, or the
+    /// key, which [`ModelSystem::new`] admitted, has no reference.
     pub fn bound_reference(
         &self,
         over: EffectiveId,
         instance: &ModelInstance,
-    ) -> Option<ObjectReference> {
-        let type_key = self.model.type_key(over)?;
-        self.model.object_reference(type_key, &instance.key).ok()
+    ) -> Result<ObjectReference, InternalFault> {
+        let type_key = self
+            .model
+            .type_key(over)
+            .ok_or_else(|| InternalFault::new("model-simulation", "over-type-declared"))?;
+        self.model
+            .object_reference(type_key, &instance.key)
+            .map_err(|_| InternalFault::new("model-simulation", "universe-key-references"))
     }
 
     /// The non-abstract object types `effect` creates (FR-013): each conforms

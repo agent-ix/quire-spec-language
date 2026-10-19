@@ -103,7 +103,7 @@ pub struct ModelCheckRecord {
 /// settles `failed`, or `Incomplete(Cancelled)` when `cancel` stopped it) and [`check_closure`] checks its certificate for
 /// `certificate` under `limits` and `cancel`; a refused check settles
 /// `inconclusive` by `NoInstance` or `NoInitialState` and `failed`
-/// otherwise. A `Violated` outcome's
+/// otherwise, `clause-root-unresolved` among the causes. A `Violated` outcome's
 /// counterexample is handed to `replay` (FR-128) and settles by its result:
 /// reproduced against `package_id` is `Refuted`; a result settled against
 /// any other package is `Inconclusive(ReplayRefused(stale_dependency))`; a

@@ -47,10 +47,10 @@ use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
 use qsl_replay::{
-    ClosureCertificate, CounterexampleKind, IncompleteCause, Instance, ItemRefusal, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ProductStateRef, ReachedLimit,
-    RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause, Instance,
+    ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
+    ProductStateRef, ReachedLimit, RunStats, TemporalCounterexample, UndecidedCause,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::family::ClassifyFailure;
@@ -201,9 +201,7 @@ pub fn check_model(
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     // The form is refused before admission reads any snapshot.
     let clause = match request.item {
-        ModelCheckItem::Clause {
-            clause, letters, ..
-        } => {
+        ModelCheckItem::Clause { clause, letters } => {
             let form = clause.property_form();
             let atom = reachable_invariant_atom(clause)
                 .ok_or(ModelCheckRefusal::FormNotDecided { form })?;
@@ -214,16 +212,18 @@ pub fn check_model(
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
-    let system = ModelSystem::new(request.subject.simulation)
+    let system = ModelSystem::new(request.subject.simulation.clone())
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(not_simulated)?;
-    let instances = request
-        .item
-        .instances(&system)
-        .map_err(|refusal| match refusal {
-            ItemRefusal::Unbounded(refusal) => not_simulated(refusal),
-            other => ModelCheckRefusal::Item(other),
-        })?;
+    let (instances, root_cancelled) =
+        match request.item.instances(&request.subject, &system, cancel) {
+            Ok(instances) => (instances, None),
+            Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
+                (Vec::new(), Some(cause))
+            }
+            Err(ItemRefusal::Unbounded(refusal)) => return Err(not_simulated(refusal)),
+            Err(refusal) => return Err(ModelCheckRefusal::Item(refusal)),
+        };
     let item = match clause {
         Some((atom, letters, fairness)) => Item::Invariant {
             atom,
@@ -250,6 +250,13 @@ pub fn check_model(
         monitor: monitor(&item, request.limits.max_automaton_states)
             .map_err(|_| fault("monitor-builds"))?,
     };
+    if let Some(source) = root_cancelled {
+        return Ok(ModelCheckOutcome::Stopped {
+            cause: IncompleteCause::Cancelled { source },
+            limit: None,
+            stats: run.stats(),
+        });
+    }
     if no_initial {
         return Ok(ModelCheckOutcome::Undecided {
             cause: UndecidedCause::NoInitialState,
