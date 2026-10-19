@@ -34,6 +34,7 @@ mod hyper_clause;
 mod probabilistic;
 mod protocol_clause;
 mod protocol_control;
+mod refinement;
 mod spans;
 mod state_graph;
 mod state_model;
@@ -56,6 +57,12 @@ pub use protocol_control::{
     AwaitForm, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering, ChannelOverflow,
     JoinPolicy, LoopProofForm, LossSelector, Outstanding, ParallelForm, ProtocolMemberForm,
     RepeatForm, SchedulingForm, TerminalForm,
+};
+pub use refinement::{
+    AbstractSideForm, ArgumentForm, FairnessRowForm, FairnessSide, FieldRowForm,
+    HistoryLiteralForm, HistoryRowForm, HistoryUpdateForm, ObjectRowForm, PopulationRowForm,
+    RefinementForm, RefinementRowForm, StepClassKeyword, StepRowForm, StepSourceForm,
+    StepTargetForm,
 };
 pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMismatch};
 pub use syntax::{
