@@ -113,6 +113,7 @@ impl ObservedLetters<'_> {
 }
 
 impl TemporalLetters for ObservedLetters<'_> {
+    #[deny(clippy::wildcard_enum_match_arm)]
     fn atom(
         &mut self,
         atom: FormulaNodeId,
