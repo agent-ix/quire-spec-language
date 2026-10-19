@@ -176,6 +176,17 @@ pub enum BindIdentityCause {
 /// Why an occurrence or an operand did not bind.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum BindRefusal {
+    /// The admitted package is not Contract IR's admission of the bytes
+    /// emitted from the checked unit: its `package_id` differs from the one
+    /// the emitter computed for the unit, or the unit was never emitted.
+    #[error("the admitted package {admitted} is not the checked unit's emission ({emitted:?})")]
+    AdmittedPackage {
+        /// The admitted package's `package_id` digest.
+        admitted: String,
+        /// The unit's emitted `package_id` digest, or `None` when the unit
+        /// was never emitted.
+        emitted: Option<String>,
+    },
     /// The occurrence is not the claim's scalar application.
     #[error("the occurrence does not name a scalar application of the called function: {0:?}")]
     ScalarIdentity(BindIdentityCause),
@@ -215,7 +226,7 @@ impl BindRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::ScalarIdentity(_) => Code::StaleDependency,
+            Self::AdmittedPackage { .. } | Self::ScalarIdentity(_) => Code::StaleDependency,
             Self::Operands(_)
             | Self::OperandNotParameter { .. }
             | Self::OperandNotArgument { .. } => Code::UnsupportedConstruct,
@@ -226,7 +237,7 @@ impl BindRefusal {
     /// The catalog cause, where the code has one here.
     pub fn cause(&self) -> Option<&'static str> {
         match self {
-            Self::ScalarIdentity(_) => Some("content-mismatch"),
+            Self::AdmittedPackage { .. } | Self::ScalarIdentity(_) => Some("content-mismatch"),
             Self::Operands(_)
             | Self::OperandNotParameter { .. }
             | Self::OperandNotArgument { .. } => Some("expression-form"),
@@ -264,7 +275,9 @@ fn fault(invariant: &'static str) -> Box<RunRefusal> {
 /// once by the caller under [`admission_evidence`]; `models` and `checked`
 /// are the I1 and S4 products those bytes were emitted from. The entry takes
 /// no bytes and admits nothing: the operands are read from `admitted` as
-/// given.
+/// given. An `admitted` whose `package_id` is not the one the emitter
+/// computed for `checked` is refused [`BindRefusal::AdmittedPackage`]
+/// before anything else is checked.
 ///
 /// `Err` is [`super::run`]'s own refusal for the call's admission, and its
 /// internal failure. `cancel` is polled as [`super::run`] polls it.
@@ -277,6 +290,13 @@ pub fn bind_scalar_operands(
     environment: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<BindOutcome, Box<RunRefusal>> {
+    let emitted = checked.package().emitted_package_id().map(|id| id.hex());
+    if emitted.as_deref() != Some(admitted.package_id().digest.as_ref()) {
+        return Ok(BindOutcome::Refused(BindRefusal::AdmittedPackage {
+            admitted: admitted.package_id().digest.to_string(),
+            emitted,
+        }));
+    }
     let package = Package {
         admitted,
         models,

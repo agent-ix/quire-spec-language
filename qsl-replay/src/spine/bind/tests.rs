@@ -1155,3 +1155,54 @@ fn tc_1053_step_9_binds_from_the_callers_admission_without_the_bytes() {
     assert_eq!(bound.values(), [7, 2]);
     assert_eq!(bound.occurrence(), &occurrence);
 }
+
+/// FR-367-AC-12: an admitted package that is not the admission of the
+/// checked unit's own emitted bytes refuses before anything binds, even when
+/// the occurrence's node is in both packages.
+#[trace("TC-1053", "FR-367-AC-12")]
+#[test]
+fn tc_1053_step_10_a_mismatched_admission_refuses() {
+    let unit = compile(SUB);
+    let other = compile(&format!(
+        "{SUB}\nfunction neg using v(a: Int[0, 9]): Int[-9, 0] pure {{ -a }}"
+    ));
+    let occurrence = the_application(&other, "sub", ScalarOperator::Subtract);
+    // The node is content-addressed: both packages hold the same occurrence.
+    assert_eq!(
+        the_application(&unit, "sub", ScalarOperator::Subtract),
+        occurrence
+    );
+    let admitted = admit(&unit);
+    let outcome = bind_scalar_operands(
+        &admitted,
+        &other.models,
+        &other.checked,
+        &call("sub", vec![arg("a", 7), arg("b", 2)]),
+        &occurrence,
+        &ObjectEnvironment::default(),
+        &Cancel::new(),
+    );
+    let Ok(BindOutcome::Refused(refusal)) = outcome else {
+        panic!("a mismatched admission refuses, got {outcome:?}");
+    };
+    assert_eq!(
+        refusal,
+        BindRefusal::AdmittedPackage {
+            admitted: unit.emitted.package().package_id().hex(),
+            emitted: Some(other.emitted.package().package_id().hex()),
+        }
+    );
+    assert_eq!(refusal.code(), Code::StaleDependency);
+    assert_eq!(refusal.cause(), Some("content-mismatch"));
+
+    // The same occurrence binds over the other unit's own admission.
+    assert_eq!(
+        bound(
+            &other,
+            &call("sub", vec![arg("a", 7), arg("b", 2)]),
+            &occurrence
+        )
+        .values(),
+        [7, 2]
+    );
+}

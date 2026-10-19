@@ -69,6 +69,10 @@ once with `read_checked_package` under `admission_evidence`, then call
    compare `values()` with the claim's operand values.
 9. For `sub`: admit the emitted bytes, drop the emitted unit and its bytes,
    then bind `b = 2, a = 7` over the admitted package.
+10. Admit `sub`'s emitted bytes and bind `a = 7, b = 2` over that admission
+    with the `CheckedUnit` of a second unit, `sub` plus
+    `function neg using v(a: Int[0, 9]): Int[-9, 0] pure { -a }`; then bind
+    the same call over the second unit's own admission.
 
 ## Expected Results
 
@@ -101,3 +105,6 @@ once with `read_checked_package` under `admission_evidence`, then call
 - Step 7: `Bound` with `[4, 1]` though `run` is `Incomplete` at `work_units`.
 - Step 8: equal results; `values()` equals the claim's ordered operand values.
 - Step 9: `[7, 2]`, bound with no emitted byte left to read.
+- Step 10: `Refused(AdmittedPackage)` with the first unit's and the second
+  unit's `package_id` digests, `stale_dependency`/`content-mismatch`; then
+  `[7, 2]`.
