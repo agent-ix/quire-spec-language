@@ -16,7 +16,7 @@ Scope: FR-194-AC-1 to FR-194-AC-6.
 
 ## Test Procedure
 
-Fixtures: the timestamped response trace of FR-194-AC-1; event-position traces of FR-194-AC-2; a sparse trace with three responses; a dense trace of 20 values; the event-position `x` traces `2, 1, 0, 4` and `1, 0, 2, 3, 4` with the newest `x` absent.
+Fixtures: the timestamped response trace of FR-194-AC-1; event-position traces of FR-194-AC-2; a sparse trace with three responses; a dense trace of 20 values; the event-position `x` traces `2, 1, 0, 4` and `1, 0, 2, 3` with `x` absent at position 4.
 
 1. Evaluate the quantile clause at `0.95` and `0.9`, and with threshold `0.005 s`.
 2. Evaluate the `count`, `fraction`, `sum`, `min` and `max` terms of FR-194-AC-2.
