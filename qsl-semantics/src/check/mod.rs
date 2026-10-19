@@ -130,6 +130,7 @@ mod protocol_relationship;
 mod protocol_requirement;
 mod protocol_slots;
 mod references;
+mod refinement;
 mod refusal;
 mod region;
 mod settings;
@@ -147,6 +148,11 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
+pub use refinement::{
+    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, RefinementCause,
+    RefinementDeclaration, RefinementRefusal, RowClass, StepClass, StepRow, StepTarget,
+    UnsupportedFeature,
+};
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
     TerminalDeclaration, TerminalRefusal,
@@ -247,7 +253,7 @@ pub use settings::{
 };
 pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
-    OperationSelection, ProtocolClauseFamily, StateClauseDeclaration,
+    OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
@@ -478,6 +484,8 @@ pub struct CheckedGraph {
     /// FR-124: the intended terminal states of each selected model, by
     /// alias.
     terminals: Vec<CheckedTerminal>,
+    /// FR-135 to FR-137: every checked refinement, in declaration order.
+    refinements: Vec<CheckedRefinement>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
     /// FR-337: every emitted temporal clause, in declaration order.
@@ -1550,6 +1558,46 @@ impl PackageDeclarations {
             }
         }
         terminals.sort_by(|left, right| left.model.cmp(&right.model));
+        // FR-135 to FR-137: each `refinement` declaration, its rows typed as
+        // state-clause bodies over the concrete object.
+        let mut refinements = Vec::new();
+        for refinement in &self.refinements {
+            let location = Location::root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match refinement::check_refinement(refinement, &declarations, &mut contract_cx) {
+                Ok((checked, used)) => {
+                    nodes_used = used;
+                    refinements.push(checked);
+                }
+                Err((found, used)) => {
+                    nodes_used = used;
+                    let exhausted = found.iter().any(|refusal| {
+                        matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_))
+                    });
+                    refusals.extend(found);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
         // FR-218: a second reference to one protocol in the unit refuses at
         // the second: the function bodies in declaration order, then the
         // state clauses.
@@ -1854,6 +1902,7 @@ impl PackageDeclarations {
             source: &source,
             embedding: embedding.as_deref(),
             position_limit: limits.nodes(),
+            models: &models,
         };
         let mut checked_temporal = Vec::with_capacity(self.temporal_clauses.len());
         for (index, clause) in self.temporal_clauses.iter().enumerate() {
@@ -2001,6 +2050,7 @@ impl PackageDeclarations {
                 source: &source,
                 embedding: embedding.as_deref(),
                 position_limit: limits.nodes(),
+                models: &models,
             },
             models: &models,
             signatures: &signatures,
@@ -2601,7 +2651,16 @@ impl PackageDeclarations {
                     .collect();
                 for claimed in temporal_clause::TemporalTraceFamily::requirements(&checked) {
                     let extent = claimed
-                        .requirements(claims::wire(lowered.key), &[claims::wire(lowered.over)])
+                        .population()
+                        .map(|domain| population_domain_key(&object_types, &object_nodes, domain))
+                        .transpose()
+                        .and_then(|population| {
+                            claimed.requirements(
+                                claims::wire(lowered.key),
+                                &[claims::wire(lowered.over)],
+                                population,
+                            )
+                        })
                         .map_err(|fault| {
                             vec![CheckRefusal {
                                 location: location.clone(),
@@ -2779,12 +2838,21 @@ impl PackageDeclarations {
         // so a package that checks with one is refused rather than compiled
         // with an identity equal to the same package without it
         // (`terminal::not_emitted`).
-        if !self.emit_unwritten_terminals && !self.terminals.is_empty() {
-            return Err(self
-                .terminals
-                .iter()
-                .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span))
-                .collect());
+        let mut unwritten = Vec::new();
+        if !self.emit_unwritten_terminals {
+            unwritten.extend(
+                self.terminals
+                    .iter()
+                    .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span)),
+            );
+        }
+        if !self.emit_unwritten_refinements {
+            unwritten.extend(self.refinements.iter().map(|refinement| {
+                refinement::not_emitted(refinement.form.name.name.clone(), refinement.form.span)
+            }));
+        }
+        if !unwritten.is_empty() {
+            return Err(unwritten);
         }
         // FR-165: likewise, no S4 emission writes a state-graph claim yet.
         if !self.emit_unwritten_state_graph_claims && !checked_state_graph_claims.is_empty() {
@@ -2815,6 +2883,7 @@ impl PackageDeclarations {
             state_clauses,
             type_invariants,
             terminals,
+            refinements,
             protocols: checked_protocols,
             temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
@@ -2964,6 +3033,28 @@ fn population_key_table(
                 })
         })
         .collect()
+}
+
+/// ADR-012 §15.7: the domain key of `domain` from the admitted models'
+/// object types and their `model`/`object_type` nodes: the one place a
+/// checked graph's `population_key` and the emitted `temporal-satisfaction`
+/// record build it.
+fn population_domain_key(
+    object_types: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::EffectiveId>,
+    object_nodes: &BTreeMap<crate::model::key::DeclarationKey, quire_exact::NodeKey>,
+    domain: state_clause::PopulationDomain,
+) -> Result<qsl_foundation::bound::DomainKey, qsl_foundation::InternalFault> {
+    let node = object_types
+        .iter()
+        .find_map(|(declaration, id)| (*id == domain.object).then_some(declaration))
+        .and_then(|declaration| object_nodes.get(declaration))
+        .ok_or_else(|| {
+            qsl_foundation::InternalFault::new(
+                "check.population-domain",
+                "member-type-has-a-model-node",
+            )
+        })?;
+    state_clause::population_key(&domain, *node)
 }
 
 impl CheckedGraph {
@@ -3192,6 +3283,11 @@ impl CheckedGraph {
             .find(|terminal| terminal.model == alias)
     }
 
+    /// FR-135 to FR-137: every checked refinement, in declaration order.
+    pub fn refinements(&self) -> &[CheckedRefinement] {
+        &self.refinements
+    }
+
     /// FR-113: every checked protocol declaration, in declaration order.
     pub fn protocols(&self) -> &[CheckedProtocol] {
         &self.protocols
@@ -3300,18 +3396,17 @@ impl CheckedGraph {
         else {
             return Ok(None);
         };
-        let node = self
-            .object_types
-            .iter()
-            .find_map(|(declaration, id)| (*id == domain.object).then_some(declaration))
-            .and_then(|declaration| self.object_nodes.get(declaration))
-            .ok_or_else(|| {
-                qsl_foundation::InternalFault::new(
-                    "check.population-domain",
-                    "member-type-has-a-model-node",
-                )
-            })?;
-        state_clause::population_key(domain, *node).map(Some)
+        self.population_key(*domain).map(Some)
+    }
+
+    /// ADR-012 §15.7: the domain key of `domain`, a population a checked
+    /// clause ranges over ([`TemporalClaim::population`]): the one key
+    /// [`Self::population_domain`] and a requirement record build.
+    pub fn population_key(
+        &self,
+        domain: state_clause::PopulationDomain,
+    ) -> Result<qsl_foundation::bound::DomainKey, qsl_foundation::InternalFault> {
+        population_domain_key(&self.object_types, &self.object_nodes, domain)
     }
 
     /// FR-115: the frame of the operation `selection` names, and its object

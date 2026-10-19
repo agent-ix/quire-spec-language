@@ -26,6 +26,7 @@ use qsl_foundation::{Code, Span};
 use super::hyper_clause;
 use super::probabilistic;
 use super::protocol_clause;
+use super::refinement;
 use super::state_graph;
 use super::state_model;
 use super::sum_case;
@@ -189,6 +190,9 @@ pub enum LeadingTokenKind {
     /// `terminal`: the `TemporalTrace` terminal declaration form, holding
     /// its `when` predicate or `any` (FR-382).
     Terminal,
+    /// `refinement`: the refinement declaration form, holding its rows in
+    /// source order (FR-310).
+    Refinement,
     /// `time`: a model's time source (`time M ...`) or a time invariant
     /// (`time invariant ...`), the one production the CST holds (FR-393).
     /// `time` is a declaration-head spelling only; elsewhere it stays an
@@ -420,6 +424,7 @@ fn dispatch(
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
         LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
+        LeadingTokenKind::Refinement => refinement::refinement_declaration(construct),
         LeadingTokenKind::Time => time_model::time_member(construct),
         LeadingTokenKind::Urgent => time_model::urgent_declaration(construct),
         LeadingTokenKind::Hyper => hyper_clause::hyper_clause(construct),
@@ -469,6 +474,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"protocol" => Some(LeadingTokenKind::Protocol),
         b"temporal" => Some(LeadingTokenKind::Temporal),
         b"terminal" => Some(LeadingTokenKind::Terminal),
+        b"refinement" => Some(LeadingTokenKind::Refinement),
         b"time" => Some(LeadingTokenKind::Time),
         b"urgent" => Some(LeadingTokenKind::Urgent),
         b"hyper" => Some(LeadingTokenKind::Hyper),

@@ -893,6 +893,12 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
         }
+        CheckCause::RefinementNotEmitted { name, .. } => {
+            message = format!("{message}: `refinement {name}` checks but is not emitted yet");
+        }
+        CheckCause::Refinement(refusal) => {
+            message = format!("{message}: in `refinement {}`", refusal.refinement);
+        }
         CheckCause::TimedNotChecked { construct, .. } => {
             message = format!("{message}: {} is not checked yet", construct.description());
         }
@@ -981,6 +987,14 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 }
                 TemporalCause::AmbiguousFairnessOperation { name, .. } => format!(
                     "{message}: the fairness operation `{name}` names operations of several types"
+                ),
+                TemporalCause::AmbiguousPopulation { populations, .. } => format!(
+                    "{message}: the `over` type is covered by several populations: {}",
+                    populations
+                        .iter()
+                        .map(|key| key.node.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
                 TemporalCause::FairnessUnderBoundedProfile { .. } => {
                     format!("{message}: this profile admits no fairness constraint")

@@ -3871,6 +3871,9 @@ pub enum DeclarationForm {
     /// A `terminal` declaration (FR-382), boxed for the same reason as
     /// [`Self::Function`].
     Terminal(Box<TerminalDeclarationForm>),
+    /// A `refinement` declaration (FR-310), boxed for the same reason as
+    /// [`Self::Function`].
+    Refinement(Box<super::refinement::RefinementForm>),
     /// A `hyper` clause over `behaviours` (FR-171), boxed for the same
     /// reason as [`Self::Function`].
     HyperBehaviours(Box<crate::hyper_clause::HyperBehavioursForm>),
