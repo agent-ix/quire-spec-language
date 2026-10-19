@@ -44,3 +44,17 @@ No major finding. All three findings are low.
 ## Verdict
 
 **PASS: mergeable. No major or high finding.** The weighted choice is bit-exact to the QSpec generator definition: preimage, big-endian `v`, the `v < n · ⌊2^256 / n⌋` acceptance, least-covering-index selection, LCM scaling, and `n = 1` with no digest. FR-101's uniform draw now goes through it with every existing vector unchanged. A total above `2^256` is refused, so the draw loop always terminates. The three low findings are performance and idiom, and can be fixed in this PR or recorded.
+
+## Dispositions
+
+Round 1, reviewed at 54a09ad4c9258e2a6ce3d37a22014aaf8309bebb (fix commit 54a09ad4c). No builds were run for this round, and the coder reports the gate at EXIT=0.
+
+The fast path selects the same index as before. `Items::Unit(count)` has total `Integer::from(count)`, which equals the sum of `count` ones, so `accept_below`, the acceptance test and `v mod n` are unchanged. The least `i` with `r < i + 1` is `r` itself, so returning `remainder` is the running-sum selection over ones. `from_scaled` turns any all-ones list into `Unit`, so `Weights::new` over unit weights and `Weights::uniform` still compare equal. An empty list still refuses `Empty`. The new unit test compares `choose` on `Unit` against `Scaled` ones for `n = 2, 3, 5, 7` at 200 points.
+
+`Weights::scaled()` now returns an owned `Vec<Integer>`. Its only callers are three `assert_eq!` calls in `qsl-eval/tests/it/weighted_sampler.rs`, which compare against a `Vec<Integer>`, so nothing breaks. The cached `uniform` in `PinnedSampler` is reused only when `len() == n`, and it always holds a `Unit`.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 54a09ad4c |
+| FND-002 | fixed | 54a09ad4c |
+| FND-003 | fixed | 54a09ad4c |

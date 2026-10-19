@@ -42,3 +42,25 @@ No major finding. FND-001 and FND-002 are medium. Neither is a code defect in th
 ## Verdict
 
 **PASS: mergeable. No major finding.** FR-188-AC-2 is fully covered. FR-188-AC-1's vector clauses (QSpec TC-354 SM-01 to SM-03 and every TC-210 uniform vector at choice 0) are covered. FR-101's uniform sampler goes through the weighted choice with its vectors unchanged. FR-188-AC-1's GeneratorMismatch clause, FR-188-AC-3 and FR-187 are the declared remainder. Before merge, the lead must keep QSL-569 open for that remainder (FND-001). The FR-188 choice-index conflict with QSpec (FND-002) must be resolved in the spec before part 2.
+
+## New findings (disposition pass 1)
+
+FR-188 was revised on main by STD-222 (#1061, c3ed9a2f5) and STD-223 (#1063, 2d78cc488). This round checks the code at 54a09ad4c against the merged text.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The merged FR-188 Outputs give `weighted_choice(at: ChoicePoint, weights: &[Rational]) -> Result<usize, TotalAboveDrawRange>`, where `TotalAboveDrawRange { total: Integer }` is a struct that carries the scaled total. FR-188-AC-5 expects `TotalAboveDrawRange{total: 2^256 + 1}`. The code has `weighted_choice(at, &Weights) -> usize`, with the refusal on `Weights::new` as the unit variant `WeightsRefusal::TotalAboveDrawRange`, which has no `total`. It also adds `Empty` and `NotPositive` refusals that the spec does not name. The behaviour agrees: refusal happens before any digest, and `N = 2^256` accepts every draw. The public interface and the error payload contradict the merged spec. Not blocking for part 1, because FR-188-AC-5 is not in this PR's scope. Part 2 must either adopt the spec's signature and payload or amend FR-188. | qsl-eval/src/simulation/choice.rs:61-76,119,267-269; spec/functional/FR-188-draw-weighted-choices-with-the-qspec-sampler.md (origin/main, Outputs and FR-188-AC-5) |
+
+The other merged rules do not contradict the code. A one-item choice selects index 0 with no digest and takes no choice index: `choose` returns `(0, 0)` and computes no digest, and assigning choice indices belongs to `sample_probabilistic`, which is not built. `DefinitionRef` and `SampleStop::GeneratorMismatch` are parameters and results of `sample_probabilistic`, also not built. FR-101's sampler without a workload makes one choice per step at choice index 0, which is consistent with the rule.
+
+## Dispositions
+
+Round 1, reviewed at 54a09ad4c9258e2a6ce3d37a22014aaf8309bebb.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | The QSL-569 attachment for PR #1060 still reads `linkKind: closes`, and the ticket is In Progress. This is a lead action at merge, not a code change: keep QSL-569 open, or reopen it, for FR-187, FR-188-AC-1's GeneratorMismatch clause and FR-188-AC-3 to AC-6. |
+| FND-002 | fixed | c3ed9a2f5 (STD-222, on main): FR-188 now adopts the generator definition's one-item, no-choice-index rule. |
+| FND-003 | deferred | Superseded by FND-006. STD-222 kept `&[Rational]` and added `Result<usize, TotalAboveDrawRange>`, so the code, not the spec, must adapt. Owned by QSL-569 part 2. |
+| FND-004 | fixed | c3ed9a2f5 / 2d78cc488 (STD-222, STD-223, on main): FR-188 now states the `TotalAboveDrawRange` refusal before any digest, citing QSpec FR-181-AC-14. |
+| FND-005 | accepted-no-change | STD-222 kept FR-188-AC-1 as a single AC (vectors plus `sample_probabilistic`'s GeneratorMismatch refusal). The `FR-188-AC-1` tag lands with part 2's GeneratorMismatch test. |
