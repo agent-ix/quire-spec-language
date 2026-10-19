@@ -364,13 +364,19 @@ Boolean result.
 
 **Frame.** The shipped package frames `attemptUpdate` as `modifies
 [versionNumber]`, which FR-120 reads as the field of every object of the
-population. With two objects over `Int[0, 1000]` one expansion would then
-enumerate 1001 x 1001 candidates, and the run would stop at `max_candidates`
-(FR-126). The example, and the shipped unit as this section uses it, frame
-`attemptUpdate` as `modifies_receiver [versionNumber]` (FR-154) instead: an
-update writes the receiver's `versionNumber` and leaves the other object
-as it is, so a state has exactly one successor per receiver and result
-choice.
+population. With two objects over `Int[0, 1000]` each application would
+then enumerate 1001 x 1001 candidates, so an expansion charges about two
+million candidates against the subject's `max_candidates` (FR-120). The
+example, and the shipped unit as this section uses it, frame
+`attemptUpdate` as `modifies self.versionNumber` (FR-154's receiver scope)
+instead: an update writes the receiver's `versionNumber` and leaves the
+other object as it is, so a state has one successor per receiver.
+
+**Candidate limit.** Even so, an application enumerates the receiver's 1001
+values with their result pairs. The example's request sets the subject's
+`max_candidates` to 1,000,000, and its rows assume it; a smaller setting
+such as TC-472's 1,000 stops the run with `Stopped{ResourceExhausted,
+{MaxCandidates, value}}` at the first expansion.
 
 The shipped unit's post clause `VersionUnchanged` keeps `versionNumber`
 fixed, so every transition is a self-loop. The example unit keeps the two
@@ -401,13 +407,14 @@ temporal ReachesTwo using inf over (c: Config::ConfigVersion) clock "model-steps
 **Subject.** Universe `config_history = {a, b}`. One initial snapshot: `a`
 and `b` both at version 0 with `parent` absent. Write a state as
 `(va, vb)` and the transition `attemptUpdate` with receiver `a` as `upd(a)`.
-The result value is not in the state key, so both result choices reach the
-same successor. The model has 9 reachable states, each with two successors,
-`upd(a)` and `upd(b)`, both always enabled. Both instances are symmetric: the
-rows below name the instance the loop updates as `a` and the bound instance
-as `b`, and hold with the two names exchanged. Which instance `over` binds
-first is the order the engine ranks `over` instances in, not a property of
-the model.
+The result value is not in the state key, so the choice of result does not
+change the successor. The model has 9 reachable states, each with two successors,
+`upd(a)` and `upd(b)`, both always enabled. The two instances are symmetric.
+The rows below name the instance a loop updates `a` and the instance `c`
+is bound to `b`; they hold with the two names exchanged, and which instance
+the reported counterexample binds is the ranking of `over` bindings (QSpec's
+shared grammar and FR-126 "Counterexamples"), not a property of the
+model.
 
 **Product.** The form is TP-4. For `c = b`, the negation is `eventually
 always (b.versionNumber != 2)`, a two-state Büchi automaton: `q0` loops on
@@ -418,9 +425,8 @@ on such states. The reachable product has 15 states: 9 with `q0` and 6 with
 
 **Verdict under `fair weak each`.** `upd(b)` is enabled at every state of
 both SCCs and taken in neither, so FA-4 rejects both. No fair accepting cycle
-exists for `c = b`; `c = a` is symmetric. Exploring the product for one
-instance reaches 15 states, and for both instances 30 (the two products
-are explored separately). The item settles `proved`, basis
+exists for `c = b`; `c = a` is symmetric. The request binds both instances
+and explores the 15-state product of each, 30 product states in all. The item settles `proved`, basis
 `closed-scope`, `TerminalValue::Proved{basis: Exhaustive, certification: Certified}` (V-1), over this
 subject.
 
@@ -429,7 +435,7 @@ whole, and `upd(a)` inside the SCC satisfies it. The unmarked spelling
 `fair weak Config::ConfigVersion::attemptUpdate` is this variant (FA-6); the
 clause above writes `each` because its verdict relies on it. The first
 accepting SCC in canonical order contains the initial product state
-`(0, 0, q1)`, so the stem is empty. The item settles `refuted` (V-4) with this lasso, bound to `c = b`:
+`(0, 0, q1)`, so the stem is empty. The item settles `refuted` (V-4) with this lasso, bound to the instance the loop leaves at version 0 (`b` here):
 
 | Position | State | Step into the next position |
 | --- | --- | --- |

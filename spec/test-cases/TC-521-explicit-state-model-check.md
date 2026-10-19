@@ -20,8 +20,9 @@ Scope: FR-126-AC-1 to FR-126-AC-7.
 ## Test Procedure
 
 Fixtures: ADR-018 §6's ConfigVersion example unit and its shipped unit,
-both with `attemptUpdate` framed `modifies_receiver [versionNumber]` (FR-154),
-universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
+both with `attemptUpdate` framed `modifies self.versionNumber` (FR-154),
+universe `{a, b}`, both versions 0, and the subject's `max_candidates` set
+to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the `Counter` unit (FR-124-AC-1); the
 `Health` unit and its `Restless` variant (FR-126-AC-4).
 
 1. The TP-4 claim under a weak `each` constraint and under a weak
@@ -47,9 +48,9 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `Holds{Exhaustive}` with 15 product states for one bound
-  instance and 30 for both; `Violated` with an
-  empty stem and the three-step `upd(a)` loop for `c = b`; `Violated` with
+- Step 1: `Holds{Exhaustive}` with 30 product states, the 15-state product of
+  each bound instance; `Violated` with an
+  empty stem and the three-step loop of one receiver for the instance it leaves at version 0; `Violated` with
   the loop `(0,0) -upd(a)-> (0,0) -upd(b)-> (0,0)`.
 - Step 2: `Violated` with a five-step prefix on which `vb` is never 2;
   `Holds{Exhaustive}`; `Holds{Exhaustive}`; `Violated` with the prefix
