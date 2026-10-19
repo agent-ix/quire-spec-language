@@ -54,3 +54,15 @@ Mergeable after FND-001 and FND-004 (medium). FR-135's support-set
 paragraph, FR-310's new `abstract-subject` bullet and FR-147's body are
 consistent with each other and with QSpec. FND-002, FND-003 and FND-005 are
 wording; FND-003 is outside the diff and may be deferred to a follow-up.
+
+## Dispositions
+
+Round 1, against head 40892cef1 (fix commit edced4cd7).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | edced4cd7: FR-310 now reads "the refinement's internal list (the compilation's `refinement_internals` input) names it (QSpec FR-432)". |
+| FND-002 | fixed | edced4cd7: ADR-020 RM-9, MC-1 and QS-11 say "the refinement's internal list". |
+| FND-003 | fixed | edced4cd7: FR-148 closure, FR-214 (two places and AC-4), ADR-027 PR-2 and line 598, and TC-659 step 4 use "the refinement's internal list"; grep finds no "profile's … list" left in spec/. |
+| FND-004 | fixed | edced4cd7: FR-147-AC-2 conditions the sentence on a build that omits `refinement-internal-list` and sends the built case to the new AC-12 (`malformed-declaration` at `/0`). |
+| FND-005 | fixed | edced4cd7: the column is headed "Alias-free (the spelling with `<A>::` removed)" and lists both forms in every two-form row. |

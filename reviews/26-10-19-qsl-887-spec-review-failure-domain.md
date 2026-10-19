@@ -56,3 +56,12 @@ mutation 17 expects exactly that for `Spec::Twice::finish` under
 `abstract Spec`. QSpec should say which list checks run on a model-subject
 refinement. This is a QSpec defect to hand to the planner; QSL's reading
 (skip name resolution) matches the QSpec vectors.
+
+## Dispositions
+
+Round 1, against head 40892cef1 (fix commit edced4cd7).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | edced4cd7: a "model-subject refinement" rule says S3 SHALL check shape, spelling, repetition and that `refinement` names a refinement, and SHALL NOT resolve alias, protocol, node, template, channel, role or memory kind; AC-11 and TC-552 step 11 add `Other::Twice::finish` on `CasRefinesCounter` giving no `missing-name`. (The fix leaves AC-11's first vector inconsistent; recorded as SR-13075 FND-005.) |
+| FND-002 | fixed | edced4cd7: FR-147-AC-12 and TC-552 step 12 cover the built-feature model-subject refusal, `malformed-declaration` at (the unit's value, `/0`). |

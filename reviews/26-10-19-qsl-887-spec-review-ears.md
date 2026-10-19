@@ -37,3 +37,11 @@ bullets are SHALL statements. `quire validate` reports no EARS diagnostic.
 
 Mergeable on this lens; FND-001 is wording. The rules themselves are
 determinate, with named codes, causes and loci.
+
+## Dispositions
+
+Round 1, against head 40892cef1 (fix commit edced4cd7).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | edced4cd7: Resolution, Defects, Precedence and the model-subject rule now read "S3 SHALL resolve", "S3 SHALL refuse each defect below", "SHALL report every defect", "SHALL refuse it", "SHALL check … SHALL NOT resolve". |

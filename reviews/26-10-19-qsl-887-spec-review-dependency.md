@@ -44,3 +44,11 @@ can pass.
 
 Mergeable after FND-001. The removal of the STD-199 and STD-182 waits is right;
 the support-set condition is behaviour and belongs in the criteria.
+
+## Dispositions
+
+Round 1, against head 40892cef1 (fix commit edced4cd7).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | edced4cd7: AC-1, AC-3, AC-4 and AC-9 apply in a build holding both features, AC-7 and AC-11 in one omitting them, AC-5, AC-6, AC-8 and AC-10 in any build; AC-2 adds "A producer that has built a feature is checked by that feature's own criteria"; TC-552 maps every step to built, unbuilt or any. |

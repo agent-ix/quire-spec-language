@@ -74,3 +74,20 @@ protocol name; FR-432-AC-7's vector does not show it. QSL follows FR-375,
 which is the rule that fixes node bytes and identity, so QSL is right. QSpec
 should restate FR-432's order as alias-free (or as a set, with FR-375 owning
 the order).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-147-AC-11's first vector (an unresolved entry `Spec::Twice::zz` "reports `missing_declaration`/`missing-name` and no `not-yet-implemented`") names no refinement, and the fix makes it unsatisfiable as written. A model-subject list is no longer name-resolved (the same AC says `Spec::Twice::zz` on `CasRefinesCounter` gives no `missing-name`), so the vector can only be on `CasTwice`. TC-552 runs step 11 against **unbuilt**, which omits `protocol-abstract-side` too, and there `CasTwice` also gets the `protocol-abstract-side` `not-yet-implemented` at `Twice` (FR-147 "Both features"). Name `CasTwice` and say "no `not-yet-implemented` naming `refinement-internal-list`" (the protocol-side refusal still beside it), or run the vector in a build that holds `protocol-abstract-side`. Step 11's Expected Results ("the unresolved entry gives `missing-name` and no `not-yet-implemented`") needs the same change. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:265; spec/test-cases/TC-552-s3-checks-a-refinement-whose-abstract-side-is-a-protocol.md:90-91 |
+
+## Dispositions
+
+Round 1, against head 40892cef1 (fix commit edced4cd7).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | edced4cd7: FR-147-AC-6 now locates `"refinement": 7` at `/0/refinement`, matching QSpec TC-386 IL-03 and TC-310 mutation 17; TC-552 step 6 names it. |
+| FND-002 | fixed | edced4cd7: TC-552 Steps 1 and 5 expect `[Twice::finish]`, ordered by the bytes of the alias-free spellings. |
+| FND-003 | fixed | edced4cd7: FR-147-AC-5 and TC-552 step 5 add the lower-case alias `spec` vector, `[Twice::finish, lose Twice::ch]`, which alias-including ordering would reverse (checked: `T` 0x54 < `l` 0x6C; `l` < `s` 0x73). |
+| FND-004 | fixed | edced4cd7: FR-147-AC-10 and TC-552 step 10 cover the unit importing and not importing the library. |

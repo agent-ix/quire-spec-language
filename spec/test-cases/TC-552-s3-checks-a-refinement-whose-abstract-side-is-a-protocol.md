@@ -48,7 +48,7 @@ Fixtures: `Twice`, `CasTwice` and `Full` (FR-147); `CasRefinesCounter`
     library's value, with the unit importing the library and with it not
     importing the library.
 11. Give the refinement check, in a build omitting `refinement-internal-list`,
-    a list with an unresolved entry, a value attributable to no refinement, a
+    `CasTwice`'s list with an unresolved entry, a value attributable to no refinement, a
     well-formed non-empty list and a malformed entry on `CasRefinesCounter`,
     and on `CasRefinesCounter` an entry `Other::Twice::finish`.
 12. Give the refinement check a non-empty and an empty list for
@@ -87,8 +87,10 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   library's at (that library's value, pointer) and the compilation is not
   admitted whether or not the unit imports the library; no compile-request
   member is named.
-- Step 11: the unresolved entry gives `missing-name` and no
-  `not-yet-implemented`; the value attributable to no refinement gives its
+- Step 11: the unresolved entry on `CasTwice` gives `missing-name`, no
+  `not-yet-implemented` naming `refinement-internal-list`, and the
+  `protocol-abstract-side` refusal at `Twice` (the build omits that feature
+  too); the value attributable to no refinement gives its
   defect alone; the well-formed non-empty list gives only the
   `not-yet-implemented` refusal at the model alias; the malformed entry gives
   `malformed-declaration`; `Other::Twice::finish` on `CasRefinesCounter`
