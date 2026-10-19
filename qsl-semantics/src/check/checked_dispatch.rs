@@ -1828,6 +1828,7 @@ mod tests {
             ExprNode::Result => "Result",
             ExprNode::Reaches { .. } => "Reaches",
             ExprNode::ProtocolReference { .. } => "ProtocolReference",
+            ExprNode::Quantity(_) => "Quantity",
         }
     }
 

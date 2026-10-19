@@ -16,6 +16,17 @@ pub(super) enum Terminal {
     /// An unsigned integer that fits `u64`: an interval bound or a
     /// compensation's `attempts` count.
     Bound,
+    /// A `decimal-literal`: one fractional token spelled
+    /// `[0-9]+ '.' [0-9]+`, with no exponent (QSpec shared grammar,
+    /// `exact-value`).
+    DecimalLiteral,
+    /// The built-in `Clock` type: the unqualified word `Clock` not followed
+    /// by `::`, so `Clock::T` stays a qualified name (FR-393).
+    ClockType,
+    /// An identifier that may name a declared type: any identifier but
+    /// `Clock`, which an unqualified type position always reads as the
+    /// built-in (FR-393).
+    TypeIdentifier,
     End,
 }
 
@@ -102,6 +113,9 @@ fn uint() -> Rule {
 }
 fn bound() -> Rule {
     Rule::Terminal(Terminal::Bound)
+}
+fn type_ident() -> Rule {
+    Rule::Terminal(Terminal::TypeIdentifier)
 }
 fn r(production: P) -> Rule {
     Rule::Production(production)
@@ -286,6 +300,9 @@ fn source_and_types(g: &mut Grammar) {
         r(P::PopulationBound),
         r(P::TemporalClause),
         r(P::TerminalDeclaration),
+        r(P::TimeInvariant),
+        r(P::TimeDeclaration),
+        r(P::UrgentDeclaration),
         r(P::ProtocolClause),
         r(P::Refinement),
         r(P::RelationClause),
@@ -394,6 +411,7 @@ fn source_and_types(g: &mut Grammar) {
                 x(">"),
                 opt(s(vec![x("["), uint(), x("]")])),
             ]),
+            Rule::Terminal(Terminal::ClockType),
             r(P::QualifiedName),
         ]),
     );
@@ -441,7 +459,7 @@ fn source_and_types(g: &mut Grammar) {
         s(vec![
             opt(x("ordered")),
             x("enum"),
-            ident(),
+            type_ident(),
             x("{"),
             list(|| r(P::EnumMember)),
             opt(x(",")),
@@ -462,7 +480,7 @@ fn source_and_types(g: &mut Grammar) {
         P::RecordDeclaration,
         s(vec![
             x("record"),
-            ident(),
+            type_ident(),
             x("{"),
             plus(r(P::Field)),
             x("}"),
@@ -472,7 +490,7 @@ fn source_and_types(g: &mut Grammar) {
         P::TupleDeclaration,
         s(vec![
             x("tuple"),
-            ident(),
+            type_ident(),
             x("("),
             list(|| r(P::TypeReference)),
             x(")"),
@@ -483,7 +501,7 @@ fn source_and_types(g: &mut Grammar) {
         P::UnionDeclaration,
         s(vec![
             x("union"),
-            ident(),
+            type_ident(),
             x("{"),
             list(|| r(P::UnionMember)),
             opt(x(",")),
@@ -501,7 +519,7 @@ fn source_and_types(g: &mut Grammar) {
         P::AliasDeclaration,
         s(vec![
             x("type"),
-            ident(),
+            type_ident(),
             x("="),
             r(P::TypeReference),
             x(";"),
@@ -744,6 +762,21 @@ fn expressions(g: &mut Grammar) {
             ]),
         ]),
     );
+    // `exact-value = uint | decimal-literal | exact-number` and
+    // `quantity-literal = exact-value, qualified-name` (QSpec shared
+    // grammar, "Probabilistic, timed and real-time forms"; FR-393).
+    g.insert(
+        P::ExactValue,
+        c(vec![
+            uint(),
+            Rule::Terminal(Terminal::DecimalLiteral),
+            r(P::ExactNumber),
+        ]),
+    );
+    g.insert(
+        P::QuantityLiteral,
+        s(vec![r(P::ExactValue), r(P::QualifiedName)]),
+    );
     g.insert(
         P::FloatValue,
         c(vec![
@@ -896,6 +929,7 @@ fn expressions(g: &mut Grammar) {
             x("self"),
             x("result"),
             s(vec![x("protocol"), r(P::QualifiedName)]),
+            r(P::QuantityLiteral),
             uint(),
             text(),
             r(P::ExactNumber),
@@ -1083,14 +1117,86 @@ fn temporal(g: &mut Grammar) {
             x(";"),
         ]),
     );
+    // A bracketed interval uses one kind of bound at both ends (FR-393),
+    // and a step bound fits `u64` (FR-325). The grammar admits any unsigned
+    // integer and, at the upper end, the other kind's bound, so that the
+    // parser's interval check refuses each at that bound's own span
+    // (`parser::interval_bounds`), rather than wherever the ordered choice
+    // happened to stop.
     g.insert(
         P::Interval,
         s(vec![
             x("["),
-            bound(),
+            uint(),
             x(","),
-            c(vec![bound(), x("*")]),
+            c(vec![r(P::QuantityLiteral), uint(), x("*")]),
             x("]"),
+        ]),
+    );
+    // `timed-interval = ( '[' | '(' ), quantity-literal, ',',
+    // quantity-literal, ( ']' | ')' )`. A `(` opens one only when a
+    // quantity literal follows it (the shared grammar's second-token rule).
+    g.insert(
+        P::TimedInterval,
+        s(vec![
+            c(vec![x("["), x("(")]),
+            r(P::QuantityLiteral),
+            x(","),
+            c(vec![r(P::QuantityLiteral), uint(), x("*")]),
+            c(vec![x("]"), x(")")]),
+        ]),
+    );
+    // `time-decl`, `time-invariant`, `clock-bound` and `urgent-decl`. The
+    // words `time`, `urgent`, `dense`, `tick` and `period` are contextual:
+    // reserved nowhere, so they stay identifiers outside these heads.
+    g.insert(
+        P::TimeDeclaration,
+        s(vec![
+            literal("time"),
+            ident(),
+            c(vec![
+                literal("dense"),
+                s(vec![
+                    literal("tick"),
+                    r(P::QualifiedName),
+                    literal("period"),
+                    r(P::QuantityLiteral),
+                ]),
+            ]),
+            x("unit"),
+            r(P::QualifiedName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::TimeInvariant,
+        s(vec![
+            literal("time"),
+            x("invariant"),
+            ident(),
+            x("when"),
+            r(P::Block),
+            x("{"),
+            r(P::ClockBound),
+            star(s(vec![x("and"), r(P::ClockBound)])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::ClockBound,
+        s(vec![
+            r(P::Postfix),
+            c(vec![x("<"), x("<=")]),
+            r(P::QuantityLiteral),
+        ]),
+    );
+    g.insert(
+        P::UrgentDeclaration,
+        s(vec![
+            literal("urgent"),
+            ident(),
+            c(vec![s(vec![x("when"), r(P::Block)]), r(P::QualifiedName)]),
+            x(";"),
         ]),
     );
     g.insert(
@@ -1134,14 +1240,26 @@ fn temporal(g: &mut Grammar) {
             star(s(vec![x("and"), r(P::TemporalRelation)])),
         ]),
     );
+    // An operator's interval is a choice, not an option: a `(` after an
+    // operator either opens a timed interval or is its parenthesized
+    // operand, and only the whole alternative can tell (FR-393).
+    let interval = || c(vec![r(P::Interval), r(P::TimedInterval)]);
+    let binary = || c(vec![x("until"), x("release"), x("since"), x("triggered")]);
+    let unary = || {
+        c(vec![
+            x("eventually"),
+            x("always"),
+            x("once"),
+            x("historically"),
+        ])
+    };
     g.insert(
         P::TemporalRelation,
         s(vec![
             r(P::TemporalUnary),
-            opt(s(vec![
-                c(vec![x("until"), x("release"), x("since"), x("triggered")]),
-                opt(r(P::Interval)),
-                r(P::TemporalUnary),
+            opt(c(vec![
+                s(vec![binary(), interval(), r(P::TemporalUnary)]),
+                s(vec![binary(), r(P::TemporalUnary)]),
             ])),
         ]),
     );
@@ -1149,16 +1267,8 @@ fn temporal(g: &mut Grammar) {
         P::TemporalUnary,
         c(vec![
             s(vec![x("not"), r(P::TemporalUnary)]),
-            s(vec![
-                c(vec![
-                    x("eventually"),
-                    x("always"),
-                    x("once"),
-                    x("historically"),
-                ]),
-                opt(r(P::Interval)),
-                r(P::TemporalUnary),
-            ]),
+            s(vec![unary(), interval(), r(P::TemporalUnary)]),
+            s(vec![unary(), r(P::TemporalUnary)]),
             r(P::TemporalPrimary),
         ]),
     );

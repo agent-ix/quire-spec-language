@@ -6,8 +6,9 @@
 use ix_trace_rs::trace;
 use qsl_forms::{
     build_unit, ActivationForm, BuiltinType, DeclarationForm, FairnessGranularity, FairnessKind,
-    IntervalForm, IntervalUpper, ParsedUnit, TemporalClauseForm, TemporalFormulaForm,
-    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TypeFormHead,
+    IntervalForm, IntervalUpper, OperatorInterval, ParsedUnit, TemporalClauseForm,
+    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
+    TypeFormHead,
 };
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -102,8 +103,17 @@ fn interval(
     )
 }
 
-fn written(interval: Option<IntervalForm>) -> Option<(u64, IntervalUpper, Span)> {
-    interval.map(|interval| (interval.lower, interval.upper, interval.span))
+/// The step interval an operator holds, `None` when it holds none; a timed
+/// interval fails the test, since every clause here writes step intervals.
+fn steps(interval: &Option<OperatorInterval>) -> Option<IntervalForm> {
+    interval.as_ref().map(|interval| match interval {
+        OperatorInterval::Steps(steps) => *steps,
+        OperatorInterval::Timed(timed) => panic!("a step interval, not {timed:?}"),
+    })
+}
+
+fn written(interval: &Option<OperatorInterval>) -> Option<(u64, IntervalUpper, Span)> {
+    steps(interval).map(|interval| (interval.lower, interval.upper, interval.span))
 }
 
 /// FR-325-AC-1 (TC-835 step 1): the recovery-stability clause holds `None`
@@ -147,7 +157,7 @@ fn an_unbounded_operator_over_a_bounded_one_keeps_each_operators_interval() {
     let inner = operator(form, sole_operand(form, conclusion));
     assert_eq!(inner.operator, TemporalOperator::Always);
     assert_eq!(
-        written(inner.interval),
+        written(&inner.interval),
         Some(interval(0, IntervalUpper::Finite(10), &text, "[0,10]"))
     );
     assert_eq!(slice(&text, inner.span), "always[0,10] holds(s.healthy)");
@@ -175,7 +185,7 @@ fn binary_and_unary_operators_build_none_closed_open_and_inverted_intervals() {
     let since = operator(form, form.root());
     assert_eq!(since.operator, TemporalOperator::Since);
     assert_eq!(
-        written(since.interval),
+        written(&since.interval),
         Some(interval(2, IntervalUpper::Finite(4), &text_since, "[2,4]"))
     );
     assert_eq!(since.operands.len(), 2);
@@ -184,14 +194,14 @@ fn binary_and_unary_operators_build_none_closed_open_and_inverted_intervals() {
     let (text_open, unit) = formula_unit("eventually[3,*] holds(p)");
     let form = &clause(&unit).formula;
     assert_eq!(
-        written(operator(form, form.root()).interval),
+        written(&operator(form, form.root()).interval),
         Some(interval(3, IntervalUpper::Open, &text_open, "[3,*]"))
     );
 
     let (text_inverted, unit) = formula_unit("eventually[5,3] holds(p)");
     let form = &clause(&unit).formula;
     assert_eq!(
-        written(operator(form, form.root()).interval),
+        written(&operator(form, form.root()).interval),
         Some(interval(
             5,
             IntervalUpper::Finite(3),
@@ -231,7 +241,7 @@ fn every_temporal_operator_takes_each_interval_shape_and_nests_freely() {
             let built = operator(form, form.root());
             assert_eq!(built.operator, expected, "{keyword}{spelling}");
             assert_eq!(
-                built.interval.map(|i| (i.lower, i.upper)),
+                steps(&built.interval).map(|i| (i.lower, i.upper)),
                 shape,
                 "{keyword}{spelling}"
             );
@@ -244,7 +254,7 @@ fn every_temporal_operator_takes_each_interval_shape_and_nests_freely() {
             let built = operator(form, form.root());
             assert_eq!(built.operator, expected, "{keyword}{spelling}");
             assert_eq!(
-                built.interval.map(|i| (i.lower, i.upper)),
+                steps(&built.interval).map(|i| (i.lower, i.upper)),
                 shape,
                 "{keyword}{spelling}"
             );
@@ -295,7 +305,7 @@ fn a_bound_that_is_not_a_u64_fails_at_s1_at_the_bound() {
     let (_, unit) = formula_unit("eventually[0,18446744073709551615] holds(p)");
     let form = &clause(&unit).formula;
     assert_eq!(
-        operator(form, form.root()).interval.map(|i| i.upper),
+        steps(&operator(form, form.root()).interval).map(|i| i.upper),
         Some(IntervalUpper::Finite(u64::MAX))
     );
 }
@@ -346,7 +356,7 @@ fn the_clause_forms_are_the_same_under_every_profile_selection() {
         conjunction
             .operands
             .iter()
-            .map(|id| operator(form, *id).interval.map(|i| i.upper))
+            .map(|id| steps(&operator(form, *id).interval).map(|i| i.upper))
             .collect::<Vec<_>>(),
         [Some(IntervalUpper::Finite(5)), Some(IntervalUpper::Open)]
     );
@@ -412,7 +422,7 @@ fn without_spans(form: &TemporalFormulaForm) -> Vec<String> {
             TemporalNodeForm::Operator(operator) => format!(
                 "{:?} {:?} {:?}",
                 operator.operator,
-                operator.interval.map(|i| (i.lower, i.upper)),
+                steps(&operator.interval).map(|i| (i.lower, i.upper)),
                 operator.operands
             ),
         })

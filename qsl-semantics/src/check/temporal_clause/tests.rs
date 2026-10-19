@@ -411,3 +411,25 @@ fn the_package_check_refuses_a_clause_no_emission_writes_yet() {
     };
     assert!(matches!(**cause, TemporalCause::MissingInterval { .. }));
 }
+
+/// FR-393 leaves a timed interval's meaning to S3 (FR-233, FR-234). Until
+/// that check lands, a clause with one refuses `unsupported_construct`/
+/// `not-yet-implemented` at the interval under every profile, rather than
+/// checking it as a step interval or dropping it.
+#[trace("TC-1078")]
+#[test]
+fn a_timed_interval_refuses_not_yet_implemented_at_the_interval() {
+    let formula = "eventually[0 ms, 3 ms) holds(c.level = 3)";
+    for profile in [INFINITE, EVENT] {
+        let (text, cause) = refused(&[profile], formula);
+        assert_eq!(
+            cause,
+            TemporalCause::TimedIntervalNotChecked {
+                span: first(&text, "[0 ms, 3 ms)"),
+            },
+            "{profile}"
+        );
+        assert_eq!(cause.code(), Code::UnsupportedConstruct);
+        assert_eq!(cause.tag(), "not-yet-implemented");
+    }
+}

@@ -29,6 +29,7 @@ use super::sum_case;
 use super::syntax::DeclarationForm;
 use super::temporal_clause;
 use super::terminal_declaration;
+use super::time_model;
 use super::value;
 
 /// A parsed form built from one declaration of a lossless CST with no
@@ -185,6 +186,14 @@ pub enum LeadingTokenKind {
     /// `terminal`: the `TemporalTrace` terminal declaration form, holding
     /// its `when` predicate or `any` (FR-382).
     Terminal,
+    /// `time`: a model's time source (`time M ...`) or a time invariant
+    /// (`time invariant ...`), the one production the CST holds (FR-393).
+    /// `time` is a declaration-head spelling only; elsewhere it stays an
+    /// identifier.
+    Time,
+    /// `urgent`: an urgency declaration (FR-393), a declaration-head
+    /// spelling only.
+    Urgent,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -226,6 +235,10 @@ pub enum FormsCause {
         /// The production whose node had the unexpected shape.
         production: Production,
     },
+    /// A `decimal(n, s)` whose scale `s` exceeds the unit's source length in
+    /// bytes, so its exact value is larger than any decimal literal the unit
+    /// could write (FR-393, FR-257).
+    DecimalScaleBeyondSource,
 }
 
 impl FormsCause {
@@ -238,6 +251,7 @@ impl FormsCause {
                 Code::UnsupportedConstruct
             }
             Self::UnexpectedShape { .. } => Code::RuntimeInvariant,
+            Self::DecimalScaleBeyondSource => Code::StageLimitExceeded,
         }
     }
 }
@@ -391,6 +405,8 @@ fn dispatch(
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
         LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
+        LeadingTokenKind::Time => time_model::time_member(construct),
+        LeadingTokenKind::Urgent => time_model::urgent_declaration(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -431,6 +447,8 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"protocol" => Some(LeadingTokenKind::Protocol),
         b"temporal" => Some(LeadingTokenKind::Temporal),
         b"terminal" => Some(LeadingTokenKind::Terminal),
+        b"time" => Some(LeadingTokenKind::Time),
+        b"urgent" => Some(LeadingTokenKind::Urgent),
         _ => None,
     }
 }

@@ -58,7 +58,10 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::PopulationBound(_)
         | DeclarationForm::Protocol(_)
         | DeclarationForm::Temporal(_)
-        | DeclarationForm::Terminal(_) => panic!("a function form, not {form:?}"),
+        | DeclarationForm::Terminal(_)
+        | DeclarationForm::TimeSource(_)
+        | DeclarationForm::TimeInvariant(_)
+        | DeclarationForm::Urgent(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -149,6 +152,12 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
         ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
+        ExprNode::Quantity(quantity) => format!(
+            "quantity({}/{} {})",
+            quantity.magnitude.value.numerator,
+            quantity.magnitude.value.denominator,
+            quantity.unit.name
+        ),
     };
     if children.is_empty() {
         head
@@ -199,6 +208,9 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Protocol(_) => "protocol",
             DeclarationForm::Temporal(_) => "temporal",
             DeclarationForm::Terminal(_) => "terminal",
+            DeclarationForm::TimeSource(_) => "time",
+            DeclarationForm::TimeInvariant(_) => "time invariant",
+            DeclarationForm::Urgent(_) => "urgent",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);

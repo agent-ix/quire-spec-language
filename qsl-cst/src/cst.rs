@@ -129,7 +129,22 @@ productions! {
     Capture,
     #[doc = "`fair [weak | strong] [whole | each] <qualified-name> ;`: a fairness constraint over one model operation, before a `temporal` clause's captures."]
     Fairness,
-    Interval, TemporalExpression, TemporalImplication, TemporalDisjunction,
+    Interval,
+    #[doc = "`( [ | ( ) <quantity-literal> , <quantity-literal> ( ] | ) )`: a temporal operator's timed interval, each end closed or open (FR-393)."]
+    TimedInterval,
+    #[doc = "`<uint> | <decimal-literal> | <exact-number>`: an exact rational magnitude (FR-393)."]
+    ExactValue,
+    #[doc = "`<exact-value> <qualified-name>`: a magnitude with its unit (FR-393)."]
+    QuantityLiteral,
+    #[doc = "`time <identifier> (dense | tick <qualified-name> period <quantity-literal>) unit <qualified-name> ;`: a model's time source (FR-393)."]
+    TimeDeclaration,
+    #[doc = "`time invariant <identifier> when <block> { <clock-bound> (and <clock-bound>)* }`: a time invariant (FR-393)."]
+    TimeInvariant,
+    #[doc = "`<postfix> (< | <=) <quantity-literal>`: one upper bound on a clock (FR-393)."]
+    ClockBound,
+    #[doc = "`urgent <identifier> (when <block> | <qualified-name>) ;`: an urgency declaration (FR-393)."]
+    UrgentDeclaration,
+    TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
     TerminalDeclaration,

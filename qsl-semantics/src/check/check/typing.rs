@@ -789,6 +789,18 @@ impl<'a> Typer<'a> {
                 ResolvedTarget::Value(()) => self.name(name, hint.as_deref(), &location)?,
             },
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
+            // FR-393 builds a quantity literal; FR-230 owns its check (a
+            // clock constraint's constant). Until then it refuses here
+            // rather than type as some other value.
+            ExprNode::Quantity(quantity) => {
+                return Err(CheckRefusal {
+                    location,
+                    cause: CheckCause::TimedNotChecked {
+                        construct: super::super::refusal::TimedConstruct::Quantity,
+                        span: quantity.span,
+                    },
+                })
+            }
             ExprNode::Case(case) => {
                 return Ok(Self::case(
                     Branches::Inferred(hint),

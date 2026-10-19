@@ -273,7 +273,8 @@ impl DeclarationRegions {
             CheckCause::ProtocolObligation(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
-            CheckCause::TerminalNotEmitted { span, .. } => {
+            CheckCause::TerminalNotEmitted { span, .. }
+            | CheckCause::TimedNotChecked { span, .. } => {
                 region(&self.source, self.embedding.as_deref(), *span)
             }
             CheckCause::Terminal(cause) => {

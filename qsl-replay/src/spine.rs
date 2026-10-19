@@ -472,6 +472,9 @@ fn forms_message(refusal: &FormsRefusal) -> String {
         FormsCause::UnexpectedShape { .. } => {
             "a node does not have the shape of its grammar rule".to_owned()
         }
+        FormsCause::DecimalScaleBeyondSource => {
+            "a `decimal` scale is larger than the source could write".to_owned()
+        }
     }
 }
 
@@ -644,6 +647,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             gate.family.as_str(),
             gate.required_layer().identity()
         ),
+        AssemblyCause::TimedNotChecked(construct) => {
+            format!("{} builds but is not checked yet", construct.description())
+        }
     };
     with_more(message, refusal.errors.len())
 }
@@ -782,6 +788,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
         }
+        CheckCause::TimedNotChecked { construct, .. } => {
+            message = format!("{message}: {} is not checked yet", construct.description());
+        }
         // FR-326: name what the `TemporalTrace` check refused.
         CheckCause::Temporal(cause) => {
             message = match cause.as_ref() {
@@ -816,6 +825,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 }
                 TemporalCause::NotEmitted { name, .. } => {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")
+                }
+                TemporalCause::TimedIntervalNotChecked { .. } => {
+                    format!("{message}: a timed interval is not checked yet")
                 }
             };
         }

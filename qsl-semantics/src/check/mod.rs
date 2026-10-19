@@ -269,7 +269,7 @@ pub use refusal::{
     DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
     MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause, ProtocolReferenceCause,
     ProvedInterval, QualifiedCandidate, ShadowedDeclaration, StageLimitCause, TemporalCause,
-    WrongSnapshotCause,
+    TimedConstruct, WrongSnapshotCause,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
