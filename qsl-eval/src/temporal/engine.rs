@@ -31,6 +31,7 @@ use std::collections::HashMap;
 use qsl_foundation::InternalFault;
 use qsl_semantics::check::{Activation, CheckedFormula, CheckedTemporalClause, TemporalProfile};
 use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
+use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::input::TemporalTrace;
 use super::letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
@@ -252,13 +253,46 @@ fn unroll(plan: &Plan, prefix: u64, period: u64) -> Result<Unrolling, InternalFa
     })
 }
 
+/// What the evaluator reads of a claim: a temporal clause's formula,
+/// profile, activation, horizon and fairness set, or a hyper body's formula
+/// and profile with the activation `on origin` (FR-175).
+#[derive(Clone, Copy)]
+pub(super) struct Subject<'a> {
+    pub(super) formula: &'a CheckedFormula,
+    pub(super) profile: TemporalProfile,
+    pub(super) activation: Activation,
+    pub(super) horizon: Option<u64>,
+    pub(super) fairness: &'a [FairnessConstraint],
+}
+
+impl<'a> Subject<'a> {
+    /// A temporal clause's claim.
+    pub(super) fn of_clause(clause: &'a CheckedTemporalClause) -> Self {
+        Self {
+            formula: clause.formula(),
+            profile: clause.profile(),
+            activation: clause.activation(),
+            horizon: clause.horizon(),
+            fairness: clause.fairness(),
+        }
+    }
+}
+
 /// The unrolling `clause` is evaluated over on `trace` (ADR-018 SM-8).
 pub fn unrolling(
     clause: &CheckedTemporalClause,
     trace: TemporalTrace,
 ) -> Result<Unrolling, TemporalRefusal> {
-    let shape = Shape::new(clause.profile(), trace)?;
-    let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
+    unrolling_of(Subject::of_clause(clause), trace)
+}
+
+/// The unrolling `subject` is evaluated over on `trace`.
+pub(super) fn unrolling_of(
+    subject: Subject<'_>,
+    trace: TemporalTrace,
+) -> Result<Unrolling, TemporalRefusal> {
+    let shape = Shape::new(subject.profile, trace)?;
+    let plan = Plan::new(subject.formula).map_err(TemporalRefusal::Fault)?;
     unroll(&plan, shape.prefix, shape.period()).map_err(TemporalRefusal::Fault)
 }
 
@@ -272,26 +306,26 @@ pub(super) enum Goal {
 
 /// Evaluate `clause` on `trace` (FR-327, FR-328, FR-329).
 pub(super) fn run<L: TemporalLetters>(
-    clause: &CheckedTemporalClause,
+    clause: Subject<'_>,
     trace: TemporalTrace,
     goal: Goal,
     source: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
-    let shape = Shape::new(clause.profile(), trace)?;
+    let shape = Shape::new(clause.profile, trace)?;
     if let Goal::At(position) = goal {
         trace.admit(position)?;
     }
     // A supplied trace carries no enabledness, so a fairness set over it has
     // no premise to check against: nothing is evaluated (FR-328, FR-329).
-    if matches!(goal, Goal::Clause) && !clause.profile().is_bounded() {
-        if let Some(constraint) = clause.fairness().first() {
+    if matches!(goal, Goal::Clause) && !clause.profile.is_bounded() {
+        if let Some(constraint) = clause.fairness.first() {
             return Ok(TemporalOutcome::MissingFairnessPremise {
                 constraint: constraint.clone(),
             });
         }
     }
-    let plan = Plan::new(clause.formula()).map_err(TemporalRefusal::Fault)?;
+    let plan = Plan::new(clause.formula).map_err(TemporalRefusal::Fault)?;
     let evaluation = Evaluator::new(clause, plan, shape, meter)
         .and_then(|mut evaluator| evaluator.execute(clause, goal, source));
     match evaluation {
@@ -398,7 +432,7 @@ struct Evaluator<'a> {
 
 impl<'a> Evaluator<'a> {
     fn new(
-        clause: &'a CheckedTemporalClause,
+        clause: Subject<'a>,
         plan: Plan,
         shape: Shape,
         meter: &'a mut Meter,
@@ -416,7 +450,7 @@ impl<'a> Evaluator<'a> {
             .map(|floor| convert(*floor).map(|floor| -floor))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
-            formula: clause.formula(),
+            formula: clause.formula,
             plan,
             meter,
             mode: shape.mode,
@@ -496,15 +530,15 @@ impl<'a> Evaluator<'a> {
 
     fn execute<L: TemporalLetters>(
         &mut self,
-        clause: &CheckedTemporalClause,
+        clause: Subject<'_>,
         goal: Goal,
         source: &mut L,
     ) -> Result<TemporalOutcome, Stop> {
-        let activation = clause.activation();
+        let activation = clause.activation;
         let clause_goal = matches!(goal, Goal::Clause);
         // An `on origin` bounded clause reads positions 0 to its horizon;
         // every other clause reads every represented position (UE-1).
-        let read = match (clause_goal, activation, clause.horizon()) {
+        let read = match (clause_goal, activation, clause.horizon) {
             (true, Activation::Origin, Some(horizon)) => {
                 horizon.saturating_add(1).min(self.represented)
             }

@@ -76,6 +76,15 @@ pub enum TemporalRefusal {
     /// A finite trace holds no observation (FR-327 "Inputs").
     #[error("a finite trace holds at least one observation")]
     EmptyTrace,
+    /// A tuple whose component count differs from the hyper clause's trace
+    /// variables (FR-175 "Inputs").
+    #[error("the tuple holds {found} traces for {expected} trace variables")]
+    TupleArity {
+        /// The clause's trace variables.
+        expected: usize,
+        /// The components supplied.
+        found: usize,
+    },
     /// A lasso with an empty loop (FR-329 "Lasso shape").
     #[error("a lasso holds at least one loop position")]
     EmptyLoop,
@@ -115,9 +124,11 @@ impl TemporalRefusal {
     /// `runtime_invariant`/`established-invariant-broken` for a fault.
     pub fn catalog_code(&self) -> CatalogCode {
         match self {
-            Self::EmptyTrace | Self::EmptyLoop | Self::TraceTooLong | Self::Window(_) => {
-                CatalogCode::new("invalid_runtime_input", "invalid-value")
-            }
+            Self::EmptyTrace
+            | Self::EmptyLoop
+            | Self::TraceTooLong
+            | Self::TupleArity { .. }
+            | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
             Self::LassoUnderBoundedProfile { .. } | Self::ProfileNotEvaluated { .. } => {
                 CatalogCode::new("unsupported_construct", "expression-form")
             }
