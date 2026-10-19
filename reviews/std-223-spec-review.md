@@ -79,3 +79,17 @@ changelog), the FR-188 Dependencies text (states what is read from QSpec, not
 a history), FR-189's mapping to `Unsupported(TotalAboveDrawRange{total})`, and
 the agreement with FR-190, FR-192's `UnsupportedCause` and FR-193's replay
 refusal.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | FR-189-AC-7's `Wide` fixture and claim are not admissible source as written. S1 probes at b35139782 show three problems. `probability >= 1/2` refuses `invalid_syntax` at `/`; `0.5` or `rational(1, 2)` parses, and S3 then passes the form checks. The inline `spin(random x: Bool ~ { … })` refuses at `:`; the source form is `random Wide::spin(x) ~ { true: 1, false: <2^256> };`, which parses, and its 257-bit weight passes S3's form checks. The QSL type is `Boolean`, not `Bool`. The fixture also gives `v` no initial value, while FR-189-AC-6 gives one. Without it the initial-state count, and so `m`, is unstated. The outcome is unaffected: the run stops at test 0's first sample either way. The `1/2` threshold was copied from FR-189-AC-6, which has the same defect; AC-6 predates this diff. | spec/functional/FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md:173 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | b35139782: FR-188-AC-5 and TC-623 Step 3 assert only the Rust values (`TotalAboveDrawRange{total: 2^256 + 1}`, `SampleStop::TotalAboveDrawRange`, `total` `2^256 + 1`). TC-623 points to FR-189-AC-7 (TC-624) for the settled wire form, and FR-188's stop statement says "FR-189 settles that stop". |
+| FND-002 | fixed | b35139782: new FR-189-AC-7 (TC-624 Step 6) over `Wide` expects `Unsupported(TotalAboveDrawRange{total})` and the settled `unsupported` record with cause `total-above-draw-range` and the decimal `total`. Checked by reasoning, since no sampler or EN-4 code exists yet (no `weighted_choice` in the tree). The operation and identity choices are one-item and draw nothing. The parameter choice at choice index 0 has total `2^256 + 1`, so `weighted_choice` refuses before any digest, `sample_probabilistic` stops, FR-189 returns `Unsupported` for the run, and FR-192's `Unsupported` row writes `unsupported`. That matches AC-7's claimed outcome. The fixture text is FND-004. |
+| FND-003 | fixed | b35139782: FR-188-AC-5 now uses weights `(2^256, 1)` in canonical value order with the SM-09 total. TC-623 cites SM-09 for the refusal and SM-08 only for the in-range total. |

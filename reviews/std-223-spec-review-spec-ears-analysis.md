@@ -36,3 +36,9 @@ FR-189's mapping adds a "whose wire cause is" clause. That clause describes
 the returned value; it adds no second obligation. The bullet's existing
 pair of SHALLs and its stop-as-subject phrasing predate this diff and are out
 of scope.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | b35139782: FR-188's statement ends at "SHALL stop with `SampleStop::TotalAboveDrawRange`", followed by the separate sentence "FR-189 settles that stop.". The settlement is now FR-189's own If/then statement, with "the run" as its subject. The `GeneratorMismatch` refusal is split into its own If/then statement with EN-4 as its agent. |
