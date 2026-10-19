@@ -982,7 +982,10 @@ fn shape(
 /// trace of FR-132, with the liveness clause none of its states meets.
 fn mutex_outcome(constraints: &str) -> (Fixture, TemporalOutcome) {
     let clause = "always eventually holds(c.level = 1)";
-    let fixture = modelled_with(vec![acquire(), release()], &format!("{constraints}{clause}"));
+    let fixture = modelled_with(
+        vec![acquire(), release()],
+        &format!("{constraints}{clause}"),
+    );
     let settled = outcome(&fixture, lasso(0, 3), counters(&[0, 2, 0]));
     (fixture, settled)
 }
@@ -1012,7 +1015,11 @@ fn a_fairness_constraint_over_a_supplied_lasso_names_the_first_constraint() {
         let TemporalOutcome::MissingFairnessPremise { constraint } = &settled else {
             panic!("{constraints}: not a missing premise: {settled:?}");
         };
-        assert_eq!(shape(constraint), (kind, "acquire", granularity), "{constraints}");
+        assert_eq!(
+            shape(constraint),
+            (kind, "acquire", granularity),
+            "{constraints}"
+        );
         assert_eq!(Some(constraint), fixture.clause.fairness().first());
         assert_eq!(settled.category(), Category::Unsupported);
     }
