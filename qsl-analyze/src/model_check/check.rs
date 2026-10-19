@@ -360,7 +360,10 @@ impl Run<'_, '_> {
             AutomatonError::AtomOutOfRange { .. }
             | AutomatonError::UnknownState { .. }
             | AutomatonError::NotSafetyAutomaton { .. }
-            | AutomatonError::InvertedInterval { .. } => fault("monitor-steps").into(),
+            | AutomatonError::InvertedInterval { .. }
+            | AutomatonError::PastOverFuture
+            | AutomatonError::ProfileNotTranslated { .. }
+            | AutomatonError::Invariant { .. } => fault("monitor-steps").into(),
         }
     }
 
