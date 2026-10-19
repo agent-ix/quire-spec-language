@@ -54,8 +54,9 @@ rows at compile time and requests one protocol refinement claim.
   profile's list of abstract internal steps (ADR-020 RM-9, MC-1). The
   declaration carries no `internal` or `visible` row. The abstract-side
   spelling is illustrative until QSpec spells it (ADR-020 QS-11; FR-310).
-- The unit's `refinement_internals` member, the one place the profile's
-  internal list is declared (see "The profile's internal list").
+- A `refinement_internals` value, the data shape of the profile's internal
+  list (see "The profile's internal list"). No document of the build hosts
+  one yet, so it is absent.
 - The abstract model's checked protocol clause and its step classes
   (ADR-027 ST-1 to ST-15).
 
@@ -98,44 +99,63 @@ rows at compile time and requests one protocol refinement claim.
 A profile selection carries an identity and nothing else (FR-110; QSpec's
 shared grammar), and QSpec's refinement grammar has no `internal` row
 (QSpec FR-375), so QSpec names the list (QSpec FR-432) without declaring
-where it lives. QSL declares it in the unit's own admission input, as the
-**`refinement_internals` member** beside `dependency_selections`. The
-profile document, the admitted abstract package and the refinement
-declaration are not sources: the first has no member to hold a list, the
-second belongs to another author who cannot know which of its steps a
-particular refinement treats as internal, and the third would add a
-row QSpec's grammar does not have. The member is QSL-proposed pending
-QSpec's ruling (Remaining work).
+where it lives or what it looks like. QSL decides what it can decide alone:
+the **data shape** of the list and how S3 **resolves** it. It does not decide
+where the list is hosted; that waits on QSpec (Remaining work, STD-199).
 
-- **Shape.** `refinement_internals` is a JSON array of objects
-  `{"refinement": "<name>", "internal": ["<class>", ...]}`. `refinement`
-  is the name of a refinement declared in the unit; `internal` is an array
-  of abstract step class spellings, each a string in the form of FR-432's
-  left sides with the abstract alias: `<A>::<protocol>::<node>` for a node
-  class, `duplicate <A>::<protocol>::<channel>` or
-  `lose <A>::<protocol>::<channel>` for a channel class, and
-  `memory <kind>` for a memory step kind.
-- **Reading.** S3 reads the member once, when it checks the refinement
-  named by `refinement`, resolving each entry against the abstract
-  protocol clause. The resolved classes, ordered by their canonical class
-  keys and without repeats, are the refinement's `abstract_internal`, and
-  they enter the refinement node and so the `package_id` and every
-  obligation identity that cites it (FR-135 "Package and identity"): the
-  verdict is a function of the checked package, not of the member read
-  again.
-- **Absent is empty.** A unit with no `refinement_internals` member, or none
-  whose `refinement` names this declaration, has an empty list for it: every
-  abstract step class is visible. Absence is not a refusal (QSpec FR-432).
-- **Defects.** A member that is not an array of objects with a string
-  `refinement` and an array of string `internal` entries, or an object with
-  an unknown key, SHALL refuse `invalid_model_binding`/`malformed-declaration`
-  naming the member path. An entry whose `refinement` names no refinement of
-  the unit SHALL refuse `missing_declaration`/`missing-name` naming it. Two
-  objects naming one refinement, or one class named twice in one `internal`
-  array, SHALL refuse `invalid_model_binding`/`conflicting-binding` naming
-  both.
-- Every cause above is in QSpec FR-272's closed lists. Only the member is
-  QSL-proposed.
+**Shape.** A `refinement_internals` value is a JSON array of objects
+`{"refinement": "<name>", "internal": ["<class>", ...]}`, where `refinement`
+is the name of a refinement declared in the unit and `internal` is an array of
+class spellings. A class spelling is exactly one of
+
+| Class | Spelling | Resolves to |
+| --- | --- | --- |
+| a node | `<A>::<protocol>::<node>` | an attempt, event, send, receive or finish node of the abstract protocol |
+| a channel duplicate | `duplicate <A>::<protocol>::<channel>` | the `duplicate` step of that channel |
+| a channel loss | `lose <A>::<protocol>::<channel>` | the `lose` step of that channel |
+| a memory step | `memory <kind>` | a memory step kind of the abstract model's memory model |
+
+`<A>` is the abstract alias of the refinement, `<protocol>`, `<node>`,
+`<channel>` and `<kind>` are identifiers. The spelling has one space after a
+keyword, no other whitespace and no other characters; it is its own
+**canonical spelling**. The classes of FR-432 that have no spelling here
+(`fork`, `join`, `cend`, `spawn`, `retire`, `activate`) cannot be named
+internal, so each stays visible (Remaining work).
+
+**Resolution.** S3 resolves one refinement's entries against its abstract
+protocol clause. The resolved classes, in ascending order of the UTF-8 bytes
+of their canonical spellings, are `abstract_internal`. The order of objects in
+the array and of entries within one `internal` array is free and does not
+change the result.
+
+**Absent is empty.** A refinement with no object in the value, and an absent
+value, has an empty list: every abstract step class is visible. Absence is
+not a refusal (QSpec FR-432).
+
+**Defects.** Each refusal below carries as its locus the RFC 6901 JSON Pointer
+of the offending value inside the `refinement_internals` value (such as
+`/0/internal/1`), since a JSON value has no source span and no IR node; the host
+adds its own prefix when QSpec decides it. A refusal naming two values carries
+both pointers.
+
+| Defect | Refusal |
+| --- | --- |
+| the value is not an array of objects; an object lacks `refinement` or `internal`, has another key, or has a non-string `refinement`, a non-array `internal` or a non-string entry | `invalid_model_binding`/`malformed-declaration` |
+| an entry that is not one of the four spellings above (an empty string, `frob x`, `spawn Spec::Twice::r`, `Spec::Twice`, extra or leading whitespace, a non-identifier part) | `invalid_model_binding`/`malformed-declaration` |
+| `refinement` names no refinement of the unit; an entry spelled correctly whose alias is not the refinement's abstract alias or whose node, channel or kind does not exist, or whose node is not an attempt, event, send, receive or finish node | `missing_declaration`/`missing-name` |
+| two objects naming one refinement; one canonical spelling twice in one `internal` array | `invalid_model_binding`/`conflicting-binding` |
+
+Every code and cause above is in QSpec FR-272's closed lists.
+
+**Until QSpec decides the host.** The build supplies no list: every refinement
+has an empty list, and every abstract step class is visible. S3's refinement
+check takes the resolved list as an input, and a non-empty list reaching it in
+any form is refused `unsupported_construct`/`not-yet-implemented`
+(FR-341-AC-5), at the span of the `<protocol>` name of the refinement's
+abstract side, with no `CheckedRefinement`. Whether `abstract_internal` is a
+member of the refinement node, whether it enters the `package_id`, the lock
+and replay, and how a verdict reproduces the list on replay are not decided
+here.
 
 ### Internal abstract steps
 
@@ -178,25 +198,44 @@ same operation, and `finish`. Refinement `CasTwice`: `abstract Spec::Twice
 concrete Impl` over ADR-020 §8's compare-and-set model with its `peek`
 operation removed, `value = self.value`, `commitA` and `commitB` mapped
 `-> Spec::Counter::inc(self)`, `beginA`, `beginB`, `retryA` and `retryB`
-mapped `-> stutter`, and the unit member `refinement_internals =
-[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]`.
+mapped `-> stutter`, and the `refinement_internals` value `[{"refinement":
+"CasTwice", "internal": ["Spec::Twice::finish"]}]`. A second refinement
+`CasRefinesCounter` (ADR-020 §8, model abstract side) is declared in the unit
+where a vector names it.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-147-AC-1 | `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [finish]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`. | Test (TC-552) |
+| FR-147-AC-1 | (Waits on STD-199 and STD-182.) `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [finish]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`. | Test (TC-552) |
 | FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); an internal list naming `Spec::Twice::zz` (`missing_declaration`/`missing-name`); an internal list naming `Spec::Twice::a1` beside a row `-> node Spec::Twice::a1(self)` (`invalid_model_binding`/`conflicting-binding`, a QSL addition to FR-432); `-> node Spec::Twice::a1(self)` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`); a `refinement_internals` object for `CasRefinesCounter` naming `Spec::Twice::finish` (`invalid_model_binding`/`malformed-declaration`). | Test (TC-552) |
-| FR-147-AC-3 | `CasTwice` with `ensure fair weak Spec::Counter::inc` settles its liveness half `unsupported`, `unsupported-requested-capability`, naming hidden abstract fields, beside the safety result of FR-148. | Test (TC-552) |
-| FR-147-AC-4 | `CasTwice` with `finish` removed from its `refinement_internals` list checks, with `finish` visible and `abstract_internal` empty; with the list naming `finish` it checks with `finish` internal; with the list naming `finish` and a step row `-> node Spec::Twice::finish(self)` it refuses `invalid_model_binding`/`conflicting-binding` (a QSL addition to FR-432). | Test (TC-552) |
-| FR-147-AC-5 | The list is read from the unit's `refinement_internals` member only. `CasTwice` with the member above checks with `abstract_internal = [finish]`. The same unit with the member absent, with `[]`, and with an object for another refinement checks with `abstract_internal` empty and `finish` visible. Two units that differ only in this member have different `package_id`s. | Test (TC-552) |
-| FR-147-AC-6 | Member defects: `{"refinement": "CasTwice"}` with no `internal`, `"internal": "Spec::Twice::finish"` (not an array), a non-string entry, and an object key `visible` each refuse `invalid_model_binding`/`malformed-declaration` naming the member path; `{"refinement": "Nope", ...}` refuses `missing_declaration`/`missing-name` naming `Nope`; two objects for `CasTwice`, and `["Spec::Twice::finish", "Spec::Twice::finish"]`, each refuse `invalid_model_binding`/`conflicting-binding` naming both. No refusal produces a `CheckedRefinement`. | Test (TC-552) |
+| FR-147-AC-3 | (Waits on STD-199 and STD-182.) `CasTwice` with `ensure fair weak Spec::Counter::inc` settles its liveness half `unsupported`, `unsupported-requested-capability`, naming hidden abstract fields, beside the safety result of FR-148. | Test (TC-552) |
+| FR-147-AC-4 | (Waits on STD-199 and STD-182.) `CasTwice` with `finish` removed from its `refinement_internals` list checks, with `finish` visible and `abstract_internal` empty; with the list naming `finish` it checks with `finish` internal; with the list naming `finish` and a step row `-> node Spec::Twice::finish(self)` it refuses `invalid_model_binding`/`conflicting-binding` (a QSL addition to FR-432). | Test (TC-552) |
+| FR-147-AC-5 | Resolution of the shape. For `CasTwice`, the value above resolves to `abstract_internal = [finish]`. The value absent, `[]`, and `[{"refinement": "CasRefinesCounter", "internal": []}]` each resolve `CasTwice` to the empty list. A value naming `["Spec::Twice::finish", "lose Spec::Twice::ch"]` and its permutation, and the same two inside two arrays swapped, resolve to the same list, in the byte order of `Spec::Twice::finish` then `lose Spec::Twice::ch`. | Test (TC-552) |
+| FR-147-AC-6 | Defects, each refused with no list: `{"refinement": "CasTwice"}` at `/0`, `"internal": "Spec::Twice::finish"` at `/0/internal`, a non-string entry at `/0/internal/0`, and an object key `visible` at `/0` (each `invalid_model_binding`/`malformed-declaration`); the entries `""`, `frob x`, `spawn Spec::Twice::r`, `Spec::Twice` and ` Spec::Twice::finish` (each `malformed-declaration` at its pointer); `{"refinement": "Nope", ...}` at `/0/refinement`, the entries `Other::Twice::finish`, `Spec::Twice::zz`, `lose Spec::Twice::nochan` and a `parallel` node (each `missing_declaration`/`missing-name` at its pointer); two objects for `CasTwice` at `/1` and `/0`, and `["Spec::Twice::finish", "Spec::Twice::finish"]` at `/0/internal/1` and `/0/internal/0` (each `invalid_model_binding`/`conflicting-binding`). | Test (TC-552) |
+| FR-147-AC-7 | The refinement check given a non-empty resolved list for `CasTwice`, and a non-empty list for `CasRefinesCounter`, refuses each `unsupported_construct`/`not-yet-implemented` and classifies `unsupported` (FR-341-AC-5), with no `CheckedRefinement`; given an empty list it does not refuse for the list. | Test (TC-552) |
 
 ## Remaining work
 
-- The `refinement_internals` member and its shape, the class spellings and
-  AC-5 and AC-6 are QSL-proposed. QSpec FR-432 says "the refinement profile's
-  explicit list" and FR-375 gives the declaration no row; the QSpec
-  follow-up is Linear STD-199. If QSpec declares the list in another place
-  or shape, that replaces this member, with no second source kept.
+QSL-proposed pending QSpec, Linear STD-199 (QSpec FR-432 says "the
+refinement profile's explicit list" and FR-375 gives the declaration no
+row). The data shape, the class spellings, the resolution and ordering and
+the defect causes above are QSL's own decisions and stand until QSpec
+spells them differently. QSpec has not decided, and this requirement does
+not:
+
+- the **host** of the `refinement_internals` value: the source unit, the
+  compile request, the lock or another document;
+- a **node member** for `abstract_internal` in FR-375's refinement node (its
+  body list is closed), and so whether the list is part of the `package_id`
+  and obligation identities;
+- its inclusion in the lock sources and replay (ADR-015; QSpec FR-323-AC-7),
+  without which a replay recompiles with an empty list;
+- spellings for the classes of FR-432 that cannot be named here (`fork`,
+  `join`, `cend`, `spawn`, `retire`, `activate`).
+
+Until STD-199 decides, no list is supplied and a non-empty one is refused
+(above). FR-147-AC-1, AC-3 and AC-4 need a protocol abstract side (Linear
+STD-182) and a non-empty list, so they wait on both; AC-5 to AC-7 are
+testable now over the resolver and the refusal.
 
 ## Dependencies
 

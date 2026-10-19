@@ -143,20 +143,33 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
 
 ### Refinement features the build does not check
 
-QSpec FR-375 and the FR-136 to FR-149 family specify more refinement forms
-than a build may yet check. The checker holds a closed **support set** of
-refinement feature names: `history-row` (FR-138) and `protocol-abstract-side`
-(FR-147). A declaration that uses a named feature outside the build's
-support set SHALL refuse `unknown_required_feature`/`unsupported-feature`
-(QSpec FR-272: "A recognized name is not implementation support"), at the
-span of the first row or abstract-side token that uses it, naming the feature
-and, as the selected scope, the refinement's name and the profile identity.
-It does not refuse `unsupported_construct`, which is a form the selected
-profile prohibits, nor `unimplemented_capability`, which FR-271 gives the
-driver's unbuilt engine. The refusal is decided before the feature's own
-checks, so no other diagnostic about that row is reported, and no
-`CheckedRefinement` is produced. A feature in the support set is checked by
-its own requirement.
+QSL-proposed pending QSpec (Linear STD-199, item 4). QSpec FR-375 and the
+FR-136 to FR-149 family specify more refinement forms than a build may yet
+check. The build holds a closed **support set** of refinement feature names,
+a build capability constant and not a request or test parameter. It names
+two features: `history-row` (FR-138), spelled by a `history` row, and
+`protocol-abstract-side` (FR-147), spelled by `abstract <A>::<protocol>`.
+
+- A declaration that uses a feature outside the support set SHALL refuse
+  `unsupported_construct`/`not-yet-implemented`, once for each row that uses
+  the feature, and SHALL produce no `CheckedRefinement`. This is the refusal
+  FR-341-AC-5 classifies `unsupported` (a QSL implementation gap).
+- The refusal's span is the first token of the row for a `history` row (the
+  `history` keyword), and the span of the `<protocol>` name for a protocol
+  abstract side. It names the feature, the refinement's name and the exact
+  selected profile identity (QSpec FR-272's payload for the code).
+- The refusal is decided before the feature's own checks, so no other
+  diagnostic about that row is reported; the rest of the declaration is
+  checked as usual and its own refusals are reported beside it.
+- A feature in the support set is checked by its own requirement.
+
+`unknown_required_feature` is not used: a source refusal, which FR-341
+classifies `refused`, would tell the author the unit is wrong when the build
+is incomplete. `unimplemented_capability` is not used: FR-271 defines it as
+valid complete-V1 meaning the selected producer does not implement, which
+fits, but FR-272 lists no cause for it. `not-yet-implemented` under
+`unsupported_construct` is the pair FR-341 and TC-861 already use for this
+standing; QSpec has not catalogued the cause (STD-199 item 4).
 
 ### Package and identity
 
@@ -175,7 +188,7 @@ its own requirement.
 | FR-135-AC-2 | Refusals, each at its span with no `CheckedRefinement`: the abstract alias `Nope`, resolving to no model (`missing_declaration`/`missing-name`); the `population` row removed (`missing_declaration`/`missing-name` naming `Spec::counters`); the row written twice (`invalid_model_binding`/`conflicting-binding`); the row reversed as `population Impl::counters from Spec::counters` (`invalid_model_binding`/`malformed-declaration`); the `object` row removed (`missing_declaration`/`missing-name` naming `Spec::Counter`); `value` mapped twice (`invalid_model_binding`/`conflicting-binding` naming both rows); the declaration in a unit that selects a bounded profile (`unknown_profile`/`wrong-selection-role` at the alias). | Test (TC-540) |
 | FR-135-AC-3 | `value = self.busyA` refuses `ill_typed`/`type-mismatch` at the expression's span. In ADR-020 §8's `RingIsQueue`, a field of type `Reference<Q::Queue>` mapped by `self.ring` (of type `Reference<R::Ring>`) checks, and the same field mapped by an expression of type `Reference<R::Slot>` refuses `ill_typed`/`type-mismatch`. | Test (TC-540) |
 | FR-135-AC-4 | With the `value` row removed, `CasRefinesCounter` checks with `value` in `hidden`. Changing the `value` row to `value = self.tmpA` changes the refinement's node identity and the `package_id`. | Test (TC-540) |
-| FR-135-AC-5 | With a support set that omits `history-row`, `RegisterHistory` (FR-138) refuses `unknown_required_feature`/`unsupported-feature` at the `history` row's span, naming `history-row`, `RegisterHistory` and the profile identity, and reports no other diagnostic for the row; with one that omits `protocol-abstract-side`, `CasTwice` (FR-147) refuses the same pair at the `abstract` alias naming `protocol-abstract-side`; with both in the set each checks as FR-138-AC-1 and FR-147-AC-1 state. A declaration using neither feature checks the same under every support set. | Test (TC-540) |
+| FR-135-AC-5 | A declaration with one `history` row (`RegisterHistory`, FR-138), in a build whose support set omits `history-row`, refuses `unsupported_construct`/`not-yet-implemented` at the `history` keyword of that row naming `history-row`, `RegisterHistory` and the profile identity, with no other diagnostic for the row and no `CheckedRefinement`; two such rows give two refusals. A declaration whose abstract side is a protocol (`CasTwice`, FR-147), in a build whose support set omits `protocol-abstract-side`, refuses the same pair at the span of `Twice`, naming `protocol-abstract-side`. Both classify `unsupported` (FR-341-AC-5). `CasRefinesCounter`, which uses neither feature, checks as FR-135-AC-1 states. The vector refuses a row that uses a feature the build has not built; it does not select a support set. | Test (TC-540) |
 
 ## Dependencies
 
