@@ -22,7 +22,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use qsl_eval::simulation::model::PredicateReading;
 use qsl_replay::{
-    GraphUndefined, ModelPath, ModelStep, OpenCause, RunEnd, StateGraphOutcome, GraphWitness,
+    GraphUndefined, GraphWitness, ModelPath, ModelStep, OpenCause, RunEnd, StateGraphOutcome,
     WitnessSource,
 };
 use qsl_semantics::check::{PredicateRole, StateGraphForm};
@@ -190,7 +190,11 @@ impl<'g> Reader<'g> {
         })
     }
 
-    fn undefined(&self, node: usize, undefined: GraphUndefined) -> Result<StateGraphOutcome, ModelCheckRefusal> {
+    fn undefined(
+        &self,
+        node: usize,
+        undefined: GraphUndefined,
+    ) -> Result<StateGraphOutcome, ModelCheckRefusal> {
         Ok(StateGraphOutcome::Undefined {
             stem: self.stem(node)?,
             undefined,
@@ -199,7 +203,10 @@ impl<'g> Reader<'g> {
 
     /// `possible`: a witness for every initial state, else a trap initial
     /// state, else an undefined evaluation.
-    fn possible(&self, sampled: &[Option<GraphWitness>]) -> Result<StateGraphOutcome, ModelCheckRefusal> {
+    fn possible(
+        &self,
+        sampled: &[Option<GraphWitness>],
+    ) -> Result<StateGraphOutcome, ModelCheckRefusal> {
         let targets = self.nodes_where(PredicateRole::Target);
         let mut reaching = targets.clone();
         reaching.extend(self.open_nodes());
@@ -359,10 +366,8 @@ impl<'g> Reader<'g> {
         // `condensation` lists components in topological order; counting
         // runs in reverse, so each successor is counted first.
         for component in components.iter().rev() {
-            let cyclic = component.len() > 1
-                || component
-                    .iter()
-                    .any(|node| outgoing[*node].contains(node));
+            let cyclic =
+                component.len() > 1 || component.iter().any(|node| outgoing[*node].contains(node));
             for &node in component {
                 counts[node] = if !in_h[node] {
                     0
@@ -371,9 +376,9 @@ impl<'g> Reader<'g> {
                 } else if cyclic {
                     2
                 } else {
-                    outgoing[node]
-                        .iter()
-                        .fold(0u8, |sum, target| sum.saturating_add(counts[*target]).min(2))
+                    outgoing[node].iter().fold(0u8, |sum, target| {
+                        sum.saturating_add(counts[*target]).min(2)
+                    })
                 };
             }
         }
@@ -383,19 +388,28 @@ impl<'g> Reader<'g> {
     /// The shortest path from `node` to the nearest node at distance 0,
     /// taking at each node the first edge in canonical order that `admit`
     /// accepts and whose target is one nearer.
-    fn descend(&self, node: usize, distance: &[usize], admit: impl Fn(usize) -> bool) -> Vec<ModelStep> {
+    fn descend(
+        &self,
+        node: usize,
+        distance: &[usize],
+        admit: impl Fn(usize) -> bool,
+    ) -> Vec<ModelStep> {
         self.descend_edges(node, distance, &admit)
             .into_iter()
             .map(|edge| self.step(edge))
             .collect()
     }
 
-    fn descend_edges(&self, mut node: usize, distance: &[usize], admit: &impl Fn(usize) -> bool) -> Vec<usize> {
+    fn descend_edges(
+        &self,
+        mut node: usize,
+        distance: &[usize],
+        admit: &impl Fn(usize) -> bool,
+    ) -> Vec<usize> {
         let mut path = Vec::new();
         while distance[node] != 0 && distance[node] != FAR {
             let Some(edge) = self.graph.outgoing[node].iter().copied().find(|edge| {
-                admit(*edge)
-                    && distance[self.graph.edges[*edge].target.0] == distance[node] - 1
+                admit(*edge) && distance[self.graph.edges[*edge].target.0] == distance[node] - 1
             }) else {
                 break;
             };
@@ -458,7 +472,11 @@ impl<'g> Reader<'g> {
 
     /// Settle with refuting `evidence` at its node, unless an undefined
     /// evaluation is at an earlier node or the same one.
-    fn settle_with(&self, node: usize, evidence: Evidence) -> Result<StateGraphOutcome, ModelCheckRefusal> {
+    fn settle_with(
+        &self,
+        node: usize,
+        evidence: Evidence,
+    ) -> Result<StateGraphOutcome, ModelCheckRefusal> {
         if let Some((at, undefined)) = self.first_undefined() {
             if at <= node {
                 return self.undefined(at, undefined);
@@ -478,7 +496,10 @@ impl<'g> Reader<'g> {
 
     /// Settle with the trap at `trap`, if any, else an undefined evaluation,
     /// else `Holds` on a complete run.
-    fn settle(&self, trap: Option<(usize, Evidence)>) -> Result<StateGraphOutcome, ModelCheckRefusal> {
+    fn settle(
+        &self,
+        trap: Option<(usize, Evidence)>,
+    ) -> Result<StateGraphOutcome, ModelCheckRefusal> {
         if let Some((node, evidence)) = trap {
             return self.settle_with(node, evidence);
         }

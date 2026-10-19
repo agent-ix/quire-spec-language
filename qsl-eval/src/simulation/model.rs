@@ -46,7 +46,7 @@ use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
-use crate::simulation::sample::sample_request;
+use crate::simulation::sample::{sample_request, sample_request_until, SampleRequest};
 use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
@@ -832,23 +832,10 @@ pub fn sample_model(
     Ok(ModelTrace { trace, effects })
 }
 
-/// One sampled walk from one initial state and the state at each of its
-/// positions (FR-166).
-#[derive(Clone, Debug)]
-pub struct ModelWalk {
-    /// The FR-101 sampled trace.
-    pub trace: Trace<ModelTransition, ModelFinding>,
-    /// The state at each position, position 0 the initial state: one more
-    /// than the trace's steps.
-    pub states: Vec<ModelSimState>,
-}
-
-/// `system` with one initial state, recording each state the sampler
-/// expands, in order.
+/// `system` with one initial state.
 struct OneInitial<'s, 'a> {
     system: &'s ModelSystem<'a>,
     start: ModelSimState,
-    expanded: std::cell::RefCell<Vec<ModelSimState>>,
 }
 
 impl TransitionSystem for OneInitial<'_, '_> {
@@ -869,22 +856,25 @@ impl TransitionSystem for OneInitial<'_, '_> {
         &self,
         state: &Self::State,
     ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
-        self.expanded.borrow_mut().push(state.clone());
         self.system.successors(state)
     }
 }
 
-/// FR-166: FR-101's `sample_request` over the view of `system` whose only
+/// FR-166: FR-101's sampled trace over the view of `system` whose only
 /// initial state is the subject's initial state `initial` (its index in the
-/// subject's initial list), with the state at each position of the walk.
-/// The sampler expands every state it visits, the last included, so each
-/// position's state is the one it expanded there.
+/// subject's initial list), ending at the first state where `end` holds
+/// ([`sample_request_until`]). `end` reads each state the walk visits, in
+/// order, position 0 included.
 ///
 /// # Errors
 ///
 /// [`NotSimulated`] as `sample_request` returns it;
 /// [`NotSimulated::EmptyInitial`] when `initial` is not an index of the
 /// subject's initial states.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "FR-101's sample request members plus the walk's initial state and end condition"
+)]
 pub fn sample_model_walk(
     system: &ModelSystem<'_>,
     initial: usize,
@@ -893,35 +883,33 @@ pub fn sample_model_walk(
     seed: u64,
     trace: u64,
     max_steps: usize,
-) -> Result<ModelWalk, NotSimulated> {
+    end: impl FnMut(&ModelSimState) -> bool,
+) -> Result<Trace<ModelTransition, ModelFinding>, NotSimulated> {
     let start = system
         .initial
         .get(initial)
         .cloned()
         .ok_or(NotSimulated::EmptyInitial)?;
-    let view = OneInitial {
-        system,
-        start,
-        expanded: std::cell::RefCell::new(Vec::new()),
-    };
+    let view = OneInitial { system, start };
     let domains = system.domains();
     let roots: Vec<(WireNodeId, &ValueType)> = domains
         .iter()
         .map(|(id, value_type)| (*id, value_type))
         .collect();
-    let trace = sample_request(
+    sample_request_until(
         &view,
-        &roots,
-        system.types,
-        position_limit,
-        sampler,
-        seed,
-        trace,
-        max_steps,
-        identity_limits(),
-    )?;
-    let states = view.expanded.into_inner();
-    Ok(ModelWalk { trace, states })
+        SampleRequest {
+            domains: &roots,
+            types: system.types,
+            position_limit,
+            sampler,
+            seed,
+            trace,
+            max_steps,
+            identity: identity_limits(),
+        },
+        end,
+    )
 }
 
 /// The effect of each step of a trace that replayed: the state each step's

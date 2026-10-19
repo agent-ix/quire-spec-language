@@ -93,7 +93,9 @@ impl Walk {
     /// Mark `at` and every queued node `NotExpanded`.
     fn halt(&mut self, at: usize) {
         for node in std::iter::once(at).chain(self.queue.iter().copied()) {
-            self.graph.open.insert(NodeIndex(node), OpenCause::NotExpanded);
+            self.graph
+                .open
+                .insert(NodeIndex(node), OpenCause::NotExpanded);
         }
     }
 
@@ -193,33 +195,33 @@ impl Exploration<'_, '_, '_> {
         if let Some(halt) = cancelled(self.cancel) {
             return Ok(Err(halt));
         }
-        let mut labels = Vec::new();
-        let mut refused = false;
+        let mut keys = Vec::new();
+        let mut predicates = Vec::new();
         for view in self.views.iter().flatten() {
             for (role, body) in &view.predicates {
-                let Some(body) = body else {
-                    continue;
-                };
-                if let Some(halt) = cancelled(self.cancel) {
-                    return Ok(Err(halt));
+                if let Some(body) = body {
+                    keys.push((view.item, view.instance, *role));
+                    predicates.push((*body, view.over.as_ref()));
                 }
-                let reading =
-                    match self
-                        .system
-                        .state_predicate(&walk.states[at], body, view.over.as_ref())
-                    {
-                        Ok(reading) => reading,
-                        Err(stop) => return expansion_stop(&stop, self.budgets).map(Err),
-                    };
-                refused |= matches!(reading, PredicateReading::Refused(_));
-                labels.push(PredicateLabel {
-                    item: view.item,
-                    instance: view.instance,
-                    role: *role,
-                    reading,
-                });
             }
         }
+        let readings = match self.system.state_predicates(&walk.states[at], &predicates) {
+            Ok(readings) => readings,
+            Err(stop) => return expansion_stop(&stop, self.budgets).map(Err),
+        };
+        let refused = readings
+            .iter()
+            .any(|reading| matches!(reading, PredicateReading::Refused(_)));
+        let labels = keys
+            .into_iter()
+            .zip(readings)
+            .map(|((item, instance, role), reading)| PredicateLabel {
+                item,
+                instance,
+                role,
+                reading,
+            })
+            .collect();
         walk.graph.nodes[at].labels = labels;
         let expansion = match self.system.successors(&walk.states[at]) {
             Ok(expansion) => expansion,
@@ -341,7 +343,9 @@ impl Exploration<'_, '_, '_> {
         };
         Ok(Ok(match class {
             TerminalClass::NotTerminal | TerminalClass::Intended => None,
-            TerminalClass::Deadlocked => Some(DeadlockEvent::Violated(CounterexampleKind::Deadlock, at)),
+            TerminalClass::Deadlocked => {
+                Some(DeadlockEvent::Violated(CounterexampleKind::Deadlock, at))
+            }
             TerminalClass::Undefined { model, cause } => Some(DeadlockEvent::Violated(
                 CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
                     site: site(UndefinedLocus::Terminal(model), None),
@@ -422,7 +426,9 @@ impl Exploration<'_, '_, '_> {
 
 /// FR-126's closure certificate of a deadlock-freedom proof: every explored
 /// model state under the item's carried root, sorted.
-fn deadlock_certificate(graph: &ExploredStateGraph) -> Result<ClosureCertificate, ModelCheckRefusal> {
+fn deadlock_certificate(
+    graph: &ExploredStateGraph,
+) -> Result<ClosureCertificate, ModelCheckRefusal> {
     let instances = ModelCheckItem::DeadlockFreedom
         .instances()
         .map_err(ModelCheckRefusal::Item)?;

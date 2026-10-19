@@ -32,8 +32,8 @@ use qsl_eval::simulation::model::{check_model_bounds, ModelSystem, PredicateRead
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, NotSimulated};
 use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
-    IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, OpenCause,
-    ReachedLimit, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome, DEFAULT_WITNESS_SEED,
+    IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, OpenCause, ReachedLimit,
+    RunEnd, StateGraphInstanceOutcome, StateGraphOutcome, DEFAULT_WITNESS_SEED,
 };
 use qsl_semantics::check::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole,
@@ -358,6 +358,7 @@ pub fn check_state_graph(
                         .map(|view| StateGraphInstanceOutcome {
                             over: view.over.clone(),
                             outcome: StateGraphOutcome::NoInitialState,
+                            sampled: Vec::new(),
                             walks_stopped: 0,
                         })
                         .collect()
@@ -422,6 +423,7 @@ pub fn check_state_graph(
                     Ok(StateGraphInstanceOutcome {
                         over: view.over.clone(),
                         outcome,
+                        sampled: sampled.witnesses(view).to_vec(),
                         walks_stopped: sampled.stopped(view),
                     })
                 })
@@ -455,6 +457,7 @@ fn stopped_before_exploring(
                             end: halt.end(),
                             open: std::collections::BTreeSet::new(),
                         },
+                        sampled: Vec::new(),
                         walks_stopped: 0,
                     })
                     .collect()

@@ -108,12 +108,12 @@ pub use model_check::replay::{
     replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
     ModelTraceSubject, ModelTraceValue,
 };
-pub use model_check::state_graph::{
-    GraphUndefined, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome,
-    GraphWitness, WitnessSource,
-};
 pub use model_check::settle::{
     settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
+};
+pub use model_check::state_graph::{
+    GraphUndefined, GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome,
+    StateGraphOutcome, WitnessSource,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;

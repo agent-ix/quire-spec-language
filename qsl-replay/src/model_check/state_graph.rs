@@ -156,6 +156,10 @@ pub struct StateGraphInstanceOutcome {
     pub over: Option<ObjectReference>,
     /// The decision.
     pub outcome: StateGraphOutcome,
+    /// Phase 0's witness per initial state, in initial-state order, or none
+    /// where no walk reached the target (FR-166 Outputs); empty when phase 0
+    /// drew no walk for the instance.
+    pub sampled: Vec<Option<GraphWitness>>,
     /// The phase 0 walks of a `possible` instance that `max_walk_steps`
     /// stopped before they visited a target state (FR-166); 0 for every
     /// other form.

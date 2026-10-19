@@ -44,62 +44,67 @@ pub enum PredicateReading {
 }
 
 impl ModelSystem<'_> {
-    /// `predicate` at `state` with its `over` parameter bound to `over`
-    /// (`None` for a claim with no `over`), under a fresh meter of the
-    /// subject's budget.
+    /// Each of `predicates` at `state`, in order, each with its `over`
+    /// parameter bound to its binding (`None` for a claim with no `over`)
+    /// and under a fresh meter of the subject's budget. The state is
+    /// observed once for all of them.
     ///
     /// # Errors
     ///
     /// `resource_exhausted`/`insufficient-next-charge` naming the evaluation
-    /// meter when the evaluation exhausts it;
+    /// meter when an evaluation exhausts it;
     /// `runtime_invariant`/`established-invariant-broken` when the state
     /// cannot be observed or the evaluator faults.
-    pub fn state_predicate(
+    pub fn state_predicates(
         &self,
         state: &ModelSimState,
-        predicate: &CheckedPredicateBody,
-        over: Option<&ObjectReference>,
-    ) -> Result<PredicateReading, ExpansionStop> {
+        predicates: &[(&CheckedPredicateBody, Option<&ObjectReference>)],
+    ) -> Result<Vec<PredicateReading>, ExpansionStop> {
         let walk = walk_of(self, state, None)?;
-        let bound = match over {
-            None => None,
-            Some(binding) => {
-                let Some(row) = walk.rows.iter().find(|row| {
-                    row.reference.universe() == binding.universe()
-                        && row.reference.object() == binding.object()
-                }) else {
-                    return Ok(PredicateReading::Undefined {
-                        cause: UndefinedCause::Family(UndefinedRecord {
-                            reason: UndefinedReason::AbsentKey,
-                            fields: BTreeMap::new(),
-                        }),
-                        location: None,
-                    });
-                };
-                Some(row.reference.clone())
-            }
-        };
-        let evaluation = evaluate_state_predicate(
-            self.package,
-            predicate,
-            &walk.observation.environment,
-            bound,
-            &mut Meter::new(self.meter),
-        )
-        .map_err(|_| stop(BROKEN))?;
-        Ok(match verdict(&evaluation.outcome) {
-            Verdict::True => PredicateReading::True,
-            Verdict::False => PredicateReading::False,
-            Verdict::Undecided(outcome) => match outcome.undefined_cause() {
-                Some(cause) => PredicateReading::Undefined {
-                    cause,
-                    location: evaluation.location,
-                },
-                None if matches!(outcome, ClauseOutcome::Incomplete(_)) => {
-                    return Err(exhausted(ExpansionLimit::EvaluationMeter))
+        let mut readings = Vec::with_capacity(predicates.len());
+        for (predicate, over) in predicates {
+            let bound = match over {
+                None => None,
+                Some(binding) => {
+                    let Some(row) = walk.rows.iter().find(|row| {
+                        row.reference.universe() == binding.universe()
+                            && row.reference.object() == binding.object()
+                    }) else {
+                        readings.push(PredicateReading::Undefined {
+                            cause: UndefinedCause::Family(UndefinedRecord {
+                                reason: UndefinedReason::AbsentKey,
+                                fields: BTreeMap::new(),
+                            }),
+                            location: None,
+                        });
+                        continue;
+                    };
+                    Some(row.reference.clone())
                 }
-                None => PredicateReading::Refused(outcome),
-            },
-        })
+            };
+            let evaluation = evaluate_state_predicate(
+                self.package,
+                predicate,
+                &walk.observation.environment,
+                bound,
+                &mut Meter::new(self.meter),
+            )
+            .map_err(|_| stop(BROKEN))?;
+            readings.push(match verdict(&evaluation.outcome) {
+                Verdict::True => PredicateReading::True,
+                Verdict::False => PredicateReading::False,
+                Verdict::Undecided(outcome) => match outcome.undefined_cause() {
+                    Some(cause) => PredicateReading::Undefined {
+                        cause,
+                        location: evaluation.location,
+                    },
+                    None if matches!(outcome, ClauseOutcome::Incomplete(_)) => {
+                        return Err(exhausted(ExpansionLimit::EvaluationMeter))
+                    }
+                    None => PredicateReading::Refused(outcome),
+                },
+            });
+        }
+        Ok(readings)
     }
 }

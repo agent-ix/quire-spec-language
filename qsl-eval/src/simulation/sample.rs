@@ -210,6 +210,7 @@ pub(crate) fn sample<S: TransitionSystem>(
     trace_index: u64,
     max_steps: usize,
     identity: IdentityLimits,
+    mut end: impl FnMut(&S::State) -> bool,
 ) -> SampleResult<S::TransitionId, S::Finding> {
     let mut initial = sorted_initial(system, identity)?;
     if initial.is_empty() {
@@ -227,6 +228,9 @@ pub(crate) fn sample<S: TransitionSystem>(
     let mut steps = Vec::new();
     let mut findings = Vec::new();
     let stopped = loop {
+        if end(&current) {
+            break StopReason::Reached;
+        }
         let (mut successors, state_findings) = match expand(system, &current, identity)? {
             Expanded::Successors {
                 successors,
@@ -312,14 +316,73 @@ pub fn sample_request<S: TransitionSystem>(
     max_steps: usize,
     identity: IdentityLimits,
 ) -> Result<Trace<S::TransitionId, S::Finding>, NotSimulated> {
-    if !is_pinned_sampler(sampler) {
+    sample_request_until(
+        system,
+        SampleRequest {
+            domains,
+            types,
+            position_limit,
+            sampler,
+            seed,
+            trace,
+            max_steps,
+            identity,
+        },
+        |_| false,
+    )
+}
+
+/// [`sample_request`]'s inputs.
+pub struct SampleRequest<'r> {
+    /// The requires-bound roots.
+    pub domains: &'r [(WireNodeId, &'r ValueType)],
+    /// The type environment the roots are classified under.
+    pub types: &'r TypeEnvironment,
+    /// The requires-bound pre-check's position budget.
+    pub position_limit: u64,
+    /// The sampler's `DefinitionRef`.
+    pub sampler: &'r DefinitionRef,
+    /// The run's seed.
+    pub seed: u64,
+    /// The trace's index within the run.
+    pub trace: u64,
+    /// The most steps the trace takes.
+    pub max_steps: usize,
+    /// The identity limits states and transitions encode under.
+    pub identity: IdentityLimits,
+}
+
+/// [`sample_request`], ending the trace at the first state, position 0
+/// included, where `end` holds, before that state is expanded:
+/// [`StopReason::Reached`]. The draws are those of `sample_request` for the
+/// same seed and trace index, so the trace is the prefix of the one
+/// `sample_request` draws, up to that state (FR-166: a phase 0 walk ends at
+/// its first target state).
+///
+/// # Errors
+///
+/// As [`sample_request`].
+pub fn sample_request_until<S: TransitionSystem>(
+    system: &S,
+    request: SampleRequest<'_>,
+    end: impl FnMut(&S::State) -> bool,
+) -> Result<Trace<S::TransitionId, S::Finding>, NotSimulated> {
+    if !is_pinned_sampler(request.sampler) {
         return Err(NotSimulated::GeneratorMismatch {
-            supplied: sampler.clone(),
+            supplied: request.sampler.clone(),
         });
     }
-    check_requires_bound(domains, types, position_limit)?;
-    sample(system, sampler.clone(), seed, trace, max_steps, identity)?
-        .ok_or(NotSimulated::EmptyInitial)
+    check_requires_bound(request.domains, request.types, request.position_limit)?;
+    sample(
+        system,
+        request.sampler.clone(),
+        request.seed,
+        request.trace,
+        request.max_steps,
+        request.identity,
+        end,
+    )?
+    .ok_or(NotSimulated::EmptyInitial)
 }
 
 #[cfg(test)]
