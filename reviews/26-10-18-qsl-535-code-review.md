@@ -147,3 +147,21 @@ Round 5, at f43e510325272eae2c120e9cc663324a2d0eecb9 (after a merge of origin/ma
 | --- | --- | --- |
 | FND-011 | fixed | When a syntactic refusal is found, `check_claim` now first takes the earliest `missing-name` among the predicate's operands. `{ eventually c.versionNumber = newName }` refuses `missing-name` at `newName`, as merged FR-165-AC-5 requires (test `an_unknown_name_beside_an_operator_refuses_as_a_missing_name`). Residual edge: FND-013. |
 | FND-012 | fixed | `temporal_operators.sort_by_key(\|operator\| operator.span.start)`. Two tests now assert exact offsets and kinds: `[eventually, until]` and the inner `until` before the outer one. |
+
+Round 6, at 75fd07be96bb0818d8389c5af43c262c3f47d9a7 (after a merge of origin/main 8711b7802), checked on a clean `git archive` export of that commit. The merge resolution is correct: token.rs keeps both the claim words and main's `Arrow`, and lib.rs keeps main's comment. Focused tests (qsl-cst, qsl-forms, qsl-semantics test-support, qsl-replay) are green apart from the known macOS `ten_thousand_edge_chain`; `clippy --workspace --all-targets -D warnings` and `fmt --all --check` are clean.
+
+The new tests would have failed before the fix: at f43e510 both vectors refused `expression-form` (round-5 probes), and they now refuse `missing-name`. Extra probes, all correct:
+
+| Probe | Result |
+| --- | --- |
+| nested `let a = 1 in let b = a in eventually b = zz` | `missing-name` at `zz` |
+| the same with `b = 2` | `expression-form` |
+| a binding value with an unknown name, `let b = qq` | `missing-name` at `qq`, span mapped into the value |
+| shadowing `let n = 1 in let n = qq in ...` | `missing-name` at `qq` |
+| a `let` closed inside a group, read outside it: `(let k = ... in k = 1) and eventually k = 2` | `missing-name` at `k` |
+| `let k = 1 in (k = 1 and eventually k = ww)` | `missing-name` at `ww` |
+| an else-branch `let m = n` with `n` bound only in the then branch | `missing-name` at `n` |
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-013 | fixed | S2 records, index-aligned with the operands, the `let` scope each operand sits under, outermost first, with each name's value form. A binding value sits outside its own `let`. S3 rebuilds each operand wrapped in its real `let`s, checks it, and maps refusal paths back to the operand or binding-value spans. Tested by `let_names_are_scoped_when_names_resolve_first` and the S2 `let_bindings_are_kept`. |

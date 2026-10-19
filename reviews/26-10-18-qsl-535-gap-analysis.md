@@ -76,3 +76,5 @@ Round 5, at f43e510325272eae2c120e9cc663324a2d0eecb9, against merged FR-165 AC-1
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-003 | fixed | `refused_at` asserts the `invalid_syntax` code and the exact byte offset of the named token for every AC-6 vector. |
+
+Round 6, at 75fd07be96bb0818d8389c5af43c262c3f47d9a7. There is no change to the gap findings. The two new FR-165-AC-5 vectors (`let`-scoped names-first) discriminate: they fail on the round-5 code. The if/else vector asserts only the named text `n`, not its offset, but the first vector would catch an implementation that drops `let` scopes altogether.
