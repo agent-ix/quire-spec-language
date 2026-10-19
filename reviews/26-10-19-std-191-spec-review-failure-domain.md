@@ -44,3 +44,4 @@ Three findings. FND-001 strengthens base FND-001. FND-002 and FND-003 are real g
 | FND-001 | fixed | Fixed at b3a8e6c42. |
 | FND-002 | fixed | Fixed at b3a8e6c42. |
 | FND-003 | fixed | Fixed at b3a8e6c42. |
+| FND-004 | fixed | Round 2 at db8ec3662: AC-5 and TC-685 step 5 now expect FR-091's `ambiguous_declaration`/`ambiguous-name` at assembly; `conflicting_declaration` is kept only for source vs domain package and waits on STD-192. |

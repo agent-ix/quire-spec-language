@@ -40,3 +40,4 @@ One finding. The FR-185/186 and TC-620/621 vector sets are consistent with one a
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | The new cause is gone from the spec; FR-091's table needs no row. PR #1003 must drop `FormsCause::DecimalScaleBeyondSource`. |
+| FND-002 | fixed | Round 2 at db8ec3662: FR-091 amended to point at FR-230's use. |

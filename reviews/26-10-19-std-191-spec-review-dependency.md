@@ -40,3 +40,4 @@ One low finding. The enablement split is covered by base FND-002 and FND-004.
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | Fixed at b3a8e6c42. |
+| FND-002 | fixed | Round 2 at db8ec3662: FR-393's FR-255 edge removed; FR-185 edge kept. |

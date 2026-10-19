@@ -66,3 +66,4 @@ Not mergeable. FND-001 and FND-002 are high. FND-001: FR-393's refusal contradic
 | FND-004 | fixed | Fixed at b3a8e6c42. |
 | FND-005 | fixed | Moot: the S2 rule is dropped, so no position needs it. |
 | FND-006 | fixed | TC-1078 is back to main: step 7 is the Clock units again. |
+| FND-007 | fixed | Round 2 at db8ec3662: Time dimension is now the single `Time` base node; AC-5 refuses a `Duration = Time` unit `ill_typed`/`type-mismatch`, consistent with FR-142's nominal rule. |
