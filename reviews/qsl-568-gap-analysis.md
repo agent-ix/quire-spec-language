@@ -70,3 +70,30 @@ are lows.
 | FND-001 | medium | FR-311-AC-3 is tagged on an S2-only test. The AC reads "both build at S2 and are refused only at S3 (FR-185-AC-2, FR-185-AC-3)"; no FR-311-AC-3 test asserts the S3 refusal, so S3 could admit a zero weight and the tagged test would still pass. The workload half is refused today only by the blanket `not-yet-implemented` (FR-185-AC-3's `incomplete-workload` is not built). This is the same shape as FR-392-AC-5, which the PR correctly leaves at TC-1077 only. Tag TC-890 only, or add the S3 assertion under the AC tag. | qsl-forms/tests/it/probabilistic_forms.rs:234-247 |
 | FND-002 | low | FR-392-AC-1 states "each with `Workload(Steady)`, its confidence items in declared order". The test asserts both for `NoFault` only; `P95` checks only that there are three confidence items, and `LongRun` and `Monthly` check neither the scheduler nor the confidence. Assert both for all four claims. | qsl-forms/tests/it/probabilistic_forms.rs:264-396 |
 | FND-003 | low | The quantity-literal refusal is tested in a function body only. No test puts `5 ms` in a `temporal` clause's `holds(...)` or a state clause, and none shows a `random`/`probabilistic` declaration inside a protocol body is refused. The code paths are sound (one `Typer` gate; unit-level grammar only); the tests would keep them so. | qsl-semantics/tests/it/probabilistic_declarations.rs:355-360 |
+
+## New findings (disposition pass 1)
+
+Reviewed at `ed2402498e5fe74036bc2c378d6ad62c54fac195`. Every `#[trace]`
+rechecked: FR-311-AC-1, FR-311-AC-2 and FR-392-AC-1/2/3/4/6 stay correct
+(FR-392-AC-1 now asserts `Workload(Steady)`, `on origin` and the three
+confidence items for all four claims); FR-311-AC-3 now carries TC-890 only.
+The new S3 tests (`a_second_reward_of_one_name_on_one_operation_refuses`,
+`a_negative_rational_weight_refuses_invalid_weight`,
+`a_quantile_over_a_fraction_refuses`,
+`an_event_window_is_not_refused_before_profiles_resolve`,
+`huge_written_exact_values_are_read_without_expansion`) carry TC-620/TC-621
+only, which is right: FR-185-AC-2/3/4 and FR-186-AC-2/3/4 each still need
+typing, resolution, units or the QSL-883 limit outcome.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | FR-185 now states that a bare weight `-1` is not an `exact-value` and S1 refuses it `invalid_syntax`. No test writes `random Server::attempt(d) ~ { 1 ms: -1 };` or a `-1` workload weight; the malformed-declaration table in the S1 tests has no signed weight. Add one row so the S1 half of that rule cannot regress. | qsl-cst/tests/it/probabilistic.rs:191-230 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c29cae523 |
+| FND-002 | fixed | c29cae523 |
+| FND-003 | deferred | low; not fixed in this PR, recorded under the lane's majors-only fix policy |
+| FND-004 | deferred | low; new this round, recorded under the lane's majors-only fix policy |

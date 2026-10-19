@@ -84,3 +84,37 @@ QSL FR-195 admits; nothing compiles because of it. Three lows, recorded.
 | FND-002 | low | `dispatch_call` repeats the syn walk of `dispatch_entry_is_a_single_thin_call` (find `fn dispatch`, find its `match`). Extract one helper that returns the match and use it from both tests. | qsl-forms/src/dispatch.rs:654-703 |
 | FND-003 | low | `Horizon` is `QuantityLiteral \| bound()`. A count above `u64` refuses `invalid_syntax` at the token after the number (`)`), because the `QuantityLiteral` alternative reads further than `bound` and wins the failure merge. The test pins the `)` locus. Point the refusal at the number, or say in the test why `)` is the locus. QSpec's `horizon` is `uint`; FR-392's `Spanned<u64>` narrowing is QSL's choice. | qsl-cst/src/grammar.rs:2182; qsl-cst/tests/it/probabilistic.rs:216 |
 | FND-004 | low | The repeat checks are quadratic and charge no meter: `form.support[..index].iter().any(same_literal)`, the workload `weights[..index]` scan and `distributions.contains`. The default 50 000-node ceiling keeps this small, but a caller-raised ceiling does not. A set keyed on the literal (or the spelled name) makes each check linear. | qsl-semantics/src/check/probabilistic.rs:289; qsl-semantics/src/check/probabilistic.rs:437-439; qsl-semantics/src/check/probabilistic.rs:481-484 |
+
+## New findings (disposition pass 1)
+
+Reviewed at `ed2402498e5fe74036bc2c378d6ad62c54fac195` (fix commits
+c29cae523, 8e699a819, ed2402498; merges of main incl. #1001 and #1007). New
+behaviour checked and clean: `duplicate-reward` (keyed on operation and
+reward name as written, at the second declaration); `quantile-over-fraction`
+(at the fraction's span); a repeated confidence parameter refuses
+`partial-confidence` naming it, before any range check; `rational(-1, 1)` as
+a weight refuses `invalid-weight` through `magnitude`'s sign test;
+`EventForm::Temporal` holds `TemporalFormulaForm`, as FR-392 now states. The
+`docs/native-error-codes.md` row lists exactly the causes `tag()` emits under
+`invalid_probabilistic_model` and marks `duplicate-reward`,
+`quantile-over-fraction` and `invalid-confidence` QSL-proposed pending
+STD-188. No `s3.rational_bits` setting, `CheckingLimits` field, limit cause
+or test remains in code, docs or tests; the only mentions are two comments
+saying the ceiling waits on QSL-883, and the PR body says the same. Exact
+values: `magnitude` reads sign, `decimal_digits` (a radix-10 rendering of a
+source-written integer) and one comparison; nothing is reduced; no `pow`,
+`gcd` or unbounded shift; no panic path. `ratio` is the one expansion, below.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The module doc says a written exact value is never reduced, and `huge_written_exact_values_are_read_without_expansion` says "never reduced or expanded". `ratio` does expand `10^s` for a decimal scale up to `MAX_EXPANDED_SCALE` (4096, about 13,600 bits) and multiplies written integers for the θ ± ι comparison. That is bounded and correct, but the statement is not true of every exact-value path; say "expanded only up to scale 4096 for the confidence range". The test asserts only the refusal, so it cannot fail on an expansion either. | qsl-semantics/src/check/probabilistic.rs:24-27; qsl-semantics/src/check/probabilistic.rs:418-436; qsl-semantics/tests/it/probabilistic_declarations.rs:228-247 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c29cae523 |
+| FND-002 | deferred | low; not fixed in this PR, recorded under the lane's majors-only fix policy |
+| FND-003 | deferred | low; not fixed in this PR, recorded under the lane's majors-only fix policy |
+| FND-004 | deferred | low; not fixed, and the new `rewards.contains` check has the same shape; recorded under the lane's majors-only fix policy |
+| FND-005 | deferred | low; new this round, recorded under the lane's majors-only fix policy |
