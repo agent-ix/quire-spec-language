@@ -106,13 +106,12 @@ pub enum ProtocolAnchorCause {
         /// The entry's own span.
         span: Span,
     },
-    /// A protocol whose anchors, binders and attempt bindings all
-    /// check, but which holds a construct no checker reads yet (a node kind
-    /// other than `sequence`, `attempt`, `finish` and `compensate`, a
-    /// channel, a relationship, a requirement, a replicated role, a
-    /// `related by` clause, or a body other than a bare Boolean literal). Refused rather than compiled with unchecked content
-    /// and silently missing from the emitted package (SR-753 FND-002,
-    /// SR-761 FND-001, SR-770 FND-001).
+    /// A protocol whose anchors, binders and attempt bindings all check,
+    /// but which holds a construct no checker reads yet (a relationship, a
+    /// requirement, a replicated role, a `related by` clause, a `predicate`
+    /// join or a `terminal when` member). Refused rather than compiled with
+    /// unchecked content and silently missing from the emitted package
+    /// (SR-753 FND-002, SR-761 FND-001, SR-770 FND-001).
     Unimplemented {
         /// The declared protocol name.
         name: String,
@@ -214,6 +213,256 @@ pub enum ProtocolAnchorCause {
         /// The list's span, or the quorum count's.
         span: Span,
     },
+    /// FR-218 "Constructs": an `event` or `commit` written `by`, or a
+    /// `choice` or `repeat` owned `by`, a name that is no declared role.
+    /// `missing_declaration`/`missing-name`, at the role name.
+    NodeRole {
+        /// The node's declared name.
+        node: String,
+        /// The role name as written.
+        name: String,
+        /// The role name's own span.
+        span: Span,
+    },
+    /// FR-218 "Channels": a `send` or `receive` written `via` a name that
+    /// is no declared channel. `missing_declaration`/`missing-name`, at the
+    /// name.
+    MissingChannel {
+        /// The node's declared name.
+        node: String,
+        /// The channel name as written.
+        name: String,
+        /// The channel name's own span.
+        span: Span,
+    },
+    /// FR-218 "Channels": a `send` or `receive` record binder, or a FIFO
+    /// binder, whose declared type is not the channel's `carries` type.
+    /// `ill_typed`/`type-mismatch`, at the binder's type.
+    CarriesMismatch {
+        /// The channel's declared name.
+        channel: String,
+        /// The channel's `carries` type.
+        expected: Box<quire_exact::ValueType>,
+        /// The binder's declared type.
+        actual: Box<quire_exact::ValueType>,
+        /// The binder type's span.
+        span: Span,
+    },
+    /// FR-218 "Channels": a refusal of the clause checker inside a channel's
+    /// FIFO key, checked over its binder and constants only. Its code and
+    /// cause are the wrapped cause's.
+    KeyClause {
+        /// The channel's declared name.
+        channel: String,
+        /// The clause checker's cause.
+        cause: Box<CheckCause>,
+        /// The located node.
+        span: Span,
+    },
+    /// FR-218 "Channels": a channel's FIFO key reads model state.
+    /// `ill_typed`/`operator-ineligible`, at the read, naming the key by its
+    /// channel.
+    KeyModelState {
+        /// The channel's declared name.
+        channel: String,
+        /// The read.
+        span: Span,
+    },
+    /// FR-218 "Channels": a channel's FIFO key is of a type over which the
+    /// clause checker admits no `=` (QSpec FR-054: stable equality).
+    /// `ill_typed`/`operator-ineligible`, at the key, retaining the operator
+    /// and the type.
+    KeyEquality {
+        /// The channel's declared name.
+        channel: String,
+        /// The key's type.
+        key_type: Box<quire_exact::ValueType>,
+        /// The key.
+        span: Span,
+    },
+    /// FR-218 "Scopes": a refusal inside one slot of a node -- a body, a
+    /// `check` condition, a `visible` entry, a guard or a loop proof -- by
+    /// the clause checker, or a read of a binder that is not readable at
+    /// the slot (`MissingName`, as FR-113 refuses an unresolved name). Its
+    /// code and cause are the wrapped cause's.
+    SlotClause {
+        /// The node's declared name.
+        node: String,
+        /// Which slot of the node.
+        slot: SlotKind,
+        /// The cause.
+        cause: Box<CheckCause>,
+        /// The located read or node.
+        span: Span,
+    },
+    /// FR-218 "Model state": a slot that bars model state (a `check`
+    /// condition, a guard, a `visible` entry) reads it, or reads the `over`
+    /// input. `ill_typed`/`operator-ineligible`, at the read, naming the
+    /// slot.
+    SlotModelState {
+        /// The node's declared name.
+        node: String,
+        /// Which slot of the node.
+        slot: SlotKind,
+        /// The read.
+        span: Span,
+    },
+    /// FR-218 "Choice and repeat decisions": a `visible` entry or a guard
+    /// reads a fact that is not an eligible, individually listed fact of the
+    /// owner. `wrong_snapshot`/`wrong-observation`, at the read.
+    WrongObservation {
+        /// The `choice` or `repeat` node's declared name.
+        node: String,
+        /// The owning role.
+        owner: String,
+        /// The binder read.
+        binder: String,
+        /// The field read, when the read is a field read.
+        field: Option<String>,
+        /// Why the fact is not observable.
+        reason: ObservationReason,
+        /// The read.
+        span: Span,
+    },
+    /// FR-218 "Constructs": the compiled causal edge relation, without the
+    /// `repeat` back edges, has a cycle. `invalid_package`/
+    /// `definition-cycle`, naming the controls on the cycle in tree order,
+    /// at the first of them.
+    CausalCycle {
+        /// The names of the controls on the cycle, in tree order.
+        nodes: Vec<String>,
+        /// The first control's name span.
+        span: Span,
+    },
+    /// FR-218 "Constructs": a `repeat` whose body does not necessarily take
+    /// a step. `unsupported_construct`/`declaration-form`, at the `repeat`,
+    /// naming it and the selected protocol profile (QSpec FR-052).
+    NoProgress {
+        /// The `repeat` control's declared name.
+        repeat: String,
+        /// The identity of the selected protocol profile, when one is
+        /// selected.
+        profile: Option<String>,
+        /// The `repeat`'s name span.
+        span: Span,
+    },
+    /// FR-218 "Choice and repeat decisions": a `choice` whose guards are not
+    /// proved exhaustive and exclusive. `undefined_expression`/
+    /// `unproved-exhaustiveness`, at the choice.
+    Exhaustiveness {
+        /// The `choice` control's declared name.
+        choice: String,
+        /// The names of the cases involved, in source order.
+        cases: Vec<String>,
+        /// What the valuations show, in the order `missing-arm`,
+        /// `duplicate-arm`; never empty.
+        failed: Vec<ArmFault>,
+        /// The `choice`'s name span.
+        span: Span,
+    },
+    /// QSpec FR-466 "Per-operator checks" 2: an `await` whose matched event
+    /// is a `send` or an `attempt`. `unsupported_construct`/
+    /// `declaration-form`, at the `await`, naming the form and the selected
+    /// protocol profile.
+    AwaitedForm {
+        /// The `await` control's declared name.
+        node: String,
+        /// The matched event node's declared name.
+        event: String,
+        /// The matched node's form keyword (`send` or `attempt`).
+        form: &'static str,
+        /// The identity of the selected protocol profile, when one is
+        /// selected.
+        profile: Option<String>,
+        /// The `await`'s name span.
+        span: Span,
+    },
+    /// QSpec FR-466 "Per-operator checks" 6: an `await`'s `within` with
+    /// `lower > upper` or an open upper bound. `ill_typed`/`type-mismatch`
+    /// at the interval (member `within`, expected a closed interval with
+    /// `lower <= upper`, actual the interval as written).
+    AwaitWindow {
+        /// The `await` control's declared name.
+        node: String,
+        /// The lower bound as written.
+        lower: u64,
+        /// The upper bound as written; `None` for `*`.
+        upper: Option<u64>,
+        /// The interval's span.
+        span: Span,
+    },
+    /// QSpec FR-464 "Profiles and laws": an `await` reads a clock role, so
+    /// the unit selects a `temporal_profile`; without one,
+    /// `missing_declaration`/`missing-selection` at the `await`.
+    MissingTemporalProfile {
+        /// The `await` control's declared name.
+        node: String,
+        /// The `await`'s name span.
+        span: Span,
+    },
+}
+
+/// Which expression slot of a protocol node a refusal is about (FR-218
+/// "Scopes").
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SlotKind {
+    /// An event node's constraint body.
+    Constraint,
+    /// A `check`'s condition.
+    Condition,
+    /// The `finish` constraint.
+    Finish,
+    /// A `visible` entry of a `choice` or `repeat`.
+    Visible,
+    /// A `case` guard or a `repeat`'s `while` guard.
+    Guard,
+    /// A `repeat`'s invariant.
+    Invariant,
+    /// A `repeat`'s variant.
+    Variant,
+}
+
+/// Why a decision's read is not an observable fact of its owner (FR-218
+/// "Choice and repeat decisions").
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ObservationReason {
+    /// `other-role`: the binder is eligible only for a different role.
+    OtherRole,
+    /// `ineligible-kind`: the binder's kind is never eligible.
+    IneligibleKind,
+    /// `unlisted`: eligible, but no individual `visible` entry lists it.
+    Unlisted,
+}
+
+impl ObservationReason {
+    /// The `reason` member's value.
+    pub const fn identifier(self) -> &'static str {
+        match self {
+            Self::OtherRole => "other-role",
+            Self::IneligibleKind => "ineligible-kind",
+            Self::Unlisted => "unlisted",
+        }
+    }
+}
+
+/// What a valuation of a `choice`'s visible facts shows about its guards
+/// (FR-218 "Choice and repeat decisions").
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ArmFault {
+    /// `missing-arm`: a valuation no guard covers.
+    MissingArm,
+    /// `duplicate-arm`: a valuation two guards cover.
+    DuplicateArm,
+}
+
+impl ArmFault {
+    /// The `failed` entry's value.
+    pub const fn identifier(self) -> &'static str {
+        match self {
+            Self::MissingArm => "missing-arm",
+            Self::DuplicateArm => "duplicate-arm",
+        }
+    }
 }
 
 /// Which end of a channel names a role (FR-218 "Channels").
@@ -369,7 +618,22 @@ impl ProtocolAnchorCause {
             | Self::ChannelType { span, .. }
             | Self::ChannelCarriesObject { span, .. }
             | Self::RoleModel { span, .. }
-            | Self::JoinList { span, .. } => *span,
+            | Self::JoinList { span, .. }
+            | Self::NodeRole { span, .. }
+            | Self::MissingChannel { span, .. }
+            | Self::CarriesMismatch { span, .. }
+            | Self::CausalCycle { span, .. }
+            | Self::NoProgress { span, .. }
+            | Self::Exhaustiveness { span, .. }
+            | Self::KeyClause { span, .. }
+            | Self::KeyModelState { span, .. }
+            | Self::KeyEquality { span, .. }
+            | Self::SlotClause { span, .. }
+            | Self::SlotModelState { span, .. }
+            | Self::WrongObservation { span, .. }
+            | Self::AwaitedForm { span, .. }
+            | Self::AwaitWindow { span, .. }
+            | Self::MissingTemporalProfile { span, .. } => *span,
         }
     }
 
@@ -381,11 +645,26 @@ impl ProtocolAnchorCause {
             | Self::MissingProfile { .. }
             | Self::MissingRoleType { .. }
             | Self::MissingRole { .. }
-            | Self::ChannelRole { .. } => Code::MissingDeclaration,
+            | Self::ChannelRole { .. }
+            | Self::NodeRole { .. }
+            | Self::MissingChannel { .. }
+            | Self::MissingTemporalProfile { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
-            Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
+            Self::WrongKind { .. }
+            | Self::ChannelMismatch { .. }
+            | Self::CarriesMismatch { .. }
+            | Self::AwaitWindow { .. }
+            | Self::KeyModelState { .. }
+            | Self::KeyEquality { .. }
+            | Self::SlotModelState { .. } => Code::IllTyped,
+            Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
+            Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
-            Self::Unimplemented { .. } => Code::UnsupportedConstruct,
+            Self::Unimplemented { .. } | Self::NoProgress { .. } | Self::AwaitedForm { .. } => {
+                Code::UnsupportedConstruct
+            }
+            Self::CausalCycle { .. } => Code::InvalidPackage,
+            Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).0
             }
@@ -404,11 +683,29 @@ impl ProtocolAnchorCause {
             | Self::MissingProfile { .. }
             | Self::MissingRoleType { .. }
             | Self::MissingRole { .. }
-            | Self::ChannelRole { .. } => "missing-name",
+            | Self::ChannelRole { .. }
+            | Self::NodeRole { .. }
+            | Self::MissingChannel { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
-            Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
+            Self::WrongKind { .. }
+            | Self::ChannelMismatch { .. }
+            | Self::CarriesMismatch { .. }
+            | Self::AwaitWindow { .. } => "type-mismatch",
+            Self::KeyModelState { .. } | Self::KeyEquality { .. } | Self::SlotModelState { .. } => {
+                "operator-ineligible"
+            }
+            // Only a cause that has a tag is wrapped
+            // (`protocol_controls::check_fifo`, `protocol_slots`).
+            Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => {
+                cause.cause().unwrap_or_default()
+            }
+            Self::WrongObservation { .. } => "wrong-observation",
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
+            Self::NoProgress { .. } | Self::AwaitedForm { .. } => "declaration-form",
+            Self::MissingTemporalProfile { .. } => "missing-selection",
+            Self::CausalCycle { .. } => "definition-cycle",
+            Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).1
             }

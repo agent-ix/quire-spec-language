@@ -530,12 +530,20 @@ fn s2_records_the_parts_s3_reads_to_decide_coverage() {
     assert!(at(form.constructs[3].span).starts_with("channel C"));
     assert!(at(form.constructs[5].span).starts_with("related by rel"));
 
-    let bodies: Vec<(&str, Option<bool>)> = form
+    let bodies: Vec<(&str, bool)> = form
         .bodies
         .iter()
-        .map(|body| (at(body.span), body.constant))
+        .map(|body| {
+            (
+                at(body.span),
+                matches!(
+                    body.expression.expression.root_node(),
+                    ExprNode::Boolean(false)
+                ),
+            )
+        })
         .collect();
-    assert_eq!(bodies, [("tried", None), ("false", Some(false))]);
+    assert_eq!(bodies, [("tried", false), ("false", true)]);
     assert_eq!(
         form.declarations[form.bodies[0].owner].kind,
         ProtocolNodeKind::Attempt
@@ -896,9 +904,9 @@ fn s2_builds_the_channel_of_a_send_and_receive_only() {
     let form = protocol_form(unit.forms()[0].form());
 
     let send = decl(form, "Ping", ProtocolNodeKind::Send);
-    assert_eq!(send.channel.as_deref(), Some("C"));
+    assert_eq!(send.channel.as_ref().map(|c| c.name.as_str()), Some("C"));
     let receive = decl(form, "Got", ProtocolNodeKind::Receive);
-    assert_eq!(receive.channel.as_deref(), Some("D"));
+    assert_eq!(receive.channel.as_ref().map(|c| c.name.as_str()), Some("D"));
     // Every other declared kind carries no channel.
     assert_eq!(decl(form, "Main", ProtocolNodeKind::Sequence).channel, None);
     assert_eq!(decl(form, "End", ProtocolNodeKind::Finish).channel, None);
