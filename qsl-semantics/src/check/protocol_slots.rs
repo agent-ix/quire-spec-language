@@ -42,7 +42,8 @@ use super::ir::{CheckedBody, NodeKind};
 use super::protocol_clause::{record_binder, CheckedProtocol, ProtocolNodeId};
 use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, Goal};
 use super::refusal::{
-    ArmFault, CheckCause, CheckRefusal, ObservationReason, ProtocolAnchorCause, SlotKind,
+    ArmFault, CheckCause, CheckRefusal, ObservationReason, ProtocolAnchorCause, RelatedEnd,
+    SlotKind,
 };
 use super::state_clause::ClauseDeclarations;
 use super::type_form::resolve_form;
@@ -108,6 +109,19 @@ pub struct CheckedNodeBody {
     pub body: CheckedBody,
 }
 
+/// One checked `related by r (a, b)` clause of an event node (FR-218
+/// "Relationships").
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckedRelated {
+    /// The event node.
+    pub node: ProtocolNodeId,
+    /// The index of the relationship among the checked protocol's
+    /// relationships.
+    pub relationship: usize,
+    /// The first and second end, each of its relationship end's type.
+    pub ends: [CheckedBody; 2],
+}
+
 /// The nodes that read one binder (FR-218 "Scopes").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedReaders {
@@ -142,6 +156,9 @@ pub struct CheckedSlots {
     pub choices: Vec<CheckedChoice>,
     /// The repeats.
     pub repeats: Vec<CheckedRepeat>,
+    /// Every `related by` clause, by node in declaration order and each
+    /// node's clauses in source order.
+    pub related: Vec<CheckedRelated>,
     /// The readers of every binder the `run` tree and `finish` can read:
     /// the `over` input, the activation binder, the protocol captures and
     /// each node's binder, in that order.
@@ -715,6 +732,80 @@ pub(crate) fn check(
                 node: ProtocolNodeId(node),
                 body: checked_body,
             });
+        }
+    }
+
+    // FR-218 "Relationships": each `related by r (a, b)` clause of an
+    // event node, checked independently. Each end is a value over the
+    // binders readable at the node and the `over` input, of its
+    // relationship end's type.
+    for (node, declaration) in protocol.declarations.iter().enumerate() {
+        for related in &declaration.related {
+            let name = &related.relationship;
+            if !protocol
+                .relationships
+                .iter()
+                .any(|relationship| relationship.name.name == name.name)
+            {
+                checker.refuse(ProtocolAnchorCause::MissingRelated {
+                    node: declaration.name.name.clone(),
+                    name: name.name.clone(),
+                    span: name.span,
+                });
+                continue;
+            }
+            // A declared relationship that did not resolve is refused by
+            // `protocol_relationship`, so the package does not compile.
+            let Some((relationship, checked_relationship)) = checked
+                .relationships
+                .iter()
+                .enumerate()
+                .find(|(_, relationship)| relationship.name == name.name)
+            else {
+                continue;
+            };
+            let mut readable = flow.input(node);
+            readable.extend(node_binder.get(&node));
+            let mut ends = Vec::with_capacity(2);
+            for ((form, expected), end) in related
+                .ends
+                .iter()
+                .zip(&checked_relationship.ends)
+                .zip([RelatedEnd::First, RelatedEnd::Second])
+            {
+                let Some(body) = checker.slot(
+                    &Slot {
+                        owner: SlotOwner::Node(node),
+                        kind: SlotKind::RelatedEnd,
+                        form,
+                        goal: Goal::Infer,
+                        readable: &readable,
+                        bars_model_state: false,
+                    },
+                    &mut cx,
+                ) else {
+                    continue;
+                };
+                let actual = body.root().value_type();
+                if actual != expected {
+                    checker.refuse(ProtocolAnchorCause::RelatedEnd {
+                        relationship: name.name.clone(),
+                        end,
+                        expected: Box::new(expected.clone()),
+                        actual: Box::new(actual.clone()),
+                        span: span_of(form, &Location::root(Origin::Expression)),
+                    });
+                    continue;
+                }
+                ends.push(body);
+            }
+            if let Ok(ends) = <[CheckedBody; 2]>::try_from(ends) {
+                slots.related.push(CheckedRelated {
+                    node: ProtocolNodeId(node),
+                    relationship,
+                    ends,
+                });
+            }
         }
     }
 

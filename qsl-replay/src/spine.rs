@@ -851,6 +851,34 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: `await {node}` reads a clock, but the unit selects no temporal \
                      profile"
                 ),
+                ProtocolAnchorCause::MissingRelationship { name, .. } => {
+                    format!("{message}: `{name}` names no export of a selected model")
+                }
+                ProtocolAnchorCause::RelationshipExport { name, actual, .. } => {
+                    format!("{message}: `{name}` names a {actual}, not a relationship")
+                }
+                ProtocolAnchorCause::MissingRelated { node, name, .. } => format!(
+                    "{message}: `{node}` is related by `{name}`, which is no relationship of the \
+                     protocol"
+                ),
+                ProtocolAnchorCause::RelatedEnd {
+                    relationship, end, ..
+                } => format!(
+                    "{message}: the {} end of `related by {relationship}` is not of the \
+                     relationship end's type",
+                    end.identifier()
+                ),
+                ProtocolAnchorCause::MissingRequirement { name, .. } => {
+                    format!("{message}: `requires temporal {name}` names no declaration of the unit")
+                }
+                ProtocolAnchorCause::RequirementKind { name, kind, .. } => format!(
+                    "{message}: `requires temporal {name}` names a {kind}, not a temporal clause"
+                ),
+                ProtocolAnchorCause::RequirementCycle {
+                    protocol, temporal, ..
+                } => format!(
+                    "{message}: `requires temporal {temporal}` reaches `protocol {protocol}` again"
+                ),
             };
         }
         CheckCause::TerminalNotEmitted { name, .. } => {

@@ -122,6 +122,8 @@ mod protocol_clause;
 mod protocol_controls;
 mod protocol_obligation;
 mod protocol_reference;
+mod protocol_relationship;
+mod protocol_requirement;
 mod protocol_slots;
 mod references;
 mod refusal;
@@ -268,16 +270,18 @@ pub use protocol_obligation::{
     CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
     ObligationCause, ObligationOwner, ObligationStage, ReadClass,
 };
+pub use protocol_relationship::CheckedRelationship;
+pub use protocol_requirement::CheckedRequirement;
 pub use protocol_slots::{
-    CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRepeat,
-    CheckedSlots, CheckedTerminalMember,
+    CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRelated,
+    CheckedRepeat, CheckedSlots, CheckedTerminalMember,
 };
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
     DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
     MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
-    ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
+    ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
     ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TemporalCause,
     WrongSnapshotCause,
 };
@@ -1206,6 +1210,21 @@ impl PackageDeclarations {
         // bound (see `check::family::check_declaration_body`'s own doc for
         // why this, not a `Cell` or a second call, is the mechanism).
         let mut nodes_used = 0_u64;
+        // FR-218 "Requirements": each function's name and keyword, which a
+        // `requires temporal` name that resolves to it names.
+        let function_kinds: Vec<(String, &'static str)> = self
+            .functions
+            .iter()
+            .map(|function| {
+                (
+                    function.name.clone(),
+                    match function.kind() {
+                        qsl_forms::DeclarationKind::Function => "function",
+                        qsl_forms::DeclarationKind::Predicate => "predicate",
+                    },
+                )
+            })
+            .collect();
         for (index, function) in self.functions.into_iter().enumerate() {
             // FR-092 "Function nodes": the kind travels with the draft to
             // lowering, which keys a predicate's node `predicate`.
@@ -1567,6 +1586,41 @@ impl PackageDeclarations {
         let protocol_profile = lock_evidence
             .protocol_profile()
             .map(|definition| definition.identity.clone());
+        // FR-218 "Requirements": the unit's declarations a `requires
+        // temporal` name resolves among, each other kind by its keyword.
+        let unit_declarations = protocol_requirement::UnitDeclarations::new(
+            &self.temporal_clauses,
+            &self.protocols,
+            state_clause_forms
+                .iter()
+                .map(|clause| {
+                    (
+                        clause.name.as_str(),
+                        match clause.kind {
+                            qsl_forms::StateClauseKind::Invariant => "invariant",
+                            qsl_forms::StateClauseKind::Precondition => "pre",
+                            qsl_forms::StateClauseKind::Postcondition => "post",
+                        },
+                    )
+                })
+                .chain(
+                    function_kinds
+                        .iter()
+                        .map(|(name, kind)| (name.as_str(), *kind)),
+                )
+                .chain(
+                    self.terminals
+                        .iter()
+                        .map(|terminal| (terminal.name.as_str(), "terminal")),
+                )
+                .chain(
+                    self.state_graph_claims
+                        .iter()
+                        .map(|claim| (claim.form.name.name.as_str(), "claim")),
+                )
+                .chain(self.native_names.iter().map(|name| (name.as_str(), "unit")))
+                .chain(scope.type_names().map(|name| (name, "type"))),
+        );
         for (index, protocol) in self.protocols.iter().enumerate() {
             let attempts = self
                 .protocol_attempts
@@ -1619,6 +1673,23 @@ impl PackageDeclarations {
                     let content = protocol_clause::content(protocol, &self.alias_names, &scope);
                     let content_refused = !content.is_empty();
                     refusals.extend(content);
+                    match protocol_requirement::check(
+                        index,
+                        &self.protocols,
+                        &self.temporal_clauses,
+                        &unit_declarations,
+                    ) {
+                        Ok(requirements) => checked.requirements = requirements,
+                        Err(requirement_refusals) => refusals.extend(requirement_refusals),
+                    }
+                    match protocol_relationship::check(protocol, &models) {
+                        Ok(relationships) => checked.relationships = relationships,
+                        Err(relationship_refusals) => refusals.extend(
+                            relationship_refusals
+                                .into_iter()
+                                .map(|(_, refusal)| refusal),
+                        ),
+                    }
                     match obligations {
                         protocol_obligation::Obligations::Checked(checked_obligations, used) => {
                             checked.obligations = *checked_obligations;

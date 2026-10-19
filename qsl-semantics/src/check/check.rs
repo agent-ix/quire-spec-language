@@ -951,6 +951,11 @@ impl Scope {
         self.index.protocols.get(name).copied()
     }
 
+    /// Every name a type of the unit binds, in name order.
+    pub(crate) fn type_names(&self) -> impl Iterator<Item = &str> {
+        self.index.types.keys().map(String::as_str)
+    }
+
     /// Whether `name` is a declared type or enum of the unit, which a
     /// protocol reference cannot name (FR-218).
     pub(crate) fn declares_type(&self, name: &str) -> bool {
