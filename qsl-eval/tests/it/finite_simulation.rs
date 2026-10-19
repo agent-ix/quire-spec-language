@@ -13,8 +13,8 @@ use std::cell::Cell;
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::{
-    explore_request, replay, sample_request, Expansion, ExpansionStop, Limit, Limits, NotSimulated,
-    Outcome, ReplayError, StopReason, Trace, TransitionSystem,
+    explore_request, replay, sample_request, sample_request_until, Expansion, ExpansionStop, Limit,
+    Limits, NotSimulated, Outcome, ReplayError, SampleRequest, StopReason, Trace, TransitionSystem,
 };
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::{LimitExceeded, LimitKind};
@@ -2148,4 +2148,122 @@ fn tc_536_exploration_limits_publish_their_defaults() {
         Limit::Transitions(5).setting().name(),
         "explore.transitions"
     );
+}
+
+// ---------------------------------------------------------------------------
+// FR-166: a sampled trace that ends at its caller's end condition.
+// ---------------------------------------------------------------------------
+
+/// `sample_request_until`'s request, seed 424242, trace 0, at most
+/// `max_steps` steps.
+fn until_request<'r>(
+    types: &'r TypeEnvironment,
+    sampler: &'r DefinitionRef,
+    max_steps: usize,
+) -> SampleRequest<'r> {
+    SampleRequest {
+        domains: NO_DOMAINS,
+        types,
+        position_limit: 1000,
+        sampler,
+        seed: 424_242,
+        trace: 0,
+        max_steps,
+        identity: IdentityLimits::default(),
+    }
+}
+
+/// An end condition is read before each state is expanded: ending at the
+/// state after step 3 of TC-454's five-way vector (indices 1, 3, 3) gives
+/// the first three steps of `sample_request`'s trace for the same seed and
+/// trace index, `StopReason::Reached`, and no findings of that state, which
+/// is never expanded; an end condition that holds at once gives no step.
+#[test]
+fn an_end_condition_ends_the_trace_at_a_prefix_of_the_sampled_trace() {
+    let system = five_way_chain().with_finding("0-1-3-3", "never-recorded");
+    let full = sample_request(
+        &system,
+        NO_DOMAINS,
+        &empty_types(),
+        1000,
+        &sampler_ref(),
+        424_242,
+        0,
+        5,
+        IdentityLimits::default(),
+    )
+    .expect("a bounded, generator-matched sample");
+    assert_eq!(
+        full.provenance.as_ref().map(|p| p.stopped),
+        Some(StopReason::StepLimit)
+    );
+    assert_eq!(full.findings.len(), 1, "the full trace expands the state");
+
+    let (types, sampler) = (empty_types(), sampler_ref());
+    let until = sample_request_until(
+        &system,
+        until_request(&types, &sampler, 5),
+        |state: &String| state == "0-1-3-3",
+    )
+    .expect("a bounded, generator-matched sample");
+    assert_eq!(until.initial, full.initial);
+    assert_eq!(until.steps, full.steps[..3]);
+    assert!(until.findings.is_empty(), "{:?}", until.findings);
+    let provenance = until.provenance.expect("a sampled trace has provenance");
+    assert_eq!(provenance.stopped, StopReason::Reached);
+    assert_eq!((provenance.seed, provenance.trace), (424_242, 0));
+
+    let at_once =
+        sample_request_until(&system, until_request(&types, &sampler, 5), |_: &String| {
+            true
+        })
+        .expect("a bounded, generator-matched sample");
+    assert!(at_once.steps.is_empty());
+    assert_eq!(
+        at_once.provenance.map(|p| p.stopped),
+        Some(StopReason::Reached)
+    );
+}
+
+/// `replay` does not expand the last state of a `Reached` trace: a chain
+/// whose state `2` stops on expansion replays a trace that reached `2`; the
+/// same trace recorded as `StepLimit` expands `2` and fails there.
+#[test]
+fn replay_skips_the_unexpanded_last_state_of_a_reached_trace() {
+    let cause = CatalogCode::new("invalid_runtime_input", "invalid-value");
+    let system = EdgeGraph::new(
+        vec!["0"],
+        vec![
+            ("0", op("t0"), "1"),
+            ("1", op("t0"), "2"),
+            ("2", op("t0"), "3"),
+        ],
+    )
+    .with_stop("2", cause);
+    let (types, sampler) = (empty_types(), sampler_ref());
+    let trace = sample_request_until(
+        &system,
+        until_request(&types, &sampler, 5),
+        |state: &String| state == "2",
+    )
+    .expect("a bounded, generator-matched sample");
+    assert_eq!(trace.steps.len(), 2);
+    assert_eq!(
+        trace.provenance.as_ref().map(|p| p.stopped),
+        Some(StopReason::Reached)
+    );
+    replay(&system, &trace, IdentityLimits::default()).expect("a reached trace replays");
+
+    let mut unmarked = trace.clone();
+    if let Some(provenance) = unmarked.provenance.as_mut() {
+        provenance.stopped = StopReason::StepLimit;
+    }
+    assert!(matches!(
+        replay(&system, &unmarked, IdentityLimits::default()),
+        Err(ReplayError::Stopped {
+            step: 2,
+            recorded: None,
+            replayed: Some(replayed),
+        }) if replayed == cause
+    ));
 }
