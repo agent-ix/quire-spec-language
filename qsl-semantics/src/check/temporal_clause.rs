@@ -423,7 +423,7 @@ fn fault(invariant: &'static str) -> StageFailure<CheckRefusal> {
 
 /// Whether `operator` is a temporal operator, which an interval may
 /// qualify, rather than a connective.
-pub(super) const fn is_temporal(operator: TemporalOperator) -> bool {
+const fn is_temporal(operator: TemporalOperator) -> bool {
     match operator {
         TemporalOperator::Eventually
         | TemporalOperator::Always

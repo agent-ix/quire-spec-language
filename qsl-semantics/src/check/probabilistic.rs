@@ -17,8 +17,7 @@
 //!   long-run threshold outside `(0, 1)` (`qualitative-threshold`), a
 //!   confidence clause that omits or repeats a parameter
 //!   (`partial-confidence`) or whose parameters leave no indifference region
-//!   (`invalid-confidence`), and a temporal event with an unbounded
-//!   operator.
+//!   (`invalid-confidence`).
 //!
 //! Resolving a model, an operation, a parameter, a profile or a workload,
 //! typing a support value, a reward or a threshold, reading preconditions,
@@ -27,9 +26,8 @@
 //! above still refuses `not-yet-implemented`.
 
 use qsl_forms::{
-    ConfidenceItemForm, ConfidenceKey, EventForm, ExactValueForm, ExactValueKind, ExprNode,
-    Expression, IntervalUpper, ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm,
-    TemporalNodeForm, WorkloadForm,
+    ConfidenceItemForm, ConfidenceKey, ExactValueForm, ExactValueKind, ExprNode, Expression,
+    ProbabilisticBody, ProbabilisticForm, RandomForm, RewardForm, WorkloadForm,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
@@ -38,7 +36,6 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::layer::visit_located;
 use super::refusal::{CheckCause, CheckRefusal};
-use super::temporal_clause::is_temporal;
 
 /// The largest scale a decimal is expanded at when a confidence range is
 /// compared. A larger scale leaves the range unchecked here; the claim still
@@ -176,15 +173,6 @@ pub enum ProbabilisticCause {
         /// The parameter's span.
         span: Span,
     },
-    /// A temporal operator of a probabilistic event with no closed interval:
-    /// the event needs a finite window. `unsupported_construct`/
-    /// `expression-form`.
-    UnboundedEvent {
-        /// The claim.
-        claim: String,
-        /// The operator's span.
-        span: Span,
-    },
     /// A quantity literal in a position no checker reads yet.
     /// `unsupported_construct`/`not-yet-implemented`.
     QuantityLiteral,
@@ -215,7 +203,6 @@ impl ProbabilisticCause {
             | Self::QualitativeThreshold { span, .. }
             | Self::PartialConfidence { span, .. }
             | Self::InvalidConfidence { span, .. }
-            | Self::UnboundedEvent { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
             Self::QuantityLiteral => None,
         }
@@ -233,9 +220,7 @@ impl ProbabilisticCause {
             | Self::PartialConfidence { .. }
             | Self::InvalidConfidence { .. } => Code::InvalidProbabilisticModel,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
-            Self::UnboundedEvent { .. }
-            | Self::QuantityLiteral
-            | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
+            Self::QuantityLiteral | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -251,7 +236,6 @@ impl ProbabilisticCause {
             Self::QualitativeThreshold { .. } => "qualitative-threshold",
             Self::PartialConfidence { .. } => "partial-confidence",
             Self::InvalidConfidence { .. } => "invalid-confidence",
-            Self::UnboundedEvent { .. } => "expression-form",
             Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",
         }
     }
@@ -555,27 +539,7 @@ fn claim(form: &ProbabilisticForm) -> Vec<ProbabilisticCause> {
     // The probability, level or fraction the confidence parameters are
     // measured against; `expected` claims have none.
     let theta = match &form.body {
-        ProbabilisticBody::Probability {
-            threshold, event, ..
-        } => {
-            if let EventForm::Temporal(formula) = event {
-                for node in formula.nodes() {
-                    let TemporalNodeForm::Operator(operator) = node else {
-                        continue;
-                    };
-                    let bounded = operator
-                        .interval
-                        .is_some_and(|interval| interval.upper != IntervalUpper::Open);
-                    if is_temporal(operator.operator) && !bounded {
-                        causes.push(ProbabilisticCause::UnboundedEvent {
-                            claim: claim.clone(),
-                            span: operator.operator_span,
-                        });
-                    }
-                }
-            }
-            Some(threshold)
-        }
+        ProbabilisticBody::Probability { threshold, .. } => Some(threshold),
         ProbabilisticBody::Quantile { level, .. } => Some(level),
         ProbabilisticBody::MeanOfFraction { threshold, .. }
         | ProbabilisticBody::LongRunFraction { threshold, .. } => Some(threshold),

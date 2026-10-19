@@ -318,34 +318,23 @@ fn confidence_parameters_keep_their_ranges() {
     assert_eq!(located(&source), [not_yet(&source)]);
 }
 
-/// FR-186 "Events and measures": a probabilistic event's temporal operator
-/// needs a closed interval; one without refuses `unsupported_construct`/
-/// `expression-form` at the operator, and a nest of closed intervals does
-/// not.
+/// FR-186 "Events and measures": an event's window is not checked yet, so a
+/// claim with an operator that has no closed interval refuses
+/// `not-yet-implemented` like any other claim, not for its window: QSpec
+/// FR-407 admits `[always holds(P)]` and the like under the infinite-trace
+/// profile, and profiles do not resolve here yet.
 #[trace("TC-621")]
 #[test]
-fn an_event_operator_needs_a_closed_interval() {
-    for (event, at) in [
-        ("always holds(n.healthy)", "always"),
-        ("eventually[0,*] holds(n.healthy)", "eventually"),
-        ("eventually[0,100] always holds(n.healthy)", "always"),
+fn an_event_window_is_not_refused_before_profiles_resolve() {
+    for event in [
+        "always holds(n.healthy)",
+        "eventually[0,*] holds(n.healthy)",
+        "eventually[0,100] always[0,10] holds(n.healthy)",
+        "holds(a) and not holds(b)",
     ] {
         let source = claim(&format!("{{ probability >= 0.99 [ {event} ] }}"));
-        assert_eq!(
-            located(&source),
-            [(
-                Code::UnsupportedConstruct,
-                Some("expression-form"),
-                at.to_owned()
-            )],
-            "{event}"
-        );
+        assert_eq!(located(&source), [not_yet(&source)], "{event}");
     }
-    let bounded =
-        claim("{ probability >= 0.99 [ eventually[0,100] always[0,10] holds(n.healthy) ] }");
-    assert_eq!(located(&bounded), [not_yet(&bounded)]);
-    let connectives = claim("{ probability >= 0.99 [ holds(a) and not holds(b) ] }");
-    assert_eq!(located(&connectives), [not_yet(&connectives)]);
 }
 
 /// A quantity literal in an ordinary expression refuses `unsupported_construct`/

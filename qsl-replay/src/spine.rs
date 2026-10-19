@@ -825,9 +825,6 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProbabilisticCause::InvalidConfidence {
                     claim, parameter, ..
                 } => format!("{message}: `{parameter}` of claim `{claim}` is out of range"),
-                ProbabilisticCause::UnboundedEvent { claim, .. } => {
-                    format!("{message}: the event of claim `{claim}` needs a finite window")
-                }
                 ProbabilisticCause::QuantityLiteral => {
                     format!("{message}: a quantity literal is not checked in this position yet")
                 }

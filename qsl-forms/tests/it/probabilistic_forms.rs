@@ -231,9 +231,10 @@ fn each_leading_word_builds_only_its_own_form() {
     assert!(matches!(unit.forms(), [form] if matches!(form.form(), DeclarationForm::Workload(_))));
 }
 
-/// FR-311-AC-3 (TC-890 step 3): a zero weight and a workload that omits an
-/// operation both build; S3 refuses them (FR-185).
-#[trace("TC-890", "FR-311-AC-3")]
+/// TC-890 step 3, the S2 half of FR-311-AC-3: a zero weight and a workload
+/// that omit nothing S2 checks both build. That S3 refuses them is asserted in
+/// `qsl-semantics`, for the zero weight only, so this test tags no criterion.
+#[trace("TC-890")]
 #[test]
 fn a_zero_weight_and_an_incomplete_workload_build_at_s2() {
     let (_, unit) = build("random Server::attempt(d) ~ { 1 ms: 0 };");
@@ -257,6 +258,25 @@ fn confidence_of(
         .iter()
         .map(|item| (item.key, exact(&item.value)))
         .collect()
+}
+
+/// The scheduler `Steady`, activation `on origin` and confidence items
+/// `alpha`, `beta`, `indifference` (in that order) a claim was written with.
+fn assert_steady_origin(text: &str, form: &ProbabilisticForm, iota: (&str, usize)) {
+    let SchedulerForm::Workload(workload) = &form.scheduler else {
+        panic!("a workload scheduler: {:?}", form.scheduler);
+    };
+    assert_eq!(workload.name, "Steady");
+    assert_eq!(slice(text, workload.span), "Steady");
+    assert_eq!(form.activation, ActivationForm::Origin);
+    assert_eq!(
+        confidence_of(form),
+        [
+            (ConfidenceKey::Alpha, decimal_literal("1", 2)),
+            (ConfidenceKey::Beta, decimal_literal("1", 2)),
+            (ConfidenceKey::Indifference, decimal_literal(iota.0, iota.1)),
+        ]
+    );
 }
 
 /// FR-392-AC-1 (TC-1077 step 1): ADR-024 §7's `NoFault`, `P95`, `LongRun` and
@@ -312,6 +332,8 @@ fn the_adr_024_claims_build_their_probabilistic_forms() {
     let (text, unit) = build(p95);
     let form = claim(&unit);
     assert_eq!(slice(&text, form.span), p95);
+    assert_eq!(form.name.name, "P95");
+    assert_steady_origin(&text, form, ("1", 2));
     let ProbabilisticBody::Quantile {
         level,
         measure,
@@ -348,6 +370,8 @@ fn the_adr_024_claims_build_their_probabilistic_forms() {
     let (text, unit) = build(long_run);
     let form = claim(&unit);
     assert_eq!(slice(&text, form.span), long_run);
+    assert_eq!(form.name.name, "LongRun");
+    assert_steady_origin(&text, form, ("2", 4));
     let ProbabilisticBody::LongRunFraction {
         predicate,
         weighting,
@@ -368,6 +392,8 @@ fn the_adr_024_claims_build_their_probabilistic_forms() {
     let (text, unit) = build(monthly);
     let form = claim(&unit);
     assert_eq!(slice(&text, form.span), monthly);
+    assert_eq!(form.name.name, "Monthly");
+    assert_steady_origin(&text, form, ("5", 3));
     let ProbabilisticBody::Probability {
         event:
             EventForm::Compare {
