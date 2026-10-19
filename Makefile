@@ -222,13 +222,14 @@ ci-all-features:
 # executables that lane already built are reused. `--tests` selects the test
 # targets implicitly, so a target whose required features are off (qsl-source's
 # `it`) is skipped as in that lane; naming `--test it` would make it an error.
-# Nothing is recompiled in a directory of its own. The three tests run serially in one process
-# (`--test-threads=1`: deep-stack tests must not share a thread pool); each
-# name must still select exactly one ignored test.
+# Nothing is recompiled in a directory of its own. The five tests run concurrently in one process
+# (`--test-threads=5`, one thread per case); each name must still select exactly one ignored test.
 test-deep-format:
 	@set -eu; \
 	for test in \
-		formatter_identity::all_three_deep_source_generators_keep_format_identity \
+		formatter_identity::deep_sum_source_generator_keeps_format_identity \
+		formatter_identity::deep_else_if_source_generator_keeps_format_identity \
+		formatter_identity::deep_let_source_generator_keeps_format_identity \
 		formatter_identity::replay_large_source_generator_keeps_format_identity \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity; do \
 		listing=$$(CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact "$$test" --list); \
@@ -238,8 +239,10 @@ test-deep-format:
 			exit 1; \
 		fi; \
 	done; \
-	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=1 \
-		formatter_identity::all_three_deep_source_generators_keep_format_identity \
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=5 \
+		formatter_identity::deep_sum_source_generator_keeps_format_identity \
+		formatter_identity::deep_else_if_source_generator_keeps_format_identity \
+		formatter_identity::deep_let_source_generator_keeps_format_identity \
 		formatter_identity::replay_large_source_generator_keeps_format_identity \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity
 
