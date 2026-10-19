@@ -65,6 +65,26 @@ with spec, owner decision (FND-003); (5) see SR-12812.
 | --- | --- | --- | --- |
 | FND-009 | low | The merge of origin/main (3fcce8cf5) replaced the removed `UnsupportedDeclarationForm` with `UnresolvedTypeName { name: format!("{:?}", over.head) }`. `over (c: Integer)` now refuses as `missing_declaration`/`missing-name` naming the Debug text `Builtin(Integer)`, although the type exists and simply is not an object type. | qsl-semantics/src/check/assemble.rs:3344-3352 |
 
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | medium | A temporal operator inside a quantifier body (`exists(d in c.items: eventually d.n = 2)`), an `if` branch (`if c.b then eventually c.n = 2 else true endif`) or a comparison operand (`c.b = eventually c.n`) is still refused at S1 as `invalid_syntax`. The merged FR-165 says S1 SHALL NOT refuse a predicate for holding a temporal operator, and that `graph-predicate` admits one at any operand position. `StateGraphTerm` reaches only `not`, a unary operator, `Comparison` and parentheses, so the S3 `expression-form` refusal never runs for these shapes. The three AC-4 shapes and `c.b implies eventually ...` do parse. | qsl-cst/src/grammar.rs:1187-1200 |
+
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | S3 runs the syntactic refusals before it resolves any name, so `{ eventually c.versionNumber = newName }` refuses `expression-form` at `eventually`. STD-176 (PR #986, in review) says S3 SHALL resolve names first and refuse `missing-name` at `newName` (its new AC-6 last sentence). Merged FR-165 does not decide this. If #986 lands as written, #968 fails it. The owner should choose: resolve names before the operator refusal, or change STD-176. | qsl-semantics/src/check/state_graph_claim.rs:409 |
+| FND-012 | low | S2 does not keep operators and operands in source order. Within a node it emits tokens and operands immediately and defers nested nodes, so `eventually c.a until c.b` builds `[until, eventually]`. In `(c.a until c.b) until c.c`, element 0 is the outer (second) `until`. This contradicts `StateGraphPredicateForm`'s "Every temporal operator written, in source order". S3 is unaffected, because `syntactic_refusal` takes the minimum span start. The SG-R18 test asserts only `ops[0].0 == Until`, so it cannot detect the order. | qsl-forms/src/state_graph.rs:129-165; qsl-forms/src/syntax.rs:3141 |
+
+## New findings (disposition pass 5)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | low | Names-first misses an unknown name that sits beside a `let`-bound name. `unresolved_name` checks each operand alone. When the clause checker stops at a `let`-bound name (`MissingName("n")`), the function skips that operand, so a later unknown name in the same operand is never seen: `let n = 1 in eventually n = newName` refuses `expression-form` at `eventually`, not `missing-name` at `newName`. `bindings` also ignores scope: in `if c.versionNumber = 1 then let n = 1 in eventually n = 2 else eventually n = 3`, the unbound `n` in the else branch is excused and the claim refuses `expression-form`. This contradicts FR-165 Predicates ("S3 SHALL resolve names first"). The claim is still refused with no checked claim, so the only defect is the wrong code. Binding the `let` names into the operand's view would fix both cases. | qsl-semantics/src/check/state_graph_claim.rs:361-401; qsl-forms/src/state_graph.rs:141-146 |
+
+
 ## Dispositions
 
 Round 1, at 5456c3b03f01941ac09a6aeca5bc3f7344fa4801 (fix commit) on top of merge 3fcce8cf5. Every other merge resolution, in assemble.rs, region.rs and refinement.rs, keeps both #960's terminal code and the claim code correctly.
@@ -79,3 +99,51 @@ Round 1, at 5456c3b03f01941ac09a6aeca5bc3f7344fa4801 (fix commit) on top of merg
 | FND-006 | accepted-no-change | Planner ruling: a parameter-like name keeps refusing as `missing-name`. |
 | FND-007 | fixed | `check_predicate` now starts each predicate from the claim's running total; `the_node_limit_applies_to_the_claims_cumulative_total` shows a limit one predicate fits under refuses the two-predicate claim. |
 | FND-008 | fixed | `Predicate.span` is now `Span`, falling back to the operand root and then the claim span. |
+
+Round 2, at f797d36addb7be8a8ed3044eeb09debfbce1be3b (fix commit), on top of merge 9e9dbc6d4. That merge brings in specs and reviews only and touches no claim code. The fix was reviewed statically: the focused build could not run because the shared disk was full (ENOSPC, 950 MiB free).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-009 | fixed | A new `AssemblyCause::OverNotObjectType { claim }` (`ill_typed`/`type-mismatch`, located at the type) replaces the Debug-formatted `UnresolvedTypeName`. The replay message reads "the `over` type of state-graph claim `P` is not an object type". Every `AssemblyCause` match site was updated. The new test is `an_over_type_that_is_not_an_object_type_refuses_at_the_type`. |
+
+Round 3, at b82b29bc8bee5d29ca40a5df3bb6e80eb2d4760b (merge of origin/main b5c704456, which also carries the optional-`over` change). The conflicts in refusal.rs and region.rs are resolved correctly: both `CheckCause::StateGraph` and `ProtocolObligation` keep their `code`, `cause` and region arms. The four other `ClauseView` callers (state clause, operation clause, terminal, type invariant) all pass `Some(context)` and `Some(("self", ..))`, which is the previous behaviour; the postcondition parent-projection branch now also requires `Some(context)`, which those callers always supply. Focused tests (qsl-semantics with test-support, qsl-forms, qsl-cst, qsl-replay) are green apart from the known macOS `ten_thousand_edge_chain`; `clippy --workspace --all-targets -D warnings` and `fmt --all --check` are clean.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | `over` is optional in all three productions (`opt(s(vec![x("over"), bound_parameter()]))`), S2 builds `over: Option<ParameterForm>`, and S3 records `over()` `None` with no slot bound, as merged FR-165-AC-4 requires. Covered by `each_form_parses_without_over`, `a_claim_without_over_checks_and_records_no_binding` and `a_claim_without_over_binds_no_object_name`. |
+| FND-010 | deferred | STD-176 (planner): FR-165 Parsing, AC-4 and ADR-022 SG-4 are to be aligned with what QSpec's merged graph-predicate recognises. QSpec makes a temporal operator inside an `if` condition, a `let` binding or a primary's operand (call argument, quantifier body) a syntax error, so FR-165's "any operand position" wording is too broad. The parser alignment commit needs its own pass. |
+
+Round 4, at 8fe62d1e35b3456c07f81bed858c67ea8e67c311 (S1 aligned to QSpec `graph-predicate`, after a clean merge of origin/main), checked on a clean `git archive` export of that commit.
+
+- **Grammar.** The grammar matches quire-specification origin/main 4f65ed2 shared-grammar.md lines 574-601, production by production:
+  - optional `over` in all three clauses;
+  - `always possible` in the order over, then from, then body;
+  - `unique path` ending in `;`;
+  - `graph-body` takes fairness only at its start;
+  - the let/if/implication alternatives;
+  - right-recursive `implies`;
+  - at most one binary temporal operator per relation.
+- **Expr-first rule.** `graph-unary` tries `Comparison` before `not`, temporal and `(`. Together with the `Expression` + `Peek` alternative, this realises QSpec's "derives as an `expr`" rule: `not c.n = 2` reads as one expression. No phrase without an operator reaches S3 with more than one operand (probed: `(c.a) and (c.b)`, `let`/`if` bodies, chained `implies`).
+- **Syntax-error locations.** Each matches QSpec SG-R13/R15/R18 and STD-176's AC-6 (probed):
+  - `;` for fairness after a body predicate or inside `from`;
+  - `fair` after a `unique path` clause;
+  - `eventually` in an `if` condition, a `let` binding, `exists(d in c.items: ...)`, a call argument and a comparison operand;
+  - the second `until` in a flat chain.
+- **Peek terminal.** It is used only in `StateGraphPredicate`, is zero-width, and records an expected-set entry only on mismatch.
+- **Reserved words.** `possible`, `unique` and `path` are complete-facet reserved words, as QSpec shared-grammar.md line 702 states. Member names (`MemberName`) still accept them. No in-repo source broke.
+- **Tests.** qsl-cst, qsl-forms, qsl-semantics (test-support), qsl-replay, qsl-eval, qsl-package, qsl-route, qsl-analyze and the root crate all pass, apart from the known macOS failures `ten_thousand_edge_chain` and `cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-010 | fixed | The predicate is now QSpec's `graph-predicate`. A temporal operator in a quantifier body, a call argument, a comparison operand, an `if` condition or a `let` binding is an S1 syntax error at the operator, which is what QSpec and STD-176 require. One in an `if` branch, a `let` body, a group, a connective or a `from`/`to` operand parses and is refused at S3. |
+
+Round 5, at f43e510325272eae2c120e9cc663324a2d0eecb9 (after a merge of origin/main a14b0b3e1), checked on a clean `git archive` export of that commit.
+
+- **Merge resolution.** assemble.rs keeps both `state_graph_claims(...)` and main's three-argument `operation_bodies`. layer.rs imports both `OperationBodyForm` and `StateGraphClaimForm`. The claim path computes `model_gate::selects_model(profiles)` and passes it to `LayerAdmission::new`, the same way the three other callers do.
+- **Names-first.** `over`-bound names resolve through the receiver slot, and a name bound by a quantifier inside an operand resolves within that operand (probed). The one gap is `let`-bound names (FND-013).
+- **Tests and lint.** Focused tests are green on qsl-cst, qsl-forms, qsl-semantics (test-support) and qsl-replay, apart from the known macOS `ten_thousand_edge_chain`. `clippy --workspace --all-targets -D warnings` and `fmt --all --check` are clean.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-011 | fixed | When a syntactic refusal is found, `check_claim` now first takes the earliest `missing-name` among the predicate's operands. `{ eventually c.versionNumber = newName }` refuses `missing-name` at `newName`, as merged FR-165-AC-5 requires (test `an_unknown_name_beside_an_operator_refuses_as_a_missing_name`). Residual edge: FND-013. |
+| FND-012 | fixed | `temporal_operators.sort_by_key(\|operator\| operator.span.start)`. Two tests now assert exact offsets and kinds: `[eventually, until]` and the inner `until` before the outer one. |

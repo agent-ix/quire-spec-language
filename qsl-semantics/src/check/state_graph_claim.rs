@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ExprNode, Expression, ExpressionForm, StateClauseKind, StateGraphClaimForm,
+    ExprNode, Expression, ExpressionBuilder, ExpressionForm, StateClauseKind, StateGraphClaimForm,
     StateGraphClaimKind, StateGraphPredicateForm,
 };
 use qsl_foundation::bound::{DomainKey, DomainKind};
@@ -322,14 +322,19 @@ fn syntactic_refusal(form: &StateGraphClaimForm) -> Option<StateGraphCause> {
         .map(|(_, cause)| cause)
 }
 
-/// The span of the node `location` reaches in `operand`.
-fn span_at(operand: &ExpressionForm, location: &Location) -> Option<Span> {
+/// The span of the node `path` reaches in `operand`.
+fn location_span(operand: &ExpressionForm, path: &[usize]) -> Option<Span> {
     let spans = &operand.spans;
     let mut node = spans.root();
-    for index in location.path() {
-        node = spans.child(node, index)?;
+    for index in path {
+        node = spans.child(node, *index)?;
     }
     spans.span(node)
+}
+
+/// The span of the node `location` reaches in `operand`.
+fn span_at(operand: &ExpressionForm, location: &Location) -> Option<Span> {
+    location_span(operand, &location.path())
 }
 
 /// The view the clause checker reads of a predicate operand under the claim's
@@ -352,12 +357,55 @@ fn view_of<'v>(declaration: &'v StateGraphDeclaration, body: &'v Expression) -> 
     }
 }
 
+/// `operand` wrapped in the `let` bindings it sits under, outermost first, so
+/// the clause checker resolves a bound name as the source scopes it. `None`
+/// when the wrapper cannot be built.
+fn scoped(operand: &ExpressionForm, scope: &[(String, ExpressionForm)]) -> Option<Expression> {
+    let mut inner = operand.expression.clone();
+    for (name, value) in scope.iter().rev() {
+        let mut builder = ExpressionBuilder::new();
+        let value = builder.graft(value.expression.clone());
+        let body = builder.graft(inner);
+        builder
+            .push(ExprNode::Let {
+                name: name.clone(),
+                value,
+                body,
+            })
+            .ok()?;
+        inner = builder.build().ok()?;
+    }
+    Some(inner)
+}
+
+/// The span of the node `path` reaches in the operand wrapped by `scope`
+/// `let`s: each wrapper's body is child 1 and its value child 0.
+fn scoped_span(
+    operand: &ExpressionForm,
+    scope: &[(String, ExpressionForm)],
+    path: &[usize],
+) -> Option<Span> {
+    let mut depth = 0;
+    while depth < scope.len() && path.get(depth) == Some(&1) {
+        depth += 1;
+    }
+    if depth == scope.len() {
+        return location_span(operand, &path[depth..]);
+    }
+    if path.get(depth) == Some(&0) {
+        let (_, value) = &scope[depth];
+        return location_span(value, &path[depth + 1..]);
+    }
+    None
+}
+
 /// The first name of a predicate's operands that resolves to nothing: a name
 /// refusal outranks a temporal operator or fairness constraint, so a claim
 /// that holds both reports the name. Only a missing name counts, since an
-/// operand read alone may lack the context its operator supplies; a name a
-/// `let` of the predicate binds, and `self` (refused as an anchor read),
-/// resolve.
+/// operand read alone may lack the context its operator supplies. Each
+/// operand is checked under the `let`s it sits in, so a name a `let` binds
+/// resolves only in that `let`'s body; `self` (refused as an anchor read)
+/// resolves.
 fn unresolved_name<'a>(
     declaration: &StateGraphDeclaration,
     declarations: &ClauseDeclarations<'a>,
@@ -365,8 +413,11 @@ fn unresolved_name<'a>(
 ) -> Option<StateGraphCause> {
     let mut earliest: Option<(usize, StateGraphCause)> = None;
     for (role, predicate) in predicates(&declaration.form.kind) {
-        for operand in &predicate.operands {
-            let view = view_of(declaration, &operand.expression);
+        for (operand, scope) in predicate.operands.iter().zip(&predicate.scopes) {
+            let Some(wrapped) = scoped(operand, scope) else {
+                continue;
+            };
+            let view = view_of(declaration, &wrapped);
             let Err(inner) =
                 check_clause(&view, declarations, &mut cx.reborrow(declarations.scope))
             else {
@@ -375,10 +426,10 @@ fn unresolved_name<'a>(
             let CheckCause::MissingName(name) = &inner.cause else {
                 continue;
             };
-            if name == "self" || predicate.bindings.contains(name) {
+            if name == "self" {
                 continue;
             }
-            let span = span_at(operand, &inner.location)
+            let span = scoped_span(operand, scope, &inner.location.path())
                 .or_else(|| operand.spans.span(operand.spans.root()))
                 .unwrap_or(declaration.form.span);
             if earliest

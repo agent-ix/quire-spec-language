@@ -592,3 +592,28 @@ fn an_unknown_name_beside_an_operator_refuses_as_a_missing_name() {
     assert_eq!(cause, Some("missing-name"));
     assert_eq!(named.as_deref(), Some("newName"));
 }
+
+/// FR-165-AC-5: a `let` name resolves only inside its body, and a later
+/// unknown name in the same operand is still found.
+#[trace("TC-590", "FR-165-AC-5")]
+#[test]
+fn let_names_are_scoped_when_names_resolve_first() {
+    let (code, cause, named, _) = sole_refusal(
+        "possible P using v over (c: Config::ConfigVersion) \
+         { let n = 1 in eventually n = newName }\n",
+    );
+    assert_eq!(code, Code::MissingDeclaration);
+    assert_eq!(cause, Some("missing-name"));
+    assert_eq!(named.as_deref(), Some("newName"));
+
+    let body = "possible P using v over (c: Config::ConfigVersion) \
+        { if c.versionNumber = 1 then let n = 1 in eventually n = 2 \
+          else eventually n = 3 }\n";
+    let Err(mut refusals) = check(body) else {
+        panic!("the unbound `n` must refuse");
+    };
+    let (refusal, named) = refusals.remove(0);
+    assert_eq!(refusal.cause.code(), Code::MissingDeclaration);
+    assert_eq!(refusal.cause.cause(), Some("missing-name"));
+    assert_eq!(named.as_deref(), Some("n"));
+}

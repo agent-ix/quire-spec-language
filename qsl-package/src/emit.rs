@@ -78,7 +78,7 @@ use quire_contract_model::{
     encode_checked_package_v2, CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition,
     CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
     CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageV2,
+    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
     CheckedPackageLockV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
     CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
     CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ProtocolForm,
@@ -1178,19 +1178,19 @@ fn emit_package_inner(
         required_features: vec![root.into()],
         dependency_selections: dependency_selections(package),
     };
-    let preimage = CheckedPackageIdentityPreimageV2 {
-        version: IDENTITY_PREIMAGE_V2.into(),
-        edition,
-        profile_selections,
-        definition_selections,
-        model_selections,
-        required_features: lock.required_features.clone(),
-        dependency_selections: lock.dependency_selections.clone(),
-        identity_projection: nodes.iter().map(Into::into).collect(),
-    };
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
+    };
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: IDENTITY_PREIMAGE_V2,
+        edition: &edition,
+        profile_selections: &profile_selections,
+        definition_selections: &definition_selections,
+        model_selections: &model_selections,
+        required_features: &lock.required_features,
+        dependency_selections: &lock.dependency_selections,
+        identity_projection: &semantic_graph.nodes,
     };
     let capability_report = [CheckedCapability {
         feature: root.into(),

@@ -202,7 +202,7 @@ vocabulary! {
     Method => "method", Domain => "domain", Depends => "depends", Bound => "bound",
     Body => "body",
     Possible => "possible", Unique => "unique", Path => "path",
-    Caret => "^", Question => "?", Apostrophe => "'"
+    Arrow => "->", Caret => "^", Question => "?", Apostrophe => "'"
 }
 
 impl Kind {

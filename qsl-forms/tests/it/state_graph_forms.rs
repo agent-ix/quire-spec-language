@@ -477,7 +477,14 @@ fn let_bindings_are_kept() {
     let StateGraphClaimKind::Possible { target } = &claim.kind else {
         panic!("possible");
     };
-    assert_eq!(target.bindings, ["n"]);
+    assert_eq!(target.scopes.len(), target.operands.len());
+    let bound: Vec<Vec<&str>> = target
+        .scopes
+        .iter()
+        .map(|scope| scope.iter().map(|(name, _)| name.as_str()).collect())
+        .collect();
+    // The binding value sits outside its own `let`; the body sits inside.
+    assert_eq!(bound, [Vec::<&str>::new(), vec!["n"]]);
 }
 
 /// SG-R08: `possible`, `unique` and `path` are reserved words, refused where

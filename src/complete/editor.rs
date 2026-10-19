@@ -382,6 +382,7 @@ fn is_symbol(production: Production) -> bool {
             | Production::TerminalDeclaration
             | Production::StateGraphClaim
             | Production::ProtocolClause
+            | Production::Refinement
             | Production::RelationClause
             | Production::HyperClause
             | Production::HybridDeclaration

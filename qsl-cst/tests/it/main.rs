@@ -10,5 +10,6 @@ mod deep_sources;
 mod limits;
 mod model_source;
 mod nesting_levels;
+mod protocol_memory_refinement;
 mod selection;
 mod terminal_declaration;

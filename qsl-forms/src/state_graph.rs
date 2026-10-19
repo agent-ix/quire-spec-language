@@ -12,8 +12,8 @@ use qsl_cst::{CstNode, LosslessCst, Production, TokenKind};
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
-    DeclarationForm, StateGraphClaimForm, StateGraphClaimKind, StateGraphPredicateForm,
-    TemporalOperatorUse, UsingAlias,
+    DeclarationForm, ExpressionForm, StateGraphClaimForm, StateGraphClaimKind,
+    StateGraphPredicateForm, TemporalOperatorUse, UsingAlias,
 };
 use super::temporal_clause::{expression_form, fairness_form, operator_of, parameter_form};
 use super::value::{
@@ -131,19 +131,22 @@ fn predicate_form(
     predicate: &CstNode,
 ) -> Result<StateGraphPredicateForm, FormsRefusal> {
     let mut operands = Vec::new();
+    let mut scopes = Vec::new();
     let mut temporal_operators = Vec::new();
-    let mut bindings = Vec::new();
     // Source order: the next node to read is the last one pushed, so each
     // node's children go back in reverse.
-    let mut pending = vec![predicate];
-    while let Some(node) = pending.pop() {
+    let mut pending: Vec<(&CstNode, Vec<(String, ExpressionForm)>)> = vec![(predicate, Vec::new())];
+    while let Some((node, scope)) = pending.pop() {
         let mut nested = Vec::new();
         let node_items = items(cst, node);
-        if let [Item::Token(first), Item::Token(name), ..] = node_items[..] {
-            if first.spelling() == b"let" {
-                bindings.push(text(name, node)?);
+        // `let name = value in body`: the body sees the name.
+        let binder = match node_items[..] {
+            [Item::Token(first), Item::Token(name), ..] if first.spelling() == b"let" => {
+                Some(text(name, node)?)
             }
-        }
+            _ => None,
+        };
+        let mut value = None;
         for item in node_items {
             match item {
                 Item::Token(token) => {
@@ -157,7 +160,12 @@ fn predicate_form(
                 Item::Node(child) => match child.production() {
                     Production::Interval => {}
                     Production::Expression | Production::Comparison => {
-                        operands.push(expression_form(cst, child)?);
+                        let form = expression_form(cst, child)?;
+                        if binder.is_some() {
+                            value = Some(form.clone());
+                        }
+                        operands.push(form);
+                        scopes.push(scope.clone());
                     }
                     Production::StateGraphPredicate
                     | Production::StateGraphImplication
@@ -169,7 +177,15 @@ fn predicate_form(
                 },
             }
         }
-        pending.extend(nested.into_iter().rev());
+        let inner = match (binder, value) {
+            (Some(name), Some(value)) => {
+                let mut inner = scope;
+                inner.push((name, value));
+                inner
+            }
+            _ => scope,
+        };
+        pending.extend(nested.into_iter().rev().map(|child| (child, inner.clone())));
     }
     // The walk reads a node's own tokens before its children, so a binary
     // operator precedes the operator inside its left operand.
@@ -177,6 +193,6 @@ fn predicate_form(
     Ok(StateGraphPredicateForm {
         operands,
         temporal_operators,
-        bindings,
+        scopes,
     })
 }
