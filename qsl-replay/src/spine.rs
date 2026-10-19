@@ -772,6 +772,30 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::JoinList {
                     parallel, fault, ..
                 } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
+                ProtocolAnchorCause::NodeRole { node, name, .. } => {
+                    format!("{message}: `{node}` names `{name}`, which is no role of the protocol")
+                }
+                ProtocolAnchorCause::MissingChannel { node, name, .. } => format!(
+                    "{message}: `{node}` is written via `{name}`, which is no channel of the                      protocol"
+                ),
+                ProtocolAnchorCause::CarriesMismatch { channel, .. } => format!(
+                    "{message}: the binder's type is not the type channel `{channel}` carries"
+                ),
+                ProtocolAnchorCause::CausalCycle { nodes, .. } => format!(
+                    "{message}: the causal edges form a cycle through {}",
+                    nodes.join(", ")
+                ),
+                ProtocolAnchorCause::NoProgress { repeat, .. } => format!(
+                    "{message}: the body of `repeat {repeat}` does not necessarily take a step"
+                ),
+                ProtocolAnchorCause::Exhaustiveness { choice, failed, .. } => format!(
+                    "{message}: the guards of `choice {choice}` are not exhaustive and exclusive                      ({})",
+                    failed
+                        .iter()
+                        .map(|fault| fault.identifier())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             };
         }
         CheckCause::TerminalNotEmitted { name, .. } => {

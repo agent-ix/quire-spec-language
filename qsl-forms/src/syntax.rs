@@ -2365,6 +2365,11 @@ pub struct ScopedAnchorForm {
     /// `receive-of` anchor (FR-113's channel-mismatch check); `None` for
     /// every other site.
     pub channel: Option<String>,
+    /// The index into [`ProtocolDeclarationForm::declarations`] of the node
+    /// that writes the reference: the `receive`, `effect`, `event` or
+    /// `await` for a site of the `run` tree, the `compensate` template for
+    /// a template's `for` and `commit` references.
+    pub owner: usize,
 }
 
 /// The kind of static protocol node a [`ProtocolNodeDeclaration`] names, or
@@ -2450,13 +2455,16 @@ pub struct ProtocolNodeDeclaration {
     /// The innermost named control enclosing this declaration; `None` at
     /// the top level.
     pub scope: Option<ScopeId>,
-    /// The channel a `send` or `receive` is written `via`; `None` for
-    /// every other kind.
-    pub channel: Option<String>,
+    /// The channel a `send` or `receive` is written `via`, with its span;
+    /// `None` for every other kind.
+    pub channel: Option<DeclaredName>,
     /// The `related by` clauses of a `send`, `receive`, `attempt`, `effect`
     /// or `event` node, one per clause in source order (FR-308); empty for
     /// every other kind.
     pub related: Vec<RelatedForm>,
+    /// The role an `attempt`, `event` or `commit` is written `by`; `None`
+    /// for every other kind.
+    pub role: Option<DeclaredName>,
 }
 
 /// A binder's syntactic role (FR-113 "Refusals": a record binder, a
@@ -2533,6 +2541,77 @@ pub struct RoleForm {
     pub name: DeclaredName,
     /// The `M::T` object type the role is `on` or `each`, as spelled.
     pub context: NameForm,
+    /// The population, maximum and lifetime of a replicated `each` role;
+    /// `None` for a static `on` role (FR-308 `RoleForm::Replicated`).
+    pub replicated: Option<ReplicatedRoleForm>,
+    /// The span of the whole member, `;` included.
+    pub span: Span,
+}
+
+/// The replicated part of `role R each M::T from population max n lifetime
+/// l;` (FR-308), as written and unresolved.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplicatedRoleForm {
+    /// The population the instances are drawn `from`.
+    pub population: DeclaredName,
+    /// The authored maximum number of live instances.
+    pub max: u64,
+    /// The span of the maximum.
+    pub max_span: Span,
+    /// The lifetime of one instance.
+    pub lifetime: RoleLifetime,
+}
+
+/// A replicated role's `lifetime` (FR-308).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RoleLifetime {
+    /// `lifetime workflow`, with the span of `workflow`.
+    Workflow(Span),
+    /// `lifetime scope`, with the span of `scope`.
+    Scope(Span),
+    /// `lifetime until(e)`, with the condition expression.
+    Until(ExpressionForm),
+}
+
+/// One `case N when { guard } control` of a `choice` (FR-308): its label
+/// and its guard expression, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceCaseForm {
+    /// The case label.
+    pub name: DeclaredName,
+    /// The guard expression.
+    pub guard: ExpressionForm,
+}
+
+/// `choice N by R visible (..) { case ..; case ..; }` (FR-308): the owner,
+/// the visible facts and each case's guard, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceForm {
+    /// The index of the control's own declaration.
+    pub declaration: usize,
+    /// The control's name.
+    pub name: DeclaredName,
+    /// The owning role, as written.
+    pub owner: DeclaredName,
+    /// The `visible` entries, in source order.
+    pub visible: Vec<ExpressionForm>,
+    /// The span of the whole `visible(..)` list.
+    pub visible_span: Span,
+    /// The cases, in source order.
+    pub cases: Vec<ChoiceCaseForm>,
+    /// The span of the whole control.
+    pub span: Span,
+}
+
+/// `check N using p { e };` (FR-308): the profile alias the check is
+/// written `using`. Its body is the [`ProtocolBodyForm`] its declaration
+/// owns.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckForm {
+    /// The index of the control's own declaration.
+    pub declaration: usize,
+    /// The `using` profile alias.
+    pub using: UsingAlias,
 }
 
 /// A part of a protocol declaration that is neither a static node (a
@@ -2812,6 +2891,12 @@ pub struct ProtocolDeclarationForm {
     /// Every `await` control of the `run` tree, in source order of the
     /// controls (FR-308).
     pub awaits: Vec<AwaitForm>,
+    /// Every `choice` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub choices: Vec<ChoiceForm>,
+    /// Every `check` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub checks: Vec<CheckForm>,
     /// Every `terminal` and `scheduling` member, in source order (FR-308).
     pub members: Vec<ProtocolMemberForm>,
 }

@@ -53,7 +53,7 @@ pub use spans::{DeclarationSpans, ExpressionSpans, SpanId, SpanRefusal, SpansMis
 pub use syntax::{
     Accumulation, ActivationForm, AliasForm, AnchorForm, AnchorSegment, AnchorSite, ArmForm,
     AttemptForm, BinaryOperator, BinderForm, BinderKind, BinderQuery, BuiltinType, CaptureForm,
-    CaseForm, ClauseKind, ClockForm, CompensationAttempts, CompensationCommit, CompensationForm,
+    CaseForm, CheckForm, ChoiceCaseForm, ChoiceForm, ClauseKind, ClockForm, CompensationAttempts, CompensationCommit, CompensationForm,
     CompensationRecover, CompensationRetry, DeclarationForm, DeclarationKind, DeclaredClauseKind,
     DeclaredName, DimensionForm, DimensionTermForm, EnumForm, EnumMemberForm, ExactNumberForm,
     ExactNumberKind, ExprId, ExprNode, ExprRef, Expression, ExpressionBuilder, ExpressionForm,
@@ -61,7 +61,8 @@ pub use syntax::{
     FunctionDeclaration, IntervalForm, IntervalUpper, NameForm, OperationBodyForm, ParameterForm,
     PopulationBoundForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
     ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RecordFieldForm,
-    RecordForm, RelatedForm, RelationshipForm, RequirementForm, RoleForm, ScopeEntry, ScopeId,
+    RecordForm, RelatedForm, RelationshipForm, ReplicatedRoleForm, RequirementForm, RoleForm,
+    RoleLifetime, ScopeEntry, ScopeId,
     ScopeName, ScopedAnchorForm, ShapeChanged, Spellings, StateClauseForm, StateClauseKind,
     TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
     TemporalOperatorForm, TermOperator, TerminalDeclarationForm, TerminalDeclarationKind,

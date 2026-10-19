@@ -188,6 +188,18 @@ pub enum ObligationCause {
         /// The operation name.
         span: Span,
     },
+    /// `ambiguous_declaration`/`ambiguous-name`: the type declaring a
+    /// template's operation is a member type of two or more populations,
+    /// so its frame's extent cannot be decided, as FR-114 refuses an
+    /// attempt's.
+    AmbiguousPopulation {
+        /// The template.
+        compensation: String,
+        /// The populations, in ascending declaration key order.
+        populations: Vec<crate::model::key::DeclarationKey>,
+        /// The operation.
+        span: Span,
+    },
     /// `ill_typed`/`type-mismatch`: `attempts 0`.
     ZeroAttempts {
         /// The template.
@@ -242,6 +254,23 @@ pub enum ObligationCause {
         /// The interval.
         span: Span,
     },
+    /// `unsupported_construct`/`declaration-form`: a template's `commit`
+    /// node dominates its forward effect in the compiled causal edge
+    /// relation, so every execution takes it before the effect registers
+    /// the obligation (member `commit`, reason `commit-precedes-effect`).
+    CommitPrecedesEffect {
+        /// The identity of the selected protocol profile that prohibits the
+        /// form, when one is selected.
+        profile: Option<String>,
+        /// The template.
+        compensation: String,
+        /// The `commit` node's name.
+        commit: String,
+        /// The forward `effect` node's name.
+        effect: String,
+        /// The commit anchor.
+        span: Span,
+    },
 }
 
 impl ObligationCause {
@@ -256,11 +285,13 @@ impl ObligationCause {
             | Self::MissingRole { span, .. }
             | Self::MissingOperation { span, .. }
             | Self::AmbiguousOperation { span, .. }
+            | Self::AmbiguousPopulation { span, .. }
             | Self::ZeroAttempts { span, .. }
             | Self::AttemptTypeName { span, .. }
             | Self::AttemptType { span, .. }
             | Self::RetryBinder { span, .. }
-            | Self::Deadline { span, .. } => *span,
+            | Self::Deadline { span, .. }
+            | Self::CommitPrecedesEffect { span, .. } => *span,
         }
     }
 
@@ -277,9 +308,12 @@ impl ObligationCause {
             | Self::RetryBinder { .. }
             | Self::Deadline { .. } => Code::IllTyped,
             Self::Clause { cause, .. } => cause.code(),
-            Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
+            Self::AmbiguousOperation { .. } | Self::AmbiguousPopulation { .. } => {
+                Code::AmbiguousDeclaration
+            }
             Self::AttemptTypeName { fault, .. } => type_fault_class(fault).0,
             Self::AttemptType { .. } => Code::InvalidModelBinding,
+            Self::CommitPrecedesEffect { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -296,9 +330,54 @@ impl ObligationCause {
             | Self::RetryBinder { .. }
             | Self::Deadline { .. } => Some("type-mismatch"),
             Self::Clause { cause, .. } => cause.cause(),
-            Self::AmbiguousOperation { .. } => Some("ambiguous-name"),
+            Self::AmbiguousOperation { .. } | Self::AmbiguousPopulation { .. } => {
+                Some("ambiguous-name")
+            }
             Self::AttemptTypeName { fault, .. } => Some(type_fault_class(fault).1),
             Self::AttemptType { .. } => Some("malformed-declaration"),
+            Self::CommitPrecedesEffect { .. } => Some("declaration-form"),
+        }
+    }
+
+    /// The member a refusal of a template's member names, for the refusals
+    /// FR-381 states one for.
+    pub const fn member(&self) -> Option<&'static str> {
+        match self {
+            Self::CommitPrecedesEffect { .. } => Some("commit"),
+            Self::ZeroAttempts { .. } | Self::AttemptType { .. } => Some("attempts"),
+            Self::Deadline { .. } => Some("within"),
+            Self::StageRead { .. }
+            | Self::ModelStateRead { .. }
+            | Self::CaptureType { .. }
+            | Self::Clause { .. }
+            | Self::ForwardType { .. }
+            | Self::MissingRole { .. }
+            | Self::MissingOperation { .. }
+            | Self::AmbiguousOperation { .. }
+            | Self::AmbiguousPopulation { .. }
+            | Self::AttemptTypeName { .. }
+            | Self::RetryBinder { .. } => None,
+        }
+    }
+
+    /// The `reason` member of a refusal that states one.
+    pub const fn reason(&self) -> Option<&'static str> {
+        match self {
+            Self::CommitPrecedesEffect { .. } => Some("commit-precedes-effect"),
+            Self::StageRead { .. }
+            | Self::ModelStateRead { .. }
+            | Self::CaptureType { .. }
+            | Self::Clause { .. }
+            | Self::ForwardType { .. }
+            | Self::MissingRole { .. }
+            | Self::MissingOperation { .. }
+            | Self::AmbiguousOperation { .. }
+            | Self::AmbiguousPopulation { .. }
+            | Self::ZeroAttempts { .. }
+            | Self::AttemptTypeName { .. }
+            | Self::AttemptType { .. }
+            | Self::RetryBinder { .. }
+            | Self::Deadline { .. } => None,
         }
     }
 }

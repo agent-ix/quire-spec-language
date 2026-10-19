@@ -3076,6 +3076,19 @@ impl PackageDeclarations {
                 protocol.name.span,
             )
         }));
+        // FR-381: a template's operation anchor occurrence is recorded at
+        // the template's name.
+        declared_type_spans.extend(unit.protocols.iter().flat_map(|protocol| {
+            protocol.compensations.iter().map(|template| {
+                (
+                    super::lowering::compensation_origin(
+                        &protocol.name.name,
+                        &template.name.name,
+                    ),
+                    template.name.span,
+                )
+            })
+        }));
         // FR-110: the header profile that selects the protocol clause family's
         // profile is the package's `protocol_profile` (ADR-011 §2.4).
         if let Some(definition) = selections

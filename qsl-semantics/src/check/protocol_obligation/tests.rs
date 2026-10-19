@@ -934,22 +934,26 @@ fn the_recovery_predicate_is_a_total_boolean() {
     assert_eq!(cause.tag(), Some("unproved-range"));
     assert_eq!(at(&text, &cause), "recovered.tally + 1");
 
-    let (_, found) = refusals(&changed(
+    // The unresolved binder type is `protocol_clause::content`'s refusal,
+    // `missing_declaration`/`missing-name` at the type, and the only one.
+    let (text, found) = refusals(&changed(
         RECOVER,
         "recover (recovered: M::Absent) { true };",
     ));
     assert!(obligation_causes(&found).is_empty(), "{found:?}");
-    // The unresolved binder type is `protocol_clause::content`'s refusal
-    // (`missing_declaration`/`missing-name`), and `content` reports only the
-    // earliest uncovered construct while the template's `effect` node is
-    // uncovered; S3 itself gives no cause for it.
-    assert!(
-        found.iter().any(|refusal| matches!(
-            &refusal.cause,
-            CheckCause::ProtocolAnchor(cause) if cause.tag() == "not-yet-implemented"
-        )),
-        "{found:?}"
-    );
+    let [refusal] = found.as_slice() else {
+        panic!("one refusal: {found:?}");
+    };
+    let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+        panic!("a protocol cause: {refusal:?}");
+    };
+    let ProtocolAnchorCause::BinderType { binder, span, .. } = cause.as_ref() else {
+        panic!("a binder-type cause: {cause:?}");
+    };
+    assert_eq!(binder, "recovered");
+    assert_eq!(refusal.cause.code().as_str(), "missing_declaration");
+    assert_eq!(refusal.cause.cause(), Some("missing-name"));
+    assert_eq!(&text[span.start..span.end], "M::Absent");
 }
 
 /// FR-381-AC-10, the typing it rests on: `=` between an `Int[..]` operand and

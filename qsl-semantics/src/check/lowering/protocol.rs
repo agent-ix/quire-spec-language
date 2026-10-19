@@ -28,6 +28,13 @@ pub(crate) fn declaration_origin(protocol: &str) -> String {
     format!("protocol {protocol}")
 }
 
+/// The `Origin::TypeDeclaration` name a protocol's `compensate` template is
+/// located under, where its operation's `anchor` occurrence is recorded
+/// (FR-381). Spaced, so it names no declared type.
+pub(crate) fn compensation_origin(protocol: &str, template: &str) -> String {
+    format!("protocol {protocol} compensate {template}")
+}
+
 /// One checked protocol declaration, as lowering reads it.
 pub(crate) struct ProtocolInput {
     /// The declared name.

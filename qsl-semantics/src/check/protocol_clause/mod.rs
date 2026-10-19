@@ -41,17 +41,23 @@ mod anchors;
 mod attempts;
 mod binders;
 mod coverage;
+mod graph;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
 pub use coverage::content;
-pub use types::{BoundAttempt, CheckedAttempt, CheckedProtocol, ProtocolNodeId};
+pub(crate) use coverage::{constant_formula, constant_integer};
+pub(crate) use graph::dominates;
+pub use types::{
+    BoundAttempt, CausalEdge, CheckedAttempt, CheckedControl, CheckedControlTree,
+    CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
+};
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::ProtocolDeclarationForm;
+use qsl_forms::{BinderForm, BinderKind, ProtocolDeclarationForm};
 use qsl_foundation::Span;
 
 use super::protocol_obligation::CheckedObligations;
@@ -88,9 +94,14 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
 /// `attempts` (the assembler's own per-attempt operation resolution) and
 /// `state_clauses` (the unit's own checked state clauses, for FR-114's
 /// `contracts` check) are read for FR-114 alone; every other check is over
-/// the protocol's own form. Returns the checked protocol (its `attempts`
-/// empty: S4/lowering fills it in) alongside the S3-level `BoundAttempt`s
-/// `check::mod`'s own pipeline lowers next.
+/// the protocol's own form. Once every anchor resolves, the `run` control
+/// tree and its compiled causal edge relation are built (FR-218), and a
+/// cycle without the `repeat` back edges, or a `repeat` whose body does not
+/// necessarily step, is refused; `profile` is the selected protocol
+/// profile's identity, which the latter refusal names. Returns the checked
+/// protocol (its `attempts` empty: S4/lowering fills it in) alongside the
+/// S3-level `BoundAttempt`s `check::mod`'s own pipeline lowers next.
+#[allow(clippy::too_many_arguments)] // each input is a distinct package table the check reads
 pub fn check(
     protocol: &ProtocolDeclarationForm,
     alias_names: &BTreeMap<String, AliasKind>,
@@ -99,6 +110,7 @@ pub fn check(
     signatures: &Signatures,
     attempts: &[AttemptDeclaration],
     state_clauses: &[StateClauseDeclaration],
+    profile: Option<&str>,
 ) -> Result<(CheckedProtocol, Vec<BoundAttempt>), Vec<CheckRefusal>> {
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
 
@@ -163,14 +175,26 @@ pub fn check(
         bind_attempts(protocol, attempts, state_clauses, scope.types());
     refusals.extend(contract_refusals);
 
-    if !refusals.is_empty() {
+    let compiled = if refusals.is_empty() {
+        match graph::compile(protocol, &resolved, profile) {
+            Ok(compiled) => Some(compiled),
+            Err(graph_refusals) => {
+                refusals.extend(graph_refusals);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let Some(compiled) = compiled.filter(|_| refusals.is_empty()) else {
         // FR-113 "Outputs": refusals in source position order. `sort_by_key`
         // is stable, so refusals at equal spans (the up-front duplicate
         // pass, which emits one per declaration at that declaration's own
         // span) keep their relative order.
         refusals.sort_by_key(|(span, _)| span.start);
         return Err(refusals.into_iter().map(|(_, refusal)| refusal).collect());
-    }
+    };
 
     Ok((
         CheckedProtocol {
@@ -179,7 +203,29 @@ pub fn check(
             attempts: Vec::new(),
             obligations: CheckedObligations::default(),
             channels: Vec::new(),
+            controls: compiled.tree,
+            edges: compiled.edges,
+            decisions: crate::check::protocol_decisions::CheckedDecisions::default(),
+            compensation_operations: Vec::new(),
         },
         bound_attempts,
     ))
+}
+
+/// The `as (x: T)` record binder of the node `declaration` declares: the
+/// first record binder written after the node's name. Every node that has
+/// one writes it before any other binder.
+pub(crate) fn record_binder(
+    protocol: &ProtocolDeclarationForm,
+    declaration: usize,
+) -> Option<&BinderForm> {
+    let declaration = protocol.declarations.get(declaration)?;
+    protocol
+        .binders
+        .iter()
+        .filter(|binder| {
+            binder.kind == BinderKind::RecordBinder
+                && binder.name.span.start >= declaration.name.span.end
+        })
+        .min_by_key(|binder| binder.name.span.start)
 }

@@ -105,6 +105,7 @@ pub(super) fn check(
         }
     }
     refuse_duplicate_channels(&protocol.channels, &mut refusals);
+    check_messages(protocol, scope, &mut refusals);
 
     for parallel in &protocol.parallels {
         check_join(protocol, parallel, &mut refusals);
@@ -190,6 +191,71 @@ fn check_channel(
         overflow: channel.overflow.value,
         span: channel.span,
     })
+}
+
+/// FR-218 "Channels": each `send` and `receive` names a declared channel
+/// `via`, and its record binder declares the channel's `carries` type, by
+/// type identity. A binder is not compared with a `carries` type that is
+/// refused (an object type, or a name that does not resolve), nor with one
+/// of two channels of one name; a binder type that does not resolve is
+/// refused by `protocol_clause::content`.
+fn check_messages(
+    protocol: &ProtocolDeclarationForm,
+    scope: &Scope,
+    refusals: &mut Vec<(Span, CheckRefusal)>,
+) {
+    for (index, declaration) in protocol.declarations.iter().enumerate() {
+        let Some(via) = &declaration.channel else {
+            continue;
+        };
+        let channels: Vec<&ChannelForm> = protocol
+            .channels
+            .iter()
+            .filter(|channel| channel.name.name == via.name)
+            .collect();
+        let channel = match channels.as_slice() {
+            [] => {
+                refusals.push((
+                    via.span,
+                    refusal(ProtocolAnchorCause::MissingChannel {
+                        node: declaration.name.name.clone(),
+                        name: via.name.clone(),
+                        span: via.span,
+                    }),
+                ));
+                continue;
+            }
+            [channel] => *channel,
+            // Two channels of one name refuse at their declarations.
+            _ => continue,
+        };
+        let Ok(expected) = resolve_form(scope, &channel.carries) else {
+            continue;
+        };
+        if matches!(
+            expected,
+            ValueType::Reference(_) | ValueType::Population(_)
+        ) {
+            continue;
+        }
+        let Some(binder) = super::protocol_clause::record_binder(protocol, index) else {
+            continue;
+        };
+        let Ok(actual) = resolve_form(scope, &binder.value_type) else {
+            continue;
+        };
+        if actual != expected {
+            refusals.push((
+                binder.value_type.span,
+                refusal(ProtocolAnchorCause::CarriesMismatch {
+                    channel: channel.name.name.clone(),
+                    expected,
+                    actual,
+                    span: binder.value_type.span,
+                }),
+            ));
+        }
+    }
 }
 
 /// FR-218 "Channels": two channels of one name refuse at each declaration,

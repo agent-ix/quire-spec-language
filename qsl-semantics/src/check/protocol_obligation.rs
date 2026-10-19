@@ -42,7 +42,7 @@ use super::ir::{CheckedBody, NodeKind, Observation};
 use super::observation::Observations;
 use super::protocol_clause::{CheckedProtocol, ProtocolNodeId};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
-use super::state_clause::{ClauseDeclarations, ClauseOperation};
+use super::state_clause::{population_of, ClauseDeclarations, ClauseOperation, PopulationDomain};
 use super::type_form::resolve_form;
 use crate::family::CheckContext;
 use crate::model::operation::OperationLookup;
@@ -161,8 +161,13 @@ pub struct CheckedCompensation {
     pub effect: ProtocolNodeId,
     /// The index of the `by` role among the protocol's roles.
     pub role: usize,
-    /// The resolved operation.
+    /// The resolved operation. The identity of its shared anchor and frame
+    /// node is [`CheckedProtocol::compensation_operations`]'s entry at this
+    /// template's index, minted at S4.
     pub operation: ClauseOperation,
+    /// The population domain of the type declaring the operation, which
+    /// the operation's frame record names (FR-104 "Requirements").
+    pub(crate) frame_population: Option<PopulationDomain>,
     /// The forward binder.
     pub forward: CheckedBinder,
     /// The registration captures, as indices into
@@ -365,7 +370,7 @@ impl Site {
 
 /// What an expression is checked against.
 #[derive(Clone, Copy)]
-enum Goal<'g> {
+pub(super) enum Goal<'g> {
     /// A Boolean guard, relation or predicate.
     Boolean,
     /// A capture's initializer, against the type the capture declares.
@@ -378,18 +383,22 @@ enum Goal<'g> {
 }
 
 /// Checks `protocol`'s roles' obligations: its activation, captures and
-/// templates (FR-381). `anchors` is the protocol's resolved scoped anchors
-/// when FR-113 resolved them all; the effect and commit nodes of a template
-/// come from them, so without them those two are not checked.
+/// templates (FR-381). `anchors` is the protocol's resolved scoped anchors,
+/// control tree and edge relation when FR-113 resolved them all; the effect
+/// and commit nodes of a template and the commit's dominance come from
+/// them, so without them those are not checked. `profile` is the selected
+/// protocol profile's identity, which a dominance refusal names.
 pub(crate) fn check<'a>(
     protocol: &ProtocolDeclarationForm,
     anchors: Option<&CheckedProtocol>,
+    profile: Option<&str>,
     declarations: &ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
 ) -> Obligations {
     let mut checker = Checker {
         protocol,
         anchors,
+        profile,
         input: declarations,
         universe: Universe::of(protocol),
         nodes: declarations.nodes_used,
@@ -414,6 +423,7 @@ fn refusal(cause: ObligationCause) -> CheckRefusal {
 struct Checker<'c, 'a> {
     protocol: &'c ProtocolDeclarationForm,
     anchors: Option<&'c CheckedProtocol>,
+    profile: Option<&'c str>,
     input: &'c ClauseDeclarations<'a>,
     universe: Universe,
     nodes: u64,
@@ -734,19 +744,41 @@ impl Checker<'_, '_> {
     }
 
     /// The record type of the `effect` node `effect`: the type of its `as`
-    /// binder, the first record binder written after its name.
+    /// binder.
     fn effect_type(&self, effect: ProtocolNodeId) -> Option<ValueType> {
-        let declaration = self.protocol.declarations.get(effect.0)?;
-        let binder = self
-            .protocol
-            .binders
-            .iter()
-            .filter(|binder| {
-                binder.kind == BinderKind::RecordBinder
-                    && binder.name.span.start >= declaration.name.span.end
-            })
-            .min_by_key(|binder| binder.name.span.start)?;
+        let binder = super::protocol_clause::record_binder(self.protocol, effect.0)?;
         self.resolve(&binder.value_type)
+    }
+
+    /// FR-381 "Retry, commit and recovery": a `commit` node that dominates
+    /// the forward effect in the compiled causal edge relation refuses at
+    /// the commit anchor.
+    fn commit_dominance(
+        &mut self,
+        form: &CompensationForm,
+        commit: ProtocolNodeId,
+        effect: ProtocolNodeId,
+    ) {
+        let (Some(checked), CompensationCommit::Node(anchor)) = (self.anchors, &form.commit) else {
+            return;
+        };
+        if !super::protocol_clause::dominates(&checked.controls, &checked.edges, commit, effect) {
+            return;
+        }
+        let name = |node: ProtocolNodeId| {
+            self.protocol
+                .declarations
+                .get(node.0)
+                .map(|declaration| declaration.name.name.clone())
+                .unwrap_or_default()
+        };
+        self.refuse(ObligationCause::CommitPrecedesEffect {
+            profile: self.profile.map(str::to_owned),
+            compensation: form.name.name.clone(),
+            commit: name(commit),
+            effect: name(effect),
+            span: anchor.span,
+        });
     }
 
     fn template(
@@ -788,6 +820,9 @@ impl Checker<'_, '_> {
         }
 
         let operation = self.operation(form);
+        let frame_population = operation
+            .as_ref()
+            .and_then(|operation| self.frame_population(form, operation));
 
         if form.attempts.count == 0 {
             self.refuse(ObligationCause::ZeroAttempts {
@@ -902,6 +937,9 @@ impl Checker<'_, '_> {
                 .anchor(form, AnchorSite::CompensateCommit)
                 .map(CheckedCommit::Node),
         };
+        if let (Some(CheckedCommit::Node(commit)), Some(effect)) = (commit, effect) {
+            self.commit_dominance(form, commit, effect);
+        }
 
         let binder = |declared: &Option<ValueType>, name: &str| {
             declared.as_ref().map(|value_type| CheckedBinder {
@@ -920,6 +958,7 @@ impl Checker<'_, '_> {
                 effect: effect?,
                 role: role?,
                 operation: operation?,
+                frame_population: frame_population?,
                 forward: binder(&own.forward, &form.forward.name.name)?,
                 registration_captures,
                 trigger: binder(&own.trigger, &form.trigger.name.name)?,
@@ -996,6 +1035,29 @@ impl Checker<'_, '_> {
                     compensation: name.to_owned(),
                     name: member.to_owned(),
                     span: member_span,
+                });
+                None
+            }
+        }
+    }
+
+    /// The population domain of the type declaring `operation`, resolved
+    /// as FR-114 resolves an attempt's (`None` inside the result when the
+    /// type shares no population). Two or more populations covering the
+    /// type leave the frame's extent undecided and refuse
+    /// `ambiguous_declaration`/`ambiguous-name` at the operation.
+    fn frame_population(
+        &mut self,
+        form: &CompensationForm,
+        operation: &ClauseOperation,
+    ) -> Option<Option<PopulationDomain>> {
+        match population_of(self.input.models, operation.declaring, self.scope().types()) {
+            Ok(domain) => Some(domain),
+            Err(populations) => {
+                self.refuse(ObligationCause::AmbiguousPopulation {
+                    compensation: form.name.name.clone(),
+                    populations,
+                    span: form.operation.span,
                 });
                 None
             }
@@ -1159,7 +1221,7 @@ fn wraps(cause: &CheckCause) -> bool {
 
 /// Types `form` over `bound` as a state clause types its body (FR-104), so a
 /// field read through an object reference is a model read.
-fn type_body(
+pub(super) fn type_body(
     form: &ExpressionForm,
     bound: &[(String, ValueType)],
     goal: Goal<'_>,

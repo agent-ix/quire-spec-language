@@ -1,32 +1,38 @@
 //! The part of a protocol's content [`check`](super::check) does not read:
-//! which node kinds and constructs are not yet checked, and the grammar's
+//! which constructs and expressions are not yet checked, and the grammar's
 //! required `using`, role and binder-type resolution.
 
 use std::collections::BTreeMap;
 
-use qsl_forms::{ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeKind};
+use qsl_forms::{
+    BinaryOperator, ExprNode, ExpressionForm, ProtocolConstructKind, ProtocolDeclarationForm,
+    ProtocolNodeKind,
+};
 use qsl_foundation::Span;
 
 use super::refusal;
 use crate::check::refusal::{AliasKind, CheckRefusal, ProtocolAnchorCause};
 use crate::check::Scope;
 
-/// Whether this checker covers every part of a static node of `kind`:
-/// a `sequence` (a name and its children), a `parallel` and its `branch`es
-/// (their join, checked by `protocol_controls`), an `attempt` (its
-/// operation and `contracts`, FR-114; its role, binder and body are checked
-/// by [`content`]), the `finish` node (its binder and body, the same) and a
-/// `compensate` template (its stages, FR-381, are checked by
-/// `protocol_obligation`). Every other kind carries content -- a channel, a
-/// guard, a join policy, an anchor's target semantics -- that nothing checks
-/// yet. Exhaustive, so a new node kind must be classified here.
+/// Whether this checker covers every part of a static node of `kind`
+/// other than its expressions (whose coverage [`uncovered_expressions`]
+/// decides): its children and their causal edges (`graph`), its anchors
+/// (FR-113), an `attempt`'s operation and `contracts` (FR-114), its role,
+/// binder and channel ([`content`], `protocol_controls`), a `parallel`'s
+/// join, a `choice`'s and a `repeat`'s owner and guards
+/// (`protocol_decisions`) and a `compensate` template's stages (FR-381,
+/// `protocol_obligation`). Every node kind is covered; the match stays
+/// exhaustive, so a new node kind must be classified here.
 fn covered_kind(kind: ProtocolNodeKind) -> bool {
     use ProtocolNodeKind as K;
     match kind {
-        K::Sequence | K::Parallel | K::Branch | K::Attempt | K::Finish | K::CompensateTemplate => {
-            true
-        }
-        K::Send
+        K::Sequence
+        | K::Parallel
+        | K::Branch
+        | K::Attempt
+        | K::Finish
+        | K::CompensateTemplate
+        | K::Send
         | K::Receive
         | K::Effect
         | K::Event
@@ -35,8 +41,103 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
         | K::Repeat
         | K::Case
         | K::Await
-        | K::Check => false,
+        | K::Check => true,
     }
+}
+
+/// Whether `form` is a Boolean formula over literals alone: `true`,
+/// `false`, `not`, `and`, `or` and `implies`. Such a guard reads no name,
+/// so it is checked without the binder scopes and decision facts a guard
+/// that reads one needs (FR-218 "Choice and repeat decisions"), which are
+/// not checked yet.
+pub(crate) fn constant_formula(form: &ExpressionForm) -> Option<bool> {
+    // Children precede their parent in post-order, so one explicit stack
+    // evaluates a formula of any depth.
+    let mut values: BTreeMap<qsl_forms::ExprId, bool> = BTreeMap::new();
+    let mut stack = vec![(form.expression.root(), false)];
+    while let Some((node, expanded)) = stack.pop() {
+        if !expanded {
+            stack.push((node, true));
+            for child in node.children() {
+                stack.push((child, false));
+            }
+            continue;
+        }
+        let value = |id| values.get(&id).copied();
+        let result = match node.node() {
+            ExprNode::Boolean(value) => *value,
+            ExprNode::Not(operand) => !value(*operand)?,
+            ExprNode::Binary {
+                operator,
+                left,
+                right,
+            } => {
+                let (left, right) = (value(*left)?, value(*right)?);
+                match operator {
+                    BinaryOperator::And => left && right,
+                    BinaryOperator::Or => left || right,
+                    BinaryOperator::Implies => !left || right,
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        };
+        values.insert(node.id(), result);
+    }
+    values.get(&form.expression.root_id()).copied()
+}
+
+/// Whether `form` is an integer literal, negated or not: the one `variant`
+/// that reads no name.
+pub(crate) fn constant_integer(form: &ExpressionForm) -> bool {
+    match form.expression.root_node() {
+        ExprNode::Integer(_) => true,
+        ExprNode::Negate(operand) => matches!(
+            form.expression.get(*operand).map(|operand| operand.node()),
+            Some(ExprNode::Integer(_))
+        ),
+        _ => false,
+    }
+}
+
+/// The span of `form`'s whole expression.
+fn span_of(form: &ExpressionForm) -> Span {
+    form.spans.at(&[]).unwrap_or(Span { start: 0, end: 0 })
+}
+
+/// Every expression of a `choice` or `repeat` this checker does not check
+/// yet, by span and keyword: a `visible` entry, and a guard, invariant or
+/// variant that reads a name. Checking those needs the binder scopes and
+/// the decision-fact rules of FR-218, which are not implemented.
+fn uncovered_expressions(protocol: &ProtocolDeclarationForm) -> Vec<(Span, &'static str)> {
+    let mut uncovered = Vec::new();
+    for choice in &protocol.choices {
+        if !choice.visible.is_empty() {
+            uncovered.push((choice.visible_span, "visible"));
+        }
+        for case in &choice.cases {
+            if constant_formula(&case.guard).is_none() {
+                uncovered.push((span_of(&case.guard), "case guard"));
+            }
+        }
+    }
+    for repeat in &protocol.repeats {
+        if !repeat.visible.is_empty() {
+            uncovered.push((repeat.visible_span, "visible"));
+        }
+        if constant_formula(&repeat.guard).is_none() {
+            uncovered.push((span_of(&repeat.guard), "repeat guard"));
+        }
+        if let Some(proof) = &repeat.loop_proof {
+            if constant_formula(&proof.invariant).is_none() {
+                uncovered.push((span_of(&proof.invariant), "invariant"));
+            }
+            if !constant_integer(&proof.variant) {
+                uncovered.push((span_of(&proof.variant), "variant"));
+            }
+        }
+    }
+    uncovered
 }
 
 /// Whether a protocol construct of `kind` is checked: a protocol-level
@@ -93,6 +194,7 @@ pub fn content(
                 .filter(|construct| !covered_construct(construct.kind))
                 .map(|construct| (construct.span, construct.kind.label())),
         )
+        .chain(uncovered_expressions(protocol))
         .chain(
             protocol
                 .bodies
@@ -161,6 +263,55 @@ pub fn content(
                 refusal(ProtocolAnchorCause::MissingRole {
                     role: attempt.role.name.clone(),
                     span: attempt.role.span,
+                }),
+            ));
+        }
+    }
+    // FR-218: an `event` or `commit` written `by`, and a `choice` or
+    // `repeat` owned `by`, a role the protocol declares.
+    let owners = protocol
+        .declarations
+        .iter()
+        .filter(|declaration| declaration.kind != ProtocolNodeKind::Attempt)
+        .filter_map(|declaration| Some((&declaration.name.name, declaration.role.as_ref()?)))
+        .chain(
+            protocol
+                .choices
+                .iter()
+                .map(|choice| (&choice.name.name, &choice.owner)),
+        )
+        .chain(
+            protocol
+                .repeats
+                .iter()
+                .map(|repeat| (&repeat.name.name, &repeat.owner)),
+        );
+    for (node, owner) in owners {
+        if !roles.contains_key(owner.name.as_str()) {
+            refusals.push((
+                owner.span,
+                refusal(ProtocolAnchorCause::NodeRole {
+                    node: node.clone(),
+                    name: owner.name.clone(),
+                    span: owner.span,
+                }),
+            ));
+        }
+    }
+    // A `check` and an `await` are written `using` a profile selection, as
+    // the protocol itself is.
+    let usings = protocol
+        .checks
+        .iter()
+        .map(|check| &check.using)
+        .chain(protocol.awaits.iter().map(|await_form| &await_form.using));
+    for using in usings {
+        if alias_names.get(&using.alias) != Some(&AliasKind::Profile) {
+            refusals.push((
+                using.span,
+                refusal(ProtocolAnchorCause::MissingProfile {
+                    alias: using.alias.clone(),
+                    span: using.span,
                 }),
             ));
         }

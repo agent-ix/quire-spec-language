@@ -214,6 +214,97 @@ pub enum ProtocolAnchorCause {
         /// The list's span, or the quorum count's.
         span: Span,
     },
+    /// FR-218 "Constructs": an `event` or `commit` written `by`, or a
+    /// `choice` or `repeat` owned `by`, a name that is no declared role.
+    /// `missing_declaration`/`missing-name`, at the role name.
+    NodeRole {
+        /// The node's declared name.
+        node: String,
+        /// The role name as written.
+        name: String,
+        /// The role name's own span.
+        span: Span,
+    },
+    /// FR-218 "Channels": a `send` or `receive` written `via` a name that
+    /// is no declared channel. `missing_declaration`/`missing-name`, at the
+    /// name.
+    MissingChannel {
+        /// The node's declared name.
+        node: String,
+        /// The channel name as written.
+        name: String,
+        /// The channel name's own span.
+        span: Span,
+    },
+    /// FR-218 "Channels": a `send` or `receive` record binder, or a FIFO
+    /// binder, whose declared type is not the channel's `carries` type.
+    /// `ill_typed`/`type-mismatch`, at the binder's type.
+    CarriesMismatch {
+        /// The channel's declared name.
+        channel: String,
+        /// The channel's `carries` type.
+        expected: quire_exact::ValueType,
+        /// The binder's declared type.
+        actual: quire_exact::ValueType,
+        /// The binder type's span.
+        span: Span,
+    },
+    /// FR-218 "Constructs": the compiled causal edge relation, without the
+    /// `repeat` back edges, has a cycle. `invalid_package`/
+    /// `definition-cycle`, naming the controls on the cycle in tree order,
+    /// at the first of them.
+    CausalCycle {
+        /// The names of the controls on the cycle, in tree order.
+        nodes: Vec<String>,
+        /// The first control's name span.
+        span: Span,
+    },
+    /// FR-218 "Constructs": a `repeat` whose body does not necessarily take
+    /// a step. `unsupported_construct`/`declaration-form`, at the `repeat`,
+    /// naming it and the selected protocol profile (QSpec FR-052).
+    NoProgress {
+        /// The `repeat` control's declared name.
+        repeat: String,
+        /// The identity of the selected protocol profile, when one is
+        /// selected.
+        profile: Option<String>,
+        /// The `repeat`'s name span.
+        span: Span,
+    },
+    /// FR-218 "Choice and repeat decisions": a `choice` whose guards are not
+    /// proved exhaustive and exclusive. `undefined_expression`/
+    /// `unproved-exhaustiveness`, at the choice.
+    Exhaustiveness {
+        /// The `choice` control's declared name.
+        choice: String,
+        /// The names of the cases involved, in source order.
+        cases: Vec<String>,
+        /// What the valuations show, in the order `missing-arm`,
+        /// `duplicate-arm`; never empty.
+        failed: Vec<ArmFault>,
+        /// The `choice`'s name span.
+        span: Span,
+    },
+}
+
+/// What a valuation of a `choice`'s visible facts shows about its guards
+/// (FR-218 "Choice and repeat decisions").
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ArmFault {
+    /// `missing-arm`: a valuation no guard covers.
+    MissingArm,
+    /// `duplicate-arm`: a valuation two guards cover.
+    DuplicateArm,
+}
+
+impl ArmFault {
+    /// The `failed` entry's value.
+    pub const fn identifier(self) -> &'static str {
+        match self {
+            Self::MissingArm => "missing-arm",
+            Self::DuplicateArm => "duplicate-arm",
+        }
+    }
 }
 
 /// Which end of a channel names a role (FR-218 "Channels").
@@ -369,7 +460,13 @@ impl ProtocolAnchorCause {
             | Self::ChannelType { span, .. }
             | Self::ChannelCarriesObject { span, .. }
             | Self::RoleModel { span, .. }
-            | Self::JoinList { span, .. } => *span,
+            | Self::JoinList { span, .. }
+            | Self::NodeRole { span, .. }
+            | Self::MissingChannel { span, .. }
+            | Self::CarriesMismatch { span, .. }
+            | Self::CausalCycle { span, .. }
+            | Self::NoProgress { span, .. }
+            | Self::Exhaustiveness { span, .. } => *span,
         }
     }
 
@@ -381,11 +478,17 @@ impl ProtocolAnchorCause {
             | Self::MissingProfile { .. }
             | Self::MissingRoleType { .. }
             | Self::MissingRole { .. }
-            | Self::ChannelRole { .. } => Code::MissingDeclaration,
+            | Self::ChannelRole { .. }
+            | Self::NodeRole { .. }
+            | Self::MissingChannel { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
-            Self::WrongKind { .. } | Self::ChannelMismatch { .. } => Code::IllTyped,
+            Self::WrongKind { .. } | Self::ChannelMismatch { .. } | Self::CarriesMismatch { .. } => {
+                Code::IllTyped
+            }
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
-            Self::Unimplemented { .. } => Code::UnsupportedConstruct,
+            Self::Unimplemented { .. } | Self::NoProgress { .. } => Code::UnsupportedConstruct,
+            Self::CausalCycle { .. } => Code::InvalidPackage,
+            Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).0
             }
@@ -404,11 +507,18 @@ impl ProtocolAnchorCause {
             | Self::MissingProfile { .. }
             | Self::MissingRoleType { .. }
             | Self::MissingRole { .. }
-            | Self::ChannelRole { .. } => "missing-name",
+            | Self::ChannelRole { .. }
+            | Self::NodeRole { .. }
+            | Self::MissingChannel { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
-            Self::WrongKind { .. } | Self::ChannelMismatch { .. } => "type-mismatch",
+            Self::WrongKind { .. } | Self::ChannelMismatch { .. } | Self::CarriesMismatch { .. } => {
+                "type-mismatch"
+            }
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
+            Self::NoProgress { .. } => "declaration-form",
+            Self::CausalCycle { .. } => "definition-cycle",
+            Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).1
             }

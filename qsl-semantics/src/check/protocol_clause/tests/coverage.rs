@@ -6,20 +6,23 @@ use super::attempt_fixture::attempt_flow;
 use super::{assemble, checks, only_cause, recovery_flow, refusals, resolve_protocol};
 use crate::check::refusal::ProtocolAnchorCause;
 
-/// SR-770 FND-001: a protocol whose anchors (FR-113) and
-/// attempt bindings (FR-114) all resolve, but which holds content no
-/// checker reads yet (here an `effect`, an `event` and a `commit`; a
-/// `compensate` template is checked by `protocol_obligation`), still refuses
-/// `unsupported_construct`/`not-yet-implemented` once, at the earliest
-/// such construct -- the `effect` -- rather than compiling
-/// with that content unchecked and silently missing from the emitted
-/// package.
+/// SR-770 FND-001, now that `effect`, `event` and `commit` nodes are
+/// covered: a protocol whose anchors (FR-113) and attempt bindings (FR-114)
+/// all resolve and that holds an `effect`, an `event` and a `commit` checks,
+/// while the same protocol with a body that reads a binder still refuses
+/// `unsupported_construct`/`not-yet-implemented` once, at that body, rather
+/// than compiling with the body unchecked and silently missing from the
+/// emitted package.
 #[trace("TC-511", "FR-113")]
 #[test]
 fn a_resolving_protocol_with_unchecked_content_still_refuses() {
     let source = recovery_flow("Main::Committed", "");
-    let (_, _, result) = resolve_protocol(&source);
-    result.unwrap_or_else(|refusals| panic!("{refusals:?}"));
+    checks(&source);
+    let source = source.replacen(
+        "as (applied: Boolean) { true }",
+        "as (applied: Boolean) { applied }",
+        1,
+    );
     let (refusal, cause) = only_cause(&source);
     assert_eq!(refusal.cause.code().as_str(), "unsupported_construct");
     assert_eq!(refusal.cause.cause(), Some("not-yet-implemented"));
@@ -30,9 +33,9 @@ fn a_resolving_protocol_with_unchecked_content_still_refuses() {
             span,
         } => {
             assert_eq!(name, "RecoveryFlow");
-            assert_eq!(construct, "effect");
+            assert_eq!(construct, "body");
             let (text, _) = assemble(&source);
-            assert!(text[span.start..].starts_with("Applied"), "{span:?}");
+            assert_eq!(&text[span.start..span.end], "applied");
         }
         other => panic!("an Unimplemented cause, got {other:?}"),
     }
@@ -71,13 +74,13 @@ fn each_unchecked_part_of_an_attempt_protocol_refuses() {
             "unsupported_construct",
             "not-yet-implemented",
         ),
-        // A node kind other than `sequence`/`attempt`/`finish`.
+        // A `send` via a name that is no channel (FR-218 "Channels").
         (
             "contracts [] as (tried: Boolean) { true };\n",
             "contracts [] as (tried: Boolean) { true };\n\
              send Ping via R as (ping: Boolean) { true };\n",
-            "unsupported_construct",
-            "not-yet-implemented",
+            "missing_declaration",
+            "missing-name",
         ),
         (
             "role R on M::Actor;",

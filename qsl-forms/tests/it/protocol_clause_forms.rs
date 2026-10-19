@@ -884,9 +884,9 @@ fn s2_builds_the_channel_of_a_send_and_receive_only() {
     let form = protocol_form(unit.forms()[0].form());
 
     let send = decl(form, "Ping", ProtocolNodeKind::Send);
-    assert_eq!(send.channel.as_deref(), Some("C"));
+    assert_eq!(send.channel.as_ref().map(|c| c.name.as_str()), Some("C"));
     let receive = decl(form, "Got", ProtocolNodeKind::Receive);
-    assert_eq!(receive.channel.as_deref(), Some("D"));
+    assert_eq!(receive.channel.as_ref().map(|c| c.name.as_str()), Some("D"));
     // Every other declared kind carries no channel.
     assert_eq!(decl(form, "Main", ProtocolNodeKind::Sequence).channel, None);
     assert_eq!(decl(form, "End", ProtocolNodeKind::Finish).channel, None);

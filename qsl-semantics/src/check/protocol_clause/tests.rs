@@ -92,6 +92,7 @@ fn resolve_protocol(declarations: &str) -> (String, ProtocolDeclarationForm, Che
         &signatures,
         &[],
         &[],
+        None,
     );
     (text, protocol, result)
 }
