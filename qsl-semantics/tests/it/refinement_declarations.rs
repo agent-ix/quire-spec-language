@@ -14,8 +14,9 @@ use ix_trace_rs::trace;
 use qsl_forms::{AbstractSideForm, DeclaredName, RefinementRowForm, StepSourceForm};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    AssemblyRefusal, CheckCause, CheckRefusal, CheckedGraph, CheckedRefinement,
-    PackageDeclarations, RefinementCause, RowClass, StepClass, StepTarget,
+    step_row_refs, step_simulation_records, AssemblyRefusal, CheckCause, CheckRefusal,
+    CheckedGraph, CheckedRefinement, PackageDeclarations, RefinementCause, RowClass, StepClass,
+    StepTarget,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -23,6 +24,7 @@ use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimulationRecord};
 use serde_json::{json, Value};
 
 const INTEGER: &str = "ix://quire/native/Integer";
@@ -1570,4 +1572,160 @@ fn a_step_row_naming_an_ambiguous_operation_refuses_at_its_name() {
         (Code::AmbiguousDeclaration, Some("ambiguous-name"))
     );
     assert_eq!(ambiguous.at, "Impl::Child::op");
+}
+
+/// A node key standing for `CasRefinesCounter`'s refinement node, which the
+/// caller mints (FR-144 is not built yet).
+fn refinement_key() -> quire_exact::NodeKey {
+    quire_exact::NodeKey::from_digest([7_u8; 32])
+}
+
+/// A node key for a concrete operation, standing for the key the refinement
+/// node's minting gives it: the digest of the operation's declaration node.
+fn operation_key(operation: &DeclarationKey) -> quire_exact::NodeKey {
+    use sha2::{Digest, Sha256};
+    quire_exact::NodeKey::from_digest(Sha256::digest(operation.node.as_bytes()).into())
+}
+
+fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
+    step_simulation_records(
+        refinement_key(),
+        only_refinement(graph),
+        graph.state_clauses(),
+    )
+    .expect("the rows fit a step row reference")
+}
+
+/// TC-551 step 1, record values only (the `operation-contract` requirement
+/// records are not built): `CasRefinesCounter` writes one `Initial` and one
+/// `Step` record for each of its seven rows, with no hypotheses.
+#[trace("TC-551")]
+#[test]
+fn the_counter_refinement_writes_an_initial_and_a_step_record_per_row() {
+    let records = simulation_records(&checked_counter(&cas_refines_counter()));
+    assert_eq!(records.len(), 8);
+    let mut expected = vec![StepObligation::Initial];
+    expected.extend((0..7).map(|row| StepObligation::Step {
+        row: StepRowRef::new(row),
+    }));
+    let found: Vec<_> = records.iter().map(|record| record.obligation).collect();
+    assert_eq!(found, expected);
+    for record in &records {
+        assert_eq!(record.refinement, refinement_key());
+        assert!(record.hypotheses.is_empty());
+    }
+}
+
+/// TC-551 step 1, record values only: with `commitB -> any` the refinement
+/// writes no record.
+#[trace("TC-551")]
+#[test]
+fn an_any_row_writes_no_simulation_record() {
+    let base = cas_refines_counter();
+    let graph = checked_counter(&mutated(
+        &base,
+        "step Impl::Counter::commitB -> Spec::Counter::inc(self);",
+        "step Impl::Counter::commitB -> any;",
+    ));
+    assert_eq!(simulation_records(&graph), []);
+}
+
+/// TC-551 step 2, the hidden-field case only: a refinement with a hidden
+/// field writes no record. `RegisterHistory` needs the unchecked history row
+/// (FR-138), so that case is not tested.
+#[trace("TC-551")]
+#[test]
+fn a_hidden_field_writes_no_simulation_record() {
+    let base = cas_refines_counter();
+    let graph = checked_counter(&mutated(&base, "value = self.value;", ""));
+    assert_eq!(simulation_records(&graph), []);
+}
+
+const CAS_INV: &str = "invariant CasInv using inf on Impl::Counter at current { \
+     self.busyA or self.tmpA <= self.value }\n";
+
+/// TC-551 step 3, record values only (`CasInv`'s own `operation-contract`
+/// record and the obligation identity are not built): an invariant of
+/// `Impl::Counter` is a hypothesis of every record, and the `Initial`
+/// record differs from the one without it.
+#[trace("TC-551")]
+#[test]
+fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
+    let base = cas_refines_counter();
+    let without = simulation_records(&checked_counter(&base));
+    let graph = checked_counter(&format!("{base}\n{CAS_INV}"));
+    let with = simulation_records(&graph);
+    let [invariant] = graph.state_clauses() else {
+        panic!("one invariant clause");
+    };
+    assert_eq!(with.len(), 8);
+    for record in &with {
+        assert_eq!(record.hypotheses, [invariant.identity()]);
+    }
+    assert_ne!(with[0], without[0]);
+}
+
+/// TC-551 step 3: an invariant of the abstract model is not a hypothesis
+/// over concrete state, even though the declaring package holds it.
+#[trace("TC-551")]
+#[test]
+fn an_abstract_model_invariant_is_not_a_hypothesis() {
+    let base = cas_refines_counter();
+    let abstract_invariant =
+        "invariant SpecInv using inf on Spec::Counter at current { self.value >= 0 }\n";
+    let graph = checked_counter(&format!("{base}\n{CAS_INV}{abstract_invariant}"));
+    let [concrete, abstract_clause] = graph.state_clauses() else {
+        panic!("two invariant clauses");
+    };
+    for record in simulation_records(&graph) {
+        assert_eq!(record.hypotheses, [concrete.identity()]);
+        assert_ne!(record.hypotheses, [abstract_clause.identity()]);
+    }
+}
+
+/// Swapping two invariant clauses in the source leaves every record equal.
+#[trace("TC-551")]
+#[test]
+fn the_order_of_invariant_clauses_does_not_change_the_records() {
+    let base = cas_refines_counter();
+    let second = "invariant CasInv2 using inf on Impl::Counter at current { \
+         self.busyB or self.tmpB <= self.value }\n";
+    let forward = simulation_records(&checked_counter(&format!("{base}\n{CAS_INV}{second}")));
+    let backward = simulation_records(&checked_counter(&format!("{base}\n{second}{CAS_INV}")));
+    assert_eq!(forward[0].hypotheses.len(), 2);
+    assert_eq!(forward, backward);
+}
+
+/// The step row of each concrete operation, by operation name, as the
+/// record's `StepRowRef` names it.
+fn row_refs_by_operation(graph: &CheckedGraph) -> BTreeMap<String, StepRowRef> {
+    let refinement = only_refinement(graph);
+    let refs = step_row_refs(refinement, operation_key).expect("the rows fit");
+    refinement
+        .steps()
+        .iter()
+        .zip(refs)
+        .map(|(row, reference)| {
+            let StepClass::Operation(operation) = &row.class;
+            (operation.node.clone(), reference)
+        })
+        .collect()
+}
+
+/// Reordering the step rows in the source does not change which row a
+/// `Step{row}` names: positions follow QSpec FR-375's node-key order.
+#[trace("TC-551")]
+#[test]
+fn reordering_step_rows_does_not_change_the_row_a_reference_names() {
+    let base = cas_refines_counter();
+    let first = "step Impl::Counter::commitA -> Spec::Counter::inc(self);\n";
+    let last = "step Impl::Counter::peek -> stutter;\n";
+    let swapped = mutated(&mutated(&base, first, "@@"), last, first).replace("@@", last);
+    assert_ne!(base, swapped);
+    let before = row_refs_by_operation(&checked_counter(&base));
+    let after = row_refs_by_operation(&checked_counter(&swapped));
+    assert_eq!(before, after);
+    let mut positions: Vec<_> = before.values().map(|reference| reference.index()).collect();
+    positions.sort_unstable();
+    assert_eq!(positions, (0..7).collect::<Vec<_>>());
 }
