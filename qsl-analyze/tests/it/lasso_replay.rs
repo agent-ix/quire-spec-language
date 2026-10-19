@@ -1,0 +1,397 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-128 for an authored clause's counterexample: a lasso or a finite
+//! prefix that EN-1 found over the `Counter` subject (`crate::counter`)
+//! replays through `replay_model_trace`, which recompiles the unit, resolves
+//! the clause by its `clause_node` and `occurrence_key`, re-executes the
+//! steps, closes the loop, checks it against the fairness set and evaluates
+//! the formula over it (ADR-018 CX-3, SM-8).
+//!
+//! Not covered: FR-128-AC-1's `ConfigVersion` and `Branch` subjects and
+//! FR-128-AC-4's `upd(a)` lasso, which need subjects this crate's fixtures
+//! do not have; the `interval` and `trace: "observed"` refusals of AC-3,
+//! since the payload carries neither member yet; and the undefined-letter
+//! counterexamples of AC-5 (TC-539), which this replay does not build.
+
+use ix_trace_rs::trace;
+use qsl_eval::simulation::model::ExpansionLimits;
+use qsl_foundation::diagnostic::Code;
+use qsl_foundation::source::provenance::OccurrenceKey;
+use qsl_foundation::SourceIdentity;
+use qsl_replay::{
+    compile_package, replay_model_trace, settle_model_check, CertificateRequest, DependencyInput,
+    DigestDomain, DigestRecord, DisagreementCause, InconclusiveCause, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelTraceRefusal, ModelTraceReplayResult,
+    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ReplayLimits, ReplayRefusal,
+    ResultLabel, TemporalCounterexample, TerminalValue, WireNodeId,
+};
+use quire_exact::Cancel;
+
+use crate::counter::{
+    document, document_with_ranged_parameter, subject, universe, Letters, UNLIMITED,
+};
+use crate::liveness::{counter, is_zero, Fixture};
+use crate::model_settle::{envelope_at, request};
+
+const FORMULA: &str = "always eventually holds(c.value = 3)";
+
+fn is_three(value: i64) -> Option<bool> {
+    Some(value == 3)
+}
+
+fn below_two(value: i64) -> Option<bool> {
+    Some(value < 2)
+}
+
+/// A fixture's compiled `package_id`, as the replay request recompiles it.
+fn package_id(fixture: &Fixture) -> DigestRecord {
+    compile_package(
+        SourceIdentity::new("agent-ix", "counter", "git", "1"),
+        "counter.native",
+        &fixture.unit,
+        [fixture.documents.document.as_slice()],
+        &DependencyInput::default(),
+        qsl_replay::StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles")
+    .package_id()
+}
+
+/// The identities of the fixture's one clause, as an envelope carries them.
+fn clause_identity(fixture: &Fixture) -> (WireNodeId, OccurrenceKey) {
+    let node = &fixture.package.graph().temporal_clauses()[0];
+    let id = WireNodeId::from_digest(*node.identity().as_bytes());
+    (id, OccurrenceKey::new(id, node.claim().clone()))
+}
+
+fn subject_of(fixture: &Fixture) -> ModelTraceSubject {
+    ModelTraceSubject {
+        initial: fixture.initial.clone(),
+        universes: universe(&fixture.keys),
+        expansion: ExpansionLimits {
+            max_candidates: 1_000_000,
+        },
+    }
+}
+
+/// Replay `payload` as the fixture's clause's counterexample, the clause's
+/// atoms read by `atom`.
+fn replay_with(
+    fixture: &Fixture,
+    payload: TemporalCounterexample,
+    atom: fn(i64) -> Option<bool>,
+) -> Result<ModelTraceReplayResult, ReplayRefusal> {
+    let id = package_id(fixture);
+    let (node, occurrence) = clause_identity(fixture);
+    replay_model_trace(
+        request(&fixture.documents, &fixture.unit, id),
+        &subject_of(fixture),
+        &envelope_at(&fixture.unit, id, payload, node, occurrence),
+        &Letters { atom },
+        ReplayLimits::default(),
+    )
+}
+
+/// The counterexample EN-1 finds for the fixture's clause.
+fn found(fixture: &Fixture, atom: fn(i64) -> Option<bool>) -> TemporalCounterexample {
+    match fixture.decide(atom).expect("checked") {
+        ModelCheckOutcome::Violated { counterexample, .. } => counterexample.as_ref().clone(),
+        other => panic!("expected a violation, got {other:?}"),
+    }
+}
+
+fn reproduced(result: Result<ModelTraceReplayResult, ReplayRefusal>) -> Option<u64> {
+    match result.expect("replays").settlement {
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position,
+        } => trace_position,
+        other => panic!("expected a reproduction, got {other:?}"),
+    }
+}
+
+fn refusal(
+    result: Result<ModelTraceReplayResult, ReplayRefusal>,
+) -> (ModelTraceRefusal, Code, &'static str) {
+    match result {
+        Err(ReplayRefusal::ModelTrace(refusal)) => {
+            let error = ReplayRefusal::ModelTrace(refusal.clone());
+            (*refusal, error.code(), error.cause().expect("a cause"))
+        }
+        other => panic!("expected a model-trace refusal, got {other:?}"),
+    }
+}
+
+/// Verifies part of FR-128-AC-1: the lasso whose loop is the terminal
+/// stutter step at value 3 (FR-126-AC-3's last sentence) reproduces with
+/// `trace_position` 0, and so does the lasso a weak `inc` constraint forces
+/// through `inc` and back by `setTo(0)`. Replaying one envelope twice gives
+/// equal results (FR-128-AC-4's last sentence).
+#[trace("TC-523")]
+#[test]
+fn a_lasso_reproduces_with_its_formula_false_on_the_unrolled_trace() {
+    let stutter = counter(document(false), "", "always eventually holds(c.value = 0)");
+    let payload = found(&stutter, is_zero);
+    assert_eq!(
+        reproduced(replay_with(&stutter, payload.clone(), is_zero)),
+        Some(0)
+    );
+    assert_eq!(
+        replay_with(&stutter, payload.clone(), is_zero).expect("replays"),
+        replay_with(&stutter, payload, is_zero).expect("replays")
+    );
+
+    let fair = counter(
+        document_with_ranged_parameter(),
+        "fair weak M::Counter::inc;",
+        FORMULA,
+    );
+    let payload = found(&fair, is_three);
+    assert_eq!(payload.fairness.len(), 1);
+    assert_eq!(reproduced(replay_with(&fair, payload, is_three)), Some(0));
+}
+
+/// Verifies part of FR-128-AC-1: a finite prefix of a safety clause
+/// (`always holds(c.value < 2)`, violated by `0 -inc-> 1 -inc-> 2`)
+/// reproduces with `trace_position` 2, the prefix's last position.
+#[trace("TC-523")]
+#[test]
+fn a_bad_prefix_reproduces_at_its_last_position() {
+    let safety = counter(document(false), "", "always holds(c.value < 2)");
+    let payload = found(&safety, below_two);
+    assert_eq!(payload.lasso, None);
+    assert_eq!(payload.prefix.len(), 2);
+    assert_eq!(
+        reproduced(replay_with(&safety, payload, below_two)),
+        Some(2)
+    );
+}
+
+/// Verifies part of FR-128-AC-4: a lasso on which the claim is true when
+/// the replay reads the atoms (here every counter value reads as 3) settles
+/// `inconclusive`, `ReplayParity` by `Verdicts`, not a reproduction.
+#[trace("TC-523")]
+#[test]
+fn a_lasso_on_which_the_claim_holds_disagrees() {
+    let fixture = counter(document_with_ranged_parameter(), "", FORMULA);
+    let payload = found(&fixture, is_three);
+    let ModelTraceSettlement::Inconclusive(cause) = replay_with(&fixture, payload, |_| Some(true))
+        .expect("replays")
+        .settlement
+    else {
+        panic!("a true claim disagrees with the refutation");
+    };
+    assert!(
+        matches!(cause, DisagreementCause::Verdicts { .. }),
+        "{cause:?}"
+    );
+}
+
+/// Verifies part of FR-128-AC-3: the lasso with its last step removed does
+/// not close (the loop is empty), a `terminal-stutter` loop on a state that
+/// enables `inc` refuses, and a post-state digest altered refuses
+/// `stale_dependency`/`content-mismatch` naming the step and the digest;
+/// each refuses with no result.
+#[trace("TC-523")]
+#[test]
+fn a_lasso_that_does_not_close_or_does_not_stutter_at_a_terminal_state_refuses() {
+    let fixture = counter(document_with_ranged_parameter(), "", FORMULA);
+    let payload = found(&fixture, is_three);
+    assert_eq!(payload.prefix.len(), 1, "the free loop is `setTo(0)` alone");
+
+    let mut open = payload.clone();
+    open.prefix.pop();
+    let (cause, code, tag) = refusal(replay_with(&fixture, open, is_three));
+    assert_eq!(cause, ModelTraceRefusal::LoopOpen { entry: 0, steps: 0 });
+    assert_eq!((code, tag), (Code::InvalidRuntimeInput, "invalid-value"));
+
+    let mut stutter = payload.clone();
+    stutter.prefix.clear();
+    stutter.lasso = Some(qsl_replay::Lasso {
+        entry: 0,
+        terminal_stutter: true,
+    });
+    let (cause, code, _) = refusal(replay_with(&fixture, stutter, is_three));
+    assert_eq!(cause, ModelTraceRefusal::StutterNotTerminal { position: 0 });
+    assert_eq!(code, Code::InvalidRuntimeInput);
+
+    let mut altered = payload;
+    let recorded = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
+    altered.prefix[0].post_state = recorded;
+    let (cause, code, tag) = refusal(replay_with(&fixture, altered, is_three));
+    assert_eq!(cause, ModelTraceRefusal::PostState { step: 0, recorded });
+    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
+}
+
+/// Verifies part of FR-128-AC-3: the lasso EN-1 finds with no constraint
+/// (loop `setTo(0)` alone), in an envelope for the clause with the weak
+/// `inc` constraint, carrying that clause's identities and fairness set, is
+/// unfair, and refuses `UnfairLasso` naming that constraint, whose code is
+/// `invalid_runtime_input`/`invalid-value`. The same payload with its
+/// fairness set left empty names another set than the clause's and refuses
+/// `stale_dependency`/`content-mismatch`.
+#[trace("TC-523")]
+#[test]
+fn an_unfair_lasso_refuses_naming_the_constraint() {
+    let free = counter(document_with_ranged_parameter(), "", FORMULA);
+    let fair = counter(
+        document_with_ranged_parameter(),
+        "fair weak M::Counter::inc;",
+        FORMULA,
+    );
+    let mut payload = found(&free, is_three);
+    assert!(payload.fairness.is_empty());
+
+    let (cause, code, tag) = refusal(replay_with(&fair, payload.clone(), is_three));
+    assert!(
+        matches!(&cause, ModelTraceRefusal::FairnessSet { payload, recompiled }
+            if payload.is_empty() && recompiled.len() == 1),
+        "{cause:?}"
+    );
+    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
+
+    let clause = fair.clauses[0].fairness().to_vec();
+    payload.fairness.clone_from(&clause);
+    let refused = replay_with(&fair, payload, is_three);
+    let Err(error @ ReplayRefusal::UnfairLasso { .. }) = refused else {
+        panic!("expected an unfair lasso, got {refused:?}");
+    };
+    let ReplayRefusal::UnfairLasso { constraint } = &error else {
+        unreachable!("matched above");
+    };
+    assert_eq!(constraint, &clause[0]);
+    assert_eq!(error.code(), Code::InvalidRuntimeInput);
+    assert_eq!(error.cause(), Some("invalid-value"));
+}
+
+/// Verifies part of FR-128-AC-4: a `clause_node` that names no clause of the
+/// recompiled package refuses `stale_dependency`/`content-mismatch`, and so
+/// does the clause's own node under another occurrence.
+#[trace("TC-523")]
+#[test]
+fn a_counterexample_names_its_clause_by_node_and_occurrence() {
+    let fixture = counter(document_with_ranged_parameter(), "", FORMULA);
+    let payload = found(&fixture, is_three);
+    let id = package_id(&fixture);
+    let (node, occurrence) = clause_identity(&fixture);
+    let replay_at = |node, occurrence| {
+        replay_model_trace(
+            request(&fixture.documents, &fixture.unit, id),
+            &subject_of(&fixture),
+            &envelope_at(&fixture.unit, id, payload.clone(), node, occurrence),
+            &Letters { atom: is_three },
+            ReplayLimits::default(),
+        )
+    };
+    assert!(replay_at(node, occurrence.clone()).is_ok());
+
+    let other = WireNodeId::from_digest([7; 32]);
+    let other_key = OccurrenceKey::new(other, occurrence.origin().clone());
+    let (cause, code, tag) = refusal(replay_at(other, other_key));
+    assert_eq!(
+        cause,
+        ModelTraceRefusal::UnknownTemporalClause { clause_node: other }
+    );
+    assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
+
+    let moved = OccurrenceKey::new(
+        node,
+        quire_exact::Origin::new(quire_exact::Role::new("claim"), 9),
+    );
+    let (cause, ..) = refusal(replay_at(node, moved));
+    assert!(
+        matches!(cause, ModelTraceRefusal::ItemIdentity { .. }),
+        "{cause:?}"
+    );
+}
+
+/// FR-127 V-4 for a TP-4 outcome: the lasso EN-1 returns settles `refuted`
+/// only through `replay_model_trace` (ADR-018 SM-7), as it settled `failed`
+/// while a formula counterexample could not be replayed.
+#[trace("TC-523")]
+#[test]
+fn a_liveness_violation_settles_refuted_through_replay() {
+    let fixture = counter(document_with_ranged_parameter(), "", FORMULA);
+    let outcome = fixture.decide(is_three).expect("checked");
+    let id = package_id(&fixture);
+    let (node, occurrence) = clause_identity(&fixture);
+    let letters = Letters { atom: is_three };
+    let record = settle_model_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &id,
+        &CertificateRequest {
+            subject: subject(
+                &fixture.package,
+                &fixture.documents,
+                fixture.initial.clone(),
+                &fixture.keys,
+                UNLIMITED,
+            ),
+            item: ModelCheckItem::Clause {
+                clause: &fixture.clauses[0],
+                letters: &letters,
+            },
+        },
+        &Cancel::new(),
+        |counterexample| {
+            replay_model_trace(
+                request(&fixture.documents, &fixture.unit, id),
+                &subject_of(&fixture),
+                &envelope_at(
+                    &fixture.unit,
+                    id,
+                    counterexample.clone(),
+                    node,
+                    occurrence.clone(),
+                ),
+                &letters,
+                ReplayLimits::default(),
+            )
+        },
+    );
+    assert_eq!(record.value, TerminalValue::Refuted);
+    assert_eq!(record.label, ResultLabel::Refuted);
+    assert!(record.counterexample.is_some());
+
+    let stale = settle_model_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &id,
+        &CertificateRequest {
+            subject: subject(
+                &fixture.package,
+                &fixture.documents,
+                fixture.initial.clone(),
+                &fixture.keys,
+                UNLIMITED,
+            ),
+            item: ModelCheckItem::Clause {
+                clause: &fixture.clauses[0],
+                letters: &letters,
+            },
+        },
+        &Cancel::new(),
+        |counterexample| {
+            let mut unfair = counterexample.clone();
+            unfair.prefix.pop();
+            replay_model_trace(
+                request(&fixture.documents, &fixture.unit, id),
+                &subject_of(&fixture),
+                &envelope_at(&fixture.unit, id, unfair, node, occurrence.clone()),
+                &letters,
+                ReplayLimits::default(),
+            )
+        },
+    );
+    assert!(
+        matches!(
+            stale.value,
+            TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
+                Code::InvalidRuntimeInput
+            ))
+        ),
+        "{:?}",
+        stale.value
+    );
+}

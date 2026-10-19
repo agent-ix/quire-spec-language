@@ -344,6 +344,13 @@ pub enum ReplayRefusal {
     /// FR-128: a model counterexample's replay refused.
     #[error("{0}")]
     ModelTrace(Box<crate::model_check::replay::ModelTraceRefusal>),
+    /// FR-128, FR-131: a model counterexample's lasso is unfair under a
+    /// constraint of the clause's fairness set, the first that fails.
+    #[error("invalid_runtime_input/invalid-value: the lasso is unfair under {constraint:?}")]
+    UnfairLasso {
+        /// The first constraint of the fairness set the loop fails.
+        constraint: quire_semantic_value::fairness::FairnessConstraint,
+    },
     /// An executor or S6a invariant broke.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
@@ -380,7 +387,8 @@ impl ReplayRefusal {
                 AdmissionFailure::Refused(record) | AdmissionFailure::Incomplete(record),
             ) => record.code,
             Self::Admission(AdmissionFailure::Fault(_)) => Code::RuntimeInvariant,
-            Self::UnknownParameter(_)
+            Self::UnfairLasso { .. }
+            | Self::UnknownParameter(_)
             | Self::DuplicateArgument(_)
             | Self::UnboundParameter(_)
             | Self::Witness { .. }
@@ -419,7 +427,7 @@ impl ReplayRefusal {
             Self::ForeignReference { .. } => Some("foreign-universe"),
             Self::ObjectEnvironment(failure) => failure.cause(),
             Self::Input(refusal) => Some(refusal.cause()),
-            Self::NativePayload { .. } => Some("invalid-value"),
+            Self::NativePayload { .. } | Self::UnfairLasso { .. } => Some("invalid-value"),
             Self::Storage { failure, .. } => membership_failure_cause(failure),
             Self::Supplied(stop) => supplied_stop_cause(stop),
             Self::Admission(
