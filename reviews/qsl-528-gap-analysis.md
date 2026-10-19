@@ -12,7 +12,8 @@ review_set: subset
 
 Ticket: QSL-528. PR quire-spec-language#1029. Planless, diff-scoped gap
 analysis. Plan completion: not assessed. I traced criteria to tagged tests
-by reading. No test was run (reviewer-only brief). The repository tags
+by reading and ran `quoin matrix --json` once. No test was run
+(reviewer-only brief). The repository tags
 tests by TC id only (`#[trace("TC-521")]`), so each binding below is judged
 against the TC procedure step and the AC row the test's doc names, and on
 whether the test can fail on that behaviour.
@@ -66,9 +67,10 @@ AC-9 (QSL-530), and AC-4's base `Health` row (a TP-4 formula).
 ## Verdict
 
 Coverage of the claimed rows is sound for what the tests assert. Two tags
-over-claim TC-521 (FND-002), which is this lane's main failure mode, but
-the TC was already tagged by other tests on `main`, so no AC changes
-status. The blocking gap is the code defect SR-12189 FND-001: no test
+over-claim TC-521 (FND-002), which is this lane's main failure mode.
+`quoin matrix --json` (quoin 0.28.3) at the reviewed tree shows every
+FR-126 AC `untagged` except AC-5, because TC-only tags bind no AC, so the
+over-claim inflates no matrix row. The defect is in what the tag claims. The blocking gap is the code defect SR-12189 FND-001: no test
 exercises a TP-2 or TP-3 position where the monitor's next step does not
 read an atom that is undefined (FND-001). Only majors block, so this
 artifact adds none of its own beyond tracking that test.
