@@ -3952,10 +3952,18 @@ fn read_population(
             ))
         }
     };
+    // FR-150: the `symmetric` marker is optional and Boolean; absent is
+    // `false`. A non-Boolean value refuses rather than reading as `false`.
+    let symmetric = match ctx.value.get("symmetric") {
+        None => false,
+        Some(Value::Bool(symmetric)) => *symmetric,
+        Some(_) => return Err(ctx.malformed_in("symmetric", "not a Boolean")),
+    };
     Ok(PopulationRecord {
         key: declaration_key(package, node),
         member_types,
         extent,
+        symmetric,
     })
 }
 

@@ -1307,6 +1307,7 @@ fn a_population_naming_an_undeclared_member_type_refuses_instead_of_being_ignore
                 DeclarationKey::fixture("model.no-such-type"),
             ],
             extent: qsl_semantics::model::domain_package::Extent::Closed,
+            symmetric: false,
         },
     ));
     match normalize(&domain_package, ModelNormalizationLimits::UNLIMITED) {
@@ -1364,6 +1365,7 @@ fn a_population_naming_a_record_value_type_refuses_malformed() {
                 DeclarationKey::fixture("model.Money"),
             ],
             extent: qsl_semantics::model::domain_package::Extent::Closed,
+            symmetric: false,
         },
     ));
     let NormalizeOutcome::Refused(refusals) =
