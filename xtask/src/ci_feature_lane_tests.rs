@@ -224,14 +224,16 @@ fn expected(root: &str, commands: &[&[&str]]) -> String {
         .collect()
 }
 
-const DEEP_CASES: [&str; 3] = [
-    "formatter_identity::all_three_deep_source_generators_keep_format_identity",
+const DEEP_CASES: [&str; 5] = [
+    "formatter_identity::deep_sum_source_generator_keeps_format_identity",
+    "formatter_identity::deep_else_if_source_generator_keeps_format_identity",
+    "formatter_identity::deep_let_source_generator_keeps_format_identity",
     "formatter_identity::replay_large_source_generator_keeps_format_identity",
     "formatter_identity::dependency_chain_and_order_variants_keep_format_identity",
 ];
 
 /// The deep-format calls in recipe order: one exact listing per case, then the
-/// three cases serially in a single run, all in the default lane's directory.
+/// four light cases two at a time, then the dependency chain alone, all in the default lane's directory.
 fn deep_calls(directory: &str) -> String {
     let listings: Vec<Vec<&str>> = DEEP_CASES
         .iter()
@@ -249,19 +251,26 @@ fn deep_calls(directory: &str) -> String {
             ]
         })
         .collect();
-    let mut run = vec![
-        "test",
-        "--locked",
-        "--workspace",
-        "--tests",
-        "--",
-        "--ignored",
-        "--exact",
-        "--test-threads=1",
-    ];
-    run.extend(DEEP_CASES);
+    let argv = |threads: &'static str, cases: &[&'static str]| {
+        let mut run = vec![
+            "test",
+            "--locked",
+            "--workspace",
+            "--tests",
+            "--",
+            "--ignored",
+            "--exact",
+            threads,
+        ];
+        run.extend(cases);
+        run
+    };
+    let (chain, light) = DEEP_CASES.split_last().unwrap();
+    let light_run = argv("--test-threads=2", light);
+    let chain_run = argv("--test-threads=1", &[*chain]);
     let mut commands: Vec<&[&str]> = listings.iter().map(Vec::as_slice).collect();
-    commands.push(&run);
+    commands.push(&light_run);
+    commands.push(&chain_run);
     expected(directory, &commands)
 }
 
