@@ -60,3 +60,5 @@ STD-199 citation, and TC-552 step 6.
 | FND-002 | fixed | Round 1: the fixture declares `CasRefinesCounter`, and AC-5 and TC-552 step 5 use `{"refinement": "CasRefinesCounter", "internal": []}`. |
 | FND-003 | fixed | Round 1: the support set is "a build capability constant and not a request or test parameter"; AC-5 and TC-540 step 5 run against the build as it stands and select no set. |
 | FND-004 | fixed | Round 1: FR-135's section opens "QSL-proposed pending QSpec (Linear STD-199, item 4)", and STD-199 carries the updated question. |
+| FND-005 | fixed | Round 2 (49b77c0dd): fixture `Twice` now declares a channel `ch` and a `parallel` node `par`, so AC-5's `lose Spec::Twice::ch` resolves and AC-6's parallel-node vector exercises the node-kind rule. |
+| FND-006 | fixed | Round 2: AC-2 states that its first three vectors wait on STD-199 and STD-182, Remaining work names them, and TC-552's scope runs step 2 now only for the `CasRefinesCounter` node-row vector. |

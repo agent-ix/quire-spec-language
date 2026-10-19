@@ -54,8 +54,10 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   list, ordered by the bytes of the canonical spellings.
 - Step 6: each variant refuses with FR-147-AC-6's code and subcode at its
   JSON Pointer (both pointers for a conflict) and gives no list.
-- Step 7: the two non-empty lists each refuse once
-  `unsupported_construct`/`not-yet-implemented` at the first token of the name
-  after `abstract`, naming `refinement-internal-list`, the refinement and the
-  profile, with no `CheckedRefinement`, classified `unsupported`; the empty
-  list is not refused for the list.
+- Step 7: the non-empty list for `CasRefinesCounter` refuses exactly once,
+  `unsupported_construct`/`not-yet-implemented` at its model alias, naming
+  `refinement-internal-list`, the refinement and the profile; the non-empty
+  list for `CasTwice` refuses exactly twice, `protocol-abstract-side` at
+  `Twice` and `refinement-internal-list` at `Spec`, each once; all classified
+  `unsupported`, with no `CheckedRefinement`; the empty list is not refused
+  for the list.
