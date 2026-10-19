@@ -75,3 +75,9 @@ Round 1, against head a403f83ce (fix commit a403f83ce).
 | FND-002 | fixed | - The engine SHALL run the first phase over every binding before it runs the   second phase over any. If any binding's first phase ends with a violation   or an `Undecided`, then the engine SHALL return the finding that ranks first   across bindings by depth (the position of an undefined letter, the depth of   a rejecting state), and the second phase SHALL NOT run. A lasso therefore   never competes with a first-phase finding of another binding. |
 | FND-003 | fixed | For a TP-4 item the order across `over` bindings is the shallowest first, then the earlier binding in canonical order; the safety engines (TP-1 to TP-3) rank by depth, then canonical state order, then binding. |
 | FND-004 | fixed | - The engine SHALL rank the pass's findings with the same binding's product   findings by depth, the product's finding winning a tie at equal depth; the   binding order then decides between bindings. |
+
+Round 2, against head fe619eeeb (fix commit fe619eeeb).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | - When a binding's first phase ends with a finding at depth `d`, the engine   SHALL explore each later binding only through depth `d - 1`, since a later   binding wins only with a strictly shallower finding (a tie goes to the   earlier binding). It SHALL return the finding once every later binding has   finished or completed depth `d - 1` with no finding, and SHALL return the   `Stopped` of a later binding that stops on `max_states`, `max_transitions`,   the evaluation meter or cancellation before it completed depth `d - 1`.   A later binding that reaches `max_depth` before depth `d - 1` ha... |

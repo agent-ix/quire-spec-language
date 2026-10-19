@@ -77,3 +77,9 @@ Round 1, against head a403f83ce (fix commit a403f83ce).
 | FND-003 | fixed | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2 (specified behaviour). |
 | FND-004 | fixed | The TP-4 claim of AC-1 under `fair strong each attemptUpdate` returns the `StrongFairness` refusal, `unsupported_construct`/`not-yet-implemented`, having explored no state; the same claim as a checked clause with a guarded `on each ... when` activation, given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337), returns the `GuardedActivation` refusal. AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its stati... |
 | FND-005 | fixed | - The pass SHALL charge each state it creates to `max_states` and each edge   it follows to `max_transitions`, and exhausting either SHALL settle   `Stopped{ResourceExhausted, {MaxStates / MaxTransitions, value}}`: an   uncharged pass would be unbounded. |
+
+Round 2, against head fe619eeeb (fix commit fe619eeeb).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | With initial versions `a` 0 and `b` 1 and the AC-12 claim, whose first phase ends in `a` with a finding at depth 2, `max_states` 6 returns `Stopped{ResourceExhausted, {MaxStates, 6}}`, since binding `b` stops before it completes depth 1; `max_states` 1,000 returns the AC-14 finding for `b`; with both versions 0, `max_states` 1,000 returns the AC-12 finding for `a`, the tie going to the earlier binding. |
