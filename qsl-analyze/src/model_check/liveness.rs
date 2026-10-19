@@ -645,6 +645,33 @@ impl FirstHit {
     }
 }
 
+/// The shallowest depth each model state is known at, by its state-key
+/// digest: a product state's, or the model-only pass's own.
+#[derive(Default)]
+struct Depths(BTreeMap<DigestRecord, usize>);
+
+impl Depths {
+    /// Record that `digest` is reached at `depth`; whether that is news: the
+    /// state is new, or this is shallower than where it was known, so a
+    /// finding there ranks first (UE-4).
+    fn reach(&mut self, digest: DigestRecord, depth: usize) -> bool {
+        match self.0.entry(digest) {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(depth);
+                true
+            }
+            std::collections::btree_map::Entry::Occupied(mut known) => {
+                if depth < *known.get() {
+                    known.insert(depth);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
 /// A model state of the model-only pass over the states a dead automaton
 /// leaves: how it was reached, from a root or from another such state.
 struct DeadNode {
@@ -693,7 +720,7 @@ impl<'r, 'a> Run<'r, 'a> {
                     None => stopped(*cause, *limit, totals.stats()),
                 });
             }
-            let dead = self.dead_phase(&run, live.as_ref().map(|(depth, _)| *depth))?;
+            let dead = self.dead_phase(&run, live.as_ref().map(|(depth, _)| *depth), &totals)?;
             run.dead_cut = dead.cut;
             if let Some(Ending::Stopped(cause, limit)) = dead.stopped {
                 return Ok(match live {
@@ -963,22 +990,42 @@ impl<'r, 'a> Run<'r, 'a> {
     /// product state covers, the first whose letter is undefined or whose
     /// expansion evaluates a contract conjunction undefined ends the first
     /// phase, and a refused one leaves it undecided. It stops at `bound`, the
-    /// depth of a finding the product already has, which wins ties.
+    /// depth of a finding the product already has, which wins ties. Its
+    /// states and edges are charged to what is left of the run's
+    /// `max_states` and `max_transitions`, though they join no total: a pass
+    /// that exhausts either stops the run naming it.
     fn dead_phase(
         &self,
         run: &Explored<'_, '_>,
         bound: Option<usize>,
+        spent: &Totals,
     ) -> Result<DeadPhase, ModelCheckRefusal> {
         let roots = std::mem::take(&mut *run.product.dead.borrow_mut());
         let mut phase = DeadPhase::default();
         if roots.is_empty() {
             return Ok(phase);
         }
-        let mut examined: BTreeSet<DigestRecord> = BTreeSet::new();
+        let limits = self.request.limits.limits;
+        let mut states_left = limits
+            .max_states
+            .saturating_sub(usize::try_from(spent.states).unwrap_or(usize::MAX));
+        let mut edges_left = limits
+            .max_transitions
+            .saturating_sub(usize::try_from(spent.edges).unwrap_or(usize::MAX));
+        let out_of = |limit, value: usize| {
+            Some(Ending::Stopped(
+                IncompleteCause::ResourceExhausted,
+                Some(ReachedLimit {
+                    limit,
+                    value: widen(value),
+                }),
+            ))
+        };
+        let mut examined = Depths::default();
         let mut live: BTreeMap<(DigestRecord, StateId), ProductStateId> = BTreeMap::new();
         for (index, state) in run.graph.states().iter().enumerate() {
             let digest = self.digest(&state.state.model)?;
-            examined.insert(digest);
+            examined.reach(digest, state.depth);
             if let Property::After(at) = &state.state.property {
                 live.insert((digest, *at), ProductStateId(index));
             }
@@ -986,7 +1033,12 @@ impl<'r, 'a> Run<'r, 'a> {
         let mut nodes: Vec<DeadNode> = Vec::new();
         let mut frontier: BTreeSet<(usize, usize)> = BTreeSet::new();
         for (root, entry) in roots.iter().enumerate() {
-            if examined.insert(self.digest(&entry.model)?) {
+            if examined.reach(self.digest(&entry.model)?, entry.depth) {
+                if states_left == 0 {
+                    phase.stopped = out_of(ModelCheckLimit::MaxStates, limits.max_states);
+                    return Ok(phase);
+                }
+                states_left -= 1;
                 frontier.insert((entry.depth, nodes.len()));
                 nodes.push(DeadNode {
                     model: entry.model.clone(),
@@ -1076,7 +1128,17 @@ impl<'r, 'a> Run<'r, 'a> {
             }
             let root = nodes.get(index).map_or(0, |node| node.root);
             for (transition, next) in expansion.successors {
-                if examined.insert(self.digest(&next)?) {
+                if edges_left == 0 {
+                    phase.stopped = out_of(ModelCheckLimit::MaxTransitions, limits.max_transitions);
+                    return Ok(phase);
+                }
+                edges_left -= 1;
+                if examined.reach(self.digest(&next)?, depth.saturating_add(1)) {
+                    if states_left == 0 {
+                        phase.stopped = out_of(ModelCheckLimit::MaxStates, limits.max_states);
+                        return Ok(phase);
+                    }
+                    states_left -= 1;
                     frontier.insert((depth.saturating_add(1), nodes.len()));
                     nodes.push(DeadNode {
                         model: next,
@@ -1718,6 +1780,22 @@ impl Open {
 mod tests {
     use super::*;
     use ix_trace_rs::trace;
+
+    /// UE-4: a model state the product knows at depth 3 is news again when
+    /// the model-only pass reaches it at depth 1, but not at depth 1 twice or
+    /// at depth 2 after that.
+    #[trace("TC-521")]
+    #[test]
+    fn a_shallower_arrival_at_a_known_model_state_is_news() {
+        use qsl_foundation::digest::DigestDomain;
+        let digest = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [7; 32]);
+        let mut depths = Depths::default();
+        assert!(depths.reach(digest, 3), "a new state");
+        assert!(!depths.reach(digest, 3), "no shallower");
+        assert!(!depths.reach(digest, 4), "deeper");
+        assert!(depths.reach(digest, 1), "shallower");
+        assert!(!depths.reach(digest, 2), "deeper than the shallowest");
+    }
 
     /// CX-5 tie: from the entry v0, edge 0 reaches v1 (an acceptance-set
     /// state) and edge 1 takes the weak constraint; both obligations are at

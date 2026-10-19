@@ -37,3 +37,23 @@ What is sound: the refusal instead of an unsound `Holds` (a product with no pass
 | FND-006 | low | `proof_waits_for_the_component_certificate` and `a_strong_constraint_is_refused_not_ignored` carry `#[trace("TC-521")]` but assert interim refusals that TC-521 and FR-126 contradict (TC-521 expects `Holds{Exhaustive}`; ADR-019 FS-2 decides strong constraints). The tag counts them as TC-521 evidence. Leave these two untagged (or tag the ticket's interim behaviour only in prose) until they are replaced in PR 2. | qsl-analyze/tests/it/liveness.rs:312-313, 580-581 |
 | FND-007 | low | The doc comment of `proof_waits_for_the_component_certificate` derives "7 states ... 3 + 3 + 1" while the body asserts 8 (value 3 in the waiting state and the dead state). The prose is wrong; fix it to 3 + 3 + 2 and name the dead state. | qsl-analyze/tests/it/liveness.rs:303-311, 324 |
 | FND-008 | low | Style note: `use qsl_eval::simulation::model::{..., ModelSystem, ModelSystem as System}` imports one type under two names, and both are used (`ModelSystem::new`, `System<'a>`). Use one name. | qsl-analyze/src/model_check/liveness.rs:45-47 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | The model-only pass that replaced the `Dead` state (`dead_phase`) runs outside every run budget. It walks model states breadth-first from the dead roots with no `max_states` or `max_transitions` check, and its states count toward no total ("count toward no limit or total"). A request with `max_states` 1 over a subject whose negation dies at the first step can still read letters and expand contracts over the whole reachable model, and then return `Violated`, `Undecided` or the certificate refusal, never `Stopped{MaxStates}`. FR-126 says reaching `max_states` or `max_transitions` stops the run, and every terminal record states whether a limit was reached. Scenario: `positions_past_a_dead_automaton_are_still_read` with `max_states` 1 explores values 2 and 3 after the one product state. Charge dead-pass states and edges to the run's remaining budget (and report them), or get STD-203 to state that this pass is unbudgeted. | qsl-analyze/src/model_check/liveness.rs:967-1090 |
+| FND-010 | low | The dead pass skips any model state that a product state already covers (`examined` is seeded with every product state's model digest), even when the dead path reaches it at a smaller depth. An undefined letter or contract at such a state is then reported at the product's deeper position, with a longer prefix, not at the shallowest position UE-4 ranks first. The refutation is still valid, so this is canonical ordering only. Seed `examined` per depth (keep the shallowest depth per model state), or rank the product's hit against the dead path's depth for that state. | qsl-analyze/src/model_check/liveness.rs:977-993 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | d5f75958d: `nearest` breaks on `reached > length`; unit test `a_vertex_obligation_ties_an_edge_obligation_at_the_same_distance` asserts the CX-5 walk v0 v1 v0 v2 v0. |
+| FND-002 | fixed | d5f75958d: each binding's `retain` gets the run's remaining `max_states` / `max_transitions`, and the reached limit reports the request's value; `the_state_budget_is_shared_by_every_instance` covers it. |
+| FND-003 | fixed | d5f75958d: the `Dead` property state and the extra acceptance set are removed; the product has 15 states per instance over ADR-018 section 6's example (`the_example_unit_has_a_fifteen_state_product_per_instance`). The replacement pass is FND-009/FND-010. |
+| FND-004 | fixed | d5f75958d: `len()` adds the terminal stutter step; the AC-3 test asserts `len() == 4` and `prefix.len() == 3`. |
+| FND-005 | fixed | d5f75958d: `Totals::add` keeps the maximum automaton-state count; the shared-budget test asserts two instances report the same count as one. |
+| FND-006 | fixed | d5f75958d: the `TC-521` tag is removed from both interim-refusal tests. |
+| FND-007 | fixed | d5f75958d: with no dead state the product has 7 states; the doc comment derives 3 + 3 + 1 and the test asserts 7. |
+| FND-008 | fixed | d5f75958d: the import is `ModelSystem` only, and `System` is gone. |

@@ -358,6 +358,40 @@ fn positions_past_a_dead_automaton_are_still_read() {
     assert_eq!(evaluation.site.position, 2);
     assert_eq!(outcome.stats().product_states, 1);
 
+    // The model-only pass is charged to the run's budgets: with none left it
+    // stops the run naming the limit instead of walking the model.
+    let stops = |limits: ModelCheckLimits| match fixture
+        .run(|v| Some(v == 1), None, limits, UNLIMITED, &Cancel::new())
+        .expect("checked")
+    {
+        ModelCheckOutcome::Stopped { cause, limit, .. } => (cause, limit),
+        other => panic!("expected a stopped run, got {other:?}"),
+    };
+    let mut states = ModelCheckLimits::default();
+    states.limits.max_states = 1;
+    assert_eq!(
+        stops(states),
+        (
+            IncompleteCause::ResourceExhausted,
+            Some(ReachedLimit {
+                limit: ModelCheckLimit::MaxStates,
+                value: 1
+            })
+        )
+    );
+    let mut edges = ModelCheckLimits::default();
+    edges.limits.max_transitions = 0;
+    assert_eq!(
+        stops(edges),
+        (
+            IncompleteCause::ResourceExhausted,
+            Some(ReachedLimit {
+                limit: ModelCheckLimit::MaxTransitions,
+                value: 0
+            })
+        )
+    );
+
     let refusal = fixture
         .decide(|v| Some(v == 1))
         .expect_err("no certificate yet");
