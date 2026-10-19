@@ -14,7 +14,7 @@ Verify that S2 builds one `RefinementForm` per `refinement` declaration with
 every row as written, open arguments and population-valued forms included,
 and resolves no name.
 
-Scope: FR-310-AC-1 to FR-310-AC-3.
+Scope: FR-310-AC-1 to FR-310-AC-4.
 
 ## Test Procedure
 
@@ -23,7 +23,10 @@ FR-147's `CasTwice`.
 
 1. Build the S2 form of `CasRefinesCounter`.
 2. Build the forms of `RingIsQueue` and `CasTwice`.
-3. Build the forms of a declaration whose abstract alias names no model and
+3. Build a declaration with history rows whose initial values are `-3`,
+   `true`, `none`, `"a"`, `rational(1, 2)` and `Impl::Mode::idle`, and a
+   fairness row `assume fair strong Impl::Counter::retryA;`.
+4. Build the forms of a declaration whose abstract alias names no model and
    of one with a duplicate `population` row, then run S3 on them.
 
 Tag the tests `#[trace("TC-889", "<AC id>")]`.
@@ -33,5 +36,9 @@ Tag the tests `#[trace("TC-889", "<AC id>")]`.
 - Step 1: abstract side `Model(Spec)`, concrete `Impl`, the rows in source
   order with spans; the `ensure` granularity `each`.
 - Step 2: `seq` and `only` expression forms; `Apply` with `[self.ring,
-  Open]`; `Protocol(Spec, Twice)` and an `Internal` row for `finish`.
-- Step 3: both forms build; S3 refuses each with FR-135-AC-2's code.
+  Open]`; `Protocol(Spec, Twice)`, and a `Class` source with a `Node` target
+  for the protocol step row.
+- Step 3: the six history literals build as `Integer`, `Boolean`, `None`,
+  `Text`, `Exact` and `EnumMember` forms, none as an expression form; the
+  fairness row builds kind `Strong`, granularity absent.
+- Step 4: both forms build; S3 refuses each with FR-135-AC-2's code.
