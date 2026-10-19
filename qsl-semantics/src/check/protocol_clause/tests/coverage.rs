@@ -144,3 +144,42 @@ fn each_unchecked_part_of_an_attempt_protocol_refuses() {
         }
     }
 }
+
+/// QSpec FR-464 "Profiles and laws": a `compensate` template reads a clock
+/// role, so under no temporal profile it refuses `missing_declaration`/
+/// `missing-selection` at the template's name, naming it; with one selected
+/// the same protocol checks.
+#[trace("QSpec-FR-464")]
+#[test]
+fn a_compensate_template_needs_a_temporal_profile() {
+    let source = recovery_flow("Main::Committed", "");
+    checks(&source);
+    let header = super::HEADER.replace("profile t = \"quire.temporal.infinite-trace/v1\";\n", "");
+    assert_ne!(
+        header,
+        super::HEADER,
+        "the fixture header selects a temporal profile"
+    );
+    let (text, assembled) = super::assemble_with(&header, &source);
+    let found = assembled
+        .check(quire_semantic_value::checking::CheckingLimits::default())
+        .expect_err("a template under no temporal profile refuses");
+    let [refusal] = found.as_slice() else {
+        panic!("one refusal: {found:?}");
+    };
+    assert_eq!(refusal.cause.code().as_str(), "missing_declaration");
+    assert_eq!(refusal.cause.cause(), Some("missing-selection"));
+    let crate::check::CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
+        panic!("a protocol cause: {refusal:?}");
+    };
+    let ProtocolAnchorCause::MissingTemporalProfile {
+        construct,
+        node,
+        span,
+    } = cause.as_ref()
+    else {
+        panic!("a missing temporal profile, got {cause:?}");
+    };
+    assert_eq!((*construct, node.as_str()), ("compensate", "Undo"));
+    assert_eq!(&text[span.start..span.end], "Undo");
+}

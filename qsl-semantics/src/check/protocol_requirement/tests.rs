@@ -1,6 +1,6 @@
 //! FR-218 "Requirements" (TC-1056, TC-1065) over fixture R of the protocol
-//! obligation tests, with a temporal profile selected so the unit can
-//! declare temporal clauses.
+//! obligation tests, whose header selects the temporal profile `t` a
+//! temporal clause is written `using`.
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
@@ -40,12 +40,7 @@ fn protocol(name: &str, members: &str) -> String {
 }
 
 fn assemble(declarations: &str) -> (String, PackageDeclarations) {
-    let header = HEADER.replacen(
-        "model M",
-        "profile t = \"quire.temporal.infinite-trace/v1\";\nmodel M",
-        1,
-    );
-    let text = format!("{header}{declarations}");
+    let text = format!("{HEADER}{declarations}");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",

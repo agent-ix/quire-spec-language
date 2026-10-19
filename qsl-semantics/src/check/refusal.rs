@@ -391,13 +391,15 @@ pub enum ProtocolAnchorCause {
         /// The interval's span.
         span: Span,
     },
-    /// QSpec FR-464 "Profiles and laws": an `await` reads a clock role, so
-    /// the unit selects a `temporal_profile`; without one,
-    /// `missing_declaration`/`missing-selection` at the `await`.
+    /// QSpec FR-464 "Profiles and laws": an `await` or a `compensate` reads
+    /// a clock role, so the unit selects a `temporal_profile`; without one,
+    /// `missing_declaration`/`missing-selection` at the node.
     MissingTemporalProfile {
-        /// The `await` control's declared name.
+        /// The node's keyword, `await` or `compensate`.
+        construct: &'static str,
+        /// The `await` control's or `compensate` template's declared name.
         node: String,
-        /// The `await`'s name span.
+        /// The node's name span.
         span: Span,
     },
     /// QSpec FR-465 "Role" 2: a replicated role whose authored `max` is

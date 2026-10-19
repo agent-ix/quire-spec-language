@@ -847,9 +847,11 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: the `within` of `await {node}` is not a closed interval with \
                      lower <= upper"
                 ),
-                ProtocolAnchorCause::MissingTemporalProfile { node, .. } => format!(
-                    "{message}: `await {node}` reads a clock, but the unit selects no temporal \
-                     profile"
+                ProtocolAnchorCause::MissingTemporalProfile {
+                    construct, node, ..
+                } => format!(
+                    "{message}: `{construct} {node}` reads a clock, but the unit selects no \
+                     temporal profile"
                 ),
                 ProtocolAnchorCause::RoleMax { role, actual, .. } => format!(
                     "{message}: replicated role `{role}` allows at most {actual} live instances; \
