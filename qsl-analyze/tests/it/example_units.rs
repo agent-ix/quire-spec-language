@@ -864,3 +864,103 @@ fn a_binding_that_stops_with_a_finding_does_not_hide_a_shallower_one() {
         );
     }
 }
+
+/// Letters over the joint state of the two objects: `read(key, atom, va, vb)`.
+struct Joint<'w> {
+    world: &'w World,
+    atoms: Vec<FormulaNodeId>,
+    read: fn(&str, usize, i64, i64) -> Option<bool>,
+    /// Run when `b`'s second atom is read at the joint state (1, 2).
+    on_trigger: Box<dyn Fn() + 'w>,
+}
+
+impl ModelLetters for Joint<'_> {
+    fn atom(
+        &self,
+        atom: FormulaNodeId,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        let index = self
+            .atoms
+            .iter()
+            .position(|known| *known == atom)
+            .expect("atom");
+        let va = self.world.integer(state, "a", "versionNumber");
+        let vb = self.world.integer(state, "b", "versionNumber");
+        if instance.key == "b" && (va, vb) == (1, 2) && index == 1 {
+            (self.on_trigger)();
+        }
+        Ok(match (self.read)(&instance.key, index, va, vb) {
+            Some(true) => AtomReading::True,
+            Some(false) => AtomReading::False,
+            None => AtomReading::Undefined(UndefinedCause::Kernel(
+                quire_exact::Undefined::DivisionByZero,
+            )),
+        })
+    }
+}
+
+fn hidden_pass(key: &str, atom: usize, va: i64, vb: i64) -> Option<bool> {
+    if key == "a" {
+        return Some(atom == 1);
+    }
+    match (atom, va, vb) {
+        (0, 1, 0) | (0, 0, 2) => Some(true),
+        (0, _, _) => Some(false),
+        (1, 2, 0) | (1, 2, 1) => None,
+        (1, _, _) => Some(true),
+        _ => unreachable!(),
+    }
+}
+
+/// A binding that stops while holding a product finding at depth `d` has not
+/// run its model-only pass, so a shallower finding from a dead root may be
+/// hidden. Unlimited, `b` is undefined at position 2 (found by the pass);
+/// cancelling after `b`'s depth-3 product finding exists must answer
+/// `Stopped{Cancelled}`, not that depth-3 finding.
+#[trace("TC-1085")]
+#[test]
+fn a_stopped_binding_does_not_return_a_finding_its_own_pass_may_beat() {
+    let world = config_over(false, WHOLE, DEAD_AT_ZERO, (0, 0));
+    let atoms = qsl_eval::automaton::translate(&world.clauses[0], 1 << 20)
+        .expect("translates")
+        .atoms()
+        .to_vec();
+    let plain = Joint {
+        world: &world,
+        atoms: atoms.clone(),
+        read: hidden_pass,
+        on_trigger: Box::new(|| {}),
+    };
+    let outcome = with_limits(&world, &plain, ModelCheckLimits::default());
+    let counterexample = violated(&outcome);
+    assert_eq!(bound(counterexample), "b");
+    assert_eq!(undefined_at(counterexample).0, 2);
+
+    let cancel = Cancel::new();
+    let cancelling = Joint {
+        world: &world,
+        atoms,
+        read: hidden_pass,
+        on_trigger: Box::new(|| cancel.cancel(CancelCause::Requested)),
+    };
+    let outcome = run(
+        &world,
+        &cancelling,
+        None,
+        ModelCheckLimits::default(),
+        &cancel,
+    );
+    assert!(
+        matches!(
+            outcome,
+            Ok(ModelCheckOutcome::Stopped {
+                cause: IncompleteCause::Cancelled { .. },
+                ..
+            })
+        ),
+        "{outcome:?}"
+    );
+}

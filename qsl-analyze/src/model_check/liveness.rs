@@ -792,6 +792,18 @@ impl<'r, 'a> Run<'r, 'a> {
                 });
                 match live {
                     Some((depth, hit)) if best.is_none() && canonical => {
+                        // The binding's model-only pass has not run: a dead
+                        // root below the finding may hold a shallower one.
+                        let dead = self.dead_phase(&run, Some(depth), &mut totals)?;
+                        if let Some(Ending::Stopped(cause, limit)) = dead.stopped {
+                            return Ok(stopped(cause, limit, totals.stats()));
+                        }
+                        let (depth, hit) = match dead.hit {
+                            Some((dead_depth, dead_hit)) if dead_depth < depth => {
+                                (dead_depth, dead_hit)
+                            }
+                            _ => (depth, hit),
+                        };
                         let last = index + 1 == self.bindings.len();
                         if depth == 0 || last {
                             return Ok(hit.outcome(totals.stats()));
