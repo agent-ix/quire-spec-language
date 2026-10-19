@@ -15,6 +15,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-090
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-393
+    type: depends_on
 ---
 # FR-325: Parse temporal operators with an optional interval into S2 TemporalTrace forms
 
@@ -23,7 +25,8 @@ relationships:
 S1 (`qsl-cst`) SHALL parse every unary temporal operator (`eventually`,
 `always`, `once`, `historically`) and every binary temporal operator
 (`until`, `release`, `since`, `triggered`) with an interval `[a,b]`, an
-interval `[a,*]`, or no interval, under every profile (ADR-014 A-1). S2
+interval `[a,*]`, a timed interval (FR-393), or no interval, under every profile
+(ADR-014 A-1). S2
 (`qsl-forms`) SHALL build one TemporalTrace form per temporal clause, holding
 each operator with an optional interval form, as the M-3b TemporalTrace forms
 of ADR-011. Parsing selects no meaning: whether an interval is required,
@@ -60,8 +63,9 @@ profile.
   `CaptureForm{parameter, value, span}`: the capture's name and declared
   type as a parameter form, its value expression as written, and the
   capture's span. Each operator node is
-  `TemporalOperatorForm{operator, interval: Option<IntervalForm>, operands}`
-  with `IntervalForm{lower: u64, upper: IntervalUpper::{Finite(u64), Open}}`
+  `TemporalOperatorForm{operator, interval: Option<OperatorInterval>, operands}`
+  with `OperatorInterval::{Steps(IntervalForm), Timed(TimedIntervalForm)}` (FR-393)
+  and `IntervalForm{lower: u64, upper: IntervalUpper::{Finite(u64), Open}}`
   and the source span of the operator and of its interval.
 
 ## Behavior
@@ -78,12 +82,13 @@ profile.
   S3's to check.
 - When an operator is written with no interval, S2 SHALL build its form
   with `interval: None`.
-- When an operator is written with `[a,b]`, S2 SHALL build `Some` with
-  `upper: Finite(b)`; with `[a,*]`, `Some` with `upper: Open`. S2 SHALL
+- When an operator is written with `[a,b]`, S2 SHALL build `Some(Steps(..))` with
+  `upper: Finite(b)`; with `[a,*]`, `Some(Steps(..))` with `upper: Open`. S2 SHALL
   build an interval with `a > b` as written, with no diagnostic; the S3
   check refuses an inverted interval.
-- A bound that is not a decimal `u64` SHALL fail at S1 with a parse
-  diagnostic located at the bound's span.
+- A step-interval bound that is not a decimal `u64` SHALL fail at S1 with a
+  parse diagnostic located at the bound's span; a timed interval's bounds
+  are parsed as FR-393 states.
 - Nesting SHALL be free: an operator with an interval and an operator
   without one may appear in any operand position of each other.
 - S2 SHALL produce the same form for the same clause text under every
@@ -95,8 +100,8 @@ profile.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-325-AC-1 | `always (holds(not s.healthy) implies eventually always[0,10] holds(s.healthy))` parses, and its form holds `interval: None` on the outer `always` and on `eventually`, and `Some{lower: 0, upper: Finite(10)}` on the inner `always`, each with its own span. | Test (TC-835) |
-| FR-325-AC-2 | `holds(p) until holds(q)`, `holds(p) since[2,4] holds(q)` and `eventually[3,*] holds(p)` parse; their operator forms hold `None`, `Some{2, Finite(4)}` and `Some{3, Open}`. `eventually[5,3] holds(p)` parses to `Some{5, Finite(3)}` with no S1 or S2 diagnostic. | Test (TC-835) |
+| FR-325-AC-1 | `always (holds(not s.healthy) implies eventually always[0,10] holds(s.healthy))` parses, and its form holds `interval: None` on the outer `always` and on `eventually`, and `Some(Steps{lower: 0, upper: Finite(10)})` on the inner `always`, each with its own span. | Test (TC-835) |
+| FR-325-AC-2 | `holds(p) until holds(q)`, `holds(p) since[2,4] holds(q)` and `eventually[3,*] holds(p)` parse; their operator forms hold `None`, `Some(Steps{2, Finite(4)})` and `Some(Steps{3, Open})`. `eventually[5,3] holds(p)` parses to `Some(Steps{5, Finite(3)})` with no S1 or S2 diagnostic. | Test (TC-835) |
 | FR-325-AC-3 | `eventually[0,x] holds(p)` fails at S1 with a parse diagnostic located at `x`'s span, and no S2 form is built. | Test (TC-835) |
 | FR-325-AC-4 | Two units that differ only in the selected profile identity, one selecting the infinite-trace profile and one the event-position false-extension profile, padded so their headers have equal length and the clause starts at the same byte offset, build equal S2 forms for the clause, compared by `PartialEq` and by their `Debug` rendering. | Test (TC-835) |
 | FR-325-AC-5 | A clause whose body holds `fair Config::ConfigVersion::attemptUpdate;`, `fair strong each Config::ConfigVersion::reset;` and `fair weak whole Config::ConfigVersion::tick;` before its formula builds three fairness forms in that order: (`None`, `None`, `Config::ConfigVersion::attemptUpdate`), (`Some(Strong)`, `Some(Each)`, `Config::ConfigVersion::reset`) and (`Some(Weak)`, `Some(Whole)`, `Config::ConfigVersion::tick`), each with the span of its own constraint. | Test (TC-835) |
