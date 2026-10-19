@@ -82,7 +82,7 @@ pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 ```
 
 `StatisticalRefusal` holds FR-120's `AdmissionFailure`, FR-101's
-`RequiresBound`, `EveryScheduler` for a claim `under every scheduler` and
+`RequiresBound` and `GeneratorMismatch`, `EveryScheduler` for a claim `under every scheduler` and
 `MissingConfidence` for a claim without confidence parameters,
 `ExactOnlyForm` for a claim form only EN-5 decides (QSpec FR-411, ADR-028
 XF-5), or `NotStatistical` for a method
@@ -148,6 +148,9 @@ the claim's form does not admit (FR-190, SPRT below).
 - A `SampleStop::NotMarkov` SHALL return `Unsupported(NotMarkov{…})`; an
   `ExpansionStop` SHALL return `Stopped` with its cause; a budget reached
   SHALL return `Stopped` naming it (FR-191).
+- A `SampleStop::TotalAboveDrawRange` SHALL return
+  `Unsupported(TotalAboveDrawRange{total})`; a `SampleStop::GeneratorMismatch`
+  SHALL refuse with `StatisticalRefusal`'s `GeneratorMismatch`.
 - The outcome SHALL be a function of the subject, the claim, the method,
   `min_cycles`, the seed, the sampler and the limits.
 - The EN-4 provider manifest SHALL advertise (`probabilistic-satisfaction`,
