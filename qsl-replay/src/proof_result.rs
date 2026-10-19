@@ -12,6 +12,7 @@ use crate::call_site::CallSiteRefusal;
 use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
+use crate::hybrid::{SolverHorizon, SolverMethod};
 use crate::model_check::limits::ModelCheckLimit;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
@@ -26,7 +27,7 @@ use quire_semantic_value::fairness::FairnessConstraint;
 use serde::Serialize;
 
 /// FR-127: how a proof established its claim, independently of certification.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ProofBasis {
     /// Kani's completed SUCCESS checks; zero denotes a vacuous proof.
@@ -53,6 +54,19 @@ pub enum ProofBasis {
     ClosedForm {
         /// The analysis.
         analysis: ClosedFormAnalysis,
+    },
+    /// FR-250: a hybrid solver's sound result, holding for the claim within
+    /// its time horizon and jump bound. Always paired with
+    /// [`Certification::Uncertified`]: a solver QSL runs has no core
+    /// certificate checker, and `SolverResult::terminal_value` is the only
+    /// place that builds one.
+    BoundedSolver {
+        /// The kind of method that produced the result.
+        method: SolverMethod,
+        /// The time horizon the proof covers.
+        horizon: SolverHorizon,
+        /// The jump bound the proof covers.
+        jumps: u64,
     },
 }
 
@@ -302,6 +316,10 @@ pub enum InconclusiveCause {
     /// AMC-rtb's high-mode criterion failed; the test is sufficient and
     /// not necessary, so it decides nothing (ADR-026 RT-6).
     SufficientTestFailed,
+    /// FR-250: a hybrid solver result that proves nothing (`δ-sat`, a
+    /// flowpipe meeting the unsafe set, `unknown`, or a method not sound for
+    /// its outcome).
+    SolverInconclusive,
 }
 
 impl InconclusiveCause {
@@ -317,6 +335,7 @@ impl InconclusiveCause {
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
             Self::ScalarAgrees(_) => "scalar-agrees",
+            Self::SolverInconclusive => "solver-inconclusive",
             Self::SufficientTestFailed => "sufficient-test-failed",
         }
     }
@@ -331,7 +350,8 @@ impl InconclusiveCause {
             | Self::NoInitialState
             | Self::NoInstance
             | Self::SufficientTestFailed
-            | Self::CertificateRejected { .. } => 0,
+            | Self::CertificateRejected { .. }
+            | Self::SolverInconclusive => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
             Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
@@ -437,7 +457,8 @@ impl TerminalValue {
                     | ProofBasis::Exhaustive
                     | ProofBasis::BoundedComplete { .. }
                     | ProofBasis::Inductive { .. }
-                    | ProofBasis::ClosedForm { .. },
+                    | ProofBasis::ClosedForm { .. }
+                    | ProofBasis::BoundedSolver { .. },
                 ..
             }
             | Self::Tested => Category::Success,
@@ -1057,7 +1078,7 @@ mod tests {
         for (basis, category) in bases {
             for (certification, spelling) in certifications {
                 let value = TerminalValue::Proved {
-                    basis,
+                    basis: basis.clone(),
                     certification,
                 };
                 let source = BackendProviderSource {

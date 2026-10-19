@@ -34,6 +34,9 @@ pub enum NativeRunResultError {
     /// A separating witness did not have the record its family assigns.
     #[error("invalid separating witness: {0}")]
     Witness(#[from] crate::result::CauseCodecError),
+    /// A temporal clause's disposition has no `native-run-result/2` member.
+    #[error("a temporal disposition has no native-run-result/2 form")]
+    TemporalDisposition,
     /// The typed report could not be represented as JSON.
     #[error("cannot serialize clause-run result: {0}")]
     Json(#[from] serde_json::Error),
@@ -2285,6 +2288,9 @@ impl Disposition {
                     invariant: fault.invariant(),
                 });
             }
+            // `write_clause_run_result` refuses a temporal disposition before
+            // it builds this record.
+            ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_) => {}
         }
         result
     }
@@ -2307,6 +2313,12 @@ fn format_model_selection(
 
 /// Serialize one FR-109 report as RFC 8785 `native-run-result/2` bytes.
 pub fn write_clause_run_result(report: &ClauseRunReport) -> Result<Vec<u8>, NativeRunResultError> {
+    if matches!(
+        report.disposition,
+        ClauseDisposition::Temporal(_) | ClauseDisposition::TemporalRefusal(_)
+    ) {
+        return Err(NativeRunResultError::TemporalDisposition);
+    }
     if report.basis.is_decisive() != report.witness.is_some() {
         return Err(NativeRunResultError::BasisWitness);
     }

@@ -34,6 +34,9 @@ const NO_SLOT: usize = usize::MAX;
 pub(crate) struct TypedCondition {
     /// The checked Boolean condition.
     pub(crate) body: CheckedBody,
+    /// The evaluation slot count: the `over` parameter's slot and every
+    /// local the condition binds.
+    pub(crate) slots: usize,
     /// The name each slot of the condition was bound under.
     pub(crate) slot_names: Vec<String>,
     /// The compound units typing formed, which lowering keys.
@@ -84,6 +87,7 @@ pub(crate) fn check_conditions(
                 cause: CheckCause::NonBooleanRoot,
             });
         }
+        let slots = typer.slots();
         let slot_names = typer.slot_names().to_vec();
         let formed_units = typer.into_formed_units();
         let observations = Observations::of(body.root(), Observation::Current, bound.len());
@@ -98,6 +102,7 @@ pub(crate) fn check_conditions(
             id.index(),
             TypedCondition {
                 body,
+                slots,
                 slot_names,
                 formed_units,
             },

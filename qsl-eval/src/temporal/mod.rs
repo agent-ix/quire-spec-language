@@ -26,6 +26,7 @@
 mod engine;
 mod input;
 mod letters;
+mod observed;
 mod outcome;
 mod plan;
 mod position;
@@ -35,6 +36,7 @@ mod window;
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
 pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
+pub use observed::{evaluate_observed, HoldsStop, ObservedRun};
 pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 pub use position::{PositionRefusal, TemporalPosition};
 pub use tuple::{evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters};
