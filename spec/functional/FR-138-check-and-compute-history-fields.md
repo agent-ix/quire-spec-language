@@ -142,6 +142,6 @@ and not its range, so the range is left only at run time.
 
 - The QSpec half (history field semantics): QSpec FR-378 (Linear STD-133).
 - The history-row production, the `history-literal` spellings and the
-  history-literal conformance rule: QSpec FR-375. FR-375-AC-9 is the covering
-  test for the `none`, `true`/`false` and enum-member cases, which FR-138
-  does not restate.
+  history-literal conformance rule: QSpec FR-375. The covering test for the
+  `none`, `true`/`false` and enum-member cases, which FR-138 does not
+  restate, is QSpec TC-310 mutation 10 (FR-375-AC-9).

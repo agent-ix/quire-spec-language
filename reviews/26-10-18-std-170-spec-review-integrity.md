@@ -51,3 +51,10 @@ Checked and clean:
   computed-expression range narrowing.
 - ADR-020 AX-1 states the rule by reference, and no `<literal>` remains in
   `spec/`.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The partial restatement is removed. The S3 bullet now defers to FR-375's history-literal rule (FR-375-AC-9) and keeps only the non-member refusal at the literal, which FR-375 also states (2c0bd426d). |
+| FND-002 | fixed | Inputs no longer redraws the row shape. It reads "as QSpec FR-375's history-row production defines them, with spans" (2c0bd426d). |

@@ -64,3 +64,17 @@ The decisions the author made:
   FR-138-AC-5 stays on TC-554.
 - **Checklist:** `quire validate` exits 0 on the three changed files. There
   are no hashes, digests, pins or tracking records.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | FR-138 References calls FR-375-AC-9 "the covering test". FR-375-AC-9 is an acceptance criterion. The covering test is QSpec TC-310, mutation 10. | spec/functional/FR-138-check-and-compute-history-fields.md:145-147 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-543 Step 2 now asserts that `true` and `5` refuse at the literal's span (2c0bd426d). |
+| FND-002 | fixed | FR-138 no longer states its own `none` and enum-path SHALLs. Its S3 bullet defers to FR-375's history-literal rule, and References names FR-375-AC-9 as the coverage for the `none`, `true`/`false` and enum-member cases. No FR-138 rule is left without a test. QSL-866 implements against FR-375-AC-9 (2c0bd426d). |
+| FND-003 | fixed | The fixture paragraph is rewrapped to 80 columns (2c0bd426d). |
