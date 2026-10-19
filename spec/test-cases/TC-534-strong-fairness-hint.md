@@ -15,7 +15,7 @@ identity and position; its absence when the clause already carries the
 constraint, for non-liveness items and for a stutter loop; and that it
 leaves the verdict, counterexample and identities unchanged.
 
-Scope: FR-133-AC-1 to FR-133-AC-3.
+Scope: FR-133-AC-1 to FR-133-AC-4.
 
 ## Test Procedure
 
@@ -27,6 +27,11 @@ Scope: FR-133-AC-1 to FR-133-AC-3.
 3. Settle FR-126-AC-3's stutter refutation and deadlock-freedom refutation,
    and FR-126-AC-2's bounded refutation.
 
+4. Settle a refuted lasso over a model with types `T1 < T2` (identity
+   order), `T1` declaring `setTo` before `inc` and `T2` declaring `bump`,
+   that leaves all three enabled and untaken; repeat with the declarations
+   reordered and renamed for display.
+
 Tag the tests `#[trace("TC-534", "FR-133-AC-n")]`.
 
 ## Expected Results
@@ -34,6 +39,8 @@ Tag the tests `#[trace("TC-534", "FR-133-AC-n")]`.
 - Step 1: each record carries one hint `{Strong, acquire, Each}`, identity
   `acq(1)`, position 0, warning severity; verdict `refuted`, counterexample
   and obligation identity equal to the settlement without the hint.
-- Step 2: one hint `{Strong, attemptUpdate, Each}`, identity `upd(b)`,
-  position 0.
+- Step 2: one hint `{Strong, attemptUpdate, Each}`, identity `upd(a)`,
+  position 0; the engine's lasso loops on `upd(b)`, bound to `a`.
 - Step 3: no hint on any record.
+- Step 4: three hints in the order `T1.inc`, `T1.setTo`, `T2.bump`, identical
+  under the reordered and renamed declarations.
