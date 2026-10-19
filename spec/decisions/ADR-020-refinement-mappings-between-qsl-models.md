@@ -480,7 +480,7 @@ refinement RingIsQueue using inf abstract Q concrete R {   // illustrative spell
   population Q::queues from R::rings;
   object Q::Queue from R::Ring {
     items = seq(i in 0 .. self.size - 1:
-              only(s in R::slots where s.ring = self and s.index = (self.head + i) mod 2: s.value));
+              only(s in R::slots where s.ring = self and convert<Integer>(s.index) = (self.head + i) mod 2: s.value));
   }
   step R::Slot::put  -> Q::Queue::enq(self.ring, x);
   step R::Slot::take -> Q::Queue::deq(self.ring);
@@ -488,6 +488,8 @@ refinement RingIsQueue using inf abstract Q concrete R {   // illustrative spell
 ```
 
 `slots` is concrete-only state (RM-2), read as a whole population by `only`.
+The `mod` result is an `Integer`, which QSpec FR-149 does not compare with an
+`Int[0, 1]` operand, so the row converts the index explicitly.
 The receiver `self.ring` is a `Reference<Ring>`, lifted to the abstract
 `Queue` with the same key (RM-3). With universes `rings = {r}` and `slots =
 {s0, s1}` (indices 0 and 1), the state `head = 1`, `size = 2`, `s1.value =
