@@ -56,6 +56,12 @@ reader returns.
 - One v2 node per temporal clause, its body as FR-370 states, with
   `semantic_type` the package's `scalar_type`/`boolean` node and every
   occurrence of role `claim`.
+- The clause's identity triple `[node, role, ordinal]`: `node` is the
+  emitted node's FR-322 NodeId, `role` is `claim`, and `ordinal` is the
+  occurrence ordinal the package assigns that node (O-07). The triple is
+  the clause root of FR-338's automaton-state context.
+- The clause's `over` node: the NodeId of the parameter node the first
+  argument of the `quire.op.temporal.clause` application references.
 - From the I2 reader: the checked clause's v2 view, or FR-370's refusal
   with its locus.
 
@@ -78,6 +84,19 @@ reader returns.
   its written `weak whole` form emit identical bytes (ADR-018 FA-6).
 - The emitter SHALL write strong previous as `quire.op.temporal.once` with
   interval `{lower: "1", upper: "1"}`.
+- The emitter SHALL emit the clause node as the only source of the clause's
+  identity: a consumer resolves a clause root `[node, role, ordinal]` by
+  looking `node` up in the recompiled package and requiring a
+  `temporal`/`temporal_clause` node whose occurrence carries that role and
+  ordinal, and reads the clause's `over` node from that node's first
+  argument. No consumer supplies either from outside the package.
+- The emitter SHALL write the `over` argument as a reference to the
+  parameter node, never as a value; the concrete binding of an `over`
+  parameter comes from the model subject a check explores (FR-125), not
+  from the package.
+- The I2 reader SHALL return the clause's identity triple and `over` node
+  with its v2 view, and SHALL refuse a lookup whose node is absent, is not
+  a temporal clause node, or whose occurrence role or ordinal differs.
 - The emitter SHALL key the node and its dependencies by FR-322's
   application-node rule, so equal checked clauses emit equal node keys and
   a different interval, fairness set or profile emits a different key.
@@ -93,6 +112,7 @@ reader returns.
 | FR-337-AC-2 | The clause written with `fair weak attemptUpdate` and with `fair weak whole attemptUpdate` emits byte-identical fairness applications and equal node keys; changing `each` to `whole`, or the formula's `eventually` to `eventually[0,5]`, changes the node key and the `package_id`. | Test (TC-524) |
 | FR-337-AC-3 | `eventually[0,5] holds(c.versionNumber = 2)` under event-position false-extension emits `quire.op.temporal.eventually` with member `temporal_interval` `{lower: "0", upper: "5"}` and an empty fairness argument; strong previous emits `quire.op.temporal.once` with `{lower: "1", upper: "1"}`; under infinite-trace `eventually[3,*] holds(c.versionNumber = 2)` emits `{lower: "3", upper: null}`. | Test (TC-524) |
 | FR-337-AC-4 | Fed to QSL's I2 reader, AC-1's node with its arguments reordered fails the schema; with a `null` interval under a bounded profile it refuses `invalid_package`/`operation-member-mismatch`; with a fairness member naming an absent operation it refuses `missing_declaration`/`missing-name`; with a `quire.op.temporal.fair` application inside the formula it refuses `ill_typed`/`operator-ineligible`, each at FR-370's locus. | Test (TC-524) |
+| FR-337-AC-5 | Compiling ADR-018 §6's example unit, the I2 reader returns for `ReachesTwo` the triple `[node, "claim", ordinal]` with `node` equal to the emitted node's NodeId and the `over` node equal to `c`'s parameter node; resolving that triple in the recompiled package finds the clause, while a triple with an unknown NodeId, a non-temporal node's NodeId, role `invariant` or another ordinal is refused. | Test (TC-1079) |
 
 ## Dependencies
 

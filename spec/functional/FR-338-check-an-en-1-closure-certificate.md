@@ -107,7 +107,9 @@ lexical form is `"0"` or `[1-9][0-9]*`, with value at most
 Thus checked ordinal 0 becomes `"0"`, never `0`; the u64 maximum is
 lexically admissible only when that actual occurrence exists, while
 `"18446744073709551616"` refuses. The checker resolves this triple in the
-request's recompiled package, rederives its checked formula and rejects a
+request's recompiled package through FR-337's clause node (the node is the
+clause's emitted `temporal_clause` node, its `over` node the first
+argument's parameter node), rederives its checked formula and rejects a
 foreign occurrence. For the derived deadlock item, root is the closed
 alternative `["deadlock-freedom"]`, selecting the fixed formula below.
 `binding` is the ordered vector of `[parameter_node,typed_value]` for the
@@ -557,6 +559,14 @@ different materialization orders SHALL produce identical full octets.
 - The checker SHALL rebuild the item's property automaton with
   `qsl-eval`'s translation, and SHALL read nothing from the engine but the
   certificate.
+- The checker SHALL treat an `AutomatonStateKey` that the translation
+  refuses to admit (a listed admission negative) as a defect of the
+  certificate, not of the request: it SHALL reject with `ShapeMismatch` at
+  `ProductState` carrying the refused key and its model state, and SHALL NOT
+  use the key for membership, expansion or acceptance. The closure is then
+  not proved: FR-127 settles it `inconclusive`, `CertificateRejected`, never
+  `proved`. One refused key rejects the whole certificate, however many other
+  states are valid.
 - The checker SHALL reject with `InitialMissing` when an initial product
   state is not in the certificate.
 - Starting from the initial product states, the checker SHALL expand each
@@ -586,6 +596,7 @@ different materialization orders SHALL produce identical full octets.
 | FR-338-AC-5 | Each listed admission negative refuses before the key is used for membership; the same state under a different item/profile/activation is not admitted by the original context. | Test |
 | FR-338-AC-6 | `eventually[0,1] p` on origin with p false then true advances to accept, false then false to reject; the final counted-distance region and terminal false-extension give the evaluator's same result; zero-distance protocol steps read letters without reducing debts, open-upper until/release retain IV-2 prefix semantics; the non-progress lasso vectors distinguish starvation from actual counted progress without invented fairness, and on each retains an older unfulfilled activation after creating a new one; auxiliary exhaustion/cancellation returns typed Stopped with exact limit/value/setting/source and settles Incomplete rather than a certificate defect. | Test |
 | FR-338-AC-7 | Canonical keys retain past memory, general offset sets, shifts and Büchi acceptance facts; changing any fact affecting a future move changes the key, while common IV-3 subsumption produces one identical counter key. u64::MAX bounds and b+1 saturation remain exact, and a reached resource budget yields no truncated key. | Analysis |
+| FR-338-AC-8 | AC-1's certificate with one product state's key replaced by each admission negative (a foreign context, a non-canonical encoding, an unsorted set) is rejected `ShapeMismatch` at `ProductState` carrying that refused key and its model state, never `Accepted`; the proof settles `inconclusive`/`CertificateRejected`, not `proved`; the certificate with that state's valid key restored is accepted. | Test (TC-1080) |
 
 ## Dependencies
 
