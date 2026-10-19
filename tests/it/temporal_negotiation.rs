@@ -175,7 +175,7 @@ fn an_infinite_trace_item_routes_only_to_a_backend_negotiation_supports() {
     let unbounded = backend("liveness", Mode::Unbounded);
     let (_, sole) = candidates_of(&graph, &registry_of([unbounded.clone()]));
     let candidate = unbounded.candidate().clone();
-    assert_eq!(sole, [candidate.clone()]);
+    assert_eq!(sole, std::slice::from_ref(&candidate));
     assert_eq!(
         route(&[Disposition::Supported(candidate.clone())]),
         vec![Some(&candidate)]
