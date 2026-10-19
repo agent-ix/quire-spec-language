@@ -824,6 +824,31 @@ struct DeadPhase {
     stopped: Option<Ending>,
 }
 
+/// The annotated quotient of one reduced product and its constraints.
+type Annotated = (
+    Quotient<ModelTransition>,
+    Vec<QuotientConstraint<ModelTransition>>,
+);
+
+/// Why a lasso's loop was not built: its concretisation stopped, or the
+/// annotated quotient's loop search did.
+enum LoopStop {
+    Lift(LiftStop),
+    Quotient(QuotientStop),
+}
+
+impl From<LiftStop> for LoopStop {
+    fn from(stop: LiftStop) -> Self {
+        Self::Lift(stop)
+    }
+}
+
+impl From<ModelCheckRefusal> for LoopStop {
+    fn from(refusal: ModelCheckRefusal) -> Self {
+        Self::Lift(LiftStop::Refusal(refusal))
+    }
+}
+
 /// What the second phase found in one graph.
 enum Second {
     Lasso(Box<TemporalCounterexample>),
@@ -1542,7 +1567,7 @@ impl<'r, 'a> Run<'r, 'a> {
         let walk = model.greedy_loop(&component, entry)?;
         let loop_edges = model.loop_edges(&walk)?;
         let entry = ProductStateId(entry.index());
-        self.lasso(run, entry, |_| Ok(loop_edges)).map(Second::from)
+        self.lasso(run, entry, |_| Ok(loop_edges))
     }
 
     fn cancelled(&self) -> Result<Second, ModelCheckRefusal> {
@@ -1587,8 +1612,7 @@ impl<'r, 'a> Run<'r, 'a> {
             constraint.strength == Strength::Weak
                 && constraint.granularity == FairnessGranularity::Whole
         });
-        let mut quotient_stop = None;
-        let built = self.lasso(run, entry, |sigma| {
+        self.lasso(run, entry, |sigma| {
             if greedy {
                 let model = FairModel::build(self.system, self.clause, run)?;
                 let vertices: Vec<Vertex> = model.graph.vertices().collect();
@@ -1606,15 +1630,8 @@ impl<'r, 'a> Run<'r, 'a> {
                 let walk = model.greedy_loop(&component, vertex(&entry)?)?;
                 return Ok(model.loop_edges(&walk)?);
             }
-            analyzer.fair_loop(fair, sigma).map_err(|stop| {
-                quotient_stop = Some(stop);
-                LiftStop::Refusal(fault("the-quotient-loop-stopped"))
-            })
-        });
-        if let Some(stop) = quotient_stop {
-            return self.quotient_stop(stop);
-        }
-        built.map(Second::from)
+            analyzer.fair_loop(fair, sigma).map_err(LoopStop::Quotient)
+        })
     }
 
     /// The annotated quotient of a reduced graph (FR-153 "Inputs") and its
@@ -1622,21 +1639,11 @@ impl<'r, 'a> Run<'r, 'a> {
     /// closed under the binding's group, which charges `meter`. An identity
     /// of the operation that no reachable state enables is disabled at every
     /// state, so it passes every test and leaves no verdict changed.
-    #[allow(clippy::type_complexity)]
     fn quotient(
         &self,
         run: &Explored<'_, '_>,
         meter: &mut Meter,
-    ) -> Result<
-        Result<
-            (
-                Quotient<ModelTransition>,
-                Vec<QuotientConstraint<ModelTransition>>,
-            ),
-            QuotientStop,
-        >,
-        ModelCheckRefusal,
-    > {
+    ) -> Result<Result<Annotated, QuotientStop>, ModelCheckRefusal> {
         let graph = &run.graph;
         let mut enabled = Vec::with_capacity(graph.states().len());
         let mut edges = Vec::with_capacity(graph.states().len());
@@ -1760,10 +1767,10 @@ impl<'r, 'a> Run<'r, 'a> {
         &self,
         run: &Explored<'_, '_>,
         entry: ProductStateId,
-        pass: impl FnOnce(&Permutation) -> Result<Vec<LoopEdge>, LiftStop>,
-    ) -> Result<Built, ModelCheckRefusal> {
+        pass: impl FnOnce(&Permutation) -> Result<Vec<LoopEdge>, LoopStop>,
+    ) -> Result<Second, ModelCheckRefusal> {
         let (root, stem) = tree_path(&run.graph, entry);
-        let lifted = (|| -> Result<TemporalCounterexample, LiftStop> {
+        let lifted = (|| -> Result<TemporalCounterexample, LoopStop> {
             let (initial_state, mut lift) = self.lift_start(run, root)?;
             self.lift_edges(run, &mut lift, &stem)?;
             let entry_index = lift.len();
@@ -1788,7 +1795,9 @@ impl<'r, 'a> Run<'r, 'a> {
                 .count();
             let terminal_stutter = stutters > 0;
             if terminal_stutter && stutters != edges.len() {
-                return Err(fault("a-loop-is-all-stutter-or-all-model-steps").into());
+                return Err(
+                    LiftStop::from(fault("a-loop-is-all-stutter-or-all-model-steps")).into(),
+                );
             }
             let passes = order(&word);
             let mut done = 0_usize;
@@ -1799,7 +1808,9 @@ impl<'r, 'a> Run<'r, 'a> {
                     break;
                 }
                 if done >= passes {
-                    return Err(fault("a-lifted-loop-closes-within-its-order").into());
+                    return Err(
+                        LiftStop::from(fault("a-lifted-loop-closes-within-its-order")).into(),
+                    );
                 }
             }
             Ok(TemporalCounterexample {
@@ -1814,7 +1825,11 @@ impl<'r, 'a> Run<'r, 'a> {
                 }),
             })
         })();
-        self.built(lifted)
+        match lifted {
+            Ok(counterexample) => self.built(Ok(counterexample)).map(Second::from),
+            Err(LoopStop::Lift(stop)) => self.built(Err(stop)).map(Second::from),
+            Err(LoopStop::Quotient(stop)) => self.quotient_stop(stop),
+        }
     }
 }
 
