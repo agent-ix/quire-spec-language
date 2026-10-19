@@ -113,7 +113,8 @@ pub(super) fn run_temporal(
     let clause = node.clause();
 
     // A bounded profile reads a closed finite trace.
-    if matches!(trace, TraceInput::Lasso { .. }) && clause.profile() != TemporalProfile::InfiniteTrace
+    if matches!(trace, TraceInput::Lasso { .. })
+        && clause.profile() != TemporalProfile::InfiniteTrace
     {
         return early(refused("invalid-value", BTreeMap::new()));
     }
@@ -142,18 +143,21 @@ pub(super) fn run_temporal(
             run.observation_limits,
         ) {
             Ok((environment, usage)) => {
-                admitted.document_bytes = admitted.document_bytes.saturating_add(usage.document_bytes);
+                admitted.document_bytes =
+                    admitted.document_bytes.saturating_add(usage.document_bytes);
                 admitted.objects = admitted.objects.saturating_add(usage.objects);
                 admitted.values = admitted.values.saturating_add(usage.values);
                 environments.push(environment);
             }
-            Err(failure) => return report(
-                ClauseDisposition::Admit(failure),
-                ClauseRunUsage {
-                    admission_consumed: admitted,
-                    ..ClauseRunUsage::default()
-                },
-            ),
+            Err(failure) => {
+                return report(
+                    ClauseDisposition::Admit(failure),
+                    ClauseRunUsage {
+                        admission_consumed: admitted,
+                        ..ClauseRunUsage::default()
+                    },
+                )
+            }
         }
     }
 

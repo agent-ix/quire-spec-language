@@ -108,7 +108,8 @@ impl TemporalLetters for ObservedLetters<'_> {
                     _ => InternalFault::new("temporal.observed", "holds-condition-evaluates"),
                 })
             })?;
-        let fault = |code: &'static str| LetterStop::Fault(InternalFault::new("temporal.observed", code));
+        let fault =
+            |code: &'static str| LetterStop::Fault(InternalFault::new("temporal.observed", code));
         match evaluation.outcome {
             FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))) => {
                 Ok(AtomReading::True)
@@ -116,7 +117,9 @@ impl TemporalLetters for ObservedLetters<'_> {
             FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(false))) => {
                 Ok(AtomReading::False)
             }
-            FamilyOutcome::Evaluated(Outcome::Completed(_)) => Err(fault("holds-condition-boolean")),
+            FamilyOutcome::Evaluated(Outcome::Completed(_)) => {
+                Err(fault("holds-condition-boolean"))
+            }
             FamilyOutcome::Evaluated(Outcome::Undefined(undefined)) => {
                 Ok(AtomReading::Undefined(UndefinedCause::Kernel(undefined)))
             }

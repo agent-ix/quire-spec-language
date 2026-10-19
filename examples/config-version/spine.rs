@@ -339,6 +339,10 @@ pub fn write(directory: &Path, case: Case) -> io::Result<()> {
             "kind": "frame",
             "operation": operation.to_string(),
         }),
+        ClauseRunSelection::Temporal { name, .. } => json!({
+            "kind": "temporal",
+            "name": name,
+        }),
     };
     let request = json!({"format": "clause-run/1", "request": {
         "source": {"file": "spine-unit.native", "identity": "example/config-version-spine-unit"},

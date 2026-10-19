@@ -65,7 +65,11 @@ fn backend(id: &str, mode: Mode) -> BackendDescriptor {
         ProviderOrigin::Linked,
         ManifestDigest::from_digest(ByteDigest::of(id.as_bytes()).as_bytes()),
         [(Capability::TemporalSatisfaction, mode)],
-        Some(BTreeSet::from([DomainKind::InfiniteTrace])),
+        // A bounded pair names the domains it can bound (FR-290).
+        match mode {
+            Mode::Bounded => Some(BTreeSet::from([DomainKind::Collection])),
+            Mode::Unbounded => None,
+        },
     )
     .expect("a well-formed descriptor")
 }
@@ -139,7 +143,11 @@ fn an_infinite_trace_item_is_unbounded_and_refuses_a_bounded_request() {
         (code.code(), code.cause()),
         ("invalid_runtime_input", "invalid-value")
     );
-    assert_eq!(writer.items().len(), before, "a refused request writes no item");
+    assert_eq!(
+        writer.items().len(),
+        before,
+        "a refused request writes no item"
+    );
 }
 
 /// Against an empty registry the item has an empty candidate set naming
@@ -182,7 +190,10 @@ fn an_infinite_trace_item_routes_only_to_a_backend_negotiation_supports() {
 fn each_backend_result_label_maps_to_its_category() {
     let completed = Execution::Completed;
     assert_eq!(ResultLabel::Proved.category(completed), Category::Success);
-    assert_eq!(ResultLabel::Refuted.category(completed), Category::Violation);
+    assert_eq!(
+        ResultLabel::Refuted.category(completed),
+        Category::Violation
+    );
     assert_eq!(
         ResultLabel::Inconclusive.category(completed),
         Category::Inconclusive

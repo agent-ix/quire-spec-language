@@ -31,8 +31,8 @@ mod window;
 
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
-pub use observed::evaluate_observed;
 pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
+pub use observed::evaluate_observed;
 pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 pub use position::{PositionRefusal, TemporalPosition};
 pub use window::{
