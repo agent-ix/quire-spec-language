@@ -15,10 +15,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
-    check_state_graph, ModelCheckRefusal, NodeIndex, StateGraphRequest, StateGraphRun,
+    check_state_graph, GraphEdge, ModelCheckRefusal, NodeIndex, StateGraphRequest, StateGraphRun,
 };
-use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
-use qsl_eval::simulation::TransitionSystem;
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PredicateReading};
+use qsl_eval::simulation::{StopReason, TransitionSystem};
 use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
     CounterexampleKind, GraphWitness, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
@@ -128,6 +128,20 @@ fn receiver(step: &ModelStep) -> String {
 
 fn names(steps: &[ModelStep]) -> Vec<String> {
     steps.iter().map(operation).collect()
+}
+
+/// The operation names of the retained edges out of `node`, in canonical
+/// order.
+fn edge_names(run: &StateGraphRun, node: NodeIndex) -> Vec<String> {
+    run.graph
+        .outgoing(node)
+        .map(|edge: &GraphEdge| {
+            operation(&ModelStep {
+                transition: edge.transition.clone(),
+                post_state: run.graph.nodes[edge.target.index()].key,
+            })
+        })
+        .collect()
 }
 
 fn witnesses(outcome: &StateGraphOutcome) -> &[GraphWitness] {
@@ -722,12 +736,71 @@ fn a_stopped_exploration_leaves_sampled_witnesses_unchecked() {
     }
 }
 
+/// A `max_states` below the subject's distinct initial states stops the run
+/// before any node is inserted: `ReachesTwo` decides nothing, never a
+/// witness for each initial state with no path, though phase 0 sampled one
+/// for each.
+#[test]
+fn a_state_limit_below_the_initial_states_decides_nothing() {
+    let world = config_world(REACHES_TWO, &[(0, 0), (1, 1)]);
+    let end = stopped_at(ModelCheckLimit::MaxStates, 1);
+    let result = run(world.request(
+        AB,
+        vec![world.item("ReachesTwo", AB)],
+        max_states(ModelCheckLimits::default(), 1),
+    ));
+    assert_eq!(result.graph.end, end);
+    assert!(result.graph.nodes.is_empty());
+    for instance in &result.items[0] {
+        assert_eq!(
+            instance.outcome,
+            StateGraphOutcome::NoDecision {
+                end: end.clone(),
+                open: BTreeSet::new()
+            }
+        );
+    }
+}
+
+/// A walk that serves `ReachesTwo` and `ReachesThree` runs on after
+/// `ReachesTwo` finds its target, until `max_walk_steps` stops it, yet each
+/// `ReachesTwo` witness records `Reached`: it equals the witness of the walk
+/// the item draws with no other item pending, which ends at its target.
+#[test]
+fn each_sampled_witness_records_that_its_walk_reached_the_target() {
+    let world = config_world(&format!("{REACHES_TWO}{REACHES_THREE}"), &[(0, 0)]);
+    let shared = run(world.request(
+        AB,
+        vec![world.item("ReachesTwo", AB), world.item("ReachesThree", AB)],
+        short_walks(),
+    ));
+    for instance in &shared.items[1] {
+        assert_eq!(
+            instance.walks_stopped, DEFAULT_WITNESS_SAMPLES,
+            "the premise"
+        );
+    }
+    let alone = run(world.request(AB, vec![world.item("ReachesTwo", AB)], short_walks()));
+    for (instance, single) in shared.items[0].iter().zip(&alone.items[0]) {
+        let [Some(witness)] = instance.sampled.as_slice() else {
+            panic!("a sampled witness: {:?}", instance.sampled);
+        };
+        let WitnessSource::Sampled(provenance) = &witness.source else {
+            panic!("sampled: {:?}", witness.source);
+        };
+        assert_eq!(provenance.stopped, StopReason::Reached);
+        assert_eq!(instance.sampled, single.sampled);
+    }
+}
+
 /// TC-618 (FR-166-AC-7's engine half; the terminal record is FR-169's):
 /// `ReachesThree` under the default `witness_samples` draws 64 walks per
 /// instance, each stopped by `max_walk_steps` ([`SHORT_WALK`] steps here, the
 /// published default being 4,096); with `max_walk_steps` 1
 /// `ReachesTwo` gets no sampled witness, its target two steps away; with
-/// horizon 1 no walk is counted as stopped by the budget.
+/// horizon 1 no walk is counted as stopped by the budget, and every walk
+/// takes at most 1 step: `ReachesTwo` gets no sampled witness under it,
+/// and under horizon 2 a witness of 2 steps.
 #[trace("TC-618")]
 #[test]
 fn the_walk_budget_bounds_and_counts_each_walk() {
@@ -754,11 +827,28 @@ fn the_walk_budget_bounds_and_counts_each_walk() {
         }
     }
 
-    let mut request = world.request(AB, vec![world.item("ReachesThree", AB)], defaults);
-    request.max_depth = Some(1);
-    let result = run(request);
+    let horizon = |depth| {
+        let mut request = world.request(
+            AB,
+            vec![world.item("ReachesThree", AB), world.item("ReachesTwo", AB)],
+            defaults,
+        );
+        request.max_depth = Some(depth);
+        run(request)
+    };
+    let result = horizon(1);
     for instance in &result.items[0] {
         assert_eq!(instance.walks_stopped, 0);
+    }
+    for instance in &result.items[1] {
+        assert_eq!(instance.sampled, vec![None]);
+    }
+    let result = horizon(2);
+    for instance in &result.items[1] {
+        let [Some(witness)] = instance.sampled.as_slice() else {
+            panic!("a sampled witness: {:?}", instance.sampled);
+        };
+        assert_eq!(witness.path.steps.len(), 2);
     }
 }
 
@@ -888,6 +978,32 @@ fn unique_path_counts_paths() {
     );
 }
 
+/// A `unique path` item under a horizon: §7.3's jobs under `max_depth` 1
+/// leave the depth-1 nodes open, `MaxDepth`. The closed initial node counts
+/// no path to `done` only because the nodes it reaches are open, so it is
+/// no trap: the sequenced job, whose claim holds, and the unsequenced one
+/// both decide nothing.
+#[test]
+fn a_unique_path_under_a_horizon_is_never_trapped_by_open_nodes() {
+    for sequenced in [true, false] {
+        let world = job_world(sequenced, false);
+        let mut request = world.request(&["j"], vec![world.item("InOneWay", &["j"])], no_samples());
+        request.max_depth = Some(1);
+        let result = run(request);
+        let root = result.graph.initial()[0];
+        assert!(!result.graph.open.contains_key(&root), "the premise");
+        assert!(!result.graph.open.is_empty());
+        assert_eq!(
+            result.items[0][0].outcome,
+            StateGraphOutcome::NoDecision {
+                end: RunEnd::Completed,
+                open: BTreeSet::from([OpenCause::MaxDepth])
+            },
+            "sequenced: {sequenced}"
+        );
+    }
+}
+
 /// FR-168-AC-4: the game with `n` and `celebrate` under horizon 3: the trap
 /// at `Lost` counts although the node `Won` with `n = 1` is open, and
 /// `possible x.phase = Won and x.n = 50` decides nothing: `end` `Completed`,
@@ -988,10 +1104,33 @@ fn an_explored_witness_descends_toward_the_target_not_an_open_node() {
     let mut request = world.request(&["f"], vec![world.item("Four", &["f"])], no_samples());
     request.max_depth = Some(2);
     let result = run(request);
-    let three = digest_where(&world, &["f"], |state| world.value(state, "f", "pos") == 3);
+    let at = |pos| {
+        node_of(
+            &result,
+            digest_where(&world, &["f"], |state| {
+                world.value(state, "f", "pos") == pos
+            }),
+        )
+    };
+    assert_eq!(result.graph.open.get(&at(3)), Some(&OpenCause::MaxDepth));
+    // The premise: `toA` precedes `toB` in canonical order, and `pos = 1`
+    // and `pos = 2` are both one edge from the open node or the target.
     assert_eq!(
-        result.graph.open.get(&node_of(&result, three)),
-        Some(&OpenCause::MaxDepth)
+        edge_names(&result, result.graph.initial()[0]),
+        ["toA", "toB"]
+    );
+    let targets = |node: NodeIndex| -> Vec<NodeIndex> {
+        result
+            .graph
+            .outgoing(node)
+            .map(|edge| edge.target)
+            .collect()
+    };
+    assert_eq!(targets(at(1)), vec![at(3)]);
+    assert_eq!(targets(at(2)), vec![at(4)]);
+    assert_eq!(
+        result.graph.reading(at(4), 0, 0, PredicateRole::Target),
+        Some(&PredicateReading::True)
     );
     let StateGraphOutcome::WitnessedUnchecked { paths, end, open } = &result.items[0][0].outcome
     else {

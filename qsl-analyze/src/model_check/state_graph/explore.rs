@@ -11,8 +11,8 @@
 //! - `MaxDepth`: it is at the horizon and has a successor, which the run does
 //!   not follow;
 //! - `UndecidedSuccessor`: its expansion evaluated a contract conjunction
-//!   undecided, or a claim predicate read refused at it; the successors the
-//!   expansion did return are retained and explored;
+//!   undecided; the successors the expansion did return are retained and
+//!   explored;
 //! - `NotExpanded`: it was discovered and not expanded, or partly expanded,
 //!   when a limit or a cancellation stopped the run.
 //!
@@ -24,9 +24,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use qsl_eval::automaton::{SafetyState, SafetyTranslation};
-use qsl_eval::simulation::model::{
-    ModelFinding, ModelSimState, ModelSystem, PredicateReading, TerminalClass,
-};
+use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_replay::{
     ClosureCertificate, CounterexampleKind, ItemRefusal, ModelCheckLimit, ModelCheckLimits,
@@ -209,9 +207,6 @@ impl Exploration<'_, '_, '_> {
             Ok(readings) => readings,
             Err(stop) => return expansion_stop(&stop, self.budgets).map(Err),
         };
-        let refused = readings
-            .iter()
-            .any(|reading| matches!(reading, PredicateReading::Refused(_)));
         let labels = keys
             .into_iter()
             .zip(readings)
@@ -235,7 +230,7 @@ impl Exploration<'_, '_, '_> {
             .findings
             .iter()
             .any(ModelFinding::is_refused_contract);
-        if refused || undefined.is_some() || undecided {
+        if undefined.is_some() || undecided {
             walk.graph
                 .open
                 .insert(NodeIndex(at), OpenCause::UndecidedSuccessor);

@@ -12,6 +12,10 @@
 //!   removed; paths to `to` are counted per node in reverse topological order
 //!   of `H`'s condensation, saturating at 2.
 //!
+//! A node where a predicate of the instance read refused is open for that
+//! instance alone, `UndecidedSuccessor`: its truth there is not known, and
+//! no other instance's reading depends on it.
+//!
 //! Refuting evidence (a trap, a path pair, an undefined evaluation) counts
 //! whatever else is open; between a trap or path pair and an undefined
 //! evaluation the earlier node in discovery order decides, and a node that is
@@ -56,6 +60,8 @@ struct Reader<'g> {
     view: &'g InstanceView<'g>,
     /// Each node's retained predecessors, one entry per edge.
     incoming: Vec<Vec<usize>>,
+    /// Whether a predicate of the instance read refused at each node.
+    refused: Vec<bool>,
 }
 
 impl<'g> Reader<'g> {
@@ -66,10 +72,22 @@ impl<'g> Reader<'g> {
                 sources.push(edge.source.0);
             }
         }
+        let refused = graph
+            .nodes
+            .iter()
+            .map(|node| {
+                node.labels.iter().any(|label| {
+                    label.item == view.item
+                        && label.instance == view.instance
+                        && matches!(label.reading, PredicateReading::Refused(_))
+                })
+            })
+            .collect();
         Self {
             graph,
             view,
             incoming,
+            refused,
         }
     }
 
@@ -77,8 +95,10 @@ impl<'g> Reader<'g> {
         self.graph.nodes.len()
     }
 
+    /// Whether `node` is open for the instance: open in the graph, or a
+    /// predicate of the instance read refused there.
     fn is_open(&self, node: usize) -> bool {
-        self.graph.open.contains_key(&NodeIndex(node))
+        self.refused[node] || self.graph.open.contains_key(&NodeIndex(node))
     }
 
     /// Whether `role` holds at `node`: `None` when it is undefined, refused
@@ -156,15 +176,23 @@ impl<'g> Reader<'g> {
     }
 
     fn open_nodes(&self) -> Vec<usize> {
-        self.graph.open.keys().map(|node| node.0).collect()
+        (0..self.count())
+            .filter(|node| self.is_open(*node))
+            .collect()
     }
 
     fn open_causes(&self) -> BTreeSet<OpenCause> {
-        self.graph.open.values().copied().collect()
+        let mut causes: BTreeSet<OpenCause> = self.graph.open.values().copied().collect();
+        if self.refused.contains(&true) {
+            causes.insert(OpenCause::UndecidedSuccessor);
+        }
+        causes
     }
 
     fn complete(&self) -> bool {
-        self.graph.end == RunEnd::Completed && self.graph.open.is_empty()
+        self.graph.end == RunEnd::Completed
+            && self.graph.open.is_empty()
+            && !self.refused.contains(&true)
     }
 
     fn no_decision(&self) -> StateGraphOutcome {
@@ -207,6 +235,12 @@ impl<'g> Reader<'g> {
         &self,
         sampled: &[Option<GraphWitness>],
     ) -> Result<StateGraphOutcome, ModelCheckRefusal> {
+        // A subject with no initial state never reaches the decision, so a
+        // graph with none is a run that stopped before inserting them: it
+        // has no node to hold a witness for each initial state.
+        if self.graph.initial.is_empty() {
+            return Ok(self.no_decision());
+        }
         let targets = self.nodes_where(PredicateRole::Target);
         let mut reaching = targets.clone();
         reaching.extend(self.open_nodes());
@@ -276,7 +310,7 @@ impl<'g> Reader<'g> {
     }
 
     /// `unique path`: a known node where `from` holds with two paths, else a
-    /// closed one with none, else an undefined evaluation, else `Holds` on a
+    /// known one with none, else an undefined evaluation, else `Holds` on a
     /// complete run.
     fn unique_path(&self) -> Result<StateGraphOutcome, ModelCheckRefusal> {
         let to: Vec<usize> = self.nodes_where(PredicateRole::To);
@@ -303,8 +337,10 @@ impl<'g> Reader<'g> {
         let from = |node: usize| self.holds(node, PredicateRole::From) == Some(true);
         let pair = (0..self.count())
             .find(|node| reaches_open[*node] == FAR && from(*node) && counts[*node] == 2);
+        // A known node reaches no open node in `H`, so it is closed and
+        // what it reaches is settled.
         let trap = (0..self.count())
-            .find(|node| !self.is_open(*node) && from(*node) && counts[*node] == 0)
+            .find(|node| reaches_open[*node] == FAR && from(*node) && counts[*node] == 0)
             .map(|node| (node, Evidence::Trap));
         match pair {
             Some(node) => {
@@ -586,4 +622,80 @@ fn condensation(outgoing: &[Vec<usize>]) -> Vec<Vec<usize>> {
         components.push(component);
     }
     components
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use qsl_eval::simulation::model::{ClauseOutcome, PredicateReading};
+    use qsl_foundation::digest::{DigestDomain, DigestRecord};
+    use qsl_replay::{
+        GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphOutcome, WitnessSource,
+    };
+    use qsl_semantics::check::{CheckedStatePredicate, PredicateRole, StateGraphForm};
+
+    use super::super::{
+        ExploredStateGraph, GraphNode, GraphStats, InstanceView, NodeIndex, PredicateLabel,
+    };
+    use super::decide;
+
+    /// Item `item`'s one instance, `possible` with an unwritten target.
+    fn view(item: usize) -> InstanceView<'static> {
+        InstanceView {
+            item,
+            instance: 0,
+            over: None,
+            predicates: vec![(PredicateRole::Target, None)],
+        }
+    }
+
+    /// SR-12183 FND-006: a predicate of item 0 that read refused at the one
+    /// node of a completed run opens that node for item 0 alone,
+    /// `UndecidedSuccessor`; item 1 over the same graph is `Witnessed`.
+    #[test]
+    fn a_refused_reading_opens_its_node_for_its_own_instance_only() {
+        let graph = ExploredStateGraph {
+            nodes: vec![GraphNode {
+                key: DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [0; 32]),
+                depth: 0,
+                labels: vec![PredicateLabel {
+                    item: 0,
+                    instance: 0,
+                    role: PredicateRole::Target,
+                    reading: PredicateReading::Refused(ClauseOutcome::NotBoolean),
+                }],
+            }],
+            edges: Vec::new(),
+            open: BTreeMap::new(),
+            end: RunEnd::Completed,
+            stats: GraphStats::default(),
+            outgoing: vec![Vec::new()],
+            parent: vec![None],
+            root: vec![0],
+            initial: vec![NodeIndex(0)],
+        };
+        let form = StateGraphForm::Possible {
+            target: CheckedStatePredicate::ConstantTrue,
+        };
+        let paths = vec![GraphWitness {
+            path: ModelPath {
+                initial: 0,
+                steps: Vec::new(),
+            },
+            source: WitnessSource::Explored,
+        }];
+        assert_eq!(
+            decide(&graph, &form, &view(0), &[]).expect("decides"),
+            StateGraphOutcome::WitnessedUnchecked {
+                paths: paths.clone(),
+                end: RunEnd::Completed,
+                open: BTreeSet::from([OpenCause::UndecidedSuccessor]),
+            }
+        );
+        assert_eq!(
+            decide(&graph, &form, &view(1), &[]).expect("decides"),
+            StateGraphOutcome::Witnessed { paths }
+        );
+    }
 }

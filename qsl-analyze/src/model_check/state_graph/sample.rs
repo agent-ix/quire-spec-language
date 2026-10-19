@@ -165,9 +165,15 @@ impl Phase<'_, '_> {
                                 .get_mut(&key)
                                 .and_then(|slots| slots.get_mut(initial))
                             {
+                                // The walk this instance would draw alone
+                                // ends at its target: `Reached`, whatever
+                                // ended the shared walk.
                                 *slot = Some(GraphWitness {
                                     path,
-                                    source: WitnessSource::Sampled(walk.provenance.clone()),
+                                    source: WitnessSource::Sampled(SampleProvenance {
+                                        stopped: StopReason::Reached,
+                                        ..walk.provenance.clone()
+                                    }),
                                 });
                             }
                         }

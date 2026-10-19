@@ -54,8 +54,9 @@ pub enum OpenCause {
     /// The node is at the search horizon and has a successor the run did not
     /// follow.
     MaxDepth,
-    /// The node's expansion evaluated a contract conjunction, or a
-    /// predicate of a claim read at the node, undecided.
+    /// The node's expansion evaluated a contract conjunction undecided; or,
+    /// in one instance's outcome only, a predicate of that instance read
+    /// refused at the node.
     UndecidedSuccessor,
     /// The node was discovered and not expanded when a limit or a
     /// cancellation stopped the run.

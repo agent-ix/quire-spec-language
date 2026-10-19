@@ -192,10 +192,11 @@ type SampleResult<T, F> = Result<Option<Trace<T, F>>, EncodingRefusal>;
 
 /// Draw one sampled run from `system`, starting at trace `trace_index mod m`
 /// among `system`'s `m` distinct initial states (no draw selects the
-/// start). Every state on the trace is expanded, the last included, and its
-/// findings recorded at its step index. The run ends at the first state
-/// whose expansion stops, after `max_steps` transitions, or at the first
-/// state with no successors, checked in that order.
+/// start). The run ends at the first state where `end` holds, unexpanded
+/// ([`StopReason::Reached`]); at the first state whose expansion stops;
+/// after `max_steps` transitions; or at the first state with no successors,
+/// checked in that order. Every other state on the trace is expanded, the
+/// last included, and its findings recorded at its step index.
 ///
 /// Returns `Ok(None)` when `system.initial()` returns no states.
 ///
