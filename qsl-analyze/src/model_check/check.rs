@@ -17,17 +17,25 @@
 //! from the frontier, which is breadth-first discovery order.
 //!
 //! A run proves an item only when its frontier empties with no state bad:
-//! every reachable product state was examined. A run that reaches its
+//! every reachable product state was examined. Its `Holds` carries the
+//! closure certificate the core checks before the proof settles (ADR-018
+//! PC-3, FR-338): every explored model state with the canonical key, under
+//! each instance's context, of the automaton state it was explored in. In a
+//! proof that is the carried root for every instance. A run that reaches its
 //! horizon with a state left unexpanded settles V-5; a run that reaches a
 //! limit or is cancelled settles V-7; neither is ever `Holds`.
 //!
-//! The liveness phase (TP-4), the bounded and interval monitors (TP-2,
-//! TP-3) and proof certificates are not part of this module yet: a clause
-//! of another property form is refused before any state is explored.
+//! The liveness phase (TP-4) and the bounded and interval monitors (TP-2,
+//! TP-3) are not part of this module yet: a clause of another property form
+//! is refused before any state is explored. A clause with no instance is
+//! `Undecided(NoInstance)` before any state is explored (FR-125).
 
 use std::collections::{BTreeMap, VecDeque};
 
-use qsl_eval::automaton::{Atom, AutomatonError, GbaBuilder, Guard, Letter, Monitor, StateId};
+use qsl_eval::automaton::{
+    invariant_atom, Atom, AutomatonError, GbaBuilder, Guard, KeyRefusal, Letter, Monitor,
+    SafetyState, StateId,
+};
 use qsl_eval::model_subject::{ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
@@ -39,11 +47,12 @@ use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
 use qsl_replay::{
-    CounterexampleKind, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelStep, ReachedLimit, RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation,
-    UndefinedLocus, UndefinedSite,
+    ClosureCertificate, CounterexampleKind, IncompleteCause, Instance, ItemRefusal, ModelCheckItem,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ProductStateRef, ReachedLimit,
+    RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
-use qsl_semantics::check::{CheckedTemporalClause, FormulaNode, FormulaNodeId};
+use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ObjectReference};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
@@ -51,20 +60,6 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 /// The type positions the requires-bound pre-check may visit.
 const BOUND_POSITIONS: u64 = 1 << 20;
-
-/// What an EN-1 run decides (FR-126 Inputs).
-pub enum ModelCheckItem<'a> {
-    /// An authored clause with its property form, its atoms read through
-    /// `letters`.
-    Clause {
-        /// The checked clause.
-        clause: &'a CheckedTemporalClause,
-        /// The seam to the one clause evaluator for its `holds` atoms.
-        letters: &'a dyn ModelLetters,
-    },
-    /// FR-124's derived deadlock-freedom item.
-    DeadlockFreedom,
-}
 
 /// One EN-1 run (FR-126 Inputs).
 pub struct ModelCheckRequest<'a> {
@@ -105,6 +100,13 @@ pub enum ModelCheckRefusal {
     /// A state or transition identity has no canonical encoding.
     #[error(transparent)]
     Encoding(#[from] EncodingRefusal),
+    /// An automaton state key has no canonical encoding within the identity
+    /// byte budget.
+    #[error(transparent)]
+    Key(#[from] KeyRefusal),
+    /// The item has no canonical translation.
+    #[error(transparent)]
+    Item(ItemRefusal),
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -200,7 +202,9 @@ pub fn check_model(
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     let item = match request.item {
-        ModelCheckItem::Clause { clause, letters } => {
+        ModelCheckItem::Clause {
+            clause, letters, ..
+        } => {
             let form = clause.property_form();
             let atom = reachable_invariant_atom(clause)
                 .ok_or(ModelCheckRefusal::FormNotDecided { form })?;
@@ -220,6 +224,7 @@ pub fn check_model(
         }
         ModelCheckItem::DeadlockFreedom => Item::Deadlock,
     };
+    let instances = request.item.instances().map_err(ModelCheckRefusal::Item)?;
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
@@ -247,6 +252,12 @@ pub fn check_model(
             stats: run.stats(),
         });
     }
+    if instances.is_empty() {
+        return Ok(ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInstance,
+            stats: run.stats(),
+        });
+    }
     match run.explore() {
         Ok(()) => Ok(if run.horizon_cut {
             ModelCheckOutcome::BoundReached {
@@ -254,7 +265,10 @@ pub fn check_model(
                 stats: run.stats(),
             }
         } else {
-            ModelCheckOutcome::Holds { stats: run.stats() }
+            ModelCheckOutcome::Holds {
+                certificate: run.certificate(&instances)?,
+                stats: run.stats(),
+            }
         }),
         Err(Halt::Refusal(refusal)) => Err(refusal),
         Err(Halt::Finish(Finish::Undecided(cause))) => Ok(ModelCheckOutcome::Undecided {
@@ -282,15 +296,7 @@ fn reachable_invariant_atom(clause: &CheckedTemporalClause) -> Option<FormulaNod
     if clause.property_form() != Some(PropertyForm::ReachableInvariant) {
         return None;
     }
-    let formula = clause.formula();
-    let FormulaNode::Unary { operand, .. } = formula.nodes().get(formula.root().index())? else {
-        return None;
-    };
-    matches!(
-        formula.nodes().get(operand.index()),
-        Some(FormulaNode::Holds { .. })
-    )
-    .then_some(*operand)
+    invariant_atom(clause)
 }
 
 /// The bad-prefix monitor of `always (a_0 and ... and a_{n-1})`: one atom
@@ -334,6 +340,23 @@ impl Run<'_, '_> {
             automaton_states: widen(self.monitor.state_count()),
             depth: widen(self.nodes.iter().map(|node| node.depth).max().unwrap_or(0)),
         }
+    }
+
+    /// The closure certificate of a run that proved its item: every explored
+    /// model state under each instance's carried root, sorted by model state
+    /// then key.
+    fn certificate(&self, instances: &[Instance]) -> Result<ClosureCertificate, ModelCheckRefusal> {
+        let mut states = Vec::with_capacity(self.nodes.len().saturating_mul(instances.len()));
+        for instance in instances {
+            let key = instance.translation.key(SafetyState::Carried)?;
+            states.extend(self.nodes.iter().map(|node| ProductStateRef {
+                model_state: node.digest,
+                automaton_state: key.clone(),
+            }));
+        }
+        states.sort();
+        states.dedup();
+        Ok(ClosureCertificate { states })
     }
 
     fn poll(&self) -> Result<(), Finish> {

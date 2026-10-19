@@ -18,22 +18,22 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{check_model, ModelCheckItem, ModelCheckRefusal, ModelCheckRequest};
+use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::{NotSimulated, TransitionSystem};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    CounterexampleKind, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ReachedLimit, TemporalCounterexample, UndecidedCause, UndefinedLocus,
+    CounterexampleKind, IncompleteCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
+    ModelCheckOutcome, ReachedLimit, TemporalCounterexample, UndecidedCause, UndefinedLocus,
     DEFAULT_MAX_AUTOMATON_STATES,
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
 
 use crate::counter::{
-    clause, document, package, reference, subject, value, Documents, Letters, CONTRACT, UNLIMITED,
-    ZERO,
+    clause, document, identity, package, reference, subject, value, Documents, Letters, CONTRACT,
+    UNLIMITED, ZERO,
 };
 
 const WHEN: &str = "terminal Done using v on M when { self.value = 3 };\n";
@@ -220,7 +220,7 @@ fn deadlock_freedom_is_violated_at_the_unintended_terminal_state() {
     for terminal in [WHEN, ANY] {
         let world = self::world(terminal, &[&[("c", 0)]]);
         match deadlock(&world) {
-            ModelCheckOutcome::Holds { stats } => {
+            ModelCheckOutcome::Holds { stats, .. } => {
                 assert_eq!(stats.product_states, 4, "{terminal}");
                 assert_eq!(stats.product_edges, 3, "{terminal}");
                 assert_eq!(stats.depth, 3, "{terminal}");
@@ -320,7 +320,7 @@ fn the_deadlock_path_and_counts_match_an_explicit_enumeration() {
         UNLIMITED,
     )
     .expect("checked");
-    let ModelCheckOutcome::Holds { stats } = outcome else {
+    let ModelCheckOutcome::Holds { stats, .. } = outcome else {
         panic!("expected Holds, got {outcome:?}");
     };
     assert_eq!((stats.product_states, stats.product_edges), (16, 96));
@@ -350,6 +350,7 @@ fn invariant(
         ModelCheckItem::Clause {
             clause: &clause,
             letters: &letters,
+            identity: &identity(),
         },
         None,
         ModelCheckLimits::default(),
@@ -371,7 +372,7 @@ fn a_reachable_invariant_holds_or_is_violated_at_its_first_bad_state() {
     match invariant(&world, &["c"], "always holds(c.value <= 3)", |v| {
         Some(v <= 3)
     }) {
-        ModelCheckOutcome::Holds { stats } => assert_eq!(stats.product_states, 4),
+        ModelCheckOutcome::Holds { stats, .. } => assert_eq!(stats.product_states, 4),
         other => panic!("expected Holds, got {other:?}"),
     }
     let outcome = invariant(&world, &["c"], "always holds(c.value != 2)", |v| {
@@ -681,6 +682,7 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
         ModelCheckItem::Clause {
             clause: &safety,
             letters: &letters,
+            identity: &identity(),
         },
         None,
         ModelCheckLimits::default(),
