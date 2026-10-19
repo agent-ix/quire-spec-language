@@ -296,6 +296,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::IllTyped(_)
         | CheckCause::WrongSnapshot(_)
         | CheckCause::MissingName(_)
+        | CheckCause::MissingSelf
         | CheckCause::AmbiguousName { .. }
         | CheckCause::AmbiguousMember(_)
         | CheckCause::AmbiguousQualified(_)
