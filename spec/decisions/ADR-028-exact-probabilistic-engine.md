@@ -481,14 +481,16 @@ accumulates `duration` from 0, saturating above the threshold.
 #### 15.4 A claim over every scheduler
 
 ```text
-model Link = "example/link" …;   // object m: Msg { delivered: Bool, attempts: Int[0, 2] }
+model Link = "example/link" …;   // object m: Msg { delivered: Boolean, attempts: Int[0, 2] }
 
-operation Msg::send_a(random lost: Bool ~ { true: 1, false: 9 })
+operation Msg::send_a(lost: Boolean)
   pre  not self.delivered and self.attempts < 2
   post self.attempts = pre(self.attempts) + 1 and self.delivered = not lost;
-operation Msg::send_b(random lost: Bool ~ { true: 1, false: 4 })
+operation Msg::send_b(lost: Boolean)
   pre  not self.delivered and self.attempts < 2
   post self.attempts = pre(self.attempts) + 1 and self.delivered = not lost;
+random Msg::send_a(lost) ~ { true: 1, false: 9 };
+random Msg::send_b(lost) ~ { true: 1, false: 4 };
 terminal when self.delivered or self.attempts = 2;
 
 workload Even on Link { weight Msg::send_a = 1; weight Msg::send_b = 1; }
@@ -520,12 +522,13 @@ loss and `391/400 = 0.9775` at the start.
 #### 15.5 A closed probabilistic timed automaton
 
 ```text
-model Retx = "example/retx" …;   // object m: Msg { delivered: Bool, x: Clock }
+model Retx = "example/retx" …;   // object m: Msg { delivered: Boolean, x: Clock }
 time dense unit ms;
 
-operation Msg::send(random lost: Bool ~ { true: 1, false: 9 })
+operation Msg::send(lost: Boolean)
   pre  not self.delivered and self.x >= 1 ms
   post self.delivered = not lost and self.x = 0;
+random Msg::send(lost) ~ { true: 1, false: 9 };
 time invariant when not self.delivered { self.x <= 2 ms }
 terminal when self.delivered;
 
@@ -566,11 +569,12 @@ no zero-delay cycle exists (TA-5). The scheduler chooses when to send in
 #### 15.6 Termination against a fair adversary
 
 ```text
-model Coin = "example/coin" …;   // object p: Proc { done: Bool }, initially not done
+model Coin = "example/coin" …;   // object p: Proc { done: Boolean }, initially not done
 
-operation Proc::flip(random heads: Bool ~ { true: 1, false: 1 })
+operation Proc::flip(heads: Boolean)
   pre  not self.done
   post self.done = heads;
+random Proc::flip(heads) ~ { true: 1, false: 1 };
 operation Proc::wait
   pre  not self.done
   post self.done = pre(self.done);

@@ -215,9 +215,9 @@ approximate expected values, which ignore overshoot.
 
 ```text
 profile ev = "quire.temporal.event-position.false-extension/v1" …;
-model Health = "example/health" …;     // object n: Node { healthy: Bool }, initially healthy
+model Health = "example/health" …;     // object n: Node { healthy: Boolean }, initially healthy
 
-operation Node::tick(fault: Bool)
+operation Node::tick(fault: Boolean)
   post self.healthy = (pre(self.healthy) and not fault);
 
 random Node::tick(fault) ~ { true: 1, false: 9999999 };
@@ -298,12 +298,12 @@ latency is the sum of two durations.
 #### 7.3 Availability: long-run and per window
 
 ```text
-model Avail = "example/avail" …;       // object v: Server { up: Bool }, initially up
+model Avail = "example/avail" …;       // object v: Server { up: Boolean }, initially up
 
-operation Server::tick(fail: Bool)
+operation Server::tick(fail: Boolean)
   pre  self.up
   post self.up = not fail;
-operation Server::repair(ok: Bool)
+operation Server::repair(ok: Boolean)
   pre  not self.up
   post self.up = ok;
 
