@@ -163,9 +163,10 @@ pub(super) fn check_kind(
         });
     }
     if anchor.site == AnchorSite::ReceiveOf {
-        if let (Some(receive_channel), Some(send_channel)) =
-            (anchor.channel.as_ref(), declaration.channel.as_ref())
-        {
+        if let (Some(receive_channel), Some(send_channel)) = (
+            anchor.channel.as_ref(),
+            declaration.channel.as_ref().map(|channel| &channel.name),
+        ) {
             if receive_channel != send_channel {
                 return Some(ProtocolAnchorCause::ChannelMismatch {
                     receive_channel: receive_channel.clone(),

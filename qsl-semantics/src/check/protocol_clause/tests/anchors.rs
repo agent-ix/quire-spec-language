@@ -66,14 +66,19 @@ fn a_nested_scope_resolves_its_own_name_over_an_outer_one_of_the_same_spelling()
          await WaitInner after Applied using v clock \"ticks\" within [0,1] \
          match event Seen by R for Undo as (seen_inner: Boolean) { true }; \
          then sequence Then { } timeout sequence Timeout { }\n\
-         }\n\
-         await WaitQualified after Main::Applied using v clock \"ticks\" within [0,1] \
+         }\n";
+    // The two awaits in `Main` follow the outer `Applied` they wait after: an
+    // await anchored at a later control closes a causal cycle (FR-218).
+    let outer = "await WaitQualified after Main::Applied using v clock \"ticks\" within [0,1] \
          match event SeenQ by R for Undo as (seen_qualified: Boolean) { true }; \
          then sequence ThenQ { } timeout sequence TimeoutQ { }\n\
          await WaitOuter after Applied using v clock \"ticks\" within [0,1] \
          match event SeenO by R for Undo as (seen_outer: Boolean) { true }; \
          then sequence ThenO { } timeout sequence TimeoutO { }\n";
-    let (_, protocol, result) = resolve_protocol(&recovery_flow("Main::Committed", inner));
+    let applied = "effect Applied of Tried as (applied: Boolean) { true };\n";
+    let source =
+        recovery_flow("Main::Committed", inner).replacen(applied, &format!("{applied}{outer}"), 1);
+    let (_, protocol, result) = resolve_protocol(&source);
     let (checked, _) = result.unwrap_or_else(|refusals| panic!("{refusals:?}"));
 
     let outer_applied = declaration_id(&protocol, "Applied", ProtocolNodeKind::Effect, &["Main"]);
