@@ -6,5 +6,7 @@ mod compile_protocol_profile;
 mod format_outcome_facade;
 mod outcome_facade;
 mod parse_outcome_facade;
+#[path = "../../../tests/support/refinement_cas.rs"]
 mod refinement_fixture;
 mod refinement_mapping;
+mod refinement_step;
