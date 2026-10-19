@@ -783,6 +783,74 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::JoinList {
                     parallel, fault, ..
                 } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
+                ProtocolAnchorCause::NodeRole { node, name, .. } => {
+                    format!("{message}: `{node}` names `{name}`, which is no role of the protocol")
+                }
+                ProtocolAnchorCause::MissingChannel { node, name, .. } => format!(
+                    "{message}: `{node}` is written via `{name}`, which is no channel of the \
+                     protocol"
+                ),
+                ProtocolAnchorCause::CarriesMismatch { channel, .. } => format!(
+                    "{message}: the binder's type is not the type channel `{channel}` carries"
+                ),
+                ProtocolAnchorCause::CausalCycle { nodes, .. } => format!(
+                    "{message}: the causal edges form a cycle through {}",
+                    nodes.join(", ")
+                ),
+                ProtocolAnchorCause::NoProgress { repeat, .. } => format!(
+                    "{message}: the body of `repeat {repeat}` does not necessarily take a step"
+                ),
+                ProtocolAnchorCause::KeyClause { channel, cause, .. } => format!(
+                    "{message}: the FIFO key of channel `{channel}` does not check ({})",
+                    cause.cause().unwrap_or_default()
+                ),
+                ProtocolAnchorCause::KeyModelState { channel, .. } => {
+                    format!("{message}: the FIFO key of channel `{channel}` reads model state")
+                }
+                ProtocolAnchorCause::KeyEquality { channel, .. } => format!(
+                    "{message}: the FIFO key of channel `{channel}` is of a type with no `=`"
+                ),
+                ProtocolAnchorCause::SlotClause { node, slot, cause, .. } => format!(
+                    "{message}: the {slot:?} of `{node}` does not check ({})",
+                    cause.cause().unwrap_or_default()
+                ),
+                ProtocolAnchorCause::SlotModelState { node, slot, .. } => {
+                    format!("{message}: the {slot:?} of `{node}` reads model state")
+                }
+                ProtocolAnchorCause::WrongObservation {
+                    node,
+                    owner,
+                    binder,
+                    reason,
+                    ..
+                } => format!(
+                    "{message}: `{node}` reads `{binder}`, which is no listed fact of `{owner}` \
+                     ({})",
+                    reason.identifier()
+                ),
+                ProtocolAnchorCause::Exhaustiveness { choice, failed, .. } => format!(
+                    "{message}: the guards of `choice {choice}` are not exhaustive and exclusive \
+                     ({})",
+                    failed
+                        .iter()
+                        .map(|fault| fault.identifier())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                ProtocolAnchorCause::AwaitedForm {
+                    node, event, form, ..
+                } => format!(
+                    "{message}: `await {node}` matches `{form} {event}`; an await matches a \
+                     receive, an effect or an event"
+                ),
+                ProtocolAnchorCause::AwaitWindow { node, .. } => format!(
+                    "{message}: the `within` of `await {node}` is not a closed interval with \
+                     lower <= upper"
+                ),
+                ProtocolAnchorCause::MissingTemporalProfile { node, .. } => format!(
+                    "{message}: `await {node}` reads a clock, but the unit selects no temporal \
+                     profile"
+                ),
             };
         }
         CheckCause::TerminalNotEmitted { name, .. } => {
@@ -1304,13 +1372,15 @@ mod tests {
         .expect_err("a protocol with unchecked content must not compile to a package");
         match refusal.as_ref() {
             CompileRefusal::Check { refusals, .. } => {
+                // Every part is checked now: the undeclared input, role and
+                // binder types and the undeclared channel each refuse.
                 assert!(
                     refusals.iter().any(|refusal| matches!(
                         &refusal.cause,
                         qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
                             if matches!(
                                 cause.as_ref(),
-                                qsl_semantics::check::ProtocolAnchorCause::Unimplemented { name, .. } if name == "Flow"
+                                qsl_semantics::check::ProtocolAnchorCause::MissingChannel { node, .. } if node == "S"
                             )
                     )),
                     "{refusals:?}"
