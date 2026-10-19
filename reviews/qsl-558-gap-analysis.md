@@ -64,3 +64,21 @@ Declared remainder, not blocking: FR-219-AC-2..5, FR-220-AC-3 (request
 clause), AC-4, AC-5, FR-211-AC-2..4, FR-212-AC-1/2/4 and the class parts of
 AC-3, EN-1/request-writer memory selection, V-8 `WeakAccessShape`, S4
 emission of protocol bodies (FR-383).
+
+## New findings (disposition pass 1)
+
+Reviewed at 121ae663286793479ad54b1136fd8e268c0ce060.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | `each_fence_ordering_is_recorded` still carries `#[trace("TC-665", "FR-220-AC-2")]`. The PR body says FR-220-AC-2 is now partial at S3: an RMW with no ordering is no longer refused there, and the classification refusals moved to TC-only tests. This fence-only test is now the sole FR-220-AC-2 tag, so the matrix shows the whole criterion covered. Drop the AC id and keep TC-665, as was done for AC-1 and AC-3. It is a one-line fix and should land before merge, but it does not block. | qsl-semantics/src/check/protocol_memory/tests.rs:255 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5bc8357cb: the FR-220-AC-1 tag is dropped to TC-665/TC-664, and the SB fixture now stores two cells (`X`, `Y`) from C1/C2 branches with per-core registers. |
+| FND-002 | fixed | 5bc8357cb: tests for write-write relaxed stores, a register read again in its own branch, and any-object-field (`grow`) and membership (`spawn`) wide writes under `tso` (and admitted under `sc`). |
+| FND-003 | fixed | 505008530: `a_relaxed_fence_is_a_parse_refusal_at_the_relaxed_word` carries `#[trace("TC-665", "FR-220-AC-6")]`. |
+
+Disposition verdict: no major. FND-004 should be fixed with a one-line tag edit.

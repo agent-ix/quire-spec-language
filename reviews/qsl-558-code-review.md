@@ -67,3 +67,23 @@ the FR-212 `Fair`/`Adversarial` derivation from `ProtocolMemberForm::Scheduling`
 the TC-1065 test narrowed to the predicate join. Rust idioms: no `unwrap`/
 indexing in the new production paths (0dd3dd31d), no new `unsafe`, exhaustive
 matches, `Option::transpose` for the optional forms.
+
+## New findings (disposition pass 1)
+
+Reviewed at 121ae663286793479ad54b1136fd8e268c0ce060 (fix commits 505008530, 5bc8357cb, 47d3ace91; the merges of main are not part of this review).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | Under a weak default, `classify` refuses `AccessShape` for any written any-object field or population membership, whether or not that location is shared. MA-4 is about the attempt's *shared* footprint, and MA-2 makes branch-local writes part of the same step. So a branch that creates objects in a population, or writes an any-object field, that no other branch touches is refused at S3, and no EN-1 backstop can admit it. The PR body declares this ("whatever else is shared"), and STD-218 is to restate the S3/EN-1 split. STD-218 should rule this case explicitly, or S3 should defer it to the MA-4 pre-check like the other sharing-dependent shapes. This edge does not block: it fires only for a declared weak default and only for create/delete/any-object writes. | qsl-semantics/src/check/protocol_memory.rs:215-245, 298-300, 380-390 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 5bc8357cb: S3 no longer infers sharing. An ordering refuses only when no access kind the footprint leaves possible takes it, and the write-write (a), MP/LB register (b) and two-cell SB (c) cases are admitted and tested. The split is declared in the PR body and goes to the spec as STD-218. |
+| FND-002 | fixed | 505008530: an `ordering` on an attempt outside every `parallel` refuses `ill_typed`/`operator-ineligible` as `Local` (tested), and the PR body is corrected. |
+| FND-003 | fixed | 505008530: kind names replace Debug output, an RMW with none reads "needs an `ordering`", and AccessShape reads "is not one memory access". |
+| FND-004 | fixed | 505008530: `BoundAttempt.receiver` (the type `on M::T::op` names) is passed as `receiver_type`. |
+| FND-005 | fixed | 505008530: shared `parent_map` and `ancestors` helpers are used by `check_models` and `classify`. |
+
+Disposition verdict: MERGEABLE. No major remains. FND-006 is medium and does not block.
