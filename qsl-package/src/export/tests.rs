@@ -615,11 +615,7 @@ fn an_item_that_references_no_element_is_bound_with_no_bindings() {
     let package = package(
         "function addBoth using v(x: Int[0, 9], y: Int[0, 9]): Int[0, 18] pure { x + y }\n",
     );
-    let mut items = package
-        .graph()
-        .requirements()
-        .iter()
-        .map(|(key, _)| key.clone());
+    let mut items = package.graph().requirements().keys().cloned();
     let (Some(item), None) = (items.next(), items.next()) else {
         panic!("one requirement record");
     };
