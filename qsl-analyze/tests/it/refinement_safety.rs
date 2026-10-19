@@ -8,13 +8,17 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::operation_identity_text;
 use qsl_eval::simulation::Limits;
 use qsl_replay::{
-    CounterexampleKind, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ReachedLimit,
-    RefinementFailure, RefinementOutcome, SafetyOutcome, StepRejection, TemporalCounterexample,
+    CounterexampleKind, IncompleteCause, MappingRowRef, ModelCheckLimit, ModelCheckLimits,
+    ObjectKey, ReachedLimit, RefinementFailure, RefinementOutcome, SafetyOutcome, StepRejection,
+    TemporalCounterexample, UndefinedLocus,
 };
 use quire_exact::{Cancel, CancelCause};
 
 use crate::refinement_fixture::{
     cas_refines_counter, key, lost_update_refinement, mutated, Variant, World, CAS, UNLIMITED,
+};
+use crate::ring_world::{
+    key as ring_key, RingWorld, Variant as RingVariant, QUEUE, RING, UNLIMITED as RING_UNLIMITED,
 };
 
 fn run_with(
@@ -213,4 +217,96 @@ fn a_limit_a_horizon_and_a_cancellation_end_the_run() {
 fn the_same_request_gives_the_same_outcome() {
     let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());
     assert_eq!(run(&world), run(&world));
+}
+
+/// The safety half of the ring world `world`, under the default limits.
+fn run_ring(world: &RingWorld) -> SafetyOutcome {
+    let RefinementOutcome { safety } = check_refinement(
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(RING_UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the refinement is checked");
+    safety
+}
+
+/// FR-142-AC-6 (TC-547 step 6): `RingIsQueue` holds.
+#[trace("TC-547", "FR-142-AC-6")]
+#[test]
+fn the_ring_buffer_refines_the_queue() {
+    let SafetyOutcome::Holds { stats } = run_ring(&RingWorld::new()) else {
+        panic!("the refinement holds");
+    };
+    assert!(stats.product_states > 1);
+}
+
+/// FR-142-AC-6 (TC-547 step 6): with the broken `take` it is refuted at
+/// `deq(r)`'s postcondition.
+#[trace("TC-547", "FR-142-AC-6")]
+#[test]
+fn the_broken_take_is_refuted_at_the_dequeue_postcondition() {
+    let world = RingWorld::variant(RingVariant {
+        broken_take: true,
+        ..RingVariant::default()
+    });
+    let counterexample = violated(run_ring(&world));
+    let Some(RefinementFailure::AbstractStepRejected {
+        transition, cause, ..
+    }) = counterexample.refinement
+    else {
+        panic!("an abstract step is rejected");
+    };
+    assert_eq!(cause, StepRejection::Postcondition);
+    assert_eq!(
+        transition.operation(),
+        operation_identity_text(&ring_key(QUEUE, "Queue/deq")).expect("a text")
+    );
+}
+
+/// FR-142-AC-6 (TC-547 step 6): with FR-140-AC-3's `only` the refinement is
+/// refuted at the first state with `size >= 1` in canonical order, as an
+/// undefined evaluation naming that position, the `items` row and object `r`.
+#[trace("TC-547", "FR-142-AC-6")]
+#[test]
+fn an_undefined_items_row_refutes_at_the_first_non_empty_queue() {
+    let world = RingWorld::variant(RingVariant {
+        only_ring: true,
+        ..RingVariant::default()
+    });
+    let counterexample = violated(run_ring(&world));
+    assert_eq!(counterexample.prefix.len(), 1);
+    let row = MappingRowRef::Field {
+        object_type: ring_key(QUEUE, "Queue"),
+        field: ring_key(QUEUE, "Queue/items"),
+    };
+    assert_eq!(
+        counterexample.refinement,
+        Some(RefinementFailure::Undefined {
+            position: 1,
+            row: row.clone()
+        })
+    );
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = counterexample.kind else {
+        panic!("the kind is an undefined evaluation");
+    };
+    assert_eq!(evaluation.site.position, 1);
+    assert_eq!(
+        evaluation.site.locus,
+        UndefinedLocus::Mapping {
+            row,
+            object: Some(ObjectKey {
+                population: ring_key(RING, "rings"),
+                key: "r".to_owned(),
+            }),
+        }
+    );
 }
