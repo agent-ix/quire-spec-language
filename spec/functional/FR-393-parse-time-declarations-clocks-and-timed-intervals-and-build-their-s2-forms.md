@@ -21,8 +21,6 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-185
     type: depends_on
-  - target: ix://agent-ix/quire-spec-language/FR-255
-    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-142
     type: depends_on
 ---

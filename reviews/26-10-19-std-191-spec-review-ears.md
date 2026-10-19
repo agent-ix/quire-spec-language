@@ -29,3 +29,10 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 Two findings, both wording. FND-002 overlaps base FND-001 and is resolved by the same fix.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed at b3a8e6c42. |
+| FND-002 | fixed | Fixed at b3a8e6c42. |

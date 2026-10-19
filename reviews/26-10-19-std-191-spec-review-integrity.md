@@ -28,3 +28,15 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 One finding. The FR-185/186 and TC-620/621 vector sets are consistent with one another. The new cause is missing from the exhaustive tables it belongs in.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | FR-230 now gives source-declared units a use in source: `time dense unit u`, `time tick ... unit u`, and quantity literals such as `3 ms` resolve against them. FR-091's 'a source-declared unit has no use in source' is now stale. Fix: amend that sentence to point to FR-230's time-unit lookup. | spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md:474-476 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The new cause is gone from the spec; FR-091's table needs no row. PR #1003 must drop `FormsCause::DecimalScaleBeyondSource`. |

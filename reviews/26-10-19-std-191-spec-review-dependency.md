@@ -28,3 +28,15 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 One low finding. The enablement split is covered by base FND-002 and FND-004.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The new `depends_on` edge from FR-393 to FR-255 was added for the `s1.input_bytes` bullet, which this fix removed. FR-393's body no longer cites FR-255, so the edge records a dependency that does not exist. Fix: remove the FR-255 edge and keep the FR-185 edge. | spec/functional/FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md:24-25 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed at b3a8e6c42. |

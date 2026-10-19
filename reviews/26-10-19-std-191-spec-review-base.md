@@ -49,3 +49,20 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 Not mergeable. FND-001 and FND-002 are high. FND-001: FR-393's refusal contradicts FR-096, FR-255, FR-257 and FR-277, which are not amended. It also names a setting (`s1.input_bytes`) that cannot raise the bound, and it is not needed: FR-393 holds `(c, s)` as written and FR-185 already bounds the written denominator at S3 without expanding `10^s`. The planner default in STD-191 asked for this refusal, so the lead may need to rule. The two consistent options are a content refusal with no setting (FR-091 table and FR-257 Behavior 4), or no S2 rule, with `decimal(1, 4294967295)` refused at S3 by `s3.rational_bits` as before. FND-002: FR-230's 'run now' claim does not hold for filament-core-data as it is. Out of diff scope, for the lead: PR #1003's `scaled()` expands `10^s` at S2 (`divided_by_power_of_ten`), against FR-393's 'no `10^s` expanded'. Its `FormsCause::DecimalScaleBeyondSource` carries no counter or bound, and its tests' doc comments say 'FR-393-AC-7 (TC-1078 step 7)', which this renumbering makes step 8.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | high | 'Units of two such dimensions convert to one another by FR-142' contradicts QSpec FR-142. FR-142 admits a direct declared-to-declared conversion 'only when both units have the same dimension node identity; distinct dimension nodes with equal base-dimension maps, such as torque and energy, do not admit it.' A derived `Duration = Time` is a separate dimension node with its own root, so `time dense unit d` with `d` of `Duration` and a guard `x >= 3 ms` (`ms` of `Time`) cannot convert, and FR-230 promises that it can. Fix: make the time dimension the one dimension node whose identity is the base `Time` (a derived alias has its own units and is not the time dimension). Alternatively, require every time quantity in a model to share `u`'s dimension node and refuse otherwise. Drop the `Duration = Time` vector from AC-5, or make it a refusal. | spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md:109-113,220 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed at b3a8e6c42. |
+| FND-002 | fixed | Verified against FR-091 and filament-core-data: the assembler admits a unit's own `dimension`/`unit` forms into the checked package's `units` (FR-091 assembler steps 1-6, AC-32; FR-094-AC-8 declares base `Time` and root `second` in source), so source-declared time units are available now without STD-192; FCD main still has no unit graph, and FR-230 now waits only the domain-package vectors. |
+| FND-003 | fixed | Fixed at b3a8e6c42. |
+| FND-004 | fixed | Fixed at b3a8e6c42. |
+| FND-005 | fixed | Moot: the S2 rule is dropped, so no position needs it. |
+| FND-006 | fixed | TC-1078 is back to main: step 7 is the Clock units again. |

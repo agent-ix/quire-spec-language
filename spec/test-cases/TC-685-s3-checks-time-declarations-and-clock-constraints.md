@@ -22,7 +22,7 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 2. Check each refusal fixture of FR-230-AC-2.
 3. Check the tick model with period `1/2 ms`, with period `0 ms`, and with an unresolved tick operation.
 4. Check the disjunctive guard and the 64-clock model with the `10^40 ms` constant.
-5. Check, with units declared in the unit's own source, `time dense unit ms` and `unit s`, the quantity `3 ms` under `unit s`, `unit hour`, a graph with no base `Time`, two base dimensions named `Time`, a time unit with a nonzero offset, and two graphs declaring `ms` differently.
+5. Check, with units declared in the unit's own source, `time dense unit ms` and `unit s`, the quantity `3 ms` under `unit s`, `unit hour`, a graph with no base `Time`, two dimensions named `Time` in the source, a unit of `Duration = Time`, a time unit with a nonzero offset, and two graphs declaring `ms` differently.
 6. Check a `Clock` field of a package-admitted object type.
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
@@ -33,5 +33,5 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 2: each refuses with the code and span FR-230-AC-2 names.
 - Step 3: `TimeSource::Tick` with period `1/2`; `invalid_model_binding`/`malformed-declaration`; `missing_declaration`/`missing-name`.
 - Step 4: two convex parts each with `self.ready`; the large model checks with no refusal.
-- Step 5: both models check and `3 ms` converts to `3/1000`; `missing_declaration`/`missing-name` naming `hour`; `missing_declaration`/`missing-name` naming `Time`; `conflicting_declaration`; `ill_typed`/`type-mismatch`; different package identities. The same vectors with domain-package units wait on STD-192.
+- Step 5: both models check and `3 ms` converts to `3/1000`; `missing_declaration`/`missing-name` naming `hour`; `missing_declaration`/`missing-name` naming `Time`; `ambiguous_declaration`/`ambiguous-name` at assembly; `ill_typed`/`type-mismatch` for the `Duration` unit; `ill_typed`/`type-mismatch`; different package identities. The same vectors with domain-package units wait on STD-192.
 - Step 6: `unsupported_construct`/`not-yet-implemented` at the field, until STD-192 lands.

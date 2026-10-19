@@ -30,3 +30,17 @@ Units examined (each listed in the Linear comment's `scope` with its text): FR-1
 ## Verdict
 
 Three findings. FND-001 strengthens base FND-001. FND-002 and FND-003 are real gaps in FR-230's new lookup and should be fixed with it.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | AC-5's 'two base dimensions named `Time` refuse `conflicting_declaration`' is stated for a graph declared in the unit's own source, but FR-091's assembler refuses a duplicate dimension name first, with `ambiguous_declaration`/`ambiguous-name` (FR-091 Catalog codes). S3's `conflicting_declaration` is therefore unreachable from source. Two `Time` bases can only arise from the domain package or imports, which do not exist yet. Fix: state AC-5's duplicate vector as FR-091's `ambiguous_declaration`/`ambiguous-name` at assembly, and keep `conflicting_declaration` only for a source/package pair, waiting on STD-192. | spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md:126-128,220; spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md:483,864 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed at b3a8e6c42. |
+| FND-002 | fixed | Fixed at b3a8e6c42. |
+| FND-003 | fixed | Fixed at b3a8e6c42. |
