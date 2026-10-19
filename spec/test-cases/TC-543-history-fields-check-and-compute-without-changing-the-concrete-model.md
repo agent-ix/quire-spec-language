@@ -23,7 +23,8 @@ Fixture: `Register` and `RegisterHistory` (FR-138).
 
 1. Check `RegisterHistory`; compare the concrete model's state nodes, clause
    node identities and initial successors with and without the history row.
-2. Check each refusal variant of FR-138-AC-2.
+2. Check each refusal variant of FR-138-AC-2, including the out-of-range
+   literal `5`.
 3. Compute history along `write(r, 1)`, `write(r, 0)`, `write(r, 1)`.
 4. Add the `writes` history field and compute along `write(r, 0)`, `write(r,
    0)`.
