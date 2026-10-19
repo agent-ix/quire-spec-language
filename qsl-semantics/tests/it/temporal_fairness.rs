@@ -7,7 +7,7 @@
 //! `c.versionNumber` and `c.healthy` as text only.
 
 use ix_trace_rs::trace;
-use qsl_foundation::bound::{DomainKind, TemporalInterval, TemporalUpper};
+use qsl_foundation::bound::{DomainKey, DomainKind, TemporalInterval, TemporalUpper};
 use qsl_foundation::diagnostic::{Code, StageFailure};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::Span;
@@ -319,6 +319,12 @@ fn clauses_over_a_model_subject_classify_into_their_property_form() {
             .requirements(
                 WireNodeId::from_digest([1; 32]),
                 &[WireNodeId::from_digest([2; 32])],
+                // The population's key is FR-336's test; this one reads the
+                // formula's domain.
+                claim.population().map(|_| DomainKey::Population {
+                    member_type: WireNodeId::from_digest([3; 32]),
+                    ordinal: 0,
+                }),
             )
             .expect("the record is keyed");
         assert_eq!(record.kind(), Capability::TemporalSatisfaction);

@@ -21,7 +21,11 @@
 //! The clause's requirement record is `temporal-satisfaction` over its
 //! extent: the `over` parameter's, each `on each` parameter's and each
 //! capture's type positions, plus, under infinite-trace, the formula itself
-//! as one infinite-trace domain no finite bound can stand for.
+//! as one infinite-trace domain no finite bound can stand for. A clause
+//! over a model object type also carries that type's population as a
+//! `DomainKey::Population` domain unless the unit bounds it (FR-336-AC-1);
+//! the record is computed from checked types alone, so no universe a
+//! request supplies reaches it.
 //!
 //! FR-123 adds the fairness set and the property form. Each fairness
 //! constraint is checked into one shared `FairnessConstraint` (kind,
@@ -58,6 +62,8 @@ use quire_semantic_value::location::{Location, Origin};
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::Scope;
+use super::lowering::AdmittedModel;
+use super::state_clause::{population_of, PopulationDomain};
 use crate::check::Capability;
 use crate::family::requirements::{classify_domains, ClassifyFailure};
 use crate::family::requirements::{ClaimExtent, Requirements};
@@ -96,6 +102,9 @@ pub struct TemporalDeclarations<'a> {
     pub(crate) embedding: Option<&'a SourceMap>,
     /// The type positions a requirement's extent walk may visit.
     pub(crate) position_limit: u64,
+    /// The admitted models whose populations the `over` object type's
+    /// population is found in (FR-336-AC-1).
+    pub(crate) models: &'a [AdmittedModel],
 }
 
 /// The `TemporalTrace` family's `temporal` clause production (ADR-012
@@ -255,6 +264,9 @@ pub struct TemporalClaim {
     parameter_domains: BTreeMap<(usize, Vec<u32>), DomainKind>,
     /// Whether the formula is itself an infinite-trace domain.
     infinite_trace: bool,
+    /// The population of the `over` object type when the unit declares no
+    /// maximum for it: an unbounded domain of the record (FR-336-AC-1).
+    population: Option<PopulationDomain>,
 }
 
 impl TemporalClaim {
@@ -263,13 +275,22 @@ impl TemporalClaim {
         self.kind
     }
 
+    /// The unbounded population the clause ranges over: the `over` object
+    /// type's population, when the unit declares no maximum for it. Its key
+    /// is [`CheckedGraph::population_key`](crate::check::CheckedGraph::population_key).
+    pub fn population(&self) -> Option<PopulationDomain> {
+        self.population
+    }
+
     /// The claim's requirement record (FR-326 "Requirement record"), keyed
     /// by the clause's checked node and each parameter's, in the order the
-    /// clause declares them.
+    /// clause declares them. `population` is the key of
+    /// [`Self::population`]; the record takes no universe (FR-336-AC-1).
     pub fn requirements(
         &self,
         clause: WireNodeId,
         parameters: &[WireNodeId],
+        population: Option<DomainKey>,
     ) -> Result<Requirements, InternalFault> {
         let mut domains = BTreeMap::new();
         for ((index, path), kind) in &self.parameter_domains {
@@ -292,6 +313,11 @@ impl TemporalClaim {
                 },
                 DomainKind::InfiniteTrace,
             );
+        }
+        if self.population.is_some() {
+            let key =
+                population.ok_or_else(|| InternalFault::new(STAGE, "population-domain-keyed"))?;
+            domains.insert(key, DomainKind::Population);
         }
         Ok(Requirements::new(
             self.kind,
@@ -587,6 +613,23 @@ fn check_clause(
         .collect();
     let formula = build_formula(form, &intervals)?;
     let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
+    let population = match types.first() {
+        Some(ValueType::Reference(object)) => {
+            population_of(declarations.models, *object, declarations.scope.types())
+                .map_err(|populations| {
+                    refuse(TemporalCause::AmbiguousPopulation {
+                        name: populations
+                            .iter()
+                            .map(|key| key.node.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        span: declaration.span,
+                    })
+                })?
+                .filter(|domain| domain.maximum.is_none())
+        }
+        _ => None,
+    };
     let property_form = property_form(profile, model_subject, &formula);
 
     Ok(CheckedTemporalClause {
@@ -601,6 +644,7 @@ fn check_clause(
             kind: Capability::TemporalSatisfaction,
             parameter_domains,
             infinite_trace: !bounded,
+            population,
         },
         formula,
         activation: match &form.activation {
@@ -996,6 +1040,7 @@ pub fn check_clauses(
         source: &package.source,
         embedding: None,
         position_limit: 10_000,
+        models: &package.models,
     };
     package
         .temporal_clauses

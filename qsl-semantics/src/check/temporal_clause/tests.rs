@@ -76,6 +76,7 @@ fn check(package: &PackageDeclarations) -> Outcome {
         source: &package.source,
         embedding: None,
         position_limit: 10_000,
+        models: &package.models,
     };
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut diagnostics = DiagnosticSink::default();
@@ -150,7 +151,7 @@ fn a_bare_operator_is_unbounded_under_infinite_trace_and_refused_under_a_bounded
         .try_into()
         .expect("one claim");
     let record = claim
-        .requirements(node(1), &[node(2)])
+        .requirements(node(1), &[node(2)], None)
         .expect("the record is keyed");
     assert_eq!(record.kind(), Capability::TemporalSatisfaction);
     let ClaimExtent::Unbounded(domains) = record.extent() else {
@@ -301,7 +302,7 @@ fn a_bounded_clause_over_a_bounded_type_is_bounded_and_keys_carry_the_profile() 
             .try_into()
             .expect("one claim");
         if profile != INFINITE {
-            let record = claim.requirements(node(1), &[node(2)]).expect("keyed");
+            let record = claim.requirements(node(1), &[node(2)], None).expect("keyed");
             assert_eq!(record.kind(), Capability::TemporalSatisfaction);
             assert_eq!(record.extent(), &ClaimExtent::Bounded);
         }
@@ -327,7 +328,7 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
     let [claim] = TemporalTraceFamily::requirements(&clause)
         .try_into()
         .expect("one claim");
-    let record = claim.requirements(node(1), &[node(2)]).expect("keyed");
+    let record = claim.requirements(node(1), &[node(2)], None).expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("unbounded: {:?}", record.extent());
     };
@@ -335,7 +336,7 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
     kinds.sort();
     assert_eq!(kinds, [DomainKind::Integer, DomainKind::InfiniteTrace]);
     assert_eq!(
-        claim.requirements(node(1), &[]),
+        claim.requirements(node(1), &[], None),
         Err(InternalFault::new(STAGE, "parameter-node-keyed"))
     );
 
@@ -344,7 +345,7 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
     let [claim] = TemporalTraceFamily::requirements(&clause)
         .try_into()
         .expect("one claim");
-    let record = claim.requirements(node(1), &[node(2)]).expect("keyed");
+    let record = claim.requirements(node(1), &[node(2)], None).expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("a bounded profile over an unbounded type is unbounded");
     };

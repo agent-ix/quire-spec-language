@@ -238,7 +238,7 @@ pub use settings::{
 };
 pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
-    OperationSelection, ProtocolClauseFamily, StateClauseDeclaration,
+    OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
@@ -1719,6 +1719,7 @@ impl PackageDeclarations {
             source: &source,
             embedding: embedding.as_deref(),
             position_limit: limits.nodes(),
+            models: &models,
         };
         for clause in &self.temporal_clauses {
             let mut contract_cx = crate::family::CheckContext::new(
@@ -2982,6 +2983,16 @@ impl CheckedGraph {
         else {
             return Ok(None);
         };
+        self.population_key(*domain).map(Some)
+    }
+
+    /// ADR-012 §15.7: the domain key of `domain`, a population a checked
+    /// clause ranges over ([`TemporalClaim::population`]): the one key
+    /// [`Self::population_domain`] and a requirement record build.
+    pub fn population_key(
+        &self,
+        domain: state_clause::PopulationDomain,
+    ) -> Result<qsl_foundation::bound::DomainKey, qsl_foundation::InternalFault> {
         let node = self
             .object_types
             .iter()
@@ -2993,7 +3004,7 @@ impl CheckedGraph {
                     "member-type-has-a-model-node",
                 )
             })?;
-        state_clause::population_key(domain, *node).map(Some)
+        state_clause::population_key(&domain, *node)
     }
 
     /// FR-115: the frame of the operation `selection` names, and its object
