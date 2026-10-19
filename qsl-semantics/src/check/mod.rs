@@ -300,11 +300,11 @@ pub use protocol_slots::{
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
-    DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
-    MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
-    ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd,
-    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimedConstruct,
-    WrongSnapshotCause,
+    DispatchSubtypeFailure, IdentityForm, IdentityNode, IdentityObserving,
+    InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation, MemberCandidate,
+    NavigationBound, Obligation, ObservationReason, PredicateRole, ProtocolAnchorCause,
+    ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, RelatedEnd, ShadowedDeclaration,
+    SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimedConstruct, WrongSnapshotCause,
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
@@ -927,7 +927,7 @@ impl PackageDeclarations {
         // Carry that selection into S3 so the inherited-edge rule is
         // confined to a package with an admitted model.
         let complete_model = !self.models.is_empty();
-        let mut scope = Scope::new(
+        let scope = Scope::new(
             self.types,
             self.operations,
             self.enums,
@@ -948,6 +948,14 @@ impl PackageDeclarations {
                 .iter()
                 .map(|protocol| protocol.name.name.as_str()),
         );
+        let symmetric_objects = self
+            .models
+            .iter()
+            .flat_map(|model| {
+                model.symmetric_object_types(|sub, sup| scope.types().conforms(sub, sup))
+            })
+            .collect();
+        let mut scope = scope.with_symmetric_objects(symmetric_objects);
         let dispatch_tables = self.dispatch_tables;
         if let Some(index) = self
             .resolved_signatures
