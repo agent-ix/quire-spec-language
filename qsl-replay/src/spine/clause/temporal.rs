@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::temporal::{evaluate_observed, TemporalRefusal, TemporalTrace};
+use qsl_eval::temporal::{evaluate_observed, HoldsStop, TemporalRefusal, TemporalTrace};
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::TemporalProfile;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -17,7 +17,10 @@ use qsl_semantics::model::observation::{
 };
 use quire_exact::{Meter, ValueType};
 
-use super::{ClauseDisposition, ClauseRunReport, ClauseRunUsage, CompiledRun};
+use super::{
+    convert_call_failure, convert_outcome, ClauseDisposition, ClauseRunReport, ClauseRunUsage,
+    CompiledRun, RunRefusal,
+};
 use crate::proof_result::SettlementBasis;
 
 /// FR-330 Inputs: the observations a temporal clause is run over, each a
@@ -161,10 +164,21 @@ pub(super) fn run_temporal(
         }
     }
 
+    // From here on admission has run: every report keeps what it consumed.
+    let late = |disposition| {
+        report(
+            disposition,
+            ClauseRunUsage {
+                admission_consumed: admitted,
+                ..ClauseRunUsage::default()
+            },
+        )
+    };
+
     // `over` resolves in the observation at position 0 (FR-330 Inputs).
     let (_, over_type) = clause.over();
     let ValueType::Reference(type_identity) = over_type else {
-        return early(ClauseDisposition::EvaluateFault(
+        return late(ClauseDisposition::EvaluateFault(
             qsl_foundation::diagnostic::InternalFault::new("temporal", "over-is-a-reference"),
         ));
     };
@@ -175,13 +189,13 @@ pub(super) fn run_temporal(
         *type_identity,
     ) {
         Ok(universe) => universe,
-        Err(failure) => return early(ClauseDisposition::Admit(failure)),
+        Err(failure) => return late(ClauseDisposition::Admit(failure)),
     };
     let resolved = environments
         .first()
         .and_then(|environment| environment.objects().find(universe, &over.key));
     let Some(reference) = resolved else {
-        return early(refused(
+        return late(refused(
             "wrong-role-mapping",
             BTreeMap::from([
                 ("population", over.population.clone()),
@@ -191,16 +205,33 @@ pub(super) fn run_temporal(
     };
 
     let mut meter = Meter::new(run.accounting);
-    let disposition = match evaluate_observed(
+    let observed = evaluate_observed(
         run.package,
         node,
         &environments,
         shape,
         reference,
         &mut meter,
-    ) {
-        Ok(outcome) => ClauseDisposition::Temporal(outcome),
-        Err(refusal) => ClauseDisposition::TemporalRefusal(refusal),
+    );
+    let disposition = match (observed.stopped, observed.result) {
+        // A condition's refusal is reported as FR-109 reports a state
+        // clause's (`convert_outcome`); a failed call as `check_clause` does.
+        (Some(HoldsStop::Refused(evaluation)), _) => {
+            match convert_outcome(evaluation, run.package.graph(), run.sources) {
+                Ok(outcome) => ClauseDisposition::Evaluate(outcome),
+                Err(refusal) => match *refusal {
+                    RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+                    other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+                },
+            }
+        }
+        (Some(HoldsStop::Failed(failure)), _) => match *convert_call_failure(failure) {
+            RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
+            other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
+        },
+        (None, Ok(outcome)) => ClauseDisposition::Temporal(outcome),
+        (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
+        (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(refusal),
     };
     report(disposition, ClauseRunUsage::from_meter(&meter, admitted))
 }

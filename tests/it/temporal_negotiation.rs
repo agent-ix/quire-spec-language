@@ -15,7 +15,6 @@ use qsl_replay::{Execution, ResultLabel};
 use qsl_route::request::{
     items_from_requirements, BoundRefusal, ExtentClassification, RequestWriter,
 };
-use qsl_route::routing::{route, Disposition};
 use qsl_route::{
     BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
 };
@@ -150,36 +149,28 @@ fn an_infinite_trace_item_is_unbounded_and_refuses_a_bounded_request() {
     );
 }
 
-/// Against an empty registry the item has an empty candidate set naming
-/// `temporal-satisfaction` and its fixture settlement routes nowhere; a
-/// bounded-only descriptor is a candidate whose fixture settlement
-/// (`unsupported`, `unbounded-extent`) routes nowhere; an unbounded
-/// descriptor's `supported` settlement routes to it.
-#[trace("TC-842", "FR-332-AC-2")]
+/// The item's candidate set follows the registry: empty with none, the
+/// bounded-only descriptor when only that is registered, the unbounded one
+/// when only that is. This is the candidate computation only. The warned
+/// `unsupported`/`unbounded-extent` settlements are CG's and no settlement
+/// record exists in QSL, so FR-332-AC-2 is not tagged.
 #[test]
-fn an_infinite_trace_item_routes_only_to_a_backend_negotiation_supports() {
+fn an_infinite_trace_items_candidates_follow_the_registry() {
     let graph = reaches();
 
     let (kind, none) = candidates_of(&graph, &Registry::new());
     assert_eq!(kind.to_string(), "temporal-satisfaction");
     assert!(none.is_empty(), "{none:?}");
-    assert_eq!(route(&[Disposition::Unsupported]), vec![None]);
 
     let bounded = backend("bounded-only", Mode::Bounded);
     let modes: Vec<Mode> = bounded.advertises().map(|(_, mode)| mode).collect();
     assert_eq!(modes, [Mode::Bounded]);
     let (_, only) = candidates_of(&graph, &registry_of([bounded.clone()]));
     assert_eq!(only, [bounded.candidate().clone()]);
-    assert_eq!(route(&[Disposition::Unsupported]), vec![None]);
 
     let unbounded = backend("liveness", Mode::Unbounded);
     let (_, sole) = candidates_of(&graph, &registry_of([unbounded.clone()]));
-    let candidate = unbounded.candidate().clone();
-    assert_eq!(sole, std::slice::from_ref(&candidate));
-    assert_eq!(
-        route(&[Disposition::Supported(candidate.clone())]),
-        vec![Some(&candidate)]
-    );
+    assert_eq!(sole, [unbounded.candidate().clone()]);
 }
 
 /// Each FR-360 label settles in its ADR-014 A-5 category; `failed` is

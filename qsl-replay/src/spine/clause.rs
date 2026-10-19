@@ -347,7 +347,12 @@ impl ClauseDisposition {
             }
             Self::FrameViolation(_) => Category::Violation,
             Self::Temporal(outcome) => outcome.category(),
-            Self::TemporalRefusal(_) => Category::Refusal,
+            // The refusal's own catalog code decides: a malformed trace is a
+            // refusal, a profile the evaluator does not read is unsupported.
+            Self::TemporalRefusal(refusal) => {
+                qsl_foundation::diagnostic::Code::from_code(refusal.catalog_code().code())
+                    .map_or(Category::InternalFailure, |code| code.category())
+            }
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(false))) => {
                 Category::Violation
             }

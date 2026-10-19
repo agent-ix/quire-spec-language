@@ -9,21 +9,23 @@ use serde::Serialize;
 /// The kind of selection a case makes (FR-109, FR-115).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SelectionKind {
-    /// A state clause or a temporal clause.
+    /// A state clause.
     Clause,
     /// A Boolean function run as a claim.
     Function,
     /// An operation frame.
     Frame,
+    /// A temporal clause. A refinement check selects none, so a case that
+    /// does is a broken case (a tool failure).
+    Temporal,
 }
 
 impl SelectionKind {
     /// The kind of `selection`.
     pub fn of(selection: &ClauseRunSelection) -> Self {
         match selection {
-            // A temporal clause is a clause: one declared by name, whose
-            // absence in the superseding revision drops a constraint.
-            ClauseRunSelection::Clause(_) | ClauseRunSelection::Temporal { .. } => Self::Clause,
+            ClauseRunSelection::Clause(_) => Self::Clause,
+            ClauseRunSelection::Temporal { .. } => Self::Temporal,
             ClauseRunSelection::Function { .. } => Self::Function,
             ClauseRunSelection::Frame { .. } => Self::Frame,
         }
@@ -84,6 +86,7 @@ pub fn compare(prior: Side, superseding: Side, kind: SelectionKind) -> CaseResul
         (Admitted, Absent) => match kind {
             SelectionKind::Clause | SelectionKind::Frame => Holds,
             SelectionKind::Function => Regression,
+            SelectionKind::Temporal => ToolFailure,
         },
         (Admitted, Refused | Prohibited) => Regression,
         (Admitted, Unsupported) => UnresolvedUnsupported,
@@ -208,6 +211,7 @@ mod tests {
         match kind {
             SelectionKind::Clause | SelectionKind::Frame => H,
             SelectionKind::Function => R,
+            SelectionKind::Temporal => T,
         }
     }
 

@@ -20,7 +20,28 @@ use super::{
     evaluate, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
     TemporalRefusal, TemporalTrace, UndefinedCause,
 };
-use crate::value::CheckedPackageEvaluation;
+use crate::value::{CallFailure, CheckedPackageEvaluation, Evaluation};
+
+/// Why a `holds` condition stopped the run without a reading, kept whole so
+/// the caller reports it as FR-109 reports the same S6a result of a state
+/// clause (a refusal with its record; a failed call by its own mapping).
+#[derive(Debug)]
+pub enum HoldsStop {
+    /// The condition's S6a result was a refusal.
+    Refused(Evaluation),
+    /// The call failed before or during S6a.
+    Failed(CallFailure),
+}
+
+/// What [`evaluate_observed`] returns: the evaluator's result and, when a
+/// condition stopped the run, why (the result is then the stop's fault).
+#[derive(Debug)]
+pub struct ObservedRun {
+    /// The evaluator's result.
+    pub result: Result<TemporalOutcome, TemporalRefusal>,
+    /// The condition stop that ended the run, if one did.
+    pub stopped: Option<HoldsStop>,
+}
 
 /// Evaluate `clause`, a temporal clause of `package`, over `environments`,
 /// the object environment of each represented position, prefix first, then
@@ -36,15 +57,20 @@ pub fn evaluate_observed(
     trace: TemporalTrace,
     over: &ObjectReference,
     meter: &mut Meter,
-) -> Result<TemporalOutcome, TemporalRefusal> {
+) -> ObservedRun {
     let mut letters = ObservedLetters {
         package,
         clause,
         environments,
         trace,
         over,
+        stopped: None,
     };
-    evaluate(clause.clause(), trace, &mut letters, meter)
+    let result = evaluate(clause.clause(), trace, &mut letters, meter);
+    ObservedRun {
+        result,
+        stopped: letters.stopped,
+    }
 }
 
 struct ObservedLetters<'a> {
@@ -53,6 +79,7 @@ struct ObservedLetters<'a> {
     environments: &'a [ObjectEnvironment],
     trace: TemporalTrace,
     over: &'a ObjectReference,
+    stopped: Option<HoldsStop>,
 }
 
 impl ObservedLetters<'_> {
@@ -93,23 +120,31 @@ impl TemporalLetters for ObservedLetters<'_> {
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop> {
         let objects = self.environment(position)?;
-        let evaluation = self
-            .package
-            .evaluate_holds(
-                self.clause,
-                atom,
-                Value::Reference(self.over.clone()),
-                objects,
-                meter,
-            )
-            .map_err(|failure| {
-                LetterStop::Fault(match failure {
-                    crate::value::CallFailure::Fault(fault) => fault,
-                    _ => InternalFault::new("temporal.observed", "holds-condition-evaluates"),
-                })
-            })?;
-        let fault =
+        let stop =
             |code: &'static str| LetterStop::Fault(InternalFault::new("temporal.observed", code));
+        let evaluation = match self.package.evaluate_holds(
+            self.clause,
+            atom,
+            Value::Reference(self.over.clone()),
+            objects,
+            meter,
+        ) {
+            Ok(evaluation) => evaluation,
+            Err(failure) => {
+                self.stopped = Some(HoldsStop::Failed(failure));
+                return Err(stop("holds-condition-call-failed"));
+            }
+        };
+        let fault = stop;
+        let refused = matches!(
+            evaluation.outcome,
+            FamilyOutcome::Evaluated(Outcome::Refused(_))
+                | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_))
+        );
+        if refused {
+            self.stopped = Some(HoldsStop::Refused(evaluation));
+            return Err(fault("holds-condition-refused"));
+        }
         match evaluation.outcome {
             FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))) => {
                 Ok(AtomReading::True)
@@ -126,13 +161,13 @@ impl TemporalLetters for ObservedLetters<'_> {
             FamilyOutcome::Evaluated(Outcome::Incomplete(incomplete)) => {
                 Err(LetterStop::Incomplete(incomplete))
             }
-            FamilyOutcome::Evaluated(Outcome::Refused(_)) => Err(fault("holds-condition-refused")),
+            FamilyOutcome::Evaluated(Outcome::Refused(_))
+            | FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => {
+                Err(fault("holds-condition-refused"))
+            }
             FamilyOutcome::FamilyEvaluated(FamilyResult::Undefined(cause)) => Ok(
                 AtomReading::Undefined(UndefinedCause::Family(cause.undefined_record())),
             ),
-            FamilyOutcome::FamilyEvaluated(FamilyResult::Refused(_)) => {
-                Err(fault("holds-condition-refused"))
-            }
             #[cfg(seam_probe_eval_downstream)]
             FamilyOutcome::__SeamProbe => unreachable!("never constructed outside the probe build"),
         }

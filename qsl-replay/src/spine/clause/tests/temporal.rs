@@ -109,6 +109,19 @@ fn finite(unit: Unit, name: &str, values: &[i64]) -> ClauseRunRequest {
     )
 }
 
+/// `Reaches` over `Finite` 0, 1, 2 with an `over` naming key `ghost`.
+fn ghost() -> ClauseRunRequest {
+    request(
+        Unit::Infinite,
+        |labels| ClauseRunSelection::Temporal {
+            name: "Reaches".to_owned(),
+            trace: TraceInput::Finite(labels.to_vec()),
+            over: over("ghost"),
+        },
+        &[0, 1, 2],
+    )
+}
+
 /// `name` over a lasso whose prefix is the first `prefix` of `values` and
 /// whose loop is the rest.
 fn lasso(unit: Unit, name: &str, prefix: usize, values: &[i64]) -> ClauseRunRequest {
@@ -214,15 +227,7 @@ fn a_selection_that_cannot_run_reports_its_stage_and_cause() {
         ("invalid_runtime_input", "invalid-value")
     );
 
-    let ghost = report(request(
-        Unit::Infinite,
-        |labels| ClauseRunSelection::Temporal {
-            name: "Reaches".to_owned(),
-            trace: TraceInput::Finite(labels.to_vec()),
-            over: over("ghost"),
-        },
-        &[0, 1, 2],
-    ));
+    let ghost = report(ghost());
     assert_eq!(ghost.disposition.stage(), ClauseRunStage::Admit);
     let ClauseDisposition::Admit(AdmissionFailure::Refused(record)) = &ghost.disposition else {
         panic!("expected an admission refusal, got {:?}", ghost.disposition);
@@ -262,13 +267,15 @@ fn a_zero_work_budget_is_incomplete_and_a_repeated_run_reports_equal() {
     assert_eq!(starved.disposition.category(), Category::Incomplete);
     assert_eq!(exit_code(&starved), 22);
 
-    let requests: [fn() -> ClauseRunRequest; 6] = [
+    let requests: [fn() -> ClauseRunRequest; 8] = [
         || finite(Unit::Bounded, "Bounded", &[0, 1, 2]),
         || finite(Unit::Infinite, "Reaches", &[0, 1, 2]),
         || lasso(Unit::Infinite, "Reaches", 0, &[0, 1]),
         || lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]),
         || finite(Unit::Infinite, "Absent", &[0, 1, 2]),
         || lasso(Unit::Bounded, "Bounded", 0, &[0, 1, 2]),
+        ghost,
+        || lasso(Unit::Infinite, "Reaches", 3, &[0, 1, 2]),
     ];
     for build in requests {
         assert_eq!(
@@ -280,6 +287,11 @@ fn a_zero_work_budget_is_incomplete_and_a_repeated_run_reports_equal() {
 
 /// `Fair` (`always eventually holds(c.value = 2)` under `fair weak noop`)
 /// over a lasso is unsupported: an observed trace carries no enabledness.
+///
+/// The report carries the outcome, not a catalog code: the wire cause
+/// `unsupported_projection`/`missing-fairness-premise` is implied by
+/// `MissingFairnessPremise` and its only writer refuses temporal dispositions
+/// until the wire form is specified.
 #[trace("TC-848", "FR-330-AC-6")]
 #[test]
 fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
@@ -297,8 +309,8 @@ fn a_fairness_premise_over_a_supplied_trace_is_unsupported() {
 
 /// `Reaches` run at S6a on a lasso where it holds is evidence for that trace
 /// only: it settles no truth and derives no witness, so nothing joins it to a
-/// requested item (FR-332: S6a evaluation never settles an item).
-#[trace("TC-842", "FR-332-AC-4")]
+/// requested item. This is the report half of FR-332-AC-4; the accounting
+/// record half does not exist in QSL yet, so the test is not tagged.
 #[test]
 fn a_clause_run_over_a_trace_settles_no_item() {
     let held = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1, 2]));
@@ -309,4 +321,26 @@ fn a_clause_run_over_a_trace_settles_no_item() {
     let violated = report(lasso(Unit::Infinite, "Reaches", 0, &[0, 1]));
     assert_eq!(violated.basis, SettlementBasis::Unavailable);
     assert!(violated.witness.is_none());
+}
+
+/// A temporal refusal's category comes from its own catalog code: a malformed
+/// trace is a refusal, a profile the evaluator does not read is unsupported
+/// (exit 21), and a broken invariant is an internal failure (exit 30).
+#[test]
+fn a_temporal_refusal_takes_its_category_from_its_catalog_code() {
+    use qsl_semantics::check::TemporalProfile;
+    let category = |refusal| ClauseDisposition::TemporalRefusal(refusal).category();
+    assert_eq!(category(TemporalRefusal::EmptyLoop), Category::Refusal);
+    assert_eq!(
+        category(TemporalRefusal::ProfileNotEvaluated {
+            profile: TemporalProfile::TimestampedEventFiniteWindow
+        }),
+        Category::Unsupported
+    );
+    assert_eq!(
+        category(TemporalRefusal::Fault(
+            qsl_foundation::diagnostic::InternalFault::new("temporal", "broken")
+        )),
+        Category::InternalFailure
+    );
 }
