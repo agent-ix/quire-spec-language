@@ -87,11 +87,6 @@ impl Gba {
             .get(set)
             .is_some_and(|members| members.contains(&state))
     }
-
-    /// Every state's transitions, by state index.
-    pub(crate) fn rows(&self) -> &[Vec<Transition>] {
-        &self.rows
-    }
 }
 
 /// Builds a [`Gba`]. A new builder holds the initial state alone.

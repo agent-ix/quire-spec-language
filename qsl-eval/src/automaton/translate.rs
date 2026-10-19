@@ -38,7 +38,7 @@ use crate::automaton::counters::{DeadlineCounter, ExtentCounter};
 use crate::automaton::dnf::Dnf;
 use crate::automaton::error::AutomatonError;
 use crate::automaton::formula::{invariant, lower, FutureKind, Ir, Lowered, Node, NodeId, Window};
-use crate::automaton::gba::{Gba, GbaBuilder};
+use crate::automaton::gba::{Gba, GbaBuilder, Transition};
 use crate::automaton::letter::{Atom, Guard, Letter};
 use crate::automaton::numbering::Numbering;
 use crate::automaton::past::{Memory, Outcome, Past};
@@ -150,6 +150,34 @@ impl PropertyAutomaton {
         Ok(states)
     }
 
+    /// Every guarded transition out of `from`, each target numbered the first
+    /// time it is reached: the row a caller that reasons over all letters at
+    /// once reads, such as the bad-prefix [`Monitor`](crate::automaton::Monitor)
+    /// deciding which states have an infinite run.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::UnknownState`] when `from` has not been reached;
+    /// [`AutomatonError::StateLimit`] when reaching a target would exceed the
+    /// limit.
+    pub fn transitions(&mut self, from: StateId) -> Result<Vec<Transition>, AutomatonError> {
+        self.expand(from)?;
+        let row = self
+            .expanded
+            .get(from.index())
+            .and_then(Option::as_ref)
+            .ok_or_else(|| invariant("state-expanded"))?
+            .clone();
+        row.into_iter()
+            .map(|(guard, config)| {
+                Ok(Transition {
+                    guard,
+                    target: self.reached.intern(config)?.state,
+                })
+            })
+            .collect()
+    }
+
     /// The number of acceptance sets: one for each unbounded `eventually`
     /// or `until` of the translated formula. A run accepts when it visits
     /// every set infinitely often; with none it is a safety automaton.
@@ -172,10 +200,10 @@ impl PropertyAutomaton {
     }
 
     /// The explicit automaton of every state reachable on some letter, built
-    /// by reaching them all. This is for a caller that needs the whole graph
-    /// (the bad-prefix [`Monitor`](crate::automaton::Monitor) trims one, and
-    /// tests compare it); a product reaches states through
-    /// [`successors`](Self::successors) instead.
+    /// by reaching them all. This is for a caller that needs the whole graph,
+    /// such as a test comparing it with the evaluator; a product reaches
+    /// states through [`successors`](Self::successors) or a lazy
+    /// [`Monitor`](crate::automaton::Monitor) instead.
     ///
     /// # Errors
     ///
@@ -188,20 +216,12 @@ impl PropertyAutomaton {
         let mut index = 0;
         while index < self.reached.len() {
             let state = StateId::new(index);
-            self.expand(state)?;
-            let row = self
-                .expanded
-                .get(index)
-                .and_then(Option::as_ref)
-                .ok_or_else(|| invariant("state-expanded"))?
-                .clone();
-            for (guard, target) in row {
-                let reached = self.reached.intern(target)?.state;
-                while added <= reached.index() {
+            for transition in self.transitions(state)? {
+                while added <= transition.target.index() {
                     builder.add_state();
                     added += 1;
                 }
-                builder.add_transition(state, guard, reached)?;
+                builder.add_transition(state, transition.guard, transition.target)?;
             }
             index += 1;
         }

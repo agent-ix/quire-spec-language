@@ -11,11 +11,11 @@
 //!   each acceptance set is a set of states. With no acceptance set it is a
 //!   safety automaton.
 //! - [`Monitor`] is the deterministic bad-prefix monitor of a safety
-//!   automaton (ADR-018 SM-6): the automaton trimmed to the states from which
-//!   some infinite run exists, then determinized by subset construction as
-//!   the caller reaches states, whose one rejecting state is the empty
-//!   subset. A deterministic automaton gives the bounded profile's finite
-//!   monitor through the same type.
+//!   automaton (ADR-018 SM-6), read lazily through [`SafetyAutomaton`]: the
+//!   subset construction over the states from which some infinite run
+//!   exists, each state's viability decided when a step first meets it, whose
+//!   one rejecting state is the empty subset. A deterministic automaton gives
+//!   the bounded profile's finite monitor through the same type.
 //! - [`Numbering`] numbers states in the order the caller reaches them, under
 //!   the `max_automaton_states` bound (ADR-018 IV-6), with checked
 //!   arithmetic. The number is storage local to one explored graph and never
@@ -60,7 +60,7 @@ pub use key::{
     AUTOMATON_STATE_KEY_V1,
 };
 pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
-pub use monitor::Monitor;
+pub use monitor::{Monitor, SafetyAutomaton};
 pub use numbering::{Interned, Numbering};
 pub use state::StateId;
 pub use translate::{translate, AutomatonKind, PropertyAutomaton};
