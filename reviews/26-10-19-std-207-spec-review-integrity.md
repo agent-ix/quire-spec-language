@@ -52,6 +52,13 @@ Findings: FND-001 (high), FND-002 (medium). The `solver-steps` statement agrees 
 | --- | --- | --- | --- |
 | FND-004 | high | Leaving `max_solver_time` out of the key is consistent with QSpec FR-306's never-stored rule, but FR-292 as written contradicts it. Under FR-306 only a result that is not time-limited is stored, and the run that produced it finished within its budget, so serving it to a request that differs only in `max_solver_time` returns a sound result, the same treatment FR-306 gives a wall-clock deadline. FR-292, though, holds the key to "exactly the members the Description lists" ("the options that affect a result, and every deterministic budget"; outside: "path, timestamp, wall-clock deadline, application version string or execution backend"). `max_solver_time` is an option that affects a result and is not on the outside list. FR-292 also says "`analyze` shall return records with equal RFC 8785 bytes for requests whose key members ... are equal", which two requests at 1 s and 60 s break (`TimedOut` against `proved`), and AC-3 now asserts exactly those equal keys. Amend FR-292 in this PR: name wall-clock solver budgets beside the deadline outside the key, and limit the equal-records rule to results that are not time-limited or cancelled. QSpec FR-306's outside-the-key list needs the same entry (add it to the QSpec ask). | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:83-89,109; spec/functional/FR-292-key-cached-results-by-content-identity.md:43-48,65-68 |
 
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-292-AC-1 now says changing `max_solver_time` leaves the key bytes equal, but TC-776, the AC's only verification, still lists the non-meaning changes as "the request file path, the working directory, the wall-clock deadline or the execution backend" (step 1). No TC step changes `max_solver_time`, so a test that follows TC-776 never checks the new clause. Add `max_solver_time` to TC-776 step 1. FR-250-AC-3 also asserts the equal key bytes, through TC-705, so the behaviour has one test; the gap is FR-292-AC-1's trace. | spec/test-cases/TC-776-cache-keys-change-with-every-meaning-input-and-nothing-else-and-reads.md:19; spec/functional/FR-292-key-cached-results-by-content-identity.md:81 |
+| FND-006 | medium | ADR-029 CA-2, the decision FR-292 implements, still lists what stays outside the key as "Paths, timestamps, wall-clock deadlines, application version strings and the execution backend that ran", with the reason "Each either has no effect on the result or is already bound by a member above." `max_solver_time` has an effect on the result and is bound by no member, so that reason does not cover it. The ADR needs a line saying a wall-clock solver budget is also outside, because every result it limits is time-limited and never stored (CA-5). QSpec FR-306's outside-the-key list needs the same entry (part of the QSpec ask). | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:595-614; spec/functional/FR-292-key-cached-results-by-content-identity.md:42-47 |
+
 ## Dispositions
 
 Round 1, against head 594d3e3e1 (fix commit 594d3e3e1).
@@ -67,3 +74,9 @@ Round 2, against head 6a7c400df (fix commit 6a7c400df).
 | --- | --- | --- |
 | FND-001 | fixed | FR-250: "It is a wall-clock setting, so it is no member of the canonical request key (FR-292) and no member of a stored record." The "state it as `max_solver_time` in the record" clause is gone. |
 | FND-003 | fixed | Map rows: "`Stopped(solver-steps)`, or any deterministic budget ... `Incomplete(LimitReached{limit, value, setting})`" and "`Stopped(solver-time)` ... `Incomplete(TimedOut)` (FR-293), distinct from `Cancelled(Deadline)`"; AC-2: "a `solver-steps` stop settles `incomplete`, `LimitReached{limit: solver-steps, ...}`; a `solver-time` stop settles `incomplete`, `TimedOut`". |
+
+Round 3, against head 78dcc6f2d (fix commit 78dcc6f2d).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | still-open | The Description is qualified ("for every result that is neither timed out nor cancelled"), but the normative Behavior bullet, which AC-2 tests, is unchanged: "The `analyze` operation shall return records with equal RFC 8785 bytes for requests whose key members, `package_id` and engine `BackendId` are equal." With `max_solver_time` outside the key, that SHALL still fails for a 1 s and a 60 s request (`TimedOut` against `proved`). Add the same qualification to the Behavior bullet. The key-list half is fixed: "wall-clock solver budget (FR-250's `max_solver_time`)" is now outside the key, and FR-292-AC-1 tests it. |

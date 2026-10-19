@@ -69,7 +69,8 @@ reader's record or typed refusal.
 - QSL shall serialize an `analyze` request's key members to one RFC 8785
   form holding exactly the members the Description lists.
 - The `analyze` operation shall return records with equal RFC 8785 bytes for
-  requests whose key members, `package_id` and engine `BackendId` are equal.
+  requests whose key members, `package_id` and engine `BackendId` are equal,
+  for every result that is neither timed out nor cancelled.
 - The typed `analyze` record reader shall return the record for the bytes
   QSL's serialization writes, and a typed refusal for any bytes that differ
   from the RFC 8785 re-encoding of the value they hold.
