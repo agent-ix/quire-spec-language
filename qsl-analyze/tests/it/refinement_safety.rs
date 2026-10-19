@@ -8,9 +8,9 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::operation_identity_text;
 use qsl_eval::simulation::Limits;
 use qsl_replay::{
-    CounterexampleKind, IncompleteCause, MappingRowRef, ModelCheckLimit, ModelCheckLimits,
-    ObjectKey, ReachedLimit, RefinementFailure, RefinementOutcome, SafetyOutcome, StepRejection,
-    TemporalCounterexample, UndefinedLocus,
+    CounterexampleKind, IncompleteCause, MappingRowRef, MappingSite, ModelCheckLimit,
+    ModelCheckLimits, ObjectKey, ReachedLimit, RefinementFailure, RefinementOutcome, SafetyOutcome,
+    StepRejection, TemporalCounterexample, UndefinedLocus,
 };
 use quire_exact::{Cancel, CancelCause};
 
@@ -301,12 +301,12 @@ fn an_undefined_items_row_refutes_at_the_first_non_empty_queue() {
     assert_eq!(evaluation.site.position, 1);
     assert_eq!(
         evaluation.site.locus,
-        UndefinedLocus::Mapping {
+        UndefinedLocus::Mapping(Box::new(MappingSite {
             row,
             object: Some(ObjectKey {
                 population: ring_key(RING, "rings"),
                 key: "r".to_owned(),
             }),
-        }
+        }))
     );
 }

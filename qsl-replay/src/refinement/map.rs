@@ -289,6 +289,10 @@ pub fn subject_models(refinement: &CheckedRefinement) -> Option<(&str, &str)> {
 
 /// Check that `concrete_system` is over the refinement's concrete model and
 /// `abstract_system` over its abstract one.
+#[allow(
+    clippy::result_large_err,
+    reason = "FR-140 fixes MappingFailure's shape: a row, an object and the evaluator's cause"
+)]
 fn check_systems(
     refinement: &CheckedRefinement,
     concrete_system: &ModelSystem<'_>,

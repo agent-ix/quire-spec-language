@@ -157,15 +157,13 @@ pub fn replay_refinement_trace(
             RefinementTraceSettlement::Inconclusive(disagreement(Category::Violation))
         }
         Found::Undefined(evaluation) => match (&payload.kind, &evaluation.site.locus) {
-            (
-                CounterexampleKind::UndefinedEvaluation(claimed),
-                UndefinedLocus::Mapping { row, .. },
-            ) if claimed == evaluation.as_ref()
-                && *recorded
-                    == (RefinementFailure::Undefined {
-                        position: evaluation.site.position,
-                        row: row.clone(),
-                    }) =>
+            (CounterexampleKind::UndefinedEvaluation(claimed), UndefinedLocus::Mapping(site))
+                if claimed == evaluation.as_ref()
+                    && *recorded
+                        == (RefinementFailure::Undefined {
+                            position: evaluation.site.position,
+                            row: site.row.clone(),
+                        }) =>
             {
                 RefinementTraceSettlement::Reproduced {
                     failure: recorded.clone(),

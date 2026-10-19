@@ -62,14 +62,18 @@ pub enum UndefinedLocus {
     Terminal(String),
     /// The request's state constraint (ADR-021 SC-2), by its clause name.
     Constraint(String),
-    /// A refinement's mapping row or step-row argument (ADR-020 RE-5), and
-    /// the concrete object it was evaluated for.
-    Mapping {
-        /// The row.
-        row: MappingRowRef,
-        /// The object, when the row is evaluated for one.
-        object: Option<ObjectKey>,
-    },
+    /// A refinement's mapping row or step-row argument (ADR-020 RE-5).
+    Mapping(Box<MappingSite>),
+}
+
+/// The row and object a refinement's undefined mapping names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MappingSite {
+    /// The row.
+    pub row: MappingRowRef,
+    /// The concrete object the row was evaluated for, when it is evaluated
+    /// for one.
+    pub object: Option<ObjectKey>,
 }
 
 /// QSpec FR-364's `where` of an undefined evaluation.

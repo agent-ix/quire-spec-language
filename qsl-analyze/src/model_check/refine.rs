@@ -398,7 +398,7 @@ impl Run<'_, '_> {
             StepVerdict::Fails(failure) => Err(failed(failure, CounterexampleKind::Formula)),
             StepVerdict::Undefined(evaluation) => {
                 let row = match &evaluation.site.locus {
-                    qsl_replay::UndefinedLocus::Mapping { row, .. } => row.clone(),
+                    qsl_replay::UndefinedLocus::Mapping(site) => site.row.clone(),
                     _ => {
                         return Err(End::Fault(InternalFault::new(
                             "refinement-check",

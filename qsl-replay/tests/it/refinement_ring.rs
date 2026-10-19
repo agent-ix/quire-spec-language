@@ -365,7 +365,7 @@ fn an_undefined_step_row_argument_is_undefined() {
     assert_eq!(undefined.site.position, 1);
     assert_eq!(
         undefined.site.locus,
-        qsl_replay::UndefinedLocus::Mapping {
+        qsl_replay::UndefinedLocus::Mapping(Box::new(qsl_replay::MappingSite {
             row: MappingRowRef::Argument {
                 operation: key(RING, "Slot/put"),
                 argument: StepArgument::Parameter(0),
@@ -374,7 +374,7 @@ fn an_undefined_step_row_argument_is_undefined() {
                 population: key(RING, "slots"),
                 key: "s0".to_owned(),
             }),
-        }
+        }))
     );
 }
 

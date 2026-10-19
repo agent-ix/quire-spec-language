@@ -25,7 +25,9 @@ use qsl_semantics::model::state::ModelState;
 use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use crate::model_check::counterexample::{UndefinedEvaluation, UndefinedLocus, UndefinedSite};
+use crate::model_check::counterexample::{
+    MappingSite, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+};
 use crate::refinement::failure::{
     RefinementFailure, StepRejection, StepVerdict, Taken, Undetermined,
 };
@@ -269,6 +271,10 @@ fn step_row<'r>(
 
 /// `identities` in canonical order (FR-101): ascending transition-identity
 /// bytes.
+#[allow(
+    clippy::result_large_err,
+    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
+)]
 fn canonical(
     system: &ModelSystem<'_>,
     identities: Vec<ModelTransition>,
@@ -296,6 +302,10 @@ struct Arguments {
 /// RS-4: the receiver and arguments of the abstract-operation row `row`,
 /// evaluated at the pre-state over the concrete step's receiver and
 /// arguments (FR-141 "Abstract-operation evaluation").
+#[allow(
+    clippy::result_large_err,
+    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
+)]
 fn evaluate_arguments(
     refinement: &CheckedRefinement,
     concrete_system: &ModelSystem<'_>,
@@ -341,11 +351,11 @@ fn evaluate_arguments(
                     lift_value(refinement, concrete_system, abstract_system, value).map_err(
                         |lifting| match lifting {
                             Lifting::Unmapped(concrete_type) => StepVerdict::Undetermined(
-                                Undetermined::Mapping(MappingUndetermined {
+                                Undetermined::Mapping(Box::new(MappingUndetermined {
                                     row: at.clone(),
                                     object: object.clone(),
                                     cause: EvalFailure::UnmappedType(concrete_type),
-                                }),
+                                })),
                             ),
                             Lifting::Fault => fault("argument-lifts"),
                         },
@@ -359,21 +369,21 @@ fn evaluate_arguments(
                         site: UndefinedSite {
                             position: step.position,
                             state_key: digest,
-                            locus: UndefinedLocus::Mapping {
+                            locus: UndefinedLocus::Mapping(Box::new(MappingSite {
                                 row: at,
                                 object: object.clone(),
-                            },
+                            })),
                             transition: None,
                         },
                         cause,
                     }))
                 }
                 Ok(RowReading::Undetermined(outcome)) => Err(StepVerdict::Undetermined(
-                    Undetermined::Mapping(MappingUndetermined {
+                    Undetermined::Mapping(Box::new(MappingUndetermined {
                         row: at,
                         object: object.clone(),
                         cause: EvalFailure::Evaluation(Box::new(outcome)),
-                    }),
+                    })),
                 )),
             }
         };
@@ -496,14 +506,14 @@ fn mapping_verdict(
                 site: UndefinedSite {
                     position,
                     state_key: digest,
-                    locus: UndefinedLocus::Mapping { row, object },
+                    locus: UndefinedLocus::Mapping(Box::new(MappingSite { row, object })),
                     transition: None,
                 },
                 cause: *cause,
             })
         }
         MappingFailure::Undetermined(undetermined) => {
-            StepVerdict::Undetermined(Undetermined::Mapping(undetermined))
+            StepVerdict::Undetermined(Undetermined::Mapping(Box::new(undetermined)))
         }
         MappingFailure::WrongSystem(_) => fault("the-engine-passed-the-refinements-own-systems"),
         MappingFailure::Fault(_) => fault("mapping-evaluation"),

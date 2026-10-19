@@ -95,7 +95,7 @@ pub enum Taken {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Undetermined {
     /// A mapping row or step-row argument was refused or incomplete.
-    Mapping(MappingUndetermined),
+    Mapping(Box<MappingUndetermined>),
     /// A contract conjunction of the abstract model could not be decided.
     UndecidedSuccessor,
 }
