@@ -71,3 +71,17 @@ the PR is SR-12153 FND-001.
 | FND-002 | low | The AC-17 test binds `owner: _` and never asserts the retained `owner` member the AC names. The AC's first clause (a choice or repeat owned by an undeclared role refuses `missing-name` at the owner) is asserted only by the untagged `a_choice_owner_is_a_role_and_its_constant_guards_partition`. The `over`-read case asserts the slot and node but not the code or cause. | qsl-semantics/src/check/protocol_clause/tests/graph.rs:644; qsl-semantics/src/check/protocol_clause/tests/graph.rs:761 |
 | FND-003 | low | AC-19 asserts `!cases.is_empty()` rather than the case names the AC says are retained. AC-18 never asserts the `missing_declaration`/`missing-name` code or cause. Its comment says the reads check "on the await's then path", but only the all-branch-join positive case is written. | qsl-semantics/src/check/protocol_clause/tests/graph.rs:907; qsl-semantics/src/check/protocol_clause/tests/graph.rs:848 |
 | FND-004 | low | FR-218 "Choice and repeat decisions" says "A decision fact is a Boolean field read of a record binder", but `visible` entries are typed with `Goal::Infer`, so a non-Boolean entry such as `attempted.n` is admitted. AC-2's own test relies on this (`visible (attempted.n)` with guards `attempted.n > 0` and `attempted.n > 1`). The partition proof stays sound, because guard subterms are independent atoms. The spec and AC-2 disagree on whether non-Boolean facts may be listed, and the spec should settle it. | qsl-semantics/src/check/protocol_slots.rs:700; qsl-semantics/src/check/protocol_controls/model_state_tests.rs |
+
+## Dispositions
+
+Round 1, reviewed at 837a476a67d36fb7f671e1ed35ae2bbd3f80854b: fix commit
+56c826467, plus merge 837a476a6 of origin/main. The merge leaves every
+claimed `#[trace]` binding in place, FR-308-AC-1 included. It adds fence,
+memory-clause and access-ordering refusal tests, which are untagged.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 56c826467 |
+| FND-002 | fixed | 56c826467 |
+| FND-003 | fixed | 56c826467 |
+| FND-004 | deferred | Spec ambiguity. FR-218 says a decision fact is a Boolean field read, while AC-2's own example lists `m.n`. Nothing changed in the fix round, and it is low. Route it to the same FR-218 spec follow-up. |

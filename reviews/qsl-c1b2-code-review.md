@@ -103,3 +103,39 @@ recorded, not blocking.
 | FND-004 | low | Two replay messages lost a `\` line continuation, so they contain a run of about 22 spaces inside the string: "which is no channel of the                      protocol" and "not exhaustive and exclusive                      ({})". | qsl-replay/src/spine.rs:779; qsl-replay/src/spine.rs:820 |
 | FND-005 | low | FR-218 "Channels" and AC-20 say the key-equality refusal retains `operator` (`=`) and the type. `ProtocolAnchorCause::KeyEquality` has `channel`, `key_type` and `span` only, so a consumer cannot read the operator as a field (FR-218 "Outputs": members are read as fields, never from a message). | qsl-semantics/src/check/refusal.rs:275 |
 | FND-006 | low | Doc comments in the graph tests are stale. They say bodies that read names, and guards that read visible facts, are "not checked yet". This PR checks both, and AC-17 and AC-19 are now claimed by other tests in the same file. | qsl-semantics/src/check/protocol_clause/tests/graph.rs:81; qsl-semantics/src/check/protocol_clause/tests/graph.rs:454 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | QSpec FR-466 step 6 says the window refusal retains `member` (`within`), `expected` (a closed interval with `lower <= upper`) and `actual`. `ProtocolAnchorCause::AwaitWindow` holds `node`, `lower`, `upper` and `span`: the actual interval is there, but `member` and `expected` are only implied by the variant, not held as fields. | qsl-semantics/src/check/refusal.rs:380-393 |
+
+## Dispositions
+
+Round 1, reviewed at 837a476a67d36fb7f671e1ed35ae2bbd3f80854b: fix commit
+56c826467, plus merge 837a476a6 of origin/main.
+
+The merge adds `ProtocolNodeKind::Fence` and two construct kinds,
+`MemoryClause` and `AccessOrdering`. In `coverage.rs`, `covered_kind`
+classes `Fence` as the only uncovered node kind, and `covered_construct`
+leaves `MemoryClause` and `AccessOrdering` uncovered. All three refuse
+`not-yet-implemented`, and the new tests in `tests/coverage.rs` and
+`protocol_controls.rs` cover them: a fence, `parallel memory sc|tso|ra`,
+and `attempt ordering seq_cst`. So nothing new compiles unchecked.
+
+`graph.rs` classes `Fence` as a leaf, entered before it exits, that
+necessarily steps. That matches QSpec FR-464 "Derived causal relation" and
+"Progress", which both list `fence` among the leaves and the step nodes.
+`protocol_slots` gives it no binder and no decision eligibility, which
+matches the grammar (`fence N ordering o;` has no `as` binder). The
+classification is sound, and it only decides which refusal comes first,
+because `content` refuses every fence anyway.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 56c826467 |
+| FND-002 | deferred | Spec defect: FR-381's "lies on every path" admits commits that every execution takes before the effect, at AND-joins. The code is correct to the text. Route it to a spec ticket under QSL-850 that defines dominance over sequence plus effect edges and `join all`. |
+| FND-003 | deferred | Not addressed in the fix round. It is medium, not major, so it is recorded and does not block under the lane's major-only rule. Follow-up: precompute each guard node's atom index, or charge by guard size. |
+| FND-004 | fixed | 56c826467 |
+| FND-005 | deferred | Not addressed in the fix round. It is low and recorded: `KeyEquality` still holds no `operator` member. |
+| FND-006 | fixed | 56c826467 |
