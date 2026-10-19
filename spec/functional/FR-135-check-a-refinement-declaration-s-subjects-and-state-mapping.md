@@ -154,7 +154,7 @@ the refinement, which is located at the first token of the name after
 `abstract`, once per refinement.
 
 - A declaration that uses a feature outside the support set SHALL refuse
-  `unsupported_construct`/`not-yet-implemented`, once for each row that uses
+  `unsupported_construct`/`not-yet-implemented`, once for each row or refinement that uses
   the feature, and SHALL produce no `CheckedRefinement`. This is the refusal
   FR-341-AC-5 classifies `unsupported` (a QSL implementation gap).
 - The refusal's span is the first token of the row for a `history` row (the

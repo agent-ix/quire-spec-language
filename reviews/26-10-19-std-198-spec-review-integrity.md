@@ -62,6 +62,13 @@ work cite STD-199.
 | FND-008 | medium | FR-147's refusal of a non-empty list now names the feature `refinement-internal-list`. FR-135 says the build's closed support set "names two features: `history-row` … and `protocol-abstract-side`". The two sections disagree on the closed set of refinement feature names a `not-yet-implemented` refusal can name. Either add `refinement-internal-list` to FR-135's list, with a pointer to FR-147, or say in FR-147 that this refusal is outside the support set. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:150-158,220; spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:148-151 |
 | FND-009 | medium | AC-7 says `CasTwice` with a non-empty list "refuses each `unsupported_construct`/`not-yet-implemented` once", and Remaining work says AC-7 is "testable now". In this build `CasTwice`'s protocol abstract side is itself unbuilt. FR-135 refuses it with the same code and cause at `Twice` and then checks the rest of the declaration, so `CasTwice` gives two refusals of that pair, at `Twice` and at `Spec`. "Once" is false for `CasTwice` today, or the AC means once for the list feature, and the test author cannot tell which. State the expected refusal set for `CasTwice` (both features), or use a model-side vector alone until STD-182. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:220,243-247; spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:153-163 |
 
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | FR-135's support-set paragraph now places `refinement-internal-list` "once per refinement" at the abstract-side name, but the SHALL bullet below it still says the refusal is "once for each row that uses the feature". The list is not a row, and the protocol side is a header, not a row, either. The paragraph settles it, but the normative bullet reads more narrowly than the paragraph. Say "once for each row or refinement that uses the feature". | spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:149-158 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -73,3 +80,5 @@ work cite STD-199.
 | FND-005 | fixed | Round 1: the rationale now quotes FR-271 correctly and gives FR-272's missing cause as the reason; the code moved to `unsupported_construct`/`not-yet-implemented` per FR-341-AC-5 and ADR-017 Q-6. |
 | FND-006 | fixed | Round 1: the spec picks the `<protocol>` name span and one refusal per row, both matching #970 at b68219026, which now returns the same code and cause. #970 still differs from FR-135 in three ways: its `Unsupported { construct }` carries free text, not `history-row`/`protocol-abstract-side`, and no profile identity; it returns early after the protocol-side refusal although FR-135 checks the rest of the declaration; and it refuses at `row.span`, not the `history` keyword token. Those are #970 changes. |
 | FND-007 | fixed | Round 2 (49b77c0dd): one rule now covers either abstract side. A non-empty list refuses `unsupported_construct`/`not-yet-implemented` once per refinement, at the first token of the name after `abstract`, which both forms have. The model-side binding refusal is removed from "Internal abstract steps" and from AC-2, and AC-7 and TC-552 step 7 agree. |
+| FND-008 | fixed | Round 3 (431760874): FR-135's support set now names three features, adding `refinement-internal-list` (FR-147), and FR-135-AC-5 points to FR-147-AC-7. |
+| FND-009 | fixed | Round 3: AC-7 and TC-552 step 7 give `CasRefinesCounter` exactly one refusal, and `CasTwice` exactly two (`protocol-abstract-side` at `Twice`, `refinement-internal-list` at `Spec`). |

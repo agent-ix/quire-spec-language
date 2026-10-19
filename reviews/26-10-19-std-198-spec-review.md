@@ -52,6 +52,13 @@ STD-199 citation, and TC-552 step 6.
 | FND-005 | medium | FR-147-AC-5 resolves `["Spec::Twice::finish", "lose Spec::Twice::ch"]` to a two-element list, but fixture `Twice` declares no channel. Under FR-147's Defects table, and by AC-6's own `lose Spec::Twice::nochan` vector, `lose Spec::Twice::ch` refuses `missing_declaration`/`missing-name`, so the AC-5 vector cannot resolve. AC-6's "a `parallel` node" vector has the same gap: `Twice` has no parallel node, so the vector passes as an unknown name and never exercises the "not an attempt, event, send, receive or finish node" rule. Add a channel `ch` and a parallel node to the fixture. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:194-201,212-213 |
 | FND-006 | medium | Remaining work says "FR-147-AC-1, AC-3 and AC-4 … wait on both; AC-5 to AC-7 are testable now", and leaves AC-2 out of both lists. AC-2 is not marked as waiting, but most of its vectors cannot run in this build. `abstract Spec::Thrice` is a protocol abstract side, which FR-135 refuses `unsupported_construct`/`not-yet-implemented` before the feature's own checks. The conflicting-binding vector needs a non-empty list to reach the check, which AC-7 refuses. Mark AC-2's protocol-side vectors "Waits on STD-199 and STD-182", or split AC-2. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:209,214,236-237; spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:157-163 |
 
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | The rewritten FR-147-AC-7 row lost its Verification cell. It has three columns where the table has four, and no `Test (TC-552)`. AC-7 is now the only FR-147 criterion with no stated verification method or covering TC, although TC-552 step 7 still tests it. `quire validate` passes the file, so nothing catches this. Restore `\| Test (TC-552) \|` at the end of the row. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:220 |
+
 ## Dispositions
 
 | FND | outcome | reason |
