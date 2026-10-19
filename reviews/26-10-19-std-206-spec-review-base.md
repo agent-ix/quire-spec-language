@@ -111,6 +111,14 @@ Not mergeable: 3 high, 7 medium, 1 low. The ADR-020 section 8 guard is right and
 | FND-021 | low | The new reading order's 'does not depend on the order they were written in' (field rows by name bytes) and the Fault arm have no AC; QSpec FR-377-AC-9 tests both. FR-140-AC-9 tests only object-key order (SubRing before r). Add a vector with two failing field rows written in the reverse of name order (the same row is reported either way), and a Fault vector or a stated reason why none is possible. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:158-168 |
 | FND-022 | low | TC-1086 step 8 maps 'size = 1', but FR-140-AC-11's Some case is head = 1, size = 2, and step 8 gives no head for its state. Use AC-11's states (head = 1, size = 2, then size = 0), or give head for the size = 1 state. | spec/test-cases/TC-1086-the-refinement-mapping-reports-what-it-cannot-map.md:39,58 |
 
+## New findings (disposition pass 4)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-023 | medium | check_initial and check_step take only abstract_system, but FR-140's map_state (since this PR) needs concrete_system as well, so FR-141 has no concrete system to map with or to 'pass the refinement's own systems'. FR-140 now has the signature map_state(refinement, concrete_system, abstract_system, state, history), and FR-141 says it computes 'the post mapped state by FR-140'. Add the concrete ModelSystem (or a protocol counterpart for a protocol concrete side) to both FR-141 signatures, or say where check_step gets it from. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:63-74 |
+| FND-024 | low | The rationale 'check_step and check_initial pass the refinement's own systems, so a WrongSystem arising inside them is an internal fault, not a caller error' contradicts the signature (the caller supplies abstract_system) and FR-141-AC-8 ('a WrongSystem from a swapped system passed to it'). Settling `failed` is a reasonable outcome, but the stated reason does not hold. Say instead that check_step's callers (FR-142, FR-145) pass the refinement's systems, so a WrongSystem means that engine code passed the wrong one, which is an internal fault. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:169-174 |
+| FND-025 | low | AC-13's 'two undefined rows on objects a and b' and 'two fields of one object' are not in AC-9's variant, which has one ring r and one undefined items row. Name the fixture: for example rings = {a, b} with the AC-3 `only` row undefined at both, and a second Queue field whose row is undefined, with the two field names. | spec/functional/FR-140-evaluate-the-refinement-mapping-at-a-state.md:214 |
+
 ## Dispositions
 
 Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
@@ -136,6 +144,9 @@ Round 1, head 72d04b1dc (fix commits d561b72e7, 72d04b1dc).
 | FND-017 | fixed | - |
 | FND-018 | fixed | - |
 | FND-019 | fixed | - |
+| FND-020 | fixed | - |
+| FND-021 | fixed | - |
+| FND-022 | fixed | - |
 
 Disposition pass 1 (head 72d04b1dc): FND-001 to FND-011 fixed. New: FND-012 (high), FND-013 (high), FND-014 (medium), FND-015 (medium), FND-016 (medium). Not mergeable.
 
@@ -146,3 +157,7 @@ Disposition pass 2 (head f0b08808e): FND-012 to FND-016 fixed. New: FND-017 (hig
 Round 3, head c76e918bc (fix commits 7a4057061, c76e918bc): rows after round 2's.
 
 Disposition pass 3 (head c76e918bc, fix commits 7a4057061 and c76e918bc): FND-017 to FND-019 fixed. New: FND-020 (medium), FND-021 (low), FND-022 (low). Not mergeable while FND-020 is open.
+
+Round 4, head 600543dbc (fix commit 600543dbc): rows after round 3's.
+
+Disposition pass 4 (head 600543dbc, fix commit 600543dbc): FND-020 to FND-022 fixed. New: FND-023 (medium), FND-024 (low), FND-025 (low). Not mergeable while FND-023 is open.

@@ -42,3 +42,5 @@ Tag the tests `#[trace("TC-546", "FR-141-AC-n")]`.
 - Step 4: a two-state set, then the `side` 1 state;
   `AbstractStepRejected{show(c), Frame{…}}`.
 - Step 5: `Taken::Stutter` through the node row; pass by RS-3.
+
+Every call passes the concrete `ModelSystem` and the abstract system (FR-141).

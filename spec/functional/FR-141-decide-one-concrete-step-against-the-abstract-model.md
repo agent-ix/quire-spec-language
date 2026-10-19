@@ -62,12 +62,14 @@ pub struct RefinementPosition {
 
 pub fn check_initial(
     refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,   // FR-140's row evaluator; a model subject
     abstract_system: AbstractSystem<'_>,
     concrete_initial: &SideState,
 ) -> StepVerdict;
 
 pub fn check_step(
     refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,   // FR-140's row evaluator; a model subject
     abstract_system: AbstractSystem<'_>,
     pre: &RefinementPosition,
     step: &ConcreteStep,              // transition identity, post-state, result
@@ -167,9 +169,10 @@ how it evaluates them and what it reports:
   sorted by state key. Each abstract successor computed SHALL count toward
   FR-101's `max_transitions` of the run that called `check_step`.
 - A `MappingFailure::Fault` or `MappingFailure::WrongSystem` from FR-140
-  SHALL return `StepVerdict::Fault`. `check_step` and `check_initial` pass
-  the refinement's own systems, so a `WrongSystem` arising inside them is an
-  internal fault, not a caller error. The engine (FR-142), replay (FR-145)
+  SHALL return `StepVerdict::Fault`. A `WrongSystem` arising inside
+  `check_step` or `check_initial` means the engine code that called them
+  (FR-142, FR-145) passed a system that is not the refinement's own, which
+  is an internal fault of that code, not a verdict. The engine (FR-142), replay (FR-145)
   and FR-144 carry it unchanged and the item settles `failed` (QSpec
   FR-383); it is never `Fails`, `Undefined` or `Undetermined`.
 - An undecided contract conjunction of either model SHALL return
@@ -177,7 +180,7 @@ how it evaluates them and what it reports:
 
 ### Purity
 
-- `check_initial` and `check_step` SHALL be functions of their inputs.
+- `check_initial` and `check_step` SHALL be functions of their inputs, the two systems included. A protocol concrete subject has no `ModelSystem`; FR-148 states its concrete-side reader.
 
 ## Acceptance Criteria
 
