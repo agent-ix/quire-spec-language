@@ -93,6 +93,31 @@ pub fn evaluate_with_enabledness<L: TemporalLetters>(
     )
 }
 
+/// Evaluate `clause` on a finite prefix of `len` positions whose continuation
+/// is unknown, under any profile: the three-valued reading of an
+/// infinite-trace prefix (FR-328), where a position past the prefix is
+/// neither true nor false. `Violated` is a falsity every continuation shares;
+/// `Pending` is a prefix that decides nothing. The clause's fairness set is
+/// not read (see [`evaluate_with_enabledness`]).
+pub fn evaluate_open_prefix<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    len: u64,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject {
+            fairness: &[],
+            profile: qsl_semantics::check::TemporalProfile::InfiniteTrace,
+            ..engine::Subject::of_clause(clause)
+        },
+        TemporalTrace::Finite { len },
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
 /// Evaluate `clause`'s formula at `position` of `trace`, ignoring its
 /// activation and fairness (ADR-018 SM-8; FR-125 "Reading a lasso"). A
 /// lasso reaches every position by wrapping; a finite trace refuses a

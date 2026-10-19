@@ -43,8 +43,8 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::{ExpansionStop, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
 use qsl_eval::temporal::{
-    evaluate_with_enabledness, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
-    TemporalTrace,
+    evaluate_open_prefix, evaluate_with_enabledness, LetterStop, TemporalLetters, TemporalOutcome,
+    TemporalPosition, TemporalTrace,
 };
 use qsl_foundation::diagnostic::{Category, Code, InternalFault};
 use qsl_foundation::digest::{DigestDomain, DigestRecord, WireNodeId};
@@ -142,14 +142,12 @@ pub enum ModelTraceRefusal {
         /// The stutter loop's position.
         position: usize,
     },
-    /// A bounded-profile prefix that neither ends at a terminal state nor
-    /// covers the formula's horizon from the activation it refutes: read as
-    /// a closed trace it would show a falsity its continuation may not
+    /// A bounded-profile prefix that does not end at a terminal state and
+    /// does not decide the formula false whatever its continuation is: read
+    /// as a closed trace it would show a falsity its continuation may not
     /// (ADR-018 CX-1).
-    #[error("invalid_runtime_input/invalid-value: the prefix of {positions} positions neither ends at a terminal state nor covers the horizon {horizon} from the activation at {at}")]
+    #[error("invalid_runtime_input/invalid-value: the prefix of {positions} positions does not end at a terminal state and does not decide the formula (horizon {horizon}) false")]
     PrefixShort {
-        /// The activation the evaluator found false.
-        at: u64,
         /// The formula's horizon.
         horizon: u64,
         /// The positions the prefix holds.
@@ -670,22 +668,45 @@ fn check_formula(
     };
     // The fairness set is checked above against the replayed enabledness; a
     // bad prefix refutes whatever the set says about the continuation.
-    let outcome = evaluate_with_enabledness(formula.clause, trace, &mut letters, &mut meter);
+    //
+    // Under a bounded profile a prefix reads as a closed trace, false past
+    // its end, only where it ends at a terminal state (SM-4). Anywhere else
+    // its continuation is unknown, and only a falsity every continuation
+    // shares refutes (ADR-018 CX-1).
+    let open = payload.lasso.is_none()
+        && formula.clause.profile().is_bounded()
+        && !ends_terminal(system, positions)?;
+    let outcome = if open {
+        evaluate_open_prefix(
+            formula.clause,
+            position_of(positions.len()),
+            &mut letters,
+            &mut meter,
+        )
+    } else {
+        evaluate_with_enabledness(formula.clause, trace, &mut letters, &mut meter)
+    };
+    if open
+        && !matches!(
+            outcome,
+            Ok(TemporalOutcome::Violated { .. } | TemporalOutcome::Incomplete(_))
+        )
+    {
+        return Err(refused(ModelTraceRefusal::PrefixShort {
+            horizon: formula.clause.horizon().unwrap_or(0),
+            positions: positions.len(),
+        }));
+    }
     Ok(match outcome {
         // A lasso is evaluated from its origin (ADR-018 section 6): a clause
         // false only at a later activation is not the refutation EN-1 found.
         Ok(TemporalOutcome::Violated { at }) if payload.lasso.is_some() && at.index() != 0 => {
             disagrees(Category::Success)
         }
-        Ok(TemporalOutcome::Violated { at }) => {
-            if payload.lasso.is_none() {
-                short_prefix(system, formula.clause, positions, at)?;
-            }
-            ModelTraceSettlement::Reproduced {
-                value: ModelTraceValue::Truth(false),
-                trace_position: payload.trace_position(),
-            }
-        }
+        Ok(TemporalOutcome::Violated { .. }) => ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: payload.trace_position(),
+        },
         Ok(TemporalOutcome::Holds) => disagrees(Category::Success),
         Ok(_) => no_value(),
         Err(qsl_eval::temporal::TemporalRefusal::Fault(_)) => {
@@ -695,40 +716,16 @@ fn check_formula(
     })
 }
 
-/// ADR-018 CX-1: under a bounded profile a finite prefix reads as a closed
-/// trace, so a falsity at the activation `at` is shown only when the prefix
-/// holds the formula's horizon from `at` or ends at a terminal state (SM-4).
-/// Otherwise the continuation, which the prefix does not carry, may satisfy
-/// the formula, and the prefix refutes nothing.
-fn short_prefix(
-    system: &ModelSystem<'_>,
-    clause: &CheckedTemporalClause,
-    positions: &[Position],
-    at: TemporalPosition,
-) -> Result<(), ReplayRefusal> {
-    if !clause.profile().is_bounded() {
-        return Ok(());
-    }
-    let horizon = clause.horizon().unwrap_or(0);
-    let last = position_of(positions.len().saturating_sub(1));
-    if at.index().saturating_add(horizon) <= last {
-        return Ok(());
-    }
-    let ends_terminal = match positions.last() {
+/// Whether the last replayed state is terminal: no transition identity is
+/// enabled at it (ADR-018 SM-4).
+fn ends_terminal(system: &ModelSystem<'_>, positions: &[Position]) -> Result<bool, ReplayRefusal> {
+    Ok(match positions.last() {
         Some(position) => matches!(
             expand(system, &position.state)?,
             Ok(expansion) if expansion.successors.is_empty()
         ),
         None => false,
-    };
-    if ends_terminal {
-        return Ok(());
-    }
-    Err(refused(ModelTraceRefusal::PrefixShort {
-        at: at.index(),
-        horizon,
-        positions: positions.len(),
-    }))
+    })
 }
 
 /// Whether a lasso's loop is fair under the clause's fairness set.
