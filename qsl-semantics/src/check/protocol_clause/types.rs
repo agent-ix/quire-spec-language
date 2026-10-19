@@ -27,6 +27,9 @@ pub struct BoundAttempt {
     pub declaration: usize,
     /// The resolved operation `on M::T::op` names.
     pub operation: ClauseOperation,
+    /// The object type `on M::T::op` names: the type of the attempt's
+    /// receiver.
+    pub receiver: quire_exact::EffectiveId,
     /// The population domain of the type declaring the operation.
     pub frame_population: Option<PopulationDomain>,
     /// Each `contracts` entry, resolved to the index of the unit's own
@@ -104,6 +107,10 @@ pub struct CheckedProtocol {
     /// source order (FR-218 "Relationships"), filled in by `check::mod`'s
     /// own pipeline before the slots, whose `related by` ends read it.
     pub relationships: Vec<crate::check::protocol_relationship::CheckedRelationship>,
+    /// Every `parallel`'s source memory default, every `fence` and every
+    /// attempt's access class and ordering (FR-219, FR-220), filled in by
+    /// `check::mod`'s own pipeline.
+    pub memory: crate::check::protocol_memory::CheckedMemory,
 }
 
 /// One checked `await` (QSpec FR-466 `await` layout): its node, the clock

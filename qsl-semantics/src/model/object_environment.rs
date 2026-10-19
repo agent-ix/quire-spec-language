@@ -56,6 +56,10 @@ pub struct ObjectEnvironment {
     /// Every object the snapshot admitted, ascending; empty for an
     /// environment no snapshot admitted.
     references: Vec<ObjectReference>,
+    /// The objects each population of the snapshot lists, by the
+    /// population's declaration identity, in ascending key order (FR-139);
+    /// empty for an environment no snapshot admitted.
+    population_members: BTreeMap<String, Vec<ObjectReference>>,
     /// Where an evaluation over this environment records what it reads.
     read_log: Option<ReadLog>,
 }
@@ -71,6 +75,7 @@ impl ObjectEnvironment {
             extents: None,
             population_sizes: BTreeMap::new(),
             references: Vec::new(),
+            population_members: BTreeMap::new(),
             read_log: None,
         }
     }
@@ -87,6 +92,26 @@ impl ObjectEnvironment {
     /// declaration identity is `population`, when it lists that population.
     pub fn population_size(&self, population: &str) -> Option<u64> {
         self.population_sizes.get(population).copied()
+    }
+
+    /// Records the objects each population of the admitted snapshot lists,
+    /// by the population's declaration identity and in ascending key order,
+    /// so a refinement row that reads a whole population can enumerate it
+    /// (FR-139).
+    #[must_use]
+    pub fn with_population_members(
+        mut self,
+        members: BTreeMap<String, Vec<ObjectReference>>,
+    ) -> Self {
+        self.population_members = members;
+        self
+    }
+
+    /// The objects the snapshot lists for the population whose declaration
+    /// identity is `population`, in ascending key order, when it lists that
+    /// population.
+    pub fn population_members(&self, population: &str) -> Option<&[ObjectReference]> {
+        self.population_members.get(population).map(Vec::as_slice)
     }
 
     /// Records every object the snapshot admitted, so an evaluation that

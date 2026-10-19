@@ -1818,6 +1818,8 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Record { .. }
                 | ExprNode::Collection { .. }
                 | ExprNode::Query { .. }
+                | ExprNode::Population { .. }
+                | ExprNode::Seq { .. }
                 | ExprNode::Flatten(_)
                 | ExprNode::Size(_)
                 | ExprNode::Contains { .. }
@@ -4165,6 +4167,7 @@ fn protocol_attempts(
             attempts.push(AttemptDeclaration {
                 declaration: attempt.declaration,
                 operation,
+                receiver: context,
                 frame_population,
             });
         }

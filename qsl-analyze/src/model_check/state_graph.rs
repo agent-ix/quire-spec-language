@@ -17,9 +17,10 @@
 //!    graph per item instance, returning evidence only where open nodes
 //!    cannot change it.
 //!
-//! The settlement of the outcomes (FR-169), the certificate the settlement
-//! checks, and the replay of the evidence (FR-170) are not part of this
-//! module.
+//! A `Witnessed` or `Holds` outcome carries the run's FR-169 certificate,
+//! which `qsl-replay`'s `check_state_graph` checks. The settlement of the
+//! outcomes (FR-169) and the replay of the evidence (FR-170) are not part of
+//! this module.
 
 mod decide;
 mod explore;

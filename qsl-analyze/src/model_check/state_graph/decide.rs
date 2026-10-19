@@ -25,9 +25,10 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use qsl_eval::simulation::model::PredicateReading;
+use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{
-    GraphUndefined, GraphWitness, ModelPath, ModelStep, OpenCause, RunEnd, StateGraphOutcome,
-    WitnessSource,
+    GraphUndefined, GraphWitness, ModelPath, ModelStep, OpenCause, RunEnd, StateGraphCertificate,
+    StateGraphOutcome, WitnessSource,
 };
 use qsl_semantics::check::{PredicateRole, StateGraphForm};
 
@@ -273,7 +274,10 @@ impl<'g> Reader<'g> {
         if witnesses.len() == self.graph.initial.len() {
             return match undefined {
                 Some((node, undefined)) => self.undefined(node, undefined),
-                None if self.complete() => Ok(StateGraphOutcome::Witnessed { paths: witnesses }),
+                None if self.complete() => Ok(StateGraphOutcome::Witnessed {
+                    paths: witnesses,
+                    certificate: self.ranked(&d_p)?,
+                }),
                 None => Ok(StateGraphOutcome::WitnessedUnchecked {
                     paths: witnesses,
                     end: self.graph.end.clone(),
@@ -306,7 +310,10 @@ impl<'g> Reader<'g> {
                 && e_plus[*node] == FAR
                 && self.holds(*node, PredicateRole::From) == Some(true)
         });
-        self.settle(trap.map(|node| (node, Evidence::Trap)))
+        let targets = self.nodes_where(PredicateRole::Target);
+        self.settle(trap.map(|node| (node, Evidence::Trap)), || {
+            self.ranked(&self.backward(&targets, |_| true))
+        })
     }
 
     /// `unique path`: a known node where `from` holds with two paths, else a
@@ -333,7 +340,7 @@ impl<'g> Reader<'g> {
             in_h[edge.source.0] && in_h[edge.target.0] && !is_to[edge.source.0]
         };
         let reaches_open = self.backward_over(&self.open_nodes(), &h_edge);
-        let counts = self.path_counts(&in_h, &is_to, &h_edge);
+        let (counts, order) = self.path_counts(&in_h, &is_to, &h_edge);
         let from = |node: usize| self.holds(node, PredicateRole::From) == Some(true);
         let pair = (0..self.count())
             .find(|node| reaches_open[*node] == FAR && from(*node) && counts[*node] == 2);
@@ -348,7 +355,7 @@ impl<'g> Reader<'g> {
                 let evidence = self.path_pair(node, &d_y, &h_edge)?;
                 self.settle_with(node, evidence)
             }
-            None => self.settle(trap),
+            None => self.settle(trap, || self.counted(&in_h, &counts, &order)),
         }
     }
 
@@ -380,13 +387,15 @@ impl<'g> Reader<'g> {
         distance
     }
 
-    /// Each node's count of paths to a `to` node in `H`, saturating at 2.
+    /// Each node's count of paths to a `to` node in `H`, saturating at 2,
+    /// and its position in a reverse topological order of `H`'s
+    /// condensation.
     fn path_counts(
         &self,
         in_h: &[bool],
         is_to: &[bool],
         h_edge: &impl Fn(usize) -> bool,
-    ) -> Vec<u8> {
+    ) -> (Vec<u8>, Vec<u64>) {
         let outgoing: Vec<Vec<usize>> = (0..self.count())
             .map(|node| {
                 self.graph.outgoing[node]
@@ -399,12 +408,16 @@ impl<'g> Reader<'g> {
             .collect();
         let components = condensation(&outgoing);
         let mut counts = vec![0u8; self.count()];
+        let mut order = vec![0u64; self.count()];
+        let mut position = 0u64;
         // `condensation` lists components in topological order; counting
         // runs in reverse, so each successor is counted first.
         for component in components.iter().rev() {
             let cyclic =
                 component.len() > 1 || component.iter().any(|node| outgoing[*node].contains(node));
             for &node in component {
+                order[node] = position;
+                position = position.saturating_add(1);
                 counts[node] = if !in_h[node] {
                     0
                 } else if is_to[node] {
@@ -418,7 +431,70 @@ impl<'g> Reader<'g> {
                 };
             }
         }
-        counts
+        (counts, order)
+    }
+
+    /// The certificate's closure: every explored node's digest, sorted, and
+    /// each node's index in it.
+    fn closure(&self) -> Result<(Vec<DigestRecord>, Vec<u64>), ModelCheckRefusal> {
+        let mut closure: Vec<DigestRecord> = self.graph.nodes.iter().map(|node| node.key).collect();
+        closure.sort();
+        closure.dedup();
+        let index = self
+            .graph
+            .nodes
+            .iter()
+            .map(|node| {
+                closure
+                    .binary_search(&node.key)
+                    .ok()
+                    .and_then(|at| u64::try_from(at).ok())
+                    .ok_or_else(|| fault("closure-holds-every-node"))
+            })
+            .collect::<Result<_, _>>()?;
+        Ok((closure, index))
+    }
+
+    /// The `possible` and `always possible` certificate (FR-169, ADR-022
+    /// GC-1): the closure and each node's `distance` to the nearest target
+    /// node, for every node that reaches one.
+    fn ranked(&self, distance: &[usize]) -> Result<StateGraphCertificate, ModelCheckRefusal> {
+        let (closure, index) = self.closure()?;
+        let mut ranks = Vec::new();
+        for (node, d) in distance.iter().enumerate() {
+            if *d != FAR {
+                let d = u32::try_from(*d).map_err(|_| fault("distance-fits-u32"))?;
+                ranks.push((index[node], d));
+            }
+        }
+        ranks.sort_unstable();
+        Ok(StateGraphCertificate {
+            closure,
+            ranks,
+            counts: Vec::new(),
+        })
+    }
+
+    /// The `unique path` certificate (FR-169, ADR-022 GC-1): the closure and
+    /// each node of `H`'s path count and position in reverse topological
+    /// order.
+    fn counted(
+        &self,
+        in_h: &[bool],
+        counts: &[u8],
+        order: &[u64],
+    ) -> Result<StateGraphCertificate, ModelCheckRefusal> {
+        let (closure, index) = self.closure()?;
+        let mut entries: Vec<(u64, u8, u64)> = (0..self.count())
+            .filter(|node| in_h[*node])
+            .map(|node| (index[node], counts[node], order[node]))
+            .collect();
+        entries.sort_unstable();
+        Ok(StateGraphCertificate {
+            closure,
+            ranks: Vec::new(),
+            counts: entries,
+        })
     }
 
     /// The shortest path from `node` to the nearest node at distance 0,
@@ -558,10 +634,11 @@ impl<'g> Reader<'g> {
     }
 
     /// Settle with the trap at `trap`, if any, else an undefined evaluation,
-    /// else `Holds` on a complete run.
+    /// else `Holds` with `certificate`'s certificate on a complete run.
     fn settle(
         &self,
         trap: Option<(usize, Evidence)>,
+        certificate: impl FnOnce() -> Result<StateGraphCertificate, ModelCheckRefusal>,
     ) -> Result<StateGraphOutcome, ModelCheckRefusal> {
         if let Some((node, evidence)) = trap {
             return self.settle_with(node, evidence);
@@ -570,7 +647,9 @@ impl<'g> Reader<'g> {
             return self.undefined(at, undefined);
         }
         Ok(if self.complete() {
-            StateGraphOutcome::Holds
+            StateGraphOutcome::Holds {
+                certificate: certificate()?,
+            }
         } else {
             self.no_decision()
         })
@@ -734,10 +813,13 @@ mod tests {
                 open: BTreeSet::from([OpenCause::UndecidedSuccessor]),
             }
         );
-        assert_eq!(
-            decide(&graph, &form, &view(1), &[]).expect("decides"),
-            StateGraphOutcome::Witnessed { paths }
-        );
+        let StateGraphOutcome::Witnessed {
+            paths: witnessed, ..
+        } = decide(&graph, &form, &view(1), &[]).expect("decides")
+        else {
+            panic!("item 1 is witnessed");
+        };
+        assert_eq!(witnessed, paths);
     }
 
     /// A closed, completed graph over `count` nodes with `edges`, each
