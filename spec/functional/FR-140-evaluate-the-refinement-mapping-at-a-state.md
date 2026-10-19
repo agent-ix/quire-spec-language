@@ -85,6 +85,7 @@ pub enum MappingFailure {
     Undefined { row: MappingRowRef, object: Option<ObjectKey>, cause: UndefinedRecord },  // ADR-013 O-16
     Undetermined(MappingUndetermined),
     WrongSystem(RefusalRecord),       // a caller error; see Inputs
+    Fault(CatalogCode),               // an internal fault; not a row outcome
 }
 
 pub struct MappingUndetermined {
@@ -98,7 +99,6 @@ pub enum EvalFailure {
     Incomplete(IncompleteCause),      // the meter ran out, or the budget admits no charge
     OutOfType,                        // a history update's value leaves its declared type
     UnmappedType(DeclarationKey),     // no object row names this concrete most-specific type
-    Stopped(CatalogCode),             // the evaluator stopped on a broken invariant
 }
 ```
 
@@ -144,35 +144,28 @@ step row, or a history update.
   each concrete subtype the source population may hold.
 - Where an abstract field is declared optional (`T?`, a field that may be
   absent), its row has type `Option<T>`, and `map_state` SHALL leave the
-  field unset when the row evaluates to `None` and SHALL set it to `v` when
+  field unset when the row evaluates to `none` and SHALL set it to `v` when
   the row evaluates to `Some(v)`. A hidden field stays in `hidden`; an unset
   optional field is not hidden. A field declared `Option<T>` (a value that
-  is an option) takes the row's option value unchanged, so `None` stays an
-  explicit `None` and the field is set. A `null` row value is not mapped:
-  QSpec keeps `null` distinct from `none` and from absence, and no rule
-  fixes what an abstract field holds for it, so a row that evaluates to
-  `null` SHALL make `map_state` return `MappingFailure::Undetermined` with
-  `EvalFailure::Refused` carrying an `unsupported_construct`/
-  `not-yet-implemented` record. It is a refused row, not a stop: the
-  observation is sound, so the other rows are still read and an earlier or
-  later Undefined row still refutes.
-  Remaining work (STD-211): the optional-field rule has no test vector,
-  because this build's S2 refuses `none` and the shared grammar has no
-  constructor for `Some(v)`; the rule is recorded now so that a build does not
-  guess when QSpec adds one.
+  is an option) takes the row's option value unchanged, so `none` stays an
+  explicit `none` and the field is set (QSpec FR-377). No well-typed row
+  evaluates to `null` (QSpec FR-143), so `map_state` has no `null` case.
 - `MappedState.visible` SHALL list no relationship extent. No refinement row
   maps a relationship (ADR-020 RM-2 to RM-4), so FR-135 refuses a refinement
-  whose abstract model declares a relationship, and a checked refinement's
-  abstract model has no link for a mapped state to hold.
-- `map_state` SHALL evaluate population rows in declaration order, objects
-  in key order, and per object its type's object row and then its field
-  rows in declaration order. Except after an evaluator stop (below),
+  whose abstract model declares a relationship (`unsupported_construct`/
+  `declaration-form`), and a checked refinement's abstract model has no link
+  for a mapped state to hold.
+- `map_state` SHALL read the rows in a fixed order that does not depend on
+  the order they were written in: the populations in the checked node's
+  order, within each population its objects in ascending key order, and per
+  object its type's object row and then that type's field rows in ascending
+  field name as UTF-8 bytes (QSpec FR-377 "Failure precedence").
   `map_state` SHALL return the first `MappingFailure::Undefined` in that
-  order if any row is undefined; otherwise the first `MappingFailure::Undetermined` in that order. An
-  undefined row therefore refutes the refinement at the state even when an
-  earlier row is undetermined (a refutation of a reachable state is not
-  made less true by another row's undetermined value), and the order fixes
-  the row, object and cause that a verdict and its replay report.
+  order if any row is undefined; otherwise the first
+  `MappingFailure::Undetermined` in that order. An undefined row therefore
+  refutes the refinement at the state even when an earlier row is
+  undetermined, and the order fixes the row, object and cause that a verdict
+  and its replay report.
 - If a row's evaluation is `Undefined`, then `map_state` SHALL return
   `MappingFailure::Undefined` naming the row, the object and the
   evaluator's `UndefinedRecord`, and no partial state (ADR-020 RE-5).
@@ -187,11 +180,11 @@ step row, or a history update.
   `EvalFailure::OutOfType`.
   S3 proves each field row conforms, so only a history update (FR-138) can
   reach it.
-- If the evaluator stops on a broken invariant, then `map_state` SHALL return
-  `MappingFailure::Undetermined` with `EvalFailure::Stopped` and its catalog
-  code at once, without reading a further row, even when an earlier row was
-  undefined: a stop is an internal fault, so the observation the other rows
-  read cannot be trusted.
+- If the evaluator hits an internal fault such as a broken invariant, then
+  `map_state` SHALL return `MappingFailure::Fault` with its catalog code at
+  once. The fault is not an outcome of any row and takes no part in the
+  order above: the item settles `failed` (QSpec FR-383) and the failure is
+  never `Undefined`, `Undetermined` or inconclusive.
 - When the refinement has no hidden field, `map_state` SHALL return a
   complete abstract state in `MappedState.visible`.
 - `model_check` SHALL compare mapped states by the FR-101 state key that the
@@ -216,6 +209,7 @@ step row, or a history update.
 | FR-140-AC-8 | With the two systems of AC-1, `map_state` reads the rows through the concrete system and builds the result in the abstract one, so the mapped state's key is the abstract system's key function's. With the two systems swapped, or with a system over a third model, it returns `MappingFailure::WrongSystem` with `invalid_runtime_input`/`wrong-role-mapping` and reads no row. | Test (TC-1086) |
 | FR-140-AC-9 | `RingIsQueue` with the `only` condition of AC-3: the failure's `UndefinedRecord` has reason `only-not-one`. The same variant at a state that also holds a `SubRing` object whose key sorts before `r` returns `MappingFailure::Undefined` (the undefined row outranks the unmapped type); with `RingIsQueue`'s original `items` row, which is defined at `head = 1`, `size = 2`, it returns `MappingFailure::Undetermined` for `SubRing`. The `SubRing` state is `head = 1`, `size = 2`. | Test (TC-1086) |
 | FR-140-AC-10 | The mapped state of AC-2 lists no relationship extent. | Test (TC-1086) |
+| FR-140-AC-11 | With the abstract `Queue` declaring `head: Int[0, 1]?` and the row `head = if self.size >= 1 then Some(self.head) else none`: at `head = 1`, `size = 2` the mapped `head` is 1; at `size = 0` the mapped `head` is unset, is not in `hidden`, and the key equals the key of the abstract state with `head` unset. With the field declared `head: Option<Int[0, 1]>` and the same row, `size = 0` maps `head` to an explicit `none` and the field is set. | Test (TC-1086) |
 | FR-140-AC-12 | Over `RingIsQueue` with the abstract `Queue` also declaring `cells: Set<Reference<Cell>>[0, 2]`, an object row `Cell` from `Slot`, `population Q::cells from R::slots` and the row `cells = R::slots`, the state of AC-2 maps `cells` to the two `Cell` references with keys `s0` and `s1`, in key order, each of type `Cell`, not `Slot`. | Test (TC-1086) |
 
 ## Dependencies

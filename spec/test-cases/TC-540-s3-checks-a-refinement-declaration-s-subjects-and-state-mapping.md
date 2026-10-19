@@ -15,7 +15,7 @@ object rows into a `CheckedRefinement`, refuses each missing, duplicated,
 misplaced or ill-typed row at its span, lifts references, records hidden
 fields and puts the declaration in the package identity.
 
-Scope: FR-135-AC-1 to FR-135-AC-7.
+Scope: FR-135-AC-1 to FR-135-AC-8.
 
 ## Test Procedure
 
@@ -39,6 +39,8 @@ Fixtures: ADR-020 §8's `CasRefinesCounter` unit, with `Spec` local and with
 6. Check `RingIsQueue` with a nested `Sequence<Reference<Ring>>` row, and
    with the same field as a plain reference.
 7. Check `RingIsQueue` with a relationship declared on the abstract `Queue`.
+8. Check `RingIsQueue` in a unit that selects no layer of its own, then with
+   a Boolean row naming a protocol of the unit.
 
 Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
 
@@ -60,5 +62,7 @@ Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
   `CheckedRefinement`; `CasRefinesCounter` checks.
 - Step 6: `unsupported_construct`/`not-yet-implemented` at the row's
   expression; then it checks.
-- Step 7: `unsupported_construct`/`not-yet-implemented` at the alias `Q`; no
+- Step 7: `unsupported_construct`/`declaration-form` at the alias `Q`; no
   `CheckedRefinement`.
+- Step 8: the rows check; then `unsupported_construct`/`expression-form` at
+  the `protocol` token naming `quire.protocol.complete/v1`.

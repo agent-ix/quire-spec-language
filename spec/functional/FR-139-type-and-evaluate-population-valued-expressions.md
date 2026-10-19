@@ -97,7 +97,7 @@ one mapping row.
   so the row that contains it evaluates undefined and the refinement settles
   `refuted` with `UndefinedEvaluation` (FR-140, FR-142; QSpec FR-376).
 - That undefined result SHALL carry the `UndefinedRecord` reason
-  `only-not-one`, for no object and for several alike, so FR-140's
+  `only-not-one`, for no object and for several alike, with a payload naming the population binding, the `only` locus and the enclosing row and no match count (QSpec native-diagnostics "Undefined reasons"), so FR-140's
   `MappingFailure::Undefined` and the refinement counterexample's `cause`
   name it.
 - `seq(i in lo .. hi: e)` SHALL evaluate to the sequence of `e` for each
