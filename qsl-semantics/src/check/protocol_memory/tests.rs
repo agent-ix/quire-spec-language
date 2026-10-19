@@ -10,9 +10,9 @@ use crate::check::{
 };
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, Extent, FieldMemberRecord, Multiplicity,
     NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
-    OperationParameterRecord, ValueTypeRef,
+    OperationParameterRecord, PopulationRecord, ValueTypeRef,
 };
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
@@ -312,6 +312,19 @@ fn operation(
     parameters: &[(&str, &str)],
     receiver_modifies: &[&str],
 ) -> DomainPackageRecord {
+    operation_with(owner, name, parameters, receiver_modifies, &[], &[])
+}
+
+/// [`operation`] that also writes the fields `modifies` of every object and
+/// creates the object types `creates`.
+fn operation_with(
+    owner: &str,
+    name: &str,
+    parameters: &[(&str, &str)],
+    receiver_modifies: &[&str],
+    modifies: &[&str],
+    creates: &[&str],
+) -> DomainPackageRecord {
     DomainPackageRecord::OperationMember(OperationMemberRecord {
         key: key(&format!("{owner}/{name}")),
         owner: key(owner),
@@ -334,6 +347,8 @@ fn operation(
                 .iter()
                 .map(|field| key(&format!("{owner}/{field}")))
                 .collect(),
+            modifies: modifies.iter().map(|field| key(field)).collect(),
+            creates: creates.iter().map(|created| key(created)).collect(),
             ..OperationEffect::default()
         },
         requires: Vec::new(),
@@ -366,14 +381,25 @@ fn store_buffering_model() -> SelectedModel {
             object("Actor"),
             object("Cell"),
             object("Core"),
+            DomainPackageRecord::Population(PopulationRecord {
+                key: key("cells"),
+                member_types: vec![key("Cell")],
+                extent: Extent::Closed,
+                symmetric: false,
+            }),
             boolean_field("Cell", "v"),
             boolean_field("Cell", "w"),
             boolean_field("Core", "r"),
+            boolean_field("Core", "w"),
             operation("Actor", "op", &[], &[]),
             operation("Cell", "set", &[], &["v"]),
             operation("Cell", "flip", &[], &["v"]),
             operation("Cell", "both", &[], &["v", "w"]),
             operation("Cell", "touch", &[], &[]),
+            operation("Cell", "peek", &[], &[]),
+            operation_with("Cell", "grow", &[], &[], &["Cell/v"], &[]),
+            operation_with("Cell", "spawn", &[], &[], &[], &["Cell"]),
+            operation("Core", "echo", &[], &["w"]),
             operation("Core", "read", &[("src", "Cell")], &["r"]),
         ],
     );
@@ -392,6 +418,8 @@ fn store_buffering_model() -> SelectedModel {
 }
 
 const SB_CLAUSES: &str = "pre ReadSrc using v on M::Core::read { src.v }\n\
+    pre Peek using v on M::Cell::peek { self.v }\n\
+    pre Echo using v on M::Core::echo { self.r }\n\
     post Flip using v on M::Cell::flip { self.v = not pre(self.v) }\n\
     post Both using v on M::Cell::both { self.v = pre(self.w) and self.w = pre(self.v) }\n";
 
@@ -417,6 +445,7 @@ fn litmus(
     format!(
         "{SB_CLAUSES}protocol Flow using v over (input: Boolean) on origin {{\n\
          role X on M::Cell;\n\
+         role Y on M::Cell;\n\
          role C1 on M::Core;\n\
          role C2 on M::Core;\n\
          run parallel Both {memory} {{ \
@@ -430,7 +459,7 @@ fn litmus(
 }
 
 /// The checked classes of the attempts of `source`, by attempt name.
-fn classes(source: &str) -> Vec<(String, AccessClass, Option<AccessOrdering>)> {
+fn classes(source: &str) -> Vec<(String, Option<AccessClass>, Option<AccessOrdering>)> {
     let (_, assembled) = assemble_model(source, store_buffering_model());
     let graph = assembled
         .check(CheckingLimits::default())
@@ -501,214 +530,182 @@ fn refused(source: &str) -> (String, Vec<ProtocolAnchorCause>) {
 const STORE: &str = "M::Cell::set";
 const LOAD: &str = "M::Core::read";
 
-/// ADR-025 section 10's `SB`: each `set` is a store, each `read` a load of
-/// the other thread's cell, whose own register is branch-local; without
-/// orderings the accesses are the same kinds, non-atomic; `flip` is a
-/// read-modify-write.
+/// The attempts of ADR-025 section 10's `SB`: two cells `x` and `y`, a store
+/// to each, and a load of the other thread's cell into a per-core register.
+fn sb(memory: &str, store_order: &str, load_order: &str) -> String {
+    litmus(
+        memory,
+        &[
+            ("Sx", "X", STORE, store_order),
+            ("Ly", "C1", LOAD, load_order),
+        ],
+        &[
+            ("Sy", "Y", STORE, store_order),
+            ("Lx", "C2", LOAD, load_order),
+        ],
+    )
+}
+
+/// (c) ADR-025 section 10's `SB` checks under `sc`, `tso` and `ra`, with the
+/// stores' `release` and the loads' `acquire` recorded and the model
+/// recorded. Which of `Cell.v` and `Core.r` is shared is EN-1's decision
+/// (MA-1), so S3 fixes no access kind for them.
 #[trace("TC-665", "TC-664")]
 #[test]
-fn store_buffering_classifies_stores_loads_and_read_modify_writes() {
-    let sb_in = |memory: &str, store_order: &str, load_order: &str| {
-        litmus(
-            memory,
-            &[
-                ("Sx", "X", STORE, store_order),
-                ("Ly", "C1", LOAD, load_order),
-            ],
-            &[
-                ("Sy", "X", STORE, store_order),
-                ("Lx", "C2", LOAD, load_order),
-            ],
-        )
-    };
-    let sb = |store_order: &str, load_order: &str| sb_in("", store_order, load_order);
-    let sb_with = |memory: &str| sb_in(memory, "ordering release", "ordering acquire");
-    let atomic = classes(&sb("ordering release", "ordering acquire"));
-    assert_eq!(
-        atomic,
-        [
-            (
-                "Sx".to_owned(),
-                AccessClass::Store,
-                Some(AccessOrdering::Release)
-            ),
-            (
-                "Ly".to_owned(),
-                AccessClass::Load,
-                Some(AccessOrdering::Acquire)
-            ),
-            (
-                "Sy".to_owned(),
-                AccessClass::Store,
-                Some(AccessOrdering::Release)
-            ),
-            (
-                "Lx".to_owned(),
-                AccessClass::Load,
-                Some(AccessOrdering::Acquire)
-            ),
-        ]
-    );
-    let plain = classes(&sb("", ""));
-    assert!(plain.iter().all(|(_, _, ordering)| ordering.is_none()));
-    assert_eq!(
-        plain.iter().map(|(_, class, _)| *class).collect::<Vec<_>>(),
-        [
-            AccessClass::Store,
-            AccessClass::Load,
-            AccessClass::Store,
-            AccessClass::Load
-        ]
-    );
-
-    // The same protocol checks under each weak default: every access is one
-    // location (FR-219-AC-1).
+fn store_buffering_checks_under_every_memory_model() {
     for (memory, model) in [
+        ("", MemoryModelName::Sc),
         ("memory tso", MemoryModelName::Tso),
         ("memory ra", MemoryModelName::Ra),
     ] {
-        let weak = classes(&sb_with(memory));
-        assert_eq!(weak.len(), 4, "{memory}");
-        let (_, assembled) = assemble_model(&sb_with(memory), store_buffering_model());
+        let source = sb(memory, "ordering release", "ordering acquire");
+        let found = classes(&source);
+        let orderings: Vec<_> = found.iter().map(|(_, _, ordering)| *ordering).collect();
+        assert_eq!(
+            orderings,
+            [
+                Some(AccessOrdering::Release),
+                Some(AccessOrdering::Acquire),
+                Some(AccessOrdering::Release),
+                Some(AccessOrdering::Acquire)
+            ],
+            "{memory}"
+        );
+        assert!(
+            found.iter().all(|(_, class, _)| class.is_none()),
+            "{memory}"
+        );
+        let (_, assembled) = assemble_model(&source, store_buffering_model());
         let graph = assembled.check(CheckingLimits::default()).expect("checks");
         assert_eq!(
             graph.protocol("Flow").expect("checked").memory.parallels[0].memory,
             model
         );
     }
-
-    let rmw = classes(&litmus(
-        "",
-        &[("Fa", "X", "M::Cell::flip", "ordering acq_rel")],
-        &[("Fb", "X", "M::Cell::flip", "ordering acq_rel")],
-    ));
-    assert!(rmw
-        .iter()
-        .all(|(_, class, ordering)| *class == AccessClass::Rmw
-            && *ordering == Some(AccessOrdering::AcqRel)));
 }
 
-/// A load with `release`, a store with `acquire`, a read-modify-write with
-/// no ordering and a local attempt with `relaxed` each refuse
-/// `ill_typed`/`operator-ineligible`, naming the attempt; the orderings each
-/// kind takes check.
-#[trace("TC-665", "FR-220-AC-2")]
-#[test]
-fn an_ordering_its_access_kind_does_not_take_refuses() {
-    let pair = |left: (&str, &str, &str, &str), right: (&str, &str, &str, &str)| {
-        litmus("", &[left], &[right])
-    };
-    // `Sx` stores a cell `Ly` loads, so both are shared.
-    let cases = [
-        (
-            pair(
-                ("Sx", "X", STORE, ""),
-                ("Ly", "C1", LOAD, "ordering release"),
-            ),
-            ("Ly", "release"),
-            AccessClass::Load,
-            Some(AccessOrdering::Release),
-        ),
-        (
-            pair(
-                ("Sx", "X", STORE, "ordering acquire"),
-                ("Ly", "C1", LOAD, ""),
-            ),
-            ("Sx", "acquire"),
-            AccessClass::Store,
-            Some(AccessOrdering::Acquire),
-        ),
-        (
-            pair(
-                ("Fa", "X", "M::Cell::flip", ""),
-                ("Fb", "X", "M::Cell::flip", "ordering seq_cst"),
-            ),
-            ("Fa", "Fa"),
-            AccessClass::Rmw,
-            None,
-        ),
-        (
-            pair(
-                ("Sx", "X", STORE, ""),
-                ("Ta", "X", "M::Cell::touch", "ordering relaxed"),
-            ),
-            ("Ta", "relaxed"),
-            AccessClass::Local,
-            Some(AccessOrdering::Relaxed),
-        ),
-    ];
-    for (source, (name, at), class, ordering) in cases {
-        let (text, causes) = refused(&source);
-        let [ProtocolAnchorCause::AccessOrdering {
-            attempt,
-            class: found_class,
-            ordering: found_ordering,
-            span,
-        }] = &causes[..]
-        else {
-            panic!("one AccessOrdering cause: {causes:?}");
-        };
-        assert_eq!(
-            (attempt.as_str(), *found_class, *found_ordering),
-            (name, class, ordering)
-        );
-        assert_eq!(&text[span.start..span.end], at);
-    }
-
-    for (store, load) in [
-        ("ordering relaxed", "ordering relaxed"),
-        ("ordering release", "ordering acquire"),
-        ("ordering seq_cst", "ordering seq_cst"),
-        ("", ""),
-    ] {
-        classes(&litmus(
-            "",
-            &[("Sx", "X", STORE, store)],
-            &[("Ly", "C1", LOAD, load)],
-        ));
-    }
-}
-
-/// An attempt that accesses two shared fields of its receiver refuses
-/// `unsupported_construct`/`declaration-form` naming both locations under a
-/// weak default, and checks under `sc`, classified as a read-modify-write.
+/// (a) Two branches that store the same cell with `ordering relaxed`, and
+/// nothing reads it, check under a weak default: whether the cell is shared
+/// is not S3's decision.
 #[trace("TC-665")]
 #[test]
-fn a_two_field_access_refuses_under_a_weak_default_and_checks_under_sc() {
-    let both = |memory: &str| {
+fn two_relaxed_stores_of_one_cell_check() {
+    for memory in ["", "memory tso", "memory ra"] {
+        let source = litmus(
+            memory,
+            &[("Sa", "X", STORE, "ordering relaxed")],
+            &[("Sb", "X", STORE, "ordering relaxed")],
+        );
+        let found = classes(&source);
+        assert_eq!(found.len(), 2, "{memory}");
+        assert!(found
+            .iter()
+            .all(|(_, _, ordering)| *ordering == Some(AccessOrdering::Relaxed)));
+    }
+}
+
+/// (b) The message-passing and load-buffering shape: a branch loads into its
+/// core's register and a later attempt of that branch reads the register
+/// again, while the other branch writes its own register. It checks under
+/// every model.
+#[trace("TC-665")]
+#[test]
+fn a_register_read_again_in_its_own_branch_checks() {
+    for memory in ["", "memory tso", "memory ra"] {
+        let source = litmus(
+            memory,
+            &[
+                ("Ly", "C1", LOAD, "ordering acquire"),
+                ("Ea", "C1", "M::Core::echo", ""),
+            ],
+            &[("Lx", "C2", LOAD, "ordering acquire")],
+        );
+        assert_eq!(classes(&source).len(), 3, "{memory}");
+    }
+}
+
+/// An ordering refuses `ill_typed`/`operator-ineligible` when no access kind
+/// the footprint leaves possible takes it: any ordering on an attempt that
+/// touches no data place, `release` on one that writes nothing, `acquire` on
+/// one that reads nothing. An attempt that touches no data place records
+/// `Local`.
+#[trace("TC-665")]
+#[test]
+fn an_ordering_no_possible_access_kind_takes_refuses() {
+    let one = |left: (&str, &str, &str, &str)| litmus("", &[left], &[("Sy", "Y", STORE, "")]);
+    let cases = [
+        (
+            one(("Ta", "X", "M::Cell::touch", "ordering relaxed")),
+            ("Ta", "relaxed"),
+        ),
+        (
+            one(("Pa", "X", "M::Cell::peek", "ordering release")),
+            ("Pa", "release"),
+        ),
+        (
+            one(("Sa", "X", STORE, "ordering acquire")),
+            ("Sa", "acquire"),
+        ),
+    ];
+    for (source, (name, at)) in cases {
+        let (text, causes) = refused(&source);
+        let [ProtocolAnchorCause::AccessOrdering { attempt, span, .. }] = &causes[..] else {
+            panic!("one AccessOrdering cause: {causes:?}");
+        };
+        assert_eq!(attempt, name);
+        assert_eq!(&text[span.start..span.end], at);
+    }
+    let local = classes(&one(("Ta", "X", "M::Cell::touch", "")));
+    assert_eq!(local[0].1, Some(AccessClass::Local));
+    // Every ordering a possible kind takes checks.
+    for (operation, ordering) in [
+        (STORE, "ordering relaxed"),
+        (STORE, "ordering release"),
+        ("M::Cell::peek", "ordering acquire"),
+        ("M::Cell::flip", "ordering acq_rel"),
+        ("M::Cell::flip", ""),
+    ] {
+        classes(&one(("Oa", "X", operation, ordering)));
+    }
+}
+
+/// Under a weak default a written any-object field or population membership
+/// refuses `unsupported_construct`/`declaration-form`, naming the location;
+/// two fields of the receiver are not decided by the footprint alone, so
+/// they check at S3 (EN-1's pre-check decides them); `sc` admits all.
+#[trace("TC-665")]
+#[test]
+fn a_wide_write_refuses_under_a_weak_default_only() {
+    let pair = |memory: &str, operation: &str| {
         litmus(
             memory,
-            &[("Ba", "X", "M::Cell::both", "ordering seq_cst")],
-            &[("Bb", "X", "M::Cell::both", "ordering seq_cst")],
+            &[("Wa", "X", operation, "")],
+            &[("Wb", "Y", operation, "")],
         )
     };
-    let under_sc = classes(&both(""));
-    assert!(under_sc
-        .iter()
-        .all(|(_, class, _)| *class == AccessClass::Rmw));
-    classes(&both("memory sc"));
-
-    let (_, causes) = refused(&both("memory tso"));
-    assert_eq!(causes.len(), 2, "{causes:?}");
-    for (cause, name) in causes.iter().zip(["Ba", "Bb"]) {
-        let ProtocolAnchorCause::AccessShape {
-            attempt,
-            model,
-            locations,
-            ..
-        } = cause
-        else {
-            panic!("an AccessShape cause, got {cause:?}");
-        };
-        assert_eq!((attempt.as_str(), *model), (name, MemoryModelName::Tso));
-        assert_eq!(
-            locations,
-            &[
-                format!("ix://{PACKAGE}/Cell/v"),
-                format!("ix://{PACKAGE}/Cell/w")
-            ]
-        );
+    for operation in ["M::Cell::grow", "M::Cell::spawn"] {
+        classes(&pair("", operation));
+        let (_, causes) = refused(&pair("memory tso", operation));
+        assert_eq!(causes.len(), 2, "{operation}: {causes:?}");
+        for cause in &causes {
+            let ProtocolAnchorCause::AccessShape {
+                model, locations, ..
+            } = cause
+            else {
+                panic!("an AccessShape cause, got {cause:?}");
+            };
+            assert_eq!(*model, MemoryModelName::Tso);
+            let [location] = &locations[..] else {
+                panic!("one location: {locations:?}");
+            };
+            assert!(
+                location.starts_with(&format!("ix://{PACKAGE}/Cell"))
+                    || location.starts_with("membership of"),
+                "{location}"
+            );
+        }
     }
+    classes(&pair("memory tso", "M::Cell::both"));
 }
 
 /// MA-1 shares nothing outside a `parallel`, so an attempt there is local

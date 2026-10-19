@@ -12,15 +12,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::{
-    AccessOrdering, AttemptForm, JoinPolicy, MemoryModelName, ProtocolDeclarationForm,
-};
+use qsl_forms::{AccessOrdering, JoinPolicy, MemoryModelName, ProtocolDeclarationForm};
 use qsl_foundation::Span;
 
 use super::footprint::{FootprintRefusal, SymbolicFootprint, SymbolicLocation};
 use super::protocol_clause::{BoundAttempt, CheckedControlTree, CheckedProtocol, ProtocolNodeId};
 use super::refusal::{CheckCause, CheckRefusal, ProtocolAnchorCause};
-use crate::model::key::DeclarationKey;
 use quire_semantic_value::location::{Location, Origin};
 
 /// One checked `parallel` control's source default (FR-219 "Outputs").
@@ -60,9 +57,10 @@ pub enum AccessClass {
 pub struct CheckedAccess {
     /// The `attempt` control.
     pub node: ProtocolNodeId,
-    /// Its access kind over the shared locations of the enclosing
-    /// `parallel` controls.
-    pub class: AccessClass,
+    /// Its access kind, when the footprint alone fixes it: `Local` for an
+    /// attempt that touches no data place. Otherwise `None`: which places are
+    /// shared across branches (ADR-025 MA-1) is decided by EN-1.
+    pub class: Option<AccessClass>,
     /// Its `ordering`, when written.
     pub ordering: Option<AccessOrdering>,
 }
@@ -206,106 +204,106 @@ pub(crate) fn check_models(
     }
 }
 
-/// What the location sharing and classification rules read of a footprint
-/// location: the field or population it is about, with every object of it
-/// taken as one, since which objects a receiver or argument names is known
-/// only when the engine instantiates the footprint (ADR-025 MA-1, MA-2).
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum Place {
-    /// A field, of one object or of any object.
-    Field(DeclarationKey),
-    /// A population's membership, of one object or of any object.
-    Membership(DeclarationKey),
-}
-
-impl Place {
-    fn text(&self) -> String {
-        match self {
-            Self::Field(field) => field.node.clone(),
-            Self::Membership(population) => format!("membership of {}", population.node),
-        }
-    }
-}
-
-/// One attempt's accesses over [`Place`]s: what it reads in the pre-state,
-/// what it writes, and which of its places name more than one object or a
-/// population membership.
+/// What S3 reads of an attempt's footprint: whether it reads or writes any
+/// data place (a field, or a population membership other than the
+/// existence of the receiver and the arguments), and the places no single
+/// access can be.
 #[derive(Default)]
 struct Accesses {
-    reads: BTreeSet<Place>,
-    writes: BTreeSet<Place>,
-    /// Places a single hardware or C11 access cannot be: any-object
-    /// locations and population memberships (ADR-025 MA-4).
-    wide: BTreeSet<Place>,
+    reads: bool,
+    writes: bool,
+    /// Written any-object fields and written population memberships
+    /// (ADR-025 MA-4).
+    wide_writes: BTreeSet<String>,
 }
 
 impl Accesses {
-    /// The accesses of `footprint`. The membership of the receiver or of an
-    /// argument that every operation reads is the object's existence, not a
-    /// data access.
+    /// The existence of the receiver and of each argument, which every
+    /// operation reads, is not a data access.
     fn of(footprint: &SymbolicFootprint) -> Self {
         let mut accesses = Self::default();
-        for location in &footprint.reads {
-            match location {
-                SymbolicLocation::Field { field, .. } => {
-                    accesses.reads.insert(Place::Field(field.clone()));
-                }
-                SymbolicLocation::AnyField { field } => {
-                    accesses.reads.insert(Place::Field(field.clone()));
-                    accesses.wide.insert(Place::Field(field.clone()));
-                }
-                SymbolicLocation::AnyMembership { population } => {
-                    accesses.reads.insert(Place::Membership(population.clone()));
-                    accesses.wide.insert(Place::Membership(population.clone()));
-                }
-                SymbolicLocation::Membership { .. } => {}
-            }
-        }
+        accesses.reads = footprint
+            .reads
+            .iter()
+            .any(|location| !matches!(location, SymbolicLocation::Membership { .. }));
+        accesses.writes = !footprint.writes.is_empty();
         for location in &footprint.writes {
             match location {
-                SymbolicLocation::Field { field, .. } => {
-                    accesses.writes.insert(Place::Field(field.clone()));
-                }
+                SymbolicLocation::Field { .. } => {}
                 SymbolicLocation::AnyField { field } => {
-                    accesses.writes.insert(Place::Field(field.clone()));
-                    accesses.wide.insert(Place::Field(field.clone()));
+                    accesses.wide_writes.insert(field.node.clone());
                 }
                 SymbolicLocation::Membership { population, .. }
                 | SymbolicLocation::AnyMembership { population } => {
                     accesses
-                        .writes
-                        .insert(Place::Membership(population.clone()));
-                    accesses.wide.insert(Place::Membership(population.clone()));
+                        .wide_writes
+                        .insert(format!("membership of {}", population.node));
                 }
             }
         }
         accesses
     }
 
-    fn places(&self) -> impl Iterator<Item = &Place> {
-        self.reads.union(&self.writes)
+    /// The access kinds the footprint leaves possible. Which places are
+    /// shared across branches (ADR-025 MA-1) is decided on the instantiated
+    /// footprints, so any place read may be the one shared location of a
+    /// load, any place written the one of a store, and a read and a written
+    /// place together an RMW; with every place branch-local the attempt is
+    /// local.
+    fn possible(&self) -> Vec<AccessClass> {
+        let mut possible = vec![AccessClass::Local];
+        if self.reads {
+            possible.push(AccessClass::Load);
+        }
+        if self.writes {
+            possible.push(AccessClass::Store);
+        }
+        if self.reads && self.writes {
+            possible.push(AccessClass::Rmw);
+        }
+        possible
     }
 }
 
-/// One attempt inside a `parallel`: its accesses and the `(parallel,
-/// branch)` pairs that hold it, innermost first.
-struct Held<'a> {
-    form: &'a AttemptForm,
-    accesses: Accesses,
-    holders: Vec<(ProtocolNodeId, ProtocolNodeId)>,
+/// Whether an access of `class` takes `ordering` (ADR-025 MA-3).
+fn takes(class: AccessClass, ordering: AccessOrdering) -> bool {
+    match class {
+        AccessClass::Load => matches!(
+            ordering,
+            AccessOrdering::Relaxed | AccessOrdering::Acquire | AccessOrdering::SeqCst
+        ),
+        AccessClass::Store => matches!(
+            ordering,
+            AccessOrdering::Relaxed | AccessOrdering::Release | AccessOrdering::SeqCst
+        ),
+        AccessClass::Rmw => true,
+        AccessClass::Local => false,
+    }
 }
 
-/// Classify every attempt inside a `parallel` over the places its enclosing
-/// `parallel` controls share, and refuse an ordering its kind does not take
-/// and, under a weak default, an access that is not one location (FR-220,
-/// ADR-025 MA-1 to MA-4).
+/// Check what an attempt's footprint alone decides about its access
+/// (FR-220, ADR-025 MA-2 to MA-4).
 ///
-/// A place is shared in a `parallel` when attempts in two or more of its
-/// branches access it, at least one writes it and at least one reads it: a
-/// place nothing reads is a register of its thread, whichever objects the
-/// threads write it on. `footprint_of` gives an attempt's symbolic footprint;
-/// an attempt whose footprint has no derivation refuses
-/// `unsupported_construct`/`not-yet-implemented`.
+/// Whether a place is shared across the branches of a `parallel` (MA-1) is
+/// decided on the instantiated footprints, by EN-1; it cannot be told from
+/// the symbolic footprint, which names no object. So S3 decides only what
+/// holds whichever places turn out shared:
+///
+/// - An `ordering` refuses when no access kind the footprint leaves possible
+///   takes it: any ordering on an attempt that touches no data place, a
+///   `release` or `acq_rel` on an attempt that writes nothing, an `acquire`
+///   or `acq_rel` on one that reads nothing.
+/// - Under a weak default, a written any-object field or population
+///   membership is not one hardware or C11 access, whatever else is shared
+///   (MA-4).
+/// - Deferred to EN-1 and the MA-4 pre-check: which kind an attempt is when
+///   the footprint leaves several possible (so an RMW with no ordering is not
+///   refused here), and every shape that depends on which places are shared,
+///   such as two fields of the receiver.
+///
+/// `footprint_of` gives an attempt's symbolic footprint; an attempt whose
+/// footprint has no derivation refuses `unsupported_construct`/
+/// `not-yet-implemented`.
 pub(crate) fn classify(
     protocol: &ProtocolDeclarationForm,
     checked: &CheckedProtocol,
@@ -321,26 +319,32 @@ pub(crate) fn classify(
         .collect();
 
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
-    // Each attempt inside a `parallel`, with its accesses and the branches
-    // that hold it: (parallel, branch) from the innermost out.
-    let mut attempts: Vec<Held> = Vec::new();
+    let mut accesses = Vec::new();
     for form in &protocol.attempts {
         let node = ProtocolNodeId(form.declaration);
-        let holders: Vec<_> = ancestors(&parent, node)
+        let Some(name) = protocol
+            .declarations
+            .get(form.declaration)
+            .map(|declaration| &declaration.name)
+        else {
+            continue;
+        };
+        let ordering = form.ordering.as_ref();
+        let weak = ancestors(&parent, node)
             .into_iter()
-            .filter(|(above, _)| model_of.contains_key(above))
-            .collect();
-        if holders.is_empty() {
+            .filter_map(|(above, _)| model_of.get(&above).copied())
+            .find(|model| model.is_weak());
+        let inside = ancestors(&parent, node)
+            .into_iter()
+            .any(|(above, _)| model_of.contains_key(&above));
+        if !inside {
             // MA-1 shares nothing outside a `parallel`, so by MA-3 the
             // attempt is local and takes no ordering.
-            if let (Some(ordering), Some(declaration)) = (
-                form.ordering.as_ref(),
-                protocol.declarations.get(form.declaration),
-            ) {
+            if let Some(ordering) = ordering {
                 refusals.push((
                     ordering.span,
                     refusal(ProtocolAnchorCause::AccessOrdering {
-                        attempt: declaration.name.name.clone(),
+                        attempt: name.name.clone(),
                         class: AccessClass::Local,
                         ordering: Some(ordering.value),
                         span: ordering.span,
@@ -355,132 +359,56 @@ pub(crate) fn classify(
         else {
             continue;
         };
-        match footprint_of(binding) {
-            Ok(footprint) => attempts.push(Held {
-                form,
-                accesses: Accesses::of(&footprint),
-                holders,
-            }),
-            Err(_) => refusals.push((
-                form.operation.span,
-                refusal(ProtocolAnchorCause::Unimplemented {
-                    name: protocol.name.name.clone(),
-                    construct: "attempt footprint",
-                    span: form.operation.span,
-                }),
-            )),
-        }
-    }
-
-    // Per `parallel` and place: the branches that read it and that write it.
-    type Touch = (BTreeSet<ProtocolNodeId>, BTreeSet<ProtocolNodeId>);
-    let mut touched: BTreeMap<(ProtocolNodeId, Place), Touch> = BTreeMap::new();
-    for held in &attempts {
-        let accesses = &held.accesses;
-        for &(parallel, branch) in &held.holders {
-            for place in accesses.places() {
-                let entry = touched.entry((parallel, place.clone())).or_default();
-                if accesses.reads.contains(place) {
-                    entry.0.insert(branch);
-                }
-                if accesses.writes.contains(place) {
-                    entry.1.insert(branch);
-                }
-            }
-        }
-    }
-    let shared = |parallel: ProtocolNodeId, place: &Place| {
-        touched
-            .get(&(parallel, place.clone()))
-            .is_some_and(|(readers, writers)| {
-                !readers.is_empty() && !writers.is_empty() && readers.union(writers).count() >= 2
-            })
-    };
-
-    let mut accesses = Vec::with_capacity(attempts.len());
-    for Held {
-        form,
-        accesses: found,
-        holders,
-    } in &attempts
-    {
-        let Some(name) = protocol
-            .declarations
-            .get(form.declaration)
-            .map(|declaration| &declaration.name)
-        else {
-            continue;
-        };
-        let shared_places: BTreeSet<&Place> = found
-            .places()
-            .filter(|place| holders.iter().any(|&(parallel, _)| shared(parallel, place)))
-            .collect();
-        let reads = shared_places
-            .iter()
-            .any(|place| found.reads.contains(*place));
-        let writes = shared_places
-            .iter()
-            .any(|place| found.writes.contains(*place));
-        let class = match (reads, writes) {
-            (false, false) => AccessClass::Local,
-            (true, false) => AccessClass::Load,
-            (false, true) => AccessClass::Store,
-            (true, true) => AccessClass::Rmw,
-        };
-
-        // MA-4: under a weak default, one access is one location.
-        let weak = holders
-            .iter()
-            .filter_map(|(parallel, _)| model_of.get(parallel))
-            .copied()
-            .find(|model| model.is_weak());
-        if let Some(model) = weak {
-            let wide = shared_places
-                .iter()
-                .any(|place| found.wide.contains(*place));
-            if shared_places.len() >= 2 || wide {
+        let found = match footprint_of(binding) {
+            Ok(footprint) => Accesses::of(&footprint),
+            Err(_) => {
                 refusals.push((
-                    name.span,
-                    refusal(ProtocolAnchorCause::AccessShape {
+                    form.operation.span,
+                    refusal(ProtocolAnchorCause::Unimplemented {
+                        name: protocol.name.name.clone(),
+                        construct: "attempt footprint",
+                        span: form.operation.span,
+                    }),
+                ));
+                continue;
+            }
+        };
+        let possible = found.possible();
+
+        if let (Some(model), false) = (weak, found.wide_writes.is_empty()) {
+            refusals.push((
+                name.span,
+                refusal(ProtocolAnchorCause::AccessShape {
+                    attempt: name.name.clone(),
+                    model,
+                    locations: found.wide_writes.iter().cloned().collect(),
+                    span: name.span,
+                }),
+            ));
+        }
+
+        if let Some(ordering) = ordering {
+            if !possible.iter().any(|&class| takes(class, ordering.value)) {
+                // The kind the footprint leaves: local, or the one other.
+                let class = possible
+                    .iter()
+                    .copied()
+                    .find(|&class| class != AccessClass::Local)
+                    .unwrap_or(AccessClass::Local);
+                refusals.push((
+                    ordering.span,
+                    refusal(ProtocolAnchorCause::AccessOrdering {
                         attempt: name.name.clone(),
-                        model,
-                        locations: shared_places.iter().map(|place| place.text()).collect(),
-                        span: name.span,
+                        class,
+                        ordering: Some(ordering.value),
+                        span: ordering.span,
                     }),
                 ));
             }
         }
-
-        // MA-3: the orderings each kind takes.
-        let ordering = form.ordering.as_ref();
-        let admitted = match (class, ordering.map(|ordering| ordering.value)) {
-            (_, None) => class != AccessClass::Rmw,
-            (AccessClass::Load, Some(o)) => matches!(
-                o,
-                AccessOrdering::Relaxed | AccessOrdering::Acquire | AccessOrdering::SeqCst
-            ),
-            (AccessClass::Store, Some(o)) => matches!(
-                o,
-                AccessOrdering::Relaxed | AccessOrdering::Release | AccessOrdering::SeqCst
-            ),
-            (AccessClass::Rmw, Some(_)) => true,
-            (AccessClass::Local, Some(_)) => false,
-        };
-        if !admitted {
-            let span = ordering.map_or(name.span, |ordering| ordering.span);
-            refusals.push((
-                span,
-                refusal(ProtocolAnchorCause::AccessOrdering {
-                    attempt: name.name.clone(),
-                    class,
-                    ordering: ordering.map(|ordering| ordering.value),
-                    span,
-                }),
-            ));
-        }
         accesses.push(CheckedAccess {
-            node: ProtocolNodeId(form.declaration),
-            class,
+            node,
+            class: (possible == [AccessClass::Local]).then_some(AccessClass::Local),
             ordering: ordering.map(|ordering| ordering.value),
         });
     }
