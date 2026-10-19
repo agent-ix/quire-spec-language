@@ -37,10 +37,8 @@ exactly as they were.
 
 ## Inputs
 
-- The parsed `history` rows, in the QSpec FR-375 history-row production:
-  `history <C>::<Type>.<field>: <bounded type> = <history-literal> { on
-  <C>::<Type>::<op>: <expression>; … }`, with spans. The `history-literal`
-  spellings and their parse refusals are QSpec FR-375's.
+- The parsed `history` rows, as QSpec FR-375's history-row production
+  defines them, with spans.
 - The concrete model's object types, fields and operations.
 - In `qsl-replay`: a concrete state, the history values at it, and a concrete
   step (its transition identity and post-state).
@@ -70,12 +68,10 @@ exactly as they were.
   or another history field of the same type, SHALL refuse
   `invalid_model_binding`/`conflicting-binding`.
 - The initial `history-literal` SHALL conform to the declared type under
-  QSpec FR-375's value-set rule: it conforms only if its value is a member of
-  the declared type's value set, range included, and a non-member refuses
-  `ill_typed`/`type-mismatch` at the literal. The literal's value is
-  statically known, so the check does not defer to run time. `none` conforms
-  only to an `Option<T>` type, and an enum member is its three-segment path;
-  an unresolved name refuses as QSpec FR-375 states.
+  QSpec FR-375's history-literal rule (FR-375-AC-9), which covers value-set
+  membership including range, `none`, `true`/`false` and enum members. A
+  non-member refuses `ill_typed`/`type-mismatch` at the literal, decided
+  statically and not at run time.
 - An operation with two updates for one history field SHALL refuse
   `invalid_model_binding`/`conflicting-binding`.
 - Each update SHALL be checked with `self` bound to the step's receiver
@@ -121,10 +117,10 @@ frame `modifies [value]` and postcondition `self.value = x`; initial `value`
 0. Refinement `RegisterHistory`: `prev = self.last`, `value = self.value`,
 `history Impl::Register.last: Int[0, 1] = 0 { on Impl::Register::write:
 pre(self.value); }`, `step Impl::Register::write ->
-Spec::Register::write(self, x)`. For an update expression, which is computed and not a literal, S3
-admits `pre(self.writes) + 1` against a field declared `Int[0, 1]`: static
-conformance compares the native type `Integer` and not its range, so the
-range is left only at run time.
+Spec::Register::write(self, x)`. For an update expression, which is
+computed and not a literal, S3 admits `pre(self.writes) + 1` against a field
+declared `Int[0, 1]`: static conformance compares the native type `Integer`
+and not its range, so the range is left only at run time.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
@@ -146,4 +142,6 @@ range is left only at run time.
 
 - The QSpec half (history field semantics): QSpec FR-378 (Linear STD-133).
 - The history-row production, the `history-literal` spellings and the
-  value-set conformance rule: QSpec FR-375 (FR-375-AC-9).
+  history-literal conformance rule: QSpec FR-375. FR-375-AC-9 is the covering
+  test for the `none`, `true`/`false` and enum-member cases, which FR-138
+  does not restate.
