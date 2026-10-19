@@ -71,3 +71,11 @@ Round 2 reviewed at `a173ab896` (#979) and `e938dee` (QSpec #277).
 | FND | Outcome | Reason |
 | --- | --- | --- |
 | FND-004 | still-open | The second cause is now `none-value` from `value(o)` over `None`. FR-107:231 says that under `CheckMode::Linked` no clause reaches a kernel `Undefined` from `value(..)`, because it carries a presence obligation (FR-104: refused `undefined_expression`/`unproved-presence` without a presence fact). `quire-exact`'s `Undefined::NoneValue` doc says "Only direct kernel evaluation of an unlinked expression can meet it". So the vector may be refused at checking, or is out of reach in a monitor; FR-100 only spells the reason. Minimal fix: drop `o` and the second cause. With `sum of 6 / e.x over past[0, 3]` over `x = 1, 0, 2, 3` at position 3, oldest-first is already pinned: oldest first visits 0 and 1 and stops (2 units, `division-by-zero`); newest first would visit 3 and 2, then meet position 1 as the third admitted value with `max_window_values` 2 and give `Incomplete`, or charge 3 units without the limit. Same in QSpec TC-366 WA-09. |
+
+## Dispositions (disposition pass 3)
+
+Round 3 reviewed at `d6a9b2c2a` (#979) and `b825dda` (QSpec #277).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | `o` and the `none-value` second cause are dropped from FR-194-AC-6, TC-629 and TC-366 WA-09. Oldest-first is pinned by the 2-unit atom charge at position 3 (oldest first visits 0 and 1 and stops; newest first visits 3, 2, 1). |

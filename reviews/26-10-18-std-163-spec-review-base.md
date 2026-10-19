@@ -74,3 +74,17 @@ Round 2 reviewed at `a173ab896` (#979) and `e938dee` (QSpec #277). The round-1 r
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-005 | low | AC-5's new vector "with `min_count 5` and a window of three defined values" names no term or window. Over `x = 2, 1, 0, 4`, every three-position window at position 3 contains the zero. Name the term: the guarded `sum of 6 / e.x where holds(e.x != 0) over past[0, 3]` with `min_count 5` is `InsufficientData{3, 5}`. TC-629 step 4 has the same wording. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:146; spec/test-cases/TC-629-window-aggregates-in-monitors.md:35 |
+
+## Dispositions (disposition pass 3)
+
+Round 3 reviewed at `d6a9b2c2a` (#979) and `b825dda` (QSpec #277).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-005 | fixed | AC-5 and TC-629 step 4 name the guarded sum with `min_count 5` as `InsufficientData{count: 3, min_count: 5}`. Hand-checked: the filter admits positions 0, 1 and 3, so the count is 3. |
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | AC-6 and TC-629 step 5 say "the clause-level charge is 3 units (1 at position 0, 2 at position 1)". That counts window-visit units only. The clause's meter also carries FR-327's per-node visit units and the letter read's own unit (#966 `letters.rs`), so a test reading the meter sees more than 3. Say "clause-level visit charge", as AC-3 does. Also, the parenthetical "a newest-first visit would ... stop `Incomplete`" holds only when the limit is checked before the value is read (#966's order). The 2-unit charge is the discriminator that does not depend on order. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:147; spec/test-cases/TC-629-window-aggregates-in-monitors.md:36; quire-specification:spec/test-cases/TC-366-window-aggregates.md:32 |
