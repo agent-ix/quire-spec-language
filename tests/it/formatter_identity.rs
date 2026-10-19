@@ -234,7 +234,7 @@ fn private_protocol_shared_binder_keeps_format_identity() {
 #[trace("FR-003-AC-9")]
 #[test]
 fn private_protocol_named_contract_keeps_format_identity() {
-    let source = include_str!("../../qsl-semantics/src/check/protocol_clause.rs");
+    let source = include_str!("../../qsl-semantics/src/check/protocol_clause/tests/attempts.rs");
     let template = function_literal(
         source,
         "an_empty_contracts_list_binds_with_no_refusal",
@@ -1317,68 +1317,83 @@ fn lifecycle_large_declaration_unit_keeps_format_identity() {
     .unwrap();
 }
 
-#[trace("TC-885", "FR-003-AC-9")]
-#[test]
-#[ignore = "runs in make test-deep-format (part of make ci)"]
-fn all_three_deep_source_generators_keep_format_identity() {
+fn deep_source_generator_keeps_format_identity(label: &str) {
     let fixture = include_str!("../../qsl-package/src/emit/tests/deep_bodies.rs");
     let header = source_literal(fixture, "HEADER");
-    let start = fixture_text(
+    let mut source = fixture_text(
         function_literal(fixture, "deep_source", "{HEADER}"),
         &[("HEADER", &header)],
     );
     let end = function_literal(fixture, "deep_source", "x }");
-    for label in ["sum", "else if", "let"] {
-        let mut source = start.clone();
-        for level in 0..100_000 {
-            match label {
-                "sum" if level == 0 => {}
-                "sum" => source.push_str("x + "),
-                "else if" => source.push_str("if a then x else "),
-                _ => source.push_str(&format!("let b{level} = x in ")),
-            }
+    for level in 0..100_000 {
+        match label {
+            "sum" if level == 0 => {}
+            "sum" => source.push_str("x + "),
+            "else if" => source.push_str("if a then x else "),
+            _ => source.push_str(&format!("let b{level} = x in ")),
         }
-        source.push_str(&end);
-        let bytes = source.len();
-        let mut limits = qsl_replay::spine::SpineLimits::default();
-        limits.source.source_bytes = limits.source.source_bytes.max(bytes);
-        limits.source.tokens = limits.source.tokens.max(bytes);
-        limits.source.nodes = limits.source.nodes.max(bytes.saturating_mul(16));
-        limits.checking = quire_semantic_value::checking::CheckingLimits::new(u64::MAX)
-            .with_input_bytes(u64::MAX)
-            .with_work_budget(u64::MAX);
-        if label == "sum" {
-            let parsed = qsl_cst::parse(
-                SourceIdentity::new("a", "u", "git", "small-stack"),
-                "unit.native",
-                source.as_bytes(),
-                limits.source,
-            )
-            .expect("the 100,000-level formatter control parses");
-            assert!(parsed.is_admissible(), "the depth control is admitted");
-            let formatted = std::thread::Builder::new()
-                .name("deep-formatter-small-stack".to_owned())
-                .stack_size(256 * 1024)
-                .spawn(move || qsl_cst::format::format(&parsed))
-                .expect("the small-stack formatter thread starts")
-                .join()
-                .expect("the iterative formatter fits on a 256 KiB stack")
-                .expect("the 100,000-level source formats");
-            assert!(!formatted.is_empty(), "deep formatting emits source");
-        }
-        crate::support::front_end::emitted_with_authority(
-            SourceIdentity::new("a", "u", "git", "1"),
+    }
+    source.push_str(&end);
+    let bytes = source.len();
+    let mut limits = qsl_replay::spine::SpineLimits::default();
+    limits.source.source_bytes = limits.source.source_bytes.max(bytes);
+    limits.source.tokens = limits.source.tokens.max(bytes);
+    limits.source.nodes = limits.source.nodes.max(bytes.saturating_mul(16));
+    limits.checking = quire_semantic_value::checking::CheckingLimits::new(u64::MAX)
+        .with_input_bytes(u64::MAX)
+        .with_work_budget(u64::MAX);
+    if label == "sum" {
+        let parsed = qsl_cst::parse(
+            SourceIdentity::new("a", "u", "git", "small-stack"),
             "unit.native",
             source.as_bytes(),
-            &BTreeMap::new(),
-            &DependencyInput::default(),
-            limits,
-            &qsl_replay::spine::LockEvidence::default(),
+            limits.source,
         )
-        .unwrap_or_else(|refusal| {
-            panic!("{label}: actual 100,000-level fixture must check: {refusal}")
-        });
+        .expect("the 100,000-level formatter control parses");
+        assert!(parsed.is_admissible(), "the depth control is admitted");
+        let formatted = std::thread::Builder::new()
+            .name("deep-formatter-small-stack".to_owned())
+            .stack_size(256 * 1024)
+            .spawn(move || qsl_cst::format::format(&parsed))
+            .expect("the small-stack formatter thread starts")
+            .join()
+            .expect("the iterative formatter fits on a 256 KiB stack")
+            .expect("the 100,000-level source formats");
+        assert!(!formatted.is_empty(), "deep formatting emits source");
     }
+    crate::support::front_end::emitted_with_authority(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        source.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+        limits,
+        &qsl_replay::spine::LockEvidence::default(),
+    )
+    .unwrap_or_else(|refusal| {
+        panic!("{label}: actual 100,000-level fixture must check: {refusal}")
+    });
+}
+
+#[trace("TC-885", "FR-003-AC-9")]
+#[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
+fn deep_sum_source_generator_keeps_format_identity() {
+    deep_source_generator_keeps_format_identity("sum");
+}
+
+#[trace("TC-885", "FR-003-AC-9")]
+#[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
+fn deep_else_if_source_generator_keeps_format_identity() {
+    deep_source_generator_keeps_format_identity("else if");
+}
+
+#[trace("TC-885", "FR-003-AC-9")]
+#[test]
+#[ignore = "runs in make test-deep-format (part of make ci)"]
+fn deep_let_source_generator_keeps_format_identity() {
+    deep_source_generator_keeps_format_identity("let");
 }
 
 #[trace("TC-885", "FR-003-AC-9")]
@@ -1550,9 +1565,17 @@ fn replay_composite_and_model_units_keep_format_identity() {
         "tc_906_a_reference_replays_by_identity_and_a_dereference_completes_no_value",
         "function ",
     );
+    let model_profile = source_literal(
+        include_str!("../../qsl-replay/src/execute/tests.rs"),
+        "MODEL_PROFILE",
+    );
     let source = fixture_text(
         function_literal(fixture, "model_fixture", "language "),
-        &[("PROFILE", &profile), ("hex", &digest), ("body", &body)],
+        &[
+            ("MODEL_PROFILE", &model_profile),
+            ("hex", &digest),
+            ("body", &body),
+        ],
     );
     emitted(
         SourceIdentity::new("agent-ix", "test:replay", "git", "r1"),

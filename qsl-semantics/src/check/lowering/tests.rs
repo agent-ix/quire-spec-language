@@ -2095,38 +2095,3 @@ fn tc_441_an_unbounded_collection_is_its_composite_node_alone() {
         .expect("the unbounded type's node");
     assert_eq!(unbounded.content.semantic_form, "sequence");
 }
-
-/// TC-441 (ADR-014 N-3): a population with no declared
-/// maximum refuses to lower with `UnrepresentableBound`, before any node
-/// is written, since its bare set node would be an unbounded
-/// `Set<Reference<T>>`.
-#[trace("TC-441", "FR-097-AC-8")]
-#[test]
-fn tc_441_an_unbounded_population_refuses_to_lower() {
-    let scope = empty_scope();
-    let owner = SourceOwner::from(&fixture_source());
-    let lock = LockEvidence::default();
-    let mut occurrences = OccurrenceMap::default();
-    let location = generated_location();
-    let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
-    let mut lowering = Lowering::new(
-        &scope,
-        &owner,
-        &[],
-        scope.types().units().clone(),
-        &lock,
-        0,
-        &mut occurrences,
-        &mut meter,
-        qsl_foundation::IdentityLimits::default(),
-    );
-    let refusal = lowering
-        .population_type(
-            quire_exact::EffectiveId::from_digest([4; 32]),
-            None,
-            &location,
-        )
-        .expect_err("an unbounded population has no node of its own yet");
-    assert_eq!(refusal.cause, CheckCause::UnrepresentableBound);
-    assert_eq!(lowering.finish(&location).graph.nodes().count(), 0);
-}

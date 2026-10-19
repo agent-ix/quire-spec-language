@@ -217,9 +217,6 @@ fn execute(command: Command<'_>) -> Result<(u8, Output), (u8, String)> {
         Command::Compile { path } => quire_spec_language::command::compile(path)
             .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
             .map_err(|error| command_error(&error, true)),
-        Command::Lower { path, target } => quire_spec_language::command::lower_for(path, target)
-            .map(|bytes| (Category::Success.exit_code(), Output::Artifact(bytes)))
-            .map_err(|error| command_error(&error, true)),
     }
 }
 
@@ -229,17 +226,7 @@ fn main() -> ExitCode {
     // arguments without collecting an unbounded process argument list.
     let arguments: Vec<_> = std::env::args_os().skip(1).take(13).collect();
     let outcome = Command::try_from(arguments.as_slice())
-        .map_err(|error| {
-            // An unrecognized lowering target names a real, catalogued
-            // capability this build does not implement (unsupported);
-            // every other usage failure is invalid input (refusal).
-            let category = if matches!(error, cli::UsageError::UnknownTarget(_)) {
-                Category::Unsupported
-            } else {
-                Category::Refusal
-            };
-            (category.exit_code(), error.to_string())
-        })
+        .map_err(|error| (Category::Refusal.exit_code(), error.to_string()))
         .and_then(execute);
     let (code, result) = match outcome {
         Ok((code, output)) => {

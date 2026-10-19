@@ -28,6 +28,7 @@ use crate::model::domain_package::{
 use crate::model::intake::SelectedModel;
 use crate::model::key::DeclarationKey;
 use crate::model::normalize::{normalize, NormalizeOutcome};
+use crate::value::layer::{HeaderLayer, LayerForm};
 use quire_exact::Cancel;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::declaration::{
@@ -210,6 +211,45 @@ fn a_state_machine_meaning_is_emitted_as_an_object_type() {
             .collect::<Vec<_>>(),
         ["advance"]
     );
+}
+
+/// A model scalar type is a nameable type: `M::Total` carries its
+/// `Int[lower, upper]` (FR-218-AC-24, FR-381-AC-13).
+#[test]
+fn a_model_scalar_is_named_with_its_integer_interval() {
+    let total = DeclarationKey::fixture("ix://test/orders/Total");
+    let package = DomainPackage::new(
+        DomainPackageRef::fixture("bundle.model-scalar-name"),
+        vec![DomainPackageRecord::ScalarType(ScalarTypeRecord {
+            key: total,
+            domain: ScalarValueDomain::Integer {
+                lower: 0,
+                upper: 1000,
+            },
+        })],
+    );
+    let NormalizeOutcome::Completed(view) =
+        normalize(&package, ModelNormalizationLimits::default())
+    else {
+        panic!("the scalar domain package normalizes");
+    };
+    let selected = SelectedModel {
+        alias: "M".to_owned(),
+        span: Span { start: 0, end: 0 },
+        view,
+        operation_clauses: Vec::new(),
+        type_invariants: Vec::new(),
+    };
+    let mut operations = super::OperationTable::default();
+    let types = super::model_object_types(
+        "M",
+        &selected,
+        selected.span,
+        &mut operations,
+        IdentityLimits::default(),
+    )
+    .expect("a scalar-only model is supported");
+    assert_eq!(types.scalars, [("M::Total".to_owned(), int(0, 1000))]);
 }
 
 /// The span of the last occurrence of `needle` in `text`.
@@ -484,27 +524,46 @@ fn the_assembler_keeps_temporal_clauses_and_refuses_an_undeclared_alias() {
     );
 }
 
-/// An `abstraction` declaration that S2 builds and no check admits yet
-/// refuses `unsupported_construct`/`declaration-form` at the declaration's
-/// span, rather than compiling and being silently ignored.
-#[trace("FR-304")]
+/// FR-124: a `terminal` declaration resolves its `using` alias and its model
+/// alias; one on an alias that names no `model` declaration refuses
+/// `missing_declaration`/`missing-name` at the alias.
+#[trace("TC-1059", "FR-382-AC-6")]
 #[test]
-fn an_abstraction_declaration_refuses_as_an_unsupported_declaration_form() {
-    let declaration = "abstraction Link using v { population M::configs to \"state::configs\"; }";
-    let (text, found) = errors(declaration);
-    assert_eq!(
-        found,
-        [AssemblyError {
-            cause: AssemblyCause::UnsupportedDeclarationForm {
-                form: "abstraction"
+fn a_terminal_declaration_on_no_model_refuses_at_the_model_alias() {
+    for declaration in [
+        "terminal Done using v on M when { true };",
+        "terminal Halt using v on M any;",
+    ] {
+        let (text, found) = errors(declaration);
+        assert_eq!(
+            found,
+            [AssemblyError {
+                cause: AssemblyCause::UnresolvedTerminalModel { alias: "M".into() },
+                span: after(&text, "on", "M"),
+            }],
+            "{declaration}"
+        );
+        assert_eq!(found[0].cause.code(), Code::MissingDeclaration);
+        assert_eq!(
+            found[0].cause.catalog_code(),
+            qsl_foundation::CatalogCode::new("missing_declaration", "missing-name")
+        );
+    }
+}
+
+/// FR-124: a `terminal` declaration's `using` alias names a profile
+/// selection of the unit.
+#[test]
+fn a_terminal_declaration_using_no_profile_refuses_at_the_alias() {
+    let (text, found) = errors("terminal Halt using missing on M any;");
+    assert!(
+        found.contains(&AssemblyError {
+            cause: AssemblyCause::UndeclaredAlias {
+                alias: "missing".into()
             },
-            span: last(&text, declaration),
-        }]
-    );
-    assert_eq!(found[0].cause.code(), Code::UnsupportedConstruct);
-    assert_eq!(
-        found[0].cause.catalog_code(),
-        qsl_foundation::CatalogCode::new("unsupported_construct", "declaration-form")
+            span: last(&text, "missing"),
+        }),
+        "{found:?}"
     );
 }
 
@@ -512,7 +571,13 @@ fn an_abstraction_declaration_refuses_as_an_unsupported_declaration_form() {
 #[test]
 fn nested_constructs_of_other_families_refuse_with_their_own_causes() {
     let checked = |declarations: &str| {
-        let (_, assembled) = assemble(declarations);
+        // `deref` is `state.graph`'s (FR-361 item 17), so the unit selects
+        // the model profile, which holds it.
+        let text = text(
+            &PROFILE_V.replace("quire.value.complete", "quire.model.complete"),
+            declarations,
+        );
+        let assembled = assemble_as("a", "u", &text);
         let refusals = assembled
             .expect("the unit assembles")
             .check(CheckingLimits::default())
@@ -2622,4 +2687,98 @@ fn a_case_expression_assembles_over_a_registered_union() {
          function f using v(s: Shape): Integer pure { case s { Circle(r): r; Empty: 0; } }",
     );
     assembled.expect("the unit assembles");
+}
+
+const LAYER_PROFILES: &str = "profile c = \"quire.state.core/v1\";\n\
+                              profile q = \"quire.state.queries/v1\";\n";
+
+/// The unit holding the layer profiles `c` (state core) and `q` (state
+/// queries) and `declarations`, assembled.
+fn assemble_layers(declarations: &str) -> (String, Result<PackageDeclarations, AssemblyRefusal>) {
+    let text = text(LAYER_PROFILES, declarations);
+    let assembled = assemble_as("a", "u", &text);
+    (text, assembled)
+}
+
+/// The one error the assembler gives for `declarations`, which names layer
+/// `layer`, the form outside its set and the located text.
+fn layer_refusal(declarations: &str, located: &str) -> (HeaderLayer, LayerForm, String) {
+    let (text, assembled) = assemble_layers(declarations);
+    let refusal = assembled.expect_err("the layer refuses the form");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error, not {refusal:?}");
+    };
+    let AssemblyCause::UnsupportedLayerForm { layer, form } = error.cause else {
+        panic!("a layer refusal, not {error:?}");
+    };
+    assert_eq!(&text[error.span.start..error.span.end], located);
+    assert_eq!(
+        error.cause.catalog_code().to_string(),
+        format!("unsupported_construct/{}", form.refusal_cause())
+    );
+    (layer, form, text)
+}
+
+/// FR-110-AC-8: a named predicate declared under state core refuses
+/// `unsupported_construct`/`declaration-form` at the declaration, naming the
+/// layer; the same declaration under state queries assembles.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn a_named_predicate_declaration_is_outside_state_core_and_inside_state_queries() {
+    let declaration = "predicate Positive using c(x: Int[0, 9]): Boolean { x > 0 }";
+    let (layer, form, _) = layer_refusal(declaration, declaration);
+    assert_eq!(layer, HeaderLayer::StateCore);
+    assert_eq!(form, LayerForm::PredicateDeclaration);
+    assemble_layers(&declaration.replace("using c", "using q"))
+        .1
+        .expect("state queries admits a named predicate declaration");
+}
+
+/// FR-110-AC-8: an expression form outside the closure refuses
+/// `unsupported_construct`/`expression-form` at the expression, and a form of
+/// a wider layer is never admitted: state queries admits `filter` over a
+/// predicate but not integer `div`, which only the value layer adds.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn an_expression_form_of_a_wider_layer_is_refused_at_its_span() {
+    let (layer, form, _) = layer_refusal(
+        "predicate Half using q(x: Int[0, 9]): Boolean { x div 2 = 1 }",
+        "x div 2",
+    );
+    assert_eq!(layer, HeaderLayer::StateQueries);
+    assert_eq!(form, LayerForm::ValueConstruct);
+    // The first offending form in source order is the one refused.
+    let (_, form, _) = layer_refusal(
+        "predicate Twice using q(x: Int[0, 9]): Boolean { x rem 2 = 0 and x div 2 = 1 }",
+        "x rem 2",
+    );
+    assert_eq!(form, LayerForm::ValueConstruct);
+}
+
+/// FR-110-AC-8: a named predicate call is a state-queries form. A function
+/// declaration is the value layer's, so a function using state queries
+/// refuses as a declaration, not as the call in its body.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn a_function_declaration_is_outside_state_queries() {
+    let declarations = "predicate Positive using q(x: Int[0, 9]): Boolean { x > 0 }\n\
+                        function f using q(x: Int[0, 9]): Boolean pure { Positive(x) }";
+    let located = "function f using q(x: Int[0, 9]): Boolean pure { Positive(x) }";
+    let (layer, form, _) = layer_refusal(declarations, located);
+    assert_eq!(layer, HeaderLayer::StateQueries);
+    assert_eq!(form, LayerForm::FunctionDeclaration);
+}
+
+/// FR-110-AC-8: the value layer admits what it adds to state core, and the
+/// header layers are recorded in the assembled package, ascending.
+#[trace("TC-490", "FR-110-AC-7")]
+#[test]
+fn the_value_layer_admits_functions_and_the_package_records_its_layers() {
+    let package = assemble(
+        "function f using v(x: Int[0, 9]): Boolean pure { x div 2 = 1 }\n\
+         predicate P using v(x: Int[0, 9]): Boolean { f(x) }",
+    )
+    .1
+    .expect("the value layer admits functions, predicates and integer division");
+    assert_eq!(package.header_layers, [HeaderLayer::ValueComplete]);
 }

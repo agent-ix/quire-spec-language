@@ -341,6 +341,9 @@ pub enum ReplayRefusal {
     /// FR-364's `resolve` of a reference argument, refused.
     #[error("the object environment is refused: {0}")]
     ObjectEnvironment(ObjectEnvironmentFailure),
+    /// FR-128: a model counterexample's replay refused.
+    #[error("{0}")]
+    ModelTrace(Box<crate::model_check::replay::ModelTraceRefusal>),
     /// An executor or S6a invariant broke.
     #[error("internal fault in {}: {}", .0.stage(), .0.invariant())]
     Fault(InternalFault),
@@ -389,6 +392,7 @@ impl ReplayRefusal {
             Self::Supplied(stop) => supplied_stop_code(stop),
             Self::UnsupportedHelper(_) => Code::UnsupportedConstruct,
             Self::Cancelled(_) => Code::Cancelled,
+            Self::ModelTrace(refusal) => refusal.code(),
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -410,6 +414,7 @@ impl ReplayRefusal {
                 Some("content-mismatch")
             }
             Self::WrongObservation { .. } => Some("wrong-observation"),
+            Self::ModelTrace(refusal) => Some(refusal.cause()),
             Self::UnusedObjectEnvironment => Some("unknown-member"),
             Self::ForeignReference { .. } => Some("foreign-universe"),
             Self::ObjectEnvironment(failure) => failure.cause(),
@@ -966,7 +971,10 @@ pub(crate) fn run_spine(
 /// package the provision carries under its `sha256-jcs` digest as I1's
 /// package input, applying ADR-015 D-4's seven rules in order: each rule
 /// over every entry, in entry order, before the next.
-fn recompile(request: &ReplayRequest, limits: &CallerLimits) -> Result<Recompiled, ReplayRefusal> {
+pub(crate) fn recompile(
+    request: &ReplayRequest,
+    limits: &CallerLimits,
+) -> Result<Recompiled, ReplayRefusal> {
     // Rule 1: strictly ascending identities, before anything is built.
     for (index, pair) in request.dependencies().windows(2).enumerate() {
         if let [before, entry] = pair {

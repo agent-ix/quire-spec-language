@@ -30,7 +30,9 @@ use crate::check::ir::{
     CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, Node, NodeId, NodeKind,
     RecordSlot, Slot, Visit,
 };
-use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, WrongSnapshotCause};
+use crate::check::refusal::{
+    CheckCause, CheckRefusal, IdentityForm, IdentityNode, KeyFault, WrongSnapshotCause,
+};
 use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
@@ -277,6 +279,9 @@ enum PeerForm<'e, 'r> {
         converted: Option<(ValueType, Location)>,
     },
 }
+
+/// A typed `=` operand and the equality operand it compares as.
+type TypedOperand = (Node, EqualityOperand);
 
 /// A form over one operand whose node it finishes once the operand is
 /// typed.
@@ -778,6 +783,11 @@ impl<'a> Typer<'a> {
             ExprNode::Rational(numerator, denominator) => {
                 self.rational_literal(numerator, denominator, hint.as_deref(), &location)?
             }
+            // FR-393: a quantity literal is parsed and built, and no checker
+            // reads one yet.
+            ExprNode::Quantity(_) => {
+                return Err(super::super::probabilistic::quantity_literal(location))
+            }
             ExprNode::Name(name) => match resolve_target(self, name, &location, || Ok(()))? {
                 ResolvedTarget::UnionMember(member) => {
                     member.admit_shape(None, &location)?;
@@ -786,6 +796,16 @@ impl<'a> Typer<'a> {
                 ResolvedTarget::Value(()) => self.name(name, hint.as_deref(), &location)?,
             },
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
+            // A `hyper` clause's reads and labels have a meaning only inside
+            // the clause; S2 builds them nowhere else.
+            ExprNode::Indexed { .. } | ExprNode::StepLabel { .. } | ExprNode::Stutter => {
+                return Err(CheckRefusal {
+                    location,
+                    cause: CheckCause::Hyper(Box::new(
+                        crate::check::hyper_clause::HyperCause::OutsideHyperClause,
+                    )),
+                })
+            }
             ExprNode::Case(case) => {
                 return Ok(Self::case(
                     Branches::Inferred(hint),
@@ -1359,6 +1379,16 @@ impl<'a> Typer<'a> {
     ) -> Result<(Node, EqualityOperand, ValueType), CheckRefusal> {
         match converted {
             Some((target, location)) => {
+                if typed.value_type != target {
+                    if let Some(refusal) = self.identity_observing(
+                        &location,
+                        IdentityNode::Convert,
+                        IdentityForm::ReferenceConversion,
+                        &typed.value_type,
+                    ) {
+                        return Err(refusal);
+                    }
+                }
                 if matches!(typed.value_type, ValueType::Float(_)) {
                     return Err(mismatch(&location));
                 }
@@ -2078,12 +2108,48 @@ impl<'a> Typer<'a> {
                     }
                     Pair::Second(first) => {
                         let (left, right) = ordered(right_first, first, (typed, compared));
+                        let (left, right) = self.admit_sum_into_peer(left, right)?;
                         self.equality(operator, left, right, &location)
                             .map(Step::Typed)
                     }
                 }
             }
         }
+    }
+
+    /// FR-381-AC-10: an `Integer`-typed arithmetic operand of `=` against an
+    /// unconverted `Int[..]` operand is admitted into that interval through
+    /// a range-obligated coercion, so `x = y + 1` over `Int[0, 3]` operands
+    /// proves `y + 1` a member or refuses `unproved-range`. Any other
+    /// `Int[..]`-against-`Integer` pair is left for the equality matrix.
+    fn admit_sum_into_peer(
+        &mut self,
+        left: TypedOperand,
+        right: TypedOperand,
+    ) -> Result<(TypedOperand, TypedOperand), CheckRefusal> {
+        let is_sum = |(node, operand): &TypedOperand| {
+            node.value_type == ValueType::Integer
+                && matches!(node.kind, NodeKind::Arithmetic(..))
+                && operand.target().is_none()
+        };
+        let interval = |(node, operand): &TypedOperand| match &node.value_type {
+            ValueType::Int(_) if operand.target().is_none() => Some(node.value_type.clone()),
+            _ => None,
+        };
+        let admit = |typer: &mut Self, sum: TypedOperand, into: &ValueType| {
+            typer
+                .coerce(sum.0, into)
+                .map(|node| (node, EqualityOperand::typed(into.clone())))
+        };
+        if let (true, Some(into)) = (is_sum(&right), interval(&left)) {
+            let right = admit(self, right, &into)?;
+            return Ok((left, right));
+        }
+        if let (true, Some(into)) = (is_sum(&left), interval(&right)) {
+            let left = admit(self, left, &into)?;
+            return Ok((left, right));
+        }
+        Ok((left, right))
     }
 
     fn accept_unary(&mut self, frame: UnaryFrame<'_>, operand: Node) -> Result<Node, CheckRefusal> {
@@ -2250,7 +2316,18 @@ impl<'a> Typer<'a> {
         identity: Option<Node>,
     ) -> Result<Node, CheckRefusal> {
         if !fold.source_type.kind().is_ordered() && !fold.catalogued {
-            return Err(ineligible(&frame.location));
+            let node = match frame.form {
+                Accumulation::Fold => IdentityNode::Fold,
+                Accumulation::Reduce => IdentityNode::Reduce,
+            };
+            return Err(self
+                .identity_observing(
+                    &frame.location,
+                    node,
+                    IdentityForm::OrderSensitiveTraversal,
+                    &fold.source.value_type,
+                )
+                .unwrap_or_else(|| ineligible(&frame.location)));
         }
         Ok(node(
             NodeKind::Fold {

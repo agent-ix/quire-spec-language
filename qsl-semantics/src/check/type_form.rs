@@ -129,6 +129,9 @@ pub enum TypeFormFault {
     /// A collection cardinality minimum above its maximum
     /// (`CardinalityBound`'s own refusal).
     EmptyCardinality,
+    /// The `Clock` type, which S2 builds (FR-393) and no S3 check resolves
+    /// yet (FR-230).
+    ClockNotChecked,
 }
 
 /// A [`TypeFormFault`] and the span of the type form it concerns.
@@ -150,6 +153,10 @@ impl TypeFormError {
                 loci: vec![location.clone()],
             },
             TypeFormFault::IntegerOutsideI128(outside) => CheckCause::IntegerOutsideI128(outside),
+            TypeFormFault::ClockNotChecked => CheckCause::TimedNotChecked {
+                construct: super::refusal::TimedConstruct::Clock,
+                span: self.span,
+            },
             TypeFormFault::Malformed
             | TypeFormFault::EmptyInterval
             | TypeFormFault::DenominatorBelowOne
@@ -226,6 +233,16 @@ fn bound_text(form: &TypeForm, index: usize) -> Result<&str, TypeFormError> {
         .get(index)
         .map(String::as_str)
         .ok_or_else(|| malformed(form))
+}
+
+/// A collection or population form writes either no bound (the unbounded
+/// type, FR-333) or exactly `count` of them; any other count is malformed.
+fn optional_bounds(form: &TypeForm, count: usize) -> Result<(), TypeFormError> {
+    match form.bounds.len() {
+        0 => Ok(()),
+        written if written == count => Ok(()),
+        _ => Err(malformed(form)),
+    }
 }
 
 fn bound_integer(form: &TypeForm, index: usize) -> Result<Integer, TypeFormError> {
@@ -364,6 +381,7 @@ fn resolve_builtin<'f>(
                 argument: only_argument(form)?,
             })
         }
+        BuiltinType::Clock => Err(fault(form, TypeFormFault::ClockNotChecked)),
         BuiltinType::Reference => {
             let target = only_argument(form)?;
             let TypeFormHead::Name(name) = &target.head else {
@@ -436,7 +454,13 @@ fn resolve_head<'f>(names: &impl TypeNames, form: &'f TypeForm) -> Result<Step<'
             argument: only_argument(form)?,
         }),
         TypeFormHead::Population => {
-            Ok(Step::Leaf(ValueType::Population(Some(bound_u64(form, 0)?))))
+            optional_bounds(form, 1)?;
+            let maximum = form
+                .bounds
+                .first()
+                .map(|_| bound_u64(form, 0))
+                .transpose()?;
+            Ok(Step::Leaf(ValueType::Population(maximum)))
         }
         TypeFormHead::Name(name) => named_type(names, name, form).map(Step::Leaf),
     }
@@ -509,14 +533,19 @@ impl<N: TypeNames> Resolver<'_, '_, N> {
             }
             Step::Collection { kind, form, .. } => {
                 let element = self.resolved.pop().ok_or_else(|| malformed(form))?;
-                let minimum = bound_u64(form, 0)?;
-                let maximum = bound_u64(form, 1)?;
-                let bound = CardinalityBound::new(minimum, maximum)
-                    .map_err(|_| fault(form, TypeFormFault::EmptyCardinality))?;
+                optional_bounds(form, 2)?;
+                let bound = if form.bounds.is_empty() {
+                    None
+                } else {
+                    let minimum = bound_u64(form, 0)?;
+                    let maximum = bound_u64(form, 1)?;
+                    Some(
+                        CardinalityBound::new(minimum, maximum)
+                            .map_err(|_| fault(form, TypeFormFault::EmptyCardinality))?,
+                    )
+                };
                 Ok(ValueType::collection(CollectionType::new(
-                    kind,
-                    element,
-                    Some(bound),
+                    kind, element, bound,
                 )))
             }
         }
@@ -537,6 +566,7 @@ pub(crate) fn resolve_type_form(
 mod tests {
     use super::*;
     use crate::check::family::fixtures::{empty_scope, root_location, scope_with};
+    use ix_trace_rs::trace;
     use quire_exact::{CollectionKind, EffectiveId};
     use quire_semantic_value::declaration::{ObjectTypeDeclaration, TypeEnvironment};
 
@@ -704,7 +734,80 @@ mod tests {
         assert_mismatch(&builtin(BuiltinType::Decimal, &["0", "9", "3", "1"]));
         assert_mismatch(&builtin(BuiltinType::Text, &["5", "1", "nfc"]));
         assert_mismatch(&builtin(BuiltinType::Text, &["-1", "5"]));
-        assert_mismatch(&TypeForm::new(TypeFormHead::Population, SPAN));
+        assert_mismatch(
+            &TypeForm::new(TypeFormHead::Population, SPAN)
+                .with_bounds(vec!["1".to_owned(), "2".to_owned()]),
+        );
+    }
+
+    /// FR-333-AC-1: an absent collection bound resolves to `bound: None` for
+    /// every kind, and a present bound is a different type; `[3, 2]` refuses
+    /// `type-mismatch` at the form's span.
+    #[trace("TC-843", "FR-333-AC-1", "FR-333-AC-3")]
+    #[test]
+    fn an_absent_collection_bound_resolves_to_none() {
+        let collection = |kind: CollectionKind, bounds: &[&str]| {
+            TypeForm::collection(kind, SPAN)
+                .with_arguments(vec![TypeForm::builtin(BuiltinType::Int, SPAN)
+                    .with_bounds(vec!["0".to_owned(), "9".to_owned()])])
+                .with_bounds(bounds.iter().map(|bound| (*bound).to_owned()).collect())
+        };
+        for kind in [
+            CollectionKind::Sequence,
+            CollectionKind::Set,
+            CollectionKind::Bag,
+            CollectionKind::OrderedSet,
+        ] {
+            let resolved =
+                resolve(&collection(kind, &[])).expect("an unbounded collection resolves");
+            let ValueType::Collection(ref unbounded) = resolved else {
+                panic!("a collection type");
+            };
+            assert_eq!(unbounded.kind(), kind);
+            assert_eq!(unbounded.bound(), None);
+        }
+        let unbounded = resolve(&collection(CollectionKind::Set, &[])).unwrap();
+        let bounded = resolve(&collection(CollectionKind::Set, &["0", "8"])).unwrap();
+        let ValueType::Collection(ref inner) = bounded else {
+            panic!("a collection type");
+        };
+        assert_eq!(
+            inner.bound(),
+            Some(CardinalityBound::new(0, 8).expect("a nonempty bound"))
+        );
+        assert_ne!(unbounded, bounded);
+        let inverted = resolve_form(
+            &empty_scope(),
+            &collection(CollectionKind::Set, &["3", "2"]),
+        )
+        .expect_err("an inverted bound refuses");
+        assert_eq!(inverted.fault, TypeFormFault::EmptyCardinality);
+        assert_eq!(inverted.span, SPAN);
+        let refusal = resolve(&collection(CollectionKind::Set, &["3", "2"]))
+            .expect_err("an inverted bound refuses");
+        assert!(matches!(
+            refusal.cause,
+            CheckCause::IllTyped(quire_exact::IllTypedCause::TypeMismatch)
+        ));
+    }
+
+    /// FR-333-AC-2: `Population<T>` resolves to `Population(None)` and
+    /// `Population<T>[4]` to `Population(Some(4))`.
+    #[trace("TC-843", "FR-333-AC-2")]
+    #[test]
+    fn an_absent_population_maximum_resolves_to_none() {
+        let population = |bounds: &[&str]| {
+            TypeForm::new(TypeFormHead::Population, SPAN)
+                .with_bounds(bounds.iter().map(|bound| (*bound).to_owned()).collect())
+        };
+        assert_eq!(
+            resolve(&population(&[])).expect("an unbounded population resolves"),
+            ValueType::Population(None)
+        );
+        assert_eq!(
+            resolve(&population(&["4"])).expect("a bounded population resolves"),
+            ValueType::Population(Some(4))
+        );
     }
 
     /// `Option`, a collection and `Reference` each take exactly one type

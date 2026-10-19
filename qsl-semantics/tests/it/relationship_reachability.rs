@@ -173,7 +173,7 @@ fn links() -> Vec<Link> {
     ]
 }
 
-fn relationship_key(id: &str) -> DeclarationKey {
+pub(crate) fn relationship_key(id: &str) -> DeclarationKey {
     key(&format!("relationship/Order-{id}"))
 }
 
@@ -209,6 +209,7 @@ fn population(name: &str, member: &str) -> DomainPackageRecord {
         key: key(name),
         member_types: vec![key(member)],
         extent: Extent::Closed,
+        symmetric: false,
     })
 }
 
@@ -237,7 +238,7 @@ fn operation(
 }
 
 /// Fixture R, with the extra populations `extra` (name, member type).
-fn package(extra: &[(&str, &str)]) -> DomainPackage {
+pub(crate) fn package(extra: &[(&str, &str)]) -> DomainPackage {
     let mut records = vec![
         object_type("Order", &[]),
         object_type("Rush", &["Order"]),
@@ -274,11 +275,11 @@ fn check(declarations: &str) -> Result<CheckedGraph, Vec<CheckRefusal>> {
     check_with(&[], declarations)
 }
 
-fn invariant(owner: &str, body: &str) -> String {
+pub(crate) fn invariant(owner: &str, body: &str) -> String {
     format!("invariant I using v on M::{owner} at current {{ {body} }}")
 }
 
-fn clause(kind: &str, operation: &str, body: &str) -> String {
+pub(crate) fn clause(kind: &str, operation: &str, body: &str) -> String {
     format!("{kind} I using v on M::{operation} {{ {body} }}")
 }
 

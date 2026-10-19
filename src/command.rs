@@ -6,16 +6,13 @@ mod compilation;
 #[cfg(feature = "quire-extraction")]
 pub mod extraction;
 mod output;
-mod projection_error;
 mod wire;
 
 pub use output::NativeResult;
-pub use projection_error::{ProjectionLocation, ProjectionSource};
 
 use crate::formal_source::FormalSource;
-use crate::lowering::{self, LoweringError, LoweringLimits, ProjectionTarget};
 use crate::model_source::ModelSourceError;
-use crate::package::{NativePackage, NativePackageRef, PackageError};
+use crate::package::{NativePackageRef, PackageError};
 use qsl_foundation::serde_object::Object;
 use qsl_foundation::{ByteDigest, Code, Diagnostic, Source};
 use qsl_semantics::model::domain_package::DOMAIN_PACKAGE_PROFILE;
@@ -210,21 +207,6 @@ pub enum RunCause {
     /// Existing native package failure.
     #[error("{0}")]
     Package(#[from] Box<PackageError>),
-    /// Original lowering failure and its resolved native source context.
-    #[error("{error}")]
-    Lowering {
-        /// Explicit target whose lowering failed.
-        target: ProjectionTarget,
-        /// Exact native package selected for projection.
-        package: NativePackageRef,
-        /// Program provenance without retained source text.
-        program: Box<ProjectionSource>,
-        /// Source coordinates resolved while the selected program was available.
-        location: ProjectionLocation,
-        /// Original classification, authored clause and IR diagnostics.
-        #[source]
-        error: Box<LoweringError>,
-    },
     /// The selected package failed its verified reader; source compilation is not a fallback.
     #[error("selected package {file}: {error}")]
     SelectedPackage {
@@ -346,7 +328,6 @@ impl RunCause {
             Self::Checking(error) => error.diagnostic.code,
             Self::Model(error) => error.code(),
             Self::Package(error) | Self::SelectedPackage { error, .. } => error.code,
-            Self::Lowering { error, .. } => error.code.code(),
             Self::CompleteSelection(_)
             | Self::Libraries(_)
             | Self::CompleteRunSelection(_)
@@ -786,57 +767,7 @@ impl std::fmt::Display for LibrarySelection {
     }
 }
 
-/// Compile native-compile/1 sources and export the existing Boolean IR projection.
-/// Unsupported clauses refuse the complete export; no runtime inputs are needed.
-pub fn lower(path: &Path) -> std::result::Result<Vec<u8>, Box<RunError>> {
-    lower_for(path, ProjectionTarget::BooleanOracleV1)
-}
-
-/// Export a source-only job through an explicit IR lowering target (FR-033).
-pub fn lower_for(
-    path: &Path,
-    target: ProjectionTarget,
-) -> std::result::Result<Vec<u8>, Box<RunError>> {
-    compile_with(path, |package| {
-        lowering::lower_for(package, target, LoweringLimits::default())
-            .map(|projection| projection.bytes().to_vec())
-            .map_err(|error| {
-                let program = &package.checked().bindings().source;
-                RunCause::Lowering {
-                    target,
-                    package: NativePackageRef::new(package.digest()),
-                    program: Box::new(program.into()),
-                    location: ProjectionLocation::resolve(program.source(), error.source),
-                    error,
-                }
-            })
-    })
-}
-
-fn compile_with(
-    path: &Path,
-    export: impl FnOnce(&NativePackage<'_>) -> Result<Vec<u8>>,
-) -> std::result::Result<Vec<u8>, Box<RunError>> {
-    with_request(path, |directory, bytes, _digest| {
-        let request: wire::CompileRequest = request(bytes)?;
-        compilation::source_only(&request.program)?;
-        let mut intake = intake(
-            directory,
-            FileCounts {
-                programs: 1,
-                models: request.models.len(),
-                snapshots: 0,
-                invocations: 0,
-                packages: 0,
-            },
-        )?;
-        let models = compilation::models(&mut intake, &request.models)?;
-        let package = compilation::package(&mut intake, &request.program, &models)?;
-        export(&package)
-    })
-}
-
-// Both commands retain the same exact request identity on any later failure.
+// Every command retains the same exact request identity on any later failure.
 fn with_request<T>(
     path: &Path,
     action: impl FnOnce(&Path, &[u8], ByteDigest) -> Result<T>,

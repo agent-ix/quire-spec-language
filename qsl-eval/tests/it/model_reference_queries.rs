@@ -120,6 +120,7 @@ fn fixture_f1() -> DomainPackage {
                     DeclarationKey::fixture("model.B"),
                 ],
                 extent: Extent::Closed,
+                symmetric: false,
             }),
         ],
     )
@@ -193,6 +194,7 @@ fn fixture_f1_with_second_population() -> DomainPackage {
                 DeclarationKey::fixture("model.B"),
             ],
             extent: Extent::Closed,
+            symmetric: false,
         }));
     domain_package
 }
@@ -277,6 +279,7 @@ fn subtype_incomplete_scenario() -> Scenario {
                 key: p1_population_key(),
                 member_types: vec![DeclarationKey::fixture("model.B")],
                 extent: Extent::Closed,
+                symmetric: false,
             }),
         ],
     );
@@ -932,6 +935,7 @@ fn tc_227_checked_evaluate_uses_reflexive_coverage_without_query_walk() {
                 key: p1_population_key(),
                 member_types: vec![DeclarationKey::fixture("model.B")],
                 extent: Extent::Closed,
+                symmetric: false,
             }),
         ],
     );

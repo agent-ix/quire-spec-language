@@ -59,8 +59,8 @@ impl TypeInvariantDeclaration {
         ClauseView {
             kind: StateClauseKind::Invariant,
             complete_value: false,
-            context: self.context,
-            receiver: self.self_type.clone(),
+            context: Some(self.context),
+            receiver: Some(("self", self.self_type.clone())),
             operation: None,
             context_population: None,
             frame_population: None,

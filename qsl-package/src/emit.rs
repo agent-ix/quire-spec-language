@@ -89,7 +89,7 @@ use quire_contract_model::{
     encode_checked_package_v2, CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition,
     CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
     CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageV2,
+    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
     CheckedPackageLockV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
     CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
     CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ProtocolForm,
@@ -107,7 +107,7 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    Member, NodeOwner,
+    HeaderLayer, Member, ModelEntry, NodeOwner,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
@@ -350,6 +350,10 @@ impl BodyNames {
                 names.annotations.insert(node_id(application.result_type.0));
                 if let Some(declaration) = operation.member().and_then(Member::declaration) {
                     names.dependencies.insert(node_id(declaration));
+                }
+                // FR-380: the population node a reachability links to.
+                if let Some(population) = operation.member().and_then(Member::population) {
+                    names.dependencies.insert(node_id(population));
                 }
                 let leaf_laws = operation.leaves().iter().flat_map(|leaf| &leaf.laws);
                 names
@@ -857,11 +861,19 @@ fn catalog_entry(lock: &DefinitionLock, role: CatalogRole) -> &CatalogEntry {
     lock.entry(role)
 }
 
-/// The lock's `edition` and `definition_selections`: the catalog's edition,
-/// then its other always-selected roles in catalog order, then each law
-/// definition the bodies name that is not already selected.
+/// The lock's `edition` and `definition_selections` (FR-110 "Lock rows"):
+/// the catalog's edition; then the header-selected layers and every layer
+/// their `requires` closure names, in the lock's row order, and no layer
+/// that requires a selected layer; then the qualification-catalog rows
+/// QSpec FR-001 selects for those layers; then each law definition the
+/// bodies name that is not already selected.
+///
+/// A unit whose header selects no layer selects the `always` rows: the
+/// lock's `without_layer` rows are for a unit that selects layers none of
+/// which is `quire.value.complete/v1`.
 fn catalog_selections(
     lock: &DefinitionLock,
+    layers: &[HeaderLayer],
     laws: &[DefinitionReference],
 ) -> (CheckedSelection, Vec<CheckedArtifactRef>) {
     // A law's `DefinitionRef` is also part of the application-node keys that
@@ -870,16 +882,36 @@ fn catalog_selections(
         role: CheckedSelectionRole::Edition,
         definition: artifact(&catalog_entry(lock, CatalogRole::Edition).reference()),
     };
-    let mut definitions: Vec<CheckedArtifactRef> = lock
-        .always_roles()
+    let closure = lock.closure(layers);
+    let qualification = if layers.is_empty() {
+        lock.always_roles()
+    } else {
+        lock.qualification_roles(&closure)
+    };
+    let selected = closure
         .iter()
-        .filter(|role| **role != CatalogRole::Edition)
-        .map(|role| artifact(&catalog_entry(lock, *role).reference()))
-        .collect();
-    for law in laws {
-        let law = artifact(law);
-        if !definitions.contains(&law) {
-            definitions.push(law);
+        .map(|layer| lock.layer_reference(*layer))
+        .chain(
+            qualification
+                .iter()
+                .filter(|role| **role != CatalogRole::Edition)
+                .map(|role| catalog_entry(lock, *role).reference()),
+        )
+        // FR-361 item 3: the complete-model lock's `package_selection.always`
+        // rows, for a unit whose layers hold the model layer.
+        .chain(
+            closure
+                .contains(&HeaderLayer::ModelComplete)
+                .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .into_iter()
+                .flatten(),
+        )
+        .chain(laws.iter().cloned());
+    let mut definitions: Vec<CheckedArtifactRef> = Vec::new();
+    for definition in selected {
+        let definition = artifact(&definition);
+        if !definitions.contains(&definition) {
+            definitions.push(definition);
         }
     }
     (edition, definitions)
@@ -986,25 +1018,37 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
+///
+/// A package emitted before (by this function or
+/// [`emit_checked_with_cancel`]) returns its remembered emission: a checked
+/// package does not change, so a dependency reached again, or a caller that
+/// emits what the lifecycle already emitted, does not emit it twice.
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    if let Some(emission) = package.remembered_emission() {
+        return Ok(emission.clone());
+    }
     emit_checked_with_cancel(package, &Cancel::new())
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
 /// entry and at every node it writes (FR-276). A cancelled handle stops the
-/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes.
+/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes. It always
+/// emits, so every node is polled; the emission it returns is remembered for
+/// [`emit_checked`].
 pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package_inner(
+    let emission = emit_package_inner(
         package,
         graph.memoized_regions(),
         |_| None,
         cancel,
         &ir_decodes,
-    )
+    )?;
+    package.remember_emission(&emission);
+    Ok(emission)
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
@@ -1195,7 +1239,8 @@ fn emit_package_inner(
     let (profile_selections, laws) = split_laws(&order);
 
     let catalog = DefinitionLock::pinned();
-    let (edition, definition_selections) = catalog_selections(&catalog, &laws);
+    let (edition, definition_selections) =
+        catalog_selections(&catalog, graph.header_layers(), &laws);
     let model_selections: Vec<CheckedDomainPackageRef> = graph
         .model_selections()
         .iter()
@@ -1215,19 +1260,19 @@ fn emit_package_inner(
         required_features: vec![root.into()],
         dependency_selections: dependency_selections(package),
     };
-    let preimage = CheckedPackageIdentityPreimageV2 {
-        version: IDENTITY_PREIMAGE_V2.into(),
-        edition,
-        profile_selections,
-        definition_selections,
-        model_selections,
-        required_features: lock.required_features.clone(),
-        dependency_selections: lock.dependency_selections.clone(),
-        identity_projection: nodes.iter().map(Into::into).collect(),
-    };
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
+    };
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: IDENTITY_PREIMAGE_V2,
+        edition: &edition,
+        profile_selections: &profile_selections,
+        definition_selections: &definition_selections,
+        model_selections: &model_selections,
+        required_features: &lock.required_features,
+        dependency_selections: &lock.dependency_selections,
+        identity_projection: &semantic_graph.nodes,
     };
     let capability_report = [CheckedCapability {
         feature: root.into(),

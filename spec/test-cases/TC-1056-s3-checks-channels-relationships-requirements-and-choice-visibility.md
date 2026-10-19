@@ -14,7 +14,7 @@ Verify that S3 checks each channel's roles, payload, ordering and premises,
 each relationship declaration and `related by` clause, each `requires temporal`
 requirement and the owner and visible facts of each `choice` and `repeat`, and
 refuses each mutation with its code, cause, span and retained members. Scope:
-FR-218-AC-10 to FR-218-AC-20.
+FR-218-AC-2, FR-218-AC-10 to FR-218-AC-20 and FR-218-AC-26.
 
 Catches a channel with an undeclared role that checks, a send typed differently
 from its channel that checks, a relationship bound to its written name instead of
@@ -22,16 +22,23 @@ its key, an end of the wrong type that checks, a requirement that resolves
 through an import, a decision on a fact its owner cannot observe, and a gap or
 overlap that passes because the guards are constant.
 
-Fixture **P**: a domain package `M` with object types `Node{total: Total,
-tally: Int[0, 3], n: Int[0, 9]}` and `Plain{ready: Boolean}`; a relationship
-`pipe` whose first end is `Plain` and second end is `Node`; a relationship
-`owns` between the same two types; a port `out`; model alias `M`, profile alias
+Fixture **P**: a domain package `M` with the object types `Node{total: Total,
+tally: Int[0, 3], n: Int[0, 9], ok: Boolean}` with the operation `Node::step`, and `Peer{id: Int[0, 9]}`; the record value type
+`Plain{ready: Boolean, count: Int[0, 9], peer: Reference<Peer>}`; the base protocol's one activation is `activation on origin` and its one `finish` is `finish Closed as (closed: M::Plain) { true };`; a relationship `pipe` whose
+first end is `Peer` and second end is `Node`; a relationship `owns` between the
+same two types; a port `out`; model alias `M`, profile alias
 `P`, a temporal clause `Due` and a predicate `Accept` in the unit. The base
 protocol `Pipeline` declares `role Seller on M::Node;`, `role Buyer on
 M::Node;`, `channel Pay from Seller to Buyer carries M::Plain ordering
 unordered delivery at-least-once capacity 2 overflow block;` and a `run`
 `sequence Main` holding `send Sent via Pay as (sent: M::Plain) { true };` and
 `receive Got via Pay of Main::Sent as (got: M::Plain) { true };`. It checks.
+The channel carries a record, because a channel does not carry an object type
+(FR-218), and every binder a decision reads through its fields is a record: a
+field read of an object binder is a model-state read, which a guard, a
+`visible` entry and a FIFO key bar (FR-218). The protocol input `view` is the
+one object-typed binder, read only as a relationship end and in the rows that
+name it.
 
 ## Test Procedure
 
@@ -54,14 +61,14 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 12 | row 10 with key `{m.ready and view.total > 0}`, `view` the protocol input | `ill_typed`/`operator-ineligible` at the read of `view.total`, naming the key |
 | 13 | delivery `exactly-once-premise`, capacity `symbolic(Bound)`, overflow `loss head`, `ordering unordered` | checks; the checked channel records those four premises, `Bound` unresolved and the selector `Head` |
 | 14 | row 13 with delivery `at-most-once` | checks; a different checked channel from row 13's; ordering, capacity and overflow unchanged; the same with `loss tail` and with `loss new` are two further different checked channels |
-| 15 | `relationship Pipe = M::pipe;` | checks; the checked relationship holds `pipe`'s declaration key and end types `Plain`, `Node` in that order |
+| 15 | `relationship Pipe = M::pipe;` | checks; the checked relationship holds `pipe`'s declaration key and end types `Peer`, `Node` in that order |
 | 16 | `relationship Pipe = M::nothing;` | `missing_declaration`/`missing-name` at `nothing` |
 | 17 | `relationship Pipe = M::out;` and `relationship Pipe = M::Node;` | each `invalid_model_binding`/`wrong-export` at the name; required kind `relationship`, actual kind `port` and `object type`, both declaration keys |
 | 18 | two `relationship Pipe = ...;` | `ambiguous_declaration`/`ambiguous-name` at both declarations |
-| 19 | row 15 and `related by Pipe (sent, view)` on `Got`, `view` the protocol input of type `M::Node` | checks; `Got` holds one checked clause with both ends |
-| 20 | row 19 with `related by Absent (sent, view)` | `missing_declaration`/`missing-name` at `Absent`; `node` `Got` |
-| 21 | row 19 with the ends swapped, `(view, sent)` | `ill_typed`/`type-mismatch` at each end; `end` `first` expected `Plain` actual `Node`, then `end` `second` expected `Node` actual `Plain` |
-| 22 | row 19 plus `related by Owns (sent, view)` (with `relationship Owns = M::owns;`) and a repeat of `related by Pipe (sent, view)` | checks; `Got` holds three checked clauses in source order |
+| 19 | row 15 and `related by Pipe (sent.peer, view)` on `Got`, `view` the protocol input of type `M::Node` | checks; `Got` holds one checked clause with both ends |
+| 20 | row 19 with `related by Absent (sent.peer, view)` | `missing_declaration`/`missing-name` at `Absent`; `node` `Got` |
+| 21 | row 19 with the ends swapped, `(view, sent.peer)` | `ill_typed`/`type-mismatch` at each end; `end` `first` expected `Peer` actual `Node`, then `end` `second` expected `Node` actual `Peer` |
+| 22 | row 19 plus `related by Owns (sent.peer, view)` (with `relationship Owns = M::owns;`) and a repeat of `related by Pipe (sent.peer, view)` | checks; `Got` holds three checked clauses in source order |
 | 23 | `requires temporal Due;` | checks; the requirement is bound to `Due`'s node key |
 | 24 | `requires temporal Nothing;`, and `requires temporal Due;` where `Due` is declared only in an imported unit | each `missing_declaration`/`missing-name` at the name; no package |
 | 25 | `requires temporal Accept;` | `ill_typed`/`operator-ineligible` at `Accept`; the resolved kind named |
@@ -82,6 +89,14 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 40 | complementary guards `gotA.ready and gotB.ready`, `gotA.ready and not gotB.ready`, `not gotA.ready and gotB.ready`, `not gotA.ready and not gotB.ready` over both listed facts | checks |
 | 41 | row 28 with a protocol capture `lim` and a guard `got.ready and lim >= 0` not listed in `visible` | checks: a protocol capture needs no listing |
 | 42 | row 10 with key `{m}` (a record type) and with a key of a type over which the clause checker admits no `=` | the first checks; the second `ill_typed`/`operator-ineligible` at the key, `operator` `=` and the type |
+| 43 | before `Got`, `attempt Tried by Seller on M::Node::step contracts [] as (attempted: M::Node) { true };`, and after `Got` `choice Decide by Seller visible (attempted.ok) { case yes when { attempted.ok } check A using P { true }; case no when { not attempted.ok } check B using P { true }; }` | `ill_typed`/`operator-ineligible` at the `visible` entry and at each guard read of `attempted.ok`, naming the `visible` entry and the guards: a field read of an object binder is a model-state read; with `attempted: M::Plain`, `visible (attempted.ready)` and guards `attempted.ready` and `not attempted.ready` the same choice checks |
+| 44 | row 10 with key `{m.peer.id = 1}` | `ill_typed`/`operator-ineligible` at `m.peer.id`, naming the key: a read through a reference field is a model-state read |
+| 45 | row 28 with `visible (got.count)` and guards `got.count > 0` and `not (got.count > 0)`; then with guards `got.count > 0` and `got.count > 1` | the first checks: an individual entry may be a non-Boolean fact, and two guards over one atom and its negation partition; the second `undefined_expression`/`unproved-exhaustiveness`, `failed` `[missing-arm, duplicate-arm]` (FR-218-AC-2) |
+| 46 | before the choice `effect Done of Main::Tried as (done: M::Plain) { true };` (with row 43's `attempt Tried`), and the choice `by Seller visible (done.ready)` reading `done.ready` | `wrong_snapshot`/`wrong-observation` at `done.ready`; `reason` `ineligible-kind` (an `effect` record) |
+| 47 | before the choice `commit Fixed by Seller as (fixed: M::Plain) { true };`, and the choice `by Seller visible (fixed.ready)` reading `fixed.ready` | the same refusal with `reason` `ineligible-kind` (a `commit` record) |
+| 48 | the base's activation replaced by `activation on each (x: M::Plain)` and the choice `by Buyer visible (x.ready)` reading `x.ready` | the same refusal with `reason` `ineligible-kind` (the protocol's activation binder) |
+| 49 | the base's `finish Closed` kept and a choice in the run reading `closed.ready`, listed in `visible` | `missing_declaration`/`missing-name` at each read of `closed`, as an out-of-scope read, and no `wrong-observation` refusal: no decision reaches a `finish` record (FR-218-AC-17) |
+| 50 | row 35's first case (the receive in `branch left`, the choice in `branch right`) with `visible (true)` | `missing_declaration`/`missing-name` at each read of `got` and no `wrong-observation` refusal: the read is out of scope and also unlisted, and the scope refusal precedes the decision-fact refusal (FR-218-AC-17) |
 
 ## Expected Results
 

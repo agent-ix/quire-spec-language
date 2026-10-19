@@ -210,6 +210,12 @@ pub struct ItemCause {
     rule: Option<CertificateRule>,
     #[serde(rename = "at", skip_serializing_if = "Option::is_none")]
     certificate_at: Option<CertificateLocus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limit: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    setting: Option<&'static str>,
 }
 
 fn cancel_source<S: Serializer>(
@@ -235,6 +241,9 @@ impl ItemCause {
             source: None,
             rule: None,
             certificate_at: None,
+            limit: None,
+            value: None,
+            setting: None,
         }
     }
 
@@ -265,7 +274,11 @@ impl ItemCause {
                 item.depth = Some(*depth);
             }
             ReportedInconclusiveCause::Cause(
-                InconclusiveCause::UndecidedSuccessor | InconclusiveCause::NoInitialState,
+                InconclusiveCause::UndecidedSuccessor
+                | InconclusiveCause::NoInitialState
+                | InconclusiveCause::NoInstance
+                | InconclusiveCause::SufficientTestFailed
+                | InconclusiveCause::SolverInconclusive,
             ) => {}
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
@@ -332,12 +345,20 @@ impl OutcomeItem {
             ),
             TerminalValue::Unsupported(cause) => (
                 ItemLabel::Unsupported,
-                Some(ItemCause::kind(cause.as_str())),
+                Some(ItemCause {
+                    code: cause.code().map(str::to_owned),
+                    ..ItemCause::kind(cause.as_str())
+                }),
             ),
             TerminalValue::Incomplete(cause) => {
                 let mut item = ItemCause::kind(cause.as_str());
                 match cause {
                     IncompleteCause::Cancelled { source } => item.source = Some(*source),
+                    IncompleteCause::LimitReached { limit, value } => {
+                        item.limit = Some(limit.as_str());
+                        item.value = Some(*value);
+                        item.setting = Some(limit.setting());
+                    }
                     IncompleteCause::TimedOut | IncompleteCause::ResourceExhausted => {}
                 }
                 (ItemLabel::Incomplete, Some(item))
@@ -350,7 +371,7 @@ impl OutcomeItem {
                 certification,
             } => {
                 if result == ItemLabel::Proved {
-                    (Some(*basis), Some(*certification))
+                    (Some(basis.clone()), Some(*certification))
                 } else {
                     (None, None)
                 }
@@ -1030,6 +1051,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::UnsupportedHelper(_)
         | ReplayRefusal::Cancelled(_)
         | ReplayRefusal::NativePayload { .. }
+        | ReplayRefusal::ModelTrace(_)
         | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
     }
 }
@@ -1285,7 +1307,7 @@ mod tests {
                     vec![record(
                         6,
                         TerminalValue::Proved {
-                            basis,
+                            basis: basis.clone(),
                             certification,
                         },
                     )],

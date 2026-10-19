@@ -31,8 +31,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
-    Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, RecordFieldForm,
-    StateClauseForm, TypeForm, TypeFormHead, UnitForm,
+    Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, PopulationBoundForm,
+    RecordFieldForm, StateClauseForm, TerminalDeclarationForm, TerminalDeclarationKind, TypeForm,
+    TypeFormHead, UnitForm,
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -45,16 +46,21 @@ use quire_exact::{
 use super::check::{
     EnumBinding, ModelRecords, PackageDeclarations, ResolvedSignature, VariantTypeDeclaration,
 };
+use super::layer::LayerAdmission;
 use super::lowering::{
-    record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, RecordKeyError,
+    record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, AuthoredBound,
+    RecordKeyError,
 };
+use super::model_gate::{self, ModelGateRefusal};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
-use super::refusal::AliasKind;
+use super::refusal::{AliasKind, TimedConstruct};
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
 };
+use super::state_graph_claim::StateGraphDeclaration;
+use super::terminal::{TerminalClauseDeclaration, TerminalClauseKind};
 use super::type_form::{
     native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
@@ -75,10 +81,12 @@ use crate::model::intake::{
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::{OperationDeclaration, OperationLookup, OperationTable};
+use crate::value::definition::DefinitionLock;
 use crate::value::enumeration::{
     AdmittedEnumDeclaration, EnumDeclarationPreimage, EnumMemberPreimage,
 };
 use crate::value::environment_stage::stage_limit;
+use crate::value::layer::{HeaderLayer, LayerForm};
 use crate::value::semantic_node::{identity_limit, NominalRefusal, OwnerSelection};
 use quire_semantic_value::declaration::{
     CompositeDeclaration, CompositeShape, DeclarationCause, EnvironmentFailure, FieldDeclaration,
@@ -365,21 +373,90 @@ pub enum AssemblyCause {
         /// The span of each body's declaration, in source order.
         bodies: Vec<Span>,
     },
+    /// Two state-graph claims of the unit share a name (FR-165). Located at
+    /// the second.
+    DuplicateStateGraphClaim {
+        /// The claim name.
+        name: String,
+        /// The span of the first claim's name.
+        first: Span,
+    },
+    /// A state-graph claim's `over` type is not an object type of an admitted
+    /// domain package (a builtin, collection or population type). Located at
+    /// the type.
+    OverNotObjectType {
+        /// The claim name.
+        claim: String,
+    },
+    /// A `bound` declaration names a model alias that is no `model`
+    /// declaration of the unit, or a population its domain package does not
+    /// declare (FR-380 "The declaration").
+    UnresolvedPopulationBound {
+        /// The alias or population name as written.
+        name: String,
+    },
+    /// A `bound` declaration's label is another bound's, a clause's or a
+    /// function's, or two `bound` declarations name one population (FR-380
+    /// "The declaration"). `name` is the shared label or the population
+    /// as `M::p`.
+    AmbiguousPopulationBound {
+        /// The shared label, or the population as `M::p`.
+        name: String,
+        /// The span of each declaration's name, in source order.
+        spans: Vec<Span>,
+    },
     /// A state clause's context type (or the type declaring its operation)
-    /// is a member type of two or more populations with no maximum, so its
-    /// extent cannot name exactly one (FR-104 "Requirements").
+    /// is a member type of two or more populations, so its extent cannot
+    /// name exactly one (FR-104 "Requirements").
     AmbiguousPopulation {
         /// The context type as written, `M::T`.
         context: String,
         /// The populations, in ascending `DeclarationKey` order.
         populations: Vec<DeclarationKey>,
     },
-    /// A declaration form S2 builds that no check admits yet: refused
-    /// rather than compiled and silently missing from the package.
-    UnsupportedDeclarationForm {
-        /// The declaration's leading keyword, such as `terminal`.
-        form: &'static str,
+    /// A `terminal` declaration's `on` alias is no `model` declaration of
+    /// the unit (FR-124).
+    UnresolvedTerminalModel {
+        /// The alias as written.
+        alias: String,
     },
+    /// A `terminal when` declaration's model has no population, so its state
+    /// has no object for the predicate's `self` to range over (FR-124).
+    UnresolvedTerminalState {
+        /// The model alias.
+        model: String,
+    },
+    /// A `terminal when` declaration's model has populations of several
+    /// object types, so the predicate's `self` is not one type (FR-124).
+    AmbiguousTerminalState {
+        /// The model alias.
+        model: String,
+    },
+    /// A second `terminal` declaration for one model alias (FR-124).
+    AmbiguousTerminal {
+        /// The model alias.
+        model: String,
+        /// The span of each declaration for the alias, in source order.
+        spans: Vec<Span>,
+    },
+    /// A declaration whose `using` alias names a header profile resolved to
+    /// `layer` writes a form outside the admitted-form set of that layer's
+    /// `requires` closure (FR-110 "Layer selection"):
+    /// `unsupported_construct`/`declaration-form` or `expression-form`.
+    UnsupportedLayerForm {
+        /// The selected layer.
+        layer: HeaderLayer,
+        /// The form outside its admitted-form set.
+        form: LayerForm,
+    },
+    /// A model construct in a unit whose header does not select
+    /// `quire.model.complete/v1` (FR-361): `unsupported_construct`/
+    /// `declaration-form` or `expression-form`.
+    UnselectedModelConstruct(ModelGateRefusal),
+    /// A timed declaration or the `Clock` type, which S2 builds (FR-393)
+    /// and no S3 check reads yet (FR-230): `unsupported_construct`/
+    /// `not-yet-implemented`, never compiled unchecked.
+    TimedNotChecked(super::refusal::TimedConstruct),
 }
 
 impl AssemblyCause {
@@ -388,7 +465,10 @@ impl AssemblyCause {
         match self {
             Self::UnresolvedTypeName { .. }
             | Self::UndeclaredAlias { .. }
-            | Self::UnresolvedOperation { .. } => Code::MissingDeclaration,
+            | Self::UnresolvedOperation { .. }
+            | Self::UnresolvedTerminalModel { .. }
+            | Self::UnresolvedTerminalState { .. }
+            | Self::UnresolvedPopulationBound { .. } => Code::MissingDeclaration,
             Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
             Self::AmbiguousTypeName { .. }
@@ -396,16 +476,22 @@ impl AssemblyCause {
             | Self::DuplicateEnumMember { .. }
             | Self::DuplicateQuantityName { .. }
             | Self::AmbiguousOperation { .. }
+            | Self::AmbiguousPopulationBound { .. }
+            | Self::AmbiguousTerminal { .. }
+            | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
-            Self::UnsupportedDeclarationForm { .. } => Code::UnsupportedConstruct,
-            Self::DuplicateOperationBody { .. } => Code::ConflictingDeclaration,
+            Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
+                Code::ConflictingDeclaration
+            }
             Self::QuantityCycle { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
             // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
-            Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
+            Self::IllFormedBounds(_)
+            | Self::ImportedTypeName { .. }
+            | Self::OverNotObjectType { .. } => Code::IllTyped,
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 Code::UnknownRequiredFeature
             }
@@ -431,6 +517,9 @@ impl AssemblyCause {
             | Self::StorageAllocation { .. }
             | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
+            Self::UnsupportedLayerForm { .. }
+            | Self::UnselectedModelConstruct(_)
+            | Self::TimedNotChecked(_) => Code::UnsupportedConstruct,
         }
     }
 
@@ -463,23 +552,31 @@ impl AssemblyCause {
     /// ADR-013 O-17).
     pub fn catalog_code(&self) -> CatalogCode {
         let cause = match self {
-            Self::UnresolvedTypeName { .. } | Self::UnresolvedOperation { .. } => "missing-name",
+            Self::UnresolvedTypeName { .. }
+            | Self::UnresolvedOperation { .. }
+            | Self::UnresolvedTerminalModel { .. }
+            | Self::UnresolvedTerminalState { .. }
+            | Self::UnresolvedPopulationBound { .. } => "missing-name",
             Self::AmbiguousTypeName { .. }
             | Self::DuplicateAlias { .. }
             | Self::DuplicateEnumMember { .. }
             | Self::DuplicateQuantityName { .. }
             | Self::AmbiguousOperation { .. }
+            | Self::AmbiguousPopulationBound { .. }
+            | Self::AmbiguousTerminal { .. }
+            | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
-            Self::UnsupportedDeclarationForm { .. } => "declaration-form",
-            Self::DuplicateOperationBody { .. } => "duplicate-declaration",
+            Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
+                "duplicate-declaration"
+            }
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
             // Informational (FR-091-OQ-12): STD-112 replaces this cause
             // once QSpec publishes the topology causes; nothing reads it.
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
-            Self::IllFormedBounds(_) => "type-mismatch",
+            Self::IllFormedBounds(_) | Self::OverNotObjectType { .. } => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 "unsupported-feature"
@@ -506,6 +603,9 @@ impl AssemblyCause {
             Self::IdentityAllocation { .. } | Self::StorageAllocation { .. } => "allocation-failed",
             Self::StorageCapacity { .. } => "reservation-size-overflow",
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
+            Self::UnsupportedLayerForm { form, .. } => form.refusal_cause(),
+            Self::UnselectedModelConstruct(refusal) => refusal.family.refusal_cause(),
+            Self::TimedNotChecked(_) => "not-yet-implemented",
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -600,14 +700,33 @@ struct Unit {
     /// Operation body declarations in declaration order (FR-102), resolved
     /// by the caller into `OperationBodyDeclaration`s (FR-104).
     operation_bodies: Vec<OperationBodyForm>,
+    /// `bound` declarations in declaration order (FR-380), resolved by the
+    /// caller into the admitted models' authored population bounds.
+    population_bounds: Vec<PopulationBoundForm>,
     /// Each `protocol` declaration's form, in source order, for FR-113's
     /// `check::protocol_clause` checker to resolve at S3.
     protocols: Vec<qsl_forms::ProtocolDeclarationForm>,
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
-    /// The span of each `abstraction` declaration, in source order.
-    abstraction_declarations: Vec<Span>,
+    /// Each `abstraction` declaration (FR-304), in source order, for
+    /// `CheckedGraph::declared_abstraction` to check at S3.
+    abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
+    /// Each `hyper` clause and `relation`, in source order, for
+    /// `check::hyper_clause` to resolve at S3.
+    hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
+    probabilistic: Vec<super::ProbabilisticDeclaration>,
+    /// Each `terminal` declaration's form, in source order, resolved by the
+    /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
+    terminals: Vec<TerminalDeclarationForm>,
+    /// Each `refinement` declaration's form, in source order, resolved by the
+    /// caller into the unit's `RefinementDeclaration`s (FR-135).
+    refinements: Vec<qsl_forms::RefinementForm>,
+    /// The timed declarations (FR-393), refused until FR-230 checks them.
+    timed: Vec<(TimedConstruct, Span)>,
+    /// Each state-graph claim's form, in source order, resolved by the
+    /// caller into `StateGraphDeclaration`s (FR-165).
+    state_graph_claims: Vec<qsl_forms::StateGraphClaimForm>,
 }
 
 impl Unit {
@@ -622,18 +741,22 @@ impl Unit {
             declared: BTreeMap::new(),
             state_clauses: Vec::new(),
             operation_bodies: Vec::new(),
+            population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
-            abstraction_declarations: Vec::new(),
+            abstractions: Vec::new(),
+            hyper_clauses: Vec::new(),
+            probabilistic: Vec::new(),
+            terminals: Vec::new(),
+            refinements: Vec::new(),
+            timed: Vec::new(),
+            state_graph_claims: Vec::new(),
         };
         for form in forms {
             let span = form.span();
             match form.into_form() {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
-                // Abstraction declarations are refused until a check admits them.
-                DeclarationForm::Abstraction(abstraction) => {
-                    unit.abstraction_declarations.push(abstraction.span)
-                }
+                DeclarationForm::Abstraction(abstraction) => unit.abstractions.push(*abstraction),
                 DeclarationForm::Alias(alias) => {
                     unit.declare(&alias.name, Declared::Alias(unit.aliases.len()));
                     unit.aliases.push(alias);
@@ -660,7 +783,8 @@ impl Unit {
                 }
                 DeclarationForm::StateClause(clause) => unit.state_clauses.push(*clause),
                 DeclarationForm::OperationBody(body) => unit.operation_bodies.push(*body),
-                DeclarationForm::Protocol(protocol) => unit.protocols.push(protocol),
+                DeclarationForm::PopulationBound(bound) => unit.population_bounds.push(bound),
+                DeclarationForm::Protocol(protocol) => unit.protocols.push(*protocol),
                 DeclarationForm::Union(union) => {
                     unit.declare(&union.name, Declared::Composite);
                     unit.composites.push(Composite {
@@ -668,6 +792,40 @@ impl Unit {
                         members: Members::Union(union.members),
                     });
                 }
+                DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
+                DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
+                DeclarationForm::TimeSource(time) => {
+                    unit.timed.push((TimedConstruct::TimeSource, time.span));
+                }
+                DeclarationForm::TimeInvariant(invariant) => {
+                    unit.timed
+                        .push((TimedConstruct::TimeInvariant, invariant.span));
+                }
+                DeclarationForm::Urgent(urgent) => {
+                    unit.timed.push((TimedConstruct::Urgent, urgent.span));
+                }
+                DeclarationForm::HyperBehaviours(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Behaviours(*clause)),
+                DeclarationForm::HyperFinite(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Finite(*clause)),
+                DeclarationForm::ModelRelation(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Relation(*clause)),
+                DeclarationForm::Random(random) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Random(random)),
+                DeclarationForm::Reward(reward) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Reward(reward)),
+                DeclarationForm::Workload(workload) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Workload(workload)),
+                DeclarationForm::Probabilistic(claim) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Claim(claim)),
+                DeclarationForm::StateGraphClaim(claim) => unit.state_graph_claims.push(*claim),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {
@@ -799,6 +957,9 @@ struct ModelTypes {
     objects: Vec<ObjectTypeDeclaration>,
     composites: Vec<CompositeDeclaration>,
     variant_types: Vec<VariantTypeDeclaration>,
+    /// Each scalar type's `alias::T` name and its `Int[lower, upper]`, text
+    /// or native type.
+    scalars: Vec<(String, ValueType)>,
     model_records: ModelRecords,
     relationships: Vec<RelationshipDeclaration>,
     /// Each record value type's and event type's composite declaration node.
@@ -1103,11 +1264,39 @@ fn model_object_types(
         }
     }
     let relationships = relationship_declarations(package, identities, &declarations);
+    // A scalar type is a declared type name too; one with no kernel type is
+    // not nameable and is left out.
+    let one_one = Multiplicity {
+        lower: 1,
+        upper: Some(1),
+        ordered: false,
+        unique: true,
+    };
+    let scalars: Vec<(String, ValueType)> = package
+        .records
+        .iter()
+        .filter(|record| matches!(record, DomainPackageRecord::ScalarType(_)))
+        .filter_map(|record| {
+            let key = record.key();
+            let artifact = type_identity_segment(&key.package, &key.node)?;
+            let value_type = model_value_type(
+                &ValueTypeRef::Package(key.clone()),
+                one_one,
+                &records,
+                identities,
+                &meaning_handles,
+                &variant_shapes,
+            )
+            .ok()?;
+            Some((format!("{alias}::{artifact}"), value_type))
+        })
+        .collect();
     if errors.is_empty() {
         Ok(ModelTypes {
             objects: declarations,
             composites,
             variant_types,
+            scalars,
             model_records,
             relationships,
             handles: meaning_handles,
@@ -1617,6 +1806,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
                 | ExprNode::Rational(..)
+                | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Name(_)
                 | ExprNode::Let { .. }
@@ -1642,6 +1832,9 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::SelfRef
                 | ExprNode::Result
                 | ExprNode::Reaches { .. }
+                | ExprNode::Indexed { .. }
+                | ExprNode::StepLabel { .. }
+                | ExprNode::Stutter
                 | ExprNode::ProtocolReference { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
@@ -1686,6 +1879,10 @@ fn check_names(
                     }
                 }
             }
+            TypeFormHead::Builtin(BuiltinType::Clock) => errors.push(AssemblyError {
+                cause: AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
+                span: form.span,
+            }),
             TypeFormHead::Builtin(BuiltinType::Reference) => {
                 for target in &form.arguments {
                     let name = match &target.head {
@@ -1779,6 +1976,7 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         | TypeFormFault::MalformedDecimal
         | TypeFormFault::EmptyTextBounds
         | TypeFormFault::EmptyCardinality) => AssemblyCause::IllFormedBounds(fault),
+        TypeFormFault::ClockNotChecked => AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
     };
     AssemblyError {
         cause,
@@ -2226,15 +2424,16 @@ impl PackageDeclarations {
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
-        let mut errors = Vec::new();
-        for span in &unit.abstraction_declarations {
-            errors.push(AssemblyError {
-                cause: AssemblyCause::UnsupportedDeclarationForm {
-                    form: "abstraction",
-                },
+        // FR-393: the timed declarations build at S2; until FR-230's check
+        // reads them, each refuses here rather than compile unchecked.
+        let mut errors: Vec<AssemblyError> = unit
+            .timed
+            .iter()
+            .map(|(construct, span)| AssemblyError {
+                cause: AssemblyCause::TimedNotChecked(*construct),
                 span: *span,
-            });
-        }
+            })
+            .collect();
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -2246,6 +2445,7 @@ impl PackageDeclarations {
         let mut object_types = Vec::new();
         let mut model_composites = Vec::new();
         let mut model_variant_types = Vec::new();
+        let mut model_scalars = Vec::new();
         let mut model_records = ModelRecords::default();
         let mut model_relationships = Vec::new();
         let mut operations = OperationTable::default();
@@ -2276,6 +2476,7 @@ impl PackageDeclarations {
                     object_types.extend(types.objects);
                     model_composites.extend(types.composites);
                     model_variant_types.extend(types.variant_types);
+                    model_scalars.extend(types.scalars);
                     model_records.extend(types.model_records);
                     model_relationships.extend(types.relationships);
                     let handles = types.handles;
@@ -2312,6 +2513,7 @@ impl PackageDeclarations {
                     .iter()
                     .map(|declared| declared.name().to_owned()),
             )
+            .chain(model_scalars.iter().map(|(name, _)| name.clone()))
             .collect();
 
         // Selection aliases are unique within a unit, and a `using` alias
@@ -2364,6 +2566,13 @@ impl PackageDeclarations {
                 });
             }
         }
+        let lock = DefinitionLock::pinned();
+        let predicates: BTreeSet<&str> = unit
+            .functions
+            .iter()
+            .filter(|function| function.kind() == qsl_forms::DeclarationKind::Predicate)
+            .map(|function| function.name.as_str())
+            .collect();
         // FR-326: a `temporal` clause's `using` alias names one of the
         // unit's profile selections, as a function's does. Which temporal
         // profile the clause is checked under is the unit's, not the
@@ -2383,6 +2592,51 @@ impl PackageDeclarations {
                 });
             }
         }
+        // FR-172: a `hyper` clause's and a `relation`'s `using` alias names one
+        // of the unit's profile selections, as a `temporal` clause's does.
+        for clause in &unit.hyper_clauses {
+            let using = clause.profile();
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == using.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: using.alias.clone(),
+                    },
+                    span: using.span,
+                });
+            }
+        }
+        // FR-304: an `abstraction` declaration's `using` alias names one of
+        // the unit's profile selections.
+        for abstraction in &unit.abstractions {
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == abstraction.profile.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: abstraction.profile.alias.clone(),
+                    },
+                    span: abstraction.profile.span,
+                });
+            }
+        }
+        // FR-361: S3 refuses each model construct the unit writes unless its
+        // header selects the model profile.
+        errors.extend(model_gate::refusals(
+            &selections.profiles,
+            &model_gate::Declarations {
+                abstractions: &unit.abstractions,
+                functions: &unit.functions,
+                state_clauses: &unit.state_clauses,
+                operation_bodies: &unit.operation_bodies,
+            },
+        ));
+        let selects_model = model_gate::selects_model(&selections.profiles);
         let mut function_selections = BTreeMap::new();
         for (index, function) in unit.functions.iter().enumerate() {
             if let Some(using) = function.using() {
@@ -2396,6 +2650,13 @@ impl PackageDeclarations {
                 {
                     Some(profile) => {
                         function_selections.insert(index, profile.clone());
+                        // FR-110 "Layer selection".
+                        if let Some(layer) = HeaderLayer::from_identity(&profile.identity) {
+                            errors.extend(
+                                LayerAdmission::new(&lock, layer, &predicates, selects_model)
+                                    .function(function),
+                            );
+                        }
                     }
                     None => errors.push(AssemblyError {
                         cause: AssemblyCause::UndeclaredAlias {
@@ -2545,6 +2806,22 @@ impl PackageDeclarations {
                 );
             }
         }
+        for claim in &unit.state_graph_claims {
+            let operands = super::state_graph_claim::predicates(&claim.kind)
+                .into_iter()
+                .flat_map(|(_, predicate)| &predicate.operands)
+                .map(|operand| &operand.expression);
+            for form in expression_type_forms(operands) {
+                check_names(
+                    &unit,
+                    &object_names,
+                    &model_composite_names,
+                    &qualified,
+                    &form,
+                    &mut errors,
+                );
+            }
+        }
         for clause in &unit.state_clauses {
             for form in expression_type_forms([&clause.body]) {
                 check_names(
@@ -2587,6 +2864,13 @@ impl PackageDeclarations {
                 .entry(declared.name().to_owned())
                 .or_default()
                 .push(ValueType::Enum(declared.shape()));
+        }
+        for (name, value_type) in &model_scalars {
+            names
+                .types
+                .entry(name.clone())
+                .or_default()
+                .push(value_type.clone());
         }
         // Each enum, admitted under the unit's owner: its declaration key
         // and its members' keys are minted here (FB-13).
@@ -2698,6 +2982,14 @@ impl PackageDeclarations {
             .iter()
             .map(|enumeration| (enumeration.name.name.clone(), enumeration.name.span))
             .collect();
+        // The `[N]` of each `bound` is located under its label (FR-380), the
+        // position its population node's `Type` occurrence resolves to.
+        declared_type_spans.extend(unit.population_bounds.iter().map(|bound| {
+            (
+                super::lowering::bound_origin(&bound.label.name),
+                bound.bracketed,
+            )
+        }));
         // A selected model's alias is the declaration-site locus for model
         // graph roots that have no value or function occurrence of their own.
         // `Origin::TypeDeclaration` resolves this same span table, so such a
@@ -2821,8 +3113,32 @@ impl PackageDeclarations {
             operations: &operations,
             selected: &models,
         };
-        let state_clauses = state_clauses(unit.state_clauses, &resolve, &admitted);
-        let operation_bodies = operation_bodies(unit.operation_bodies, &resolve);
+        // FR-380: a bound applies to the whole package, so every model holds
+        // its bounds before any clause resolves the population it ranges
+        // over.
+        let (admitted, bound_errors) = match population_bounds(
+            &unit.population_bounds,
+            &models,
+            &unit.state_clauses,
+            &unit.functions,
+        ) {
+            Ok(bounds) => (apply_population_bounds(admitted, bounds), Vec::new()),
+            Err(errors) => (admitted, errors),
+        };
+        let state_clauses = state_clauses(
+            unit.state_clauses,
+            &resolve,
+            &admitted,
+            (&lock, &predicates),
+        );
+        let state_graph_claims = state_graph_claims(
+            unit.state_graph_claims,
+            &resolve,
+            &admitted,
+            (&lock, &predicates),
+        );
+        let operation_bodies =
+            operation_bodies(unit.operation_bodies, &resolve, (&lock, &predicates));
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
             &object_names,
@@ -2830,20 +3146,46 @@ impl PackageDeclarations {
             &operations,
             &admitted,
         );
-        let (state_clauses, protocol_attempts, operation_bodies) =
-            match (state_clauses, protocol_attempts, operation_bodies) {
-                (Ok(clauses), Ok(attempts), Ok(bodies)) => (clauses, attempts, bodies),
-                (clauses, attempts, bodies) => {
-                    let mut errors = Vec::new();
-                    for refusal in [clauses.err(), attempts.err(), bodies.err()]
-                        .into_iter()
-                        .flatten()
-                    {
-                        errors.extend(refusal.errors);
-                    }
-                    return refuse(errors);
+        let terminals = terminal_declarations(unit.terminals, &resolve, &admitted);
+        let refinements = refinement_declarations(unit.refinements, &resolve);
+        let (
+            state_clauses,
+            state_graph_claims,
+            protocol_attempts,
+            operation_bodies,
+            terminals,
+            refinements,
+        ) = match (
+            state_clauses,
+            state_graph_claims,
+            protocol_attempts,
+            operation_bodies,
+            terminals,
+            refinements,
+        ) {
+            (Ok(clauses), Ok(claims), Ok(attempts), Ok(bodies), Ok(terminals), Ok(refinements))
+                if bound_errors.is_empty() =>
+            {
+                (clauses, claims, attempts, bodies, terminals, refinements)
+            }
+            (clauses, claims, attempts, bodies, terminals, refinements) => {
+                let mut errors = bound_errors;
+                for refusal in [
+                    clauses.err(),
+                    claims.err(),
+                    attempts.err(),
+                    bodies.err(),
+                    terminals.err(),
+                    refinements.err(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    errors.extend(refusal.errors);
                 }
-            };
+                return refuse(errors);
+            }
+        };
         // FR-103, FR-302: the view of each selected model, with `has_body`
         // set from the bodies that resolved into it. A model no body names
         // keeps the view intake admitted, whose `has_body` is false
@@ -2886,6 +3228,9 @@ impl PackageDeclarations {
             .iter()
             .zip(resolved)
             .filter_map(|(alias, value_type)| Some((alias.name.name.clone(), value_type?)))
+            // A model scalar is named like an alias: it has a type and no
+            // declaration identity.
+            .chain(model_scalars)
             .collect();
         package.alias_names = selections
             .profiles
@@ -2917,6 +3262,9 @@ impl PackageDeclarations {
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
+        package.state_graph_claims = state_graph_claims;
+        package.terminals = terminals;
+        package.refinements = refinements;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
         // FR-092: a protocol's node is declared at the protocol's name.
@@ -2925,6 +3273,52 @@ impl PackageDeclarations {
                 super::lowering::declaration_origin(&protocol.name.name),
                 protocol.name.span,
             )
+        }));
+        // FR-337: a temporal clause's nodes are located at its own sites:
+        // its name, its `over` parameter's name, each formula node's span,
+        // each written fairness constraint's span, and each `holds`
+        // condition's expression tree.
+        let mut declared_site_spans = BTreeMap::new();
+        for (index, clause) in unit.temporal_clauses.iter().enumerate() {
+            use super::lowering::{temporal_site, TemporalSite};
+            let form = &clause.form;
+            declared_type_spans.insert(temporal_site(index, TemporalSite::Claim), form.name.span);
+            declared_type_spans.insert(
+                temporal_site(index, TemporalSite::Over),
+                form.over.name.span,
+            );
+            for (id, node) in form.formula.iter() {
+                let span = match node {
+                    qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,
+                    qsl_forms::TemporalNodeForm::Holds { condition, span } => {
+                        declared_site_spans.insert(
+                            temporal_site(index, TemporalSite::Condition(id.index())),
+                            condition.spans.clone(),
+                        );
+                        *span
+                    }
+                    qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                };
+                declared_type_spans
+                    .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
+            }
+            for (constraint, written) in form.fairness.iter().enumerate() {
+                declared_type_spans.insert(
+                    temporal_site(index, TemporalSite::Fairness(constraint)),
+                    written.span,
+                );
+            }
+        }
+        package.declared_site_spans = declared_site_spans;
+        // FR-381: a template's operation anchor occurrence is recorded at
+        // the template's name.
+        declared_type_spans.extend(unit.protocols.iter().flat_map(|protocol| {
+            protocol.compensations.iter().map(|template| {
+                (
+                    super::lowering::compensation_origin(&protocol.name.name, &template.name.name),
+                    template.name.span,
+                )
+            })
         }));
         // FR-110: the header profile that selects the protocol clause family's
         // profile is the package's `protocol_profile` (ADR-011 §2.4).
@@ -2935,8 +3329,25 @@ impl PackageDeclarations {
         {
             package.lock_evidence = package.lock_evidence.with_protocol_profile(definition);
         }
+        package.header_layers = selections
+            .profiles
+            .iter()
+            .filter_map(|profile| HeaderLayer::from_identity(&profile.identity))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        // FR-451: a declaration is located under its own spaced name.
+        declared_type_spans.extend(unit.abstractions.iter().map(|abstraction| {
+            (
+                super::abstraction::declaration_origin(&abstraction.name.name),
+                abstraction.name.span,
+            )
+        }));
+        package.abstractions = unit.abstractions;
+        package.hyper_clauses = unit.hyper_clauses;
+        package.probabilistic = unit.probabilistic;
         package.temporal_selections = selections
             .profiles
             .iter()
@@ -2981,6 +3392,7 @@ fn state_clauses(
     forms: Vec<StateClauseForm>,
     resolve: &Resolve<'_>,
     models: &[AdmittedModel],
+    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
 ) -> Result<Vec<StateClauseDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
@@ -2989,6 +3401,7 @@ fn state_clauses(
         operations,
         selected,
     } = *resolve;
+    let selects_model = model_gate::selects_model(profiles);
     let mut errors = Vec::new();
     let mut clauses = Vec::with_capacity(forms.len());
     for form in forms {
@@ -2997,13 +3410,22 @@ fn state_clauses(
             .iter()
             .find(|profile| profile.alias == form.profile.alias)
             .cloned();
-        if selection.is_none() {
-            errors.push(error(
+        match &selection {
+            None => errors.push(error(
                 AssemblyCause::UndeclaredAlias {
                     alias: form.profile.alias.clone(),
                 },
                 form.profile.span,
-            ));
+            )),
+            // FR-110 "Layer selection".
+            Some(selection) => {
+                if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
+                    errors.extend(
+                        LayerAdmission::new(lock, layer, predicates, selects_model)
+                            .state_clause(&form),
+                    );
+                }
+            }
         }
         let context = object_names.get(&form.context.name).copied();
         let Some(context) = context else {
@@ -3118,6 +3540,402 @@ fn state_clauses(
     }
 }
 
+/// FR-135: each `refinement` declaration's `using` alias resolved to one of
+/// the unit's profile selections. The model aliases and every row resolve at
+/// S3, where the models' declarations are checked.
+fn refinement_declarations(
+    forms: Vec<qsl_forms::RefinementForm>,
+    resolve: &Resolve<'_>,
+) -> Result<Vec<super::RefinementDeclaration>, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    let mut declarations = Vec::with_capacity(forms.len());
+    for form in forms {
+        let selection = resolve
+            .profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        match selection {
+            Some(selection) => declarations.push(super::RefinementDeclaration { form, selection }),
+            None => errors.push(AssemblyError {
+                cause: AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                span: form.profile.span,
+            }),
+        }
+    }
+    if errors.is_empty() {
+        Ok(declarations)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-165 "Forms": each state-graph claim's `using` alias resolved to one of
+/// the unit's profile selections and its `over` type to an object type of an
+/// admitted domain package, whose population must be exactly one or none. A
+/// predicate form outside the selected layer's admitted set refuses as a
+/// state clause body's does (FR-110).
+fn state_graph_claims(
+    forms: Vec<qsl_forms::StateGraphClaimForm>,
+    resolve: &Resolve<'_>,
+    models: &[AdmittedModel],
+    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
+) -> Result<Vec<StateGraphDeclaration>, AssemblyRefusal> {
+    let Resolve {
+        profiles,
+        object_names,
+        types,
+        ..
+    } = *resolve;
+    let mut errors = Vec::new();
+    let selects_model = model_gate::selects_model(profiles);
+    let mut claims = Vec::with_capacity(forms.len());
+    let mut names: BTreeMap<String, Span> = BTreeMap::new();
+    for form in forms {
+        let error = |cause, span| AssemblyError { cause, span };
+        if let Some(first) = names.get(&form.name.name) {
+            errors.push(error(
+                AssemblyCause::DuplicateStateGraphClaim {
+                    name: form.name.name.clone(),
+                    first: *first,
+                },
+                form.name.span,
+            ));
+            continue;
+        }
+        names.insert(form.name.name.clone(), form.name.span);
+        let selection = profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        match &selection {
+            None => errors.push(error(
+                AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                form.profile.span,
+            )),
+            Some(selection) => {
+                if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
+                    errors.extend(
+                        LayerAdmission::new(lock, layer, predicates, selects_model)
+                            .state_graph_claim(&form),
+                    );
+                }
+            }
+        }
+        let (context, context_population) = match &form.over {
+            None => (None, None),
+            Some(over_parameter) => {
+                let over = &over_parameter.value_type;
+                let TypeFormHead::Name(name) = &over.head else {
+                    errors.push(error(
+                        AssemblyCause::OverNotObjectType {
+                            claim: form.name.name.clone(),
+                        },
+                        over.span,
+                    ));
+                    continue;
+                };
+                let Some(context) = object_names.get(name).copied() else {
+                    errors.push(error(
+                        AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                        over.span,
+                    ));
+                    continue;
+                };
+                let context_population = match population_of(models, context, types) {
+                    Ok(domain) => domain,
+                    Err(populations) => {
+                        errors.push(error(
+                            AssemblyCause::AmbiguousPopulation {
+                                context: name.clone(),
+                                populations,
+                            },
+                            over.span,
+                        ));
+                        continue;
+                    }
+                };
+                (Some(context), context_population)
+            }
+        };
+        let Some(selection) = selection else {
+            continue;
+        };
+        claims.push(StateGraphDeclaration {
+            form,
+            selection,
+            context,
+            context_population,
+        });
+    }
+    if errors.is_empty() {
+        Ok(claims)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-124: each `terminal` declaration resolved. Its `using` alias must name
+/// one of the unit's profile selections and its `on` alias a `model`
+/// declaration of the unit; a second declaration for one alias refuses at
+/// itself, naming every declaration of the alias. A `when` predicate's
+/// `self` is the one object type the model's populations range over.
+fn terminal_declarations(
+    forms: Vec<TerminalDeclarationForm>,
+    resolve: &Resolve<'_>,
+    models: &[AdmittedModel],
+) -> Result<Vec<TerminalClauseDeclaration>, AssemblyRefusal> {
+    let Resolve {
+        profiles, types, ..
+    } = *resolve;
+    let mut errors = Vec::new();
+    let mut declarations = Vec::with_capacity(forms.len());
+    for (index, form) in forms.iter().enumerate() {
+        let error = |cause, span| AssemblyError { cause, span };
+        let selection = profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        if selection.is_none() {
+            errors.push(error(
+                AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                form.profile.span,
+            ));
+        }
+        let alias = form.model.name.as_str();
+        let Some(model) = models.iter().find(|model| model.alias() == Some(alias)) else {
+            errors.push(error(
+                AssemblyCause::UnresolvedTerminalModel {
+                    alias: alias.to_owned(),
+                },
+                form.model.span,
+            ));
+            continue;
+        };
+        let spans: Vec<Span> = forms
+            .iter()
+            .filter(|other| other.model.name == form.model.name)
+            .map(|other| other.span)
+            .collect();
+        if forms
+            .iter()
+            .take(index)
+            .any(|earlier| earlier.model.name == form.model.name)
+        {
+            errors.push(error(
+                AssemblyCause::AmbiguousTerminal {
+                    model: alias.to_owned(),
+                    spans,
+                },
+                form.span,
+            ));
+            continue;
+        }
+        let kind = match &form.kind {
+            TerminalDeclarationKind::Any => TerminalClauseKind::Any,
+            TerminalDeclarationKind::When(predicate) => {
+                let objects: Vec<EffectiveId> = model.population_objects().into_iter().collect();
+                let [context] = objects.as_slice() else {
+                    let cause = if objects.is_empty() {
+                        AssemblyCause::UnresolvedTerminalState {
+                            model: alias.to_owned(),
+                        }
+                    } else {
+                        AssemblyCause::AmbiguousTerminalState {
+                            model: alias.to_owned(),
+                        }
+                    };
+                    errors.push(error(cause, form.model.span));
+                    continue;
+                };
+                let context = *context;
+                let population = match population_of(models, context, types) {
+                    Ok(domain) => domain,
+                    Err(populations) => {
+                        errors.push(error(
+                            AssemblyCause::AmbiguousPopulation {
+                                context: alias.to_owned(),
+                                populations,
+                            },
+                            form.model.span,
+                        ));
+                        continue;
+                    }
+                };
+                TerminalClauseKind::When {
+                    predicate: predicate.clone(),
+                    context,
+                    population,
+                }
+            }
+        };
+        let Some(selection) = selection else {
+            continue;
+        };
+        declarations.push(TerminalClauseDeclaration {
+            name: form.name.name.clone(),
+            model: alias.to_owned(),
+            selection,
+            span: form.span,
+            kind,
+        });
+    }
+    if errors.is_empty() {
+        Ok(declarations)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// The authored bound of each bounded population, by `model` alias and then
+/// the population's declaration key (FR-380).
+type PopulationBounds = BTreeMap<String, BTreeMap<DeclarationKey, AuthoredBound>>;
+
+/// FR-380 "The declaration": each `bound` declaration resolved. Its alias
+/// must name a `model` declaration of the unit and its population a
+/// population declaration of that model's domain package; its maximum must
+/// fit a `u64`, as FR-333 requires of a `Population<T>[N]`. A label another
+/// bound, clause or function of the package uses, and two bounds naming one
+/// population, each refuse at every declaration involved. The result does
+/// not depend on the order of the declarations.
+fn population_bounds(
+    forms: &[PopulationBoundForm],
+    selected: &[SelectedModel],
+    clauses: &[StateClauseForm],
+    functions: &[FunctionDeclaration],
+) -> Result<PopulationBounds, Vec<AssemblyError>> {
+    let mut errors = Vec::new();
+    // Every declaration involved in an ambiguity, by what it shares.
+    let mut ambiguous: Vec<(String, Vec<Span>)> = Vec::new();
+
+    // A label names one declaration of the package.
+    let mut labels: BTreeMap<&str, (Vec<Span>, bool)> = BTreeMap::new();
+    for form in forms {
+        let (spans, _) = labels.entry(form.label.name.as_str()).or_default();
+        spans.push(form.label.span);
+    }
+    for (name, span) in
+        clauses
+            .iter()
+            .map(|clause| (clause.name.name.as_str(), clause.name.span))
+            .chain(functions.iter().filter_map(|function| {
+                Some((function.name.as_str(), function.spans()?.declaration))
+            }))
+    {
+        if let Some((spans, shared)) = labels.get_mut(name) {
+            spans.push(span);
+            *shared = true;
+        }
+    }
+    for (name, (spans, shared)) in labels {
+        if shared || spans.len() > 1 {
+            ambiguous.push((name.to_owned(), spans));
+        }
+    }
+
+    // A bound resolves to a population of its model, once.
+    let mut bounds = PopulationBounds::new();
+    let mut named: BTreeMap<(&str, DeclarationKey), Vec<Span>> = BTreeMap::new();
+    for form in forms {
+        let unresolved = |name: &DeclaredName| AssemblyError {
+            cause: AssemblyCause::UnresolvedPopulationBound {
+                name: name.name.clone(),
+            },
+            span: name.span,
+        };
+        let Some(model) = selected.iter().find(|model| model.alias == form.model.name) else {
+            errors.push(unresolved(&form.model));
+            continue;
+        };
+        let population =
+            model
+                .view
+                .domain_package()
+                .records
+                .iter()
+                .find_map(|record| match record {
+                    DomainPackageRecord::Population(population)
+                        if type_identity_segment(&population.key.package, &population.key.node)
+                            == Some(form.population.name.as_str()) =>
+                    {
+                        Some(population.key.clone())
+                    }
+                    _ => None,
+                });
+        let Some(population) = population else {
+            errors.push(unresolved(&form.population));
+            continue;
+        };
+        let Ok(maximum) = form.maximum.name.parse::<u64>() else {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::IllFormedBounds(TypeFormFault::Malformed),
+                span: form.maximum.span,
+            });
+            continue;
+        };
+        named
+            .entry((form.model.name.as_str(), population.clone()))
+            .or_default()
+            .push(form.label.span);
+        bounds.entry(form.model.name.clone()).or_default().insert(
+            population.clone(),
+            AuthoredBound {
+                maximum,
+                label: form.label.name.clone(),
+                population,
+            },
+        );
+    }
+    for ((alias, population), spans) in named {
+        if spans.len() > 1 {
+            let name = type_identity_segment(&population.package, &population.node).map_or_else(
+                || population.node.clone(),
+                |segment| format!("{alias}::{segment}"),
+            );
+            ambiguous.push((name, spans));
+        }
+    }
+    for (name, mut spans) in ambiguous {
+        spans.sort_by_key(|span| span.start);
+        for span in &spans {
+            errors.push(AssemblyError {
+                cause: AssemblyCause::AmbiguousPopulationBound {
+                    name: name.clone(),
+                    spans: spans.clone(),
+                },
+                span: *span,
+            });
+        }
+    }
+    if errors.is_empty() {
+        Ok(bounds)
+    } else {
+        Err(errors)
+    }
+}
+
+/// `models` with each one's authored population bounds (FR-380).
+fn apply_population_bounds(
+    models: Vec<AdmittedModel>,
+    mut bounds: PopulationBounds,
+) -> Vec<AdmittedModel> {
+    models
+        .into_iter()
+        .map(
+            |model| match model.alias().and_then(|alias| bounds.remove(alias)) {
+                Some(held) => model.with_population_bounds(held),
+                None => model,
+            },
+        )
+        .collect()
+}
+
 /// FR-103, FR-302: the `DeclarationKey` of the operation `name` that the
 /// object type `declaring` of the `model` declaration `alias` declares, read
 /// from that model's effective view. `None` when the alias, the type or the
@@ -3163,6 +3981,7 @@ fn operation_key_of(
 fn operation_bodies(
     forms: Vec<OperationBodyForm>,
     resolve: &Resolve<'_>,
+    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
 ) -> Result<Vec<OperationBodyDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
@@ -3171,6 +3990,7 @@ fn operation_bodies(
         operations,
         selected,
     } = *resolve;
+    let selects_model = model_gate::selects_model(profiles);
     let mut errors = Vec::new();
     let mut bodies = Vec::with_capacity(forms.len());
     for form in forms {
@@ -3179,13 +3999,22 @@ fn operation_bodies(
             .iter()
             .find(|profile| profile.alias == form.profile.alias)
             .cloned();
-        if selection.is_none() {
-            errors.push(error(
+        match &selection {
+            None => errors.push(error(
                 AssemblyCause::UndeclaredAlias {
                     alias: form.profile.alias.clone(),
                 },
                 form.profile.span,
-            ));
+            )),
+            // FR-110 "Layer selection".
+            Some(selection) => {
+                if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
+                    errors.extend(
+                        LayerAdmission::new(lock, layer, predicates, selects_model)
+                            .operation_body(&form),
+                    );
+                }
+            }
         }
         let [model, object, member] = form.target.as_slice() else {
             // The grammar admits any qualified name; only

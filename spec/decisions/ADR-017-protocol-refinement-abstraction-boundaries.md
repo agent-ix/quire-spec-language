@@ -110,9 +110,9 @@ FR-116):
   NodeKey, frame_origin: Origin }`, one per (declaring type, operation name),
   for each operation a clause or attempt names (`check/state_clause.rs:62-68`,
   `check/mod.rs:489-508`), and `CheckedAttempt { declaration, anchor, frame,
-  contracts: Vec<NodeKey> }` (`check/protocol_clause.rs:91-103`). A scoped
+  contracts: Vec<NodeKey> }` (`check/protocol_clause/types.rs`). A scoped
   anchor resolves to a `ProtocolNodeId` inside S3 only
-  (`check/protocol_clause.rs:532-608`).
+  (`check/protocol_clause/anchors.rs`).
 - S4 emits `state`/`operation_anchor`, `state`/`frame` (the QSpec FR-340
   term, each `modifies` entry a `FrameField { declaration: NodeRef, name }`)
   and `state`/`state_clause` (`check/lowering/state.rs:198-428`). No
@@ -332,7 +332,7 @@ modules ADR-012 §12.2 and §15.3 name:
 
 1. **An S2-parsed construct gains its check** (for example `compensate`,
    parsed as `ProtocolNodeKind::CompensateTemplate`, `qsl-forms/src/syntax.rs:1225`,
-   and refused by S3's `covered_kind`, `check/protocol_clause.rs:389-405`):
+   and refused by S3's `covered_kind`, `check/protocol_clause/coverage.rs`):
    classify it in `covered_kind`, check it in `check::protocol_clause`, lower
    it in the `ProtocolClause` lowering.
 2. **A temporal atom over a protocol operation**: `TemporalTrace` reads the
@@ -678,7 +678,8 @@ There is no totality check.
   `route`. It names no `BackendId` (ADR-012 §11). For an emission onto
   implementation code, the driver puts only the bound items in the QSpec
   FR-331 request it sends CG, so CG receives no new input; CG reads the
-  bindings from the v2 node.
+  bindings from the v2 node. The export's bound and refused result kinds, which the driver reads, are fixed by
+  [FR-307](../functional/FR-307-export-the-bindings-each-item-references.md)-AC-6.
 - **Referenced elements.** An item references: the receiver's static object
   type of every model member in its checked claim (the O-06 declaring node,
   which is the static type even when a supertype declares the member,

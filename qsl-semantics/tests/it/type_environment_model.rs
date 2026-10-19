@@ -87,6 +87,7 @@ fn population_record(member_types: &[&str]) -> DomainPackageRecord {
             .map(|member| DeclarationKey::fixture(*member))
             .collect(),
         extent: Extent::Closed,
+        symmetric: false,
     })
 }
 

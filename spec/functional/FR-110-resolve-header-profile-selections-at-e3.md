@@ -45,10 +45,8 @@ exist"; ruling on QSL-229). Its model half is I1 (FR-056), which spine
 lock's edition and definition selections come from the same catalog
 through the emitter (ADR-011 §2.4, amended 2026-09-24).
 
-Layer selection (AC-7, AC-8) and AC-1's layer-closure lock
-rows are not yet implemented. FR-361 states what a unit that selects
-`quire.model.complete/v1` gains, and the complete-model lock rows the
-catalog then holds.
+FR-361 states what a unit that selects `quire.model.complete/v1` gains, and
+the complete-model lock rows the catalog then holds.
 
 ## Inputs
 
@@ -67,8 +65,9 @@ catalog then holds.
 - `check::resolve_profiles(profiles: &[ProfileSelection])
   -> Result<(), Vec<ProfileRefusal>>`, in layer-3 `check`, reading
   `DefinitionLock::pinned()`. Success returns
-  nothing: the `Value` family's lock rows are fixed by the catalog, so no
-  later stage reads a resolved profile.
+  nothing: the `Value` family's lock rows are fixed by the catalog. The
+  layers the headers resolve to reach the checked graph as `header_layers`,
+  which the emitter reads for `definition_selections` ("Lock rows").
 - `check::ProfileRefusal`: the profile's alias, the span of its identity
   literal, the `DefinitionRef` it selected, the required role (`root`), the
   `root` row it was compared with (`CatalogEntry`) and a `ProfileCause`:
@@ -106,6 +105,13 @@ build compiled against.
   and required role").
 - The spine registers no clause family yet, so every header profile a spine
   unit declares reaches this table.
+- Known limit (QSL-827): the layer table classifies `=` and `!=` as a form
+  every layer admits. Whether an equality is admitted depends on its operand
+  types, which S3 does not know at this check, so a unit under a narrow
+  layer can write an equality over a type that layer does not admit.
+- A unit whose header declares no profile selects no layer. Its lock holds
+  the package-selection `always` rows, as for a unit that selects
+  `quire.value.complete/v1`, and no layer row. This is the explicit default.
 - Two header profiles that both select the same layer both resolve;
   a repeated alias is the assembler's duplicate-alias refusal (FR-091-AC-22).
 - Every code and cause is one `quire.native.diagnostics/v1` lists. The
@@ -172,7 +178,7 @@ edge therefore compile to distinct packages.
 
 | ID | Constraint | Type | Validation |
 | --- | --- | --- | --- |
-| FR-110-CON-1 | The resolution's one input is the unit's profile selections; it reads the catalog, including the `header_selectable_layers` rows that name each layer's admitted-form set and `requires` edges, from `DefinitionLock::pinned()` (ADR-011 §2.4: the lock evidence derives from the source and the QSL build). QSL defines no admitted-form set of its own. | Design | Inspection |
+| FR-110-CON-1 | The resolution's one input is the unit's profile selections; it reads the catalog, including the `header_selectable_layers` rows that name each layer's admitted-form set and `requires` edges, from `DefinitionLock::pinned()` (ADR-011 §2.4: the lock evidence derives from the source and the QSL build). QSL's Rust layer table is the machine form of QSpec's prose admitted-form sets; QSL adds no form of its own. | Design | Inspection |
 
 ## Acceptance Criteria
 

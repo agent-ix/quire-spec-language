@@ -7,7 +7,8 @@
 //! refuses with a typed cause and no output.
 //!
 use crate::{
-    CompleteCause, CompleteCode, CompleteDiagnostic, CstToken, ParsedSource, TokenClass, TokenKind,
+    CompleteCause, CompleteCode, CompleteDiagnostic, CstToken, ParsedSource, Production,
+    TokenClass, TokenKind,
 };
 use qsl_foundation::source::MAX_SOURCE_BYTES;
 use qsl_foundation::{Phase, Setting, SettingLimits, Span};
@@ -144,6 +145,15 @@ pub fn format_with_limits(
         text: String::new(),
         limit: limits.output_bytes,
     };
+    // A `bound` declaration (FR-380) ends in `]`, which no other rule ends a
+    // line at, so its end offset is taken from the CST.
+    let bound_ends: std::collections::BTreeSet<usize> = parsed
+        .cst()
+        .nodes()
+        .iter()
+        .filter(|node| node.production() == Production::PopulationBound)
+        .map(|node| node.span().end)
+        .collect();
     let mut indent = 0_usize;
     let mut previous: Option<&CstToken> = None;
     let mut closed_declaration = false;
@@ -185,7 +195,7 @@ pub fn format_with_limits(
         if spelling == b"{" {
             indent = indent.saturating_add(1);
             output.newline(span)?;
-        } else if spelling == b";" {
+        } else if spelling == b";" || bound_ends.contains(&span.end) {
             output.newline(span)?;
         }
         closed_declaration = spelling == b"}" && indent == 0;
@@ -406,6 +416,26 @@ mod tests {
         let formatted = format(&parsed).expect("admissible source formats");
         assert!(formatted.contains("x / // divide\n"), "{formatted}");
         assert!(formatted.contains("true // c\n"), "{formatted}");
+    }
+
+    /// FR-380: a `bound` declaration has no closing `;` or `}`, so each one
+    /// still ends its own line.
+    #[trace("TC-013", "FR-003-AC-3")]
+    #[test]
+    fn a_population_bound_ends_its_own_line() {
+        let parsed = parse(&format!(
+            "{HEADER}bound A on M::orders [8] bound B on M::people [2] invariant I using v on M::Order at current {{ true }} bound C on M::staff [0]\n"
+        ));
+        assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+        let formatted = format(&parsed).expect("admissible source formats");
+        let expected = format!(
+            "{HEADER}bound A on M::orders [8]\nbound B on M::people [2]\ninvariant I using v on M::Order at current {{\n  true\n}}\nbound C on M::staff [0]\n"
+        );
+        assert_eq!(formatted, expected);
+        assert_eq!(
+            format(&parse(&formatted)).expect("formats again"),
+            formatted
+        );
     }
 
     #[trace("TC-013", "FR-003-AC-3")]

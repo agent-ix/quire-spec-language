@@ -57,7 +57,8 @@ use super::ir::{
 };
 use super::navigation::Relationships;
 use super::refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityNode,
+    IdentityObserving, Obligation, StageLimitCause,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
@@ -325,6 +326,10 @@ pub struct PackageDeclarations {
     /// The package's lock evidence (ADR-011 §2.4): the law `DefinitionRef`s
     /// a lowered operation may name (FR-093).
     pub lock_evidence: super::lowering::LockEvidence,
+    /// FR-110: the header-selectable layers the unit's header profiles
+    /// resolve to, ascending; the lock's `definition_selections` hold their
+    /// `requires` closure.
+    pub header_layers: Vec<crate::value::layer::HeaderLayer>,
     /// Record, tuple and model object-type declarations.
     pub types: TypeEnvironment,
     /// Where each record keeps the fields its ancestors name (FR-359).
@@ -393,6 +398,11 @@ pub struct PackageDeclarations {
     /// unit (the FR-091 assembler fills it). A declaration built by hand has
     /// none, and its `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-337: the expression spans of each declaration site that
+    /// has an expression tree of its own and is located by an
+    /// `Origin::TypeDeclaration` site name (a temporal clause's `holds`
+    /// condition), by that name. The FR-091 assembler fills it.
+    pub declared_site_spans: BTreeMap<String, qsl_forms::ExpressionSpans>,
     /// FR-096, FR-302: the span of the unit declaration each function
     /// synthesized for dispatch without form spans of its own was derived
     /// from, by index into [`Self::functions`]: every occurrence in such a
@@ -436,11 +446,26 @@ pub struct PackageDeclarations {
     /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
     /// each as S2 built it, for the `TemporalTrace` family's `check`.
     pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-304: the unit's `abstraction` declarations in declaration order,
+    /// each as S2 built it, for `CheckedGraph::declared_abstraction`.
+    pub abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
+    /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
+    /// `probabilistic` declarations in declaration order, each as S2 built
+    /// it, for the `Probabilistic` family's check (FR-185, FR-186).
+    pub probabilistic: Vec<super::ProbabilisticDeclaration>,
+    /// FR-165: the unit's state-graph claims in declaration order, each with
+    /// its profile and `over` type resolved, for the `StateGraph` family's
+    /// `check`.
+    pub state_graph_claims: Vec<super::state_graph_claim::StateGraphDeclaration>,
     /// FR-110, FR-326: the unit's header profile selections the
     /// `TemporalTrace` family's catalog holds, in source order. A clause is
     /// checked under the one of them, or refuses when there is none or
     /// several.
     pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
+    /// FR-171, FR-172: the unit's `hyper` clauses and `relation`s in
+    /// declaration order, each as S2 built it, for the `TemporalTrace`
+    /// family's `check`.
+    pub hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
     /// FR-103: each domain-package operation `requires`/`ensures` clause the
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
@@ -449,6 +474,22 @@ pub struct PackageDeclarations {
     /// owner resolved, checked beside the state clauses. A checked invariant
     /// adds no declaration, claim or requirement record.
     pub type_invariants: Vec<super::TypeInvariantDeclaration>,
+    /// FR-124: the unit's `terminal` declarations in declaration order, each
+    /// resolved by the FR-091 assembler and checked beside the state clauses.
+    pub terminals: Vec<super::TerminalClauseDeclaration>,
+    /// Test-only: check a package that holds a `terminal` declaration
+    /// without refusing it as not emitted (FR-124).
+    pub emit_unwritten_terminals: bool,
+    /// FR-135 to FR-137: the unit's `refinement` declarations in declaration
+    /// order, each resolved by the FR-091 assembler and checked after the
+    /// state clauses.
+    pub refinements: Vec<super::RefinementDeclaration>,
+    /// Test-only: check a package that holds a `refinement` declaration
+    /// without refusing it as not emitted (FR-135).
+    pub emit_unwritten_refinements: bool,
+    /// Test-only: check a package that holds a state-graph claim without
+    /// refusing it as not emitted (FR-165).
+    pub emit_unwritten_state_graph_claims: bool,
     /// FR-103, FR-302: the unit's `operation-body` declarations in
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
@@ -465,6 +506,39 @@ pub struct PackageDeclarations {
 }
 
 impl PackageDeclarations {
+    /// These declarations, to be checked without refusing a `terminal`
+    /// declaration as not emitted, so the S3 value
+    /// (`CheckedGraph::terminals`) stays testable until S4 writes it
+    /// (FR-124).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_terminals(mut self) -> Self {
+        self.emit_unwritten_terminals = true;
+        self
+    }
+
+    /// These declarations, to be checked without refusing a `refinement`
+    /// declaration as not emitted, so the S3 value
+    /// (`CheckedGraph::refinements`) stays testable until S4 writes it
+    /// (FR-135).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_refinements(mut self) -> Self {
+        self.emit_unwritten_refinements = true;
+        self
+    }
+
+    /// These declarations, to be checked without refusing a state-graph
+    /// claim as not emitted, so the S3 value
+    /// (`CheckedGraph::state_graph_claims`) stays testable until S4 writes it
+    /// (FR-165).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_state_graph_claims(mut self) -> Self {
+        self.emit_unwritten_state_graph_claims = true;
+        self
+    }
+
     /// The work units the staged model type admission has spent so far
     /// (structural admission plus its metered reads), when one is staged.
     #[cfg(any(test, feature = "test-support"))]
@@ -501,6 +575,7 @@ impl PackageDeclarations {
             pending_types: None,
             source,
             lock_evidence: super::lowering::LockEvidence::default(),
+            header_layers: Vec::new(),
             types: TypeEnvironment::default(),
             model_records: ModelRecords::default(),
             relationships: Relationships::default(),
@@ -520,6 +595,7 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            declared_site_spans: BTreeMap::new(),
             synthesized_spans: BTreeMap::new(),
             embedding: None,
             units: quire_semantic_value::unit::UnitGraph::default(),
@@ -530,9 +606,18 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),
+            abstractions: Vec::new(),
+            probabilistic: Vec::new(),
+            state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
+            hyper_clauses: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
+            terminals: Vec::new(),
+            emit_unwritten_terminals: false,
+            refinements: Vec::new(),
+            emit_unwritten_refinements: false,
+            emit_unwritten_state_graph_claims: false,
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
             identity,
@@ -672,6 +757,9 @@ pub struct Scope {
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
+    /// FR-150: each object type a `symmetric` population covers, with that
+    /// population's declaration key.
+    symmetric_objects: BTreeMap<EffectiveId, DeclarationKey>,
     /// The by-name lookups over the declared types, enums, aliases and
     /// model operations, built once by [`Self::new`]. Aliases and
     /// model operations are only ever looked up by name, so only this index
@@ -836,9 +924,64 @@ impl Scope {
             complete_value: false,
             complete_model: false,
             dispatch_operations,
+            symmetric_objects: BTreeMap::new(),
             index,
             imports: BTreeMap::new(),
         }
+    }
+
+    /// This scope with the object types the admitted models' `symmetric`
+    /// populations cover (FR-150).
+    pub(crate) fn with_symmetric_objects(
+        mut self,
+        symmetric_objects: BTreeMap<EffectiveId, DeclarationKey>,
+    ) -> Self {
+        self.symmetric_objects = symmetric_objects;
+        self
+    }
+
+    /// FR-150: the `symmetric` population whose objects `value_type` is, or
+    /// contains, a reference to: through `Option`, a collection's element, a
+    /// record's field or a tuple's position. `None` when it reads no such
+    /// population.
+    pub(crate) fn symmetric_population_in(
+        &self,
+        value_type: &ValueType,
+    ) -> Option<&DeclarationKey> {
+        if self.symmetric_objects.is_empty() {
+            return None;
+        }
+        let mut pending = vec![value_type];
+        let mut seen = BTreeSet::new();
+        while let Some(current) = pending.pop() {
+            match current {
+                ValueType::Reference(object) => {
+                    if let Some(population) = self.symmetric_objects.get(object) {
+                        return Some(population);
+                    }
+                }
+                ValueType::Option(payload) => pending.push(payload),
+                ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Composite(key) if seen.insert(*key) => {
+                    match self
+                        .types
+                        .composite(*key)
+                        .map(|declaration| declaration.shape())
+                    {
+                        Some(CompositeShape::Record(fields)) => {
+                            pending.extend(fields.iter().map(|field| field.value_type()));
+                        }
+                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
+                        Some(CompositeShape::Union(members)) => {
+                            pending.extend(members.iter().flat_map(|member| member.positions()))
+                        }
+                        None => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     /// This scope with `imports`, each admitted import by its qualifier.
@@ -905,6 +1048,11 @@ impl Scope {
     /// The index of the unit's protocol declaration written `name`.
     pub(crate) fn protocol_named(&self, name: &str) -> Option<usize> {
         self.index.protocols.get(name).copied()
+    }
+
+    /// Every name a type of the unit binds, in name order.
+    pub(crate) fn type_names(&self) -> impl Iterator<Item = &str> {
+        self.index.types.keys().map(String::as_str)
     }
 
     /// Whether `name` is a declared type or enum of the unit, which a
@@ -2506,7 +2654,7 @@ impl<'a> Typer<'a> {
     /// it refuses `missing_declaration`/`missing-name`.
     fn self_reference(&self, location: &Location) -> Result<Node, CheckRefusal> {
         let Some(state) = &self.state else {
-            return Err(refuse(location, CheckCause::MissingName("self".to_owned())));
+            return Err(refuse(location, CheckCause::MissingSelf));
         };
         self.bound_slot(state.self_slot, location)
     }
@@ -2862,6 +3010,27 @@ impl<'a> Typer<'a> {
         Ok(target)
     }
 
+    /// FR-150: the `identity-observing-form` refusal of the `node` form at
+    /// `location` when `operand` is, or contains, a reference into a
+    /// `symmetric` population; `None` otherwise.
+    fn identity_observing(
+        &self,
+        location: &Location,
+        node: IdentityNode,
+        form: IdentityForm,
+        operand: &ValueType,
+    ) -> Option<CheckRefusal> {
+        let population = self.scope.symmetric_population_in(operand)?.clone();
+        Some(refuse(
+            location,
+            CheckCause::IdentityObservingForm(Box::new(IdentityObserving {
+                node,
+                form,
+                population,
+            })),
+        ))
+    }
+
     /// `convert<target>(e)` over the typed operand `e`.
     fn convert(
         &mut self,
@@ -2873,6 +3042,18 @@ impl<'a> Typer<'a> {
             (ValueType::Collection(source), ValueType::Collection(to)) => {
                 if source.element() != to.element() {
                     return Err(mismatch(location));
+                }
+                // A Set or Bag read as an ordered collection is read in the
+                // identity-sorted order of its elements.
+                if !source.kind().is_ordered() && to.kind().is_ordered() {
+                    if let Some(refusal) = self.identity_observing(
+                        location,
+                        IdentityNode::Convert,
+                        IdentityForm::OrderSensitiveTraversal,
+                        &operand.value_type,
+                    ) {
+                        return Err(refusal);
+                    }
                 }
                 Ok(node(
                     NodeKind::ConvertCollection {
@@ -2909,7 +3090,14 @@ impl<'a> Typer<'a> {
                 if matches!(source, ValueType::Float(_))
                     || !admits_equality_conversion(source, target, &self.units)
                 {
-                    return Err(mismatch(location));
+                    return Err(self
+                        .identity_observing(
+                            location,
+                            IdentityNode::Convert,
+                            IdentityForm::ReferenceConversion,
+                            source,
+                        )
+                        .unwrap_or_else(|| mismatch(location)));
                 }
                 let converted = EqualityOperand::converted(source.clone(), target.clone());
                 Ok(node(

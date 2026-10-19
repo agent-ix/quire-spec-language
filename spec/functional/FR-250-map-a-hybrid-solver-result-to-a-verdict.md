@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-193
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: depends_on
 ---
 # FR-250: Map a hybrid solver result to a verdict through the QSpec FR-193 provider
 
@@ -48,6 +50,9 @@ the claim inconclusive, because no solver witness replays exactly.
   SolverOutcome, horizon: ExactRational, jumps: u64 }`,
   where `SolverOutcome` is `Unsat`, `DeltaSat`, `EnclosureDisjoint`,
   `EnclosureMeetsUnsafe`, `Unknown` or `Stopped(limit)`.
+- A provider overrun of its `deadline_ms` (QSpec FR-462) is not a
+  `SolverOutcome`: the host ends the provider at `deadline_ms` and settles
+  each item still open as `TimedOut`, and no `SolverResult` is read.
 
 ## Outputs
 
@@ -71,14 +76,55 @@ The FR-331 terminal record of the claim.
 | --- | --- | --- | --- | --- |
 | `Unsat` or `EnclosureDisjoint` from a method sound for that outcome | `proved`, labelled `uncertified` | `closed-scope` | `Proved{basis: BoundedSolver{method, horizon, jumps}, certification: Uncertified}` | success |
 | `DeltaSat`, `EnclosureMeetsUnsafe`, `Unknown`, or a result from a method not sound for its outcome | `inconclusive` | `unsettled` | `Inconclusive(SolverInconclusive)` | inconclusive |
-| `Stopped(limit)` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped(max_solver_steps)`, or any deterministic budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped(max_solver_time)`, or a provider overrun of its `deadline_ms` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)` (FR-293) | incomplete |
+| A run the caller's frontend ends at its own deadline (FR-276) | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(Cancelled{source: deadline})`, never `TimedOut` | incomplete |
 
+- A horizon SHALL be a non-negative exact rational number of seconds, and
+  the record SHALL write it in the `ExactRational` wire form.
 - No provider result SHALL settle `refuted`.
 - A `BoundedSolver` proof SHALL carry the label `uncertified`: a solver
   QSL runs is a native engine with no core certificate checker (ADR-018
   PC-1, ADR-026 HY-2).
 - A `BoundedSolver` proof SHALL hold for the claim within its horizon and
   jump bound, and the record SHALL carry both.
+- A hybrid item SHALL carry its budgets as `hybrid.limits.max_solver_steps`
+  and `hybrid.limits.max_solver_time`, each a whole positive count, and their
+  setting names are `hybrid.max_solver_steps` and `hybrid.max_solver_time`
+  (QSpec FR-331).
+- If a hybrid item has an empty `hybrid`, a `hybrid` with an empty `limits`,
+  a zero budget, or a `hybrid.limits` member other than these two, then the
+  hybrid provider SHALL refuse the request before consumption, as QSpec
+  FR-331 refuses any out-of-domain value.
+- `max_solver_time` SHALL be a request setting of its own, independent of
+  FR-276's deadline, that the caller may give as a possibly fractional
+  duration in seconds. When a request is admitted with a fractional
+  `max_solver_time`, the request writer SHALL round it up to the next whole
+  second and write that whole-second integer as the wire value; the run uses
+  the rounded value.
+- If a wire `max_solver_time` is fractional, then the hybrid provider SHALL
+  refuse the request before consumption, as QSpec FR-331 refuses any
+  out-of-domain value.
+- `max_solver_time` is a wall-clock setting, so it SHALL be outside the
+  canonical request key (FR-292), no member of a stored record SHALL record
+  wall time, and a result it limits SHALL NOT be stored.
+- A solver that exhausts `max_solver_time`, and a provider that overruns its
+  `deadline_ms`, SHALL settle `incomplete` with the cause
+  `IncompleteCause::TimedOut` (FR-293), not `LimitReached`.
+- A run the caller's frontend ends at its own deadline (FR-276) SHALL settle
+  `incomplete`, execution `resource-incomplete`, with the cause
+  `Cancelled{source: deadline}`, so no event has two causes.
+- When the caller sets no value for a budget, the request writer SHALL omit
+  the member and the provider SHALL apply its descriptor `bounds`; QSL's
+  published defaults of 60 seconds and 1,000,000 steps are the descriptor
+  bounds of its built-in hybrid solver, so an unset budget adds no member to
+  the canonical key bytes.
+- The `max_solver_steps` request member SHALL be a count of solver steps:
+  whole and positive, as the provider counts its own steps. QSL SHALL compare
+  and report a `max_solver_steps` value as the provider counts it, and SHALL
+  NOT convert it to time. A solver that exhausts it settles `incomplete`,
+  `LimitReached{limit: max_solver_steps, value, setting:
+  hybrid.max_solver_steps}`.
 - A further hybrid engine SHALL be one more negotiated backend whose
   results take this map.
 
@@ -87,7 +133,8 @@ The FR-331 terminal record of the claim.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
-| FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; `Stopped` settles `incomplete`, `LimitReached`. No fixture result settles `refuted`. | Test (TC-705) |
+| FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; a `max_solver_steps` stop settles `incomplete`, `LimitReached{limit: max_solver_steps, ...}`; a `max_solver_time` stop and a provider `deadline_ms` overrun each settle `incomplete`, `TimedOut`; a frontend deadline settles `incomplete`, `Cancelled{source: deadline}`. No fixture result settles `refuted`. | Test (TC-705) |
+| FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled{source: deadline}` raised on a run whose frontend FR-276 deadline fires; a wire `max_solver_time` of 1.5, a zero budget, an unknown `hybrid.limits` member, an empty `hybrid` and a `hybrid` with an empty `limits` are each refused by the hybrid provider before consumption; a request that sets no budget omits both members; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes, a `TimedOut` result of the shorter one being stored by neither. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: max_solver_steps, value: 1000, setting: hybrid.max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
 
 ## Dependencies
 
@@ -97,6 +144,7 @@ The FR-331 terminal record of the claim.
   [FR-230](FR-230-check-time-declarations-clocks-and-clock-constraints.md),
   [FR-235](FR-235-settle-a-timed-verdict-as-a-terminal-record.md).
 - QSpec FR-193 (the solver contract and its source form).
+- QSpec FR-331 (the `hybrid.limits` budgets and their refusals).
 
 ## References
 

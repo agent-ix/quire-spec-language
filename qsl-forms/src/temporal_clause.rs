@@ -16,12 +16,12 @@ use super::dispatch::{Construct, FormsRefusal};
 use super::syntax::{
     ActivationForm, CaptureForm, ClockForm, DeclarationForm, ExpressionForm,
     FairnessConstraintForm, FairnessGranularity, FairnessKind, IntervalForm, IntervalUpper,
-    ParameterForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId,
-    TemporalOperator, TemporalOperatorForm, UsingAlias,
+    OperatorInterval, ParameterForm, TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm,
+    TemporalNodeId, TemporalOperator, TemporalOperatorForm, TimedIntervalForm, UsingAlias,
 };
 use super::value::{
-    declared_name, expression, has_token, items, name_form, nodes_of, only, production_node, text,
-    tokens_of, type_form, unexpected, Item,
+    declared_name, expression, has_token, items, name_form, nodes_of, only, production_node,
+    quantity_form, text, tokens_of, type_form, unexpected, unrepresented, Item,
 };
 
 /// `temporal Name using p over (x: T) clock "c" activation { fairness*
@@ -75,12 +75,15 @@ pub(crate) fn temporal_clause(construct: Construct<'_>) -> Result<DeclarationFor
         activation,
         fairness,
         captures,
-        formula: formula_form(cst, formula)?,
+        formula: formula_form(cst, formula, false)?,
     })))
 }
 
 /// One `Parameter` node (`ident : ParameterType`) as a parameter form.
-fn parameter_form(cst: &LosslessCst, parameter: &CstNode) -> Result<ParameterForm, FormsRefusal> {
+pub(crate) fn parameter_form(
+    cst: &LosslessCst,
+    parameter: &CstNode,
+) -> Result<ParameterForm, FormsRefusal> {
     let parameter_items = items(cst, parameter);
     let declared = only(&parameter_items, Production::ParameterType, parameter)?;
     let declared_items = items(cst, declared);
@@ -92,7 +95,10 @@ fn parameter_form(cst: &LosslessCst, parameter: &CstNode) -> Result<ParameterFor
 }
 
 /// `capture name: Type = value ;`.
-fn capture_form(cst: &LosslessCst, capture: &CstNode) -> Result<CaptureForm, FormsRefusal> {
+pub(crate) fn capture_form(
+    cst: &LosslessCst,
+    capture: &CstNode,
+) -> Result<CaptureForm, FormsRefusal> {
     let capture_items = items(cst, capture);
     Ok(CaptureForm {
         parameter: parameter_form(cst, only(&capture_items, Production::Parameter, capture)?)?,
@@ -102,7 +108,10 @@ fn capture_form(cst: &LosslessCst, capture: &CstNode) -> Result<CaptureForm, For
 }
 
 /// One `Expression` node as a condition with its spans.
-fn expression_form(cst: &LosslessCst, node: &CstNode) -> Result<ExpressionForm, FormsRefusal> {
+pub(crate) fn expression_form(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<ExpressionForm, FormsRefusal> {
     let (expression, spans) = expression(cst, node)?;
     Ok(ExpressionForm { expression, spans })
 }
@@ -110,7 +119,7 @@ fn expression_form(cst: &LosslessCst, node: &CstNode) -> Result<ExpressionForm, 
 /// `fair [weak | strong] [whole | each] Operation ;`: an unwritten kind or
 /// granularity stays `None`, for S3 to read as `weak` (FR-129) or `whole`
 /// (FR-123).
-fn fairness_form(
+pub(crate) fn fairness_form(
     cst: &LosslessCst,
     constraint: &CstNode,
 ) -> Result<FairnessConstraintForm, FormsRefusal> {
@@ -147,7 +156,10 @@ fn fairness_form(
 /// One `Interval` node (`[a, b]` or `[a, *]`) as written. S1 admits only
 /// bounds that fit `u64`, so a bound that does not parse here is a broken
 /// invariant between the two stages.
-fn interval_form(cst: &LosslessCst, interval: &CstNode) -> Result<IntervalForm, FormsRefusal> {
+pub(crate) fn interval_form(
+    cst: &LosslessCst,
+    interval: &CstNode,
+) -> Result<IntervalForm, FormsRefusal> {
     let interval_items = items(cst, interval);
     let bound = |token: &qsl_cst::CstToken| {
         text(token, interval)?
@@ -168,10 +180,17 @@ fn interval_form(cst: &LosslessCst, interval: &CstNode) -> Result<IntervalForm, 
 }
 
 /// A formula CST node (`TemporalExpression` or any production under it) as
-/// a formula arena.
-fn formula_form(cst: &LosslessCst, root: &CstNode) -> Result<TemporalFormulaForm, FormsRefusal> {
+/// a formula arena. `hyper` admits the indexed reads and step labels of a
+/// `hyper` clause's body in a `holds` condition; elsewhere a condition that
+/// uses them is unrepresented.
+pub(crate) fn formula_form(
+    cst: &LosslessCst,
+    root: &CstNode,
+    hyper: bool,
+) -> Result<TemporalFormulaForm, FormsRefusal> {
     let mut build = Formula {
         cst,
+        hyper,
         nodes: Vec::new(),
         work: vec![Task {
             node: root,
@@ -198,12 +217,13 @@ struct Task<'c> {
 
 struct Formula<'c> {
     cst: &'c LosslessCst,
+    hyper: bool,
     nodes: Vec<TemporalNodeForm>,
     work: Vec<Task<'c>>,
 }
 
 /// The operator a temporal keyword spells.
-fn operator_of(spelling: &[u8]) -> Option<TemporalOperator> {
+pub(crate) fn operator_of(spelling: &[u8]) -> Option<TemporalOperator> {
     match spelling {
         b"eventually" => Some(TemporalOperator::Eventually),
         b"always" => Some(TemporalOperator::Always),
@@ -233,7 +253,7 @@ impl<'c> Formula<'c> {
     fn operator_node(
         &mut self,
         operator: TemporalOperator,
-        interval: Option<IntervalForm>,
+        interval: Option<OperatorInterval>,
         span: Span,
         operator_span: Span,
         parent: Option<usize>,
@@ -406,19 +426,24 @@ impl<'c> Formula<'c> {
             })
             .ok_or_else(|| unexpected(node))?;
         let operator = operator_of(token.spelling()).ok_or_else(|| unexpected(node))?;
-        let interval = nodes_of(items, Production::Interval)
-            .first()
-            .map(|interval| interval_form(self.cst, interval))
-            .transpose()?;
-        let operands: Vec<&CstNode> = items
-            .iter()
-            .filter_map(|item| match item {
-                Item::Node(operand) if operand.production() != Production::Interval => {
-                    Some(*operand)
+        let mut interval = None;
+        let mut operands: Vec<&CstNode> = Vec::new();
+        for item in items {
+            let Item::Node(child) = item else { continue };
+            let built = match child.production() {
+                Production::Interval => OperatorInterval::Steps(interval_form(self.cst, child)?),
+                Production::TimedInterval => {
+                    OperatorInterval::Timed(Box::new(timed_interval_form(self.cst, child)?))
                 }
-                Item::Node(_) | Item::Token(_) => None,
-            })
-            .collect();
+                _ => {
+                    operands.push(child);
+                    continue;
+                }
+            };
+            if interval.replace(built).is_some() {
+                return Err(unexpected(node));
+            }
+        }
         if operands.len() != arity {
             return Err(unexpected(node));
         }
@@ -448,6 +473,9 @@ impl<'c> Formula<'c> {
             [Item::Token(holds), Item::Token(_), Item::Node(condition), Item::Token(_)]
                 if holds.spelling() == b"holds" =>
             {
+                if condition.production() == Production::HyperExpression && !self.hyper {
+                    return Err(unrepresented(Production::HyperExpression, condition.span()));
+                }
                 let condition = expression_form(self.cst, condition)?;
                 self.add(
                     TemporalNodeForm::Holds {
@@ -461,4 +489,38 @@ impl<'c> Formula<'c> {
             _ => Err(unexpected(node)),
         }
     }
+}
+
+/// One `TimedInterval` node: `( [ | ( ) lower , upper ( ] | ) )`. S1 refuses
+/// a timed interval whose upper end is not a quantity literal, so a missing
+/// quantity here is a broken invariant between the two stages.
+pub(crate) fn timed_interval_form(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<TimedIntervalForm, FormsRefusal> {
+    let interval_items = items(cst, node);
+    let (Some(Item::Token(open)), Some(Item::Token(close))) =
+        (interval_items.first(), interval_items.last())
+    else {
+        return Err(unexpected(node));
+    };
+    let closed = |spelling: &[u8], closed: &[u8], open: &[u8]| {
+        if spelling == closed {
+            Ok(true)
+        } else if spelling == open {
+            Ok(false)
+        } else {
+            Err(unexpected(node))
+        }
+    };
+    let [lower, upper] = nodes_of(&interval_items, Production::QuantityLiteral)[..] else {
+        return Err(unexpected(node));
+    };
+    Ok(TimedIntervalForm {
+        lower: quantity_form(cst, lower)?,
+        lower_closed: closed(open.spelling(), b"[", b"(")?,
+        upper: quantity_form(cst, upper)?,
+        upper_closed: closed(close.spelling(), b"]", b")")?,
+        span: node.span(),
+    })
 }

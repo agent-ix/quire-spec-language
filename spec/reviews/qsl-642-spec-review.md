@@ -10,8 +10,6 @@ relationships:
     type: reviews
   - target: ix://agent-ix/quire-spec-language/FR-092
     type: reviews
-  - target: ix://agent-ix/quire-spec-language/FR-033
-    type: reviews
   - target: ix://agent-ix/quire-spec-language/FR-098
     type: reviews
   - target: ix://agent-ix/quire-spec-language/FR-082

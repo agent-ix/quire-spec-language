@@ -13,8 +13,9 @@ pub fn shared_binder_protocols() -> String {
 
 use semantics::model::accounting::ModelNormalizationLimits;
 use semantics::model::domain_package::{
-    DomainPackage, DomainPackageRecord, DomainPackageRef, ObjectTypeRecord, OperationEffect,
-    OperationMemberRecord,
+    DomainPackage, DomainPackageRecord, DomainPackageRef, FieldMemberRecord, Multiplicity,
+    NativeValueType, ObjectTypeRecord, OperationEffect, OperationMemberRecord,
+    RecordValueTypeRecord, ValueTypeRef,
 };
 use semantics::model::intake::SelectedModel;
 use semantics::model::key::DeclarationKey;
@@ -23,6 +24,7 @@ use semantics::model::normalize::{normalize, NormalizeOutcome};
 /// The owning protocol test's original native header.
 pub const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\
+    profile t = \"quire.temporal.infinite-trace/v1\";\n\
     model M = \"example/protocol-fixture\" version \"1\" digest \
     \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n";
 
@@ -60,6 +62,27 @@ pub fn m_actor_model() -> SelectedModel {
                 requires: Vec::new(),
                 ensures: Vec::new(),
                 has_body: false,
+                redefines: None,
+            }),
+            // The record value type `Try { done: Boolean }`, the attempt
+            // type of a `compensate` template (FR-381).
+            DomainPackageRecord::RecordValueType(RecordValueTypeRecord {
+                key: key("Try"),
+                identity_fields: Vec::new(),
+                supertypes: Vec::new(),
+            }),
+            DomainPackageRecord::FieldMember(FieldMemberRecord {
+                key: key("Try/done"),
+                owner: key("Try"),
+                value_type: ValueTypeRef::Native(NativeValueType::Boolean),
+                multiplicity: Multiplicity {
+                    lower: 1,
+                    upper: Some(1),
+                    ordered: false,
+                    unique: true,
+                },
+                presence: quire_exact::Presence::Required,
+                subsets: Vec::new(),
                 redefines: None,
             }),
             // A second operation, so FR-114-AC-3's "a `pre` clause of a

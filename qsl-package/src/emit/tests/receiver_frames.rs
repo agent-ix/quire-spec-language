@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1043 (FR-154-AC-6, AC-7, AC-10; FR-105-AC-7): the `state`/`frame` node
+//! TC-1043 (FR-154-AC-6, AC-7, AC-10; FR-105-AC-7) and TC-573 (FR-154-AC-4): the `state`/`frame` node
 //! body S4 emits for receiver-scoped field entries and scoped deletes, the
 //! node ids and package ids those entries decide, and IR's I2 read of the
 //! frame step over edited copies. The expected bodies are the vectors of
@@ -23,9 +23,19 @@ struct Emitted {
     evidence: CheckedPackageEvidence,
 }
 
-/// The package holding `operations` of `Counter` (each named by its own
-/// postcondition clause), with the frames of `overrides`.
-fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
+/// What [`unit_of`] builds: the unit text, the package document, the package
+/// input keyed by digest, and the hex digest the unit pins the package by.
+struct UnitParts {
+    unit: String,
+    document: Vec<u8>,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    digest: String,
+}
+
+/// The unit text selecting the package holding `operations` of `Counter`
+/// (each named by its own postcondition clause) with the frames of
+/// `overrides`, the package document, and the digest the unit pins it by.
+fn unit_of(operations: &[&str], overrides: &[(&str, Value)]) -> UnitParts {
     let document = serde_json::to_vec(&fixture::document(operations, overrides))
         .expect("the fixture serializes");
     let packages = qsl_semantics::model::intake::package_input([document.as_slice()]);
@@ -41,6 +51,23 @@ fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
         package = fixture::PACKAGE,
         posts = fixture::posts(operations),
     );
+    UnitParts {
+        unit,
+        document,
+        packages,
+        digest,
+    }
+}
+
+/// The package holding `operations` of `Counter` (each named by its own
+/// postcondition clause), with the frames of `overrides`.
+fn emit(operations: &[&str], overrides: &[(&str, Value)]) -> Emitted {
+    let UnitParts {
+        unit,
+        document,
+        packages,
+        digest,
+    } = unit_of(operations, overrides);
     let graph = assemble_with_models(unit.as_bytes(), &packages)
         .expect("the unit assembles")
         .check(CheckingLimits::default())
@@ -181,7 +208,7 @@ fn the_frame_bodies_of_scoped_entries_are_the_wire_vectors() {
 /// by `deletes self`, have different node ids; two packages differing only by
 /// that one scope have different `package_id`s; a frame of type-wide entries
 /// carries `deletes_scoped: []` and every field entry `every-object`.
-#[trace("TC-1043", "FR-154-AC-4", "FR-154-AC-7")]
+#[trace("TC-1043", "FR-154-AC-7")]
 #[test]
 fn a_scope_or_a_scoped_delete_changes_the_node_id_and_the_package_id() {
     let emitted = emit(&ALL, &[]);
@@ -207,6 +234,68 @@ fn a_scope_or_a_scoped_delete_changes_the_node_id_and_the_package_id() {
     assert_ne!(
         b1.emission.package().package_id(),
         b2.emission.package().package_id()
+    );
+}
+
+/// FR-154-AC-4 (TC-573): the frame node of an operation under `modifies self.value`
+/// carries the scope `receiver` and under `modifies value` the scope
+/// `every-object`, and the two nodes' contents differ; a frame naming `value`
+/// in both `modifies_receiver` and `modifies` is refused at intake with
+/// `invalid_model_binding`/`conflicting-binding` naming both entries and the
+/// operation, so no package and no frame node is built.
+#[trace("TC-573", "FR-154-AC-4")]
+#[test]
+fn the_two_scopes_of_one_field_differ_in_the_node_and_both_at_once_refuse_at_intake() {
+    use qsl_semantics::model::intake::{admit_unit, UnitIntakeCause};
+    use qsl_semantics::model::key::DeclarationKey;
+    use qsl_semantics::model::refusal::ModelRefusalCause;
+
+    let emitted = emit(&["own", "all"], &[]);
+    let own = emitted.frame("own");
+    let all = emitted.frame("all");
+    assert_eq!(own["body"]["modifies"][0]["scope"], "receiver");
+    assert_eq!(all["body"]["modifies"][0]["scope"], "every-object");
+    assert_ne!(own["body"], all["body"]);
+
+    let value = fixture::id("Counter/value");
+    let both = json!({
+        "modifies": [value], "modifies_receiver": [value], "creates": [], "deletes": [],
+    });
+    let UnitParts { unit, packages, .. } = unit_of(&["own"], &[("own", both)]);
+    let parsed = qsl_cst::parse(
+        qsl_foundation::SourceIdentity::new("agent-ix", "test:tc-573", "fixture", "fixture:1"),
+        "program.native",
+        unit.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 admits the unit");
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let refusal = admit_unit(
+        &built.selections().models,
+        &packages,
+        qsl_semantics::model::accounting::ModelNormalizationLimits::default(),
+    )
+    .expect_err("both scopes of one field refuse at intake");
+    let UnitIntakeCause::Refused(refusals) = refusal.cause else {
+        panic!("{refusal:?}: expected a Refused cause");
+    };
+    assert_eq!(refusals.len(), 1, "one refusal: {refusals:?}");
+    let refusal = &refusals[0];
+    assert_eq!(refusal.code.as_str(), "invalid_model_binding");
+    let ModelRefusalCause::ConflictingBinding { key, .. } = &refusal.cause else {
+        panic!("{:?}: expected ConflictingBinding", refusal.cause);
+    };
+    assert_eq!(
+        key,
+        &DeclarationKey {
+            package: fixture::PACKAGE.to_owned(),
+            node: fixture::id("Counter/own"),
+        }
+    );
+    assert!(
+        refusal.detail.contains("modifies[0]") && refusal.detail.contains("modifies_receiver[0]"),
+        "names both entries: {}",
+        refusal.detail
     );
 }
 

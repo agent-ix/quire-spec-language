@@ -36,13 +36,15 @@ mod compile;
 // and Kani harnesses exercise it directly.
 #[allow(
     dead_code,
-    reason = "the zone certificate checker is its first caller and has not landed yet"
+    reason = "the zone certificate checker and the FR-339 component certificate check are its first callers and have not landed yet"
 )]
 mod certificate;
 mod composite;
 mod execute;
+mod hybrid;
 mod identity;
 mod limits;
+mod model_check;
 mod object_environment;
 mod outcome;
 mod proof_result;
@@ -57,6 +59,24 @@ pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
+};
+pub use certificate::closed_form::outcome::{
+    AmcEvidence, ClosedFormAnalysis, ClosedFormEvidence, ClosedFormOutcome, DemandWitness,
+    HighModeMiss, JobIterates, MissEvidence, ScheduleLimit, TaskFixpoint,
+};
+pub use certificate::closed_form::recompute::{recompute, ClosedFormCheck, ClosedFormDisagreement};
+pub use certificate::closed_form::settle::settle;
+pub use certificate::closed_form::task_set::{
+    Arrival, Criticality, ScheduleClaim, ScheduleSubject, SchedulingPolicy, Task, TaskSet,
+    TaskSetRefusal, TimeMember, Wcet,
+};
+pub use certificate::closure::{
+    check_closure, CertificateRejection, CertificateRequest, ClosureCertificate, ClosureRefusal,
+    ProductStateRef, TemporalCertificateCheck,
+};
+pub use certificate::scc::{Component, ComponentWitness};
+pub use certificate::state_graph::{
+    check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
 };
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
@@ -73,11 +93,36 @@ pub use execute::{
     IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal, ParityPreimage,
     ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
 };
+pub use hybrid::{
+    NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+};
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
     RawSourceRef, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits};
+pub use model_check::counterexample::{
+    deadlock_freedom_clause, CounterexampleKind, Lasso, ModelStep, TemporalCounterexample,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+};
+pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
+pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
+pub use model_check::limits::{
+    ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
+    DEFAULT_MAX_WALK_STEPS, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
+};
+pub use model_check::outcome::{ModelCheckOutcome, RunStats, UndecidedCause};
+pub use model_check::replay::{
+    replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
+    ModelTraceSubject, ModelTraceValue,
+};
+pub use model_check::settle::{
+    settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
+};
+pub use model_check::state_graph::{
+    GraphUndefined, GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome,
+    StateGraphOutcome, WitnessSource,
+};
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a

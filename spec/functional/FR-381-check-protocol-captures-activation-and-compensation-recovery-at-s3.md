@@ -118,6 +118,16 @@ reading stage may not read, and `unbound` for a name nothing declares.
   This rule has precedence over the table: the table's `missing-name` refusal
   applies to binders and captures only. Protocol captures and registration and
   activation captures may read the `over` input.
+- The protocol activation guard, the trigger guard, the retry relation and the
+  recovery predicate bar every read of model state, as FR-218 defines it: a
+  field read of a binder whose type is an object type, a field read through a
+  reference-typed value and an explicit dereference are such reads. S3 SHALL
+  refuse one in any of them with `ill_typed`/`operator-ineligible` at the read,
+  naming the stage, as it refuses a read of the `over` input. The binder of
+  each of these stages is read through its fields only when its type is a
+  record type or an event type. A binder read as a whole value, and any
+  model-state read in a registration or activation capture, are not refused by
+  this rule.
 - Evaluation order is source order, so a capture is available to the captures,
   guards and relations written after it and to none written before it. A
   capture's initializer that reads the capture itself or a later capture is
@@ -147,7 +157,7 @@ reading stage may not read, and `unbound` for a name nothing declares.
   clause checker, refusing a non-Boolean with `ill_typed`/`non-boolean-root` at
   the guard, and SHALL record `OnEach{binder, record_type, guard}`. An absent
   guard is the guard that is always true, and S3 records it as absent: a
-  protocol that writes `when ({true})` and one that writes no guard are
+  protocol that writes `when (true)` and one that writes no guard are
   different checked clauses (FR-383).
 
 ### Compensation registration
@@ -186,9 +196,16 @@ node `E` (QSpec FR-056).
   (`attempts`), `expected` (a count of at least one) and `actual` (`0`). S3 SHALL admit every
   `n` from one to the greatest `u64` and SHALL record it exactly.
 - S3 SHALL resolve `T` as FR-104 resolves a declared type, and SHALL refuse a
-  `retry` binder whose declared type is not `T` with `ill_typed`/`type-mismatch`
-  at the binder's type, retaining `compensation`, `binder`, `expected` (`T`) and
-  `actual`. The `earlier` binder is checked before the `later` binder.
+  `T` that is not a record type or an event type with `invalid_model_binding`/
+  `malformed-declaration` at `T`, retaining `compensation`, `member`
+  (`attempts`) and `name`, as FR-218 refuses a channel's `carries` type that is
+  not admitted. The attempt record is a record, so an object type, a scalar
+  type, a composite type and a variant type are refused. S3 SHALL NOT compare
+  the `retry` binders with a refused `T`.
+- S3 SHALL refuse a `retry` binder whose declared type is not an admitted `T`
+  with `ill_typed`/`type-mismatch` at the binder's type, retaining
+  `compensation`, `binder`, `expected` (`T`) and `actual`. The `earlier` binder
+  is checked before the `later` binder.
 - `within [a,b]` is a closed interval. S3 SHALL refuse an interval with `a > b`,
   as FR-326 refuses it in a temporal clause, and an open upper bound, with
   `ill_typed`/`type-mismatch` at the interval, retaining `compensation`,
@@ -203,18 +220,46 @@ node `E` (QSpec FR-056).
   SHALL refuse an operation with an undischarged definedness obligation with the
   `undefined_expression` cause FR-104 gives, at the operation. The relation
   constrains a retry and never forces one.
+- S3 SHALL type the `=` and `!=` of a retry relation and of a recovery
+  predicate by the expected-type rule FR-104 states for every equality (QSpec
+  FR-149): an `Int[lo,hi]` operand types a binary `+`, `-` or `*` operand on
+  the other side `Int[lo,hi]` with a range obligation, an unproved obligation
+  refusing `undefined_expression`/`unproved-range` at the arithmetic node, and
+  no other form is coerced; an ordering between `Integer` and `Int[..]`
+  operands is an integer ordering and is accepted.
 - A `commit` member is either `commit never` or `commit N` naming a `commit`
   node. S3 SHALL record `Never` for the first, which selects no earlier cutoff,
   and `Node(id)` for the second (QSpec FR-057). S3 SHALL refuse a `commit` node
-  that dominates the forward effect in the compiled causal edge relation, that
-  is, lies on every path from the protocol's start to the effect, so that every
-  execution takes it before the effect registers the obligation. The refusal is
+  that dominates the forward effect. S3 decides dominance on the control tree
+  only, which is conservative and sound: a commit dominates an effect when a
+  `sequence` holds, in order, a child that passes the commit and a later child
+  that contains the effect. A control passes a commit when it is the commit;
+  when it is a `sequence` with a child that passes it; or when it is a
+  `parallel` whose join requires a branch that passes it. A join requires
+  branch `L` when every set of completed branches that satisfies its policy
+  contains `L`: a `join all` requires every branch it lists, which is every
+  branch of the `parallel`; a `quorum(n)` whose `n` equals the number of
+  distinct labels it joins requires each of those labels, and a `join any`
+  that lists one label requires that label. A `join any` or `quorum(n)` with a
+  smaller `n` over several labels, and every `join predicate`, require no
+  branch, because its settle condition is not evaluated statically (TC-1058
+  carries no vector for a `join predicate` until predicate joins are checked,
+  STD-190); a branch
+  the join does not list is never required. A `choice` passes a commit in no
+  case, and a `repeat` passes none, because S3 treats every `repeat` as
+  skippable whatever its guard, a constant-true guard included. The causal
+  edge relation does not decide dominance: a commit and an effect in sibling
+  branches of one `parallel` have no common `sequence` order, so the commit
+  does not dominate the effect even when a `send` and a `receive` order them
+  across the branches. Deciding dominance through such cross-branch causal
+  edges is a later extension, and until then S3 admits that commit. The refusal is
   `unsupported_construct`/`declaration-form` at the commit anchor, as QSpec
   FR-052 refuses a structurally prohibited form, retaining the selected
   protocol profile that prohibits it, `compensation`, `member` (`commit`),
   `commit`, `effect` and `reason` (`commit-precedes-effect`). A commit that
-  follows the effect, that no edge orders against it, or that lies in one
-  `case` of a `choice` before the effect, is admitted.
+  follows the effect, a commit in a parallel branch whose sibling branch holds
+  the effect, or a commit that lies in one `case` of a `choice` with the
+  effect after the `choice`, is admitted.
 - S3 SHALL resolve the recovery binder's type as FR-104 resolves a declared
   type, and SHALL check the recovery predicate as a Boolean through the clause
   checker over the names its stage may read, refusing a non-Boolean with
@@ -241,10 +286,13 @@ node `E` (QSpec FR-056).
 | FR-381-AC-6 | Two templates for one effect check and give two registrations; two templates of one name refuse `ambiguous_declaration`/`ambiguous-name` at both declarations. A template `for` an `attempt`, `send` or `event` node, and a `commit` that names an `effect`, each refuse as FR-113-AC-7 states. | Test (TC-1058) |
 | FR-381-AC-7 | `attempts 0` refuses `ill_typed`/`type-mismatch` at the `0`, retaining compensation, member `attempts`, expected a count of at least one and actual `0`. `attempts 1` and `attempts 18446744073709551615` check and the checked compensation holds exactly that count; `attempts 18446744073709551616` fails at S1. | Test (TC-1058) |
 | FR-381-AC-8 | `within [31,30]` and `within [0,*]` each refuse `ill_typed`/`type-mismatch` at the interval, as FR-326 refuses `[31,30]` in a temporal clause, retaining compensation, member `within`, expected a closed interval with `a <= b` and actual the interval as written; `within [0,0]` and `within [0,30]` check. | Test (TC-1058) |
-| FR-381-AC-9 | `attempts 3 of M::Plain` with `retry (earlier: M::Node, later: M::Node)` refuses `ill_typed`/`type-mismatch` at the `earlier` binder's type and then at the `later` binder's, each retaining compensation, binder, expected `M::Plain` and actual `M::Node`; with the retry binders `M::Plain` it checks. | Test (TC-1058) |
-| FR-381-AC-10 | A retry relation `earlier.tally < 3 and later.tally = earlier.tally + 1` checks; with `earlier.tally < 3 and` removed it refuses `undefined_expression`/`unproved-range` at `earlier.tally + 1`. A non-Boolean relation refuses `ill_typed`/`non-boolean-root`; a relation that reads a registration capture and an activation capture checks. | Test (TC-1058) |
-| FR-381-AC-11 | `commit never` and `commit Main::Committed` check and the checked compensation holds `Never` and `Node` of the commit's id. A `commit` node that dominates the forward effect in the compiled edges refuses `unsupported_construct`/`declaration-form` at the commit anchor, retaining the selected protocol profile, compensation, member `commit`, commit, effect and reason `commit-precedes-effect`; a commit that follows the effect, a commit in a parallel branch with no edge to it, and a commit in one `case` of a `choice` before the effect, check. | Test (TC-1058) |
+| FR-381-AC-9 | With `attempts 3 of M::Flag` and retry binders `M::Attempt`, `earlier` and then `later` each refuse `ill_typed`/`type-mismatch` at the binder's type, retaining compensation, binder, expected `M::Flag` and actual `M::Attempt`; with the binders `M::Flag` it checks. `attempts 3 of M::Pulse`, an event type, with binders `M::Pulse` checks. | Test (TC-1058) |
+| FR-381-AC-10 | A retry relation `earlier.tally < 3 and later.tally = earlier.tally + 1` checks: the guard puts the sum's interval `[1,3]` inside `Int[0,3]`, so the expected-type rule types the sum `Int[0,3]`. With `earlier.tally < 3 and` removed it refuses `undefined_expression`/`unproved-range` at `earlier.tally + 1`, the sum, as does the recovery predicate `recovered.tally = recovered.tally + 1` at its sum. `later.tally = -earlier.tally` refuses `ill_typed`/`type-mismatch` at the comparison `later.tally = -earlier.tally`. A non-Boolean relation refuses `ill_typed`/`non-boolean-root`; a relation that reads a registration capture and an activation capture checks. | Test (TC-1058) |
+| FR-381-AC-11 | `commit never` and `commit Main::Committed` check and the checked compensation holds `Never` and `Node` of the commit's id. A `commit` node that dominates the forward effect on the control tree refuses `unsupported_construct`/`declaration-form` at the commit anchor, retaining the selected protocol profile, compensation, member `commit`, commit, effect and reason `commit-precedes-effect`; a commit inside a `join all` branch, inside a branch of `quorum(2) [a, b]` and inside the one branch of `join any [a]`, each with the effect after the parallel, refuses the same way; a commit that follows the effect, a commit in a parallel branch whose sibling branch holds the effect (including when a `send` in the commit's branch and a `receive` in the effect's branch order them), a commit in a branch of `join any [a, b]` or of `quorum(1) [a, b]` with the effect after the parallel, a commit in the body of a `repeat` with the effect after the `repeat`, and a commit in one `case` of a `choice` with the effect after the `choice`, check. | Test (TC-1058) |
 | FR-381-AC-12 | A recovery predicate that is a non-Boolean refuses `ill_typed`/`non-boolean-root`; one with an undischarged range obligation refuses `undefined_expression`/`unproved-range`; an unresolved binder type refuses `missing_declaration`/`missing-name`; one that reads a registration and an activation capture checks. A `Full` template with commit `Main::Committed` and a `Partial` template with commit `never`, of one effect, give two checked compensations with their own captures, maxima and commits, in source order, and a refusal in `Full` and one in `Partial` are both reported, in source order. | Test (TC-1058) |
+| FR-381-AC-13 | `attempts 3 of M::Node`, an object type, refuses `invalid_model_binding`/`malformed-declaration` at `M::Node`, retaining compensation, member `attempts` and name, and gives no refusal at the retry binders, whatever their type; the same refusal holds for the scalar type `M::Total`, a composite type and a variant type, and `attempts 3 of M::Absent` refuses `missing_declaration`/`missing-name` at `Absent`. | Test (TC-1058) |
+| FR-381-AC-14 | A trigger guard and a recovery predicate that read a field of a binder of the object type `M::Node`, and an activation guard that reads a field of an `on each` binder of that type, each refuse `ill_typed`/`operator-ineligible` at the read, naming their stage; a retry relation over object binders refuses the same way; the same reads over a record-type binder check, and a registration capture that reads a field of an object binder checks. | Test (TC-1057) |
+| FR-381-AC-15 | A trigger guard that reads `trigger.node.n` through the reference-typed field `node` of a record binder, and a recovery predicate that reads `deref(recovered.node).n`, each refuse `ill_typed`/`operator-ineligible` at the read, naming their stage; an activation capture that reads the same field through the reference checks. | Test (TC-1057) |
 
 ## Dependencies
 

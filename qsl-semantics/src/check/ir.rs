@@ -2,6 +2,7 @@
 //! The typed, name-resolved expression tree that checking produces and the
 //! evaluator runs.
 
+use super::lowering::AuthoredBound;
 use super::navigation::EndSide;
 use crate::model::key::DeclarationKey;
 use qsl_foundation::absence::AbsenceMode;
@@ -53,21 +54,6 @@ impl RecordField {
     pub fn name(&self) -> &str {
         &self.name
     }
-}
-
-/// The state a model read in a state clause observes (FR-104
-/// "Observations of reads"): `current` in an invariant, `pre` in a
-/// precondition and `post` in a postcondition, except inside `pre(e)`,
-/// where reads of `self` and reads through references obtained inside `e`
-/// observe `pre`.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Observation {
-    /// An invariant's `at current` state.
-    Current,
-    /// The operation's pre-state.
-    Pre,
-    /// The operation's post-state.
-    Post,
 }
 
 /// The typed index of one node of a [`CheckedBody`]: its position there.
@@ -174,6 +160,19 @@ impl CheckedBody {
             location: Location::root(quire_semantic_value::location::Origin::Expression),
         });
         Self { nodes }
+    }
+
+    /// Link the relationship-end reachability `id` to the authored bound of
+    /// the population it walks (FR-380). A node that is no such
+    /// reachability is left as it is.
+    pub(in crate::check) fn link_population(&mut self, id: NodeId, bound: AuthoredBound) {
+        if let Some(Node {
+            kind: NodeKind::ReachesEnd { population, .. },
+            ..
+        }) = self.nodes.get_mut(id.0)
+        {
+            *population = Some(bound);
+        }
     }
 
     /// A body of `nodes`, each stored after the nodes it names, the last the
@@ -1015,6 +1014,10 @@ pub enum NodeKind {
         role: String,
         /// The relationship end nearest the operands.
         near: EndSide,
+        /// The authored bound (FR-380) of the population this reachability
+        /// walks, when the unit bounds it. The typer leaves it `None`; the
+        /// state clause check sets it once the walked population resolves.
+        population: Option<AuthoredBound>,
     },
     /// `protocol <name>` (FR-308, FR-218): a reference to the unit's
     /// `protocol`-th protocol declaration, resolved once at S3 and typed

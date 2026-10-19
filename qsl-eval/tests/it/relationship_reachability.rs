@@ -109,7 +109,7 @@ fn declared_end(role: &str, multiplicity: Option<Multiplicity>) -> DeclaredEnd {
 /// Fixture R's `Order`, `Rush`, the optional field `trail`, the population
 /// `orders`, the operation `reroute(target)` and `Order/next` and
 /// `Order/link`, checked with the four clauses of [`CLAUSES`].
-fn orders_package(shape: Shape) -> CheckedPackage {
+fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
     let relationship = |relationship_key, direction, source: DeclaredEnd, target: DeclaredEnd| {
         DomainPackageRecord::Relationship(RelationshipRecord {
             key: relationship_key,
@@ -140,6 +140,7 @@ fn orders_package(shape: Shape) -> CheckedPackage {
             key: key("orders"),
             member_types: vec![key("Order")],
             extent: Extent::Closed,
+            symmetric: false,
         }),
         DomainPackageRecord::OperationMember(OperationMemberRecord {
             key: key("Order/reroute"),
@@ -179,9 +180,9 @@ fn orders_package(shape: Shape) -> CheckedPackage {
     let identity = package.model_selection.identity.clone();
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
-         {CLAUSES}"
+         {CLAUSES}{declarations}"
     );
     let selected = SelectedModels::fixture(
         "M",
@@ -231,8 +232,13 @@ struct Orders {
 
 impl Orders {
     fn new(shape: Shape) -> Self {
+        Self::with_declarations(shape, "")
+    }
+
+    /// The scenario whose unit also holds `declarations`.
+    fn with_declarations(shape: Shape, declarations: &str) -> Self {
         Self {
-            package: orders_package(shape),
+            package: orders_package(shape, declarations),
             shape,
         }
     }
@@ -1321,6 +1327,126 @@ fn row_23_every_small_graph_agrees_with_the_independent_closure() {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// TC-1054 row 13: with `bound OrdersBound on M::orders [2]`, an
+/// observation whose `orders` population lists 2 objects evaluates the
+/// reachability as for an unbounded population; one listing 3 refuses
+/// `cardinality_out_of_bound`/`above-maximum` naming 2 and 3, before any
+/// charge and as no resource outcome.
+#[trace("TC-1054", "FR-380-AC-7")]
+#[test]
+fn an_observation_above_the_authored_bound_refuses_above_maximum() {
+    let orders = Orders::with_declarations(Shape::BASE, "bound OrdersBound on M::orders [2]\n");
+    let population = key("orders").node;
+    let observed = |count: u64| {
+        chain(&orders).with_population_sizes(BTreeMap::from([(population.clone(), count)]))
+    };
+
+    let (at_the_bound, meter) = orders.reaches(
+        &orders.order("o1"),
+        &orders.order("o3"),
+        &observed(2),
+        UNLIMITED,
+    );
+    assert!(
+        boolean(at_the_bound),
+        "decided as for an unbounded population"
+    );
+    assert_charges(&meter, &[EXPAND, EDGE, EXPAND, EDGE, RETAIN], 5, 1);
+
+    let (above, meter) = orders.reaches(
+        &orders.order("o1"),
+        &orders.order("o3"),
+        &observed(3),
+        UNLIMITED,
+    );
+    let FamilyOutcome::Evaluated(Outcome::Refused(refusal)) = &above.outcome else {
+        panic!("expected a kernel refusal, got {:?}", above.outcome);
+    };
+    assert!(matches!(
+        refusal,
+        quire_exact::Refusal::CardinalityOutOfBound {
+            violation: quire_exact::BoundViolation::AboveMaximum,
+            count: 3,
+            ..
+        }
+    ));
+    let record = above
+        .refusal_record(orders.package.graph())
+        .expect("cardinality_out_of_bound has a catalog code");
+    assert_eq!(
+        record.code(),
+        qsl_foundation::diagnostic::CatalogCode::new("cardinality_out_of_bound", "above-maximum")
+    );
+    let fields: Vec<(&str, &str)> = record
+        .fields()
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect();
+    assert_eq!(
+        fields,
+        [("bound", "[0, 2]"), ("collection", "set"), ("count", "3")],
+        "the maximum 2 and the count 3"
+    );
+    assert_charges(&meter, &[], 0, 0);
+
+    // Without the bound the same observation is decided.
+    let unbounded = Orders::base();
+    let (decided, _) = unbounded.reaches(
+        &unbounded.order("o1"),
+        &unbounded.order("o3"),
+        &chain(&unbounded).with_population_sizes(BTreeMap::from([(population, 3)])),
+        UNLIMITED,
+    );
+    assert!(boolean(decided));
+}
+
+/// TC-1054 row 13: the bound refuses for every population the
+/// clause's record holds as bounded, not only when a `reaches` node runs: a
+/// clause over the bounded context population alone, and one whose
+/// `reaches` is skipped by a short-circuit, both refuse above the maximum.
+#[trace("TC-1054", "FR-380-AC-7")]
+#[test]
+fn a_bounded_population_refuses_for_a_clause_that_never_evaluates_a_reaches() {
+    let orders = Orders::with_declarations(
+        Shape::BASE,
+        "bound OrdersBound on M::orders [2]\n\
+         pre PreContext using v on M::Order::reroute { true }\n\
+         pre PreShort using v on M::Order::reroute { true or reaches(self, target, next) }\n",
+    );
+    let population = key("orders").node;
+    for clause in ["PreContext", "PreShort"] {
+        for (count, refused) in [(2_u64, false), (3, true)] {
+            let environment =
+                chain(&orders).with_population_sizes(BTreeMap::from([(population.clone(), count)]));
+            let (evaluation, meter) = orders.run(
+                clause,
+                &orders.order("o1"),
+                &orders.order("o3"),
+                &environment,
+                UNLIMITED,
+            );
+            match (&evaluation.outcome, refused) {
+                (FamilyOutcome::Evaluated(Outcome::Refused(refusal)), true) => {
+                    assert!(
+                        matches!(
+                            refusal,
+                            quire_exact::Refusal::CardinalityOutOfBound {
+                                violation: quire_exact::BoundViolation::AboveMaximum,
+                                count: 3,
+                                ..
+                            }
+                        ),
+                        "{clause}: {refusal:?}"
+                    );
+                    assert_charges(&meter, &[], 0, 0);
+                }
+                (FamilyOutcome::Evaluated(Outcome::Completed(Value::Boolean(true))), false) => {}
+                (other, _) => panic!("{clause} over {count} objects: {other:?}"),
             }
         }
     }

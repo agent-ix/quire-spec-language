@@ -41,9 +41,11 @@ mod golden;
 mod identity_depth;
 mod navigation;
 mod owners;
+mod population_bound;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;
+mod temporal_clause;
 mod union_nodes;
 mod variant_types;
 
@@ -253,6 +255,28 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
                 .collect()
         }
         other => panic!("expected Verified, got {other:?}"),
+    }
+}
+
+/// The small checked producer's canonical envelope and identity are fixed by
+/// the owned-projection emission, then admitted by the independent V2 reader.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn emitted_package_preserves_the_owned_projection_golden() {
+    let emission = emit(&package(vec![f()]));
+    assert_eq!(
+        emission.package.bytes(),
+        include_bytes!("tests/fixtures/owned_projection_wire.json")
+    );
+    assert_eq!(
+        emission.package.package_id().hex(),
+        "f2332c7edc46df9efb27d7d7da73a9af1464a46c5a1b28996118754fb0678e3c"
+    );
+    match read_back(&emission) {
+        Read::Verified { package, .. } => {
+            assert_eq!(package.package_id(), emission.package.package_id());
+        }
+        other => panic!("the golden envelope must be reader-admitted: {other:?}"),
     }
 }
 
@@ -654,7 +678,7 @@ fn recursion_group_members_are_written_in_ordinal_order() {
 }
 
 /// FR-093 "Node dependencies" rules 1 to 3, rebuilt from a written node by a
-/// test-side walker: body reference targets, operation member declarations,
+/// test-side walker: body reference targets, operation member declarations and populations,
 /// and a `bounded_domain` node's semantic type.
 fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
     fn walk(term: &Value, found: &mut BTreeSet<String>) {
@@ -663,12 +687,14 @@ fn rebuilt_dependencies(node: &Value) -> Vec<Value> {
                 if members.get("term") == Some(&json!("reference")) {
                     found.insert(members["target"]["digest"].as_str().unwrap().to_owned());
                 }
-                if let Some(declaration) = members
-                    .get("operation")
-                    .and_then(|operation| operation.get("member"))
-                    .and_then(|member| member.get("declaration"))
-                {
-                    found.insert(declaration["digest"].as_str().unwrap().to_owned());
+                for key in ["declaration", "population"] {
+                    if let Some(named) = members
+                        .get("operation")
+                        .and_then(|operation| operation.get("member"))
+                        .and_then(|member| member.get(key))
+                    {
+                        found.insert(named["digest"].as_str().unwrap().to_owned());
+                    }
                 }
                 members.values().for_each(|value| walk(value, found));
             }
@@ -1347,6 +1373,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
                 panic!("the fixture set holds no protocol reference")
             }
+            Err(EmitRefusal::Abstraction(_)) => {
+                panic!("the fixture set binds no abstraction relation")
+            }
         }
     }
     assert_eq!(
@@ -1763,7 +1792,7 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
 /// A unit with a declared record, an `Integer` function and a function with
 /// parameters, the FR-091 round trip's source.
 const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\";\n\
+    profile v = \"quire.model.complete/v1\";\n\
     record Point { x: Integer; y: Integer; }\n\
     function one using v(): Integer pure { 1 + 0 }\n\
     function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n";
@@ -2739,7 +2768,13 @@ fn closure(package: &CheckedPackage) -> Vec<(LibraryName, PackageId, Vec<Library
     package
         .dependency_selections()
         .iter()
-        .map(|(identity, resolved)| (identity.clone(), resolved.package_id, resolved.path.clone()))
+        .map(|(identity, resolved)| {
+            (
+                identity.clone(),
+                resolved.package_id,
+                resolved.path(identity),
+            )
+        })
         .collect()
 }
 
@@ -2830,7 +2865,7 @@ fn a_diamond_selecting_one_package_unifies() {
     .expect("one selection of test/units by two paths unifies");
     let units = &root.dependency_selections()[&lib("test/units")];
     assert_eq!(units.package_id, d);
-    assert_eq!(units.path, path(&["test/units"]));
+    assert_eq!(units.path(&lib("test/units")), path(&["test/units"]));
     read_linked(&root);
 }
 
@@ -2891,9 +2926,15 @@ fn e4_refuses_a_conflicting_diamond() {
     };
     assert_eq!(*identity, lib("test/units"));
     assert_eq!(selections[0].package_id, d);
-    assert_eq!(selections[0].path, path(&["test/mid", "test/units"]));
+    assert_eq!(
+        selections[0].path(identity),
+        path(&["test/mid", "test/units"])
+    );
     assert_eq!(selections[1].package_id, another_id);
-    assert_eq!(selections[1].path, path(&["test/mid2", "test/units"]));
+    assert_eq!(
+        selections[1].path(identity),
+        path(&["test/mid2", "test/units"])
+    );
 
     // A dependency whose occurrences have no source region does not emit,
     // so its `package_id` cannot be recomputed.
@@ -3021,7 +3062,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
 fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = \"example/config-version\" version \"1\" digest \
          \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
          {declarations}\n\
@@ -3284,16 +3325,16 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
 }
 
 /// SR-770 FND-001 (the reviewer's own probe): a unit with a function and a
-/// protocol whose content no checker reads -- undeclared types
-/// (`Nope::Input`, `Nope::Actor`, `Undeclared`), a `send` via an undeclared
-/// channel and ill-typed bodies (`1 + true`) -- refuses at check, rather
-/// than checking and emitting a package the protocol is silently missing
-/// from.
+/// protocol whose content is garbage -- undeclared types (`Nope::Input`,
+/// `Nope::Actor`, `Undeclared`), a `send` via an undeclared channel and
+/// ill-typed bodies (`1 + true`) -- refuses at check, at the undeclared
+/// names, rather than checking and emitting a package the protocol is
+/// silently missing from.
 #[trace("TC-513", "FR-114")]
 #[test]
 fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
     let unit = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\";\n\
+        profile v = \"quire.model.complete/v1\";\n\
         model Config = \"example/config-version\" version \"1\" digest \
         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
         function f using v (): Boolean pure { true }\n\
@@ -3307,27 +3348,29 @@ fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
     let refusals = check_attempt_unit(unit, false)
         .map(|_| ())
         .expect_err("a protocol with unchecked content must not check");
+    assert!(!refusals.is_empty());
     assert!(
         refusals
             .iter()
-            .any(|refusal| refusal.cause.code().as_str() == "unsupported_construct"),
+            .all(|refusal| refusal.cause.code().as_str() == "missing_declaration"),
         "{refusals:?}"
     );
 }
 
 /// SR-770 FND-001/SR-771 FND-005 (probe C): the same garbage beside a
 /// valid, resolving attempt still refuses at check. Each part is refused on
-/// its own: an ill-typed body as not yet implemented, and an undeclared
-/// role or binder type as a missing name. SR-773 FND-002 adds the rest of
+/// its own: an ill-typed body by the clause checker, and an undeclared role
+/// or binder type as a missing name. SR-773 FND-002 adds the rest of
 /// the content `protocol_clause::content` checks rather than refuses (a
 /// `using` naming no profile, a `by` naming no role, two roles of one name)
-/// and the one refused construct no other test writes (`relationship`).
+/// and a `relationship` naming an object type, which refuses as a wrong
+/// export (FR-218 "Relationships").
 #[trace("TC-513", "FR-114")]
 #[test]
 fn a_valid_attempt_does_not_let_garbage_content_through() {
     let valid = attempt_frame_unit("", "Config::ConfigVersion::attemptUpdate", "");
     for (from, to, code) in [
-        ("{ true };\n}", "{ 1 + true };\n}", "unsupported_construct"),
+        ("{ true };\n}", "{ 1 + true };\n}", "ill_typed"),
         (
             "role R on Config::ConfigVersion;",
             "role R on Nope::Actor;",
@@ -3361,7 +3404,7 @@ fn a_valid_attempt_does_not_let_garbage_content_through() {
         (
             "role R on Config::ConfigVersion;",
             "role R on Config::ConfigVersion;\nrelationship rel = Config::ConfigVersion;",
-            "unsupported_construct",
+            "invalid_model_binding",
         ),
     ] {
         let unit = valid.replacen(from, to, 1);
@@ -3448,7 +3491,7 @@ fn emit_from_text(declarations: &str) -> (String, Emission) {
 pub(crate) fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          {declarations}"
     );
     let parsed = qsl_cst::parse(
@@ -3693,4 +3736,42 @@ fn a_node_a_state_clause_places_does_not_move_to_a_type_name() {
         generated_texts(&emitted.wire, &unit, &integer["node_id"]),
         ["1 < 2"]
     );
+}
+
+/// ADR-013 O-02: the emission a package remembers is the emitter's own, and a
+/// repeat emit and a `link_with` reuse it rather than emitting again.
+#[test]
+fn a_package_remembers_its_emission_and_link_with_reuses_it() {
+    let shared = Arc::new(dependency());
+    assert!(shared.remembered_emission().is_none());
+    let first = emit_checked(&shared).expect("the dependency emits");
+    let remembered = shared
+        .remembered_emission()
+        .expect("the emit remembers its emission");
+    assert_eq!(remembered.package(), first.package());
+    let again = emit_checked(&shared).expect("a repeat emit");
+    assert_eq!(again.package(), first.package());
+    let linked = CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: Arc::clone(&shared),
+        }],
+    )
+    .expect("the root links");
+    assert_eq!(
+        linked.dependency_selections()[&lib("test/units")].package_id,
+        first.package().package_id()
+    );
+
+    let unemitted = Arc::new(dependency());
+    CheckedPackage::link_with(
+        root_graph(),
+        vec![crate::Import {
+            identity: lib("test/units"),
+            package: Arc::clone(&unemitted),
+        }],
+    )
+    .expect("the root links");
+    assert!(unemitted.remembered_emission().is_some());
 }

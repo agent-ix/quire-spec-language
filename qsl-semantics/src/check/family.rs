@@ -43,7 +43,7 @@
 //! `crate::check` -- layer 5 depending on layer 3 is the permitted
 //! direction (ADR-011 §6.1).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use quire_exact::{CollectionKind, NodeKey, Origin, Role};
 
@@ -415,6 +415,12 @@ fn encode_expression(
                 out.write_str(&numerator.to_string());
                 out.write_str(&denominator.to_string());
             }
+            ExprNode::Quantity(quantity) => {
+                out.write_str("quantity");
+                out.write_str(&quantity.magnitude.first.to_string());
+                out.write_str(&quantity.magnitude.second.to_string());
+                out.write_str(&quantity.unit.name);
+            }
             ExprNode::String(text) => {
                 out.write_str("string");
                 out.write_str(text);
@@ -632,6 +638,30 @@ fn encode_expression(
                 out.write_str(edge);
                 pending.extend([expr.at(*source), expr.at(*target)]);
             }
+            ExprNode::Indexed { read, trace } => {
+                out.write_str("indexed");
+                out.write_str(trace);
+                pending.push(expr.at(*read));
+            }
+            ExprNode::StepLabel { trace, label } => {
+                out.write_str("step_label");
+                out.write_str(trace);
+                match label {
+                    qsl_forms::StepLabelForm::Operation => out.write_str("op"),
+                    qsl_forms::StepLabelForm::Receiver => out.write_str("receiver"),
+                    qsl_forms::StepLabelForm::Argument {
+                        operation,
+                        parameter,
+                    } => {
+                        out.write_str("argument");
+                        out.write_str(operation);
+                        out.write_str(parameter);
+                    }
+                }
+            }
+            ExprNode::Stutter => {
+                out.write_str("stutter");
+            }
             // Not the S2 seam (`Typer::infer_form`'s own doc,
             // `qsl-semantics/src/check/check/typing.rs`): an unconditional
             // probe arm so this match keeps compiling under `--cfg
@@ -664,6 +694,7 @@ fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) 
                 BuiltinType::Text => "Text",
                 BuiltinType::Option => "Option",
                 BuiltinType::Reference => "Reference",
+                BuiltinType::Clock => "Clock",
             },
         });
         out.write_u64(quire_exact::length_amount(form.arguments.len()));
@@ -1325,6 +1356,25 @@ impl<S> OccurrenceMap<S> {
         let ordinal = u64::try_from(spans.len()).unwrap_or(u64::MAX);
         spans.push(span);
         Origin::new(role.kernel_role(), ordinal)
+    }
+
+    /// Renumber the `role` occurrences of each node of `nodes` into
+    /// ascending order of `position` of their spans, keeping the recorded
+    /// order among equal positions (FR-380: a population node's `Type`
+    /// occurrences take their ordinals in source order, whichever writer
+    /// recorded them first). Only meant to run once lowering is done and
+    /// nothing holds an ordinal it returned.
+    pub(crate) fn order_by<K: Ord>(
+        &mut self,
+        role: OccurrenceRole,
+        nodes: &BTreeSet<NodeKey>,
+        position: impl Fn(&S) -> K,
+    ) {
+        for node in nodes {
+            if let Some(spans) = self.spans.get_mut(&(*node, role)) {
+                spans.sort_by_key(&position);
+            }
+        }
     }
 
     /// Whether any occurrence of `identity` is recorded.

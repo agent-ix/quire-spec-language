@@ -24,10 +24,17 @@ use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
 use super::abstraction_declaration;
+use super::hyper_clause;
+use super::probabilistic;
 use super::protocol_clause;
+use super::refinement;
+use super::state_graph;
+use super::state_model;
 use super::sum_case;
 use super::syntax::DeclarationForm;
 use super::temporal_clause;
+use super::terminal_declaration;
+use super::time_model;
 use super::value;
 
 /// A parsed form built from one declaration of a lossless CST with no
@@ -173,6 +180,10 @@ pub enum LeadingTokenKind {
     Post,
     /// `body`: the `ProtocolClause` operation-body form (FR-102).
     Body,
+    /// `bound`: the `StateModel` population-bound form (FR-380). `bound` is a
+    /// declaration-head spelling only; in an expression it stays an
+    /// identifier.
+    Bound,
     /// `protocol`: the `ProtocolClause` protocol declaration form, holding
     /// its scoped anchors (FR-112, ADR-012 §12.2).
     Protocol,
@@ -180,6 +191,37 @@ pub enum LeadingTokenKind {
     /// formula with each operator's optional interval (FR-325, ADR-011
     /// M-3b).
     Temporal,
+    /// `terminal`: the `TemporalTrace` terminal declaration form, holding
+    /// its `when` predicate or `any` (FR-382).
+    Terminal,
+    /// `refinement`: the refinement declaration form, holding its rows in
+    /// source order (FR-310).
+    Refinement,
+    /// `time`: a model's time source (`time M ...`) or a time invariant
+    /// (`time invariant ...`), the one production the CST holds (FR-393).
+    /// `time` is a declaration-head spelling only; elsewhere it stays an
+    /// identifier.
+    Time,
+    /// `urgent`: an urgency declaration (FR-393), a declaration-head
+    /// spelling only.
+    Urgent,
+    /// `hyper`: the `TemporalTrace` hyper clause form, over `behaviours` or
+    /// over a finite trace domain (FR-171).
+    Hyper,
+    /// `relation`: the `TemporalTrace` relation clause form (FR-171).
+    Relation,
+    /// `random`: the `Probabilistic` random-parameter form (FR-311).
+    Random,
+    /// `reward`: the `Probabilistic` reward form (FR-311).
+    Reward,
+    /// `workload`: the `Probabilistic` workload form (FR-311).
+    Workload,
+    /// `probabilistic`: the `Probabilistic` claim form (FR-392).
+    Probabilistic,
+    /// `possible`, `always` or `unique`: the `StateGraph` claim form, whose
+    /// head is `possible`, `always possible` or `unique path` (FR-165,
+    /// ADR-022 SG-1 to SG-3). `always` leads no other declaration.
+    StateGraph,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -385,8 +427,20 @@ fn dispatch(
         LeadingTokenKind::Pre => protocol_clause::state_clause(construct),
         LeadingTokenKind::Post => protocol_clause::state_clause(construct),
         LeadingTokenKind::Body => protocol_clause::operation_body(construct),
+        LeadingTokenKind::Bound => state_model::population_bound(construct),
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
+        LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
+        LeadingTokenKind::Refinement => refinement::refinement_declaration(construct),
+        LeadingTokenKind::Time => time_model::time_member(construct),
+        LeadingTokenKind::Urgent => time_model::urgent_declaration(construct),
+        LeadingTokenKind::Hyper => hyper_clause::hyper_clause(construct),
+        LeadingTokenKind::Relation => hyper_clause::relation_clause(construct),
+        LeadingTokenKind::Random => probabilistic::random_declaration(construct),
+        LeadingTokenKind::Reward => probabilistic::reward_declaration(construct),
+        LeadingTokenKind::Workload => probabilistic::workload_declaration(construct),
+        LeadingTokenKind::Probabilistic => probabilistic::probabilistic_clause(construct),
+        LeadingTokenKind::StateGraph => state_graph::state_graph_claim(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -424,8 +478,20 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"pre" => Some(LeadingTokenKind::Pre),
         b"post" => Some(LeadingTokenKind::Post),
         b"body" => Some(LeadingTokenKind::Body),
+        b"bound" => Some(LeadingTokenKind::Bound),
         b"protocol" => Some(LeadingTokenKind::Protocol),
         b"temporal" => Some(LeadingTokenKind::Temporal),
+        b"terminal" => Some(LeadingTokenKind::Terminal),
+        b"refinement" => Some(LeadingTokenKind::Refinement),
+        b"time" => Some(LeadingTokenKind::Time),
+        b"urgent" => Some(LeadingTokenKind::Urgent),
+        b"hyper" => Some(LeadingTokenKind::Hyper),
+        b"relation" => Some(LeadingTokenKind::Relation),
+        b"random" => Some(LeadingTokenKind::Random),
+        b"reward" => Some(LeadingTokenKind::Reward),
+        b"workload" => Some(LeadingTokenKind::Workload),
+        b"probabilistic" => Some(LeadingTokenKind::Probabilistic),
+        b"possible" | b"always" | b"unique" => Some(LeadingTokenKind::StateGraph),
         _ => None,
     }
 }
@@ -465,8 +531,13 @@ fn declared_edition(cst: &LosslessCst) -> Option<String> {
 fn declared_extent(cst: &LosslessCst, node: &CstNode) -> Option<Box<str>> {
     let significant = value::significant_tokens(cst, node);
     for (index, token) in significant.iter().enumerate() {
+        // A `bound <label> on ...` population-bound declaration (FR-380) has
+        // an identifier after `bound`: only an integer literal is an extent.
         if token.spelling() == b"bound" {
-            if let Some(literal) = significant.get(index + 1) {
+            if let Some(literal) = significant
+                .get(index + 1)
+                .filter(|literal| literal.spelling().first().is_some_and(u8::is_ascii_digit))
+            {
                 return String::from_utf8(literal.spelling().to_vec())
                     .ok()
                     .map(String::into_boxed_str);
@@ -621,6 +692,81 @@ mod tests {
                  conditional, lookup or loop; arm body shape was {shape}"
             );
         }
+    }
+
+    /// The call `dispatch`'s arm for `kind` makes, as `path::function`.
+    fn dispatch_call(kind: &str) -> String {
+        let source = include_str!("dispatch.rs");
+        let file = syn::parse_file(source).expect("dispatch.rs parses as a Rust file");
+        let dispatch_fn = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(function) if function.sig.ident == "dispatch" => Some(function),
+                _ => None,
+            })
+            .expect("fn dispatch exists");
+        let match_expr = dispatch_fn
+            .block
+            .stmts
+            .iter()
+            .find_map(|statement| match statement {
+                syn::Stmt::Expr(syn::Expr::Match(match_expr), _) => Some(match_expr),
+                _ => None,
+            })
+            .expect("dispatch's body is one match expression");
+        let arms: Vec<_> = match_expr
+            .arms
+            .iter()
+            .filter(|arm| match &arm.pat {
+                syn::Pat::Path(path) => path
+                    .path
+                    .segments
+                    .last()
+                    .is_some_and(|segment| segment.ident == kind),
+                _ => false,
+            })
+            .collect();
+        let [arm] = arms[..] else {
+            panic!("exactly one arm for {kind}: {}", arms.len());
+        };
+        let syn::Expr::Call(call) = &*arm.body else {
+            panic!("the {kind} arm is one call");
+        };
+        let syn::Expr::Path(callee) = &*call.func else {
+            panic!("the {kind} arm calls a path");
+        };
+        callee
+            .path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("::")
+    }
+
+    /// FR-311-AC-2 and FR-392-AC-2 (the dispatch half): each probabilistic
+    /// leading word has one arm, one call, to its own production and to no
+    /// other.
+    #[trace("TC-890", "FR-311-AC-2")]
+    #[trace("TC-1077", "FR-392-AC-2")]
+    #[test]
+    fn each_probabilistic_word_dispatches_to_its_one_production() {
+        for (kind, production) in [
+            ("Random", "probabilistic::random_declaration"),
+            ("Reward", "probabilistic::reward_declaration"),
+            ("Workload", "probabilistic::workload_declaration"),
+            ("Probabilistic", "probabilistic::probabilistic_clause"),
+        ] {
+            assert_eq!(dispatch_call(kind), production, "{kind}");
+        }
+        assert_eq!(from_spelling(b"random"), Some(LeadingTokenKind::Random));
+        assert_eq!(from_spelling(b"reward"), Some(LeadingTokenKind::Reward));
+        assert_eq!(from_spelling(b"workload"), Some(LeadingTokenKind::Workload));
+        assert_eq!(
+            from_spelling(b"probabilistic"),
+            Some(LeadingTokenKind::Probabilistic)
+        );
     }
 
     #[trace("TC-167", "FR-067-AC-7")]

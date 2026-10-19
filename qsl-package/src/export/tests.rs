@@ -43,7 +43,7 @@ fn package(clauses: &str) -> CheckedPackage {
     };
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model M = {:?} version \"1\" digest \"sha256-jcs:{}\";\n{clauses}",
         fixture::PACKAGE,
         qsl_semantics::model::key::hex(digest),
@@ -601,4 +601,17 @@ fn a_let_bound_read_references_the_same_object_types_as_the_inline_read() {
         };
         assert_eq!(unbound_keys(refusal), [(&config_key(), fixture::PACKAGE)]);
     }
+}
+
+/// Binding an abstraction changes the package, so its remembered emission is
+/// dropped.
+#[test]
+fn bind_abstraction_resets_the_remembered_emission() {
+    let mut package = package(CLAUSES);
+    crate::emit_checked(&package).expect("the package emits");
+    assert!(package.remembered_emission().is_some());
+    package
+        .bind_abstraction(&[config_object()])
+        .expect("the relation checks");
+    assert!(package.remembered_emission().is_none());
 }

@@ -8,16 +8,26 @@ use qsl_semantics::model::observation::Observation;
 use quire_exact::{EffectiveId, ObjectReference};
 use quire_semantic_value::model_transition::ModelTransition;
 
+use super::footprints::Enforcement;
 use super::{
     contracts, encode, frames, identity_limits, state_document, ClauseInfo, ModelFinding,
     ModelSimState, ModelSystem, BROKEN, EXHAUSTED,
 };
-use crate::simulation::expansion::{Expansion, ExpansionStop};
+use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::key;
 
 /// A stop with `cause`.
 pub(super) const fn stop(cause: qsl_foundation::CatalogCode) -> ExpansionStop {
-    ExpansionStop { cause }
+    ExpansionStop { cause, limit: None }
+}
+
+/// `resource_exhausted`/`insufficient-next-charge` naming the budget `limit`
+/// that ran out.
+pub(super) const fn exhausted(limit: ExpansionLimit) -> ExpansionStop {
+    ExpansionStop {
+        cause: EXHAUSTED,
+        limit: Some(limit),
+    }
 }
 
 /// The candidates one expansion has generated, against its bound
@@ -37,7 +47,7 @@ impl Budget {
     pub(super) fn charge(&mut self) -> Result<(), ExpansionStop> {
         self.used = self.used.saturating_add(1);
         if self.used > self.max {
-            Err(stop(EXHAUSTED))
+            Err(exhausted(ExpansionLimit::MaxCandidates))
         } else {
             Ok(())
         }
@@ -65,6 +75,9 @@ pub(super) struct Walk<'s, 'a> {
     pub(super) state: &'s ModelSimState,
     pub(super) observation: Observation,
     pub(super) rows: Vec<Row>,
+    /// The footprints each step's clauses are held to, when the expansion
+    /// enforces them.
+    pub(super) enforcement: Option<&'s Enforcement<'s>>,
 }
 
 impl Walk<'_, '_> {
@@ -111,7 +124,7 @@ pub(super) struct ContractFinding {
 pub(super) type Successor = (ModelTransition, ModelSimState);
 
 /// The objects of `state`, in ascending (population, key) order.
-fn rows_of(
+pub(super) fn rows_of(
     system: &ModelSystem<'_>,
     state: &qsl_semantics::model::state::ModelState,
 ) -> Result<Vec<Row>, ExpansionStop> {
@@ -132,11 +145,14 @@ fn rows_of(
     Ok(rows)
 }
 
-/// Expand `state`: its findings and every successor (FR-120).
-pub(super) fn expand_state(
-    system: &ModelSystem<'_>,
-    state: &ModelSimState,
-) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+/// What an expansion of `state` reads: its synthesized observation and its
+/// objects (FR-120 "Frame and observation seam"), and the footprints its
+/// clauses are held to when the expansion enforces them.
+pub(super) fn walk_of<'s, 'a>(
+    system: &'s ModelSystem<'a>,
+    state: &'s ModelSimState,
+    enforcement: Option<&'s Enforcement<'s>>,
+) -> Result<Walk<'s, 'a>, ExpansionStop> {
     let identity = identity_limits();
     let state_key = encode::model_key(&system.model, &state.state);
     let (_, digest) = key::state_key(&state_key, identity).map_err(|_| stop(BROKEN))?;
@@ -144,12 +160,22 @@ pub(super) fn expand_state(
         .model
         .observation(&state.state, state_document(&digest))
         .map_err(|_| stop(BROKEN))?;
-    let walk = Walk {
+    Ok(Walk {
         system,
         state,
         observation,
         rows: rows_of(system, &state.state)?,
-    };
+        enforcement,
+    })
+}
+
+/// Expand `state`: its findings and every successor (FR-120).
+pub(super) fn expand_state(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    enforcement: Option<&Enforcement<'_>>,
+) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+    let walk = walk_of(system, state, enforcement)?;
     let mut budget = Budget {
         used: 0,
         max: system.limits.max_candidates,

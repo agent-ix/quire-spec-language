@@ -151,7 +151,7 @@ minutes" needs no probability: it needs aggregate atoms.
 | WA-2 | **Windows.** Under event-position false-extension, `past[a, b]` holds the positions `j` with `i − b <= j <= i − a` and `j >= 0`. Under timestamped-event finite-window (QSpec FR-090), it holds the events whose timestamp `t_j` satisfies `t_i − b <= t_j <= t_i − a`, with `a` and `b` durations. A window never reads a future position, so an aggregate atom needs no lookahead and adds nothing to the formula's horizon (ADR-014 TR-4). |
 | WA-3 | **Values.** Values are exact: integers, exact rationals and quantities with QSpec FR-142's dimension rules. `quantile q` is the nearest-rank quantile, the `⌈q · n⌉`-th smallest of the `n` values in the window. Comparisons with the threshold follow FR-142. |
 | WA-4 | **Insufficient data.** An aggregate term declares `min_count >= 1`. A window holding fewer values evaluates the atom to the kernel's `Undefined`, with cause `InsufficientData{count, min_count}`, so the clause at that position is O-16 undefined, the existing outcome for an atom with no value, never `refuted` and never `UndefinedEvaluation`, as QSpec FR-414 states. |
-| WA-5 | **Memory.** The evaluator keeps the window's values. `max_window_values` is an ADR-014 B-2 run limit that the caller sets per run, with a published default; a window that exceeds it yields `Incomplete`, never a truth value. Evaluation charges TR-5 work per value visited. |
+| WA-5 | **Memory.** The evaluator keeps the window's values. `max_window_values` is an ADR-014 B-2 run limit that the caller sets per run, with a published default; a window that exceeds it yields `Incomplete`, never a truth value. Evaluation charges TR-5 work per window position visited, filtered out or not. |
 | WA-6 | **Meaning.** The truth of an aggregate atom at a position is a deterministic function of the trace. A monitor result over an observed trace reads by ADR-014 A-4 for a finite trace: a violation is a violation of the claim on that trace, and a holding result is `tested`, evidence for that trace only. The result carries evidence kind `Observed{trace, positions}` (SV-1). |
 | WA-7 | **Relation to tl-mltl.** An aggregate atom is evaluated at atom evaluation, before temporal evaluation, as `holds` atoms are. The temporal layer stays Boolean MLTL over derived Boolean signals, so tl-mltl consumes the derived signal unchanged and stays free of probabilistic semantics. QSL's layer-5 evaluator defines the meaning (ADR-018 SM-1); the observation layer computes the derived signal for a live system (References). |
 | WA-8 | **Relation to model claims.** A model quantile (PF-4) is over behaviours under a workload, one observation per behaviour. A window quantile is over events of one observed trace. A monitor with the same threshold as a model claim checks that the running system stays within the model's assumption; its violation is evidence that the workload does not describe the live system, and changes no verdict of the model claim. |
@@ -217,9 +217,10 @@ approximate expected values, which ignore overshoot.
 profile ev = "quire.temporal.event-position.false-extension/v1" …;
 model Health = "example/health" …;     // object n: Node { healthy: Bool }, initially healthy
 
-operation Node::tick(random fault: Bool ~ { true: 1, false: 9999999 })
+operation Node::tick(fault: Bool)
   post self.healthy = (pre(self.healthy) and not fault);
 
+random Node::tick(fault) ~ { true: 1, false: 9999999 };
 workload Steady on Health { weight Node::tick = 1; }
 
 probabilistic NoFault using ev on Health under Steady on origin
@@ -253,15 +254,17 @@ model Service = "example/service" …;   // object s: Server { phase: Phase, att
 operation Server::request
   pre  self.phase = Idle
   post self.phase = Busy and self.attempts = 0;
-operation Server::attempt(random d: Quantity<Time> ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 },
-                          random outcome: Outcome ~ { Ok: 98, Fail: 2 })
+operation Server::attempt(d: Quantity<Time>, outcome: Outcome)
   pre  self.phase = Busy
   post self.attempts = pre(self.attempts) + 1 and
-       self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy)
-  reward duration = d;
+       self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy);
 operation Server::reset
   pre  self.phase = Done
   post self.phase = Idle;
+
+random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 };
+random Server::attempt(outcome) ~ { Ok: 98, Fail: 2 };
+reward duration on Server::attempt = d;
 
 workload Steady on Service { weight Server::request = 1; weight Server::attempt = 1; weight Server::reset = 1; }
 
@@ -297,22 +300,24 @@ latency is the sum of two durations.
 ```text
 model Avail = "example/avail" …;       // object v: Server { up: Bool }, initially up
 
-operation Server::tick(random fail: Bool ~ { true: 1, false: 1999 })
+operation Server::tick(fail: Bool)
   pre  self.up
   post self.up = not fail;
-operation Server::repair(random ok: Bool ~ { true: 9, false: 1 })
+operation Server::repair(ok: Bool)
   pre  not self.up
   post self.up = ok;
 
+random Server::tick(fail) ~ { true: 1, false: 1999 };
+random Server::repair(ok) ~ { true: 9, false: 1 };
 workload Steady on Avail { weight Server::tick = 1; weight Server::repair = 1; }
 
 probabilistic LongRun using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.0002 {
-  long-run fraction holds(v.up) >= 0.999
+  long_run_fraction holds(v.up) >= 0.999
 }
 probabilistic Monthly using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.005 {
-  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= 0.999 ]
+  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= rational(999, 1000) ]
 }
 ```
 
@@ -420,7 +425,7 @@ The owner ruled on the five questions the draft left open, on 2026-10-01, and on
   §1 `ProofBasis` paragraph: statistical results are not a `ProofBasis`
   member (SV-1).
 - ADR-014 §3 TR-1: a statistical run is identified by its provenance (RP-1).
-  TR-5: aggregate atoms charge per value visited (WA-5). TR-6: EN-4 runs
+  TR-5: aggregate atoms charge per window position visited (WA-5). TR-6: EN-4 runs
   carry a seed.
 - ADR-013 O-16 proof column: "measured: accepted" is success and never
   proof evidence; "measured: rejected" is violation, fails the pipeline as

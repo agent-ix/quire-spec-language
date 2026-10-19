@@ -35,12 +35,18 @@ quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", 
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
 quire-semantic-value = { workspace = true }
 thiserror = "2.0.20"
+# The closed-form checker rounds exact rationals to integers.
+num-bigint = "0.4.8"
+num-integer = "0.1.47"
 # FR-269: the deciding element is written through the shared canonical writer
 # and read through the shared reader, so a value of any depth round-trips.
 # Also FR-106's snapshot/invocation `DocumentRef.digest`, the document's own
 # `sha256-jcs` digest (FR-056's digest-first rule), which the test fixtures
 # compute over the same RFC 8785 implementation.
 quire-canonical = { workspace = true }
+# FR-338: a product-state locus carries its automaton key's octets as
+# FR-331's base64url transport.
+base64 = "0.22"
 # FR-269: the `DisagreementCause` wire codec and its strict reader.
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }

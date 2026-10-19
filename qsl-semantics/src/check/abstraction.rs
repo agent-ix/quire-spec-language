@@ -21,10 +21,11 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
+use qsl_forms::{AbstractionBindingForm, NameForm};
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_foundation::{Code, InternalFault};
+use qsl_foundation::{Code, InternalFault, Span};
 use quire_exact::{Identifier, NodeKey};
-use quire_semantic_value::location::Location;
+use quire_semantic_value::location::{Location, Origin};
 
 use super::lowering::{
     generated_location, object_type_node, population_node, relation_node, text_scalar_node,
@@ -269,7 +270,7 @@ impl CheckedAbstractionRelation {
 }
 
 /// The entry of a binding that is not admissible (ADR-017 AR-3).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum MalformedEntry {
     /// A frame binding maps a parameter to the receiver's spelling.
     ReceiverParameter {
@@ -288,6 +289,9 @@ pub enum MalformedEntry {
     UnknownParameter(Identifier),
     /// A frame binding omits a parameter the operation declares.
     OmittedParameter(Identifier),
+    /// An object binding binds one field twice, or a frame binding one
+    /// parameter twice.
+    DuplicateEntry(Identifier),
     /// A frame binding maps two parameters to one Rust parameter.
     SharedRustParameter {
         /// The first operation parameter, in identifier order.
@@ -300,7 +304,7 @@ pub enum MalformedEntry {
 }
 
 /// Why S3 refused an authored binding (ADR-017 AR-3).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AbstractionRefusal {
     /// The key resolves to no admitted declaration, or an operation key
     /// names a type that does not itself declare the operation.
@@ -326,6 +330,15 @@ pub enum AbstractionRefusal {
         /// The defective entry.
         entry: MalformedEntry,
     },
+    /// A name written in an `abstraction` declaration that names no
+    /// declaration of the unit's admitted domain packages: no key can be
+    /// formed for it (FR-304).
+    UnresolvedName {
+        /// The name as written, such as `M::T`.
+        name: String,
+        /// The span of the name.
+        span: Span,
+    },
     /// An admitted operation declares a parameter whose name is not an
     /// identifier: a broken check invariant.
     Internal(InternalFault),
@@ -335,7 +348,9 @@ impl AbstractionRefusal {
     /// The catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::MissingDeclaration { .. } => Code::MissingDeclaration,
+            Self::MissingDeclaration { .. } | Self::UnresolvedName { .. } => {
+                Code::MissingDeclaration
+            }
             Self::ConflictingBinding { .. } | Self::MalformedDeclaration { .. } => {
                 Code::InvalidModelBinding
             }
@@ -346,7 +361,7 @@ impl AbstractionRefusal {
     /// The catalog cause.
     pub fn cause(&self) -> &'static str {
         match self {
-            Self::MissingDeclaration { .. } => "missing-name",
+            Self::MissingDeclaration { .. } | Self::UnresolvedName { .. } => "missing-name",
             Self::ConflictingBinding { .. } => "conflicting-binding",
             Self::MalformedDeclaration { .. } => "malformed-declaration",
             Self::Internal(_) => "established-invariant-broken",
@@ -354,7 +369,202 @@ impl AbstractionRefusal {
     }
 }
 
+/// The `Origin::TypeDeclaration` name an `abstraction` declaration is
+/// located under (QSpec FR-451). Spaced, so it names no declared type.
+pub(crate) fn declaration_origin(name: &str) -> String {
+    format!("abstraction {name}")
+}
+
+/// The parts of `name`, a `::`-separated model name, when it has `count`.
+fn name_parts(name: &NameForm, count: usize) -> Option<Vec<Identifier>> {
+    let parts: Vec<Identifier> = name
+        .name
+        .split("::")
+        .map(Identifier::new)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    (parts.len() == count).then_some(parts)
+}
+
 impl CheckedGraph {
+    /// FR-304: the relation the unit's `abstraction` declarations check to,
+    /// when it holds any.
+    pub fn abstraction(&self) -> Option<&CheckedAbstractionRelation> {
+        self.abstraction.as_ref()
+    }
+
+    /// Where a refusal of the declarations is located: the first
+    /// declaration.
+    pub(super) fn abstraction_location(&self) -> Location {
+        Location::root(Origin::TypeDeclaration {
+            name: self
+                .abstractions
+                .first()
+                .map(|declaration| declaration_origin(&declaration.name.name))
+                .unwrap_or_default(),
+        })
+    }
+
+    /// FR-304: the one relation the unit's `abstraction` declarations check
+    /// to, with each declaration as a site, or `None` when the unit declares
+    /// none. Every name is resolved against the admitted domain packages,
+    /// then every resolved binding is checked together, so key uniqueness
+    /// spans the declarations (QSpec FR-450 rule 5).
+    ///
+    /// # Errors
+    ///
+    /// Every refused name and binding.
+    pub(super) fn check_declared_abstraction(
+        &self,
+    ) -> Result<Option<CheckedAbstractionRelation>, Vec<AbstractionRefusal>> {
+        if self.abstractions.is_empty() {
+            return Ok(None);
+        }
+        let mut bindings = Vec::new();
+        let mut refusals = Vec::new();
+        for declaration in &self.abstractions {
+            for binding in &declaration.bindings {
+                match self.authored_binding(binding) {
+                    Ok(authored) => bindings.push(authored),
+                    Err(refusal) => refusals.push(*refusal),
+                }
+            }
+        }
+        match self.check_abstraction(&bindings) {
+            Ok(relation) if refusals.is_empty() => {
+                let sites = self
+                    .abstractions
+                    .iter()
+                    .map(|declaration| {
+                        Location::root(Origin::TypeDeclaration {
+                            name: declaration_origin(&declaration.name.name),
+                        })
+                    })
+                    .collect();
+                Ok(Some(relation.with_sites(sites)))
+            }
+            Ok(_) => Err(refusals),
+            Err(found) => {
+                refusals.extend(found);
+                Err(refusals)
+            }
+        }
+    }
+
+    /// One written binding as an [`AuthoredBinding`], its names resolved.
+    fn authored_binding(
+        &self,
+        binding: &AbstractionBindingForm,
+    ) -> Result<AuthoredBinding, Box<AbstractionRefusal>> {
+        let unresolved = |name: &NameForm| {
+            Box::new(AbstractionRefusal::UnresolvedName {
+                name: name.name.clone(),
+                span: name.span,
+            })
+        };
+        let object = |model: &Identifier, object: &Identifier| {
+            self.model_objects
+                .get(model.as_str())
+                .and_then(|objects| objects.get(object))
+                .cloned()
+        };
+        match binding {
+            AbstractionBindingForm::Object(form) => {
+                let key = name_parts(&form.model_type, 2)
+                    .and_then(|parts| object(&parts[0], &parts[1]))
+                    .ok_or_else(|| unresolved(&form.model_type))?;
+                let mut fields = BTreeMap::new();
+                for field in &form.fields {
+                    let name = Identifier::new(&field.field.name).map_err(|_| {
+                        Box::new(AbstractionRefusal::UnresolvedName {
+                            name: field.field.name.clone(),
+                            span: field.field.span,
+                        })
+                    })?;
+                    if fields
+                        .insert(name.clone(), RustField::new(&field.rust_field.text))
+                        .is_some()
+                    {
+                        return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
+                            key: AbstractionKey::Object(key),
+                            entry: MalformedEntry::DuplicateEntry(name),
+                        }));
+                    }
+                }
+                Ok(AuthoredBinding::Object {
+                    key,
+                    value: ObjectBinding {
+                        rust_type: RustPath::new(&form.rust_type.text),
+                        fields,
+                    },
+                })
+            }
+            AbstractionBindingForm::Population(form) => {
+                let key = name_parts(&form.population, 2)
+                    .and_then(|parts| {
+                        let domain = self
+                            .model_populations
+                            .get(parts[0].as_str())
+                            .and_then(|populations| populations.get(&parts[1]))?;
+                        self.population_keys
+                            .iter()
+                            .find_map(|(key, held)| (held == domain).then(|| key.clone()))
+                    })
+                    .ok_or_else(|| unresolved(&form.population))?;
+                Ok(AuthoredBinding::Population {
+                    key,
+                    value: PopulationBinding {
+                        collection: RustPath::new(&form.collection.text),
+                    },
+                })
+            }
+            AbstractionBindingForm::Frame(form) => {
+                let parts =
+                    name_parts(&form.operation, 3).ok_or_else(|| unresolved(&form.operation))?;
+                let declaring =
+                    object(&parts[0], &parts[1]).ok_or_else(|| unresolved(&form.operation))?;
+                let key = OperationKey {
+                    declaring,
+                    operation: parts[2].clone(),
+                };
+                let mut parameters = BTreeMap::new();
+                for parameter in &form.parameters {
+                    let name = Identifier::new(&parameter.parameter.name).map_err(|_| {
+                        Box::new(AbstractionRefusal::UnresolvedName {
+                            name: parameter.parameter.name.clone(),
+                            span: parameter.parameter.span,
+                        })
+                    })?;
+                    if parameters
+                        .insert(
+                            name.clone(),
+                            RustParameter::new(&parameter.rust_parameter.text),
+                        )
+                        .is_some()
+                    {
+                        return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
+                            key: AbstractionKey::Frame(key),
+                            entry: MalformedEntry::DuplicateEntry(name),
+                        }));
+                    }
+                }
+                let receiver = if form.receiver.text == "self" {
+                    RustReceiver::SelfValue
+                } else {
+                    RustReceiver::Parameter(RustParameter::new(&form.receiver.text))
+                };
+                Ok(AuthoredBinding::Frame {
+                    key,
+                    value: FrameBinding {
+                        function: RustPath::new(&form.function.text),
+                        receiver,
+                        parameters,
+                    },
+                })
+            }
+        }
+    }
+
     /// FR-304, FR-305: checks `bindings`, in source order, against the
     /// admitted domain packages. Every refused binding is reported, in
     /// source order, and a refusal yields no relation.

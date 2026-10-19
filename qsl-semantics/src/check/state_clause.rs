@@ -29,8 +29,8 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
 use super::facts::{CheckedFacts, Definedness};
-use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
-use super::lowering::{AdmittedModel, LoweredClause};
+use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind};
+use super::lowering::{AdmittedModel, AuthoredBound, LoweredClause};
 use super::observation::Observations;
 use super::references::{body_objects, ModelReferences};
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
@@ -39,6 +39,7 @@ use crate::family::{
     classify_domains, classify_extent, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure,
     FamilyContract, Requirements,
 };
+use crate::model::clause_observation::Observation;
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use qsl_foundation::bound::DomainKind;
@@ -203,18 +204,23 @@ impl StateClauseDeclaration {
     fn view(&self) -> ClauseView<'_> {
         ClauseView {
             kind: self.kind,
-            complete_value: self.selection.identity
-                == crate::value::definition::DefinitionLock::pinned()
-                    .entry(crate::value::definition::CatalogRole::Root)
-                    .identity,
-            context: self.context,
-            receiver: ValueType::Reference(self.context),
+            complete_value: is_complete_value(&self.selection),
+            context: Some(self.context),
+            receiver: Some(("self", ValueType::Reference(self.context))),
             operation: self.operation.as_ref(),
             context_population: self.context_population,
             frame_population: self.frame_population,
             body: &self.body,
         }
     }
+}
+
+/// Whether `selection` is the complete-value profile.
+pub(crate) fn is_complete_value(selection: &ProfileSelection) -> bool {
+    selection.identity
+        == crate::value::definition::DefinitionLock::pinned()
+            .entry(crate::value::definition::CatalogRole::Root)
+            .identity
 }
 
 /// What [`check_clause`] reads of a clause: a unit's state clause
@@ -225,10 +231,14 @@ pub(crate) struct ClauseView<'a> {
     pub(crate) kind: StateClauseKind,
     /// Whether the selected profile is the complete-value one.
     pub(crate) complete_value: bool,
-    pub(crate) context: EffectiveId,
-    /// The type of `self`: a reference to the context for a state clause or
-    /// a kept operation clause, a value of the owner for a type invariant.
-    pub(crate) receiver: ValueType,
+    /// The object type the clause is about; `None` for a state-graph claim
+    /// with no `over` binding.
+    pub(crate) context: Option<EffectiveId>,
+    /// Slot 0, bound as its name and type: `self` for a state clause, a kept
+    /// operation clause and a type invariant, the `over` parameter for a
+    /// state-graph claim's predicate. `None` binds nothing (a claim with no
+    /// `over`).
+    pub(crate) receiver: Option<(&'a str, ValueType)>,
     pub(crate) operation: Option<&'a ClauseOperation>,
     pub(crate) context_population: Option<PopulationDomain>,
     pub(crate) frame_population: Option<PopulationDomain>,
@@ -256,7 +266,11 @@ impl ClauseView<'_> {
     /// clause, each typed as FR-103 declares it: the slots the body is
     /// typed over, in order. An invariant binds `self` alone.
     fn parameters(&self) -> (Vec<(String, ValueType)>, bool) {
-        let mut parameters = vec![("self".to_owned(), self.receiver.clone())];
+        let mut parameters: Vec<(String, ValueType)> = self
+            .receiver
+            .iter()
+            .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+            .collect();
         let Some(operation) = self.operation else {
             return (parameters, false);
         };
@@ -405,6 +419,10 @@ pub struct ClauseDeclarations<'a> {
 pub struct PopulationDomain {
     pub(crate) object: EffectiveId,
     pub(crate) ordinal: usize,
+    /// The maximum of the unit's authored bound on this population
+    /// (FR-380), which makes it a `Population(Some(N))` domain; `None` is
+    /// the unbounded `Population(None)` domain.
+    pub(crate) maximum: Option<u64>,
 }
 
 /// What an `operation-contract` claim is about.
@@ -458,23 +476,27 @@ pub struct TypedStateClause {
     /// is exactly the kind of comparison a `#[string_edge]` reader marks,
     /// never an interior evaluator decision).
     pub(crate) has_result: bool,
+    /// The authored bound of every bounded population the claims name, the
+    /// ones an evaluation refuses above (FR-380-AC-7).
+    pub(crate) bounds: Vec<AuthoredBound>,
 }
 
 /// The `ProtocolClause` family's state clause production (ADR-012 §15.2,
 /// FR-104).
 pub struct ProtocolClauseFamily;
 
-/// The one population with no maximum that covers `object`, by conformance
-/// (FR-104, FR-084's `allInstances<T>`: a member type or a proper supertype
-/// of it): `Ok(None)` when none does, and the populations' keys in ascending
-/// `DeclarationKey` order when several do. A domain package population
-/// declares no maximum, so every one counts.
+/// The one population that covers `object`, by conformance (FR-104,
+/// FR-084's `allInstances<T>`: a member type or a proper supertype of it),
+/// whether or not the unit authors a bound on it (FR-380): `Ok(None)` when
+/// none does, and the populations' keys in ascending `DeclarationKey` order
+/// when several do. A domain package population declares no maximum, so
+/// every one counts.
 pub(crate) fn population_of(
     models: &[AdmittedModel],
     object: EffectiveId,
     types: &TypeEnvironment,
 ) -> Result<Option<PopulationDomain>, Vec<DeclarationKey>> {
-    let found: Vec<(usize, &DeclarationKey, EffectiveId)> = models
+    let found: Vec<(usize, &DeclarationKey, EffectiveId, Option<&AuthoredBound>)> = models
         .iter()
         .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
         .collect();
@@ -483,17 +505,31 @@ pub(crate) fn population_of(
         // The domain names the population's own covering member type, not
         // `object` (SR-736 FND-010): `Sub` and `ConfigVersion` clauses over
         // `config_history` key the same `PopulationDomain`.
-        [(ordinal, _, member)] => Ok(Some(PopulationDomain {
+        [(ordinal, _, member, bound)] => Ok(Some(PopulationDomain {
             object: *member,
             ordinal: *ordinal,
+            maximum: bound.map(|bound| bound.maximum),
         })),
         many => {
             let mut keys: Vec<DeclarationKey> =
-                many.iter().map(|(_, key, _)| (*key).clone()).collect();
+                many.iter().map(|(_, key, _, _)| (*key).clone()).collect();
             keys.sort();
             Err(keys)
         }
     }
+}
+
+/// The authored bound (FR-380) of the one population that covers `object`,
+/// when the unit bounds it: what a reachability over `object` links to.
+fn walked_bound(
+    models: &[AdmittedModel],
+    object: EffectiveId,
+    types: &TypeEnvironment,
+) -> Option<AuthoredBound> {
+    models
+        .iter()
+        .flat_map(|model| model.populations_of(object, |sub, sup| types.conforms(sub, sup)))
+        .find_map(|(_, _, _, bound)| bound.cloned())
 }
 
 /// `refusal`'s cause attributed to the `StateModel` family.
@@ -610,13 +646,16 @@ pub(crate) fn check_clause(
     .with_context(cx.reborrow(input.scope));
     bind_parameters(&mut typer, &parameters, location)?;
     let mut parent_projections = BTreeMap::new();
-    if let (StateClauseKind::Postcondition, Some(operation), Some(staged)) =
-        (form.kind, form.operation.as_ref(), input.staged)
-    {
+    if let (StateClauseKind::Postcondition, Some(operation), Some(staged), Some(context)) = (
+        form.kind,
+        form.operation.as_ref(),
+        input.staged,
+        form.context,
+    ) {
         let mut staged = staged.borrow_mut();
         for model in input.models {
             let projected = model
-                .parent_projections(form.context, operation, &mut staged, u64::MAX)
+                .parent_projections(context, operation, &mut staged, u64::MAX)
                 .map_err(|failure| parent_slot_refusal(failure, location))?;
             parent_projections.extend(projected);
         }
@@ -655,6 +694,9 @@ pub(crate) fn check_clause(
     // (FR-104 "Requirements").
     let mut clause_populations = BTreeSet::new();
     clause_populations.extend(form.context_population);
+    // Each relationship-end reachability that walks a population with an
+    // authored bound (FR-380), to be linked to that bound below.
+    let mut linked = Vec::new();
     for node in body.root().descendants() {
         // The objects walked: a field edge's operand type, and an end's near
         // end type `E` (FR-365 "The population a reachability walks").
@@ -681,8 +723,16 @@ pub(crate) fn check_clause(
                         refusal
                     }
                 })?;
+            if end_form && walked.is_some_and(|domain| domain.maximum.is_some()) {
+                let bound = walked_bound(input.models, object, input.scope.types());
+                linked.extend(bound.map(|bound| (node.id(), bound)));
+            }
             clause_populations.extend(walked);
         }
+    }
+    let mut body = body;
+    for (id, bound) in linked {
+        body.link_population(id, bound);
     }
     let mut claims = vec![ClauseClaim {
         subject: ClaimSubject::Clause,
@@ -694,6 +744,14 @@ pub(crate) fn check_clause(
             populations: form.frame_population.into_iter().collect(),
         });
     }
+    let mut bounds: Vec<AuthoredBound> = claims
+        .iter()
+        .flat_map(|claim| &claim.populations)
+        .filter(|domain| domain.maximum.is_some())
+        .filter_map(|domain| walked_bound(input.models, domain.object, input.scope.types()))
+        .collect();
+    bounds.sort_by(|left, right| left.label.cmp(&right.label));
+    bounds.dedup();
     let population_types = claims
         .iter()
         .flat_map(|claim| claim.populations.iter().map(|domain| domain.object))
@@ -712,6 +770,7 @@ pub(crate) fn check_clause(
         population_types,
         claims,
         has_result,
+        bounds,
     })
 }
 
@@ -732,9 +791,16 @@ pub struct CheckedStateClause {
     pub(crate) claim: Origin,
     pub(crate) spans: DeclarationSpans,
     pub(crate) has_result: bool,
+    pub(crate) bounds: Vec<AuthoredBound>,
 }
 
 impl CheckedStateClause {
+    /// The authored bound of each bounded population the clause ranges over
+    /// (FR-380), ascending by label.
+    pub fn population_bounds(&self) -> &[AuthoredBound] {
+        &self.bounds
+    }
+
     /// The declared name.
     pub fn name(&self) -> &str {
         &self.name
@@ -862,6 +928,11 @@ fn record(
         }
     }
     for (domain, object) in populations {
+        // An authored bound makes the population a `Population(Some(N))`
+        // domain, which is not an unbounded domain (FR-380, ADR-014 §4).
+        if domain.maximum.is_some() {
+            continue;
+        }
         domains.insert(
             population_key(domain, *object).map_err(ClassifyFailure::Fault)?,
             DomainKind::Population,

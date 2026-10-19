@@ -73,6 +73,66 @@ pub fn evaluate_closed(
     .run(node, slots, Vec::new())
 }
 
+/// FR-124 (ADR-018 DL-1): evaluate the `terminal when` predicate
+/// `predicate` of `package` for the object `self_object` of the state whose
+/// objects are `current`, through the one clause evaluator (FR-107): the
+/// predicate is checked as an invariant is, so every read observes
+/// `current`.
+pub fn evaluate_terminal_predicate(
+    package: &CheckedPackage,
+    predicate: &qsl_semantics::check::CheckedTerminalPredicate,
+    current: &ObjectEnvironment,
+    self_object: quire_exact::ObjectReference,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    // An invariant's checked body reads no `pre(..)`, so every model read
+    // observes `current` (FR-104).
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(
+        predicate.body(),
+        predicate.slots(),
+        vec![Value::Reference(self_object)],
+    )
+}
+
+/// FR-167 (ADR-022 GM-3): evaluate the state-graph predicate `predicate` of
+/// `package` with its `over` parameter bound to `over` (`None` for a claim
+/// with no `over`) at the state whose objects are `current`, through the one
+/// clause evaluator (FR-107). The predicate is checked as an invariant body
+/// is, so every read observes `current`.
+pub fn evaluate_state_predicate(
+    package: &CheckedPackage,
+    predicate: &qsl_semantics::check::CheckedPredicateBody,
+    current: &ObjectEnvironment,
+    over: Option<quire_exact::ObjectReference>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(
+        predicate.body(),
+        predicate.slots(),
+        over.map(Value::Reference).into_iter().collect(),
+    )
+}
+
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
 /// names the same code as a string ([`InputRefusal::code`]) but cannot name
@@ -487,6 +547,23 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
         meter: &mut Meter,
     ) -> Result<Evaluation, CallFailure>;
 
+    /// FR-327 "Bounded-profile evaluation": evaluate the condition of the
+    /// `holds` atom `atom` of the temporal clause `clause` over `objects`,
+    /// the observation at one position, with `over` the clause's `over`
+    /// parameter. Every read observes `objects`; a temporal condition has no
+    /// `pre` observation. The result is S6a's, unchanged, as
+    /// [`Self::evaluate`] returns it.
+    ///
+    /// A node that is no `holds` atom of `clause` is an `Err` fault.
+    fn evaluate_holds(
+        &self,
+        clause: &qsl_semantics::check::TemporalClauseNode,
+        atom: qsl_semantics::check::FormulaNodeId,
+        over: Value,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure>;
+
     /// FR-107: evaluate one checked state clause over `observations`
     /// (FR-106's `AdmittedObservations`), the `ProtocolClause` S6a family's
     /// entry point beside [`Self::call`]'s `Value` one.
@@ -625,9 +702,13 @@ impl<'a> ClauseSetup<'a> {
         // post side (FR-104, FR-106), whether selected by `PreCall` or by
         // `Invocation`.
         let current = match declaration.observation() {
-            qsl_semantics::check::Observation::Current => observations.current.as_ref(),
-            qsl_semantics::check::Observation::Post => observations.post.as_ref(),
-            qsl_semantics::check::Observation::Pre => observations.pre.as_ref(),
+            qsl_semantics::model::clause_observation::Observation::Current => {
+                observations.current.as_ref()
+            }
+            qsl_semantics::model::clause_observation::Observation::Post => {
+                observations.post.as_ref()
+            }
+            qsl_semantics::model::clause_observation::Observation::Pre => observations.pre.as_ref(),
         }
         .ok_or_else(|| {
             CallFailure::Fault(InternalFault::new(
@@ -880,6 +961,28 @@ impl CheckedPackageEvaluation for CheckedPackage {
         .map_err(CallFailure::Fault)
     }
 
+    fn evaluate_holds(
+        &self,
+        clause: &qsl_semantics::check::TemporalClauseNode,
+        atom: qsl_semantics::check::FormulaNodeId,
+        over: Value,
+        objects: &ObjectEnvironment,
+        meter: &mut Meter,
+    ) -> Result<Evaluation, CallFailure> {
+        let (condition, slots) = clause.condition(atom).ok_or_else(|| {
+            CallFailure::Fault(InternalFault::new("S6a", "holds-atom-resolved-by-clause"))
+        })?;
+        Machine::new(
+            self.graph().scope(),
+            self.graph(),
+            objects,
+            meter,
+            self.graph().dispatch_tables(),
+        )
+        .run(condition, slots, vec![over])
+        .map_err(CallFailure::Fault)
+    }
+
     fn evaluate_clause(
         &self,
         clause: &QualifiedName,
@@ -888,6 +991,25 @@ impl CheckedPackageEvaluation for CheckedPackage {
     ) -> Result<ClauseEvaluation, CallFailure> {
         let setup = ClauseSetup::of(self, clause, observations)?;
         let identity = setup.declaration.identity();
+        // FR-380-AC-7: an observation listing more objects of a bounded
+        // population the clause ranges over than its maximum refuses before
+        // any charge, whether or not a `reaches` of the body is evaluated.
+        for bound in setup.declaration.population_bounds() {
+            for instant in [&observations.current, &observations.pre, &observations.post]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(refusal) = evaluate::authored_bound_refusal(&instant.environment, bound)
+                    .map_err(CallFailure::Fault)?
+                {
+                    return Ok(ClauseEvaluation::new(
+                        evaluate::refused_evaluation(refusal),
+                        setup.trail,
+                        setup.receiver_path,
+                    ));
+                }
+            }
+        }
         let mut env = s6a::protocol_clause::ProtocolClauseEnv::new(
             self.graph(),
             setup.current,
@@ -950,7 +1072,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         };
         let reads: std::collections::BTreeMap<
             quire_semantic_value::location::Location,
-            qsl_semantics::check::Observation,
+            qsl_semantics::model::clause_observation::Observation,
         > = declaration
             .reads()
             .map(|(location, observation)| (location.clone(), observation))

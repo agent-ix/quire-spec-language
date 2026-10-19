@@ -79,7 +79,7 @@ fn model_fixture(body: &str) -> Fixture {
         .jcs_digest();
     let hex = qsl_semantics::model::key::hex(&digest);
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+        "language \"ix:native\" edition \"1-draft\";\n{MODEL_PROFILE}\
          model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{hex}\";\n{body}"
     );
     let packages = package_input([document.as_slice()]);

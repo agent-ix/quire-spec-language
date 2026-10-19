@@ -609,9 +609,12 @@ QSpec FR-201 domain, `quire.cache-key/v1`, over the JCS bytes of:
   changes the key;
 - for `generate`, the generation target and its options.
 
-Paths, timestamps, wall-clock deadlines, application version strings and the
-execution backend that ran are outside the key. Each either has no effect on
-the result or is already bound by a member above.
+Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's
+`max_solver_time`), application version strings and the execution backend that
+ran are outside the key. Each either has no effect on the result or is already
+bound by a member above, except a wall-clock deadline and a wall-clock solver
+budget: they can change a result, but every result they limit is time-limited
+or cancelled and is never stored (CA-5), so the key never has to bind them.
 
 **CA-3 Invalidation.** Any change to a meaning input changes the key, so a
 changed input is a miss and a stale entry is never read. Nothing else

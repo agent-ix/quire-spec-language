@@ -2,8 +2,8 @@
 //! QSpec FR-450 "Binding forms", QSL FR-304: S2 builds the abstraction
 //! relation declaration -- `abstraction Name using p { type ...; population
 //! ...; operation ...; }` -- run on real complete-V1 source through
-//! `qsl_cst::parse` and `build_unit` (TC-811, the parse half). S3 reads no
-//! declaration from source yet, so nothing here claims FR-304-AC-8.
+//! `qsl_cst::parse` and `build_unit` (TC-811, the parse half). The compile
+//! half, FR-304-AC-8, is claimed in `qsl-replay`'s model-gate tests.
 
 use qsl_forms::{
     build_unit, AbstractionBindingForm, AbstractionDeclarationForm, DeclarationForm, ParsedUnit,

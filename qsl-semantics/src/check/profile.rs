@@ -2,8 +2,10 @@
 //! FR-110: E3 resolves a unit's header profile selections against the
 //! `Value` family's catalog, [`DefinitionLock::pinned`].
 //!
-//! The one row a header selects is `root` (`quire.value.complete/v1`); the
-//! catalog's other rows come from its own package-selection rules. A clause
+//! A header selects one of the lock's `header_selectable_layers` rows (the
+//! five layers of QSpec AD-003, including the `root` row
+//! `quire.value.complete/v1`); the catalog's `qualification_catalog` rows
+//! come from its own package-selection rules. A clause
 //! profile resolves in its clause family's catalog (ADR-012 §2): the
 //! `ProtocolClause` family's is [`protocol_profile`] and the `TemporalTrace`
 //! family's is [`TemporalProfile`]. Every other header profile reaches the
@@ -13,6 +15,7 @@ use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, Span};
 
 use crate::value::definition::{CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference};
+use crate::value::layer::HeaderLayer;
 
 /// The publishing authority of the clause families' profiles.
 pub(super) const CLAUSE_PROFILE_AUTHORITY: &str = "agent-ix";
@@ -146,8 +149,9 @@ impl ProfileRefusal {
     }
 }
 
-/// Resolve each header profile by identity against the `root` row of
-/// [`DefinitionLock::pinned`], in source order (FR-110). Every refusing
+/// Resolve each header profile by identity against the
+/// `header_selectable_layers` rows of [`DefinitionLock::pinned`] and the
+/// protocol clause family's catalog, in source order (FR-110). Every refusing
 /// profile is returned, in source order.
 pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<ProfileRefusal>> {
     let lock = DefinitionLock::pinned();
@@ -156,7 +160,7 @@ pub fn resolve_profiles(profiles: &[ProfileSelection]) -> Result<(), Vec<Profile
         .iter()
         .filter_map(|profile| {
             let selected = profile.identity.as_str();
-            let cause = if selected == root.identity
+            let cause = if HeaderLayer::from_identity(selected).is_some()
                 || protocol_profile(selected).is_some()
                 || TemporalProfile::from_identity(selected).is_some()
             {

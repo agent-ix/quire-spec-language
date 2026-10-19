@@ -20,7 +20,8 @@
 //! by authority and identity. The v2 emitter writes each row as the package
 //! lock's edition and definition selections ([`CatalogEntry::reference`]).
 //! `make conformance` compares the catalog and its selection rules with
-//! QSpec's `complete-value-lock.json`, read at run time.
+//! QSpec's `complete-value-lock.json` and `complete-model-lock.json`, read at
+//! run time.
 
 use std::collections::BTreeSet;
 
@@ -29,6 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use quire_semantic_value::definition::{PackageCause, PackageRefusal, SelectionRefusalCode};
 
+use super::layer::{HeaderLayer, LayerForm, LayerRow, LAYER_ROWS};
 use quire_exact::{
     ieee_intrinsic_identities, DivisionMember, DivisionProfile, Integer, IntegerDomain, Meter,
     Outcome,
@@ -113,6 +115,146 @@ pub enum CatalogRole {
     RuleFr149,
 }
 
+/// A role of QSpec's `complete-model-lock.json` `qualification_catalog`; each
+/// variant is the lock role of the same name (FR-361 item 3). The lock
+/// requires the complete-value lock, so these rows come beside
+/// [`CatalogRole`]'s. The model lock's `root` is the `quire.model.complete/v1`
+/// layer and its `state_graph` is the `quire.state.graph/v1` layer; neither
+/// is the complete-value lock's `root` ([`CatalogRole::Root`]).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ModelRole {
+    /// QSpec's `root` role.
+    Root,
+    /// QSpec's `state_graph` role.
+    StateGraph,
+    /// QSpec's `rule_manifest` role.
+    RuleManifest,
+    /// QSpec's `effective_declaration_schema` role.
+    EffectiveDeclarationSchema,
+    /// QSpec's `effective_declaration_vectors` role.
+    EffectiveDeclarationVectors,
+    /// QSpec's `rule_ad_006` role.
+    RuleAd006,
+    /// QSpec's `rule_fr_043` role.
+    RuleFr043,
+    /// QSpec's `rule_fr_143` role.
+    RuleFr143,
+    /// QSpec's `rule_fr_144` role.
+    RuleFr144,
+    /// QSpec's `rule_fr_150` role.
+    RuleFr150,
+    /// QSpec's `rule_fr_151` role.
+    RuleFr151,
+    /// QSpec's `rule_fr_152` role.
+    RuleFr152,
+    /// QSpec's `rule_fr_153` role.
+    RuleFr153,
+    /// QSpec's `rule_fr_154` role.
+    RuleFr154,
+    /// QSpec's `rule_fr_204` role.
+    RuleFr204,
+    /// QSpec's `rule_fr_208` role.
+    RuleFr208,
+    /// QSpec's `rule_fr_321` role.
+    RuleFr321,
+    /// QSpec's `rule_interface_003` role.
+    RuleInterface003,
+}
+
+impl ModelRole {
+    /// Every role in QSpec's complete-model lock catalog order.
+    pub const ALL: [Self; 18] = [
+        Self::Root,
+        Self::StateGraph,
+        Self::RuleManifest,
+        Self::EffectiveDeclarationSchema,
+        Self::EffectiveDeclarationVectors,
+        Self::RuleAd006,
+        Self::RuleFr043,
+        Self::RuleFr143,
+        Self::RuleFr144,
+        Self::RuleFr150,
+        Self::RuleFr151,
+        Self::RuleFr152,
+        Self::RuleFr153,
+        Self::RuleFr154,
+        Self::RuleFr204,
+        Self::RuleFr208,
+        Self::RuleFr321,
+        Self::RuleInterface003,
+    ];
+
+    /// Normative spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Root => "root",
+            Self::StateGraph => "state_graph",
+            Self::RuleManifest => "rule_manifest",
+            Self::EffectiveDeclarationSchema => "effective_declaration_schema",
+            Self::EffectiveDeclarationVectors => "effective_declaration_vectors",
+            Self::RuleAd006 => "rule_ad_006",
+            Self::RuleFr043 => "rule_fr_043",
+            Self::RuleFr143 => "rule_fr_143",
+            Self::RuleFr144 => "rule_fr_144",
+            Self::RuleFr150 => "rule_fr_150",
+            Self::RuleFr151 => "rule_fr_151",
+            Self::RuleFr152 => "rule_fr_152",
+            Self::RuleFr153 => "rule_fr_153",
+            Self::RuleFr154 => "rule_fr_154",
+            Self::RuleFr204 => "rule_fr_204",
+            Self::RuleFr208 => "rule_fr_208",
+            Self::RuleFr321 => "rule_fr_321",
+            Self::RuleInterface003 => "rule_interface_003",
+        }
+    }
+
+    /// The identity of the definition the QSL build implements for this
+    /// role, published by `agent-ix`.
+    pub fn identity(self) -> &'static str {
+        match self {
+            Self::Root => "quire.model.complete/v1",
+            Self::StateGraph => "quire.state.graph/v1",
+            Self::RuleManifest => "quire.model.complete.rules/v1",
+            Self::EffectiveDeclarationSchema => "quire.model.effective-declaration.schema/v1",
+            Self::EffectiveDeclarationVectors => "quire.model.effective-declaration.vectors/v1",
+            Self::RuleAd006 => "quire.rule.ad-006/v1",
+            Self::RuleFr043 => "quire.rule.fr-043/v1",
+            Self::RuleFr143 => "quire.rule.fr-143/v1",
+            Self::RuleFr144 => "quire.rule.fr-144/v1",
+            Self::RuleFr150 => "quire.rule.fr-150/v1",
+            Self::RuleFr151 => "quire.rule.fr-151/v1",
+            Self::RuleFr152 => "quire.rule.fr-152/v1",
+            Self::RuleFr153 => "quire.rule.fr-153/v1",
+            Self::RuleFr154 => "quire.rule.fr-154/v1",
+            Self::RuleFr204 => "quire.rule.fr-204/v1",
+            Self::RuleFr208 => "quire.rule.fr-208/v1",
+            Self::RuleFr321 => "quire.rule.fr-321/v1",
+            Self::RuleInterface003 => "quire.rule.interface_003/v1",
+        }
+    }
+}
+
+/// One complete-model lock catalog entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModelEntry {
+    /// Catalog role.
+    pub role: ModelRole,
+    /// Publishing authority.
+    pub authority: &'static str,
+    /// Definition identity.
+    pub identity: &'static str,
+}
+
+impl ModelEntry {
+    /// This entry as the `DefinitionRef` a package lock selects.
+    pub fn reference(&self) -> DefinitionReference {
+        DefinitionReference {
+            authority: self.authority.to_owned(),
+            identity: self.identity.to_owned(),
+        }
+    }
+}
+
 /// How QSpec FR-001's package-selection rules select one role.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SelectionRule {
@@ -124,6 +266,10 @@ enum SelectionRule {
     /// share it; one without the trigger selects none of them.
     OneOf(Trigger),
 }
+
+/// The lock's `package_selection.without_layer` rows: the roles a package
+/// selects when its layers do not hold `package_selection.layer`.
+const WITHOUT_LAYER: [CatalogRole; 1] = [CatalogRole::Edition];
 
 /// The publishing authority of every catalog definition.
 const AUTHORITY: &str = "agent-ix";
@@ -309,6 +455,8 @@ pub struct DefinitionLock {
     always: Vec<CatalogRole>,
     conditional: Vec<(Trigger, CatalogRole)>,
     exactly_one: Vec<(Trigger, Vec<CatalogRole>)>,
+    layers: [LayerRow; HeaderLayer::ALL.len()],
+    model_catalog: [ModelEntry; ModelRole::ALL.len()],
 }
 
 impl DefinitionLock {
@@ -340,7 +488,79 @@ impl DefinitionLock {
             always,
             conditional,
             exactly_one,
+            layers: LAYER_ROWS,
+            model_catalog: ModelRole::ALL.map(|role| ModelEntry {
+                role,
+                authority: AUTHORITY,
+                identity: role.identity(),
+            }),
         }
+    }
+
+    /// The `header_selectable_layers` rows, in the lock's order.
+    pub fn layers(&self) -> &[LayerRow] {
+        &self.layers
+    }
+
+    /// The row of `layer`. The table has one row per layer, in the
+    /// declaration order of [`HeaderLayer::ALL`], so the lookup is total.
+    pub fn layer_row(&self, layer: HeaderLayer) -> &LayerRow {
+        &self.layers[layer as usize]
+    }
+
+    /// The `DefinitionRef` a package lock selects for `layer`.
+    pub fn layer_reference(&self, layer: HeaderLayer) -> DefinitionReference {
+        DefinitionReference {
+            authority: AUTHORITY.to_owned(),
+            identity: layer.identity().to_owned(),
+        }
+    }
+
+    /// The `requires` closure of `selected`: the selected layers and every
+    /// layer they require, transitively, in the lock's row order. A layer
+    /// that requires a selected layer is not in it.
+    pub fn closure(&self, selected: &[HeaderLayer]) -> Vec<HeaderLayer> {
+        let mut reached: BTreeSet<HeaderLayer> = BTreeSet::new();
+        let mut pending: Vec<HeaderLayer> = selected.to_vec();
+        while let Some(layer) = pending.pop() {
+            if reached.insert(layer) {
+                pending.extend_from_slice(self.layer_row(layer).requires);
+            }
+        }
+        reached.into_iter().collect()
+    }
+
+    /// The admitted-form set of `selected`: the forms of every layer in its
+    /// `requires` closure, and no form of a wider layer.
+    pub fn admitted_forms(&self, selected: HeaderLayer) -> BTreeSet<LayerForm> {
+        self.closure(&[selected])
+            .into_iter()
+            .flat_map(|layer| self.layer_row(layer).forms.iter().copied())
+            .collect()
+    }
+
+    /// Whether `selected`'s admitted-form set holds `form`.
+    pub fn admits(&self, selected: HeaderLayer, form: LayerForm) -> bool {
+        self.admitted_forms(selected).contains(&form)
+    }
+
+    /// The qualification-catalog roles QSpec FR-001 selects for a union of
+    /// layers: the `always` rules when the union holds `quire.value.complete/v1`
+    /// (the lock's `package_selection.layer`), and the `without_layer` rows
+    /// otherwise.
+    pub fn qualification_roles(&self, union: &[HeaderLayer]) -> &[CatalogRole] {
+        if union.contains(&HeaderLayer::ValueComplete) {
+            &self.always
+        } else {
+            &WITHOUT_LAYER
+        }
+    }
+
+    /// The complete-model lock's catalog, in its order. Its
+    /// `package_selection.always` rows are every row: the lock has no
+    /// conditional or exactly-one rule.
+    pub fn model_catalog(&self) -> &[ModelEntry] {
+        &self.model_catalog
     }
 
     /// The closed qualification catalog, in catalog order.

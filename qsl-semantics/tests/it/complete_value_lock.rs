@@ -9,7 +9,9 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use ix_trace_rs::trace;
-use qsl_semantics::value::{CatalogRole, DefinitionLock, Trigger};
+use qsl_semantics::value::{
+    CatalogRole, DefinitionLock, HeaderLayer, LayerForm, ModelRole, Trigger,
+};
 use quire_semantic_value::definition::SelectionRefusalCode;
 use serde_json::Value;
 
@@ -153,6 +155,57 @@ fn conformance_catalog_matches_qspec_complete_value_lock() {
     );
 }
 
+/// FR-361-AC-10: the rows of the catalog that come from QSpec's
+/// complete-model lock equal that lock: each `qualification_catalog` row's
+/// role, authority and identity, in order, and its `package_selection`.
+/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
+/// requires it.
+#[trace("FR-361-AC-10", "TC-1017")]
+#[test]
+fn conformance_catalog_matches_qspec_complete_model_lock() {
+    let Some(document) = qspec_document("complete-model-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["role"].as_str().unwrap(),
+                row["definition"]["authority"].as_str().unwrap(),
+                row["definition"]["identity"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    let lock = lock();
+    let catalog: Vec<(&str, &str, &str)> = lock
+        .model_catalog()
+        .iter()
+        .map(|entry| (entry.role.as_str(), entry.authority, entry.identity))
+        .collect();
+    assert_eq!(catalog, rows);
+    let selection = &document["package_selection"];
+    let always: Vec<&str> = ModelRole::ALL.iter().map(|role| role.as_str()).collect();
+    assert_eq!(always, strings(&selection["always"]));
+    assert!(selection["conditional"].as_array().unwrap().is_empty());
+    assert!(selection["exactly_one"].as_array().unwrap().is_empty());
+    // The root is the model layer and `state_graph` the state-graph layer.
+    assert_eq!(
+        ModelRole::Root.identity(),
+        HeaderLayer::ModelComplete.identity()
+    );
+    assert_eq!(
+        ModelRole::StateGraph.identity(),
+        HeaderLayer::StateGraph.identity()
+    );
+    println!(
+        "conformance: {} model catalog rows match QSpec's lock",
+        catalog.len()
+    );
+}
+
 /// The vector's selected roles: the always roles less any omitted, then its
 /// additional roles.
 fn vector_roles<'a>(vectors: &'a Value, vector: &'a Value) -> Vec<&'a str> {
@@ -228,4 +281,142 @@ fn conformance_admit_selection_matches_qspec_selection_vectors() {
         accepted.len(),
         refused.len()
     );
+}
+
+fn layer(identity: &str) -> HeaderLayer {
+    HeaderLayer::from_identity(identity).unwrap_or_else(|| panic!("no layer {identity}"))
+}
+
+/// FR-110-AC-7: a selected layer's closure holds the layer and every layer
+/// its `requires` edges name, transitively, in the lock's row order, and no
+/// layer that requires it.
+#[trace("TC-490", "FR-110-AC-7")]
+#[test]
+fn the_requires_closure_of_each_layer_is_computed() {
+    use HeaderLayer::{ModelComplete, StateCore, StateGraph, StateQueries, ValueComplete};
+    let lock = lock();
+    let expected: [(HeaderLayer, &[HeaderLayer]); 5] = [
+        (StateCore, &[StateCore]),
+        (StateQueries, &[StateCore, StateQueries]),
+        (StateGraph, &[StateCore, StateQueries, StateGraph]),
+        (ValueComplete, &[StateCore, ValueComplete]),
+        (
+            ModelComplete,
+            &[
+                StateCore,
+                StateQueries,
+                StateGraph,
+                ValueComplete,
+                ModelComplete,
+            ],
+        ),
+    ];
+    for (selected, closure) in expected {
+        assert_eq!(lock.closure(&[selected]), closure, "{selected:?}");
+    }
+    // A union of selections is the union of their closures.
+    assert_eq!(
+        lock.closure(&[StateQueries, ValueComplete]),
+        [StateCore, StateQueries, ValueComplete]
+    );
+    assert_eq!(lock.closure(&[]), Vec::<HeaderLayer>::new());
+}
+
+/// FR-110-AC-8: the admitted-form set of a layer is the forms of its closure.
+/// State core holds no named predicate, state queries do, and no layer
+/// admits a form that only a wider layer adds.
+#[trace("TC-490", "FR-110-AC-8")]
+#[test]
+fn a_layer_admits_the_forms_of_its_closure_and_no_wider_layer() {
+    use HeaderLayer::{StateCore, StateGraph, StateQueries, ValueComplete};
+    use LayerForm::{
+        FunctionDeclaration, NamedPredicateCall, ObjectNavigation, PredicateDeclaration,
+        SequenceQuery, StateClause, ValueConstruct,
+    };
+    let lock = lock();
+    assert!(lock.admits(StateCore, StateClause));
+    for form in [
+        PredicateDeclaration,
+        NamedPredicateCall,
+        SequenceQuery,
+        ObjectNavigation,
+        FunctionDeclaration,
+        ValueConstruct,
+    ] {
+        assert!(!lock.admits(StateCore, form), "state core admits {form:?}");
+    }
+    for form in [
+        StateClause,
+        PredicateDeclaration,
+        NamedPredicateCall,
+        SequenceQuery,
+    ] {
+        assert!(lock.admits(StateQueries, form), "queries refuses {form:?}");
+    }
+    for form in [ObjectNavigation, FunctionDeclaration, ValueConstruct] {
+        assert!(!lock.admits(StateQueries, form), "queries admits {form:?}");
+    }
+    assert!(lock.admits(StateGraph, ObjectNavigation));
+    assert!(!lock.admits(StateGraph, FunctionDeclaration));
+    assert!(lock.admits(ValueComplete, FunctionDeclaration));
+    assert!(lock.admits(ValueComplete, ValueConstruct));
+}
+
+/// FR-110-AC-1: the qualification rows a package selects follow the lock's
+/// `package_selection.layer`: the `always` rules when the layers hold
+/// `quire.value.complete/v1`, and the `without_layer` rows otherwise.
+#[trace("TC-490", "FR-110-AC-1")]
+#[test]
+fn the_qualification_rows_follow_the_value_complete_layer() {
+    let lock = lock();
+    assert_eq!(
+        lock.qualification_roles(&lock.closure(&[HeaderLayer::ValueComplete])),
+        lock.always_roles()
+    );
+    assert_eq!(
+        lock.qualification_roles(&lock.closure(&[HeaderLayer::StateGraph])),
+        [CatalogRole::Edition]
+    );
+}
+
+/// The layer rows are QSpec's `header_selectable_layers`: each row's
+/// identity, `requires`, admitted-form file and witness request, in order,
+/// and the lock's `package_selection.layer` and `without_layer`. Skipped
+/// (and passing) when `QSPEC_DIR` is unset; `make conformance` requires it.
+#[trace("TC-490", "FR-110-AC-9")]
+#[test]
+fn conformance_layer_rows_match_qspec_complete_value_lock() {
+    let Some(document) = qspec_document("complete-value-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let lock = lock();
+    let rows = document["header_selectable_layers"].as_array().unwrap();
+    assert_eq!(rows.len(), lock.layers().len());
+    for (row, ours) in rows.iter().zip(lock.layers()) {
+        assert_eq!(row["identity"], ours.layer.identity());
+        let requires: Vec<&str> = ours.requires.iter().map(|l| l.identity()).collect();
+        assert_eq!(strings(&row["requires"]), requires);
+        assert_eq!(row["admitted_forms"], ours.admitted_forms);
+        assert_eq!(
+            row["witness_request"]["kind"],
+            ours.witness_request.kind.as_str()
+        );
+        assert_eq!(
+            row["witness_request"]["extent"],
+            ours.witness_request.extent
+        );
+        assert_eq!(layer(ours.layer.identity()), ours.layer);
+    }
+    let selection = &document["package_selection"];
+    assert_eq!(
+        layer(selection["layer"].as_str().unwrap()),
+        HeaderLayer::ValueComplete
+    );
+    let without: Vec<&str> = lock
+        .qualification_roles(&[])
+        .iter()
+        .map(|role| role.as_str())
+        .collect();
+    assert_eq!(without, strings(&selection["without_layer"]));
 }

@@ -9,20 +9,25 @@
 
 use crate::bounds::{BoundExceeded, ReplayLimits};
 use crate::call_site::CallSiteRefusal;
+use crate::certificate::closed_form::outcome::ClosedFormAnalysis;
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::execute::ReplayRefusal;
+use crate::hybrid::{SolverHorizon, SolverMethod};
+use crate::model_check::limits::ModelCheckLimit;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
+use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
 use quire_exact::CancelCause;
+use quire_semantic_value::fairness::FairnessConstraint;
 use serde::Serialize;
 
 /// FR-127: how a proof established its claim, independently of certification.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ProofBasis {
     /// Kani's completed SUCCESS checks; zero denotes a vacuous proof.
@@ -43,6 +48,25 @@ pub enum ProofBasis {
     Inductive {
         /// Induction depth.
         depth: u64,
+    },
+    /// A closed-form schedulability analysis whose evidence the core
+    /// recomputed (ADR-026 RT-7).
+    ClosedForm {
+        /// The analysis.
+        analysis: ClosedFormAnalysis,
+    },
+    /// FR-250: a hybrid solver's sound result, holding for the claim within
+    /// its time horizon and jump bound. Always paired with
+    /// [`Certification::Uncertified`]: a solver QSL runs has no core
+    /// certificate checker, and `SolverResult::terminal_value` is the only
+    /// place that builds one.
+    BoundedSolver {
+        /// The kind of method that produced the result.
+        method: SolverMethod,
+        /// The time horizon the proof covers.
+        horizon: SolverHorizon,
+        /// The jump bound the proof covers.
+        jumps: u64,
     },
 }
 
@@ -134,6 +158,15 @@ pub enum IncompleteCause {
     },
     /// The run exhausted a configured resource bound before completing.
     ResourceExhausted,
+    /// FR-127: an EN-1 run reached one of its named limits before it
+    /// completed its method: the limit, the value it was set to, and so the
+    /// request member that raises it ([`ModelCheckLimit::setting`]).
+    LimitReached {
+        /// The limit reached.
+        limit: ModelCheckLimit,
+        /// The value the run used for it.
+        value: u64,
+    },
 }
 
 impl IncompleteCause {
@@ -142,7 +175,7 @@ impl IncompleteCause {
         match self {
             Self::TimedOut => "timed-out",
             Self::Cancelled { .. } => "cancelled",
-            Self::ResourceExhausted => "limit-reached",
+            Self::ResourceExhausted | Self::LimitReached { .. } => "limit-reached",
         }
     }
 }
@@ -172,22 +205,65 @@ impl ProofRefusalCause {
 }
 
 /// FR-331's `unsupported` cause: the solver or backend is absent after
-/// negotiation (ADR-013 O-16).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+/// negotiation (ADR-013 O-16), or the premise a clause needs is not there
+/// (FR-132).
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum UnavailabilityCause {
     /// No solver satisfying the request's capability negotiation is present.
     SolverAbsent,
     /// No backend satisfying the request's capability negotiation is
     /// present.
     BackendAbsent,
+    /// A clause with a fairness constraint was evaluated over a supplied
+    /// trace, which carries no enabledness (FR-132, ADR-019 SV-2): the
+    /// first constraint of its checked fairness set. Wire cause
+    /// `unsupported_projection`/`missing-fairness-premise` (QSpec FR-362).
+    MissingFairnessPremise {
+        /// The first constraint of the checked fairness set.
+        constraint: FairnessConstraint,
+    },
 }
 
 impl UnavailabilityCause {
     /// The cause's wire spelling.
-    pub const fn as_str(self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::SolverAbsent => "solver-absent",
             Self::BackendAbsent => "backend-absent",
+            Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
+        }
+    }
+
+    /// The catalog code the wire cause travels under, where the cause has
+    /// one (QSpec FR-362).
+    pub const fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::SolverAbsent | Self::BackendAbsent => None,
+            Self::MissingFairnessPremise { .. } => Some("unsupported_projection"),
+        }
+    }
+
+    /// The QSpec FR-243 basis every unavailability settles with: no truth
+    /// was settled.
+    pub const fn basis(&self) -> SettlementBasis {
+        SettlementBasis::Unavailable
+    }
+
+    /// The cause an evaluator outcome settles with, for the outcome that
+    /// is a missing premise (FR-132); `None` for every other outcome.
+    pub fn from_temporal_outcome(outcome: &TemporalOutcome) -> Option<Self> {
+        match outcome {
+            TemporalOutcome::MissingFairnessPremise { constraint } => {
+                Some(Self::MissingFairnessPremise {
+                    constraint: constraint.clone(),
+                })
+            }
+            TemporalOutcome::Holds
+            | TemporalOutcome::Violated { .. }
+            | TemporalOutcome::Undefined(_)
+            | TemporalOutcome::Pending
+            | TemporalOutcome::Incomplete(_)
+            | TemporalOutcome::WindowLimitReached(_) => None,
         }
     }
 }
@@ -213,6 +289,8 @@ pub enum InconclusiveCause {
     UndecidedSuccessor,
     /// The subject supplies no initial state.
     NoInitialState,
+    /// The item has zero instances (FR-125).
+    NoInstance,
     /// The core rejected a certificate, retaining its failing rule and locus.
     CertificateRejected {
         /// The check rule that failed.
@@ -235,6 +313,13 @@ pub enum InconclusiveCause {
     /// none of: a harness defect. The agreement names the claim and the
     /// outcome, and no predicate verdict.
     ScalarAgrees(ScalarAgreement),
+    /// AMC-rtb's high-mode criterion failed; the test is sufficient and
+    /// not necessary, so it decides nothing (ADR-026 RT-6).
+    SufficientTestFailed,
+    /// FR-250: a hybrid solver result that proves nothing (`δ-sat`, a
+    /// flowpipe meeting the unsafe set, `unknown`, or a method not sound for
+    /// its outcome).
+    SolverInconclusive,
 }
 
 impl InconclusiveCause {
@@ -245,10 +330,13 @@ impl InconclusiveCause {
             Self::InductionNotClosed { .. } => "induction-not-closed",
             Self::UndecidedSuccessor => "undecided-successor",
             Self::NoInitialState => "no-initial-state",
+            Self::NoInstance => "no-instance",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
             Self::ScalarAgrees(_) => "scalar-agrees",
+            Self::SolverInconclusive => "solver-inconclusive",
+            Self::SufficientTestFailed => "sufficient-test-failed",
         }
     }
 
@@ -260,7 +348,10 @@ impl InconclusiveCause {
             | Self::InductionNotClosed { .. }
             | Self::UndecidedSuccessor
             | Self::NoInitialState
-            | Self::CertificateRejected { .. } => 0,
+            | Self::NoInstance
+            | Self::SufficientTestFailed
+            | Self::CertificateRejected { .. }
+            | Self::SolverInconclusive => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
             Self::ReplayRefused(_) => 0,
             Self::ScalarAgrees(agreement) => agreement.measured_bytes(),
@@ -365,7 +456,9 @@ impl TerminalValue {
                     ProofBasis::Checks { .. }
                     | ProofBasis::Exhaustive
                     | ProofBasis::BoundedComplete { .. }
-                    | ProofBasis::Inductive { .. },
+                    | ProofBasis::Inductive { .. }
+                    | ProofBasis::ClosedForm { .. }
+                    | ProofBasis::BoundedSolver { .. },
                 ..
             }
             | Self::Tested => Category::Success,
@@ -830,6 +923,86 @@ pub struct EmptyEnvelopeSet;
 
 #[cfg(test)]
 mod tests {
+
+    fn fairness(
+        kind: quire_semantic_value::fairness::FairnessKind,
+        name: &str,
+        granularity: quire_semantic_value::fairness::FairnessGranularity,
+    ) -> FairnessConstraint {
+        use quire_semantic_value::fairness::FairnessOperation;
+        FairnessConstraint::new(
+            kind,
+            FairnessOperation::new(
+                quire_exact::EffectiveId::from_digest([7; 32]),
+                name.to_owned(),
+            ),
+            granularity,
+        )
+    }
+
+    /// FR-132-AC-1: the evaluator's missing premise settles `unsupported`
+    /// with the cause naming the first constraint, basis `unavailable`,
+    /// wire cause `unsupported_projection`/`missing-fairness-premise`,
+    /// category unsupported.
+    #[trace("TC-533", "FR-132-AC-1")]
+    #[test]
+    fn a_missing_fairness_premise_settles_unsupported_naming_the_first_constraint() {
+        use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+        let first = fairness(FairnessKind::Strong, "acquire", FairnessGranularity::Each);
+        let outcome = TemporalOutcome::MissingFairnessPremise {
+            constraint: first.clone(),
+        };
+        let cause = UnavailabilityCause::from_temporal_outcome(&outcome)
+            .expect("a missing premise has a cause");
+        assert_eq!(
+            cause,
+            UnavailabilityCause::MissingFairnessPremise { constraint: first }
+        );
+        assert_ne!(
+            cause,
+            UnavailabilityCause::MissingFairnessPremise {
+                constraint: fairness(FairnessKind::Weak, "release", FairnessGranularity::Whole)
+            }
+        );
+        assert_eq!(cause.as_str(), "missing-fairness-premise");
+        assert_eq!(cause.code(), Some("unsupported_projection"));
+        assert_eq!(cause.basis().as_str(), "unavailable");
+
+        let record =
+            TerminalRecord::unsupported(RequestIndex::new(0), BackendId::new("backend"), cause);
+        assert_eq!(record.value().category(), Category::Unsupported);
+        let item = crate::outcome::OutcomeItem::from_terminal(&record);
+        let wire = serde_json::to_value(&item).expect("the item serialises");
+        assert_eq!(wire["result"], "unsupported");
+        assert_eq!(wire["cause"]["kind"], "missing-fairness-premise");
+        assert_eq!(wire["cause"]["code"], "unsupported_projection");
+        assert_eq!(wire["category"], "unsupported");
+    }
+
+    /// Every other evaluator outcome is no missing premise.
+    #[test]
+    fn no_other_outcome_is_a_missing_fairness_premise() {
+        assert_eq!(
+            UnavailabilityCause::from_temporal_outcome(&TemporalOutcome::Holds),
+            None
+        );
+        assert_eq!(
+            UnavailabilityCause::from_temporal_outcome(&TemporalOutcome::Pending),
+            None
+        );
+        // A window over `max_window_values` is an incomplete run, a limit
+        // reached, not a premise the trace lacks.
+        assert_eq!(
+            UnavailabilityCause::from_temporal_outcome(&TemporalOutcome::WindowLimitReached(
+                qsl_eval::temporal::WindowLimitReached {
+                    limit: "max_window_values",
+                    value: 10,
+                    setting: "monitor.max_window_values",
+                }
+            )),
+            None
+        );
+    }
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
     use crate::result::Verdict;
@@ -905,7 +1078,7 @@ mod tests {
         for (basis, category) in bases {
             for (certification, spelling) in certifications {
                 let value = TerminalValue::Proved {
-                    basis,
+                    basis: basis.clone(),
                     certification,
                 };
                 let source = BackendProviderSource {
@@ -958,6 +1131,7 @@ mod tests {
             ),
             (InconclusiveCause::UndecidedSuccessor, "undecided-successor"),
             (InconclusiveCause::NoInitialState, "no-initial-state"),
+            (InconclusiveCause::NoInstance, "no-instance"),
         ] {
             let source = BackendProviderSource {
                 backend_identity: "model-provider".to_owned(),

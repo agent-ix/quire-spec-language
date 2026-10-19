@@ -24,6 +24,21 @@ pub mod string_edge;
 pub mod test_suites;
 pub mod typestate_scan;
 
+/// Test helpers shared by the unit tests.
+#[cfg(test)]
+mod test_support {
+    /// A temporary directory whose path is already canonical. macOS reports
+    /// `$TMPDIR` under the `/var` symlink while the tools under test print
+    /// the resolved `/private/var` path, so comparing paths needs the
+    /// resolved one from the start.
+    pub(crate) fn tempdir() -> tempfile::TempDir {
+        let base = std::env::temp_dir()
+            .canonicalize()
+            .expect("canonical temp dir");
+        tempfile::tempdir_in(base).expect("tempdir")
+    }
+}
+
 #[cfg(test)]
 mod ci_clean_build_tests;
 

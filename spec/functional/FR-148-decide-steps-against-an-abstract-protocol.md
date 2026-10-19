@@ -62,7 +62,7 @@ often than the protocol allows, is refuted with a prefix that replays.
 
 - The **internal closure** of a set SHALL be the set together with every
   abstract protocol state reachable from a member by abstract steps whose
-  class an `internal` row names. Each closure step computed SHALL count
+  class the refinement's internal list names (`abstract_internal`). Each closure step computed SHALL count
   toward FR-101's `max_transitions`.
 
 ### Initial states (PR-3)

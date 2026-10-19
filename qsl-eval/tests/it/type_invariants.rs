@@ -219,7 +219,7 @@ fn compile_unit(document: &Value, body: &str) -> (Compiled, Packages) {
     let (_, packages) = crate::tc235_business_meaning_runtime::read_k2(document);
     let digest = packages.keys().next().expect("one package");
     let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{body}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{body}\n",
         qsl_semantics::model::key::hex(digest),
     );
     let compiled = compile_parsed(&unit, &packages);
