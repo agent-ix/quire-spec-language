@@ -6,8 +6,8 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, CaptureForm, CompensationCommit, CompensationForm, DeclarationForm, ExprNode,
-    ExpressionForm, FormsCause, IntervalUpper, ParsedUnit, ProtocolDeclarationForm,
+    build_unit, ActivationForm, CaptureForm, CompensationCommit, CompensationForm, DeclarationForm,
+    ExprNode, ExpressionForm, FormsCause, IntervalUpper, ParsedUnit, ProtocolDeclarationForm,
     ProtocolNodeDeclaration, TypeFormHead,
 };
 use qsl_foundation::{Code, SourceIdentity, Span};
@@ -432,4 +432,46 @@ fn a_recovering_member_refuses_and_a_whole_protocol_builds_equal_twice() {
     let first = build(&full);
     let second = build(&full);
     assert_eq!(protocol(&first), protocol(&second));
+}
+
+/// A protocol's `activation` builds into its own field: `on origin` as
+/// `Origin`, and `on each (x: T) when (e)` as `Each` with the binder, the
+/// declared type as written and the guard with its span; a missing `when`
+/// builds no guard.
+#[test]
+fn a_protocol_activation_builds_into_its_field() {
+    let written = |activation: &str| {
+        format!(
+            "{HEADER}protocol Flow using v over (input: {OBJECT}) {activation} {{\n\
+             role R on {OBJECT};\n\
+             run {RUN}\n\
+             finish End as (outcome: Boolean) {{ true }};\n\
+             }}\n"
+        )
+    };
+
+    let origin_text = written("on origin");
+    let origin = build(&origin_text);
+    assert_eq!(protocol(&origin).activation, ActivationForm::Origin);
+
+    let each_text = written(&format!("on each (opened: {OBJECT}) when (opened.ready)"));
+    let each = build(&each_text);
+    let ActivationForm::Each { parameter, when } = &protocol(&each).activation else {
+        panic!("an `on each` activation: {:?}", protocol(&each).activation);
+    };
+    assert_eq!(parameter.name.name, "opened");
+    assert_eq!(slice(&each_text, parameter.name.span), "opened");
+    let TypeFormHead::Name(type_name) = &parameter.value_type.head else {
+        panic!("a named type: {:?}", parameter.value_type.head);
+    };
+    assert_eq!(type_name, OBJECT);
+    let guard = when.as_ref().expect("the guard is written");
+    assert_eq!(expression_text(&each_text, guard), "opened.ready");
+
+    let bare_text = written(&format!("on each (opened: {OBJECT})"));
+    let bare = build(&bare_text);
+    let ActivationForm::Each { when, .. } = &protocol(&bare).activation else {
+        panic!("an `on each` activation: {:?}", protocol(&bare).activation);
+    };
+    assert!(when.is_none());
 }
