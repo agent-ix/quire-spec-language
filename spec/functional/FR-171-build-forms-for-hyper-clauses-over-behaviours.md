@@ -18,7 +18,7 @@ relationships:
 
 The S2 value form builder SHALL build a form for a `hyper` clause whose
 domain is `behaviours` and for a `relation` clause whose execution bindings
-name model operations (ADR-023 HS-1 to HS-9), and refuses neither with
+name model operations (ADR-023 HS-1 to HS-9), and SHALL NOT refuse either with
 `UnrepresentedConstruct`. The forms carry the
 syntax only; S3 (FR-172) resolves names and checks them. A `hyper` clause
 over a declared finite trace domain and a `relation` over other qualified
