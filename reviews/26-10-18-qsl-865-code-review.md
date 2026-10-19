@@ -30,3 +30,17 @@ Ticket: QSL-865. Code review with the rust-review lane folded in, over PR 975's 
 | FND-001 | low | `run_child` and `child_peak_bytes` exist only for `linux` and `macos`, so on any other target (Windows, FreeBSD) the qsl-semantics `it` test binary no longer compiles. Before this PR it compiled there and failed only at runtime. CI is ubuntu-only and draco is macOS, so nothing breaks today. A `#[cfg(not(any(linux, macos)))]` fallback that skips with a reason, or a cfg on the test, would restore that. | qsl-semantics/tests/it/model_identity_full_size.rs:109-147 |
 | FND-002 | low | The parent no longer prints `VMHWM_BASELINE_BYTES` (peak before normalization) on Linux, although the child still prints it. The N19 line loses the before-normalization figure it used to report. This is only diagnostic output; no assertion used it. | qsl-semantics/tests/it/model_identity_full_size.rs:70,103,183 |
 | FND-003 | low | `is_unreaped` is only ever asserted false (lines 2987, 3016), and no positive control asserts it is true for a live unwaited child. If the probe ever went vacuous again (as `/proc` was on macOS), these tests would still pass. The PR swaps the probe without adding a positive control. This predates the PR. | xtask/src/test_suites.rs:2957-2966 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The new probe self-test `the_liveness_probe_sees_an_exited_child_until_it_is_waited_for` carries `#[trace("TC-950", "NFR-014-AC-10")]`, but it checks the test helper `is_unreaped`, not the product's reap-on-I/O-failure behavior that NFR-014-AC-10 requires. That adds one more binding to the AC that does not test the AC. Fix: drop the trace attribute, or keep it only if the repo's convention is to tag helper self-tests to the AC they support. | xtask/src/test_suites.rs:2968-2969 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | afdc5a920: `run_child` is now `cfg(not(target_os = "macos"))`, and there is a `child_peak_bytes` stub for other targets that panics with a clear message, so the test fails loudly there instead of passing unchecked. Read as correct for Windows/BSD (all cfg arms covered, unused params prefixed); host clippy is clean. |
+| FND-002 | fixed | afdc5a920: on Linux the parent prints `N19 vmhwm_before_normalization_bytes=` from the child's `VMHWM_BASELINE_BYTES`. Verified in a Linux arm64 container (rustc 1.98.1, procps-ng 4.0.4): `N19 vmhwm_before_normalization_bytes=11591680`, `peak_resident_bytes=47845376`, which matches the macOS peak (47693824) in magnitude and confirms both are bytes. |
+| FND-003 | fixed | afdc5a920: new test `the_liveness_probe_sees_an_exited_child_until_it_is_waited_for` polls `ps -o stat=` until the child is a zombie, asserts `is_unreaped` is true, then waits and asserts false. It passes on macOS and on Linux (container), together with the four existing reap tests. |

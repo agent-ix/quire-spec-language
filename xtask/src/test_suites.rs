@@ -2966,7 +2966,6 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
     }
 
     #[test]
-    #[trace("TC-950", "NFR-014-AC-10")]
     fn the_liveness_probe_sees_an_exited_child_until_it_is_waited_for() {
         let mut child = Command::new("true").spawn().expect("spawn true");
         let pid = child.id();
