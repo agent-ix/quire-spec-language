@@ -380,11 +380,10 @@ impl World {
             .unwrap_or_else(|| panic!("`{name}` checked"))
     }
 
-    /// The item `name` with one instance per key of `keys`.
-    pub(crate) fn item(&self, name: &str, keys: &[&str]) -> StateGraphItem<'_> {
+    /// The item `name`; its instances are the subject's universe keys.
+    pub(crate) fn item(&self, name: &str) -> StateGraphItem<'_> {
         StateGraphItem {
             claim: self.claim(name),
-            bindings: keys.iter().map(|key| self.reference(key)).collect(),
         }
     }
 

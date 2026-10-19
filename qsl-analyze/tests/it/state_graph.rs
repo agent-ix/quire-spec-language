@@ -284,7 +284,7 @@ fn expected_steps(
 #[test]
 fn each_worked_example_explores_once_to_its_graph() {
     let world = config_world(&format!("{REACHES_TWO}{REACHES_THREE}"), &[(0, 0)]);
-    let items = vec![world.item("ReachesTwo", AB), world.item("ReachesThree", AB)];
+    let items = vec![world.item("ReachesTwo"), world.item("ReachesThree")];
     let mut request = world.request(AB, items, no_samples());
     request.deadlock_freedom = true;
     let result = run(request);
@@ -300,7 +300,7 @@ fn each_worked_example_explores_once_to_its_graph() {
     assert_eq!(keys, states.keys().copied().collect());
 
     let game = game_world(false, false, CAN_STILL_WIN);
-    let result = run(game.request(&["g"], vec![game.item("CanStillWin", &["g"])], no_samples()));
+    let result = run(game.request(&["g"], vec![game.item("CanStillWin")], no_samples()));
     assert_eq!((result.graph.nodes.len(), result.graph.edges.len()), (4, 3));
     let (states, _) = reachable(&game, &["g"]);
     let phases: Vec<i64> = result
@@ -314,7 +314,7 @@ fn each_worked_example_explores_once_to_its_graph() {
     assert!(result.graph.open.is_empty());
 
     let job = job_world(false, false);
-    let result = run(job.request(&["j"], vec![job.item("InOneWay", &["j"])], no_samples()));
+    let result = run(job.request(&["j"], vec![job.item("InOneWay")], no_samples()));
     assert_eq!((result.graph.nodes.len(), result.graph.edges.len()), (5, 5));
     assert_eq!(reachable(&job, &["j"]).1, 5);
 }
@@ -333,7 +333,7 @@ fn a_horizon_and_a_state_limit_leave_their_nodes_open() {
                 && world.value(state, "b", "versionNumber") == vb
         })
     };
-    let mut request = world.request(AB, vec![world.item("ReachesTwo", AB)], no_samples());
+    let mut request = world.request(AB, vec![world.item("ReachesTwo")], no_samples());
     request.max_depth = Some(1);
     let result = run(request);
     assert_eq!(result.graph.end, RunEnd::Completed);
@@ -354,7 +354,7 @@ fn a_horizon_and_a_state_limit_leave_their_nodes_open() {
 
     let request = world.request(
         AB,
-        vec![world.item("ReachesTwo", AB)],
+        vec![world.item("ReachesTwo")],
         max_states(no_samples(), 3),
     );
     let result = run(request);
@@ -382,7 +382,7 @@ fn an_undecided_contract_conjunction_leaves_only_its_node_open() {
     let guard = "pre Guard using v on Config::ConfigVersion::attemptUpdate { \
                  2 div (2 - self.versionNumber) >= 1 }\n";
     let world = config_world_over(guard, REACHES_TWO, &["a"], &[vec![0]]);
-    let result = run(world.request(&["a"], vec![world.item("ReachesTwo", &["a"])], no_samples()));
+    let result = run(world.request(&["a"], vec![world.item("ReachesTwo")], no_samples()));
     assert_eq!(result.graph.end, RunEnd::Completed);
     let (states, _) = reachable(&world, &["a"]);
     assert_eq!(result.graph.nodes.len(), states.len());
@@ -412,7 +412,7 @@ fn an_undecided_contract_conjunction_leaves_only_its_node_open() {
 #[test]
 fn the_deadlock_item_and_the_subject_refusals() {
     let game = game_world(false, false, CAN_STILL_WIN);
-    let mut request = game.request(&["g"], vec![game.item("CanStillWin", &["g"])], no_samples());
+    let mut request = game.request(&["g"], vec![game.item("CanStillWin")], no_samples());
     request.deadlock_freedom = true;
     let result = run(request);
     let Some(ModelCheckOutcome::Violated { counterexample, .. }) = &result.deadlock else {
@@ -432,7 +432,7 @@ fn the_deadlock_item_and_the_subject_refusals() {
         &format!("{}{REACHES_TWO}", crate::graph_world::CONFIG_CONTRACT),
         &[],
     );
-    let mut request = empty.request(AB, vec![empty.item("ReachesTwo", AB)], no_samples());
+    let mut request = empty.request(AB, vec![empty.item("ReachesTwo")], no_samples());
     request.deadlock_freedom = true;
     let result = run(request);
     for instance in &result.items[0] {
@@ -466,7 +466,7 @@ fn the_deadlock_item_and_the_subject_refusals() {
         &[&[("c", &[("value", 0)])]],
     );
     let refusal = check_state_graph(
-        world.request(&["c"], vec![world.item("Big", &["c"])], no_samples()),
+        world.request(&["c"], vec![world.item("Big")], no_samples()),
         &Cancel::new(),
     )
     .expect_err("an unbounded root refuses");
@@ -482,7 +482,7 @@ fn the_deadlock_item_and_the_subject_refusals() {
 #[test]
 fn the_explored_graph_is_a_function_of_the_request() {
     let game = game_world(false, false, CAN_STILL_WIN);
-    let once = || run(game.request(&["g"], vec![game.item("CanStillWin", &["g"])], no_samples()));
+    let once = || run(game.request(&["g"], vec![game.item("CanStillWin")], no_samples()));
     let (first, second) = (once(), once());
     assert_eq!(first.graph, second.graph);
     assert!(first.graph.nodes.iter().all(|node| !node.labels.is_empty()));
@@ -500,11 +500,13 @@ fn default_phase_zero_samples_a_witness_for_each_instance() {
     let world = config_world(REACHES_TWO, &[(0, 0)]);
     let result = run(world.request(
         AB,
-        vec![world.item("ReachesTwo", AB)],
+        vec![world.item("ReachesTwo")],
         ModelCheckLimits::default(),
     ));
     assert_eq!(result.seed, DEFAULT_WITNESS_SEED);
+    assert_eq!(result.items[0].len(), 2, "one instance per universe key");
     for (instance, key) in result.items[0].iter().zip(["a", "b"]) {
+        assert_eq!(instance.over, Some(world.reference(key)));
         let [witness] = witnesses(&instance.outcome) else {
             panic!("one witness per initial state");
         };
@@ -531,7 +533,7 @@ fn default_phase_zero_samples_a_witness_for_each_instance() {
 #[test]
 fn phase_zero_off_and_a_target_no_walk_reaches() {
     let world = config_world(&format!("{REACHES_TWO}{REACHES_THREE}"), &[(0, 0)]);
-    let result = run(world.request(AB, vec![world.item("ReachesTwo", AB)], no_samples()));
+    let result = run(world.request(AB, vec![world.item("ReachesTwo")], no_samples()));
     for instance in &result.items[0] {
         assert!(instance.sampled.is_empty());
         assert_eq!(instance.walks_stopped, 0);
@@ -539,7 +541,7 @@ fn phase_zero_off_and_a_target_no_walk_reaches() {
             assert_eq!(witness.source, WitnessSource::Explored);
         }
     }
-    let result = run(world.request(AB, vec![world.item("ReachesThree", AB)], short_walks()));
+    let result = run(world.request(AB, vec![world.item("ReachesThree")], short_walks()));
     for instance in &result.items[0] {
         assert_eq!(instance.sampled, vec![None]);
         assert_eq!(instance.walks_stopped, DEFAULT_WITNESS_SAMPLES);
@@ -560,7 +562,7 @@ fn trace_indices_and_seeds_name_each_walk() {
     let request = |seed| {
         let mut request = world.request(
             AB,
-            vec![world.item("ReachesTwo", AB)],
+            vec![world.item("ReachesTwo")],
             ModelCheckLimits::default(),
         );
         request.seed = seed;
@@ -605,7 +607,7 @@ fn an_overflowing_trace_index_and_a_cancellation_stop_before_any_walk() {
         witness_samples: u64::MAX,
         ..ModelCheckLimits::default()
     };
-    let result = run(world.request(AB, vec![world.item("ReachesTwo", AB)], limits));
+    let result = run(world.request(AB, vec![world.item("ReachesTwo")], limits));
     let end = stopped_at(ModelCheckLimit::WitnessSamples, u64::MAX);
     assert_eq!(result.graph.end, end);
     assert!(result.graph.nodes.is_empty());
@@ -625,7 +627,7 @@ fn an_overflowing_trace_index_and_a_cancellation_stop_before_any_walk() {
     let result = check_state_graph(
         world.request(
             AB,
-            vec![world.item("ReachesTwo", AB)],
+            vec![world.item("ReachesTwo")],
             ModelCheckLimits::default(),
         ),
         &cancel,
@@ -654,11 +656,7 @@ fn an_overflowing_trace_index_and_a_cancellation_stop_before_any_walk() {
 #[test]
 fn a_sampled_witness_never_hides_an_undefined_target() {
     let world = config_world(&format!("{REACHES_TWO}{DIVIDES}"), &[(0, 0)]);
-    let result = run(world.request(
-        AB,
-        vec![world.item("Divides", &["a"])],
-        ModelCheckLimits::default(),
-    ));
+    let result = run(world.request(AB, vec![world.item("Divides")], ModelCheckLimits::default()));
     let instance = &result.items[0][0];
     let [Some(sampled)] = instance.sampled.as_slice() else {
         panic!("a sampled witness: {:?}", instance.sampled);
@@ -679,7 +677,7 @@ fn a_sampled_witness_never_hides_an_undefined_target() {
 
     let result = run(world.request(
         AB,
-        vec![world.item("ReachesTwo", AB)],
+        vec![world.item("ReachesTwo")],
         ModelCheckLimits::default(),
     ));
     assert!(result.graph.open.is_empty());
@@ -704,7 +702,7 @@ fn a_stopped_exploration_leaves_sampled_witnesses_unchecked() {
     let end = stopped_at(ModelCheckLimit::MaxStates, 2);
     let result = run(world.request(
         AB,
-        vec![world.item("ReachesTwo", AB)],
+        vec![world.item("ReachesTwo")],
         max_states(ModelCheckLimits::default(), 2),
     ));
     for instance in &result.items[0] {
@@ -722,7 +720,7 @@ fn a_stopped_exploration_leaves_sampled_witnesses_unchecked() {
     }
     let result = run(world.request(
         AB,
-        vec![world.item("ReachesTwo", AB)],
+        vec![world.item("ReachesTwo")],
         max_states(no_samples(), 2),
     ));
     for instance in &result.items[0] {
@@ -746,7 +744,7 @@ fn a_state_limit_below_the_initial_states_decides_nothing() {
     let end = stopped_at(ModelCheckLimit::MaxStates, 1);
     let result = run(world.request(
         AB,
-        vec![world.item("ReachesTwo", AB)],
+        vec![world.item("ReachesTwo")],
         max_states(ModelCheckLimits::default(), 1),
     ));
     assert_eq!(result.graph.end, end);
@@ -771,7 +769,7 @@ fn each_sampled_witness_records_that_its_walk_reached_the_target() {
     let world = config_world(&format!("{REACHES_TWO}{REACHES_THREE}"), &[(0, 0)]);
     let shared = run(world.request(
         AB,
-        vec![world.item("ReachesTwo", AB), world.item("ReachesThree", AB)],
+        vec![world.item("ReachesTwo"), world.item("ReachesThree")],
         short_walks(),
     ));
     for instance in &shared.items[1] {
@@ -780,7 +778,7 @@ fn each_sampled_witness_records_that_its_walk_reached_the_target() {
             "the premise"
         );
     }
-    let alone = run(world.request(AB, vec![world.item("ReachesTwo", AB)], short_walks()));
+    let alone = run(world.request(AB, vec![world.item("ReachesTwo")], short_walks()));
     for (instance, single) in shared.items[0].iter().zip(&alone.items[0]) {
         let [Some(witness)] = instance.sampled.as_slice() else {
             panic!("a sampled witness: {:?}", instance.sampled);
@@ -809,7 +807,7 @@ fn the_walk_budget_bounds_and_counts_each_walk() {
     assert_eq!(defaults.max_walk_steps, DEFAULT_MAX_WALK_STEPS);
     assert_eq!(DEFAULT_MAX_WALK_STEPS, 4_096);
     assert_eq!(ModelCheckLimit::MaxWalkSteps.setting(), "max_walk_steps");
-    let result = run(world.request(AB, vec![world.item("ReachesThree", AB)], short_walks()));
+    let result = run(world.request(AB, vec![world.item("ReachesThree")], short_walks()));
     for instance in &result.items[0] {
         assert_eq!(instance.walks_stopped, 64);
     }
@@ -818,7 +816,7 @@ fn the_walk_budget_bounds_and_counts_each_walk() {
         max_walk_steps: 1,
         ..defaults
     };
-    let result = run(world.request(AB, vec![world.item("ReachesTwo", AB)], short));
+    let result = run(world.request(AB, vec![world.item("ReachesTwo")], short));
     for instance in &result.items[0] {
         assert_eq!(instance.sampled, vec![None]);
         assert_eq!(instance.walks_stopped, 64);
@@ -830,7 +828,7 @@ fn the_walk_budget_bounds_and_counts_each_walk() {
     let horizon = |depth| {
         let mut request = world.request(
             AB,
-            vec![world.item("ReachesThree", AB), world.item("ReachesTwo", AB)],
+            vec![world.item("ReachesThree"), world.item("ReachesTwo")],
             defaults,
         );
         request.max_depth = Some(depth);
@@ -864,7 +862,7 @@ fn explored_witnesses_and_an_initial_trap() {
     let world = config_world(&format!("{REACHES_TWO}{REACHES_THREE}"), &[(0, 0)]);
     let result = run(world.request(
         AB,
-        vec![world.item("ReachesTwo", AB), world.item("ReachesThree", AB)],
+        vec![world.item("ReachesTwo"), world.item("ReachesThree")],
         no_samples(),
     ));
     for (instance, key) in result.items[0].iter().zip(["a", "b"]) {
@@ -913,7 +911,7 @@ fn explored_witnesses_and_an_initial_trap() {
 fn always_possible_traps_and_holds() {
     let decide = |restart: bool, body: &str, name: &str| {
         let world = game_world(false, restart, body);
-        let once = || run(world.request(&["g"], vec![world.item(name, &["g"])], no_samples()));
+        let once = || run(world.request(&["g"], vec![world.item(name)], no_samples()));
         let (first, second) = (once(), once());
         assert_eq!(first.items, second.items);
         (world, first.items[0][0].outcome.clone())
@@ -947,7 +945,7 @@ fn always_possible_traps_and_holds() {
 fn unique_path_counts_paths() {
     let decide = |sequenced, reset| {
         let world = job_world(sequenced, reset);
-        let result = run(world.request(&["j"], vec![world.item("InOneWay", &["j"])], no_samples()));
+        let result = run(world.request(&["j"], vec![world.item("InOneWay")], no_samples()));
         result.items[0][0].outcome.clone()
     };
     let StateGraphOutcome::PathPair {
@@ -987,7 +985,7 @@ fn unique_path_counts_paths() {
 fn a_unique_path_under_a_horizon_is_never_trapped_by_open_nodes() {
     for sequenced in [true, false] {
         let world = job_world(sequenced, false);
-        let mut request = world.request(&["j"], vec![world.item("InOneWay", &["j"])], no_samples());
+        let mut request = world.request(&["j"], vec![world.item("InOneWay")], no_samples());
         request.max_depth = Some(1);
         let result = run(request);
         let root = result.graph.initial()[0];
@@ -1017,10 +1015,7 @@ fn a_trap_counts_past_a_horizon_and_an_unreached_target_does_not() {
     let world = game_world(true, false, &body);
     let mut request = world.request(
         &["g"],
-        vec![
-            world.item("CanStillWin", &["g"]),
-            world.item("Fifty", &["g"]),
-        ],
+        vec![world.item("CanStillWin"), world.item("Fifty")],
         no_samples(),
     );
     request.max_depth = Some(3);
@@ -1050,7 +1045,7 @@ fn a_trap_counts_past_a_horizon_and_an_unreached_target_does_not() {
 #[test]
 fn an_undefined_target_refutes_in_place_of_a_witness() {
     let world = config_world(DIVIDES, &[(0, 0)]);
-    let result = run(world.request(AB, vec![world.item("Divides", &["a"])], no_samples()));
+    let result = run(world.request(AB, vec![world.item("Divides")], no_samples()));
     let StateGraphOutcome::Undefined { stem, undefined } = &result.items[0][0].outcome else {
         panic!("undefined: {:?}", result.items[0][0].outcome);
     };
@@ -1080,7 +1075,7 @@ fn an_undefined_target_refutes_in_place_of_a_witness() {
 fn phase_zero_changes_the_source_never_the_outcome_kind() {
     let world = config_world(REACHES_TWO, &[(0, 0)]);
     for (limits, sampled) in [(ModelCheckLimits::default(), true), (no_samples(), false)] {
-        let result = run(world.request(AB, vec![world.item("ReachesTwo", AB)], limits));
+        let result = run(world.request(AB, vec![world.item("ReachesTwo")], limits));
         for instance in &result.items[0] {
             let StateGraphOutcome::Witnessed { paths } = &instance.outcome else {
                 panic!("witnessed: {:?}", instance.outcome);
@@ -1101,7 +1096,7 @@ fn phase_zero_changes_the_source_never_the_outcome_kind() {
 #[test]
 fn an_explored_witness_descends_toward_the_target_not_an_open_node() {
     let world = fork_world("possible Four using v over (x: F::Fork) { x.pos = 4 }\n");
-    let mut request = world.request(&["f"], vec![world.item("Four", &["f"])], no_samples());
+    let mut request = world.request(&["f"], vec![world.item("Four")], no_samples());
     request.max_depth = Some(2);
     let result = run(request);
     let at = |pos| {

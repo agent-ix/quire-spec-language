@@ -39,20 +39,19 @@ use qsl_semantics::check::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, PredicateRole,
     StateGraphForm,
 };
-use quire_exact::{Cancel, ObjectReference};
+use quire_exact::{Cancel, ObjectReference, ValueType};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{fault, BOUND_POSITIONS};
 use super::ModelCheckRefusal;
 
-/// One state-graph item of a request: a checked claim and its instances.
+/// One state-graph item of a request: a checked claim. Its instances are
+/// derived from the subject's universes (FR-125 Instancing): one per key of
+/// each population that admits its `over` type, in canonical order; a claim
+/// with no `over` parameter has the one instance with no binding.
 pub struct StateGraphItem<'a> {
     /// The checked claim.
     pub claim: &'a CheckedStateGraphClaim,
-    /// The objects its `over` parameter binds, one instance each, in FR-125's
-    /// canonical order. Read only for a claim with an `over` parameter; a
-    /// claim with none has the one instance with no binding.
-    pub bindings: Vec<ObjectReference>,
 }
 
 /// One EN-1 run over a model subject's state-graph items (FR-166, FR-167).
@@ -224,8 +223,12 @@ struct InstanceView<'a> {
     predicates: Vec<(PredicateRole, Option<&'a CheckedPredicateBody>)>,
 }
 
-/// The instances of `items`, item by item.
-fn instances<'a>(items: &[StateGraphItem<'a>]) -> Vec<Vec<InstanceView<'a>>> {
+/// The instances of `items`, item by item, derived from `system`'s
+/// universes (FR-125 Instancing).
+fn instances<'a>(
+    items: &[StateGraphItem<'a>],
+    system: &ModelSystem<'_>,
+) -> Result<Vec<Vec<InstanceView<'a>>>, ModelCheckRefusal> {
     items
         .iter()
         .enumerate()
@@ -240,12 +243,21 @@ fn instances<'a>(items: &[StateGraphItem<'a>]) -> Vec<Vec<InstanceView<'a>>> {
                     (role, body)
                 })
                 .collect();
-            let bindings: Vec<Option<ObjectReference>> = if entry.claim.over().is_some() {
-                entry.bindings.iter().cloned().map(Some).collect()
-            } else {
-                vec![None]
+            let bindings: Vec<Option<ObjectReference>> = match entry.claim.over() {
+                None => vec![None],
+                Some(over) => system
+                    .instances(&ValueType::Reference(over.object))
+                    .map_err(bounds_refusal)?
+                    .iter()
+                    .map(|instance| {
+                        system
+                            .bound_reference(over.object, instance)
+                            .map(Some)
+                            .map_err(|_| fault("state-graph-instance-references"))
+                    })
+                    .collect::<Result<_, _>>()?,
             };
-            bindings
+            Ok(bindings
                 .into_iter()
                 .enumerate()
                 .map(|(instance, over)| InstanceView {
@@ -254,9 +266,18 @@ fn instances<'a>(items: &[StateGraphItem<'a>]) -> Vec<Vec<InstanceView<'a>>> {
                     over,
                     predicates: bodies.clone(),
                 })
-                .collect()
+                .collect())
         })
         .collect()
+}
+
+/// The refusal of an unbounded or unclassifiable subject.
+fn bounds_refusal(refusal: NotSimulated) -> ModelCheckRefusal {
+    match refusal {
+        NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
+        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
+        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
+    }
 }
 
 /// A stop that ended a run before its frontier emptied: a named limit, a
@@ -342,12 +363,8 @@ pub fn check_state_graph(
     let no_initial = request.subject.simulation.initial.is_empty();
     let system = ModelSystem::new(request.subject.simulation)
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
-    check_model_bounds(&system, BOUND_POSITIONS).map_err(|refusal| match refusal {
-        NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
-        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
-        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
-    })?;
-    let views = instances(&request.items);
+    check_model_bounds(&system, BOUND_POSITIONS).map_err(bounds_refusal)?;
+    let views = instances(&request.items, &system)?;
     if no_initial {
         return Ok(StateGraphRun {
             graph: explore::empty(RunEnd::Completed),
