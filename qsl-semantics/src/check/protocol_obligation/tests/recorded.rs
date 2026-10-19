@@ -322,8 +322,7 @@ fn joined(join: &str) -> String {
 
 /// FR-381-AC-11: `commit never` and `commit Main::Committed` check and the
 /// checked compensation holds `Never` and `Node` of the commit's id; a
-/// commit that every execution reaching the forward effect has passed
-/// refuses `unsupported_construct`/`declaration-form` at the commit anchor,
+/// commit that dominates the forward effect on the control tree refuses `unsupported_construct`/`declaration-form` at the commit anchor,
 /// retaining the selected protocol profile, compensation, member `commit`,
 /// commit, effect and reason `commit-precedes-effect` -- a commit sequenced
 /// between the attempt and its effect, and one inside a `join all` branch,
@@ -331,8 +330,10 @@ fn joined(join: &str) -> String {
 /// with the effect after the parallel; a commit that follows the effect, one
 /// in a parallel branch whose sibling holds the effect, one in a branch of
 /// `join any [a, b]` or of `quorum(1) [a, b]` with the effect after the
-/// parallel, one in the body of a `repeat` before the effect and one in one
-/// `case` of a `choice` before the effect check.
+/// parallel, one in the body of a `repeat` with the effect after the
+/// `repeat` and one in one `case` of a `choice` with the effect after the
+/// `choice` check (the cross-branch `send`/`receive` case is
+/// [`a_commit_ordered_across_branches_is_admitted`]).
 #[trace("TC-1058", "FR-381-AC-11")]
 #[test]
 fn a_commit_that_dominates_its_effect_refuses() {
@@ -443,6 +444,48 @@ fn a_commit_that_dominates_its_effect_refuses() {
     for source in [after, sibling, repeated, case] {
         checked(&source);
     }
+}
+
+/// FR-381-AC-11, TC-1058 row 20b: under `join all [s, r]`, branch `s`
+/// holds `commit C` and then `send Tx`, and branch `r` `attempt T`, the
+/// `receive` of `Tx` and then `effect E`. Every execution reaching `E` has
+/// passed `C` through the message edge, but dominance is decided on the
+/// control tree only, where no `sequence` orders the two branches, so the
+/// template checks (STD-189: deciding it through cross-branch edges is a
+/// later extension).
+#[trace("TC-1058", "FR-381-AC-11")]
+#[test]
+fn a_commit_ordered_across_branches_is_admitted() {
+    let run = "run sequence Main {\n\
+         parallel P {\n\
+         branch s sequence S { commit C by Service as (c: M::Flag) { true }; \
+         send Tx via Ch as (tx: M::Flag) { true }; }\n\
+         branch r sequence R { attempt T by Service on M::Node::step contracts [] \
+         as (t: M::Flag) { true }; \
+         receive Rx via Ch of Main::P::s::S::Tx as (rx: M::Flag) { true }; \
+         effect E of Main::P::r::R::T as (e: M::Receipt) { true }; }\n\
+         } join all [s, r];\n}";
+    let source = edit(
+        &with_run(run),
+        "role Service on M::Node;",
+        "role Service on M::Node;\nrole Peer on M::Node;\n\
+         channel Ch from Service to Peer carries M::Flag ordering unordered \
+         delivery at-least-once capacity 1 overflow block;",
+    );
+    let source = edit(
+        &edit(
+            &source,
+            "compensate Refund for Main::Applied",
+            "compensate Refund for Main::P::r::R::E",
+        ),
+        "commit Main::Committed;",
+        "commit Main::P::s::S::C;",
+    );
+    let graph = checked(&source);
+    assert_eq!(
+        graph.protocols()[0].obligations.compensations[0].commit,
+        CheckedCommit::Node(node(&source, "C", ProtocolNodeKind::Commit))
+    );
 }
 
 /// FR-381-AC-12, the recorded half: a `Full` template with commit

@@ -605,15 +605,15 @@ fn required_labels(parallel: &ParallelForm) -> BTreeSet<&str> {
 }
 
 /// Whether `commit` dominates `effect` (FR-381 "Retry, commit and
-/// recovery"): every execution that reaches the effect has passed the
-/// commit first. Dominance is read off the control tree, not off paths of
-/// the causal edge relation: an execution of a control *passes* the commit
-/// when the commit is the control itself, a child of a `sequence` passes it,
-/// a branch the `parallel`'s join requires passes it, every case of a
-/// `choice` passes it, or both the `then` and the `timeout` of an `await`
-/// pass it; a `repeat` is skippable whatever its guard and never passes it.
-/// The commit dominates the effect when some `sequence` holding the effect
-/// holds, before the child that holds the effect, a child that passes it.
+/// recovery"), decided on the control tree only, which is conservative and
+/// sound: some `sequence` holds, in order, a child that passes the commit
+/// and a later child that contains the effect. A control passes the commit
+/// when it is the commit, when it is a `sequence` (or the `branch` holding a
+/// body) with a child that passes it, or when it is a `parallel` whose join
+/// requires a branch that passes it; a `choice`, an `await` and a `repeat`
+/// pass none. The causal edge relation does not decide dominance: a commit
+/// in one branch of a `parallel` that a `send`/`receive` orders before an
+/// effect in a sibling branch is admitted (a later extension, STD-189).
 pub(crate) fn dominates(
     protocol: &ProtocolDeclarationForm,
     tree: &CheckedControlTree,
@@ -645,27 +645,9 @@ pub(crate) fn dominates(
                         && child(branch)
                 })
             }
-            K::Choice => !control.children.is_empty() && control.children.iter().all(child),
-            K::Await => {
-                let matched = protocol
-                    .awaits
-                    .iter()
-                    .find(|form| form.declaration == control.node.0)
-                    .map(|form| form.matched.span);
-                let mut paths = control.children.iter().filter(|node| {
-                    protocol
-                        .declarations
-                        .get(node.0)
-                        .is_some_and(|declaration| Some(declaration.name.span) != matched)
-                });
-                let mut any = false;
-                let all = paths.all(|node| {
-                    any = true;
-                    child(node)
-                });
-                any && all
-            }
-            K::Repeat => false,
+            // A `choice` takes one case, an `await` one of its two paths,
+            // and a `repeat` may be skipped: none passes a commit.
+            K::Choice | K::Await | K::Repeat => false,
             K::Send
             | K::Receive
             | K::Attempt

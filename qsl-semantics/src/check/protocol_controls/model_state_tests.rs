@@ -244,10 +244,8 @@ fn a_guard_reads_no_model_state_and_partitions_its_facts() {
         ]
     );
     assert_eq!(at, "Pick");
-    // TC-1056 row 45: one atom and its negation partition, over the
-    // individual non-Boolean entry. The negation is parenthesized: `not`
-    // binds tighter than `>`, so the row's `not got.count > 0` would negate
-    // the integer.
+    // TC-1056 row 45: one atom and its negation, `not (got.count > 0)`,
+    // partition over the individual non-Boolean entry.
     check(&decide(
         "",
         &attempted(
