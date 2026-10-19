@@ -170,11 +170,14 @@ step row, or a history update.
 - If a row's evaluation is incomplete, then `map_state` SHALL return
   `MappingFailure::Undetermined(MappingUndetermined)` naming the row and the
   object, with `EvalFailure::Incomplete`, and no partial state.
-- If a history update's value leaves its declared type (S3 proves each field
-  row conforms, so only a history update, FR-138, can), then the mapping
-  SHALL be undetermined with `EvalFailure::OutOfType`.
-- If the evaluator stops on a broken invariant, then the failure SHALL be
-  `EvalFailure::Stopped` with its catalog code.
+- If a history update's value leaves its declared type, then
+  `map_state` SHALL return `MappingFailure::Undetermined` with
+  `EvalFailure::OutOfType`.
+  S3 proves each field row conforms, so only a history update (FR-138) can
+  reach it.
+- If the evaluator stops on a broken invariant, then `map_state` SHALL return
+  `MappingFailure::Undetermined` with `EvalFailure::Stopped` and its catalog
+  code.
 - When the refinement has no hidden field, `map_state` SHALL return a
   complete abstract state in `MappedState.visible`.
 - `model_check` SHALL compare mapped states by the FR-101 state key that the
