@@ -151,9 +151,9 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 pub mod stratum;
 mod termination;
 pub use refinement::{
-    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, RefinementCause,
-    RefinementDeclaration, RefinementRefusal, RowClass, StepClass, StepRow, StepTarget,
-    UnsupportedFeature,
+    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, PopulationUse,
+    PopulationValue, RefinementCause, RefinementDeclaration, RefinementRefusal, RowClass,
+    StepClass, StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -961,6 +961,7 @@ impl PackageDeclarations {
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
+        .with_known_populations(refinement::population_names(&self.models))
         .with_complete_model(complete_model)
         .with_protocols(
             self.protocols

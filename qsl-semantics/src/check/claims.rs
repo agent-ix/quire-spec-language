@@ -374,6 +374,8 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::Reaches { .. }
         | NodeKind::ReachesEnd { .. }
         | NodeKind::ProtocolReference { .. }
+        | NodeKind::PopulationObjects { .. }
+        | NodeKind::Seq { .. }
         | NodeKind::Case { .. } => false,
         #[cfg(seam_probe)]
         NodeKind::__SeamProbe => unreachable!("never constructed outside the probe build"),

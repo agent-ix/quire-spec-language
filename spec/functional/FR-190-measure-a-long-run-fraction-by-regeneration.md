@@ -47,6 +47,9 @@ FR-189's `StatisticalOutcome`, whose verdict basis records
 - Test `j` SHALL sample one behaviour at trace index `j` from its initial
   state `s0` with FR-188's sampler, step by step, and close a cycle at each
   later position whose state key equals `s0`'s.
+- A sampler stop during a test SHALL map as FR-189 states: `NotMarkov` and
+  `TotalAboveDrawRange` to `Unsupported`, `ExpansionStop` to `Stopped`, and
+  `GeneratorMismatch` to a refusal.
 - Each cycle `k` SHALL contribute `Y_k`, the weighted count of its positions
   where `P` holds, and `L_k`, its total weight; unweighted, each position
   has weight 1, and `weighted by R` weights each position by the reward of
