@@ -349,7 +349,7 @@ impl<'a> Side<'a> {
     }
 }
 
-/// The refusals of one declaration and the nodes its row expressions spent.
+/// The refusals found in one declaration, in the order they were found.
 struct Findings {
     refinement: String,
     refusals: Vec<CheckRefusal>,
@@ -541,9 +541,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             let source = concrete_populations
                 .iter()
                 .find(|population| population.name == row.source.name);
-            if target.is_some() && source.is_some() {
-                // Both sides resolved.
-            } else {
+            if target.is_none() || source.is_none() {
                 // A name that spells a population of the other model is the
                 // wrong side of the row; one that spells none is missing.
                 let wrong_side = |written: &qsl_forms::NameForm, others: &[Population<'_>]| {
