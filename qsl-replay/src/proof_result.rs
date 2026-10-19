@@ -248,7 +248,8 @@ impl UnavailabilityCause {
             | TemporalOutcome::Violated { .. }
             | TemporalOutcome::Undefined(_)
             | TemporalOutcome::Pending
-            | TemporalOutcome::Incomplete(_) => None,
+            | TemporalOutcome::Incomplete(_)
+            | TemporalOutcome::WindowLimitReached(_) => None,
         }
     }
 }
@@ -962,6 +963,18 @@ mod tests {
         );
         assert_eq!(
             UnavailabilityCause::from_temporal_outcome(&TemporalOutcome::Pending),
+            None
+        );
+        // A window over `max_window_values` is an incomplete run, a limit
+        // reached, not a premise the trace lacks.
+        assert_eq!(
+            UnavailabilityCause::from_temporal_outcome(&TemporalOutcome::WindowLimitReached(
+                qsl_eval::temporal::WindowLimitReached {
+                    limit: "max_window_values",
+                    value: 10,
+                    setting: "monitor.max_window_values",
+                }
+            )),
             None
         );
     }
