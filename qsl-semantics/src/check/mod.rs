@@ -270,7 +270,7 @@ pub use protocol_obligation::{
 };
 pub use protocol_slots::{
     CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRepeat,
-    CheckedSlots,
+    CheckedSlots, CheckedTerminalMember,
 };
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,

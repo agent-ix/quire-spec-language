@@ -3,7 +3,9 @@
 //! expression slot of a protocol's `run` tree and `finish` -- each node's
 //! body, each `check` condition, each `choice`'s and `repeat`'s `visible`
 //! entries and guards and each `repeat`'s loop proof -- over the binders
-//! readable at it, and of each `choice`'s partition.
+//! readable at it, and of each `choice`'s partition. The clause's own
+//! `terminal when` predicate (FR-211) is checked the same way, over the
+//! `over` input and, under `on origin`, the protocol captures.
 //!
 //! The readable binders follow QSpec FR-466 "Binder scope": `In(n)` is
 //! what a control reads at its entry and `Out(n)` what is readable after it
@@ -28,8 +30,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    BinaryOperator, BinderKind, ExprNode, ExprRef, ExpressionForm, ProtocolDeclarationForm,
-    ProtocolNodeKind,
+    ActivationForm, BinaryOperator, BinderKind, ExprNode, ExprRef, ExpressionForm,
+    ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind, TerminalForm,
 };
 use qsl_foundation::Span;
 use quire_exact::ValueType;
@@ -115,10 +117,25 @@ pub struct CheckedReaders {
     pub readers: Vec<ProtocolNodeId>,
 }
 
+/// A protocol's intended terminal states (FR-211 "Outputs", the three
+/// cases of FR-124's declaration).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum CheckedTerminalMember {
+    /// The protocol writes no `terminal` member.
+    #[default]
+    None,
+    /// `terminal when { P }`: the checked Boolean predicate.
+    When(CheckedBody),
+    /// `terminal any`: every terminal state is intended.
+    Any,
+}
+
 /// Every checked slot of a protocol's `run` tree and `finish`, each list in
 /// source order, and each binder's readers.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CheckedSlots {
+    /// The protocol's `terminal` member (FR-211).
+    pub terminal: CheckedTerminalMember,
     /// The node bodies.
     pub bodies: Vec<CheckedNodeBody>,
     /// The choices.
@@ -184,10 +201,21 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
     }
 }
 
-/// One slot to check: the node it belongs to, which slot, its form, its
-/// goal, the binders readable at it and whether it bars model state.
+/// What holds a slot: a node of the `run` tree or `finish`, whose reads
+/// are recorded as that node's, or the protocol clause itself (its
+/// `terminal when` predicate), which no node reads for.
+#[derive(Clone, Copy)]
+enum SlotOwner {
+    /// The node of this index.
+    Node(usize),
+    /// The protocol clause.
+    Clause,
+}
+
+/// One slot to check: what holds it, which slot, its form, its goal, the
+/// binders readable at it and whether it bars model state.
 struct Slot<'s> {
-    node: usize,
+    owner: SlotOwner,
     kind: SlotKind,
     form: &'s ExpressionForm,
     goal: Goal<'s>,
@@ -222,7 +250,10 @@ impl Checker<'_, '_> {
     /// `slot` typed over every binder and checked against the slot's rules,
     /// in the order the module doc states; `None` when it refuses.
     fn slot(&mut self, slot: &Slot<'_>, cx: &mut CheckContext<'_, Scope>) -> Option<CheckedBody> {
-        let node_name = self.name(slot.node);
+        let node_name = match slot.owner {
+            SlotOwner::Node(node) => self.name(node),
+            SlotOwner::Clause => self.protocol.name.name.clone(),
+        };
         let mut nodes = self.nodes;
         let typed = type_body(
             slot.form,
@@ -296,9 +327,11 @@ impl Checker<'_, '_> {
             }
             return None;
         }
-        for local in read {
-            if let Some(readers) = self.readers.get_mut(local) {
-                readers.insert(slot.node);
+        if let SlotOwner::Node(node) = slot.owner {
+            for local in read {
+                if let Some(readers) = self.readers.get_mut(local) {
+                    readers.insert(node);
+                }
             }
         }
         Some(body)
@@ -670,7 +703,7 @@ pub(crate) fn check(
             _ => (SlotKind::Constraint, false),
         };
         let slot = Slot {
-            node,
+            owner: SlotOwner::Node(node),
             kind,
             form: &body.expression,
             goal: Goal::Boolean,
@@ -695,7 +728,7 @@ pub(crate) fn check(
             .map(|entry| {
                 checker.slot(
                     &Slot {
-                        node,
+                        owner: SlotOwner::Node(node),
                         kind: SlotKind::Visible,
                         form: entry,
                         goal: Goal::Infer,
@@ -713,7 +746,7 @@ pub(crate) fn check(
                 checker
                     .slot(
                         &Slot {
-                            node,
+                            owner: SlotOwner::Node(node),
                             kind: SlotKind::Guard,
                             form: &case.guard,
                             goal: Goal::Boolean,
@@ -774,7 +807,7 @@ pub(crate) fn check(
                             bars_model_state: bool| {
             checker.slot(
                 &Slot {
-                    node,
+                    owner: SlotOwner::Node(node),
                     kind,
                     form,
                     goal,
@@ -845,6 +878,46 @@ pub(crate) fn check(
             guard,
         });
     }
+
+    // FR-211 "The `terminal` member": `terminal when { P }` is a Boolean
+    // predicate over the model observation (the `over` input) and, under
+    // `on origin`, the protocol captures (QSpec FR-464 stage `terminal`,
+    // FR-429). Any other binder, the `on each` binder included, is out of
+    // scope. A second member is `protocol_controls`' refusal; the first is
+    // the one recorded.
+    let origin = matches!(protocol.activation, ActivationForm::Origin);
+    let terminal_readable: BTreeSet<usize> = checker
+        .binders
+        .iter()
+        .enumerate()
+        .filter(|(_, binder)| match binder.origin {
+            BinderOrigin::Input => true,
+            BinderOrigin::Capture => origin,
+            BinderOrigin::Activation | BinderOrigin::Node(_) => false,
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let terminal = protocol.members.iter().find_map(|member| match member {
+        ProtocolMemberForm::Terminal(terminal) => Some(terminal),
+        ProtocolMemberForm::Scheduling(_) => None,
+    });
+    slots.terminal = match terminal {
+        None => CheckedTerminalMember::None,
+        Some(TerminalForm::Any { .. }) => CheckedTerminalMember::Any,
+        Some(TerminalForm::When { predicate, .. }) => checker
+            .slot(
+                &Slot {
+                    owner: SlotOwner::Clause,
+                    kind: SlotKind::Terminal,
+                    form: predicate,
+                    goal: Goal::Boolean,
+                    readable: &terminal_readable,
+                    bars_model_state: false,
+                },
+                &mut cx,
+            )
+            .map_or(CheckedTerminalMember::None, CheckedTerminalMember::When),
+    };
 
     if !checker.refusals.is_empty() {
         checker.refusals.sort_by_key(|(span, _)| span.start);
@@ -971,6 +1044,9 @@ fn partition(
         span: choice.name.span,
     }))
 }
+
+#[cfg(test)]
+mod tests;
 
 /// The binders readable at each control's entry, and after the root.
 struct Flow {

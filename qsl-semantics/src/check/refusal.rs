@@ -420,6 +420,8 @@ pub enum SlotKind {
     Invariant,
     /// A `repeat`'s variant.
     Variant,
+    /// The protocol's `terminal when` predicate (FR-211).
+    Terminal,
 }
 
 /// Why a decision's read is not an observable fact of its owner (FR-218
