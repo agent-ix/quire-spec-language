@@ -21,7 +21,7 @@ Fixtures: `Service` and `P95` at `5 ms` and `2 ms`; a two-initial-state variant;
 1. `P95` at `5 ms` and `2 ms` with Okamoto, then with SPRT.
 2. Compute Okamoto's `N` for `m = 1` and `m = 2`, and the SPRT thresholds; run step 1's first request twice.
 3. Run the two-initial-state variant; the symmetric variant with each workload.
-4. Run the activation variant with Okamoto; reduce `quantile 1/2 of M >= 3` over the two-point variant.
+4. Run the activation variant with Okamoto; reduce `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) over the two-point variant.
 5. Compute `N` for `NoFault`; run the `Health` variants; request `mean of` with SPRT.
 6. Run the `Wide` claim of FR-189-AC-7 with Okamoto.
 
