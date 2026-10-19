@@ -55,3 +55,14 @@ scope:
 Read-only review of `git diff origin/main...HEAD` and of PR #966's diff
 (`qsl-eval/src/temporal/window.rs`, `letters.rs`, tests). No cargo or make
 ci run, per the brief.
+
+## Dispositions
+
+Round 1 reviewed at `7d264fc5b` (fix commits `0c8174539`, `7d264fc5b`).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-629:35 now reads "at `past[2, 3]` the sum `9` true, count `2`, fraction `1`"; hand-checked (6/2 + 6/1 = 9; both > 1; 2/2). |
+| FND-002 | fixed | FR-194-AC-5 states `9` and true, `count` `2`, `fraction` `1` for `past[2, 3]`. |
+| FND-003 | fixed | AC-5 and AC-6 spell `sum of 6 / e.x`. |
+| FND-004 | fixed | AC-3 and AC-6 count "visit units", and FR-194 says visit units are separate from the units a filter, value or predicate charges. |

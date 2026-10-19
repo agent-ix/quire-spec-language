@@ -47,3 +47,19 @@ scope:
 Checked against PR #966's `AggregateAtom::evaluate` loop (charge, then
 `admits`, then the limit check, then `take`). That code has no undefined
 path yet; its review deferred that gap (#966 FND-002) to this ticket.
+
+## Dispositions
+
+Round 1 reviewed at `7d264fc5b` (fix commits `0c8174539`, `7d264fc5b`), with QSpec PR #277 at `66f9538`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-194 and FR-414 (#277) now say: visit oldest first, stop at the first undefined position, carry its cause, leave later positions and a later `max_window_values` overflow unreached, and charge the positions visited up to and including it. Hand-checked FR-194-AC-6: positions 0 and 1 are visited (6/1, then 6/0), 2 units are charged, and with `max_window_values` 2 the count reaches 2 only at position 1, so the overflow (a third admitted value at position 2) is never reached. New FND-004 covers that vector's second cause. |
+| FND-002 | fixed | The rule now covers an undefined filter at a visited position and an undefined value or predicate at an admitted position. The guarded `sum of 6 / e.x where holds(e.x != 0)` = 3 + 6 + 1.5 = 10.5, which is `<= 20` and true; that vector is in AC-5 and TC-366 WA-08. |
+| FND-003 | fixed | The reason is now "the first fault found and the count is not complete", which is true under stop-at-first. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The second cause in FR-194-AC-6 and TC-366 WA-09, "no `x` at position 4 (a different undefined cause)", is not a defined undefined cause. QSL nowhere makes an absent observation field undefined; FR-098-AC-8 refuses an absent field as `WrongValueKind`. A trace with a missing field can therefore be refused before any atom is evaluated. The output also cannot show "from position 1", because the atom's cause carries no window position (`UndefinedEvaluation.at` is the clause position). Oldest-first is then observable only if the second cause is a named, distinct undefined cause, for example a family `absent-key` lookup at position 4, or another kernel undefined variant. Name it. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:145; quire-specification:spec/test-cases/TC-366-window-aggregates.md:32 |

@@ -42,3 +42,22 @@ scope:
 
 `git grep "value visited"` over QSL `spec/` and QSpec `origin/main` found
 these hits and no others. QSpec was read only.
+
+## Dispositions
+
+Round 1 reviewed at `7d264fc5b` (fix commits `0c8174539`, `7d264fc5b`), with QSpec PR #277 at `66f9538`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | QSpec PR #277 amends FR-414: Outputs, a new "Undefined positions" section, "per window position visited", AC-7 and AC-8, and TC-366 WA-08 to WA-10. FR-194 Dependencies cite QSpec FR-414. #277 must merge with #979 (still open). |
+| FND-002 | fixed | ADR-024 WA-5 ("per window position visited, filtered out or not"), the ADR-024 amendments list, and ADR-014 TR-5 ("one unit per window position it visits"). |
+| FND-003 | still-open | The added clause, "carried as `InsufficientData` is, in the undefined-evaluation record of the O-16 undefined result", contradicts ADR-024 WA-4 and FR-327, which say `InsufficientData` is never `UndefinedEvaluation`. My round-0 suggestion was also wrong: it took the clause category to be O-16 undefined. See new FND-004 and FND-005. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | FR-194 makes the clause "O-16 undefined" when a window position is undefined (lines 96, 110, 117-118). QSL FR-327 (Undefined evaluation) says otherwise: an atom that evaluates `Undefined` (only a window's `insufficient-data` excluded) returns `Undefined(UndefinedEvaluation{where, cause})`, category **violation**; only `insufficient-data` settles O-16 `undefined`. So a `division-by-zero` inside an aggregate would be non-failing, while the same division in a plain `holds` atom fails (FR-327-AC-5). That also goes against "a window result never improves by the loss of a position" and against ADR-024 SV-11. Failure scenario: `sum of e.a / e.b over past[0, 9] <= 5` with `e.b = 0` never fails the pipeline. Owner ruling needed; the consistent reading is FR-327's: `UndefinedEvaluation{where, cause}`, category violation, distinct from `insufficient-data`. AC-5's "the clause is undefined there" should then state the category. | spec/functional/FR-194-evaluate-window-aggregates-in-monitors.md:96,110,116-121; spec/functional/FR-327-evaluate-a-temporal-clause-over-a-finite-trace.md:103-117 |
+| FND-005 | high | The same contradiction in QSpec PR #277. The new "Undefined positions" section says "The monitor clause at that position settles in the O-16 category `undefined` with that cause". That gives a kernel-undefined window position the treatment FR-414 reserves for `insufficient-data`, which it explains as "not an undefined evaluation of the claim". Align it with whatever FND-004 rules. | quire-specification:spec/functional/temporal/FR-414-evaluate-window-aggregates.md:88-89 |
+
+Observation outside this PR's scope, for PR #966: `TemporalOutcome::category` maps every `Undefined(_)`, `InsufficientData` included, to `Category::Violation`. FR-327 and ADR-024 WA-4 require O-16 `undefined` for `insufficient-data`.

@@ -16,7 +16,7 @@ Scope: FR-194-AC-1 to FR-194-AC-6.
 
 ## Test Procedure
 
-Fixtures: the timestamped response trace of FR-194-AC-1; event-position traces of FR-194-AC-2; a sparse trace with three responses; a dense trace of 20 values; the event-position `x` traces `2, 1, 0, 4` and `1, 0, 2, 3` with `x` absent at position 4.
+Fixtures: the timestamped response trace of FR-194-AC-1; event-position traces of FR-194-AC-2; a sparse trace with three responses; a dense trace of 20 values; the event-position `x` traces `2, 1, 0, 4` and `1, 0, 2, 3` with `o` `Some(5), Some(5), Some(5), None`.
 
 1. Evaluate the quantile clause at `0.95` and `0.9`, and with threshold `0.005 s`.
 2. Evaluate the `count`, `fraction`, `sum`, `min` and `max` terms of FR-194-AC-2.
@@ -32,6 +32,6 @@ Tag the tests `#[trace("TC-629", "FR-194-AC-n")]`.
 - Step 1: false, true, and the same with `0.005 s`.
 - Step 2: windows 0 to 4 and 6 to 15; `3/4`; 7, 1, 4.
 - Step 3: `Undefined(InsufficientData{3, 5})`; `Incomplete` naming `max_window_values` and 10; 20 units.
-- Step 4: `Undefined(division-by-zero)` for the unguarded sum, the undefined filter and the undefined predicate, also under `min_count 5`, with no `InsufficientData`; the guarded sum `10.5` and true; at `past[2, 3]` the sum `9` true, count `2`, fraction `1`.
-- Step 5: `Undefined(division-by-zero)` from position 1 both ways, never `Incomplete`; 2 visit units; 20 visit units over the 20-position filter window.
+- Step 4: `UndefinedEvaluation{where: position 3, cause: division-by-zero}`, category violation, for the unguarded sum, the undefined filter and the undefined predicate, also under `min_count 5`; with three defined values and `min_count 5`, O-16 `undefined` with `InsufficientData`; the guarded sum `10.5` and true; at `past[2, 3]` the sum `9` true, count `2`, fraction `1`.
+- Step 5: `UndefinedEvaluation` with `division-by-zero`, not `none-value`, both ways, never `Incomplete`; 2 visit units; 20 visit units over the 20-position filter window.
 - Step 6: all refused; equal horizons; a Boolean signal; `tested` with `Observed`.
