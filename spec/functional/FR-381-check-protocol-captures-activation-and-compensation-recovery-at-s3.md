@@ -225,7 +225,8 @@ node `E` (QSpec FR-056).
   FR-149): an `Int[lo,hi]` operand types a binary `+`, `-` or `*` operand on
   the other side `Int[lo,hi]` with a range obligation, an unproved obligation
   refusing `undefined_expression`/`unproved-range` at the arithmetic node, and
-  no other form is coerced.
+  no other form is coerced; an ordering between `Integer` and `Int[..]`
+  operands is an integer ordering and is accepted.
 - A `commit` member is either `commit never` or `commit N` naming a `commit`
   node. S3 SHALL record `Never` for the first, which selects no earlier cutoff,
   and `Node(id)` for the second (QSpec FR-057). S3 SHALL refuse a `commit` node

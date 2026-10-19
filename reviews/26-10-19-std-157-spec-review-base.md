@@ -42,3 +42,24 @@ Ticket: STD-157 (QSpec-side, Done; no QSL-side ticket exists for this PR). The P
 ## Verdict
 
 Not mergeable as is. FND-001 changes a TC expected result; FND-002 to FND-004 are wording fixes in one bullet. The rule's core matches merged QSpec FR-149: the coerced form, either-side and parenthesized matching, the obligation and its facts, the `undefined_expression`/`unproved-range` code, cause and locus at the arithmetic node, and the no-clamp/wrap/widen clause. The AC-10 intervals are correct. The unguarded and recovery-predicate refusals are already TC-1058 rows 16 and 22.
+
+## New findings (disposition pass 1)
+
+Against head 5dadb78aa.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-104-AC-12 and TC-1084 step 3 require `earlier.tally + 1 <= later.tally` (an `Integer` sum against `Int[0,3]` under `<=`) to refuse `ill_typed`/`type-mismatch`, as QSpec FR-149-AC-21 says. The QSL checker accepts it: `ordering` admits any pair where both sides are `Integer` or `Int(_)` as `OrderedKind::Integers` (qsl-semantics/src/check/check.rs:1444, 2245), and the ordering peer path does no coercion (typing.rs:2048-2069). The spec now asks for a refusal the code does not make. A test written to TC-1084 step 3 fails, and turning on the refusal would reject every existing mixed `Integer`/`Int[..]` ordering. That needs a QSL code ticket, or a QSpec check that FR-149-AC-21 really means to ban mixed integer ordering. This is the planner's call, not the author's. | spec/functional/FR-104-check-state-clauses.md:309; spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:23 |
+| FND-006 | low | The TC-1084 fixture is under-specified. It gives "parameters `earlier` and `later`" of the record but checks the same text "as a guard, as an invariant and as a function body". An invariant binds `self`, not parameters, and "a guard" does not say which clause's guard. FR-104's new bullet also lists "a function body" among positions "in a clause". Name the clause, or the binder, for each position. | spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:19-21; spec/functional/FR-104-check-state-clauses.md:141-144 |
+| FND-007 | low | FR-104 now restates QSpec FR-149's rule as normative, but its frontmatter has no `ix://agent-ix/quire-specification/FR-149` relationship, so the cross-repo dependency is invisible to link and blast-radius queries. Add a `depends_on` edge. | spec/functional/FR-104-check-state-clauses.md:1-32 |
+
+## Dispositions
+
+Round 1, against head 5dadb78aa.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-1058 row 16a and FR-381-AC-10 now locate the refusal at the comparison `later.tally = -earlier.tally` |
+| FND-002 | fixed | FR-104 bullet: "an `Integer`-typed unary `-`, path, call, ..." plus "An operand of the same `Int[..]` type as its peer is accepted unchanged" |
+| FND-003 | fixed | FR-104 bullet lists `sum`, the `Rational[..]`/`Decimal[..]` case and `<`, `<=`, `>` and `>=` |
+| FND-004 | fixed | The rule is stated once in FR-104 for every `=`/`!=` (FR-104-AC-12, TC-1084); FR-381 refers to it |

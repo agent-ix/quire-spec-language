@@ -25,6 +25,8 @@ relationships:
     type: references
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-149
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-043
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-010
@@ -153,9 +155,11 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   unary `-`, path, call, `div`, `rem`, `count`, `sum` or unannotated
   `let`-bound name against an `Int[..]` operand, and an arithmetic operand
   against a `Rational[..]` or `Decimal[..]` operand, each refuse
-  `ill_typed`/`type-mismatch` at the comparison, and `<`, `<=`, `>` and `>=`
-  supply no expected type. An operand of the same `Int[..]` type as its peer
-  is accepted unchanged.
+  `ill_typed`/`type-mismatch` at the comparison. An operand of the same
+  `Int[..]` type as its peer is accepted unchanged. The ordering operators `<`,
+  `<=`, `>` and `>=` supply no expected type and coerce nothing: between an
+  `Integer` operand and an `Int[..]` operand they are an integer ordering and
+  are accepted.
 
 ### Observations of reads
 
@@ -306,7 +310,7 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
 | FR-104-AC-9 | Under `quire.model.complete/v1`, `reaches(self, target, parent)` on a `ConfigVersion` subtype with its inherited `parent: Option<Reference<ConfigVersion>>` field checks with `self` retained as the subtype reference and `target` as the base reference, without erasing the operand identity FR-043 evaluates; a target type not conforming to the edge owner refuses `ill_typed`/`operator-ineligible`. The subtype/base operands under any other admitted model selection refuse `ill_typed`/`operator-ineligible` by the exact-type rule. | Test |
 | FR-104-AC-10 | Over the ConfigVersion package (TC-458's) with a process `Flow` (identity field `x`, field `n: Integer`) that declares operation `go` whose frame is `modifies [Flow/n]` and a closed population of `Flow`, `pre P using v on Config::Flow::go { self.n < 3 }`, `post Q using v on Config::Flow::go { self.n = pre(self.n) + 1 }` and `invariant I using v on Config::Flow at current { self.n >= 0 }` each check, `self` being `Reference<Config::Flow>` and `self.n` an `Attribute` of type `Integer`; `P`'s read is `pre`, `Q`'s reads are `post` and `pre`, `I`'s read is `current`. `pre M using v on Config::Flow::missing { true }` refuses `missing_declaration`/`missing-name` at `missing`. | Test (TC-459, TC-460) |
 | FR-104-AC-11 | Over the ConfigVersion package with `bound HistoryBound on Config::config_history [8]` (FR-380), `NoCycle` yields an `operation-contract` record whose one domain, the `config_history` population keyed as in FR-104-AC-5, is a `Population(Some(8))` domain with available finite bound `Cardinality{8}` and is not listed among the unbounded domains, so a clause whose only domains are bounded has extent `Bounded`; the population covering `ConfigVersion` is still the one `config_history`, and a second population `archive` of `ConfigVersion` with or without a bound of its own still refuses `ambiguous_declaration`/`ambiguous-name` at each clause's `on`. Without the `bound` declaration the record is FR-104-AC-5's. | Test (TC-1054) |
-| FR-104-AC-12 | With `tally` of `Int[0,3]`, `earlier.tally < 3 and later.tally = earlier.tally + 1` checks in a guard, an invariant and a function body alike; with the guard removed each refuses `undefined_expression`/`unproved-range` at `earlier.tally + 1`. `later.tally = earlier.tally` checks; `later.tally = -earlier.tally`, `later.tally = n` for `n` of `Integer`, and `earlier.tally + 1 <= later.tally` each refuse `ill_typed`/`type-mismatch` at the comparison. | Test (TC-1084) |
+| FR-104-AC-12 | Over `record Counter { tally: Int[0,3]; next: Int[0,3]; }`, `self.tally < 3 and self.next = self.tally + 1` checks as the `pre` guard of an operation on `Counter` and as an invariant over `self`; the function `f(earlier: Counter, later: Counter)` whose body is `earlier.tally < 3 and later.tally = earlier.tally + 1` checks. With `self.tally < 3 and` or `earlier.tally < 3 and` removed, each refuses `undefined_expression`/`unproved-range` at the sum. `later.tally = earlier.tally` checks; `later.tally = -earlier.tally` and `later.tally = n` for `n` of `Integer` each refuse `ill_typed`/`type-mismatch` at the comparison. | Test (TC-1084) |
 
 ## Dependencies
 

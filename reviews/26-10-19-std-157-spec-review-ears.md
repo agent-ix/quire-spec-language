@@ -32,3 +32,11 @@ Ticket: STD-157. The PR adds one FR-381 behaviour bullet and leaves the FR state
 ## Verdict
 
 Mergeable on this lens; FND-001 is wording. Sentence 3's refusal (code, cause, locus at the arithmetic node, never the equality) and its SHALL NOT clamp/wrap/widen are each one determinate, testable response.
+
+## Dispositions
+
+Round 1, against head 5dadb78aa.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The FR-104 bullet now reads "the checker SHALL type the arithmetic node `Int[lo,hi]` ..."; FR-381's bullet is one SHALL sentence |
