@@ -91,3 +91,9 @@ Round 1, against head 40892cef1 (fix commit edced4cd7).
 | FND-002 | fixed | edced4cd7: TC-552 Steps 1 and 5 expect `[Twice::finish]`, ordered by the bytes of the alias-free spellings. |
 | FND-003 | fixed | edced4cd7: FR-147-AC-5 and TC-552 step 5 add the lower-case alias `spec` vector, `[Twice::finish, lose Twice::ch]`, which alias-including ordering would reverse (checked: `T` 0x54 < `l` 0x6C; `l` < `s` 0x73). |
 | FND-004 | fixed | edced4cd7: FR-147-AC-10 and TC-552 step 10 cover the unit importing and not importing the library. |
+
+Round 2, against head c476e4dc6.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | c476e4dc6: FR-147-AC-11 puts the unresolved-entry vector on `CasTwice` and expects `missing-name`, no `not-yet-implemented` naming `refinement-internal-list`, and the independent `protocol-abstract-side` refusal at `Twice`; TC-552 step 11 procedure and Expected Results match. |
