@@ -58,3 +58,20 @@ Ticket: STD-203. PR quire-spec-language#1036 at head 226cfb393. Failure-domain p
 ## Verdict
 
 Findings: FND-001 (medium), FND-002 (medium), FND-003 (medium), FND-004 (low). The restated symmetric tie (binds `a`, loop `upd(b)`), the AC-10 asymmetric lasso, the AC-11 and AC-12 undefined prefixes and the AC-12 `max_states` 1 stop all reproduce on the engine (with `mod` for `/`); AC ids are kept and every new AC is linked to a TC that verifies FR-126. Not mergeable until the high and medium findings are resolved.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The stop rule throws away a decisive refutation. A first-phase finding (an undefined letter or contract, the only thing that can be found before a stop, since the second phase runs only after every binding's first phase finished with nothing) is a real V-4 counterexample; the rule turns it into Stopped whenever any later binding hits max_states, max_transitions, the meter or cancel, even after that binding has explored past the finding's depth, where no shorter one can exist. It also makes later bindings explore their whole product when only depths below the finding matter, so the shared budget runs out more often. And it is inconsistent: a max_depth cut counts as finished although a shorter counterexample could lie past it, which is the rule's own reason for refusing. Proposed rule: with a finding at depth d in binding x, a later binding need only be explored through depth d-1 (an earlier one wins a tie, and earlier bindings already ran); return the finding once every later binding finished or completed depth d-1 with no finding; return Stopped only when a binding stopped before completing depth d-1. This keeps 'shortest, then earlier binding' exact and deterministic. Owner decision; not a spec-author call. | spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md:315-320 |
+
+## Dispositions
+
+Round 1, against head a403f83ce (fix commit a403f83ce).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - The engine SHALL return a counterexample only when every binding finished   its exploration, a binding that completes `max_depth` counting as finished.   If a binding stops on `max_states`, `max_transitions`, the evaluation meter   or cancellation before every binding finished, then the engine SHALL return   that `Stopped`, even when an earlier binding already holds a counterexample,   because a shorter one could remain in the unexplored binding. |
+| FND-002 | fixed | - The engine SHALL run the first phase over every binding before it runs the   second phase over any. If any binding's first phase ends with a violation   or an `Undecided`, then the engine SHALL return the finding that ranks first   across bindings by depth (the position of an undefined letter, the depth of   a rejecting state), and the second phase SHALL NOT run. A lasso therefore   never competes with a first-phase finding of another binding. |
+| FND-003 | fixed | For a TP-4 item the order across `over` bindings is the shallowest first, then the earlier binding in canonical order; the safety engines (TP-1 to TP-3) rank by depth, then canonical state order, then binding. |
+| FND-004 | fixed | - The engine SHALL rank the pass's findings with the same binding's product   findings by depth, the product's finding winning a tie at equal depth; the   binding order then decides between bindings. |

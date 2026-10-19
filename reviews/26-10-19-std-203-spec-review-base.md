@@ -59,3 +59,21 @@ Ticket: STD-203. PR quire-spec-language#1036 at head 226cfb393. Base spec review
 ## Verdict
 
 Findings: FND-001 (high), FND-002 (medium), FND-003 (medium), FND-004 (low), FND-005 (low). The restated symmetric tie (binds `a`, loop `upd(b)`), the AC-10 asymmetric lasso, the AC-11 and AC-12 undefined prefixes and the AC-12 `max_states` 1 stop all reproduce on the engine (with `mod` for `/`); AC ids are kept and every new AC is linked to a TC that verifies FR-126. Not mergeable until the high and medium findings are resolved.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | AC-15 cannot fail. Under the new ordering, binding a cannot 'already hold the AC-10 counterexample' when b stops: AC-10's counterexample is a second-phase lasso, and the second phase runs only after every binding's first phase finished. A b that stops in its first phase gives Stopped under the old engine, the new rule and the alternative alike (the engine at 04ac7043d already returns Stopped there). The max_states value is also unnamed. To test the stop rule, use a first-phase finding in a (for example the AC-12 claim, undefined at depth 2 for a) with a max_states that stops b, and name the value. | spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md:434 |
+
+## Dispositions
+
+Round 1, against head a403f83ce (fix commit a403f83ce).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - A TP-4 item SHALL NOT settle `Holds` without the `ComponentCertificate`   that FR-339's checker accepts. When the first phase completed with an empty   frontier and the second phase finds no fair accepting cycle, the engine   SHALL return `Holds{basis: Exhaustive}` with that certificate, and   without one SHALL return `LivenessRefusal::ComponentCertificateNotBuilt` as   `unsupported_construct`/`not-yet-implemented`, carrying the run's   statistics. A run stopped by `max_depth` is unaffected and returns   `BoundReached`. |
+| FND-002 | fixed | Over the example subject with both versions 0, `always holds(6 mod (2 - c.versionNumber) >= 0)` returns `Violated` bound to `a` with the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)` and `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`, since both bindings are undefined at depth 2 and `a` is the earlier. With initial versions `a` 0 and `b` 1, it returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`. |
+| FND-003 | fixed | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2 (specified behaviour). |
+| FND-004 | fixed | The TP-4 claim of AC-1 under `fair strong each attemptUpdate` returns the `StrongFairness` refusal, `unsupported_construct`/`not-yet-implemented`, having explored no state; the same claim as a checked clause with a guarded `on each ... when` activation, given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337), returns the `GuardedActivation` refusal. AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its stati... |
+| FND-005 | fixed | - The pass SHALL charge each state it creates to `max_states` and each edge   it follows to `max_transitions`, and exhausting either SHALL settle   `Stopped{ResourceExhausted, {MaxStates / MaxTransitions, value}}`: an   uncharged pass would be unbounded. |

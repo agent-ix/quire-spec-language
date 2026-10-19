@@ -30,8 +30,8 @@ versions 0, the subject's `max_candidates` 1,000,000.
    to the engine directly.
 4. AC-1's weak `each` claim, with and without a built FR-339 certificate.
 5. Step 1's claim with initial versions `a` 0 and `b` 1.
-6. The AC-10 claim with `max_states` set so that binding `b` stops, and with
-   `max_depth` 3.
+6. Step 5's request with `max_states` 6 and with `max_states` 1,000; step 1's
+   request with `max_states` 1,000.
 
 ## Expected Results
 
@@ -44,7 +44,6 @@ versions 0, the subject's `max_candidates` 1,000,000.
 - Step 4: `Holds{Exhaustive}` with an accepted certificate; without one,
   `ComponentCertificateNotBuilt` with the run's statistics, not `Holds`.
 - Step 5: `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` at
-  position 1 (specified behaviour; the interim engine still returns the first
-  binding's finding, `a` at position 2).
-- Step 6: `Stopped{ResourceExhausted, {MaxStates, value}}`; then the shortest
-  counterexample.
+  position 1.
+- Step 6: `Stopped{ResourceExhausted, {MaxStates, 6}}`; the step 5 finding for
+  `b`; the step 1 finding for `a`.

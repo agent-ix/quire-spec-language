@@ -312,12 +312,15 @@ automaton states and the depth reached.
   tie in depth or in length by the earlier binding in canonical order, and
   the counterexample SHALL name its binding. This order is for a TP-4 item:
   the safety engines rank by depth, then canonical state order, then binding.
-- The engine SHALL return a counterexample only when every binding finished
-  its exploration, a binding that completes `max_depth` counting as finished.
-  If a binding stops on `max_states`, `max_transitions`, the evaluation meter
-  or cancellation before every binding finished, then the engine SHALL return
-  that `Stopped`, even when an earlier binding already holds a counterexample,
-  because a shorter one could remain in the unexplored binding.
+- When a binding's first phase ends with a finding at depth `d`, the engine
+  SHALL explore each later binding only through depth `d - 1`, since a later
+  binding wins only with a strictly shallower finding (a tie goes to the
+  earlier binding). It SHALL return the finding once every later binding has
+  finished or completed depth `d - 1` with no finding, and SHALL return the
+  `Stopped` of a later binding that stops on `max_states`, `max_transitions`,
+  the evaluation meter or cancellation before it completed depth `d - 1`.
+  A later binding that reaches `max_depth` before depth `d - 1` has
+  completed its horizon and counts as finished.
 - The run's `max_states` and `max_transitions` SHALL be shared by every
   binding; the run's `automaton_states` SHALL be the largest count of any one
   binding; the run's `product_states` SHALL be the sum over bindings.
@@ -430,8 +433,8 @@ automaton states and the depth reached.
 | FR-126-AC-11 | Over the example subject with both versions 0, `always holds(6 mod (2 - c.versionNumber) >= 0)` returns `Violated` bound to `a` with the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)` and `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`, since both bindings are undefined at depth 2 and `a` is the earlier. With initial versions `a` 0 and `b` 1, it returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`. | Test (TC-521) |
 | FR-126-AC-12 | Over the example subject with both versions 0, `eventually (holds(c.versionNumber = 0) and holds(6 mod (2 - c.versionNumber) >= 0))`, whose negation automaton has no move at position 0, returns `Violated` bound to `a` with `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}` and the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)`, found by the model-only pass; the run's statistics report no product state for the dead positions. With `max_states` 1 it returns `Stopped{ResourceExhausted, {MaxStates, 1}}`, the pass's second state exhausting the budget. | Test (TC-1085) |
 | FR-126-AC-13 | The TP-4 claim of AC-1 under `fair strong each attemptUpdate` returns the `StrongFairness` refusal, `unsupported_construct`/`not-yet-implemented`, having explored no state; the same claim as a checked clause with a guarded `on each ... when` activation, given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337), returns the `GuardedActivation` refusal. AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its statistics when no certificate is built, never `Holds` without one. | Test (TC-1085) |
-| FR-126-AC-14 | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2 (specified behaviour). | Test (TC-1085) |
-| FR-126-AC-15 | With `max_states` set so that binding `b` stops before it finishes while binding `a` already holds the AC-10 counterexample, the run returns `Stopped{ResourceExhausted, {MaxStates, value}}`, not the counterexample; with `max_depth` 3 both bindings finish and the shortest is returned. | Test (TC-1085) |
+| FR-126-AC-14 | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2. | Test (TC-1085) |
+| FR-126-AC-15 | With initial versions `a` 0 and `b` 1 and the AC-12 claim, whose first phase ends in `a` with a finding at depth 2, `max_states` 6 returns `Stopped{ResourceExhausted, {MaxStates, 6}}`, since binding `b` stops before it completes depth 1; `max_states` 1,000 returns the AC-14 finding for `b`; with both versions 0, `max_states` 1,000 returns the AC-12 finding for `a`, the tie going to the earlier binding. | Test (TC-1085) |
 
 ## Dependencies
 

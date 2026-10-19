@@ -56,3 +56,12 @@ Ticket: STD-203. PR quire-spec-language#1036 at head 226cfb393. Integrity pass o
 ## Verdict
 
 Findings: FND-001 (medium), FND-002 (medium). The restated symmetric tie (binds `a`, loop `upd(b)`), the AC-10 asymmetric lasso, the AC-11 and AC-12 undefined prefixes and the AC-12 `max_states` 1 stop all reproduce on the engine (with `mod` for `/`); AC ids are kept and every new AC is linked to a TC that verifies FR-126. Not mergeable until the high and medium findings are resolved.
+
+## Dispositions
+
+Round 1, against head a403f83ce (fix commit a403f83ce).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | id: TC-1085 (spec/test-cases/TC-1085-liveness-model-only-pass-and-unsupported-refusals.md); no other open PR or main adds TC-1085. |
+| FND-002 | fixed | - Step 2: `Violated` with a five-step prefix bound to `a`, on which `va` is never 2;   `Holds{Exhaustive}`; `Holds{Exhaustive}`; `Violated` with the prefix   `0 -inc-> 1`. |
