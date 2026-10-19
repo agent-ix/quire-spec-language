@@ -724,12 +724,15 @@ fn the_emitted_record_carries_the_population_domain_and_no_universe() {
     let (graph, clause, requirements) = record_of(&text);
     let population = graph
         .population_domain(
-            &Identifier::new("Config").expect("an identifier"),
-            &Identifier::new("config_history").expect("an identifier"),
+            &quire_exact::Identifier::new("Config").expect("an identifier"),
+            &quire_exact::Identifier::new("config_history").expect("an identifier"),
         )
         .expect("keyed")
         .expect("config_history resolves");
-    assert_eq!(requirements.kind(), qsl_semantics::check::Capability::TemporalSatisfaction);
+    assert_eq!(
+        requirements.kind(),
+        qsl_semantics::check::Capability::TemporalSatisfaction
+    );
     let ClaimExtent::Unbounded(domains) = requirements.extent() else {
         panic!("unbounded: {:?}", requirements.extent());
     };
