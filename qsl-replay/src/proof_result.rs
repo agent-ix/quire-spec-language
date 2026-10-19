@@ -313,6 +313,10 @@ pub enum InconclusiveCause {
     /// AMC-rtb's high-mode criterion failed; the test is sufficient and
     /// not necessary, so it decides nothing (ADR-026 RT-6).
     SufficientTestFailed,
+    /// FR-250: a hybrid solver result that proves nothing (`δ-sat`, a
+    /// flowpipe meeting the unsafe set, `unknown`, or a method not sound for
+    /// its outcome).
+    SolverInconclusive,
 }
 
 impl InconclusiveCause {
