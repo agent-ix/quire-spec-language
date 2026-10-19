@@ -105,11 +105,12 @@ fn an_item_without_fairness_keeps_every_capable_backend() {
     assert!(set.missing_fairness_kinds().is_empty());
 }
 
-/// FR-134-AC-2 (registry half): with only the weak backend, a strong item
+/// FR-134-AC-2, registry half only (not tagged to the AC, which also
+/// requires the `Unsupported` settlement that `negotiate_*` owns): with only the weak backend, a strong item
 /// has an empty set that names the missing `Strong` kind. Settling it
 /// `unsupported` is `negotiate_*`'s work, not the registry's.
 #[test]
-#[trace("TC-535", "FR-134-AC-2")]
+#[trace("TC-535")]
 fn an_emptied_set_names_the_missing_fairness_kind() {
     let registry = registry([temporal("weak-only", 1, &[Weak])]);
     let set = set_for(&registry, &[Strong]);

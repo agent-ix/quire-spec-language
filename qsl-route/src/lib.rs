@@ -168,6 +168,10 @@ pub struct BackendDescriptor {
 /// descriptor. The driver supplies the manifest fields as data; this is the
 /// sole manifest conversion entry point shared by linked and process
 /// providers (FR-288, C-28).
+///
+/// The manifest's `fairness_kinds` are not read here: the descriptor is built
+/// with no fairness kinds. Until the item path is wired, [`BackendDescriptor::with_fairness_kinds`]
+/// is the only way to set them.
 pub fn descriptor_from_manifest<'a>(
     backend: Candidate,
     origin: ProviderOrigin,
@@ -593,7 +597,7 @@ impl Registry {
     ///   the identity's recorded conflict digests, and `held` is left
     ///   untouched (it already holds nothing for this identity).
     /// - When the identity is held with an equal descriptor (same identity,
-    ///   manifest digest and advertised pairs), the repeat is one
+    ///   manifest digest, advertised pairs and fairness kinds), the repeat is one
     ///   registration and is not refused (FR-290-AC-9).
     /// - When the identity is held with a descriptor that differs in any
     ///   member, the two conflict: the held registration is withdrawn, both
