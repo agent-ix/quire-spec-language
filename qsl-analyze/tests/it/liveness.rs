@@ -34,22 +34,24 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
 
 use crate::counter::{
-    document, document_with_ranged_parameter, key, package_with_clauses, subject, value, Documents,
-    Letters, CONTRACT, UNLIMITED, ZERO,
+    clause_text, document, document_with_ranged_parameter, key, package_with_clauses, subject,
+    unit_text, value, Documents, Letters, CONTRACT, UNLIMITED, ZERO,
 };
 
 /// A Counter world with one declared clause.
 pub(crate) struct Fixture {
-    package: CheckedPackage,
-    clauses: Vec<CheckedTemporalClause>,
-    documents: Documents,
-    initial: Vec<DocumentRef>,
-    keys: Vec<&'static str>,
+    pub(crate) package: CheckedPackage,
+    pub(crate) clauses: Vec<CheckedTemporalClause>,
+    pub(crate) documents: Documents,
+    pub(crate) initial: Vec<DocumentRef>,
+    pub(crate) keys: Vec<&'static str>,
+    /// The native unit the package was checked from.
+    pub(crate) unit: Vec<u8>,
 }
 
 /// The world over `document` with `body`, one start with the counters
 /// `starts`, and the clause `fairness` + `formula` over `c`.
-fn fixture(
+pub(crate) fn fixture(
     document: Vec<u8>,
     body: &str,
     fairness: &str,
@@ -57,6 +59,11 @@ fn fixture(
     starts: &[(&'static str, i64)],
 ) -> Fixture {
     let (package, clauses) = package_with_clauses(&document, body, &[("C", fairness, formula)]);
+    let unit = unit_text(
+        &document,
+        &(body.to_owned() + &clause_text("C", fairness, formula)),
+    )
+    .into_bytes();
     let mut documents = Documents::new(document);
     let initial = vec![documents.start("s0", starts)];
     Fixture {
@@ -65,6 +72,7 @@ fn fixture(
         documents,
         initial,
         keys: starts.iter().map(|(key, _)| *key).collect(),
+        unit,
     }
 }
 
@@ -107,7 +115,7 @@ impl Fixture {
         )
     }
 
-    fn decide(
+    pub(crate) fn decide(
         &self,
         atom: fn(i64) -> Option<bool>,
     ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {

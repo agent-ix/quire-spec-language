@@ -7,6 +7,7 @@ mod deadlock_item;
 mod example_units;
 mod graph_core;
 mod graph_world;
+mod lasso_replay;
 mod liveness;
 mod model_check;
 mod model_check_safety;
