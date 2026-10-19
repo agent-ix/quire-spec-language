@@ -56,6 +56,7 @@ pub struct AggregateTerm {
 }
 pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Quantity } }
 // Atom evaluation: Value::Bool, or Undefined(InsufficientData{count, min_count}),
+// or Undefined(<cause of the undefined value, filter or predicate>),
 // or a run stop Incomplete(LimitReached{limit, value, setting}) (ADR-018 V-7)
 ```
 
@@ -100,7 +101,19 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
   limit SHALL have a published default of 1,048,576 (2^20), which QSL
   publishes, and the setting name `monitor.max_window_values` (FR-255's
   convention).
-- Evaluation SHALL charge one unit of ADR-014 TR-5 work per value visited.
+- When the value expression, the filter or the `fraction` predicate is
+  undefined at a window position (for example a division by zero), the atom
+  SHALL evaluate to `Undefined` carrying that undefined evaluation's own
+  cause unchanged (`division-by-zero` in the example), and the clause at that
+  position is O-16 undefined. The evaluator SHALL NOT skip the position, so a
+  window result never improves by the loss of a position it could not
+  evaluate. This cause is distinct from `InsufficientData`, which reports a
+  window short of `min_count` values. When the same window both holds an
+  undefined position and fewer than `min_count` values, the atom carries the
+  undefined position's cause, because the count is not known.
+- Evaluation SHALL charge one unit of ADR-014 TR-5 work per window position
+  visited, whether or not the filter admits the position. The charge for a
+  position the filter rejects is the same as for one it admits.
 - Each aggregate atom SHALL become a derived Boolean signal per position,
   and the temporal layer (tl-mltl) SHALL receive those signals unchanged.
 
@@ -116,8 +129,9 @@ pub enum PastWindow { Positions { a: u64, b: u64 }, Duration { a: Quantity, b: Q
 |----|----------|--------------|
 | FR-194-AC-1 | Over a timestamped trace of 20 responses with latencies `1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 6, 7` ms in one 300 s window, `quantile 0.95 of e.latency where holds(e is Response) over past[0, 300 s] <= 5 ms` is false at the last position (the 19th smallest is 6 ms); with `quantile 0.9` it is true (the 18th smallest is 1 ms). The threshold `0.005 s` gives the same results. | Test (TC-629) |
 | FR-194-AC-2 | Under event-position, `count where holds(e is Error) over past[0, 9] <= 2` at position 4 reads positions 0 to 4 only; at position 15 it reads positions 6 to 15. `fraction holds(e.ok) over past[0, 3]` over `ok` values `true, false, true, true` is `3/4` at position 3. `sum`, `min` and `max` of `1, 4, 2` are 7, 1 and 4. | Test (TC-629) |
-| FR-194-AC-3 | With `min_count 5` and three responses in the window, the atom is `Undefined(InsufficientData{count: 3, min_count: 5})` and the clause is undefined at that position. With `max_window_values` 10 and 20 values in the window, the run stops `Incomplete(LimitReached{…})` naming `max_window_values` and 10. The run's work meter counts 20 for one evaluation over 20 values. | Test (TC-629) |
+| FR-194-AC-3 | With `min_count 5` and three responses in the window, the atom is `Undefined(InsufficientData{count: 3, min_count: 5})` and the clause is undefined at that position. With `max_window_values` 10 and 20 values in the window, the run stops `Incomplete(LimitReached{…})` naming `max_window_values` and 10. The run's work meter counts 20 for one evaluation over 20 window positions. | Test (TC-629) |
 | FR-194-AC-4 | S3 refuses an aggregate term in a claim over a model subject, `past[0, 300 s]` under event-position, `quantile 1`, `min_count 0`, and a threshold of length against a time value. AC-1's clause has the same horizon with and without its aggregate atom; its tl-mltl input is the derived Boolean signal; a holding result is `tested` with evidence `Observed`. | Test (TC-629) |
+| FR-194-AC-5 | Over event-position values `2, 1, 0, 4` of `x` in `past[0, 3]`, at position 3: `sum 6 / e.x over past[0, 3] <= 20` is `Undefined(division-by-zero)` at position 3, not the sum `10.5` of the other three positions, and the clause is undefined there. `count where holds(6 / e.x > 1) over past[0, 3]` is `Undefined(division-by-zero)` for the undefined filter, and `fraction holds(6 / e.x > 1) over past[0, 3]` for the undefined predicate. With `min_count 5` the same window gives `Undefined(division-by-zero)`, not `InsufficientData`. A window of positions 0 to 1 only (`past[2, 3]` at position 3) holds no zero and evaluates normally. A filter that rejects 10 of 20 positions charges 20 work units, not 10. | Test (TC-629) |
 
 ## Dependencies
 
