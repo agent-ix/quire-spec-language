@@ -85,3 +85,15 @@ The rest is sound:
 - The rust-review checks: no `unwrap` or `expect` in production paths,
   checked integer conversions (`u64::try_from(..).unwrap_or(u64::MAX)` and
   `to_u64` with refusal), and no new `unsafe`.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | still-open | Fix commit e8a43b6e6 fixes this for state clauses only: `with_known_populations` is wired in `state_clause::check_clause` alone. Probes at e8a43b6e6 show `R::slots` in a `temporal` clause body (`always holds(size(R::slots) = 2)`) still refuses `missing_declaration`/`missing-name`, and so does `R::slots` in a `function` body. A temporal clause body is a clause body under FR-139, so this is still a defect there. A function body is not clearly a clause body: the six forms and `seq` already refuse `expression-form` there, and only the bare name differs. Making the guard intrinsic to every non-refinement `Typer` would cover both. |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | deferred | Planner re-plan: QSL-544 (#1032) lands first. After it lands, #1035 must rebase and delete `evaluate_row` in favour of `evaluate_refinement_row`, or the reverse. At e8a43b6e6, `git merge-tree origin/qsl-544 HEAD` still reports content conflicts, in `qsl-eval/src/value/expression/mod.rs` and now also `qsl-eval/src/simulation/model.rs`. |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |

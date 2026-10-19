@@ -643,7 +643,6 @@ pub(crate) fn check_clause(
     )
     .with_cancel(input.cancel)
     .with_complete_value(form.complete_value)
-    .with_known_populations(super::refinement::population_names(input.models))
     .with_context(cx.reborrow(input.scope));
     bind_parameters(&mut typer, &parameters, location)?;
     let mut parent_projections = BTreeMap::new();

@@ -127,3 +127,24 @@ Linear note and are not fixed in this PR.
 FR-140-AC-2/3 are correctly declared not built and not claimed. The PR body
 claims no more than built, except for the `expression-form` sentence (SR-13119
 FND-002/FND-003). No compatibility shim was found.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | Spec gap (planner). FR-139-AC-4's second `only`, written `only(s in R::slots where s.ring = self and s.index = self.head + 2: s.value)`, cannot evaluate undefined as the AC requires. The equality coerces `self.head + 2` into `s.index`'s `Int[0, 1]`, and at `head = 1, size = 2` the row evaluates `Refused(IntegerOutOfDomain { target: [0, 1] })` (probed at e8a43b6e6). That is a refused row, which FR-140 reads as `map` undetermined, not refuted. The fixture's `s.index + 0` gives the AC's intended "no slot satisfies it". TC-544 step 4 has the same text. Rewrite the AC expression, or settle how an out-of-range comparison operand should behave. | spec/functional/FR-139-type-and-evaluate-population-valued-expressions.md; tests/support/ring_queue.rs:313-325 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | still-open | The two tests that keep `QSpec-FR-376-AC-1` (`the_ring_rows_check_at_s3_with_the_universe_size_symbolic`, `the_ring_rows_evaluate_over_the_slots_in_the_observed_state`) still exercise no `sum`. The new `sum` tests are tagged `TC-544` only, so no test tagged with the AC covers the sixth form. `QSpec-TC-311` stays on 8 tests while TC-311 step 1's expressions are not run. Add `QSpec-FR-376-AC-1` to `a_sum_records_its_bound_and_is_checked_at_admission` and `a_sum_adds_the_matching_objects_and_each_form_visits_an_object_once`, or drop it from the two ring tests. |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | rejected | The finding was wrong. The literal `s.index = self.head + 2` passes S3, but at evaluation it gives `Refused(IntegerOutOfDomain)` and not the undefined `only` that AC-4 tests (probed). The fixture's `+ 0` is needed and is now explained in a comment. The spec side is FND-011. |
+| FND-006 | deferred | Planner re-plan: FR-139 stays with QSL-546; FR-140-AC-6/9/10/11 and FR-135-AC-6 move to QSL-546, and QSL-544 (#1032) lands first. The ticket's FR-140 scope belongs to the planner, not this PR. |
+| FND-007 | deferred | Spec gap: posted in the planner note on QSL-546 (QSpec native-diagnostics and FR-376, QSL FR-139 or FR-090 `only-not-one` entry). |
+| FND-008 | deferred | Spec gap: posted in the planner note on QSL-546 (amend QSpec FR-376's `sum` bound to `[min(0, n*lo), max(0, n*hi)]`). The PR's test cites it as a pending FR-139 AC. |
+| FND-009 | deferred | Spec gap: posted in the planner note on QSL-546 (ADR-020 §8 row that checks, and a value-profile rule for refinement rows). |
+| FND-010 | deferred | Spec gap: posted in the planner note on QSL-546 (QSpec shared-grammar.md productions and `..`). |

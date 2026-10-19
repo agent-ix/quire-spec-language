@@ -942,6 +942,7 @@ impl PackageDeclarations {
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
+        .with_known_populations(refinement::population_names(&self.models))
         .with_complete_model(complete_model)
         .with_protocols(
             self.protocols

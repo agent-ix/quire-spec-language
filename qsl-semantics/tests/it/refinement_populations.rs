@@ -290,9 +290,8 @@ fn a_universe_below_the_used_maximum_is_admitted() {
 
 /// FR-139 (`sum`): a `sum` types as an integer, records its size-dependent
 /// bound and is checked at admission against the type of its use. The bound
-/// is `[min(0, n*lo), max(0, n*hi)]` (the open FR-139-AC-6, pending the spec
-/// change).
-#[trace("TC-544")]
+/// is `[min(0, n*lo), max(0, n*hi)]` (an open spec change).
+#[trace("TC-544", "QSpec-TC-311", "QSpec-FR-376-AC-1")]
 #[test]
 fn a_sum_records_its_bound_and_is_checked_at_admission() {
     let graph = checked(&ring_is_queue(&all_rows())).graph;
@@ -322,25 +321,39 @@ fn a_sum_records_its_bound_and_is_checked_at_admission() {
     )));
 }
 
-/// FR-139: a population name or `seq` in a state clause refuses
-/// `unsupported_construct`/`expression-form` at its span.
+/// FR-139: a population name or `seq` in a state clause, a temporal clause
+/// body or a function body refuses `unsupported_construct`/`expression-form`
+/// at its span.
 #[trace("TC-544", "FR-139-AC-2")]
 #[test]
-fn a_population_name_and_a_seq_in_an_invariant_refuse_as_expression_forms() {
-    for (body, at) in [
-        ("size(R::slots) = 2", "R::slots"),
-        ("size(seq(i in 0 .. 1: i)) = 2", "seq(i in 0 .. 1: i)"),
+fn a_population_name_and_a_seq_outside_a_refinement_refuse_as_expression_forms() {
+    for (declaration, at) in [
+        (
+            "invariant Total using v on R::Ring at current { size(R::slots) = 2 }",
+            "R::slots",
+        ),
+        (
+            "invariant Total using v on R::Ring at current { size(seq(i in 0 .. 1: i)) = 2 }",
+            "seq(i in 0 .. 1: i)",
+        ),
+        (
+            "temporal W using inf over (r: R::Ring) clock \"t\" on origin \
+             { always holds(size(R::slots) = 2) }",
+            "R::slots",
+        ),
+        (
+            "function f using v(): Boolean pure { size(R::slots) = 2 }",
+            "R::slots",
+        ),
     ] {
-        let found = refused(&format!(
-            "invariant Total using v on R::Ring at current {{ {body} }}"
-        ));
+        let found = refused(declaration);
         let [refusal] = &found[..] else {
-            panic!("one refusal for {body}");
+            panic!("one refusal for {declaration}");
         };
         assert_eq!(
             (refusal.refusal.cause.code(), refusal.refusal.cause.cause()),
             (Code::UnsupportedConstruct, Some("expression-form")),
-            "{body}"
+            "{declaration}"
         );
         assert_eq!(refusal.at, at);
     }

@@ -869,7 +869,11 @@ impl<'a> Typer<'a> {
             }
             ExprNode::Name(name)
                 if self.populations.is_none()
-                    && self.known_populations.iter().any(|known| known == name) =>
+                    && self
+                        .scope
+                        .known_populations
+                        .iter()
+                        .any(|known| known == name) =>
             {
                 return Err(refuse(
                     &location,

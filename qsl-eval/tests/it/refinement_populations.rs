@@ -341,7 +341,7 @@ fn only_is_undefined_for_no_object_and_for_several() {
 /// s.value)` is the sum over the slots passing the condition, 0 over none,
 /// and visits each slot once; `items` visits 6 (2 elements, then 2 slots for
 /// each).
-#[trace("TC-544")]
+#[trace("TC-544", "QSpec-TC-311", "QSpec-FR-376-AC-1")]
 #[test]
 fn a_sum_adds_the_matching_objects_and_each_form_visits_an_object_once() {
     let world = World::new();

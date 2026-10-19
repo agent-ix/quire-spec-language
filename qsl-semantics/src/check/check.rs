@@ -748,6 +748,10 @@ pub struct Scope {
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     pub(crate) integer_division: Option<AdmittedIntegerDivision>,
     pub(crate) complete_value: bool,
+    /// The names of the concrete populations of the unit's models, which
+    /// refuse `unsupported_construct`/`expression-form` where no refinement
+    /// reads them (FR-139).
+    pub(crate) known_populations: Vec<String>,
     /// Every admitted model currently uses `quire.model.complete/v1`; an
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
@@ -914,6 +918,7 @@ impl Scope {
             ieee_profile,
             integer_division: None,
             complete_value: false,
+            known_populations: Vec::new(),
             complete_model: false,
             dispatch_operations,
             index,
@@ -937,6 +942,11 @@ impl Scope {
 
     pub(crate) fn with_complete_value(mut self, complete_value: bool) -> Self {
         self.complete_value = complete_value;
+        self
+    }
+
+    pub(crate) fn with_known_populations(mut self, names: Vec<String>) -> Self {
+        self.known_populations = names;
         self
     }
 
@@ -1386,10 +1396,6 @@ pub(crate) struct Typer<'a> {
     /// outside a refinement declaration, where a population name or form
     /// refuses `unsupported_construct`/`expression-form`.
     populations: Option<PopulationScope>,
-    /// The names of the concrete populations of the unit's models, which
-    /// refuse `unsupported_construct`/`expression-form` where no refinement
-    /// reads them (FR-139).
-    known_populations: Vec<String>,
 }
 
 /// The concrete populations a refinement row's expression may name (FR-139,
@@ -1646,16 +1652,7 @@ impl<'a> Typer<'a> {
             units: UnitScope::new(scope.types.units()),
             body: BodyBuilder::default(),
             populations: None,
-            known_populations: Vec::new(),
         }
-    }
-
-    /// This pass refusing the population names `names` as an expression
-    /// form (FR-139).
-    #[must_use]
-    pub(crate) fn with_known_populations(mut self, names: Vec<String>) -> Self {
-        self.known_populations = names;
-        self
     }
 
     /// The static range of the integer `node` computes (FR-139).
