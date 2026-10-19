@@ -511,10 +511,10 @@ fn a_recovering_cst_refuses_and_a_rebuilt_declaration_is_equal() {
     assert_eq!(protocol(&first), protocol(&second));
 }
 
-/// FR-220-AC-2: a `fence` control and a `parallel` with a `memory` clause
+/// Verifies the parse only and claims no criterion.
+/// A `fence` control and a `parallel` with a `memory` clause
 /// build as protocol nodes beside the controls around them; the `memory`
 /// words do not become the parallel's name or join labels.
-#[trace("FR-220-AC-2", "FR-219-AC-1")]
 #[test]
 fn a_fence_and_a_memory_clause_build_beside_their_controls() {
     let run = format!(

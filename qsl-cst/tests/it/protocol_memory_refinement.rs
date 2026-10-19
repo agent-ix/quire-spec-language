@@ -5,7 +5,6 @@
 //! attempt's `ordering` and the `fence` control (FR-220), and a refinement
 //! declaration's `step` rows (FR-136, FR-214). Each test reads the CST nodes
 //! the parser produced; the checks those forms feed belong to later slices.
-use ix_trace_rs::trace;
 use qsl_cst::{CompleteCode, Limits, ParsedSource, Production};
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -77,10 +76,10 @@ fn refused_at(declaration: &str) -> String {
     text[start..end].to_owned()
 }
 
-/// FR-211-AC-1, FR-211-AC-4, FR-212-AC-2: a protocol clause holds one
+/// Verifies the parse only and claims no criterion.
+/// A protocol clause holds one
 /// `terminal` and one `scheduling adversarial` member after its relationships
 /// and channels, and starts on `on each`.
-#[trace("FR-211-AC-1", "FR-211-AC-4", "FR-212-AC-2")]
 #[test]
 fn a_protocol_parses_terminal_scheduling_and_on_each_activation() {
     let members = "terminal any;\nscheduling adversarial;";
@@ -111,10 +110,10 @@ fn a_protocol_parses_terminal_scheduling_and_on_each_activation() {
     assert!(texts(&text, &parsed, Production::ProtocolScheduling).is_empty());
 }
 
-/// FR-211-AC-1, FR-212-AC-2: a `terminal` member without `when`/`any`, and a
+/// Verifies the parse only and claims no criterion.
+/// A `terminal` member without `when`/`any`, and a
 /// `scheduling` member that names no `adversarial`, fail at the token the
 /// grammar refuses.
-#[trace("FR-211-AC-1", "FR-212-AC-2")]
 #[test]
 fn a_malformed_terminal_or_scheduling_member_is_refused_at_its_token() {
     let run = "sequence Main { }";
@@ -125,9 +124,9 @@ fn a_malformed_terminal_or_scheduling_member_is_refused_at_its_token() {
     );
 }
 
-/// FR-219-AC-1: a `parallel` takes an optional `memory sc | tso | ra` clause
+/// Verifies the parse only and claims no criterion.
+/// A `parallel` takes an optional `memory sc | tso | ra` clause
 /// between its name and its branches; a `parallel` without one still parses.
-#[trace("FR-219-AC-1")]
 #[test]
 fn a_parallel_parses_its_memory_clause() {
     let branches = "{ branch a sequence A { } branch b sequence B { } } join all [a, b];";
@@ -147,18 +146,18 @@ fn a_parallel_parses_its_memory_clause() {
     assert_eq!(texts(&text, &parsed, Production::Parallel).len(), 4);
 }
 
-/// FR-219-AC-1: a memory model other than `sc`, `tso` and `ra` is refused at
+/// Verifies the parse only and claims no criterion.
+/// A memory model other than `sc`, `tso` and `ra` is refused at
 /// the model word.
-#[trace("FR-219-AC-1")]
 #[test]
 fn an_unknown_memory_model_is_refused_at_the_model_word() {
     let run = "parallel P memory pso { branch a sequence A { } branch b sequence B { } } join all [a, b];";
     assert_eq!(refused_at(&protocol("on origin", "", run)), "pso");
 }
 
-/// FR-220-AC-1: an attempt takes `ordering` with any of the five memory
+/// Verifies the parse only and claims no criterion.
+/// An attempt takes `ordering` with any of the five memory
 /// orders, between its operation and `contracts`; one without it still parses.
-#[trace("FR-220-AC-1")]
 #[test]
 fn an_attempt_parses_each_memory_order() {
     let attempt = |name: &str, ordering: &str| {
@@ -179,9 +178,9 @@ fn an_attempt_parses_each_memory_order() {
     assert_eq!(texts(&text, &parsed, Production::EventNode).len(), 6);
 }
 
-/// FR-220-AC-2: a `fence` control takes `ordering` with `acquire`, `release`,
+/// Verifies the parse only and claims no criterion.
+/// A `fence` control takes `ordering` with `acquire`, `release`,
 /// `acq_rel` or `seq_cst`, and is one more control of a sequence.
-#[trace("FR-220-AC-2")]
 #[test]
 fn a_fence_parses_each_fence_order() {
     let run = "sequence Main {\n\
@@ -206,21 +205,30 @@ fn a_fence_parses_each_fence_order() {
     );
 }
 
-/// FR-220-AC-2: a `fence` with no `ordering` is refused at the token that
+/// Verifies the parse only and claims no criterion.
+/// A `fence` with `ordering relaxed` is refused at S1, at `relaxed`: QSpec's
+/// `fence-order` excludes it (STD-167).
+#[test]
+fn a_relaxed_fence_is_a_parse_refusal_at_the_relaxed_word() {
+    let run = "sequence Main { fence F ordering relaxed; }";
+    assert_eq!(refused_at(&protocol("on origin", "", run)), "relaxed");
+}
+
+/// Verifies the parse only and claims no criterion.
+/// A `fence` with no `ordering` is refused at the token that
 /// should have started it.
-#[trace("FR-220-AC-2")]
 #[test]
 fn a_fence_without_an_ordering_is_refused() {
     let run = "sequence Main { fence F; }";
     assert_eq!(refused_at(&protocol("on origin", "", run)), ";");
 }
 
-/// FR-136-AC-1, FR-214-AC-1: a refinement declaration holds explicit `step`
+/// Verifies the parse only and claims no criterion.
+/// A refinement declaration holds explicit `step`
 /// rows whose left side is a concrete operation or a protocol step class
 /// (`fork`, `join`, `cend`, `duplicate`, `lose`, `spawn`, `retire`,
 /// `activate`, or a node, template, channel or role by name, or `memory`) and
 /// whose right side is an abstract application, `stutter`, `any` or `node`.
-#[trace("FR-136-AC-1", "FR-214-AC-1", "FR-214-AC-4")]
 #[test]
 fn a_refinement_parses_its_step_rows() {
     let rows = [
@@ -251,24 +259,64 @@ fn a_refinement_parses_its_step_rows() {
         [declaration.as_str()]
     );
     assert_eq!(texts(&text, &parsed, Production::StepRow), rows);
+    // Which alternative each row took: the source and target text are the
+    // row's two sides exactly, a step-kind word or `memory` sits outside the
+    // qualified name, and only an application target holds an operation name.
+    let sides: Vec<(&str, &str)> = rows
+        .iter()
+        .map(|row| {
+            let (source, target) = row
+                .strip_prefix("step ")
+                .and_then(|row| row.strip_suffix(';'))
+                .and_then(|row| row.split_once(" -> "))
+                .expect("a step row");
+            (source, target)
+        })
+        .collect();
+    let sources: Vec<&str> = sides.iter().map(|side| side.0).collect();
+    let targets: Vec<&str> = sides.iter().map(|side| side.1).collect();
+    assert_eq!(texts(&text, &parsed, Production::StepSource), sources);
+    assert_eq!(texts(&text, &parsed, Production::StepTarget), targets);
     assert_eq!(
-        texts(&text, &parsed, Production::StepSource).len(),
-        rows.len()
+        texts(&text, &parsed, Production::OperationName),
+        ["Spec::Counter::inc", "Spec::Counter::inc"]
     );
-    assert_eq!(
-        texts(&text, &parsed, Production::StepTarget).len(),
-        rows.len()
-    );
+    let kinds = [
+        "memory ",
+        "fork ",
+        "join ",
+        "cend ",
+        "duplicate ",
+        "lose ",
+        "spawn ",
+        "retire ",
+        "activate ",
+    ];
+    let mut names = Vec::new();
+    for (source, target) in &sides {
+        if source.starts_with("memory ") {
+            continue;
+        }
+        let name = kinds
+            .iter()
+            .find_map(|kind| source.strip_prefix(kind))
+            .unwrap_or(source);
+        names.push(name);
+        if let Some(node) = target.strip_prefix("node ") {
+            names.push(node.split('(').next().expect("a node name"));
+        }
+    }
+    assert_eq!(texts(&text, &parsed, Production::QualifiedName), names);
     assert_eq!(
         texts(&text, &parsed, Production::StepArgument),
         ["1", "_", "_", "1"]
     );
 }
 
-/// FR-136-AC-1: a step row without its `->`, without a target, or whose
+/// Verifies the parse only and claims no criterion.
+/// A step row without its `->`, without a target, or whose
 /// target is neither application, `stutter`, `any` nor `node` is refused at
 /// the offending token.
-#[trace("FR-136-AC-1")]
 #[test]
 fn a_malformed_step_row_is_refused_at_its_token() {
     for (row, offending) in [
