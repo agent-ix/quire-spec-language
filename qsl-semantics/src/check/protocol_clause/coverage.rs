@@ -35,7 +35,8 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
         | K::Repeat
         | K::Case
         | K::Await
-        | K::Check => false,
+        | K::Check
+        | K::Fence => false,
     }
 }
 
@@ -53,7 +54,9 @@ fn covered_construct(kind: ProtocolConstructKind) -> bool {
         | K::Related
         | K::FifoOrdering
         | K::JoinPredicate
-        | K::TerminalWhen => false,
+        | K::TerminalWhen
+        | K::MemoryClause
+        | K::AccessOrdering => false,
     }
 }
 

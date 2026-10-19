@@ -127,7 +127,10 @@ ifeq ($(origin QSPEC_DIR),undefined)
 QSPEC_DIR := $(SIBLINGS)/quire-specification
 endif
 # Freeze the raw caller value before Make can expand literal '$' path bytes.
-override export QSPEC_DIR := $(value QSPEC_DIR)
+# `override` and `export` stay separate statements: GNU Make 3.81 (macOS) turns a
+# combined `override export V :=` into a recursive variable that expands the `$`.
+override QSPEC_DIR := $(value QSPEC_DIR)
+export QSPEC_DIR
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
 	quire-canonical:quire-canonical:. \
 	ix-trace-rs:ix-trace-rs:.
@@ -196,10 +199,12 @@ use-remote:
 # Resolve paths in the shell from environment data so quotes, backticks and
 # dollars remain literal path bytes instead of becoming Make expansions.
 ifneq ($(origin CI_DEFAULT_TARGET_DIR),undefined)
-override export CI_DEFAULT_TARGET_DIR := $(value CI_DEFAULT_TARGET_DIR)
+override CI_DEFAULT_TARGET_DIR := $(value CI_DEFAULT_TARGET_DIR)
+export CI_DEFAULT_TARGET_DIR
 endif
 ifneq ($(origin CI_ALL_TARGET_DIR),undefined)
-override export CI_ALL_TARGET_DIR := $(value CI_ALL_TARGET_DIR)
+override CI_ALL_TARGET_DIR := $(value CI_ALL_TARGET_DIR)
+export CI_ALL_TARGET_DIR
 endif
 
 ci-default-features:
@@ -262,7 +267,8 @@ test-deep-format:
 # Preserve the caller's literal target root across the Make/shell boundary.
 # An empty value retains Cargo's default target root.
 ifneq ($(origin CARGO_TARGET_DIR),undefined)
-override export CARGO_TARGET_DIR := $(value CARGO_TARGET_DIR)
+override CARGO_TARGET_DIR := $(value CARGO_TARGET_DIR)
+export CARGO_TARGET_DIR
 endif
 
 ci-clean-build:

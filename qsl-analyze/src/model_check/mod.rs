@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! ADR-018 EN-1: reusable unreduced product and retained graph machinery.
+//! ADR-018 EN-1: the explicit-state model checker.
 //!
-//! This module does not translate formulas, decide fairness, emit certificates
-//! or settle a model-check verdict. The graph outcome is FR-101's exploration
-//! outcome; even an exhaustive graph is not a proof of a temporal property.
+//! [`check_model`] decides a reachable invariant (TP-1) or the
+//! deadlock-freedom item over every behaviour of a model subject (FR-126's
+//! first phase); `qsl-replay` settles its outcome (FR-127). The retained
+//! graph, the generic product and the SCC decomposition are the reusable
+//! machinery the liveness phase builds on; a graph outcome alone is FR-101's
+//! exploration outcome, never a proof of a temporal property.
 
+mod check;
 mod graph;
 mod product;
 mod scc;
 
+pub use check::{check_model, ModelCheckItem, ModelCheckRefusal, ModelCheckRequest};
 pub use graph::{
     retain, GraphExploration, IdentityPermutation, ProductStateId, RetainedEdge, RetainedGraph,
     RetainedState,

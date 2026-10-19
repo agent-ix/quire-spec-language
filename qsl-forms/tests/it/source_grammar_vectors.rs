@@ -112,3 +112,58 @@ fn a_relation_or_hyper_clause_refuses_the_unit_with_no_dispatch_entry() {
         }
     }
 }
+
+/// A `refinement` declaration parses but has no S2 dispatch entry, so the unit
+/// is refused with `NoDispatchEntry`, mapped to `unsupported_construct`, at the
+/// declaration and builds no `ParsedUnit`.
+#[test]
+fn a_refinement_declaration_refuses_the_unit_with_no_dispatch_entry() {
+    let refinement = "refinement R using v abstract Spec concrete Impl {\n\
+        step Impl::Counter::peek -> stutter;\n}";
+    let text = format!("{HEADER}{PREDICATE}{refinement}\n");
+    let parsed = parse(&text);
+    assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
+    match build_unit(&parsed) {
+        Err(refusal) => {
+            assert_eq!(
+                refusal.cause,
+                FormsCause::NoDispatchEntry {
+                    spelling: "refinement".to_owned()
+                }
+            );
+            assert_eq!(refusal.cause.catalog_code(), Code::UnsupportedConstruct);
+            assert_eq!(refusal.span, Some(span_of(&text, refinement)));
+        }
+        Ok(unit) => panic!("a refusal, not {unit:?}"),
+    }
+}
+
+/// A refinement declaration holding population, object, history and fairness
+/// rows parses but has no S2 dispatch entry, so the unit is refused with
+/// `NoDispatchEntry`, mapped to `unsupported_construct`, at the declaration:
+/// no row is built or admitted silently.
+#[test]
+fn a_refinement_with_every_row_kind_refuses_the_unit_with_no_dispatch_entry() {
+    let refinement = "refinement R using v abstract Spec concrete Impl {\n\
+        population Spec::Counters from Impl::Counters;\n\
+        object Spec::Counter from Impl::Counter { value = self.cells; }\n\
+        history Impl::Counter.prev : Boolean = false { on Impl::Counter::write : true; }\n\
+        assume fair weak each Impl::Counter::write;\n\
+        ensure fair weak Spec::Counter::inc;\n}";
+    let text = format!("{HEADER}{PREDICATE}{refinement}\n");
+    let parsed = parse(&text);
+    assert!(parsed.is_admissible(), "{text}: {:?}", parsed.diagnostics());
+    match build_unit(&parsed) {
+        Err(refusal) => {
+            assert_eq!(
+                refusal.cause,
+                FormsCause::NoDispatchEntry {
+                    spelling: "refinement".to_owned()
+                }
+            );
+            assert_eq!(refusal.cause.catalog_code(), Code::UnsupportedConstruct);
+            assert_eq!(refusal.span, Some(span_of(&text, refinement)));
+        }
+        Ok(unit) => panic!("a refusal, not {unit:?}"),
+    }
+}

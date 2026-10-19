@@ -49,7 +49,10 @@ fn chain() -> DomainPackage {
     )
 }
 
-/// `VmHWM` of this process, in bytes.
+/// `VmHWM` of this process, in bytes. Linux only: macOS has no `/proc`, and
+/// the crate forbids `unsafe`, so the parent reads the child's peak from
+/// `/usr/bin/time -l` there (see `run_child`).
+#[cfg(target_os = "linux")]
 fn peak_resident_bytes() -> u64 {
     let status = std::fs::read_to_string("/proc/self/status").expect("/proc/self/status reads");
     let kib: u64 = status
@@ -63,6 +66,7 @@ fn peak_resident_bytes() -> u64 {
 /// The child: normalize on a 512 KiB-stack thread and print the measurements.
 fn child() {
     let package = chain();
+    #[cfg(target_os = "linux")]
     let baseline = peak_resident_bytes();
     let (elapsed, declarations, facts, hashed, work, outcome) = std::thread::scope(|scope| {
         std::thread::Builder::new()
@@ -94,8 +98,59 @@ fn child() {
     println!("HASHED={hashed}");
     println!("WORK={work}");
     println!("WALL_MS={}", elapsed.as_millis());
-    println!("VMHWM_BASELINE_BYTES={baseline}");
-    println!("VMHWM_BYTES={}", peak_resident_bytes());
+    #[cfg(target_os = "linux")]
+    {
+        println!("VMHWM_BASELINE_BYTES={baseline}");
+        println!("VMHWM_BYTES={}", peak_resident_bytes());
+    }
+}
+
+/// Run this test binary as the measured child.
+#[cfg(not(target_os = "macos"))]
+fn run_child() -> std::process::Output {
+    Command::new(std::env::current_exe().expect("the test binary path"))
+        .args(["--exact", TEST_PATH, "--nocapture", "--test-threads=1"])
+        .env(CHILD_ENV, "1")
+        .output()
+        .expect("the child process runs")
+}
+
+/// Run this test binary as the measured child under `/usr/bin/time -l`,
+/// which reports the child's peak resident set in bytes on stderr.
+#[cfg(target_os = "macos")]
+fn run_child() -> std::process::Output {
+    Command::new("/usr/bin/time")
+        .arg("-l")
+        .arg(std::env::current_exe().expect("the test binary path"))
+        .args(["--exact", TEST_PATH, "--nocapture", "--test-threads=1"])
+        .env(CHILD_ENV, "1")
+        .output()
+        .expect("the child process runs under /usr/bin/time")
+}
+
+/// The child's peak resident set in bytes.
+#[cfg(target_os = "linux")]
+fn child_peak_bytes(stdout: &str, _stderr: &str) -> u64 {
+    measured(stdout, "VMHWM_BYTES")
+}
+
+/// No peak-resident measurement exists for this target: the test fails
+/// rather than passing without checking the ceiling.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn child_peak_bytes(_stdout: &str, _stderr: &str) -> u64 {
+    panic!("peak resident set is measured only on Linux (VmHWM) and macOS (/usr/bin/time -l)")
+}
+
+/// The child's peak resident set in bytes, from `/usr/bin/time -l`.
+#[cfg(target_os = "macos")]
+fn child_peak_bytes(_stdout: &str, stderr: &str) -> u64 {
+    stderr
+        .lines()
+        .find_map(|line| line.trim().strip_suffix("maximum resident set size"))
+        .unwrap_or_else(|| panic!("/usr/bin/time -l reports the peak: {stderr}"))
+        .trim()
+        .parse()
+        .unwrap_or_else(|error| panic!("the peak is a number: {error}"))
 }
 
 /// The number the child printed after `name=`. The harness may put its own
@@ -119,11 +174,7 @@ fn ten_thousand_edge_chain() {
         child();
         return;
     }
-    let output = Command::new(std::env::current_exe().expect("the test binary path"))
-        .args(["--exact", TEST_PATH, "--nocapture", "--test-threads=1"])
-        .env(CHILD_ENV, "1")
-        .output()
-        .expect("the child process runs");
+    let output = run_child();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     assert!(
         output.status.success(),
@@ -135,9 +186,11 @@ fn ten_thousand_edge_chain() {
     assert_eq!(measured(&stdout, "HASHED"), 15_104_845);
     assert_eq!(measured(&stdout, "WORK"), 60_006);
     let wall_ms = measured(&stdout, "WALL_MS");
-    let resident = measured(&stdout, "VMHWM_BYTES");
+    let resident = child_peak_bytes(&stdout, &String::from_utf8_lossy(&output.stderr));
+    println!("N19 wall_ms={wall_ms} peak_resident_bytes={resident}");
+    #[cfg(target_os = "linux")]
     println!(
-        "N19 wall_ms={wall_ms} vmhwm_bytes={resident} vmhwm_before_normalization_bytes={}",
+        "N19 vmhwm_before_normalization_bytes={}",
         measured(&stdout, "VMHWM_BASELINE_BYTES")
     );
     assert!(
