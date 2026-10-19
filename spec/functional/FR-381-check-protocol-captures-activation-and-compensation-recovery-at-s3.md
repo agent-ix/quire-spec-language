@@ -157,7 +157,7 @@ reading stage may not read, and `unbound` for a name nothing declares.
   clause checker, refusing a non-Boolean with `ill_typed`/`non-boolean-root` at
   the guard, and SHALL record `OnEach{binder, record_type, guard}`. An absent
   guard is the guard that is always true, and S3 records it as absent: a
-  protocol that writes `when ({true})` and one that writes no guard are
+  protocol that writes `when (true)` and one that writes no guard are
   different checked clauses (FR-383).
 
 ### Compensation registration
@@ -223,15 +223,26 @@ node `E` (QSpec FR-056).
 - A `commit` member is either `commit never` or `commit N` naming a `commit`
   node. S3 SHALL record `Never` for the first, which selects no earlier cutoff,
   and `Node(id)` for the second (QSpec FR-057). S3 SHALL refuse a `commit` node
-  that dominates the forward effect in the compiled causal edge relation, that
-  is, lies on every path from the protocol's start to the effect, so that every
-  execution takes it before the effect registers the obligation. The refusal is
+  that dominates the forward effect. A commit dominates an effect when every
+  execution that reaches the effect has passed the commit first, so that every
+  execution takes it before the effect registers the obligation. Dominance is
+  a property of executions, not of paths in the causal edge relation: the
+  attempt-to-effect edge (QSpec FR-464) orders an effect after its attempt and
+  does not let an execution skip a commit sequenced between them. An execution
+  that leaves a `parallel` has passed every branch the join requires, so a
+  commit inside a branch of a `join all` (or of a `quorum(n)` whose `n` equals
+  the number of distinct labels joined) is passed by every execution that
+  reaches the control after the `parallel`; a commit inside a branch that a
+  `join any`, a `join predicate` or a smaller `quorum(n)` does not require is
+  not. A commit in one `case` of a `choice`, or in the body of a `repeat` that
+  may run zero times, is not passed by every execution. The refusal is
   `unsupported_construct`/`declaration-form` at the commit anchor, as QSpec
   FR-052 refuses a structurally prohibited form, retaining the selected
   protocol profile that prohibits it, `compensation`, `member` (`commit`),
   `commit`, `effect` and `reason` (`commit-precedes-effect`). A commit that
-  follows the effect, that no edge orders against it, or that lies in one
-  `case` of a `choice` before the effect, is admitted.
+  follows the effect, a commit in a parallel branch whose executions can reach
+  the effect without passing it, or a commit that lies in one `case` of a
+  `choice` before the effect, is admitted.
 - S3 SHALL resolve the recovery binder's type as FR-104 resolves a declared
   type, and SHALL check the recovery predicate as a Boolean through the clause
   checker over the names its stage may read, refusing a non-Boolean with
@@ -260,7 +271,7 @@ node `E` (QSpec FR-056).
 | FR-381-AC-8 | `within [31,30]` and `within [0,*]` each refuse `ill_typed`/`type-mismatch` at the interval, as FR-326 refuses `[31,30]` in a temporal clause, retaining compensation, member `within`, expected a closed interval with `a <= b` and actual the interval as written; `within [0,0]` and `within [0,30]` check. | Test (TC-1058) |
 | FR-381-AC-9 | With `attempts 3 of M::Flag` and retry binders `M::Attempt`, `earlier` and then `later` each refuse `ill_typed`/`type-mismatch` at the binder's type, retaining compensation, binder, expected `M::Flag` and actual `M::Attempt`; with the binders `M::Flag` it checks. `attempts 3 of M::Pulse`, an event type, with binders `M::Pulse` checks. | Test (TC-1058) |
 | FR-381-AC-10 | A retry relation `earlier.tally < 3 and later.tally = earlier.tally + 1` checks; with `earlier.tally < 3 and` removed it refuses `undefined_expression`/`unproved-range` at `earlier.tally + 1`. A non-Boolean relation refuses `ill_typed`/`non-boolean-root`; a relation that reads a registration capture and an activation capture checks. | Test (TC-1058) |
-| FR-381-AC-11 | `commit never` and `commit Main::Committed` check and the checked compensation holds `Never` and `Node` of the commit's id. A `commit` node that dominates the forward effect in the compiled edges refuses `unsupported_construct`/`declaration-form` at the commit anchor, retaining the selected protocol profile, compensation, member `commit`, commit, effect and reason `commit-precedes-effect`; a commit that follows the effect, a commit in a parallel branch with no edge to it, and a commit in one `case` of a `choice` before the effect, check. | Test (TC-1058) |
+| FR-381-AC-11 | `commit never` and `commit Main::Committed` check and the checked compensation holds `Never` and `Node` of the commit's id. A `commit` node that dominates the forward effect, in that every execution reaching the effect has passed it, refuses `unsupported_construct`/`declaration-form` at the commit anchor, retaining the selected protocol profile, compensation, member `commit`, commit, effect and reason `commit-precedes-effect`; a commit inside a `join all` branch with the effect after the parallel refuses the same way; a commit that follows the effect, a commit in a parallel branch whose sibling branch holds the effect, a commit in a branch of a `join any` with the effect after the parallel, and a commit in one `case` of a `choice` before the effect, check. | Test (TC-1058) |
 | FR-381-AC-12 | A recovery predicate that is a non-Boolean refuses `ill_typed`/`non-boolean-root`; one with an undischarged range obligation refuses `undefined_expression`/`unproved-range`; an unresolved binder type refuses `missing_declaration`/`missing-name`; one that reads a registration and an activation capture checks. A `Full` template with commit `Main::Committed` and a `Partial` template with commit `never`, of one effect, give two checked compensations with their own captures, maxima and commits, in source order, and a refusal in `Full` and one in `Partial` are both reported, in source order. | Test (TC-1058) |
 | FR-381-AC-13 | `attempts 3 of M::Node`, an object type, refuses `invalid_model_binding`/`malformed-declaration` at `M::Node`, retaining compensation, member `attempts` and name, and gives no refusal at the retry binders, whatever their type; the same refusal holds for the scalar type `M::Total`, a composite type and a variant type, and `attempts 3 of M::Absent` refuses `missing_declaration`/`missing-name` at `Absent`. | Test (TC-1058) |
 | FR-381-AC-14 | A trigger guard and a recovery predicate that read a field of a binder of the object type `M::Node`, and an activation guard that reads a field of an `on each` binder of that type, each refuse `ill_typed`/`operator-ineligible` at the read, naming their stage; a retry relation over object binders refuses the same way; the same reads over a record-type binder check, and a registration capture that reads a field of an object binder checks. | Test (TC-1057) |

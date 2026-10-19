@@ -53,6 +53,8 @@ members.
 | 17 | the retry relation `earlier.tally` | `ill_typed`/`non-boolean-root` at the relation |
 | 18 | `commit never` | checks; the clause holds `Never` |
 | 19 | the run holds `attempt Tried`, `commit Committed`, `effect Applied` in that order | `unsupported_construct`/`declaration-form` at `Main::Committed`, retaining the selected protocol profile; `compensation` `Refund`, `member` `commit`, `commit` `Committed`, `effect` `Applied`, `reason` `commit-precedes-effect` |
+| 19a | the run holds `parallel P` with branches `a` (holding `commit Committed`) and `b`, `join all [a, b]`, and then `effect Applied` after the parallel | `unsupported_construct`/`declaration-form` at `Main::Committed` with `reason` `commit-precedes-effect`: every execution that reaches the effect has passed the join of `a` and `b`, hence the commit |
+| 19b | row 19a with `join any [a, b]` | checks: an execution that leaves the parallel through `b` reaches the effect without the commit |
 | 20 | the commit in `parallel` branch `a` and the effect in branch `b` | checks |
 | 20a | `choice Pick` before the effect with `case yes` holding `commit Committed` and `case no` holding a `check` | checks: the commit lies in one case and does not dominate the effect |
 | 21 | the recovery predicate `recovered.n` | `ill_typed`/`non-boolean-root` at the predicate |
