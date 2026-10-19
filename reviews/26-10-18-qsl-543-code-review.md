@@ -60,3 +60,30 @@ QSL's spec. (2) A fairness row with no kind is accepted and read as `Weak`
 | FND-004 | low | The fairness row grammar makes the kind optional (`opt(weak|strong)`), and S3 reads an unwritten kind as `Weak`. ADR-020 §1's surface line `assume fair (weak | strong) [each | whole] ...` and FR-137's Inputs (`fair <kind> [<granularity>]`) both require a kind. The CST test explicitly accepts `ensure fair Spec::Counter::inc;`. This is a spec question for the owner. | qsl-cst/src/grammar.rs:1697; qsl-semantics/src/check/refinement.rs:1200-1203; qsl-cst/tests/it/refinement_declaration.rs:59 |
 | FND-005 | low | A population or object row whose name spells nothing in either model refuses `missing_declaration`/`missing-name` at the name. FR-135 says a row "whose left side is not an abstract population, or whose right side is not a concrete population, SHALL refuse `invalid_model_binding`/`malformed-declaration` at the row's span". Only the swapped-sides case gets that code. This may be a spec-reading question. | qsl-semantics/src/check/refinement.rs:544-571, 784-788 |
 | FND-006 | low | `maps_complete` is `findings.refusals.is_empty()`, so an unrelated `WrongProfile` refusal also stops every step argument from being typed. The step-argument diagnostics are lost when the only error is the profile. Smaller points: a type error whose location maps to no span falls back to `Span{0,0}` (byte 0), and a unit with both a `terminal` and a `refinement` reports only the terminal's not-emitted refusal. | qsl-semantics/src/check/refinement.rs:763, 940-942; qsl-semantics/src/check/mod.rs:2181-2196 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The FND-001 fix replaces `check_as` with `infer` plus the file's own `conforms`. `conforms` has no `Composite` arm, and its fallback is equality. `Typer::coerce` admitted a record into a record type it conforms to (FR-359, `composite_conforms`), and state-clause bodies still do. Since the fix, an abstract field of record type `R` mapped by an expression of a conforming record subtype refuses `ill_typed`/`type-mismatch`. The same equality fallback applies to collections whose element types differ only by an integer range or a subtype. This is an edge case and no fixture uses records. Fix: add a `Composite` arm (`types.composite_conforms`), and either recurse element-wise for collections or state that they must be invariant. | qsl-semantics/src/check/refinement.rs:415-425, 986-996; qsl-semantics/src/check/check.rs:1518-1526 |
+
+## Dispositions
+
+Round 1, reviewed at `84309fc22546a5adec7ac758a9dfb2ed5513d3ec`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 84309fc22546a5adec7ac758a9dfb2ed5513d3ec |
+| FND-002 | fixed | 84309fc22546a5adec7ac758a9dfb2ed5513d3ec |
+| FND-003 | fixed | 84309fc22546a5adec7ac758a9dfb2ed5513d3ec |
+| FND-004 | deferred | owner question (planner holds: is the fairness kind optional; QSpec FR-375 `weak` vs QSL `weak \| strong`) |
+| FND-005 | deferred | owner question (planner holds: `missing-name` vs `malformed-declaration` for a row naming nothing) |
+| FND-006 | fixed | 84309fc22546a5adec7ac758a9dfb2ed5513d3ec |
+
+FND-001: every row expression is now typed with `typer.infer(.., Some(required), ..)` and then checked with the file's one `conforms` (references by `TypeEnvironment::conforms`, integer ranges by containment, options element-wise). The range-checked `Coerce` path is gone. Three new tests cover it: `a_subtype_receiver_conforms_to_the_supertype_it_lifts_to` (checks), `a_supertype_receiver_does_not_conform_to_the_subtype_it_lifts_to` (refuses `type-mismatch` at `self`) and `an_integer_range_must_lie_inside_the_range_it_defines` (`Int[0,3]` into `Int[0,10]` checks, the reverse refuses at `self.value`). The fix also dropped record conformance (FND-007, new).
+
+FND-002: `operation_named` now refuses `OperationLookup::Ambiguous` at the name with `RefinementCause::Ambiguous` (`ambiguous_declaration`/`ambiguous-name`, the same catalog pair `protocol_controls` uses). The concrete and abstract sides share this path, and `check_limit` classifies the new arm. No test covers it. That is acceptable for a low finding: the arm is a direct match on the lookup result with no logic of its own. A diamond fixture would now be cheap to add, because `object_type_under` accepts several supertypes.
+
+FND-003: `Side::populations` and `Side::object_types` return `Result`, and `or_fault` turns a broken invariant into an internal fault. A missing attribute list faults as `abstract-object-type-has-attributes`. Nothing is dropped silently any more.
+
+FND-006: `maps_complete` now counts only refusals after the header (`baseline`), so a `WrongProfile` refusal no longer suppresses step-argument typing. A row error with no span is now a fault, not `Span{0,0}`. Terminal and refinement not-emitted refusals are both reported, which `a_terminal_and_a_refinement_are_each_refused_not_emitted` tests.

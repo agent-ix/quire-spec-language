@@ -55,3 +55,16 @@ other finding is low.
 | --- | --- | --- | --- |
 | FND-001 | medium | Three tests carry a criterion tag although part of the criterion is untested: FR-135-AC-1 (the `AbstractSide::Dependency` half), FR-135-AC-4 (the "changes the node identity and the `package_id`" half) and FR-137-AC-1 (the "node identity differs" half). The doc comments say so, but the matrix shows all three ACs as covered, so nothing would flag them when S4 lands. The repo's own precedent for an S4-gated half tags only the TC: `terminal_declarations.rs:51-54` (`#[trace("TC-519")]`) and `temporal_fairness.rs:115-121` (`#[trace("TC-518")]`). Fix: drop the AC id from these three `trace` attributes and keep `TC-540`/`TC-542`, or split each AC. | qsl-semantics/tests/it/refinement_declarations.rs:492-496, 691-694, 930-934 |
 | FND-002 | low | Some test oracles are weaker than their ACs. For `value` mapped twice (FR-135-AC-2) and `peek` written twice (FR-136-AC-2), the AC says the refusal names both rows, but the tests assert only the second row's text and never `Conflicting.first`. The population case does assert it. FR-135-AC-2's "each at its span" is not asserted for the two `MissingRow` refusals (removed population and object rows). FR-136-AC-1's "receiver self" is never asserted, and for `put` the test checks only that one argument exists (`is_some`), not that it is `x`. | qsl-semantics/tests/it/refinement_declarations.rs:554-564, 600-619, 718-768, 820-830 |
+
+## Dispositions
+
+Round 1, reviewed at `84309fc22546a5adec7ac758a9dfb2ed5513d3ec`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 84309fc22546a5adec7ac758a9dfb2ed5513d3ec |
+| FND-002 | fixed | 84309fc22546a5adec7ac758a9dfb2ed5513d3ec |
+
+FND-001: the three tests now carry `#[trace("TC-540")]` / `#[trace("TC-542")]` only. No test in the tree tags FR-135-AC-1, FR-135-AC-4 or FR-137-AC-1, so the matrix reports them untagged until S4 lands.
+
+FND-002: the value-twice and peek-twice tests assert `Conflicting.first` slicing to the first row. The three `MissingRow` refusals assert their span (`CasRefinesCounter`). FR-136-AC-1 asserts `self` as the receiver's only parameter, with a reference type, and asserts `put`'s argument as an `Integer` body over `[self, x]`.

@@ -409,9 +409,11 @@ fn split_member(name: &str) -> Option<(&str, &str)> {
     name.rsplit_once("::")
 }
 
-/// Whether a value of `actual` fits a slot of `required` (ADR-016 SC-2):
-/// the same type, an integer in a containing integer range, an object
-/// reference to a subtype, or an option of such.
+/// Whether a value of `actual` fits a slot of `required` (ADR-016 SC-2): the
+/// same type, an integer in a containing integer range, an object reference
+/// to a subtype, a record to a record it specializes (FR-359), or an option
+/// of such. A collection is invariant in its element type, as FR-359-AC-8
+/// states: a collection of a child record is not a collection of its parent.
 fn conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -> bool {
     match (actual, required) {
         (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => true,
@@ -419,6 +421,9 @@ fn conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -
             target.lower() <= source.lower() && source.upper() <= target.upper()
         }
         (ValueType::Reference(sub), ValueType::Reference(sup)) => types.conforms(*sub, *sup),
+        (ValueType::Composite(sub), ValueType::Composite(sup)) => {
+            types.composite_conforms(*sub, *sup)
+        }
         (ValueType::Option(sub), ValueType::Option(sup)) => conforms(types, sub, sup),
         _ => actual == required,
     }
@@ -1318,5 +1323,64 @@ pub(crate) fn not_emitted(name: String, span: Span) -> CheckRefusal {
     CheckRefusal {
         location: Location::root(Origin::Expression),
         cause: CheckCause::RefinementNotEmitted { name, span },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+    use quire_exact::{CollectionKind, CollectionType, NodeKey, Presence};
+    use quire_semantic_value::declaration::{
+        CompositeDeclaration, CompositeShape, FieldDeclaration,
+    };
+
+    use super::*;
+
+    /// FR-359: a record conforms to the record it specializes and to no
+    /// other; a parent does not conform to its child, and a collection of the
+    /// child is not a collection of the parent (FR-359-AC-8).
+    #[trace("TC-541")]
+    #[test]
+    fn a_record_conforms_to_its_ancestor_only() {
+        let [money, taxed, fee] = [1, 2, 3].map(|byte| NodeKey::from_digest([byte; 32]));
+        let record = |key, name: &str, supertypes: Vec<NodeKey>| {
+            CompositeDeclaration::new(
+                key,
+                name,
+                CompositeShape::Record(vec![FieldDeclaration::new(
+                    "amount",
+                    ValueType::Integer,
+                    Presence::Required,
+                )]),
+            )
+            .with_supertypes(supertypes)
+        };
+        let types = TypeEnvironment::new(
+            [
+                record(money, "Money", vec![]),
+                record(taxed, "TaxedMoney", vec![money]),
+                record(fee, "Fee", vec![]),
+            ],
+            [],
+        )
+        .expect("the records admit");
+        let record = ValueType::Composite;
+        assert!(conforms(&types, &record(taxed), &record(money)));
+        assert!(conforms(&types, &record(money), &record(money)));
+        assert!(!conforms(&types, &record(money), &record(taxed)));
+        assert!(!conforms(&types, &record(fee), &record(money)));
+        let sequence_of = |element| {
+            ValueType::collection(CollectionType::new(CollectionKind::Sequence, element, None))
+        };
+        assert!(!conforms(
+            &types,
+            &sequence_of(record(taxed)),
+            &sequence_of(record(money))
+        ));
+        assert!(conforms(
+            &types,
+            &ValueType::option(record(taxed)),
+            &ValueType::option(record(money))
+        ));
     }
 }

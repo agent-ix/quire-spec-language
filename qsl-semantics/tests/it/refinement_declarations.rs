@@ -1304,3 +1304,52 @@ fn a_terminal_and_a_refinement_are_each_refused_not_emitted() {
         [(Code::UnsupportedConstruct, Some("not-yet-implemented")); 2]
     );
 }
+
+const DIAMOND: &str = "example/diamond-counter";
+
+/// `Base1 { value }` and `Base2 { other }`, each with `op()`, and `Child`
+/// specializing both, so `Child::op` names two unrelated declarations.
+fn diamond_counter() -> Vec<u8> {
+    document(
+        DIAMOND,
+        vec![
+            object_type(
+                DIAMOND,
+                "Base1",
+                &[("value", INTEGER)],
+                vec![operation(DIAMOND, "Base1", "op", &[], None, &[])],
+            ),
+            object_type(
+                DIAMOND,
+                "Base2",
+                &[("other", INTEGER)],
+                vec![operation(DIAMOND, "Base2", "op", &[], None, &[])],
+            ),
+            object_type_under(DIAMOND, "Child", &["Base1", "Base2"], &[], Vec::new()),
+        ],
+        vec![population(DIAMOND, "counters", "Child")],
+    )
+}
+
+/// A step row naming an operation that two unrelated ancestors declare is
+/// refused at the row's name, not dropped.
+#[trace("TC-541")]
+#[test]
+fn a_step_row_naming_an_ambiguous_operation_refuses_at_its_name() {
+    let (spec, diamond) = (counter_spec(), diamond_counter());
+    let models = [("Spec", SPEC, &spec[..]), ("Impl", DIAMOND, &diamond[..])];
+    let body = "refinement Diamond using inf abstract Spec concrete Impl {\n\
+        population Spec::counters from Impl::counters;\n\
+        object Spec::Counter from Impl::Child { value = self.value; }\n\
+        step Impl::Child::op -> stutter;\n\
+        step Impl::Base1::op -> stutter;\n\
+        step Impl::Base2::op -> stutter;\n\
+        }";
+    let found = refused(&models, body);
+    let ambiguous = only(&found);
+    assert_eq!(
+        ambiguous.code_and_cause(),
+        (Code::AmbiguousDeclaration, Some("ambiguous-name"))
+    );
+    assert_eq!(ambiguous.at, "Impl::Child::op");
+}
