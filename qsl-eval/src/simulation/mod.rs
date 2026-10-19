@@ -27,7 +27,7 @@ mod order;
 mod sample;
 mod trace;
 
-pub use expansion::{Expansion, ExpansionStop, StateFindings};
+pub use expansion::{Expansion, ExpansionLimit, ExpansionStop, StateFindings};
 pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, TransitionSystem};
 pub use footprint::{independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};

@@ -97,7 +97,7 @@ pub(in crate::spine) fn lookup_driver_fixture(functions: &str) -> LookupDriverFi
     .jcs_digest();
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model M = \"acme/orders\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          {}\n",
         hex(&digest),

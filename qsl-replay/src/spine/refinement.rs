@@ -250,6 +250,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::UnresolvedOperation { .. }
         | AssemblyCause::AmbiguousOperation { .. }
         | AssemblyCause::DuplicateOperationBody { .. }
+        | AssemblyCause::DuplicateStateGraphClaim { .. }
+        | AssemblyCause::OverNotObjectType { .. }
         | AssemblyCause::UnresolvedPopulationBound { .. }
         | AssemblyCause::AmbiguousPopulationBound { .. }
         | AssemblyCause::UnresolvedTerminalModel { .. }
@@ -257,7 +259,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::AmbiguousTerminal { .. }
         | AssemblyCause::AmbiguousTerminalState { .. }
         | AssemblyCause::AmbiguousPopulation { .. }
-        | AssemblyCause::UnsupportedLayerForm { .. } => None,
+        | AssemblyCause::UnsupportedLayerForm { .. }
+        | AssemblyCause::UnselectedModelConstruct(_) => None,
     }
 }
 
@@ -293,6 +296,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::IllTyped(_)
         | CheckCause::WrongSnapshot(_)
         | CheckCause::MissingName(_)
+        | CheckCause::MissingSelf
         | CheckCause::AmbiguousName { .. }
         | CheckCause::AmbiguousMember(_)
         | CheckCause::AmbiguousQualified(_)
@@ -316,7 +320,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ProtocolReference(_)
         | CheckCause::ProtocolObligation(_)
         | CheckCause::TerminalNotEmitted { .. }
-        | CheckCause::Temporal(_) => None,
+        | CheckCause::Temporal(_)
+        | CheckCause::StateGraph(_) => None,
         #[cfg(seam_probe)]
         CheckCause::__SeamProbe => None,
     }

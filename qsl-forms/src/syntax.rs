@@ -2405,6 +2405,8 @@ pub enum ProtocolNodeKind {
     Await,
     /// A `check` control.
     Check,
+    /// A `fence` control.
+    Fence,
 }
 
 impl ProtocolNodeKind {
@@ -2428,6 +2430,7 @@ impl ProtocolNodeKind {
             Self::Case => "case",
             Self::Await => "await",
             Self::Check => "check",
+            Self::Fence => "fence",
         }
     }
 }
@@ -2562,6 +2565,10 @@ pub enum ProtocolConstructKind {
     JoinPredicate,
     /// A `terminal when { predicate };` member.
     TerminalWhen,
+    /// A `parallel`'s `memory sc | tso | ra` clause.
+    MemoryClause,
+    /// An `attempt`'s `ordering o` memory order.
+    AccessOrdering,
 }
 
 impl ProtocolConstructKind {
@@ -2578,6 +2585,8 @@ impl ProtocolConstructKind {
             Self::FifoOrdering => "channel ordering fifo",
             Self::JoinPredicate => "join predicate",
             Self::TerminalWhen => "terminal when",
+            Self::MemoryClause => "parallel memory",
+            Self::AccessOrdering => "attempt ordering",
         }
     }
 }
@@ -3121,6 +3130,76 @@ pub struct TerminalDeclarationForm {
     pub span: Span,
 }
 
+/// One temporal operator written inside a state-graph claim's predicate. S1
+/// admits the spelling so that S3 can refuse it at this span (FR-165).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TemporalOperatorUse {
+    /// Which operator.
+    pub operator: TemporalOperator,
+    /// The span of the operator keyword.
+    pub span: Span,
+}
+
+/// A state-graph claim's predicate as written: its expression operands in
+/// source order and every temporal operator written around them. A
+/// well-formed predicate has one operand and no operator.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateGraphPredicateForm {
+    /// The expression operands, in source order.
+    pub operands: Vec<ExpressionForm>,
+    /// Every temporal operator written, in source order.
+    pub temporal_operators: Vec<TemporalOperatorUse>,
+    /// For each operand, index-aligned, the `let` bindings it sits under,
+    /// outermost first: each name with the value form it is bound to.
+    pub scopes: Vec<Vec<(String, ExpressionForm)>>,
+}
+
+/// Which of the three state-graph claim forms was written, with its
+/// predicates (ADR-022 SG-1 to SG-3).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StateGraphClaimKind {
+    /// `possible Name using p over (x: T) { P }`.
+    Possible {
+        /// `P`.
+        target: StateGraphPredicateForm,
+    },
+    /// `always possible Name using p over (x: T) [from (Q)] { P }`.
+    AlwaysPossible {
+        /// `Q`, when written.
+        from: Option<StateGraphPredicateForm>,
+        /// `P`.
+        target: StateGraphPredicateForm,
+    },
+    /// `unique path Name using p over (x: T) from (X) to (Y)`.
+    UniquePath {
+        /// `X`.
+        from: StateGraphPredicateForm,
+        /// `Y`.
+        to: StateGraphPredicateForm,
+    },
+}
+
+/// A state-graph claim (FR-165, ADR-022 SG-1 to SG-4). S2 resolves nothing:
+/// the `using` alias and the `over` type stay spelled and spanned, a
+/// fairness constraint is kept for S3 to refuse, and each predicate is built
+/// as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateGraphClaimForm {
+    /// The declared claim name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `over (x: T)` parameter, when written.
+    pub over: Option<ParameterForm>,
+    /// The fairness constraints written in the claim's braces, in source
+    /// order.
+    pub fairness: Vec<FairnessConstraintForm>,
+    /// The form and its predicates.
+    pub kind: StateGraphClaimKind,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -3158,6 +3237,9 @@ pub enum DeclarationForm {
     /// A `terminal` declaration (FR-382), boxed for the same reason as
     /// [`Self::Function`].
     Terminal(Box<TerminalDeclarationForm>),
+    /// A `possible`, `always possible` or `unique path` claim (FR-165),
+    /// boxed for the same reason as [`Self::Function`].
+    StateGraphClaim(Box<StateGraphClaimForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

@@ -17,7 +17,7 @@ use qsl_semantics::model::state::{ModelState, StateModel};
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum Enc {
+pub(crate) enum Enc {
     Null,
     Bool(bool),
     Str(String),
@@ -58,7 +58,7 @@ impl Encode for Enc {
 }
 
 impl Enc {
-    pub(super) fn text(value: impl Into<String>) -> Self {
+    pub(crate) fn text(value: impl Into<String>) -> Self {
         Self::Str(value.into())
     }
 
@@ -89,7 +89,7 @@ impl Encode for ModelKey {
 }
 
 /// Lowercase hex of `bytes`.
-pub(super) fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut text = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -134,6 +134,8 @@ pub(super) fn reference_enc(reference: &ObjectReference) -> Enc {
 
 /// The reference [`reference_enc`] wrote as `text`: its canonical text names
 /// the members in sorted order, so the text is matched member by member.
+/// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
+#[qsl_attrs::string_edge]
 pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
     let rest = text.strip_prefix(r#"{"identity":""#)?;
     let (identity, rest) = rest.split_once(r#"","object_type":""#)?;
@@ -149,6 +151,8 @@ pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
 
 /// The reference a parameter's canonical text names: the text of a reference,
 /// or of an option holding one. `Some(None)` is an absent option.
+/// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
+#[qsl_attrs::string_edge]
 pub(super) fn parse_optional_reference(text: &str) -> Option<Option<ObjectReference>> {
     if let Some(inner) = text
         .strip_prefix(r#"{"type":"option","value":"#)
@@ -179,7 +183,7 @@ fn unhex32(text: &str) -> Option<[u8; 32]> {
 }
 
 /// FR-181's typed canonical form of `value`.
-pub(super) fn value_enc(value: &Value) -> Enc {
+pub(crate) fn value_enc(value: &Value) -> Enc {
     match value {
         Value::Boolean(flag) => Enc::tagged("boolean", vec![("value", Enc::Bool(*flag))]),
         Value::Integer(integer) => {

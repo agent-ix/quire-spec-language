@@ -91,6 +91,7 @@ pub(crate) use family::SCALAR_LIMITS_UNLIMITED as UNBOUNDED_SCALAR_LIMITS;
 mod field_refinement;
 mod identity;
 mod model_conformance;
+mod model_gate;
 mod navigation;
 // The nested expression forms of TC-415, shared by this crate's tests and the
 // package emitter's tests, so only `test-support` exposes them.
@@ -126,6 +127,7 @@ mod refusal;
 mod region;
 mod settings;
 mod state_clause;
+mod state_graph_claim;
 mod state_model;
 mod sum_case;
 mod temporal_clause;
@@ -168,6 +170,7 @@ use quire_exact::{Cancel, ValueType};
 pub use check::Scope;
 pub use claims::{ClaimSite, PathGuard, RequirementRecord, ResultBound, SiteGuard, ValueClaim};
 pub use family::{CheckedDeclaration, ValueDeclarations, ValueFunctionFamily};
+pub use model_gate::{ModelFamily, ModelGateRefusal, OwnerKind};
 pub use profile::{resolve_profiles, ProfileCause, ProfileRefusal};
 // Named only by `fixtures::measure_resolved`'s return type.
 #[cfg(any(test, feature = "test-support"))]
@@ -265,12 +268,17 @@ pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
     DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
-    MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause, ProtocolReferenceCause,
-    ProvedInterval, QualifiedCandidate, ShadowedDeclaration, StageLimitCause, TemporalCause,
-    WrongSnapshotCause,
+    MemberCandidate, NavigationBound, Obligation, PredicateRole, ProtocolAnchorCause,
+    ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, ShadowedDeclaration,
+    StageLimitCause, StateGraphCause, TemporalCause, WrongSnapshotCause,
+};
+pub use state_graph_claim::{
+    CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
+    StateGraphClaim, StateGraphDeclaration, StateGraphFamily, StateGraphForm,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
+
 pub use temporal_clause::{
     Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedTemporalClause,
     FormulaNode, FormulaNodeId, TemporalClaim, TemporalDeclaration, TemporalDeclarations,
@@ -441,6 +449,8 @@ pub struct CheckedGraph {
     terminals: Vec<CheckedTerminal>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-165: every checked state-graph claim, in declaration order.
+    state_graph_claims: Vec<CheckedStateGraphClaim>,
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
@@ -1670,6 +1680,62 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
+        // FR-165: each state-graph claim, checked through the `StateGraph`
+        // family's contract once every function signature is known, against
+        // the same package-wide node total and contract meter.
+        let mut checked_state_graph_claims = Vec::with_capacity(self.state_graph_claims.len());
+        for claim in &self.state_graph_claims {
+            let location = root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: pending_types.as_ref(),
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_graph_claim::StateGraphFamily::check(claim, &mut contract_cx) {
+                Ok(staged) => {
+                    let checked = staged.into_value();
+                    nodes_used = checked.nodes_used;
+                    checked_state_graph_claims.push(checked);
+                }
+                Err(StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location,
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                Err(StageFailure::Fault(fault)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                    return Err(refusals);
+                }
+                Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
         if !refusals.is_empty() {
             return Err(refusals);
         }
@@ -2198,6 +2264,13 @@ impl PackageDeclarations {
                 .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span))
                 .collect());
         }
+        // FR-165: likewise, no S4 emission writes a state-graph claim yet.
+        if !self.emit_unwritten_state_graph_claims && !checked_state_graph_claims.is_empty() {
+            return Err(checked_state_graph_claims
+                .iter()
+                .map(state_graph_claim::not_emitted)
+                .collect());
+        }
         Ok(CheckedGraph {
             source,
             scope,
@@ -2220,6 +2293,7 @@ impl PackageDeclarations {
             type_invariants,
             terminals,
             protocols: checked_protocols,
+            state_graph_claims: checked_state_graph_claims,
             operation_frames,
             model_objects,
             object_types,
@@ -2561,6 +2635,18 @@ impl CheckedGraph {
     /// FR-104: every checked state clause, in declaration order.
     pub fn state_clauses(&self) -> &[CheckedStateClause] {
         &self.state_clauses
+    }
+
+    /// FR-165: the checked state-graph claim declared `name`.
+    pub fn state_graph_claim(&self, name: &str) -> Option<&CheckedStateGraphClaim> {
+        self.state_graph_claims
+            .iter()
+            .find(|claim| claim.name() == name)
+    }
+
+    /// FR-165: every checked state-graph claim, in declaration order.
+    pub fn state_graph_claims(&self) -> &[CheckedStateGraphClaim] {
+        &self.state_graph_claims
     }
 
     /// FR-366: every checked type-level invariant.
