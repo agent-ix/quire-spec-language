@@ -17,10 +17,11 @@ use qsl_eval::automaton::{
     StateId,
 };
 use qsl_eval::temporal::{
-    evaluate, AtomReading, TemporalLetters, TemporalOutcome, TemporalPosition, TemporalTrace,
+    evaluate, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
+    TemporalTrace,
 };
 use qsl_semantics::check::{FormulaNodeId, SCALAR_LIMITS_UNLIMITED};
-use quire_exact::{Incomplete, Meter};
+use quire_exact::Meter;
 
 use crate::temporal_trace::{fixture, Fixture, EVENT, INFINITE};
 
@@ -89,7 +90,7 @@ impl TemporalLetters for WordLetters<'_> {
         node: FormulaNodeId,
         position: TemporalPosition,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, LetterStop> {
         let index = self
             .property
             .atoms()
@@ -103,7 +104,7 @@ impl TemporalLetters for WordLetters<'_> {
         &mut self,
         position: TemporalPosition,
         _meter: &mut Meter,
-    ) -> Result<AtomReading, Incomplete> {
+    ) -> Result<AtomReading, LetterStop> {
         let when = self.property.when().expect("the clause has a `when`");
         Ok(reading(self.letter(position).holds(when)))
     }
