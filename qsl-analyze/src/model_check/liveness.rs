@@ -81,10 +81,6 @@ pub enum LivenessRefusal {
     /// FS-2) and counterexample obligations this engine does not decide yet.
     #[error("EN-1 decides weak fairness only; the clause holds a strong fairness constraint")]
     StrongFairness,
-    /// A guarded `on each` activation reads a `when` condition no letter
-    /// seam supplies yet.
-    #[error("EN-1 does not read the `when` condition of a guarded `on each` activation yet")]
-    GuardedActivation,
     /// The clause has no property automaton.
     #[error(transparent)]
     Automaton(#[from] AutomatonError),
@@ -125,7 +121,7 @@ pub(super) fn check(
         return Err(LivenessRefusal::StrongFairness.into());
     }
     if matches!(clause.activation(), Activation::Each { guarded: true }) {
-        return Err(LivenessRefusal::GuardedActivation.into());
+        return Err(ModelCheckRefusal::GuardedActivation);
     }
     // The clause's identity is resolved from the package, as the safety path
     // does (FR-337-AC-5): a package that gives it no root refuses.
