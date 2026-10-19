@@ -205,12 +205,7 @@ impl World {
             .unwrap_or_else(|| panic!("{values:?} is reachable"))
     }
 
-    /// The deadlock-freedom item's or the clause's run.
-    fn run(&self, item: ModelCheckItem<'_>) -> ModelCheckOutcome {
-        self.run_in(&self.package, item)
-    }
-
-    /// [`World::run`] over `package`.
+    /// The run of `item` over `package`.
     fn run_in(&self, package: &CheckedPackage, item: ModelCheckItem<'_>) -> ModelCheckOutcome {
         check_model(
             ModelCheckRequest {
