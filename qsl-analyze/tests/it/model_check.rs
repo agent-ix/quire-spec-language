@@ -789,16 +789,22 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
 #[test]
 fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     let world = self::world("", &[&[("c", 0)]]);
-    let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
-    let empty = letters(&world, &[], |_| Some(true));
-    let ident = identity();
-    let item = || ModelCheckItem::Clause {
-        clause: &clause,
-        letters: &empty,
-        identity: &ident,
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", "always holds(c.value <= 3)")],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
     };
-    let outcome = run(
+    let empty = letters(&world, &[], |_| Some(true));
+    let item = || ModelCheckItem::Clause {
+        clause,
+        letters: &empty,
+    };
+    let outcome = run_in(
         &world,
+        &package,
         &["c"],
         item(),
         None,
@@ -815,7 +821,7 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     ));
 
     let mut no_universe = subject(
-        &world.package,
+        &package,
         &world.documents,
         world.initial.clone(),
         &["c"],
@@ -858,16 +864,22 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
 #[test]
 fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
     let world = self::world("", &[]);
-    let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", "always holds(c.value <= 3)")],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
     let bound = letters(&world, &["c"], |_| Some(true));
-    let ident = identity();
-    let outcome = run(
+    let outcome = run_in(
         &world,
+        &package,
         &["c"],
         ModelCheckItem::Clause {
-            clause: &clause,
+            clause,
             letters: &bound,
-            identity: &ident,
         },
         None,
         ModelCheckLimits::default(),

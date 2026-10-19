@@ -865,7 +865,7 @@ fn a_clause_with_no_instance_settles_inconclusive_never_proved_or_refuted() {
     let world = world(CONTRACT, &[("c", 0)]);
     let mut invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     invariant.letters.bindings.clear();
-    let outcome = world.run(invariant.item());
+    let outcome = invariant.run(&world);
     assert!(matches!(
         outcome,
         ModelCheckOutcome::Undecided {
