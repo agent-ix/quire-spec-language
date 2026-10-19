@@ -81,17 +81,17 @@ fn level(upper: u64) -> Json {
     )
 }
 
-/// `inc()`, or with `parameter` an operation `setTo(n: Integer)` whose
-/// parameter no finite domain bounds.
-fn operation(name: &str, parameter: Option<&str>) -> Json {
+/// `inc()`, or with `parameter` (name, type reference) an operation
+/// `setTo` taking that one parameter.
+fn operation(name: &str, parameter: Option<(&str, &str)>) -> Json {
     let identity = ident(&format!("Counter/{name}"));
     let params: Vec<Json> = parameter
         .into_iter()
-        .map(|parameter| {
+        .map(|(parameter, type_ref)| {
             let parameter_identity = format!("{identity}/{parameter}");
             json!({
                 "identity": parameter_identity, "name": parameter,
-                "typeRef": "ix://quire/native/Integer",
+                "typeRef": type_ref,
                 "presence": "required", "nullable": false, "defaultKind": "none",
                 "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
                 "origin": origin(&parameter_identity),
@@ -106,9 +106,21 @@ fn operation(name: &str, parameter: Option<&str>) -> Json {
     })
 }
 
+const NATIVE_INTEGER: &str = "ix://quire/native/Integer";
+
 /// The domain package; with `unbounded`, `Counter` also has `setTo(n:
 /// Integer)`.
 pub(crate) fn document(unbounded: bool) -> Vec<u8> {
+    document_with(unbounded.then_some(NATIVE_INTEGER.to_owned()))
+}
+
+/// The domain package whose `Counter` also has `setTo(n: Int[0, 3])`: the
+/// parameter is bounded by its declared type.
+pub(crate) fn document_with_ranged_parameter() -> Vec<u8> {
+    document_with(Some(ident("Level")))
+}
+
+fn document_with(parameter_type: Option<String>) -> Vec<u8> {
     let counter = ident("Counter");
     let constructs: Vec<Json> = [
         ("object_type", meaning::OBJECT_TYPE),
@@ -125,8 +137,8 @@ pub(crate) fn document(unbounded: bool) -> Vec<u8> {
     .collect();
     let value = ident("Counter/value");
     let mut operations = vec![operation("inc", None)];
-    if unbounded {
-        operations.push(operation("setTo", Some("n")));
+    if let Some(type_ref) = &parameter_type {
+        operations.push(operation("setTo", Some(("n", type_ref))));
     }
     let population = ident("counters");
     json!({

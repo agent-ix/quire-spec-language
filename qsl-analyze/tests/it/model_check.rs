@@ -19,9 +19,10 @@ use std::collections::{BTreeMap, VecDeque};
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckItem, ModelCheckRefusal, ModelCheckRequest};
-use qsl_eval::simulation::model::{ModelSimState, ModelSystem, TerminalClass};
-use qsl_eval::simulation::{NotSimulated, TransitionSystem};
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PopulationUniverse, TerminalClass};
+use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::UndefinedCause;
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     CounterexampleKind, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
@@ -30,10 +31,11 @@ use qsl_replay::{
 };
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
+use quire_exact::{Integer, ValueType};
 
 use crate::counter::{
-    clause, document, package, reference, subject, value, Documents, Letters, CONTRACT, UNLIMITED,
-    ZERO,
+    clause, document, document_with_ranged_parameter, package, reference, subject, universe, value,
+    Documents, Letters, CONTRACT, UNLIMITED, ZERO,
 };
 
 const WHEN: &str = "terminal Done using v on M when { self.value = 3 };\n";
@@ -664,7 +666,7 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
     )
     .expect_err("an unbounded parameter");
     assert!(
-        matches!(&refusal, ModelCheckRefusal::NotSimulated(cause) if matches!(**cause, NotSimulated::RequiresBound(_))),
+        matches!(&refusal, ModelCheckRefusal::RequiresBound(_)),
         "{refusal:?}"
     );
 
@@ -711,4 +713,130 @@ fn two_runs_give_equal_outcomes() {
         .expect("checked")
     };
     assert_eq!(once(), once());
+}
+
+/// Run the deadlock item over `world` with `universes` in place of the
+/// subject's universe and `proof_bounds` beside it, under `meter`.
+fn run_with(
+    world: &World,
+    universes: Vec<PopulationUniverse>,
+    proof_bounds: Vec<ProofBound>,
+    meter: ScalarLimits,
+) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+    let mut subject = subject(
+        &world.package,
+        &world.documents,
+        world.initial.clone(),
+        &["c"],
+        meter,
+    );
+    subject.simulation.universes = universes;
+    subject.proof_bounds = proof_bounds;
+    check_model(
+        ModelCheckRequest {
+            subject,
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+}
+
+fn system_without_universe(world: &World) -> ModelSystem<'_> {
+    let mut simulation = subject(
+        &world.package,
+        &world.documents,
+        world.initial.clone(),
+        &["c"],
+        UNLIMITED,
+    )
+    .simulation;
+    simulation.universes = Vec::new();
+    ModelSystem::new(simulation).expect("the subject admits")
+}
+
+fn unbounded_roots(refusal: &ModelCheckRefusal) -> Vec<(DomainKey, DomainKind)> {
+    match refusal {
+        ModelCheckRefusal::RequiresBound(bound) => bound
+            .domains
+            .iter()
+            .map(|(key, kind)| (key.clone(), kind))
+            .collect(),
+        other => panic!("not RequiresBound: {other:?}"),
+    }
+}
+
+/// FR-336-AC-2: a population root with no universe is refused
+/// `RequiresBound` naming it, before any state is sampled -- a zero meter,
+/// which stops any exploration, changes nothing. This covers the refusal
+/// half of FR-336-AC-2 only: its "explores and returns FR-126-AC-1's
+/// outcome" half needs `Holds` over 15 product states for `always
+/// eventually`, which EN-1 refuses as `FormNotDecided` yet, so the AC is
+/// not tagged.
+#[trace("TC-846")]
+#[test]
+fn a_population_with_no_universe_is_refused_before_exploring() {
+    let world = self::world("", &[&[("c", 0)]]);
+    let refusal = run_with(&world, Vec::new(), Vec::new(), ZERO).expect_err("no universe");
+    let roots = unbounded_roots(&refusal);
+    assert_eq!(roots.len(), 1, "{roots:?}");
+    assert_eq!(roots[0].1, DomainKind::Population);
+    let held: Vec<_> = system_without_universe(&world)
+        .domains()
+        .into_iter()
+        .filter(|(_, value_type)| matches!(value_type, ValueType::Population(_)))
+        .collect();
+    let [(population, _)] = held.as_slice() else {
+        panic!("one population root: {held:?}");
+    };
+    assert_eq!(
+        roots[0].0,
+        DomainKey::Node {
+            node: *population,
+            path: Vec::new()
+        }
+    );
+
+    let outcome = run_with(&world, universe(&["c"]), Vec::new(), UNLIMITED)
+        .expect("a universe makes the root finite");
+    assert!(
+        matches!(
+            &outcome,
+            ModelCheckOutcome::Violated { .. } | ModelCheckOutcome::Holds { .. }
+        ),
+        "{outcome:?}"
+    );
+}
+
+/// FR-336-AC-3: an unranged `Integer` parameter is refused naming that
+/// root with or without a `ProofBound` on it; declared `Int[0, 3]` it
+/// explores.
+#[trace("TC-846", "FR-336-AC-3")]
+#[test]
+fn a_proof_bound_does_not_make_an_unranged_parameter_finite() {
+    let world = world_with(document(true), CONTRACT, &[&[("c", 0)]]);
+    let bare = run_with(&world, universe(&["c"]), Vec::new(), UNLIMITED).expect_err("unranged");
+    let roots = unbounded_roots(&bare);
+    assert_eq!(roots.len(), 1, "{roots:?}");
+    assert_eq!(roots[0].1, DomainKind::Integer);
+
+    let range =
+        FiniteBound::integer_range(Integer::from(0_i64), Integer::from(3_i64)).expect("a range");
+    let proof = ProofBound::new(roots[0].0.clone(), Some(DomainKind::Integer), range)
+        .expect("an integer range pairs with an integer domain");
+    let bounded = run_with(&world, universe(&["c"]), vec![proof], UNLIMITED)
+        .expect_err("a proof bound is not a universe");
+    assert_eq!(unbounded_roots(&bounded), roots);
+
+    let world = world_with(document_with_ranged_parameter(), CONTRACT, &[&[("c", 0)]]);
+    let outcome =
+        run_with(&world, universe(&["c"]), Vec::new(), UNLIMITED).expect("Int[0, 3] is finite");
+    assert!(
+        matches!(
+            &outcome,
+            ModelCheckOutcome::Violated { .. } | ModelCheckOutcome::Holds { .. }
+        ),
+        "{outcome:?}"
+    );
 }
