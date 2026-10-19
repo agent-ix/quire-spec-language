@@ -98,10 +98,10 @@ pub enum StepTargetForm {
   written (absent when none is written) or as `Memory`, and SHALL NOT
   decide whether an unkeyworded name is an operation, a node or a fence:
   S3 classifies the source by resolving the name (FR-136, QSpec FR-432).
-- The `AbstractSideForm::Protocol` side (`abstract <A>::<protocol>`) has no
-  QSpec production yet: FR-375's header admits a model alias only. QSL
-  builds the form and the side waits on that production, tracked as Linear
-  STD-182 (ADR-020 QS-11).
+- S2 SHALL build the header's `abstract-subject` (QSpec FR-375) as
+  `AbstractSideForm::Model(alias)` for an alias alone and as
+  `AbstractSideForm::Protocol(alias, clause)` for `abstract <A>::<protocol>`.
+  Whether the clause resolves is S3's (FR-147; ADR-020 QS-11).
 - S2 SHALL build each field row's right side, each step-row argument and
   each history update as an expression form as written, the
   population-valued forms (FR-139) included, and an open argument `_` as

@@ -11,21 +11,20 @@ relationships:
 ## Description
 
 Verify the abstract protocol side: resolution of the protocol, node targets,
-the profile's internal list (its shape, resolution and refusal), the
+the refinement's internal list (its shape, spellings, resolution, locus and refusal), the
 `refinement` requirement record and the unsupported liveness half.
 
-Scope: FR-147-AC-1 to FR-147-AC-7. Steps 1, 3 and 4 wait on STD-199 and
-STD-182 (FR-147 Remaining work); step 2 runs now only for its `CasRefinesCounter` node-row
-vector, and steps 5 to 7 run now.
+Scope: FR-147-AC-1 to FR-147-AC-11.
 
 ## Test Procedure
 
-Fixtures: `Twice` and `CasTwice` (FR-147); `CasRefinesCounter` (ADR-020 §8).
+Fixtures: `Twice`, `CasTwice` and `Full` (FR-147); `CasRefinesCounter`
+(ADR-020 §8).
 
 1. Check `CasTwice`, and with `commitA -> node Spec::Twice::a1(self)`.
 2. Check each refusal variant of FR-147-AC-2.
 3. Check and settle `CasTwice` with `ensure fair weak Spec::Counter::inc`.
-4. Check `CasTwice` with `finish` removed from the profile's internal list,
+4. Check `CasTwice` with `finish` removed from the refinement's internal list,
    with the list naming `finish`, and with the list naming `finish` beside
    a step row `-> node Spec::Twice::finish(self)`.
 
@@ -36,6 +35,14 @@ Fixtures: `Twice` and `CasTwice` (FR-147); `CasRefinesCounter` (ADR-020 §8).
 6. Resolve each defect variant of FR-147-AC-6, one value per variant.
 7. Give the refinement check a non-empty resolved list for `CasTwice` and for
    `CasRefinesCounter`, and an empty one.
+8. Resolve a value naming one entry of every class over `Full`.
+9. Resolve `CasTwice`'s list, rename the abstract alias to `S` with the value
+   renamed to match, and resolve again; compare with the empty list.
+10. Place one defect in the unit's value and the same defect in a supplied
+    library's value.
+11. Give the refinement check, in a build omitting `refinement-internal-list`,
+    a list with an unresolved entry, a value attributable to no refinement, a
+    well-formed non-empty list and a malformed entry on `CasRefinesCounter`.
 
 Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 
@@ -53,7 +60,7 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   three give it empty; the two orders and the swapped arrays give the same
   list, ordered by the bytes of the canonical spellings.
 - Step 6: each variant refuses with FR-147-AC-6's code and subcode at its
-  JSON Pointer (both pointers for a conflict) and gives no list.
+  (input, JSON Pointer) pair (both pairs for a conflict) and gives no list.
 - Step 7: the non-empty list for `CasRefinesCounter` refuses exactly once,
   `unsupported_construct`/`not-yet-implemented` at its model alias, naming
   `refinement-internal-list`, the refinement and the profile; the non-empty
@@ -61,3 +68,15 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   `Twice` and `refinement-internal-list` at `Spec`, each once; all classified
   `unsupported`, with no `CheckedRefinement`; the empty list is not refused
   for the list.
+- Step 8: each entry makes exactly its own class internal; the resolved list
+  is in the byte order of the alias-free spellings.
+- Step 9: `abstract_internal = [Twice::finish]` before and after the rename,
+  with the same node identity; the empty list gives a different identity.
+- Step 10: the unit's defect is located at (the unit's value, pointer), the
+  library's at (that library's value, pointer) and the compilation is not
+  admitted; no compile-request member is named.
+- Step 11: the unresolved entry gives `missing-name` and no
+  `not-yet-implemented`; the value attributable to no refinement gives its
+  defect alone; the well-formed non-empty list gives only the
+  `not-yet-implemented` refusal at the model alias; the malformed entry gives
+  `malformed-declaration`.
