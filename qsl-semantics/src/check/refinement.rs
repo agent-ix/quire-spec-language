@@ -83,6 +83,12 @@ pub enum RefinementCause {
         /// the other model of the refinement.
         held_by: Option<String>,
     },
+    /// A name resolves to several operations, none of whose declaring types
+    /// is more derived than every other: `ambiguous_declaration`/`ambiguous-name`.
+    Ambiguous {
+        /// The name as written.
+        name: String,
+    },
     /// A population, object type or concrete operation has no row:
     /// `missing_declaration`/`missing-name`.
     MissingRow {
@@ -128,6 +134,7 @@ impl RefinementCause {
         match self {
             Self::WrongProfile { .. } => Code::UnknownProfile,
             Self::Unresolved { .. } | Self::MissingRow { .. } => Code::MissingDeclaration,
+            Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
             Self::Conflicting { .. } | Self::Malformed { .. } => Code::InvalidModelBinding,
             Self::Check(cause) => cause.code(),
         }
@@ -138,6 +145,7 @@ impl RefinementCause {
         match self {
             Self::WrongProfile { .. } => Some("wrong-selection-role"),
             Self::Unresolved { .. } | Self::MissingRow { .. } => Some("missing-name"),
+            Self::Ambiguous { .. } => Some("ambiguous-name"),
             Self::Conflicting { .. } => Some("conflicting-binding"),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Check(cause) => cause.cause(),
@@ -322,12 +330,15 @@ struct ObjectType {
 }
 
 impl<'a> Side<'a> {
-    fn populations(&self) -> Vec<Population<'a>> {
+    /// Every population of the model, or the invariant an admitted
+    /// population breaks by having no artifact name.
+    fn populations(&self) -> Result<Vec<Population<'a>>, &'static str> {
         self.model
             .population_domains()
-            .filter_map(|(_, record, _)| {
-                let segment = type_identity_segment(&record.key.package, &record.key.node)?;
-                Some(Population {
+            .map(|(_, record, _)| {
+                let segment = type_identity_segment(&record.key.package, &record.key.node)
+                    .ok_or("population-identity-is-an-artifact-name")?;
+                Ok(Population {
                     name: format!("{}::{segment}", self.alias),
                     record,
                 })
@@ -335,12 +346,18 @@ impl<'a> Side<'a> {
             .collect()
     }
 
-    fn object_types(&self, types: &TypeEnvironment) -> Vec<ObjectType> {
+    /// Every object type of the model, or the invariant an admitted object
+    /// type breaks by being absent from the type environment.
+    fn object_types(&self, types: &TypeEnvironment) -> Result<Vec<ObjectType>, &'static str> {
         self.model
             .object_types()
-            .filter_map(|(key, id)| {
-                Some(ObjectType {
-                    name: types.object_type(id)?.name().to_owned(),
+            .map(|(key, id)| {
+                Ok(ObjectType {
+                    name: types
+                        .object_type(id)
+                        .ok_or("admitted-object-type-is-in-the-environment")?
+                        .name()
+                        .to_owned(),
                     id,
                     key: key.clone(),
                 })
@@ -478,7 +495,9 @@ pub(crate) fn check_refinement<'a, 'c>(
         nodes: &mut nodes,
         lifting: BTreeMap::new(),
         maps_complete: true,
+        baseline: 0,
     };
+    checker.baseline = checker.findings.refusals.len();
     let populations = checker.populations(form);
     let objects = checker.objects(form, cx);
     let steps = checker.steps(form, cx);
@@ -517,6 +536,9 @@ struct Checker<'c, 'a> {
     /// Typing a step's receiver and arguments is meaningful only against a
     /// complete map: a type no row maps cannot be lifted.
     maps_complete: bool,
+    /// How many refusals the header already holds, which say nothing of the
+    /// maps.
+    baseline: usize,
 }
 
 impl<'c, 'a> Checker<'c, 'a> {
@@ -526,8 +548,14 @@ impl<'c, 'a> Checker<'c, 'a> {
 
     /// FR-135 "Population map".
     fn populations(&mut self, form: &RefinementForm) -> Vec<PopulationRow> {
-        let abstract_populations = self.abstract_side.populations();
-        let concrete_populations = self.concrete_side.populations();
+        let abstract_populations = {
+            let found = self.abstract_side.populations();
+            self.or_fault(found)
+        };
+        let concrete_populations = {
+            let found = self.concrete_side.populations();
+            self.or_fault(found)
+        };
         let mut rows: Vec<PopulationRow> = Vec::new();
         // The abstract populations a row names on its left, and the row.
         let mut named: BTreeMap<&DeclarationKey, Span> = BTreeMap::new();
@@ -643,10 +671,22 @@ impl<'c, 'a> Checker<'c, 'a> {
         form: &RefinementForm,
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> Vec<ObjectRow> {
-        let abstract_types = self.abstract_side.object_types(self.types());
-        let concrete_types = self.concrete_side.object_types(self.types());
-        let abstract_populations = self.abstract_side.populations();
-        let concrete_populations = self.concrete_side.populations();
+        let abstract_types = {
+            let found = self.abstract_side.object_types(self.types());
+            self.or_fault(found)
+        };
+        let concrete_types = {
+            let found = self.concrete_side.object_types(self.types());
+            self.or_fault(found)
+        };
+        let abstract_populations = {
+            let found = self.abstract_side.populations();
+            self.or_fault(found)
+        };
+        let concrete_populations = {
+            let found = self.concrete_side.populations();
+            self.or_fault(found)
+        };
         // The population rows that resolved, as (abstract, concrete).
         let mapped: Vec<(&Population<'_>, &Population<'_>)> = form
             .rows
@@ -760,7 +800,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             }
         }
 
-        self.maps_complete = self.findings.refusals.is_empty();
+        self.maps_complete = self.findings.refusals.len() == self.baseline;
         let mut objects = Vec::new();
         for (row, target, source) in resolved {
             if let Some(object) = self.object_row(row, target, source, cx) {
@@ -857,7 +897,11 @@ impl<'c, 'a> Checker<'c, 'a> {
             }
         }
         let mut hidden = Vec::new();
-        for attribute in types.attributes(target.id)?.iter() {
+        let Some(attributes) = types.attributes(target.id) else {
+            self.fault("abstract-object-type-has-attributes");
+            return None;
+        };
+        for attribute in attributes.iter() {
             if defined.contains_key(attribute.field().name()) {
                 continue;
             }
@@ -874,6 +918,15 @@ impl<'c, 'a> Checker<'c, 'a> {
             concrete_type: source.key.clone(),
             fields,
             hidden,
+        })
+    }
+
+    /// `found`, or an empty list and the internal fault of the invariant it
+    /// reports broken.
+    fn or_fault<T>(&mut self, found: Result<Vec<T>, &'static str>) -> Vec<T> {
+        found.unwrap_or_else(|invariant| {
+            self.fault(invariant);
+            Vec::new()
         })
     }
 
@@ -927,7 +980,20 @@ impl<'c, 'a> Checker<'c, 'a> {
                 self_slot: 0,
                 result_slot: None,
             });
-            let body = typer.check_as(&expression.expression, required, &location)?;
+            // One rule for every row: the expression's own type conforms to
+            // the type it defines (ADR-016 SC-2), never a range-checked
+            // coercion into it.
+            let body = typer.infer(&expression.expression, Some(required), &location)?;
+            if !conforms(
+                declarations.scope.types(),
+                body.root().value_type(),
+                required,
+            ) {
+                return Err(CheckRefusal::ill_typed(
+                    &location,
+                    IllTypedCause::TypeMismatch,
+                ));
+            }
             Ok::<_, CheckRefusal>((body, typer.slots()))
         })();
         match typed {
@@ -937,11 +1003,14 @@ impl<'c, 'a> Checker<'c, 'a> {
                 slots,
             }),
             Err(refusal) => {
-                let span = super::region::span_at(&expression.spans, &refusal.location)
+                match super::region::span_at(&expression.spans, &refusal.location)
                     .or_else(|| expression.spans.at(&[]))
-                    .unwrap_or(Span { start: 0, end: 0 });
-                self.findings
-                    .refuse(span, RefinementCause::Check(refusal.cause));
+                {
+                    Some(span) => self
+                        .findings
+                        .refuse(span, RefinementCause::Check(refusal.cause)),
+                    None => self.fault("row-expression-has-a-span"),
+                }
                 None
             }
         }
@@ -956,23 +1025,22 @@ impl<'c, 'a> Checker<'c, 'a> {
     ) -> Vec<StepRow> {
         let scope = self.declarations.scope;
         let types = self.types();
-        let abstract_types = self.abstract_side.object_types(types);
-        let concrete_types = self.concrete_side.object_types(types);
+        let abstract_types = {
+            let found = self.abstract_side.object_types(types);
+            self.or_fault(found)
+        };
+        let concrete_types = {
+            let found = self.concrete_side.object_types(types);
+            self.or_fault(found)
+        };
         let mut first_rows: BTreeMap<(EffectiveId, String), Span> = BTreeMap::new();
         let mut steps = Vec::new();
         for row in &form.rows {
             let RefinementRowForm::Step(row) = row else {
                 continue;
             };
-            let Some((object, operation)) =
+            let Some((object, declaring, concrete)) =
                 self.operation_named(&row.concrete, &concrete_types, None)
-            else {
-                continue;
-            };
-            let OperationLookup::Declared {
-                declaring,
-                operation: concrete,
-            } = operation
             else {
                 continue;
             };
@@ -1049,19 +1117,41 @@ impl<'c, 'a> Checker<'c, 'a> {
         name: &qsl_forms::NameForm,
         types: &'t [ObjectType],
         held_by: Option<&str>,
-    ) -> Option<(&'t ObjectType, OperationLookup<'a>)> {
+    ) -> Option<(
+        &'t ObjectType,
+        EffectiveId,
+        &'a crate::model::operation::OperationDeclaration,
+    )> {
         let scope = self.declarations.scope;
-        let found = split_member(&name.name).and_then(|(type_name, member)| {
+        let lookup = split_member(&name.name).and_then(|(type_name, member)| {
             let object = types.iter().find(|object| object.name == type_name)?;
-            match scope.operations().resolve(self.types(), object.id, member) {
-                OperationLookup::Missing => None,
-                lookup => Some((object, lookup)),
-            }
+            Some((
+                object,
+                scope.operations().resolve(self.types(), object.id, member),
+            ))
         });
-        if found.is_none() {
-            self.findings.unresolved(&name.name, name.span, held_by);
+        match lookup {
+            Some((
+                object,
+                OperationLookup::Declared {
+                    declaring,
+                    operation,
+                },
+            )) => Some((object, declaring, operation)),
+            Some((_, OperationLookup::Ambiguous(_))) => {
+                self.findings.refuse(
+                    name.span,
+                    RefinementCause::Ambiguous {
+                        name: name.name.clone(),
+                    },
+                );
+                None
+            }
+            Some((_, OperationLookup::Missing)) | None => {
+                self.findings.unresolved(&name.name, name.span, held_by);
+                None
+            }
         }
-        found
     }
 
     /// A step row whose right side applies an abstract operation.
@@ -1075,16 +1165,8 @@ impl<'c, 'a> Checker<'c, 'a> {
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> Option<StepTarget> {
         let types = self.types();
-        let (target_type, lookup) = self.operation_named(operation, abstract_types, None)?;
-        let OperationLookup::Declared {
-            declaring,
-            operation: abstract_operation,
-        } = lookup
-        else {
-            self.findings
-                .unresolved(&operation.name, operation.span, None);
-            return None;
-        };
+        let (target_type, declaring, abstract_operation) =
+            self.operation_named(operation, abstract_types, None)?;
         let parameters = abstract_operation.parameters();
         if arguments.len() != parameters.len() + 1 {
             self.findings.refuse(
@@ -1161,8 +1243,14 @@ impl<'c, 'a> Checker<'c, 'a> {
     /// FR-137: the rows of `side`, each constraint once, in source order.
     fn fairness(&mut self, form: &RefinementForm, side: FairnessSide) -> Vec<FairnessConstraint> {
         let scope = self.declarations.scope;
-        let abstract_types = self.abstract_side.object_types(self.types());
-        let concrete_types = self.concrete_side.object_types(self.types());
+        let abstract_types = {
+            let found = self.abstract_side.object_types(self.types());
+            self.or_fault(found)
+        };
+        let concrete_types = {
+            let found = self.concrete_side.object_types(self.types());
+            self.or_fault(found)
+        };
         let (own_types, other_types, other_alias) = match side {
             FairnessSide::Assume => (&concrete_types, &abstract_types, self.abstract_side.alias),
             FairnessSide::Ensure => (&abstract_types, &concrete_types, self.concrete_side.alias),

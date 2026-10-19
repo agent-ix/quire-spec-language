@@ -2179,21 +2179,21 @@ impl PackageDeclarations {
         // so a package that checks with one is refused rather than compiled
         // with an identity equal to the same package without it
         // (`terminal::not_emitted`).
-        if !self.emit_unwritten_terminals && !self.terminals.is_empty() {
-            return Err(self
-                .terminals
-                .iter()
-                .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span))
-                .collect());
+        let mut unwritten = Vec::new();
+        if !self.emit_unwritten_terminals {
+            unwritten.extend(
+                self.terminals
+                    .iter()
+                    .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span)),
+            );
         }
-        if !self.emit_unwritten_refinements && !self.refinements.is_empty() {
-            return Err(self
-                .refinements
-                .iter()
-                .map(|refinement| {
-                    refinement::not_emitted(refinement.form.name.name.clone(), refinement.form.span)
-                })
-                .collect());
+        if !self.emit_unwritten_refinements {
+            unwritten.extend(self.refinements.iter().map(|refinement| {
+                refinement::not_emitted(refinement.form.name.name.clone(), refinement.form.span)
+            }));
+        }
+        if !unwritten.is_empty() {
+            return Err(unwritten);
         }
         Ok(CheckedGraph {
             source,

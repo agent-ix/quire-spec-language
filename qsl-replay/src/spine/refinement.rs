@@ -283,6 +283,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             RefinementCause::Check(cause) => check_limit(cause),
             RefinementCause::WrongProfile { .. }
             | RefinementCause::Unresolved { .. }
+            | RefinementCause::Ambiguous { .. }
             | RefinementCause::MissingRow { .. }
             | RefinementCause::Conflicting { .. }
             | RefinementCause::Malformed { .. } => None,

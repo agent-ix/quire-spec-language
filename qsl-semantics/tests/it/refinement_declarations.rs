@@ -19,6 +19,7 @@ use qsl_semantics::check::{
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::DeclarationKey;
+use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use serde_json::{json, Value};
@@ -136,12 +137,23 @@ fn object_type(
     fields: &[(&str, &str)],
     operations: Vec<Value>,
 ) -> Value {
+    object_type_under(package, name, &[], fields, operations)
+}
+
+/// An object type declaring `supertypes` (names in the same package).
+fn object_type_under(
+    package: &str,
+    name: &str,
+    supertypes: &[&str],
+    fields: &[(&str, &str)],
+    operations: Vec<Value>,
+) -> Value {
     declaration(
         package,
         name,
         "object_type",
         json!({
-            "supertypes": [],
+            "supertypes": supertypes.iter().map(|ty| node(package, ty)).collect::<Vec<_>>(),
             "fields": fields
                 .iter()
                 .map(|(field_name, type_ref)| field(package, name, field_name, type_ref))
@@ -162,7 +174,23 @@ fn population(package: &str, name: &str, member: &str) -> Value {
 }
 
 fn document(package: &str, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
+    document_with(package, Vec::new(), types, populations)
+}
+
+fn document_with(
+    package: &str,
+    extra_constructs: Vec<Value>,
+    types: Vec<Value>,
+    populations: Vec<Value>,
+) -> Vec<u8> {
     const DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    let constructs: Vec<Value> = [
+        construct(package, "object_type", meaning::OBJECT_TYPE),
+        construct(package, "population", meaning::POPULATION),
+    ]
+    .into_iter()
+    .chain(extra_constructs)
+    .collect();
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
@@ -175,15 +203,80 @@ fn document(package: &str, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8
             "mappingVersions": [], "profileVersions": [], "lockDigest": DIGEST,
         },
         "occurrences": [], "extensions": [],
-        "constructs": [
-            construct(package, "object_type", meaning::OBJECT_TYPE),
-            construct(package, "population", meaning::POPULATION),
-        ],
+        "constructs": constructs,
         "types": types,
         "populations": populations,
     })
     .to_string()
     .into_bytes()
+}
+
+const SUB: &str = "example/sub-counter";
+const NARROW: &str = "example/narrow-counter";
+const WIDE: &str = "example/wide-counter";
+
+/// `Counter { value }` with `peek()`, its subtype `SubCounter { extra }` with
+/// `bump()`, and the population `counters` of counters.
+fn sub_counter() -> Vec<u8> {
+    document(
+        SUB,
+        vec![
+            object_type(
+                SUB,
+                "Counter",
+                &[("value", INTEGER)],
+                vec![operation(SUB, "Counter", "peek", &[], None, &[])],
+            ),
+            object_type_under(
+                SUB,
+                "SubCounter",
+                &["Counter"],
+                &[("extra", INTEGER)],
+                vec![operation(SUB, "SubCounter", "bump", &[], None, &["extra"])],
+            ),
+        ],
+        vec![population(SUB, "counters", "Counter")],
+    )
+}
+
+/// `Counter { value: Int[0, upper] }` and the population `counters`.
+fn bounded_counter(package: &str, upper: u32) -> Vec<u8> {
+    let constraints: Vec<Value> = [("min", "0".to_owned()), ("max", upper.to_string())]
+        .iter()
+        .map(|(keyword, value)| {
+            let path = format!("Bound/constraints/{keyword}");
+            json!({
+                "identity": node(package, &path), "keyword": keyword,
+                "operands": {"value": value},
+                "appliesTo": INTEGER,
+                "diagnosticCode": format!("bound.{keyword}"),
+                "origin": origin(package, &path),
+            })
+        })
+        .collect();
+    let bound = declaration(
+        package,
+        "Bound",
+        "value_type",
+        json!({
+            "scalar": "integer",
+            "constraints": constraints,
+        }),
+    );
+    document_with(
+        package,
+        vec![construct(package, "value_type", meaning::VALUE_TYPE)],
+        vec![
+            bound,
+            object_type(
+                package,
+                "Counter",
+                &[("value", &node(package, "Bound"))],
+                Vec::new(),
+            ),
+        ],
+        vec![population(package, "counters", "Counter")],
+    )
 }
 
 /// `Counter { value }` with `inc()` and the population `counters`.
@@ -493,7 +586,7 @@ fn cas_key(node_name: &str) -> DeclarationKey {
 /// row, one object row with the field row `value = self.value` and no hidden
 /// field. The dependency-package half needs the S4 closure and is not
 /// tested.
-#[trace("TC-540", "FR-135-AC-1")]
+#[trace("TC-540")]
 #[test]
 fn the_counter_refinement_checks_to_one_population_and_one_object_row() {
     let graph = checked_counter(&cas_refines_counter());
@@ -562,6 +655,7 @@ fn each_malformed_header_and_row_refuses_at_its_span() {
         row.refinement(),
         &missing(RowClass::Population, "Spec::counters")
     );
+    assert_eq!(row.at, "CasRefinesCounter");
 
     // The row written twice: the second row conflicts with the first.
     let found = refused_counter(&mutated(
@@ -604,6 +698,7 @@ fn each_malformed_header_and_row_refuses_at_its_span() {
         row.refinement(),
         &missing(RowClass::Object, "Spec::Counter")
     );
+    assert_eq!(row.at, "CasRefinesCounter");
 
     // `value` mapped twice.
     let found = refused_counter(&mutated(
@@ -617,6 +712,11 @@ fn each_malformed_header_and_row_refuses_at_its_span() {
         (Code::InvalidModelBinding, Some("conflicting-binding"))
     );
     assert_eq!(twice.at, "value = self.tmpA;");
+    let RefinementCause::Conflicting { name, first } = twice.refinement() else {
+        panic!("a conflict: {:?}", twice.refinement());
+    };
+    assert_eq!(name, "Spec::Counter.value");
+    assert_eq!(&twice.unit[first.start..first.end], "value = self.value;");
 
     // A header that selects a bounded profile.
     let bounded = "profile finite = \"quire.temporal.event-position.false-extension/v1\";\n";
@@ -691,7 +791,7 @@ fn a_field_row_is_typed_against_the_abstract_field_after_reference_lifting() {
 /// FR-135-AC-4 (TC-540 step 4): with the `value` row removed, the refinement
 /// checks with `value` hidden. The node-identity half needs S4 emission and
 /// is not tested.
-#[trace("TC-540", "FR-135-AC-4")]
+#[trace("TC-540")]
 #[test]
 fn an_abstract_field_with_no_row_is_hidden() {
     let base = cas_refines_counter();
@@ -720,11 +820,17 @@ fn every_concrete_operation_has_a_checked_step_row() {
         match &step.target {
             StepTarget::Abstract {
                 operation,
+                receiver,
                 arguments,
                 binds_result,
-                ..
             } => {
                 assert_eq!(operation, &spec_key("Counter/inc"));
+                let [(name, receiver_type)] = receiver.parameters() else {
+                    panic!("self alone: {:?}", receiver.parameters());
+                };
+                assert_eq!(name, "self");
+                assert_eq!(receiver.body().value_type(), receiver_type);
+                assert!(matches!(receiver_type, ValueType::Reference(_)));
                 assert!(arguments.is_empty());
                 assert!(!binds_result);
                 applied.push(concrete.clone());
@@ -764,8 +870,18 @@ fn every_concrete_operation_has_a_checked_step_row() {
     else {
         panic!("put applies enq: {:?}", put.target);
     };
-    assert_eq!(put_arguments.len(), 1);
-    assert!(put_arguments[0].is_some());
+    let [Some(put_argument)] = &put_arguments[..] else {
+        panic!("one argument: {put_arguments:?}");
+    };
+    assert_eq!(put_argument.body().value_type(), &ValueType::Integer);
+    assert_eq!(
+        put_argument
+            .parameters()
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["self", "x"]
+    );
     assert!(!put_binds);
     let StepTarget::Abstract {
         arguments: take_arguments,
@@ -816,6 +932,7 @@ fn step_rows_cover_each_concrete_operation_exactly_once() {
             name: "Impl::Counter::peek".to_owned(),
         }
     );
+    assert_eq!(missing.at, "CasRefinesCounter");
 
     let found = refused_counter(&mutated(
         &base,
@@ -828,6 +945,11 @@ fn step_rows_cover_each_concrete_operation_exactly_once() {
         (Code::InvalidModelBinding, Some("conflicting-binding"))
     );
     assert_eq!(twice.at, "step Impl::Counter::peek -> any;");
+    let RefinementCause::Conflicting { name, first } = twice.refinement() else {
+        panic!("a conflict: {:?}", twice.refinement());
+    };
+    assert_eq!(name, "Impl::Counter::peek");
+    assert_eq!(&twice.unit[first.start..first.end], peek);
 
     let found = refused_counter(&mutated(
         &base,
@@ -931,7 +1053,7 @@ fn constraints(refinement: &CheckedRefinement, concrete: bool) -> Vec<String> {
 /// source order and `F_A` is `[Weak Each inc]`; an `ensure` row with no
 /// granularity reads `Whole`, and with no `ensure` row `F_A` is empty. The
 /// node-identity half needs S4 emission and is not tested.
-#[trace("TC-542", "FR-137-AC-1")]
+#[trace("TC-542")]
 #[test]
 fn the_fairness_rows_form_the_two_sets_in_source_order() {
     let base = cas_refines_counter();
@@ -1073,5 +1195,112 @@ fn a_checked_refinement_refuses_not_emitted_at_package_build() {
             .map(|refusal| (refusal.cause.code(), refusal.cause.cause()))
             .collect::<Vec<_>>(),
         [(Code::UnsupportedConstruct, Some("not-yet-implemented"))]
+    );
+}
+
+fn sub_refinement(source: &str, peek: &str) -> String {
+    format!(
+        "refinement SubRefines using inf abstract Spec concrete Impl {{\n\
+         population Spec::counters from Impl::counters;\n\
+         object Spec::Counter from Impl::{source} {{ value = self.value; }}\n\
+         step Impl::Counter::peek -> {peek};\n\
+         step Impl::SubCounter::bump -> Spec::Counter::inc(self);\n\
+         }}"
+    )
+}
+
+/// ADR-016 SC-2 over a subtype: a step on `SubCounter` supplies `self` where
+/// the abstract receiver lifts to a reference to its supertype `Counter`.
+#[trace("TC-541")]
+#[test]
+fn a_subtype_receiver_conforms_to_the_supertype_it_lifts_to() {
+    let (spec, sub) = (counter_spec(), sub_counter());
+    let models = [("Spec", SPEC, &spec[..]), ("Impl", SUB, &sub[..])];
+    let graph =
+        check_with("", &models, &sub_refinement("Counter", "stutter")).unwrap_or_else(|refusals| {
+            panic!(
+                "{:?}",
+                refusals.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+            )
+        });
+    assert_eq!(only_refinement(&graph).steps().len(), 2);
+}
+
+/// The other direction does not conform: with the object row mapped from the
+/// subtype, a step on the supertype `Counter` supplies a reference the lifted
+/// receiver type, a reference to `SubCounter`, does not accept.
+#[trace("TC-541")]
+#[test]
+fn a_supertype_receiver_does_not_conform_to_the_subtype_it_lifts_to() {
+    let (spec, sub) = (counter_spec(), sub_counter());
+    let models = [("Spec", SPEC, &spec[..]), ("Impl", SUB, &sub[..])];
+    let found = refused(
+        &models,
+        &sub_refinement("SubCounter", "Spec::Counter::inc(self)").replace(
+            "step Impl::SubCounter::bump -> Spec::Counter::inc(self);",
+            "step Impl::SubCounter::bump -> stutter;",
+        ),
+    );
+    let receiver = only(&found);
+    assert_eq!(
+        receiver.code_and_cause(),
+        (Code::IllTyped, Some("type-mismatch"))
+    );
+    assert_eq!(receiver.at, "self");
+}
+
+fn range_refinement() -> String {
+    "refinement Ranges using inf abstract Spec concrete Impl {\n\
+     population Spec::counters from Impl::counters;\n\
+     object Spec::Counter from Impl::Counter { value = self.value; }\n\
+     }"
+    .to_owned()
+}
+
+/// ADR-016 SC-2 over integer ranges: a field of `Int[0, 3]` defines a field of
+/// `Int[0, 10]`, and a field of `Int[0, 10]` is refused for one of
+/// `Int[0, 3]` rather than range-checked into it.
+#[trace("TC-540")]
+#[test]
+fn an_integer_range_must_lie_inside_the_range_it_defines() {
+    let (narrow, wide) = (bounded_counter(NARROW, 3), bounded_counter(WIDE, 10));
+    let inside = [("Spec", WIDE, &wide[..]), ("Impl", NARROW, &narrow[..])];
+    check_with("", &inside, &range_refinement()).unwrap_or_else(|refusals| {
+        panic!(
+            "{:?}",
+            refusals.iter().map(|r| &r.refusal).collect::<Vec<_>>()
+        )
+    });
+    let outside = [("Spec", NARROW, &narrow[..]), ("Impl", WIDE, &wide[..])];
+    let found = refused(&outside, &range_refinement());
+    let range = only(&found);
+    assert_eq!(
+        range.code_and_cause(),
+        (Code::IllTyped, Some("type-mismatch"))
+    );
+    assert_eq!(range.at, "self.value");
+}
+
+/// A unit holding a `terminal` declaration and a refinement reports both as
+/// not emitted, not only the first.
+#[trace("TC-540")]
+#[test]
+fn a_terminal_and_a_refinement_are_each_refused_not_emitted() {
+    let (spec, cas) = counters();
+    let body = format!(
+        "terminal Halt using v on Spec any;\n{}",
+        cas_refines_counter()
+    );
+    let (_, declarations) = assemble("", &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)], &body);
+    let refusals = declarations
+        .expect("the unit assembles")
+        .check(CheckingLimits::default())
+        .expect_err("neither is emitted yet");
+    assert_eq!(
+        refusals
+            .iter()
+            .map(|refusal| (refusal.cause.code(), refusal.cause.cause()))
+            .collect::<Vec<_>>(),
+        [(Code::UnsupportedConstruct, Some("not-yet-implemented")); 2]
     );
 }
