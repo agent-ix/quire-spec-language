@@ -62,9 +62,6 @@ impl ClauseRootUnresolved {
     pub const TAG: &'static str = "clause-root-unresolved";
 }
 
-/// The `claim` role as the kernel `Origin` carries it.
-const CLAIM: &str = "claim";
-
 /// A broken invariant between IR's admission and this lookup.
 const NODE_ID_FAULT: InternalFault = InternalFault::new("I2", "admitted-node-id-is-a-wire-node-id");
 
@@ -75,21 +72,25 @@ fn is_clause(node: &CheckedSemanticNodeV2) -> bool {
         == Some(CheckedNodeKind::Temporal(TemporalForm::TemporalClause))
 }
 
-/// The `over` node of the clause node `node`: the target of the `reference`
-/// its body application's first argument is. `None` when that argument is
-/// no reference to a wire node id.
+/// The `over` node of the clause node `node`: the `target` of its body
+/// application's first argument, which IR's reader admitted as a reference
+/// to a `value`/`parameter` node (QSpec FR-370 reader order). `None` when
+/// that argument names no target.
 fn over_of(node: &CheckedSemanticNodeV2) -> Option<WireNodeId> {
     let over = node.body.get("arguments")?.get(0)?;
-    if over.get("term")?.as_str()? != "reference" {
-        return None;
-    }
     WireNodeId::from_hex(over.get("target")?.get("digest")?.as_str()?)
 }
 
 /// The clause root of `node`'s `claim` occurrence `occurrence`.
 fn root(node: WireNodeId, occurrence: &CheckedOccurrence, over: Option<WireNodeId>) -> ClauseRoot {
     ClauseRoot {
-        occurrence: OccurrenceKey::new(node, Origin::new(Role::new(CLAIM), occurrence.ordinal)),
+        occurrence: OccurrenceKey::new(
+            node,
+            Origin::new(
+                Role::new(super::role_spelling(&CheckedOccurrenceRole::Claim)),
+                occurrence.ordinal,
+            ),
+        ),
         over,
     }
 }
@@ -129,7 +130,8 @@ pub fn resolve_clause_root(
         .find(|node| *node.node_id.digest == *digest)
         .filter(|node| is_clause(node))
         .ok_or_else(unresolved)?;
-    if triple.origin().role().as_str() != CLAIM {
+    if super::occurrence_role(triple.origin().role().as_str()) != Some(CheckedOccurrenceRole::Claim)
+    {
         return Err(unresolved());
     }
     let occurrence = node

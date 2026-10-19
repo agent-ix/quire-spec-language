@@ -313,11 +313,9 @@ fn the_resolved_fairness_set_and_the_intervals_decide_the_node_key() {
     assert_ne!(each_key, whole_key);
     assert_ne!(package_id(&each), package_id(&whole));
 
-    let bounded = format!(
-        "fair weak Config::ConfigVersion::attemptUpdate;\n\
-         always eventually[0,5] holds(c.versionNumber = 2)"
-    );
-    let (interval, interval_key) = identity_with(INFINITE, &bounded);
+    let bounded = "fair weak Config::ConfigVersion::attemptUpdate;\n\
+         always eventually[0,5] holds(c.versionNumber = 2)";
+    let (interval, interval_key) = identity_with(INFINITE, bounded);
     assert_ne!(interval_key, unmarked_key);
     assert_ne!(package_id(&interval), package_id(&unmarked));
 }
