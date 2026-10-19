@@ -412,6 +412,48 @@ fn a_reachable_invariant_holds_or_is_violated_at_its_first_bad_state() {
     assert_eq!(counterexample.trace_position(), Some(2));
 }
 
+/// A horizon that ends at a terminal state leaves nothing unexplored when
+/// the terminal stutter coalesces with that state: over the Counter subject,
+/// whose chain ends at value 3 at depth 3, `always holds(c.value <= 3)` with
+/// horizon 3 holds, while horizon 2 stops at `BoundReached{2}`.
+#[test]
+fn a_horizon_at_a_terminal_state_whose_stutter_coalesces_still_holds() {
+    let world = self::world("", &[&[("c", 0)]]);
+    let (package, clauses) = package_with_clauses(
+        &world.documents.document,
+        &world.body,
+        &[("C", "", "always holds(c.value <= 3)")],
+    );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
+    let letters = letters(&world, &["c"], |v| Some(v <= 3));
+    let with = |max_depth| {
+        run_in(
+            &world,
+            &package,
+            &["c"],
+            ModelCheckItem::Clause {
+                clause,
+                letters: &letters,
+            },
+            max_depth,
+            ModelCheckLimits::default(),
+            UNLIMITED,
+        )
+        .expect("checked")
+    };
+    assert!(matches!(
+        with(Some(2)),
+        ModelCheckOutcome::BoundReached { depth: 2, .. }
+    ));
+    let outcome = with(Some(3));
+    assert!(
+        matches!(outcome, ModelCheckOutcome::Holds { .. }),
+        "{outcome:?}"
+    );
+}
+
 /// The bound instance a formula violation names is the first instance, in
 /// binding order, whose atom is false at the violating state: over two
 /// counters `a` (initial 2) and `b` (initial 0), `always holds(c.value !=

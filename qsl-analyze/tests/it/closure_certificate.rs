@@ -656,6 +656,33 @@ fn a_request_whose_clause_root_does_not_resolve_settles_failed() {
     assert_eq!(record.execution, Execution::Failed);
 }
 
+/// A TP-3 proof has no canonical closure certificate until its translation
+/// states have FR-338 keys (QSL-878): over the Counter subject,
+/// `always eventually[0,1] holds(c.value <= 3)` under infinite-trace holds
+/// with an empty certificate, which settles `Failed`, never `Proved`.
+#[test]
+fn a_safety_proof_with_an_empty_certificate_settles_failed_never_proved() {
+    let world = world(CONTRACT, &[("c", 0)]);
+    let claim = world.invariant("always eventually[0,1] holds(c.value <= 3)", |v| {
+        Some(v <= 3)
+    });
+    let outcome = claim.run(&world);
+    assert!(certificate(&outcome).states.is_empty());
+    let record = settle_model_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &claim.package_id(&world),
+        &claim.request(&world, UNLIMITED),
+        &Cancel::new(),
+        |_| panic!("a proof replays nothing"),
+    );
+    assert_eq!(record.value, TerminalValue::Failed);
+    assert_eq!(
+        (record.label, record.execution),
+        (ResultLabel::Failed, Execution::Failed)
+    );
+}
+
 /// FR-127's certificate rows: the settlement map runs the core checker on
 /// a `Holds` outcome's certificate itself, over the request's own package. The engine's certificate settles
 /// `proved`, `closed-scope`, `Proved{Exhaustive, Certified}`; the same

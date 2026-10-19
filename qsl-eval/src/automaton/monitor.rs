@@ -14,6 +14,7 @@
 //! first position where no continuation is left.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use crate::automaton::error::AutomatonError;
 use crate::automaton::gba::{Gba, Transition};
@@ -124,8 +125,9 @@ impl<A: SafetyAutomaton + ?Sized> SafetyAutomaton for Box<A> {
 /// What the monitor knows of one automaton state.
 #[derive(Clone, Debug, Default)]
 struct Known {
-    /// Its satisfiable transitions, once read.
-    row: Option<Vec<Transition>>,
+    /// Its satisfiable transitions, once read, shared so a step does not
+    /// copy them.
+    row: Option<Rc<[Transition]>>,
     /// Whether some infinite run starts there, once decided.
     viable: Option<bool>,
 }
@@ -201,34 +203,13 @@ impl<A: SafetyAutomaton> Monitor<A> {
         let members = self.members_of(from)?;
         let mut next = BTreeSet::new();
         for member in members {
-            for transition in self.row(member)? {
+            for transition in self.row(member)?.iter() {
                 if transition.guard.admits(letter) && self.viable(transition.target)? {
                     next.insert(transition.target);
                 }
             }
         }
         Ok(self.subsets.intern(next)?.state)
-    }
-
-    /// The atoms whose truth can change the state [`step`](Self::step)
-    /// reaches from `from`, as letter bits (atom `i` is bit `i`): the atoms
-    /// the guards of its members' transitions to viable states constrain. A
-    /// caller need evaluate no other atom of the next letter, and none when
-    /// this is 0.
-    ///
-    /// # Errors
-    ///
-    /// As [`step`](Self::step).
-    pub fn reads(&mut self, from: StateId) -> Result<u64, AutomatonError> {
-        let mut atoms = 0;
-        for member in self.members_of(from)? {
-            for transition in self.row(member)? {
-                if self.viable(transition.target)? {
-                    atoms |= transition.guard.literals();
-                }
-            }
-        }
-        Ok(atoms)
     }
 
     /// Whether `state` is the rejecting state: the prefix read is a bad
@@ -268,17 +249,17 @@ impl<A: SafetyAutomaton> Monitor<A> {
     }
 
     /// `state`'s satisfiable transitions, read from the automaton once.
-    fn row(&mut self, state: StateId) -> Result<Vec<Transition>, AutomatonError> {
+    fn row(&mut self, state: StateId) -> Result<Rc<[Transition]>, AutomatonError> {
         if let Some(row) = self.known.get(&state).and_then(|known| known.row.as_ref()) {
-            return Ok(row.clone());
+            return Ok(Rc::clone(row));
         }
-        let row: Vec<Transition> = self
+        let row: Rc<[Transition]> = self
             .automaton
             .row(state)?
             .into_iter()
             .filter(|transition| transition.guard.is_satisfiable())
             .collect();
-        self.slot(state).row = Some(row.clone());
+        self.slot(state).row = Some(Rc::clone(&row));
         Ok(row)
     }
 
@@ -294,10 +275,14 @@ impl<A: SafetyAutomaton> Monitor<A> {
         let mut on_path = BTreeSet::from([state]);
         while let Some(&(top, cursor)) = path.last() {
             let row = self.row(top)?;
-            let closes = row.iter().any(|transition| {
-                on_path.contains(&transition.target)
-                    || self.known_viable(transition.target) == Some(true)
-            });
+            // A frame is tested once, when it is pushed: a later visit
+            // follows a dead child, which neither adds a state to the path
+            // nor makes a target viable.
+            let closes = cursor == 0
+                && row.iter().any(|transition| {
+                    on_path.contains(&transition.target)
+                        || self.known_viable(transition.target) == Some(true)
+                });
             if closes {
                 for (member, _) in path {
                     self.slot(member).viable = Some(true);

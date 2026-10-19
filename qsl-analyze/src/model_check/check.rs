@@ -18,9 +18,10 @@
 //! states are bounded by `max_automaton_states` (ADR-018 IV-6).
 //!
 //! A clause's letter is read when its product state is created, for each
-//! instance of the clause's `over` binding, and only the atoms the monitor's
-//! next step depends on are evaluated: a position the claim no longer reads
-//! evaluates nothing (FR-125). The first product state in breadth-first
+//! instance of the clause's `over` binding: every atom of the clause at every
+//! position the claim reads (ADR-018 UE-1, FR-125). A TP-2 `on origin` claim
+//! reads positions 0 to its horizon `h`, and its later positions evaluate no
+//! atom; every other claim reads every position. The first product state in breadth-first
 //! order whose letter is undefined, whose monitor state rejects, whose
 //! expansion evaluates a contract conjunction undefined, whose bounded
 //! closure rejects, or (for the deadlock-freedom item) that is deadlocked
@@ -157,6 +158,9 @@ enum Item<'a> {
         /// Whether a terminal state closes the monitor by the bounded
         /// profile's closed-boundary rule (TP-2) rather than stuttering.
         bounded: bool,
+        /// The last position the claim reads: the horizon `h` of a TP-2 `on
+        /// origin` clause, none when it reads every position (UE-1).
+        last_read: Option<u64>,
     },
     Deadlock,
 }
@@ -173,7 +177,8 @@ impl Item<'_> {
 
 /// One product state: its model state, key, depth, the step that first
 /// reached it (`None` for the terminal stutter step), and the monitor state
-/// of each instance after reading this position.
+/// of each instance after reading this position. An instance whose atom is
+/// undefined there keeps the state it read the position from.
 struct Node {
     state: ModelSimState,
     digest: DigestRecord,
@@ -374,6 +379,10 @@ fn prepare(
     }
     let certified = form == Some(PropertyForm::ReachableInvariant)
         && clause.profile() == TemporalProfile::InfiniteTrace;
+    let last_read = match clause.activation() {
+        Activation::Origin if bounded => clause.horizon(),
+        Activation::Origin | Activation::Each { .. } => None,
+    };
     let prepared = Item::Clause {
         bindings: letters.bindings(),
         letters,
@@ -381,6 +390,7 @@ fn prepare(
         atoms: automaton.atoms().to_vec(),
         live: automaton.live(),
         bounded,
+        last_read,
     };
     Ok((prepared, Box::new(automaton), certified))
 }
@@ -550,11 +560,29 @@ impl Run<'_, '_> {
                 steps.push((Vec::new(), key, digest, None, self.nodes[at].state.clone()));
             }
             let depth = self.nodes[at].depth;
+            let before = self.nodes[at].monitor.clone();
             if self.max_depth.is_some_and(|horizon| depth >= horizon) {
-                self.horizon_cut |= !steps.is_empty();
+                // A terminal stutter that coalesces with an explored product
+                // state leaves nothing unexplored.
+                let unexplored = match steps.pop() {
+                    Some((_, key, digest, None, state)) => {
+                        let node = Node {
+                            state,
+                            digest,
+                            depth: depth.saturating_add(1),
+                            parent: Some((at, None)),
+                            initial_index: self.nodes[at].initial_index,
+                            monitor: Vec::new(),
+                        };
+                        let (after, bad) = self.advance(&node, &before)?;
+                        bad.is_some() || !self.known.contains_key(&(key, after))
+                    }
+                    Some(_) => true,
+                    None => false,
+                };
+                self.horizon_cut |= unexplored;
                 continue;
             }
-            let before = self.nodes[at].monitor.clone();
             for (_, key, digest, transition, state) in steps {
                 if self.edges >= self.limits.limits.max_transitions {
                     return Err(Self::stopped(
@@ -595,28 +623,8 @@ impl Run<'_, '_> {
     /// or add it to the frontier. A state whose letter is undefined or whose
     /// monitor rejects is added as the run's first bad state.
     fn create(&mut self, key: Vec<u8>, mut node: Node, before: &[StateId]) -> Step<()> {
-        let mut bad = None;
-        node.monitor = match self.item {
-            Item::Deadlock => before.to_vec(),
-            Item::Clause { .. } => {
-                let mut after = Vec::with_capacity(before.len());
-                for (instance, from) in before.iter().enumerate() {
-                    let (state, finding) = self.read(&node, instance, *from)?;
-                    after.push(state);
-                    match finding {
-                        Some(undefined @ CounterexampleKind::UndefinedEvaluation(_)) => {
-                            bad = Some((undefined, instance));
-                            break;
-                        }
-                        Some(kind) => {
-                            bad.get_or_insert((kind, instance));
-                        }
-                        None => {}
-                    }
-                }
-                after
-            }
-        };
+        let (after, bad) = self.advance(&node, before)?;
+        node.monitor = after;
         let product = (key, node.monitor.clone());
         if bad.is_none() && self.known.contains_key(&product) {
             return Ok(());
@@ -643,9 +651,42 @@ impl Run<'_, '_> {
         Ok(())
     }
 
+    /// Each instance's monitor state after reading `node`'s position from
+    /// `before`, and the first finding with its instance: an undefined atom,
+    /// which ends the read with the remaining instances left at `before`, or
+    /// else the first rejecting monitor state.
+    fn advance(
+        &mut self,
+        node: &Node,
+        before: &[StateId],
+    ) -> Step<(Vec<StateId>, Option<(CounterexampleKind, usize)>)> {
+        if matches!(self.item, Item::Deadlock) {
+            return Ok((before.to_vec(), None));
+        }
+        let mut after = Vec::with_capacity(before.len());
+        let mut bad = None;
+        for (instance, from) in before.iter().enumerate() {
+            let (state, finding) = self.read(node, instance, *from)?;
+            after.push(state);
+            match finding {
+                Some(undefined @ CounterexampleKind::UndefinedEvaluation(_)) => {
+                    bad = Some((undefined, instance));
+                    break;
+                }
+                Some(kind) => {
+                    bad.get_or_insert((kind, instance));
+                }
+                None => {}
+            }
+        }
+        after.extend_from_slice(before.get(after.len()..).unwrap_or_default());
+        Ok((after, bad))
+    }
+
     /// Instance `instance`'s monitor state after reading `node`'s letter
-    /// from `from`, evaluating only the atoms that step reads, and what the
-    /// read found: an undefined atom, or a rejecting monitor state.
+    /// from `from`, evaluating every atom of the clause when the claim reads
+    /// `node`'s position and none otherwise, and what the read found: an
+    /// undefined atom, or a rejecting monitor state.
     fn read(
         &mut self,
         node: &Node,
@@ -657,6 +698,7 @@ impl Run<'_, '_> {
             letters,
             atoms,
             live,
+            last_read,
             ..
         } = self.item
         else {
@@ -665,13 +707,11 @@ impl Run<'_, '_> {
         let binding = bindings
             .get(instance)
             .ok_or_else(|| fault("instance-has-a-binding"))?;
-        let reads = self.monitor.reads(from).map_err(Self::automaton)?;
         let mut letter = live.map_or_else(Letter::default, |live| Letter::default().with(live));
-        for (index, formula_atom) in atoms.iter().enumerate() {
+        let reads_position = last_read.is_none_or(|last| widen(node.depth) <= last);
+        let read: &[FormulaNodeId] = if reads_position { atoms } else { &[] };
+        for (index, formula_atom) in read.iter().enumerate() {
             let atom = Atom::new(index).map_err(|_| fault("clause-atom-in-range"))?;
-            if reads & Letter::default().with(atom).bits() == 0 {
-                continue;
-            }
             self.poll()?;
             let mut meter = Meter::new(self.meter);
             let reading = letters

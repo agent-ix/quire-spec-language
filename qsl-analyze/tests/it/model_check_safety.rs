@@ -15,6 +15,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
+use qsl_eval::temporal::UndefinedCause;
 use qsl_replay::{
     CounterexampleKind, IncompleteCause, ModelCheckItem, ModelCheckLimit, ModelCheckLimits,
     ModelCheckOutcome, ReachedLimit, TemporalCounterexample,
@@ -154,7 +155,6 @@ fn bounded_each_clauses_are_decided_on_the_product() {
 /// `eventually[0,5] holds(c.value > 3)` `on origin` is violated by that
 /// closure at the terminal state, with the prefix `0 -inc-> 1 -inc-> 2
 /// -inc-> 3`, while `eventually[0,5] holds(c.value = 3)` holds.
-#[trace("TC-521")]
 #[test]
 fn a_terminal_state_closes_a_bounded_monitor_with_false_letters() {
     let world = counter_world(
@@ -186,7 +186,6 @@ fn a_terminal_state_closes_a_bounded_monitor_with_false_letters() {
 /// stutter after value 3, whose behaviour is the prefix `0 -inc-> 1 -inc-> 2
 /// -inc-> 3` stuttered forever; `always (holds(c.value = 2) implies
 /// eventually[0,1] holds(c.value = 3))` holds.
-#[trace("TC-521")]
 #[test]
 fn a_terminal_state_stutters_under_infinite_trace() {
     let world = counter_world(
@@ -365,6 +364,78 @@ fn a_formula_violation_before_an_undefined_position_and_an_unread_position() {
         vec![value(|v| (v != 2).then(|| 6 % (2 - v) == 0 && v == 1))],
     );
     holds(&outcome);
+}
+
+/// The counterexample's undefined evaluation and the counter values on its
+/// prefix.
+fn undefined(world: &World, outcome: &ModelCheckOutcome) -> (u64, Vec<i64>) {
+    let counterexample = violated(outcome);
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
+        panic!("expected an undefined evaluation: {counterexample:?}");
+    };
+    assert_eq!(
+        evaluation.cause,
+        UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
+    );
+    (
+        evaluation.site.position,
+        values(world, &["c"], counterexample, "c", "value"),
+    )
+}
+
+/// ADR-018 UE-1: a claim reads every atom of the claim at every position it
+/// reads, also once its monitor no longer depends on the atom. Over the
+/// Counter subject under infinite-trace, `holds(c.value >= 0) release
+/// holds(6 mod (2 - c.value) >= 0)` is discharged at position 0, yet its
+/// second atom is still read at position 2, where it is undefined: the run is
+/// violated with `UndefinedEvaluation` at position 2, prefix `0 -inc-> 1
+/// -inc-> 2`.
+#[test]
+fn a_discharged_infinite_trace_claim_still_reads_every_atom() {
+    let world = counter_world(
+        INFINITE,
+        &[Clause {
+            activation: ORIGIN,
+            formula: "holds(c.value >= 0) release holds(6 mod (2 - c.value) >= 0)",
+        }],
+    );
+    let outcome = checked(
+        &world,
+        0,
+        &["c"],
+        vec![
+            value(|v| Some(v >= 0)),
+            value(|v| (v != 2).then(|| 6 % (2 - v) >= 0)),
+        ],
+    );
+    assert_eq!(undefined(&world, &outcome), (2, vec![0, 1, 2]));
+}
+
+/// ADR-018 UE-1 for TP-2 `on origin`: the claim reads positions 0 to its
+/// horizon `h`. Over the Counter subject under event-position
+/// false-extension, `holds(c.value = 1) implies eventually[0,3] holds(6 mod
+/// (2 - c.value) = 0)` is decided true at position 0, whose antecedent is
+/// false, yet position 2 is within the horizon 3 and reads the consequent's
+/// atom undefined there: violated with `UndefinedEvaluation` at position 2.
+#[test]
+fn a_decided_bounded_claim_still_reads_every_atom_up_to_its_horizon() {
+    let world = counter_world(
+        BOUNDED,
+        &[Clause {
+            activation: ORIGIN,
+            formula: "holds(c.value = 1) implies eventually[0,3] holds(6 mod (2 - c.value) = 0)",
+        }],
+    );
+    let outcome = checked(
+        &world,
+        0,
+        &["c"],
+        vec![
+            value(|v| Some(v == 1)),
+            value(|v| (v != 2).then(|| 6 % (2 - v) == 0)),
+        ],
+    );
+    assert_eq!(undefined(&world, &outcome), (2, vec![0, 1, 2]));
 }
 
 /// A TP-4 clause is not decided by the first phase and an `on each`
