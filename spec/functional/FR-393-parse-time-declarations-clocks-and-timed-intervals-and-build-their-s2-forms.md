@@ -107,8 +107,8 @@ pub enum OperatorInterval {
 `decimal-literal`, `rational(n, d)` or `decimal(c, s)`) and two integers whose
 meaning the kind fixes (the integer and 1; the digits without the point and
 the count of fraction digits; `n` and `d`; the coefficient and the scale).
-S2 neither reduces it nor raises ten to a scale, so a scale of any size costs
-nothing at S2, and the form keeps what was written. S3 reduces it to a
+S2 neither reduces it nor raises ten to a scale, and the form keeps what was
+written. S2 bounds only the scale of a `decimal(c, s)` (next section). S3 reduces it to a
 numerator and denominator in lowest terms, after bounding the value as
 written by `s3.rational_bits` and refusing one past it with the limit
 outcome FR-185 states.
@@ -153,6 +153,21 @@ the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
   written (`0.0005` is held as digits `5` and `4` fraction digits, which S3
   reduces to `1/2000`) and SHALL record each interval end's openness from
   its bracket.
+- If the scale `s` of a `decimal(c, s)` is larger than the byte length of the
+  unit's source, S2 SHALL refuse the unit with `stage_limit_exceeded`
+  (`FormsCause::DecimalScaleBeyondSource`), naming the scale as the counter
+  and the source length as the bound, at the scale's span, and SHALL build no
+  form. A scale up to the source length builds. A `decimal-literal` needs no
+  such rule, since its fraction digits are spelled in the source. The
+  source length is bounded by `s1.input_bytes` (FR-255), so this bound keeps
+  S2's work within S1's limits; the setting that raises it is
+  `s1.input_bytes`, which admits a longer source.
+- A scale that S2 admits can still describe a denominator far larger than
+  S3 accepts. S3 measures the value as written against `s3.rational_bits`
+  (FR-185) and refuses one past it before expanding `10^s`, so the two
+  bounds compose: S2 refuses a scale that no source of that length could
+  spell as a literal, and S3 refuses a value whose written size is past the
+  checking ceiling.
 - S2 SHALL leave unchecked for S3: time-source uniqueness, unit dimension,
   clock typing, the negativity of a constant, interval ordering and
   punctuality, and which profile admits a timed interval (FR-230, FR-234).
@@ -168,6 +183,7 @@ the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
 | FR-393-AC-5 | `eventually[0, 3 ms] holds(p)`, `eventually[0 ms, 3] holds(p)` and `eventually[0 ms, *] holds(p)` fail at S1 with a parse diagnostic at `3 ms`, `3` and `*` respectively, and build no form. | Test (TC-1078) |
 | FR-393-AC-6 | The `Rpc` unit of AC-1, once with no facet selected and once with the complete facets selected, builds equal forms under `PartialEq`; S2 reports no facet diagnostic for either. | Test (TC-1078) |
 | FR-393-AC-7 | `x: Clock` builds `TypeForm::Clock`; `x: M::Clock` builds a named type form for the qualified name and no `TypeForm::Clock`; a unit that declares an unqualified type named `Clock` fails at S1 with a parse diagnostic at the declared name. | Test (TC-1078) |
+| FR-393-AC-8 | `decimal(1, 4294967295)` as a quantity magnitude in a unit of about 60 bytes is refused at S2 with `stage_limit_exceeded`/`DecimalScaleBeyondSource`, naming scale `4294967295` and the source length, at the scale's span, and no form is built. The same magnitude with a scale equal to the source length builds; its `ExactValue` is held as written with no `10^s` expanded. In a unit of at least 19,729 bytes, `decimal(1, 19729)` builds at S2 and is refused at S3 by `s3.rational_bits` (FR-185-AC-2). | Test (TC-1078) |
 
 ## Dependencies
 

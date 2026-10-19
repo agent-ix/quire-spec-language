@@ -82,7 +82,7 @@ span on refusal.
   second SHALL refuse `invalid_timed_model`/`duplicate-time-source` at
   its span, naming the first (QSpec FR-415).
 - The checker SHALL resolve the unit `u` as a unit of QSpec FR-142's time
-  dimension, and SHALL refuse a unit of another dimension with
+  dimension (next section), and SHALL refuse a unit of another dimension with
   `ill_typed`/`type-mismatch` at the unit's span.
 - Under `time tick O period p unit u`, the checker SHALL resolve `O` to an
   operation of the model (FR-103), refusing `missing_declaration`/
@@ -92,6 +92,49 @@ span on refusal.
 - A model with a `time` member is a timed model. The `TimedModel` SHALL be
   part of the checked package, so two models that differ only in it have
   different package identities.
+
+### The time dimension and its units
+
+QSL declares no dimension and no unit of its own. QSpec FR-142 takes
+dimensions and units from the identities declared in the admitted domain
+package, and QSL's unit identities come from there (FR-088, FR-091); `ms` and
+`s` are not built in.
+
+- The **time dimension** SHALL be the admitted dimension whose vector is the
+  single base dimension `time` with exponent 1. The **time units** SHALL be
+  the admitted unit nodes of that dimension identity. A domain package that
+  uses `time dense unit ms` declares `s` as the zero-offset root of the time
+  dimension and `ms` as a unit whose edge to `s` has scale `1/1000`; the
+  domain package, not QSL, owns those declarations.
+- To read `time dense unit u`, `time tick O period p unit u` or a quantity
+  such as `3 ms`, the checker SHALL look `u` up by name among the admitted
+  package's units, read the dimension identity of the unit it finds, compare
+  it with the time dimension, and convert the quantity exactly by composing
+  the unit's edges to the root (QSpec FR-142). A quantity in one time unit
+  therefore converts to `u` with no unit table in QSL.
+- If the package has no unit named `u`, the checker SHALL refuse
+  `missing_declaration`/`missing-name` at the unit's span, naming `u`.
+- If the package declares no time dimension, the checker SHALL refuse a
+  `time` member `missing_declaration`/`missing-name` at the member, naming
+  the dimension `time`.
+- The unit lookup and the dimension comparison SHALL use the admitted
+  package's identities, so two models that read different packages' `ms` have
+  different package identities.
+
+### Clock fields and the domain package
+
+A `Clock` field belongs to a model object type, and object types come from
+the admitted domain package. That package has no `Clock` field type
+(`ScalarValueDomain` has none), so no admitted object type can carry a
+clock today; adding one is a filament-core-data contract change that QSL
+does not make (Remaining work: STD-192). Until it lands:
+
+- the checker SHALL refuse a `Clock` field of a package-admitted object type
+  `unsupported_construct`/`not-yet-implemented` at the field's span, and
+- every FR-230 vector that declares a clock field (FR-230-AC-1, the clock
+  refusals of FR-230-AC-2 and FR-230-AC-4) waits on that change, while the
+  time-source vectors (the `time` member, its unit and its tick period)
+  run now.
 
 ### Clocks and resets
 
@@ -153,6 +196,7 @@ span on refusal.
 | FR-230-AC-2 | Refusals, each at its span: a second `time` member (`invalid_timed_model`/`duplicate-time-source`); `time dense unit m` (`ill_typed`/`type-mismatch`); `self.n = self.x` with `n: Int` (`invalid_timed_model`/`clock-read-outside-constraint`); `x <= self.y` with both clocks (`invalid_timed_model`/`clock-comparison`); `x >= -1 ms` (`invalid_timed_model`/`negative-clock-constant`); a `Clock` field under `time tick` (`invalid_timed_model`/`clock-without-dense-time`); `self.x = self.x + 1` (`invalid_timed_model`/`clock-write`); a time invariant body `x >= 1` (`invalid_timed_model`/`time-invariant-shape`); `urgent reply` where `reply` guards on `x` (`invalid_timed_model`/`urgent-guard-reads-clock`); `urgent when P` in an untimed model (`missing_declaration`/`missing-name`). | Test (TC-685) |
 | FR-230-AC-3 | `time tick tick period 1/2 ms unit ms` checks to `TimeSource::Tick` with period `1/2`; `period 0 ms` refuses `invalid_model_binding`/`malformed-declaration`; a tick operation name that resolves to nothing refuses `missing_declaration`/`missing-name`. | Test (TC-685) |
 | FR-230-AC-4 | A guard `(x < 1 or x > 2) and self.ready` checks to two convex parts, `x < 1` and `x > 2`, each with the data predicate `self.ready`. A model with 64 clock fields over a universe of 100 objects and a constant of `10^40 ms` checks with no refusal. | Test (TC-685) |
+| FR-230-AC-5 | In a domain package that declares the time dimension with `s` (root) and `ms` (`1/1000` of `s`), `time dense unit ms` and `time dense unit s` check, and a quantity `3 ms` read under `unit s` converts to `3/1000`. `time dense unit hour` refuses `missing_declaration`/`missing-name` naming `hour`. In a package with no time dimension, `time dense unit ms` refuses `missing_declaration`/`missing-name` naming `time`. A model that reads a package whose `ms` is declared as `1/1000` and one whose `ms` is declared as `1/100` have different package identities. A `Clock` field of a package-admitted object type refuses `unsupported_construct`/`not-yet-implemented` at the field's span. | Test (TC-685) |
 
 ## Dependencies
 
@@ -161,11 +205,14 @@ span on refusal.
   (operations and frames), [FR-104](FR-104-check-state-clauses.md) (state
   predicates), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md)
   (the sibling `terminal` declaration).
-- QSpec FR-142 (the time dimension and exact unit conversion) and QSpec
-  FR-205 (exact quantities).
+- QSpec FR-142 (dimensions, units and exact unit conversion, read from the
+  admitted package) and QSpec FR-205 (exact quantities).
+- [FR-088](FR-088-clause-name-and-type-identity.md) (unit identity).
 
 ## References
 
 - QSpec half: QSpec FR-415 (Linear STD-139) owns the shared grammar of the
   `time` member, `Clock` fields, resets, clock constraints, time invariants
   and `urgent` (ADR-026 OV-7).
+- Remaining work: STD-192 (filament-core-data: a `Clock` field type and the time
+  dimension declarations in the admitted domain package).
