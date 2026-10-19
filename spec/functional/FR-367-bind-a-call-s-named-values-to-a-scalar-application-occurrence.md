@@ -37,8 +37,14 @@ artifact and reports no verdict.
 
 ## Inputs
 
-- The compiled and emitted package the call runs against, as FR-100's `run`
-  holds it after its compile and package stages, with its `package_id`.
+- The package the call runs against: Contract IR's admitted
+  `CheckedPackageV2` of the unit's emitted bytes, which the caller admits once
+  with `read_checked_package` under the evidence `admission_evidence` returns,
+  and the `AdmittedModels` and `CheckedUnit` those bytes were emitted from (the
+  I1 and S4 products FR-100's `run` holds before its package stage). The
+  caller SHALL pass the admission of the bytes emitted from that
+  `CheckedUnit`; the entry checks the pairing by `package_id` and refuses a
+  mismatch (Behavior 1).
 - A `Call` (FR-100): `function`, `arguments`, `accounting`, `supplied`.
 - A `ScalarOccurrence`, the scalar claim's location (FR-357 Inputs, operator
   level), with exactly these typed members:
@@ -51,29 +57,40 @@ artifact and reports no verdict.
 
 ## Outputs
 
-`bind_scalar_operands(package, call, occurrence, objects, cancel) ->
-Result<BindOutcome, Box<RunRefusal>>`, where `package` is a `&BindPackage` (the
-compiled and emitted package read back through Contract IR), `call` a `&Call`,
-`occurrence` a `&ScalarOccurrence`, `objects` the `&ObjectEnvironment` FR-100's
-`run` takes and `cancel` the `&Cancel` handle polled as `run` polls it. It is
-shaped as FR-100's `run` returns its outcome. The `Err` arm
+`bind_scalar_operands(admitted, models, checked, call, occurrence, environment,
+cancel) -> Result<BindOutcome, Box<RunRefusal>>`, where `admitted` is the
+caller's `&CheckedPackageV2`, `models` the `&AdmittedModels`, `checked` the
+`&CheckedUnit`, `call` a `&Call`, `occurrence` a `&ScalarOccurrence`,
+`environment` the `&ObjectEnvironment` FR-100's `run` takes and `cancel` the
+`&Cancel` handle polled as `run` polls it. The entry takes no package bytes:
+it neither reads nor admits the emitted package, and reads every operand from
+`admitted` as given.
+
+The entry is shaped as FR-100's `run` returns its outcome. The `Err` arm
 is FR-100's own `RunRefusal`, unchanged: the call-admission refusals of
 Behavior 1 and the internal failure (`RunRefusal::Fault`, FR-100 "Internal
 failure at S6a"). The `Ok` arm is exactly one of:
 
 - `BindOutcome::Bound(BoundScalarOperands)`;
-- `BindOutcome::Refused(BindRefusal)`, an occurrence or operand refusal below.
+- `BindOutcome::Refused(BindRefusal)`, a package, occurrence or operand refusal below.
 
 The binding evaluates nothing, so it reports no `Incomplete` outcome: an
 accounting limit the evaluation would reach does not stop it, and a
 supplied-value admission stop is the `Err` arm's `RunRefusal::Supplied`, as
 `run` returns it.
 
+`admission_evidence(models, checked, emitted, imports) ->
+Result<CheckedPackageEvidence, Box<RunRefusal>>` returns the evidence the
+caller's one admission needs: the emitter's own evidence, every domain
+package document the unit's `model` declarations selected, and the admitted
+packages of the dependency closure the unit's `import`s reached, read under
+the I2 limits `imports`. It reads no byte of the emitted package. A refusal is
+the internal failure `RunRefusal::Fault`.
+
 `BoundScalarOperands` has accessors for these typed members:
 
 | Member | Value |
 | --- | --- |
-| `package_id` | The package's `package_id` |
 | `occurrence` | The `ScalarOccurrence` as supplied |
 | `operands` | `&[BoundOperand]`, one per application argument, in the application's wire argument order |
 | `values()` | `Vec<i64>`: the `value` of each `BoundOperand` in the same order, the generated oracle's argument order |
@@ -105,6 +122,7 @@ supplied-value admission stop is the `Err` arm's `RunRefusal::Supplied`, as
 
 | Variant | Carries | Code and cause |
 | --- | --- | --- |
+| `AdmittedPackage` | the admitted package's `package_id` digest, and the checked unit's emitted `package_id` digest or none when the unit was never emitted | `stale_dependency`/`content-mismatch` |
 | `ScalarIdentity` | a cause: FR-357's `Node`, `Operator` or `Occurrence`, or this requirement's `Function` | `stale_dependency`/`content-mismatch` |
 | `Operands` | Contract IR's `CheckedScalarOperandError` | `unsupported_construct`/`expression-form` |
 | `OperandNotParameter` | `ordinal` | `unsupported_construct`/`expression-form` |
@@ -125,7 +143,10 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
 
 ## Behavior
 
-1. The entry SHALL admit the call as FR-100's `run` does before the
+1. The entry SHALL first compare the admitted package's `package_id` with the
+   `package_id` the emitter computed for the checked unit, and SHALL return
+   `Refused(AdmittedPackage)` when they differ or the unit was never emitted,
+   before any call admission or occurrence check. The entry SHALL then admit the call as FR-100's `run` does before the
    evaluation: it SHALL select `Call.function` (`select`), join each argument
    to the parameter of the same declared name, and convert each value to its
    parameter's declared type. It SHALL return `Err` with the `RunRefusal`
@@ -216,6 +237,8 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
 | FR-367-AC-8 | Binding the same request twice gives equal results. Binding does not call the function: a call whose evaluation would exceed `work_units` still binds when its arguments are admitted. The `undefined` half is not exercised for three kernel undefined reasons, which the checker discharges statically: an integer division by a divisor not proved nonzero, a `reduce` over a source not proved nonempty (`Unproved(NonemptyReduction)`), and a `sum` whose range is not proved inside its declared domain (`Unproved(Range)`) each refuse the unit at check, over a scalar or a `Reference` argument alike. Not covered: none-value, ieee-not-finite. A call that `run` reports `Incomplete` at `work_units` still binds, and binding reports no `Incomplete` outcome. | Test (TC-1053) |
 | FR-367-AC-9 | The `BoundScalarOperands` returned for a claim equals, member for member, what FR-357's operator-level claim for the same occurrence holds as its ordered operand values, and `values()` is accepted unchanged as the `operands` of a generated oracle's native request (CG `KaniScalarNativeRequest.operands`); a differently ordered or reconstructed vector is a different binding. | Test (TC-1053) |
 | FR-367-AC-10 | Over `function lt using v(a: Int[0, 9]): Int[0, 10] pure { let x = a in x + 1 }`, the `+` occurrence returns `Refused(OperandNotArgument { ordinal: 0, parameter: x, level })` with the binder's declared name and level (`unsupported_construct`/`expression-form`) and binds no partial list; the same holds for a quantifier-bound variable operand, such as `x` in `forall(x in deref(n).items: x + 1 > 0)` over a `Reference<M::Node>` argument. | Test (TC-1053) |
+| FR-367-AC-11 | The entry binds from the caller's one admission: with the emitted unit and its bytes dropped after the caller's `read_checked_package` call, `bind_scalar_operands` over the admitted `CheckedPackageV2` and the unit's `AdmittedModels` and `CheckedUnit` binds `sub`'s `-` occurrence to `[7, 2]` for `b = 2`, `a = 7`. The entry has no byte or `EmittedUnit` input, so by signature it can neither read nor admit the emitted package a second time; the compiler enforces this, and the test observes the binding only. | Test (TC-1053) |
+| FR-367-AC-12 | An admitted package that is not the admission of the checked unit's own emitted bytes, such as the admission of `sub` alone passed with the `CheckedUnit` of `sub` plus a second function `neg`, returns `Refused(AdmittedPackage)` (`stale_dependency`/`content-mismatch`) carrying both `package_id` digests, even though `sub`'s `-` occurrence is a node of both packages; the same occurrence binds `[7, 2]` over the second unit's own admission. | Test (TC-1053) |
 
 ## Dependencies
 
