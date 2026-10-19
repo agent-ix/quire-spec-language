@@ -115,6 +115,15 @@ reports.
   QSL SHALL then report `NoInstance` for the item before it explores any
   state, and FR-127 settles it `inconclusive`, so an item that was never
   evaluated is never read as holding.
+- QSL SHALL instantiate a checked hyper clause (FR-172) at request time with
+  one instance per key of the universe of the one population each object
+  parameter `v: V::T` resolves to, the instances ranging over the product of
+  those universes. For each of those populations with no universe, QSL SHALL
+  return `NotSimulated::RequiresBound` naming it (FR-120), before
+  instantiating.
+- When any one of those populations has an empty universe, the hyper clause
+  has zero instances. QSL SHALL then report `NoInstance` for the item before
+  it explores any state, and FR-127 and FR-182 settle it `inconclusive`.
 - QSL SHALL give a clause or claim with no `over` parameter one instance, with
   no bound object.
 
