@@ -1202,7 +1202,7 @@ impl Checker<'_, '_> {
 /// Whether the clause checker's `cause` is one a stage reports as its own
 /// (FR-381 refusals for non-Boolean roots, undischarged obligations and the
 /// like).
-fn wraps(cause: &CheckCause) -> bool {
+pub(super) fn wraps(cause: &CheckCause) -> bool {
     matches!(
         cause,
         CheckCause::IllTyped(_)
@@ -1276,7 +1276,7 @@ fn is_qualified(name: &str) -> bool {
 
 /// The span of the node `location` reaches in `form`, or the whole
 /// expression's.
-fn span_of(form: &ExpressionForm, location: &Location) -> Span {
+pub(super) fn span_of(form: &ExpressionForm, location: &Location) -> Span {
     form.spans
         .at(&location.path())
         .or_else(|| form.spans.at(&[]))
@@ -1288,7 +1288,11 @@ fn span_of(form: &ExpressionForm, location: &Location) -> Span {
 /// reference-typed value, an explicit dereference, a navigation, a
 /// reachability, a lookup or population read and a dispatch call, and every
 /// other read of the `over` input. Outermost reads only, in source order.
-fn model_state_reads(body: &CheckedBody, form: &ExpressionForm, input: Option<usize>) -> Vec<Span> {
+pub(super) fn model_state_reads(
+    body: &CheckedBody,
+    form: &ExpressionForm,
+    input: Option<usize>,
+) -> Vec<Span> {
     let mut spans = Vec::new();
     for node in body.root().descendants() {
         let location = node.location();

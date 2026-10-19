@@ -12,30 +12,51 @@
 //! control and must be sound for the branches it lists; a protocol holds at
 //! most one `terminal` and one `scheduling` member.
 //!
-//! Two parts of a channel and a join carry an expression or a named
-//! function no checker reads yet: a `fifo` key and a `predicate(name)`
-//! join. `protocol_clause::content` refuses those as unimplemented through
-//! the constructs S2 records for them, so a protocol holding one never
-//! compiles unchecked.
+//! Each `send` and `receive` names a declared channel and binds its
+//! `carries` type. A `fifo` key is checked through the one clause checker
+//! (FR-104) over its binder and constants only: it reads no model state and
+//! its type admits `=`. A `predicate(name)` join names a function no checker
+//! reads yet; `protocol_clause::content` refuses it as unimplemented through
+//! the construct S2 records for it, so a protocol holding one never compiles
+//! unchecked.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering, ChannelOverflow, JoinPolicy,
-    ParallelForm, ProtocolDeclarationForm, ProtocolMemberForm, TypeFormHead,
+    BinaryOperator, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
+    ChannelOverflow, Expression, ExpressionForm, JoinPolicy, ParallelForm,
+    ParameterForm, ProtocolDeclarationForm, ProtocolMemberForm, TypeFormHead,
 };
 use qsl_foundation::Span;
 use quire_exact::ValueType;
 use quire_semantic_value::location::{Location, Origin};
 
+use super::ir::CheckedBody;
+use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, CheckedBinder, Goal};
 use super::refusal::{ChannelEnd, CheckCause, CheckRefusal, JoinFault, ProtocolAnchorCause};
+use super::state_clause::ClauseDeclarations;
 use super::type_form::resolve_form;
 use super::Scope;
+use crate::family::CheckContext;
+
+/// A checked channel's ordering premise (FR-218 "Channels").
+#[derive(Clone, Debug, PartialEq)]
+pub enum CheckedOrdering {
+    /// `ordering unordered`: no binder and no key.
+    Unordered,
+    /// `ordering fifo by (binder: T) { key }`.
+    Fifo {
+        /// The message binder, of the channel's `carries` type.
+        binder: CheckedBinder,
+        /// The checked key, whose type admits `=`.
+        key: CheckedBody,
+    },
+}
 
 /// One channel FR-218 has checked: its roles, its payload type and its four
 /// premises, each exactly as written (FR-218 "Channels"). The capacity of a
 /// `symbolic(name)` channel keeps the name unresolved.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CheckedChannel {
     /// The declared channel name.
     pub name: String,
@@ -46,7 +67,7 @@ pub struct CheckedChannel {
     /// The `carries` type, resolved.
     pub carries: ValueType,
     /// The ordering premise.
-    pub ordering: ChannelOrdering,
+    pub ordering: CheckedOrdering,
     /// The delivery premise.
     pub delivery: ChannelDelivery,
     /// The capacity premise.
@@ -68,13 +89,30 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
     }
 }
 
+/// The clause checker's inputs a FIFO key is checked with, and the
+/// package's running node total.
+struct Keys<'k, 'a, 'c> {
+    declarations: &'k ClauseDeclarations<'a>,
+    cx: &'k mut CheckContext<'c, Scope>,
+    nodes: u64,
+}
+
 /// FR-218: the channels, joins and `terminal`/`scheduling` members of
-/// `protocol`, or the refusals in source position order. The channels are
-/// returned in source order.
+/// `protocol`, with the package's running node total after the FIFO keys,
+/// or the refusals in source position order. The channels are returned in
+/// source order.
 pub(super) fn check(
     protocol: &ProtocolDeclarationForm,
-    scope: &Scope,
-) -> Result<Vec<CheckedChannel>, Vec<CheckRefusal>> {
+    declarations: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, ClauseDeclarations<'_>>,
+) -> Result<(Vec<CheckedChannel>, u64), Vec<CheckRefusal>> {
+    let scope = declarations.scope;
+    let mut cx = cx.reborrow(scope);
+    let mut keys = Keys {
+        declarations,
+        cx: &mut cx,
+        nodes: declarations.nodes_used,
+    };
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
     let roles: BTreeSet<&str> = protocol
         .roles
@@ -100,7 +138,7 @@ pub(super) fn check(
 
     let mut checked = Vec::with_capacity(protocol.channels.len());
     for channel in &protocol.channels {
-        if let Some(channel) = check_channel(channel, &roles, scope, &mut refusals) {
+        if let Some(channel) = check_channel(channel, &roles, &mut keys, &mut refusals) {
             checked.push(channel);
         }
     }
@@ -113,7 +151,7 @@ pub(super) fn check(
     refuse_repeated_members(protocol, &mut refusals);
 
     if refusals.is_empty() {
-        return Ok(checked);
+        return Ok((checked, keys.nodes));
     }
     // Source position order; the sort is stable, so refusals at one span
     // keep the order they were found in.
@@ -126,9 +164,10 @@ pub(super) fn check(
 fn check_channel(
     channel: &ChannelForm,
     roles: &BTreeSet<&str>,
-    scope: &Scope,
+    keys: &mut Keys<'_, '_, '_>,
     refusals: &mut Vec<(Span, CheckRefusal)>,
 ) -> Option<CheckedChannel> {
+    let scope = keys.declarations.scope;
     let before = refusals.len();
     for (end, role) in [
         (ChannelEnd::From, &channel.from),
@@ -177,6 +216,12 @@ fn check_channel(
             None
         }
     };
+    let ordering = match &channel.ordering.value {
+        ChannelOrdering::Unordered => Some(CheckedOrdering::Unordered),
+        ChannelOrdering::Fifo { binder, key } => {
+            check_fifo(channel, binder, key, carries.as_ref(), keys, refusals)
+        }
+    };
     if refusals.len() != before {
         return None;
     }
@@ -185,12 +230,137 @@ fn check_channel(
         from: channel.from.name.clone(),
         to: channel.to.name.clone(),
         carries: carries?,
-        ordering: channel.ordering.value.clone(),
+        ordering: ordering?,
         delivery: channel.delivery.value,
         capacity: channel.capacity.value.clone(),
         overflow: channel.overflow.value,
         span: channel.span,
     })
+}
+
+/// FR-218 "Channels": `ordering fifo by (m: T) { key }`. `T` resolves and
+/// is the channel's `carries` type (not compared with a refused `carries`
+/// type); `key` is checked through the clause checker over `m` and
+/// constants only, reads no model state, and is of a type over which the
+/// clause checker admits `=`.
+fn check_fifo(
+    channel: &ChannelForm,
+    binder: &ParameterForm,
+    key: &ExpressionForm,
+    carries: Option<&ValueType>,
+    keys: &mut Keys<'_, '_, '_>,
+    refusals: &mut Vec<(Span, CheckRefusal)>,
+) -> Option<CheckedOrdering> {
+    let name = channel.name.name.as_str();
+    let binder_type = match resolve_form(keys.declarations.scope, &binder.value_type) {
+        Ok(binder_type) => binder_type,
+        Err(error) => {
+            refusals.push((
+                error.span,
+                refusal(ProtocolAnchorCause::BinderType {
+                    binder: binder.name.name.clone(),
+                    fault: error.fault,
+                    span: error.span,
+                }),
+            ));
+            return None;
+        }
+    };
+    if let Some(carries) = carries {
+        if *carries != binder_type {
+            refusals.push((
+                binder.value_type.span,
+                refusal(ProtocolAnchorCause::CarriesMismatch {
+                    channel: name.to_owned(),
+                    expected: carries.clone(),
+                    actual: binder_type.clone(),
+                    span: binder.value_type.span,
+                }),
+            ));
+            return None;
+        }
+    }
+    let bound = [(binder.name.name.clone(), binder_type.clone())];
+    let body = match keys.type_key(key, &bound, Goal::Infer) {
+        Ok(body) => body,
+        Err(CheckRefusal { location, cause }) => {
+            let span = span_of(key, &location);
+            let wrapped = if wraps(&cause) && cause.cause().is_some() {
+                refusal(ProtocolAnchorCause::KeyClause {
+                    channel: name.to_owned(),
+                    cause: Box::new(cause),
+                    span,
+                })
+            } else {
+                // A reached limit, a cancellation or a fault keeps its own
+                // cause.
+                CheckRefusal { location, cause }
+            };
+            refusals.push((span, wrapped));
+            return None;
+        }
+    };
+    let reads = model_state_reads(&body, key, None);
+    if !reads.is_empty() {
+        for span in reads {
+            refusals.push((
+                span,
+                refusal(ProtocolAnchorCause::KeyModelState {
+                    channel: name.to_owned(),
+                    span,
+                }),
+            ));
+        }
+        return None;
+    }
+    let key_type = body.root().value_type().clone();
+    // `=` over two values of the key's type, as the clause checker types it.
+    let equal = ExpressionForm {
+        expression: Expression::binary(
+            BinaryOperator::Equal,
+            Expression::name("left"),
+            Expression::name("right"),
+        ),
+        spans: key.spans.clone(),
+    };
+    let operands = [
+        ("left".to_owned(), key_type.clone()),
+        ("right".to_owned(), key_type.clone()),
+    ];
+    if keys.type_key(&equal, &operands, Goal::Boolean).is_err() {
+        let span = span_of(key, &Location::root(Origin::Expression));
+        refusals.push((
+            span,
+            refusal(ProtocolAnchorCause::KeyEquality {
+                channel: name.to_owned(),
+                key_type,
+                span,
+            }),
+        ));
+        return None;
+    }
+    Some(CheckedOrdering::Fifo {
+        binder: CheckedBinder {
+            name: binder.name.name.clone(),
+            value_type: binder_type,
+        },
+        key: body,
+    })
+}
+
+impl Keys<'_, '_, '_> {
+    /// `form` checked through the clause checker over `bound` alone.
+    fn type_key(
+        &mut self,
+        form: &ExpressionForm,
+        bound: &[(String, ValueType)],
+        goal: Goal<'_>,
+    ) -> Result<CheckedBody, CheckRefusal> {
+        let mut nodes = self.nodes;
+        let typed = type_body(form, bound, goal, self.declarations, &mut nodes, self.cx);
+        self.nodes = nodes;
+        typed
+    }
 }
 
 /// FR-218 "Channels": each `send` and `receive` names a declared channel
@@ -415,10 +585,13 @@ fn refuse_repeated_members(
 }
 
 #[cfg(test)]
+mod fifo_tests;
+
+#[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
     use qsl_forms::{
-        build_unit, ChannelCapacity, ChannelDelivery, ChannelOrdering, ChannelOverflow,
+        build_unit, ChannelCapacity, ChannelDelivery, ChannelOverflow,
         LossSelector,
     };
     use qsl_foundation::SourceIdentity;
@@ -699,7 +872,7 @@ mod tests {
         let [base, delivery, tail, new] = recorded(&graph) else {
             panic!("four channels: {:?}", recorded(&graph));
         };
-        assert_eq!(base.ordering, ChannelOrdering::Unordered);
+        assert_eq!(base.ordering, super::CheckedOrdering::Unordered);
         assert_eq!(base.delivery, ChannelDelivery::ExactlyOncePremise);
         assert_eq!(base.capacity, ChannelCapacity::Symbolic("Bound".to_owned()));
         assert_eq!(base.overflow, ChannelOverflow::Loss(LossSelector::Head));
@@ -724,13 +897,11 @@ mod tests {
         assert_ne!(same_but_place(tail), same_but_place(new));
     }
 
-    /// Part of FR-218-AC-22 (TC-1065 rows 4 and 5): two cases or two
-    /// branches of one label refuse at both labels in source order, and a
-    /// `choice` with one case and a `parallel` with one branch fail at the
-    /// parser. Only a sound `parallel` is shown to check: a sound `choice`
-    /// still refuses `not-yet-implemented`, so the acceptance half of the
-    /// criterion is not verified for `choice`.
-    #[trace("TC-1065")]
+    /// FR-218-AC-22 (TC-1065 rows 4 and 5): two cases or two branches of
+    /// one label refuse at both labels in source order, and a `choice` with
+    /// one case and a `parallel` with one branch fail at the parser; two
+    /// cases and two branches check.
+    #[trace("TC-1065", "FR-218-AC-22")]
     #[test]
     fn equal_case_or_branch_labels_refuse_and_a_single_one_fails_at_the_parser() {
         let choice = "choice Decide by Buyer visible () { \
@@ -772,6 +943,12 @@ mod tests {
             assert!(!parsed.is_admissible(), "{run}");
         }
         checks(&pipeline("", &parallel("all [east, west]")));
+        checks(&pipeline(
+            "",
+            "choice Decide by Buyer visible () { \
+             case shipped when { true } sequence A { } \
+             case held when { false } sequence B { } }",
+        ));
     }
 
     /// FR-218-AC-23 (TC-1065 rows 6 and 7): an unsound join list refuses
@@ -944,17 +1121,14 @@ mod tests {
         }
     }
 
-    /// The parts of a channel, a join and a protocol whose expression or
-    /// function no checker reads yet refuse `unsupported_construct`/
-    /// `not-yet-implemented` rather than compile unchecked.
+    /// The parts of a join and a protocol whose expression or function no
+    /// checker reads yet refuse `unsupported_construct`/`not-yet-implemented`
+    /// rather than compile unchecked.
     #[trace("TC-1065")]
     #[test]
-    fn a_fifo_key_a_predicate_join_and_a_terminal_predicate_are_not_compiled_unchecked() {
-        let fifo = "channel Q from Seller to Buyer carries Plain ordering fifo by (m: Plain) \
-            { m.ready } delivery unknown capacity 1 overflow reject;";
+    fn a_predicate_join_and_a_terminal_predicate_are_not_compiled_unchecked() {
         let predicate_join = parallel("predicate(done) [east, west]");
         for (members, run, construct) in [
-            (fifo, RUN, "channel ordering fifo"),
             ("", predicate_join.as_str(), "join predicate"),
             ("terminal when { true };", RUN, "terminal when"),
         ] {

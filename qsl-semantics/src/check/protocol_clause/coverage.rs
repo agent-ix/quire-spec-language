@@ -142,17 +142,16 @@ fn uncovered_expressions(protocol: &ProtocolDeclarationForm) -> Vec<(Span, &'sta
 
 /// Whether a protocol construct of `kind` is checked: a protocol-level
 /// `capture` and an `activation on each` are (FR-381, `protocol_obligation`),
-/// and a plain `channel` is (FR-218, `protocol_controls`).
+/// and a `channel` with its `fifo` key is (FR-218, `protocol_controls`).
 /// Exhaustive, so a new construct kind must be classified here.
 fn covered_construct(kind: ProtocolConstructKind) -> bool {
     use ProtocolConstructKind as K;
     match kind {
-        K::Capture | K::ActivationEach | K::Channel => true,
+        K::Capture | K::ActivationEach | K::Channel | K::FifoOrdering => true,
         K::ReplicatedRole
         | K::Relationship
         | K::Requirement
         | K::Related
-        | K::FifoOrdering
         | K::JoinPredicate
         | K::TerminalWhen => false,
     }

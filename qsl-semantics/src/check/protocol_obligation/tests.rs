@@ -4,11 +4,9 @@
 //! fixture R. Every assertion is on the refusal's typed code, cause, members
 //! and span text, never on a message.
 //!
-//! A protocol that holds a `compensate` template also holds the `effect` and
-//! `commit` nodes it names, and those nodes are not covered by
-//! `protocol_clause::content` yet, so such a protocol never checks as a
-//! whole. These tests read the obligation refusals of the whole pipeline and
-//! assert that a part that checks produces none.
+//! These tests read the obligation refusals of the whole pipeline and
+//! assert that a part that checks produces none; `recorded` asserts the
+//! checked clause of a protocol that checks as a whole.
 
 use ix_trace_rs::trace;
 use qsl_forms::build_unit;
@@ -25,15 +23,24 @@ use crate::check::{
     CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, ProtocolAnchorCause,
 };
 
+mod recorded;
+
 mod fixture {
     use crate as semantics;
     include!("../../../tests/fixtures/protocol_obligations.rs");
 }
 use fixture::{obligation_model, HEADER};
 
-/// S1, S2 and the assembler over `declarations`, against fixture R.
+/// S1, S2 and the assembler over `declarations`, against fixture R. A
+/// leading `profile` line of `declarations` is a header selection: it is
+/// written among the header's profiles, before the model.
 fn assemble(declarations: &str) -> (String, PackageDeclarations) {
-    let text = format!("{HEADER}{declarations}\n");
+    let (profile, declarations) = match declarations.split_once('\n') {
+        Some((first, rest)) if first.starts_with("profile ") => (format!("{first}\n"), rest),
+        _ => (String::new(), declarations),
+    };
+    let header = HEADER.replacen("model M", &format!("{profile}model M"), 1);
+    let text = format!("{header}{declarations}\n");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
@@ -72,9 +79,9 @@ fn checked(declarations: &str) -> CheckedGraph {
 }
 
 /// The obligation refusals among `refusals`, in order. Every other refusal
-/// must be the not-yet-implemented one for the uncovered `effect`/`commit`
-/// nodes, or `content`'s unresolved binder type: a limit, a fault or any other cause would otherwise let a
-/// "checks" assertion pass because the stage never ran.
+/// must be a not-yet-implemented one or `content`'s unresolved binder type:
+/// a limit, a fault or any other cause would otherwise let a "checks"
+/// assertion pass because the stage never ran.
 fn obligation_causes(refusals: &[CheckRefusal]) -> Vec<ObligationCause> {
     refusals
         .iter()
@@ -429,6 +436,7 @@ fn a_registration_capture_cannot_read_itself() {
 /// FR-381-AC-1: a read of a name another stage's row owns refuses
 /// `missing_declaration`/`missing-name` at the read with `read` `stage`,
 /// and a name nothing declares with `unbound`.
+#[trace("TC-1057", "FR-381-AC-1")]
 #[test]
 fn a_name_outside_its_stage_refuses_with_the_stage_read() {
     let cases = [
@@ -682,6 +690,7 @@ fn a_barred_stage_cannot_read_the_over_input() {
 /// the record type of its effect refuses `type-mismatch` retaining
 /// compensation, expected and actual; an absent `by` role and an absent
 /// operation refuse `missing-name`.
+#[trace("TC-1058", "FR-381-AC-5")]
 #[test]
 fn a_template_is_checked_against_its_effect_role_and_operation() {
     let declarations = edit(
@@ -734,6 +743,7 @@ fn a_template_is_checked_against_its_effect_role_and_operation() {
 
 /// FR-381-AC-7, the count: `attempts 0` refuses `type-mismatch` at the
 /// count; `attempts 1` and the greatest `u64` check.
+#[trace("TC-1058", "FR-381-AC-7")]
 #[test]
 fn an_attempt_count_of_zero_refuses() {
     let (text, cause) = only(&changed("attempts 3 of", "attempts 0 of"));
@@ -917,6 +927,7 @@ fn the_retry_relation_is_a_total_boolean() {
 /// FR-381, recovery: a non-Boolean predicate refuses `non-boolean-root`, an
 /// undischarged range obligation `unproved-range`, and an unresolved binder
 /// type refuses as a declared type does.
+#[trace("TC-1058", "FR-381-AC-12")]
 #[test]
 fn the_recovery_predicate_is_a_total_boolean() {
     let (text, cause) = only(&changed(
@@ -994,6 +1005,7 @@ fn an_int_equals_a_sum_is_range_obligated_and_other_mixes_keep_the_matrix() {
 
 /// FR-381: a refusal inside one template does not hide another's, and the
 /// refusals come in source order.
+#[trace("TC-1058", "FR-381-AC-12")]
 #[test]
 fn every_template_is_checked_and_refusals_come_in_source_order() {
     let second = other("capture seen: M::Total = 0;").replacen("attempts 3 of", "attempts 0 of", 1);

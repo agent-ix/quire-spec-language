@@ -22,6 +22,7 @@ mod anchors;
 mod attempts;
 mod binders;
 mod coverage;
+mod graph;
 mod node_keys;
 
 /// S1, S2 and the assembler over `declarations`, against

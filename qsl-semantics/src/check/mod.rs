@@ -262,7 +262,7 @@ pub use protocol_clause::{
 pub use protocol_decisions::{
     CheckedCase, CheckedChoice, CheckedDecisions, CheckedLoopProof, CheckedRepeat,
 };
-pub use protocol_controls::CheckedChannel;
+pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_obligation::{
     CaptureOwner, CaptureStage, CheckedActivation, CheckedBinder, CheckedCapture, CheckedCommit,
     CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
@@ -1656,8 +1656,26 @@ impl PackageDeclarations {
                     }
                     // FR-218: the protocol's channels, joins and
                     // `terminal`/`scheduling` members.
-                    match protocol_controls::check(protocol, &scope) {
-                        Ok(channels) => checked.channels = channels,
+                    let control_declarations = state_clause::ClauseDeclarations {
+                        nodes_used,
+                        ..obligation_declarations
+                    };
+                    let mut control_cx = crate::family::CheckContext::new(
+                        &control_declarations,
+                        contract_limits,
+                        &mut contract_meter,
+                        &mut contract_diagnostics,
+                        &mut contract_scopes,
+                    );
+                    match protocol_controls::check(
+                        protocol,
+                        &control_declarations,
+                        &mut control_cx,
+                    ) {
+                        Ok((channels, used)) => {
+                            checked.channels = channels;
+                            nodes_used = used;
+                        }
                         Err(control_refusals) => refusals.extend(control_refusals),
                     }
                     protocol_bindings.push(bound);

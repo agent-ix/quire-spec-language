@@ -111,6 +111,22 @@ pub fn obligation_model() -> SelectedModel {
             has_body: false,
             redefines: None,
         }),
+        // A second operation with a frame of its own, for a template that
+        // names another operation than the protocol's attempt (FR-381-AC-5).
+        DomainPackageRecord::OperationMember(OperationMemberRecord {
+            key: key("Node/undo"),
+            owner: key("Node"),
+            parameters: Vec::new(),
+            result: None,
+            effect: OperationEffect {
+                receiver_modifies: vec![key("Node/total")],
+                ..OperationEffect::default()
+            },
+            requires: Vec::new(),
+            ensures: Vec::new(),
+            has_body: false,
+            redefines: None,
+        }),
         record("Receipt"),
         field("Receipt", "total", package("Total")),
         field("Receipt", "tally", package("Tally")),

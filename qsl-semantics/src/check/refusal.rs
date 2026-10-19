@@ -249,6 +249,38 @@ pub enum ProtocolAnchorCause {
         /// The binder type's span.
         span: Span,
     },
+    /// FR-218 "Channels": a refusal of the clause checker inside a channel's
+    /// FIFO key, checked over its binder and constants only. Its code and
+    /// cause are the wrapped cause's.
+    KeyClause {
+        /// The channel's declared name.
+        channel: String,
+        /// The clause checker's cause.
+        cause: Box<CheckCause>,
+        /// The located node.
+        span: Span,
+    },
+    /// FR-218 "Channels": a channel's FIFO key reads model state.
+    /// `ill_typed`/`operator-ineligible`, at the read, naming the key by its
+    /// channel.
+    KeyModelState {
+        /// The channel's declared name.
+        channel: String,
+        /// The read.
+        span: Span,
+    },
+    /// FR-218 "Channels": a channel's FIFO key is of a type over which the
+    /// clause checker admits no `=` (QSpec FR-054: stable equality).
+    /// `ill_typed`/`operator-ineligible`, at the key, retaining the operator
+    /// and the type.
+    KeyEquality {
+        /// The channel's declared name.
+        channel: String,
+        /// The key's type.
+        key_type: quire_exact::ValueType,
+        /// The key.
+        span: Span,
+    },
     /// FR-218 "Constructs": the compiled causal edge relation, without the
     /// `repeat` back edges, has a cycle. `invalid_package`/
     /// `definition-cycle`, naming the controls on the cycle in tree order,
@@ -466,7 +498,10 @@ impl ProtocolAnchorCause {
             | Self::CarriesMismatch { span, .. }
             | Self::CausalCycle { span, .. }
             | Self::NoProgress { span, .. }
-            | Self::Exhaustiveness { span, .. } => *span,
+            | Self::Exhaustiveness { span, .. }
+            | Self::KeyClause { span, .. }
+            | Self::KeyModelState { span, .. }
+            | Self::KeyEquality { span, .. } => *span,
         }
     }
 
@@ -482,9 +517,12 @@ impl ProtocolAnchorCause {
             | Self::NodeRole { .. }
             | Self::MissingChannel { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
-            Self::WrongKind { .. } | Self::ChannelMismatch { .. } | Self::CarriesMismatch { .. } => {
-                Code::IllTyped
-            }
+            Self::WrongKind { .. }
+            | Self::ChannelMismatch { .. }
+            | Self::CarriesMismatch { .. }
+            | Self::KeyModelState { .. }
+            | Self::KeyEquality { .. } => Code::IllTyped,
+            Self::KeyClause { cause, .. } => cause.code(),
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
             Self::Unimplemented { .. } | Self::NoProgress { .. } => Code::UnsupportedConstruct,
             Self::CausalCycle { .. } => Code::InvalidPackage,
@@ -514,6 +552,10 @@ impl ProtocolAnchorCause {
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } | Self::CarriesMismatch { .. } => {
                 "type-mismatch"
             }
+            Self::KeyModelState { .. } | Self::KeyEquality { .. } => "operator-ineligible",
+            // Only a cause that has a tag is wrapped
+            // (`protocol_controls::check_fifo`).
+            Self::KeyClause { cause, .. } => cause.cause().unwrap_or_default(),
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
             Self::NoProgress { .. } => "declaration-form",

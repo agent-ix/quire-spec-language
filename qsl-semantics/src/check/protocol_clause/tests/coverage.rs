@@ -3,7 +3,7 @@
 use ix_trace_rs::trace;
 
 use super::attempt_fixture::attempt_flow;
-use super::{assemble, checks, only_cause, recovery_flow, refusals, resolve_protocol};
+use super::{assemble, checks, only_cause, recovery_flow, refusals};
 use crate::check::refusal::ProtocolAnchorCause;
 
 /// SR-770 FND-001, now that `effect`, `event` and `commit` nodes are
