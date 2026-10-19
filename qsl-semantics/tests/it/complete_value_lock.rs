@@ -9,7 +9,9 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use ix_trace_rs::trace;
-use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer, LayerForm, Trigger};
+use qsl_semantics::value::{
+    CatalogRole, DefinitionLock, HeaderLayer, LayerForm, ModelRole, Trigger,
+};
 use quire_semantic_value::definition::SelectionRefusalCode;
 use serde_json::Value;
 
@@ -149,6 +151,57 @@ fn conformance_catalog_matches_qspec_complete_value_lock() {
     );
     println!(
         "conformance: {} catalog rows match QSpec's lock",
+        catalog.len()
+    );
+}
+
+/// FR-361-AC-10: the rows of the catalog that come from QSpec's
+/// complete-model lock equal that lock: each `qualification_catalog` row's
+/// role, authority and identity, in order, and its `package_selection`.
+/// Skipped (and passing) when `QSPEC_DIR` is unset; `make conformance`
+/// requires it.
+#[trace("FR-361-AC-10", "TC-1017")]
+#[test]
+fn conformance_catalog_matches_qspec_complete_model_lock() {
+    let Some(document) = qspec_document("complete-model-lock.json") else {
+        println!("skipped: QSPEC_DIR not set");
+        return;
+    };
+    let rows: Vec<(&str, &str, &str)> = document["qualification_catalog"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["role"].as_str().unwrap(),
+                row["definition"]["authority"].as_str().unwrap(),
+                row["definition"]["identity"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    let lock = lock();
+    let catalog: Vec<(&str, &str, &str)> = lock
+        .model_catalog()
+        .iter()
+        .map(|entry| (entry.role.as_str(), entry.authority, entry.identity))
+        .collect();
+    assert_eq!(catalog, rows);
+    let selection = &document["package_selection"];
+    let always: Vec<&str> = ModelRole::ALL.iter().map(|role| role.as_str()).collect();
+    assert_eq!(always, strings(&selection["always"]));
+    assert!(selection["conditional"].as_array().unwrap().is_empty());
+    assert!(selection["exactly_one"].as_array().unwrap().is_empty());
+    // The root is the model layer and `state_graph` the state-graph layer.
+    assert_eq!(
+        ModelRole::Root.identity(),
+        HeaderLayer::ModelComplete.identity()
+    );
+    assert_eq!(
+        ModelRole::StateGraph.identity(),
+        HeaderLayer::StateGraph.identity()
+    );
+    println!(
+        "conformance: {} model catalog rows match QSpec's lock",
         catalog.len()
     );
 }

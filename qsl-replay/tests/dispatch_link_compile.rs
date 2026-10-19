@@ -128,7 +128,7 @@ fn unit(document: &[u8], declarations: &str) -> (String, BTreeMap<[u8; 32], Vec<
     let digest = packages.keys().next().expect("one package");
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = {PACKAGE:?} version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          {declarations}\n",
         qsl_semantics::model::key::hex(digest)

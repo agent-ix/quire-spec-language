@@ -217,7 +217,7 @@ fn model_package_with(
     }
     let digest = packages.keys().next().expect("lifecycle package digest");
     let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = \"test/orders\" version \"1\" digest \"sha256-jcs:{}\";\n{}\n",
         qsl_semantics::model::key::hex(digest),
         body,
     );
