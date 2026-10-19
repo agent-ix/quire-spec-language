@@ -42,14 +42,14 @@ Config::ConfigVersion) { c.versionNumber = 2 }` and `always possible
 CanStillWin using v over (x: G::Game) from (x.phase != Lost) { x.phase =
 Won }`. The checker admits both, records which form each is, and refuses a
 predicate that reads a pre-state, uses a temporal operator or carries a
-fairness constraint, at the offending span.
+fairness constraint, at the offending span; a placement `graph-predicate`
+does not recognise is a syntax error.
 
 ## Inputs
 
 - Parsed state-graph claim syntax (S1), in the spellings QSpec's shared
   grammar gives the three forms. The `over` parameter is optional in all
-  three, and a predicate may contain a temporal operator at any position
-  (see Parsing).
+  three, and a predicate is read through `graph-predicate` (see Parsing).
 - The admitted domain packages and the unit's state models (FR-103).
 - For the request writer: the request's temporal and state-graph items with
   their model subjects (FR-125).
@@ -84,18 +84,32 @@ pub enum StateGraphForm {
 - S1 SHALL parse each of the three forms with the `over (x: T)` parameter
   present or absent. A claim without `over` parses to a claim with no `over`
   binding.
-- S1 SHALL parse a predicate of a state-graph claim through a
-  `graph-predicate` production of QSpec's shared grammar (state-graph
-  section): a clause expression in which unary and binary temporal operators,
-  each with an optional interval, may stand at any operand position, with
-  fairness constraints admitted at the start of the body. The production is
-  recognition only; QSpec FR-390 refuses at admission. QSpec's
-  state-graph productions today take a block of plain `expr`, which has no
-  temporal operators. QSL's S1 implements the `graph-predicate` widening now,
-  ahead of QSpec, so the S3 refusal below is reachable from source text; the
-  production is owned by QSpec, and STD-171 aligns QSpec's grammar with it.
-- S1 SHALL NOT refuse a predicate for holding a temporal operator; S3 does
-  (see Predicates).
+- S1 SHALL parse each predicate of a state-graph claim (a body, a `from`
+  operand, a `to` operand) through the `graph-predicate` production of
+  QSpec's shared grammar (state-graph section), and a body's leading
+  fairness constraints through `graph-body`. The production is recognition
+  only and is owned by QSpec; this requirement does not restate it. QSpec
+  FR-390 and its TC-330 vectors SG-R09 to SG-R18 are the reference for what
+  it recognises.
+- S1 SHALL NOT refuse a temporal operator, with or without an interval, that
+  `graph-predicate` recognises: one standing as an operand of a
+  `graph-relation`, of a unary operator, of a parenthesised group or of a
+  branch of an `if` or `let` (`c.n = 1 and eventually c.n = 2`,
+  `not eventually c.n = 2`, `(eventually c.n = 2)`, `c.a until c.b`,
+  and one in a `from` or `to` operand). It SHALL NOT refuse a fairness
+  constraint at the start of a body. S3 refuses these (see Predicates).
+- S1 SHALL refuse with `invalid_syntax`, at the offending token, what
+  `graph-predicate` does not recognise: a temporal operator in an `if`
+  condition, in a `let` binding, or in an operand of a primary (a call
+  argument, or a quantifier body such as `exists(d in c.items: eventually
+  d.n = 2)`); a fairness constraint anywhere but the start of a body (after
+  the predicate, inside a `from` or `to` operand, or on a `unique path`
+  clause, which has no body); and a second binary temporal operator in one
+  `graph-relation` (`c.a until c.b until c.c`). A chain is written with
+  parentheses, `(c.a until c.b) until c.c`, and parses.
+- A phrase that derives as an `expr` is read as that `expr`, so
+  `not c.n = 2` is `(not c.n) = 2` and reaches the checker as an ordinary
+  expression.
 
 ### Forms
 
@@ -128,9 +142,10 @@ pub enum StateGraphForm {
   names an operation parameter, which no claim scope binds, then S3 SHALL
   refuse `missing-name` located at the name. S3 is the only stage that
   refuses a parameter read.
-- If a predicate contains a temporal operator at any position, then S3 SHALL
-  refuse `unsupported_construct`/`expression-form` located at the operator.
-  S1 has already parsed it through `graph-predicate` (see Parsing).
+- If a predicate contains a temporal operator that S1 recognised, then S3
+  SHALL refuse `unsupported_construct`/`expression-form` located at the
+  operator; where a predicate holds several, at the first in source order.
+  A placement S1 does not recognise never reaches S3 (see Parsing).
 - If the claim carries a fairness constraint, then S3 SHALL refuse
   `unsupported_construct`/`expression-form` located at the constraint
   (ADR-022 GM-7).
@@ -160,8 +175,9 @@ pub enum StateGraphForm {
 | FR-165-AC-1 | Over ADR-022 §7's units: `ReachesTwo` and `ReachesThree` check to `Possible`, each with its `over` binding recorded; `CanStillWin` without `from` checks to `AlwaysPossible` with `from` the constant `true`, and with `from (x.phase != Lost)` to `AlwaysPossible` with that predicate; `InOneWay` checks to `UniquePath`. Each records (`temporal-satisfaction`, `Unbounded`) with its form beside it. `possible P` and `always possible P` over the same `P` have different node identities. | Test (TC-590) |
 | FR-165-AC-2 | Refusals, each `unsupported_construct`/`expression-form` at the named span, with no checked claim: `possible` whose predicate reads `pre(c.versionNumber)` (at the read); `possible` whose predicate is `eventually c.versionNumber = 2` (at `eventually`); `always possible` carrying `fair weak attemptUpdate` (at the constraint). | Test (TC-590) |
 | FR-165-AC-3 | A request whose only items are `CanStillWin` and `InOneWay` carries one `DeadlockFreedom` item for each of their two subjects; a request with `ReachesTwo` and a temporal claim over the same subject carries one; the §7.2 game with `terminal any` carries none. | Test (TC-590) |
-| FR-165-AC-4 | S1 parses `possible Anything using v { true }` (no `over`) to a claim with no `over` binding, and parses `possible R using v over (c: Config::ConfigVersion) { c.versionNumber = 2 and eventually c.versionNumber = 3 }`, `possible N using v over (c: Config::ConfigVersion) { not eventually c.versionNumber = 2 }` and `possible P using v over (c: Config::ConfigVersion) { (eventually c.versionNumber = 2) }` to claims; none is an S1 refusal. S3 checks the first with `over` recorded as `None`, and refuses each of the other three `unsupported_construct`/`expression-form` at `eventually`, with no checked claim. | Test (TC-590) |
+| FR-165-AC-4 | S1 parses `possible Anything using v { true }` (no `over`) to a claim with no `over` binding. S1 parses, with no S1 refusal, `possible R ... { c.versionNumber = 2 and eventually c.versionNumber = 3 }`, `{ not eventually c.versionNumber = 2 }`, `{ (eventually c.versionNumber = 2) }`, `{ c.a until c.b }`, `{ (c.a until c.b) until c.c }`, `{ if c.a then eventually c.b else c.c }`, a temporal operator in a `from` operand, and `{ fair weak M::Cfg::step; c.done }`. S3 checks the first with `over` recorded as `None` and refuses each other claim `unsupported_construct`/`expression-form`, with no checked claim, at the temporal operator (at the first in source order when several) or at the constraint. | Test (TC-590) |
 | FR-165-AC-5 | Over a fixture unit whose operation `setVersion` takes parameter `newVersion: Int`, S3 refuses a `possible` claim whose predicate is `c.versionNumber = newVersion` with `missing-name` at `newVersion`, not `expression-form`; the same claim with `pre(c.versionNumber)` still refuses `expression-form`, with no checked claim. | Test (TC-590) |
+| FR-165-AC-6 | S1 refuses `invalid_syntax`, with no claim, at the offending token: `{ if eventually c.a then c.b else c.c }`, `{ let x = eventually c.a in c.b }`, `{ exists(d in c.items: eventually d.n = 2) }`, `{ f(eventually c.a) }`, `{ c.done; fair weak M::Cfg::step }`, a fairness constraint in a `from` operand, `unique path ... to (c.d); fair weak M::Cfg::step`, and `{ c.a until c.b until c.c }` (at the second `until`). | Test (TC-590) |
 
 ## Dependencies
 
