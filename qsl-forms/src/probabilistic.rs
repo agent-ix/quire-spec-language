@@ -325,6 +325,7 @@ fn event_form(cst: &LosslessCst, event: &CstNode) -> Result<EventForm, FormsRefu
         [] => Ok(EventForm::Temporal(formula_form(
             cst,
             only(&event_items, Production::TemporalExpression, event)?,
+            false,
         )?)),
         _ => Err(unexpected(event)),
     }

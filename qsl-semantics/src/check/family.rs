@@ -638,6 +638,30 @@ fn encode_expression(
                 out.write_str(edge);
                 pending.extend([expr.at(*source), expr.at(*target)]);
             }
+            ExprNode::Indexed { read, trace } => {
+                out.write_str("indexed");
+                out.write_str(trace);
+                pending.push(expr.at(*read));
+            }
+            ExprNode::StepLabel { trace, label } => {
+                out.write_str("step_label");
+                out.write_str(trace);
+                match label {
+                    qsl_forms::StepLabelForm::Operation => out.write_str("op"),
+                    qsl_forms::StepLabelForm::Receiver => out.write_str("receiver"),
+                    qsl_forms::StepLabelForm::Argument {
+                        operation,
+                        parameter,
+                    } => {
+                        out.write_str("argument");
+                        out.write_str(operation);
+                        out.write_str(parameter);
+                    }
+                }
+            }
+            ExprNode::Stutter => {
+                out.write_str("stutter");
+            }
             // Not the S2 seam (`Typer::infer_form`'s own doc,
             // `qsl-semantics/src/check/check/typing.rs`): an unconditional
             // probe arm so this match keeps compiling under `--cfg

@@ -114,6 +114,8 @@ mod layer;
 mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
+mod hyper_clause;
+mod hyper_typing;
 mod node_key;
 mod observation;
 mod operation_body;
@@ -257,6 +259,14 @@ pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // conversion does, and both are `check`-core call sites of one canonical
 // function rather than two.
 pub use field_refinement::RefinementObligation;
+#[cfg(any(test, feature = "test-support"))]
+pub use hyper_clause::check_hyper_clauses;
+pub use hyper_clause::{
+    ArgumentRead, CheckedHyper, CheckedHyperClause, CheckedModelRelation, CheckedQuantifier,
+    CheckedStepPredicate, CopyGroup, HyperCause, HyperDeclaration, HyperDeclarations, HyperForm,
+    HyperIdentity, HyperTraceFamily, HyperUnsupported, ModelAlias, ObjectParameter,
+    OperationContractClaim, StepRead,
+};
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,
     InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
@@ -1978,6 +1988,54 @@ impl PackageDeclarations {
                         return Err(refusals);
                     }
                 }
+            }
+        }
+        // FR-172: each `hyper` clause and `relation`, checked through the
+        // `TemporalTrace` family under the unit's one temporal profile. A
+        // clause that checks is refused as not emitted, as a `temporal`
+        // clause is.
+        let hyper_declarations = hyper_clause::HyperDeclarations {
+            temporal: temporal_clause::TemporalDeclarations {
+                scope: &scope,
+                selections: &self.temporal_selections,
+                source: &source,
+                embedding: embedding.as_deref(),
+                position_limit: limits.nodes(),
+            },
+            models: &models,
+            signatures: &signatures,
+        };
+        for clause in &self.hyper_clauses {
+            let mut contract_cx = crate::family::CheckContext::new(
+                &hyper_declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match hyper_clause::HyperTraceFamily::check(clause, &mut contract_cx) {
+                Ok(staged) => {
+                    let (name, span) = staged.into_value().name_and_span();
+                    refusals.push(hyper_clause::not_emitted(name, span));
+                }
+                Err(StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                Err(StageFailure::Fault(fault)) => {
+                    refusals.push(CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                    return Err(refusals);
+                }
+                Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
         if !refusals.is_empty() {

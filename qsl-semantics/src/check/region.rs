@@ -287,6 +287,9 @@ impl DeclarationRegions {
             CheckCause::Temporal(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
+            CheckCause::Hyper(cause) if cause.span().is_some() => {
+                region(&self.source, self.embedding.as_deref(), cause.span()?)
+            }
             CheckCause::StateGraph(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span()?)
             }
