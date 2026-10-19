@@ -295,10 +295,10 @@ pub enum ClauseDisposition {
     /// a `Temporal` selection. Its category is the outcome's: a pending
     /// result is `inconclusive`, a missing fairness premise `unsupported`,
     /// and a false or undefined clause a `violation` at its position.
-    Temporal(qsl_eval::temporal::TemporalOutcome),
+    Temporal(TemporalVerdict),
     /// Stage `evaluate`, category `refusal` (FR-330): the evaluator refused
     /// the supplied trace (a lasso with an empty loop, for one).
-    TemporalRefusal(qsl_eval::temporal::TemporalRefusal),
+    TemporalRefusal(TemporalTraceRefusal),
     /// Stage `evaluate`, category `internal-failure`: a broken S6a
     /// invariant reached outside the outcome mapping (FR-100's own
     /// internal-failure exit status).
@@ -368,11 +368,207 @@ impl ClauseDisposition {
         match self {
             Self::Evaluate(CallOutcome::Completed(CallValue::Boolean(value))) => Some(*value),
             Self::FrameViolation(_) => Some(false),
-            Self::Temporal(qsl_eval::temporal::TemporalOutcome::Holds) => Some(true),
-            Self::Temporal(qsl_eval::temporal::TemporalOutcome::Violated { .. }) => Some(false),
+            Self::Temporal(TemporalVerdict::Holds) => Some(true),
+            Self::Temporal(TemporalVerdict::Violated { .. }) => Some(false),
             _ => None,
         }
     }
+}
+
+/// The settlement of a temporal clause on one trace (FR-327 "Outputs"), as
+/// the spine reports it (FR-100-AC-8: the spine's public surface owns its
+/// types). Positions are zero-based trace indices.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TemporalVerdict {
+    /// `Completed(true)`: every activation evaluated true. Evidence for this
+    /// trace only (`tested`), never `proved` (ADR-014 section 8).
+    Holds,
+    /// `Completed(false)`: the first activation, in position order, that
+    /// evaluated false.
+    Violated {
+        /// The position of that activation.
+        at: u64,
+    },
+    /// The claim is not defined on the trace (ADR-018 UE-2); it does not
+    /// hold on it.
+    Undefined {
+        /// The first position at which an atom the clause reads is
+        /// undefined.
+        at: u64,
+        /// The first undefined atom at `at`, in clause-node order.
+        cause: TemporalUndefinedCause,
+    },
+    /// A finite prefix that neither shows a bad prefix nor can show more
+    /// (FR-328): O-16 inconclusive.
+    Pending,
+    /// The clause has a fairness set and the trace carries no enabledness
+    /// to check it against (FR-328, FR-329): O-16 unsupported.
+    MissingFairnessPremise {
+        /// The first constraint of the checked fairness set.
+        constraint: quire_semantic_value::fairness::FairnessConstraint,
+    },
+    /// The work budget ran out; no truth value (ADR-014 TR-5).
+    Incomplete(quire_exact::Incomplete),
+    /// A window aggregate outgrew `max_window_values` (FR-194; ADR-018
+    /// V-7); no truth value.
+    WindowLimitReached {
+        /// The limit's name, `max_window_values`.
+        limit: &'static str,
+        /// The limit's value in this run.
+        value: u64,
+        /// The setting that raises it, `monitor.max_window_values`.
+        setting: &'static str,
+    },
+}
+
+impl TemporalVerdict {
+    /// The ADR-013 O-16 category of this verdict (FR-327 "Results").
+    pub fn category(&self) -> qsl_foundation::diagnostic::Category {
+        use qsl_foundation::diagnostic::Category;
+        match self {
+            Self::Holds => Category::Success,
+            Self::Undefined {
+                cause: TemporalUndefinedCause::InsufficientData { .. },
+                ..
+            } => Category::Undefined,
+            Self::Violated { .. } | Self::Undefined { .. } => Category::Violation,
+            Self::Pending => Category::Inconclusive,
+            Self::MissingFairnessPremise { .. } => Category::Unsupported,
+            Self::Incomplete(_) | Self::WindowLimitReached { .. } => Category::Incomplete,
+        }
+    }
+}
+
+/// Why an atom has no value at a position (ADR-018 UE-2).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TemporalUndefinedCause {
+    /// The kernel `Outcome::Undefined`, for example division by zero.
+    Kernel(quire_exact::Undefined),
+    /// A family's `FamilyResult::Undefined` record.
+    Family(qsl_foundation::UndefinedRecord),
+    /// A window aggregate held fewer values than its `min_count` (ADR-024
+    /// WA-4).
+    InsufficientData {
+        /// The values the window held.
+        count: u64,
+        /// The term's `min_count`.
+        min_count: u64,
+    },
+}
+
+/// Why the temporal evaluator could not read the supplied trace at all.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TemporalTraceRefusal {
+    /// A finite trace holds no observation (FR-327 "Inputs").
+    #[error("a finite trace holds at least one observation")]
+    EmptyTrace,
+    /// A tuple whose component count differs from the hyper clause's trace
+    /// variables (FR-175 "Inputs").
+    #[error("the tuple holds {found} traces for {expected} trace variables")]
+    TupleArity {
+        /// The clause's trace variables.
+        expected: usize,
+        /// The components supplied.
+        found: usize,
+    },
+    /// A hyper clause with `align skip` (HP-6, FR-178), which is not
+    /// lockstep and is not built yet.
+    #[error("a clause with `align skip` is not evaluated in lockstep; FR-178 is not built")]
+    AlignSkipNotImplemented,
+    /// A lasso with an empty loop (FR-329 "Lasso shape").
+    #[error("a lasso holds at least one loop position")]
+    EmptyLoop,
+    /// A lasso's prefix and loop together exceed `u64` positions.
+    #[error("a lasso's prefix and loop exceed u64 positions")]
+    TraceTooLong,
+    /// A lasso under a bounded profile: only the infinite-trace profile
+    /// reads one (FR-329).
+    #[error("a lasso is read under the infinite-trace profile only, not {profile:?}")]
+    LassoUnderBoundedProfile {
+        /// The clause's profile.
+        profile: qsl_semantics::check::TemporalProfile,
+    },
+    /// The profile reads timestamped instants, which a position trace does
+    /// not carry.
+    #[error("{profile:?} reads timestamped instants, which this trace does not carry")]
+    ProfileNotEvaluated {
+        /// The clause's profile.
+        profile: qsl_semantics::check::TemporalProfile,
+    },
+    /// A position is outside the represented trace (FR-327 "Positions").
+    #[error(transparent)]
+    Position(TemporalPositionRefusal),
+    /// A window aggregate cannot be read on the trace.
+    #[error(transparent)]
+    Window(TemporalWindowRefusal),
+    /// An invariant of the checked clause or the evaluator broke.
+    #[error("temporal evaluation broke invariant {0:?}")]
+    Fault(InternalFault),
+}
+
+impl TemporalTraceRefusal {
+    /// The catalog code of this refusal: `invalid_runtime_input`/`invalid-value`
+    /// for a malformed trace or position (FR-327, FR-329),
+    /// `unsupported_construct`/`expression-form` for a profile or trace shape
+    /// the evaluator does not read, `unsupported_construct`/
+    /// `not-yet-implemented` for `align skip`, and
+    /// `runtime_invariant`/`established-invariant-broken` for a fault.
+    pub fn catalog_code(&self) -> qsl_foundation::CatalogCode {
+        use qsl_foundation::CatalogCode;
+        match self {
+            Self::EmptyTrace
+            | Self::EmptyLoop
+            | Self::TraceTooLong
+            | Self::TupleArity { .. }
+            | Self::Position(_)
+            | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
+            Self::AlignSkipNotImplemented => {
+                CatalogCode::new("unsupported_construct", "not-yet-implemented")
+            }
+            Self::LassoUnderBoundedProfile { .. } | Self::ProfileNotEvaluated { .. } => {
+                CatalogCode::new("unsupported_construct", "expression-form")
+            }
+            Self::Fault(fault) => fault.catalog_code(),
+        }
+    }
+}
+
+/// Why a trace position descriptor is refused (FR-327 "Positions").
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TemporalPositionRefusal {
+    /// The descriptor is empty or holds a byte that is not an ASCII digit.
+    #[error("a trace position is decimal ASCII digits")]
+    NotDecimal,
+    /// The descriptor has a leading zero.
+    #[error("a trace position has no leading zero")]
+    LeadingZero,
+    /// The descriptor exceeds `u64`.
+    #[error("a trace position exceeds u64")]
+    Overflow,
+    /// The decoded position lies outside the represented trace.
+    #[error("trace position TemporalPosition({position}) lies outside the represented trace")]
+    OutsideTrace {
+        /// The refused position.
+        position: u64,
+    },
+}
+
+/// Why a window aggregate cannot be read on the trace.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum TemporalWindowRefusal {
+    /// The position is not on the trace.
+    #[error("position {position} is outside the trace")]
+    OutsideTrace {
+        /// The refused position.
+        position: u64,
+    },
+    /// A position window on a timestamped trace, or a duration window on a
+    /// trace without time stamps.
+    #[error("the window's kind does not match the trace's profile")]
+    WindowKindMismatch,
+    /// Time stamps are not in non-decreasing order.
+    #[error("time stamps do not decrease along a trace")]
+    TimestampsDecrease,
 }
 
 /// FR-109 Outputs' usage: "the admission work and the evaluation meter
