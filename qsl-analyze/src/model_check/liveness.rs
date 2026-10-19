@@ -44,7 +44,7 @@
 //! that run is refused ([`LivenessRefusal::ComponentCertificateNotBuilt`])
 //! rather than returned as a closure proof, which does not check acceptance.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
@@ -403,6 +403,10 @@ struct LassoSystem<'r, 'a> {
     meter: ScalarLimits,
     cancel: &'r Cancel,
     max_depth: Option<usize>,
+    /// The depth of the first-phase finding the exploration has met: a
+    /// state that would sit there or deeper ranks after it, so none is
+    /// created (FR-126 ends the first phase at its finding).
+    found: Cell<Option<usize>>,
     halt: RefCell<Option<Halt>>,
 }
 
@@ -418,6 +422,13 @@ impl LassoSystem<'_, '_> {
             cause: STOPPED,
             limit: None,
         }
+    }
+
+    /// Note a first-phase finding at `depth`.
+    fn found_at(&self, depth: usize) {
+        self.found.set(Some(
+            self.found.get().map_or(depth, |known| known.min(depth)),
+        ));
     }
 
     fn poll(&self) -> Result<(), ExpansionStop> {
@@ -582,7 +593,17 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
         enabled.sort();
         enabled.dedup();
         findings.push(Finding::Enabled(enabled));
-        if self.max_depth.is_some_and(|horizon| state.depth >= horizon) {
+        if findings.iter().any(|finding| {
+            matches!(finding, Finding::Contract(contract)
+                if contract.undefined_contract().is_some() || contract.is_refused_contract())
+        }) {
+            self.found_at(state.depth);
+        }
+        let met_finding = self
+            .found
+            .get()
+            .is_some_and(|found| state.depth.saturating_add(1) >= found);
+        if met_finding || self.max_depth.is_some_and(|horizon| state.depth >= horizon) {
             // Every product state has an edge under infinite-trace: a
             // terminal model state steps by its stutter edge.
             findings.push(Finding::HorizonCut);
@@ -610,6 +631,12 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
                     model: model.clone(),
                     depth: state.depth.saturating_add(1),
                 });
+            }
+            if properties
+                .iter()
+                .any(|property| matches!(property, Property::Undefined { .. }))
+            {
+                self.found_at(state.depth.saturating_add(1));
             }
             for property in properties {
                 successors.push((
@@ -737,7 +764,7 @@ impl<'r, 'a> Run<'r, 'a> {
         // to the earlier binding), so it is explored through `depth - 1`
         // alone and not at all past a finding at depth 0.
         let mut best: Option<(usize, FirstHit)> = None;
-        for binding in self.bindings {
+        for (index, binding) in self.bindings.iter().enumerate() {
             let cap = match best {
                 Some((0, _)) => break,
                 Some((depth, _)) => Some(depth - 1),
@@ -749,13 +776,31 @@ impl<'r, 'a> Run<'r, 'a> {
             };
             let live = self.first_phase(&run)?;
             if let Ending::Stopped(cause, limit) = &run.ending {
-                // A later binding that stops before it completed the depth it
-                // is explored through answers with its stop; the first
-                // binding's finding stands, as it is canonical-first.
-                return Ok(match live {
-                    Some((_, hit)) if best.is_none() => hit.outcome(totals.stats()),
-                    _ => stopped(*cause, *limit, totals.stats()),
+                // A binding that stops answers with its stop, unless it holds
+                // a finding that is canonical (every shallower state was
+                // expanded) with no earlier finding to rank against: that
+                // finding then bounds the later bindings, which stop in turn
+                // when the budget is spent (FR-126 "Bindings and ranking").
+                let canonical = live.as_ref().is_some_and(|(depth, _)| {
+                    run.graph.states().iter().all(|state| {
+                        state.state.depth >= *depth
+                            || state
+                                .findings
+                                .iter()
+                                .any(|finding| matches!(finding, Finding::Enabled(_)))
+                    })
                 });
+                match live {
+                    Some((depth, hit)) if best.is_none() && canonical => {
+                        let last = index + 1 == self.bindings.len();
+                        if depth == 0 || last {
+                            return Ok(hit.outcome(totals.stats()));
+                        }
+                        best = Some((depth, hit));
+                        continue;
+                    }
+                    _ => return Ok(stopped(*cause, *limit, totals.stats())),
+                }
             }
             let bound = [
                 live.as_ref().map(|(depth, _)| *depth),
@@ -767,10 +812,9 @@ impl<'r, 'a> Run<'r, 'a> {
             let dead = self.dead_phase(&run, bound, &mut totals)?;
             run.dead_cut = dead.cut;
             if let Some(Ending::Stopped(cause, limit)) = dead.stopped {
-                return Ok(match live {
-                    Some((_, hit)) if best.is_none() => hit.outcome(totals.stats()),
-                    _ => stopped(cause, limit, totals.stats()),
-                });
+                // The pass did not finish, so a shallower finding may be
+                // hidden: the stop is the answer.
+                return Ok(stopped(cause, limit, totals.stats()));
             }
             match (live, dead.hit) {
                 (Some((live_depth, _)), Some((dead_depth, hit))) if dead_depth < live_depth => {
@@ -874,6 +918,7 @@ impl<'r, 'a> Run<'r, 'a> {
             meter: self.request.meter,
             cancel: self.cancel,
             max_depth: [self.request.max_depth, cap].into_iter().flatten().min(),
+            found: Cell::new(None),
             halt: RefCell::new(None),
         };
         if product.start_states().is_err() {
@@ -1120,6 +1165,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 });
             }
         }
+        let mut found: Option<usize> = None;
         let stop = |phase: &mut DeadPhase| -> Result<(), ModelCheckRefusal> {
             phase.stopped = self.halt_ending(&run.product)?;
             Ok(())
@@ -1202,7 +1248,13 @@ impl<'r, 'a> Run<'r, 'a> {
             // A state at the bound ranks no better than the finding that set
             // it, so the successors that would sit there are neither created
             // nor charged.
-            if bound.is_some_and(|bound| depth.saturating_add(1) >= bound) {
+            // The same holds below the depth of an undefined letter the pass
+            // has met at a state's creation: the first phase ends at it.
+            if [bound, found]
+                .into_iter()
+                .flatten()
+                .any(|limit| depth.saturating_add(1) >= limit)
+            {
                 continue;
             }
             let root = nodes.get(index).map_or(0, |node| node.root);
@@ -1218,12 +1270,23 @@ impl<'r, 'a> Run<'r, 'a> {
                         return Ok(phase);
                     }
                     *states_left -= 1;
+                    let undefined = match run.product.reading(&next) {
+                        Ok(reading) => matches!(reading, Reading::Undefined { .. }),
+                        Err(_) => {
+                            stop(&mut phase)?;
+                            return Ok(phase);
+                        }
+                    };
                     frontier.insert((depth.saturating_add(1), nodes.len()));
                     nodes.push(DeadNode {
                         model: next,
                         parent: Some((index, transition)),
                         root,
                     });
+                    if undefined {
+                        found = Some(depth.saturating_add(1));
+                        break;
+                    }
                 }
             }
         }

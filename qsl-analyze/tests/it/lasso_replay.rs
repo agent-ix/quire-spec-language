@@ -542,7 +542,6 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
         matches!(
             cause,
             ModelTraceRefusal::PrefixShort {
-                at: 0,
                 horizon: 2,
                 positions: 1
             }
@@ -565,4 +564,34 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
         matches!(cause, ModelTraceRefusal::PrefixShort { .. }),
         "{cause:?}"
     );
+
+    // EN-1 stops at the first position where the formula is already decided
+    // false, often before its horizon: such a prefix is a refutation for
+    // every continuation and reproduces. `always[0,1] eventually[0,2]
+    // holds(c.value = 3)` (horizon 3) is decided by `0 -inc-> 1 -inc-> 2`,
+    // and `holds(c.value = 1) until[0,3] holds(c.value = 2)` by the empty
+    // prefix.
+    let is_three: fn(i64) -> Option<bool> = |value| Some(value == 3);
+    let one_or_two: fn(i64) -> Option<bool> = |value| Some(value == 1 || value == 2);
+    for (formula, atom, steps) in [
+        (
+            "always[0,1] eventually[0,2] holds(c.value = 3)",
+            is_three,
+            2,
+        ),
+        (
+            "holds(c.value = 1) until[0,3] holds(c.value = 2)",
+            one_or_two,
+            0,
+        ),
+    ] {
+        let decided = bounded(formula);
+        let payload = found(&decided, atom);
+        assert_eq!(payload.prefix.len(), steps, "{formula}");
+        assert_eq!(payload.lasso, None);
+        assert!(
+            reproduced(replay_with(&decided, payload, atom)).is_some(),
+            "{formula}"
+        );
+    }
 }

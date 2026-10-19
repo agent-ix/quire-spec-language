@@ -498,7 +498,7 @@ fn undefined_at(counterexample: &TemporalCounterexample) -> (u64, UndefinedLocus
     (found.site.position, found.site.locus.clone())
 }
 
-fn with_limits(world: &World, letters: &Versions<'_>, limits: ModelCheckLimits) -> Outcome {
+fn with_limits(world: &World, letters: &dyn ModelLetters, limits: ModelCheckLimits) -> Outcome {
     run(world, letters, None, limits, &Cancel::new())
 }
 
@@ -663,39 +663,209 @@ fn a_later_binding_wins_with_a_strictly_shallower_finding() {
 }
 
 /// FR-126-AC-15: with `a` at 0 and `b` at 1, `a`'s first phase ends at depth
-/// 2, so `b` is explored through depth 1 alone: `max_states` 6 stops `b`
-/// before it completes depth 1 and returns that `Stopped`; 1,000 returns
-/// AC-14's finding for `b`. With both versions 0, `b` finds nothing shallower
-/// than depth 2 and the tie goes to `a`.
+/// 2, so `b` is explored through depth 1 alone: with `max_states` 6 `b` has
+/// begun (it has a product state) and stops before it completes depth 1, and
+/// that `Stopped` is returned; 1,000 returns AC-14's finding for `b`, the
+/// prefix `(0,1) -upd(b)-> (0,2)` at position 1. `a`'s own pass stops the run
+/// only below 5 states. With both versions 0, `b` finds nothing shallower than
+/// depth 2 and the tie goes to `a`.
 #[trace("TC-1085", "FR-126-AC-15")]
 #[test]
 fn a_later_binding_is_explored_through_one_less_than_the_finding() {
     let world = config_over(false, WHOLE, DEAD_AT_ZERO, (0, 1));
     let letters = dead_at_zero(&world);
     let mut limits = ModelCheckLimits::default();
-    limits.limits.max_states = 6;
-    let outcome = with_limits(&world, &letters, limits);
-    assert!(
-        matches!(
-            outcome,
-            Ok(ModelCheckOutcome::Stopped {
-                cause: IncompleteCause::ResourceExhausted,
-                limit: Some(ReachedLimit {
+    let stopped_in = |limits: ModelCheckLimits| match with_limits(&world, &letters, limits) {
+        Ok(ModelCheckOutcome::Stopped {
+            cause: IncompleteCause::ResourceExhausted,
+            limit:
+                Some(ReachedLimit {
                     limit: ModelCheckLimit::MaxStates,
-                    value: 6
+                    value,
                 }),
-                ..
-            })
-        ),
-        "{outcome:?}"
+            stats,
+        }) => (value, stats.product_states),
+        other => panic!("expected a stop on max_states, got {other:?}"),
+    };
+    limits.limits.max_states = 4;
+    assert_eq!(
+        stopped_in(limits),
+        (4, 0),
+        "`a`'s pass stops: `b` never starts"
     );
+    limits.limits.max_states = 6;
+    let (value, b_states) = stopped_in(limits);
+    assert_eq!(value, 6);
+    assert!(b_states > 0, "`b` began and stopped before depth 1");
     limits.limits.max_states = 1_000;
     let outcome = with_limits(&world, &letters, limits);
-    assert_eq!(bound(violated(&outcome)), "b");
+    let counterexample = violated(&outcome);
+    assert_eq!(bound(counterexample), "b");
+    assert_eq!(
+        counterexample
+            .prefix
+            .iter()
+            .map(receiver)
+            .collect::<Vec<_>>(),
+        ['b']
+    );
+    assert_eq!(undefined_at(counterexample).0, 1);
 
     let tied = config_over(false, WHOLE, DEAD_AT_ZERO, (0, 0));
     let outcome = with_limits(&tied, &dead_at_zero(&tied), limits);
     let counterexample = violated(&outcome);
     assert_eq!(bound(counterexample), "a");
     assert_eq!(undefined_at(counterexample).0, 2);
+}
+
+/// The AC-15 world's letters, with `on_b` run when the clause is read for
+/// `b`: the later binding's exploration is interfered with.
+struct Interfering<'w> {
+    inner: &'w Versions<'w>,
+    on_b: Box<dyn Fn() -> Option<Incomplete> + 'w>,
+}
+
+impl ModelLetters for Interfering<'_> {
+    fn atom(
+        &self,
+        atom: FormulaNodeId,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        if instance.key == "b" {
+            if let Some(stop) = (self.on_b)() {
+                return Err(stop);
+            }
+        }
+        self.inner.atom(atom, instance, state, meter)
+    }
+}
+
+/// FR-126 "Bindings and ranking": a later binding that stops on any cause
+/// before it completes depth `d - 1` answers with its own `Stopped`, never
+/// the earlier binding's finding. `max_transitions` and the evaluation meter
+/// and cancellation each stop `b` in AC-15's world (`a` at 0, `b` at 1).
+#[trace("TC-1085")]
+#[test]
+fn a_later_binding_that_stops_on_any_cause_answers_with_its_stop() {
+    let world = config_over(false, WHOLE, DEAD_AT_ZERO, (0, 1));
+    let inner = dead_at_zero(&world);
+
+    let mut limits = ModelCheckLimits::default();
+    limits.limits.max_transitions = 4;
+    let outcome = with_limits(&world, &inner, limits);
+    assert!(
+        matches!(
+            outcome,
+            Ok(ModelCheckOutcome::Stopped {
+                limit: Some(ReachedLimit {
+                    limit: ModelCheckLimit::MaxTransitions,
+                    value: 4
+                }),
+                ..
+            })
+        ),
+        "{outcome:?}"
+    );
+    limits.limits.max_transitions = 5;
+    assert_eq!(bound(violated(&with_limits(&world, &inner, limits))), "b");
+
+    let metered = Interfering {
+        inner: &inner,
+        on_b: Box::new(|| {
+            let mut spent = Meter::new(ZERO);
+            spent
+                .charge(quire_exact::Charge::new(
+                    quire_exact::ChargePoint::GraphExpand,
+                ))
+                .err()
+        }),
+    };
+    let outcome = with_limits(&world, &metered, ModelCheckLimits::default());
+    assert!(
+        matches!(
+            outcome,
+            Ok(ModelCheckOutcome::Stopped {
+                limit: Some(ReachedLimit {
+                    limit: ModelCheckLimit::EvaluationMeter,
+                    ..
+                }),
+                ..
+            })
+        ),
+        "{outcome:?}"
+    );
+
+    let cancel = Cancel::new();
+    let cancelling = Interfering {
+        inner: &inner,
+        on_b: Box::new(|| {
+            cancel.cancel(CancelCause::Requested);
+            None
+        }),
+    };
+    let outcome = run(
+        &world,
+        &cancelling,
+        None,
+        ModelCheckLimits::default(),
+        &cancel,
+    );
+    assert!(
+        matches!(
+            outcome,
+            Ok(ModelCheckOutcome::Stopped {
+                cause: IncompleteCause::Cancelled {
+                    source: CancelCause::Requested
+                },
+                limit: None,
+                ..
+            })
+        ),
+        "{outcome:?}"
+    );
+}
+
+/// FR-126-AC-1's claim with an atom undefined at version 2
+/// (`always eventually holds(6 mod (2 - c.versionNumber) >= 0)`): a binding
+/// whose exploration stops while it holds a finding does not hide a shallower
+/// one of a later binding. With `a` at 0 and `b` at 1 or 2, a budget too small
+/// to finish `b` stops the run, and once it suffices the answer is `b`'s
+/// shallower finding, never `a`'s deeper one.
+#[trace("TC-1085")]
+#[test]
+fn a_binding_that_stops_with_a_finding_does_not_hide_a_shallower_one() {
+    const CLAIM: &str = "always eventually holds(6 mod (2 - c.versionNumber) >= 0)";
+    for (versions, enough, position) in [((0, 1), 8, 1), ((0, 2), 6, 0)] {
+        let world = config_over(false, WHOLE, CLAIM, versions);
+        let letters = Versions::new(&world, vec![mod_is_defined]);
+        for max_states in 1..=enough {
+            let mut limits = ModelCheckLimits::default();
+            limits.limits.max_states = max_states;
+            let outcome = with_limits(&world, &letters, limits);
+            if max_states < enough {
+                assert!(
+                    matches!(outcome, Ok(ModelCheckOutcome::Stopped { .. })),
+                    "{versions:?} max_states {max_states}: {outcome:?}"
+                );
+            } else {
+                let counterexample = violated(&outcome);
+                assert_eq!(bound(counterexample), "b", "{versions:?}");
+                assert_eq!(undefined_at(counterexample).0, position, "{versions:?}");
+            }
+        }
+    }
+    let world = config_over(false, WHOLE, CLAIM, (0, 1));
+    let letters = Versions::new(&world, vec![mod_is_defined]);
+    for max_transitions in 1..=6 {
+        let mut limits = ModelCheckLimits::default();
+        limits.limits.max_transitions = max_transitions;
+        let outcome = with_limits(&world, &letters, limits);
+        assert_eq!(
+            matches!(outcome, Ok(ModelCheckOutcome::Stopped { .. })),
+            max_transitions < 6,
+            "max_transitions {max_transitions}: {outcome:?}"
+        );
+    }
 }
