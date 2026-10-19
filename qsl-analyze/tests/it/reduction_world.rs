@@ -551,7 +551,7 @@ impl World {
                 max_candidates: 1_000_000,
             },
         };
-        replay_model_trace(wire, &subject, &envelope, ReplayLimits::default())
+        replay_model_trace(wire, &subject, &envelope, &NoAtoms, ReplayLimits::default())
             .expect("the counterexample replays")
             .settlement
     }
@@ -644,5 +644,20 @@ impl ModelLetters for Letters {
                 quire_exact::Undefined::DivisionByZero,
             )),
         })
+    }
+}
+
+/// The letters of a deadlock-freedom replay, which reads no `holds` atom.
+struct NoAtoms;
+
+impl ModelLetters for NoAtoms {
+    fn atom(
+        &self,
+        _atom: FormulaNodeId,
+        _instance: &ModelInstance,
+        _state: &ModelSimState,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        Ok(AtomReading::False)
     }
 }

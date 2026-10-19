@@ -1109,6 +1109,7 @@ fn replay_stage(refusal: &ReplayRefusal) -> Option<OutcomeStage> {
         | ReplayRefusal::Cancelled(_)
         | ReplayRefusal::NativePayload { .. }
         | ReplayRefusal::ModelTrace(_)
+        | ReplayRefusal::UnfairLasso { .. }
         | ReplayRefusal::Input(_) => Some(OutcomeStage::S8),
     }
 }

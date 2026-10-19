@@ -124,6 +124,10 @@ pub use model_check::state_graph::{
     GraphUndefined, GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome,
     StateGraphOutcome, WitnessSource,
 };
+pub use model_check::step_settle::{
+    settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
+    STEP_INDUCTION_DEPTH,
+};
 pub use refinement::{
     map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingFeature, MappingRowRef,
     MappingUndetermined, ObjectKey,
