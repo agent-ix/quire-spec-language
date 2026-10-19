@@ -150,8 +150,8 @@ pub mod stratum;
 mod termination;
 pub use refinement::{
     CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, RefinementCause,
-    UnsupportedFeature,
     RefinementDeclaration, RefinementRefusal, RowClass, StepClass, StepRow, StepTarget,
+    UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
