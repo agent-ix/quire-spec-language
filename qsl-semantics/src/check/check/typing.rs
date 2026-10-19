@@ -867,6 +867,15 @@ impl<'a> Typer<'a> {
             ExprNode::Quantity(_) => {
                 return Err(super::super::probabilistic::quantity_literal(location))
             }
+            ExprNode::Name(name)
+                if self.populations.is_none()
+                    && self.known_populations.iter().any(|known| known == name) =>
+            {
+                return Err(refuse(
+                    &location,
+                    CheckCause::PopulationFormOutsideRefinement,
+                ));
+            }
             ExprNode::Name(name) if self.population_named(name).is_some() => {
                 self.population_objects(name, &location)?
             }
@@ -1226,6 +1235,12 @@ impl<'a> Typer<'a> {
                 high,
                 body,
             } => {
+                if self.populations.is_none() {
+                    return Err(refuse(
+                        &location,
+                        CheckCause::PopulationFormOutsideRefinement,
+                    ));
+                }
                 let low_location = location.child(0);
                 frames.push(Frame::Seq(Box::new(SeqFrame {
                     binder,
@@ -2672,12 +2687,35 @@ impl<'a> Typer<'a> {
             )),
             PopulationForm::Sum | PopulationForm::Only => {
                 let body = body.ok_or_else(|| mismatch(location))?;
-                let source = match condition {
-                    Some(condition) => {
-                        let filtered = source.value_type.clone();
-                        query(self, Visit::Filter, source, condition, filtered)
+                // A `sum` folds its condition into the summand, so each object
+                // is visited once; an `only` filters, and visits only the one
+                // object that passes again without a charge.
+                let (source, body) = match (condition, form) {
+                    (Some(condition), PopulationForm::Sum) if is_integer(&body.value_type) => {
+                        let zero = node(
+                            NodeKind::Literal(CheckedLiteral(Value::Integer(Integer::zero()))),
+                            ValueType::Integer,
+                            location,
+                        );
+                        let guarded = node(
+                            NodeKind::If {
+                                condition: self.push(condition),
+                                then: self.push(body),
+                                otherwise: self.push(zero),
+                            },
+                            ValueType::Integer,
+                            location,
+                        );
+                        (source, guarded)
                     }
-                    None => source,
+                    (Some(condition), _) => {
+                        let filtered = source.value_type.clone();
+                        (
+                            query(self, Visit::Filter, source, condition, filtered),
+                            body,
+                        )
+                    }
+                    (None, _) => (source, body),
                 };
                 if form == PopulationForm::Sum {
                     if !is_integer(&body.value_type) {

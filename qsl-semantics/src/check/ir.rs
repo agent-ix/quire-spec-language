@@ -1119,12 +1119,28 @@ pub(crate) fn static_integer_range<'n>(
                         work.push(Work::Exit(kind));
                         work.push(Work::Enter(node(*operand)?));
                     }
+                    // Either branch: the range spans both.
+                    NodeKind::If {
+                        then, otherwise, ..
+                    } => {
+                        work.push(Work::Exit(kind));
+                        work.push(Work::Enter(node(*otherwise)?));
+                        work.push(Work::Enter(node(*then)?));
+                    }
                     _ => return None,
                 }
             }
             Work::Exit(NodeKind::Negate(_)) => {
                 let (lower, upper) = ranges.pop()?;
                 ranges.push((upper.neg(), lower.neg()));
+            }
+            Work::Exit(NodeKind::If { .. }) => {
+                let (otherwise_lower, otherwise_upper) = ranges.pop()?;
+                let (then_lower, then_upper) = ranges.pop()?;
+                ranges.push((
+                    then_lower.min(otherwise_lower),
+                    then_upper.max(otherwise_upper),
+                ));
             }
             Work::Exit(NodeKind::Arithmetic(operator, _, _)) => {
                 let (right_lower, right_upper) = ranges.pop()?;

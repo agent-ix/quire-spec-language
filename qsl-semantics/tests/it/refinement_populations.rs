@@ -29,7 +29,7 @@ fn slots() -> DeclarationKey {
 }
 
 /// The field rows of the `Queue` object row, in `all_rows` order: `items`,
-/// `used`, `busy`, `cells`, `lone`, `ghost`, `solid`.
+/// `used`, `busy`, `cells`, `lone`, `ghost`, `solid`, `total`.
 fn queue_row(refinement: &CheckedRefinement, field_index: usize) -> &CheckedRow {
     let [queue, _cell] = refinement.objects() else {
         panic!("the queue and the cell rows: {:?}", refinement.objects());
@@ -91,7 +91,7 @@ fn the_ring_rows_check_at_s3_with_the_universe_size_symbolic() {
 /// FR-139-AC-1 (TC-544 step 1), at subject admission: with `slots = {s0,
 /// s1}`, `R::slots` is typed `Set<Reference<R::Slot>>[0, 2]` and `count` is
 /// `Int[0, 2]`, which conform to the types they are used as.
-#[trace("TC-544", "FR-139-AC-1", "QSpec-TC-311", "QSpec-FR-376-AC-1")]
+#[trace("TC-544", "FR-139-AC-1")]
 #[test]
 fn admission_substitutes_the_universe_size_into_the_recorded_bounds() {
     let graph = checked(&ring_is_queue(&all_rows())).graph;
@@ -124,8 +124,10 @@ fn admission_substitutes_the_universe_size_into_the_recorded_bounds() {
 /// of type `Int[0, 2]` checks at S3 with `n` symbolic and is admitted with
 /// `slots = {s0, s1}`; with `{s0, s1, s2}` it is refused
 /// `ill_typed`/`type-mismatch` before exploration, naming the row,
-/// `R::slots` and the size 3.
-#[trace("TC-544", "FR-139-AC-5")]
+/// `R::slots` and the size 3. This is verified at the `admit_universes`
+/// seam; a request that calls it is wired by QSL-544, which must add the
+/// request-level assertion.
+#[trace("TC-544")]
 #[test]
 fn a_universe_that_overflows_the_used_type_is_refused_at_admission() {
     let graph = checked(&ring_is_queue(&format!(
@@ -262,4 +264,84 @@ fn a_size_dependent_bound_inside_a_larger_expression_is_refused_as_unbuilt() {
         (code, cause),
         (Code::UnsupportedConstruct, Some("not-yet-implemented"))
     );
+}
+
+/// FR-139 (admission): a population whose universe is smaller than the
+/// abstract field's maximum is admitted: `Set<Reference<T>>[0, n]` fits
+/// `Set<Reference<T>>[0, 2]` for every `n` up to 2.
+#[trace("TC-544", "FR-139-AC-1")]
+#[test]
+fn a_universe_below_the_used_maximum_is_admitted() {
+    let graph = checked(&ring_is_queue(&all_rows())).graph;
+    let [refinement] = graph.refinements() else {
+        panic!("one refinement");
+    };
+    for size in [0, 1, 2] {
+        assert_eq!(
+            refinement.admit_universes(&BTreeMap::from([(slots(), size)])),
+            Ok(()),
+            "{size} slots"
+        );
+    }
+    assert!(refinement
+        .admit_universes(&BTreeMap::from([(slots(), 3)]))
+        .is_err());
+}
+
+/// FR-139 (`sum`): a `sum` types as an integer, records its size-dependent
+/// bound and is checked at admission against the type of its use. The bound
+/// is `[min(0, n*lo), max(0, n*hi)]` (the open FR-139-AC-6, pending the spec
+/// change).
+#[trace("TC-544")]
+#[test]
+fn a_sum_records_its_bound_and_is_checked_at_admission() {
+    let graph = checked(&ring_is_queue(&all_rows())).graph;
+    let [refinement] = graph.refinements() else {
+        panic!("one refinement");
+    };
+    let total = queue_row(refinement, 7);
+    assert_eq!(total.body().value_type(), &ValueType::Integer);
+    let [used] = total.population_uses() else {
+        panic!("the sum row records its bound");
+    };
+    assert_eq!(used.population(), "R::slots");
+    let PopulationValue::Sum { summand } = used.value() else {
+        panic!("a sum: {:?}", used.value());
+    };
+    assert_eq!(
+        summand,
+        &IntegerInterval::new(0_i64.into(), 1_i64.into()).expect("an interval")
+    );
+    assert_eq!(used.admitted_type(2), Some(interval(0, 2)));
+    let Err(found) = refinement.admit_universes(&BTreeMap::from([(slots(), 3)])) else {
+        panic!("three slots overflow Int[0, 2]");
+    };
+    assert!(found.iter().any(|refusal| matches!(
+        &refusal.cause,
+        RefinementCause::PopulationBound { row, size: 3, .. } if row == "Q::Queue.total"
+    )));
+}
+
+/// FR-139: a population name or `seq` in a state clause refuses
+/// `unsupported_construct`/`expression-form` at its span.
+#[trace("TC-544", "FR-139-AC-2")]
+#[test]
+fn a_population_name_and_a_seq_in_an_invariant_refuse_as_expression_forms() {
+    for (body, at) in [
+        ("size(R::slots) = 2", "R::slots"),
+        ("size(seq(i in 0 .. 1: i)) = 2", "seq(i in 0 .. 1: i)"),
+    ] {
+        let found = refused(&format!(
+            "invariant Total using v on R::Ring at current {{ {body} }}"
+        ));
+        let [refusal] = &found[..] else {
+            panic!("one refusal for {body}");
+        };
+        assert_eq!(
+            (refusal.refusal.cause.code(), refusal.refusal.cause.cause()),
+            (Code::UnsupportedConstruct, Some("expression-form")),
+            "{body}"
+        );
+        assert_eq!(refusal.at, at);
+    }
 }

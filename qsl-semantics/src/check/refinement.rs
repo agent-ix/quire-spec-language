@@ -340,6 +340,20 @@ impl PopulationUse {
             (ValueType::Int(source), ValueType::Int(target)) => {
                 target.lower() <= source.lower() && source.upper() <= target.upper()
             }
+            // `Set<Reference<T>>[0, n]` fits a set of the same element whose
+            // bound contains `[0, n]`, or has none.
+            (ValueType::Collection(source), ValueType::Collection(target)) => {
+                source.kind() == target.kind()
+                    && source.element() == target.element()
+                    && match (source.bound(), target.bound()) {
+                        (_, None) => true,
+                        (Some(source), Some(target)) => {
+                            target.minimum() <= source.minimum()
+                                && source.maximum() <= target.maximum()
+                        }
+                        (None, Some(_)) => false,
+                    }
+            }
             _ => actual == self.required,
         }
     }
@@ -551,6 +565,26 @@ struct Population<'a> {
     record: &'a PopulationRecord,
 }
 
+/// The names a row spells the concrete populations of `models` by, whether or
+/// not the clause they are written in is a refinement's (FR-139).
+pub(crate) fn population_names(models: &[AdmittedModel]) -> Vec<String> {
+    models
+        .iter()
+        .filter_map(|model| {
+            let alias = model.alias()?;
+            Some(
+                model
+                    .population_domains()
+                    .filter_map(move |(_, record, _)| {
+                        let segment = type_identity_segment(&record.key.package, &record.key.node)?;
+                        Some(format!("{alias}::{segment}"))
+                    }),
+            )
+        })
+        .flatten()
+        .collect()
+}
+
 /// One object type of a model.
 struct ObjectType {
     name: String,
@@ -745,6 +779,7 @@ pub(crate) fn check_refinement<'a, 'c>(
         lifting: BTreeMap::new(),
         maps_complete: true,
         baseline: 0,
+        populations: None,
     };
     checker.baseline = checker.findings.refusals.len();
     checker.refuse_history_rows(form, &declaration.selection.identity);
@@ -789,6 +824,8 @@ struct Checker<'c, 'a> {
     /// How many refusals the header already holds, which say nothing of the
     /// maps.
     baseline: usize,
+    /// The concrete populations a row may name, resolved on first use.
+    populations: Option<PopulationScope>,
 }
 
 impl<'c, 'a> Checker<'c, 'a> {
@@ -797,6 +834,15 @@ impl<'c, 'a> Checker<'c, 'a> {
     /// a row spells them. A population of several member types names no
     /// single `Set<Reference<T>>` and is not offered.
     fn population_scope(&mut self) -> PopulationScope {
+        if let Some(scope) = &self.populations {
+            return scope.clone();
+        }
+        let scope = self.resolve_population_scope();
+        self.populations = Some(scope.clone());
+        scope
+    }
+
+    fn resolve_population_scope(&mut self) -> PopulationScope {
         let types = self.types();
         let populations = self.concrete_side.populations();
         let object_types = self.concrete_side.object_types(types);
@@ -1761,6 +1807,8 @@ fn population_uses(
         (PopulationValue::Objects, ValueType::Collection(collection)) => {
             collection.kind() == CollectionKind::Set
                 && collection.element() == &ValueType::Reference(used.member)
+                // `n` may be 0, so a minimum above 0 is never met.
+                && collection.bound().is_none_or(|bound| bound.minimum() == 0)
         }
         (PopulationValue::Count | PopulationValue::Sum { .. }, ValueType::Integer) => true,
         (PopulationValue::Count | PopulationValue::Sum { .. }, ValueType::Int(target)) => {

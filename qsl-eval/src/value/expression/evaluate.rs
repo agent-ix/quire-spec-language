@@ -368,17 +368,17 @@ fn charge_call(meter: &mut Meter) -> Result<(), Stop> {
 /// The declaration identity of the concrete population a refinement row's
 /// `only` ranges over, for the undefined cause's payload: the population
 /// under any `where` filter of `source`.
-fn population_of(source: CheckedNode<'_>) -> String {
+fn population_of(source: CheckedNode<'_>) -> Result<String, Halt> {
     let mut node = source;
     loop {
         match node.kind() {
-            NodeKind::PopulationObjects { population } => return population.node.clone(),
+            NodeKind::PopulationObjects { population } => return Ok(population.node.clone()),
             NodeKind::Query {
                 visit: Visit::Filter,
                 source,
                 ..
             } => node = node.at(*source),
-            _ => return String::new(),
+            _ => return Err(invariant("only-source-is-a-population")),
         }
     }
 }
@@ -2784,7 +2784,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.iterations = self.iterations.saturating_sub(1);
                 return Err(Halt::Family(FamilyResult::Undefined(Box::new(
                     StateModelUndefined::OnlyNotOne {
-                        population: population_of(node.at(*operand)),
+                        population: population_of(node.at(*operand))?,
                         found,
                     },
                 ))));
@@ -2915,7 +2915,15 @@ impl<'a, 'm> Machine<'a, 'm> {
         let Some(element) = iteration.source.elements().get(iteration.next).cloned() else {
             return self.finish(*iteration);
         };
-        charge_visit(self.meter)?;
+        // An `only` over a `where` filter already visited the one object that
+        // passed it (FR-139).
+        if !matches!(
+            node.kind(),
+            NodeKind::Query { visit: Visit::Only, source, .. }
+                if matches!(node.at(*source).kind(), NodeKind::Query { visit: Visit::Filter, .. })
+        ) {
+            charge_visit(self.meter)?;
+        }
         iteration.next = iteration.next.saturating_add(1);
         let position = iteration.next.saturating_sub(1);
         let body = match node.kind() {

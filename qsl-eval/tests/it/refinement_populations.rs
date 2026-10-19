@@ -43,6 +43,7 @@ const CELLS: usize = 3;
 const LONE: usize = 4;
 const GHOST: usize = 5;
 const SOLID: usize = 6;
+const TOTAL: usize = 7;
 
 fn integer(value: i64) -> Value {
     Value::Integer(Integer::from(value))
@@ -219,7 +220,7 @@ fn the_ring_rows_evaluate_over_the_slots_in_the_observed_state() {
 
 /// FR-139-AC-3, QSpec FR-376-AC-5: renaming the slot keys leaves every
 /// mapped value unchanged, since no form orders the slots by identity.
-#[trace("TC-544", "FR-139-AC-3", "QSpec-TC-311", "QSpec-FR-376-AC-5")]
+#[trace("TC-544", "QSpec-TC-311", "QSpec-FR-376-AC-5")]
 #[test]
 fn renaming_the_slot_keys_leaves_every_mapped_value_unchanged() {
     let world = World::new();
@@ -236,7 +237,7 @@ fn renaming_the_slot_keys_leaves_every_mapped_value_unchanged() {
 
 /// FR-139 behavior: a population name evaluates to the objects of that
 /// population in the observed state, in ascending key order.
-#[trace("TC-544", "FR-139-AC-3")]
+#[trace("TC-544")]
 #[test]
 fn a_population_name_evaluates_to_its_objects_in_ascending_key_order() {
     let world = World::new();
@@ -252,7 +253,7 @@ fn a_population_name_evaluates_to_its_objects_in_ascending_key_order() {
 
 /// FR-139 behavior: each form charges one work unit per object visited, and
 /// the evaluation records the membership it read.
-#[trace("TC-544", "FR-139-AC-3")]
+#[trace("TC-544")]
 #[test]
 fn a_form_charges_one_work_unit_per_object_visited() {
     let world = World::new();
@@ -334,4 +335,27 @@ fn only_is_undefined_for_no_object_and_for_several() {
         );
         assert_eq!(undefined(&world, &state, GHOST).1[0], "found=0");
     }
+}
+
+/// FR-139 (`sum`, metering): `sum(s in R::slots where s.ring = self:
+/// s.value)` is the sum over the slots passing the condition, 0 over none,
+/// and visits each slot once; `items` visits 6 (2 elements, then 2 slots for
+/// each).
+#[trace("TC-544")]
+#[test]
+fn a_sum_adds_the_matching_objects_and_each_form_visits_an_object_once() {
+    let world = World::new();
+    let state = world.state(1, 2, [0, 1]);
+    assert_eq!(render(&world.value(&state, TOTAL)), render(&integer(1)));
+    let visits = |row| {
+        let mut meter = Meter::new(UNLIMITED);
+        world.evaluate(&state, row, &mut meter);
+        meter
+            .admitted_charges()
+            .iter()
+            .filter(|charge| charge.point == ChargePoint::CollectionVisit)
+            .count()
+    };
+    assert_eq!(visits(TOTAL), 2);
+    assert_eq!(visits(ITEMS), 6);
 }

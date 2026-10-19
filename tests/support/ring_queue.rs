@@ -4,7 +4,7 @@
 //! assembled and checked with the rest of its unit.
 //!
 //! The abstract package `example/ring-queue-spec` holds `Queue { items,
-//! used, busy, cells, lone, ghost, solid }` and `Cell { value }`; the
+//! used, busy, cells, lone, ghost, solid, total }` and `Cell { value }`; the
 //! concrete package `example/ring-queue-impl` holds `Ring { head, size }` and
 //! `Slot { ring, index, value }` with the populations `rings` and `slots`.
 //! Every row of `RingIsQueue` reads `R::slots` whole.
@@ -243,6 +243,7 @@ pub fn queue_spec() -> Vec<u8> {
                     single(QUEUE, "Queue", "lone", &digit),
                     single(QUEUE, "Queue", "ghost", &digit),
                     single(QUEUE, "Queue", "solid", BOOLEAN),
+                    single(QUEUE, "Queue", "total", &two),
                 ],
                 vec![
                     operation(QUEUE, "Queue", "enq", &[("x", &digit)], None, &["items"]),
@@ -309,6 +310,9 @@ pub const ITEMS: &str = "items = seq(i in 0 .. self.size - 1: \
 
 /// The `Queue` object row's field rows: the `items` row of ADR-020 §8 and
 /// one row for each other form that reads the slots whole.
+/// `ghost` keeps `s.index + 0`: without it `self.head + 2` is coerced into
+/// `Digit` and its range obligation refuses at evaluation, instead of no slot
+/// satisfying the condition.
 pub fn all_rows() -> String {
     format!(
         "{ITEMS}\n\
@@ -317,7 +321,8 @@ pub fn all_rows() -> String {
          cells = R::slots;\n\
          lone = only(s in R::slots where s.ring = self: s.value);\n\
          ghost = only(s in R::slots where s.ring = self and s.index + 0 = self.head + 2: s.value);\n\
-         solid = all(s in R::slots where s.value = 1);"
+         solid = all(s in R::slots where s.value = 1);\n\
+         total = sum(s in R::slots where s.ring = self: s.value);"
     )
 }
 
