@@ -70,6 +70,8 @@ pub struct HyperBehavioursForm {
     pub quantifiers: Vec<QuantifierForm>,
     /// The `match` block's condition; `None` when there is no block.
     pub match_block: Option<ExpressionForm>,
+    /// The span of the whole `match { ... }`; `None` when there is no block.
+    pub match_span: Option<Span>,
     /// The `align skip` list; `None` when there is none.
     pub align_skip: Option<AlignSkipForm>,
     /// The body, with each indexed atom as written.
@@ -176,6 +178,9 @@ pub(crate) fn hyper_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
             expression_form(cst, only(&block_items, Production::HyperExpression, block)?)
         })
         .transpose()?;
+    let match_span = nodes_of(&clause_items, Production::MatchBlock)
+        .first()
+        .map(|block| block.span());
     let align_skip = nodes_of(&clause_items, Production::AlignSkip)
         .first()
         .map(|align| {
@@ -197,6 +202,7 @@ pub(crate) fn hyper_clause(construct: Construct<'_>) -> Result<DeclarationForm, 
             parameters,
             quantifiers,
             match_block,
+            match_span,
             align_skip,
             body: formula_form(cst, body, true)?,
             span: node.span(),

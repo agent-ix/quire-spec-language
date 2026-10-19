@@ -33,6 +33,7 @@ use quire_semantic_value::fairness::{FairnessConstraint, FairnessOperation};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::abstraction::{AbstractionKey, CheckedAbstractionRelation, OperationKey};
+use super::hyper_typing::{type_condition, BodyFault, Env, ExecutionRoot, Root, Site, Ty};
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, TemporalCause};
 use super::state_clause::{population_of, PopulationDomain};
@@ -152,8 +153,16 @@ pub struct ArgumentRead {
     pub operation: OperationKey,
     /// The parameter `p`.
     pub parameter: String,
-    /// The parameter's type `T`; the read is `Option<T>`.
-    pub value_type: ValueType,
+    /// The parameter's type `T`.
+    pub parameter_type: ValueType,
+}
+
+impl ArgumentRead {
+    /// The type of the read: `Option<T>`, present exactly when the step is an
+    /// `O` step.
+    pub fn read_type(&self) -> ValueType {
+        ValueType::Option(std::sync::Arc::new(self.parameter_type.clone()))
+    }
 }
 
 /// One top-level conjunct of a `match` block (ADR-023 HM-3).
@@ -352,6 +361,7 @@ pub struct CheckedModelRelation {
     name: String,
     span: Span,
     executions: Vec<(String, OperationKey)>,
+    body: Expression,
     claim: TemporalClaim,
     code_domains: BTreeMap<(usize, Vec<u32>), DomainKind>,
 }
@@ -412,6 +422,13 @@ impl CheckedModelRelation {
     /// order.
     pub fn executions(&self) -> &[(String, OperationKey)] {
         &self.executions
+    }
+
+    /// The relation's body, every read of which was typed under the value
+    /// profile: a Boolean over each execution's arguments, result and
+    /// receiver's pre-state and post-state. S4 lowers it to FR-322 terms.
+    pub fn body(&self) -> &Expression {
+        &self.body
     }
 
     /// The relation's form: always HP-1 (FR-173).
@@ -616,6 +633,35 @@ pub enum HyperCause {
         /// The name's span.
         span: Span,
     },
+    /// A name used twice among a clause's trace variables, object parameters
+    /// or execution variables. `conflicting_declaration`/`duplicate-declaration`,
+    /// at the second name.
+    DuplicateName {
+        /// The name as written.
+        name: String,
+        /// The second name's span.
+        span: Span,
+    },
+    /// A body names a variable or member that is declared nowhere.
+    /// `missing_declaration`/`missing-name`, at the read.
+    BodyMissing {
+        /// The name as written.
+        name: String,
+        /// The read's span.
+        span: Span,
+    },
+    /// A body operand of the wrong type, or a body that is not Boolean.
+    /// `ill_typed`/`type-mismatch`, at the operand.
+    BodyIllTyped {
+        /// The operand's span.
+        span: Span,
+    },
+    /// A body form that atoms and relation bodies do not admit.
+    /// `unsupported_construct`/`expression-form`, at the form.
+    BodyUnsupported {
+        /// The form's span.
+        span: Span,
+    },
     /// An indexed read or step label outside a `hyper` clause over
     /// `behaviours`. `unsupported_construct`/`expression-form`.
     OutsideHyperClause,
@@ -645,7 +691,11 @@ impl HyperCause {
             | Self::AlignSkipRepeated { span }
             | Self::AlignSkipFairness { span }
             | Self::SingleExistentialMatch { span }
-            | Self::ExecutionNotAnOperation { span, .. } => Some(*span),
+            | Self::ExecutionNotAnOperation { span, .. }
+            | Self::DuplicateName { span, .. }
+            | Self::BodyMissing { span, .. }
+            | Self::BodyIllTyped { span }
+            | Self::BodyUnsupported { span } => Some(*span),
             Self::OutsideHyperClause => None,
         }
     }
@@ -664,15 +714,19 @@ impl HyperCause {
             | Self::AlignSkipFairness { .. }
             | Self::SingleExistentialMatch { .. }
             | Self::ExecutionNotAnOperation { .. }
+            | Self::BodyUnsupported { .. }
             | Self::OutsideHyperClause => Code::UnsupportedConstruct,
+            Self::DuplicateName { .. } => Code::ConflictingDeclaration,
             Self::UnresolvedAlias { .. }
             | Self::UnresolvedPopulation { .. }
             | Self::UnknownTrace { .. }
+            | Self::BodyMissing { .. }
             | Self::UnresolvedStepLabel { .. } => Code::MissingDeclaration,
             Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnboundParameterAlias { .. }
             | Self::ParameterNotAnObject { .. }
             | Self::UnindexedRead { .. }
+            | Self::BodyIllTyped { .. }
             | Self::MismatchedTrace { .. } => Code::IllTyped,
         }
     }
@@ -691,15 +745,19 @@ impl HyperCause {
             | Self::AlignSkipFairness { .. }
             | Self::SingleExistentialMatch { .. }
             | Self::ExecutionNotAnOperation { .. }
+            | Self::BodyUnsupported { .. }
             | Self::OutsideHyperClause => "expression-form",
+            Self::DuplicateName { .. } => "duplicate-declaration",
             Self::UnresolvedAlias { .. }
             | Self::UnresolvedPopulation { .. }
             | Self::UnknownTrace { .. }
+            | Self::BodyMissing { .. }
             | Self::UnresolvedStepLabel { .. } => "missing-name",
             Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnboundParameterAlias { .. }
             | Self::ParameterNotAnObject { .. }
             | Self::UnindexedRead { .. }
+            | Self::BodyIllTyped { .. }
             | Self::MismatchedTrace { .. } => "type-mismatch",
         }
     }
@@ -823,6 +881,13 @@ fn check_behaviours(
     let mut temporal_causes: Vec<TemporalCause> = Vec::new();
     let operators = checked_operators(&form.body, false, &mut temporal_causes)?;
     found.extend(temporal_causes.into_iter().map(Found::Temporal));
+    let atom_roots = || -> BTreeMap<&str, Root> {
+        parameters
+            .iter()
+            .map(|(parameter, object)| (parameter.name.as_str(), Root::Object(*object)))
+            .collect()
+    };
+    let no_label = |_: &str, _: &StepLabelForm| None;
     for (_, node) in form.body.iter() {
         if let TemporalNodeForm::Holds { condition, .. } = node {
             check_atom(
@@ -832,12 +897,46 @@ fn check_behaviours(
                 &variables,
                 &mut found,
             );
+            let env = Env {
+                scope,
+                roots: atom_roots(),
+                site: Site::Body,
+                label: &no_label,
+            };
+            found.extend(
+                type_condition(&env, &condition.expression, &condition.spans)
+                    .into_iter()
+                    .map(body_fault),
+            );
         }
     }
 
     let (match_expression, mu_universal, mu_existential) = match &form.match_block {
         Some(block) => {
             let split = check_match(block, &variables, declarations, &mut found)?;
+            let label = |trace: &str, label: &StepLabelForm| match step_read(
+                trace,
+                label,
+                &variables,
+                declarations,
+                root_span(&block.spans),
+            ) {
+                Ok(StepRead::Operation { .. } | StepRead::Stutter) => Some(Ty::Label),
+                Ok(StepRead::Receiver { .. }) => Some(Ty::Receiver),
+                Ok(StepRead::Argument(argument)) => Some(Ty::Argument(argument.parameter_type)),
+                Err(_) => None,
+            };
+            let env = Env {
+                scope,
+                roots: BTreeMap::new(),
+                site: Site::Match,
+                label: &label,
+            };
+            found.extend(
+                type_condition(&env, &block.expression, &block.spans)
+                    .into_iter()
+                    .map(body_fault),
+            );
             (Some(block.expression.clone()), split.0, split.1)
         }
         None => (None, Vec::new(), Vec::new()),
@@ -860,7 +959,7 @@ fn check_behaviours(
         )
     });
     if let (Some(HyperForm::SingleExistential), Some(block)) = (&form_class, &form.match_block) {
-        let span = block.spans.span(block.spans.root()).unwrap_or(form.span);
+        let span = form.match_span.unwrap_or(root_span(&block.spans));
         return Err(Found::Hyper(HyperCause::SingleExistentialMatch { span }).into_failure());
     }
 
@@ -946,7 +1045,16 @@ fn checked_quantifiers(
     found: &mut Vec<Found>,
 ) -> Result<Vec<CheckedQuantifier>, StageFailure<CheckRefusal>> {
     let mut checked = Vec::with_capacity(form.quantifiers.len());
+    let mut seen: Vec<&str> = Vec::new();
     for quantifier in &form.quantifiers {
+        if seen.contains(&quantifier.variable.name.as_str()) {
+            found.push(Found::Hyper(HyperCause::DuplicateName {
+                name: quantifier.variable.name.clone(),
+                span: quantifier.variable.span,
+            }));
+            continue;
+        }
+        seen.push(&quantifier.variable.name);
         let Some(alias) = &quantifier.alias else {
             found.push(Found::Hyper(HyperCause::QuantifierWithoutAlias {
                 span: quantifier.span,
@@ -1072,8 +1180,17 @@ fn checked_parameters(
 ) -> Vec<(ObjectParameter, EffectiveId)> {
     let scope = declarations.temporal.scope;
     let mut checked = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
     for parameter in &form.parameters {
         let name = parameter.name.name.clone();
+        if seen.contains(&name.as_str()) {
+            found.push(Found::Hyper(HyperCause::DuplicateName {
+                name,
+                span: parameter.name.span,
+            }));
+            continue;
+        }
+        seen.push(&parameter.name.name);
         let span = Span {
             start: parameter.name.span.start,
             end: parameter.value_type.span.end,
@@ -1123,14 +1240,30 @@ fn checked_parameters(
 }
 
 /// One node of an expression with the span of its CST node and its parent.
-struct Visit<'e> {
-    node: ExprRef<'e>,
-    span: Option<Span>,
-    parent: Option<ExprRef<'e>>,
+pub(crate) struct Visit<'e> {
+    pub(crate) node: ExprRef<'e>,
+    pub(crate) span: Option<Span>,
+    pub(crate) parent: Option<ExprRef<'e>>,
+}
+
+/// The span of the whole expression `spans` locates.
+fn root_span(spans: &ExpressionSpans) -> Span {
+    spans
+        .span(spans.root())
+        .unwrap_or(Span { start: 0, end: 0 })
+}
+
+/// A body fault as the cause it is reported as.
+fn body_fault(fault: BodyFault) -> Found {
+    Found::Hyper(match fault {
+        BodyFault::Missing { name, span } => HyperCause::BodyMissing { name, span },
+        BodyFault::IllTyped { span } => HyperCause::BodyIllTyped { span },
+        BodyFault::Unsupported { span } => HyperCause::BodyUnsupported { span },
+    })
 }
 
 /// Visit every node of `expression` in source order, on an explicit stack.
-fn walk<'e>(
+pub(crate) fn walk<'e>(
     expression: &'e Expression,
     spans: &ExpressionSpans,
     mut visit: impl FnMut(&Visit<'e>),
@@ -1389,7 +1522,7 @@ fn step_read(
                 operation: operation_key(declarations.models, alias.as_str(), &resolved)
                     .ok_or_else(unresolved)?,
                 parameter: parameter.clone(),
-                value_type: value_type.clone(),
+                parameter_type: value_type.clone(),
             })))
         }
     }
@@ -2002,7 +2135,15 @@ fn check_relation(
     let mut found: Vec<Found> = Vec::new();
     let mut executions = Vec::with_capacity(form.executions.len());
     let mut roots: Vec<ValueType> = Vec::new();
+    let mut body_roots: BTreeMap<&str, Root> = BTreeMap::new();
     for binding in &form.executions {
+        if body_roots.contains_key(binding.variable.name.as_str()) {
+            found.push(Found::Hyper(HyperCause::DuplicateName {
+                name: binding.variable.name.clone(),
+                span: binding.variable.span,
+            }));
+            continue;
+        }
         let alias = binding
             .operation
             .name
@@ -2028,8 +2169,28 @@ fn check_relation(
                 .iter()
                 .map(|(_, value_type)| value_type.clone()),
         );
+        body_roots.insert(
+            &binding.variable.name,
+            Root::Execution(Box::new(ExecutionRoot {
+                declaring: operation.declaring_type(),
+                parameters: declaration.parameters().to_vec(),
+                result: declaration.result().cloned(),
+            })),
+        );
         executions.push((binding.variable.name.clone(), key));
     }
+    let no_label = |_: &str, _: &StepLabelForm| None;
+    let env = Env {
+        scope,
+        roots: body_roots,
+        site: Site::Body,
+        label: &no_label,
+    };
+    found.extend(
+        type_condition(&env, &form.body.expression, &form.body.spans)
+            .into_iter()
+            .map(body_fault),
+    );
     earliest(found)?;
     let root_refs: Vec<&ValueType> = roots.iter().collect();
     let code_domains = classify_domains(&root_refs, scope.types(), temporal.position_limit)
@@ -2043,6 +2204,7 @@ fn check_relation(
         name: form.name.name.clone(),
         span: form.span,
         executions,
+        body: form.body.expression.clone(),
         claim: TemporalClaim::new(BTreeMap::new(), true),
         code_domains,
     })

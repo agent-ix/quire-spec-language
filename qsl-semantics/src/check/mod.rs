@@ -113,6 +113,7 @@ mod lowering;
 pub(crate) use assemble::variant_type_declarations;
 pub(crate) use lowering::record_node_key;
 mod hyper_clause;
+mod hyper_typing;
 mod node_key;
 mod observation;
 mod operation_body;

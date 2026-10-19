@@ -244,7 +244,7 @@ fn unbounded(clause: &CheckedHyper) -> bool {
 /// quantifiers over it, one object parameter and both `match` conjuncts in
 /// `mu_universal`; `SavesPower` with the aliases `S` and `N`; `Opaque` with
 /// its one conjunct in `mu_existential`.
-#[trace("TC-597", "FR-172-AC-1")]
+#[trace("TC-597")]
 #[test]
 fn the_adr_clauses_bind_their_aliases_parameters_and_match_conjuncts() {
     let noninterference = clause(&["V"], &non_interference());
@@ -567,7 +567,7 @@ fn the_adr_clauses_classify_into_their_forms() {
 
 /// FR-173-AC-2: each clause outside the admitted forms is `Other` and names
 /// the rule that placed it there.
-#[trace("TC-598", "FR-173-AC-2")]
+#[trace("TC-598")]
 #[test]
 fn a_clause_outside_the_admitted_forms_names_its_rule() {
     let opaque_with = |prefix: &str, body: &str| {
@@ -621,7 +621,7 @@ fn a_clause_outside_the_admitted_forms_names_its_rule() {
 /// FR-173-AC-3: a single-existential clause with a `match` block refuses at
 /// the block; the same noninterference under the event-position profile
 /// records its profile and no form.
-#[trace("TC-598", "FR-173-AC-3")]
+#[trace("TC-598")]
 #[test]
 fn a_single_existential_clause_admits_no_match_and_another_profile_has_no_form() {
     let (text, cause) = hyper_cause(
@@ -633,7 +633,7 @@ fn a_single_existential_clause_admits_no_match_and_another_profile_has_no_form()
     assert_eq!(
         cause,
         HyperCause::SingleExistentialMatch {
-            span: first(&text, "b.step.op = b.step.op")
+            span: first(&text, "match { b.step.op = b.step.op }")
         }
     );
     assert_eq!(
@@ -652,7 +652,7 @@ fn a_single_existential_clause_admits_no_match_and_another_profile_has_no_form()
 /// FR-173-AC-4 (S3): the clause records one subject alias per distinct model
 /// it names, for the request writer to supply a subject and a deadlock-freedom
 /// item each.
-#[trace("TC-598", "FR-173-AC-4")]
+#[trace("TC-598")]
 #[test]
 fn a_clause_names_one_subject_alias_per_distinct_model() {
     let aliases = |checked: &CheckedHyperClause| -> Vec<String> {
@@ -734,7 +734,7 @@ fn a_symmetric_clause_has_a_copy_group_and_an_asymmetric_one_has_none() {
 /// FR-180-AC-1 (S3): `Det` over a vault whose `step` is bound to an
 /// implementation has a code claim beside its model claim; with no binding it
 /// has the model claim alone.
-#[trace("TC-605", "FR-180-AC-1")]
+#[trace("TC-605")]
 #[test]
 fn a_bound_step_relation_has_a_code_claim_beside_its_model_claim() {
     use qsl_semantics::check::{
@@ -804,4 +804,212 @@ fn hyper_clauses_are_ungated_by_the_model_profile() {
             );
         }
     }
+}
+
+/// FR-361-AC-4: the bodies are examined now, so the gate is not vacuous. An
+/// ill-typed relation body and an ill-typed hyper atom refuse as body faults
+/// under the model profile and the value profile alike, and never as a layer
+/// refusal.
+#[trace("TC-1015", "FR-361-AC-4")]
+#[test]
+fn an_examined_body_refuses_by_its_own_fault_under_either_profile() {
+    for layer in ["quire.value.complete/v1", "quire.model.complete/v1"] {
+        for declaration in [
+            "relation Bad using inf over (x: V::ConfigVersion::step, y: V::ConfigVersion::step) \
+             { x.nope = 1 }"
+                .to_owned(),
+            "hyper H using inf over behaviours (v: V::ConfigVersion) forall trace a of V \
+             { always holds(v.nope @ a = 1) }"
+                .to_owned(),
+        ] {
+            let (_, package) = assemble_under(layer, &["V"], INFINITE, &declaration);
+            let refusals = package
+                .check(CheckingLimits::default())
+                .expect_err("an ill-typed body refuses");
+            let [CheckRefusal {
+                cause: CheckCause::Hyper(cause),
+                ..
+            }] = &refusals[..]
+            else {
+                panic!("{layer}: {declaration}: one body fault, not {refusals:?}");
+            };
+            assert!(
+                matches!(**cause, HyperCause::BodyMissing { .. }),
+                "{layer}: {declaration}: {cause:?}"
+            );
+        }
+    }
+}
+
+const BAD_RELATION: &str = "relation Bad using inf over \
+     (x: V::ConfigVersion::step, y: V::ConfigVersion::step) { ";
+
+/// FR-172 "Relations over model executions": the body checks under the value
+/// profile. A body reading a member the operation or its receiver does not
+/// declare, or a variable nothing binds, refuses `missing_declaration`; a
+/// body that is not Boolean or compares unlike types refuses `ill_typed`; and
+/// a body over each execution's argument, result, pre-state and post-state
+/// checks and is kept.
+#[trace("TC-597")]
+#[test]
+fn a_relation_body_is_typed_under_the_value_profile() {
+    let (text, cause) = hyper_cause(
+        &["V"],
+        &format!("{BAD_RELATION}x.nonexistent = zzz and q.r = 3 }}"),
+    );
+    assert_eq!(
+        cause,
+        HyperCause::BodyMissing {
+            name: "nonexistent".into(),
+            span: first(&text, "x.nonexistent"),
+        }
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::MissingDeclaration, "missing-name")
+    );
+    for (body, needle) in [
+        ("zzz = 1", "zzz"),
+        ("q.r = 3", "q"),
+        ("x.result = 1", "x.result"),
+        ("x.self.nope = 1", "x.self.nope"),
+    ] {
+        let (text, cause) = hyper_cause(&["V"], &format!("{BAD_RELATION}{body} }}"));
+        let start = text.find(body).expect("the body") + body.find(needle).expect("the needle");
+        assert!(
+            matches!(&cause, HyperCause::BodyMissing { span, .. } if span.start == start),
+            "{body}: {cause:?}"
+        );
+    }
+    for body in ["x.i", "x.i = true", "x.self = 1"] {
+        let (_, cause) = hyper_cause(&["V"], &format!("{BAD_RELATION}{body} }}"));
+        assert_eq!(
+            (cause.code(), cause.tag()),
+            (Code::IllTyped, "type-mismatch"),
+            "{body}: {cause:?}"
+        );
+    }
+
+    let checked = relation(DET);
+    assert!(matches!(
+        checked.body().root_node(),
+        qsl_forms::ExprNode::Binary {
+            operator: qsl_forms::BinaryOperator::Implies,
+            ..
+        }
+    ));
+}
+
+/// FR-172 "Indexed atoms and step labels": an atom and a `match` conjunct
+/// are typed, so an unknown root, an unknown member, an atom that is not
+/// Boolean, a conjunct that compares an operation with a receiver key and a
+/// conjunct that is not Boolean each refuse.
+#[trace("TC-597")]
+#[test]
+fn atoms_and_match_conjuncts_are_typed() {
+    let atom = |condition: &str| {
+        format!(
+            "hyper H using inf over behaviours (v: V::ConfigVersion) forall trace a of V \
+             {{ always holds({condition}) }}"
+        )
+    };
+    let conjunct = |condition: &str| {
+        format!(
+            "hyper H using inf over behaviours (v: V::ConfigVersion) forall trace a of V \
+             match {{ {condition} }} {{ always holds(true) }}"
+        )
+    };
+    for (declaration, needle, missing) in [
+        (atom("w.versionNumber = 1"), "w.versionNumber", true),
+        (atom("zzz"), "zzz", true),
+        (atom("v.nope @ a = 1"), "v.nope", true),
+        (atom("v.versionNumber @ a"), "v.versionNumber @ a", false),
+        (
+            atom("v.versionNumber @ a = true"),
+            "v.versionNumber @ a = true",
+            false,
+        ),
+        (
+            conjunct("a.step.op = a.step.receiver"),
+            "a.step.op = a.step.receiver",
+            false,
+        ),
+        (conjunct("a.step.op"), "a.step.op", false),
+    ] {
+        let (text, cause) = hyper_cause(&["V"], &declaration);
+        let at = first(&text, needle);
+        match (&cause, missing) {
+            (HyperCause::BodyMissing { span, .. }, true) => assert_eq!(span.start, at.start),
+            (HyperCause::BodyIllTyped { span }, false) => assert_eq!(*span, at, "{declaration}"),
+            other => panic!("{declaration}: {other:?}"),
+        }
+    }
+    // The typed positives: an argument compared with its own type, an
+    // operation with `stutter`.
+    clause(
+        &["V"],
+        "hyper H using inf over behaviours (v: V::ConfigVersion) forall trace a of V \
+             forall trace b of V match { a.step.op != stutter and \
+             a.step.ConfigVersion::step.i = b.step.ConfigVersion::step.i } \
+             { always holds(v.versionNumber @ a + 1 >= v.versionNumber @ b) }",
+    );
+}
+
+/// ADR-023 HS-2, HS-3, HS-8: a trace variable, an object parameter and an
+/// execution variable are each named once.
+#[trace("TC-597")]
+#[test]
+fn a_name_used_twice_refuses_at_the_second() {
+    let (text, cause) = hyper_cause(
+        &["V"],
+        "hyper H using inf over behaviours (v: V::ConfigVersion) \
+         forall trace a of V exists trace a of V { always holds(v.versionNumber @ a = 1) }",
+    );
+    let second = text.rfind("trace a").expect("second quantifier") + "trace ".len();
+    assert_eq!(
+        cause,
+        HyperCause::DuplicateName {
+            name: "a".into(),
+            span: Span {
+                start: second,
+                end: second + 1
+            }
+        }
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::ConflictingDeclaration, "duplicate-declaration")
+    );
+    let (text, cause) = hyper_cause(
+        &["V"],
+        "hyper H using inf over behaviours (v: V::ConfigVersion, v: V::ConfigVersion) \
+         forall trace a of V { always holds(true) }",
+    );
+    let second = text.rfind("v: V::ConfigVersion").expect("second parameter");
+    assert_eq!(
+        cause,
+        HyperCause::DuplicateName {
+            name: "v".into(),
+            span: Span {
+                start: second,
+                end: second + 1
+            }
+        }
+    );
+    let (text, cause) = hyper_cause(
+        &["V"],
+        "relation R using inf over (x: V::ConfigVersion::step, x: V::ConfigVersion::step) \
+         { true }",
+    );
+    let second = text.rfind("x: V::").expect("second execution");
+    assert_eq!(
+        cause,
+        HyperCause::DuplicateName {
+            name: "x".into(),
+            span: Span {
+                start: second,
+                end: second + 1
+            }
+        }
+    );
 }
