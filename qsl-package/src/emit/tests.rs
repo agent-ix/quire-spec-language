@@ -256,6 +256,28 @@ fn verified_exports(emission: &Emission) -> BTreeMap<String, String> {
     }
 }
 
+/// The small checked producer's canonical envelope and identity are fixed by
+/// the owned-projection emission, then admitted by the independent V2 reader.
+#[trace("TC-253", "FR-087-AC-3")]
+#[test]
+fn emitted_package_preserves_the_owned_projection_golden() {
+    let emission = emit(&package(vec![f()]));
+    assert_eq!(
+        emission.package.bytes(),
+        include_bytes!("tests/fixtures/owned_projection_wire.json")
+    );
+    assert_eq!(
+        emission.package.package_id().hex(),
+        "f2332c7edc46df9efb27d7d7da73a9af1464a46c5a1b28996118754fb0678e3c"
+    );
+    match read_back(&emission) {
+        Read::Verified { package, .. } => {
+            assert_eq!(package.package_id(), emission.package.package_id());
+        }
+        other => panic!("the golden envelope must be reader-admitted: {other:?}"),
+    }
+}
+
 pub(super) fn nodes(wire: &Value) -> &[Value] {
     wire["semantic_graph"]["nodes"].as_array().unwrap()
 }
@@ -1765,7 +1787,7 @@ fn generated_nodes_are_placed_at_their_enclosing_declaration() {
 /// A unit with a declared record, an `Integer` function and a function with
 /// parameters, the FR-091 round trip's source.
 const SPINE_TEXT: &str = "language \"ix:native\" edition \"1-draft\";\n\
-    profile v = \"quire.value.complete/v1\";\n\
+    profile v = \"quire.model.complete/v1\";\n\
     record Point { x: Integer; y: Integer; }\n\
     function one using v(): Integer pure { 1 + 0 }\n\
     function both using v(a: Boolean, b: Boolean): Boolean pure { a and b }\n";
@@ -3023,7 +3045,7 @@ fn config_version_model(with_sub: bool) -> qsl_semantics::model::intake::Selecte
 fn attempt_frame_unit(declarations: &str, operation: &str, contracts: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model Config = \"example/config-version\" version \"1\" digest \
          \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
          {declarations}\n\
@@ -3295,7 +3317,7 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
 #[test]
 fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
     let unit = "language \"ix:native\" edition \"1-draft\";\n\
-        profile v = \"quire.value.complete/v1\";\n\
+        profile v = \"quire.model.complete/v1\";\n\
         model Config = \"example/config-version\" version \"1\" digest \
         \"sha256-jcs:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\";\n\
         function f using v (): Boolean pure { true }\n\
@@ -3450,7 +3472,7 @@ fn emit_from_text(declarations: &str) -> (String, Emission) {
 pub(crate) fn package_from_text(declarations: &str) -> (String, CheckedPackage) {
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          {declarations}"
     );
     let parsed = qsl_cst::parse(

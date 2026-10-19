@@ -154,6 +154,14 @@ pub(crate) fn increment() -> Json {
     operation("increment", &[], None, frame(&["value"], false, false))
 }
 
+pub(crate) fn acquire() -> Json {
+    operation("acquire", &[], None, frame(&["value"], false, false))
+}
+
+pub(crate) fn release() -> Json {
+    operation("release", &[], None, frame(&["value"], false, false))
+}
+
 pub(crate) fn counters_document(operations: Vec<Json>, extras: bool) -> Vec<u8> {
     let counter_identity = ident("Counter");
     let constructs = vec![
@@ -252,7 +260,7 @@ fn build_world(
     let packages = package_input([document.as_slice()]);
     let digest = *packages.keys().next().expect("one model");
     let unit = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n\
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\nfunction Noop using v(): Boolean pure {{ true }}\n{clauses}\n",
         hex(&digest)
     );

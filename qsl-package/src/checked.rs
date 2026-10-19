@@ -486,7 +486,7 @@ pub struct EmittedPackage {
 impl EmittedPackage {
     /// The v2 emitter's sole constructor (ADR-011 T-8, M-4).
     /// `identity_preimage` is IR's own typed
-    /// `CheckedPackageIdentityPreimageV2`, JCS-encoded inside this
+    /// `CheckedPackageIdentityPreimageRefV2`, JCS-encoded inside this
     /// constructor before `package_id` is minted from those bytes
     /// (`PackageId::of_preimage`, ADR-013 O-02): there is no parameter
     /// through which a caller could instead supply arbitrary preimage
@@ -496,7 +496,7 @@ impl EmittedPackage {
     /// panic. `pub(super)`: reachable from anywhere in
     /// `qsl-package` (in particular, `emit`), never from outside it.
     pub(super) fn new<E: From<quire_canonical::Error>>(
-        identity_preimage: &quire_contract_model::CheckedPackageIdentityPreimageV2,
+        identity_preimage: &quire_contract_model::CheckedPackageIdentityPreimageRefV2<'_>,
         encode: impl FnOnce(PackageId) -> Result<Vec<u8>, E>,
     ) -> Result<Self, E> {
         // RFC 8785 bytes from `quire-canonical` (ADR-013 §2, ADR-013:113:
@@ -671,14 +671,28 @@ mod tests {
         assert_eq!(format!("{:x}", Sha256::digest(TEXT.as_bytes())), DIGEST);
         let preimage: quire_contract_model::CheckedPackageIdentityPreimageV2 =
             serde_json::from_str(TEXT).expect("the vector is a v2 identity preimage");
+        let value: serde_json::Value = serde_json::from_str(TEXT).unwrap();
+        let mut node = value["identity_projection"][0].clone();
+        node["occurrences"] = serde_json::json!([]);
+        let nodes: Vec<quire_contract_model::CheckedSemanticNodeV2> =
+            vec![serde_json::from_value(node).expect("the projection is a semantic node")];
+        let borrowed = quire_contract_model::CheckedPackageIdentityPreimageRefV2 {
+            version: preimage.version.as_ref(),
+            edition: &preimage.edition,
+            profile_selections: &preimage.profile_selections,
+            definition_selections: &preimage.definition_selections,
+            model_selections: &preimage.model_selections,
+            required_features: &preimage.required_features,
+            dependency_selections: &preimage.dependency_selections,
+            identity_projection: &nodes,
+        };
         assert_eq!(
-            EmittedPackage::new(&preimage, |_| Ok::<_, quire_canonical::Error>(Vec::new()))
+            EmittedPackage::new(&borrowed, |_| Ok::<_, quire_canonical::Error>(Vec::new()))
                 .expect("the golden preimage encodes")
                 .package_id()
                 .hex(),
             DIGEST
         );
-        let value: serde_json::Value = serde_json::from_str(TEXT).unwrap();
         assert_eq!(serde_json::to_string(&value).unwrap(), TEXT);
     }
 }

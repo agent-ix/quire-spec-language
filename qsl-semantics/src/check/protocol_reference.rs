@@ -91,6 +91,7 @@ fn operator(root: ProtocolNodeKind) -> Option<&'static str> {
         | ProtocolNodeKind::Repeat => Some(root.label()),
         ProtocolNodeKind::Await
         | ProtocolNodeKind::Check
+        | ProtocolNodeKind::Fence
         | ProtocolNodeKind::Send
         | ProtocolNodeKind::Receive
         | ProtocolNodeKind::Attempt
