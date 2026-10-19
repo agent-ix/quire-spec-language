@@ -235,7 +235,7 @@ const DEEP_CASES: [&str; 5] = [
 ];
 
 /// The deep-format calls in recipe order: one exact listing per case, then the
-/// all five cases in one run at `DEEP_THREADS`, all in the default lane's directory.
+/// five cases in one run at `DEEP_THREADS`, all in the default lane's directory.
 fn deep_calls(directory: &str) -> String {
     let listings: Vec<Vec<&str>> = DEEP_CASES
         .iter()
