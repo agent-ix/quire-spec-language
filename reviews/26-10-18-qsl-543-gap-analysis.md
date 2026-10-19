@@ -68,3 +68,5 @@ Round 1, reviewed at `84309fc22546a5adec7ac758a9dfb2ed5513d3ec`.
 FND-001: the three tests now carry `#[trace("TC-540")]` / `#[trace("TC-542")]` only. No test in the tree tags FR-135-AC-1, FR-135-AC-4 or FR-137-AC-1, so the matrix reports them untagged until S4 lands.
 
 FND-002: the value-twice and peek-twice tests assert `Conflicting.first` slicing to the first row. The three `MissingRow` refusals assert their span (`CasRefinesCounter`). FR-136-AC-1 asserts `self` as the receiver's only parameter, with a reference type, and asserts `put`'s argument as an `Integer` body over `[self, x]`.
+
+Round 2, reviewed at `bf517a3ed4ea53bbba03ffb6573e046cade6b192`: no findings were open and none are new. The new tests carry `TC-541` only and claim no AC.

@@ -411,9 +411,10 @@ fn split_member(name: &str) -> Option<(&str, &str)> {
 
 /// Whether a value of `actual` fits a slot of `required` (ADR-016 SC-2): the
 /// same type, an integer in a containing integer range, an object reference
-/// to a subtype, a record to a record it specializes (FR-359), or an option
-/// of such. A collection is invariant in its element type, as FR-359-AC-8
-/// states: a collection of a child record is not a collection of its parent.
+/// to a subtype, or a record to a record it specializes (FR-359). An `Option`
+/// or collection type is invariant in its payload, as FR-359 states: a type's
+/// identity includes its element type, so `Option<S>` or `Sequence<S>` is not
+/// an `Option<P>` or `Sequence<P>` for a child `S` of `P`.
 fn conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -> bool {
     match (actual, required) {
         (ValueType::Integer | ValueType::Int(_), ValueType::Integer) => true,
@@ -424,7 +425,6 @@ fn conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -
         (ValueType::Composite(sub), ValueType::Composite(sup)) => {
             types.composite_conforms(*sub, *sup)
         }
-        (ValueType::Option(sub), ValueType::Option(sup)) => conforms(types, sub, sup),
         _ => actual == required,
     }
 }
@@ -1338,7 +1338,8 @@ mod tests {
 
     /// FR-359: a record conforms to the record it specializes and to no
     /// other; a parent does not conform to its child, and a collection of the
-    /// child is not a collection of the parent (FR-359-AC-8).
+    /// child is not a collection of the parent, and an option of the child is not
+    /// an option of the parent (FR-359).
     #[trace("TC-541")]
     #[test]
     fn a_record_conforms_to_its_ancestor_only() {
@@ -1377,9 +1378,14 @@ mod tests {
             &sequence_of(record(taxed)),
             &sequence_of(record(money))
         ));
-        assert!(conforms(
+        assert!(!conforms(
             &types,
             &ValueType::option(record(taxed)),
+            &ValueType::option(record(money))
+        ));
+        assert!(conforms(
+            &types,
+            &ValueType::option(record(money)),
             &ValueType::option(record(money))
         ));
     }

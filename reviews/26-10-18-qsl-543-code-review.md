@@ -87,3 +87,21 @@ FND-002: `operation_named` now refuses `OperationLookup::Ambiguous` at the name 
 FND-003: `Side::populations` and `Side::object_types` return `Result`, and `or_fault` turns a broken invariant into an internal fault. A missing attribute list faults as `abstract-object-type-has-attributes`. Nothing is dropped silently any more.
 
 FND-006: `maps_complete` now counts only refusals after the header (`baseline`), so a `WrongProfile` refusal no longer suppresses step-argument typing. A row error with no span is now a fault, not `Span{0,0}`. Terminal and refinement not-emitted refusals are both reported, which `a_terminal_and_a_refinement_are_each_refused_not_emitted` tests.
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The `Option` arm of `conforms` recurses, so `Option<TaxedMoney>` conforms to `Option<Money>`, and the new unit test asserts exactly that. FR-359 (item text near line 138) says the opposite: "an expression of type `Sequence<S>` or `Option<S>` SHALL be refused at a `Sequence<P>` or `Option<P>` slot, because a collection's type identity includes its element type". So the refinement checker accepts a row the rest of the language refuses. The doc comment also cites FR-359-AC-8 for collection invariance, but AC-8 is about operation arguments. The rule is FR-359's item text. If the author is right that a record subtype cannot cross the abstract/concrete package boundary, this is close to unreachable. Fix: make the `Option` arm recurse only for non-record payloads, or not at all for `Composite`, and flip the unit test's last assertion. | qsl-semantics/src/check/refinement.rs:415, 427, 1341, 1380-1384 |
+
+## Dispositions (round 2)
+
+Round 2, reviewed at `bf517a3ed4ea53bbba03ffb6573e046cade6b192`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-007 | fixed | bf517a3ed4ea53bbba03ffb6573e046cade6b192 |
+
+FND-007: `conforms` gains `(Composite(sub), Composite(sup)) => types.composite_conforms(sub, sup)`, and collections stay invariant, which agrees with FR-359. The fix is tested at unit level: `refinement::tests::a_record_conforms_to_its_ancestor_only` checks child into parent, parent into parent, parent into child (refused), an unrelated record (refused) and a `Sequence` of the child (refused). The author argues that a record subtype cannot cross the abstract/concrete package boundary, so no refinement-level fixture can reach the arm. That argument is accepted: the abstract field's record type belongs to the abstract package and the concrete expression's type to the concrete package. My confidence is medium, since I did not check the shared-library case. The Option half of the test is FND-008 (new).
+
+FND-002 (fixed in round 1) now also has a test: `a_step_row_naming_an_ambiguous_operation_refuses_at_its_name` uses a `Child` under `Base1`/`Base2`, each declaring `op`, and asserts `ambiguous_declaration`/`ambiguous-name` as the only refusal, at `Impl::Child::op`.
