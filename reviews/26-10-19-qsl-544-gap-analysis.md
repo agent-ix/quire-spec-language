@@ -78,3 +78,16 @@ The coder's listed deviations are judged as follows:
 | FND-006 | low | A concrete object whose most-specific type has no object row. RM-3 requires a row per abstract type, not per concrete subtype that a source population admits, so a population of a supertype with a subtype object has no rule. `map_state` reports `Undetermined` with `UnmappedType`, which is sound. The spec should either make S3 (FR-135) refuse a source population that admits an unmapped most-specific type, or map the subtype through its nearest mapped supertype. | qsl-replay/src/refinement/map.rs:159-165; spec/decisions/ADR-020-refinement-mappings-between-qsl-models.md |
 | FND-007 | low | `ModelSystem::over_model` (a system over one of the models of a unit that selects two, ADR-020 RM-1) is new public `qsl-eval` API that no requirement states. Its refusal reuses FR-120's `invalid_runtime_input`/`wrong-role-mapping`, which FR-120 defines for a universe naming an undeclared population. FR-120 (or FR-140's Inputs) should state how a subject's system is built from a two-model unit, and which code refuses an unknown model. | qsl-eval/src/simulation/model.rs:384-418 |
 | FND-008 | low | The relationship extents of a mapped state are not specified. `map_state` always returns `extents: []`. FR-101's state key does not encode extents, so key equality (FR-140-AC-1) is unaffected. But FR-141 evaluates abstract clauses over a mapped state's observation, which would then show no relationship instances. FR-140 or ADR-020 RM-3 should say whether abstract relationships are mapped or refused. | qsl-replay/src/refinement/map.rs:143-146 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Spec gap: needs ACs for top-level and nested reference lifting and a ticket that builds nested lifting. Deferred to the planner's new STD ticket ("missing rules get ACs"); the code's `Unsupported(NestedReference)` refusal is sound until then. The brief gave no ticket id, and none was found in Linear. |
+| FND-002 | deferred | Plan gap: deferred to the planner's re-slice of the QSL-544, QSL-545 and QSL-546 ACs (new STD ticket). |
+| FND-003 | deferred | Spec defect: deferred to the planner's new STD ticket (ADR-020 §8 guard). The fixture keeps its checking subtraction form until then. |
+| FND-004 | deferred | Spec defect: deferred to the planner's new STD ticket (FR-141-AC-7 rewrite). It is out of scope for part 1 (FR-141). |
+| FND-005 | deferred | Spec gap: deferred to the planner's new STD ticket (FR-140 signature and `EvalFailure`). |
+| FND-006 | deferred | Spec gap: deferred to the planner's new STD ticket ("missing rules get ACs"); `UnmappedType` is now tested (SR-13112 FND-002). |
+| FND-007 | deferred | Spec gap: deferred to the planner's new STD ticket (an FR-120 rule for `over_model`). |
+| FND-008 | deferred | Spec gap: deferred to the planner's new STD ticket (relationship extents of a mapped state). |

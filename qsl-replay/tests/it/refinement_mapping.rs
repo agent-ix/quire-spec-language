@@ -2,7 +2,9 @@
 //! FR-140 (TC-545, TC-555): `map_state` over ADR-020 §8's `CasRefinesCounter`.
 
 use ix_trace_rs::trace;
+use qsl_foundation::diagnostic::Code;
 use qsl_replay::{map_state, EvalFailure, HiddenSlot, MappingFailure, MappingRowRef, ObjectKey};
+use qsl_semantics::model::observation::AdmissionFailure;
 use qsl_semantics::model::state::ModelState;
 use quire_exact::ScalarLimits;
 
@@ -157,10 +159,16 @@ fn an_object_of_an_unmapped_type_is_reported_not_dropped() {
     );
 }
 
-/// `ModelSystem::over_model` refuses a model the unit does not select.
-#[trace("TC-545")]
+/// `ModelSystem::over_model` refuses a model the unit does not select with
+/// `invalid_runtime_input`/`wrong-role-mapping`. No TC covers `over_model`
+/// yet, so the test carries no tag.
 #[test]
 fn a_system_over_an_unselected_model_is_refused() {
     let world = World::new(&cas_refines_counter());
-    assert!(world.unselected_system("example/not-selected").is_err());
+    let Err(AdmissionFailure::Refused(record)) = world.unselected_system("example/not-selected")
+    else {
+        panic!("the system is refused");
+    };
+    assert_eq!(record.code, Code::InvalidRuntimeInput);
+    assert_eq!(record.cause, "wrong-role-mapping");
 }
