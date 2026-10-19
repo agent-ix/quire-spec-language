@@ -31,3 +31,9 @@ no overlap or gap.
 
 One low redundancy finding. IDs are unique and the FR-251 coverage split is
 consistent.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 095366db6 and 6b1d00fb4: AC-6 drops the ConfigVersion-bound sentence that restated AC-1. TC-1082 (renamed to TC-1082-export-returns-bound-or-refused-per-item.md) replaces step 2 with an item that references no element, a case no other AC covers. |

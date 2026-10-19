@@ -42,3 +42,16 @@ Not mergeable until FND-001 is fixed or rejected with a reason (for example,
 a rule elsewhere that every item references at least one element). FND-002 is
 a low TC wording gap. TC-706's narrowed scope, the FR-251 Verification cells
 and the ADR-017 AR-4 pointer are correct.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | FR-307's Downstream dependency still says the driver "puts only the items that carry bindings in the QSpec FR-331 request". After the FND-001 fix, an item that references no element is bound with an empty binding set, so it carries no bindings, and this sentence still describes the driver dropping it. ADR-017 AR-4 says "only the bound items". Say "only the bound items" here as well. | spec/functional/FR-307-export-the-bindings-each-item-references.md:101-105 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 095366db6: the Per-item results bullet now says the export SHALL return each item as a bound result (an empty binding set when the item references no element) or a refusal. AC-6 adds "A requested item that references no model element returns a bound result with an empty binding set, not a refusal", and TC-1082 step 2 tests it. The residual wording in Dependencies is FND-003. |
+| FND-002 | fixed | 095366db6: TC-1081 step 1 builds with poisoned source bytes, no clause argument, and atom-callback and RT-translation hooks that fail the test if invoked. The expected result asserts that none is read or invoked. |

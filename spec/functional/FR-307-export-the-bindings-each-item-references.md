@@ -100,8 +100,8 @@ An item references:
   elements and what CG receives; ADR-011 T-13 names the driver.
 - **Downstream:** CG's Kani and Verus generators receive only bound items and
   keep their own unbound guard (ADR-017 AR-4). The orchestrating driver
-  (ADR-011 T-13, in agent-ix/quire-driver) puts only the items that carry
-  bindings in the QSpec FR-331 request (ADR-017 AR-6); this FR owns the
+  (ADR-011 T-13, in agent-ix/quire-driver) puts only the bound items
+  in the QSpec FR-331 request (ADR-017 AR-6); this FR owns the
   bound-or-refused result kinds the driver reads (AC-6), not the driver's request building.
 
 ## References

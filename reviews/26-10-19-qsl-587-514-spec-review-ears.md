@@ -26,3 +26,9 @@ context, not a requirement.
 ## Verdict
 
 One low wording finding; otherwise conformant.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 095366db6: the bullet now reads "The export SHALL return each item as one of two result kinds ... When every requested item is refused, the export SHALL still return one refusal per item", and the driver-selection clause is gone. |
