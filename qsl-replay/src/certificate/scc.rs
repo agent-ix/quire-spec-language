@@ -35,10 +35,18 @@
 //! state of its own, rejects `NotPartition` at the first state of the
 //! component it refines, or at the least reached state at the top level.
 //!
-//! The check materializes no state, edge or automaton state: the product
-//! graph's construction already charged those budgets. It polls the cancel
-//! handle at every component, state and edge it reads, and a cancellation
-//! stops it with `Stopped(Cancelled)`, which is never an acceptance.
+//! The check materializes no state, edge or automaton state, and it charges
+//! no budget: the existing budgets (states, transitions, automaton states)
+//! bound materialization, which the product graph's construction already
+//! charged. FR-339 Behavior says partition and fairness work also charges
+//! them; that sentence and this decision disagree. Work here is linear in
+//! the certificate's size per nesting level and is stopped by the cancel
+//! handle instead. It polls the handle per component, per listed state, per
+//! computed edge read and per state of a witness's enabledness or quiet-set
+//! read. `MissingAcceptance`'s set comparison and a state with no out-edge
+//! are not polled; both are bounded by the states already polled. A
+//! cancellation stops the check with `Stopped(Cancelled)`, which is never an
+//! acceptance.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -181,7 +189,8 @@ pub(crate) struct EmptyProduct;
 
 /// FR-339's partition, edge and witness checks of `components` over
 /// `product` under the clause's resolved `constraints`, polling `cancel` at
-/// every component, state and edge.
+/// every component, listed state and computed edge. It charges no budget
+/// (see the module doc).
 pub(crate) fn check_partition(
     product: &ProductGraph,
     components: &[Component],
@@ -565,14 +574,19 @@ mod tests {
     fn the_weak_each_partition_is_accepted() {
         let example = example();
         assert_eq!(example.product.states.len(), 15);
-        let mut product = example.product.clone();
-        assert_eq!(
-            product.add_state(product_state([0, 0], "q0"), [UPD_A, UPD_B]),
-            Err(ProductGraphError::DuplicateState)
-        );
         assert_eq!(
             check(&example.product, &certificate(), &example.constraints),
             TemporalCertificateCheck::Accepted
+        );
+    }
+
+    /// The same product state cannot be added to a product graph twice.
+    #[test]
+    fn a_product_state_is_added_once() {
+        let mut product = example().product;
+        assert_eq!(
+            product.add_state(product_state([0, 0], "q0"), [UPD_A, UPD_B]),
+            Err(ProductGraphError::DuplicateState)
         );
     }
 
@@ -629,7 +643,6 @@ mod tests {
     /// A partition that leaves a reached state out, or names a state the
     /// checker never reached, is not a partition: the least uncovered state
     /// and the foreign state are the loci.
-    #[trace("TC-526")]
     #[test]
     fn an_uncovered_or_foreign_state_is_not_a_partition() {
         let example = example();
@@ -654,7 +667,6 @@ mod tests {
     /// `s` leaves `{t}`, which holds no cycle, so `UnfairStrong` holds; a
     /// refinement that keeps `s`, or names a constraint an inside edge
     /// takes, fails.
-    #[trace("TC-526")]
     #[test]
     fn a_strong_refinement_is_checked_within_its_component() {
         let (x, y, z) = (Identity::new(0), Identity::new(1), Identity::new(2));
@@ -711,7 +723,6 @@ mod tests {
 
     /// A cancelled handle stops the check with its source; it is never an
     /// acceptance.
-    #[trace("TC-526")]
     #[test]
     fn a_cancelled_check_stops_with_its_source() {
         let example = example();
@@ -729,6 +740,237 @@ mod tests {
                     source: CancelCause::Requested,
                 }
             ))
+        );
+    }
+
+    /// `s -x-> t -y-> s`, where `z` is enabled at `s` alone.
+    fn two_cycle(tag: &str) -> (ProductGraph, ProductStateRef, ProductStateRef) {
+        let (x, y, z) = (Identity::new(0), Identity::new(1), Identity::new(2));
+        let (s, t) = (product_state([0, 0], tag), product_state([1, 0], tag));
+        let mut product = ProductGraph::new();
+        let sv = product.add_state(s.clone(), [x, z]).expect("a new state");
+        let tv = product.add_state(t.clone(), [y]).expect("a new state");
+        product
+            .add_edge(sv, tv, EdgeLabel::Transition(x))
+            .expect("known vertices");
+        product
+            .add_edge(tv, sv, EdgeLabel::Transition(y))
+            .expect("known vertices");
+        (product, s, t)
+    }
+
+    fn single(states: Vec<ProductStateRef>, witness: ComponentWitness) -> Vec<Component> {
+        vec![Component { states, witness }]
+    }
+
+    /// A witness that does not prove its rule is refused: `MissingAcceptance`
+    /// over a component that holds accepting states or names no set, and
+    /// `UnfairWeak` over a constraint that is disabled at one state or names
+    /// no constraint.
+    #[test]
+    fn a_witness_that_proves_nothing_is_refused() {
+        let example = example();
+        let mut holds_accepting = certificate();
+        holds_accepting[1].witness = ComponentWitness::MissingAcceptance { set: 0 };
+        assert_eq!(
+            check(&example.product, &holds_accepting, &example.constraints),
+            rejected(
+                CertificateRule::WitnessFails,
+                holds_accepting[1].states[0].clone()
+            )
+        );
+
+        let mut no_set = certificate();
+        no_set[0].witness = ComponentWitness::MissingAcceptance { set: 1 };
+        assert_eq!(
+            check(&example.product, &no_set, &example.constraints),
+            rejected(CertificateRule::WitnessFails, no_set[0].states[0].clone())
+        );
+
+        let mut no_constraint = certificate();
+        no_constraint[1].witness = ComponentWitness::UnfairWeak { constraint: 2 };
+        assert_eq!(
+            check(&example.product, &no_constraint, &example.constraints),
+            rejected(
+                CertificateRule::WitnessFails,
+                no_constraint[1].states[0].clone()
+            )
+        );
+
+        let (product, s, t) = two_cycle("q1");
+        let disabled_at_t = [Constraint::weak([Identity::new(2)])];
+        assert_eq!(
+            check(
+                &product,
+                &single(
+                    vec![s.clone(), t],
+                    ComponentWitness::UnfairWeak { constraint: 0 }
+                ),
+                &disabled_at_t
+            ),
+            rejected(CertificateRule::WitnessFails, s)
+        );
+    }
+
+    /// An empty component is not a partition: at the top level it is
+    /// rejected at the least reached state, inside a refinement at the
+    /// refined component's first state.
+    #[test]
+    fn an_empty_component_is_not_a_partition() {
+        let (product, s, t) = two_cycle("q1");
+        let empty = single(Vec::new(), ComponentWitness::Trivial);
+        assert_eq!(
+            check(&product, &empty, &[]),
+            rejected(CertificateRule::NotPartition, s.clone())
+        );
+
+        let constraints = [Constraint::strong([Identity::new(2)])];
+        let refined = single(
+            vec![t, s.clone()],
+            ComponentWitness::UnfairStrong {
+                constraints: vec![0],
+                sub: empty,
+            },
+        );
+        assert_eq!(
+            check(&product, &refined, &constraints),
+            rejected(CertificateRule::NotPartition, refined[0].states[0].clone())
+        );
+    }
+
+    /// `s -x-> a -y-> b -w-> s`, `b -v-> a`, with strong `z` enabled at `s`
+    /// alone and strong `z2` enabled at `a` alone, neither ever taken. The
+    /// quiet states of `{s, a, b}` under `z` are `{a, b}`; under `z2` and
+    /// within `{a, b}`, `{b}`.
+    fn nested() -> (ProductGraph, [ProductStateRef; 3], [Constraint; 2]) {
+        let [x, y, w, v, z, z2] = [0, 1, 2, 3, 4, 5].map(Identity::new);
+        let states = [
+            product_state([0, 0], "q1"),
+            product_state([1, 0], "q1"),
+            product_state([2, 0], "q1"),
+        ];
+        let mut product = ProductGraph::new();
+        let s = product.add_state(states[0].clone(), [x, z]).expect("new");
+        let a = product.add_state(states[1].clone(), [y, z2]).expect("new");
+        let b = product.add_state(states[2].clone(), [v, w]).expect("new");
+        for (from, to, label) in [(s, a, x), (a, b, y), (b, s, w), (b, a, v)] {
+            product
+                .add_edge(from, to, EdgeLabel::Transition(label))
+                .expect("known vertices");
+        }
+        let constraints = [Constraint::strong([z]), Constraint::strong([z2])];
+        (product, states, constraints)
+    }
+
+    fn nested_certificate(
+        [s, a, b]: [ProductStateRef; 3],
+        inner: Vec<Component>,
+    ) -> Vec<Component> {
+        let middle = single(
+            vec![a, b.clone()],
+            ComponentWitness::UnfairStrong {
+                constraints: vec![1],
+                sub: inner,
+            },
+        );
+        single(
+            vec![s, middle[0].states[0].clone(), b],
+            ComponentWitness::UnfairStrong {
+                constraints: vec![0],
+                sub: middle,
+            },
+        )
+    }
+
+    /// A refinement of a refinement is checked: the innermost level is
+    /// accepted when it partitions the quiet states of both, and its empty
+    /// component is rejected at the first state of the component it refines.
+    #[test]
+    fn a_refinement_of_a_refinement_is_checked() {
+        let (product, [s, a, b], constraints) = nested();
+        let only_b = single(vec![b.clone()], ComponentWitness::Trivial);
+        assert_eq!(
+            check(
+                &product,
+                &nested_certificate([s.clone(), a.clone(), b.clone()], only_b),
+                &constraints
+            ),
+            TemporalCertificateCheck::Accepted
+        );
+
+        let empty = single(Vec::new(), ComponentWitness::Trivial);
+        assert_eq!(
+            check(
+                &product,
+                &nested_certificate([s, a.clone(), b], empty),
+                &constraints
+            ),
+            rejected(CertificateRule::NotPartition, a)
+        );
+    }
+
+    /// The edge rule applies inside a refinement: the quiet states `a` and
+    /// `b` form a cycle, so listing them as two components has an edge back
+    /// to the earlier one, at the source of the first such edge.
+    #[test]
+    fn a_backward_edge_inside_a_refinement_is_rejected() {
+        let (product, [s, a, b], constraints) = nested();
+        let split = vec![
+            Component {
+                states: vec![b.clone()],
+                witness: ComponentWitness::Trivial,
+            },
+            Component {
+                states: vec![a.clone()],
+                witness: ComponentWitness::Trivial,
+            },
+        ];
+        let certificate = single(
+            vec![s, a.clone(), b],
+            ComponentWitness::UnfairStrong {
+                constraints: vec![0],
+                sub: split,
+            },
+        );
+        assert_eq!(
+            check(&product, &certificate, &constraints),
+            rejected(CertificateRule::BackwardEdge, a)
+        );
+    }
+
+    /// The refinements of several `UnfairStrong` components are checked
+    /// depth first in listed order: the first failing one is the rejection.
+    #[test]
+    fn refinements_are_checked_in_listed_order() {
+        let (mut product, s1, t1) = two_cycle("q1");
+        let z = Identity::new(2);
+        let (s2, t2) = (product_state([0, 1], "q1"), product_state([1, 1], "q1"));
+        let sv = product.add_state(s2.clone(), [z]).expect("new");
+        let tv = product.add_state(t2.clone(), []).expect("new");
+        product
+            .add_edge(sv, tv, EdgeLabel::Transition(Identity::new(0)))
+            .expect("known vertices");
+        product
+            .add_edge(tv, sv, EdgeLabel::Transition(Identity::new(1)))
+            .expect("known vertices");
+        let constraints = [Constraint::strong([z])];
+        // Each refinement keeps its non-quiet `s`, a foreign state there.
+        let component = |s: &ProductStateRef, t: &ProductStateRef| Component {
+            states: vec![s.clone(), t.clone()],
+            witness: ComponentWitness::UnfairStrong {
+                constraints: vec![0],
+                sub: single(vec![s.clone(), t.clone()], ComponentWitness::Trivial),
+            },
+        };
+        let first_then_second = vec![component(&s1, &t1), component(&s2, &t2)];
+        assert_eq!(
+            check(&product, &first_then_second, &constraints),
+            rejected(CertificateRule::NotPartition, s1)
+        );
+        let second_then_first = vec![first_then_second[1].clone(), first_then_second[0].clone()];
+        assert_eq!(
+            check(&product, &second_then_first, &constraints),
+            rejected(CertificateRule::NotPartition, s2)
         );
     }
 }
