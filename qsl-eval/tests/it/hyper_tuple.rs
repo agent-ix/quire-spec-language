@@ -333,42 +333,68 @@ fn a_past_operator_gives_the_same_outcome_at_a_loop_position_and_its_unrolled_co
     }
 }
 
-/// FR-175 "Work": the position of a `false` is found from the readings of the
-/// one evaluation, so the clause meter charges one unit per node and joint
-/// position and each atom is read once per joint position.
-#[trace("TC-600", "FR-175-AC-2")]
+/// FR-175 "Work": every reading, those of the position search included, is
+/// made once per represented joint position through the caller's meter, and a
+/// meter that stops the evaluation stops the search.
+#[trace("TC-600")]
 #[test]
-fn locating_the_false_position_charges_no_second_evaluation() {
-    let fixture = fixture(ALWAYS_EQUAL);
-    let shape = [lasso(0, 2), lasso(0, 3)];
-    let budget = |work_units| ScalarLimits {
-        work_units,
-        ..SCALAR_LIMITS_UNLIMITED
-    };
-    let consumed = |limits: ScalarLimits, values: Vec<Vec<i64>>| {
-        let mut letters = Letters::new(&fixture, values);
+fn the_position_search_reads_each_represented_position_once_on_the_callers_meter() {
+    let fixture =
+        fixture("always (holds(c.value @ a = 1) implies not once[2,2] holds(c.value @ b = 2))");
+    let shape = [lasso(0, 2), lasso(0, 2)];
+    let consumed = |limits: ScalarLimits| {
+        let mut letters = Letters::new(&fixture, vec![vec![1, 0], vec![2, 0]]);
         let mut meter = Meter::new(limits);
         let outcome =
             evaluate_tuple(&fixture.clause, &shape, &mut letters, &mut meter).expect("readable");
         (outcome, meter.consumed(LimitKind::WorkUnits), letters.reads)
     };
-    let (outcome, work, reads) = consumed(SCALAR_LIMITS_UNLIMITED, vec![vec![0, 1], vec![0, 1, 0]]);
-    assert_eq!(outcome, violated(3));
-    // One unit per (node, joint position) over one period, and no atom read twice.
+    let (outcome, work, reads) = consumed(SCALAR_LIMITS_UNLIMITED);
+    assert_eq!(outcome, violated(2));
+    // Two atoms at the two represented joint positions, none read twice and
+    // none read past the represented length.
     let distinct: std::collections::BTreeSet<_> = reads.iter().collect();
     assert_eq!(distinct.len(), reads.len());
-    let (_, equal_work, _) = consumed(SCALAR_LIMITS_UNLIMITED, vec![vec![5, 5], vec![5, 5, 5]]);
-    assert_eq!(work, equal_work);
-    // The evaluation fits the budget it consumed and not one unit less.
-    let (fits, _, _) = consumed(budget(work), vec![vec![0, 1], vec![0, 1, 0]]);
-    assert_eq!(fits, violated(3));
-    let (short, _, _) = consumed(budget(work - 1), vec![vec![0, 1], vec![0, 1, 0]]);
+    assert_eq!(reads.len(), 4);
+    assert!(reads.iter().all(|(_, joint)| *joint < 2));
+    let within = |work_units| ScalarLimits {
+        work_units,
+        ..SCALAR_LIMITS_UNLIMITED
+    };
+    assert_eq!(consumed(within(work)).0, violated(2));
+    let (short, _, _) = consumed(within(work - 1));
     assert!(matches!(short, TemporalOutcome::Incomplete(_)), "{short:?}");
+}
+
+/// A violation at the last unrolled position whose bounded-future part reads
+/// beyond it: the position search runs past the unrolled length by the
+/// body's future reach, so the compact and the unrolled encodings agree.
+#[trace("TC-600", "FR-175-AC-2")]
+#[test]
+fn a_violation_at_the_last_unrolled_position_is_located_through_the_future_reach() {
+    let fixture = fixture(
+        "always ((holds(c.value @ a = 1) and once[2,2] holds(c.value @ b = 2)) \
+         implies eventually[1,1] holds(c.value @ a = 1))",
+    );
+    let compact = run(
+        &fixture,
+        &[lasso(0, 2), lasso(0, 2)],
+        vec![vec![0, 1], vec![0, 2]],
+    )
+    .0;
+    let unrolled = run(
+        &fixture,
+        &[lasso(0, 4), lasso(0, 4)],
+        vec![vec![0, 1, 0, 1], vec![0, 2, 0, 2]],
+    )
+    .0;
+    assert_eq!(compact, unrolled);
+    assert_eq!(compact, violated(4));
 }
 
 /// FR-175 "Outputs": a body that is undefined on the tuple is undefined at
 /// the first joint position an atom is, with its cause.
-#[trace("TC-600", "FR-175-AC-2")]
+#[trace("TC-600")]
 #[test]
 fn an_atom_with_no_value_makes_the_body_undefined_at_the_first_such_joint_position() {
     let fixture = fixture("always holds(1 / c.value @ a = 1)");

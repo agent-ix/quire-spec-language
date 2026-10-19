@@ -32,3 +32,20 @@ FR-175-AC-2 assessment: for two loops of lengths 2 and 3, joint-loop offset k re
 | FND-003 | medium | `a_past_operator_gives_the_same_value_at_a_loop_position_and_its_unrolled_copy` uses two loops of length 2, not the 2-and-3 pair TC-600 Step 2 names. It compares only `Holds` versus not (`value == Holds`), never `trace_position`. Its `once[1,1]` read is never true only in an unrolled copy. So it passes while the compact and unrolled encodings disagree on `trace_position` for a past-operator body (SR-13071 FND-001: `Violated{at:1}` against `Violated{at:2}`). Compare the full outcomes, including `at`, on a case whose violation needs loop history. | qsl-eval/tests/it/hyper_tuple.rs:217-235 |
 | FND-004 | medium | The AC-1 test does not use ADR-023 §8.1's fixture. It feeds hand-picked observations ([0,5] against [0,6] and [0,5]) through a counters model. There is no `a` from (0,0) or `b` from (1,0) each taking `step(0)`, and no secure model. It does show the lockstep read and `trace_position` 1, but the AC's named counterexample and its secure-model `true` are not exercised. Either drive the vault traces, or reword the AC to a synthetic pair. | qsl-eval/tests/it/hyper_tuple.rs:179-189 |
 | FND-005 | low | FR-175 Outputs names an undefined result at the first joint position whose atom is undefined, with its cause. No tuple test returns `AtomReading::Undefined`, so that branch is not exercised through `Lockstep`. No AC requires it, so this is low. | spec/functional/FR-175-evaluate-a-body-over-a-tuple-of-behaviours.md:47-52 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | `locating_the_false_position_charges_no_second_evaluation` is tagged FR-175-AC-2, but it verifies FR-175's "Work" rule. No AC states that rule. The tag inflates AC-2's binder count in the matrix. Tag it `TC-600` alone (as the refusal tests are), or get the planner to add a Work AC. | qsl-eval/tests/it/hyper_tuple.rs:339-341 |
+| FND-007 | low | `an_atom_with_no_value_makes_the_body_undefined_at_the_first_such_joint_position` is tagged FR-175-AC-2, but it verifies FR-175's Outputs undefined branch. No AC states that branch. Tag it `TC-600` alone, or get the planner to add an AC. | qsl-eval/tests/it/hyper_tuple.rs:371-373 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | A spec defect, not fixable in this code PR. It went to the planner as a QSL-551 comment (2a15bff7) asking for a spec ticket under QSL-370 that rewords FR-175-AC-2 and TC-600 Step 2 to joint-loop offset 3. The new AC-2 test documents the mismatch and tests offset 3. |
+| FND-002 | fixed | fixed at dc63ebd86 |
+| FND-003 | fixed | fixed at dc63ebd86 |
+| FND-004 | fixed | fixed at dc63ebd86 |
+| FND-005 | fixed | fixed at dc63ebd86 |

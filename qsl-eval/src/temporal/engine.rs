@@ -283,17 +283,28 @@ pub fn unrolling(
     clause: &CheckedTemporalClause,
     trace: TemporalTrace,
 ) -> Result<Unrolling, TemporalRefusal> {
-    unrolling_of(Subject::of_clause(clause), trace)
-}
-
-/// The unrolling `subject` is evaluated over on `trace`.
-pub(super) fn unrolling_of(
-    subject: Subject<'_>,
-    trace: TemporalTrace,
-) -> Result<Unrolling, TemporalRefusal> {
+    let subject = Subject::of_clause(clause);
     let shape = Shape::new(subject.profile, trace)?;
     let plan = Plan::new(subject.formula).map_err(TemporalRefusal::Fault)?;
     unroll(&plan, shape.prefix, shape.period()).map_err(TemporalRefusal::Fault)
+}
+
+/// How many positions of `trace` a prefix must hold to show every `false` of
+/// `subject`'s formula on the unrolled word: the unrolled positions
+/// (ADR-018 SM-8) plus the formula's future reach, since a bounded future
+/// operator at the last unrolled position reads beyond it.
+pub(super) fn bad_prefix_bound(
+    subject: Subject<'_>,
+    trace: TemporalTrace,
+) -> Result<u128, TemporalRefusal> {
+    let shape = Shape::new(subject.profile, trace)?;
+    let plan = Plan::new(subject.formula).map_err(TemporalRefusal::Fault)?;
+    let unrolled = unroll(&plan, shape.prefix, shape.period()).map_err(TemporalRefusal::Fault)?;
+    // `left_floor` counts the atom itself as one position.
+    let future = slot(&plan.left_floor, plan.root)
+        .map_err(TemporalRefusal::Fault)?
+        .saturating_sub(1);
+    Ok(unrolled.positions.saturating_add(future))
 }
 
 /// What a run settles: the whole clause on its activations, or the root
