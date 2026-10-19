@@ -16,6 +16,9 @@
 //! at atom evaluation as an exact function of the trace, so the temporal
 //! evaluator receives a Boolean per position.
 //!
+//! [`evaluate_tuple`] evaluates a hyper body over a tuple of behaviours in
+//! lockstep (FR-175) by reading the tuple as one lasso.
+//!
 //! The trace's observations and the `holds` conditions are the caller's:
 //! the evaluator reaches them only through [`TemporalLetters`], the seam to
 //! the one clause evaluator (FR-107).
@@ -27,6 +30,7 @@ mod observed;
 mod outcome;
 mod plan;
 mod position;
+mod tuple;
 mod window;
 
 pub use engine::{unrolling, Unrolling};
@@ -35,6 +39,7 @@ pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use observed::{evaluate_observed, HoldsStop, ObservedRun};
 pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 pub use position::{PositionRefusal, TemporalPosition};
+pub use tuple::{evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters};
 pub use window::{
     AggregateAtom, AggregateKind, AggregateTerm, InsufficientData, PastWindow, TermRefusal,
     WindowLimitReached, WindowRefusal, WindowSource, WindowTrace, DEFAULT_MAX_WINDOW_VALUES,
@@ -56,7 +61,13 @@ pub fn evaluate<L: TemporalLetters>(
     letters: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
-    engine::run(clause, trace, engine::Goal::Clause, letters, meter)
+    engine::run(
+        engine::Subject::of_clause(clause),
+        trace,
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
 }
 
 /// Evaluate `clause`'s formula at `position` of `trace`, ignoring its
@@ -71,5 +82,11 @@ pub fn evaluate_at<L: TemporalLetters>(
     letters: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
-    engine::run(clause, trace, engine::Goal::At(position), letters, meter)
+    engine::run(
+        engine::Subject::of_clause(clause),
+        trace,
+        engine::Goal::At(position),
+        letters,
+        meter,
+    )
 }
