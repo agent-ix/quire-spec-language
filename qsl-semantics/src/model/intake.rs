@@ -1433,6 +1433,10 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
         // state machine cycles. The binder retains those edges so
         // normalization can report the ordered QSL loci.
         .filter(|located| !process_subtype_generalization_schema_diagnostic(document, located))
+        // FR-150: a population's `symmetric` marker is QSpec's (FR-381). The
+        // pinned semantic-IR population schema does not list it yet and
+        // refuses it as an extra member; this reader owns the marker.
+        .filter(|located| !population_symmetric_schema_diagnostic(document, located))
         .filter_map(|located| {
             if let Some(refusal) = duplicate_member_identity_refusal(document, located) {
                 return Some(refusal);
@@ -1477,6 +1481,26 @@ fn validate_with_semantic_ir(document: &PackageDocument) -> Result<(), Vec<Model
     } else {
         Err(refusals)
     }
+}
+
+/// Whether `located` is the pinned semantic-IR population schema refusing a
+/// population's `symmetric` member as an extra one (FR-150).
+#[qsl_attrs::string_edge]
+fn population_symmetric_schema_diagnostic(
+    document: &PackageDocument,
+    located: &agent_ix_semantic_ir::diag::Located,
+) -> bool {
+    if located.code != agent_ix_semantic_ir::schema::SCHEMA_VIOLATION
+        || located.message != "the member symmetric is not one this schema admits"
+    {
+        return false;
+    }
+    located
+        .pointer
+        .strip_prefix("/ir/populations/")
+        .and_then(|position| position.parse::<usize>().ok())
+        .and_then(|position| document.tree.get("populations")?.as_array()?.get(position))
+        .is_some_and(|population| population.get("symmetric").is_some())
 }
 
 #[qsl_attrs::string_edge]
@@ -3952,10 +3976,18 @@ fn read_population(
             ))
         }
     };
+    // FR-150: the `symmetric` marker is optional and Boolean; absent is
+    // `false`. A non-Boolean value refuses rather than reading as `false`.
+    let symmetric = match ctx.value.get("symmetric") {
+        None => false,
+        Some(Value::Bool(symmetric)) => *symmetric,
+        Some(_) => return Err(ctx.malformed_in("symmetric", "not a Boolean")),
+    };
     Ok(PopulationRecord {
         key: declaration_key(package, node),
         member_types,
         extent,
+        symmetric,
     })
 }
 

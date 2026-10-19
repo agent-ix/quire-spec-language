@@ -2846,6 +2846,7 @@ mod tests {
                         DeclarationKey::fixture("model.B"),
                     ],
                     extent: Extent::Closed,
+                    symmetric: false,
                 }),
             ],
         )

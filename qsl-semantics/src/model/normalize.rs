@@ -4604,6 +4604,7 @@ mod tests {
                     key: DeclarationKey::fixture("model.Orders"),
                     member_types: vec![DeclarationKey::fixture("model.Order")],
                     extent: Extent::Closed,
+                    symmetric: false,
                 }),
                 DomainPackageRecord::Clause(ClauseRecord {
                     key: clause_key.clone(),

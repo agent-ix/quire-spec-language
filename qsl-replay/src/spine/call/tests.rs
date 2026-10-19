@@ -589,6 +589,7 @@ fn synthetic_model(
                 key: population.clone(),
                 member_types: vec![object.clone()],
                 extent: Extent::Closed,
+                symmetric: false,
             }),
         ],
     );

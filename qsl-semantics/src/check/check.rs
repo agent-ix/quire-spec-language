@@ -57,7 +57,8 @@ use super::ir::{
 };
 use super::navigation::Relationships;
 use super::refusal::{
-    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, Obligation, StageLimitCause,
+    CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, IdentityForm, IdentityObserving,
+    Obligation, StageLimitCause,
 };
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationTable;
@@ -696,6 +697,9 @@ pub struct Scope {
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
     pub(crate) dispatch_operations: Vec<DispatchOperation>,
+    /// FR-150: each object type a `symmetric` population covers, with that
+    /// population's declaration key.
+    symmetric_objects: BTreeMap<EffectiveId, DeclarationKey>,
     /// The by-name lookups over the declared types, enums, aliases and
     /// model operations, built once by [`Self::new`]. Aliases and
     /// model operations are only ever looked up by name, so only this index
@@ -860,9 +864,64 @@ impl Scope {
             complete_value: false,
             complete_model: false,
             dispatch_operations,
+            symmetric_objects: BTreeMap::new(),
             index,
             imports: BTreeMap::new(),
         }
+    }
+
+    /// This scope with the object types the admitted models' `symmetric`
+    /// populations cover (FR-150).
+    pub(crate) fn with_symmetric_objects(
+        mut self,
+        symmetric_objects: BTreeMap<EffectiveId, DeclarationKey>,
+    ) -> Self {
+        self.symmetric_objects = symmetric_objects;
+        self
+    }
+
+    /// FR-150: the `symmetric` population whose objects `value_type` is, or
+    /// contains, a reference to: through `Option`, a collection's element, a
+    /// record's field or a tuple's position. `None` when it reads no such
+    /// population.
+    pub(crate) fn symmetric_population_in(
+        &self,
+        value_type: &ValueType,
+    ) -> Option<&DeclarationKey> {
+        if self.symmetric_objects.is_empty() {
+            return None;
+        }
+        let mut pending = vec![value_type];
+        let mut seen = BTreeSet::new();
+        while let Some(current) = pending.pop() {
+            match current {
+                ValueType::Reference(object) => {
+                    if let Some(population) = self.symmetric_objects.get(object) {
+                        return Some(population);
+                    }
+                }
+                ValueType::Option(payload) => pending.push(payload),
+                ValueType::Collection(collection) => pending.push(collection.element()),
+                ValueType::Composite(key) if seen.insert(*key) => {
+                    match self
+                        .types
+                        .composite(*key)
+                        .map(|declaration| declaration.shape())
+                    {
+                        Some(CompositeShape::Record(fields)) => {
+                            pending.extend(fields.iter().map(|field| field.value_type()));
+                        }
+                        Some(CompositeShape::Tuple(positions)) => pending.extend(positions),
+                        Some(CompositeShape::Union(members)) => {
+                            pending.extend(members.iter().flat_map(|member| member.positions()))
+                        }
+                        None => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
     }
 
     /// This scope with `imports`, each admitted import by its qualifier.
@@ -2886,6 +2945,27 @@ impl<'a> Typer<'a> {
         Ok(target)
     }
 
+    /// FR-150: the `identity-observing-form` refusal of the `node` form at
+    /// `location` when `operand` is, or contains, a reference into a
+    /// `symmetric` population; `None` otherwise.
+    fn identity_observing(
+        &self,
+        location: &Location,
+        node: &'static str,
+        form: IdentityForm,
+        operand: &ValueType,
+    ) -> Option<CheckRefusal> {
+        let population = self.scope.symmetric_population_in(operand)?.clone();
+        Some(refuse(
+            location,
+            CheckCause::IdentityObservingForm(Box::new(IdentityObserving {
+                node,
+                form,
+                population,
+            })),
+        ))
+    }
+
     /// `convert<target>(e)` over the typed operand `e`.
     fn convert(
         &mut self,
@@ -2933,7 +3013,14 @@ impl<'a> Typer<'a> {
                 if matches!(source, ValueType::Float(_))
                     || !admits_equality_conversion(source, target, &self.units)
                 {
-                    return Err(mismatch(location));
+                    return Err(self
+                        .identity_observing(
+                            location,
+                            "convert",
+                            IdentityForm::ReferenceConversion,
+                            source,
+                        )
+                        .unwrap_or_else(|| mismatch(location)));
                 }
                 let converted = EqualityOperand::converted(source.clone(), target.clone());
                 Ok(node(

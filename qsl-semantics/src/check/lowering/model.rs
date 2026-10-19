@@ -570,6 +570,34 @@ impl AdmittedModel {
             .collect()
     }
 
+    /// FR-150: each object type of this package that a `symmetric`
+    /// population covers, with the least such population's declaration key.
+    /// A population covers a type as in [`Self::populations_of`]: a member
+    /// type is the type itself or a supertype of it, by `conforms`.
+    pub(crate) fn symmetric_object_types(
+        &self,
+        conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
+    ) -> Vec<(EffectiveId, DeclarationKey)> {
+        let symmetric: Vec<&PopulationRecord> = self
+            .population_domains()
+            .map(|(_, population, _)| population)
+            .filter(|population| population.symmetric)
+            .collect();
+        self.object_types()
+            .filter_map(|(_, target)| {
+                let covers = |member: &DeclarationKey| {
+                    self.types.iter().any(|(id, declared)| {
+                        declared == member && (*id == target || conforms(target, *id))
+                    })
+                };
+                symmetric
+                    .iter()
+                    .find(|population| population.member_types.iter().any(covers))
+                    .map(|population| (target, population.key.clone()))
+            })
+            .collect()
+    }
+
     /// FR-124: the canonical member object type of each population of this
     /// package, once each, in ascending order: the objects the package's
     /// state is made of.

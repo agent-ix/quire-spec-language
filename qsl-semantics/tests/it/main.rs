@@ -67,6 +67,7 @@ mod relationship_reachability;
 #[cfg(feature = "test-support")]
 mod relationship_snapshots;
 mod state_clauses;
+mod symmetric_population;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]

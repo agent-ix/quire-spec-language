@@ -140,6 +140,7 @@ fn orders_package(shape: Shape, declarations: &str) -> CheckedPackage {
             key: key("orders"),
             member_types: vec![key("Order")],
             extent: Extent::Closed,
+            symmetric: false,
         }),
         DomainPackageRecord::OperationMember(OperationMemberRecord {
             key: key("Order/reroute"),

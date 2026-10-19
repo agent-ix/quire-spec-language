@@ -30,7 +30,7 @@ use crate::check::ir::{
     CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, Node, NodeId, NodeKind,
     RecordSlot, Slot, Visit,
 };
-use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, WrongSnapshotCause};
+use crate::check::refusal::{CheckCause, CheckRefusal, IdentityForm, KeyFault, WrongSnapshotCause};
 use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
 use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
@@ -1362,6 +1362,14 @@ impl<'a> Typer<'a> {
     ) -> Result<(Node, EqualityOperand, ValueType), CheckRefusal> {
         match converted {
             Some((target, location)) => {
+                if let Some(refusal) = self.identity_observing(
+                    &location,
+                    "convert",
+                    IdentityForm::ReferenceConversion,
+                    &typed.value_type,
+                ) {
+                    return Err(refusal);
+                }
                 if matches!(typed.value_type, ValueType::Float(_)) {
                     return Err(mismatch(&location));
                 }
@@ -2289,7 +2297,18 @@ impl<'a> Typer<'a> {
         identity: Option<Node>,
     ) -> Result<Node, CheckRefusal> {
         if !fold.source_type.kind().is_ordered() && !fold.catalogued {
-            return Err(ineligible(&frame.location));
+            let node = match frame.form {
+                Accumulation::Fold => "fold",
+                Accumulation::Reduce => "reduce",
+            };
+            return Err(self
+                .identity_observing(
+                    &frame.location,
+                    node,
+                    IdentityForm::OrderSensitiveTraversal,
+                    &fold.source.value_type,
+                )
+                .unwrap_or_else(|| ineligible(&frame.location)));
         }
         Ok(node(
             NodeKind::Fold {
