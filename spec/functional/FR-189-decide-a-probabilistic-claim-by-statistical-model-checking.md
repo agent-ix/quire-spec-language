@@ -148,10 +148,13 @@ the claim's form does not admit (FR-190, SPRT below).
 - A `SampleStop::NotMarkov` SHALL return `Unsupported(NotMarkov{…})`; an
   `ExpansionStop` SHALL return `Stopped` with its cause; a budget reached
   SHALL return `Stopped` naming it (FR-191).
-- A `SampleStop::TotalAboveDrawRange` SHALL return
-  `Unsupported(TotalAboveDrawRange{total})`, whose wire cause is QSpec's
-  `total-above-draw-range{total}` (FR-181-AC-14, FR-331); a `SampleStop::GeneratorMismatch`
-  SHALL refuse with `StatisticalRefusal`'s `GeneratorMismatch`.
+- If a sample stops with `SampleStop::TotalAboveDrawRange`, then the run
+  SHALL stop and return `Unsupported(TotalAboveDrawRange{total})`, which
+  FR-192 settles as `unsupported` with the kebab-case cause
+  `total-above-draw-range{total}`, `total` a decimal string (QSpec
+  FR-181-AC-14, FR-331).
+- If a sample stops with `SampleStop::GeneratorMismatch`, then EN-4 SHALL
+  refuse with `StatisticalRefusal`'s `GeneratorMismatch`.
 - The outcome SHALL be a function of the subject, the claim, the method,
   `min_cycles`, the seed, the sampler and the limits.
 - The EN-4 provider manifest SHALL advertise (`probabilistic-satisfaction`,
@@ -167,6 +170,7 @@ the claim's form does not admit (FR-190, SPRT below).
 | FR-189-AC-4 | A quantile claim over a variant of `Service` whose `request` sets `phase = Busy` with probability `1/2` (a random parameter) and otherwise stays `Idle` counts only activated samples: with Okamoto the result has `samples = 23,026` and `draws > samples`. A censored sample (no `Done` within the window) counts as exceeding the threshold. `quantile 1/2 of M >= 3` reduces to the event `M < 3` with the strict bound `< 1/2`; over a variant where `M` is 1 or 3 with probability 1/2 each, `Pr(M < 3) = 1/2`, so the reduced bound is false, as the claim is (its 1/2-quantile is 1). | Test (TC-624) |
 | FR-189-AC-5 | The ADR-024 §7.1 `NoFault` claim with Okamoto at `indifference 0.0005` computes `N = 9,210,341`. A `Health` variant with a non-unique post-state returns `Unsupported(NotMarkov)`; a variant with an undecided contract conjunction settles that test Undecided, `UndecidedSuccessor`; a `mean of` claim with SPRT is refused `NotStatistical`. | Test (TC-624) |
 | FR-189-AC-6 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0; operation `flip(random b: Int[0, 1] ~ {0: 1, 1: 1})` with postcondition `self.v = b`; workload weight `flip` 1) and the claim `probability >= 1/2 [ always[0,3] holds(1 / (1 - c.v) = 1) ]` with `α = β = 1/100`, `ι = 1/10`, Okamoto and seed 7, the test decides Rejected at the first sample in trace-index order that reaches `v = 1`, draws no further sample, and carries `UndefinedEvaluation` naming that sample's test index 0, its trace index and the first position with `v = 1`, cause `division-by-zero`; the claim settles `Completed` Rejected. | Test (TC-640) |
+| FR-189-AC-7 | Over a `Wide` model (object `w` with `v: Bool`; operation `spin(random x: Bool ~ { true: 1, false: <the decimal value of 2^256> })` with postcondition `self.v = x`; workload weight `spin` 1) and the claim `probability >= 1/2 [ always[0,3] holds(w.v or not w.v) ]` with `α = β = 1/100`, `ι = 1/10`, Okamoto and seed 7, the run stops at the first sample and returns `Unsupported(TotalAboveDrawRange{total})` with `total` `2^256 + 1`; the claim settles `unsupported` with cause `total-above-draw-range` and `total` `"115792089237316195423570985008687907853269984665640564039457584007913129639937"` (QSpec TC-354 SM-09). | Test (TC-624) |
 
 ## Dependencies
 

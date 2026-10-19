@@ -20,7 +20,7 @@ Fixtures: the weighted-sampler conformance vectors of the generator definition; 
 
 1. Run every weighted vector and every TC-210 vector as unit weights at choice index 0; call `sample_probabilistic` with a `DefinitionRef` of another identity.
 2. Draw over weights `(1/3, 1/6, 1/2)` at 60,000 trace indices; draw choices 0 and 1 at the first 100 points.
-3. Sample `Lone` and `Coin` (seed `424242`, trace 0, step 0); call `weighted_choice` over one weight, over a scaled total of `2^256` and over `(1, 2^256)`; sample `Wide`; check the public items of `qsl-eval` and `quire-semantic-value`.
+3. Sample `Lone` and `Coin` (seed `424242`, trace 0, step 0); call `weighted_choice` over one weight, over a scaled total of `2^256` and over `(2^256, 1)`; sample `Wide`; check the public items of `qsl-eval` and `quire-semantic-value`.
 4. Sample `Service` from seed 7, trace 12, 11 positions, twice; sample the `Health` variant.
 
 Tag the tests `#[trace("TC-623", "FR-188-AC-n")]`.
@@ -29,5 +29,5 @@ Tag the tests `#[trace("TC-623", "FR-188-AC-n")]`.
 
 - Step 1: every selected index equals the vector's; the sample returns `SampleStop::GeneratorMismatch` with the digest counter at zero.
 - Step 2: scaled `(2, 1, 3)`, `N = 6`; every selection equals the reference; choices 0 and 1 differ at some point.
-- Step 3: `Lone` selects item 0 with the digest counter at zero and `choices = []`; `Coin`'s choice has index 0, the TC-210 step-0 preimage and `choices = [0]` and `random = [false]`; one weight returns 0 with the digest counter at zero; the total `2^256` selects, `2^256 + 1` returns `TotalAboveDrawRange` with the digest counter at zero; `Wide` stops with `SampleStop::TotalAboveDrawRange`, whose wire form is `total-above-draw-range` with `total` the decimal string (QSpec TC-354 SM-08, SM-09); the three types are `qsl-eval` items and no `quire-semantic-value` item.
+- Step 3: `Lone` selects item 0 with the digest counter at zero and `choices = []`; `Coin`'s choice has index 0, the TC-210 step-0 preimage and `choices = [0]` and `random = [false]`; one weight returns 0 with the digest counter at zero; the total `2^256` selects, `2^256 + 1` returns `TotalAboveDrawRange` with the digest counter at zero; `Wide` stops with `SampleStop::TotalAboveDrawRange`, with `total` `2^256 + 1` (QSpec TC-354 SM-09, the in-range SM-08 total selecting); the settled wire form is FR-189-AC-7's (TC-624); the three types are `qsl-eval` items and no `quire-semantic-value` item.
 - Step 4: equal behaviours with recorded selected item indices, in-support values, FR-187 probabilities and rewards; `SampleStop::NotMarkov`.
