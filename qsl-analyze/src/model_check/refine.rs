@@ -24,18 +24,16 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::{
-    check_model_bounds, ModelFinding, ModelSimState, ModelSimulationRequest, ModelSystem,
-    PopulationUniverse,
-};
+use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, TransitionSystem};
 use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_initial, check_step, subject_models, ConcreteStep, CounterexampleKind, IncompleteCause,
+    check_initial, check_step, open_systems, ConcreteStep, CounterexampleKind, IncompleteCause,
     ModelCheckLimit, ModelCheckLimits, ModelStep, ReachedLimit, RefinementFailure,
-    RefinementOutcome, RefinementPosition, RunStats, SafetyOutcome, SafetyUndecided, StepVerdict,
-    TemporalCounterexample, UndefinedEvaluation, Undetermined,
+    RefinementOutcome, RefinementPosition, RefinementSystems, RunStats, SafetyOutcome,
+    SafetyUndecided, StepVerdict, SubjectRefusal, TemporalCounterexample, UndefinedEvaluation,
+    Undetermined,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
@@ -115,41 +113,22 @@ pub fn check_refinement(
     {
         return Err(ModelCheckRefusal::HiddenFields);
     }
-    let (concrete_model, abstract_model) =
-        subject_models(refinement).ok_or_else(|| fault("a-refinement-maps-a-population"))?;
-    let simulation = &request.concrete.simulation;
-    let concrete = ModelSystem::over_model(simulation.clone(), concrete_model)
-        .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
-    let universes = refinement
-        .populations()
-        .iter()
-        .map(|row| {
-            simulation
-                .universes
-                .iter()
-                .find(|universe| universe.population == row.concrete_population)
-                .map(|universe| PopulationUniverse {
-                    population: row.abstract_population.clone(),
-                    keys: universe.keys.clone(),
-                })
-                .ok_or_else(|| fault("a-source-population-has-a-universe"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let abstract_system = ModelSystem::over_model(
-        ModelSimulationRequest {
-            package: request.abstract_package,
-            packages: simulation.packages,
-            normalization: simulation.normalization,
-            snapshots: simulation.snapshots,
-            initial: request.abstract_initial.clone(),
-            universes,
-            observation: simulation.observation,
-            expansion: simulation.expansion,
-            meter: simulation.meter,
-        },
-        abstract_model,
+    let RefinementSystems {
+        concrete,
+        abstract_system,
+    } = open_systems(
+        refinement,
+        &request.concrete.simulation,
+        request.abstract_package,
+        request.abstract_initial.clone(),
     )
-    .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
+    .map_err(|refusal| match refusal {
+        SubjectRefusal::Admission(failure) => ModelCheckRefusal::Admission(failure),
+        SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
+            fault("the-subjects-of-a-refinement-open")
+        }
+    })?;
+    let simulation = &request.concrete.simulation;
     check_model_bounds(&concrete, BOUND_POSITIONS).map_err(not_simulated)?;
     check_model_bounds(&abstract_system, BOUND_POSITIONS).map_err(not_simulated)?;
     let mut run = Run {

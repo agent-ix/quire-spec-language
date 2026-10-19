@@ -10,6 +10,7 @@ mod failure;
 mod map;
 mod outcome;
 mod step;
+mod subject;
 
 pub use failure::{RefinementFailure, StepRejection, StepVerdict, Taken, Undetermined};
 pub use map::{
@@ -18,3 +19,4 @@ pub use map::{
 };
 pub use outcome::{RefinementOutcome, SafetyOutcome, SafetyUndecided};
 pub use step::{check_initial, check_step, ConcreteStep, RefinementPosition};
+pub use subject::{open_systems, RefinementSystems, SubjectRefusal};
