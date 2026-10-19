@@ -62,13 +62,24 @@ fn one() -> Json {
 
 /// An object type with its fields and operations.
 fn object_type(name: &str, fields: Vec<Json>, operations: Vec<Json>) -> Json {
+    object_type_extending(name, &[], fields, operations)
+}
+
+/// An object type extending `supertypes`.
+fn object_type_extending(
+    name: &str,
+    supertypes: &[&str],
+    fields: Vec<Json>,
+    operations: Vec<Json>,
+) -> Json {
     let identity = ident(name);
+    let supertypes: Vec<String> = supertypes.iter().map(|name| ident(name)).collect();
     json!({
         "identity": identity, "displayName": identity,
         "kind": {"module": PACKAGE, "name": "object_type"}, "roles": [],
         "origin": origin(&identity), "constraints": [], "extensions": [],
         "unknownPolicy": "reject",
-        "supertypes": [], "fields": fields, "operations": operations, "relationships": [],
+        "supertypes": supertypes, "fields": fields, "operations": operations, "relationships": [],
     })
 }
 
@@ -381,7 +392,8 @@ impl Subject {
         else {
             panic!("{object_type} declares no operation {operation}");
         };
-        derive_footprint(graph, &model, declaring, operation).expect("a footprint derives")
+        derive_footprint(graph, &model, identity, declaring, operation)
+            .expect("a footprint derives")
     }
 }
 
@@ -639,11 +651,13 @@ fn a_receiver_scoped_bump_touches_only_its_own_counter() {
     assert!(!independent(&bump_a, &bump_a));
 }
 
-/// FR-155-AC-2: an every-object frame writes the field on any object; a
+/// An every-object frame writes the field on any object; a
 /// post clause reading a navigated field reads the reference and the field
 /// on any object; a reference parameter's field and membership are in the
-/// enabling footprint; a creation writes the population's membership.
-#[trace("TC-574", "FR-155-AC-2")]
+/// enabling footprint; a creation writes the population's membership. The
+/// two quantification clauses of FR-155-AC-2 are not covered, because no state
+/// clause can name a population, so the test claims no criterion.
+#[trace("TC-574")]
 #[test]
 fn every_object_frames_navigation_parameters_and_creation_widen_the_footprint() {
     let mut subject = counters_subject();
@@ -730,7 +744,7 @@ fn a_read_outside_the_footprint_stops_the_expansion_naming_it() {
 
     let unenforced = system.successors(state).expect("the state expands");
     let derived = system
-        .successors_within(state, &|_, footprint| footprint)
+        .successors_within(state, &|_| BTreeSet::new())
         .expect("the derived footprint admits every read");
     let transitions = |successors: &[(ModelTransition, ModelSimState)]| {
         successors
@@ -743,11 +757,12 @@ fn a_read_outside_the_footprint_stops_the_expansion_naming_it() {
         transitions(&unenforced.successors)
     );
 
-    let narrowed = |transition: &ModelTransition, mut footprint: Footprint| {
+    let narrowed = |transition: &ModelTransition| {
         if *transition == bump_a {
-            footprint.reads.remove(&field_at(&a, "Counter/v"));
+            locations([field_at(&a, "Counter/v")])
+        } else {
+            BTreeSet::new()
         }
-        footprint
     };
     let Err(WithinStop::Violation(violation)) = system.successors_within(state, &narrowed) else {
         panic!("the narrowed footprint must stop the expansion");
@@ -757,6 +772,39 @@ fn a_read_outside_the_footprint_stops_the_expansion_naming_it() {
     assert_eq!(violation.observation, Observation::Pre);
     assert_eq!(violation.cause().code(), "runtime_invariant");
     assert_eq!(violation.cause().cause(), "established-invariant-broken");
+}
+
+/// FR-155-AC-3, post clauses: `copy(a)`'s postcondition reads the peer's `v`
+/// in the post-state; held to a footprint without the field on any object,
+/// the step stops naming that read.
+#[trace("TC-575", "FR-155-AC-3")]
+#[test]
+fn a_post_state_read_outside_the_footprint_stops_the_expansion() {
+    let mut subject = counters_subject();
+    let start = counters_start(&mut subject);
+    let system = subject.system(start, &COUNTER_KEYS);
+    let state = &system.initial()[0];
+    let (a, b) = (
+        subject.reference("Counter", "a"),
+        subject.reference("Counter", "b"),
+    );
+    let copy_a = transition("Counter", "copy", &a, Vec::new());
+    let narrowed = |transition: &ModelTransition| {
+        if *transition == copy_a {
+            locations([Location::AnyField {
+                field: key("Counter/v"),
+            }])
+        } else {
+            BTreeSet::new()
+        }
+    };
+    let Err(WithinStop::Violation(violation)) = system.successors_within(state, &narrowed) else {
+        panic!("the narrowed footprint must stop the expansion");
+    };
+    assert_eq!(violation.transition, copy_a);
+    assert_eq!(violation.location, field_at(&b, "Counter/v"));
+    assert_eq!(violation.observation, Observation::Post);
+    assert_eq!(violation.cause().code(), "runtime_invariant");
 }
 
 fn frame_objects(objects: &BTreeMap<String, StateObject>) -> Vec<FrameObject<'_, Value>> {
@@ -779,14 +827,33 @@ fn frame_objects(objects: &BTreeMap<String, StateObject>) -> Vec<FrameObject<'_,
 fn enforced_steps_pass_the_frame_decision_and_footprints_are_functions_of_the_package() {
     let mut subject = counters_subject();
     let start = counters_start(&mut subject);
-    let system = subject.system(start, &COUNTER_KEYS);
+    let system = subject.system(start.clone(), &COUNTER_KEYS);
     let a = subject.reference("Counter", "a");
 
     let initial = system.initial();
-    let enforced = system
-        .successors_within(&initial[0], &|_, footprint| footprint)
-        .expect("every step is admitted");
-    assert!(!enforced.successors.is_empty());
+
+    // Every step of every reachable state, with no free key to create under,
+    // is admitted by the frame decision and by its footprint.
+    let closed = subject.system(start, &[("counters", &["a", "b", "c"])]);
+    let state_bytes = |state: &ModelSimState| {
+        quire_canonical::to_vec(&closed.key(state), quire_canonical::Limits::new(1 << 20))
+            .expect("a state key encodes")
+    };
+    let mut seen = BTreeSet::new();
+    let mut pending = closed.initial();
+    let mut steps = 0_usize;
+    while let Some(state) = pending.pop() {
+        if !seen.insert(state_bytes(&state)) {
+            continue;
+        }
+        let expansion = closed
+            .successors_within(&state, &|_| BTreeSet::new())
+            .expect("every step is admitted");
+        steps += expansion.successors.len();
+        pending.extend(expansion.successors.into_iter().map(|(_, state)| state));
+    }
+    assert_eq!(seen.len(), 27);
+    assert!(steps > 0);
 
     let graph = subject.package.graph();
     let model = subject.model();
@@ -853,13 +920,19 @@ fn enforced_steps_pass_the_frame_decision_and_footprints_are_functions_of_the_pa
         }
     );
 
-    assert_eq!(
-        subject.symbolic("Counter", "give"),
-        subject.symbolic("Counter", "give")
-    );
+    // Two derivations from independently checked packages agree.
+    let mut other = counters_subject();
+    let other_start = counters_start(&mut other);
+    let other_system = other.system(other_start, &COUNTER_KEYS);
+    for operation in ["bump", "bumpAll", "copy", "give", "spawn"] {
+        assert_eq!(
+            subject.symbolic("Counter", operation),
+            other.symbolic("Counter", operation)
+        );
+    }
     assert_eq!(
         footprint_of(&system, "bump", &a, &[]),
-        footprint_of(&system, "bump", &a, &[])
+        footprint_of(&other_system, "bump", &other.reference("Counter", "a"), &[])
     );
 }
 
@@ -904,6 +977,13 @@ fn gates_subject() -> Subject {
                         operation("Gate", "boomNav", &[], None, &gate_frame("Gate/alarm")),
                         operation("Gate", "point", &[], None, &gate_frame("Gate/cell")),
                         operation("Gate", "pick", &[], Some(&cell), &gate_frame("Gate/alarm")),
+                        operation(
+                            "Gate",
+                            "build",
+                            &[],
+                            None,
+                            &frame(&json!({"creates": [ident("Gate")]})),
+                        ),
                     ],
                 ),
             ],
@@ -1008,9 +1088,11 @@ fn a_guard_in_a_postcondition_and_a_navigated_reference_are_in_the_enabling_foot
     assert!(!independent(&point_g, &boom_nav_g));
 }
 
-/// FR-155-AC-6: a postcondition reading through `result` reads the field on
-/// any object and the membership of the result's population.
-#[trace("TC-589", "FR-155-AC-6")]
+/// A postcondition reading through `result` reads the field on any object and
+/// the membership of the result's population. This is the footprint half of
+/// FR-155-AC-6; its reduced run needs a partial-order engine the repository
+/// does not have, so the test claims no criterion.
+#[trace("TC-589")]
 #[test]
 fn a_postcondition_reading_through_result_reads_the_result_populations() {
     let mut subject = gates_subject();
@@ -1159,4 +1241,94 @@ fn deletions_write_membership_and_read_the_references_that_block_them() {
     }));
     assert!(unlink_j.writes.contains(&field_at(&j, "Job/peer")));
     assert!(!independent(&cancel_k, &unlink_j));
+}
+
+/// FR-383 item 6: a creation reads the membership of its own population and of
+/// the population each of its reference fields names, and a write to a
+/// reference-valued field reads the membership of the population it names.
+#[trace("TC-589")]
+#[test]
+fn creations_and_reference_writes_read_the_membership_of_their_targets() {
+    let subject = gates_subject();
+    let build = subject.symbolic("Gate", "build");
+    assert!(build.reads.contains(&any_membership("gates")));
+    assert!(build.reads.contains(&any_membership("cells")));
+    let point = subject.symbolic("Gate", "point");
+    assert!(point.reads.contains(&any_membership("cells")));
+    let disarm = subject.symbolic("Gate", "disarm");
+    assert!(!disarm.reads.contains(&any_membership("cells")));
+}
+
+/// FR-383-AC-12 through FR-155-AC-5's deletion rule: a deletion framed on a
+/// supertype, applied to a receiver of a subtype, reads the references that
+/// could name the subtype and writes the subtype population's membership.
+#[trace("TC-589")]
+#[test]
+fn a_supertype_deletion_applied_to_a_subtype_uses_the_receivers_type() {
+    let sub = ident("Sub");
+    let mut subject = subject(
+        document(
+            vec![
+                object_type(
+                    "Base",
+                    vec![],
+                    vec![operation(
+                        "Base",
+                        "cancel",
+                        &[],
+                        None,
+                        &frame(&json!({"deletes_receiver": true})),
+                    )],
+                ),
+                object_type_extending("Sub", &["Base"], vec![], vec![]),
+                object_type(
+                    "Holder",
+                    vec![field("Holder", "r", &sub, "optional")],
+                    vec![operation(
+                        "Holder",
+                        "unlink",
+                        &[],
+                        None,
+                        &frame(&json!({"modifies_receiver": [ident("Holder/r")]})),
+                    )],
+                ),
+            ],
+            &[("bases", "Base"), ("subs", "Sub"), ("holders", "Holder")],
+        ),
+        &[],
+    );
+    let receiver = FootprintObject::Receiver;
+    let cancel = subject.symbolic("Sub", "cancel");
+    assert!(cancel.writes.contains(&membership("subs", &receiver)));
+    assert!(cancel.reads.contains(&any_field("Holder/r")));
+
+    let objects = [
+        Obj {
+            population: "bases",
+            key: "s",
+            object_type: "Sub",
+            fields: json!({}),
+        },
+        Obj {
+            population: "holders",
+            key: "h",
+            object_type: "Holder",
+            fields: json!({"r": present(&reference("bases", "s"))}),
+        },
+    ];
+    let start = subject.start("s0", &["bases", "subs", "holders"], &objects);
+    let system = subject.system(
+        start,
+        &[("bases", &["s"]), ("subs", &[]), ("holders", &["h"])],
+    );
+    let (s, h) = (
+        subject.reference("Sub", "s"),
+        subject.reference("Holder", "h"),
+    );
+    let cancel_s = footprint_on(&system, "Base", "cancel", &s);
+    let unlink_h = footprint_on(&system, "Holder", "unlink", &h);
+    assert!(cancel_s.reads.contains(&Location::AnyField {
+        field: key("Holder/r")
+    }));
+    assert!(!independent(&cancel_s, &unlink_h));
 }

@@ -1728,7 +1728,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .objects()
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
-                self.log_field_read(node, objects, &reference, field);
+                self.log_field_read(node, objects, &reference, field)?;
                 let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
@@ -2186,11 +2186,11 @@ impl<'a, 'm> Machine<'a, 'm> {
         objects: &ObjectEnvironment,
         reference: &ObjectReference,
         field: &FieldRef,
-    ) {
+    ) -> Result<(), Halt> {
         let Some(log) = objects.read_log() else {
-            return;
+            return Ok(());
         };
-        let Some(attribute) = self
+        let attribute = self
             .scope
             .types()
             .attributes(reference.object_type())
@@ -2199,9 +2199,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .iter()
                     .find(|attribute| attribute.stands_for(field))
             })
-        else {
-            return;
-        };
+            .ok_or_else(|| invariant("logged-attribute-unresolved"))?;
         let observation = self
             .reads
             .and_then(|reads| reads.get(node.location()).copied())
@@ -2212,6 +2210,7 @@ impl<'a, 'm> Machine<'a, 'm> {
             owner: attribute.owner(),
             name: attribute.field().name().to_owned(),
         });
+        Ok(())
     }
 
     /// Records the read of `binding`'s population, at the anchor the

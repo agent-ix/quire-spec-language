@@ -105,7 +105,10 @@ pub enum FootprintRefusal {
     },
 }
 
-/// Derive the symbolic footprints of `operation` declared by `declaring`.
+/// Derive the symbolic footprints of `operation`, declared by `declaring` and
+/// applied to a receiver of the object type `receiver_type`, which is
+/// `declaring` or a type conforming to it: the receiver's membership and the
+/// objects a deletion of it affects follow the receiver's own type.
 ///
 /// # Errors
 ///
@@ -116,12 +119,14 @@ pub enum FootprintRefusal {
 pub fn derive_footprint(
     graph: &CheckedGraph,
     model: &StateModel,
+    receiver_type: EffectiveId,
     declaring: EffectiveId,
     operation: &OperationDeclaration,
 ) -> Result<SymbolicFootprint, FootprintRefusal> {
     let derivation = Derivation {
         graph,
         model,
+        receiver_type,
         declaring,
         operation,
         populations: populations(model)?,
@@ -160,7 +165,8 @@ fn populations(model: &StateModel) -> Result<Vec<PopulationTypes>, FootprintRefu
 }
 
 /// The object types a value of `value_type` can refer to, through options and
-/// collections.
+/// collections. A reference held inside a record or tuple (`Composite`) is not
+/// followed, so a delete-blocking read of such a field is not derived.
 fn referenced_types(value_type: &ValueType, found: &mut Vec<EffectiveId>) {
     match value_type {
         ValueType::Reference(target) => found.push(*target),
@@ -195,6 +201,7 @@ fn parameter_target(value_type: &ValueType) -> Option<EffectiveId> {
 struct Derivation<'a> {
     graph: &'a CheckedGraph,
     model: &'a StateModel,
+    receiver_type: EffectiveId,
     declaring: EffectiveId,
     operation: &'a OperationDeclaration,
     populations: Vec<PopulationTypes>,
@@ -283,8 +290,8 @@ impl Derivation<'_> {
         }
         let mut deleted_types: Vec<EffectiveId> = Vec::new();
         if effect.deletes_receiver {
-            deleted_types.push(self.declaring);
-            for population in self.populations_holding(self.declaring) {
+            deleted_types.push(self.receiver_type);
+            for population in self.populations_holding(self.receiver_type) {
                 writes.insert(SymbolicLocation::Membership {
                     population: population.clone(),
                     object: FootprintObject::Receiver,
@@ -330,7 +337,7 @@ impl Derivation<'_> {
         }
 
         // The receiver's and each reference argument's membership.
-        for population in self.populations_holding(self.declaring) {
+        for population in self.populations_holding(self.receiver_type) {
             reads.insert(SymbolicLocation::Membership {
                 population: population.clone(),
                 object: FootprintObject::Receiver,

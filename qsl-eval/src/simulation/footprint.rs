@@ -52,7 +52,9 @@ impl Location {
     /// membership of an unresolved object, or of any object, is taken to meet
     /// every field location that does not name a different object: a
     /// dependence the member types would exclude is kept, never an
-    /// independence they would deny.
+    /// independence they would deny. The cost is precision: a creation or a
+    /// deletion of any object depends on every transition that reads or
+    /// writes a field, even of an unrelated type.
     pub fn meets(&self, other: &Self) -> bool {
         match (self, other) {
             (

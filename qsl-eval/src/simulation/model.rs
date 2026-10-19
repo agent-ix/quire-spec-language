@@ -460,7 +460,7 @@ impl<'a> ModelSystem<'a> {
             applications.push(Application {
                 name,
                 declaring,
-                footprint: derive_footprint(graph, model, declaring, operation),
+                footprint: derive_footprint(graph, model, identity, declaring, operation),
                 declaration: operation.clone(),
                 text,
             });

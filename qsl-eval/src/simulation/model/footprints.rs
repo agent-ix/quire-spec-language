@@ -82,14 +82,14 @@ pub(super) enum Fault {
 
 /// The footprints an enforcing expansion checks each step against.
 pub(super) struct Enforcement<'e> {
-    narrow: &'e dyn Fn(&ModelTransition, Footprint) -> Footprint,
+    withhold: &'e dyn Fn(&ModelTransition) -> BTreeSet<Location>,
     fault: RefCell<Option<Fault>>,
 }
 
 impl Enforcement<'_> {
     /// The footprint `transition` is enforced against: the derived footprint
-    /// of `application`, instantiated and passed through the caller's
-    /// restriction.
+    /// of `application`, instantiated, less the locations the caller
+    /// withholds.
     pub(super) fn footprint_of(
         &self,
         application: &Application,
@@ -98,10 +98,18 @@ impl Enforcement<'_> {
         transition: &ModelTransition,
     ) -> Result<Footprint, ExpansionStop> {
         match &application.footprint {
-            Ok(symbolic) => Ok((self.narrow)(
-                transition,
-                instantiate(symbolic, receiver, arguments),
-            )),
+            Ok(symbolic) => {
+                let mut footprint = instantiate(symbolic, receiver, arguments);
+                let withheld = (self.withhold)(transition);
+                for locations in [
+                    &mut footprint.reads,
+                    &mut footprint.writes,
+                    &mut footprint.enabling,
+                ] {
+                    locations.retain(|location| !withheld.contains(location));
+                }
+                Ok(footprint)
+            }
             Err(refusal) => {
                 self.fail(Fault::Footprint(FootprintError::Refused(refusal.clone())));
                 Err(stop(BROKEN))
@@ -375,10 +383,10 @@ impl<'a> ModelSystem<'a> {
     }
 
     /// Expand `state` as `successors` does, holding every step's `pre` and
-    /// `post` clauses to the footprint `restrict` returns for it (FR-155
-    /// "Read enforcement"). `restrict` receives each transition with its
-    /// derived footprint; the engine passes it through unchanged, and a
-    /// narrower footprint shows what a step reads beyond it.
+    /// `post` clauses to its derived footprint less the locations `withhold`
+    /// names for it (FR-155 "Read enforcement"). The engine withholds
+    /// nothing; withholding a location shows what a step reads beyond a
+    /// narrower footprint, and a footprint can only shrink.
     ///
     /// # Errors
     ///
@@ -389,10 +397,10 @@ impl<'a> ModelSystem<'a> {
     pub fn successors_within(
         &self,
         state: &ModelSimState,
-        restrict: &dyn Fn(&ModelTransition, Footprint) -> Footprint,
+        withhold: &dyn Fn(&ModelTransition) -> BTreeSet<Location>,
     ) -> Result<Expansion<ModelTransition, ModelSimState, super::ModelFinding>, WithinStop> {
         let enforcement = Enforcement {
-            narrow: restrict,
+            withhold,
             fault: RefCell::new(None),
         };
         match super::walk::expand_state(self, state, Some(&enforcement)) {
