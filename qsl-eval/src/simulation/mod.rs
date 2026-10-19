@@ -33,5 +33,5 @@ pub use footprint::{independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};
 pub use key::EncodingRefusal;
 pub use not_simulated::{NotSimulated, RequiresBound};
-pub use sample::sample_request;
+pub use sample::{sample_request, sample_request_until, SampleRequest};
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

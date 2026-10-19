@@ -60,7 +60,7 @@ use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use quire_semantic_value::model_transition::ModelTransition;
 
 /// The type positions the requires-bound pre-check may visit.
-const BOUND_POSITIONS: u64 = 1 << 20;
+pub(super) const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// One EN-1 run (FR-126 Inputs).
 pub struct ModelCheckRequest<'a> {
@@ -179,11 +179,11 @@ impl From<EncodingRefusal> for Halt {
     }
 }
 
-fn fault(invariant: &'static str) -> ModelCheckRefusal {
+pub(super) fn fault(invariant: &'static str) -> ModelCheckRefusal {
     ModelCheckRefusal::Fault(InternalFault::new("model-check", invariant))
 }
 
-fn widen(value: usize) -> u64 {
+pub(super) fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 
