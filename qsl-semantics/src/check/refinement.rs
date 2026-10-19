@@ -16,6 +16,15 @@
 //! object row maps denotes the concrete object of the same key, so the
 //! abstract type is read as a reference to the concrete type it is mapped
 //! from.
+//!
+//! A row may also read a concrete population whole (FR-139, ADR-020 RM-8):
+//! the population's name, and the `count`, `sum`, `exists`, `all`, `only` and
+//! `seq` forms over it. S3 types them with the population's universe size `n`
+//! symbolic. A row whose value is a population name, a `count` or a `sum`
+//! records the bound that depends on `n` ([`PopulationUse`]), and
+//! [`CheckedRefinement::admit_universes`] checks it against the type of the
+//! row's use once a subject supplies the universes. A bound that depends on
+//! `n` through any other form is refused as not yet checked.
 
 use std::collections::BTreeMap;
 
@@ -26,15 +35,18 @@ use qsl_forms::{
 };
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, InternalFault, Span};
-use quire_exact::{EffectiveId, IllTypedCause, Presence, ValueType};
+use quire_exact::{
+    CardinalityBound, CollectionKind, CollectionType, EffectiveId, IllTypedCause, Integer,
+    IntegerInterval, Presence, ValueType,
+};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
 use quire_semantic_value::location::{Location, Origin};
 
-use super::check::{bind_parameters, StateContext, Typer};
-use super::ir::{CheckedBody, CheckedNode};
+use super::check::{bind_parameters, PopulationScope, ScopedPopulation, StateContext, Typer};
+use super::ir::{static_integer_range, CheckedBody, CheckedNode, NodeKind, Visit};
 use super::lowering::AdmittedModel;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
@@ -143,6 +155,17 @@ pub enum RefinementCause {
         /// The identity of the profile the declaration selects.
         profile: String,
     },
+    /// A population-valued row whose bound does not fit the type it is used
+    /// as once the subject's universe fixes the population's size:
+    /// `ill_typed`/`type-mismatch` (FR-139).
+    PopulationBound {
+        /// The row.
+        row: String,
+        /// The population, as the row writes it.
+        population: String,
+        /// The population's universe size.
+        size: u64,
+    },
     /// A row's expression or type refused.
     Check(CheckCause),
 }
@@ -168,6 +191,7 @@ impl RefinementCause {
             Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
             Self::Conflicting { .. } | Self::Malformed { .. } => Code::InvalidModelBinding,
             Self::Unsupported { .. } => Code::UnsupportedConstruct,
+            Self::PopulationBound { .. } => Code::IllTyped,
             Self::Check(cause) => cause.code(),
         }
     }
@@ -181,6 +205,7 @@ impl RefinementCause {
             Self::Conflicting { .. } => Some("conflicting-binding"),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
+            Self::PopulationBound { .. } => Some("type-mismatch"),
             Self::Check(cause) => cause.cause(),
         }
     }
@@ -193,6 +218,7 @@ pub struct CheckedRow {
     pub(crate) parameters: Vec<(String, ValueType)>,
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
+    pub(crate) uses: Vec<PopulationUse>,
 }
 
 impl CheckedRow {
@@ -209,6 +235,190 @@ impl CheckedRow {
     /// The number of evaluation slots of the body.
     pub fn slots(&self) -> usize {
         self.slots
+    }
+
+    /// The bounds of this row that depend on a population's universe size,
+    /// which a subject's admission checks (FR-139).
+    pub fn population_uses(&self) -> &[PopulationUse] {
+        &self.uses
+    }
+}
+
+/// The population-size-dependent value a row is (FR-139, ADR-020 RM-8).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PopulationValue {
+    /// A concrete population name: `Set<Reference<T>>[0, n]`.
+    Objects,
+    /// `count(x in P where c)`: `Int[0, n]`.
+    Count,
+    /// `sum(x in P where c: e)`: the sum of `e`, which has this range, over
+    /// at most `n` objects, and 0 over none.
+    Sum {
+        /// The range of `e`.
+        summand: IntegerInterval,
+    },
+}
+
+/// A row whose result is a population-size-dependent value (FR-139).
+/// S3 checks every typing rule that does not depend on the universe size
+/// `n` and records the bound that does, against the type of the row's use;
+/// [`CheckedRefinement::admit_universes`] checks it once a subject supplies
+/// the universes.
+#[derive(Clone, Debug)]
+pub struct PopulationUse {
+    pub(crate) row: String,
+    pub(crate) span: Span,
+    pub(crate) population: String,
+    pub(crate) key: DeclarationKey,
+    pub(crate) member: EffectiveId,
+    pub(crate) value: PopulationValue,
+    pub(crate) required: ValueType,
+}
+
+impl PopulationUse {
+    /// The row, as `Type.field` or `step operation`.
+    pub fn row(&self) -> &str {
+        &self.row
+    }
+
+    /// The population, as the row writes it.
+    pub fn population(&self) -> &str {
+        &self.population
+    }
+
+    /// The population's declaration.
+    pub fn population_key(&self) -> &DeclarationKey {
+        &self.key
+    }
+
+    /// Which value the row is.
+    pub fn value(&self) -> &PopulationValue {
+        &self.value
+    }
+
+    /// The type the row's value is used as.
+    pub fn required(&self) -> &ValueType {
+        &self.required
+    }
+
+    /// The row value's type once the population's universe has `size`
+    /// objects, or `None` when that bound is not representable.
+    pub fn admitted_type(&self, size: u64) -> Option<ValueType> {
+        let count = Integer::from(size);
+        match &self.value {
+            PopulationValue::Objects => Some(ValueType::collection(CollectionType::new(
+                CollectionKind::Set,
+                ValueType::Reference(self.member),
+                Some(CardinalityBound::new(0, size).ok()?),
+            ))),
+            PopulationValue::Count => Some(ValueType::Int(
+                IntegerInterval::new(Integer::zero(), count).ok()?,
+            )),
+            PopulationValue::Sum { summand } => {
+                let lower = summand.lower().mul(&count);
+                let upper = summand.upper().mul(&count);
+                let zero = Integer::zero();
+                Some(ValueType::Int(
+                    IntegerInterval::new(
+                        if lower < zero { lower } else { zero.clone() },
+                        if upper > zero { upper } else { zero },
+                    )
+                    .ok()?,
+                ))
+            }
+        }
+    }
+
+    /// Whether the row's value fits the type it is used as when the
+    /// population has `size` objects.
+    fn fits_at(&self, size: u64) -> bool {
+        let Some(actual) = self.admitted_type(size) else {
+            return false;
+        };
+        match (&actual, &self.required) {
+            (ValueType::Int(_), ValueType::Integer) => true,
+            (ValueType::Int(source), ValueType::Int(target)) => {
+                target.lower() <= source.lower() && source.upper() <= target.upper()
+            }
+            // `Set<Reference<T>>[0, n]` fits a set of the same element whose
+            // bound contains `[0, n]`, or has none.
+            (ValueType::Collection(source), ValueType::Collection(target)) => {
+                source.kind() == target.kind()
+                    && source.element() == target.element()
+                    && match (source.bound(), target.bound()) {
+                        (_, None) => true,
+                        (Some(source), Some(target)) => {
+                            target.minimum() <= source.minimum()
+                                && source.maximum() <= target.maximum()
+                        }
+                        (None, Some(_)) => false,
+                    }
+            }
+            _ => actual == self.required,
+        }
+    }
+}
+
+impl CheckedRefinement {
+    /// FR-139: checks the bounds that depend on a population's universe
+    /// size, once a request admits the concrete subject's `universes` and
+    /// before exploration. Each `universes` entry is the number of objects of
+    /// one concrete population. A row whose value, with that size
+    /// substituted for `n`, does not fit the type it is used as is refused
+    /// `ill_typed`/`type-mismatch`, naming the row, the population and its
+    /// size; a population with no entry is refused `missing_declaration`/
+    /// `missing-name`.
+    ///
+    /// # Errors
+    ///
+    /// Every refusal, in row order.
+    pub fn admit_universes(
+        &self,
+        universes: &BTreeMap<DeclarationKey, u64>,
+    ) -> Result<(), Vec<RefinementRefusal>> {
+        let rows = self
+            .objects
+            .iter()
+            .flat_map(|object| object.fields.iter().map(|field| &field.expression))
+            .chain(self.steps.iter().flat_map(|step| {
+                match &step.target {
+                    StepTarget::Abstract {
+                        receiver,
+                        arguments,
+                        ..
+                    } => std::iter::once(receiver)
+                        .chain(arguments.iter().flatten())
+                        .collect::<Vec<_>>(),
+                    StepTarget::Stutter | StepTarget::Any => Vec::new(),
+                }
+            }));
+        let mut refusals = Vec::new();
+        for row in rows {
+            for used in &row.uses {
+                let cause = match universes.get(&used.key) {
+                    None => RefinementCause::Unresolved {
+                        name: used.population.clone(),
+                        held_by: None,
+                    },
+                    Some(size) if used.fits_at(*size) => continue,
+                    Some(size) => RefinementCause::PopulationBound {
+                        row: used.row.clone(),
+                        population: used.population.clone(),
+                        size: *size,
+                    },
+                };
+                refusals.push(RefinementRefusal {
+                    refinement: self.name.clone(),
+                    span: used.span,
+                    cause,
+                });
+            }
+        }
+        if refusals.is_empty() {
+            Ok(())
+        } else {
+            Err(refusals)
+        }
     }
 }
 
@@ -353,6 +563,26 @@ struct Side<'a> {
 struct Population<'a> {
     name: String,
     record: &'a PopulationRecord,
+}
+
+/// The names a row spells the concrete populations of `models` by, whether or
+/// not the clause they are written in is a refinement's (FR-139).
+pub(crate) fn population_names(models: &[AdmittedModel]) -> Vec<String> {
+    models
+        .iter()
+        .filter_map(|model| {
+            let alias = model.alias()?;
+            Some(
+                model
+                    .population_domains()
+                    .filter_map(move |(_, record, _)| {
+                        let segment = type_identity_segment(&record.key.package, &record.key.node)?;
+                        Some(format!("{alias}::{segment}"))
+                    }),
+            )
+        })
+        .flatten()
+        .collect()
 }
 
 /// One object type of a model.
@@ -549,6 +779,7 @@ pub(crate) fn check_refinement<'a, 'c>(
         lifting: BTreeMap::new(),
         maps_complete: true,
         baseline: 0,
+        populations: None,
     };
     checker.baseline = checker.findings.refusals.len();
     checker.refuse_history_rows(form, &declaration.selection.identity);
@@ -593,9 +824,50 @@ struct Checker<'c, 'a> {
     /// How many refusals the header already holds, which say nothing of the
     /// maps.
     baseline: usize,
+    /// The concrete populations a row may name, resolved on first use.
+    populations: Option<PopulationScope>,
 }
 
 impl<'c, 'a> Checker<'c, 'a> {
+    /// The concrete populations a row may name (FR-139): the populations of
+    /// the concrete model whose members are of one object type, by the name
+    /// a row spells them. A population of several member types names no
+    /// single `Set<Reference<T>>` and is not offered.
+    fn population_scope(&mut self) -> PopulationScope {
+        if let Some(scope) = &self.populations {
+            return scope.clone();
+        }
+        let scope = self.resolve_population_scope();
+        self.populations = Some(scope.clone());
+        scope
+    }
+
+    fn resolve_population_scope(&mut self) -> PopulationScope {
+        let types = self.types();
+        let populations = self.concrete_side.populations();
+        let object_types = self.concrete_side.object_types(types);
+        let (Ok(populations), Ok(object_types)) = (populations, object_types) else {
+            self.fault("concrete-populations-and-object-types-are-admitted");
+            return PopulationScope::default();
+        };
+        PopulationScope {
+            populations: populations
+                .into_iter()
+                .filter_map(|population| {
+                    let [member] = &population.record.member_types[..] else {
+                        return None;
+                    };
+                    let member = object_types.iter().find(|object| &object.key == member)?;
+                    Some(ScopedPopulation {
+                        name: population.name,
+                        key: population.record.key.clone(),
+                        member: member.id,
+                    })
+                })
+                .collect(),
+        }
+    }
+
     fn types(&self) -> &'a TypeEnvironment {
         self.declarations.scope.types()
     }
@@ -950,6 +1222,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                     parameters: vec![("self".to_owned(), ValueType::Reference(source.id))],
                     kind: qsl_forms::StateClauseKind::Invariant,
                     operation: None,
+                    label: format!("{}.{written}", target.name),
                 },
                 cx,
             );
@@ -1025,7 +1298,9 @@ impl<'c, 'a> Checker<'c, 'a> {
             parameters,
             kind,
             operation,
+            label,
         } = context;
+        let populations = self.population_scope();
         let typed = (|| {
             let mut typer = Typer::new(
                 declarations.scope,
@@ -1041,7 +1316,8 @@ impl<'c, 'a> Checker<'c, 'a> {
                 },
             )
             .with_cancel(declarations.cancel)
-            .with_context(cx.reborrow(declarations.scope));
+            .with_context(cx.reborrow(declarations.scope))
+            .with_populations(populations.clone());
             bind_parameters(&mut typer, &parameters, &location)?;
             typer.enter_state_clause(StateContext {
                 parent_projections: BTreeMap::new(),
@@ -1054,23 +1330,28 @@ impl<'c, 'a> Checker<'c, 'a> {
             // the type it defines (ADR-016 SC-2), never a range-checked
             // coercion into it.
             let body = typer.infer(&expression.expression, Some(required), &location)?;
-            if !conforms(
+            let uses = population_uses(
                 declarations.scope.types(),
-                body.root().value_type(),
+                &body,
                 required,
-            ) {
-                return Err(CheckRefusal::ill_typed(
-                    &location,
-                    IllTypedCause::TypeMismatch,
-                ));
-            }
-            Ok::<_, CheckRefusal>((body, typer.slots()))
+                (&label, &populations),
+                expression
+                    .spans
+                    .at(&[])
+                    .unwrap_or(Span { start: 0, end: 0 }),
+            )
+            .map_err(|cause| match cause {
+                Some(cause) => refuse_with(&location, cause),
+                None => CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch),
+            })?;
+            Ok::<_, CheckRefusal>((body, typer.slots(), uses))
         })();
         match typed {
-            Ok((body, slots)) => Some(CheckedRow {
+            Ok((body, slots, uses)) => Some(CheckedRow {
                 parameters,
                 body,
                 slots,
+                uses,
             }),
             Err(refusal) => {
                 match super::region::span_at(&expression.spans, &refusal.location)
@@ -1284,6 +1565,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             parameters: parameters.clone(),
             kind: qsl_forms::StateClauseKind::Postcondition,
             operation: Some(concrete.name().to_owned()),
+            label: format!("step {}", concrete.name()),
         };
         let mut complete = true;
         let receiver_type = lift(&self.lifting, &ValueType::Reference(target_type.id));
@@ -1418,6 +1700,152 @@ struct RowContext {
     parameters: Vec<(String, ValueType)>,
     kind: qsl_forms::StateClauseKind,
     operation: Option<String>,
+    /// The row, as a refusal names it: `Type.field` or `step operation`.
+    label: String,
+}
+
+fn refuse_with(location: &Location, cause: CheckCause) -> CheckRefusal {
+    CheckRefusal {
+        location: location.clone(),
+        cause,
+    }
+}
+
+/// The population-size-dependent bounds of a row `body` used as `required`
+/// (FR-139): empty when the row's type already conforms. S3 checks every
+/// typing rule that does not depend on the universe size `n` and records the
+/// bound that does. `Err(None)` is a mismatch that holds whatever `n` is;
+/// `Err(Some(_))` is a row whose bound depends on `n` through a form S3 does
+/// not read yet.
+fn population_uses(
+    types: &TypeEnvironment,
+    body: &CheckedBody,
+    required: &ValueType,
+    (label, scope): (&str, &PopulationScope),
+    span: Span,
+) -> Result<Vec<PopulationUse>, Option<CheckCause>> {
+    let root = body.root();
+    if conforms(types, root.value_type(), required) {
+        return Ok(Vec::new());
+    }
+    let reads_population = root
+        .descendants()
+        .iter()
+        .any(|node| matches!(node.kind(), NodeKind::PopulationObjects { .. }));
+    if !reads_population {
+        return Err(None);
+    }
+    let source_population = |node: CheckedNode<'_>| {
+        let mut node = node;
+        loop {
+            match node.kind() {
+                NodeKind::PopulationObjects { population } => return Some(population.clone()),
+                NodeKind::Query {
+                    visit: Visit::Filter,
+                    source,
+                    ..
+                } => node = node.at(*source),
+                _ => return None,
+            }
+        }
+    };
+    let (key, value) = match root.kind() {
+        NodeKind::PopulationObjects { population } => {
+            (population.clone(), PopulationValue::Objects)
+        }
+        NodeKind::Query {
+            visit: Visit::Count,
+            source,
+            ..
+        } => match source_population(root.at(*source)) {
+            Some(key) => (key, PopulationValue::Count),
+            None => return Err(Some(depends_on_size())),
+        },
+        NodeKind::Query {
+            visit: Visit::Sum,
+            source,
+            body: summand,
+            ..
+        } => {
+            let summand = root.at(*summand);
+            let range = static_integer_range((summand.kind(), summand.value_type()), &|id| {
+                let found = body.node(id);
+                Some((found.kind(), found.value_type()))
+            })
+            .and_then(|(lower, upper)| IntegerInterval::new(lower, upper).ok());
+            match (source_population(root.at(*source)), range) {
+                (Some(key), Some(summand)) => (key, PopulationValue::Sum { summand }),
+                // An unbounded summand gives an unbounded sum, whatever `n`
+                // is.
+                (Some(_), None) => return Err(None),
+                (None, _) => return Err(Some(depends_on_size())),
+            }
+        }
+        _ => {
+            return if relaxed_conforms(types, root.value_type(), required) {
+                Err(Some(depends_on_size()))
+            } else {
+                Err(None)
+            }
+        }
+    };
+    let Some(population) = scope.populations.iter().find(|found| found.key == key) else {
+        return Err(None);
+    };
+    let used = PopulationUse {
+        row: label.to_owned(),
+        span,
+        population: population.name.clone(),
+        key,
+        member: population.member,
+        value,
+        required: required.clone(),
+    };
+    // The part of the check that does not depend on `n`: the value's kind
+    // and its bounds that hold for every `n`.
+    let independent = match (&used.value, required) {
+        (PopulationValue::Objects, ValueType::Collection(collection)) => {
+            collection.kind() == CollectionKind::Set
+                && collection.element() == &ValueType::Reference(used.member)
+                // `n` may be 0, so a minimum above 0 is never met.
+                && collection.bound().is_none_or(|bound| bound.minimum() == 0)
+        }
+        (PopulationValue::Count | PopulationValue::Sum { .. }, ValueType::Integer) => true,
+        (PopulationValue::Count | PopulationValue::Sum { .. }, ValueType::Int(target)) => {
+            // `n` is at least 0, and a sum over no object is 0.
+            (target.lower().is_negative() || target.lower().is_zero())
+                && !target.upper().is_negative()
+        }
+        _ => false,
+    };
+    if independent {
+        Ok(vec![used])
+    } else {
+        Err(None)
+    }
+}
+
+fn depends_on_size() -> CheckCause {
+    CheckCause::PopulationFormNotChecked {
+        what: "a bound that depends on a population's size, through a form other than the row's whole value",
+    }
+}
+
+/// Whether `actual` would fit `required` if the integer and collection
+/// bounds were ignored: the shape of a row that only a universe size can
+/// settle.
+fn relaxed_conforms(types: &TypeEnvironment, actual: &ValueType, required: &ValueType) -> bool {
+    match (actual, required) {
+        (ValueType::Integer | ValueType::Int(_), ValueType::Integer | ValueType::Int(_)) => true,
+        (ValueType::Collection(actual), ValueType::Collection(required)) => {
+            actual.kind() == required.kind()
+                && relaxed_conforms(types, actual.element(), required.element())
+        }
+        (ValueType::Option(actual), ValueType::Option(required)) => {
+            relaxed_conforms(types, actual, required)
+        }
+        _ => conforms(types, actual, required),
+    }
 }
 
 /// The refusal for a `refinement` declaration that checks but that no S4

@@ -804,6 +804,23 @@ impl Renaming<'_, '_, '_> {
                         outer.extend(*identity);
                         scoped(children, id, &outer, 2, *step);
                     }
+                    // The condition and the body both read the binder.
+                    ExprNode::Population {
+                        condition, body, ..
+                    } => {
+                        children.push(Rewrite::Bind(id, 0));
+                        children.extend(
+                            condition
+                                .iter()
+                                .chain(body.iter())
+                                .copied()
+                                .map(Rewrite::Node),
+                        );
+                        children.push(Rewrite::Unbind);
+                    }
+                    ExprNode::Seq {
+                        low, high, body, ..
+                    } => scoped(children, id, &[*low, *high], 1, *body),
                     other => children.extend(other.children().into_iter().map(Rewrite::Node)),
                 }
             }
@@ -1314,7 +1331,8 @@ mod tests {
     }
     use crate::model::normalize::ModelRefusalCause;
     use qsl_forms::{
-        Accumulation, BinaryOperator, BinderQuery, DeclaredName, ExprNode, Expression, TypeForm,
+        Accumulation, BinaryOperator, BinderQuery, DeclaredName, ExprNode, Expression,
+        PopulationForm, TypeForm,
     };
     use qsl_foundation::absence::AbsenceMode;
     use quire_exact::{CollectionKind, Integer, ValueType};
@@ -1745,6 +1763,17 @@ mod tests {
                 boxed(),
                 boxed(),
             ),
+            Expression::population_form(
+                PopulationForm::Only,
+                bound(),
+                DeclaredName {
+                    name: "C::p".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                Some(boxed()),
+                Some(boxed()),
+            ),
+            Expression::seq(bound(), boxed(), boxed(), boxed()),
             Expression::size(boxed()),
             Expression::contains(boxed(), boxed()),
             Expression::all_instances(form(), boxed()),
@@ -1765,7 +1794,7 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 34] = [
+    const FORM_NAMES: [&str; 36] = [
         "Case",
         "Boolean",
         "Integer",
@@ -1791,6 +1820,8 @@ mod tests {
         "Accumulate",
         "Count",
         "Sum",
+        "Population",
+        "Seq",
         "Size",
         "Contains",
         "AllInstances",
@@ -1833,6 +1864,8 @@ mod tests {
             ExprNode::Accumulate { .. } => "Accumulate",
             ExprNode::Count { .. } => "Count",
             ExprNode::Sum { .. } => "Sum",
+            ExprNode::Population { .. } => "Population",
+            ExprNode::Seq { .. } => "Seq",
             ExprNode::Size(_) => "Size",
             ExprNode::Contains { .. } => "Contains",
             ExprNode::AllInstances { .. } => "AllInstances",

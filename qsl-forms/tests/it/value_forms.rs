@@ -157,6 +157,13 @@ fn show(expression: ExprRef<'_>) -> String {
             binder,
             ..
         } => format!("Sum[{result_type},{binder}]"),
+        ExprNode::Population {
+            form,
+            binder,
+            population,
+            ..
+        } => format!("Population[{form:?},{binder},{population}]"),
+        ExprNode::Seq { binder, .. } => format!("Seq[{binder}]"),
         ExprNode::Size(_) => "Size".into(),
         ExprNode::Contains { .. } => "Contains".into(),
         ExprNode::AllInstances { target, .. } => format!("AllInstances[{:?}]", target.head),
