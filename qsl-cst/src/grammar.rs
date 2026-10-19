@@ -921,6 +921,24 @@ fn expressions(g: &mut Grammar) {
         ]),
     );
     g.insert(
+        P::PopulationBinder,
+        s(vec![
+            ident(),
+            x("in"),
+            r(P::ModelName),
+            opt(s(vec![literal("where"), r(P::Expression)])),
+        ]),
+    );
+    g.insert(
+        P::PopulationCall,
+        s(vec![
+            Rule::Terminal(Terminal::Peek(&[
+                "count", "exists", "all", "sum", "only", "seq",
+            ])),
+            population_call(),
+        ]),
+    );
+    g.insert(
         P::CaseExpression,
         s(vec![
             x("case"),
@@ -976,6 +994,7 @@ fn expressions(g: &mut Grammar) {
                 r(P::Expression),
                 x(")"),
             ]),
+            r(P::PopulationCall),
             r(P::CollectionCall),
             s(vec![
                 x("lookup"),
@@ -1026,6 +1045,39 @@ fn expressions(g: &mut Grammar) {
     );
     scrutinee_rules(g);
     hyper_expression_rules(g);
+}
+
+/// The three shapes of a population-valued form (FR-139), after the guard
+/// that keeps every other primary from trying them.
+fn population_call() -> Rule {
+    c(vec![
+        s(vec![
+            c(vec![x("count"), x("exists"), x("all")]),
+            x("("),
+            r(P::PopulationBinder),
+            x(")"),
+        ]),
+        s(vec![
+            c(vec![x("sum"), literal("only")]),
+            x("("),
+            r(P::PopulationBinder),
+            x(":"),
+            r(P::Expression),
+            x(")"),
+        ]),
+        s(vec![
+            literal("seq"),
+            x("("),
+            ident(),
+            x("in"),
+            r(P::Expression),
+            x(".."),
+            r(P::Expression),
+            x(":"),
+            r(P::Expression),
+            x(")"),
+        ]),
+    ])
 }
 
 /// Derive the scrutinee precedence tree from the ordinary expression rules.

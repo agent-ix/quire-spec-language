@@ -77,7 +77,7 @@ pub use syntax::{
     FairnessConstraintForm, FairnessGranularity, FairnessKind, FieldInitializer, FractionForm,
     FunctionDeclaration, HorizonForm, IntervalForm, IntervalUpper, MeasureForm, MeasureWindowForm,
     NameForm, OperationBodyForm, OperatorInterval, ParameterForm, PopulationBoundForm,
-    ProbabilisticBody, ProbabilisticForm, ProtocolBodyForm, ProtocolConstructForm,
+    PopulationForm, ProbabilisticBody, ProbabilisticForm, ProtocolBodyForm, ProtocolConstructForm,
     ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
     QuantityForm, RandomForm, RecordFieldForm, RecordForm, RelatedForm, RelationshipForm,
     ReplicatedRoleForm, RequirementForm, RewardForm, RoleForm, RoleLifetime, SchedulerForm,
