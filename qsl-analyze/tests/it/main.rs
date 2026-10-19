@@ -4,4 +4,5 @@
 mod counter;
 mod graph_core;
 mod model_check;
+mod model_settle;
 mod schedulability;
