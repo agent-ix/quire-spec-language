@@ -60,3 +60,21 @@ must bring the FND-001 test below.
 | FND-001 | medium | No adverse test for a subject with no initial state at the checker. FR-338 accepts only a certificate that contains every initial product state, and FR-127 settles no initial state as `Inconclusive(NoInitialState)`. No test offers `check_closure` or `settle_model_check` a `Holds` over an empty `initial`. Today that path returns `Accepted` and `Certified` (SR-12161 FND-001). | qsl-analyze/tests/it/closure_certificate.rs |
 | FND-002 | medium | The settlement test pins an unbound package. `a_proof_settles_certified_only_when_its_certificate_is_accepted` passes `DigestRecord::mint(PackageSemanticV2, [0; 32])`, which is not the world's package, and still expects `Certified`. No test checks that a request over another package fails to certify. FR-338 Inputs bind the request to the recompiled package (SR-12161 FND-002). | qsl-analyze/tests/it/closure_certificate.rs:443-460 |
 | FND-003 | low | AC-5's "refuses before the key is used for membership" is shown at checker level only for a foreign context and a foreign digest domain. No `check_closure` test offers a malformed, non-canonical or unsorted key and asserts `ShapeMismatch` at that state. The translation-unit tests cover `admit`, but not the checker's use of it. | qsl-analyze/tests/it/closure_certificate.rs:389-429 |
+
+## Dispositions
+
+Round 1, reviewed at 2071dfd1323b0a953b0cdeda5d663a313bc58276. The fix
+commits are e55788157 and 2071dfd13. The round adds no new gap finding.
+
+STD-185 adds FR-338-AC-8. Its refused-key half is exercised by
+`a_refused_key_rejects_the_certificate_at_the_least_refused_state`, which is
+tagged `TC-1080` only. That tag is honest, because the subject is the Counter
+substitute and the unresolved-root half is not done. The PR body states that
+gap (FR-337, spec gap 1). No test claims FR-337-AC-5, TC-1079 or the
+unresolved-root refusal.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e55788157 |
+| FND-002 | fixed | e55788157 |
+| FND-003 | fixed | e55788157 |

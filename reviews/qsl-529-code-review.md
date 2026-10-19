@@ -111,3 +111,39 @@ Not mergeable until FND-001 is fixed.
 | FND-004 | medium | The checker takes its instance population and its atom truth from the caller's `&dyn ModelLetters`, the same object the engine used. `instances()` builds one context per `letters.bindings()`, and `Check::atom` reads `letters.atom`. A seam that lists only some of the `over` population, or answers an atom wrongly, makes the engine and the checker agree on a subset or a wrong letter, and the record settles `Certified`. FR-338 says the checker re-admits the subject "from its byte provision and universes (FR-125)" and evaluates atoms by "that occurrence's original checked expression and binding". The population at least should be rederived from `request.subject`'s universes. This sits next to the declared FR-337 gap (identity supplied by the request), but it is a separate trust input. Record it, or rederive. | qsl-replay/src/model_check/item.rs:87-128, qsl-replay/src/certificate/closure.rs:377-386, qsl-replay/src/certificate/closure.rs:489-507 |
 | FND-005 | low | An unreached member with a rejecting key is accepted. Every admitted key, `["safety",[]]` included, enters `members`, and only reached states are checked. A certificate that lists a bad product state it never reaches is `Accepted`. FR-338's Description accepts "exactly when the certificate's product states ... hold no bad state", while Behavior speaks of a "reached state". The proof is still sound. Either reject a rejecting-key member as `BadState` or `ShapeMismatch`, or align the FR-338 Description with Behavior. | qsl-replay/src/certificate/closure.rs:189-204 |
 | FND-006 | low | The deleted TC-522 `Holds` row asserted `truth`, `method`, `limits` and `Category::Success` on the proved record (model_settle.rs, removed rows). The replacement Certified assertions in closure_certificate.rs check only value, label, basis and execution. `Truth::Satisfied`, `EXPLICIT_STATE` and the limits row of a Certified record are no longer asserted anywhere. | qsl-analyze/tests/it/closure_certificate.rs:454-469, qsl-analyze/tests/it/model_settle.rs:619 |
+
+## Dispositions
+
+Round 1, reviewed at 2071dfd1323b0a953b0cdeda5d663a313bc58276. The fix
+commits are e55788157 (FND-001 to FND-003) and 2071dfd13 (STD-185's
+least-refused-key outcome). The merges of main, b170632e5 and e9a89c6a7, bring
+in STD-185 (#999) spec text only on this path. The
+mediums and lows left unfixed are recorded, not fixed, under the majors-only
+review rule.
+
+The fix round was also checked for regressions:
+
+- Admission now reads at most `max_states × instances` entries. The engine's
+  certificate is `nodes × instances` with `nodes ≤ max_states`, so a genuine
+  certificate never trips the limit.
+- Refused keys are never inserted into `members`.
+- `qsl-package` was already a normal dependency of `qsl-replay`.
+- The PR body states the FR-337 gap (spec gap 1). `ClauseIdentity` still
+  comes from the request, and FR-337-AC-5, TC-1079 and the unresolved-root
+  half of FR-338-AC-8 are not done. No test claims them: the TC-1080 test
+  covers only the refused-key half.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e55788157 |
+| FND-002 | fixed | e55788157 |
+| FND-003 | fixed | e55788157 |
+| FND-004 | deferred | Medium, recorded and not fixed (majors-only rule). The instance population and atom truth still come from the caller's `ModelLetters`. Rederiving the `over` population from the subject belongs with the FR-337 S4 clause-node slice the leader is routing. |
+| FND-005 | deferred | Low, recorded and not fixed. An unreached member with a rejecting key is still accepted. That is sound, but FR-338's Description and Behavior still disagree. |
+| FND-006 | deferred | Low, recorded and not fixed. `Truth::Satisfied`, `method` and `limits` on a Certified record are still not asserted. |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The least-refused order compares `model_state.as_bytes()` and ignores the digest domain. Two refused entries with equal digest bytes and equal key octets but different domains (for example a foreign-domain copy of a state) tie, and the first one read wins. In that corner the locus depends on the order of `states`, which FR-338 forbids. Fix: break the tie on the domain spelling, or on the full `ProductStateRef` `Ord`. | qsl-replay/src/certificate/closure.rs:230-243 |
