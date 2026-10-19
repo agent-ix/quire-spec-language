@@ -289,7 +289,10 @@ pub enum KeyRefusal {
 #[derive(Clone, Debug)]
 pub struct SafetyTranslation {
     item: SafetyItem,
-    context: Vec<u8>,
+    /// The context, and its canonical octets, which an admitted key's
+    /// context must equal.
+    context: Enc,
+    context_octets: Vec<u8>,
     max_bytes: u64,
 }
 
@@ -329,11 +332,13 @@ impl SafetyTranslation {
 
     fn new(item: SafetyItem, context: &StateContext) -> Result<Self, KeyRefusal> {
         let max_bytes = IdentityLimits::default().input_bytes;
-        let context = quire_canonical::to_vec(&context.enc(), Limits::new(max_bytes))
+        let context = context.enc();
+        let context_octets = quire_canonical::to_vec(&context, Limits::new(max_bytes))
             .map_err(|_| KeyRefusal::Encoding)?;
         Ok(Self {
             item,
             context,
+            context_octets,
             max_bytes,
         })
     }
@@ -361,24 +366,14 @@ impl SafetyTranslation {
     /// [`KeyRefusal::Encoding`] when the key exceeds the identity byte
     /// budget; no truncated key is produced.
     pub fn key(&self, state: SafetyState) -> Result<AutomatonStateKey, KeyRefusal> {
-        let limits = Limits::new(self.max_bytes);
-        let body =
-            quire_canonical::to_vec(&state.enc(), limits).map_err(|_| KeyRefusal::Encoding)?;
-        let discriminator = quire_canonical::to_vec(&Enc::text(AUTOMATON_STATE_KEY_V1), limits)
-            .map_err(|_| KeyRefusal::Encoding)?;
-        let length = discriminator.len() + self.context.len() + body.len() + 4;
-        if u64::try_from(length).map_or(true, |length| length > self.max_bytes) {
-            return Err(KeyRefusal::Encoding);
-        }
-        let mut octets = Vec::with_capacity(length);
-        octets.push(b'[');
-        octets.extend_from_slice(&discriminator);
-        octets.push(b',');
-        octets.extend_from_slice(&self.context);
-        octets.push(b',');
-        octets.extend_from_slice(&body);
-        octets.push(b']');
-        Ok(AutomatonStateKey(octets))
+        let key = Enc::Array(vec![
+            Enc::text(AUTOMATON_STATE_KEY_V1),
+            self.context.clone(),
+            state.enc(),
+        ]);
+        quire_canonical::to_vec(&key, Limits::new(self.max_bytes))
+            .map(AutomatonStateKey)
+            .map_err(|_| KeyRefusal::Encoding)
     }
 
     /// Admit `octets` as a key of this translation's context, refusing every
@@ -400,7 +395,7 @@ impl SafetyTranslation {
         if !matches!(discriminator.node(), Node::String(AUTOMATON_STATE_KEY_V1)) {
             return Err(KeyRefusal::Discriminator);
         }
-        if canonical(context, self.max_bytes)? != self.context {
+        if canonical(context, self.max_bytes)? != self.context_octets {
             return Err(KeyRefusal::ForeignContext);
         }
         let state = self.state(state)?;
