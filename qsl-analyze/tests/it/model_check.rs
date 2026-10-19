@@ -745,7 +745,6 @@ fn an_empty_or_unbounded_subject_explores_nothing() {
         matches!(&refusal, ModelCheckRefusal::RequiresBound(_)),
         "{refusal:?}"
     );
-
 }
 
 /// QSpec FR-361-AC-8 (QSpec TC-294): a clause with zero instances is

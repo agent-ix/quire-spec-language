@@ -20,7 +20,9 @@ use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::TemporalCounterexample;
-use qsl_semantics::check::{check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
+use qsl_semantics::check::{
+    check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
+};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
@@ -63,7 +65,12 @@ impl Domain {
     }
 
     /// The field `name` of the object `object` at `state`.
-    pub(crate) fn field<'s>(&self, state: &'s ModelSimState, object: &str, name: &str) -> &'s Value {
+    pub(crate) fn field<'s>(
+        &self,
+        state: &'s ModelSimState,
+        object: &str,
+        name: &str,
+    ) -> &'s Value {
         state.state().populations[&self.key(self.population)][object]
             .fields
             .get(&self.key(&format!("{}/{name}", self.object)))
@@ -276,7 +283,9 @@ impl World {
         // S4 emits no `on each` clause (FR-337), so the package check refuses
         // one: a world with one checks its clauses by the family alone, and
         // its package holds none of them.
-        let emitted = clauses.iter().all(|clause| clause.activation == "on origin");
+        let emitted = clauses
+            .iter()
+            .all(|clause| clause.activation == "on origin");
         let unit = if emitted {
             format!("{text}{declared}")
         } else {
@@ -462,12 +471,14 @@ impl ModelLetters for Letters {
             .iter()
             .position(|node| *node == atom)
             .expect("the engine reads only the clause's atoms");
-        Ok(match (self.atoms[index])(state, binding.object().as_str()) {
-            Some(true) => AtomReading::True,
-            Some(false) => AtomReading::False,
-            None => AtomReading::Undefined(UndefinedCause::Kernel(
-                quire_exact::Undefined::DivisionByZero,
-            )),
-        })
+        Ok(
+            match (self.atoms[index])(state, binding.object().as_str()) {
+                Some(true) => AtomReading::True,
+                Some(false) => AtomReading::False,
+                None => AtomReading::Undefined(UndefinedCause::Kernel(
+                    quire_exact::Undefined::DivisionByZero,
+                )),
+            },
+        )
     }
 }

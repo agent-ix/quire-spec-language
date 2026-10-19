@@ -684,8 +684,10 @@ impl Run<'_, '_> {
                 AtomReading::False => {}
                 AtomReading::Undefined(cause) => {
                     let site = Self::site(node, UndefinedLocus::Atom(*formula_atom), None);
-                    let kind =
-                        CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation { site, cause });
+                    let kind = CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
+                        site,
+                        cause,
+                    });
                     return Ok((from, Some(kind)));
                 }
             }
@@ -703,8 +705,8 @@ impl Run<'_, '_> {
         if !matches!(self.item, Item::Clause { bounded: true, .. }) {
             return Ok(());
         }
-        for instance in 0..self.nodes[at].monitor.len() {
-            let mut state = self.nodes[at].monitor[instance];
+        let reached = self.nodes[at].monitor.clone();
+        for (instance, mut state) in reached.into_iter().enumerate() {
             let mut seen = BTreeSet::from([state]);
             loop {
                 state = self
@@ -723,7 +725,11 @@ impl Run<'_, '_> {
         Ok(())
     }
 
-    fn site(node: &Node, locus: UndefinedLocus, transition: Option<ModelTransition>) -> UndefinedSite {
+    fn site(
+        node: &Node,
+        locus: UndefinedLocus,
+        transition: Option<ModelTransition>,
+    ) -> UndefinedSite {
         UndefinedSite {
             position: widen(node.depth),
             state_key: node.digest,

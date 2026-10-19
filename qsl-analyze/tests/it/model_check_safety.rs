@@ -65,12 +65,7 @@ fn run(
     )
 }
 
-fn checked(
-    world: &World,
-    index: usize,
-    keys: &[&str],
-    atoms: Vec<Atom>,
-) -> ModelCheckOutcome {
+fn checked(world: &World, index: usize, keys: &[&str], atoms: Vec<Atom>) -> ModelCheckOutcome {
     run(world, index, keys, atoms, ModelCheckLimits::default()).expect("checked")
 }
 
@@ -133,16 +128,19 @@ fn value(test: fn(i64) -> Option<bool>) -> Atom {
 #[test]
 fn bounded_each_clauses_are_decided_on_the_product() {
     let counter = each("Counter");
-    let world = counter_world(BOUNDED, &[
-        Clause {
-            activation: &counter,
-            formula: "eventually[0,3] holds(c.value = 3)",
-        },
-        Clause {
-            activation: &counter,
-            formula: "eventually[0,1] holds(c.value = 3)",
-        },
-    ]);
+    let world = counter_world(
+        BOUNDED,
+        &[
+            Clause {
+                activation: &counter,
+                formula: "eventually[0,3] holds(c.value = 3)",
+            },
+            Clause {
+                activation: &counter,
+                formula: "eventually[0,1] holds(c.value = 3)",
+            },
+        ],
+    );
     holds(&checked(&world, 0, &["c"], vec![value(|v| Some(v == 3))]));
     let outcome = checked(&world, 1, &["c"], vec![value(|v| Some(v == 3))]);
     let counterexample = violated(&outcome);
@@ -159,16 +157,19 @@ fn bounded_each_clauses_are_decided_on_the_product() {
 #[trace("TC-521")]
 #[test]
 fn a_terminal_state_closes_a_bounded_monitor_with_false_letters() {
-    let world = counter_world(BOUNDED, &[
-        Clause {
-            activation: ORIGIN,
-            formula: "eventually[0,5] holds(c.value > 3)",
-        },
-        Clause {
-            activation: ORIGIN,
-            formula: "eventually[0,5] holds(c.value = 3)",
-        },
-    ]);
+    let world = counter_world(
+        BOUNDED,
+        &[
+            Clause {
+                activation: ORIGIN,
+                formula: "eventually[0,5] holds(c.value > 3)",
+            },
+            Clause {
+                activation: ORIGIN,
+                formula: "eventually[0,5] holds(c.value = 3)",
+            },
+        ],
+    );
     let outcome = checked(&world, 0, &["c"], vec![value(|v| Some(v > 3))]);
     let counterexample = violated(&outcome);
     assert_eq!(counterexample.kind, CounterexampleKind::Formula);
@@ -188,16 +189,19 @@ fn a_terminal_state_closes_a_bounded_monitor_with_false_letters() {
 #[trace("TC-521")]
 #[test]
 fn a_terminal_state_stutters_under_infinite_trace() {
-    let world = counter_world(INFINITE, &[
-        Clause {
-            activation: ORIGIN,
-            formula: "always (holds(c.value = 3) implies eventually[0,1] holds(c.value = 0))",
-        },
-        Clause {
-            activation: ORIGIN,
-            formula: "always (holds(c.value = 2) implies eventually[0,1] holds(c.value = 3))",
-        },
-    ]);
+    let world = counter_world(
+        INFINITE,
+        &[
+            Clause {
+                activation: ORIGIN,
+                formula: "always (holds(c.value = 3) implies eventually[0,1] holds(c.value = 0))",
+            },
+            Clause {
+                activation: ORIGIN,
+                formula: "always (holds(c.value = 2) implies eventually[0,1] holds(c.value = 3))",
+            },
+        ],
+    );
     let outcome = checked(
         &world,
         0,
@@ -227,14 +231,20 @@ fn a_terminal_state_stutters_under_infinite_trace() {
 /// branch would only expire two positions later.
 #[test]
 fn the_monitor_rejects_at_the_first_bad_prefix() {
-    let world = counter_world(INFINITE, &[Clause {
-        activation: ORIGIN,
-        formula: "always (holds(c.value <= 1) or eventually[0,2] false)",
-    }]);
+    let world = counter_world(
+        INFINITE,
+        &[Clause {
+            activation: ORIGIN,
+            formula: "always (holds(c.value <= 1) or eventually[0,2] false)",
+        }],
+    );
     let outcome = checked(&world, 0, &["c"], vec![value(|v| Some(v <= 1))]);
     let counterexample = violated(&outcome);
     assert_eq!(counterexample.kind, CounterexampleKind::Formula);
-    assert_eq!(values(&world, &["c"], counterexample, "c", "value"), [0, 1, 2]);
+    assert_eq!(
+        values(&world, &["c"], counterexample, "c", "value"),
+        [0, 1, 2]
+    );
 }
 
 /// The FR-126-AC-6 rows over the `Restless` subject (FR-126-AC-4: `fail`
@@ -268,8 +278,14 @@ fn a_long_interval_materializes_automaton_states_as_the_product_reaches_them() {
         max_automaton_states: 50,
         ..ModelCheckLimits::default()
     };
-    let outcome = run(&world, 0, &["s"], vec![healthy(true), healthy(false)], tight)
-        .expect("checked");
+    let outcome = run(
+        &world,
+        0,
+        &["s"],
+        vec![healthy(true), healthy(false)],
+        tight,
+    )
+    .expect("checked");
     let ModelCheckOutcome::Stopped {
         cause,
         limit,
