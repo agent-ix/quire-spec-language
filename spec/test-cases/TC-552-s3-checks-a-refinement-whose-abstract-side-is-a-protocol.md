@@ -11,10 +11,10 @@ relationships:
 ## Description
 
 Verify the abstract protocol side: resolution of the protocol, node targets,
-the profile's internal list, the `refinement` requirement record and the unsupported
+the unit's `refinement_internals` member (the profile's internal list), the `refinement` requirement record and the unsupported
 liveness half.
 
-Scope: FR-147-AC-1 to FR-147-AC-3.
+Scope: FR-147-AC-1 to FR-147-AC-6.
 
 ## Test Procedure
 
@@ -26,6 +26,11 @@ Fixtures: `Twice` and `CasTwice` (FR-147); `CasRefinesCounter` (ADR-020 §8).
 4. Check `CasTwice` with `finish` removed from the profile's internal list,
    with the list naming `finish`, and with the list naming `finish` beside
    a step row `-> node Spec::Twice::finish(self)`.
+
+5. Check `CasTwice` with `refinement_internals` set to the FR-147 fixture
+   member, absent, `[]`, and holding only an object for another refinement;
+   compute each `package_id`.
+6. Check each member defect of FR-147-AC-6, one unit per variant.
 
 Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 
@@ -39,3 +44,8 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   naming hidden abstract fields.
 - Step 4: checks with `finish` visible and `abstract_internal` empty; checks
   with `finish` internal; `invalid_model_binding`/`conflicting-binding`.
+- Step 5: the fixture member gives `abstract_internal = [finish]`; the other
+  three give it empty with `finish` visible; the fixture unit's `package_id`
+  differs from the other three, which are equal to one another.
+- Step 6: each variant refuses with FR-147-AC-6's code and subcode, naming the
+  member path or both objects, and no `CheckedRefinement`.
