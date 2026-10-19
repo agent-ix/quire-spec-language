@@ -16,6 +16,7 @@ mod domain;
 pub(crate) mod encode;
 mod footprints;
 mod frames;
+mod refine;
 mod state_predicate;
 mod symmetry;
 mod terminal;
@@ -60,6 +61,7 @@ use crate::value::QualifiedName;
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
+pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
 
@@ -386,14 +388,48 @@ impl<'a> ModelSystem<'a> {
     ///
     /// FR-106's [`AdmissionFailure`]: `Refused` or `Incomplete`, one record.
     pub fn new(request: ModelSimulationRequest<'a>) -> Result<Self, AdmissionFailure> {
+        let selections = request.package.graph().model_selections();
+        Self::over(request, selections)
+    }
+
+    /// [`Self::new`] over the one domain package `model` names, for a unit
+    /// that selects several models (ADR-020 RM-1: a refinement's abstract
+    /// and concrete subjects are two models of one checked package). The
+    /// system holds that model's populations only.
+    ///
+    /// # Errors
+    ///
+    /// `invalid_runtime_input`/`wrong-role-mapping` when the package selects
+    /// no model named `model`; otherwise as [`Self::new`].
+    pub fn over_model(
+        request: ModelSimulationRequest<'a>,
+        model: &str,
+    ) -> Result<Self, AdmissionFailure> {
+        let selected: Vec<_> = request
+            .package
+            .graph()
+            .model_selections()
+            .iter()
+            .filter(|selection| selection.identity == model)
+            .cloned()
+            .collect();
+        if selected.is_empty() {
+            return Err(refused(
+                Code::InvalidRuntimeInput,
+                "wrong-role-mapping",
+                &[("model", model.to_owned())],
+            ));
+        }
+        Self::over(request, &selected)
+    }
+
+    fn over(
+        request: ModelSimulationRequest<'a>,
+        selections: &[qsl_semantics::model::domain_package::DomainPackageRef],
+    ) -> Result<Self, AdmissionFailure> {
         let graph = request.package.graph();
         let types = graph.scope().types();
-        let model = StateModel::new(
-            graph.model_selections(),
-            types,
-            request.packages,
-            request.normalization,
-        )?;
+        let model = StateModel::new(selections, types, request.packages, request.normalization)?;
         let populations = model.populations();
 
         let mut universes = BTreeMap::new();
