@@ -82,3 +82,4 @@ work cite STD-199.
 | FND-007 | fixed | Round 2 (49b77c0dd): one rule now covers either abstract side. A non-empty list refuses `unsupported_construct`/`not-yet-implemented` once per refinement, at the first token of the name after `abstract`, which both forms have. The model-side binding refusal is removed from "Internal abstract steps" and from AC-2, and AC-7 and TC-552 step 7 agree. |
 | FND-008 | fixed | Round 3 (431760874): FR-135's support set now names three features, adding `refinement-internal-list` (FR-147), and FR-135-AC-5 points to FR-147-AC-7. |
 | FND-009 | fixed | Round 3: AC-7 and TC-552 step 7 give `CasRefinesCounter` exactly one refusal, and `CasTwice` exactly two (`protocol-abstract-side` at `Twice`, `refinement-internal-list` at `Spec`). |
+| FND-010 | fixed | Round 4 (865a0e4cf): the FR-135 SHALL bullet now reads "once for each row or refinement that uses the feature", which matches the support-set paragraph. |
