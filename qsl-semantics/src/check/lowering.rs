@@ -90,6 +90,7 @@ use quire_semantic_value::quantity::UnitTable;
 mod model;
 mod protocol;
 mod state;
+mod temporal;
 mod wire;
 
 pub(crate) use model::ParentSlotFailure;
@@ -99,6 +100,7 @@ pub(crate) use protocol::{compensation_origin, declaration_origin, ProtocolInput
 pub(crate) use state::{
     AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
 };
+pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
