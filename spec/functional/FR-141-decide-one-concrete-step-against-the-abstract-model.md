@@ -180,7 +180,7 @@ how it evaluates them and what it reports:
 
 ### Purity
 
-- `check_initial` and `check_step` SHALL be functions of their inputs, the two systems included. A protocol concrete subject has no `ModelSystem`; FR-148 states its concrete-side reader.
+- `check_initial` and `check_step` SHALL be functions of their inputs, the two systems included.
 
 ## Acceptance Criteria
 
