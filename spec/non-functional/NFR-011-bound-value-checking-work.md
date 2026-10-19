@@ -28,14 +28,14 @@ charge. The ceilings are stage limits, not a caller work budget
 ## Scope
 
 One `PackageDeclarations::check` call under one `CheckingLimits`, which
-applies its node, byte and work ceilings and its rational-bits ceiling. One standalone expression check
+applies its node, byte and work ceilings. One standalone expression check
 (`CheckedGraph::check_expression` and its clause variants) applies the node
 ceiling of its `CheckingLimits`; it encodes no declaration and charges no
 work. The ceilings are inclusive unsigned counts supplied by the
 caller. The values below are the default ceilings a caller gets when it
 configures none. A caller may set each ceiling independently, above or below
 its default, through its setting (`s3.nodes`, `s3.input_bytes`,
-`s3.work_units`, `s3.rational_bits`;
+`s3.work_units`;
 [FR-255](../functional/FR-255-name-the-setting-that-raises-a-reached-limit.md)),
 and the ceiling is used as given. Every checking walk runs over an explicit
 heap stack whose growth these ceilings charge, so an expression's or a
@@ -72,16 +72,6 @@ domain bound (NFR-001).
   `position:<n>`, `inner`) along its path, plus `recursion:<d>` for a
   recursion leaf. Union entry is a composite charge under the same rule;
   each member segment contributes its literal UTF-8 byte length.
-
-- **Rational bit.** The bit length of one exact value as written, before it
-  is reduced or expanded: the largest of the bit lengths of its written
-  integers' magnitudes, and for `decimal(m, s)` and a decimal literal the bit
-  length `⌊s · log₂ 10⌋ + 1` of `10^s`, computed in exact integer arithmetic
-  (FR-185). The ceiling `s3.rational_bits` defaults to 65,536 bits and is
-  checked per exact value, not summed over the package; reaching it is a
-  stage limit of kind rational bits, which is QSL-proposed pending QSpec
-  (STD-188). It is a different limit from `max_rational_bits` (FR-203), the
-  exact engine's own budget.
 
 ## Default derivation
 
@@ -120,13 +110,6 @@ Every existing fixture and conformance vector checks within these defaults.
 The largest recorded checker input by node units is FR-093's eight-record
 cluster (95904 units, 96% of the node ceiling). The largest by work is an
 8000-function call chain (160000 units, 1% of the work ceiling).
-
-The rational-bits ceiling defaults to 65,536 bits, the same figure as the
-exact engine's `max_rational_bits` default (FR-203), so a probability weight
-or threshold that S3 admits is no larger than a value that engine takes by
-default. A written value that long is far past any probability a modeller
-states by hand, and its reduction still costs one gcd over at most that many
-bits.
 
 ## Cost at the defaults
 
@@ -170,10 +153,6 @@ TC-423 covers the defaults:
 - `CheckingLimits::new` keeps the default byte and work ceilings.
 - A checked package and a checked expression record the default ceilings,
   and record a caller's ceilings as given, above or below the defaults.
-
-The rational-bits ceiling is covered by TC-620 (FR-185-AC-2): values at
-65,536 bits and `decimal(1, 19728)` are admitted, values at 65,537 bits and
-`decimal(1, 19729)` refuse naming `s3.rational_bits`.
 
 The refusal at a caller-selected bound is covered for nodes by TC-381 and
 FR-062-AC-7, and for preimage bytes and work by FR-062-AC-5 (TC-160). Deep

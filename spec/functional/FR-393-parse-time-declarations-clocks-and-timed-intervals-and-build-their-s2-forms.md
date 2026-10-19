@@ -110,8 +110,8 @@ the count of fraction digits; `n` and `d`; the coefficient and the scale).
 S2 neither reduces it nor raises ten to a scale, so a scale of any size costs
 nothing at S2, and the form keeps what was written. S3 reduces it to a
 numerator and denominator in lowest terms, after bounding the value as
-written by `s3.rational_bits` and refusing one past it with the limit
-outcome FR-185 states.
+written against the rational-bits ceiling of the S3 checking limits and refusing one
+past it with the limit refusal FR-185 states (pending QSL-883).
 FR-311 uses the same type.
 
 `Expression` gains a `Quantity(QuantityForm)` variant. The type builder maps
