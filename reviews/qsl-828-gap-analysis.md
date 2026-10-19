@@ -44,3 +44,18 @@ the deferred quadratic step has no ticket.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | The PR identifies the remaining super-linear step (each package in an n-library chain lists its whole dependency closure, quadratic in time and memory, now the 16.5 GB / 94 s floor) and defers it as a quire-contract-model package-format change. QSL-828's own candidate list includes "fix a super-linear step", and a Linear search finds no ticket for this one. Without a ticket the cause is recorded only in a PR body. File it against quire-contract-model's checked-package format. | tests/it/formatter_identity.rs:1795-1810 |
+
+## Dispositions
+
+Round 1, reviewed at `9f8676a0a11cae15ce3a29b1957e948fb1d734a7`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | QSL-875 (Backlog) owns the per-package dependency closure that makes a library chain quadratic in quire-contract-model's package format |
+
+FND-001: QSL-875, "Dependency closure per package makes a library chain
+quadratic in time and memory", names the test, the cause
+(`CheckedDependencySelection` carries the whole closure, so package k carries k
+records) and the format decision to make. Its description says "100-deep
+chains", but the test's chain is 1,000 libraries. That wording does not change
+which ticket owns the fix.

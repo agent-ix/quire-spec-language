@@ -74,3 +74,32 @@ contended build lane, and two low findings.
 | FND-001 | medium | The 18.5 GB stage peak (and the dependency-chain case's 16.5 GB alone, about 15.4 GiB) was measured against the best-case 20 GiB cap. `locked-build.sh` computes `cap = min(20, avail - 16)` GiB and halves it when another lane is busy, so with any other chain running on the 64 GB host the cap is about 12-17 GiB. That is below the 18.5 GB two-thread peak, and below the chain case alone unless 47+ GiB is free. The stage then dies with exit 137: a loud false red, not a hidden failure. Running the chain case on its own (the four lighter cases at `--test-threads=2`, then the chain at 1) bounds the stage at the chain's own peak and makes the passing condition simply "cap >= the chain". Whether the scoped thread raised the chain's own peak was not measured: the serial and parallel peaks of that case are not both reported. | Makefile:242-247; tests/support/front_end.rs:240-267 |
 | FND-002 | low | The Makefile comment says "`--test-threads=2`, one thread per case", but two threads run five cases, and it does not say why two: the memory cap. Suggested: "two at a time: five concurrent cases peak at 26.8 GB, over the 20 GiB lane cap". | Makefile:225-226 |
 | FND-003 | low | `let mut source = start.clone();` clones a `String` that is not used again; `let mut source = start;` is enough. | tests/it/formatter_identity.rs:1328 |
+
+## Dispositions
+
+Round 1, reviewed at `9f8676a0a11cae15ce3a29b1957e948fb1d734a7` (fix commit
+`8a519637d`, then a clean merge of main that touches none of these files).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8a519637d418261e086ab092f7267fb11a210d92 |
+| FND-002 | fixed | 8a519637d418261e086ab092f7267fb11a210d92 |
+| FND-003 | fixed | 8a519637d418261e086ab092f7267fb11a210d92 |
+
+FND-001: `test-deep-format` now runs the four light cases together at
+`--test-threads=2`, then the dependency chain alone at `--test-threads=1`, both
+after the exact-listing guard. The guard still names all five cases and still
+requires exactly one match for each. Under `set -eu`, a failure in the first
+run stops the recipe. `deep_calls` builds the same two argvs from
+`DEEP_CASES.split_last()`, and the TC-915 oracle compares the whole call
+sequence in order. Changing either thread count, or moving a case from one
+run to the other, therefore fails the oracle. The coder measured the chain at
+16.55 GB with the threaded sides and 16.25 GB sequential, so the scoped thread
+does not raise that peak. The stage peak is now the chain's own peak, about
+15.4 GiB. A contended lane whose cap is below that still fails loudly; that
+floor is QSL-875's.
+
+FND-002: the comment now says the lane cap sets the schedule, light cases two
+at a time and the chain alone.
+
+FND-003: `source` is built directly from `fixture_text(...)`; no clone.
