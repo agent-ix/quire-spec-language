@@ -112,3 +112,9 @@ Round 4, against head 05c1d8de6.
 | --- | --- | --- |
 | FND-008 | fixed | Verified by the checker probe: over the Config package extended with `Counter`/`bump`, `pre G using v on Config::Counter::bump { self.tally < 3 and self.next = self.tally + 1 }` and `invariant I using v on Config::Counter at current { ... }` check, and each unguarded form refuses `undefined_expression`/`unproved-range` at the sum |
 | FND-011 | fixed | Verified by the checker probe: `f(earlier: Config::Counter, ...)` with `deref(...)` reads types; `deref(later).tally = deref(earlier).tally` checks and the `-` and `n` vectors refuse `ill_typed`/`type-mismatch` at the comparison (the guarded vector is FND-012) |
+
+Round 5, against head e3ae4c594. Every vector was checked with the probe (probe-sr1039_probe.rs), its strings taken verbatim from TC-1084 at e3ae4c594. Results: `pre G` and `invariant I` check guarded and refuse `undefined_expression`/`unproved-range` at the sum unguarded. Over `record Pair { tally: Int[0,3]; }`, `f` checks guarded and refuses at the sum unguarded; `later.tally = earlier.tally` checks; `later.tally = -earlier.tally` and `later.tally = n` refuse `ill_typed`/`type-mismatch` at the comparison.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-012 | fixed | `f` takes `record Pair { tally: Int[0,3]; }` parameters with plain `earlier.tally`/`later.tally` reads; all five `f` vectors and the four `Config::Counter` clause vectors give the results FR-104-AC-12 states |
