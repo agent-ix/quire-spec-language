@@ -62,26 +62,76 @@ integers in lowest terms.
 
 ## Behavior
 
+Every refusal below that carries a bracketed string is an
+`invalid_probabilistic_model` diagnostic whose cause is that string, and it retains the declaration locus and
+the parameter, reward, workload or operation it names. Every cause except
+`duplicate-reward` is in QSpec FR-272's closed set for that code (QSpec
+FR-405). `duplicate-reward` is a QSL-proposed cause that QSpec does not yet
+define; it is requested of QSpec in STD-188, and QSL emits it until QSpec
+adds it or names another.
+
+A weight is an `exact-value`, and `exact-number` admits a signed integer, so
+`rational(-1, 1)` parses and S3 refuses it `invalid-weight`. A bare `-1` is
+not an `exact-value`, so S1 refuses it `invalid_syntax`.
+
+### Exact values
+
+- S2 holds each weight as written (FR-393) with unbounded integers. Before
+  S3 reduces a weight to lowest terms, it SHALL measure the weight as
+  written: the bit length of the magnitude of each written integer, and for
+  `decimal(m, s)` and a `decimal-literal` the bit length of the denominator
+  `10^s`, which is `⌊s · log₂ 10⌋ + 1` (1 at `s = 0`). S3 SHALL compute
+  that bit length in exact integer arithmetic from `s`, without expanding
+  `10^s` and without floating point. The counter is the largest of those
+  bit lengths.
+- If that counter exceeds the `CheckingLimits` rational-bits ceiling (setting
+  `s3.rational_bits`, default 65,536; NFR-011, FR-255), S3 SHALL refuse the
+  declaration with `stage_limit_exceeded`/`StageFailure::Limit(LimitExceeded)`
+  of limit kind rational bits, naming the configured bound, the counter and
+  the setting that raises it (FR-277), before reducing or expanding the
+  value. The kind "rational bits" is QSL-proposed, requested of QSpec in
+  STD-188. The ceiling is inclusive and is not the exact engine's own
+  `max_rational_bits` budget (FR-203), which bounds values that engine
+  computes. The bound is on the value as written, so
+  `rational(n, n)` with an over-limit `n` is refused although it reduces to
+  1, and `decimal(25, 3)` is within the bound and reduces to `1/40`.
+- The same measure, bound and refusal apply to every `exact-value` that
+  FR-186 reads. This refusal is a limit outcome, not an
+  `invalid_probabilistic_model` cause.
+
 ### Random parameters
 
 - S3 SHALL admit a distribution on an operation parameter as a finite list
   of (value, weight) pairs. Each weight SHALL be a positive exact rational;
   each value SHALL be of the parameter's type; the values SHALL be pairwise
   distinct.
+- If a weight is not positive, S3 SHALL refuse the distribution
+  [`invalid-weight`], naming the parameter.
+- If a value is not of the parameter's type, S3 SHALL refuse the
+  distribution [`value-outside-type`], naming the parameter.
+- If a value is listed twice, S3 SHALL refuse the distribution
+  [`repeated-support-value`], naming the parameter.
+- If an operation parameter has a second distribution, S3 SHALL refuse the
+  second [`duplicate-distribution`], naming the parameter.
 - S3 SHALL record the probability of each value as its weight over the sum
   of the weights, as an exact rational in lowest terms.
-- When an operation's precondition reads a random parameter, S3 SHALL refuse
-  it, naming the parameter and the precondition.
+- If an operation's precondition reads a random parameter, S3 SHALL refuse
+  it [`random-read-in-precondition`], naming the parameter and the
+  precondition.
 - S3 SHALL let postconditions and rewards read random parameters.
 
 ### Workloads
 
 - S3 SHALL admit a workload declaration on a model that gives each operation
   of the model a positive exact rational weight.
-- When a workload omits an operation of its model, names an operation that
-  is not in the model, gives one operation two weights, or gives a weight
-  that is not positive, S3 SHALL refuse it, naming the workload and the
-  operation.
+- If a workload omits an operation of its model, S3 SHALL refuse it
+  [`incomplete-workload`], naming the workload and the operation.
+- If a workload names an operation that is not in its model, S3 SHALL
+  refuse it [`unknown-operation`], naming the workload and the operation.
+- If a workload gives one operation two weights, S3 SHALL refuse it
+  [`duplicate-weight`], naming the workload and the operation.
+- If a workload gives an operation a weight that is not positive, S3 SHALL
+  refuse it [`invalid-weight`], naming the workload and the operation.
 - A workload SHALL be a named, checked node with an identity, so a claim can
   name it and the obligation identity can bind it (FR-186).
 
@@ -89,13 +139,13 @@ integers in lowest terms.
 
 - S3 SHALL admit a named reward on an operation whose value type is an
   integer type or a quantity type (QSpec FR-142).
-- When a reward's expression reads a state field, an ambient value or
+- If a reward's expression reads a state field, an ambient value or
   anything other than the operation's parameters and constants, S3 SHALL
-  refuse it, naming the reward and the read.
-- When a reward's value type is neither an integer nor a quantity type, S3
-  SHALL refuse it.
-- When an operation declares two rewards of one name, S3 SHALL refuse the
-  second, naming the operation and the reward.
+  refuse the reward [`state-read-in-reward`], naming the reward and the read.
+- If a reward's value type is neither an integer nor a quantity type, S3
+  SHALL refuse the reward [`reward-type`].
+- If an operation declares two rewards of one name, S3 SHALL refuse the
+  second [`duplicate-reward`] (QSL-proposed, STD-188), naming the operation and the reward.
 - S3 SHALL leave the non-negativity check to model admission, which runs
   it over the parameters' finite domains (FR-187).
 
@@ -104,9 +154,9 @@ integers in lowest terms.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-185-AC-1 | ADR-024 §7.2's `Service` model checks. `Server::attempt` records `d` with support `1 ms`, `3 ms`, `12 ms` and probabilities `9/10`, `7/100`, `3/100`, and `outcome` with `Ok` at `49/50` and `Fail` at `1/50`; the reward `duration` has value type `Quantity<Time>`; the workload `Steady` records weight 1 for each of the three operations. | Test (TC-620) |
-| FR-185-AC-2 | Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter: a weight `0`; a weight `-1`; the value `1 ms` listed twice; the value `true` on a `Quantity<Time>` parameter; a precondition `pre self.phase = Busy and d < 5 ms` reading `d`. | Test (TC-620) |
-| FR-185-AC-3 | Each of these workload variants is refused at S3 naming the workload and the operation: `Steady` without `Server::reset`; a weight for an operation not in `Service`; two weights for `Server::request`; a weight `0` for `Server::request`. | Test (TC-620) |
-| FR-185-AC-4 | Each of these reward variants is refused at S3 naming the reward: `reward duration = self.attempts` (reads state); `reward ok = (outcome = Ok)` (Boolean type); two rewards named `duration` on `attempt`. `reward cost = 2` on `Server::request` checks. | Test (TC-620) |
+| FR-185-AC-2 | Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter and carrying the cause: a weight `0` and a weight `rational(-1, 1)` (`invalid-weight`); the value `1 ms` listed twice (`repeated-support-value`); the value `true` on a `Quantity<Time>` parameter (`value-outside-type`); a precondition `pre self.phase = Busy and d < 5 ms` reading `d` (`random-read-in-precondition`); a second `random Server::attempt(d) ~ …` (`duplicate-distribution`). A bare weight `-1` is not an `exact-value`, so S1 refuses it `invalid_syntax` and S3 never sees it. Exact-value bounds, each as the weight of `Server::request`: `decimal(1, 4294967295)` and `rational(n, n)` with `n` of 70,000 bits are each refused with the rational-bits limit outcome (the second although it reduces to `1`); `rational(m, 1)` with `m` of exactly 65,536 bits and `decimal(1, 19728)` (65,535 bits) are admitted; `rational(m, 1)` with `m` of exactly 65,537 bits and `decimal(1, 19729)` (65,539 bits) are refused with the limit outcome; `decimal(25, 3)` is admitted as `1/40`; `decimal(5, 0)` is admitted with a denominator of 1 bit. | Test (TC-620) |
+| FR-185-AC-3 | Each of these workload variants is refused at S3 naming the workload and the operation and carrying the cause: `Steady` without `Server::reset` (`incomplete-workload`); a weight for an operation not in `Service` (`unknown-operation`); two weights for `Server::request` (`duplicate-weight`); a weight `0` for `Server::request` (`invalid-weight`). | Test (TC-620) |
+| FR-185-AC-4 | Each of these reward variants is refused at S3 naming the reward and carrying the cause: `reward duration on Server::attempt = self.attempts` (`state-read-in-reward`); `reward ok on Server::attempt = (outcome = Ok)` (`reward-type`); a second `reward duration on Server::attempt = …` (`duplicate-reward`). `reward cost on Server::request = 2` checks. | Test (TC-620) |
 
 ## Dependencies
 

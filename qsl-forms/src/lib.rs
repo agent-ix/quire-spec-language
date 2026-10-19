@@ -33,6 +33,7 @@ mod dispatch;
 mod protocol_clause;
 mod protocol_control;
 mod spans;
+mod state_graph;
 mod state_model;
 mod sum_case;
 mod syntax;
@@ -63,8 +64,9 @@ pub use syntax::{
     ProtocolConstructKind, ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind,
     RecordFieldForm, RecordForm, RelatedForm, RelationshipForm, ReplicatedRoleForm,
     RequirementForm, RoleForm, RoleLifetime, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
-    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, TemporalClauseForm,
-    TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm,
+    ShapeChanged, Spellings, StateClauseForm, StateClauseKind, StateGraphClaimForm,
+    StateGraphClaimKind, StateGraphPredicateForm, TemporalClauseForm, TemporalFormulaForm,
+    TemporalNodeForm, TemporalNodeId, TemporalOperator, TemporalOperatorForm, TemporalOperatorUse,
     TermOperator, TerminalDeclarationForm, TerminalDeclarationKind, TreeRefusal, TupleForm,
     TypeForm, TypeFormHead, UnionForm, UnionMemberForm, UnitForm, UsingAlias,
 };

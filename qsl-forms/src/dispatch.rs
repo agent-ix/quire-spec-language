@@ -24,6 +24,7 @@ use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
 use super::protocol_clause;
+use super::state_graph;
 use super::state_model;
 use super::sum_case;
 use super::syntax::DeclarationForm;
@@ -185,6 +186,10 @@ pub enum LeadingTokenKind {
     /// `terminal`: the `TemporalTrace` terminal declaration form, holding
     /// its `when` predicate or `any` (FR-382).
     Terminal,
+    /// `possible`, `always` or `unique`: the `StateGraph` claim form, whose
+    /// head is `possible`, `always possible` or `unique path` (FR-165,
+    /// ADR-022 SG-1 to SG-3). `always` leads no other declaration.
+    StateGraph,
     /// Test-only: never constructed outside this crate's own tests, and
     /// absent from every non-test build.
     #[cfg(test)]
@@ -391,6 +396,7 @@ fn dispatch(
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
         LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
+        LeadingTokenKind::StateGraph => state_graph::state_graph_claim(construct),
         #[cfg(test)]
         LeadingTokenKind::TestProbe => test_support::stub_production(construct),
     }
@@ -431,6 +437,7 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"protocol" => Some(LeadingTokenKind::Protocol),
         b"temporal" => Some(LeadingTokenKind::Temporal),
         b"terminal" => Some(LeadingTokenKind::Terminal),
+        b"possible" | b"always" | b"unique" => Some(LeadingTokenKind::StateGraph),
         _ => None,
     }
 }

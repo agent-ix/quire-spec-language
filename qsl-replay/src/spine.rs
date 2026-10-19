@@ -617,6 +617,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             bodies.len(),
             operation.node
         ),
+        AssemblyCause::OverNotObjectType { claim } => {
+            format!("the `over` type of state-graph claim `{claim}` is not an object type")
+        }
+        AssemblyCause::DuplicateStateGraphClaim { name, .. } => {
+            format!("a second state-graph claim is named `{name}`")
+        }
         AssemblyCause::UnresolvedPopulationBound { name } => {
             format!("`bound` names `{name}`, which no declaration resolves")
         }

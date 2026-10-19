@@ -844,6 +844,98 @@ impl TemporalCause {
     }
 }
 
+/// Why the `StateGraph` family refused a state-graph claim (FR-165). Each
+/// cause carries the span it is located at, read directly, since a claim's
+/// predicates are not the expression tree of a declaration a `Location`
+/// path resolves in.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum StateGraphCause {
+    /// A predicate reads an operation anchor (`self`), a result or a
+    /// pre-state (`pre(e)`), not the state alone (ADR-022 GM-3). Located at
+    /// the read.
+    ReadsBeyondState {
+        /// The read's span.
+        span: Span,
+    },
+    /// A predicate contains a temporal operator. Located at the operator.
+    TemporalOperator {
+        /// The operator's span.
+        span: Span,
+    },
+    /// The claim carries a fairness constraint (ADR-022 GM-7). Located at
+    /// the constraint.
+    Fairness {
+        /// The constraint's span.
+        span: Span,
+    },
+    /// A claim whose parts all check, but that no S4 emission writes yet:
+    /// refused rather than compiled and silently missing from the package.
+    /// Located at the claim.
+    NotEmitted {
+        /// The declared claim name.
+        name: String,
+        /// The claim's span.
+        span: Span,
+    },
+    /// The state clause checker refused a predicate, as it refuses an
+    /// invariant body.
+    Predicate {
+        /// The refused predicate's role in the claim.
+        role: PredicateRole,
+        /// The span of the node the refusal names, or of the whole predicate
+        /// when its spans do not reach that node.
+        span: Span,
+        /// The clause checker's refusal.
+        cause: Box<CheckCause>,
+    },
+}
+
+/// Which predicate of a state-graph claim a refusal is about.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PredicateRole {
+    /// `possible`'s and `always possible`'s `P`.
+    Target,
+    /// `always possible`'s `Q` and `unique path`'s `X`.
+    From,
+    /// `unique path`'s `Y`.
+    To,
+}
+
+impl StateGraphCause {
+    /// The refusal's own span (FR-096), when it has one.
+    pub fn span(&self) -> Option<Span> {
+        match self {
+            Self::ReadsBeyondState { span }
+            | Self::TemporalOperator { span }
+            | Self::Fairness { span }
+            | Self::NotEmitted { span, .. }
+            | Self::Predicate { span, .. } => Some(*span),
+        }
+    }
+
+    /// This cause's catalog code.
+    pub fn code(&self) -> Code {
+        match self {
+            Self::ReadsBeyondState { .. }
+            | Self::TemporalOperator { .. }
+            | Self::Fairness { .. }
+            | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::Predicate { cause, .. } => cause.code(),
+        }
+    }
+
+    /// This cause's catalog tag.
+    pub fn tag(&self) -> Option<&'static str> {
+        match self {
+            Self::ReadsBeyondState { .. }
+            | Self::TemporalOperator { .. }
+            | Self::Fairness { .. } => Some("expression-form"),
+            Self::NotEmitted { .. } => Some("not-yet-implemented"),
+            Self::Predicate { cause, .. } => cause.cause(),
+        }
+    }
+}
+
 /// An inclusive mathematical integer interval whose missing ends are
 /// unbounded.
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -1185,6 +1277,10 @@ pub enum CheckCause {
     WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name`.
     MissingName(String),
+    /// `missing_declaration` / `missing-name` for `self` written where no
+    /// state clause binds it (FR-104): a typed cause, not a `MissingName`
+    /// whose text is `"self"`.
+    MissingSelf,
     /// `ambiguous_declaration` / `ambiguous-name`, listing every locus of the
     /// name.
     AmbiguousName {
@@ -1330,6 +1426,9 @@ pub enum CheckCause {
     /// FR-326: the `TemporalTrace` family refused a `temporal` clause.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     Temporal(Box<TemporalCause>),
+    /// FR-165: the `StateGraph` family refused a state-graph claim. Boxed
+    /// for the same reason as `ProtocolAnchor` above.
+    StateGraph(Box<StateGraphCause>),
     /// FR-381, FR-218: S3 refused a protocol's role, activation, capture or
     /// compensation template. Boxed for the same reason as `ProtocolAnchor`
     /// above.
@@ -1643,7 +1742,7 @@ impl CheckCause {
             | Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
-            Self::MissingName(_) => Code::MissingDeclaration,
+            Self::MissingName(_) | Self::MissingSelf => Code::MissingDeclaration,
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
@@ -1667,6 +1766,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => cause.code(),
             Self::ProtocolReference(cause) => cause.code(),
             Self::Temporal(cause) => cause.code(),
+            Self::StateGraph(cause) => cause.code(),
             Self::ProtocolObligation(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
             // Downstream crates (`qsl-eval`, `qsl-route`, the root crate)
@@ -1703,7 +1803,7 @@ impl CheckCause {
                 Some("type-mismatch")
             }
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
-            Self::MissingName(_) => Some("missing-name"),
+            Self::MissingName(_) | Self::MissingSelf => Some("missing-name"),
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }
@@ -1738,6 +1838,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
             Self::ProtocolReference(cause) => Some(cause.tag()),
             Self::Temporal(cause) => Some(cause.tag()),
+            Self::StateGraph(cause) => cause.tag(),
             Self::ProtocolObligation(cause) => cause.tag(),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
             // Not a seam-probe location (unlike `code()`, above --
