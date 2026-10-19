@@ -1530,6 +1530,18 @@ pub enum CheckCause {
     /// population. A record or event value is evaluated with no object
     /// universe, so there is nothing for the read to observe.
     ObjectReadInValueInvariant,
+    /// FR-139: a concrete population name or one of the population-valued
+    /// forms outside a refinement declaration's rows:
+    /// `unsupported_construct` / `expression-form`, at the form. State-clause
+    /// bodies keep ADR-016 FE-4.
+    PopulationFormOutsideRefinement,
+    /// FR-139: a population-valued form that S3 does not check yet:
+    /// `unsupported_construct` / `not-yet-implemented`, naming what is
+    /// unbuilt.
+    PopulationFormNotChecked {
+        /// What the check does not read.
+        what: &'static str,
+    },
     /// `ill_typed` / `type-mismatch` (FR-091): an integer literal outside
     /// `i128::MIN..=i128::MAX`, at the literal. Never a nonzero-magnitude
     /// rewrite: a literal is refused, not truncated.
@@ -1988,9 +2000,10 @@ impl CheckCause {
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
-            Self::UnsupportedNavigation(_) | Self::ObjectReadInValueInvariant => {
-                Code::UnsupportedConstruct
-            }
+            Self::UnsupportedNavigation(_)
+            | Self::ObjectReadInValueInvariant
+            | Self::PopulationFormOutsideRefinement
+            | Self::PopulationFormNotChecked { .. } => Code::UnsupportedConstruct,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::SumCase(cause) => cause.code(),
             Self::ResourceExhausted(_) => Code::StageLimitExceeded,
@@ -2054,9 +2067,10 @@ impl CheckCause {
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }
-            Self::UnsupportedNavigation(_) | Self::ObjectReadInValueInvariant => {
-                Some("expression-form")
-            }
+            Self::UnsupportedNavigation(_)
+            | Self::ObjectReadInValueInvariant
+            | Self::PopulationFormOutsideRefinement => Some("expression-form"),
+            Self::PopulationFormNotChecked { .. } => Some("not-yet-implemented"),
             Self::Unproved(Obligation::Nonzero) => Some("unproved-nonzero"),
             Self::Unproved(Obligation::Presence) => Some("unproved-presence"),
             Self::Unproved(

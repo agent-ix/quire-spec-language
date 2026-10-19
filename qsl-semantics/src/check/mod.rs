@@ -149,9 +149,9 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 pub mod stratum;
 mod termination;
 pub use refinement::{
-    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, RefinementCause,
-    RefinementDeclaration, RefinementRefusal, RowClass, StepClass, StepRow, StepTarget,
-    UnsupportedFeature,
+    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, PopulationUse,
+    PopulationValue, RefinementCause, RefinementDeclaration, RefinementRefusal, RowClass,
+    StepClass, StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,

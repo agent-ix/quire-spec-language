@@ -27,8 +27,8 @@ use super::{
 use crate::check::call_target::{resolve_target, ResolvedTarget};
 use crate::check::family::Application;
 use crate::check::ir::{
-    CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, Node, NodeId, NodeKind,
-    RecordSlot, Slot, Visit,
+    CheckedBody, CheckedLiteral, Connective, IntegerDivisionOperator, IntegerRange, Node, NodeId,
+    NodeKind, RecordSlot, Slot, Visit,
 };
 use crate::check::refusal::{CheckCause, CheckRefusal, KeyFault, WrongSnapshotCause};
 use crate::check::sum_case::{ArmHead, CaseBuilder, UnionMember, UnionRef};
@@ -36,11 +36,12 @@ use crate::check::type_form::{IntegerOutsideI128, IntegerSite};
 use crate::check::DispatchOperation;
 use qsl_forms::{
     Accumulation, BinaryOperator, BinderQuery, CaseForm, ClauseKind, ExprNode, ExprRef, Expression,
-    FieldInitializer,
+    FieldInitializer, PopulationForm,
 };
 use qsl_foundation::absence::AbsenceMode;
 use quire_exact::{
-    ArithmeticOperator, CollectionType, IllTypedCause, NodeKey, OrderingOperator, Value, ValueType,
+    ArithmeticOperator, CollectionKind, CollectionType, IllTypedCause, Integer, IntegerInterval,
+    NodeKey, OrderingOperator, Value, ValueType,
 };
 use quire_semantic_value::declaration::{EqualityOperand, EqualityOperator, FieldDeclaration};
 use quire_semantic_value::location::Location;
@@ -55,6 +56,37 @@ static BOOLEAN: ValueType = ValueType::Boolean;
 
 fn boolean<'r>() -> Want<'r> {
     Cow::Borrowed(&BOOLEAN)
+}
+
+/// The type of the binder of `seq(i in low .. high: e)` and the declared
+/// maximum length of the sequence, from the static bounds of `low` and
+/// `high` (FR-139, QSpec FR-376): `i` is `Int[lo_min, hi_max]` and the
+/// maximum is `max(0, hi_max - lo_min + 1)`. An operand with no static bound
+/// leaves `i` an `Integer` and the sequence with no maximum.
+fn seq_binder(
+    (low, high): (Option<IntegerRange>, Option<IntegerRange>),
+    location: &Location,
+) -> Result<(ValueType, Option<u64>), CheckRefusal> {
+    let (Some((lower, _)), Some((_, high_upper))) = (low, high) else {
+        return Ok((ValueType::Integer, None));
+    };
+    // An empty range never binds `i`; keep its interval well formed.
+    let upper = if high_upper < lower {
+        lower.clone()
+    } else {
+        high_upper.clone()
+    };
+    let interval = IntegerInterval::new(lower.clone(), upper)
+        .map_err(|_| refuse(location, CheckCause::UnrepresentableBound))?;
+    let length = high_upper.sub(&lower).add(&Integer::one());
+    let maximum = if length.is_negative() {
+        0
+    } else {
+        length
+            .to_u64()
+            .ok_or_else(|| refuse(location, CheckCause::UnrepresentableBound))?
+    };
+    Ok((ValueType::Int(interval), Some(maximum)))
 }
 
 /// Where a typed operand is admitted.
@@ -141,6 +173,8 @@ enum Frame<'e, 'r> {
     Query(Box<QueryFrame<'e>>),
     Accumulate(Box<AccumulateFrame<'e>>),
     Tally(Box<TallyFrame<'e>>),
+    Population(Box<PopulationFrame<'e>>),
+    Seq(Box<SeqFrame<'e>>),
     Contains(Box<ContainsFrame<'e>>),
     Reaches(Box<ReachesFrame<'e>>),
     Lookup(Box<LookupFrame<'e>>),
@@ -434,6 +468,53 @@ struct TallyFrame<'e> {
     location: Location,
     /// The typed source and the binder's slot, once the source is typed.
     source: Option<(Node, Slot)>,
+}
+
+/// Which operand of a population-valued form is being typed.
+enum PopulationAwait {
+    /// The `where` condition.
+    Condition,
+    /// The body of `sum` and `only`.
+    Body,
+}
+
+/// `count`, `sum`, `exists`, `all` or `only` over a concrete population
+/// (FR-139).
+struct PopulationFrame<'e> {
+    form: PopulationForm,
+    /// The population's objects, typed.
+    source: Node,
+    /// The slot the binder reads.
+    slot: Slot,
+    /// The body of `sum` and `only`.
+    body: Option<ExprRef<'e>>,
+    /// The typed condition, once typed.
+    typed_condition: Option<Node>,
+    awaiting: PopulationAwait,
+    location: Location,
+}
+
+/// Which operand of `seq(i in lo .. hi: e)` is being typed.
+enum SeqStage {
+    Low,
+    High {
+        low: Box<Node>,
+    },
+    Body {
+        low: Box<Node>,
+        high: Box<Node>,
+        slot: Slot,
+        maximum: Option<u64>,
+    },
+}
+
+/// `seq(i in lo .. hi: e)` (FR-139).
+struct SeqFrame<'e> {
+    binder: &'e str,
+    high: ExprRef<'e>,
+    body: ExprRef<'e>,
+    location: Location,
+    stage: SeqStage,
 }
 
 /// `contains(c, v)`.
@@ -786,6 +867,9 @@ impl<'a> Typer<'a> {
             ExprNode::Quantity(_) => {
                 return Err(super::super::probabilistic::quantity_literal(location))
             }
+            ExprNode::Name(name) if self.population_named(name).is_some() => {
+                self.population_objects(name, &location)?
+            }
             ExprNode::Name(name) => match resolve_target(self, name, &location, || Ok(()))? {
                 ResolvedTarget::UnionMember(member) => {
                     member.admit_shape(None, &location)?;
@@ -1117,6 +1201,44 @@ impl<'a> Typer<'a> {
                     location,
                     frames,
                 )
+            }
+            ExprNode::Population {
+                form,
+                binder,
+                population,
+                population_span: _,
+                condition,
+                body,
+            } => {
+                return self.population_form(
+                    (*form, binder, population),
+                    (
+                        condition.map(|id| expression.at(id)),
+                        body.map(|id| expression.at(id)),
+                    ),
+                    location,
+                    frames,
+                )
+            }
+            ExprNode::Seq {
+                binder,
+                low,
+                high,
+                body,
+            } => {
+                let low_location = location.child(0);
+                frames.push(Frame::Seq(Box::new(SeqFrame {
+                    binder,
+                    high: expression.at(*high),
+                    body: expression.at(*body),
+                    location,
+                    stage: SeqStage::Low,
+                })));
+                return Ok(Step::Descend(Goal::Infer(
+                    expression.at(*low),
+                    None,
+                    low_location,
+                )));
             }
             ExprNode::Size(operand) => {
                 let goal = Goal::Infer(expression.at(*operand), None, location.child(0));
@@ -1667,6 +1789,8 @@ impl<'a> Typer<'a> {
             Frame::Query(frame) => self.accept_query(frame, typed, frames),
             Frame::Accumulate(frame) => self.accept_accumulate(frame, typed, frames),
             Frame::Tally(frame) => self.accept_tally(frame, typed, frames),
+            Frame::Population(frame) => self.accept_population(frame, typed, frames),
+            Frame::Seq(frame) => self.accept_seq(frame, typed, frames),
             Frame::Contains(frame) => self.accept_contains(frame, typed, frames),
             Frame::Lookup(mut frame) => match frame.population.take() {
                 None => {
@@ -2363,6 +2487,279 @@ impl<'a> Typer<'a> {
                         slot,
                         source: self.push(source),
                         body: self.push(body),
+                    },
+                    value_type,
+                    &location,
+                )))
+            }
+        }
+    }
+
+    /// The population a refinement row names `name`, when this pass reads
+    /// one (FR-139).
+    fn population_named(&self, name: &str) -> Option<&super::ScopedPopulation> {
+        self.populations
+            .as_ref()?
+            .populations
+            .iter()
+            .find(|population| population.name == name)
+    }
+
+    /// A concrete population name: the objects of the population in the
+    /// observed state, `Set<Reference<T>>` with the universe size left
+    /// symbolic (FR-139).
+    fn population_objects(&self, name: &str, location: &Location) -> Result<Node, CheckRefusal> {
+        let population = self
+            .population_named(name)
+            .ok_or_else(|| refuse(location, CheckCause::MissingName(name.to_owned())))?;
+        Ok(node(
+            NodeKind::PopulationObjects {
+                population: population.key.clone(),
+            },
+            ValueType::collection(CollectionType::new(
+                CollectionKind::Set,
+                ValueType::Reference(population.member),
+                None,
+            )),
+            location,
+        ))
+    }
+
+    /// Start `form(binder in population where c [: e])` (FR-139).
+    fn population_form<'e, 'r>(
+        &mut self,
+        (form, binder, population): (PopulationForm, &'e str, &str),
+        (condition, body): (Option<ExprRef<'e>>, Option<ExprRef<'e>>),
+        location: Location,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
+        if self.populations.is_none() {
+            return Err(refuse(
+                &location,
+                CheckCause::PopulationFormOutsideRefinement,
+            ));
+        }
+        let source = self.population_objects(population, &location)?;
+        let element = self.element_type(&source)?;
+        let slot = self.bind(binder, element, &location, LocalKind::Bound)?;
+        let (awaiting, first) = match (condition, body) {
+            (Some(condition), _) => (
+                PopulationAwait::Condition,
+                Goal::Expect(condition, Expected::Checked(boolean()), location.child(0)),
+            ),
+            (None, Some(body)) => (
+                PopulationAwait::Body,
+                Goal::Infer(body, None, location.child(0)),
+            ),
+            (None, None) => {
+                return self
+                    .finish_population(form, source, slot, None, None, &location)
+                    .map(Step::Typed)
+            }
+        };
+        frames.push(Frame::Population(Box::new(PopulationFrame {
+            form,
+            source,
+            slot,
+            body,
+            typed_condition: None,
+            awaiting,
+            location,
+        })));
+        Ok(Step::Descend(first))
+    }
+
+    fn accept_population<'e, 'r>(
+        &mut self,
+        mut frame: Box<PopulationFrame<'e>>,
+        typed: Node,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
+        match frame.awaiting {
+            PopulationAwait::Condition => match frame.body {
+                Some(body) => {
+                    let body_location = frame.location.child(1);
+                    frame.typed_condition = Some(typed);
+                    frame.awaiting = PopulationAwait::Body;
+                    frames.push(Frame::Population(frame));
+                    Ok(Step::Descend(Goal::Infer(body, None, body_location)))
+                }
+                None => {
+                    let PopulationFrame {
+                        form,
+                        source,
+                        slot,
+                        location,
+                        ..
+                    } = *frame;
+                    self.finish_population(form, source, slot, Some(typed), None, &location)
+                        .map(Step::Typed)
+                }
+            },
+            PopulationAwait::Body => {
+                let PopulationFrame {
+                    form,
+                    source,
+                    slot,
+                    typed_condition,
+                    location,
+                    ..
+                } = *frame;
+                self.finish_population(form, source, slot, typed_condition, Some(typed), &location)
+                    .map(Step::Typed)
+            }
+        }
+    }
+
+    /// The node of a population-valued form over its typed operands
+    /// (FR-139). `count` and `sum` types leave the universe size symbolic:
+    /// they are `Integer` here, and the bound `Int[0, n]` is checked against
+    /// the type of the form's use when a subject admits its universes.
+    fn finish_population(
+        &mut self,
+        form: PopulationForm,
+        source: Node,
+        slot: Slot,
+        condition: Option<Node>,
+        body: Option<Node>,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.unbind(1);
+        let truth = |location: &Location| {
+            node(
+                NodeKind::Literal(CheckedLiteral(Value::Boolean(true))),
+                ValueType::Boolean,
+                location,
+            )
+        };
+        let query = |typer: &mut Self, visit, source: Node, body: Node, value_type| {
+            node(
+                NodeKind::Query {
+                    visit,
+                    slot,
+                    source: typer.push(source),
+                    body: typer.push(body),
+                },
+                value_type,
+                location,
+            )
+        };
+        let tally = |typer: &mut Self, visit, value_type, source: Node, condition: Option<Node>| {
+            let body = condition.unwrap_or_else(|| truth(location));
+            query(typer, visit, source, body, value_type)
+        };
+        match form {
+            PopulationForm::Count => Ok(tally(
+                self,
+                Visit::Count,
+                ValueType::Integer,
+                source,
+                condition,
+            )),
+            PopulationForm::Exists => Ok(tally(
+                self,
+                Visit::Exists,
+                ValueType::Boolean,
+                source,
+                condition,
+            )),
+            PopulationForm::All => Ok(tally(
+                self,
+                Visit::Forall,
+                ValueType::Boolean,
+                source,
+                condition,
+            )),
+            PopulationForm::Sum | PopulationForm::Only => {
+                let body = body.ok_or_else(|| mismatch(location))?;
+                let source = match condition {
+                    Some(condition) => {
+                        let filtered = source.value_type.clone();
+                        query(self, Visit::Filter, source, condition, filtered)
+                    }
+                    None => source,
+                };
+                if form == PopulationForm::Sum {
+                    if !is_integer(&body.value_type) {
+                        return Err(refuse(
+                            &body.location,
+                            CheckCause::PopulationFormNotChecked {
+                                what: "a sum over a value that is not an integer",
+                            },
+                        ));
+                    }
+                    Ok(query(self, Visit::Sum, source, body, ValueType::Integer))
+                } else {
+                    let value_type = body.value_type.clone();
+                    Ok(query(self, Visit::Only, source, body, value_type))
+                }
+            }
+        }
+    }
+
+    fn accept_seq<'e, 'r>(
+        &mut self,
+        mut frame: Box<SeqFrame<'e>>,
+        typed: Node,
+        frames: &mut Vec<Frame<'e, 'r>>,
+    ) -> Result<Step<'e, 'r>, CheckRefusal> {
+        match std::mem::replace(&mut frame.stage, SeqStage::Low) {
+            SeqStage::Low => {
+                if !is_integer(&typed.value_type) {
+                    return Err(mismatch(&typed.location));
+                }
+                let high = frame.high;
+                let high_location = frame.location.child(1);
+                frame.stage = SeqStage::High {
+                    low: Box::new(typed),
+                };
+                frames.push(Frame::Seq(frame));
+                Ok(Step::Descend(Goal::Infer(high, None, high_location)))
+            }
+            SeqStage::High { low } => {
+                if !is_integer(&typed.value_type) {
+                    return Err(mismatch(&typed.location));
+                }
+                let (binder_type, maximum) = seq_binder(
+                    (self.static_range(&low), self.static_range(&typed)),
+                    &frame.location,
+                )?;
+                let slot =
+                    self.bind(frame.binder, binder_type, &frame.location, LocalKind::Bound)?;
+                let body = frame.body;
+                let body_location = frame.location.child(2);
+                frame.stage = SeqStage::Body {
+                    low,
+                    high: Box::new(typed),
+                    slot,
+                    maximum,
+                };
+                frames.push(Frame::Seq(frame));
+                Ok(Step::Descend(Goal::Infer(body, None, body_location)))
+            }
+            SeqStage::Body {
+                low,
+                high,
+                slot,
+                maximum,
+            } => {
+                self.unbind(1);
+                let location = frame.location.clone();
+                let bound = maximum
+                    .map(|maximum| super::bound(0, maximum, &location))
+                    .transpose()?;
+                let value_type = ValueType::collection(CollectionType::new(
+                    CollectionKind::Sequence,
+                    typed.value_type.clone(),
+                    bound,
+                ));
+                self.check_declared_type(&value_type, &location)?;
+                Ok(Step::Typed(node(
+                    NodeKind::Seq {
+                        slot,
+                        low: self.push(*low),
+                        high: self.push(*high),
+                        body: self.push(typed),
                     },
                     value_type,
                     &location,
