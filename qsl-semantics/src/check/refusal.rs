@@ -465,6 +465,29 @@ pub enum TemporalCause {
         /// The type form's span.
         span: Span,
     },
+    /// FR-123 "Fairness constraints": a fairness constraint names no
+    /// operation of an admitted model. Located at the operation's name.
+    UnresolvedFairnessOperation {
+        /// The operation as written.
+        name: String,
+        /// The operation name's span.
+        span: Span,
+    },
+    /// FR-123 "Fairness constraints": a fairness constraint's operation
+    /// names operations of several declaring types, none more derived than
+    /// the others. Located at the operation's name.
+    AmbiguousFairnessOperation {
+        /// The operation as written.
+        name: String,
+        /// The operation name's span.
+        span: Span,
+    },
+    /// FR-123 "Fairness constraints": a fairness constraint on a clause
+    /// whose unit selects a bounded profile. Located at the constraint.
+    FairnessUnderBoundedProfile {
+        /// The constraint's span.
+        span: Span,
+    },
     /// A clause whose checked parts all hold, but that no S4 emission
     /// writes yet (FR-337): refused rather than compiled and silently
     /// missing from the emitted package.
@@ -486,6 +509,9 @@ impl TemporalCause {
             | Self::OpenInterval { span }
             | Self::InvertedInterval { span, .. }
             | Self::ParameterType { span, .. }
+            | Self::UnresolvedFairnessOperation { span, .. }
+            | Self::AmbiguousFairnessOperation { span, .. }
+            | Self::FairnessUnderBoundedProfile { span }
             | Self::NotEmitted { span, .. } => *span,
         }
     }
@@ -494,9 +520,12 @@ impl TemporalCause {
     pub fn code(&self) -> Code {
         match self {
             Self::ProfileSelection { .. } => Code::UnknownProfile,
-            Self::MissingInterval { .. } | Self::OpenInterval { .. } | Self::NotEmitted { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::MissingInterval { .. }
+            | Self::OpenInterval { .. }
+            | Self::FairnessUnderBoundedProfile { .. }
+            | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
+            Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
             Self::InvertedInterval { .. } => Code::IllTyped,
             Self::ParameterType { fault, .. } => type_fault_class(fault).0,
         }
@@ -506,7 +535,11 @@ impl TemporalCause {
     pub fn tag(&self) -> &'static str {
         match self {
             Self::ProfileSelection { .. } => "unsupported-selection",
-            Self::MissingInterval { .. } | Self::OpenInterval { .. } => "expression-form",
+            Self::MissingInterval { .. }
+            | Self::OpenInterval { .. }
+            | Self::FairnessUnderBoundedProfile { .. } => "expression-form",
+            Self::UnresolvedFairnessOperation { .. } => "missing-name",
+            Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } => "type-mismatch",
             Self::NotEmitted { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
@@ -820,6 +853,17 @@ pub enum CheckCause {
     /// FR-366: a refusal in a type-level invariant clause, with the clause
     /// it is about.
     TypeInvariant(Box<super::type_invariant::TypeInvariantRefusal>),
+    /// A `terminal when` predicate's checking refused (FR-124), with the
+    /// declaration it is about.
+    Terminal(Box<super::terminal::TerminalRefusal>),
+    /// A `terminal` declaration that checks but that no S4 emission writes
+    /// yet (FR-124): refused rather than compiled and silently missing.
+    TerminalNotEmitted {
+        /// The declared name.
+        name: String,
+        /// The span of the whole declaration.
+        span: Span,
+    },
     /// A completed model conformance stage retains every axis failure.
     ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
     /// An unfinished model stage exposes its exact five-field denial.
@@ -1254,6 +1298,7 @@ impl CheckCause {
     pub fn unwrapped(&self) -> &Self {
         match self {
             Self::TypeInvariant(refusal) => refusal.cause.unwrapped(),
+            Self::Terminal(refusal) => refusal.cause.unwrapped(),
             other => other,
         }
     }
@@ -1263,6 +1308,7 @@ impl CheckCause {
         match self {
             Self::StateModel(cause) => cause.catalog_code(),
             Self::TypeInvariant(cause) => cause.cause.catalog_code(),
+            Self::Terminal(cause) => cause.cause.catalog_code(),
             Self::DispatchLink(cause) => Some(cause.catalog),
             _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
                 self.code().as_str(),
@@ -1290,6 +1336,8 @@ impl CheckCause {
             Self::ProfileProhibitedOperator(_) => Code::UnsupportedConstruct,
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
+            Self::Terminal(cause) => cause.cause.code(),
+            Self::TerminalNotEmitted { .. } => Code::UnsupportedConstruct,
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
             Self::TypeAdmission { code, .. } => *code,
@@ -1344,6 +1392,8 @@ impl CheckCause {
         match self {
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
+            Self::Terminal(cause) => cause.cause.cause(),
+            Self::TerminalNotEmitted { .. } => Some("not-yet-implemented"),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied
             // charge is an insufficient next charge, never a stage limit.

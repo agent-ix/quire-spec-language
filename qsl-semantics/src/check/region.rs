@@ -211,6 +211,9 @@ pub struct DeclarationRegions {
     spans: Vec<Option<DeclarationSpans>>,
     /// Each state clause's form spans, by its index in source order.
     clause_spans: Vec<DeclarationSpans>,
+    /// Each `terminal` declaration's predicate spans, by its index in source
+    /// order; `None` for `terminal any`.
+    terminal_spans: Vec<Option<ExpressionSpans>>,
     type_spans: BTreeMap<String, Span>,
     /// The declaration each function synthesized for dispatch came from.
     synthesized_spans: BTreeMap<usize, Span>,
@@ -270,6 +273,14 @@ impl DeclarationRegions {
             CheckCause::ProtocolObligation(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
+            CheckCause::TerminalNotEmitted { span, .. } => {
+                region(&self.source, self.embedding.as_deref(), *span)
+            }
+            CheckCause::Terminal(cause) => {
+                let spans = self.terminal_spans.get(cause.declaration)?.as_ref()?;
+                let span = SpanMemo::default().at(spans, &refusal.location)?;
+                region(&self.source, self.embedding.as_deref(), span)
+            }
             _ => self.region(&refusal.location),
         }
     }
@@ -291,6 +302,16 @@ impl PackageDeclarations {
                 .state_clauses
                 .iter()
                 .map(|clause| clause.spans.clone())
+                .collect(),
+            terminal_spans: self
+                .terminals
+                .iter()
+                .map(|terminal| match &terminal.kind {
+                    super::TerminalClauseKind::When { predicate, .. } => {
+                        Some(predicate.spans.clone())
+                    }
+                    super::TerminalClauseKind::Any => None,
+                })
                 .collect(),
             type_spans: self.declared_type_spans.clone(),
             synthesized_spans: self.synthesized_spans.clone(),

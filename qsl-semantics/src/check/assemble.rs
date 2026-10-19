@@ -32,7 +32,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_forms::{
     AliasForm, BuiltinType, DeclarationForm, DeclaredName, DimensionForm, EnumForm, ExprNode,
     Expression, FunctionDeclaration, OperationBodyForm, ParsedUnit, PopulationBoundForm,
-    RecordFieldForm, StateClauseForm, TypeForm, TypeFormHead, UnitForm,
+    RecordFieldForm, StateClauseForm, TerminalDeclarationForm, TerminalDeclarationKind, TypeForm,
+    TypeFormHead, UnitForm,
 };
 use qsl_foundation::diagnostic::{CatalogCode, LimitExceeded};
 use qsl_foundation::source::provenance::RawSourceRef;
@@ -57,6 +58,7 @@ use super::refusal::AliasKind;
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
 };
+use super::terminal::{TerminalClauseDeclaration, TerminalClauseKind};
 use super::type_form::{
     native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
 };
@@ -395,6 +397,31 @@ pub enum AssemblyCause {
         /// The populations, in ascending `DeclarationKey` order.
         populations: Vec<DeclarationKey>,
     },
+    /// A `terminal` declaration's `on` alias is no `model` declaration of
+    /// the unit (FR-124).
+    UnresolvedTerminalModel {
+        /// The alias as written.
+        alias: String,
+    },
+    /// A `terminal when` declaration's model has no population, so its state
+    /// has no object for the predicate's `self` to range over (FR-124).
+    UnresolvedTerminalState {
+        /// The model alias.
+        model: String,
+    },
+    /// A `terminal when` declaration's model has populations of several
+    /// object types, so the predicate's `self` is not one type (FR-124).
+    AmbiguousTerminalState {
+        /// The model alias.
+        model: String,
+    },
+    /// A second `terminal` declaration for one model alias (FR-124).
+    AmbiguousTerminal {
+        /// The model alias.
+        model: String,
+        /// The span of each declaration for the alias, in source order.
+        spans: Vec<Span>,
+    },
     /// A declaration whose `using` alias names a header profile resolved to
     /// `layer` writes a form outside the admitted-form set of that layer's
     /// `requires` closure (FR-110 "Layer selection"):
@@ -405,12 +432,6 @@ pub enum AssemblyCause {
         /// The form outside its admitted-form set.
         form: LayerForm,
     },
-    /// A declaration form S2 builds that no check admits yet: refused
-    /// rather than compiled and silently missing from the package.
-    UnsupportedDeclarationForm {
-        /// The declaration's leading keyword, such as `terminal`.
-        form: &'static str,
-    },
 }
 
 impl AssemblyCause {
@@ -420,6 +441,8 @@ impl AssemblyCause {
             Self::UnresolvedTypeName { .. }
             | Self::UndeclaredAlias { .. }
             | Self::UnresolvedOperation { .. }
+            | Self::UnresolvedTerminalModel { .. }
+            | Self::UnresolvedTerminalState { .. }
             | Self::UnresolvedPopulationBound { .. } => Code::MissingDeclaration,
             Self::UnadmittedModel { .. } | Self::UnsuppliedImport { .. } => Code::MissingImport,
             Self::ModelType { .. } => Code::RuntimeInvariant,
@@ -429,9 +452,10 @@ impl AssemblyCause {
             | Self::DuplicateQuantityName { .. }
             | Self::AmbiguousOperation { .. }
             | Self::AmbiguousPopulationBound { .. }
+            | Self::AmbiguousTerminal { .. }
+            | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
-            Self::UnsupportedDeclarationForm { .. } => Code::UnsupportedConstruct,
             Self::DuplicateOperationBody { .. } => Code::ConflictingDeclaration,
             Self::QuantityCycle { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
@@ -499,6 +523,8 @@ impl AssemblyCause {
         let cause = match self {
             Self::UnresolvedTypeName { .. }
             | Self::UnresolvedOperation { .. }
+            | Self::UnresolvedTerminalModel { .. }
+            | Self::UnresolvedTerminalState { .. }
             | Self::UnresolvedPopulationBound { .. } => "missing-name",
             Self::AmbiguousTypeName { .. }
             | Self::DuplicateAlias { .. }
@@ -506,9 +532,10 @@ impl AssemblyCause {
             | Self::DuplicateQuantityName { .. }
             | Self::AmbiguousOperation { .. }
             | Self::AmbiguousPopulationBound { .. }
+            | Self::AmbiguousTerminal { .. }
+            | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
-            Self::UnsupportedDeclarationForm { .. } => "declaration-form",
             Self::DuplicateOperationBody { .. } => "duplicate-declaration",
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
@@ -647,8 +674,9 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
-    /// The span of each `terminal` declaration, in source order.
-    terminal_declarations: Vec<Span>,
+    /// Each `terminal` declaration's form, in source order, resolved by the
+    /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
+    terminals: Vec<TerminalDeclarationForm>,
 }
 
 impl Unit {
@@ -666,7 +694,7 @@ impl Unit {
             population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
-            terminal_declarations: Vec::new(),
+            terminals: Vec::new(),
         };
         for form in forms {
             let span = form.span();
@@ -707,10 +735,7 @@ impl Unit {
                         members: Members::Union(union.members),
                     });
                 }
-                // Terminal declarations are refused until the S3 terminal check admits them.
-                DeclarationForm::Terminal(terminal) => {
-                    unit.terminal_declarations.push(terminal.span)
-                }
+                DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {
@@ -2301,12 +2326,6 @@ impl PackageDeclarations {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
         let mut errors = Vec::new();
-        for span in &unit.terminal_declarations {
-            errors.push(AssemblyError {
-                cause: AssemblyCause::UnsupportedDeclarationForm { form: "terminal" },
-                span: *span,
-            });
-        }
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -2950,22 +2969,27 @@ impl PackageDeclarations {
             &operations,
             &admitted,
         );
-        let (state_clauses, protocol_attempts, operation_bodies) =
-            match (state_clauses, protocol_attempts, operation_bodies) {
-                (Ok(clauses), Ok(attempts), Ok(bodies)) if bound_errors.is_empty() => {
-                    (clauses, attempts, bodies)
+        let terminals = terminal_declarations(unit.terminals, &resolve, &admitted);
+        let (state_clauses, protocol_attempts, operation_bodies, terminals) = match (
+            state_clauses,
+            protocol_attempts,
+            operation_bodies,
+            terminals,
+        ) {
+            (Ok(clauses), Ok(attempts), Ok(bodies), Ok(terminals)) if bound_errors.is_empty() => {
+                (clauses, attempts, bodies, terminals)
+            }
+            (clauses, attempts, bodies, terminals) => {
+                let mut errors = bound_errors;
+                for refusal in [clauses.err(), attempts.err(), bodies.err(), terminals.err()]
+                    .into_iter()
+                    .flatten()
+                {
+                    errors.extend(refusal.errors);
                 }
-                (clauses, attempts, bodies) => {
-                    let mut errors = bound_errors;
-                    for refusal in [clauses.err(), attempts.err(), bodies.err()]
-                        .into_iter()
-                        .flatten()
-                    {
-                        errors.extend(refusal.errors);
-                    }
-                    return refuse(errors);
-                }
-            };
+                return refuse(errors);
+            }
+        };
         // FR-103, FR-302: the view of each selected model, with `has_body`
         // set from the bodies that resolved into it. A model no body names
         // keeps the view intake admitted, whose `has_body` is false
@@ -3042,6 +3066,7 @@ impl PackageDeclarations {
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
+        package.terminals = terminals;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
         // FR-092: a protocol's node is declared at the protocol's name.
@@ -3252,6 +3277,120 @@ fn state_clauses(
     }
     if errors.is_empty() {
         Ok(clauses)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-124: each `terminal` declaration resolved. Its `using` alias must name
+/// one of the unit's profile selections and its `on` alias a `model`
+/// declaration of the unit; a second declaration for one alias refuses at
+/// itself, naming every declaration of the alias. A `when` predicate's
+/// `self` is the one object type the model's populations range over.
+fn terminal_declarations(
+    forms: Vec<TerminalDeclarationForm>,
+    resolve: &Resolve<'_>,
+    models: &[AdmittedModel],
+) -> Result<Vec<TerminalClauseDeclaration>, AssemblyRefusal> {
+    let Resolve {
+        profiles, types, ..
+    } = *resolve;
+    let mut errors = Vec::new();
+    let mut declarations = Vec::with_capacity(forms.len());
+    for (index, form) in forms.iter().enumerate() {
+        let error = |cause, span| AssemblyError { cause, span };
+        let selection = profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        if selection.is_none() {
+            errors.push(error(
+                AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                form.profile.span,
+            ));
+        }
+        let alias = form.model.name.as_str();
+        let Some(model) = models.iter().find(|model| model.alias() == Some(alias)) else {
+            errors.push(error(
+                AssemblyCause::UnresolvedTerminalModel {
+                    alias: alias.to_owned(),
+                },
+                form.model.span,
+            ));
+            continue;
+        };
+        let spans: Vec<Span> = forms
+            .iter()
+            .filter(|other| other.model.name == form.model.name)
+            .map(|other| other.span)
+            .collect();
+        if forms
+            .iter()
+            .take(index)
+            .any(|earlier| earlier.model.name == form.model.name)
+        {
+            errors.push(error(
+                AssemblyCause::AmbiguousTerminal {
+                    model: alias.to_owned(),
+                    spans,
+                },
+                form.span,
+            ));
+            continue;
+        }
+        let kind = match &form.kind {
+            TerminalDeclarationKind::Any => TerminalClauseKind::Any,
+            TerminalDeclarationKind::When(predicate) => {
+                let objects: Vec<EffectiveId> = model.population_objects().into_iter().collect();
+                let [context] = objects.as_slice() else {
+                    let cause = if objects.is_empty() {
+                        AssemblyCause::UnresolvedTerminalState {
+                            model: alias.to_owned(),
+                        }
+                    } else {
+                        AssemblyCause::AmbiguousTerminalState {
+                            model: alias.to_owned(),
+                        }
+                    };
+                    errors.push(error(cause, form.model.span));
+                    continue;
+                };
+                let context = *context;
+                let population = match population_of(models, context, types) {
+                    Ok(domain) => domain,
+                    Err(populations) => {
+                        errors.push(error(
+                            AssemblyCause::AmbiguousPopulation {
+                                context: alias.to_owned(),
+                                populations,
+                            },
+                            form.model.span,
+                        ));
+                        continue;
+                    }
+                };
+                TerminalClauseKind::When {
+                    predicate: predicate.clone(),
+                    context,
+                    population,
+                }
+            }
+        };
+        let Some(selection) = selection else {
+            continue;
+        };
+        declarations.push(TerminalClauseDeclaration {
+            name: form.name.name.clone(),
+            model: alias.to_owned(),
+            selection,
+            span: form.span,
+            kind,
+        });
+    }
+    if errors.is_empty() {
+        Ok(declarations)
     } else {
         refuse(errors)
     }
