@@ -3373,7 +3373,7 @@ pub enum EventForm {
     /// `M <= c` or `M >= c`.
     Compare {
         /// The measure.
-        measure: MeasureForm,
+        measure: Box<MeasureForm>,
         /// The comparison.
         op: BoundOp,
         /// The threshold, as written.

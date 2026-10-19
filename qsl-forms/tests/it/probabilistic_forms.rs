@@ -371,14 +371,17 @@ fn the_adr_024_claims_build_their_probabilistic_forms() {
     let ProbabilisticBody::Probability {
         event:
             EventForm::Compare {
-                measure: MeasureForm::Fraction(fraction),
+                measure,
                 op,
                 threshold,
             },
         ..
     } = &form.body
     else {
-        panic!("a probability over a compared fraction: {:?}", form.body);
+        panic!("a probability over a compared measure: {:?}", form.body);
+    };
+    let MeasureForm::Fraction(fraction) = measure.as_ref() else {
+        panic!("a fraction measure: {measure:?}");
     };
     assert_eq!(*op, BoundOp::AtLeast);
     assert!(matches!(&fraction.horizon, HorizonForm::Steps(steps) if steps.value == 10000));

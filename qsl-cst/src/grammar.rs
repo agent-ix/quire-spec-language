@@ -1951,94 +1951,6 @@ fn analysis(g: &mut Grammar) {
     );
 }
 
-#[cfg(test)]
-mod tests {
-    use ix_trace_rs::trace;
-
-    use super::{complete_compound_spellings, complete_reserved_words, complete_v1};
-    use crate::{parse, Limits};
-    use qsl_foundation::SourceIdentity;
-
-    #[trace("QSpec-TC-180", "QSpec-FR-339-AC-1", "QSpec-FR-302-AC-1")]
-    #[test]
-    fn every_declarative_compound_is_one_budgeted_cst_leaf() {
-        let compounds = complete_compound_spellings(&complete_v1());
-        assert!(!compounds.is_empty());
-        for compound in compounds {
-            let parsed = parse(
-                SourceIdentity {
-                    authority: "test".into(),
-                    identity: "test:compound-authority".into(),
-                    revision_namespace: "test".into(),
-                    revision: compound.into(),
-                },
-                "compound.native",
-                compound.as_bytes(),
-                Limits {
-                    tokens: 1,
-                    ..Limits::default()
-                },
-            )
-            .unwrap();
-            assert_eq!(parsed.cst().tokens().len(), 1, "`{compound}`");
-            assert_eq!(parsed.cst().tokens()[0].spelling(), compound.as_bytes());
-
-            let refusal = parse(
-                SourceIdentity {
-                    authority: "test".into(),
-                    identity: "test:compound-authority".into(),
-                    revision_namespace: "test".into(),
-                    revision: format!("{compound}:below"),
-                },
-                "compound.native",
-                compound.as_bytes(),
-                Limits {
-                    tokens: 0,
-                    ..Limits::default()
-                },
-            )
-            .unwrap_err();
-            assert_eq!(refusal.code, qsl_foundation::Code::StageLimitExceeded);
-            assert_eq!(refusal.byte_span().unwrap().start, 0);
-            assert_eq!(refusal.byte_span().unwrap().end, compound.len());
-        }
-    }
-
-    #[trace("QSpec-TC-180", "QSpec-FR-339-AC-1")]
-    #[test]
-    fn every_declarative_reserved_word_is_refused_as_an_identifier() {
-        let prefix = concat!(
-            "language \"ix:native\" edition \"1-draft\";\n",
-            "profile Complete = \"quire.value.complete/v1\";\n",
-            "record "
-        );
-        for word in complete_reserved_words(&complete_v1()) {
-            let text = format!("{prefix}{word} {{ datum: Integer; }}");
-            let parsed = parse(
-                SourceIdentity {
-                    authority: "test".into(),
-                    identity: "test:reserved-word-authority".into(),
-                    revision_namespace: "test".into(),
-                    revision: word.into(),
-                },
-                "reserved.native",
-                text.as_bytes(),
-                Limits::default(),
-            )
-            .unwrap();
-            assert!(
-                !parsed.is_admissible(),
-                "reserved word `{word}` was admitted"
-            );
-            assert_eq!(
-                parsed.diagnostics()[0].byte_span().unwrap().start,
-                prefix.len(),
-                "reserved word `{word}` refused at the wrong token"
-            );
-        }
-    }
-}
-
 /// The probabilistic family: random parameters, workloads, rewards and
 /// the `probabilistic` claim (QSpec `random-decl`, `reward-decl`,
 /// `workload-decl` and `probabilistic-clause`). Every word they introduce
@@ -2268,4 +2180,92 @@ fn probabilistic(g: &mut Grammar) {
     );
     g.insert(P::Weighting, s(vec![literal("weighted"), x("by"), ident()]));
     g.insert(P::Horizon, c(vec![r(P::QuantityLiteral), bound()]));
+}
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::{complete_compound_spellings, complete_reserved_words, complete_v1};
+    use crate::{parse, Limits};
+    use qsl_foundation::SourceIdentity;
+
+    #[trace("QSpec-TC-180", "QSpec-FR-339-AC-1", "QSpec-FR-302-AC-1")]
+    #[test]
+    fn every_declarative_compound_is_one_budgeted_cst_leaf() {
+        let compounds = complete_compound_spellings(&complete_v1());
+        assert!(!compounds.is_empty());
+        for compound in compounds {
+            let parsed = parse(
+                SourceIdentity {
+                    authority: "test".into(),
+                    identity: "test:compound-authority".into(),
+                    revision_namespace: "test".into(),
+                    revision: compound.into(),
+                },
+                "compound.native",
+                compound.as_bytes(),
+                Limits {
+                    tokens: 1,
+                    ..Limits::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(parsed.cst().tokens().len(), 1, "`{compound}`");
+            assert_eq!(parsed.cst().tokens()[0].spelling(), compound.as_bytes());
+
+            let refusal = parse(
+                SourceIdentity {
+                    authority: "test".into(),
+                    identity: "test:compound-authority".into(),
+                    revision_namespace: "test".into(),
+                    revision: format!("{compound}:below"),
+                },
+                "compound.native",
+                compound.as_bytes(),
+                Limits {
+                    tokens: 0,
+                    ..Limits::default()
+                },
+            )
+            .unwrap_err();
+            assert_eq!(refusal.code, qsl_foundation::Code::StageLimitExceeded);
+            assert_eq!(refusal.byte_span().unwrap().start, 0);
+            assert_eq!(refusal.byte_span().unwrap().end, compound.len());
+        }
+    }
+
+    #[trace("QSpec-TC-180", "QSpec-FR-339-AC-1")]
+    #[test]
+    fn every_declarative_reserved_word_is_refused_as_an_identifier() {
+        let prefix = concat!(
+            "language \"ix:native\" edition \"1-draft\";\n",
+            "profile Complete = \"quire.value.complete/v1\";\n",
+            "record "
+        );
+        for word in complete_reserved_words(&complete_v1()) {
+            let text = format!("{prefix}{word} {{ datum: Integer; }}");
+            let parsed = parse(
+                SourceIdentity {
+                    authority: "test".into(),
+                    identity: "test:reserved-word-authority".into(),
+                    revision_namespace: "test".into(),
+                    revision: word.into(),
+                },
+                "reserved.native",
+                text.as_bytes(),
+                Limits::default(),
+            )
+            .unwrap();
+            assert!(
+                !parsed.is_admissible(),
+                "reserved word `{word}` was admitted"
+            );
+            assert_eq!(
+                parsed.diagnostics()[0].byte_span().unwrap().start,
+                prefix.len(),
+                "reserved word `{word}` refused at the wrong token"
+            );
+        }
+    }
 }

@@ -50,13 +50,13 @@ const MAX_EXPANDED_SCALE: u64 = 4096;
 #[derive(Clone, Debug)]
 pub enum ProbabilisticDeclaration {
     /// A `random` declaration.
-    Random(RandomForm),
+    Random(Box<RandomForm>),
     /// A `reward` declaration.
-    Reward(RewardForm),
+    Reward(Box<RewardForm>),
     /// A `workload` declaration.
-    Workload(WorkloadForm),
+    Workload(Box<WorkloadForm>),
     /// A `probabilistic` claim.
-    Claim(ProbabilisticForm),
+    Claim(Box<ProbabilisticForm>),
 }
 
 /// Whose weight is not a positive exact rational.

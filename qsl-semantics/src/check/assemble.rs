@@ -748,16 +748,16 @@ impl Unit {
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
                 DeclarationForm::Random(random) => unit
                     .probabilistic
-                    .push(super::ProbabilisticDeclaration::Random(*random)),
+                    .push(super::ProbabilisticDeclaration::Random(random)),
                 DeclarationForm::Reward(reward) => unit
                     .probabilistic
-                    .push(super::ProbabilisticDeclaration::Reward(*reward)),
+                    .push(super::ProbabilisticDeclaration::Reward(reward)),
                 DeclarationForm::Workload(workload) => unit
                     .probabilistic
-                    .push(super::ProbabilisticDeclaration::Workload(*workload)),
+                    .push(super::ProbabilisticDeclaration::Workload(workload)),
                 DeclarationForm::Probabilistic(claim) => unit
                     .probabilistic
-                    .push(super::ProbabilisticDeclaration::Claim(*claim)),
+                    .push(super::ProbabilisticDeclaration::Claim(claim)),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {

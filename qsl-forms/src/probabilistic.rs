@@ -318,7 +318,7 @@ fn event_form(cst: &LosslessCst, event: &CstNode) -> Result<EventForm, FormsRefu
     let event_items = items(cst, event);
     match nodes_of(&event_items, Production::Measure)[..] {
         [measure] => Ok(EventForm::Compare {
-            measure: measure_form(cst, measure)?,
+            measure: Box::new(measure_form(cst, measure)?),
             op: bound_op(&event_items, event)?,
             threshold: expression_form(cst, only(&event_items, Production::Expression, event)?)?,
         }),
