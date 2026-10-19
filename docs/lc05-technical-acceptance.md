@@ -1,5 +1,9 @@
 # LC05 technical acceptance packet
 
+> **Historical: `0-draft` edition.** This page describes the original `0-draft`
+> native path, which is being deleted. For `1-draft`, start from the
+> [README](../README.md) and the [run request reference](native-standalone.md).
+
 ## Admitted workflow
 
 The named ConfigVersion workflow runs end to end in the explicit
