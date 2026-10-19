@@ -2753,10 +2753,6 @@ pub enum ProtocolConstructKind {
     JoinPredicate,
     /// A `terminal when { predicate };` member.
     TerminalWhen,
-    /// A `parallel`'s `memory sc | tso | ra` clause.
-    MemoryClause,
-    /// An `attempt`'s `ordering o` memory order.
-    AccessOrdering,
 }
 
 impl ProtocolConstructKind {
@@ -2773,8 +2769,6 @@ impl ProtocolConstructKind {
             Self::FifoOrdering => "channel ordering fifo",
             Self::JoinPredicate => "join predicate",
             Self::TerminalWhen => "terminal when",
-            Self::MemoryClause => "parallel memory",
-            Self::AccessOrdering => "attempt ordering",
         }
     }
 }
@@ -2942,6 +2936,9 @@ pub struct AttemptForm {
     /// The `contracts [...]` list, in source order; empty when written
     /// `contracts []`.
     pub contracts: Vec<DeclaredName>,
+    /// The `ordering o` memory order with the span of its text, when
+    /// written (FR-220).
+    pub ordering: Option<Spanned<crate::protocol_control::AccessOrdering>>,
 }
 
 /// `protocol Name using p over (params) activation { ... run Control
@@ -3001,6 +2998,8 @@ pub struct ProtocolDeclarationForm {
     /// Every `parallel` control of the `run` tree, in source order of the
     /// controls (FR-308).
     pub parallels: Vec<ParallelForm>,
+    /// Every `fence` control of the `run` tree, in source order (FR-220).
+    pub fences: Vec<crate::protocol_control::FenceForm>,
     /// Every `repeat` control of the `run` tree, in source order of the
     /// controls (FR-308).
     pub repeats: Vec<RepeatForm>,

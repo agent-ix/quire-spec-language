@@ -102,6 +102,7 @@ impl Fixture {
                 },
                 max_depth,
                 limits,
+                reductions: Default::default(),
             },
             cancel,
         )
@@ -769,6 +770,7 @@ fn the_model_only_pass_spends_the_budget_the_next_instance_gets() {
                 },
                 max_depth: None,
                 limits,
+                reductions: Default::default(),
             },
             &Cancel::new(),
         )

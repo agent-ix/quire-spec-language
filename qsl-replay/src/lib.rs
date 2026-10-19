@@ -112,7 +112,7 @@ pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
     DEFAULT_MAX_WALK_STEPS, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
-pub use model_check::outcome::{ModelCheckOutcome, RunStats, UndecidedCause};
+pub use model_check::outcome::{ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause};
 pub use model_check::replay::{
     replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
     ModelTraceSubject, ModelTraceValue,
@@ -139,10 +139,11 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, Certification, DeclineCode,
-    EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, ProofBasis, ProofRefusalCause,
-    ProofResultEnvelope, ProofResultRefusal, ReportedInconclusiveCause, SettlementBasis,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    read_backend_provider_envelope, AppliedReduction, BackendProviderSource, Certification,
+    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, ProofBasis,
+    ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, ReductionKind,
+    ReportedInconclusiveCause, SettlementBasis, SymmetryBrokenCause, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

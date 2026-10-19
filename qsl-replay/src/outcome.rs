@@ -36,7 +36,7 @@ use serde::{Serialize, Serializer};
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::proof_result::{
     Certification, DeclineCode, IncompleteCause, InconclusiveCause, ProofBasis,
-    ReportedInconclusiveCause, TerminalRecord, TerminalValue,
+    ReportedInconclusiveCause, SymmetryBrokenCause, TerminalRecord, TerminalValue,
 };
 use crate::result::ReplayResult;
 use crate::spine::{
@@ -44,6 +44,7 @@ use crate::spine::{
     FrontEndFailure, ParsedSource, RunRefusal, SpineStage,
 };
 use crate::ReplayRefusal;
+use quire_semantic_value::fairness::PropertyForm;
 
 /// The format refusal projection consumed by the replay outcome facade.
 ///
@@ -216,6 +217,29 @@ pub struct ItemCause {
     value: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     setting: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    boundary_states: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reduction: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    form: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    population: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    initial: Option<u64>,
+    /// The generator's moved keys, each `[from, to]`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    generator: Option<Vec<(String, String)>>,
+}
+
+/// A property form's spelling on the outcome wire.
+fn form_str(form: PropertyForm) -> &'static str {
+    match form {
+        PropertyForm::ReachableInvariant => "reachable-invariant",
+        PropertyForm::BoundedMltl => "bounded-mltl",
+        PropertyForm::Safety => "safety",
+        PropertyForm::Liveness => "liveness",
+    }
 }
 
 fn cancel_source<S: Serializer>(
@@ -244,6 +268,12 @@ impl ItemCause {
             limit: None,
             value: None,
             setting: None,
+            boundary_states: None,
+            reduction: None,
+            form: None,
+            population: None,
+            initial: None,
+            generator: None,
         }
     }
 
@@ -280,6 +310,33 @@ impl ItemCause {
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::SolverInconclusive,
             ) => {}
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionNotPreserving {
+                reduction,
+                form,
+            }) => {
+                item.reduction = Some(reduction.as_str());
+                item.form = Some(form_str(*form));
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::SymmetryBroken {
+                population,
+                cause: SymmetryBrokenCause::InitialStatesNotClosed { initial, generator },
+            }) => {
+                item.population = Some(population.node.clone());
+                item.initial = Some(*initial);
+                item.generator = Some(
+                    generator
+                        .maps()
+                        .values()
+                        .flatten()
+                        .map(|(from, to)| (from.clone(), to.clone()))
+                        .collect(),
+                );
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ConstraintReached {
+                boundary_states,
+            }) => {
+                item.boundary_states = Some(*boundary_states);
+            }
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
                 item.parity = Some(ParityReason {
@@ -1338,6 +1395,60 @@ mod tests {
             let written = serde_json::to_value(record(0, value)).unwrap();
             assert!(written.get("certification").is_none(), "{written}");
             assert!(written.get("basis").is_none(), "{written}");
+        }
+    }
+
+    /// ADR-021 RV-2 to RV-4: the reduction causes keep their payloads on the
+    /// wire: the refused reduction and form, the population, initial state
+    /// and generator, and the number of boundary states.
+    #[test]
+    fn reduction_cause_wire_keeps_its_payload() {
+        use crate::proof_result::{ReductionKind, SymmetryBrokenCause};
+        use qsl_eval::simulation::Permutation;
+        use qsl_semantics::model::key::DeclarationKey;
+        use quire_semantic_value::fairness::PropertyForm;
+
+        let population = DeclarationKey {
+            package: "test/sym".to_owned(),
+            node: "ix://test/sym/counters".to_owned(),
+        };
+        let swap = Permutation::of(
+            &population,
+            [
+                ("a".to_owned(), "b".to_owned()),
+                ("b".to_owned(), "a".to_owned()),
+            ],
+        );
+        for (value, cause) in [
+            (
+                InconclusiveCause::ReductionNotPreserving {
+                    reduction: ReductionKind::PartialOrder,
+                    form: PropertyForm::BoundedMltl,
+                },
+                json!({"kind": "reduction-not-preserving", "reduction": "partial-order",
+                    "form": "bounded-mltl"}),
+            ),
+            (
+                InconclusiveCause::SymmetryBroken {
+                    population: population.clone(),
+                    cause: SymmetryBrokenCause::InitialStatesNotClosed {
+                        initial: 0,
+                        generator: swap,
+                    },
+                },
+                json!({"kind": "symmetry-broken", "population": "ix://test/sym/counters",
+                    "initial": 0, "generator": [["a", "b"], ["b", "a"]]}),
+            ),
+            (
+                InconclusiveCause::ConstraintReached {
+                    boundary_states: 12,
+                },
+                json!({"kind": "constraint-reached", "boundary_states": 12}),
+            ),
+        ] {
+            let written =
+                serde_json::to_value(record(0, TerminalValue::Inconclusive(value))).unwrap();
+            assert_eq!(written["cause"], cause, "{written}");
         }
     }
 

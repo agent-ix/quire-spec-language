@@ -103,6 +103,7 @@ fn run_in(
             item,
             max_depth,
             limits,
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )
@@ -633,6 +634,7 @@ fn limits_and_cancellation_stop_the_run_naming_what_stopped_it() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             limits: defaults,
+            reductions: Default::default(),
         },
         &cancel,
     )
@@ -684,6 +686,7 @@ fn a_cancelled_handle_stops_a_tp1_clause_run_rather_than_refusing() {
             },
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &cancel,
     )
@@ -835,6 +838,7 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
             item: item(),
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )
@@ -961,6 +965,7 @@ fn run_with(
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )
