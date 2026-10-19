@@ -15,7 +15,7 @@ object rows into a `CheckedRefinement`, refuses each missing, duplicated,
 misplaced or ill-typed row at its span, lifts references, records hidden
 fields and puts the declaration in the package identity.
 
-Scope: FR-135-AC-1 to FR-135-AC-4.
+Scope: FR-135-AC-1 to FR-135-AC-5.
 
 ## Test Procedure
 
@@ -31,6 +31,11 @@ Fixtures: ADR-020 §8's `CasRefinesCounter` unit, with `Spec` local and with
 4. Check `CasRefinesCounter` with the `value` row removed; check it with
    `value = self.tmpA` and compare node identities and `package_id`s with
    step 1.
+5. Check `RegisterHistory` with one `history` row and with two, `CasTwice`, and
+   `CasRefinesCounter`, each in the build as it stands, that is, for each
+   feature the build has not built. The step does not choose a support set; it
+   runs only while a feature is unbuilt, and is rewritten when the feature
+   lands.
 
 Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
 
@@ -45,3 +50,8 @@ Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
   checks; the `Reference<R::Slot>` row refuses `ill_typed`/`type-mismatch`.
 - Step 4: `hidden = [value]`; different node identity and different
   `package_id`.
+- Step 5: each `history` row refuses `unsupported_construct`/`not-yet-implemented`
+  at its `history` keyword naming `history-row`, the refinement and the profile
+  (two rows, two refusals); `CasTwice` refuses the same pair at `Twice` naming
+  `protocol-abstract-side`; each classifies `unsupported`; no
+  `CheckedRefinement`; `CasRefinesCounter` checks.
