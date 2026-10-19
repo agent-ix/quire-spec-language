@@ -60,13 +60,16 @@ Read it top to bottom:
 - **`language … edition`** says which version of the language the file uses, so
   old files keep their meaning when the language grows.
 - **`profile`** selects the part of the language the rules are allowed to use.
-  `quire.value.complete/v1` is values, records and expressions.
+  `quire.value.complete/v1` is values, records and expressions. The line binds
+  it to the short name `v`, and each rule says `using v`.
 - **`model`** imports the domain model the rules talk about. It names the model
   by identity, version *and* content digest, so a rule can never silently be
   checked against a different model than the one it was written for.
 - **`invariant … at current`** must hold for every `ConfigVersion` in the data.
-  `ParentOrder` says a parent, when there is one, has a lower number. `NoCycle`
-  says following `parent` links never leads back to where you started.
+  `ParentOrder` says a parent, when there is one, has a lower number:
+  `self.parent` is an optional reference, `present` asks whether it is set,
+  `value` takes the reference out and `deref` follows it to the parent object.
+  `NoCycle` says following `parent` links never leads back to where you started.
 - **`post … on …::attemptUpdate`** is checked around an operation. `pre(x)` is
   the value of `x` before the operation ran, so `VersionUnchanged` says an update
   attempt must not change the version number.
@@ -115,7 +118,8 @@ apart, all the way out to the process exit code:
 | incomplete, inconclusive | 22 | Data was missing or the work budget ran out. No truth value is reported at all. |
 | internal failure | 30 | A bug in QSL itself. |
 
-Two consequences follow. A refused or incomplete result carries no truth field
+Internal failure is not one of the five answers: it means QSL is broken, not
+that the rule or the data is. Two consequences follow. A refused or incomplete result carries no truth field
 in its output, so a script cannot accidentally read one as *false*. And every
 result names the exact source, model and input it was computed from, so you can
 always say which rule, at which revision, produced it.
@@ -123,7 +127,9 @@ always say which rule, at which revision, produced it.
 ## What you can say
 
 Every QSL unit chooses its profiles, and each profile opens up one family of
-rules. The families below are all in the `1-draft` edition.
+rules. The families below are all in the `1-draft` edition. The snippets are
+excerpts: names such as `G`, `T` and `P` are profiles, and `M` is a model,
+each declared at the top of the unit as in the first example.
 
 **Values and functions.** Bounded integers, exact rationals, records, unions
 and pure functions. There is no floating point, so arithmetic is exact.
@@ -309,9 +315,9 @@ contract tools turn checked packages into code, proofs and runtime checks.
 | [quire-analyze](https://github.com/agent-ix/quire-analyze) | SMT-based consistency and implication checks across contracts. | Works on Contract IR. |
 | [quire-verification-contracts](https://github.com/agent-ix/quire-verification-contracts) | The shared vocabulary of verification records the tools exchange. | Used by IR, codegen and the standard. |
 | [quire-observation](https://github.com/agent-ix/quire-observation) | Turns raw signals into qualified observations that rules can be evaluated over. | Supplies data for temporal checks. |
-| [quire-mltl](https://github.com/agent-ix/quire-mltl) | Connects the MLTL temporal-logic engine to quire-observation. | Adjacent. |
+| [quire-mltl](https://github.com/agent-ix/quire-mltl) | Connects the MLTL temporal-logic engine to quire-observation. | No direct dependency. |
 | quire-protocol (private) | Checks real systems against compiled protocols, including compensation. | Consumes QSL's compiled protocols. |
-| quire-verification (private) | Chooses verification techniques and plans for each requirement. | Adjacent. |
+| quire-verification (private) | Chooses verification techniques and plans for each requirement. | No direct dependency. |
 | quire-driver (private) | The `quire` command line that runs the whole chain. | Depends on QSL. |
 | quire-integration (private) | Pins a working set of versions and tests the whole chain together. | Depends on QSL. |
 
