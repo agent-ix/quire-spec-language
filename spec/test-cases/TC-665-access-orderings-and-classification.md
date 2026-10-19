@@ -18,7 +18,7 @@ Scope: FR-220-AC-1 to FR-220-AC-5.
 
 1. Check `SB` and read each attempt's class; check the non-atomic and
    `fetch_add` variants.
-2. Check each ill-ordered access and fence of FR-220-AC-2, and fences with
+2. Check each ill-ordered access of FR-220-AC-2, parse `fence F ordering relaxed;` at S1, and check fences with
    each admitted ordering.
 3. Check the two-field attempt under `memory tso` and under `sc`, then
    select `tso` from the request.
@@ -30,7 +30,7 @@ Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 ## Expected Results
 
 - Step 1: the classes of FR-220-AC-1.
-- Step 2: `ill_typed`/`operator-ineligible` naming each; the four fences check.
+- Step 2: `ill_typed`/`operator-ineligible` at S3 naming each access; `invalid_syntax` at S1 at the `relaxed` token of the fence, with no S3 result; the four fences check.
 - Step 3: `unsupported_construct`/`declaration-form` naming both locations; checks under
   `sc`; V-8 `WeakAccessShape{MultiLocation}` under the selection.
 - Step 4: 16 states and `proved` both times.
