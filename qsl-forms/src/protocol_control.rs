@@ -130,6 +130,73 @@ pub enum Outstanding {
     Cancel,
 }
 
+/// A `parallel`'s memory model name (FR-219): `sc`, `tso` or `ra`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MemoryModelName {
+    /// `memory sc`, the interleaving meaning and the default.
+    Sc,
+    /// `memory tso`.
+    Tso,
+    /// `memory ra`.
+    Ra,
+}
+
+impl MemoryModelName {
+    /// The model's spelling in source.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Sc => "sc",
+            Self::Tso => "tso",
+            Self::Ra => "ra",
+        }
+    }
+
+    /// Whether the model is `tso` or `ra`.
+    pub fn is_weak(self) -> bool {
+        self != Self::Sc
+    }
+}
+
+/// An attempt's `ordering o` or a `fence`'s ordering (FR-220).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AccessOrdering {
+    /// `relaxed`.
+    Relaxed,
+    /// `acquire`.
+    Acquire,
+    /// `release`.
+    Release,
+    /// `acq_rel`.
+    AcqRel,
+    /// `seq_cst`.
+    SeqCst,
+}
+
+impl AccessOrdering {
+    /// The ordering's spelling in source.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Relaxed => "relaxed",
+            Self::Acquire => "acquire",
+            Self::Release => "release",
+            Self::AcqRel => "acq_rel",
+            Self::SeqCst => "seq_cst",
+        }
+    }
+}
+
+/// One `fence Name ordering o;` control as written (FR-220).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FenceForm {
+    /// The index into `ProtocolDeclarationForm::declarations` of the node
+    /// this control declares.
+    pub declaration: usize,
+    /// The declared control name.
+    pub name: DeclaredName,
+    /// The ordering, with the span of its text.
+    pub ordering: Spanned<AccessOrdering>,
+}
+
 /// One `parallel` control as written (FR-308).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParallelForm {
@@ -140,6 +207,9 @@ pub struct ParallelForm {
     pub name: DeclaredName,
     /// The branch labels, in source order.
     pub branches: Vec<DeclaredName>,
+    /// The `memory` clause's model with the span of the clause, when
+    /// written (FR-219).
+    pub memory: Option<Spanned<MemoryModelName>>,
     /// The join policy, with the span of its text.
     pub join: Spanned<JoinPolicy>,
     /// The span of the `quorum` count, written exactly for `Quorum`.
@@ -473,6 +543,54 @@ fn outstanding(
     }))
 }
 
+/// A `memory sc | tso | ra` clause (FR-219): the model and the clause's
+/// span.
+fn memory_model(
+    cst: &LosslessCst,
+    clause: &CstNode,
+) -> Result<Spanned<MemoryModelName>, FormsRefusal> {
+    let clause_items = items(cst, clause);
+    let model = own_tokens(&clause_items)
+        .into_iter()
+        .nth(1)
+        .ok_or_else(|| unexpected(clause))?;
+    let value = match model.spelling() {
+        b"sc" => MemoryModelName::Sc,
+        b"tso" => MemoryModelName::Tso,
+        b"ra" => MemoryModelName::Ra,
+        _ => return Err(unexpected(clause)),
+    };
+    Ok(Spanned {
+        value,
+        span: clause.span(),
+    })
+}
+
+/// A `MemoryOrder` or `FenceOrder` node (FR-220): the ordering and the span
+/// of its text.
+pub(crate) fn access_ordering(
+    cst: &LosslessCst,
+    order: &CstNode,
+) -> Result<Spanned<AccessOrdering>, FormsRefusal> {
+    let order_items = items(cst, order);
+    let token = own_tokens(&order_items)
+        .into_iter()
+        .next()
+        .ok_or_else(|| unexpected(order))?;
+    let value = match token.spelling() {
+        b"relaxed" => AccessOrdering::Relaxed,
+        b"acquire" => AccessOrdering::Acquire,
+        b"release" => AccessOrdering::Release,
+        b"acq_rel" => AccessOrdering::AcqRel,
+        b"seq_cst" => AccessOrdering::SeqCst,
+        _ => return Err(unexpected(order)),
+    };
+    Ok(Spanned {
+        value,
+        span: order.span(),
+    })
+}
+
 /// `parallel P { branch a ..; branch b ..; } join policy [a, b]
 /// [outstanding rule];` (FR-308). `declaration` is the index of the
 /// control's own declaration.
@@ -504,10 +622,15 @@ pub(crate) fn parallel_form(
     ) else {
         return Err(unexpected(parallel));
     };
+    let memory = nodes_of(&parallel_items, Production::MemoryClause)
+        .first()
+        .map(|clause| memory_model(cst, clause))
+        .transpose()?;
     Ok(ParallelForm {
         declaration,
         name: declared(name, parallel)?,
         branches,
+        memory,
         join: Spanned {
             value: policy,
             span: join_node.span(),

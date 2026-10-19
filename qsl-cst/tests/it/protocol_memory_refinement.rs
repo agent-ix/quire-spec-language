@@ -5,6 +5,7 @@
 //! attempt's `ordering` and the `fence` control (FR-220), and a refinement
 //! declaration's `step` rows (FR-136, FR-214). Each test reads the CST nodes
 //! the parser produced; the checks those forms feed belong to later slices.
+use ix_trace_rs::trace;
 use qsl_cst::{CompleteCode, Limits, ParsedSource, Production};
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -205,9 +206,9 @@ fn a_fence_parses_each_fence_order() {
     );
 }
 
-/// Verifies the parse only and claims no criterion.
 /// A `fence` with `ordering relaxed` is refused at S1, at `relaxed`: QSpec's
 /// `fence-order` excludes it (STD-167).
+#[trace("TC-665", "FR-220-AC-6")]
 #[test]
 fn a_relaxed_fence_is_a_parse_refusal_at_the_relaxed_word() {
     let run = "sequence Main { fence F ordering relaxed; }";

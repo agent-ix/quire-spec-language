@@ -177,12 +177,27 @@ pub enum CheckedTerminalMember {
     Any,
 }
 
+/// A protocol's scheduling premise (FR-212 "Targets at S3"): whether the
+/// model checker adds the derived scheduler fairness constraints.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum CheckedScheduling {
+    /// The protocol writes no `scheduling` member: every runnable thread is
+    /// served.
+    #[default]
+    Fair,
+    /// `scheduling adversarial;`: the fairness set is the authored
+    /// constraints alone.
+    Adversarial,
+}
+
 /// Every checked slot of a protocol's `run` tree and `finish`, each list in
 /// source order, and each binder's readers.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CheckedSlots {
     /// The protocol's `terminal` member (FR-211).
     pub terminal: CheckedTerminalMember,
+    /// The protocol's `scheduling` member (FR-212).
+    pub scheduling: CheckedScheduling,
     /// The node bodies.
     pub bodies: Vec<CheckedNodeBody>,
     /// The choices.
@@ -1125,6 +1140,15 @@ pub(crate) fn check(
         ProtocolMemberForm::Terminal(terminal) => Some(terminal),
         ProtocolMemberForm::Scheduling(_) => None,
     });
+    slots.scheduling = if protocol
+        .members
+        .iter()
+        .any(|member| matches!(member, ProtocolMemberForm::Scheduling(_)))
+    {
+        CheckedScheduling::Adversarial
+    } else {
+        CheckedScheduling::Fair
+    };
     slots.terminal = match terminal {
         None => CheckedTerminalMember::None,
         Some(TerminalForm::Any { .. }) => CheckedTerminalMember::Any,
