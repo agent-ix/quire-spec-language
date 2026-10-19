@@ -35,6 +35,9 @@ quire-contract-model = { git = "https://github.com/agent-ix/quire-contract-ir", 
 # `Location` the spine reports, and the `TypeEnvironment` the clause tests admit.
 quire-semantic-value = { workspace = true }
 thiserror = "2.0.20"
+# The closed-form checker rounds exact rationals to integers.
+num-bigint = "0.4.8"
+num-integer = "0.1.47"
 # FR-269: the deciding element is written through the shared canonical writer
 # and read through the shared reader, so a value of any depth round-trips.
 # Also FR-106's snapshot/invocation `DocumentRef.digest`, the document's own

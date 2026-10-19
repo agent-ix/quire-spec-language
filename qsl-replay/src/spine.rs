@@ -596,8 +596,18 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
         AssemblyCause::UnresolvedOperation { context, operation } => {
             format!("`{context}` has no operation `{operation}`")
         }
-        AssemblyCause::UnsupportedDeclarationForm { form } => {
-            format!("a `{form}` declaration is not admitted yet")
+        AssemblyCause::UnresolvedTerminalModel { alias } => {
+            format!("`terminal ... on {alias}` names no `model` declaration of the unit")
+        }
+        AssemblyCause::UnresolvedTerminalState { model } => {
+            format!("`terminal when` on `{model}`: the model declares no population to range over")
+        }
+        AssemblyCause::AmbiguousTerminalState { model } => format!(
+            "`terminal when` on `{model}`: the model's populations range over more than one \
+             object type"
+        ),
+        AssemblyCause::AmbiguousTerminal { model, spans } => {
+            format!("{} `terminal` declarations are on `{model}`", spans.len())
         }
         AssemblyCause::AmbiguousOperation { context, operation } => {
             format!("`{context}` inherits more than one operation `{operation}`")
@@ -764,6 +774,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
             };
         }
+        CheckCause::TerminalNotEmitted { name, .. } => {
+            message = format!("{message}: `terminal {name}` checks but is not emitted yet");
+        }
         // FR-326: name what the `TemporalTrace` check refused.
         CheckCause::Temporal(cause) => {
             message = match cause.as_ref() {
@@ -786,6 +799,15 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 }
                 TemporalCause::ParameterType { parameter, .. } => {
                     format!("{message}: the type of `{parameter}` does not resolve")
+                }
+                TemporalCause::UnresolvedFairnessOperation { name, .. } => {
+                    format!("{message}: the fairness operation `{name}` names no model operation")
+                }
+                TemporalCause::AmbiguousFairnessOperation { name, .. } => format!(
+                    "{message}: the fairness operation `{name}` names operations of several types"
+                ),
+                TemporalCause::FairnessUnderBoundedProfile { .. } => {
+                    format!("{message}: this profile admits no fairness constraint")
                 }
                 TemporalCause::NotEmitted { name, .. } => {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")
