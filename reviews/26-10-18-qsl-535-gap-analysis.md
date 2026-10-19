@@ -41,3 +41,12 @@ Examined FR-165-AC-1 (form part) and FR-165-AC-2 against the eleven S3 and
 five S2 tests tagged TC-590. Ran them green. Reverse check: every new
 production symbol in qsl-forms/src/state_graph.rs and
 qsl-semantics/src/check/state_graph_claim.rs is reached by a tagged test.
+
+## Dispositions
+
+Round 1, at 5456c3b03f01941ac09a6aeca5bc3f7344fa4801.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Oracle part fixed: the S3 tests compare each slot's checked literals against a separately checked reference and assert the slots differ, so a from/target or from/to swap now fails. The §7 `CanStillWin` (G::Game) and `InOneWay` (M::Job) S3 fixtures are a legitimate deferral because no Game/Job domain package exists and AC-2's named refusals use ConfigVersion only. No follow-up ticket names them yet; QSL-863 (which needs the §7.2 game for AC-3) should take them. |
+| FND-002 | still-open | The `#[trace]` tags dropped FR-165-AC-1, but the `///` doc comments on nine tests still say `FR-165-AC-1:`. `quoin matrix --json` at 5456c3b still binds FR-165-AC-1 to those tests (static_status `tagged`). Rewording the doc comments (for example "Part of FR-165 AC-1") would make the matrix honest. The tautological record check now also asserts a different node does not match. |

@@ -117,7 +117,7 @@ fn reference(predicate: &str) -> Vec<String> {
     literals(target.body().expect("checked"))
 }
 
-/// Part of FR-165-AC-1 (per-object instances and node identity are deferred):
+/// The form part of the first criterion (per-object instances and node identity are deferred):
 /// `possible` checks to `Possible` with its target checked as a Boolean state
 /// body over the `over` parameter.
 #[trace("TC-590")]
@@ -147,7 +147,7 @@ fn possible_checks_to_the_possible_form() {
     assert_eq!(graph.state_graph_claims().len(), 2);
 }
 
-/// FR-165-AC-1: an `always possible` claim without `from` checks with `from`
+/// TC-590, the form part of FR-165 (instances and node identity are deferred): an `always possible` claim without `from` checks with `from`
 /// the constant `true`; with `from` it checks that predicate.
 #[trace("TC-590")]
 #[test]
@@ -176,7 +176,7 @@ fn always_possible_checks_with_the_constant_true_or_the_written_from() {
     assert_ne!(from, target);
 }
 
-/// FR-165-AC-1: `unique path` checks to `UniquePath` with `from` and `to`.
+/// TC-590, the form part of FR-165 (instances and node identity are deferred): `unique path` checks to `UniquePath` with `from` and `to`.
 #[trace("TC-590")]
 #[test]
 fn unique_path_checks_to_the_unique_path_form() {
@@ -193,7 +193,7 @@ fn unique_path_checks_to_the_unique_path_form() {
     assert_ne!(from, to);
 }
 
-/// FR-165-AC-1: `possible P` and `always possible P` over one `P` record
+/// TC-590, the form part of FR-165 (instances and node identity are deferred): `possible P` and `always possible P` over one `P` record
 /// different forms.
 #[trace("TC-590")]
 #[test]
@@ -209,7 +209,7 @@ fn possible_and_always_possible_over_one_predicate_differ_in_form() {
     ));
 }
 
-/// FR-165-AC-1: every claim records (`temporal-satisfaction`, `Unbounded`)
+/// TC-590, the form part of FR-165 (instances and node identity are deferred): every claim records (`temporal-satisfaction`, `Unbounded`)
 /// over a domain that names the claim's node.
 #[trace("TC-590")]
 #[test]
@@ -413,4 +413,22 @@ fn the_node_limit_applies_to_the_claims_cumulative_total() {
         .expect("a limit one predicate fits under");
     assert!(check_under(two, CheckingLimits::new(fits)).is_err());
     assert!(check_under(two, CheckingLimits::new(fits * 2 + 8)).is_ok());
+}
+
+/// An `over` type that exists but is no object type refuses `ill_typed`/
+/// `type-mismatch` at the type, not as a missing name.
+#[trace("TC-590")]
+#[test]
+fn an_over_type_that_is_not_an_object_type_refuses_at_the_type() {
+    let body = "possible P using v over (c: Integer) { c = 2 }\n";
+    let document = document();
+    let (unit, _) = config_unit_with_body(&document, body);
+    let refusal = admit_and_assemble_with_body(&document, body)
+        .expect_err("a non-object over type refuses at assembly");
+    let [error] = refusal.errors.as_slice() else {
+        panic!("one error: {refusal:?}");
+    };
+    assert_eq!(error.cause.code(), Code::IllTyped);
+    assert_eq!(error.cause.catalog_code().cause(), "type-mismatch");
+    assert_eq!(&unit[error.span.start..error.span.end], "Integer");
 }

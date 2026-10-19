@@ -58,7 +58,7 @@ fn operand_text<'t>(text: &'t str, operand: &ExpressionForm) -> &'t str {
     slice(text, span)
 }
 
-/// FR-165-AC-1: `possible` builds its name, `using` alias, `over` parameter
+/// TC-590, the form part of FR-165 (instances and node identity are deferred): `possible` builds its name, `using` alias, `over` parameter
 /// and one predicate, each spanned over its source text.
 #[trace("TC-590")]
 #[test]
@@ -77,7 +77,7 @@ fn possible_builds_its_name_alias_over_parameter_and_predicate() {
     assert_eq!(operand_text(&text, plain(target)), "c.versionNumber = 2");
 }
 
-/// FR-165-AC-1: `always possible` without `from` builds no `from`; with
+/// TC-590, the form part of FR-165 (instances and node identity are deferred): `always possible` without `from` builds no `from`; with
 /// `from (Q)` it builds `Q` beside the target.
 #[trace("TC-590")]
 #[test]
@@ -102,7 +102,7 @@ fn always_possible_builds_its_optional_from() {
     assert_eq!(operand_text(&text, plain(target)), "x.phase = Won");
 }
 
-/// FR-165-AC-1: `unique path` builds `from` and `to`.
+/// TC-590, the form part of FR-165 (instances and node identity are deferred): `unique path` builds `from` and `to`.
 #[trace("TC-590")]
 #[test]
 fn unique_path_builds_from_and_to() {
@@ -145,7 +145,7 @@ fn temporal_operators_and_fairness_are_kept_at_their_spans() {
     assert_eq!(slice(&text, constraint.span), "fair weak attemptUpdate;");
 }
 
-/// FR-165-AC-1: `possible`, `unique` and `path` stay usable as names.
+/// TC-590, the form part of FR-165 (instances and node identity are deferred): `possible`, `unique` and `path` stay usable as names.
 #[trace("TC-590")]
 #[test]
 fn the_claim_words_stay_usable_as_names() {

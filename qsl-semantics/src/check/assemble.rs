@@ -380,6 +380,13 @@ pub enum AssemblyCause {
         /// The span of the first claim's name.
         first: Span,
     },
+    /// A state-graph claim's `over` type is not an object type of an admitted
+    /// domain package (a builtin, collection or population type). Located at
+    /// the type.
+    OverNotObjectType {
+        /// The claim name.
+        claim: String,
+    },
     /// A `bound` declaration names a model alias that is no `model`
     /// declaration of the unit, or a population its domain package does not
     /// declare (FR-380 "The declaration").
@@ -473,7 +480,9 @@ impl AssemblyCause {
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
             // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
-            Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
+            Self::IllFormedBounds(_)
+            | Self::ImportedTypeName { .. }
+            | Self::OverNotObjectType { .. } => Code::IllTyped,
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 Code::UnknownRequiredFeature
             }
@@ -556,7 +565,7 @@ impl AssemblyCause {
             // Informational (FR-091-OQ-12): STD-112 replaces this cause
             // once QSpec publishes the topology causes; nothing reads it.
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
-            Self::IllFormedBounds(_) => "type-mismatch",
+            Self::IllFormedBounds(_) | Self::OverNotObjectType { .. } => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 "unsupported-feature"
@@ -3344,8 +3353,8 @@ fn state_graph_claims(
         let over = &form.over.value_type;
         let TypeFormHead::Name(name) = &over.head else {
             errors.push(error(
-                AssemblyCause::UnresolvedTypeName {
-                    name: format!("{:?}", over.head),
+                AssemblyCause::OverNotObjectType {
+                    claim: form.name.name.clone(),
                 },
                 over.span,
             ));

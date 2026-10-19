@@ -251,6 +251,7 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::AmbiguousOperation { .. }
         | AssemblyCause::DuplicateOperationBody { .. }
         | AssemblyCause::DuplicateStateGraphClaim { .. }
+        | AssemblyCause::OverNotObjectType { .. }
         | AssemblyCause::UnresolvedPopulationBound { .. }
         | AssemblyCause::AmbiguousPopulationBound { .. }
         | AssemblyCause::UnresolvedTerminalModel { .. }

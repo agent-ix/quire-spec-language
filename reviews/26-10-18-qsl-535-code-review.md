@@ -58,3 +58,24 @@ should refuse, and the emission ticket owns writing the node (FND-001);
 (2) InfiniteTrace is acceptable behaviourally, label question to owner
 (FND-005); (3) acceptable, spec clarification to owner (FND-006); (4) conflicts
 with spec, owner decision (FND-003); (5) see SR-12812.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The merge of origin/main (3fcce8cf5) replaced the removed `UnsupportedDeclarationForm` with `UnresolvedTypeName { name: format!("{:?}", over.head) }`. `over (c: Integer)` now refuses as `missing_declaration`/`missing-name` naming the Debug text `Builtin(Integer)`, although the type exists and simply is not an object type. | qsl-semantics/src/check/assemble.rs:3344-3352 |
+
+## Dispositions
+
+Round 1, at 5456c3b03f01941ac09a6aeca5bc3f7344fa4801 (fix commit) on top of merge 3fcce8cf5. Every other merge resolution, in assemble.rs, region.rs and refinement.rs, keeps both #960's terminal code and the claim code correctly.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | mod.rs refuses every checked claim with `StateGraphCause::NotEmitted` (`unsupported_construct`/`not-yet-implemented`, located at the claim) unless the test-support `with_unwritten_state_graph_claims` is set; covered by `a_checked_claim_is_refused_as_not_emitted_by_default`. |
+| FND-002 | fixed | `StateGraphFormula`/`StateGraphTerm` parse an operator inside a connective, a negation or parentheses; S2 keeps it at its span and S3 refuses `expression-form` at `eventually` (forms test and semantics test, all three shapes). |
+| FND-003 | deferred | Planner ruling: `over` stays mandatory for now; STD-162 makes it optional. |
+| FND-004 | fixed | `DuplicateStateGraphClaim` (`conflicting_declaration`) at assembly, located at the second name; tested. |
+| FND-005 | accepted-no-change | Planner ruling: the `InfiniteTrace` domain kind is accepted for the Unbounded record. |
+| FND-006 | accepted-no-change | Planner ruling: a parameter-like name keeps refusing as `missing-name`. |
+| FND-007 | fixed | `check_predicate` now starts each predicate from the claim's running total; `the_node_limit_applies_to_the_claims_cumulative_total` shows a limit one predicate fits under refuses the two-predicate claim. |
+| FND-008 | fixed | `Predicate.span` is now `Span`, falling back to the operand root and then the claim span. |
