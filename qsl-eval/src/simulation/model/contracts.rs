@@ -125,8 +125,9 @@ pub(super) fn invariants(walk: &Walk<'_, '_>) -> Result<Vec<ModelFinding>, Expan
 pub(super) enum Conjunction {
     /// Every clause is `true`, or there are none.
     True,
-    /// Some clause is `false`.
-    False,
+    /// Some clause is `false`; this is the first such clause in evaluation
+    /// order (ascending name).
+    False(String),
     /// No clause is `false` and these did not decide, in name order.
     Undecided(Vec<(String, ClauseOutcome)>),
 }
@@ -162,7 +163,19 @@ pub(super) fn conjunction(
     match evaluation.outcome {
         ClauseSetOutcome::Incomplete => Err(exhausted(ExpansionLimit::EvaluationMeter)),
         ClauseSetOutcome::True => Ok(Conjunction::True),
-        ClauseSetOutcome::False => Ok(Conjunction::False),
+        ClauseSetOutcome::False => {
+            let entry = evaluation
+                .results
+                .iter()
+                .find(|entry| matches!(verdict(&entry.evaluation.evaluation.outcome), Verdict::False))
+                .ok_or_else(|| stop(BROKEN))?;
+            let name = clauses
+                .iter()
+                .find(|info| info.qualified == entry.name)
+                .map(|info| info.name.clone())
+                .ok_or_else(|| stop(BROKEN))?;
+            Ok(Conjunction::False(name))
+        }
         ClauseSetOutcome::Undecided => {
             let mut undecided = Vec::new();
             for entry in &evaluation.results {

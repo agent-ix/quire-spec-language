@@ -60,6 +60,7 @@ use crate::value::QualifiedName;
 
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
+pub use frames::judge::{AbstractApplication, Judged, Judgement, Rejection};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
@@ -344,6 +345,9 @@ struct Clauses {
 
 /// FR-120: the transition system of a checked package's state family.
 pub struct ModelSystem<'a> {
+    /// The identity of the one domain package this system is over, when it
+    /// is over one (FR-140's `WrongSystem` check reads it).
+    over: Option<String>,
     types: &'a TypeEnvironment,
     operations: &'a qsl_semantics::model::operation::OperationTable,
     package: &'a CheckedPackage,
@@ -532,6 +536,10 @@ impl<'a> ModelSystem<'a> {
         }
 
         Ok(Self {
+            over: match selections {
+                [only] => Some(only.identity.clone()),
+                _ => None,
+            },
             types,
             operations: graph.scope().operations(),
             package: request.package,

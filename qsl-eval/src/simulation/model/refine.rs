@@ -39,6 +39,12 @@ pub enum RowReading {
 pub struct StateObservation(qsl_semantics::model::observation::Observation);
 
 impl ModelSystem<'_> {
+    /// The identity of the one domain package this system is over; `None`
+    /// for a system over several selected models.
+    pub fn model(&self) -> Option<&str> {
+        self.over.as_deref()
+    }
+
     /// Evaluate `row` over `observed`, with `bindings` for
     /// its parameters (`self` first) and a fresh meter of this system's
     /// budget.
