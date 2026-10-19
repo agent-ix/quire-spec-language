@@ -963,12 +963,11 @@ fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRo
     })
 }
 
-/// `package`'s FR-322 `dependency_selections`, in its closure's ascending
+/// `package`'s FR-322 direct `dependency_selections`, in ascending
 /// UTF-8 byte order of identity.
 fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelection> {
     package
-        .dependency_selections()
-        .iter()
+        .direct_dependency_selections()
         .map(|(identity, resolved)| CheckedDependencySelection {
             identity: identity.as_str().into(),
             package_id: semantic_id(resolved.package_id),
