@@ -64,6 +64,8 @@ mod population_bound;
 mod probabilistic_declarations;
 mod quantities;
 #[cfg(feature = "test-support")]
+mod refinement_declarations;
+#[cfg(feature = "test-support")]
 mod relationship_extents;
 #[cfg(feature = "test-support")]
 mod relationship_navigation;
@@ -74,6 +76,8 @@ mod relationship_snapshots;
 mod state_clauses;
 #[cfg(feature = "test-support")]
 mod state_graph_claims;
+#[cfg(feature = "test-support")]
+mod strong_fairness;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]

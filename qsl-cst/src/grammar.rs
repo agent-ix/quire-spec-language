@@ -4,6 +4,9 @@ use std::collections::BTreeMap;
 
 use super::Production as P;
 
+/// The built-in time type's spelling (FR-393).
+const CLOCK: &str = "Clock";
+
 #[derive(Clone, Debug)]
 pub(super) enum Terminal {
     Exact(&'static str),
@@ -20,11 +23,19 @@ pub(super) enum Terminal {
     Bound,
     /// The built-in `Clock` type: the unqualified word `Clock` not followed
     /// by `::`, so `Clock::T` stays a qualified name (FR-393).
-    ClockType,
+    ClockType {
+        /// The built-in's spelling.
+        word: &'static str,
+        /// The qualifier that makes the word a qualified name instead.
+        qualifier: &'static str,
+    },
     /// An identifier that may name a declared type: any identifier but
     /// `Clock`, which an unqualified type position always reads as the
     /// built-in (FR-393).
-    TypeIdentifier,
+    TypeIdentifier {
+        /// The built-in's spelling, which no declared type may take.
+        except: &'static str,
+    },
     End,
     /// Matches without consuming when the next token is one of these
     /// spellings: a lookahead that lets a production end where its caller
@@ -120,7 +131,7 @@ fn bound() -> Rule {
     Rule::Terminal(Terminal::Bound)
 }
 fn type_ident() -> Rule {
-    Rule::Terminal(Terminal::TypeIdentifier)
+    Rule::Terminal(Terminal::TypeIdentifier { except: CLOCK })
 }
 fn r(production: P) -> Rule {
     Rule::Production(production)
@@ -435,7 +446,10 @@ fn source_and_types(g: &mut Grammar) {
                 x(">"),
                 opt(s(vec![x("["), uint(), x("]")])),
             ]),
-            Rule::Terminal(Terminal::ClockType),
+            Rule::Terminal(Terminal::ClockType {
+                word: CLOCK,
+                qualifier: "::",
+            }),
             r(P::QualifiedName),
         ]),
     );
@@ -2003,7 +2017,7 @@ fn protocol(g: &mut Grammar) {
         s(vec![
             c(vec![literal("assume"), literal("ensure")]),
             x("fair"),
-            x("weak"),
+            c(vec![x("weak"), x("strong")]),
             opt(c(vec![x("each"), x("whole")])),
             r(P::OperationName),
             x(";"),

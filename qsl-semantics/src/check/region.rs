@@ -75,6 +75,11 @@ impl SpanMemo {
     }
 }
 
+/// The span `location`'s path reaches in `spans`.
+pub(super) fn span_at(spans: &ExpressionSpans, location: &Location) -> Option<Span> {
+    SpanMemo::default().at(spans, location)
+}
+
 /// The source a region is read from, and the document it is embedded in.
 #[derive(Clone, Copy)]
 struct Document<'a> {
@@ -303,6 +308,12 @@ impl DeclarationRegions {
             CheckCause::TerminalNotEmitted { span, .. }
             | CheckCause::TimedNotChecked { span, .. } => {
                 region(&self.source, self.embedding.as_deref(), *span)
+            }
+            CheckCause::RefinementNotEmitted { span, .. } => {
+                region(&self.source, self.embedding.as_deref(), *span)
+            }
+            CheckCause::Refinement(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span)
             }
             CheckCause::Terminal(cause) => {
                 let spans = self.terminal_spans.get(cause.declaration)?.as_ref()?;
