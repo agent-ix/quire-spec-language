@@ -70,6 +70,29 @@ pub fn evaluate<L: TemporalLetters>(
     )
 }
 
+/// Evaluate `clause` on `trace` like [`evaluate`], for a caller whose trace
+/// carries the enabledness a fairness set needs and who has checked the set
+/// itself (replay re-executes a model, FR-128): the clause's fairness set
+/// does not make the evaluation `MissingFairnessPremise`, and it does not
+/// otherwise enter the formula's value.
+pub fn evaluate_with_enabledness<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    trace: TemporalTrace,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject {
+            fairness: &[],
+            ..engine::Subject::of_clause(clause)
+        },
+        trace,
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
 /// Evaluate `clause`'s formula at `position` of `trace`, ignoring its
 /// activation and fairness (ADR-018 SM-8; FR-125 "Reading a lasso"). A
 /// lasso reaches every position by wrapping; a finite trace refuses a

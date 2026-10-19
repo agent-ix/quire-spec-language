@@ -455,3 +455,38 @@ impl ModelLetters for Letters {
         })
     }
 }
+/// The checked package of a full unit `text` over `document`, for a unit
+/// whose header differs from [`unit_text`]'s.
+pub(crate) fn package_from_text(document: &[u8], text: &str) -> CheckedPackage {
+    let packages = package_input([document]);
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("agent-ix", "counter", "git", "1"),
+        "counter.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses the unit");
+    assert!(parsed.is_admissible(), "S1: {:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selection admits")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("the operation clauses parse");
+    let graph = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .with_unwritten_terminals()
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
+}
