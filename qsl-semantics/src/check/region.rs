@@ -293,6 +293,10 @@ impl DeclarationRegions {
             CheckCause::ProtocolObligation(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
+            CheckCause::Probabilistic(cause) => match cause.span() {
+                Some(span) => region(&self.source, self.embedding.as_deref(), span),
+                None => self.region(&refusal.location),
+            },
             CheckCause::TerminalNotEmitted { span, .. } => {
                 region(&self.source, self.embedding.as_deref(), *span)
             }
