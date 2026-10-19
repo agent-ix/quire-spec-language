@@ -96,7 +96,7 @@ them as `ADR-022 GM-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
 `P`, `Q`, `X` and `Y` are Boolean state clauses under the unit's value
 profile, as an invariant body is. A claim with no `over` parameter has one
 instance. A predicate may hold a temporal operator at any position: S1
-parses it and S3 refuses it (GM-3's `expression-form`).
+parses it and S3 refuses it (SG-4's no-temporal-operator rule, `expression-form`).
 
 **Why a family and not CTL operators in the temporal grammar.** Every
 temporal formula has a truth value on one trace, which replay, monitors and

@@ -28,9 +28,12 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7.
    §6's subject; build a subject with an empty `initial` list.
 5. Evaluate FR-125-AC-5's formula over ADR-018 §6's lasso, reading the
    conjunction at positions 0, 3 and 9.
-6. Instantiate the state-graph claims `ReachesTwo` and `ReachesThree` over
-   ADR-018 §6's subject, `possible Anything using v { true }` with no `over`,
-   and an `over` claim over a one-object universe (FR-125-AC-7).
+6. Check `ReachesTwo` and `ReachesThree` once, then instantiate the same
+   checked claims over ADR-018 §6's subject (universe `{a, b}`) and over a
+   subject whose universe is `{a}`; instantiate `possible Anything using v
+   { true }` with no `over`; instantiate over a subtype-conforming
+   population, a population with no universe and an empty universe
+   (FR-125-AC-7).
 
 Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 
@@ -48,4 +51,6 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
   `true`.
 - Step 6: two instances (`a`, `b`) for each of `ReachesTwo` and
   `ReachesThree`; one instance with no bound object for the claim with no
-  `over`; one instance for the one-object universe.
+  `over`; the same checked claims give `a` alone over `{a}`, with no re-check; a
+  subtype population contributes its objects; the universe-less population
+  is `RequiresBound`; the empty universe gives zero instances.

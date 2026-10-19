@@ -20,7 +20,7 @@ Scope: FR-165-AC-1 to FR-165-AC-5.
 
 ## Test Procedure
 
-Fixtures: ADR-022 §7.1's ConfigVersion unit with universe `{a, b}`; §7.2's
+Fixtures: ADR-022 §7.1's ConfigVersion unit with universe `{a, b}`, extended with operation `setVersion` taking parameter `newVersion: Int` (ADR-018 §6's `attemptUpdate` has no parameter); §7.2's
 game unit, with and without `terminal any`; §7.3's job unit.
 
 1. Check `ReachesTwo`, `ReachesThree`, `CanStillWin` with and without
@@ -34,8 +34,7 @@ game unit, with and without `terminal any`; §7.3's job unit.
    `terminal any`.
 4. Parse and check `possible Anything using v { true }` and three
    `possible` claims whose predicates hold `eventually` after `and`, under
-   `not` and in parentheses; check a claim naming operation parameter
-   `newVersion`.
+   `not` and in parentheses; check `possible Q using v over (c: Config::ConfigVersion) { c.versionNumber = newVersion }` against `setVersion`'s `newVersion`.
 
 Tag the tests `#[trace("TC-590", "FR-165-AC-n")]`.
 
