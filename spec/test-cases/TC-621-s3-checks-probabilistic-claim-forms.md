@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-621", "FR-186-AC-n")]`.
 - Step 1: the forms, schedulers and confidences of FR-186-AC-1.
 - Step 2: `5 ms` recorded; `ill_typed`/`unit-mismatch`, `qualitative-threshold` and `quantile-over-fraction` as FR-186-AC-2 states.
 - Step 3: refused, horizon 110, refused naming window aggregates, `foreign-workload` naming `Throttle` and `Service`, checks, checks with the fairness set, `invalid_syntax` at S1.
-- Step 4: `invalid-confidence`, `partial-confidence` naming the missing parameter, `partial-confidence` naming `alpha`, the rational-bits limit outcome, `confidence: None`; identities differ for each pair.
+- Step 4: `invalid-confidence`, `partial-confidence` naming the missing parameter, `partial-confidence` naming `alpha`, a limit refusal (`LimitExceeded`) pending QSL-883, `confidence: None`; identities differ for each pair.
