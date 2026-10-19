@@ -33,11 +33,15 @@ game unit, with and without `terminal any`; §7.3's job unit.
    temporal claim over the same subject; `CanStillWin` over the game with
    `terminal any`.
 4. Parse and check `possible Anything using v { true }` and the claims of
-   FR-165-AC-4 whose predicates hold `eventually` after `and`, under `not`
-   and in parentheses, a binary `until` (bare and as a parenthesised chain),
-   an `if` branch, a `from` operand and a leading fairness constraint;
-   check `possible Q using v over (c: Config::ConfigVersion) { c.versionNumber = newVersion }` against `setVersion`'s `newVersion`.
-5. Parse the claims of FR-165-AC-6.
+   FR-165-AC-4, each over the ConfigVersion unit and each with exactly one
+   fault: `eventually` after `and`, under `not` (with and without an
+   interval, and `eventually[1,*]`), in parentheses, a binary `until` (bare
+   and as a parenthesised chain), an `if` branch, a `let` body, a `from`
+   operand, a `to` operand, and a leading fairness constraint; check
+   `possible Q using v over (c: Config::ConfigVersion) { c.versionNumber = newVersion }`
+   against `setVersion`'s `newVersion`.
+5. Parse the claims of FR-165-AC-6, including the claim that holds an unknown
+   name and a recognised operator.
 
 Tag the tests `#[trace("TC-590", "FR-165-AC-n")]`.
 
@@ -55,7 +59,7 @@ Tag the tests `#[trace("TC-590", "FR-165-AC-n")]`.
 - Step 4: every claim parses at S1; the no-`over` claim checks with `over`
   `None`; each temporal-operator or fairness claim refuses
   `unsupported_construct`/`expression-form` at its first operator or at the
-  constraint; the parameter claim refuses `missing-name` at the name; no
-  checked claim for any refusal.
-- Step 5: each refuses `invalid_syntax` at the offending token (the second
-  `until` for the flat chain), with no claim.
+  constraint, with no profile refusal; the parameter claim refuses
+  `missing-name` at the name; no checked claim for any refusal.
+- Step 5: each refuses `invalid_syntax` at the token FR-165-AC-6 names,
+  with no claim; the unknown-name claim refuses `missing-name` at the name.

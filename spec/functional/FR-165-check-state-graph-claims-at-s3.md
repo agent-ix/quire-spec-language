@@ -92,21 +92,30 @@ pub enum StateGraphForm {
   FR-390 and its TC-330 vectors SG-R09 to SG-R18 are the reference for what
   it recognises.
 - S1 SHALL NOT refuse a temporal operator, with or without an interval, that
-  `graph-predicate` recognises: one standing as an operand of a
-  `graph-relation`, of a unary operator, of a parenthesised group or of a
-  branch of an `if` or `let` (`c.n = 1 and eventually c.n = 2`,
+  `graph-predicate` recognises: one standing as an operand of
+  `and`, `or` or `implies`, of a binary temporal operator, of a unary
+  operator, of a parenthesised group or of a branch of an `if` or the body
+  of a `let` (`c.n = 1 and eventually c.n = 2`,
   `not eventually c.n = 2`, `(eventually c.n = 2)`, `c.a until c.b`,
   and one in a `from` or `to` operand). It SHALL NOT refuse a fairness
   constraint at the start of a body. S3 refuses these (see Predicates).
-- S1 SHALL refuse with `invalid_syntax`, at the offending token, what
-  `graph-predicate` does not recognise: a temporal operator in an `if`
-  condition, in a `let` binding, or in an operand of a primary (a call
-  argument, or a quantifier body such as `exists(d in c.items: eventually
-  d.n = 2)`); a fairness constraint anywhere but the start of a body (after
-  the predicate, inside a `from` or `to` operand, or on a `unique path`
-  clause, which has no body); and a second binary temporal operator in one
-  `graph-relation` (`c.a until c.b until c.c`). A chain is written with
-  parentheses, `(c.a until c.b) until c.c`, and parses.
+- S1 SHALL refuse with `invalid_syntax` everything `graph-predicate` does
+  not recognise, including:
+  - a temporal operator in an `if` condition, at the operator;
+  - a temporal operator in a `let` binding, at the operator;
+  - a temporal operator in an operand of a primary or a comparison, at the
+    operator (a call argument, a quantifier body such as `exists(d in
+    c.items: eventually d.n = 2)`, or `c.x = eventually c.y`);
+  - a fairness constraint after the predicate of a body, inside a `from`
+    operand or inside a `to` operand, at the `;` that follows the predicate;
+  - a fairness constraint after a `unique path` clause, which has no body,
+    at the `fair` token that follows the clause's `;`;
+  - a second binary temporal operator in one `graph-relation`
+    (`c.a until c.b until c.c`), at the second operator. A chain is written
+    with parentheses, `(c.a until c.b) until c.c`, and parses.
+- Where a predicate holds both a name that does not resolve and a temporal
+  operator S1 recognised, S3 SHALL resolve names first: it refuses
+  `missing-name` at the name before it considers the operator.
 - A phrase that derives as an `expr` is read as that `expr`, so
   `not c.n = 2` is `(not c.n) = 2` and reaches the checker as an ordinary
   expression.
@@ -175,9 +184,9 @@ pub enum StateGraphForm {
 | FR-165-AC-1 | Over ADR-022 §7's units: `ReachesTwo` and `ReachesThree` check to `Possible`, each with its `over` binding recorded; `CanStillWin` without `from` checks to `AlwaysPossible` with `from` the constant `true`, and with `from (x.phase != Lost)` to `AlwaysPossible` with that predicate; `InOneWay` checks to `UniquePath`. Each records (`temporal-satisfaction`, `Unbounded`) with its form beside it. `possible P` and `always possible P` over the same `P` have different node identities. | Test (TC-590) |
 | FR-165-AC-2 | Refusals, each `unsupported_construct`/`expression-form` at the named span, with no checked claim: `possible` whose predicate reads `pre(c.versionNumber)` (at the read); `possible` whose predicate is `eventually c.versionNumber = 2` (at `eventually`); `always possible` carrying `fair weak attemptUpdate` (at the constraint). | Test (TC-590) |
 | FR-165-AC-3 | A request whose only items are `CanStillWin` and `InOneWay` carries one `DeadlockFreedom` item for each of their two subjects; a request with `ReachesTwo` and a temporal claim over the same subject carries one; the §7.2 game with `terminal any` carries none. | Test (TC-590) |
-| FR-165-AC-4 | S1 parses `possible Anything using v { true }` (no `over`) to a claim with no `over` binding. S1 parses, with no S1 refusal, `possible R ... { c.versionNumber = 2 and eventually c.versionNumber = 3 }`, `{ not eventually c.versionNumber = 2 }`, `{ (eventually c.versionNumber = 2) }`, `{ c.a until c.b }`, `{ (c.a until c.b) until c.c }`, `{ if c.a then eventually c.b else c.c }`, a temporal operator in a `from` operand, and `{ fair weak M::Cfg::step; c.done }`. S3 checks the first with `over` recorded as `None` and refuses each other claim `unsupported_construct`/`expression-form`, with no checked claim, at the temporal operator (at the first in source order when several) or at the constraint. | Test (TC-590) |
+| FR-165-AC-4 | S1 parses `possible Anything using v { true }` (no `over`) to a claim with no `over` binding. Over `over (c: Config::ConfigVersion)`, S1 parses with no refusal the bodies `c.versionNumber = 2 and eventually c.versionNumber = 3`, `not eventually c.versionNumber = 2`, `not eventually[0,5] c.versionNumber = 2`, `eventually[1,*] c.versionNumber = 2`, `(c.versionNumber = 1 until c.versionNumber = 2)`, `(c.versionNumber = 1 until c.versionNumber = 2) until c.versionNumber = 3`, `if c.versionNumber = 1 then eventually c.versionNumber = 2 else c.versionNumber = 3`, `let n = c.versionNumber in eventually n = 2`, and `(eventually c.versionNumber = 2)`; `always possible` with `from (always c.versionNumber = 1)`; `unique path` with `to (eventually c.versionNumber = 2)`; and a body led by `fair weak Config::ConfigVersion::attemptUpdate;`. S3 checks the first with `over` recorded as `None` and refuses each other claim `unsupported_construct`/`expression-form`, with no checked claim and no profile refusal, at the first temporal operator in source order or at the constraint. | Test (TC-590) |
 | FR-165-AC-5 | Over a fixture unit whose operation `setVersion` takes parameter `newVersion: Int`, S3 refuses a `possible` claim whose predicate is `c.versionNumber = newVersion` with `missing-name` at `newVersion`, not `expression-form`; the same claim with `pre(c.versionNumber)` still refuses `expression-form`, with no checked claim. | Test (TC-590) |
-| FR-165-AC-6 | S1 refuses `invalid_syntax`, with no claim, at the offending token: `{ if eventually c.a then c.b else c.c }`, `{ let x = eventually c.a in c.b }`, `{ exists(d in c.items: eventually d.n = 2) }`, `{ f(eventually c.a) }`, `{ c.done; fair weak M::Cfg::step }`, a fairness constraint in a `from` operand, `unique path ... to (c.d); fair weak M::Cfg::step`, and `{ c.a until c.b until c.c }` (at the second `until`). | Test (TC-590) |
+| FR-165-AC-6 | Over the same `over (c: Config::ConfigVersion)`, S1 refuses `invalid_syntax`, with no claim, at the named token: `{ if eventually c.versionNumber = 1 then c.versionNumber = 2 else c.versionNumber = 3 }` and `{ let n = eventually c.versionNumber = 1 in n = 2 }` at `eventually`; `{ exists(d in c.versionNumber: eventually d = 2) }`, `{ f(c.versionNumber, eventually c.versionNumber = 1) }` and `{ c.versionNumber = eventually c.versionNumber = 2 }` at `eventually`; `{ c.versionNumber = 1; fair weak Config::ConfigVersion::attemptUpdate }` and `from (c.versionNumber = 1; fair weak Config::ConfigVersion::attemptUpdate)` at the `;` after the predicate; `unique path ... to (c.versionNumber = 2); fair weak Config::ConfigVersion::attemptUpdate` at `fair`; `{ c.versionNumber = 1 until c.versionNumber = 2 until c.versionNumber = 3 }` at the second `until`. A claim with an unknown name and a recognised operator, `{ eventually c.versionNumber = newName }`, refuses `missing-name` at `newName`, not `expression-form`. | Test (TC-590) |
 
 ## Dependencies
 

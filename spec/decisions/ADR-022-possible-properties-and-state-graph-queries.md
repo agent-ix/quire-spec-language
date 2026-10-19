@@ -95,7 +95,7 @@ them as `ADR-022 GM-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
 
 `P`, `Q`, `X` and `Y` are Boolean state clauses under the unit's value
 profile, as an invariant body is. A claim with no `over` parameter has one
-instance. S1 reads each predicate through QSpec's `graph-predicate`. A temporal operator it recognises (an operand of a `graph-relation`, a unary operator, a group, an `if` branch or a `let` body, in a body, `from` or `to`) parses and S3 refuses it at the first such operator in source order (`expression-form`, SG-4). A temporal operator in an `if` condition, a `let` binding or an operand of a primary, a fairness constraint outside the start of a body, and a second binary temporal operator in one `graph-relation` are `invalid_syntax` at S1.
+instance. S1 reads each predicate through QSpec's `graph-predicate`. A temporal operator it recognises (an operand of `and`, `or`, `implies` or a binary temporal operator, a unary operator, a group, an `if` branch or a `let` body, in a body, `from` or `to`) parses and S3 refuses it at the first such operator in source order (`expression-form`, SG-4). A temporal operator in an `if` condition, a `let` binding or an operand of a primary, a fairness constraint outside the start of a body, and a second binary temporal operator in one `graph-relation` are `invalid_syntax` at S1.
 
 **Why a family and not CTL operators in the temporal grammar.** Every
 temporal formula has a truth value on one trace, which replay, monitors and
