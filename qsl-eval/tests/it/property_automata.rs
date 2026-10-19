@@ -474,7 +474,10 @@ fn a_past_operator_is_tracked_as_automaton_state_across_the_loop_edge() {
 
 /// SM-6: the bad-prefix monitor of a safety automaton rejects exactly when
 /// the prefix read is a bad prefix: no continuation satisfies the clause. A
-/// prefix it does not reject has a continuation that does.
+/// prefix it does not reject has a continuation that does. The monitor over
+/// the explicit automaton and the one reading the translation lazily agree
+/// on every prefix; `eventually[0,2] false` is a branch with no infinite run,
+/// which the monitor drops at once rather than when its deadline passes.
 #[test]
 fn a_safety_monitor_rejects_exactly_the_bad_prefixes() {
     for body in [
@@ -482,18 +485,32 @@ fn a_safety_monitor_rejects_exactly_the_bad_prefixes() {
         "always (holds(p) implies eventually[0,2] holds(q))",
         "always (holds(p) implies once[0,1] holds(q))",
         "holds(p) release holds(q)",
+        "always (holds(p) or eventually[0,2] false)",
     ] {
         let subject = infinite(body);
         assert_eq!(subject.property.kind(), AutomatonKind::Safety);
         let mut monitor =
             Monitor::bad_prefix(&subject.gba, LIMIT).expect("a safety automaton has a monitor");
+        let mut lazy = Monitor::bad_prefix(
+            translate(&subject.fixture.clause, LIMIT).expect("the clause translates"),
+            LIMIT,
+        )
+        .expect("a safety automaton has a monitor");
         let continuations = words(width(&subject), 2);
         for prefix in words(width(&subject), 4) {
             let mut state = monitor.initial().expect("within the limit");
+            let mut reached = lazy.initial().expect("within the limit");
             for letter in &prefix {
                 state = monitor.step(state, *letter).expect("within the limit");
+                reached = lazy.step(reached, *letter).expect("within the limit");
             }
             let rejects = monitor.is_rejecting(state).expect("a monitor state");
+            assert_eq!(
+                lazy.is_rejecting(reached),
+                Ok(rejects),
+                "{body}: the lazy monitor on {:?}",
+                bits(&prefix)
+            );
             let satisfiable = continuations.iter().any(|loop_letters| {
                 let word: Vec<Letter> = prefix.iter().chain(loop_letters).copied().collect();
                 evaluator_holds(
@@ -522,7 +539,7 @@ fn a_safety_monitor_rejects_exactly_the_bad_prefixes() {
 fn a_bounded_monitor_is_deterministic_and_finite() {
     let subject = bounded("eventually[0,3] holds(p)");
     let mut monitor = Monitor::bad_prefix(&subject.gba, LIMIT).expect("no acceptance set");
-    let read = |monitor: &mut Monitor, word: &[Letter]| {
+    let read = |monitor: &mut Monitor<&Gba>, word: &[Letter]| {
         let mut state = monitor.initial().expect("within the limit");
         for letter in word {
             state = monitor.step(state, *letter).expect("within the limit");
