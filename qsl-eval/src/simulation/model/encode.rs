@@ -12,7 +12,7 @@
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{CollectionKind, IeeeWidth, ObjectReference, Value};
 
-use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::key::{effective_id_from_digest, DeclarationKey};
 use qsl_semantics::model::state::{ModelState, StateModel};
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
@@ -144,7 +144,7 @@ pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
     let identity = String::from_utf8(unhex(identity)?).ok()?;
     Some(ObjectReference::new(
         quire_exact::UniverseId::from_digest(unhex32(universe)?),
-        quire_exact::EffectiveId::from_digest(unhex32(object_type)?),
+        effective_id_from_digest(unhex32(object_type)?),
         quire_exact::ObjectId::new(identity).ok()?,
     ))
 }
