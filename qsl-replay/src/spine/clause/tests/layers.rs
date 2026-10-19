@@ -298,7 +298,7 @@ fn form_cases() -> Vec<FormCase> {
     use HeaderLayer::{ModelComplete, StateGraph, StateQueries, ValueComplete};
     const FROM_QUERIES: &[HeaderLayer] = &[StateQueries, StateGraph, ValueComplete, ModelComplete];
     const VALUE_AND_UP: &[HeaderLayer] = &[ValueComplete, ModelComplete];
-    const NAVIGATION: &[HeaderLayer] = &[StateGraph, ValueComplete, ModelComplete];
+    const NAVIGATION: &[HeaderLayer] = &[StateGraph, ModelComplete];
     const EVERY: &[HeaderLayer] = &HeaderLayer::ALL;
     vec![
         declaration(

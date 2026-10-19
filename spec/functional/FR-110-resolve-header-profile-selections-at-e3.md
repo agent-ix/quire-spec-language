@@ -112,10 +112,6 @@ build compiled against.
 - A unit whose header declares no profile selects no layer. Its lock holds
   the package-selection `always` rows, as for a unit that selects
   `quire.value.complete/v1`, and no layer row. This is the explicit default.
-- Until QSL-750 (model-profile selection and gating in QSL, FR-361) lands, the
-  admitted-form set of `quire.value.complete/v1` also holds the object
-  navigation forms (`deref`, `reaches`), which QSpec's `quire.state.graph/v1`
-  adds. This is a temporary exception, removed when QSL-750 lands.
 - Two header profiles that both select the same layer both resolve;
   a repeated alias is the assembler's duplicate-alias refusal (FR-091-AC-22).
 - Every code and cause is one `quire.native.diagnostics/v1` lists. The

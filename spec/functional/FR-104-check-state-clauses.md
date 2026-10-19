@@ -21,6 +21,8 @@ relationships:
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-380
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-391
+    type: references
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-043
@@ -129,6 +131,8 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   that declares a result, typed as that result. If `result` appears anywhere
   else, then the checker SHALL refuse `wrong_snapshot`/`wrong-anchor` at
   `result`, naming the clause kind and the operation.
+- A clause names a population by `M::P` as the operand of `allInstances` or
+  `lookup`; FR-391 owns its resolution, typing and domain.
 - The checker SHALL bring each parameter of the operation into scope by name
   in a `pre` or `post` body, typed as FR-103 declares it, and no parameter
   into an invariant's scope.

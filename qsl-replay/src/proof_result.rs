@@ -15,12 +15,14 @@ use crate::execute::ReplayRefusal;
 use crate::model_check::limits::ModelCheckLimit;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
+use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
 use quire_exact::CancelCause;
+use quire_semantic_value::fairness::FairnessConstraint;
 use serde::Serialize;
 
 /// FR-127: how a proof established its claim, independently of certification.
@@ -189,22 +191,64 @@ impl ProofRefusalCause {
 }
 
 /// FR-331's `unsupported` cause: the solver or backend is absent after
-/// negotiation (ADR-013 O-16).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+/// negotiation (ADR-013 O-16), or the premise a clause needs is not there
+/// (FR-132).
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum UnavailabilityCause {
     /// No solver satisfying the request's capability negotiation is present.
     SolverAbsent,
     /// No backend satisfying the request's capability negotiation is
     /// present.
     BackendAbsent,
+    /// A clause with a fairness constraint was evaluated over a supplied
+    /// trace, which carries no enabledness (FR-132, ADR-019 SV-2): the
+    /// first constraint of its checked fairness set. Wire cause
+    /// `unsupported_projection`/`missing-fairness-premise` (QSpec FR-362).
+    MissingFairnessPremise {
+        /// The first constraint of the checked fairness set.
+        constraint: FairnessConstraint,
+    },
 }
 
 impl UnavailabilityCause {
     /// The cause's wire spelling.
-    pub const fn as_str(self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::SolverAbsent => "solver-absent",
             Self::BackendAbsent => "backend-absent",
+            Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
+        }
+    }
+
+    /// The catalog code the wire cause travels under, where the cause has
+    /// one (QSpec FR-362).
+    pub const fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::SolverAbsent | Self::BackendAbsent => None,
+            Self::MissingFairnessPremise { .. } => Some("unsupported_projection"),
+        }
+    }
+
+    /// The QSpec FR-243 basis every unavailability settles with: no truth
+    /// was settled.
+    pub const fn basis(&self) -> SettlementBasis {
+        SettlementBasis::Unavailable
+    }
+
+    /// The cause an evaluator outcome settles with, for the outcome that
+    /// is a missing premise (FR-132); `None` for every other outcome.
+    pub fn from_temporal_outcome(outcome: &TemporalOutcome) -> Option<Self> {
+        match outcome {
+            TemporalOutcome::MissingFairnessPremise { constraint } => {
+                Some(Self::MissingFairnessPremise {
+                    constraint: constraint.clone(),
+                })
+            }
+            TemporalOutcome::Holds
+            | TemporalOutcome::Violated { .. }
+            | TemporalOutcome::Undefined(_)
+            | TemporalOutcome::Pending
+            | TemporalOutcome::Incomplete(_) => None,
         }
     }
 }
@@ -853,6 +897,74 @@ pub struct EmptyEnvelopeSet;
 
 #[cfg(test)]
 mod tests {
+
+    fn fairness(
+        kind: quire_semantic_value::fairness::FairnessKind,
+        name: &str,
+        granularity: quire_semantic_value::fairness::FairnessGranularity,
+    ) -> FairnessConstraint {
+        use quire_semantic_value::fairness::FairnessOperation;
+        FairnessConstraint::new(
+            kind,
+            FairnessOperation::new(
+                quire_exact::EffectiveId::from_digest([7; 32]),
+                name.to_owned(),
+            ),
+            granularity,
+        )
+    }
+
+    /// FR-132-AC-1: the evaluator's missing premise settles `unsupported`
+    /// with the cause naming the first constraint, basis `unavailable`,
+    /// wire cause `unsupported_projection`/`missing-fairness-premise`,
+    /// category unsupported.
+    #[trace("TC-533", "FR-132-AC-1")]
+    #[test]
+    fn a_missing_fairness_premise_settles_unsupported_naming_the_first_constraint() {
+        use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+        let first = fairness(FairnessKind::Strong, "acquire", FairnessGranularity::Each);
+        let outcome = TemporalOutcome::MissingFairnessPremise {
+            constraint: first.clone(),
+        };
+        let cause = UnavailabilityCause::from_temporal_outcome(&outcome)
+            .expect("a missing premise has a cause");
+        assert_eq!(
+            cause,
+            UnavailabilityCause::MissingFairnessPremise { constraint: first }
+        );
+        assert_ne!(
+            cause,
+            UnavailabilityCause::MissingFairnessPremise {
+                constraint: fairness(FairnessKind::Weak, "release", FairnessGranularity::Whole)
+            }
+        );
+        assert_eq!(cause.as_str(), "missing-fairness-premise");
+        assert_eq!(cause.code(), Some("unsupported_projection"));
+        assert_eq!(cause.basis().as_str(), "unavailable");
+
+        let record =
+            TerminalRecord::unsupported(RequestIndex::new(0), BackendId::new("backend"), cause);
+        assert_eq!(record.value().category(), Category::Unsupported);
+        let item = crate::outcome::OutcomeItem::from_terminal(&record);
+        let wire = serde_json::to_value(&item).expect("the item serialises");
+        assert_eq!(wire["result"], "unsupported");
+        assert_eq!(wire["cause"]["kind"], "missing-fairness-premise");
+        assert_eq!(wire["cause"]["code"], "unsupported_projection");
+        assert_eq!(wire["category"], "unsupported");
+    }
+
+    /// Every other evaluator outcome is no missing premise.
+    #[test]
+    fn no_other_outcome_is_a_missing_fairness_premise() {
+        assert_eq!(
+            UnavailabilityCause::from_temporal_outcome(&TemporalOutcome::Holds),
+            None
+        );
+        assert_eq!(
+            UnavailabilityCause::from_temporal_outcome(&TemporalOutcome::Pending),
+            None
+        );
+    }
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
     use crate::result::Verdict;

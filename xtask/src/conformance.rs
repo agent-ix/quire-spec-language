@@ -71,6 +71,7 @@ const CHECKS: &[Check] = &[
     Check { package: "qsl-semantics", target: Target::Lib, selection: "check::profile::tests::conformance_fr110_profile_causes_are_listed_by_qspec_native_diagnostics", summaries: &[&["conformance: ", " profile (code, cause) pairs listed by QSpec"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-semantics", target: Target::Lib, selection: "library::bundle_tests::conformance_fr111_resolution_causes_are_listed_by_qspec_native_diagnostics", summaries: &[&["conformance: ", " bundle (code, cause) pairs listed by QSpec"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_catalog_matches_qspec_complete_value_lock", summaries: &[&["conformance: ", " catalog rows match QSpec's lock"]], summary_mode: SummaryMode::Exact },
+    Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_catalog_matches_qspec_complete_model_lock", summaries: &[&["conformance: ", " model catalog rows match QSpec's lock"]], summary_mode: SummaryMode::Exact },
     Check { package: "qsl-semantics", target: Target::Test, selection: "complete_value_lock::conformance_admit_selection_matches_qspec_selection_vectors", summaries: &[&["conformance: ", " accepted and ", " refused selection vectors"]], summary_mode: SummaryMode::Exact },
 ];
 

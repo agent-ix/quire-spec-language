@@ -257,7 +257,8 @@ fn assembly_limit(cause: &AssemblyCause) -> Option<ReachedLimit> {
         | AssemblyCause::AmbiguousTerminal { .. }
         | AssemblyCause::AmbiguousTerminalState { .. }
         | AssemblyCause::AmbiguousPopulation { .. }
-        | AssemblyCause::UnsupportedLayerForm { .. } => None,
+        | AssemblyCause::UnsupportedLayerForm { .. }
+        | AssemblyCause::UnselectedModelConstruct(_) => None,
     }
 }
 
@@ -314,6 +315,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::NodePreimage(_)
         | CheckCause::ProtocolAnchor(_)
         | CheckCause::ProtocolReference(_)
+        | CheckCause::ProtocolObligation(_)
         | CheckCause::TerminalNotEmitted { .. }
         | CheckCause::Temporal(_) => None,
         #[cfg(seam_probe)]

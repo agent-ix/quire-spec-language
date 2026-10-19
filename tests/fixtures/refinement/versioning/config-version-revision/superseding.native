@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 language "ix:native" edition "1-draft";
-profile v = "quire.value.complete/v1";
+profile v = "quire.model.complete/v1";
 model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:ecfa214e5426e184e57a3ddee21e655bafba118888b1bbeab7cbd6789470926d";
 invariant ParentOrder using v on Config::ConfigVersion at current { not not present(self.parent) implies deref(value(self.parent)).versionNumber < self.versionNumber }
 invariant NoCycle using v on Config::ConfigVersion at current { not reaches(self, self, parent) }

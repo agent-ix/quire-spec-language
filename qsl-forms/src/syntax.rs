@@ -2405,6 +2405,8 @@ pub enum ProtocolNodeKind {
     Await,
     /// A `check` control.
     Check,
+    /// A `fence` control.
+    Fence,
 }
 
 impl ProtocolNodeKind {
@@ -2428,6 +2430,7 @@ impl ProtocolNodeKind {
             Self::Case => "case",
             Self::Await => "await",
             Self::Check => "check",
+            Self::Fence => "fence",
         }
     }
 }
@@ -2562,6 +2565,10 @@ pub enum ProtocolConstructKind {
     JoinPredicate,
     /// A `terminal when { predicate };` member.
     TerminalWhen,
+    /// A `parallel`'s `memory sc | tso | ra` clause.
+    MemoryClause,
+    /// An `attempt`'s `ordering o` memory order.
+    AccessOrdering,
 }
 
 impl ProtocolConstructKind {
@@ -2578,6 +2585,8 @@ impl ProtocolConstructKind {
             Self::FifoOrdering => "channel ordering fifo",
             Self::JoinPredicate => "join predicate",
             Self::TerminalWhen => "terminal when",
+            Self::MemoryClause => "parallel memory",
+            Self::AccessOrdering => "attempt ordering",
         }
     }
 }
@@ -2789,6 +2798,9 @@ pub struct ProtocolDeclarationForm {
     /// Every `attempt`'s operation name and `contracts` list, in source
     /// order (FR-114 "Inputs").
     pub attempts: Vec<AttemptForm>,
+    /// The protocol's `activation`: `on origin`, or `on each (p: T) [when
+    /// (e)]` with its binder and optional guard (FR-308).
+    pub activation: ActivationForm,
     /// The protocol's own captures, written before its roles, in source
     /// order (FR-308).
     pub captures: Vec<CaptureForm>,
@@ -3147,8 +3159,8 @@ pub enum DeclarationForm {
     OperationBody(Box<OperationBodyForm>),
     /// A `bound` population-bound declaration (FR-380).
     PopulationBound(PopulationBoundForm),
-    /// A `protocol` declaration (FR-112).
-    Protocol(ProtocolDeclarationForm),
+    /// A `protocol` declaration (FR-112), boxed for the same reason as `Function`.
+    Protocol(Box<ProtocolDeclarationForm>),
     /// A `temporal` clause (FR-325), boxed for the same reason as
     /// [`Self::Function`].
     Temporal(Box<TemporalClauseForm>),
