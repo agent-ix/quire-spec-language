@@ -2979,8 +2979,9 @@ pub struct TimedIntervalForm {
 pub enum OperatorInterval {
     /// FR-325's `[a, b]` or `[a, *]`.
     Steps(IntervalForm),
-    /// FR-393's timed interval.
-    Timed(TimedIntervalForm),
+    /// FR-393's timed interval, boxed: it is several times a step
+    /// interval's size.
+    Timed(Box<TimedIntervalForm>),
 }
 
 impl OperatorInterval {
@@ -3229,8 +3230,8 @@ pub enum TimeSourceSyntax {
     Tick {
         /// The counted operation's qualified name.
         operation: NameForm,
-        /// The period quantity.
-        period: QuantityForm,
+        /// The period quantity, boxed so the variant stays near `Dense`'s size.
+        period: Box<QuantityForm>,
     },
 }
 

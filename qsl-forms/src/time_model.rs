@@ -54,7 +54,7 @@ fn time_declaration(cst: &LosslessCst, node: &CstNode) -> Result<DeclarationForm
         (
             TimeSourceSyntax::Tick {
                 operation: name_form(cst, operation)?,
-                period: quantity_form(cst, period)?,
+                period: Box::new(quantity_form(cst, period)?),
             },
             unit,
         )

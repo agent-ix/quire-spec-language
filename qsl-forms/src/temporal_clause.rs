@@ -425,7 +425,7 @@ impl<'c> Formula<'c> {
             let built = match child.production() {
                 Production::Interval => OperatorInterval::Steps(interval_form(self.cst, child)?),
                 Production::TimedInterval => {
-                    OperatorInterval::Timed(timed_interval_form(self.cst, child)?)
+                    OperatorInterval::Timed(Box::new(timed_interval_form(self.cst, child)?))
                 }
                 _ => {
                     operands.push(child);
