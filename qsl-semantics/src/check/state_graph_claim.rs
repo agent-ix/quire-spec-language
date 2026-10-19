@@ -76,6 +76,7 @@ pub enum CheckedStatePredicate {
 pub struct CheckedPredicateBody {
     parameters: Vec<(String, ValueType)>,
     body: CheckedBody,
+    slots: usize,
 }
 
 impl CheckedPredicateBody {
@@ -87,6 +88,11 @@ impl CheckedPredicateBody {
     /// The slots the body is typed over: the `over` parameter first.
     pub fn parameters(&self) -> &[(String, ValueType)] {
         &self.parameters
+    }
+
+    /// The number of evaluation slots of the body.
+    pub fn slots(&self) -> usize {
+        self.slots
     }
 }
 
@@ -493,6 +499,7 @@ fn check_predicate<'a>(
         CheckedStatePredicate::Checked(CheckedPredicateBody {
             parameters: typed.parameters,
             body: typed.body,
+            slots: typed.slots,
         }),
         typed.nodes_used,
     ))

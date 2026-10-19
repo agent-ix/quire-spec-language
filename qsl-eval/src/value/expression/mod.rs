@@ -104,6 +104,35 @@ pub fn evaluate_terminal_predicate(
     )
 }
 
+/// FR-167 (ADR-022 GM-3): evaluate the state-graph predicate `predicate` of
+/// `package` with its `over` parameter bound to `over` (`None` for a claim
+/// with no `over`) at the state whose objects are `current`, through the one
+/// clause evaluator (FR-107). The predicate is checked as an invariant body
+/// is, so every read observes `current`.
+pub fn evaluate_state_predicate(
+    package: &CheckedPackage,
+    predicate: &qsl_semantics::check::CheckedPredicateBody,
+    current: &ObjectEnvironment,
+    over: Option<quire_exact::ObjectReference>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(
+        predicate.body(),
+        predicate.slots(),
+        over.map(Value::Reference).into_iter().collect(),
+    )
+}
+
 /// FR-139, FR-140: evaluate `row`, a refinement row's checked expression, over
 /// the concrete observation `current`, through the one clause evaluator
 /// (FR-107). `arguments` bind the row's parameters in order, `self` first.

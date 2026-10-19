@@ -26,6 +26,7 @@ mod fairness_kernels;
 mod finite_simulation;
 mod float_rounding;
 mod footprints;
+mod hyper_tuple;
 mod inherited_attributes;
 mod kernel_refusal_payloads;
 mod machine_contexts;
