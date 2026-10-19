@@ -130,6 +130,7 @@ mod protocol_relationship;
 mod protocol_requirement;
 mod protocol_slots;
 mod references;
+mod refinement;
 mod refusal;
 mod region;
 mod settings;
@@ -147,6 +148,11 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 #[cfg(any(test, feature = "test-support"))]
 pub mod stratum;
 mod termination;
+pub use refinement::{
+    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, RefinementCause,
+    RefinementDeclaration, RefinementRefusal, RowClass, StepClass, StepRow, StepTarget,
+    UnsupportedFeature,
+};
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
     TerminalDeclaration, TerminalRefusal,
@@ -478,6 +484,8 @@ pub struct CheckedGraph {
     /// FR-124: the intended terminal states of each selected model, by
     /// alias.
     terminals: Vec<CheckedTerminal>,
+    /// FR-135 to FR-137: every checked refinement, in declaration order.
+    refinements: Vec<CheckedRefinement>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
     /// FR-337: every emitted temporal clause, in declaration order.
@@ -1563,6 +1571,46 @@ impl PackageDeclarations {
             }
         }
         terminals.sort_by(|left, right| left.model.cmp(&right.model));
+        // FR-135 to FR-137: each `refinement` declaration, its rows typed as
+        // state-clause bodies over the concrete object.
+        let mut refinements = Vec::new();
+        for refinement in &self.refinements {
+            let location = Location::root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match refinement::check_refinement(refinement, &declarations, &mut contract_cx) {
+                Ok((checked, used)) => {
+                    nodes_used = used;
+                    refinements.push(checked);
+                }
+                Err((found, used)) => {
+                    nodes_used = used;
+                    let exhausted = found.iter().any(|refusal| {
+                        matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_))
+                    });
+                    refusals.extend(found);
+                    if exhausted || cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+            }
+        }
         // FR-218: a second reference to one protocol in the unit refuses at
         // the second: the function bodies in declaration order, then the
         // state clauses.
@@ -2807,12 +2855,21 @@ impl PackageDeclarations {
         // so a package that checks with one is refused rather than compiled
         // with an identity equal to the same package without it
         // (`terminal::not_emitted`).
-        if !self.emit_unwritten_terminals && !self.terminals.is_empty() {
-            return Err(self
-                .terminals
-                .iter()
-                .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span))
-                .collect());
+        let mut unwritten = Vec::new();
+        if !self.emit_unwritten_terminals {
+            unwritten.extend(
+                self.terminals
+                    .iter()
+                    .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span)),
+            );
+        }
+        if !self.emit_unwritten_refinements {
+            unwritten.extend(self.refinements.iter().map(|refinement| {
+                refinement::not_emitted(refinement.form.name.name.clone(), refinement.form.span)
+            }));
+        }
+        if !unwritten.is_empty() {
+            return Err(unwritten);
         }
         // FR-165: likewise, no S4 emission writes a state-graph claim yet.
         if !self.emit_unwritten_state_graph_claims && !checked_state_graph_claims.is_empty() {
@@ -2843,6 +2900,7 @@ impl PackageDeclarations {
             state_clauses,
             type_invariants,
             terminals,
+            refinements,
             protocols: checked_protocols,
             temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
@@ -3240,6 +3298,11 @@ impl CheckedGraph {
         self.terminals
             .iter()
             .find(|terminal| terminal.model == alias)
+    }
+
+    /// FR-135 to FR-137: every checked refinement, in declaration order.
+    pub fn refinements(&self) -> &[CheckedRefinement] {
+        &self.refinements
     }
 
     /// FR-113: every checked protocol declaration, in declaration order.

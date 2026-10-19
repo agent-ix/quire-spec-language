@@ -893,6 +893,12 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
         }
+        CheckCause::RefinementNotEmitted { name, .. } => {
+            message = format!("{message}: `refinement {name}` checks but is not emitted yet");
+        }
+        CheckCause::Refinement(refusal) => {
+            message = format!("{message}: in `refinement {}`", refusal.refinement);
+        }
         CheckCause::TimedNotChecked { construct, .. } => {
             message = format!("{message}: {} is not checked yet", construct.description());
         }

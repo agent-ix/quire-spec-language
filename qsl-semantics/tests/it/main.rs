@@ -64,6 +64,8 @@ mod population_bound;
 mod probabilistic_declarations;
 mod quantities;
 #[cfg(feature = "test-support")]
+mod refinement_declarations;
+#[cfg(feature = "test-support")]
 mod relationship_extents;
 #[cfg(feature = "test-support")]
 mod relationship_navigation;
