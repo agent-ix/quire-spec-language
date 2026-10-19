@@ -81,8 +81,8 @@ fn level(upper: u64) -> Json {
     )
 }
 
-/// `inc()`, or with `parameter` an operation `setTo(n: Integer)` whose
-/// parameter no finite domain bounds.
+/// `inc()`, or with `parameter` (name, type reference) an operation
+/// `setTo` taking that one parameter.
 fn operation(name: &str, parameter: Option<(&str, &str)>) -> Json {
     let identity = ident(&format!("Counter/{name}"));
     let params: Vec<Json> = parameter

@@ -44,6 +44,7 @@ use qsl_replay::{
     UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNode, FormulaNodeId};
+use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ObjectReference};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
@@ -91,8 +92,8 @@ pub enum ModelCheckRefusal {
     #[error("the subject has an unbounded root and requires a bound")]
     RequiresBound(RequiresBound),
     /// FR-101's pre-check could not classify the subject's extent.
-    #[error(transparent)]
-    NotSimulated(Box<NotSimulated>),
+    #[error("the subject's extent could not be classified: {0:?}")]
+    Extent(Box<ClassifyFailure>),
     /// The clause's property form is not one this engine decides yet.
     #[error("EN-1 does not decide the property form {form:?} yet")]
     FormNotDecided {
@@ -232,7 +233,8 @@ pub fn check_model(
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(|refusal| match refusal {
         NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
-        other => ModelCheckRefusal::NotSimulated(Box::new(other)),
+        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
+        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
     })?;
     let mut run = Run {
         system: &system,

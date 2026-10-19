@@ -30,8 +30,8 @@ use qsl_replay::{
     DEFAULT_MAX_AUTOMATON_STATES,
 };
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::Integer;
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
+use quire_exact::{Integer, ValueType};
 
 use crate::counter::{
     clause, document, document_with_ranged_parameter, package, reference, subject, universe, value,
@@ -743,6 +743,19 @@ fn run_with(
     )
 }
 
+fn system_without_universe(world: &World) -> ModelSystem<'_> {
+    let mut simulation = subject(
+        &world.package,
+        &world.documents,
+        world.initial.clone(),
+        &["c"],
+        UNLIMITED,
+    )
+    .simulation;
+    simulation.universes = Vec::new();
+    ModelSystem::new(simulation).expect("the subject admits")
+}
+
 fn unbounded_roots(refusal: &ModelCheckRefusal) -> Vec<(DomainKey, DomainKind)> {
     match refusal {
         ModelCheckRefusal::RequiresBound(bound) => bound
@@ -756,9 +769,12 @@ fn unbounded_roots(refusal: &ModelCheckRefusal) -> Vec<(DomainKey, DomainKind)> 
 
 /// FR-336-AC-2: a population root with no universe is refused
 /// `RequiresBound` naming it, before any state is sampled -- a zero meter,
-/// which stops any exploration, changes nothing -- and with a universe the
-/// run explores.
-#[trace("TC-846", "FR-336-AC-2")]
+/// which stops any exploration, changes nothing. This covers the refusal
+/// half of FR-336-AC-2 only: its "explores and returns FR-126-AC-1's
+/// outcome" half needs `Holds` over 15 product states for `always
+/// eventually`, which EN-1 refuses as `FormNotDecided` yet, so the AC is
+/// not tagged.
+#[trace("TC-846")]
 #[test]
 fn a_population_with_no_universe_is_refused_before_exploring() {
     let world = self::world("", &[&[("c", 0)]]);
@@ -766,6 +782,21 @@ fn a_population_with_no_universe_is_refused_before_exploring() {
     let roots = unbounded_roots(&refusal);
     assert_eq!(roots.len(), 1, "{roots:?}");
     assert_eq!(roots[0].1, DomainKind::Population);
+    let held: Vec<_> = system_without_universe(&world)
+        .domains()
+        .into_iter()
+        .filter(|(_, value_type)| matches!(value_type, ValueType::Population(_)))
+        .collect();
+    let [(population, _)] = held.as_slice() else {
+        panic!("one population root: {held:?}");
+    };
+    assert_eq!(
+        roots[0].0,
+        DomainKey::Node {
+            node: *population,
+            path: Vec::new()
+        }
+    );
 
     let outcome = run_with(&world, universe(&["c"]), Vec::new(), UNLIMITED)
         .expect("a universe makes the root finite");
