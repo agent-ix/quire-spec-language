@@ -105,3 +105,13 @@ Round 2, reviewed at `bf517a3ed4ea53bbba03ffb6573e046cade6b192`.
 FND-007: `conforms` gains `(Composite(sub), Composite(sup)) => types.composite_conforms(sub, sup)`, and collections stay invariant, which agrees with FR-359. The fix is tested at unit level: `refinement::tests::a_record_conforms_to_its_ancestor_only` checks child into parent, parent into parent, parent into child (refused), an unrelated record (refused) and a `Sequence` of the child (refused). The author argues that a record subtype cannot cross the abstract/concrete package boundary, so no refinement-level fixture can reach the arm. That argument is accepted: the abstract field's record type belongs to the abstract package and the concrete expression's type to the concrete package. My confidence is medium, since I did not check the shared-library case. The Option half of the test is FND-008 (new).
 
 FND-002 (fixed in round 1) now also has a test: `a_step_row_naming_an_ambiguous_operation_refuses_at_its_name` uses a `Child` under `Base1`/`Base2`, each declaring `op`, and asserts `ambiguous_declaration`/`ambiguous-name` as the only refusal, at `Impl::Child::op`.
+
+## Dispositions (round 3)
+
+Round 3, reviewed at `05550b0d425404c5db1cda0e20ca720f33af6b7b`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-008 | fixed | 05550b0d425404c5db1cda0e20ca720f33af6b7b |
+
+FND-008: the `Option` arm is gone from `conforms`, so `Option` falls back to equality and is invariant in its payload, as FR-359's item text states. The doc comments now cite FR-359 itself, not FR-359-AC-8. `a_record_conforms_to_its_ancestor_only` now asserts that `Option<TaxedMoney>` does not conform to `Option<Money>` and that `Option<Money>` conforms to itself. The same invariance now also covers optional references and optional integer ranges, which matches the language-wide rule ("a type is not covariant"). It is not a new defect. No new findings this round.

@@ -70,3 +70,5 @@ FND-001: the three tests now carry `#[trace("TC-540")]` / `#[trace("TC-542")]` o
 FND-002: the value-twice and peek-twice tests assert `Conflicting.first` slicing to the first row. The three `MissingRow` refusals assert their span (`CasRefinesCounter`). FR-136-AC-1 asserts `self` as the receiver's only parameter, with a reference type, and asserts `put`'s argument as an `Integer` body over `[self, x]`.
 
 Round 2, reviewed at `bf517a3ed4ea53bbba03ffb6573e046cade6b192`: no findings were open and none are new. The new tests carry `TC-541` only and claim no AC.
+
+Round 3, reviewed at `05550b0d425404c5db1cda0e20ca720f33af6b7b`: no findings were open and none are new.
