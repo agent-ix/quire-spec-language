@@ -49,3 +49,10 @@ true. The two low findings are wording: the example's implicit equal-stems
 assumption and the word "fix". Neither makes the AC wrong for the natural
 fixture (both loops entered at position 0). The rest of FR-175 and TC-600 is
 unchanged and does not restate the ordinal.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 67acb405d: FR-175-AC-2's example now reads "loops `a` = (0, 1) and `b` = (0, 1, 0), both entered at position 0 (equal stems)", and the latest-difference sentence adds "whatever the stems", which is true (checked for every phase pair). TC-600's fixture line states the same stems and values, so a fixture with unequal stems is no longer a valid reading. |
+| FND-002 | fixed | 67acb405d: "fix every loop observation" is now "force all five loop observations of both components to be equal". |
