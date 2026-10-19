@@ -44,6 +44,7 @@ mod population_bound;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;
+mod temporal_clause;
 mod union_nodes;
 mod variant_types;
 
@@ -3308,11 +3309,11 @@ fn an_inherited_operation_binds_its_declaring_types_anchor_and_frame() {
 }
 
 /// SR-770 FND-001 (the reviewer's own probe): a unit with a function and a
-/// protocol whose content no checker reads -- undeclared types
-/// (`Nope::Input`, `Nope::Actor`, `Undeclared`), a `send` via an undeclared
-/// channel and ill-typed bodies (`1 + true`) -- refuses at check, rather
-/// than checking and emitting a package the protocol is silently missing
-/// from.
+/// protocol whose content is garbage -- undeclared types (`Nope::Input`,
+/// `Nope::Actor`, `Undeclared`), a `send` via an undeclared channel and
+/// ill-typed bodies (`1 + true`) -- refuses at check, at the undeclared
+/// names, rather than checking and emitting a package the protocol is
+/// silently missing from.
 #[trace("TC-513", "FR-114")]
 #[test]
 fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
@@ -3331,18 +3332,19 @@ fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
     let refusals = check_attempt_unit(unit, false)
         .map(|_| ())
         .expect_err("a protocol with unchecked content must not check");
+    assert!(!refusals.is_empty());
     assert!(
         refusals
             .iter()
-            .any(|refusal| refusal.cause.code().as_str() == "unsupported_construct"),
+            .all(|refusal| refusal.cause.code().as_str() == "missing_declaration"),
         "{refusals:?}"
     );
 }
 
 /// SR-770 FND-001/SR-771 FND-005 (probe C): the same garbage beside a
 /// valid, resolving attempt still refuses at check. Each part is refused on
-/// its own: an ill-typed body as not yet implemented, and an undeclared
-/// role or binder type as a missing name. SR-773 FND-002 adds the rest of
+/// its own: an ill-typed body by the clause checker, and an undeclared role
+/// or binder type as a missing name. SR-773 FND-002 adds the rest of
 /// the content `protocol_clause::content` checks rather than refuses (a
 /// `using` naming no profile, a `by` naming no role, two roles of one name)
 /// and the one refused construct no other test writes (`relationship`).
@@ -3351,7 +3353,7 @@ fn a_protocol_with_unchecked_garbage_content_refuses_at_check() {
 fn a_valid_attempt_does_not_let_garbage_content_through() {
     let valid = attempt_frame_unit("", "Config::ConfigVersion::attemptUpdate", "");
     for (from, to, code) in [
-        ("{ true };\n}", "{ 1 + true };\n}", "unsupported_construct"),
+        ("{ true };\n}", "{ 1 + true };\n}", "ill_typed"),
         (
             "role R on Config::ConfigVersion;",
             "role R on Nope::Actor;",

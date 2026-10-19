@@ -62,6 +62,11 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::TimeSource(_)
         | DeclarationForm::TimeInvariant(_)
         | DeclarationForm::Urgent(_) => panic!("a function form, not {form:?}"),
+        DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
+        | DeclarationForm::StateGraphClaim(_) => panic!("a function form, not {form:?}"),
     }
 }
 
@@ -98,6 +103,12 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Boolean(value) => format!("{value}"),
         ExprNode::Integer(value) => format!("{value}"),
         ExprNode::Rational(n, d) => format!("rational({n},{d})"),
+        ExprNode::Quantity(quantity) => {
+            format!(
+                "quantity({} {})",
+                quantity.magnitude.first, quantity.unit.name
+            )
+        }
         ExprNode::String(text) => format!("string({text:?})"),
         ExprNode::Name(spelling) => spelling.clone(),
         ExprNode::Let { name, .. } => format!("Let[{name}]"),
@@ -152,12 +163,6 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
         ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
-        ExprNode::Quantity(quantity) => format!(
-            "quantity({}/{} {})",
-            quantity.magnitude.value.numerator,
-            quantity.magnitude.value.denominator,
-            quantity.unit.name
-        ),
     };
     if children.is_empty() {
         head
@@ -211,6 +216,11 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::TimeSource(_) => "time",
             DeclarationForm::TimeInvariant(_) => "time invariant",
             DeclarationForm::Urgent(_) => "urgent",
+            DeclarationForm::Random(_) => "random",
+            DeclarationForm::Reward(_) => "reward",
+            DeclarationForm::Workload(_) => "workload",
+            DeclarationForm::Probabilistic(_) => "probabilistic",
+            DeclarationForm::StateGraphClaim(_) => "state-graph",
         })
         .collect();
     assert_eq!(kinds, ["alias", "function", "record", "tuple"]);

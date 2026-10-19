@@ -415,6 +415,12 @@ fn encode_expression(
                 out.write_str(&numerator.to_string());
                 out.write_str(&denominator.to_string());
             }
+            ExprNode::Quantity(quantity) => {
+                out.write_str("quantity");
+                out.write_str(&quantity.magnitude.first.to_string());
+                out.write_str(&quantity.magnitude.second.to_string());
+                out.write_str(&quantity.unit.name);
+            }
             ExprNode::String(text) => {
                 out.write_str("string");
                 out.write_str(text);
@@ -426,12 +432,6 @@ fn encode_expression(
             ExprNode::ProtocolReference { target } => {
                 out.write_str("protocol_reference");
                 out.write_str(target);
-            }
-            ExprNode::Quantity(quantity) => {
-                out.write_str("quantity");
-                out.write_str(&quantity.magnitude.value.numerator.to_string());
-                out.write_str(&quantity.magnitude.value.denominator.to_string());
-                out.write_str(&quantity.unit.name);
             }
             ExprNode::Case(case) => {
                 out.write_str("case");

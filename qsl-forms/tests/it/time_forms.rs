@@ -6,7 +6,7 @@
 
 use ix_trace_rs::trace;
 use qsl_forms::{
-    build_unit, BuiltinType, DeclarationForm, ExactValue, FormsCause, IntervalUpper,
+    build_unit, BuiltinType, DeclarationForm, ExactValueKind, FormsCause, IntervalUpper,
     OperatorInterval, ParsedUnit, QuantityForm, TemporalNodeForm, TemporalOperatorForm,
     TimeInvariantForm, TimeSourceForm, TimeSourceSyntax, TypeFormHead, UrgentForm, UrgentTarget,
 };
@@ -53,16 +53,27 @@ fn slice(text: &str, span: Span) -> &str {
     &text[span.start..span.end]
 }
 
-fn exact(numerator: i64, denominator: i64) -> ExactValue {
-    ExactValue {
-        numerator: Integer::from(numerator),
-        denominator: Integer::from(denominator),
-    }
+/// An exact value as written: its spelling kind and its two integers.
+fn exact(kind: ExactValueKind, first: i64, second: i64) -> (ExactValueKind, Integer, Integer) {
+    (kind, Integer::from(first), Integer::from(second))
 }
 
-/// The magnitude and unit a quantity holds.
-fn quantity(form: &QuantityForm) -> (ExactValue, &str) {
-    (form.magnitude.value.clone(), form.unit.name.as_str())
+/// A `uint` magnitude `value`.
+fn natural(value: i64) -> (ExactValueKind, Integer, Integer) {
+    exact(ExactValueKind::Natural, value, 1)
+}
+
+/// The magnitude as written and the unit a quantity holds.
+fn quantity(form: &QuantityForm) -> ((ExactValueKind, Integer, Integer), &str) {
+    let magnitude = &form.magnitude;
+    (
+        (
+            magnitude.kind,
+            magnitude.first.clone(),
+            magnitude.second.clone(),
+        ),
+        form.unit.name.as_str(),
+    )
 }
 
 fn time_source(form: &DeclarationForm) -> &TimeSourceForm {
@@ -152,7 +163,7 @@ fn the_rpc_declarations_build_their_time_forms_in_order_with_spans() {
             panic!("one clock bound: {:?}", invariant.bounds);
         };
         assert!(!clock_bound.strict);
-        assert_eq!(quantity(&clock_bound.bound), (exact(bound, 1), "ms"));
+        assert_eq!(quantity(&clock_bound.bound), (natural(bound), "ms"));
         assert_eq!(
             slice(&text, clock_bound.span),
             format!("self.x <= {bound} ms")
@@ -200,7 +211,10 @@ fn the_rpc_declarations_build_their_time_forms_in_order_with_spans() {
         panic!("a tick source: {:?}", tick.source);
     };
     assert_eq!(operation.name, "Call::send");
-    assert_eq!(quantity(period), (exact(1, 2), "ms"));
+    assert_eq!(
+        quantity(period),
+        (exact(ExactValueKind::Rational, 1, 2), "ms")
+    );
     assert_eq!(slice(&text, period.span), "rational(1,2) ms");
     assert_eq!(
         slice(&text, tick.span),
@@ -279,8 +293,8 @@ fn timed_step_and_absent_intervals_build_as_written() {
             closed,
             "{formula}"
         );
-        assert_eq!(quantity(&timed.lower), (exact(lower, 1), "ms"), "{formula}");
-        assert_eq!(quantity(&timed.upper), (exact(upper, 1), "ms"), "{formula}");
+        assert_eq!(quantity(&timed.lower), (natural(lower), "ms"), "{formula}");
+        assert_eq!(quantity(&timed.upper), (natural(upper), "ms"), "{formula}");
     }
     assert_eq!(clause_operator("always (holds(k.done))").interval, None);
     let Some(OperatorInterval::Steps(steps)) =
@@ -291,8 +305,9 @@ fn timed_step_and_absent_intervals_build_as_written() {
     assert_eq!((steps.lower, steps.upper), (0, IntervalUpper::Finite(3)));
 }
 
-/// FR-393 S1/S2 half of AC-4 (TC-1078 step 4): a decimal magnitude is kept
-/// exactly; a punctual-open and an inverted interval and a second `time`
+/// FR-393 S1/S2 half of AC-4 (TC-1078 step 4): `0.003` is held as written,
+/// digits `3` over three fraction digits (the exact `3/1000`, which S3
+/// reduces); a punctual-open and an inverted interval and a second `time`
 /// declaration build at S2; `[0 ms, x]` fails at S1 at `x`. The S3 refusals
 /// AC-4 also names (FR-234-AC-2, FR-230-AC-2) are not checked yet, so this
 /// test carries no AC-4 tag.
@@ -304,7 +319,10 @@ fn exact_magnitudes_build_and_meaning_checks_wait_for_s3() {
     else {
         panic!("a timed interval");
     };
-    assert_eq!(quantity(&timed.upper), (exact(3, 1000), "s"));
+    assert_eq!(
+        quantity(&timed.upper),
+        (exact(ExactValueKind::DecimalLiteral, 3, 3), "s")
+    );
     for formula in [
         "eventually(2 ms, 2 ms] holds(k.done)",
         "eventually[3 ms, 2 ms] holds(k.done)",

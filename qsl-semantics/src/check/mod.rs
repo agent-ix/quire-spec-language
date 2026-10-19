@@ -117,20 +117,26 @@ mod node_key;
 mod observation;
 mod operation_body;
 mod operation_clause;
+mod probabilistic;
 mod profile;
 mod protocol_clause;
 mod protocol_controls;
 mod protocol_obligation;
 mod protocol_reference;
+mod protocol_slots;
 mod references;
 mod refusal;
 mod region;
 mod settings;
 mod state_clause;
+mod state_graph_claim;
 mod state_model;
 mod sum_case;
 mod temporal_clause;
 mod terminal;
+pub use probabilistic::{
+    ConfidenceFault, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner,
+};
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
 #[cfg(any(test, feature = "test-support"))]
@@ -256,23 +262,36 @@ pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTabl
 pub use model_conformance::ModelConformanceFailure;
 pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relationships};
 pub use profile::TemporalProfile;
-pub use protocol_clause::{CheckedAttempt, CheckedProtocol, ProtocolNodeId};
-pub use protocol_controls::CheckedChannel;
+pub use protocol_clause::{
+    CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
+    CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
+};
+pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_obligation::{
     CaptureOwner, CaptureStage, CheckedActivation, CheckedBinder, CheckedCapture, CheckedCommit,
     CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
     ObligationCause, ObligationOwner, ObligationStage, ReadClass,
 };
+pub use protocol_slots::{
+    CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRepeat,
+    CheckedSlots,
+};
 pub use refusal::{
-    AliasKind, AmbiguousMember, AmbiguousQualified, ChannelEnd, CheckCause, CheckRefusal,
+    AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
     DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
-    MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause, ProtocolReferenceCause,
-    ProvedInterval, QualifiedCandidate, ShadowedDeclaration, StageLimitCause, TemporalCause,
-    TimedConstruct, WrongSnapshotCause,
+    MemberCandidate, NavigationBound, Obligation, ObservationReason, PredicateRole,
+    ProtocolAnchorCause, ProtocolReferenceCause, ProvedInterval, QualifiedCandidate,
+    ShadowedDeclaration, SlotKind, StageLimitCause, StateGraphCause, TemporalCause, TimedConstruct,
+    WrongSnapshotCause,
+};
+pub use state_graph_claim::{
+    CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
+    StateGraphClaim, StateGraphDeclaration, StateGraphFamily, StateGraphForm,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
+
 pub use temporal_clause::{
     Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedTemporalClause,
     FormulaNode, FormulaNodeId, TemporalClaim, TemporalDeclaration, TemporalDeclarations,
@@ -422,6 +441,9 @@ pub struct CheckedGraph {
     /// FR-096: the span of each declared type's name read from the unit, by
     /// its declared name, so an `Origin::TypeDeclaration` resolves.
     type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-337: the expression spans of each declaration site an
+    /// `Origin::TypeDeclaration` site name locates, by that name.
+    site_spans: BTreeMap<String, qsl_forms::ExpressionSpans>,
     /// FR-096, FR-302: the declaration each function synthesized for
     /// dispatch without form spans was derived from, by function index.
     synthesized_spans: BTreeMap<usize, qsl_foundation::Span>,
@@ -443,6 +465,10 @@ pub struct CheckedGraph {
     terminals: Vec<CheckedTerminal>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-337: every emitted temporal clause, in declaration order.
+    temporal_clauses: Vec<TemporalClauseNode>,
+    /// FR-165: every checked state-graph claim, in declaration order.
+    state_graph_claims: Vec<CheckedStateGraphClaim>,
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
@@ -477,6 +503,40 @@ pub struct CheckedGraph {
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
+}
+
+/// One emitted temporal clause (FR-337 "Outputs"): the checked clause, its
+/// `temporal`/`temporal_clause` node, the `claim` occurrence of this
+/// declaration and its `over` parameter's node. Two structurally equal
+/// declarations share one node and differ in their `claim` occurrence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TemporalClauseNode {
+    clause: CheckedTemporalClause,
+    identity: quire_exact::NodeKey,
+    claim: quire_exact::Origin,
+    over: quire_exact::NodeKey,
+}
+
+impl TemporalClauseNode {
+    /// The checked clause.
+    pub fn clause(&self) -> &CheckedTemporalClause {
+        &self.clause
+    }
+
+    /// The clause's `temporal`/`temporal_clause` node.
+    pub fn identity(&self) -> quire_exact::NodeKey {
+        self.identity
+    }
+
+    /// The `claim` occurrence of this declaration of the clause node.
+    pub fn claim(&self) -> &quire_exact::Origin {
+        &self.claim
+    }
+
+    /// The `value`/`parameter` node of the clause's `over` parameter.
+    pub fn over(&self) -> quire_exact::NodeKey {
+        self.over
+    }
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -964,6 +1024,7 @@ impl PackageDeclarations {
         }
         let source = self.source;
         let type_spans = self.declared_type_spans;
+        let site_spans = self.declared_site_spans;
         let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
         let form_spans = self
@@ -1532,19 +1593,24 @@ impl PackageDeclarations {
         // and the unit's own checked state clauses (`state_clause_forms`).
         // Independent of every other declaration kind otherwise: a
         // protocol's own content is checked from its own form alone.
-        // Once those pass, `protocol_clause::
-        // content` checks the rest -- the `using` alias, roles, attempt
-        // roles and binder types -- and refuses `unsupported_construct`/
-        // `not-yet-implemented` at any construct no checker reads yet
-        // (every node kind but `sequence`/`parallel`/`attempt`/`finish`/
-        // `compensate`, a `fifo` channel ordering, a `predicate` join, a
-        // `terminal when` member, relationships, requirements, replicated
-        // roles, `related by`, and any body but a bare Boolean literal).
-        // `protocol_controls::check` then checks the channels, joins and
-        // `terminal`/`scheduling` members (FR-218). A protocol compiles only
-        // when every part is checked.
+        // Once those pass and the control tree and its causal edges compile
+        // (FR-218), `protocol_clause::content` checks the rest -- the `using`
+        // aliases, roles, node roles and owners, and binder types -- and
+        // refuses `unsupported_construct`/`not-yet-implemented` at any
+        // construct no checker reads yet (a `predicate` join, a `terminal
+        // when` member, relationships, requirements, replicated roles and
+        // `related by`). `protocol_slots::check` checks every body, guard,
+        // `visible` entry and loop proof over its readable binders, and
+        // `protocol_controls::check` the channels with their FIFO keys,
+        // messages, joins and `terminal`/`scheduling` members (FR-218). A
+        // protocol compiles only when every part is checked.
         let mut checked_protocols = Vec::with_capacity(self.protocols.len());
         let mut protocol_bindings = Vec::with_capacity(self.protocols.len());
+        // The selected protocol profile, which the structural refusals of a
+        // protocol's control tree name (FR-218, FR-381).
+        let protocol_profile = lock_evidence
+            .protocol_profile()
+            .map(|definition| definition.identity.clone());
         for (index, protocol) in self.protocols.iter().enumerate() {
             let attempts = self
                 .protocol_attempts
@@ -1558,6 +1624,10 @@ impl PackageDeclarations {
                 &signatures,
                 attempts,
                 &state_clause_forms,
+                protocol_clause::Selections {
+                    protocol: protocol_profile.as_deref(),
+                    temporal: !self.temporal_selections.is_empty(),
+                },
             );
             // FR-381: the protocol's activation, captures and compensation
             // templates, through the clause checker over the names each
@@ -1584,6 +1654,7 @@ impl PackageDeclarations {
             let obligations = protocol_obligation::check(
                 protocol,
                 anchored.as_ref().ok().map(|(checked, _)| checked),
+                protocol_profile.as_deref(),
                 &obligation_declarations,
                 &mut obligation_cx,
             );
@@ -1608,10 +1679,61 @@ impl PackageDeclarations {
                         }
                         protocol_obligation::Obligations::Unresolved => {}
                     }
+                    // FR-218: every slot of the `run` tree and `finish`,
+                    // over the binders readable at it, after the
+                    // obligations' node total.
+                    let slot_declarations = state_clause::ClauseDeclarations {
+                        nodes_used,
+                        ..obligation_declarations
+                    };
+                    let mut slot_cx = crate::family::CheckContext::new(
+                        &slot_declarations,
+                        contract_limits,
+                        &mut contract_meter,
+                        &mut contract_diagnostics,
+                        &mut contract_scopes,
+                    );
+                    match protocol_slots::check(
+                        protocol,
+                        &checked,
+                        &slot_declarations,
+                        &mut slot_cx,
+                    ) {
+                        protocol_slots::Slots::Checked(slots, used) => {
+                            checked.slots = slots;
+                            nodes_used = used;
+                        }
+                        protocol_slots::Slots::Refused(slot_refusals) => {
+                            refusals.extend(slot_refusals);
+                        }
+                        // `content` refuses a binder type that does not
+                        // resolve and an owner that is no role; with none
+                        // refused the protocol would be compiled without
+                        // its slots.
+                        protocol_slots::Slots::Unresolved if !content_refused => {
+                            refusals.push(protocol_obligation::unresolved_fault());
+                        }
+                        protocol_slots::Slots::Unresolved => {}
+                    }
                     // FR-218: the protocol's channels, joins and
                     // `terminal`/`scheduling` members.
-                    match protocol_controls::check(protocol, &scope) {
-                        Ok(channels) => checked.channels = channels,
+                    let control_declarations = state_clause::ClauseDeclarations {
+                        nodes_used,
+                        ..obligation_declarations
+                    };
+                    let mut control_cx = crate::family::CheckContext::new(
+                        &control_declarations,
+                        contract_limits,
+                        &mut contract_meter,
+                        &mut contract_diagnostics,
+                        &mut contract_scopes,
+                    );
+                    match protocol_controls::check(protocol, &control_declarations, &mut control_cx)
+                    {
+                        Ok((channels, used)) => {
+                            checked.channels = channels;
+                            nodes_used = used;
+                        }
                         Err(control_refusals) => refusals.extend(control_refusals),
                     }
                     protocol_bindings.push(bound);
@@ -1631,10 +1753,12 @@ impl PackageDeclarations {
             }
         }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
-        // family's contract under the unit's one temporal profile. No S4
-        // emission writes a temporal node yet (FR-337), so a clause that
-        // checks is refused rather than compiled and silently missing from
-        // the package (`temporal_clause::not_emitted`).
+        // family's contract under the unit's one temporal profile, then
+        // FR-337: its `holds` conditions typed over its `over` parameter,
+        // now that every function signature is known. A clause S4 does not
+        // emit (an `on each` activation or a capture) is refused rather
+        // than compiled and silently missing from the package
+        // (`temporal_clause::not_emitted`).
         let temporal_declarations = temporal_clause::TemporalDeclarations {
             scope: &scope,
             selections: &self.temporal_selections,
@@ -1642,7 +1766,8 @@ impl PackageDeclarations {
             embedding: embedding.as_deref(),
             position_limit: limits.nodes(),
         };
-        for clause in &self.temporal_clauses {
+        let mut checked_temporal = Vec::with_capacity(self.temporal_clauses.len());
+        for (index, clause) in self.temporal_clauses.iter().enumerate() {
             let mut contract_cx = crate::family::CheckContext::new(
                 &temporal_declarations,
                 contract_limits,
@@ -1651,7 +1776,50 @@ impl PackageDeclarations {
                 &mut contract_scopes,
             );
             match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
-                Ok(staged) => refusals.push(temporal_clause::not_emitted(&staged.into_value())),
+                Ok(staged) if !temporal_clause::is_emitted(&clause.form) => {
+                    refusals.push(temporal_clause::not_emitted(&staged.into_value()));
+                }
+                Ok(staged) => {
+                    let checked = staged.into_value();
+                    let location =
+                        lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                    let condition_declarations = state_clause::ClauseDeclarations {
+                        scope: &scope,
+                        signatures: &signatures,
+                        dispatch_tables: &dispatch_tables,
+                        models: &models,
+                        checking_limits: limits,
+                        location: &location,
+                        nodes_used,
+                        cancel: Some(cancel),
+                        staged: None,
+                    };
+                    let mut condition_cx = crate::family::CheckContext::new(
+                        &condition_declarations,
+                        contract_limits,
+                        &mut contract_meter,
+                        &mut contract_diagnostics,
+                        &mut contract_scopes,
+                    );
+                    match temporal_clause::condition::check_conditions(
+                        index,
+                        &clause.form,
+                        &checked,
+                        &condition_declarations,
+                        &mut condition_cx.reborrow(&scope),
+                    ) {
+                        Ok((conditions, used)) => {
+                            nodes_used = used;
+                            checked_temporal.push((index, checked, conditions));
+                        }
+                        Err(refusal) => {
+                            refusals.push(refusal);
+                            if cancel.tripped().is_some() {
+                                return Err(refusals);
+                            }
+                        }
+                    }
+                }
                 Err(StageFailure::Limit(limit)) => {
                     refusals.push(CheckRefusal {
                         location: root(Origin::Expression),
@@ -1670,6 +1838,67 @@ impl PackageDeclarations {
                     return Err(refusals);
                 }
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
+            }
+        }
+        // FR-185, FR-186: the `random`, `reward`, `workload` and
+        // `probabilistic` declarations. What the forms alone let S3 refuse is
+        // refused; the rest refuses `not-yet-implemented`, so nothing
+        // probabilistic compiles unchecked (`probabilistic::check`).
+        refusals.extend(probabilistic::check(&self.probabilistic));
+        // FR-165: each state-graph claim, checked through the `StateGraph`
+        // family's contract once every function signature is known, against
+        // the same package-wide node total and contract meter.
+        let mut checked_state_graph_claims = Vec::with_capacity(self.state_graph_claims.len());
+        for claim in &self.state_graph_claims {
+            let location = root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: pending_types.as_ref(),
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            match state_graph_claim::StateGraphFamily::check(claim, &mut contract_cx) {
+                Ok(staged) => {
+                    let checked = staged.into_value();
+                    nodes_used = checked.nodes_used;
+                    checked_state_graph_claims.push(checked);
+                }
+                Err(StageFailure::Limit(limit)) => {
+                    refusals.push(CheckRefusal {
+                        location,
+                        cause: limit_cause(&limit),
+                    });
+                    if cancel.tripped().is_some() {
+                        return Err(refusals);
+                    }
+                }
+                Err(StageFailure::Cancelled(_)) => return Err(refusals),
+                Err(StageFailure::Fault(fault)) => {
+                    refusals.push(CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(fault))),
+                    });
+                    return Err(refusals);
+                }
+                Err(StageFailure::Refused(refusal)) => {
+                    let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
+                    refusals.push(refusal);
+                    if exhausted {
+                        return Err(refusals);
+                    }
+                }
             }
         }
         if !refusals.is_empty() {
@@ -1726,6 +1955,11 @@ impl PackageDeclarations {
         }
         for clause in &mut typed_clauses {
             units.append(std::mem::take(&mut clause.formed_units));
+        }
+        for (_, _, conditions) in &mut checked_temporal {
+            for condition in conditions.values_mut() {
+                units.append(std::mem::take(&mut condition.formed_units));
+            }
         }
         let mut lowering = lowering::Lowering::new(
             &scope,
@@ -1818,6 +2052,25 @@ impl PackageDeclarations {
                     .collect()
             })
             .collect();
+        // FR-381: each `compensate` template's own location, under which its
+        // operation is lowered to the same shared anchor and frame nodes an
+        // attempt naming the operation is (index-aligned with each checked
+        // protocol's `obligations.compensations`).
+        let template_locations: Vec<Vec<Location>> = checked_protocols
+            .iter()
+            .map(|checked| {
+                checked
+                    .obligations
+                    .compensations
+                    .iter()
+                    .map(|template| {
+                        root(Origin::TypeDeclaration {
+                            name: lowering::compensation_origin(&checked.name, &template.name),
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
         let mut anchors: Vec<lowering::AnchorInput<'_>> = state_clause_forms
             .iter()
             .zip(&clause_locations)
@@ -1840,6 +2093,15 @@ impl PackageDeclarations {
                 });
             }
         }
+        for (checked, locations) in checked_protocols.iter().zip(&template_locations) {
+            for (template, location) in checked.obligations.compensations.iter().zip(locations) {
+                anchors.push(lowering::AnchorInput {
+                    declaring: template.operation.declaring,
+                    operation: &template.operation.declaration,
+                    location,
+                });
+            }
+        }
         if let Err(refusal) = lowering.register_frame_occurrences(&anchors) {
             refusals.push(refusal);
         }
@@ -1856,6 +2118,7 @@ impl PackageDeclarations {
         enum Lowerable {
             Clause(usize),
             Attempt(usize, usize),
+            Template(usize, usize),
         }
         let mut lowering_order: Vec<(usize, Lowerable)> = state_clause_forms
             .iter()
@@ -1876,7 +2139,29 @@ impl PackageDeclarations {
                 lowering_order.push((start, Lowerable::Attempt(protocol_index, attempt_index)));
             }
         }
+        for (protocol_index, checked) in checked_protocols.iter().enumerate() {
+            let forms = self
+                .protocols
+                .get(protocol_index)
+                .map(|protocol| protocol.compensations.as_slice())
+                .unwrap_or_default();
+            for template_index in 0..checked.obligations.compensations.len() {
+                let start = forms
+                    .get(template_index)
+                    .map(|form| form.name.span.start)
+                    .unwrap_or_default();
+                lowering_order.push((start, Lowerable::Template(protocol_index, template_index)));
+            }
+        }
         lowering_order.sort_by_key(|(start, _)| *start);
+        let mut lowered_templates: Vec<Vec<Option<lowering::LoweredAttempt>>> = checked_protocols
+            .iter()
+            .map(|checked| {
+                std::iter::repeat_with(|| None)
+                    .take(checked.obligations.compensations.len())
+                    .collect()
+            })
+            .collect();
         let mut lowered_clauses: Vec<Option<lowering::LoweredClause>> =
             std::iter::repeat_with(|| None)
                 .take(state_clause_forms.len())
@@ -1950,6 +2235,48 @@ impl PackageDeclarations {
                         Err(refusal) => refusals.push(refusal),
                     }
                 }
+                Lowerable::Template(protocol_index, template_index) => {
+                    let (Some(template), Some(location), Some(slot)) = (
+                        checked_protocols.get(protocol_index).and_then(|checked| {
+                            checked.obligations.compensations.get(template_index)
+                        }),
+                        template_locations
+                            .get(protocol_index)
+                            .and_then(|locations| locations.get(template_index)),
+                        lowered_templates
+                            .get_mut(protocol_index)
+                            .and_then(|lowered| lowered.get_mut(template_index)),
+                    ) else {
+                        continue;
+                    };
+                    let input = lowering::AttemptInput {
+                        location,
+                        anchor: lowering::AnchorInput {
+                            declaring: template.operation.declaring,
+                            operation: &template.operation.declaration,
+                            location,
+                        },
+                        frame_population: template.frame_population,
+                    };
+                    match lowering.protocol_attempt(&input) {
+                        Ok(lowered) => *slot = Some(lowered),
+                        Err(refusal) => refusals.push(refusal),
+                    }
+                }
+            }
+        }
+        // FR-337: each emitted temporal clause, after every function its
+        // conditions may call, minting its node identity and recording its
+        // `claim` occurrence.
+        let mut lowered_temporal = Vec::with_capacity(checked_temporal.len());
+        for (index, checked, conditions) in &checked_temporal {
+            match lowering.temporal_clause(&lowering::TemporalClauseInput {
+                index: *index,
+                clause: checked,
+                conditions,
+            }) {
+                Ok(lowered) => lowered_temporal.push(lowered),
+                Err(refusal) => refusals.push(refusal),
             }
         }
         for composite in scope.types().composites() {
@@ -1993,6 +2320,11 @@ impl PackageDeclarations {
             .collect::<Option<_>>()
             .ok_or_else(unlowered)?;
         let lowered_attempts: Vec<Vec<lowering::LoweredAttempt>> = lowered_attempts
+            .into_iter()
+            .map(|lowered| lowered.into_iter().collect::<Option<_>>())
+            .collect::<Option<_>>()
+            .ok_or_else(unlowered)?;
+        let lowered_templates: Vec<Vec<lowering::LoweredAttempt>> = lowered_templates
             .into_iter()
             .map(|lowered| lowered.into_iter().collect::<Option<_>>())
             .collect::<Option<_>>()
@@ -2104,6 +2436,66 @@ impl PackageDeclarations {
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
+        // FR-337: each emitted temporal clause's node, its `claim`
+        // occurrence and its `over` node; FR-326 "Requirement record": its
+        // `temporal-satisfaction` record, keyed by that occurrence.
+        if lowered_temporal.len() != checked_temporal.len() {
+            return Err(unlowered());
+        }
+        let temporal_clauses = checked_temporal
+            .into_iter()
+            .zip(lowered_temporal)
+            .map(|((index, checked, conditions), lowered)| {
+                let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                let unkeyable = || {
+                    vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]
+                };
+                let claim = occurrences
+                    .iter_role(family::OccurrenceRole::Claim)
+                    .find(|(node, _, at)| *node == lowered.key && **at == location)
+                    .map(|(_, origin, _)| origin)
+                    .ok_or_else(unkeyable)?;
+                let objects: std::collections::BTreeSet<_> = conditions
+                    .values()
+                    .flat_map(|condition| references::body_objects(condition.body.root()))
+                    .collect();
+                for claimed in temporal_clause::TemporalTraceFamily::requirements(&checked) {
+                    let extent = claimed
+                        .requirements(claims::wire(lowered.key), &[claims::wire(lowered.over)])
+                        .map_err(|fault| {
+                            vec![CheckRefusal {
+                                location: location.clone(),
+                                cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                                    fault,
+                                ))),
+                            }]
+                        })?;
+                    let record = claims::RequirementRecord::unguarded(
+                        extent,
+                        ValueType::Boolean,
+                        claims::wire(lowered.boolean),
+                        references::ModelReferences::new(objects.clone(), [], None),
+                    );
+                    match requirements
+                        .entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone()))
+                    {
+                        std::collections::btree_map::Entry::Vacant(slot) => {
+                            slot.insert(record);
+                        }
+                        std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                    }
+                }
+                Ok(TemporalClauseNode {
+                    clause: checked,
+                    identity: lowered.key,
+                    claim,
+                    over: lowered.over,
+                })
+            })
+            .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
         // FR-114 "Requirements": one `operation-contract` record
         // per attempt's frame, keyed by the frame node's own occurrence,
         // computed by the same `state_clause::frame_record` a `pre`/`post`
@@ -2173,6 +2565,63 @@ impl PackageDeclarations {
             }
             checked.attempts = attempts;
         }
+        // FR-381 "Compensation registration": each template bound to its
+        // operation's one anchor and frame node, with the one frame record
+        // FR-114 keys at the frame (equal for every attempt, clause and
+        // template naming the operation, so the entry is kept once).
+        for ((checked, lowered), locations) in checked_protocols
+            .iter_mut()
+            .zip(&lowered_templates)
+            .zip(&template_locations)
+        {
+            let mut bindings = Vec::with_capacity(lowered.len());
+            for ((template, lowered_template), location) in checked
+                .obligations
+                .compensations
+                .iter()
+                .zip(lowered)
+                .zip(locations)
+            {
+                let lowering::OperationBinding {
+                    anchor,
+                    frame,
+                    frame_origin,
+                } = lowered_template.binding.clone();
+                let populations: Vec<(state_clause::PopulationDomain, quire_exact::NodeKey)> =
+                    template
+                        .frame_population
+                        .zip(lowered_template.population_object)
+                        .into_iter()
+                        .collect();
+                let record = state_clause::frame_record(
+                    &template.operation,
+                    frame,
+                    &populations,
+                    lowered_template.boolean,
+                    scope.types(),
+                    limits.nodes(),
+                    location,
+                )
+                .map_err(|refusal| vec![refusal])?;
+                match requirements.entry(OccurrenceKey::new(claims::wire(frame), frame_origin)) {
+                    std::collections::btree_map::Entry::Vacant(slot) => {
+                        slot.insert(record);
+                    }
+                    std::collections::btree_map::Entry::Occupied(existing)
+                        if *existing.get() == record => {}
+                    std::collections::btree_map::Entry::Occupied(_) => {
+                        return Err(vec![CheckRefusal {
+                            location: location.clone(),
+                            cause: CheckCause::InternalFault(Box::new(
+                                KeyFault::UnkeyableRequirements,
+                            )),
+                        }]);
+                    }
+                }
+                bindings.push(protocol_clause::CheckedOperationNodes { anchor, frame });
+            }
+            checked.compensation_operations = bindings;
+        }
         let functions = CheckedFunctions::new(
             drafts
                 .into_iter()
@@ -2200,6 +2649,13 @@ impl PackageDeclarations {
                 .map(|terminal| terminal::not_emitted(terminal.name.clone(), terminal.span))
                 .collect());
         }
+        // FR-165: likewise, no S4 emission writes a state-graph claim yet.
+        if !self.emit_unwritten_state_graph_claims && !checked_state_graph_claims.is_empty() {
+            return Err(checked_state_graph_claims
+                .iter()
+                .map(state_graph_claim::not_emitted)
+                .collect());
+        }
         Ok(CheckedGraph {
             source,
             scope,
@@ -2214,6 +2670,7 @@ impl PackageDeclarations {
             effective_limits: limits,
             form_spans,
             type_spans,
+            site_spans,
             synthesized_spans,
             embedding,
             model_selections,
@@ -2222,6 +2679,8 @@ impl PackageDeclarations {
             type_invariants,
             terminals,
             protocols: checked_protocols,
+            temporal_clauses,
+            state_graph_claims: checked_state_graph_claims,
             operation_frames,
             model_objects,
             object_types,
@@ -2565,6 +3024,18 @@ impl CheckedGraph {
         &self.state_clauses
     }
 
+    /// FR-165: the checked state-graph claim declared `name`.
+    pub fn state_graph_claim(&self, name: &str) -> Option<&CheckedStateGraphClaim> {
+        self.state_graph_claims
+            .iter()
+            .find(|claim| claim.name() == name)
+    }
+
+    /// FR-165: every checked state-graph claim, in declaration order.
+    pub fn state_graph_claims(&self) -> &[CheckedStateGraphClaim] {
+        &self.state_graph_claims
+    }
+
     /// FR-366: every checked type-level invariant.
     pub fn type_invariants(&self) -> &[CheckedTypeInvariant] {
         &self.type_invariants
@@ -2587,6 +3058,11 @@ impl CheckedGraph {
     /// FR-113: every checked protocol declaration, in declaration order.
     pub fn protocols(&self) -> &[CheckedProtocol] {
         &self.protocols
+    }
+
+    /// FR-337: every emitted temporal clause, in declaration order.
+    pub fn temporal_clauses(&self) -> &[TemporalClauseNode] {
+        &self.temporal_clauses
     }
 
     /// FR-113: the checked protocol declared `name`, or `None`.

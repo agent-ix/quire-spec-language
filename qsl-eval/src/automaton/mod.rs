@@ -31,12 +31,16 @@
 //!   IV-3's counter construction for interval operators: one counter per
 //!   occurrence for a lower bound of 0, and sets of open windows or offsets
 //!   otherwise.
+//! - [`SafetyTranslation`] is FR-338's canonical translation of the safety
+//!   items EN-1 decides, whose states have the order-independent
+//!   [`AutomatonStateKey`] the closure certificate carries.
 
 mod counters;
 mod dnf;
 mod error;
 mod formula;
 mod gba;
+mod key;
 mod letter;
 mod monitor;
 mod numbering;
@@ -50,6 +54,11 @@ pub use counters::{
 };
 pub use error::AutomatonError;
 pub use gba::{Gba, GbaBuilder, Transition};
+pub use key::{
+    invariant_atom, AutomatonStateKey, ContextActivation, ContextBinding, ContextRoot, KeyRefusal,
+    NotTranslated, SafetyItem, SafetyState, SafetyTranslation, StateContext, TranslationRefusal,
+    AUTOMATON_STATE_KEY_V1,
+};
 pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::Monitor;
 pub use numbering::{Interned, Numbering};

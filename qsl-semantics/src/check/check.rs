@@ -397,6 +397,11 @@ pub struct PackageDeclarations {
     /// unit (the FR-091 assembler fills it). A declaration built by hand has
     /// none, and its `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-337: the expression spans of each declaration site that
+    /// has an expression tree of its own and is located by an
+    /// `Origin::TypeDeclaration` site name (a temporal clause's `holds`
+    /// condition), by that name. The FR-091 assembler fills it.
+    pub declared_site_spans: BTreeMap<String, qsl_forms::ExpressionSpans>,
     /// FR-096, FR-302: the span of the unit declaration each function
     /// synthesized for dispatch without form spans of its own was derived
     /// from, by index into [`Self::functions`]: every occurrence in such a
@@ -440,6 +445,14 @@ pub struct PackageDeclarations {
     /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
     /// each as S2 built it, for the `TemporalTrace` family's `check`.
     pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
+    /// `probabilistic` declarations in declaration order, each as S2 built
+    /// it, for the `Probabilistic` family's check (FR-185, FR-186).
+    pub probabilistic: Vec<super::ProbabilisticDeclaration>,
+    /// FR-165: the unit's state-graph claims in declaration order, each with
+    /// its profile and `over` type resolved, for the `StateGraph` family's
+    /// `check`.
+    pub state_graph_claims: Vec<super::state_graph_claim::StateGraphDeclaration>,
     /// FR-110, FR-326: the unit's header profile selections the
     /// `TemporalTrace` family's catalog holds, in source order. A clause is
     /// checked under the one of them, or refuses when there is none or
@@ -459,6 +472,9 @@ pub struct PackageDeclarations {
     /// Test-only: check a package that holds a `terminal` declaration
     /// without refusing it as not emitted (FR-124).
     pub emit_unwritten_terminals: bool,
+    /// Test-only: check a package that holds a state-graph claim without
+    /// refusing it as not emitted (FR-165).
+    pub emit_unwritten_state_graph_claims: bool,
     /// FR-103, FR-302: the unit's `operation-body` declarations in
     /// declaration order, each resolved to its operation's `DeclarationKey`
     /// by the FR-091 assembler. At most one per key.
@@ -483,6 +499,17 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_unwritten_terminals(mut self) -> Self {
         self.emit_unwritten_terminals = true;
+        self
+    }
+
+    /// These declarations, to be checked without refusing a state-graph
+    /// claim as not emitted, so the S3 value
+    /// (`CheckedGraph::state_graph_claims`) stays testable until S4 writes it
+    /// (FR-165).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_state_graph_claims(mut self) -> Self {
+        self.emit_unwritten_state_graph_claims = true;
         self
     }
 
@@ -542,6 +569,7 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            declared_site_spans: BTreeMap::new(),
             synthesized_spans: BTreeMap::new(),
             embedding: None,
             units: quire_semantic_value::unit::UnitGraph::default(),
@@ -552,11 +580,14 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),
+            probabilistic: Vec::new(),
+            state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
             terminals: Vec::new(),
             emit_unwritten_terminals: false,
+            emit_unwritten_state_graph_claims: false,
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
             identity,
@@ -2530,7 +2561,7 @@ impl<'a> Typer<'a> {
     /// it refuses `missing_declaration`/`missing-name`.
     fn self_reference(&self, location: &Location) -> Result<Node, CheckRefusal> {
         let Some(state) = &self.state else {
-            return Err(refuse(location, CheckCause::MissingName("self".to_owned())));
+            return Err(refuse(location, CheckCause::MissingSelf));
         };
         self.bound_slot(state.self_slot, location)
     }

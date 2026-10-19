@@ -15,19 +15,18 @@
 
 use qsl_cst::{CstElement, CstNode, CstToken, LosslessCst, Production, TokenClass, TokenKind};
 use qsl_foundation::absence::AbsenceMode;
-use qsl_foundation::source::Spanned;
 use qsl_foundation::Span;
-use quire_exact::{CollectionKind, Integer, Rational};
+use quire_exact::{CollectionKind, Integer};
 
 use super::dispatch::{Construct, FormsCause, FormsRefusal};
 use super::spans::{DeclarationSpans, ExpressionSpans};
 use super::syntax::{
     Accumulation, AliasForm, ArmForm, BinaryOperator, BinderQuery, BuiltinType, CaseForm,
     DeclarationForm, DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm,
-    EnumMemberForm, ExactNumberForm, ExactNumberKind, ExactValue, ExprId, ExprNode, Expression,
-    ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm, QuantityForm,
-    RecordFieldForm, RecordForm, TermOperator, TupleForm, TypeForm, TypeFormHead, UnitForm,
-    UsingAlias,
+    EnumMemberForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind, ExprId,
+    ExprNode, Expression, ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm,
+    QuantityForm, RecordFieldForm, RecordForm, TermOperator, TupleForm, TypeForm, TypeFormHead,
+    UnitForm, UsingAlias,
 };
 
 /// One significant child of a CST node: a token or a node.
@@ -132,7 +131,7 @@ pub(crate) fn significant_tokens<'c>(cst: &'c LosslessCst, node: &CstNode) -> Ve
 }
 
 /// An integer literal's value.
-fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsRefusal> {
+pub(crate) fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsRefusal> {
     spelling.parse().map_err(|_| unexpected(node))
 }
 
@@ -335,7 +334,10 @@ pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, For
 }
 
 /// An `ExactNumber` node as written.
-fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, FormsRefusal> {
+pub(crate) fn exact_number(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<ExactNumberForm, FormsRefusal> {
     let items = items(cst, node);
     let signed = nodes_of(&items, Production::SignedInteger);
     let (kind, first, second) = if has_token(&items, b"rational") {
@@ -364,6 +366,71 @@ fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, Fo
         second,
         span: node.span(),
     })
+}
+
+/// A `QuantityLiteral` node: a magnitude and a unit name.
+pub(crate) fn quantity_form(
+    cst: &LosslessCst,
+    quantity: &CstNode,
+) -> Result<QuantityForm, FormsRefusal> {
+    let quantity_items = items(cst, quantity);
+    Ok(QuantityForm {
+        magnitude: exact_value(
+            cst,
+            only(&quantity_items, Production::ExactValue, quantity)?,
+        )?,
+        unit: name_form(
+            cst,
+            only(&quantity_items, Production::QualifiedName, quantity)?,
+        )?,
+        span: quantity.span(),
+    })
+}
+
+/// An `ExactValue` node as written: a `uint`, a decimal literal or an exact
+/// number.
+pub(crate) fn exact_value(
+    cst: &LosslessCst,
+    value: &CstNode,
+) -> Result<ExactValueForm, FormsRefusal> {
+    let span = value.span();
+    match items(cst, value)[..] {
+        [Item::Node(number)] if number.production() == Production::ExactNumber => {
+            let number = exact_number(cst, number)?;
+            Ok(ExactValueForm {
+                kind: match number.kind {
+                    ExactNumberKind::Rational => ExactValueKind::Rational,
+                    ExactNumberKind::Decimal => ExactValueKind::Decimal,
+                },
+                first: number.first,
+                second: number.second,
+                span,
+            })
+        }
+        [Item::Token(token)] if token.kind() == TokenKind::Integer => Ok(ExactValueForm {
+            kind: ExactValueKind::Natural,
+            first: integer(&text(token, value)?, value)?,
+            second: integer("1", value)?,
+            span,
+        }),
+        [Item::Token(token)] => {
+            // A decimal literal `a.b`: the digits without the point over
+            // the count of digits after it.
+            let spelling = text(token, value)?;
+            let Some((whole, fraction)) = spelling.split_once('.') else {
+                return Err(unexpected(value));
+            };
+            let digits = format!("{whole}{fraction}");
+            let digits = digits.trim_start_matches('0');
+            Ok(ExactValueForm {
+                kind: ExactValueKind::DecimalLiteral,
+                first: integer(if digits.is_empty() { "0" } else { digits }, value)?,
+                second: integer(&fraction.len().to_string(), value)?,
+                span,
+            })
+        }
+        _ => Err(unexpected(value)),
+    }
 }
 
 /// `unit name : Dimension = scale [* target] [+ offset];` (FR-091 "Unit
@@ -574,6 +641,7 @@ enum Shape {
     Boolean(bool),
     Integer(Integer),
     Rational(Integer, Integer),
+    Quantity(QuantityForm),
     String(String),
     Name(String),
     Let(String),
@@ -617,8 +685,6 @@ enum Shape {
     Reaches(String, Span),
     /// `protocol <qualified-name>` (FR-308): the written target.
     ProtocolReference(String),
-    /// A quantity literal (FR-393).
-    Quantity(QuantityForm),
 }
 
 /// The built subexpressions of one node, consumed in order.
@@ -660,6 +726,10 @@ impl Shape {
             Self::Rational(numerator, denominator) => {
                 arity(0)?;
                 ExprNode::Rational(numerator, denominator)
+            }
+            Self::Quantity(quantity) => {
+                arity(0)?;
+                ExprNode::Quantity(quantity)
             }
             Self::String(text) => {
                 arity(0)?;
@@ -881,10 +951,6 @@ impl Shape {
                 arity(0)?;
                 ExprNode::ProtocolReference { target }
             }
-            Self::Quantity(quantity) => {
-                arity(0)?;
-                ExprNode::Quantity(quantity)
-            }
         };
         Some(node)
     }
@@ -1050,8 +1116,6 @@ impl<'c> Mapping<'c> {
             | Production::Fairness
             | Production::Interval
             | Production::TimedInterval
-            | Production::ExactValue
-            | Production::QuantityLiteral
             | Production::TimeDeclaration
             | Production::TimeInvariant
             | Production::ClockBound
@@ -1064,6 +1128,32 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
+            | Production::RandomDeclaration
+            | Production::WeightedValue
+            | Production::RewardDeclaration
+            | Production::WorkloadDeclaration
+            | Production::WorkloadWeight
+            | Production::ProbabilisticClause
+            | Production::SchedulerClause
+            | Production::FairnessItem
+            | Production::Confidence
+            | Production::ConfidenceItem
+            | Production::ProbabilisticForm
+            | Production::Event
+            | Production::Measure
+            | Production::Fraction
+            | Production::Weighting
+            | Production::Horizon
+            | Production::ExactValue
+            | Production::QuantityLiteral
+            | Production::StateGraphClaim
+            | Production::StateGraphBody
+            | Production::StateGraphPredicate
+            | Production::StateGraphImplication
+            | Production::StateGraphDisjunction
+            | Production::StateGraphConjunction
+            | Production::StateGraphRelation
+            | Production::StateGraphUnary
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1544,11 +1634,11 @@ impl<'c> Mapping<'c> {
                 let denominator = integer(&spelled(self.cst, denominator)?, child)?;
                 self.leaf(Shape::Rational(numerator, denominator), &task)
             }
+            Production::FloatValue => Err(unrepresented(Production::FloatValue, child.span())),
             Production::QuantityLiteral => {
                 let quantity = quantity_form(self.cst, child)?;
                 self.leaf(Shape::Quantity(quantity), &task)
             }
-            Production::FloatValue => Err(unrepresented(Production::FloatValue, child.span())),
             Production::CollectionValue => {
                 let kind = match items.first() {
                     Some(Item::Token(token)) => match token.spelling() {
@@ -1653,7 +1743,6 @@ impl<'c> Mapping<'c> {
             | Production::Fairness
             | Production::Interval
             | Production::TimedInterval
-            | Production::ExactValue
             | Production::TimeDeclaration
             | Production::TimeInvariant
             | Production::ClockBound
@@ -1666,6 +1755,31 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
+            | Production::RandomDeclaration
+            | Production::WeightedValue
+            | Production::RewardDeclaration
+            | Production::WorkloadDeclaration
+            | Production::WorkloadWeight
+            | Production::ProbabilisticClause
+            | Production::SchedulerClause
+            | Production::FairnessItem
+            | Production::Confidence
+            | Production::ConfidenceItem
+            | Production::ProbabilisticForm
+            | Production::Event
+            | Production::Measure
+            | Production::Fraction
+            | Production::Weighting
+            | Production::Horizon
+            | Production::ExactValue
+            | Production::StateGraphClaim
+            | Production::StateGraphBody
+            | Production::StateGraphPredicate
+            | Production::StateGraphImplication
+            | Production::StateGraphDisjunction
+            | Production::StateGraphConjunction
+            | Production::StateGraphRelation
+            | Production::StateGraphUnary
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1859,120 +1973,4 @@ fn is_bare_null(cst: &LosslessCst, node: &CstNode) -> bool {
             _ => return false,
         }
     }
-}
-
-// FR-393: an `exact-value` and a `quantity-literal`, kept exactly: a
-// `decimal-literal` `0.0005` builds `1/2000`, never a floating value. The
-// unit's dimension and the value's sign are S3's (FR-230).
-
-/// One `QuantityLiteral` node: its exact magnitude and its unit's name.
-pub(crate) fn quantity_form(
-    cst: &LosslessCst,
-    node: &CstNode,
-) -> Result<QuantityForm, FormsRefusal> {
-    let quantity_items = items(cst, node);
-    let magnitude = only(&quantity_items, Production::ExactValue, node)?;
-    Ok(QuantityForm {
-        magnitude: Spanned {
-            value: exact_value(cst, magnitude)?,
-            span: magnitude.span(),
-        },
-        unit: name_form(cst, only(&quantity_items, Production::QualifiedName, node)?)?,
-        span: node.span(),
-    })
-}
-
-/// One `ExactValue` node (`uint | decimal-literal | exact-number`) as the
-/// exact rational it denotes.
-fn exact_value(cst: &LosslessCst, node: &CstNode) -> Result<ExactValue, FormsRefusal> {
-    let value_items = items(cst, node);
-    match value_items.as_slice() {
-        [Item::Token(token)] if token.kind() == TokenKind::Integer => {
-            Ok(Rational::from_integer(integer(&text(token, node)?, node)?).into())
-        }
-        [Item::Token(token)] => decimal_literal(cst, &text(token, node)?, node),
-        [Item::Node(number)] if number.production() == Production::ExactNumber => {
-            exact_number_value(cst, number)
-        }
-        _ => Err(unexpected(node)),
-    }
-}
-
-/// `[0-9]+ '.' [0-9]+`: the digits without the point over `10^fraction`.
-fn decimal_literal(
-    cst: &LosslessCst,
-    spelling: &str,
-    node: &CstNode,
-) -> Result<ExactValue, FormsRefusal> {
-    let Some((whole, fraction)) = spelling.split_once('.') else {
-        return Err(unexpected(node));
-    };
-    // The digits without the point, leading zeros dropped (`0.003` is
-    // `3/1000`), which the integer spelling does not admit.
-    let digits = format!("{whole}{fraction}");
-    let digits = match digits.trim_start_matches('0') {
-        "" => "0",
-        significant => significant,
-    };
-    let digits = integer(digits, node)?;
-    let scale = u64::try_from(fraction.len()).map_err(|_| unexpected(node))?;
-    scaled(cst, digits, scale, node)
-}
-
-/// `rational(n, d)` or `decimal(n, s)`.
-fn exact_number_value(cst: &LosslessCst, node: &CstNode) -> Result<ExactValue, FormsRefusal> {
-    let number_items = items(cst, node);
-    let signed = nodes_of(&number_items, Production::SignedInteger);
-    if has_token(&number_items, b"rational") {
-        let [numerator, denominator] = signed.as_slice() else {
-            return Err(unexpected(node));
-        };
-        let numerator = integer(&spelled(cst, numerator)?, node)?;
-        let denominator = integer(&spelled(cst, denominator)?, node)?;
-        return Ok(match Rational::new(numerator.clone(), denominator) {
-            Ok(value) => value.into(),
-            // `rational(n, 0)` denotes no rational: kept for S3 to refuse.
-            Err(_) => ExactValue {
-                numerator,
-                denominator: Integer::zero(),
-            },
-        });
-    }
-    let scales: Vec<_> = number_items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Token(token) if token.kind() == TokenKind::Integer => Some(*token),
-            Item::Token(_) | Item::Node(_) => None,
-        })
-        .collect();
-    let ([coefficient], [scale]) = (signed.as_slice(), scales.as_slice()) else {
-        return Err(unexpected(node));
-    };
-    let coefficient = integer(&spelled(cst, coefficient)?, node)?;
-    let scale = text(scale, node)?
-        .parse::<u64>()
-        .map_err(|_| FormsRefusal::at(FormsCause::DecimalScaleBeyondSource, node.span()))?;
-    scaled(cst, coefficient, scale, node)
-}
-
-/// `digits / 10^scale`, reduced. The scale is bounded by the unit's own
-/// source length: a decimal literal that wrote the same denominator would
-/// need at least `scale` source bytes, so the value is no larger than one
-/// S1 already admitted, and S2 stays bounded by S1's limits (FR-257).
-fn scaled(
-    cst: &LosslessCst,
-    digits: Integer,
-    scale: u64,
-    node: &CstNode,
-) -> Result<ExactValue, FormsRefusal> {
-    let source_bytes = u64::try_from(cst.source().text().len()).unwrap_or(u64::MAX);
-    if scale > source_bytes {
-        return Err(FormsRefusal::at(
-            FormsCause::DecimalScaleBeyondSource,
-            node.span(),
-        ));
-    }
-    Ok(Rational::from_integer(digits)
-        .divided_by_power_of_ten(scale)
-        .into())
 }

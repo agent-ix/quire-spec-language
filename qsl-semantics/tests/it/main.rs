@@ -57,6 +57,7 @@ mod operation_bodies;
 mod operation_clauses;
 #[cfg(feature = "test-support")]
 mod population_bound;
+mod probabilistic_declarations;
 mod quantities;
 #[cfg(feature = "test-support")]
 mod relationship_extents;
@@ -67,6 +68,8 @@ mod relationship_reachability;
 #[cfg(feature = "test-support")]
 mod relationship_snapshots;
 mod state_clauses;
+#[cfg(feature = "test-support")]
+mod state_graph_claims;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]

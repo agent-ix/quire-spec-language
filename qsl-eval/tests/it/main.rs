@@ -11,6 +11,7 @@ pub(crate) mod support;
 mod tc235_k2;
 
 mod automaton_kernels;
+mod automaton_key;
 mod call_verdicts;
 mod checked_package_call;
 mod child_composite;
@@ -44,3 +45,4 @@ mod total_functions;
 mod type_invariants;
 mod unbounded_set_call;
 mod variant_fields;
+mod window_aggregates;
