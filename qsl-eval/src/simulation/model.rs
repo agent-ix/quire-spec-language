@@ -15,6 +15,7 @@ mod domain;
 pub(crate) mod encode;
 mod footprints;
 mod frames;
+mod state_predicate;
 mod terminal;
 mod walk;
 
@@ -52,6 +53,7 @@ use crate::value::QualifiedName;
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
+pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
@@ -828,6 +830,98 @@ pub fn sample_model(
     replay(system, &trace, identity_limits()).map_err(ModelSampleError::Replay)?;
     let effects = effects_of(system, &trace)?;
     Ok(ModelTrace { trace, effects })
+}
+
+/// One sampled walk from one initial state and the state at each of its
+/// positions (FR-166).
+#[derive(Clone, Debug)]
+pub struct ModelWalk {
+    /// The FR-101 sampled trace.
+    pub trace: Trace<ModelTransition, ModelFinding>,
+    /// The state at each position, position 0 the initial state: one more
+    /// than the trace's steps.
+    pub states: Vec<ModelSimState>,
+}
+
+/// `system` with one initial state, recording each state the sampler
+/// expands, in order.
+struct OneInitial<'s, 'a> {
+    system: &'s ModelSystem<'a>,
+    start: ModelSimState,
+    expanded: std::cell::RefCell<Vec<ModelSimState>>,
+}
+
+impl TransitionSystem for OneInitial<'_, '_> {
+    type State = ModelSimState;
+    type TransitionId = ModelTransition;
+    type Key = ModelKey;
+    type Finding = ModelFinding;
+
+    fn initial(&self) -> Vec<Self::State> {
+        vec![self.start.clone()]
+    }
+
+    fn key(&self, state: &Self::State) -> Self::Key {
+        self.system.key(state)
+    }
+
+    fn successors(
+        &self,
+        state: &Self::State,
+    ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
+        self.expanded.borrow_mut().push(state.clone());
+        self.system.successors(state)
+    }
+}
+
+/// FR-166: FR-101's `sample_request` over the view of `system` whose only
+/// initial state is the subject's initial state `initial` (its index in the
+/// subject's initial list), with the state at each position of the walk.
+/// The sampler expands every state it visits, the last included, so each
+/// position's state is the one it expanded there.
+///
+/// # Errors
+///
+/// [`NotSimulated`] as `sample_request` returns it;
+/// [`NotSimulated::EmptyInitial`] when `initial` is not an index of the
+/// subject's initial states.
+pub fn sample_model_walk(
+    system: &ModelSystem<'_>,
+    initial: usize,
+    position_limit: u64,
+    sampler: &DefinitionRef,
+    seed: u64,
+    trace: u64,
+    max_steps: usize,
+) -> Result<ModelWalk, NotSimulated> {
+    let start = system
+        .initial
+        .get(initial)
+        .cloned()
+        .ok_or(NotSimulated::EmptyInitial)?;
+    let view = OneInitial {
+        system,
+        start,
+        expanded: std::cell::RefCell::new(Vec::new()),
+    };
+    let domains = system.domains();
+    let roots: Vec<(WireNodeId, &ValueType)> = domains
+        .iter()
+        .map(|(id, value_type)| (*id, value_type))
+        .collect();
+    let trace = sample_request(
+        &view,
+        &roots,
+        system.types,
+        position_limit,
+        sampler,
+        seed,
+        trace,
+        max_steps,
+        identity_limits(),
+    )?;
+    let states = view.expanded.into_inner();
+    Ok(ModelWalk { trace, states })
 }
 
 /// The effect of each step of a trace that replayed: the state each step's

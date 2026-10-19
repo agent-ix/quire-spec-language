@@ -101,11 +101,16 @@ pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
+    DEFAULT_MAX_WALK_STEPS, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
 pub use model_check::outcome::{ModelCheckOutcome, RunStats, UndecidedCause};
 pub use model_check::replay::{
     replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
     ModelTraceSubject, ModelTraceValue,
+};
+pub use model_check::state_graph::{
+    GraphUndefined, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome, StateGraphOutcome,
+    GraphWitness, WitnessSource,
 };
 pub use model_check::settle::{
     settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
