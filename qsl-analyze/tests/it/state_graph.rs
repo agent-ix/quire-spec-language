@@ -818,8 +818,7 @@ fn explored_witnesses_and_an_initial_trap() {
 /// FR-168-AC-2: §7.2's `CanStillWin` is `Trapped` at `Lost` with stem
 /// `play, lose`; with `from (x.phase != Lost)` it `Holds`; with `restart`
 /// and no `from` it `Holds`. AC-6: each, run twice, gives equal outcomes.
-#[trace("TC-593", "FR-168-AC-2")]
-#[trace("TC-593", "FR-168-AC-6")]
+#[trace("TC-593", "FR-168-AC-2", "FR-168-AC-6")]
 #[test]
 fn always_possible_traps_and_holds() {
     let decide = |restart: bool, body: &str, name: &str| {
