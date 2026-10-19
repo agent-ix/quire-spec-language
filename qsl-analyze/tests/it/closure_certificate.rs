@@ -87,7 +87,11 @@ impl World {
             .collect()
     }
 
-    fn request<'w>(&'w self, item: ModelCheckItem<'w>, meter: ScalarLimits) -> CertificateRequest<'w> {
+    fn request<'w>(
+        &'w self,
+        item: ModelCheckItem<'w>,
+        meter: ScalarLimits,
+    ) -> CertificateRequest<'w> {
         CertificateRequest {
             subject: subject(
                 &self.package,
@@ -101,8 +105,12 @@ impl World {
     }
 
     fn system(&self) -> ModelSystem<'_> {
-        ModelSystem::new(self.request(ModelCheckItem::DeadlockFreedom, UNLIMITED).subject.simulation)
-            .expect("the subject admits")
+        ModelSystem::new(
+            self.request(ModelCheckItem::DeadlockFreedom, UNLIMITED)
+                .subject
+                .simulation,
+        )
+        .expect("the subject admits")
     }
 
     /// Every reachable model state, by breadth-first enumeration through
@@ -116,7 +124,10 @@ impl World {
             if seen.iter().any(|(known, _)| *known == digest) {
                 continue;
             }
-            seen.push((digest, self.keys.iter().map(|key| value(&state, key)).collect()));
+            seen.push((
+                digest,
+                self.keys.iter().map(|key| value(&state, key)).collect(),
+            ));
             let expansion = system.successors(&state).expect("expands");
             queue.extend(expansion.successors.into_iter().map(|(_, next)| next));
         }
@@ -180,9 +191,17 @@ fn certificate(outcome: &ModelCheckOutcome) -> ClosureCertificate {
     }
 }
 
-fn check(request: &CertificateRequest<'_>, certificate: &ClosureCertificate) -> TemporalCertificateCheck {
-    check_closure(request, certificate, &ModelCheckLimits::default(), &Cancel::new())
-        .expect("the request is checked")
+fn check(
+    request: &CertificateRequest<'_>,
+    certificate: &ClosureCertificate,
+) -> TemporalCertificateCheck {
+    check_closure(
+        request,
+        certificate,
+        &ModelCheckLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the request is checked")
 }
 
 fn rejected(rule: CertificateRule, at: ProductStateRef) -> TemporalCertificateCheck {
@@ -314,10 +333,7 @@ fn a_deadlock_is_bad_for_the_deadlock_item_alone() {
 fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
     let world = world(GUARDED, &[("c", 0)]);
     let reachable = world.reachable();
-    assert_eq!(
-        reachable.iter().map(|(_, values)| values[0]).max(),
-        Some(2)
-    );
+    assert_eq!(reachable.iter().map(|(_, values)| values[0]).max(), Some(2));
     let truth = world.invariant("always holds(true)", |_| Some(true));
     let translation = truth.translation(&world.objects()[0]);
     assert_eq!(
@@ -337,7 +353,10 @@ fn an_undetermined_contract_or_a_failing_atom_is_a_bad_state() {
     let world = self::world(CONTRACT, &[("c", 0)]);
     let reachable = world.reachable();
     for (formula, atom) in [
-        ("always holds(c.value != 2)", (|v| Some(v != 2)) as fn(i64) -> Option<bool>),
+        (
+            "always holds(c.value != 2)",
+            (|v| Some(v != 2)) as fn(i64) -> Option<bool>,
+        ),
         ("always holds(6 / (2 - c.value) >= 0)", |v| {
             (v != 2).then(|| 6 / (2 - v) >= 0)
         }),
@@ -399,8 +418,10 @@ fn a_certificate_of_another_item_is_not_admitted() {
     );
 
     let mut foreign = own.clone();
-    foreign.states[0].model_state =
-        DigestRecord::mint(DigestDomain::Sha256Jcs, *own.states[0].model_state.as_bytes());
+    foreign.states[0].model_state = DigestRecord::mint(
+        DigestDomain::Sha256Jcs,
+        *own.states[0].model_state.as_bytes(),
+    );
     assert_eq!(
         check(&world.request(invariant.item(), UNLIMITED), &foreign),
         rejected(CertificateRule::ShapeMismatch, foreign.states[0].clone())

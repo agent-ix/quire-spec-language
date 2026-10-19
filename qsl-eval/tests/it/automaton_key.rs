@@ -10,8 +10,7 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::automaton::{
-    ContextActivation, KeyRefusal, SafetyState, SafetyTranslation, StateContext,
-    TranslationRefusal,
+    ContextActivation, KeyRefusal, SafetyState, SafetyTranslation, StateContext, TranslationRefusal,
 };
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -94,7 +93,9 @@ fn a_reachable_invariant_keys_its_clause_root_and_state_body() {
         "ab".repeat(32)
     );
     let context = |ordinal: &str| {
-        format!(r#"[[{node},"temporal","{ordinal}"],"quire.temporal.infinite-trace/v1","infinite",[]]"#)
+        format!(
+            r#"[[{node},"temporal","{ordinal}"],"quire.temporal.infinite-trace/v1","infinite",[]]"#
+        )
     };
     let falsity = clause("always holds(false)", 0);
     let bad = falsity.read(None, false);
@@ -115,7 +116,12 @@ fn a_reachable_invariant_keys_its_clause_root_and_state_body() {
         )
     );
 
-    let shape = fixture(INFINITE, "c: Counter", "on origin", "eventually holds(true)");
+    let shape = fixture(
+        INFINITE,
+        "c: Counter",
+        "on origin",
+        "eventually holds(true)",
+    );
     let context = StateContext::clause(&shape.clause, occurrence(0), Vec::new());
     assert!(matches!(
         SafetyTranslation::reachable_invariant(&shape.clause, &context),
@@ -277,25 +283,24 @@ fn malformed_safety_keys_refuse_before_membership() {
             KeyRefusal::Unresolved,
         ),
         (
-            deadlock_key(&safety(&format!(
-                r#"[[{root}],[[[],"once",true]],[],[]]"#
-            ))),
+            deadlock_key(&safety(&format!(r#"[[{root}],[[[],"once",true]],[],[]]"#))),
             KeyRefusal::Unresolved,
         ),
         (
             deadlock_key(&safety(&format!(r#"[[{root}],[],[],[{root}]]"#))),
             KeyRefusal::Unresolved,
         ),
-        (
-            deadlock_key(&safety(&branch(""))),
-            KeyRefusal::Unreachable,
-        ),
+        (deadlock_key(&safety(&branch(""))), KeyRefusal::Unreachable),
         (
             deadlock_key(&safety(&format!("{},{}", branch(root), branch("")))),
             KeyRefusal::Unreachable,
         ),
     ];
     for (octets, refusal) in cases {
-        assert_eq!(translation.admit(octets.as_bytes()), Err(refusal), "{octets}");
+        assert_eq!(
+            translation.admit(octets.as_bytes()),
+            Err(refusal),
+            "{octets}"
+        );
     }
 }
