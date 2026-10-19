@@ -348,7 +348,7 @@ fn assemble_k2_unit(document: &Value, declarations: &str) -> PackageDeclarations
     let digest = qsl_semantics::model::key::hex(digest);
     let source = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model M = {PACKAGE:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
          {declarations}\n"
     );

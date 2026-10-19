@@ -687,7 +687,7 @@ pub(super) fn cross_selection_refinement_decoy(row: usize) {
         if reverse {
             selections.reverse();
         }
-        let unit = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{}\npost Proof using v on Decoy::{proof_context}::{proof_operation} {{ {proof} }}\n", selections.join("\n"));
+        let unit = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n{}\npost Proof using v on Decoy::{proof_context}::{proof_operation} {{ {proof} }}\n", selections.join("\n"));
         let refused = run_unit(&unit, &packages, None)
             .outcome
             .expect_err("another selection's postcondition cannot prove the original's writer");
@@ -1310,7 +1310,7 @@ fn two_model_unit(reverse: bool) -> (String, BTreeMap<[u8; 32], Vec<u8>>) {
     if reverse {
         declarations.reverse();
     }
-    (format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n{}\n{NOOP}\n",
+    (format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n{}\n{NOOP}\n",
         declarations.join("\n")), input)
 }
 

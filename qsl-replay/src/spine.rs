@@ -639,6 +639,11 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             form.refusal_cause(),
             layer.identity()
         ),
+        AssemblyCause::UnselectedModelConstruct(gate) => format!(
+            "a {} needs the header profile `{}`",
+            gate.family.as_str(),
+            gate.required_layer().identity()
+        ),
     };
     with_more(message, refusal.errors.len())
 }
