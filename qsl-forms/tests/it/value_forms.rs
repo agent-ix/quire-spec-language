@@ -59,6 +59,10 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Protocol(_)
         | DeclarationForm::Temporal(_)
         | DeclarationForm::Terminal(_)
+        | DeclarationForm::Random(_)
+        | DeclarationForm::Reward(_)
+        | DeclarationForm::Workload(_)
+        | DeclarationForm::Probabilistic(_)
         | DeclarationForm::StateGraphClaim(_) => panic!("a function form, not {form:?}"),
     }
 }
@@ -96,6 +100,12 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Boolean(value) => format!("{value}"),
         ExprNode::Integer(value) => format!("{value}"),
         ExprNode::Rational(n, d) => format!("rational({n},{d})"),
+        ExprNode::Quantity(quantity) => {
+            format!(
+                "quantity({} {})",
+                quantity.magnitude.first, quantity.unit.name
+            )
+        }
         ExprNode::String(text) => format!("string({text:?})"),
         ExprNode::Name(spelling) => spelling.clone(),
         ExprNode::Let { name, .. } => format!("Let[{name}]"),
@@ -200,6 +210,10 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Protocol(_) => "protocol",
             DeclarationForm::Temporal(_) => "temporal",
             DeclarationForm::Terminal(_) => "terminal",
+            DeclarationForm::Random(_) => "random",
+            DeclarationForm::Reward(_) => "reward",
+            DeclarationForm::Workload(_) => "workload",
+            DeclarationForm::Probabilistic(_) => "probabilistic",
             DeclarationForm::StateGraphClaim(_) => "state-graph",
         })
         .collect();

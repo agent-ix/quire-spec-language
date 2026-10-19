@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-155 "Outputs": the locations a transition reads and writes, its
+//! footprint, and the independence of two transitions that follows from
+//! footprints that do not meet.
+//!
+//! The derivation of a model transition's footprint and its enforcement are
+//! [`model`](super::model)'s; this module holds the vocabulary the engine
+//! shares with every system that offers partial-order reduction.
+
+use std::collections::BTreeSet;
+
+use qsl_semantics::model::key::DeclarationKey;
+use quire_exact::ObjectReference;
+
+/// One model location (QSpec FR-383 "Locations").
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Location {
+    /// A field of one object.
+    Field {
+        /// The object.
+        object: ObjectReference,
+        /// The field's declaration key.
+        field: DeclarationKey,
+    },
+    /// The field on any object.
+    AnyField {
+        /// The field's declaration key.
+        field: DeclarationKey,
+    },
+    /// Whether one object is a member of a population.
+    Membership {
+        /// The population's declaration key.
+        population: DeclarationKey,
+        /// The object.
+        object: ObjectReference,
+    },
+    /// Whether any object is a member of a population.
+    AnyMembership {
+        /// The population's declaration key.
+        population: DeclarationKey,
+    },
+}
+
+impl Location {
+    /// Whether the two locations share a cell of the state.
+    ///
+    /// Two field locations meet when they name the same field and, for two
+    /// resolved objects, the same object. Two membership locations meet when
+    /// they name the same population and, for two resolved objects, the same
+    /// object. A membership meets a field of the object it is about. A
+    /// location does not carry the member type of its population, so a
+    /// membership of an unresolved object, or of any object, is taken to meet
+    /// every field location that does not name a different object: a
+    /// dependence the member types would exclude is kept, never an
+    /// independence they would deny. The cost is precision: a creation or a
+    /// deletion of any object depends on every transition that reads or
+    /// writes a field, even of an unrelated type.
+    pub fn meets(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Field { object, field },
+                Self::Field {
+                    object: other_object,
+                    field: other_field,
+                },
+            ) => object == other_object && field == other_field,
+            (Self::Field { field, .. }, Self::AnyField { field: other_field })
+            | (
+                Self::AnyField { field },
+                Self::Field {
+                    field: other_field, ..
+                },
+            )
+            | (Self::AnyField { field }, Self::AnyField { field: other_field }) => {
+                field == other_field
+            }
+            (
+                Self::Membership { population, object },
+                Self::Membership {
+                    population: other_population,
+                    object: other_object,
+                },
+            ) => population == other_population && object == other_object,
+            (Self::Membership { population, .. }, Self::AnyMembership { population: other })
+            | (
+                Self::AnyMembership { population },
+                Self::Membership {
+                    population: other, ..
+                },
+            )
+            | (Self::AnyMembership { population }, Self::AnyMembership { population: other }) => {
+                population == other
+            }
+            (Self::Membership { object, .. }, Self::Field { object: holder, .. })
+            | (Self::Field { object: holder, .. }, Self::Membership { object, .. }) => {
+                object == holder
+            }
+            (Self::Membership { .. }, Self::AnyField { .. })
+            | (Self::AnyField { .. }, Self::Membership { .. })
+            | (Self::AnyMembership { .. }, Self::Field { .. } | Self::AnyField { .. })
+            | (Self::Field { .. } | Self::AnyField { .. }, Self::AnyMembership { .. }) => true,
+        }
+    }
+}
+
+/// What one transition reads, writes and needs to be enabled.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Footprint {
+    /// `R(t)`: the locations the transition's enabledness and post-state
+    /// read.
+    pub reads: BTreeSet<Location>,
+    /// `W(t)`: the locations the transition's frame lets it write.
+    pub writes: BTreeSet<Location>,
+    /// The locations the transition's enabledness reads: all of `reads` for a
+    /// model transition.
+    pub enabling: BTreeSet<Location>,
+}
+
+/// Whether some location of `left` meets some location of `right`.
+fn any_meet(left: &BTreeSet<Location>, right: &BTreeSet<Location>) -> bool {
+    left.iter()
+        .any(|written| right.iter().any(|read| written.meets(read)))
+}
+
+/// Whether `t` and `u` are independent (FR-155 "Independence"): neither
+/// writes a location the other reads or writes.
+pub fn independent(t: &Footprint, u: &Footprint) -> bool {
+    !(any_meet(&t.writes, &u.reads)
+        || any_meet(&t.writes, &u.writes)
+        || any_meet(&u.writes, &t.reads))
+}

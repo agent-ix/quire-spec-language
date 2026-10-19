@@ -29,7 +29,7 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
 use super::facts::{CheckedFacts, Definedness};
-use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
+use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind};
 use super::lowering::{AdmittedModel, AuthoredBound, LoweredClause};
 use super::observation::Observations;
 use super::references::{body_objects, ModelReferences};
@@ -39,6 +39,7 @@ use crate::family::{
     classify_domains, classify_extent, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure,
     FamilyContract, Requirements,
 };
+use crate::model::clause_observation::Observation;
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use qsl_foundation::bound::DomainKind;

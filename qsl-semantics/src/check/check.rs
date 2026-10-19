@@ -397,6 +397,11 @@ pub struct PackageDeclarations {
     /// unit (the FR-091 assembler fills it). A declaration built by hand has
     /// none, and its `declaration` occurrence then names no region.
     pub declared_type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-337: the expression spans of each declaration site that
+    /// has an expression tree of its own and is located by an
+    /// `Origin::TypeDeclaration` site name (a temporal clause's `holds`
+    /// condition), by that name. The FR-091 assembler fills it.
+    pub declared_site_spans: BTreeMap<String, qsl_forms::ExpressionSpans>,
     /// FR-096, FR-302: the span of the unit declaration each function
     /// synthesized for dispatch without form spans of its own was derived
     /// from, by index into [`Self::functions`]: every occurrence in such a
@@ -440,6 +445,10 @@ pub struct PackageDeclarations {
     /// FR-325, FR-326: the unit's `temporal` clauses in declaration order,
     /// each as S2 built it, for the `TemporalTrace` family's `check`.
     pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
+    /// `probabilistic` declarations in declaration order, each as S2 built
+    /// it, for the `Probabilistic` family's check (FR-185, FR-186).
+    pub probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// FR-165: the unit's state-graph claims in declaration order, each with
     /// its profile and `over` type resolved, for the `StateGraph` family's
     /// `check`.
@@ -560,6 +569,7 @@ impl PackageDeclarations {
             model_clauses: std::collections::BTreeMap::new(),
             resolved_signatures: ResolvedSignatures::default(),
             declared_type_spans: BTreeMap::new(),
+            declared_site_spans: BTreeMap::new(),
             synthesized_spans: BTreeMap::new(),
             embedding: None,
             units: quire_semantic_value::unit::UnitGraph::default(),
@@ -570,6 +580,7 @@ impl PackageDeclarations {
             protocols: Vec::new(),
             protocol_attempts: Vec::new(),
             temporal_clauses: Vec::new(),
+            probabilistic: Vec::new(),
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
             operation_clauses: Vec::new(),

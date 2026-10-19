@@ -111,7 +111,7 @@ impl ModelSystem<'_> {
         let Some((_, ValueType::Reference(context))) = predicate.parameters().first() else {
             return Err(stop(BROKEN));
         };
-        let walk = walk_of(self, state)?;
+        let walk = walk_of(self, state, None)?;
         let mut objects: Vec<_> = walk
             .rows
             .iter()

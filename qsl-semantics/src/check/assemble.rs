@@ -704,6 +704,7 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// Each `terminal` declaration's form, in source order, resolved by the
     /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
     terminals: Vec<TerminalDeclarationForm>,
@@ -727,6 +728,7 @@ impl Unit {
             population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
+            probabilistic: Vec::new(),
             terminals: Vec::new(),
             state_graph_claims: Vec::new(),
         };
@@ -770,6 +772,18 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
+                DeclarationForm::Random(random) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Random(random)),
+                DeclarationForm::Reward(reward) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Reward(reward)),
+                DeclarationForm::Workload(workload) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Workload(workload)),
+                DeclarationForm::Probabilistic(claim) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Claim(claim)),
                 DeclarationForm::StateGraphClaim(claim) => unit.state_graph_claims.push(*claim),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
@@ -1751,6 +1765,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
                 | ExprNode::Rational(..)
+                | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Name(_)
                 | ExprNode::Let { .. }
@@ -3157,6 +3172,42 @@ impl PackageDeclarations {
                 protocol.name.span,
             )
         }));
+        // FR-337: a temporal clause's nodes are located at its own sites:
+        // its name, its `over` parameter's name, each formula node's span,
+        // each written fairness constraint's span, and each `holds`
+        // condition's expression tree.
+        let mut declared_site_spans = BTreeMap::new();
+        for (index, clause) in unit.temporal_clauses.iter().enumerate() {
+            use super::lowering::{temporal_site, TemporalSite};
+            let form = &clause.form;
+            declared_type_spans.insert(temporal_site(index, TemporalSite::Claim), form.name.span);
+            declared_type_spans.insert(
+                temporal_site(index, TemporalSite::Over),
+                form.over.name.span,
+            );
+            for (id, node) in form.formula.iter() {
+                let span = match node {
+                    qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,
+                    qsl_forms::TemporalNodeForm::Holds { condition, span } => {
+                        declared_site_spans.insert(
+                            temporal_site(index, TemporalSite::Condition(id.index())),
+                            condition.spans.clone(),
+                        );
+                        *span
+                    }
+                    qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                };
+                declared_type_spans
+                    .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
+            }
+            for (constraint, written) in form.fairness.iter().enumerate() {
+                declared_type_spans.insert(
+                    temporal_site(index, TemporalSite::Fairness(constraint)),
+                    written.span,
+                );
+            }
+        }
+        package.declared_site_spans = declared_site_spans;
         // FR-381: a template's operation anchor occurrence is recorded at
         // the template's name.
         declared_type_spans.extend(unit.protocols.iter().flat_map(|protocol| {
@@ -3185,6 +3236,7 @@ impl PackageDeclarations {
             .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        package.probabilistic = unit.probabilistic;
         package.temporal_selections = selections
             .profiles
             .iter()

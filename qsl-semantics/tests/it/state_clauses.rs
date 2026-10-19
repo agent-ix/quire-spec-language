@@ -18,10 +18,11 @@ use qsl_foundation::bound::DomainKey;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind, Observation,
+    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind,
     WrongSnapshotCause,
 };
 use qsl_semantics::family::ClaimExtent;
+use qsl_semantics::model::clause_observation::Observation;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};

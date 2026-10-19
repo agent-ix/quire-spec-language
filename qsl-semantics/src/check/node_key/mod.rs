@@ -1277,8 +1277,15 @@ pub enum Operator {
     Deref,
     /// `reaches`.
     Reaches,
-    /// `temporal`.
+    /// `temporal`: the body root of a `temporal`/`temporal_clause` node
+    /// (QSpec FR-370).
     Temporal,
+    /// `temporal_formula`: the body root of a `temporal`/`formula` node
+    /// (QSpec FR-370).
+    TemporalFormula,
+    /// `temporal_fairness`: the body root of a `temporal`/`fairness` node
+    /// (QSpec FR-370).
+    TemporalFairness,
     /// `protocol_control`.
     ProtocolControl,
     /// `state_transition`.
@@ -1310,7 +1317,9 @@ impl Operator {
             Self::Value => "value_read",
             Self::Deref => "deref",
             Self::Reaches => "reachability",
-            Self::Temporal => "temporal",
+            Self::Temporal => "temporal_clause",
+            Self::TemporalFormula => "formula",
+            Self::TemporalFairness => "fairness",
             Self::ProtocolControl => "protocol_control",
             Self::StateTransition => "state_transition",
             // Never reached today: a `state_clause` node is inserted
@@ -2258,6 +2267,18 @@ fn map_member(member: Member, map: &mut impl FnMut(NodeKey) -> NodeKey) -> Membe
         Member::ProfileOperator { operator } => Member::ProfileOperator { operator },
         // No `declaration`: nothing for `map` to remap.
         Member::StateClause { clause } => Member::StateClause { clause },
+        Member::TemporalInterval { interval } => Member::TemporalInterval { interval },
+        Member::Fairness {
+            kind,
+            granularity,
+            declaration,
+            name,
+        } => Member::Fairness {
+            kind,
+            granularity,
+            declaration: map(declaration),
+            name,
+        },
     }
 }
 
