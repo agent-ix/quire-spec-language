@@ -476,6 +476,13 @@ pub struct PackageDeclarations {
     /// Test-only: check a package that holds a `terminal` declaration
     /// without refusing it as not emitted (FR-124).
     pub emit_unwritten_terminals: bool,
+    /// FR-135 to FR-137: the unit's `refinement` declarations in declaration
+    /// order, each resolved by the FR-091 assembler and checked after the
+    /// state clauses.
+    pub refinements: Vec<super::RefinementDeclaration>,
+    /// Test-only: check a package that holds a `refinement` declaration
+    /// without refusing it as not emitted (FR-135).
+    pub emit_unwritten_refinements: bool,
     /// Test-only: check a package that holds a state-graph claim without
     /// refusing it as not emitted (FR-165).
     pub emit_unwritten_state_graph_claims: bool,
@@ -503,6 +510,17 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_unwritten_terminals(mut self) -> Self {
         self.emit_unwritten_terminals = true;
+        self
+    }
+
+    /// These declarations, to be checked without refusing a `refinement`
+    /// declaration as not emitted, so the S3 value
+    /// (`CheckedGraph::refinements`) stays testable until S4 writes it
+    /// (FR-135).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_unwritten_refinements(mut self) -> Self {
+        self.emit_unwritten_refinements = true;
         self
     }
 
@@ -592,6 +610,8 @@ impl PackageDeclarations {
             type_invariants: Vec::new(),
             terminals: Vec::new(),
             emit_unwritten_terminals: false,
+            refinements: Vec::new(),
+            emit_unwritten_refinements: false,
             emit_unwritten_state_graph_claims: false,
             operation_bodies: Vec::new(),
             selected_views: BTreeMap::new(),
