@@ -7,7 +7,10 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::temporal::{evaluate_observed, HoldsStop, TemporalRefusal, TemporalTrace};
+use qsl_eval::temporal::{
+    evaluate_observed, HoldsStop, PositionRefusal, TemporalOutcome, TemporalRefusal, TemporalTrace,
+    UndefinedCause, UndefinedEvaluation, WindowRefusal,
+};
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::TemporalProfile;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
@@ -19,7 +22,8 @@ use quire_exact::{Meter, ValueType};
 
 use super::{
     convert_call_failure, convert_outcome, ClauseDisposition, ClauseRunReport, ClauseRunUsage,
-    CompiledRun, RunRefusal,
+    CompiledRun, RunRefusal, TemporalPositionRefusal, TemporalTraceRefusal, TemporalUndefinedCause,
+    TemporalVerdict, TemporalWindowRefusal,
 };
 use crate::proof_result::SettlementBasis;
 
@@ -128,8 +132,8 @@ pub(super) fn run_temporal(
     // A trace with no position has no observation to evaluate over.
     if trace.documents().next().is_none() {
         return early(ClauseDisposition::TemporalRefusal(match shape {
-            TemporalTrace::Finite { .. } => TemporalRefusal::EmptyTrace,
-            TemporalTrace::Lasso { .. } => TemporalRefusal::EmptyLoop,
+            TemporalTrace::Finite { .. } => TemporalTraceRefusal::EmptyTrace,
+            TemporalTrace::Lasso { .. } => TemporalTraceRefusal::EmptyLoop,
         }));
     }
 
@@ -229,9 +233,77 @@ pub(super) fn run_temporal(
             RunRefusal::Fault(fault) => ClauseDisposition::EvaluateFault(fault),
             other => ClauseDisposition::ArgumentRefusal(Box::new(other)),
         },
-        (None, Ok(outcome)) => ClauseDisposition::Temporal(outcome),
+        (None, Ok(outcome)) => ClauseDisposition::Temporal(verdict(outcome)),
         (None, Err(TemporalRefusal::Fault(fault))) => ClauseDisposition::EvaluateFault(fault),
-        (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(refusal),
+        (None, Err(refusal)) => ClauseDisposition::TemporalRefusal(trace_refusal(refusal)),
     };
     report(disposition, ClauseRunUsage::from_meter(&meter, admitted))
+}
+
+/// The spine's own form of the evaluator's outcome (FR-100-AC-8).
+fn verdict(outcome: TemporalOutcome) -> TemporalVerdict {
+    match outcome {
+        TemporalOutcome::Holds => TemporalVerdict::Holds,
+        TemporalOutcome::Violated { at } => TemporalVerdict::Violated { at: at.index() },
+        TemporalOutcome::Undefined(UndefinedEvaluation { at, cause }) => {
+            TemporalVerdict::Undefined {
+                at: at.index(),
+                cause: match cause {
+                    UndefinedCause::Kernel(undefined) => TemporalUndefinedCause::Kernel(undefined),
+                    UndefinedCause::Family(record) => TemporalUndefinedCause::Family(record),
+                    UndefinedCause::InsufficientData(data) => {
+                        TemporalUndefinedCause::InsufficientData {
+                            count: data.count,
+                            min_count: data.min_count,
+                        }
+                    }
+                },
+            }
+        }
+        TemporalOutcome::Pending => TemporalVerdict::Pending,
+        TemporalOutcome::MissingFairnessPremise { constraint } => {
+            TemporalVerdict::MissingFairnessPremise { constraint }
+        }
+        TemporalOutcome::Incomplete(incomplete) => TemporalVerdict::Incomplete(incomplete),
+        TemporalOutcome::WindowLimitReached(reached) => TemporalVerdict::WindowLimitReached {
+            limit: reached.limit,
+            value: reached.value,
+            setting: reached.setting,
+        },
+    }
+}
+
+/// The spine's own form of the evaluator's trace refusal (FR-100-AC-8).
+fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
+    match refusal {
+        TemporalRefusal::EmptyTrace => TemporalTraceRefusal::EmptyTrace,
+        TemporalRefusal::TupleArity { expected, found } => {
+            TemporalTraceRefusal::TupleArity { expected, found }
+        }
+        TemporalRefusal::AlignSkipNotImplemented => TemporalTraceRefusal::AlignSkipNotImplemented,
+        TemporalRefusal::EmptyLoop => TemporalTraceRefusal::EmptyLoop,
+        TemporalRefusal::TraceTooLong => TemporalTraceRefusal::TraceTooLong,
+        TemporalRefusal::LassoUnderBoundedProfile { profile } => {
+            TemporalTraceRefusal::LassoUnderBoundedProfile { profile }
+        }
+        TemporalRefusal::ProfileNotEvaluated { profile } => {
+            TemporalTraceRefusal::ProfileNotEvaluated { profile }
+        }
+        TemporalRefusal::Position(position) => TemporalTraceRefusal::Position(match position {
+            PositionRefusal::NotDecimal => TemporalPositionRefusal::NotDecimal,
+            PositionRefusal::LeadingZero => TemporalPositionRefusal::LeadingZero,
+            PositionRefusal::Overflow => TemporalPositionRefusal::Overflow,
+            PositionRefusal::OutsideTrace { position } => TemporalPositionRefusal::OutsideTrace {
+                position: position.index(),
+            },
+        }),
+        TemporalRefusal::Window(window) => TemporalTraceRefusal::Window(match window {
+            WindowRefusal::OutsideTrace { position } => {
+                TemporalWindowRefusal::OutsideTrace { position }
+            }
+            WindowRefusal::WindowKindMismatch => TemporalWindowRefusal::WindowKindMismatch,
+            WindowRefusal::TimestampsDecrease => TemporalWindowRefusal::TimestampsDecrease,
+        }),
+        TemporalRefusal::Fault(fault) => TemporalTraceRefusal::Fault(fault),
+    }
 }
