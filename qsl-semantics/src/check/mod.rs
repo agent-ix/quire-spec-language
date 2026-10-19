@@ -1621,7 +1621,11 @@ impl PackageDeclarations {
                         .iter()
                         .map(|claim| (claim.form.name.name.as_str(), "claim")),
                 )
-                .chain(self.native_names.iter().map(|name| (name.as_str(), "unit")))
+                .chain(
+                    self.native_names
+                        .iter()
+                        .map(|name| (name.as_str(), "dimension or unit")),
+                )
                 .chain(scope.type_names().map(|name| (name, "type"))),
         );
         for (index, protocol) in self.protocols.iter().enumerate() {

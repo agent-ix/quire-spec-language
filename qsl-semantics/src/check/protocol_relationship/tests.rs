@@ -135,14 +135,15 @@ fn checks(text: &str) -> CheckedGraph {
     check(text).unwrap_or_else(|refusals| panic!("{text}: {refusals:?}"))
 }
 
-/// Every refusal's cause, catalog pair and the text at its span.
-fn refused(
-    text: &str,
-) -> Vec<(
+/// One refusal's cause, its catalog pair and the text at its span.
+type Refused<'t> = (
     ProtocolAnchorCause,
     (&'static str, Option<&'static str>),
-    &str,
-)> {
+    &'t str,
+);
+
+/// Every refusal's cause, catalog pair and the text at its span.
+fn refused(text: &str) -> Vec<Refused<'_>> {
     let refusals = check(text).map(|_| ()).expect_err("the protocol refuses");
     refusals
         .iter()
