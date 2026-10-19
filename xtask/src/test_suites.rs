@@ -2954,10 +2954,15 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         (worker.join().expect("reap worker"), pid)
     }
 
-    /// A child that exists but has not been waited for still has a `/proc`
-    /// entry (as a zombie); a reaped one does not. Looking never reaps.
+    /// A child that exists but has not been waited for is still listed by
+    /// `ps` (as a zombie); a reaped one is not. Looking never reaps.
     fn is_unreaped(pid: u32) -> bool {
-        Path::new(&format!("/proc/{pid}")).exists()
+        Command::new("ps")
+            .args(["-p", &pid.to_string()])
+            .stdout(Stdio::null())
+            .status()
+            .expect("run ps")
+            .success()
     }
 
     fn stream_failure(what: &'static str, message: &str) -> Result<()> {

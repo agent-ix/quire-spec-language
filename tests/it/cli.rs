@@ -98,6 +98,20 @@ fn cli_preserves_os_paths_and_refuses_non_utf8_labels_before_io() {
         assert!(stderr.contains("must be UTF-8"), "{stderr}");
         assert!(!stderr.contains("cannot open"));
     }
+}
+
+// APFS and HFS+ reject file names that are not valid UTF-8 (`EILSEQ`), so a
+// non-UTF-8 source path cannot exist on macOS; the argv half above covers
+// the label refusal there.
+#[cfg(all(unix, not(target_os = "macos")))]
+#[trace("TC-017", "FR-010-AC-3", "FR-010-AC-6", "FR-010-AC-7")]
+#[test]
+fn cli_preserves_non_utf8_os_paths() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let executable = env!("CARGO_BIN_EXE_quire-spec");
     let path = temp
         .path()
         .join(OsString::from_vec(b"source-\xff.native".to_vec()));
