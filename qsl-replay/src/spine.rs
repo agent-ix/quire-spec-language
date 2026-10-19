@@ -69,7 +69,8 @@ mod clause;
 pub use clause::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
-    OperationName, OverObject, TraceInput,
+    OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
 };
 mod refinement;
 pub use refinement::{

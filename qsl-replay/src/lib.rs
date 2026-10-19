@@ -75,6 +75,9 @@ pub use certificate::closure::{
     ProductStateRef, TemporalCertificateCheck,
 };
 pub use certificate::scc::{Component, ComponentWitness};
+pub use certificate::state_graph::{
+    check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
+};
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
