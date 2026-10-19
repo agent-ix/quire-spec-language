@@ -116,6 +116,10 @@ pub use model_check::state_graph::{
     GraphUndefined, GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome,
     StateGraphOutcome, WitnessSource,
 };
+pub use model_check::step_settle::{
+    settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
+    STEP_INDUCTION_DEPTH,
+};
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a

@@ -292,6 +292,7 @@ pub struct CheckedRefinement {
     pub(crate) steps: Vec<StepRow>,
     pub(crate) concrete_fairness: Vec<FairnessConstraint>,
     pub(crate) abstract_fairness: Vec<FairnessConstraint>,
+    pub(crate) concrete_object_types: Vec<EffectiveId>,
 }
 
 impl CheckedRefinement {
@@ -340,6 +341,13 @@ impl CheckedRefinement {
     /// order.
     pub fn abstract_fairness(&self) -> &[FairnessConstraint] {
         &self.abstract_fairness
+    }
+
+    /// Every object type of the concrete model, mapped by an object row or
+    /// not: the contexts of the invariant clauses the concrete package
+    /// holds (FR-146).
+    pub fn concrete_object_types(&self) -> &[EffectiveId] {
+        &self.concrete_object_types
     }
 }
 
@@ -557,6 +565,12 @@ pub(crate) fn check_refinement<'a, 'c>(
     let steps = checker.steps(form, cx);
     let concrete_fairness = checker.fairness(form, FairnessSide::Assume);
     let abstract_fairness = checker.fairness(form, FairnessSide::Ensure);
+    let concrete_object_types = checker
+        .concrete_side
+        .model
+        .object_types()
+        .map(|(_, id)| id)
+        .collect();
     let findings = checker.findings;
     if !findings.refusals.is_empty() {
         return Err((findings.refusals, nodes));
@@ -572,6 +586,7 @@ pub(crate) fn check_refinement<'a, 'c>(
             steps,
             concrete_fairness,
             abstract_fairness,
+            concrete_object_types,
         },
         nodes,
     ))

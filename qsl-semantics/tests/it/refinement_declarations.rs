@@ -14,8 +14,8 @@ use ix_trace_rs::trace;
 use qsl_forms::{AbstractSideForm, DeclaredName, RefinementRowForm, StepSourceForm};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    AssemblyRefusal, CheckCause, CheckRefusal, CheckedGraph, CheckedRefinement,
-    PackageDeclarations, RefinementCause, RowClass, StepClass, StepTarget,
+    step_simulation_records, AssemblyRefusal, CheckCause, CheckRefusal, CheckedGraph,
+    CheckedRefinement, PackageDeclarations, RefinementCause, RowClass, StepClass, StepTarget,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -23,6 +23,7 @@ use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimulationRecord};
 use serde_json::{json, Value};
 
 const INTEGER: &str = "ix://quire/native/Integer";
@@ -1570,4 +1571,91 @@ fn a_step_row_naming_an_ambiguous_operation_refuses_at_its_name() {
         (Code::AmbiguousDeclaration, Some("ambiguous-name"))
     );
     assert_eq!(ambiguous.at, "Impl::Child::op");
+}
+
+/// A node key standing for `CasRefinesCounter`'s refinement node, which the
+/// caller mints (FR-144 is not built yet).
+fn refinement_key() -> quire_exact::NodeKey {
+    quire_exact::NodeKey::from_digest([7_u8; 32])
+}
+
+fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
+    step_simulation_records(
+        refinement_key(),
+        only_refinement(graph),
+        graph.state_clauses(),
+    )
+    .expect("the rows fit a step row reference")
+}
+
+/// FR-146-AC-1 (TC-551 step 1), first half: `CasRefinesCounter` writes one
+/// `Initial` and one `Step` record for each of its seven rows, with no
+/// hypotheses, the rows named by declaration position.
+#[trace("TC-551", "FR-146-AC-1")]
+#[test]
+fn the_counter_refinement_writes_an_initial_and_a_step_record_per_row() {
+    let records = simulation_records(&checked_counter(&cas_refines_counter()));
+    assert_eq!(records.len(), 8);
+    let mut expected = vec![StepObligation::Initial];
+    expected.extend((0..7).map(|row| StepObligation::Step {
+        row: StepRowRef::new(row),
+    }));
+    let found: Vec<_> = records.iter().map(|record| record.obligation).collect();
+    assert_eq!(found, expected);
+    for record in &records {
+        assert_eq!(record.refinement, refinement_key());
+        assert!(record.hypotheses.is_empty());
+    }
+}
+
+/// FR-146-AC-1 (TC-551 step 1), second half: with `commitB -> any` the
+/// refinement writes no record.
+#[trace("TC-551", "FR-146-AC-1")]
+#[test]
+fn an_any_row_writes_no_simulation_record() {
+    let base = cas_refines_counter();
+    let graph = checked_counter(&mutated(
+        &base,
+        "step Impl::Counter::commitB -> Spec::Counter::inc(self);",
+        "step Impl::Counter::commitB -> any;",
+    ));
+    assert_eq!(simulation_records(&graph), []);
+}
+
+/// FR-146-AC-2 (TC-551 step 2), the hidden-field half: a refinement with a
+/// hidden field writes no record. `RegisterHistory` needs the unchecked
+/// history row (FR-138), so its half is not tested.
+#[trace("TC-551")]
+#[test]
+fn a_hidden_field_writes_no_simulation_record() {
+    let base = cas_refines_counter();
+    let graph = checked_counter(&mutated(&base, "value = self.value;", ""));
+    assert_eq!(simulation_records(&graph), []);
+}
+
+/// FR-146-AC-3 (TC-551 step 3): an invariant of `Impl::Counter` is a
+/// hypothesis of every record, and changes the `Initial` record's identity
+/// preimage.
+#[trace("TC-551", "FR-146-AC-3")]
+#[test]
+fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
+    let base = cas_refines_counter();
+    let without = simulation_records(&checked_counter(&base));
+    let body = format!(
+        "{base}\ninvariant CasInv using inf on Impl::Counter at current {{ \
+         self.busyA or self.tmpA <= self.value }}\n"
+    );
+    let graph = checked_counter(&body);
+    let with = simulation_records(&graph);
+    let [invariant] = graph.state_clauses() else {
+        panic!("one invariant clause");
+    };
+    assert_eq!(with.len(), 8);
+    for record in &with {
+        assert_eq!(record.hypotheses, [invariant.identity()]);
+    }
+    let canonical = |record: &StepSimulationRecord| {
+        quire_canonical::to_vec(record, quire_canonical::Limits::new(1 << 16)).expect("encodes")
+    };
+    assert_ne!(canonical(&with[0]), canonical(&without[0]));
 }
