@@ -59,11 +59,15 @@ computes it and what it writes.
   item's lasso, the replay executor SHALL compute the hints from the
   enabled sets it recomputed at each loop state, for every engine's
   refutation.
-- For each operation of the model, in canonical declaration order, the
-  executor SHALL (the canonical declaration order is the operations ordered
-  by the canonical identity order of their declaring type, then by operation
-  name in ascending UTF-8 byte order, each operation once; source position
-  and display names do not enter it, FR-133-AC-4):
+- The canonical operation order of a model is its operations, each once under
+  the type that declares it (an operation a subtype inherits belongs to the
+  supertype that declares it, whichever type admits it), the declaring types
+  in ascending order of their `EffectiveId` digest bytes (the order of the
+  64 lowercase hex digits FR-120 encodes it as), then each type's operations
+  in ascending UTF-8 byte order of the operation name. Source position and
+  display names do not enter it (FR-133-AC-4).
+- For each operation of the model, in canonical operation order, the
+  executor SHALL:
   - when the operation is enabled at some loop state and no loop step takes
     it, name `{Strong, operation, Whole}`;
   - otherwise, when some transition identity of the operation is enabled at
@@ -92,7 +96,7 @@ computes it and what it writes.
 | FR-133-AC-1 | ADR-019 §6's mutex refuted under `weak each` on `acquire` carries exactly one hint: `{Strong, acquire, Each}`, identity `acq(1)`, first enabled position 0; `release`, taken in the loop, gets none. The refutation under `strong` (whole) on `acquire` carries the same hint. Both records still settle `refuted`, with the same counterexample and obligation identity as when the hint is not computed. | Test (TC-534) |
 | FR-133-AC-2 | ADR-018 §6's ConfigVersion claim refuted under weak `attemptUpdate` with no granularity, the lasso FR-126-AC-1 returns (bound to `a`, both bindings giving length 3; loop `upd(b)` three times), carries one hint: `{Strong, attemptUpdate, Each}`, identity `upd(a)`, the update the loop never takes, position 0. | Test (TC-534) |
 | FR-133-AC-3 | FR-126-AC-3's terminal stutter refutation over `Counter`, its deadlock-freedom refutation and FR-126-AC-2's bounded refutation carry no hint. | Test (TC-534) |
-| FR-133-AC-4 | Over a model whose types `T1` and `T2` have the identity order `T1 < T2`, where `T1` declares `setTo` before `inc` in source and `T2` declares `bump`, a lasso that leaves `inc`, `setTo` and `bump` each enabled and untaken yields the hints in the order `T1.inc`, `T1.setTo`, `T2.bump`, the same order for any source order or display name of the declarations. | Test (TC-534) |
+| FR-133-AC-4 | Hints come in canonical operation order. Over a model whose types `T1` and `T2` have `EffectiveId` order `T1 < T2`, where `T1` declares `setTo` before `inc` in source and `tick`, `T2` declares `bump`, and the loop takes `tick` (one identity), a lasso that leaves `inc`, `setTo` and `bump` each enabled and untaken yields exactly the hints `T1.inc`, `T1.setTo`, `T2.bump` in that order, whatever the source order or display names. Over a model whose subtype `U` of `S` has `U < S`, where `U` declares `m` and `tick`, `S` declares `a`, both types are admitted and the loop takes `tick`, the hints come as `U.m`, `S.a` (declaring-type order), not `a`, `m` (the order of listing `a` under the admitting subtype `U`). | Test (TC-534) |
 
 ## Dependencies
 

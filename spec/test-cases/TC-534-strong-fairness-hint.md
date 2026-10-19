@@ -27,10 +27,13 @@ Scope: FR-133-AC-1 to FR-133-AC-4.
 3. Settle FR-126-AC-3's stutter refutation and deadlock-freedom refutation,
    and FR-126-AC-2's bounded refutation.
 
-4. Settle a refuted lasso over a model with types `T1 < T2` (identity
-   order), `T1` declaring `setTo` before `inc` and `T2` declaring `bump`,
-   that leaves all three enabled and untaken; repeat with the declarations
-   reordered and renamed for display.
+4. Settle a refuted lasso over a model with types `T1 < T2` (`EffectiveId`
+   order), `T1` declaring `setTo` before `inc` and `tick`, `T2` declaring
+   `bump`, whose loop takes `tick` and leaves the other three enabled and
+   untaken; repeat with the declarations reordered and renamed for display.
+5. Settle a refuted lasso over a model admitting a type `S` declaring `a` and
+   its subtype `U` declaring `m` and `tick`, with `U < S`, whose loop takes
+   `tick` and leaves `a` and `m` enabled and untaken.
 
 Tag the tests `#[trace("TC-534", "FR-133-AC-n")]`.
 
@@ -44,3 +47,5 @@ Tag the tests `#[trace("TC-534", "FR-133-AC-n")]`.
 - Step 3: no hint on any record.
 - Step 4: three hints in the order `T1.inc`, `T1.setTo`, `T2.bump`, identical
   under the reordered and renamed declarations.
+- Step 5: two hints in the order `U.m`, `S.a`: `a` is listed under its declaring
+  supertype `S`, not under the admitting subtype `U`.
