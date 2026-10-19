@@ -27,7 +27,7 @@ use quire_exact::{Cancel, CancelCause, ObjectReference};
 
 use crate::counter::UNLIMITED;
 use crate::graph_world::{
-    config_world, fork_world, game_world, job_world, World, DIVIDES, REACHES_TWO,
+    config_world, config_world_over, fork_world, game_world, job_world, World, DIVIDES, REACHES_TWO,
 };
 use crate::state_graph::{no_samples, reachable, run, system, AB};
 
@@ -650,4 +650,40 @@ fn a_count_two_cycle_certifies_only_where_no_from_node_sits() {
         ),
         rejected(CertificateRule::CountBroken, pos(0))
     );
+}
+
+/// FR-169-AC-11: over §7.1's subject with universe `{a}`, initial `va = 0`
+/// and TC-592's guard `2 div (2 - self.versionNumber) >= 1`, a hand-built
+/// certificate of the 3 states ranked 2, 1 and 0 for `ReachesTwo` is
+/// rejected `BadState` at `va = 2`, whose guard has no value; the same
+/// ranks over the subject without the guard are accepted.
+#[trace("TC-644", "FR-169-AC-11")]
+#[test]
+fn an_undefined_guard_at_a_reached_state_rejects_bad_state() {
+    const GUARD: &str = "pre Guard using v on Config::ConfigVersion::attemptUpdate { \
+                         2 div (2 - self.versionNumber) >= 1 }\n";
+    let checked = |extra: &str| {
+        let world = config_world_over(extra, REACHES_TWO, &["a"], &[vec![0]]);
+        let states = reachable(&world, &["a"]).0;
+        assert_eq!(states.len(), 3);
+        let va = |value| {
+            state_where(&world, &["a"], |state| {
+                world.value(state, "a", "versionNumber") == value
+            })
+        };
+        let ranks = BTreeMap::from([(va(0), 2), (va(1), 1), (va(2), 0)]);
+        let certificate = with_ranks(states.keys().copied().collect(), &ranks);
+        let result = check(
+            &world,
+            &["a"],
+            "ReachesTwo",
+            Some(world.reference("a")),
+            &certificate,
+            &ModelCheckLimits::default(),
+        );
+        (result, va(2))
+    };
+    let (guarded, two) = checked(GUARD);
+    assert_eq!(guarded, rejected(CertificateRule::BadState, two));
+    assert_eq!(checked("").0, TemporalCertificateCheck::Accepted);
 }
