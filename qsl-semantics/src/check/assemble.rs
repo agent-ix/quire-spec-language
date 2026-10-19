@@ -3190,6 +3190,42 @@ impl PackageDeclarations {
                 protocol.name.span,
             )
         }));
+        // FR-337: a temporal clause's nodes are located at its own sites:
+        // its name, its `over` parameter's name, each formula node's span,
+        // each written fairness constraint's span, and each `holds`
+        // condition's expression tree.
+        let mut declared_site_spans = BTreeMap::new();
+        for (index, clause) in unit.temporal_clauses.iter().enumerate() {
+            use super::lowering::{temporal_site, TemporalSite};
+            let form = &clause.form;
+            declared_type_spans.insert(temporal_site(index, TemporalSite::Claim), form.name.span);
+            declared_type_spans.insert(
+                temporal_site(index, TemporalSite::Over),
+                form.over.name.span,
+            );
+            for (id, node) in form.formula.iter() {
+                let span = match node {
+                    qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,
+                    qsl_forms::TemporalNodeForm::Holds { condition, span } => {
+                        declared_site_spans.insert(
+                            temporal_site(index, TemporalSite::Condition(id.index())),
+                            condition.spans.clone(),
+                        );
+                        *span
+                    }
+                    qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                };
+                declared_type_spans
+                    .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
+            }
+            for (constraint, written) in form.fairness.iter().enumerate() {
+                declared_type_spans.insert(
+                    temporal_site(index, TemporalSite::Fairness(constraint)),
+                    written.span,
+                );
+            }
+        }
+        package.declared_site_spans = declared_site_spans;
         // FR-381: a template's operation anchor occurrence is recorded at
         // the template's name.
         declared_type_spans.extend(unit.protocols.iter().flat_map(|protocol| {
