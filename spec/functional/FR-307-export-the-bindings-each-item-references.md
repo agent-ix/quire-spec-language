@@ -76,6 +76,11 @@ An item references:
   bindings.
 - A bound item SHALL return every binding it references.
 - Each item's result depends only on the checked package and that item.
+- The export SHALL return each item as one of two result kinds: a bound
+  result, which carries the item's bindings (an empty set when the item
+  references no element), or a refusal. An item that references no element is
+  bound with an empty binding set. When every requested item is refused, the
+  export SHALL still return one refusal per item.
 
 ## Acceptance Criteria
 
@@ -86,6 +91,7 @@ An item references:
 | FR-307-AC-3 | A requested occurrence key that names no requirement record refuses `missing_declaration`/`missing-name` naming the key, and the other requested items' results are unchanged. | Test (TC-806) |
 | FR-307-AC-4 | An item reading a member that `Base` declares through a receiver of static type `Sub` references `Sub`: with only `Base` bound it refuses naming `Sub`, and with `Sub` bound it returns `Sub`'s binding. | Test (TC-807) |
 | FR-307-AC-5 | A frame item and a postcondition item of `attemptUpdate` each reference `OperationKey { ConfigVersion, attemptUpdate }`: with the frame bound each returns that `FrameBinding`, and without it each refuses naming that key. | Test (TC-807) |
+| FR-307-AC-6 | With no element bound, a request for a clause item and an extent-domain item returns two `missing_declaration`/`missing-name` refusals, one per item, each with no bindings, and the export itself succeeds. A requested item that references no model element returns a bound result with an empty binding set, not a refusal. | Test (TC-1082) |
 
 ## Dependencies
 
@@ -93,7 +99,10 @@ An item references:
   owns the CG request; ADR-017 AR-4 and AR-6 fix the export, its referenced
   elements and what CG receives; ADR-011 T-13 names the driver.
 - **Downstream:** CG's Kani and Verus generators receive only bound items and
-  keep their own unbound guard (ADR-017 AR-4).
+  keep their own unbound guard (ADR-017 AR-4). The orchestrating driver
+  (ADR-011 T-13, in agent-ix/quire-driver) puts only the bound items
+  in the QSpec FR-331 request (ADR-017 AR-6); this FR owns the
+  bound-or-refused result kinds the driver reads (AC-6), not the driver's request building.
 
 ## References
 
