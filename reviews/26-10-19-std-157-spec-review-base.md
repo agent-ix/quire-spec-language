@@ -71,6 +71,14 @@ Against head 6aab9a1c1.
 | --- | --- | --- | --- |
 | FND-011 | medium | In TC-1084, `f(earlier: Counter, later: Counter, n: Integer)` now takes object-type parameters, so `earlier` and `later` are references. Outside a state clause the checker treats `x.f` over a `Reference` as a record field read (`is_model_receiver` is true for a reference only `in_state_clause()`, qsl-semantics/src/check/check.rs:2482-2492; otherwise `field` needs a `Composite` record operand and returns `mismatch`, check.rs:2729-2737). So every `f` vector (steps 1 to 3) refuses `ill_typed`/`type-mismatch` at `earlier.tally` before the equality is typed: step 1's guarded form does not check, and steps 2 and 3 fail at the wrong span. FR-056-AC-9 and FR-098-AC-14 read a function's reference parameter as `deref(n).f`. The parameter type is also written unqualified (`Counter`), where object types are `M::Counter` (FR-056-AC-9; FR-108's `a: Config::ConfigVersion`). Fix: `function f using v(earlier: M::Counter, later: M::Counter, n: Integer): Boolean pure` with `deref(earlier).tally` and `deref(later).tally` throughout, or give `f` record parameters of a separate `record`. | spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:19-23; spec/functional/FR-104-check-state-clauses.md:313 |
 
+## New findings (disposition pass 4)
+
+Against head 05c1d8de6. Every form was run through the checker: a scratch test (probe-sr1039_probe.rs beside this file) in a clone at 05c1d8de6 adds `Tally` (`Int[0,3]`) and `Counter { tally, next }` with operation `bump` to the shared `config_version_document` fixture, then assembles and checks each body with `admit_and_assemble_with_body`.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | medium | FR-104-AC-12 and TC-1084 step 1 say `f` with body `deref(earlier).tally < 3 and deref(later).tally = deref(earlier).tally + 1` checks. Run through the checker, it refuses `undefined_expression`/`unproved-range` at the sum: in a function body the guard over a `deref(r).f` read supplies no fact. The other forms behave as written. `pre G` and `invariant I` check guarded and refuse at the sum unguarded. In `f`, `deref(later).tally = deref(earlier).tally` checks, `= -deref(earlier).tally` and `= n` refuse `ill_typed`/`type-mismatch` at the comparison, and the ordering checks. Forms that do check guarded: record parameters (`record Pair { tally: Int[0, 3]; }`, `f(earlier: Pair, later: Pair, n: Integer)` with `earlier.tally < 3 and later.tally = earlier.tally + 1`, with all five `f` vectors as AC-12 states), scalar parameters `a: Int[0, 3]`, and `let e = deref(earlier).tally in e < 3 and deref(later).tally = e + 1`. Fix: use record parameters for `f`. Whether a guard over `deref(r).f` should supply a fact in a function body, as `self.f` does in a clause, is a separate checker question for the planner. | spec/functional/FR-104-check-state-clauses.md:313; spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:19-21 |
+
 ## Dispositions
 
 Round 1, against head 5dadb78aa.
@@ -97,3 +105,10 @@ Round 3, against head 6aab9a1c1.
 | FND-008 | still-open | The context is now the object type `M::Counter`, but the fixture uses "the header of FR-108's unit", whose only model line is `model Config = "example/config-version" ...`. That package declares no `Counter`, and the unit declares no `M`, so `pre G ... on M::Counter::bump` and `invariant I ... on M::Counter` refuse `missing_declaration`/`missing-name` at `M` (FR-104:80-82) before the rule applies. Fix: extend the Config package with `Counter` and `bump`, as TC-459 step 7 extends it with `Flow`, and write `Config::Counter`; or give the unit its own `model M = "<package>" digest ...` header over a package that declares them |
 | FND-009 | fixed | `f(earlier: Counter, later: Counter, n: Integer)` binds `n` (the parameter typing is FND-011) |
 | FND-010 | fixed | `reviews/c-base.md`, `c-ears.md`, `d1-base.md` and `d1-ears.md` deleted; only the two SR files remain |
+
+Round 4, against head 05c1d8de6.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | fixed | Verified by the checker probe: over the Config package extended with `Counter`/`bump`, `pre G using v on Config::Counter::bump { self.tally < 3 and self.next = self.tally + 1 }` and `invariant I using v on Config::Counter at current { ... }` check, and each unguarded form refuses `undefined_expression`/`unproved-range` at the sum |
+| FND-011 | fixed | Verified by the checker probe: `f(earlier: Config::Counter, ...)` with `deref(...)` reads types; `deref(later).tally = deref(earlier).tally` checks and the `-` and `n` vectors refuse `ill_typed`/`type-mismatch` at the comparison (the guarded vector is FND-012) |
