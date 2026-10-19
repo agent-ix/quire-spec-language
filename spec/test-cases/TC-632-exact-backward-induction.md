@@ -16,7 +16,7 @@ Scope: FR-197-AC-1 to FR-197-AC-4.
 
 ## Test Procedure
 
-Fixtures: `Link` and `Deliver`; `P95`; `NoFault`; `Avail` with a mean-of-fraction claim; §15.5's `Deadline` minimum; a two-point `M` model (1 or 3 with probability 1/2 each) with `quantile 1/2 of M >= 3`.
+Fixtures: `Link` and `Deliver`; `P95`; `NoFault`; `Avail` with a mean-of-fraction claim; §15.5's `Deadline` minimum; a two-point `M` model (1 or 3 with probability 1/2 each) with `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure).
 
 1. Compute `Deliver`'s minimum, maximum and workload values and the policy.
 2. Compute `Pr(M <= 5 ms)` and `Pr(M <= 2 ms)` under the workload and by XF-2.

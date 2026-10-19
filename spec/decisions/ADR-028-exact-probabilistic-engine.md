@@ -491,7 +491,7 @@ operation Msg::send_b(lost: Boolean)
   post self.attempts = pre(self.attempts) + 1 and self.delivered = not lost;
 random Msg::send_a(lost) ~ { true: 1, false: 9 };
 random Msg::send_b(lost) ~ { true: 1, false: 4 };
-terminal when self.delivered or self.attempts = 2;
+terminal Done using ev on Link when { self.delivered or self.attempts = 2 };
 
 workload Even on Link { weight Msg::send_a = 1; weight Msg::send_b = 1; }
 
@@ -523,14 +523,14 @@ loss and `391/400 = 0.9775` at the start.
 
 ```text
 model Retx = "example/retx" …;   // object m: Msg { delivered: Boolean, x: Clock }
-time dense unit ms;
+time t dense unit ms;
 
 operation Msg::send(lost: Boolean)
   pre  not self.delivered and self.x >= 1 ms
   post self.delivered = not lost and self.x = 0;
 random Msg::send(lost) ~ { true: 1, false: 9 };
-time invariant when not self.delivered { self.x <= 2 ms }
-terminal when self.delivered;
+time invariant Deadline when { not self.delivered } { self.x <= 2 ms }
+terminal Done using timed on Retx when { self.delivered };
 
 probabilistic Deadline using timed on Retx under every scheduler on origin {
   probability >= 0.99 [ eventually[0 ms, 4 ms] holds(m.delivered) ]
@@ -578,7 +578,7 @@ random Proc::flip(heads) ~ { true: 1, false: 1 };
 operation Proc::wait
   pre  not self.done
   post self.done = pre(self.done);
-terminal when self.done;
+terminal Done using inf on Coin when { self.done };
 
 probabilistic Terminates using inf on Coin under every scheduler on origin {
   probability >= 0.99 [ eventually holds(p.done) ]
