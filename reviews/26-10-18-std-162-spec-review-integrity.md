@@ -69,6 +69,7 @@ with `missing-name`.
 | FND-002 | fixed | 2fbe63ee5: ADR-022:99 now cites SG-4's no-temporal-operator rule. |
 | FND-003 | fixed | ffa87d0f8: FR-125 Instancing makes QSL report `NoInstance` before exploring any state, and FR-127 settles it `inconclusive` (InconclusiveCause list and V-6 row). FR-126 lists `Undecided(NoInstance)`, and FR-125-AC-7 and TC-520 step 6 assert it, so a zero-instance item is never read as holding. Leaving the wire spelling to QSpec FR-331/ADR-018 QS-6 is accepted; see FND-005. |
 | FND-004 | fixed | ffa87d0f8: FR-125:110 now reads "a population whose member type conforms to `T` has no universe". |
+| FND-005 | fixed | 5e27354bd: FR-169's V-6 row now lists `NoInstance` (FR-125) between `NoInitialState` and `ReductionNotPreserving`, so the state-graph map settles a zero-instance item `inconclusive`. Still open outside this PR: QSpec's `no-instance` wire cause (FR-361, FR-391, FR-331) is not yet on STD-171 or any STD ticket; the lead should add it to STD-171. |
 
 ## New findings (disposition pass 1)
 
