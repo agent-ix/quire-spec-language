@@ -640,12 +640,12 @@ impl ProtocolAnchorCause {
             | Self::NodeRole { .. }
             | Self::MissingChannel { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
-            Self::WrongKind { .. } | Self::ChannelMismatch { .. } | Self::CarriesMismatch { .. } => {
-                "type-mismatch"
+            Self::WrongKind { .. }
+            | Self::ChannelMismatch { .. }
+            | Self::CarriesMismatch { .. } => "type-mismatch",
+            Self::KeyModelState { .. } | Self::KeyEquality { .. } | Self::SlotModelState { .. } => {
+                "operator-ineligible"
             }
-            Self::KeyModelState { .. }
-            | Self::KeyEquality { .. }
-            | Self::SlotModelState { .. } => "operator-ineligible",
             // Only a cause that has a tag is wrapped
             // (`protocol_controls::check_fifo`, `protocol_slots`).
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => {

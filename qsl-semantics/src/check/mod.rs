@@ -259,23 +259,23 @@ pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedControl, CheckedControlTree, CheckedOperationNodes,
     CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
-pub use protocol_slots::{
-    CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRepeat,
-    CheckedSlots,
-};
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_obligation::{
     CaptureOwner, CaptureStage, CheckedActivation, CheckedBinder, CheckedCapture, CheckedCommit,
     CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
     ObligationCause, ObligationOwner, ObligationStage, ReadClass,
 };
+pub use protocol_slots::{
+    CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRepeat,
+    CheckedSlots,
+};
 pub use refusal::{
-    AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal, ObservationReason, SlotKind,
+    AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
     DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
-    MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause, ProtocolReferenceCause,
-    ProvedInterval, QualifiedCandidate, ShadowedDeclaration, StageLimitCause, TemporalCause,
-    WrongSnapshotCause,
+    MemberCandidate, NavigationBound, Obligation, ObservationReason, ProtocolAnchorCause,
+    ProtocolReferenceCause, ProvedInterval, QualifiedCandidate, ShadowedDeclaration, SlotKind,
+    StageLimitCause, TemporalCause, WrongSnapshotCause,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;
@@ -1635,8 +1635,12 @@ impl PackageDeclarations {
                         &mut contract_diagnostics,
                         &mut contract_scopes,
                     );
-                    match protocol_slots::check(protocol, &checked, &slot_declarations, &mut slot_cx)
-                    {
+                    match protocol_slots::check(
+                        protocol,
+                        &checked,
+                        &slot_declarations,
+                        &mut slot_cx,
+                    ) {
                         protocol_slots::Slots::Checked(slots, used) => {
                             checked.slots = slots;
                             nodes_used = used;
@@ -1666,11 +1670,8 @@ impl PackageDeclarations {
                         &mut contract_diagnostics,
                         &mut contract_scopes,
                     );
-                    match protocol_controls::check(
-                        protocol,
-                        &control_declarations,
-                        &mut control_cx,
-                    ) {
+                    match protocol_controls::check(protocol, &control_declarations, &mut control_cx)
+                    {
                         Ok((channels, used)) => {
                             checked.channels = channels;
                             nodes_used = used;
@@ -2066,11 +2067,9 @@ impl PackageDeclarations {
                 }
                 Lowerable::Template(protocol_index, template_index) => {
                     let (Some(template), Some(location), Some(slot)) = (
-                        checked_protocols
-                            .get(protocol_index)
-                            .and_then(|checked| {
-                                checked.obligations.compensations.get(template_index)
-                            }),
+                        checked_protocols.get(protocol_index).and_then(|checked| {
+                            checked.obligations.compensations.get(template_index)
+                        }),
                         template_locations
                             .get(protocol_index)
                             .and_then(|locations| locations.get(template_index)),

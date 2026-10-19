@@ -25,12 +25,12 @@ use super::protocol_control::{
 use super::spans::DeclarationSpans;
 use super::syntax::{
     ActivationForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind,
-    CheckForm, ChoiceForm, ClockForm, CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
-    CompensationRetry, DeclarationForm, DeclaredName, ExpressionForm, OperationBodyForm,
-    ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
-    ProtocolNodeDeclaration, ProtocolNodeKind, RelatedForm, RelationshipForm, RequirementForm,
-    ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, StateClauseForm, StateClauseKind,
-    TypeForm, UsingAlias,
+    CheckForm, ChoiceForm, ClockForm, CompensationAttempts, CompensationCommit, CompensationForm,
+    CompensationRecover, CompensationRetry, DeclarationForm, DeclaredName, ExpressionForm,
+    OperationBodyForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
+    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RelatedForm,
+    RelationshipForm, RequirementForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
+    StateClauseForm, StateClauseKind, TypeForm, UsingAlias,
 };
 use super::temporal_clause::{capture_form, expression_form, interval_form, parameter_form};
 use super::value::{

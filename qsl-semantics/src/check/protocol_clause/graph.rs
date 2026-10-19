@@ -312,8 +312,8 @@ pub(super) fn compile(
             AnchorSite::ReceiveOf => builder.edge(EdgeKind::Message, exit(target.0), enter(owner)),
             AnchorSite::EffectOf => builder.edge(EdgeKind::Effect, exit(target.0), enter(owner)),
             AnchorSite::AwaitAfter => {
-                let template = protocol.declarations[target.0].kind
-                    == ProtocolNodeKind::CompensateTemplate;
+                let template =
+                    protocol.declarations[target.0].kind == ProtocolNodeKind::CompensateTemplate;
                 if template {
                     // The compensation's forward effect: the target of the
                     // template's own `for` anchor.
@@ -576,9 +576,11 @@ fn progress(
         else {
             continue;
         };
-        let body = control.children.iter().copied().find(|child| {
-            contains(form.body, protocol.declarations[child.0].name.span)
-        });
+        let body = control
+            .children
+            .iter()
+            .copied()
+            .find(|child| contains(form.body, protocol.declarations[child.0].name.span));
         if body.and_then(|body| steps.get(&body).copied()) == Some(true) {
             continue;
         }

@@ -524,7 +524,10 @@ fn s2_records_the_parts_s3_reads_to_decide_coverage() {
         .map(|body| {
             (
                 at(body.span),
-                matches!(body.expression.expression.root_node(), ExprNode::Boolean(false)),
+                matches!(
+                    body.expression.expression.root_node(),
+                    ExprNode::Boolean(false)
+                ),
             )
         })
         .collect();

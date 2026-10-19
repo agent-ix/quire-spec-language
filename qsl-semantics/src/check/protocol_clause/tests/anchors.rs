@@ -76,11 +76,8 @@ fn a_nested_scope_resolves_its_own_name_over_an_outer_one_of_the_same_spelling()
          match event SeenO by R for Undo as (seen_outer: Boolean) { true }; \
          then sequence ThenO { } timeout sequence TimeoutO { }\n";
     let applied = "effect Applied of Tried as (applied: Boolean) { true };\n";
-    let source = recovery_flow("Main::Committed", inner).replacen(
-        applied,
-        &format!("{applied}{outer}"),
-        1,
-    );
+    let source =
+        recovery_flow("Main::Committed", inner).replacen(applied, &format!("{applied}{outer}"), 1);
     let (_, protocol, result) = resolve_protocol(&source);
     let (checked, _) = result.unwrap_or_else(|refusals| panic!("{refusals:?}"));
 

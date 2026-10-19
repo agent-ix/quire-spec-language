@@ -194,9 +194,13 @@ impl CheckedControlTree {
 
     /// The tree node whose path is `path`.
     pub fn at_path(&self, path: &[&str]) -> Option<&CheckedControl> {
-        self.controls
-            .iter()
-            .find(|control| control.path.iter().map(String::as_str).eq(path.iter().copied()))
+        self.controls.iter().find(|control| {
+            control
+                .path
+                .iter()
+                .map(String::as_str)
+                .eq(path.iter().copied())
+        })
     }
 }
 

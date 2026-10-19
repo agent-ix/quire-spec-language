@@ -146,7 +146,10 @@ fn three_nested_levels_check_with_their_paths() {
         ),
     );
     let graph = checks(&source);
-    let tree = &graph.protocol("Flow").expect("the checked protocol").controls;
+    let tree = &graph
+        .protocol("Flow")
+        .expect("the checked protocol")
+        .controls;
     for (path, kind) in [
         (&["Outer"][..], ProtocolNodeKind::Parallel),
         (&["Outer", "east", "Loop"][..], ProtocolNodeKind::Repeat),
@@ -192,7 +195,11 @@ fn a_repeat_records_its_parts_and_needs_progress() {
     let body = attempt("Work");
     for (head, max, proof) in [
         ("max 3 while { true }", Some(3), false),
-        ("invariant { true } variant { 4 } while { true }", None, true),
+        (
+            "invariant { true } variant { 4 } while { true }",
+            None,
+            true,
+        ),
         (
             "max 2 invariant { true } variant { 4 } while { true }",
             Some(2),
@@ -210,7 +217,12 @@ fn a_repeat_records_its_parts_and_needs_progress() {
             &format!("repeat Loop by R visible () {head} {body}{exhausted}"),
         );
         let graph = checks(&source);
-        let [repeat] = graph.protocol("Flow").expect("checked").slots.repeats.as_slice()
+        let [repeat] = graph
+            .protocol("Flow")
+            .expect("checked")
+            .slots
+            .repeats
+            .as_slice()
         else {
             panic!("one checked repeat");
         };
@@ -232,8 +244,14 @@ fn a_repeat_records_its_parts_and_needs_progress() {
             &format!("repeat Loop by R visible () while {{ true }} {body}"),
         );
         let (text, refusal, cause) = only(&source);
-        assert_eq!(catalog(&refusal), ("unsupported_construct", Some("declaration-form")));
-        let ProtocolAnchorCause::NoProgress { repeat, profile, .. } = &cause else {
+        assert_eq!(
+            catalog(&refusal),
+            ("unsupported_construct", Some("declaration-form"))
+        );
+        let ProtocolAnchorCause::NoProgress {
+            repeat, profile, ..
+        } = &cause
+        else {
             panic!("a no-progress refusal, got {cause:?}");
         };
         assert_eq!(repeat, "Loop");
@@ -255,7 +273,10 @@ fn a_receive_before_its_own_send_is_a_causal_cycle() {
          send Tx via ch as (tx: Boolean) { true }; }",
     );
     let (text, refusal, cause) = only(&source);
-    assert_eq!(catalog(&refusal), ("invalid_package", Some("definition-cycle")));
+    assert_eq!(
+        catalog(&refusal),
+        ("invalid_package", Some("definition-cycle"))
+    );
     let ProtocolAnchorCause::CausalCycle { nodes, .. } = &cause else {
         panic!("a cycle, got {cause:?}");
     };
@@ -300,7 +321,10 @@ fn a_skippable_nested_repeat_gives_no_progress() {
         ),
     );
     let (text, refusal, cause) = only(&source);
-    assert_eq!(catalog(&refusal), ("unsupported_construct", Some("declaration-form")));
+    assert_eq!(
+        catalog(&refusal),
+        ("unsupported_construct", Some("declaration-form"))
+    );
     assert!(matches!(&cause, ProtocolAnchorCause::NoProgress { repeat, .. } if repeat == "Outer"));
     assert_eq!(located(&text, &cause), "Outer");
 
@@ -337,7 +361,10 @@ fn an_await_after_a_later_control_is_a_cycle() {
         ),
     );
     let (_, refusal, cause) = only(&source);
-    assert_eq!(catalog(&refusal), ("invalid_package", Some("definition-cycle")));
+    assert_eq!(
+        catalog(&refusal),
+        ("invalid_package", Some("definition-cycle"))
+    );
     let ProtocolAnchorCause::CausalCycle { nodes, .. } = &cause else {
         panic!("a cycle, got {cause:?}");
     };
@@ -345,7 +372,10 @@ fn an_await_after_a_later_control_is_a_cycle() {
 
     let graph = checks(&flow(
         "",
-        &format!("repeat Loop by R visible () while {{ true }} {}", attempt("Work")),
+        &format!(
+            "repeat Loop by R visible () while {{ true }} {}",
+            attempt("Work")
+        ),
     ));
     assert!(edges(&graph)
         .iter()
@@ -366,9 +396,7 @@ fn a_message_names_a_channel_and_carries_its_type() {
     let pair = |send: &str, receive: &str| {
         flow(
             &members,
-            &format!(
-                "parallel Both {{ branch s {send} branch r {receive} }} join all [s, r];"
-            ),
+            &format!("parallel Both {{ branch s {send} branch r {receive} }} join all [s, r];"),
         )
     };
     let send = "send Tx via ch as (tx: Plain) { true };";
@@ -379,14 +407,20 @@ fn a_message_names_a_channel_and_carries_its_type() {
         &members,
         "sequence Main { send Tx via nowhere as (tx: Plain) { true }; }",
     ));
-    assert_eq!(catalog(&refusal), ("missing_declaration", Some("missing-name")));
+    assert_eq!(
+        catalog(&refusal),
+        ("missing_declaration", Some("missing-name"))
+    );
     let ProtocolAnchorCause::MissingChannel { node, name, .. } = &cause else {
         panic!("a missing channel, got {cause:?}");
     };
     assert_eq!((node.as_str(), name.as_str()), ("Tx", "nowhere"));
     assert_eq!(located(&text, &cause), "nowhere");
 
-    for (send_type, receive_type, at) in [("Boolean", "Plain", "Boolean"), ("Plain", "Boolean", "Boolean")] {
+    for (send_type, receive_type, at) in [
+        ("Boolean", "Plain", "Boolean"),
+        ("Plain", "Boolean", "Boolean"),
+    ] {
         let (text, refusal, cause) = only(&pair(
             &send.replacen("(tx: Plain)", &format!("(tx: {send_type})"), 1),
             &receive.replacen("(rx: Plain)", &format!("(rx: {receive_type})"), 1),
@@ -439,7 +473,10 @@ fn a_choice_owner_is_a_role_and_its_constant_guards_partition() {
         )
     };
     let (text, refusal, cause) = only(&choice("Nobody", "true", "false"));
-    assert_eq!(catalog(&refusal), ("missing_declaration", Some("missing-name")));
+    assert_eq!(
+        catalog(&refusal),
+        ("missing_declaration", Some("missing-name"))
+    );
     let ProtocolAnchorCause::NodeRole { node, name, .. } = &cause else {
         panic!("a node role refusal, got {cause:?}");
     };
@@ -448,13 +485,21 @@ fn a_choice_owner_is_a_role_and_its_constant_guards_partition() {
 
     let repeat = flow(
         "",
-        &format!("repeat Loop by Nobody visible () while {{ true }} {}", attempt("Work")),
+        &format!(
+            "repeat Loop by Nobody visible () while {{ true }} {}",
+            attempt("Work")
+        ),
     );
     let (_, _, cause) = only(&repeat);
     assert!(matches!(&cause, ProtocolAnchorCause::NodeRole { node, .. } if node == "Loop"));
 
     for (first, second, failed, cases) in [
-        ("true", "not false", ArmFault::DuplicateArm, vec!["yes", "no"]),
+        (
+            "true",
+            "not false",
+            ArmFault::DuplicateArm,
+            vec!["yes", "no"],
+        ),
         ("false", "not true", ArmFault::MissingArm, vec!["yes", "no"]),
     ] {
         let (text, refusal, cause) = only(&choice("R", first, second));
@@ -478,11 +523,21 @@ fn a_choice_owner_is_a_role_and_its_constant_guards_partition() {
     }
 
     let graph = checks(&choice("S", "true and true", "false"));
-    let [checked] = graph.protocol("Flow").expect("checked").slots.choices.as_slice() else {
+    let [checked] = graph
+        .protocol("Flow")
+        .expect("checked")
+        .slots
+        .choices
+        .as_slice()
+    else {
         panic!("one checked choice");
     };
     assert_eq!(checked.owner, 1);
-    let names: Vec<&str> = checked.cases.iter().map(|case| case.name.as_str()).collect();
+    let names: Vec<&str> = checked
+        .cases
+        .iter()
+        .map(|case| case.name.as_str())
+        .collect();
     assert_eq!(names, ["yes", "no"]);
 }
 
@@ -499,13 +554,19 @@ fn a_node_role_and_a_check_profile_resolve() {
     ] {
         let source = flow("", &format!("sequence Main {{ {node_text} }}"));
         let (text, refusal, cause) = only(&source);
-        assert_eq!(catalog(&refusal), ("missing_declaration", Some("missing-name")));
+        assert_eq!(
+            catalog(&refusal),
+            ("missing_declaration", Some("missing-name"))
+        );
         assert!(matches!(&cause, ProtocolAnchorCause::NodeRole { node, .. } if node == name));
         assert_eq!(located(&text, &cause), "Nobody");
     }
     let source = flow("", "sequence Main { check Fine using nothing { true }; }");
     let (text, refusal, cause) = only(&source);
-    assert_eq!(catalog(&refusal), ("missing_declaration", Some("missing-name")));
+    assert_eq!(
+        catalog(&refusal),
+        ("missing_declaration", Some("missing-name"))
+    );
     assert!(matches!(cause, ProtocolAnchorCause::MissingProfile { .. }));
     assert_eq!(located(&text, &cause), "nothing");
     checks(&flow("", "sequence Main { check Fine using v { true }; }"));
@@ -557,8 +618,19 @@ fn located_causes(source: &str) -> Vec<(ProtocolAnchorCause, String)> {
 #[trace("TC-1056", "FR-218-AC-17")]
 #[test]
 fn a_decision_reads_only_listed_facts_of_its_owner() {
-    let graph = checks(&received(&pick("S", "rx.ready", "rx.ready", "not rx.ready")));
-    let [choice] = graph.protocol("Flow").expect("checked").slots.choices.as_slice() else {
+    let graph = checks(&received(&pick(
+        "S",
+        "rx.ready",
+        "rx.ready",
+        "not rx.ready",
+    )));
+    let [choice] = graph
+        .protocol("Flow")
+        .expect("checked")
+        .slots
+        .choices
+        .as_slice()
+    else {
         panic!("one checked choice");
     };
     assert_eq!((choice.owner, choice.visible.len()), (1, 1));
@@ -583,14 +655,29 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
             .collect()
     };
     let read = |binder: &str, reason, at: &str| {
-        (binder.to_owned(), Some("ready".to_owned()), reason, at.to_owned())
+        (
+            binder.to_owned(),
+            Some("ready".to_owned()),
+            reason,
+            at.to_owned(),
+        )
     };
     assert_eq!(
-        observed(&received(&pick("R", "rx.ready", "rx.ready", "not rx.ready"))),
+        observed(&received(&pick(
+            "R",
+            "rx.ready",
+            "rx.ready",
+            "not rx.ready"
+        ))),
         [read("rx", ObservationReason::OtherRole, "rx.ready")]
     );
     assert_eq!(
-        observed(&received(&pick("S", "tx.ready", "tx.ready", "not tx.ready"))),
+        observed(&received(&pick(
+            "S",
+            "tx.ready",
+            "tx.ready",
+            "not tx.ready"
+        ))),
         [read("tx", ObservationReason::IneligibleKind, "tx.ready")]
     );
     assert_eq!(
@@ -622,8 +709,17 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
         [read("rx", ObservationReason::Unlisted, "rx.ready")]
     );
     for (binder, node) in [
-        ("applied", format!("{} effect Applied of Did as (applied: Plain) {{ true }};", attempt("Did"))),
-        ("done_", "commit Done by R as (done_: Plain) { true };".to_owned()),
+        (
+            "applied",
+            format!(
+                "{} effect Applied of Did as (applied: Plain) {{ true }};",
+                attempt("Did")
+            ),
+        ),
+        (
+            "done_",
+            "commit Done by R as (done_: Plain) { true };".to_owned(),
+        ),
     ] {
         let source = flow(
             "",
@@ -639,24 +735,41 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
         );
         assert_eq!(
             observed(&source),
-            [read(binder, ObservationReason::IneligibleKind, &format!("{binder}.ready"))]
+            [read(
+                binder,
+                ObservationReason::IneligibleKind,
+                &format!("{binder}.ready")
+            )]
         );
     }
-    let activated = flow("", &pick("R", "tick.ready", "tick.ready", "not tick.ready"))
-        .replacen("on origin", "on each (tick: Plain)", 1);
+    let activated = flow("", &pick("R", "tick.ready", "tick.ready", "not tick.ready")).replacen(
+        "on origin",
+        "on each (tick: Plain)",
+        1,
+    );
     assert_eq!(
         observed(&activated),
-        [read("tick", ObservationReason::IneligibleKind, "tick.ready")]
+        [read(
+            "tick",
+            ObservationReason::IneligibleKind,
+            "tick.ready"
+        )]
     );
 
     let over = located_causes(&received(&pick("S", "", "input", "not input")));
     let [(ProtocolAnchorCause::SlotModelState { node, slot, .. }, at), _] = over.as_slice() else {
         panic!("two model-state refusals, got {over:?}");
     };
-    assert_eq!((node.as_str(), *slot, at.as_str()), ("Pick", SlotKind::Guard, "input"));
+    assert_eq!(
+        (node.as_str(), *slot, at.as_str()),
+        ("Pick", SlotKind::Guard, "input")
+    );
 
-    let captured = received(&pick("S", "", "kept", "not kept"))
-        .replacen("role R on", "capture kept: Boolean = input;\nrole R on", 1);
+    let captured = received(&pick("S", "", "kept", "not kept")).replacen(
+        "role R on",
+        "capture kept: Boolean = input;\nrole R on",
+        1,
+    );
     checks(&captured);
 }
 
@@ -668,10 +781,16 @@ fn a_decision_reads_only_listed_facts_of_its_owner() {
 #[trace("TC-1056", "FR-218-AC-18")]
 #[test]
 fn a_record_outside_its_scope_is_an_unresolved_name() {
-    let reader = |binder: &str| pick("R", &format!("{binder}.ready"), &format!("{binder}.ready"), &format!("not {binder}.ready"));
-    let event = |name: &str, binder: &str| {
-        format!("event {name} by R as ({binder}: Plain) {{ true }};")
+    let reader = |binder: &str| {
+        pick(
+            "R",
+            &format!("{binder}.ready"),
+            &format!("{binder}.ready"),
+            &format!("not {binder}.ready"),
+        )
     };
+    let event =
+        |name: &str, binder: &str| format!("event {name} by R as ({binder}: Plain) {{ true }};");
     let cases = [
         (
             "sibling",

@@ -282,10 +282,7 @@ impl Checker<'_, '_> {
             if slot.readable.contains(local) {
                 read.insert(*local);
             } else {
-                out_of_scope.push((
-                    binder.name.clone(),
-                    span_of(slot.form, checked.location()),
-                ));
+                out_of_scope.push((binder.name.clone(), span_of(slot.form, checked.location())));
             }
         }
         if !out_of_scope.is_empty() {
@@ -501,7 +498,8 @@ fn evaluate(form: &ExpressionForm, atoms: &[ExprRef<'_>], valuation: u64) -> Opt
                 match operator {
                     BinaryOperator::And => left && right,
                     BinaryOperator::Or => left || right,
-                    _ => !left || right,
+                    BinaryOperator::Implies => !left || right,
+                    _ => return None,
                 }
             }
             _ => return None,
@@ -554,20 +552,24 @@ pub(crate) fn check(
     // Every binder the `run` tree and `finish` can read, in slot order.
     let mut binders = Vec::new();
     let mut unresolved = false;
-    let mut push = |binders: &mut Vec<Binder>, name: &str, form, origin| {
-        match resolve_form(scope, form) {
+    let mut push =
+        |binders: &mut Vec<Binder>, name: &str, form, origin| match resolve_form(scope, form) {
             Ok(value_type) => binders.push(Binder {
                 name: name.to_owned(),
                 value_type,
                 origin,
             }),
             Err(_) => unresolved = true,
-        }
-    };
+        };
     for binder in &protocol.binders {
         match binder.kind {
             BinderKind::Input => {
-                push(&mut binders, &binder.name.name, &binder.value_type, BinderOrigin::Input);
+                push(
+                    &mut binders,
+                    &binder.name.name,
+                    &binder.value_type,
+                    BinderOrigin::Input,
+                );
             }
             BinderKind::ActivationParameter => push(
                 &mut binders,
@@ -870,7 +872,10 @@ pub(crate) fn check(
 
 /// The index of the role `name` among `protocol`'s roles.
 fn role_index(protocol: &ProtocolDeclarationForm, name: &str) -> Option<usize> {
-    protocol.roles.iter().position(|role| role.name.name == name)
+    protocol
+        .roles
+        .iter()
+        .position(|role| role.name.name == name)
 }
 
 /// FR-218 "Choice and repeat decisions": the `choice`'s guards are proved
@@ -999,7 +1004,12 @@ impl Flow {
                 .map(|control| control.children.iter().map(|child| child.0).collect())
                 .unwrap_or_default()
         };
-        let kind_of = |node: usize| protocol.declarations.get(node).map(|declaration| declaration.kind);
+        let kind_of = |node: usize| {
+            protocol
+                .declarations
+                .get(node)
+                .map(|declaration| declaration.kind)
+        };
         // (node, its input, the index of the next child to enter)
         let mut stack: Vec<(usize, BTreeSet<usize>, usize)> = vec![(root.node.0, roots, 0)];
         while let Some(top) = stack.last_mut() {
@@ -1017,19 +1027,17 @@ impl Flow {
                         .and_then(|previous| outs.get(previous))
                         .cloned()
                         .unwrap_or_default(),
-                    Some(ProtocolNodeKind::Await) => {
-                        match await_part(protocol, node, child) {
-                            AwaitPart::Then => children
-                                .iter()
-                                .find(|&&sibling| {
-                                    matches!(await_part(protocol, node, sibling), AwaitPart::Event)
-                                })
-                                .and_then(|event| outs.get(event))
-                                .cloned()
-                                .unwrap_or_default(),
-                            AwaitPart::Event | AwaitPart::Timeout => input,
-                        }
-                    }
+                    Some(ProtocolNodeKind::Await) => match await_part(protocol, node, child) {
+                        AwaitPart::Then => children
+                            .iter()
+                            .find(|&&sibling| {
+                                matches!(await_part(protocol, node, sibling), AwaitPart::Event)
+                            })
+                            .and_then(|event| outs.get(event))
+                            .cloned()
+                            .unwrap_or_default(),
+                        AwaitPart::Event | AwaitPart::Timeout => input,
+                    },
                     _ => input,
                 };
                 stack.push((child, child_input, 0));
@@ -1052,9 +1060,7 @@ impl Flow {
                     out.extend(node_binder.get(&node));
                     out
                 }
-                Some(ProtocolNodeKind::Sequence) => {
-                    children.last().map(out_of).unwrap_or(input)
-                }
+                Some(ProtocolNodeKind::Sequence) => children.last().map(out_of).unwrap_or(input),
                 Some(ProtocolNodeKind::Branch | ProtocolNodeKind::Case) => {
                     children.first().map(out_of).unwrap_or(input)
                 }

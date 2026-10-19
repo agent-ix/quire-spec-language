@@ -10,8 +10,8 @@ use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 
 use super::CheckedOrdering;
-use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 use crate::check::refusal::ProtocolAnchorCause;
+use crate::check::{CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations};
 
 mod fixture {
     use crate as semantics;
@@ -64,7 +64,13 @@ fn ordering(text: &str) -> CheckedOrdering {
 }
 
 /// The one refusal's cause, its catalog pair and the text at its span.
-fn only(text: &str) -> (ProtocolAnchorCause, (&'static str, Option<&'static str>), &str) {
+fn only(
+    text: &str,
+) -> (
+    ProtocolAnchorCause,
+    (&'static str, Option<&'static str>),
+    &str,
+) {
     let refusals = check(text).map(|_| ()).expect_err("the protocol refuses");
     let [refusal] = refusals.as_slice() else {
         panic!("{text}: one refusal, got {refusals:?}");
@@ -103,7 +109,13 @@ fn a_fifo_key_is_checked_over_its_binder() {
     let text = with_channel("M::Flag", "fifo by (m: M::Tick) { m.ready }");
     let (cause, pair, at) = only(&text);
     assert_eq!(pair, ("ill_typed", Some("type-mismatch")));
-    let ProtocolAnchorCause::CarriesMismatch { channel, expected, actual, .. } = &cause else {
+    let ProtocolAnchorCause::CarriesMismatch {
+        channel,
+        expected,
+        actual,
+        ..
+    } = &cause
+    else {
         panic!("a carries mismatch, got {cause:?}");
     };
     assert_eq!(channel, "Q");
@@ -125,13 +137,19 @@ fn a_fifo_key_is_checked_over_its_binder() {
 #[test]
 fn a_fifo_key_admits_equality() {
     for (carries, key) in [("M::Flag", "m.ready"), ("M::Flag", "m")] {
-        let ordering = ordering(&with_channel(carries, &format!("fifo by (m: {carries}) {{ {key} }}")));
+        let ordering = ordering(&with_channel(
+            carries,
+            &format!("fifo by (m: {carries}) {{ {key} }}"),
+        ));
         assert!(matches!(ordering, CheckedOrdering::Fifo { .. }), "{key}");
     }
     let text = with_channel("M::Pulse", "fifo by (m: M::Pulse) { m }");
     let (cause, pair, at) = only(&text);
     assert_eq!(pair, ("ill_typed", Some("operator-ineligible")));
-    let ProtocolAnchorCause::KeyEquality { channel, key_type, .. } = &cause else {
+    let ProtocolAnchorCause::KeyEquality {
+        channel, key_type, ..
+    } = &cause
+    else {
         panic!("a key-equality refusal, got {cause:?}");
     };
     assert_eq!(channel, "Q");
@@ -172,8 +190,13 @@ fn attempted(binder_type: &str, visible: &str, yes: &str, no: &str) -> String {
 #[trace("TC-663", "FR-218-AC-2")]
 #[test]
 fn a_guard_reads_no_model_state_and_partitions_its_facts() {
-    let text = decide("", &attempted("M::Receipt", "", "view.n > 0", "not (view.n > 0)"));
-    let refusals = check(&text).map(|_| ()).expect_err("the guard reads model state");
+    let text = decide(
+        "",
+        &attempted("M::Receipt", "", "view.n > 0", "not (view.n > 0)"),
+    );
+    let refusals = check(&text)
+        .map(|_| ())
+        .expect_err("the guard reads model state");
     let reads: Vec<&str> = refusals
         .iter()
         .map(|refusal| {
@@ -194,10 +217,18 @@ fn a_guard_reads_no_model_state_and_partitions_its_facts() {
 
     let text = decide(
         "",
-        &attempted("M::Receipt", "attempted.n", "attempted.n > 0", "attempted.n > 1"),
+        &attempted(
+            "M::Receipt",
+            "attempted.n",
+            "attempted.n > 0",
+            "attempted.n > 1",
+        ),
     );
     let (cause, pair, at) = only(&text);
-    assert_eq!(pair, ("undefined_expression", Some("unproved-exhaustiveness")));
+    assert_eq!(
+        pair,
+        ("undefined_expression", Some("unproved-exhaustiveness"))
+    );
     assert!(matches!(cause, ProtocolAnchorCause::Exhaustiveness { .. }));
     assert_eq!(at, "Pick");
 
@@ -223,14 +254,17 @@ fn a_guard_reads_no_model_state_and_partitions_its_facts() {
 #[test]
 fn an_object_or_reference_read_is_model_state() {
     let slots = |text: &str| -> Vec<(crate::check::SlotKind, String)> {
-        let refusals = check(text).map(|_| ()).expect_err("the reads are model state");
+        let refusals = check(text)
+            .map(|_| ())
+            .expect_err("the reads are model state");
         refusals
             .iter()
             .map(|refusal| {
                 let CheckCause::ProtocolAnchor(cause) = &refusal.cause else {
                     panic!("a protocol cause, got {refusal:?}");
                 };
-                let ProtocolAnchorCause::SlotModelState { node, slot, span } = cause.as_ref() else {
+                let ProtocolAnchorCause::SlotModelState { node, slot, span } = cause.as_ref()
+                else {
                     panic!("a model-state refusal, got {cause:?}");
                 };
                 assert_eq!(node, "Pick");
@@ -286,7 +320,13 @@ fn an_object_or_reference_read_is_model_state() {
          receive Rx via Q of Tx as (rx: M::Node) { true }; }",
     );
     let (cause, pair, at) = only(&text);
-    assert_eq!(pair, ("invalid_model_binding", Some("malformed-declaration")));
-    assert!(matches!(cause, ProtocolAnchorCause::ChannelCarriesObject { .. }));
+    assert_eq!(
+        pair,
+        ("invalid_model_binding", Some("malformed-declaration"))
+    );
+    assert!(matches!(
+        cause,
+        ProtocolAnchorCause::ChannelCarriesObject { .. }
+    ));
     assert_eq!(at, "M::Node");
 }

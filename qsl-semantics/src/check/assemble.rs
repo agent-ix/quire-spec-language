@@ -3081,10 +3081,7 @@ impl PackageDeclarations {
         declared_type_spans.extend(unit.protocols.iter().flat_map(|protocol| {
             protocol.compensations.iter().map(|template| {
                 (
-                    super::lowering::compensation_origin(
-                        &protocol.name.name,
-                        &template.name.name,
-                    ),
+                    super::lowering::compensation_origin(&protocol.name.name, &template.name.name),
                     template.name.span,
                 )
             })

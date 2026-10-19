@@ -109,7 +109,10 @@ fn a_template_shares_the_operations_anchor_and_frame() {
         panic!("one attempt");
     };
     let [bound] = protocol.compensation_operations.as_slice() else {
-        panic!("one template binding: {:?}", protocol.compensation_operations);
+        panic!(
+            "one template binding: {:?}",
+            protocol.compensation_operations
+        );
     };
     assert_eq!(bound.anchor, attempt.anchor);
     assert_eq!(bound.frame, attempt.frame);
@@ -185,10 +188,7 @@ fn two_templates_register_twice_and_a_wrong_target_refuses() {
         "commit Committed by Service as (committed: M::Flag) { true };\n\
          event Noted by Service as (noted: M::Flag) { true };",
     );
-    for (target, actual) in [
-        ("Main::Tried", "attempt"),
-        ("Main::Noted", "event"),
-    ] {
+    for (target, actual) in [("Main::Tried", "attempt"), ("Main::Noted", "event")] {
         let source = edit(
             &with_nodes,
             "compensate Refund for Main::Applied",
@@ -358,9 +358,16 @@ fn a_commit_that_dominates_its_effect_refuses() {
     let nested = with_run(&format!(
         "run sequence Main {{\nsequence Early {{ {COMMITTED} }}\n{TRIED}\n{APPLIED}\n}}"
     ));
-    let nested = edit(&nested, "commit Main::Committed;", "commit Main::Early::Committed;");
+    let nested = edit(
+        &nested,
+        "commit Main::Committed;",
+        "commit Main::Early::Committed;",
+    );
     let (_, cause) = only(&nested);
-    assert!(matches!(cause, ObligationCause::CommitPrecedesEffect { .. }));
+    assert!(matches!(
+        cause,
+        ObligationCause::CommitPrecedesEffect { .. }
+    ));
 
     for (name, run) in [
         (
@@ -423,7 +430,11 @@ fn a_full_and_a_partial_recovery_are_two_compensations() {
     let partial = other("capture part: M::Total = otherfwd.total;")
         .replacen("compensate Other for", "compensate Partial for", 1)
         .replacen("attempts 3 of", "attempts 2 of", 1);
-    let source = edit(&full, "run sequence Main", &format!("{partial}run sequence Main"));
+    let source = edit(
+        &full,
+        "run sequence Main",
+        &format!("{partial}run sequence Main"),
+    );
     let graph = checked(&source);
     let obligations = &graph.protocols()[0].obligations;
     let committed = node(&source, "Committed", ProtocolNodeKind::Commit);

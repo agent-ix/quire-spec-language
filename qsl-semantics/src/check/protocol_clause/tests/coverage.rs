@@ -41,7 +41,10 @@ fn a_resolving_protocol_with_unchecked_content_still_refuses() {
             assert_eq!(name, "RecoveryFlow");
             assert_eq!(construct, "related by");
             let (text, _) = assemble(&source);
-            assert!(text[span.start..].starts_with("related by Pays"), "{span:?}");
+            assert!(
+                text[span.start..].starts_with("related by Pays"),
+                "{span:?}"
+            );
         }
         other => panic!("an Unimplemented cause, got {other:?}"),
     }

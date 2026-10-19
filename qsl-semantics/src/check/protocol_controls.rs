@@ -24,15 +24,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     BinaryOperator, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
-    ChannelOverflow, Expression, ExpressionForm, JoinPolicy, ParallelForm,
-    ParameterForm, ProtocolDeclarationForm, ProtocolMemberForm, TypeFormHead,
+    ChannelOverflow, Expression, ExpressionForm, JoinPolicy, ParallelForm, ParameterForm,
+    ProtocolDeclarationForm, ProtocolMemberForm, TypeFormHead,
 };
 use qsl_foundation::Span;
 use quire_exact::ValueType;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::ir::CheckedBody;
-use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, CheckedBinder, Goal};
+use super::protocol_obligation::{
+    model_state_reads, span_of, type_body, wraps, CheckedBinder, Goal,
+};
 use super::refusal::{ChannelEnd, CheckCause, CheckRefusal, JoinFault, ProtocolAnchorCause};
 use super::state_clause::ClauseDeclarations;
 use super::type_form::resolve_form;
@@ -402,10 +404,7 @@ fn check_messages(
         let Ok(expected) = resolve_form(scope, &channel.carries) else {
             continue;
         };
-        if matches!(
-            expected,
-            ValueType::Reference(_) | ValueType::Population(_)
-        ) {
+        if matches!(expected, ValueType::Reference(_) | ValueType::Population(_)) {
             continue;
         }
         let Some(binder) = super::protocol_clause::record_binder(protocol, index) else {
@@ -590,10 +589,7 @@ mod model_state_tests;
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
-    use qsl_forms::{
-        build_unit, ChannelCapacity, ChannelDelivery, ChannelOverflow,
-        LossSelector,
-    };
+    use qsl_forms::{build_unit, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector};
     use qsl_foundation::SourceIdentity;
     use quire_semantic_value::checking::CheckingLimits;
 
