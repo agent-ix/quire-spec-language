@@ -477,3 +477,51 @@ fn building_a_refinement_twice_gives_equal_forms() {
     let (_, second) = build(CAS_REFINES_COUNTER);
     assert_eq!(refinement(&first), refinement(&second));
 }
+
+/// FR-139: the six population-valued forms build as `Population` and `Seq`
+/// nodes in a field row, with the condition and body as children in source
+/// order and the population as its written qualified name.
+#[trace("TC-544")]
+#[test]
+fn population_forms_build_in_a_field_row() {
+    let (_, unit) = build(
+        "refinement RingIsQueue using inf abstract Spec concrete Impl {\n\
+         object Spec::Queue from Impl::Ring {\n\
+           a = count(s in Impl::slots where s.ring = self);\n\
+           b = sum(s in Impl::slots: s.value);\n\
+           c = exists(s in Impl::slots);\n\
+           d = all(s in Impl::slots where s.value = 1);\n\
+           e = only(s in Impl::slots where s.ring = self: s.value);\n\
+           f = seq(i in 0 .. self.size - 1: i);\n\
+         }\n\
+         }",
+    );
+    let RefinementRowForm::Object(object) = &refinement(&unit).rows[0] else {
+        panic!("an object row");
+    };
+    let shape = |index: usize| {
+        let expression = &object.fields[index].value.expression;
+        match expression.root_node() {
+            ExprNode::Population {
+                form,
+                binder,
+                population,
+                condition,
+                body,
+                ..
+            } => format!(
+                "{form:?} {binder} {population} {} {}",
+                condition.is_some(),
+                body.is_some()
+            ),
+            ExprNode::Seq { binder, .. } => format!("Seq {binder}"),
+            other => panic!("a population form: {other:?}"),
+        }
+    };
+    assert_eq!(shape(0), "Count s Impl::slots true false");
+    assert_eq!(shape(1), "Sum s Impl::slots false true");
+    assert_eq!(shape(2), "Exists s Impl::slots false false");
+    assert_eq!(shape(3), "All s Impl::slots true false");
+    assert_eq!(shape(4), "Only s Impl::slots true true");
+    assert_eq!(shape(5), "Seq i");
+}

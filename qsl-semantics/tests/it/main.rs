@@ -66,6 +66,8 @@ mod quantities;
 #[cfg(feature = "test-support")]
 mod refinement_declarations;
 #[cfg(feature = "test-support")]
+mod refinement_populations;
+#[cfg(feature = "test-support")]
 mod relationship_extents;
 #[cfg(feature = "test-support")]
 mod relationship_navigation;

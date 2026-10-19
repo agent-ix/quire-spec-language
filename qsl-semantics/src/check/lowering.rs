@@ -3442,6 +3442,17 @@ impl<'a> Lowering<'a> {
                     Operands::One(reference),
                 )
             }
+            // FR-139: a population-valued form lives in a refinement row,
+            // which S4 does not emit yet (FR-310's node): no FR-093 row
+            // lowers it.
+            NodeKind::PopulationObjects { .. } | NodeKind::Seq { .. } => {
+                return Err(refuse(
+                    node.location(),
+                    CheckCause::UnsupportedFeature {
+                        loci: vec![node.location().clone()],
+                    },
+                ))
+            }
             NodeKind::Present(operand) => (
                 Keyed::Application(Operator::Present, plain("quire.op.option.present")),
                 Operands::One(operand),
@@ -3648,6 +3659,14 @@ impl<'a> Lowering<'a> {
                             ..plain("quire.op.collection.count")
                         },
                     ),
+                    Visit::Only => {
+                        return Err(refuse(
+                            node.location(),
+                            CheckCause::UnsupportedFeature {
+                                loci: vec![node.location().clone()],
+                            },
+                        ))
+                    }
                     Visit::Sum => (
                         Operator::Collection,
                         Operation {
