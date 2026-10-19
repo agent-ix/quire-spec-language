@@ -124,7 +124,9 @@ pub enum StateGraphForm {
 
 - S2 SHALL build one state-graph claim form for each parsed `possible`,
   `always possible` and `unique path` claim, holding its name, profile
-  reference, `over` parameter and predicates.
+  reference, `over` parameter, predicates and any fairness constraint
+  written in the claim's braces, which S3 refuses. A predicate keeps every
+  temporal operator written in it, which S3 refuses at the operator.
 - S3 SHALL check `possible` to `Possible`, `always possible` to
   `AlwaysPossible`, and `unique path` to `UniquePath`.
 - An `always possible` claim written without `from` SHALL check with `from`
