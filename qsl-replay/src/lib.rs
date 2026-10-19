@@ -47,6 +47,7 @@ mod model_check;
 mod object_environment;
 mod outcome;
 mod proof_result;
+mod refinement;
 mod request;
 mod result;
 mod scalar;
@@ -110,6 +111,10 @@ pub use model_check::replay::{
 };
 pub use model_check::settle::{
     settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
+};
+pub use refinement::{
+    map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingFeature, MappingRowRef,
+    MappingUndetermined, ObjectKey,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;

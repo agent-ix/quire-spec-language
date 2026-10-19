@@ -104,6 +104,31 @@ pub fn evaluate_terminal_predicate(
     )
 }
 
+/// FR-140 (ADR-020 RM-7): evaluate one refinement row `row` of `package`
+/// through the one clause evaluator (FR-107), as a value-typed body over the
+/// observation whose objects are `current`. `bindings` fill the row's
+/// parameters in order, `self` first. Like an invariant's, the row's checked
+/// body reads no `pre(..)`, so every read observes `current`.
+pub fn evaluate_refinement_row(
+    package: &CheckedPackage,
+    row: &qsl_semantics::check::CheckedRow,
+    current: &ObjectEnvironment,
+    bindings: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(row.body(), row.slots(), bindings)
+}
+
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
 /// names the same code as a string ([`InputRefusal::code`]) but cannot name
