@@ -37,7 +37,9 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::{check_model_bounds, ModelSimState, ModelSystem, PredicateReading};
+use qsl_eval::simulation::model::{
+    check_model_bounds, ModelSimState, ModelSystem, PredicateReading,
+};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_semantics::check::{
@@ -396,11 +398,9 @@ impl Check<'_, '_> {
                 .system
                 .successors(&state)
                 .map_err(|stop| self.halt(&stop))?;
-            if expansion
-                .findings
-                .iter()
-                .any(|finding| finding.undefined_contract().is_some() || finding.is_refused_contract())
-            {
+            if expansion.findings.iter().any(|finding| {
+                finding.undefined_contract().is_some() || finding.is_refused_contract()
+            }) {
                 bad.insert(at);
             }
             let mut successors = Vec::with_capacity(expansion.successors.len());
@@ -657,8 +657,7 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::to_value(CertificateLocus::Entry { index: u64::MAX })
-                .expect("serializes"),
+            serde_json::to_value(CertificateLocus::Entry { index: u64::MAX }).expect("serializes"),
             serde_json::json!({ "entry": u64::MAX.to_string() })
         );
     }

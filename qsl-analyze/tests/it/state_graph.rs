@@ -35,20 +35,23 @@ use crate::graph_world::{
     REACHES_TWO,
 };
 
-const AB: &[&str] = &["a", "b"];
+pub(crate) const AB: &[&str] = &["a", "b"];
 
-fn run(request: StateGraphRequest<'_>) -> StateGraphRun {
+pub(crate) fn run(request: StateGraphRequest<'_>) -> StateGraphRun {
     check_state_graph(request, &Cancel::new()).expect("the subject is checked")
 }
 
-fn system<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
+pub(crate) fn system<'w>(world: &'w World, keys: &[&str]) -> ModelSystem<'w> {
     ModelSystem::new(world.subject(keys, UNLIMITED).simulation).expect("admits")
 }
 
 /// Every reachable state of `world` over universe `keys`, by breadth-first
 /// enumeration of its `ModelSystem`, with its state-key digest, and the
 /// number of edges.
-fn reachable(world: &World, keys: &[&str]) -> (BTreeMap<DigestRecord, ModelSimState>, usize) {
+pub(crate) fn reachable(
+    world: &World,
+    keys: &[&str],
+) -> (BTreeMap<DigestRecord, ModelSimState>, usize) {
     let system = system(world, keys);
     let mut seen = BTreeMap::new();
     let mut edges = 0;
@@ -213,7 +216,7 @@ fn max_states(limits: ModelCheckLimits, value: usize) -> ModelCheckLimits {
     limits
 }
 
-fn no_samples() -> ModelCheckLimits {
+pub(crate) fn no_samples() -> ModelCheckLimits {
     ModelCheckLimits {
         witness_samples: 0,
         ..ModelCheckLimits::default()
