@@ -12,7 +12,7 @@
 
 mod contracts;
 mod domain;
-mod encode;
+pub(crate) mod encode;
 mod frames;
 mod terminal;
 mod walk;
@@ -77,6 +77,7 @@ pub struct ExpansionLimits {
 }
 
 /// Everything [`ModelSystem::new`] reads (FR-120 "Inputs").
+#[derive(Clone)]
 pub struct ModelSimulationRequest<'a> {
     /// The S4 package.
     pub package: &'a CheckedPackage,

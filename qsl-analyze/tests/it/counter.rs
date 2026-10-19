@@ -13,8 +13,11 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
+use qsl_replay::ClauseIdentity;
 use qsl_semantics::check::{
     check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
 };
@@ -24,7 +27,9 @@ use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
-use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, ScalarLimits, Value};
+use quire_exact::{
+    Incomplete, Meter, ObjectId, ObjectReference, Origin, Role, ScalarLimits, Value,
+};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -390,6 +395,18 @@ pub(crate) fn value(state: &ModelSimState, object: &str) -> i64 {
     {
         Some(Value::Integer(value)) => value.to_string().parse().expect("a small value"),
         other => panic!("{object}.value is not an integer: {other:?}"),
+    }
+}
+
+/// The identity of the clause [`clause`] builds: S4 emits no temporal clause
+/// node yet (FR-337), so its occurrence and `over` node are fixture ids.
+pub(crate) fn identity() -> ClauseIdentity {
+    ClauseIdentity {
+        occurrence: OccurrenceKey::new(
+            WireNodeId::from_digest([0x51; 32]),
+            Origin::new(Role::new("temporal"), 0),
+        ),
+        over: Some(WireNodeId::from_digest([0x52; 32])),
     }
 }
 

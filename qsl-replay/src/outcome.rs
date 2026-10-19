@@ -276,6 +276,7 @@ impl ItemCause {
             ReportedInconclusiveCause::Cause(
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
+                | InconclusiveCause::NoInstance
                 | InconclusiveCause::SufficientTestFailed,
             ) => {}
             ReportedInconclusiveCause::KaniVacuousProof => {}
