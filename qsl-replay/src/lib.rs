@@ -111,7 +111,7 @@ pub use model_check::limits::{
 pub use model_check::outcome::{ModelCheckOutcome, RunStats, UndecidedCause};
 pub use model_check::replay::{
     replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ModelTraceValue,
+    ModelTraceSubject, ModelTraceValue, StrongFairnessHint,
 };
 pub use model_check::settle::{
     settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,

@@ -84,7 +84,12 @@ fn replay_with(
     let id = package_id(fixture);
     let (node, occurrence) = clause_identity(fixture);
     replay_model_trace(
-        request(&fixture.documents, &fixture.unit, id),
+        request(
+            &fixture.documents.document,
+            fixture.documents.snapshot_bytes(),
+            &fixture.unit,
+            id,
+        ),
         &subject_of(fixture),
         &envelope_at(&fixture.unit, id, payload, node, occurrence),
         &Letters { atom },
@@ -108,6 +113,17 @@ fn reproduced(result: Result<ModelTraceReplayResult, ReplayRefusal>) -> Option<u
         } => trace_position,
         other => panic!("expected a reproduction, got {other:?}"),
     }
+}
+
+/// The strong-fairness hints of the replay of `payload` (FR-133).
+pub(crate) fn hints_of(
+    fixture: &Fixture,
+    payload: &TemporalCounterexample,
+    atom: fn(i64) -> Option<bool>,
+) -> Vec<qsl_replay::StrongFairnessHint> {
+    replay_with(fixture, payload.clone(), atom)
+        .expect("replays")
+        .hints
 }
 
 fn refusal(
@@ -276,7 +292,12 @@ fn a_counterexample_names_its_clause_by_node_and_occurrence() {
     let (node, occurrence) = clause_identity(&fixture);
     let replay_at = |node, occurrence| {
         replay_model_trace(
-            request(&fixture.documents, &fixture.unit, id),
+            request(
+                &fixture.documents.document,
+                fixture.documents.snapshot_bytes(),
+                &fixture.unit,
+                id,
+            ),
             &subject_of(&fixture),
             &envelope_at(&fixture.unit, id, payload.clone(), node, occurrence),
             &Letters { atom: is_three },
@@ -336,7 +357,12 @@ fn a_liveness_violation_settles_refuted_through_replay() {
         &Cancel::new(),
         |counterexample| {
             replay_model_trace(
-                request(&fixture.documents, &fixture.unit, id),
+                request(
+                    &fixture.documents.document,
+                    fixture.documents.snapshot_bytes(),
+                    &fixture.unit,
+                    id,
+                ),
                 &subject_of(&fixture),
                 &envelope_at(
                     &fixture.unit,
@@ -376,7 +402,12 @@ fn a_liveness_violation_settles_refuted_through_replay() {
             let mut unfair = counterexample.clone();
             unfair.prefix.pop();
             replay_model_trace(
-                request(&fixture.documents, &fixture.unit, id),
+                request(
+                    &fixture.documents.document,
+                    fixture.documents.snapshot_bytes(),
+                    &fixture.unit,
+                    id,
+                ),
                 &subject_of(&fixture),
                 &envelope_at(&fixture.unit, id, unfair, node, occurrence.clone()),
                 &letters,

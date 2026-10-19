@@ -25,7 +25,9 @@ use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::outcome::{ModelCheckOutcome, UndecidedCause};
-use crate::model_check::replay::{ModelTraceReplayResult, ModelTraceSettlement};
+use crate::model_check::replay::{
+    ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
+};
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
 };
@@ -113,6 +115,11 @@ pub struct ModelCheckRecord {
     pub limit_reached: Option<ReachedLimit>,
     /// The counterexample a `refuted` record carries.
     pub counterexample: Option<TemporalCounterexample>,
+    /// The strong constraints that would exclude a `refuted` liveness
+    /// lasso (FR-133), each a warning diagnostic beside the counterexample.
+    /// They are outside it, its replay identity and the obligation
+    /// identity, and change no verdict.
+    pub hints: Vec<StrongFairnessHint>,
 }
 
 /// FR-127: settle `outcome`, a run under `limits` over the package
@@ -151,6 +158,7 @@ pub fn settle_model_check(
         limits: limits.used(),
         limit_reached: None,
         counterexample: None,
+        hints: Vec::new(),
     };
     let inconclusive = |cause| {
         record(
@@ -259,9 +267,11 @@ pub fn settle_model_check(
             }
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Reproduced { .. },
+                hints,
                 ..
             }) => ModelCheckRecord {
                 counterexample: Some(counterexample.as_ref().clone()),
+                hints,
                 ..record(
                     TerminalValue::Refuted,
                     ResultLabel::Refuted,

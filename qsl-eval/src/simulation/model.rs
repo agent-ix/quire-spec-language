@@ -552,6 +552,27 @@ impl<'a> ModelSystem<'a> {
             .map(|application| application.text.as_str())
     }
 
+    /// The operations of the subject's types, each once: its declaring type,
+    /// name, and the text its transitions carry (see
+    /// [`Self::operation_text`]). They come in the subject's canonical
+    /// order: its types by effective identity, then each type's operations
+    /// in its effective view's order.
+    pub fn operations(&self) -> Vec<(EffectiveId, &str, &str)> {
+        let mut seen = BTreeSet::new();
+        self.applications
+            .values()
+            .flatten()
+            .filter(|application| seen.insert((application.declaring, application.name.as_str())))
+            .map(|application| {
+                (
+                    application.declaring,
+                    application.name.as_str(),
+                    application.text.as_str(),
+                )
+            })
+            .collect()
+    }
+
     /// The operations in `identity`'s effective view (FR-103, FR-081), by name.
     fn applications_of(
         graph: &qsl_semantics::check::CheckedGraph,
