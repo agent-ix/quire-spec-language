@@ -96,8 +96,7 @@ reports.
 
 ### Instancing
 
-- QSL SHALL instantiate a checked temporal clause, state-graph claim or hyper
-  clause at
+- QSL SHALL instantiate a checked temporal clause or state-graph claim at
   request time, from the subject's `universes`: one instance per object of
   the subject's universes whose type conforms to the `over` parameter's type
   `T` (QSpec FR-361), with the parameter bound to that object. An object of
@@ -110,18 +109,21 @@ reports.
   the order of the population's universe list, which is the canonical order.
 - When a population whose member type conforms to `T` has no universe, QSL
   SHALL return `NotSimulated::RequiresBound` naming it (FR-120), before
-  instantiating. A hyper clause is classified the same way for each of its
-  object parameters (FR-172), and a population with no universe is
-  `RequiresBound` before `NoInstance` is considered.
+  instantiating.
 - When the universes hold no object conforming to `T`, including an empty
   universe and a type no population holds, the claim has zero instances.
-- A hyper clause has one instance per key of each object parameter's
-  population (FR-172). When any one parameter's population has an empty
-  universe the instances, a product, are zero.
-  QSL SHALL then report `NoInstance` for a claim or hyper clause with zero
-  instances before it explores any
+  QSL SHALL then report `NoInstance` for the item before it explores any
   state, and FR-127 settles it `inconclusive`, so an item that was never
   evaluated is never read as holding.
+- QSL SHALL instantiate a checked hyper clause (FR-172) at request time with
+  one instance per key of the universe of the one population each object
+  parameter `v: V::T` resolves to, the instances ranging over the product of
+  those universes. For each of those populations with no universe, QSL SHALL
+  return `NotSimulated::RequiresBound` naming it (FR-120), before
+  instantiating.
+- When any one of those populations has an empty universe, the hyper clause
+  has zero instances. QSL SHALL then report `NoInstance` for the item before
+  it explores any state, and FR-127 and FR-182 settle it `inconclusive`.
 - QSL SHALL give a clause or claim with no `over` parameter one instance, with
   no bound object.
 

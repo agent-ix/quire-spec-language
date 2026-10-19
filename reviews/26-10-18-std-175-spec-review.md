@@ -39,3 +39,17 @@ and SR-12892.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | TC-607 step 7 names only a domain, `behaviours (v: V::Vault)`, and no clause, while TC-607's fixtures are the outcomes of TC-601, TC-602, TC-604 and TC-598. A coder must guess which clause to instance and must run instancing, not settle a fixture outcome. Name the clause (for example ADR-023 §1 NonInterference) and the subject the step uses. | spec/test-cases/TC-607-hyper-verdicts-settle.md:27 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | FR-182-AC-9 and TC-607 step 7 cite "§8.2's `SavesPower`", but SavesPower is declared in ADR-023 §1 (line 143). §8.2 is `Opaque` over the single alias `V`. A reader who follows the citation finds a one-alias clause and loses the product case, which the AC's `(d: S::Device, e: N::Device)` names only in passing. Cite §1. | spec/functional/FR-182-settle-a-hyper-verdict.md:133; spec/test-cases/TC-607-hyper-verdicts-settle.md:27 |
+
+## Dispositions
+
+Round 1, reviewed at 470eeeb35 (merge of origin/main 7915615f1).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |

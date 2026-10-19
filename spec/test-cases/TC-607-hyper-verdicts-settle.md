@@ -24,7 +24,7 @@ Fixtures: the outcomes of TC-601, TC-602, TC-604 and TC-598.
 4. Settle FR-179-AC-3's `max_depth` run.
 5. Settle §8.1's secure proof with FR-163-AC-1's accepted certificate and with FR-163-AC-2's member-removed certificate; settle an HP-2 `Inductive{depth: 1}` outcome.
 6. Settle the outcomes of FR-177-AC-5, FR-177-AC-6 and FR-178-AC-6.
-7. Settle ADR-023 §1's `NonInterference` on the vault subject with an empty `Vault` universe and with no `Vault` universe, and §8.2's `SavesPower` with `S::Device` empty and `N::Device` of 3 keys, then the reverse.
+7. Settle ADR-023 §1's `NonInterference` on the vault subject with an empty `Vault` universe and with no `Vault` universe, and ADR-023 §1's `SavesPower` with `S::Device` empty and `N::Device` of 3 keys, then the reverse.
 
 Tag the tests `#[trace("TC-607", "FR-182-AC-n")]`.
 
