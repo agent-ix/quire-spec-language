@@ -63,6 +63,14 @@ Against head 57228a451.
 | FND-009 | low | Step 3 checks `later.tally = n` "in `f`", but `f(earlier: Counter, later: Counter)` has no `n`. The fixture's free-standing "`n` of `Integer`" is not in scope in `f`'s body, so the vector refuses `missing_declaration`, not the `type-mismatch` it asserts. Fix: declare `f(earlier: Counter, later: Counter, n: Integer)`. | spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:19,23; spec/functional/FR-104-check-state-clauses.md:313 |
 | FND-010 | medium | The fix round committed four Linear comment bodies as files under `reviews/`: `c-base.md`, `c-ears.md`, `d1-base.md` and `d1-ears.md`. They are not SpecReview artifacts, `quire validate` rejects them ("required 'type' is missing from frontmatter"), and their generic names will collide with later reviews. Only the two `26-10-19-std-157-spec-review-*.md` SR files belong in `reviews/`; delete the other four. | reviews/c-base.md; reviews/c-ears.md; reviews/d1-base.md; reviews/d1-ears.md |
 
+## New findings (disposition pass 3)
+
+Against head 6aab9a1c1.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | In TC-1084, `f(earlier: Counter, later: Counter, n: Integer)` now takes object-type parameters, so `earlier` and `later` are references. Outside a state clause the checker treats `x.f` over a `Reference` as a record field read (`is_model_receiver` is true for a reference only `in_state_clause()`, qsl-semantics/src/check/check.rs:2482-2492; otherwise `field` needs a `Composite` record operand and returns `mismatch`, check.rs:2729-2737). So every `f` vector (steps 1 to 3) refuses `ill_typed`/`type-mismatch` at `earlier.tally` before the equality is typed: step 1's guarded form does not check, and steps 2 and 3 fail at the wrong span. FR-056-AC-9 and FR-098-AC-14 read a function's reference parameter as `deref(n).f`. The parameter type is also written unqualified (`Counter`), where object types are `M::Counter` (FR-056-AC-9; FR-108's `a: Config::ConfigVersion`). Fix: `function f using v(earlier: M::Counter, later: M::Counter, n: Integer): Boolean pure` with `deref(earlier).tally` and `deref(later).tally` throughout, or give `f` record parameters of a separate `record`. | spec/test-cases/TC-1084-equality-types-an-arithmetic-operand-against-a-bounded-integer.md:19-23; spec/functional/FR-104-check-state-clauses.md:313 |
+
 ## Dispositions
 
 Round 1, against head 5dadb78aa.
@@ -81,3 +89,11 @@ Round 2, against head 57228a451.
 | FND-005 | fixed | FR-104 and FR-381 now accept an ordering between `Integer` and `Int[..]`, matching the checker; the `<=` refusal vector is gone. STD-210 tracks the matching QSpec FR-149-AC-21 amendment |
 | FND-006 | fixed | TC-1084 now names each position: the `pre` of `bump`, an invariant over `self` and `f(earlier, later)` (their validity is FND-008 and FND-009) |
 | FND-007 | fixed | FR-104 frontmatter gains `ix://agent-ix/quire-specification/FR-149` `depends_on` |
+
+Round 3, against head 6aab9a1c1.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | still-open | The context is now the object type `M::Counter`, but the fixture uses "the header of FR-108's unit", whose only model line is `model Config = "example/config-version" ...`. That package declares no `Counter`, and the unit declares no `M`, so `pre G ... on M::Counter::bump` and `invariant I ... on M::Counter` refuse `missing_declaration`/`missing-name` at `M` (FR-104:80-82) before the rule applies. Fix: extend the Config package with `Counter` and `bump`, as TC-459 step 7 extends it with `Flow`, and write `Config::Counter`; or give the unit its own `model M = "<package>" digest ...` header over a package that declares them |
+| FND-009 | fixed | `f(earlier: Counter, later: Counter, n: Integer)` binds `n` (the parameter typing is FND-011) |
+| FND-010 | fixed | `reviews/c-base.md`, `c-ears.md`, `d1-base.md` and `d1-ears.md` deleted; only the two SR files remain |
