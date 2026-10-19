@@ -142,12 +142,14 @@ pub(crate) fn observe_state(
     let mut objects = Vec::new();
     let mut completeness = BTreeMap::new();
     let mut sizes = BTreeMap::new();
+    let mut listed = BTreeMap::new();
     for (population, members) in &state.populations {
         completeness.insert(population.node.clone(), true);
         sizes.insert(
             population.node.clone(),
             u64::try_from(members.len()).unwrap_or(u64::MAX),
         );
+        let mut references = Vec::with_capacity(members.len());
         for (key, object) in members {
             let effective = views
                 .iter()
@@ -168,8 +170,11 @@ pub(crate) fn observe_state(
                 };
                 slots.push((attribute.field().name(), slot));
             }
-            objects.push((object_reference(views, effective, key)?, slots));
+            let reference = object_reference(views, effective, key)?;
+            references.push(reference.clone());
+            objects.push((reference, slots));
         }
+        listed.insert(population.node.clone(), references);
     }
     let closure = ObjectClosure::new(types, objects, &[]).map_err(map_environment_refusal)?;
     let extents = admit_supplied_extents(
@@ -182,7 +187,8 @@ pub(crate) fn observe_state(
         identity,
         environment: ObjectEnvironment::new(closure)
             .with_extents(extents)
-            .with_population_sizes(sizes),
+            .with_population_sizes(sizes)
+            .with_population_members(listed),
         populations: completeness,
         out_of_range: Vec::new(),
     })

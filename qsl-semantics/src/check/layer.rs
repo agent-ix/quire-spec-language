@@ -235,6 +235,8 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         | ExprNode::SelfRef
         | ExprNode::Result
         | ExprNode::AllInstances { .. }
+        | ExprNode::Population { .. }
+        | ExprNode::Seq { .. }
         | ExprNode::Indexed { .. }
         | ExprNode::StepLabel { .. }
         | ExprNode::Stutter
