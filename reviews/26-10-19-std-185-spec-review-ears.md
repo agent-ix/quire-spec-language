@@ -32,3 +32,11 @@ The over-reference rule ("The emitter SHALL write the `over` argument as a
 reference to the parameter node, never as a value") is a conformant
 ubiquitous statement; its trailing clause is rationale. The three findings
 are about form only and do not change behaviour.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 05a741373 splits the rule. There is now an emitter statement ("The emitter SHALL emit, for every clause, a node that carries the clause's `over` reference and one `claim` occurrence per declaration") and a separate consumer statement that defers to FR-338. |
+| FND-002 | fixed | 05a741373 separates the ubiquitous return rule ("The I2 reader SHALL return, for each `claim` occurrence, ...") from an unwanted-behaviour rule ("If a looked-up clause root names ..., then the I2 reader SHALL return the lookup refusal `clause-root-unresolved` ..."). |
+| FND-003 | fixed | 05a741373 rewrites it as "If an `AutomatonStateKey` ... is admitted by no instance's translation context ..., then the checker SHALL return `Rejected` ...", splits the SHALL NOT and the locus-order rules into their own bullets, and moves the FR-127 consequence into a Note. |

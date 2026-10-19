@@ -56,3 +56,10 @@ certificate over ADR-018 §6's `ConfigVersion` subject. PR #997 reports that
 no model-check fixture for that subject exists yet, so TC-1080 inherits
 AC-1's fixture gap. TC-1079 compiles the same unit through S4, which TC-524
 already does.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 05a741373: FR-338-AC-8 now reads "replaced in turn by each of three admission negatives (a foreign context, a non-canonical encoding, an unsorted set)", which matches TC-1080 steps 1 and 2. |
+| FND-002 | accepted-no-change | The author kept the repo-wide `Test (TC-NNN)` Verification convention, which every other FR-337 and FR-338 AC row also uses. Changing only these two rows would make them inconsistent with the rest. Any change belongs to the whole corpus, not to this PR. |

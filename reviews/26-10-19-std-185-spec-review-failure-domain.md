@@ -39,3 +39,11 @@ new universe cannot reuse an old proof's binding.
 
 Not mergeable as is: FND-001 to FND-003 are medium and should be fixed in
 this PR. No high.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 05a741373: "One identity triple `[node, role, ordinal]` per `claim` occurrence of the clause node ... two structurally identical clause declarations share one node and differ only by occurrence ordinal (FR-088-AC-3); each declaration has its own triple". AC-5 and TC-1079 step 3 add the two-declaration vector (one node, two triples with distinct ordinals). |
+| FND-002 | fixed | 05a741373: the lookup refusal is now named `clause-root-unresolved` at the looked-up triple, as an EARS If/then rule. FR-338 now states the outcome: "If the request's own clause root does not resolve ... the checker SHALL refuse the request ...; FR-127 settles it `Failed`", while a foreign context root follows the refused-key rule. AC-5 asserts the code, and AC-8 and TC-1080 step 6 cover the refused request. |
+| FND-003 | fixed | 05a741373: "When more than one state's key is refused, the checker SHALL report the least refused `ProductStateRef`, ordered by the `model_state` digest octets and then the `automaton_state` octets, ascending unsigned lexicographic". AC-8 and TC-1080 step 5 cover both orderings. #997 still returns the first refused state in certificate order and has to adopt this rule. |

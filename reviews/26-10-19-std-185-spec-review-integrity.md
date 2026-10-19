@@ -67,3 +67,19 @@ exercises only the foreign context and foreign digest domain at checker
 level).
 
 Not mergeable as is: FND-001 (medium) should be fixed in this PR. No high.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-337-AC-5's new no-`over` vector names "FR-125-AC-7's `possible Anything using v { true }` shape". That is a state-graph claim (ADR-022 SG-4: "a property family separate from temporal claims"), and it emits no `temporal`/`temporal_clause` node, so TC-1079 step 3 cannot produce the clause it is meant to read. A temporal claim without `over` does exist in the corpus, for example FR-153-AC-3's `eventually holds(forall x in toggles: x.fired)`, which "has no `over` parameter". However, QSpec's shared-grammar `temporal-clause` requires `'over', '(', parameter, ')'`, and QSpec FR-370 always writes argument 1 as "a `reference` to the `value`/`parameter` node of the clause's `over` parameter", with a missing argument failing the schema (FR-370-AC-1). So no conforming package can hold the parameter-free clause this vector reads. Fix: point the vector at a temporal shape such as FR-153-AC-3's, and mark that half of AC-5 (and TC-1079 step 3) as waiting on the QSpec form, with a `Remaining work:` reference to the STD follow-up. | spec/functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md:132; spec/test-cases/TC-1079-a-temporal-clause-node-carries-its-root-and-over-node.md:23-25,35-37; spec/decisions/ADR-022-possible-properties-and-state-graph-queries.md:93; spec/functional/FR-153-decide-each-fairness-on-the-annotated-quotient.md:99 |
+| FND-006 | low | FR-337 Outputs still opens with "One v2 node per temporal clause", while the new bullet right after it says two structurally identical clause declarations "share one node". Make the first bullet "One v2 node per distinct checked clause", to match ADR-013's "one node per distinct clause, one `claim` occurrence per declaration". | spec/functional/FR-337-emit-a-checked-temporal-clause-as-a-v2-temporal-clause-node.md:58-67 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | The QSL side is fixed in 05a741373: Outputs ("A clause with no `over` parameter ... has no `over` node; that absence is a valid result, not a refusal") and the reader rule ("or no `over` node for a clause without an `over` parameter"). What the emitter writes in argument 1 for such a clause is still undefined, and QSL cannot define it alone. QSpec FR-370 and the shared-grammar `temporal-clause` require `over`, so the slot needs a QSpec (STD) follow-up, which the coordinator is filing. FR-337 should cite it as `Remaining work:` (see FND-005). |
+| FND-002 | fixed | 05a741373 replaces the self-contradicting "only source" rule with an emitter rule ("the identity triple and `over` node are derivable from the package alone") and a separate consumer rule ("it takes neither a clause the package does not hold nor an `over` node from its caller"). |
+| FND-003 | fixed | 05a741373 adds a `depends_on` FR-125 edge, and Dependencies now lists FR-125, FR-338, ADR-013 O-07 and QSpec FR-322. |
+| FND-004 | fixed | 05a741373: "If an `AutomatonStateKey` in a certificate state is admitted by no instance's translation context (... an item's instances each have their own context)". This matches #997's `instances.iter().any(... admit ...)`. |
