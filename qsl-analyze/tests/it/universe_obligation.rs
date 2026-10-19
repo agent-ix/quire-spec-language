@@ -21,7 +21,7 @@ use qsl_semantics::family::{ClaimExtent, FamilyContract};
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Identifier, Origin, Role};
 
-use crate::counter::{clause, document, package, Documents, CONTRACT};
+use crate::counter::{document, package, package_with_clauses, Documents, CONTRACT};
 
 /// The `Counter` subject: its universe of `counters` and its initial
 /// state. Which universe the subject holds is what the writer binds.
@@ -47,11 +47,18 @@ fn occurrence() -> OccurrenceKey {
 fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
     let document = document(false);
     let checked = package(&document, CONTRACT);
-    let clause = clause(
+    let (_, clauses) = package_with_clauses(
         &document,
-        "fair weak each M::Counter::inc;",
-        "always eventually holds(c.value = 2)",
+        CONTRACT,
+        &[(
+            "C",
+            "fair weak each M::Counter::inc;",
+            "always eventually holds(c.value = 2)",
+        )],
     );
+    let [clause] = clauses.as_slice() else {
+        panic!("one declared clause");
+    };
     let population = checked
         .graph()
         .population_domain(
@@ -60,7 +67,7 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
         )
         .expect("keyed")
         .expect("counters resolves");
-    let [claim] = TemporalTraceFamily::requirements(&clause)
+    let [claim] = TemporalTraceFamily::requirements(clause)
         .try_into()
         .expect("one claim");
     let requirements = claim
