@@ -108,3 +108,7 @@ one undefined type and in TC-623 fixtures. No compatibility layer was added.
 | FND-009 | fixed | The variant is now `SampleStop::GeneratorMismatch { supplied: DefinitionRef }`. |
 | FND-010 | fixed | References cite the sampler definition and TC-354 SM-05/SM-07. |
 | FND-011 | fixed | "Zero digests computed" through the counting wrapper is observable; the wrapper's seam is FND-014. |
+| FND-012 | fixed | Round 2: AC-4 pins Coin's canonical weights `(3, 1)`, `choices = [0]` and `random = [false]`. Recomputed: the TC-210 step-0 digest gives `v mod 4 = 2`, which is below 3, so index 0 (`false`). |
+| FND-013 | fixed | Round 2: `Wide` spells the decimal weight, and it equals 2^256 (checked). |
+| FND-014 | fixed | Round 2: the ACs and TC-623 name a test-only digest counter, incremented once per SHA-256 digest the sampler computes. |
+| FND-015 | fixed | Round 2: the sentence now reads "each by the rule above. With several operations the operation is choice 0 …". |
