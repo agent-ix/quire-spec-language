@@ -127,7 +127,10 @@ ifeq ($(origin QSPEC_DIR),undefined)
 QSPEC_DIR := $(SIBLINGS)/quire-specification
 endif
 # Freeze the raw caller value before Make can expand literal '$' path bytes.
-override export QSPEC_DIR := $(value QSPEC_DIR)
+# `override` and `export` stay separate statements: GNU Make 3.81 (macOS) turns a
+# combined `override export V :=` into a recursive variable that expands the `$`.
+override QSPEC_DIR := $(value QSPEC_DIR)
+export QSPEC_DIR
 LOCAL_PATCHES ?= quire-contract-ir:quire-contract-model:crates/quire-contract-model \
 	quire-canonical:quire-canonical:. \
 	ix-trace-rs:ix-trace-rs:.
@@ -196,10 +199,12 @@ use-remote:
 # Resolve paths in the shell from environment data so quotes, backticks and
 # dollars remain literal path bytes instead of becoming Make expansions.
 ifneq ($(origin CI_DEFAULT_TARGET_DIR),undefined)
-override export CI_DEFAULT_TARGET_DIR := $(value CI_DEFAULT_TARGET_DIR)
+override CI_DEFAULT_TARGET_DIR := $(value CI_DEFAULT_TARGET_DIR)
+export CI_DEFAULT_TARGET_DIR
 endif
 ifneq ($(origin CI_ALL_TARGET_DIR),undefined)
-override export CI_ALL_TARGET_DIR := $(value CI_ALL_TARGET_DIR)
+override CI_ALL_TARGET_DIR := $(value CI_ALL_TARGET_DIR)
+export CI_ALL_TARGET_DIR
 endif
 
 ci-default-features:
@@ -222,13 +227,17 @@ ci-all-features:
 # executables that lane already built are reused. `--tests` selects the test
 # targets implicitly, so a target whose required features are off (qsl-source's
 # `it`) is skipped as in that lane; naming `--test it` would make it an error.
-# Nothing is recompiled in a directory of its own. The three tests run serially in one process
-# (`--test-threads=1`: deep-stack tests must not share a thread pool); each
-# name must still select exactly one ignored test.
+# Nothing is recompiled in a directory of its own. Each name must still select exactly one ignored test.
+# `locked-build.sh` caps a build's memory at 12 to 20 GiB depending on the
+# other lanes, so the memory peaks set the schedule: the four light cases (about
+# 3.5 GB each) run two at a time, and the dependency-chain case (about 16 GB
+# alone) runs by itself in its own invocation.
 test-deep-format:
 	@set -eu; \
 	for test in \
-		formatter_identity::all_three_deep_source_generators_keep_format_identity \
+		formatter_identity::deep_sum_source_generator_keeps_format_identity \
+		formatter_identity::deep_else_if_source_generator_keeps_format_identity \
+		formatter_identity::deep_let_source_generator_keeps_format_identity \
 		formatter_identity::replay_large_source_generator_keeps_format_identity \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity; do \
 		listing=$$(CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact "$$test" --list); \
@@ -238,9 +247,12 @@ test-deep-format:
 			exit 1; \
 		fi; \
 	done; \
+	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=2 \
+		formatter_identity::deep_sum_source_generator_keeps_format_identity \
+		formatter_identity::deep_else_if_source_generator_keeps_format_identity \
+		formatter_identity::deep_let_source_generator_keeps_format_identity \
+		formatter_identity::replay_large_source_generator_keeps_format_identity; \
 	CARGO_TARGET_DIR="$${CI_DEFAULT_TARGET_DIR:-$${CARGO_TARGET_DIR:-target}/ci-default-features}" cargo test --locked --workspace --tests -- --ignored --exact --test-threads=1 \
-		formatter_identity::all_three_deep_source_generators_keep_format_identity \
-		formatter_identity::replay_large_source_generator_keeps_format_identity \
 		formatter_identity::dependency_chain_and_order_variants_keep_format_identity
 
 # The no-default-features checks: a from-clean build (its own target-dir, so
@@ -255,7 +267,8 @@ test-deep-format:
 # Preserve the caller's literal target root across the Make/shell boundary.
 # An empty value retains Cargo's default target root.
 ifneq ($(origin CARGO_TARGET_DIR),undefined)
-override export CARGO_TARGET_DIR := $(value CARGO_TARGET_DIR)
+override CARGO_TARGET_DIR := $(value CARGO_TARGET_DIR)
+export CARGO_TARGET_DIR
 endif
 
 ci-clean-build:

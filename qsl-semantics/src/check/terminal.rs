@@ -149,8 +149,8 @@ pub(crate) fn check_terminal<'a>(
     let view = ClauseView {
         kind: StateClauseKind::Invariant,
         complete_value: super::state_clause::is_complete_value(&declaration.selection),
-        context: *context,
-        receiver: ValueType::Reference(*context),
+        context: Some(*context),
+        receiver: Some(("self", ValueType::Reference(*context))),
         operation: None,
         context_population: *population,
         frame_population: None,

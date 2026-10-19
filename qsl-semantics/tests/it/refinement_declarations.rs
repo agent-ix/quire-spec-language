@@ -1088,7 +1088,8 @@ fn the_fairness_rows_form_the_two_sets_in_source_order() {
 
 /// FR-137-AC-2 (TC-542 step 2): a row naming an operation of the other
 /// model, or of neither, refuses `missing-name`, naming the other model when
-/// the operation is its; two equal rows check as one constraint.
+/// the operation is its; a `weak` and a `strong` row on one operation are
+/// different constraints.
 #[trace("TC-542", "FR-137-AC-2")]
 #[test]
 fn a_fairness_row_names_an_operation_of_its_own_model() {
@@ -1141,13 +1142,134 @@ fn a_fairness_row_names_an_operation_of_its_own_model() {
         }
     );
 
+    // A `weak` and a `strong` row on one operation are different constraints.
     let repeated = "assume fair weak each Impl::Counter::beginA;";
     let graph = checked_counter(&mutated(
         &base,
         repeated,
+        &format!("{repeated}\nassume fair strong each Impl::Counter::beginA;"),
+    ));
+    assert_eq!(only_refinement(&graph).concrete_fairness().len(), 7);
+}
+
+/// FR-137-AC-2 (TC-542 step 2): two rows of one set with the same kind,
+/// operation and granularity -- an unwritten granularity read as `whole` --
+/// refuse `conflicting-binding`, naming the first row and refusing at the
+/// second; neither row is dropped.
+#[trace("TC-542", "FR-137-AC-2")]
+#[test]
+fn two_identical_fairness_rows_conflict() {
+    let base = cas_refines_counter();
+    let repeated = "assume fair weak each Impl::Counter::beginA;";
+    let found = refused_counter(&mutated(
+        &base,
+        repeated,
         &format!("{repeated}\n{repeated}"),
     ));
-    assert_eq!(only_refinement(&graph).concrete_fairness().len(), 6);
+    let twice = only(&found);
+    assert_eq!(
+        twice.code_and_cause(),
+        (Code::InvalidModelBinding, Some("conflicting-binding"))
+    );
+    assert_eq!(twice.at, repeated);
+    let RefinementCause::Conflicting { name, first } = twice.refinement() else {
+        panic!("a conflict: {:?}", twice.refinement());
+    };
+    assert_eq!(name, "Impl::Counter::beginA");
+    assert_eq!(&twice.unit[first.start..first.end], repeated);
+    assert_eq!(Some(first.start), twice.unit.find(repeated));
+
+    // An unwritten granularity reads `whole`, so it conflicts with `whole`.
+    let found = refused_counter(&mutated(
+        &base,
+        repeated,
+        "assume fair weak Impl::Counter::beginA;\n\
+         assume fair weak whole Impl::Counter::beginA;",
+    ));
+    let whole = only(&found);
+    assert_eq!(
+        whole.code_and_cause(),
+        (Code::InvalidModelBinding, Some("conflicting-binding"))
+    );
+    assert_eq!(whole.at, "assume fair weak whole Impl::Counter::beginA;");
+
+    // The same holds for the `ensure` set.
+    let ensure = "ensure fair weak each Spec::Counter::inc;";
+    let found = refused_counter(&mutated(&base, ensure, &format!("{ensure}\n{ensure}")));
+    assert_eq!(
+        only(&found).code_and_cause(),
+        (Code::InvalidModelBinding, Some("conflicting-binding"))
+    );
+}
+
+/// FR-136-AC-1, FR-147-AC-2 (TC-541, TC-552): over a model subject a step
+/// row's left side names a concrete operation, so a step-class keyword or a
+/// `memory` kind names none and refuses `missing-name`; a `node` right side
+/// refuses `malformed-declaration`. The row is refused, not ignored.
+#[trace("TC-552", "FR-147-AC-2")]
+#[test]
+fn protocol_step_rows_refuse_over_a_model_subject() {
+    let base = cas_refines_counter();
+    let begin = "step Impl::Counter::beginB -> stutter;";
+
+    let found = refused_counter(&mutated(
+        &base,
+        begin,
+        &format!("{begin}\nstep fork Impl::Counter::par -> stutter;"),
+    ));
+    assert_eq!(
+        only(&found).code_and_cause(),
+        (Code::MissingDeclaration, Some("missing-name"))
+    );
+
+    let found = refused_counter(&mutated(
+        &base,
+        begin,
+        &format!("{begin}\nstep memory flush -> stutter;"),
+    ));
+    assert_eq!(
+        only(&found).refinement(),
+        &RefinementCause::Unresolved {
+            name: "flush".to_owned(),
+            held_by: None,
+        }
+    );
+
+    let commit = "step Impl::Counter::commitA -> Spec::Counter::inc(self);";
+    let found = refused_counter(&mutated(
+        &base,
+        commit,
+        "step Impl::Counter::commitA -> node Spec::Twice::a1(self);",
+    ));
+    let node = only(&found);
+    assert_eq!(
+        node.code_and_cause(),
+        (Code::InvalidModelBinding, Some("malformed-declaration"))
+    );
+    assert_eq!(
+        node.refinement(),
+        &RefinementCause::Malformed {
+            name: "Spec::Twice::a1".to_owned()
+        }
+    );
+}
+
+/// FR-138: a history row is not checked yet, so a declaration that writes
+/// one refuses `unsupported-feature` rather than checking with the row
+/// ignored.
+#[trace("TC-889")]
+#[test]
+fn a_history_row_is_refused_until_it_is_checked() {
+    let base = cas_refines_counter();
+    let begin = "step Impl::Counter::beginB -> stutter;";
+    let history = "history Impl::Counter.seen : Boolean = false { }";
+    let found = refused_counter(&mutated(&base, begin, &format!("{begin}\n{history}")));
+    let refused = only(&found);
+    assert_eq!(
+        refused.code_and_cause(),
+        (Code::UnknownRequiredFeature, Some("unsupported-feature"))
+    );
+    assert_eq!(refused.at, history);
 }
 
 /// FR-137-AC-4 (TC-542 step 4): a `strong` row checks as `Strong`, with its

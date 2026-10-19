@@ -17,7 +17,7 @@ use qsl_semantics::model::state::{ModelState, StateModel};
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) enum Enc {
+pub(crate) enum Enc {
     Null,
     Bool(bool),
     Str(String),
@@ -58,7 +58,7 @@ impl Encode for Enc {
 }
 
 impl Enc {
-    pub(super) fn text(value: impl Into<String>) -> Self {
+    pub(crate) fn text(value: impl Into<String>) -> Self {
         Self::Str(value.into())
     }
 
@@ -89,7 +89,7 @@ impl Encode for ModelKey {
 }
 
 /// Lowercase hex of `bytes`.
-pub(super) fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut text = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -133,7 +133,7 @@ pub(super) fn reference_enc(reference: &ObjectReference) -> Enc {
 }
 
 /// FR-181's typed canonical form of `value`.
-pub(super) fn value_enc(value: &Value) -> Enc {
+pub(crate) fn value_enc(value: &Value) -> Enc {
     match value {
         Value::Boolean(flag) => Enc::tagged("boolean", vec![("value", Enc::Bool(*flag))]),
         Value::Integer(integer) => {

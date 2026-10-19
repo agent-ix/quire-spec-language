@@ -18,7 +18,7 @@ Verify FR-362-AC-1 to FR-362-AC-4, FR-362-AC-7 and FR-362-AC-8. Catches an imple
 2. Run `qsl_cst::parse`, `build_unit` and the producer on the same source with its profile line rewritten to carry `version` and `digest` after the identity.
 3. Build the graph from the text of step 1 and the type report from the same text with one character of a comment changed, same authority and identity. Call the checked-unit constructor. Repeat with the graph from the changed text and the type report from the original.
 4. Build the checked unit from a graph and a type report of the same bytes and take the inventory. Compare its rows with the rows of the producer's unit.
-5. Read a unit holding `predicate Positive` and an `invariant` (moved families) and one `relation` clause (unmoved: S2 has no dispatch entry). Read it again without the `relation` clause, and once more with a `hyper` clause in its place.
+5. Read a unit with the header profile `quire.model.complete/v1`, a `model` aliased `V` whose object type `ConfigVersion` holds an operation `step(i)` and a field `versionNumber`, the header alias `v` for `quire.model.complete/v1` (used by `using v`), the temporal profile `quire.temporal.infinite-trace/v1` aliased `inf`, `predicate Positive` and an `invariant`, and one `relation Det using v over (x: V::ConfigVersion::step, y: V::ConfigVersion::step)` clause whose body checks. Read it again without the `relation` clause; once more with `hyper NonInterference using inf over behaviours (v: V::ConfigVersion) forall trace a of V forall trace b of V` and a checking `match` and body in its place; and once with a `relation` clause whose body reads `x.nope`.
 6. Take the inventory of a unit the S3 type phase refuses. Take the inventory of a unit whose type phase stops on `TypeWorkExhausted`, and of one that stops on `TypeAdmissionUnfinished`.
 
 ## Expected Results
@@ -27,6 +27,6 @@ Verify FR-362-AC-1 to FR-362-AC-4, FR-362-AC-7 and FR-362-AC-8. Catches an imple
 - Step 2: `qsl_cst::parse` returns a recovered `ParsedSource` with an `invalid_syntax` diagnostic at `version`; `build_unit` and the producer refuse `invalid_syntax`.
 - Step 3: both calls refuse with the cause naming the differing side, the selected reference and the differing reference.
 - Step 4: the rows are equal.
-- Step 5: the first and third reads are refused `unsupported_construct` at the `relation` or `hyper` clause with no graph and no type report; the second yields both; no second parser runs. When a family moves, its read is retired with the family.
+- Step 5: the first and third reads are refused only as `NotEmitted` naming the `relation` or `hyper` clause at its span, with no graph and no type report; the second yields both; the fourth is refused with the hyper cause `BodyMissing` at the `nope` read (`missing_declaration`) and not `NotEmitted`; S2 refuses no read with `NoDispatchEntry` or `UnrepresentedConstruct`; no second parser runs.
 - Step 6: the refused unit is an error outcome of `check` with no inventory rows; each exhaustion stop yields an `Incomplete` inventory with its partial rows and the typed cause.
 - Assertions compare typed causes and references, never message text.

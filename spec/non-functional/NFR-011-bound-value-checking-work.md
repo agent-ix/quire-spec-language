@@ -28,7 +28,7 @@ charge. The ceilings are stage limits, not a caller work budget
 ## Scope
 
 One `PackageDeclarations::check` call under one `CheckingLimits`, which
-applies all three ceilings. One standalone expression check
+applies its node, byte and work ceilings. One standalone expression check
 (`CheckedGraph::check_expression` and its clause variants) applies the node
 ceiling of its `CheckingLimits`; it encodes no declaration and charges no
 work. The ceilings are inclusive unsigned counts supplied by the

@@ -510,3 +510,118 @@ fn a_recovering_cst_refuses_and_a_rebuilt_declaration_is_equal() {
     let second = build(&full);
     assert_eq!(protocol(&first), protocol(&second));
 }
+
+/// FR-308-AC-1: a replicated role, a channel and an `on each` activation
+/// build a `Replicated` role with population `workers`, max 2 and an `Until`
+/// lifetime, a `ChannelForm` with `AtLeastOnce`, `Literal(1)` and `Block`,
+/// and an `Each` activation with binder `x`, each member's span covering its
+/// text. A static role builds no replicated part, and `workflow` and
+/// `scope` lifetimes build as written.
+#[trace("TC-887", "FR-308-AC-1")]
+#[test]
+fn a_replicated_role_a_channel_and_an_activation_build_as_written() {
+    let role = format!("role w each {OBJECT} from workers max 2 lifetime until(w.done);");
+    let channel = format!(
+        "channel ch from R to w carries {OBJECT} ordering unordered delivery at-least-once \
+         capacity 1 overflow block;"
+    );
+    let text = source(&format!("{role}\n{channel}"), RUN).replacen(
+        "on origin",
+        &format!("on each (x: {OBJECT}) when (true)"),
+        1,
+    );
+    let unit = build(&text);
+    let form = protocol(&unit);
+
+    let [static_r, static_s, replicated] = &form.roles[..] else {
+        panic!("three roles: {:?}", form.roles);
+    };
+    assert_eq!(static_r.replicated, None);
+    assert_eq!(slice(&text, static_s.span), format!("role S on {OBJECT};"));
+    assert_eq!(replicated.name.name, "w");
+    assert_eq!(slice(&text, replicated.span), role);
+    assert_eq!(slice(&text, replicated.context.span), OBJECT);
+    let Some(qsl_forms::ReplicatedRoleForm {
+        population,
+        max,
+        max_span,
+        lifetime,
+    }) = &replicated.replicated
+    else {
+        panic!("a replicated role: {replicated:?}");
+    };
+    assert_eq!(population.name, "workers");
+    assert_eq!(slice(&text, population.span), "workers");
+    assert_eq!(*max, 2);
+    assert_eq!(slice(&text, *max_span), "2");
+    let qsl_forms::RoleLifetime::Until(condition) = lifetime else {
+        panic!("an Until lifetime: {lifetime:?}");
+    };
+    assert_eq!(expression_text(&text, condition), "w.done");
+
+    let channel_form = only_channel(form);
+    assert_eq!(channel_form.delivery.value, ChannelDelivery::AtLeastOnce);
+    assert_eq!(channel_form.capacity.value, ChannelCapacity::Literal(1));
+    assert_eq!(channel_form.overflow.value, ChannelOverflow::Block);
+    assert_eq!(slice(&text, channel_form.span), channel);
+
+    let qsl_forms::ActivationForm::Each { parameter, when } = &form.activation else {
+        panic!("an Each activation: {:?}", form.activation);
+    };
+    assert_eq!(parameter.name.name, "x");
+    assert_eq!(
+        when.as_ref().map(|when| expression_text(&text, when)),
+        Some("true")
+    );
+
+    for (written, scope) in [("workflow", false), ("scope", true)] {
+        let text = source(
+            &format!("role w each {OBJECT} from workers max 1 lifetime {written};"),
+            RUN,
+        );
+        let unit = build(&text);
+        let lifetime = protocol(&unit).roles[2]
+            .replicated
+            .as_ref()
+            .map(|replicated| replicated.lifetime.clone());
+        match (lifetime, scope) {
+            (Some(qsl_forms::RoleLifetime::Workflow(span)), false)
+            | (Some(qsl_forms::RoleLifetime::Scope(span)), true) => {
+                assert_eq!(slice(&text, span), written);
+            }
+            (other, _) => panic!("{written}: {other:?}"),
+        }
+    }
+}
+
+/// Verifies the parse only and claims no criterion.
+/// A `fence` control and a `parallel` with a `memory` clause
+/// build as protocol nodes beside the controls around them; the `memory`
+/// words do not become the parallel's name or join labels.
+#[test]
+fn a_fence_and_a_memory_clause_build_beside_their_controls() {
+    let run = format!(
+        "sequence Main {{ parallel P memory tso {PARALLEL_BRANCHES} join all [a, b]; \
+         fence Barrier ordering seq_cst; }}"
+    );
+    let text = source("", &run);
+    let unit = build(&text);
+    let form = protocol(&unit);
+    let [parallel] = &form.parallels[..] else {
+        panic!("one parallel: {:?}", form.parallels);
+    };
+    assert_eq!(parallel.name.name, "P");
+    let labels: Vec<&str> = parallel
+        .labels
+        .iter()
+        .map(|label| label.name.as_str())
+        .collect();
+    assert_eq!(labels, ["a", "b"]);
+    let fences: Vec<&str> = form
+        .declarations
+        .iter()
+        .filter(|declaration| declaration.kind == ProtocolNodeKind::Fence)
+        .map(|declaration| declaration.name.name.as_str())
+        .collect();
+    assert_eq!(fences, ["Barrier"]);
+}

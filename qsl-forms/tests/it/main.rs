@@ -12,6 +12,7 @@ mod protocol_member_forms;
 mod protocol_reference_forms;
 mod refinement_forms;
 mod source_grammar_vectors;
+mod state_graph_forms;
 mod state_model_forms;
 mod sum_case_forms;
 mod temporal_clause_forms;

@@ -1366,11 +1366,18 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
+ "qsl-cst",
  "qsl-eval",
+ "qsl-forms",
  "qsl-foundation",
+ "qsl-package",
  "qsl-replay",
+ "qsl-route",
+ "qsl-semantics",
  "quire-canonical",
  "quire-exact",
+ "quire-semantic-value",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1482,6 +1489,7 @@ dependencies = [
 name = "qsl-replay"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "ix-trace-rs",
  "num-bigint",
  "num-integer",
@@ -1511,6 +1519,7 @@ dependencies = [
  "qsl-foundation",
  "qsl-semantics",
  "quire-exact",
+ "quire-semantic-value",
  "tempfile",
  "thiserror",
 ]
@@ -1600,7 +1609,7 @@ dependencies = [
 [[package]]
 name = "quire-contract-model"
 version = "0.1.0"
-source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#30c3e4e533de96c0db824146a57472f96fa9c652"
+source = "git+https://github.com/agent-ix/quire-contract-ir?branch=main#fdef3c598fd99122bd9f1ba14667bad8d134b712"
 dependencies = [
  "jsonschema 0.17.1",
  "num-bigint",

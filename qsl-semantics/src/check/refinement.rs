@@ -20,8 +20,9 @@
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ArgumentForm, ExpressionForm, FairnessConstraintForm, FairnessGranularity as FormGranularity,
-    FairnessKind as FormKind, FairnessSide, RefinementForm, RefinementRowForm, StepTargetForm,
+    AbstractSideForm, ArgumentForm, ExpressionForm, FairnessConstraintForm,
+    FairnessGranularity as FormGranularity, FairnessKind as FormKind, FairnessSide, RefinementForm,
+    RefinementRowForm, StepSourceForm, StepTargetForm,
 };
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, InternalFault, Span};
@@ -112,6 +113,13 @@ pub enum RefinementCause {
         /// The name as written.
         name: String,
     },
+    /// A row or header spelling the S2 form carries but S3 does not check
+    /// yet: `unknown_required_feature`/`unsupported-feature`. A declaration
+    /// holding one is refused rather than checked with the row ignored.
+    Unsupported {
+        /// What the declaration spells.
+        construct: &'static str,
+    },
     /// A row's expression or type refused.
     Check(CheckCause),
 }
@@ -136,6 +144,7 @@ impl RefinementCause {
             Self::Unresolved { .. } | Self::MissingRow { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
             Self::Conflicting { .. } | Self::Malformed { .. } => Code::InvalidModelBinding,
+            Self::Unsupported { .. } => Code::UnknownRequiredFeature,
             Self::Check(cause) => cause.code(),
         }
     }
@@ -148,6 +157,7 @@ impl RefinementCause {
             Self::Ambiguous { .. } => Some("ambiguous-name"),
             Self::Conflicting { .. } => Some("conflicting-binding"),
             Self::Malformed { .. } => Some("malformed-declaration"),
+            Self::Unsupported { .. } => Some("unsupported-feature"),
             Self::Check(cause) => cause.cause(),
         }
     }
@@ -472,6 +482,21 @@ pub(crate) fn check_refinement<'a, 'c>(
             },
         );
     }
+    let abstract_alias = match &form.abstract_side {
+        AbstractSideForm::Model(alias) => alias,
+        AbstractSideForm::Protocol { alias, clause } => {
+            // FR-147: QSpec has no production for the protocol side yet
+            // (Linear STD-182), so the checker has no source to check it
+            // against.
+            findings.refuse(
+                clause.span,
+                RefinementCause::Unsupported {
+                    construct: "an abstract protocol side (waits on QSpec STD-182, FR-147)",
+                },
+            );
+            alias
+        }
+    };
     let side = |alias: &'c qsl_forms::DeclaredName| {
         declarations
             .models
@@ -482,10 +507,9 @@ pub(crate) fn check_refinement<'a, 'c>(
                 model,
             })
     };
-    let (Some(abstract_side), Some(concrete_side)) =
-        (side(&form.abstract_model), side(&form.concrete_model))
+    let (Some(abstract_side), Some(concrete_side)) = (side(abstract_alias), side(&form.concrete))
     else {
-        for alias in [&form.abstract_model, &form.concrete_model] {
+        for alias in [abstract_alias, &form.concrete] {
             if side(alias).is_none() {
                 findings.unresolved(&alias.name, alias.span, None);
             }
@@ -503,6 +527,7 @@ pub(crate) fn check_refinement<'a, 'c>(
         baseline: 0,
     };
     checker.baseline = checker.findings.refusals.len();
+    checker.refuse_history_rows(form);
     let populations = checker.populations(form);
     let objects = checker.objects(form, cx);
     let steps = checker.steps(form, cx);
@@ -516,8 +541,8 @@ pub(crate) fn check_refinement<'a, 'c>(
         CheckedRefinement {
             name: form.name.name.clone(),
             profile: declaration.selection.clone(),
-            abstract_model: form.abstract_model.name.clone(),
-            concrete_model: form.concrete_model.name.clone(),
+            abstract_model: abstract_alias.name.clone(),
+            concrete_model: form.concrete.name.clone(),
             populations,
             objects,
             steps,
@@ -549,6 +574,21 @@ struct Checker<'c, 'a> {
 impl<'c, 'a> Checker<'c, 'a> {
     fn types(&self) -> &'a TypeEnvironment {
         self.declarations.scope.types()
+    }
+
+    /// FR-138: a history field is not checked yet, so a declaration that
+    /// writes one is refused rather than checked with the row ignored.
+    fn refuse_history_rows(&mut self, form: &RefinementForm) {
+        for row in &form.rows {
+            if let RefinementRowForm::History(row) = row {
+                self.findings.refuse(
+                    row.span,
+                    RefinementCause::Unsupported {
+                        construct: "a history row (FR-138)",
+                    },
+                );
+            }
+        }
     }
 
     /// FR-135 "Population map".
@@ -1044,8 +1084,24 @@ impl<'c, 'a> Checker<'c, 'a> {
             let RefinementRowForm::Step(row) = row else {
                 continue;
             };
+            // FR-136: over a model subject a row's left side names a concrete
+            // operation; a step-class keyword or a `memory` kind names none.
+            let source = match &row.source {
+                StepSourceForm::Named { kind: None, name } => name,
+                StepSourceForm::Named {
+                    kind: Some(_),
+                    name,
+                } => {
+                    self.findings.unresolved(&name.name, name.span, None);
+                    continue;
+                }
+                StepSourceForm::Memory(kind) => {
+                    self.findings.unresolved(&kind.name, kind.span, None);
+                    continue;
+                }
+            };
             let Some((object, declaring, concrete)) =
-                self.operation_named(&row.concrete, &concrete_types, None)
+                self.operation_named(source, &concrete_types, None)
             else {
                 continue;
             };
@@ -1079,6 +1135,12 @@ impl<'c, 'a> Checker<'c, 'a> {
             let target = match &row.target {
                 StepTargetForm::Stutter { .. } => Some(StepTarget::Stutter),
                 StepTargetForm::Any { .. } => Some(StepTarget::Any),
+                StepTargetForm::Node { node, .. } => {
+                    // FR-147: while the abstract side is a model subject, a
+                    // right side naming a protocol node is malformed.
+                    self.findings.malformed(&node.name, row.span);
+                    None
+                }
                 StepTargetForm::Apply {
                     operation,
                     arguments,
@@ -1260,7 +1322,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             FairnessSide::Assume => (&concrete_types, &abstract_types, self.abstract_side.alias),
             FairnessSide::Ensure => (&abstract_types, &concrete_types, self.concrete_side.alias),
         };
-        let mut set: Vec<FairnessConstraint> = Vec::new();
+        let mut set: Vec<(FairnessConstraint, Span)> = Vec::new();
         for row in &form.rows {
             let RefinementRowForm::Fairness(row) = row else {
                 continue;
@@ -1289,22 +1351,39 @@ impl<'c, 'a> Checker<'c, 'a> {
                     .unresolved(&written.operation.name, written.operation.span, held_by);
                 continue;
             };
+            // A refinement row writes its kind (S1 refuses a kindless row,
+            // QSpec FR-375); an unwritten granularity reads as `whole`.
+            let kind = match written.kind {
+                Some(FormKind::Weak) => FairnessKind::Weak,
+                Some(FormKind::Strong) => FairnessKind::Strong,
+                None => {
+                    self.fault("a-refinement-fairness-row-writes-its-kind");
+                    continue;
+                }
+            };
             let constraint = FairnessConstraint::new(
-                match written.kind {
-                    None | Some(FormKind::Weak) => FairnessKind::Weak,
-                    Some(FormKind::Strong) => FairnessKind::Strong,
-                },
+                kind,
                 operation,
                 match written.granularity {
                     None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
                     Some(FormGranularity::Each) => FairnessGranularity::Each,
                 },
             );
-            if !set.contains(&constraint) {
-                set.push(constraint);
+            // FR-137: two rows of one set with one kind, operation and
+            // granularity conflict; neither is dropped.
+            if let Some((_, first)) = set.iter().find(|(earlier, _)| *earlier == constraint) {
+                self.findings.refuse(
+                    written.span,
+                    RefinementCause::Conflicting {
+                        name: written.operation.name.clone(),
+                        first: *first,
+                    },
+                );
+                continue;
             }
+            set.push((constraint, written.span));
         }
-        set
+        set.into_iter().map(|(constraint, _)| constraint).collect()
     }
 }
 

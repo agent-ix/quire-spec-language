@@ -1111,6 +1111,31 @@ impl<'a> ExprRef<'a> {
             .map(|id| self.at(id))
             .collect()
     }
+
+    /// Whether this subtree and `other`, of any arena, are the same
+    /// expression: equal node payloads, child for child. The nodes'
+    /// positions in their arenas play no part; a payload that records the
+    /// span of a type it names (a conversion's target, an accumulation's or
+    /// a count's result type) compares that span as part of the payload.
+    /// Runs on an explicit stack, so a deep tree compares in constant
+    /// native stack.
+    pub fn same_tree(self, other: ExprRef<'_>) -> bool {
+        let mut pending = vec![(self, other)];
+        while let Some((left, right)) = pending.pop() {
+            let (mut left_node, mut right_node) = (left.node.clone(), right.node.clone());
+            left_node.shift_children(|_| ExprId(0));
+            right_node.shift_children(|_| ExprId(0));
+            if left_node != right_node {
+                return false;
+            }
+            let (left_children, right_children) = (left.children(), right.children());
+            if left_children.len() != right_children.len() {
+                return false;
+            }
+            pending.extend(left_children.into_iter().zip(right_children));
+        }
+        true
+    }
 }
 
 impl fmt::Debug for ExprRef<'_> {
@@ -2365,6 +2390,11 @@ pub struct ScopedAnchorForm {
     /// `receive-of` anchor (FR-113's channel-mismatch check); `None` for
     /// every other site.
     pub channel: Option<String>,
+    /// The index into [`ProtocolDeclarationForm::declarations`] of the node
+    /// that writes the reference: the `receive`, `effect`, `event` or
+    /// `await` for a site of the `run` tree, the `compensate` template for
+    /// a template's `for` and `commit` references.
+    pub owner: usize,
 }
 
 /// The kind of static protocol node a [`ProtocolNodeDeclaration`] names, or
@@ -2405,6 +2435,8 @@ pub enum ProtocolNodeKind {
     Await,
     /// A `check` control.
     Check,
+    /// A `fence` control.
+    Fence,
 }
 
 impl ProtocolNodeKind {
@@ -2428,6 +2460,7 @@ impl ProtocolNodeKind {
             Self::Case => "case",
             Self::Await => "await",
             Self::Check => "check",
+            Self::Fence => "fence",
         }
     }
 }
@@ -2450,13 +2483,16 @@ pub struct ProtocolNodeDeclaration {
     /// The innermost named control enclosing this declaration; `None` at
     /// the top level.
     pub scope: Option<ScopeId>,
-    /// The channel a `send` or `receive` is written `via`; `None` for
-    /// every other kind.
-    pub channel: Option<String>,
+    /// The channel a `send` or `receive` is written `via`, with its span;
+    /// `None` for every other kind.
+    pub channel: Option<DeclaredName>,
     /// The `related by` clauses of a `send`, `receive`, `attempt`, `effect`
     /// or `event` node, one per clause in source order (FR-308); empty for
     /// every other kind.
     pub related: Vec<RelatedForm>,
+    /// The role an `attempt`, `event` or `commit` is written `by`; `None`
+    /// for every other kind.
+    pub role: Option<DeclaredName>,
 }
 
 /// A binder's syntactic role (FR-113 "Refusals": a record binder, a
@@ -2533,6 +2569,77 @@ pub struct RoleForm {
     pub name: DeclaredName,
     /// The `M::T` object type the role is `on` or `each`, as spelled.
     pub context: NameForm,
+    /// The population, maximum and lifetime of a replicated `each` role;
+    /// `None` for a static `on` role (FR-308 `RoleForm::Replicated`).
+    pub replicated: Option<ReplicatedRoleForm>,
+    /// The span of the whole member, `;` included.
+    pub span: Span,
+}
+
+/// The replicated part of `role R each M::T from population max n lifetime
+/// l;` (FR-308), as written and unresolved.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReplicatedRoleForm {
+    /// The population the instances are drawn `from`.
+    pub population: DeclaredName,
+    /// The authored maximum number of live instances.
+    pub max: u64,
+    /// The span of the maximum.
+    pub max_span: Span,
+    /// The lifetime of one instance.
+    pub lifetime: RoleLifetime,
+}
+
+/// A replicated role's `lifetime` (FR-308).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RoleLifetime {
+    /// `lifetime workflow`, with the span of `workflow`.
+    Workflow(Span),
+    /// `lifetime scope`, with the span of `scope`.
+    Scope(Span),
+    /// `lifetime until(e)`, with the condition expression.
+    Until(ExpressionForm),
+}
+
+/// One `case N when { guard } control` of a `choice` (FR-308): its label
+/// and its guard expression, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceCaseForm {
+    /// The case label.
+    pub name: DeclaredName,
+    /// The guard expression.
+    pub guard: ExpressionForm,
+}
+
+/// `choice N by R visible (..) { case ..; case ..; }` (FR-308): the owner,
+/// the visible facts and each case's guard, as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChoiceForm {
+    /// The index of the control's own declaration.
+    pub declaration: usize,
+    /// The control's name.
+    pub name: DeclaredName,
+    /// The owning role, as written.
+    pub owner: DeclaredName,
+    /// The `visible` entries, in source order.
+    pub visible: Vec<ExpressionForm>,
+    /// The span of the whole `visible(..)` list.
+    pub visible_span: Span,
+    /// The cases, in source order.
+    pub cases: Vec<ChoiceCaseForm>,
+    /// The span of the whole control.
+    pub span: Span,
+}
+
+/// `check N using p { e };` (FR-308): the profile alias the check is
+/// written `using`. Its body is the [`ProtocolBodyForm`] its declaration
+/// owns.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckForm {
+    /// The index of the control's own declaration.
+    pub declaration: usize,
+    /// The `using` profile alias.
+    pub using: UsingAlias,
 }
 
 /// A part of a protocol declaration that is neither a static node (a
@@ -2562,6 +2669,10 @@ pub enum ProtocolConstructKind {
     JoinPredicate,
     /// A `terminal when { predicate };` member.
     TerminalWhen,
+    /// A `parallel`'s `memory sc | tso | ra` clause.
+    MemoryClause,
+    /// An `attempt`'s `ordering o` memory order.
+    AccessOrdering,
 }
 
 impl ProtocolConstructKind {
@@ -2578,6 +2689,8 @@ impl ProtocolConstructKind {
             Self::FifoOrdering => "channel ordering fifo",
             Self::JoinPredicate => "join predicate",
             Self::TerminalWhen => "terminal when",
+            Self::MemoryClause => "parallel memory",
+            Self::AccessOrdering => "attempt ordering",
         }
     }
 }
@@ -2709,17 +2822,15 @@ pub struct CompensationForm {
 }
 
 /// The `{ e }` body block of an event node, a `commit`, a `check` or the
-/// `finish` node, recorded by the index of the static declaration
-/// that owns it. `constant` is `Some(b)` exactly when the body is the bare
-/// Boolean literal `b` (`{ true }` or `{ false }`), `None` for any other
-/// body; S2 builds no expression tree for it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// `finish` node, recorded by the index of the static declaration that owns
+/// it, with its expression as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolBodyForm {
     /// The index into [`ProtocolDeclarationForm::declarations`] of the node
     /// that owns this body.
     pub owner: usize,
-    /// The literal the body consists of, when it is a bare Boolean literal.
-    pub constant: Option<bool>,
+    /// The body's expression.
+    pub expression: ExpressionForm,
     /// The span of the body's expression.
     pub span: Span,
 }
@@ -2789,6 +2900,9 @@ pub struct ProtocolDeclarationForm {
     /// Every `attempt`'s operation name and `contracts` list, in source
     /// order (FR-114 "Inputs").
     pub attempts: Vec<AttemptForm>,
+    /// The protocol's `activation`: `on origin`, or `on each (p: T) [when
+    /// (e)]` with its binder and optional guard (FR-308).
+    pub activation: ActivationForm,
     /// The protocol's own captures, written before its roles, in source
     /// order (FR-308).
     pub captures: Vec<CaptureForm>,
@@ -2809,6 +2923,12 @@ pub struct ProtocolDeclarationForm {
     /// Every `await` control of the `run` tree, in source order of the
     /// controls (FR-308).
     pub awaits: Vec<AwaitForm>,
+    /// Every `choice` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub choices: Vec<ChoiceForm>,
+    /// Every `check` control of the `run` tree, in source order of the
+    /// controls (FR-308).
+    pub checks: Vec<CheckForm>,
     /// Every `terminal` and `scheduling` member, in source order (FR-308).
     pub members: Vec<ProtocolMemberForm>,
 }
@@ -3118,6 +3238,76 @@ pub struct TerminalDeclarationForm {
     pub span: Span,
 }
 
+/// One temporal operator written inside a state-graph claim's predicate. S1
+/// admits the spelling so that S3 can refuse it at this span (FR-165).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TemporalOperatorUse {
+    /// Which operator.
+    pub operator: TemporalOperator,
+    /// The span of the operator keyword.
+    pub span: Span,
+}
+
+/// A state-graph claim's predicate as written: its expression operands in
+/// source order and every temporal operator written around them. A
+/// well-formed predicate has one operand and no operator.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateGraphPredicateForm {
+    /// The expression operands, in source order.
+    pub operands: Vec<ExpressionForm>,
+    /// Every temporal operator written, in source order.
+    pub temporal_operators: Vec<TemporalOperatorUse>,
+    /// For each operand, index-aligned, the `let` bindings it sits under,
+    /// outermost first: each name with the value form it is bound to.
+    pub scopes: Vec<Vec<(String, ExpressionForm)>>,
+}
+
+/// Which of the three state-graph claim forms was written, with its
+/// predicates (ADR-022 SG-1 to SG-3).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StateGraphClaimKind {
+    /// `possible Name using p over (x: T) { P }`.
+    Possible {
+        /// `P`.
+        target: StateGraphPredicateForm,
+    },
+    /// `always possible Name using p over (x: T) [from (Q)] { P }`.
+    AlwaysPossible {
+        /// `Q`, when written.
+        from: Option<StateGraphPredicateForm>,
+        /// `P`.
+        target: StateGraphPredicateForm,
+    },
+    /// `unique path Name using p over (x: T) from (X) to (Y)`.
+    UniquePath {
+        /// `X`.
+        from: StateGraphPredicateForm,
+        /// `Y`.
+        to: StateGraphPredicateForm,
+    },
+}
+
+/// A state-graph claim (FR-165, ADR-022 SG-1 to SG-4). S2 resolves nothing:
+/// the `using` alias and the `over` type stay spelled and spanned, a
+/// fairness constraint is kept for S3 to refuse, and each predicate is built
+/// as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StateGraphClaimForm {
+    /// The declared claim name.
+    pub name: DeclaredName,
+    /// The `using` alias.
+    pub profile: UsingAlias,
+    /// The `over (x: T)` parameter, when written.
+    pub over: Option<ParameterForm>,
+    /// The fairness constraints written in the claim's braces, in source
+    /// order.
+    pub fairness: Vec<FairnessConstraintForm>,
+    /// The form and its predicates.
+    pub kind: StateGraphClaimKind,
+    /// The span of the whole declaration.
+    pub span: Span,
+}
+
 /// One `Value` parsed declaration form (FR-091 "What a `Value` parsed form
 /// carries").
 #[derive(Clone, Debug)]
@@ -3147,8 +3337,8 @@ pub enum DeclarationForm {
     OperationBody(Box<OperationBodyForm>),
     /// A `bound` population-bound declaration (FR-380).
     PopulationBound(PopulationBoundForm),
-    /// A `protocol` declaration (FR-112).
-    Protocol(ProtocolDeclarationForm),
+    /// A `protocol` declaration (FR-112), boxed for the same reason as `Function`.
+    Protocol(Box<ProtocolDeclarationForm>),
     /// A `temporal` clause (FR-325), boxed for the same reason as
     /// [`Self::Function`].
     Temporal(Box<TemporalClauseForm>),
@@ -3158,6 +3348,9 @@ pub enum DeclarationForm {
     /// A `refinement` declaration (FR-310), boxed for the same reason as
     /// [`Self::Function`].
     Refinement(Box<super::refinement::RefinementForm>),
+    /// A `possible`, `always possible` or `unique path` claim (FR-165),
+    /// boxed for the same reason as [`Self::Function`].
+    StateGraphClaim(Box<StateGraphClaimForm>),
 }
 
 /// The longest each explicit heap stack grew in this thread, by name, so a

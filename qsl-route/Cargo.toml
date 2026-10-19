@@ -7,14 +7,16 @@ rust-version = "1.98"
 license = "AGPL-3.0-or-later"
 description = "ADR-011 §6.1 layer R: the #185 capability-backend registry and router over the canonical capability kind."
 
-# ADR-011 §6.1 layer R may depend on "4, 3, F, K"; `route` names only layer
-# 3 (`qsl_semantics::check::Capability`) and F (`qsl_foundation`'s
-# `DigestRecord`, `DigestDomain` and `CatalogCode`). The root crate's
+# ADR-011 §6.1 layer R may depend on "4, 3, F, SV, K"; `route` names only
+# layer 3 (`qsl_semantics::check::Capability`), F (`qsl_foundation`'s
+# `DigestRecord`, `DigestDomain` and `CatalogCode`) and SV (the FR-124
+# deadlock-freedom item's `PropertyForm`). The root crate's
 # `tests/it/family_outcome_layering.rs` (TC-390) asserts that this table
 # names no other workspace crate.
 [dependencies]
 qsl-foundation = { path = "../qsl-foundation" }
 qsl-semantics = { path = "../qsl-semantics" }
+quire-semantic-value = { workspace = true }
 thiserror = "2.0.20"
 
 [dev-dependencies]

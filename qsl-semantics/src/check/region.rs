@@ -88,11 +88,14 @@ struct Document<'a> {
 }
 
 /// The spans of declarations that are not function or state clause forms: a
-/// declared type's name by the name, and the declaration a function
-/// synthesized for dispatch was derived from by the function's index.
+/// declared type's name by the name, each declaration site with an
+/// expression tree of its own (a temporal clause's `holds` condition,
+/// FR-337) by its site name, and the declaration a function synthesized for
+/// dispatch was derived from by the function's index.
 #[derive(Clone, Copy)]
 struct DeclaredSpans<'a> {
     types: &'a BTreeMap<String, Span>,
+    sites: &'a BTreeMap<String, ExpressionSpans>,
     synthesized: &'a BTreeMap<usize, Span>,
 }
 
@@ -107,7 +110,11 @@ fn resolve<'s>(
     attempt_span: impl Fn(usize, usize) -> Option<Span>,
     location: &Location,
 ) -> Option<SourceRegion> {
-    let DeclaredSpans { types, synthesized } = declared;
+    let DeclaredSpans {
+        types,
+        sites,
+        synthesized,
+    } = declared;
     let span = match &location.origin {
         // A function synthesized for dispatch has no form spans: every
         // occurrence in it is located at the declaration it came from.
@@ -117,14 +124,19 @@ fn resolve<'s>(
         },
         Origin::StateClause { index, .. } => memo.at(&clause_spans(*index)?.body, location)?,
         Origin::Measure { index, .. } => memo.at(spans(*index)?.measure.as_ref()?, location)?,
-        Origin::TypeDeclaration { name } if location.depth() == 0 => *types.get(name)?,
+        // A site with an expression tree walks it; any other declared name
+        // names one span, at its root only.
+        Origin::TypeDeclaration { name } => match sites.get(name) {
+            Some(spans) => memo.at(spans, location)?,
+            None if location.depth() == 0 => *types.get(name)?,
+            None => return None,
+        },
         Origin::ProtocolAttempt { protocol, attempt } if location.depth() == 0 => {
             attempt_span(*protocol, *attempt)?
         }
         // A kept operation clause is read from a domain package, not from
         // this unit, so it names no region of the unit (FR-103).
-        Origin::TypeDeclaration { .. }
-        | Origin::ProtocolAttempt { .. }
+        Origin::ProtocolAttempt { .. }
         | Origin::ModelOperationClause { .. }
         | Origin::Expression => return None,
     };
@@ -169,6 +181,7 @@ impl PackageDeclarations {
             |index| Some(&self.state_clauses.get(index)?.spans),
             DeclaredSpans {
                 types: &self.declared_type_spans,
+                sites: &self.declared_site_spans,
                 synthesized: &self.synthesized_spans,
             },
             |protocol, attempt| self.attempt_span(protocol, attempt),
@@ -220,6 +233,9 @@ pub struct DeclarationRegions {
     /// order; `None` for `terminal any`.
     terminal_spans: Vec<Option<ExpressionSpans>>,
     type_spans: BTreeMap<String, Span>,
+    /// Each declaration site with an expression tree of its own, by its
+    /// site name.
+    pub(super) site_spans: BTreeMap<String, ExpressionSpans>,
     /// The declaration each function synthesized for dispatch came from.
     synthesized_spans: BTreeMap<usize, Span>,
     /// Each protocol's own attempts' declared name spans,
@@ -243,6 +259,7 @@ impl DeclarationRegions {
             |index| self.clause_spans.get(index),
             DeclaredSpans {
                 types: &self.type_spans,
+                sites: &self.site_spans,
                 synthesized: &self.synthesized_spans,
             },
             |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
@@ -262,8 +279,8 @@ impl DeclarationRegions {
 
     /// FR-096: the region a check refusal names. A stage limit a family
     /// `check` located carries its own region (a declaration's span, or the
-    /// node `Typer`'s depth stop failed at); a `ProtocolAnchor` or `Temporal` cause
-    /// (FR-113, FR-326) carries its own span directly, since a protocol has no
+    /// node `Typer`'s depth stop failed at); a `ProtocolAnchor`, `Temporal` or `ProtocolObligation` cause
+    /// (FR-113, FR-326, FR-381) carries its own span directly, since a protocol has no
     /// expression tree for a `Location` path to walk; every other refusal
     /// is located by its `location`.
     pub fn refusal_region(&self, refusal: &CheckRefusal) -> Option<SourceRegion> {
@@ -273,6 +290,12 @@ impl DeclarationRegions {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
             CheckCause::Temporal(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span())
+            }
+            CheckCause::StateGraph(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span()?)
+            }
+            CheckCause::ProtocolObligation(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
             CheckCause::TerminalNotEmitted { span, .. } => {
@@ -322,6 +345,7 @@ impl PackageDeclarations {
                 })
                 .collect(),
             type_spans: self.declared_type_spans.clone(),
+            site_spans: self.declared_site_spans.clone(),
             synthesized_spans: self.synthesized_spans.clone(),
             // SR-770 FND-007: `None` for an attempt whose declaration index
             // names no declaration of its protocol (a hand-built form, never
@@ -375,6 +399,7 @@ impl CheckedGraph {
             |index| Some(&self.state_clauses.get(index)?.spans),
             DeclaredSpans {
                 types: &self.type_spans,
+                sites: &self.site_spans,
                 synthesized: &self.synthesized_spans,
             },
             |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,
@@ -400,6 +425,7 @@ impl CheckedGraph {
                 |index| Some(&self.state_clauses.get(index)?.spans),
                 DeclaredSpans {
                     types: &self.type_spans,
+                    sites: &self.site_spans,
                     synthesized: &self.synthesized_spans,
                 },
                 |protocol, attempt| *self.attempt_spans.get(protocol)?.get(attempt)?,

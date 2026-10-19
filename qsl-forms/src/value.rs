@@ -130,7 +130,7 @@ pub(crate) fn significant_tokens<'c>(cst: &'c LosslessCst, node: &CstNode) -> Ve
 }
 
 /// An integer literal's value.
-fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsRefusal> {
+pub(crate) fn integer(spelling: &str, node: &CstNode) -> Result<Integer, FormsRefusal> {
     spelling.parse().map_err(|_| unexpected(node))
 }
 
@@ -333,7 +333,10 @@ pub(crate) fn dimension(construct: Construct<'_>) -> Result<DeclarationForm, For
 }
 
 /// An `ExactNumber` node as written.
-fn exact_number(cst: &LosslessCst, node: &CstNode) -> Result<ExactNumberForm, FormsRefusal> {
+pub(crate) fn exact_number(
+    cst: &LosslessCst,
+    node: &CstNode,
+) -> Result<ExactNumberForm, FormsRefusal> {
     let items = items(cst, node);
     let signed = nodes_of(&items, Production::SignedInteger);
     let (kind, first, second) = if has_token(&items, b"rational") {
@@ -1048,14 +1051,14 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
-            | Production::RefinementDeclaration
-            | Production::PopulationRow
-            | Production::ObjectRow
-            | Production::FieldRow
-            | Production::StepRow
-            | Production::StepTarget
-            | Production::StepArgument
-            | Production::FairnessRow
+            | Production::StateGraphClaim
+            | Production::StateGraphBody
+            | Production::StateGraphPredicate
+            | Production::StateGraphImplication
+            | Production::StateGraphDisjunction
+            | Production::StateGraphConjunction
+            | Production::StateGraphRelation
+            | Production::StateGraphUnary
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1070,6 +1073,22 @@ impl<'c> Mapping<'c> {
             | Production::Compensation
             | Production::ProtocolTerminal
             | Production::ProtocolScheduling
+            | Production::MemoryClause
+            | Production::MemoryOrder
+            | Production::FenceOrder
+            | Production::Fence
+            | Production::Refinement
+            | Production::StepRow
+            | Production::StepSource
+            | Production::StepTarget
+            | Production::StepArgument
+            | Production::PopulationRow
+            | Production::ObjectRow
+            | Production::FieldRow
+            | Production::HistoryRow
+            | Production::HistoryUpdate
+            | Production::HistoryLiteral
+            | Production::FairnessRow
             | Production::Control
             | Production::Sequence
             | Production::Visibility
@@ -1632,14 +1651,14 @@ impl<'c> Mapping<'c> {
             | Production::TemporalUnary
             | Production::TemporalPrimary
             | Production::TerminalDeclaration
-            | Production::RefinementDeclaration
-            | Production::PopulationRow
-            | Production::ObjectRow
-            | Production::FieldRow
-            | Production::StepRow
-            | Production::StepTarget
-            | Production::StepArgument
-            | Production::FairnessRow
+            | Production::StateGraphClaim
+            | Production::StateGraphBody
+            | Production::StateGraphPredicate
+            | Production::StateGraphImplication
+            | Production::StateGraphDisjunction
+            | Production::StateGraphConjunction
+            | Production::StateGraphRelation
+            | Production::StateGraphUnary
             | Production::ProtocolClause
             | Production::Role
             | Production::RoleLifetime
@@ -1654,6 +1673,22 @@ impl<'c> Mapping<'c> {
             | Production::Compensation
             | Production::ProtocolTerminal
             | Production::ProtocolScheduling
+            | Production::MemoryClause
+            | Production::MemoryOrder
+            | Production::FenceOrder
+            | Production::Fence
+            | Production::Refinement
+            | Production::StepRow
+            | Production::StepSource
+            | Production::StepTarget
+            | Production::StepArgument
+            | Production::PopulationRow
+            | Production::ObjectRow
+            | Production::FieldRow
+            | Production::HistoryRow
+            | Production::HistoryUpdate
+            | Production::HistoryLiteral
+            | Production::FairnessRow
             | Production::Control
             | Production::Sequence
             | Production::Visibility

@@ -43,6 +43,7 @@ mod composite;
 mod execute;
 mod identity;
 mod limits;
+mod model_check;
 mod object_environment;
 mod outcome;
 mod proof_result;
@@ -68,6 +69,10 @@ pub use certificate::closed_form::task_set::{
     Arrival, Criticality, ScheduleClaim, ScheduleSubject, SchedulingPolicy, Task, TaskSet,
     TaskSetRefusal, TimeMember, Wcet,
 };
+pub use certificate::closure::{
+    check_closure, CertificateRejection, CertificateRequest, ClosureCertificate, ClosureRefusal,
+    ProductStateRef, TemporalCertificateCheck,
+};
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
@@ -88,6 +93,22 @@ pub use identity::{
     RawSourceRef, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits};
+pub use model_check::counterexample::{
+    deadlock_freedom_clause, CounterexampleKind, ModelStep, TemporalCounterexample,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+};
+pub use model_check::item::{ClauseIdentity, Instance, ItemRefusal, ModelCheckItem};
+pub use model_check::limits::{
+    ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
+};
+pub use model_check::outcome::{ModelCheckOutcome, RunStats, UndecidedCause};
+pub use model_check::replay::{
+    replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
+    ModelTraceSubject, ModelTraceValue,
+};
+pub use model_check::settle::{
+    settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
+};
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
 // The typed identity and catalog code a `TerminalRecord` and a
