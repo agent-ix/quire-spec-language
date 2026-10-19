@@ -275,6 +275,8 @@ pub enum InconclusiveCause {
     UndecidedSuccessor,
     /// The subject supplies no initial state.
     NoInitialState,
+    /// The item has zero instances (FR-125).
+    NoInstance,
     /// The core rejected a certificate, retaining its failing rule and locus.
     CertificateRejected {
         /// The check rule that failed.
@@ -310,6 +312,7 @@ impl InconclusiveCause {
             Self::InductionNotClosed { .. } => "induction-not-closed",
             Self::UndecidedSuccessor => "undecided-successor",
             Self::NoInitialState => "no-initial-state",
+            Self::NoInstance => "no-instance",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
@@ -326,6 +329,7 @@ impl InconclusiveCause {
             | Self::InductionNotClosed { .. }
             | Self::UndecidedSuccessor
             | Self::NoInitialState
+            | Self::NoInstance
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. } => 0,
             Self::ReplayParity(cause) => cause.measured_bytes(),
@@ -1106,6 +1110,7 @@ mod tests {
             ),
             (InconclusiveCause::UndecidedSuccessor, "undecided-successor"),
             (InconclusiveCause::NoInitialState, "no-initial-state"),
+            (InconclusiveCause::NoInstance, "no-instance"),
         ] {
             let source = BackendProviderSource {
                 backend_identity: "model-provider".to_owned(),
