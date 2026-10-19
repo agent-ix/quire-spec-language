@@ -327,43 +327,57 @@ fn mutex(fairness: &str) -> crate::liveness::Fixture {
 }
 
 /// The operation order is by declaring type, then name, whatever order a type
-/// declares its operations in and whichever admitted type inherits them: a
-/// `Sub` type of `Counter` that declares `bump` adds `bump` after `Counter`'s
-/// `inc` and `setTo` (declared in either order), each listed once under
-/// `Counter`.
+/// declares its operations in and whichever admitted type inherits them:
+/// `Counter` inherits `inc` and `setTo` from a `Base` that declares them (in
+/// either order) and declares `bump` itself; with `Counter` alone admitted,
+/// or with `Base` admitted before or after it, the operations are the same
+/// three, each once, in declaring-type then name order.
 #[trace("TC-534", "FR-133-AC-4")]
 #[test]
 fn operations_are_ordered_by_declaring_type_then_name() {
     use qsl_eval::simulation::model::ModelSystem;
+    const COUNTER: &str = "ix://test/counter/Counter";
+    const BASE: &str = "ix://test/counter/Base";
     let mut orders = Vec::new();
-    for (reversed, members) in [(false, 2), (true, 2), (false, 1), (true, 1)] {
+    for (reversed, admitted) in [
+        (false, vec![COUNTER]),
+        (true, vec![COUNTER]),
+        (false, vec![BASE, COUNTER]),
+        (true, vec![COUNTER, BASE]),
+    ] {
         let mut domain: serde_json::Value =
             serde_json::from_slice(&document_with_ranged_parameter()).expect("JSON");
         let types = domain["types"].as_array_mut().expect("types");
         let counter = types
             .iter_mut()
-            .find(|node| node["identity"] == "ix://test/counter/Counter")
+            .find(|node| node["identity"] == COUNTER)
             .expect("Counter");
         let mut operations = counter["operations"].as_array().expect("ops").clone();
         let mut bump = operations[0].clone();
         if reversed {
             operations.reverse();
         }
-        counter["operations"] = operations.into();
-        bump["identity"] = "ix://test/counter/Sub/bump".into();
+        let mut base = counter.clone();
+        base["operations"] = operations.into();
+        let mut base: serde_json::Value = serde_json::from_str(
+            &base
+                .to_string()
+                .replace("test/counter/Counter/", "test/counter/Base/"),
+        )
+        .expect("JSON");
+        base["identity"] = BASE.into();
+        bump["identity"] = "ix://test/counter/Counter/bump".into();
         bump["name"] = "bump".into();
-        let mut sub = counter.clone();
-        sub["identity"] = "ix://test/counter/Sub".into();
-        sub["supertypes"] = serde_json::json!(["ix://test/counter/Counter"]);
-        sub["fields"] = serde_json::json!([]);
-        sub["operations"] = serde_json::json!([bump]);
-        types.push(sub);
-        domain["populations"][0]["members"] =
-            serde_json::json!(["ix://test/counter/Counter", "ix://test/counter/Sub"]);
+        bump["frame"]["modifies"] = serde_json::json!(["ix://test/counter/Base/value"]);
+        counter["supertypes"] = serde_json::json!([BASE]);
+        counter["fields"] = serde_json::json!([]);
+        counter["operations"] = serde_json::json!([bump]);
+        types.push(base);
+        domain["populations"][0]["members"] = serde_json::json!(admitted);
         let document = domain.to_string().into_bytes();
         let fixture = crate::liveness::fixture(
             document,
-            CONTRACT,
+            "",
             "",
             "always eventually holds(c.value = 3)",
             &[("c", 0)],
