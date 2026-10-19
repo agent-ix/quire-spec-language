@@ -57,3 +57,5 @@ scope:
 | FND-002 | fixed | The 'after spawn creates d' and 'while it is disabled' clauses are gone; AC-5 now says the hook is called with no state (25695410f, FR-162:122). |
 | FND-003 | fixed | The V-8 sentence is removed from FR-162-AC-5 (25695410f). |
 | FND-004 | fixed | The candidate is now seeded by the enabled `spawn` (25695410f, FR-155:147, TC-1075:25,33). |
+| FND-005 | fixed | AC-7 and TC-1075 step 3 add argument vectors `drop(k, c)`, `touch(k, c)` and `touch(k, x)`, with exact sets that I checked against FR-383 items 4 and 5: memberships of `c` in `as` and `bs`, because `C` conforms to `A` and `B`; `x` in `as` only; `AnyField{Holder/h}` only for the delete, because `C` conforms to `B` and not to `Base` or `Sub`. The declared-type derivation on PR #967 (`populations_relating(A)`) fails them (9a6cc1800, FR-155:158). |
+| FND-006 | fixed | The duplicate 'SHALL NOT take a state' clause is removed (9a6cc1800, FR-162:77-81). |

@@ -55,3 +55,5 @@ scope:
 | --- | --- | --- |
 | FND-001 | fixed | The premise is replaced: the identity's triples carry object_type, so no state is needed (25695410f, FR-155:31-37). |
 | FND-002 | fixed | 'may contain more' and 'conformance in both directions' are gone from FR-155, FR-162 and TC-1075 (grep-checked). The State-free bullet now says 'exactly as FR-383 states it, with no widening', which agrees with the Derivation bullet (25695410f). |
+| FND-003 | fixed | Outputs now record type-dependent locations as rules over the receiver's or parameter's type, Derivation leaves them unresolved, and Instantiation resolves them from the triples' object_type (9a6cc1800, FR-155:80-90,100-110). |
+| FND-004 | fixed | The worked example now names every population whose member type C conforms to, and every referrer field whose referenced type C conforms to (9a6cc1800, FR-155:121-124). |
