@@ -30,8 +30,9 @@ makes the abstract subject a protocol subject (ADR-027 PS-1, PR-2; ADR-020
 RM-9, MC-1). This is QSpec FR-177's protocol refinement. The mapping rows define
 the abstract model's visible fields; the abstract protocol's rest points,
 binders, queues and instances are hidden. Each concrete step's explicit row
-states its observation, and the declaration's `internal` and `visible`
-rows classify every abstract step class that no step row targets. The relation's meaning, including
+states its observation, and the refinement profile's list of permitted
+abstract internal steps (QSpec FR-432) names the abstract step classes that
+are internal; every other abstract step class is visible. The relation's meaning, including
 divergence-freedom, refusal sets, terminal success and assumption
 weakening, is QSpec's (ADR-020 QS-8); this requirement covers QSL's S3
 checks and requirement record. FR-148 decides the steps.
@@ -41,16 +42,18 @@ checks and requirement record. FR-148 decides the steps.
 A specification author has an abstract protocol that performs two
 increments and then finishes, and a concrete compare-and-set model. They
 map each commit to the abstract increment, each other concrete step to an
-internal step, and declare the abstract `finish` internal. QSL checks the
+internal step, and list the abstract `finish` among the profile's internal
+steps. QSL checks the
 rows at compile time and requests one protocol refinement claim.
 
 ## Inputs
 
 - The parsed refinement form, whose abstract side is written
-  `abstract <A>::<protocol>`, with `internal <A>::<protocol>::<node>` and
-  `visible <A>::<protocol>::<node>` rows
-  (ADR-020 RM-9; the spelling is illustrative, and ADR-020 QS-11 asks QSpec
-  FR-375 and FR-177 for these forms).
+  `abstract <A>::<protocol>`, with step rows whose right sides may be
+  `node <A>::<protocol>::<node>(...)` (QSpec FR-432), and the refinement
+  profile's list of abstract internal steps (ADR-020 RM-9, MC-1). The
+  declaration carries no `internal` or `visible` row. The abstract-side
+  spelling is illustrative until QSpec spells it (ADR-020 QS-11; FR-310).
 - The abstract model's checked protocol clause and its step classes
   (ADR-027 ST-1 to ST-15).
 
@@ -90,25 +93,19 @@ rows at compile time and requests one protocol refinement claim.
 
 ### Internal abstract steps
 
-- Each `internal` row SHALL name an abstract protocol node, or a channel or
-  memory step kind of the abstract protocol, refusing
-  `missing_declaration`/`missing-name` otherwise.
-- An abstract node named both by an `internal` row and as the right side of
-  a step row SHALL refuse `invalid_model_binding`/`conflicting-binding`,
-  naming both rows.
-- Each `visible` row SHALL name an abstract protocol node, or a channel or
-  memory step kind of the abstract protocol, refusing
-  `missing_declaration`/`missing-name` otherwise; a class named by both an
-  `internal` and a `visible` row SHALL refuse
-  `invalid_model_binding`/`conflicting-binding`.
-- Every abstract step class SHALL be named by an `internal` row, a
-  `visible` row or the right side of a step row; a class named by none
-  SHALL refuse `missing_declaration`/`missing-name` naming the class, since
-  no abstract step is visible or internal by rule (ADR-020 MC-1).
-- A class named by a `visible` row or by a step row's right side SHALL be
-  visible with its observation label.
-- An `internal` row while the abstract side is a model subject SHALL refuse
-  `invalid_model_binding`/`malformed-declaration`.
+- Each entry of the profile's internal list SHALL name an abstract protocol
+  node, or a channel or memory step kind of the abstract protocol, refusing
+  `missing_declaration`/`missing-name` otherwise. The resolved entries are
+  `abstract_internal`.
+- An abstract class named both by the profile's internal list and as the
+  right side of a step row SHALL refuse
+  `invalid_model_binding`/`conflicting-binding`, naming the entry and the
+  row.
+- An abstract step class that the list does not name SHALL be visible with
+  its observation label (QSpec FR-432); no class is refused for being named
+  by neither the list nor a step row (ADR-020 MC-1).
+- A non-empty internal list while the abstract side is a model subject SHALL
+  refuse `invalid_model_binding`/`malformed-declaration`.
 
 ### Requirement record
 
@@ -134,14 +131,14 @@ same operation, and `finish`. Refinement `CasTwice`: `abstract Spec::Twice
 concrete Impl` over ADR-020 §8's compare-and-set model with its `peek`
 operation removed, `value = self.value`, `commitA` and `commitB` mapped
 `-> Spec::Counter::inc(self)`, `beginA`, `beginB`, `retryA` and `retryB`
-mapped `-> stutter`, and `internal Spec::Twice::finish`.
+mapped `-> stutter`, and a profile internal list that names `Spec::Twice::finish`.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-147-AC-1 | `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [finish]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> Spec::Twice::a1` checks, naming node `a1`. | Test (TC-552) |
-| FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); `internal Spec::Twice::zz` (`missing_declaration`/`missing-name`); `internal Spec::Twice::a1` beside a row `-> Spec::Twice::a1` (`invalid_model_binding`/`conflicting-binding`); `-> Spec::Twice::a1` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`); `internal Spec::Twice::finish` in `CasRefinesCounter` (`invalid_model_binding`/`malformed-declaration`). | Test (TC-552) |
+| FR-147-AC-1 | `CasTwice` checks with `AbstractSide::Protocol` naming `Twice` and `abstract_internal = [finish]`, and writes one requirement record of kind `refinement` and no `temporal-satisfaction` record for the declaration. A row `step Impl::Counter::commitA -> node Spec::Twice::a1(self);` checks, naming node `a1`. | Test (TC-552) |
+| FR-147-AC-2 | Refusals: `abstract Spec::Thrice` (`missing_declaration`/`missing-name`); a profile internal list naming `Spec::Twice::zz` (`missing_declaration`/`missing-name`); a list naming `Spec::Twice::a1` beside a row `-> node Spec::Twice::a1(self)` (`invalid_model_binding`/`conflicting-binding`); `-> node Spec::Twice::a1(self)` in `CasRefinesCounter`, whose abstract side is a model (`invalid_model_binding`/`malformed-declaration`); a list naming `Spec::Twice::finish` in `CasRefinesCounter` (`invalid_model_binding`/`malformed-declaration`). | Test (TC-552) |
 | FR-147-AC-3 | `CasTwice` with `ensure fair weak Spec::Counter::inc` settles its liveness half `unsupported`, `unsupported-requested-capability`, naming hidden abstract fields, beside the safety result of FR-148. | Test (TC-552) |
-| FR-147-AC-4 | `CasTwice` with its `internal Spec::Twice::finish` row removed refuses `missing_declaration`/`missing-name` naming the class `finish`; with `visible Spec::Twice::finish` in its place it checks, with `finish` visible; with both rows it refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-552) |
+| FR-147-AC-4 | `CasTwice` with `finish` removed from the profile's internal list checks, with `finish` visible and `abstract_internal` empty; with the list naming `finish` it checks with `finish` internal; with the list naming `finish` and a step row `-> node Spec::Twice::finish(self)` it refuses `invalid_model_binding`/`conflicting-binding`. | Test (TC-552) |
 
 ## Dependencies
 

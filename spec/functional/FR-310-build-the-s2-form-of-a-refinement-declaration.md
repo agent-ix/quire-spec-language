@@ -59,8 +59,9 @@ pub enum RefinementRowForm {
 }
 
 pub enum StepSourceForm {                      // QSpec FR-432 protocol-step-source
-    Operation(QualifiedName),
-    Class { kind: Option<StepClassKeyword>, name: QualifiedName }, // fork, join, cend, ...
+    // keyword optional: an operation, attempt node, event, send, receive,
+    // timeout, finish node or fence is a bare qualified name; fork, join, ...
+    Named { kind: Option<StepClassKeyword>, name: QualifiedName },
     Memory(Name),                              // `memory <kind>`
 }
 
@@ -93,13 +94,21 @@ pub enum StepTargetForm {
   when its step row is `stutter`, and an abstract step is internal only when
   the refinement profile's list names it (QSpec FR-432), so the form holds
   neither a row nor a list for it.
+- S2 SHALL build a step row's source as `Named` with the keyword exactly as
+  written (absent when none is written) or as `Memory`, and SHALL NOT
+  decide whether an unkeyworded name is an operation, a node or a fence:
+  S3 classifies the source by resolving the name (FR-136, QSpec FR-432).
+- The `AbstractSideForm::Protocol` side (`abstract <A>::<protocol>`) has no
+  QSpec production yet: FR-375's header admits a model alias only. QSL
+  builds the form and the side waits on that production, tracked as Linear
+  STD-182 (ADR-020 QS-11).
 - S2 SHALL build each field row's right side, each step-row argument and
   each history update as an expression form as written, the
   population-valued forms (FR-139) included, and an open argument `_` as
   `ArgumentForm::Open`.
 - S2 SHALL build each `assume` and `ensure` row's kind (`weak` or `strong`)
-  and granularity as written, with no granularity left absent for S3 to read
-  as `whole`.
+  as written, and its granularity as written: an unwritten granularity is
+  built as absent, and S3 reads absent as `whole` (FR-137).
 - S2 SHALL build no form that resolves a name: whether an alias names a
   model, a row names a population, type, operation or protocol class, and
   whether the rows are complete, are S3's (FR-135 to FR-137, FR-147).
@@ -111,7 +120,7 @@ pub enum StepTargetForm {
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-310-AC-1 | ADR-020 §8's `CasRefinesCounter` builds one `RefinementForm` with abstract side `Model(Spec)`, concrete `Impl`, and its population, object, seven step, `assume` and `ensure` rows in source order, each with its span; the `ensure` row's granularity is `each` as written. | Test (TC-889) |
-| FR-310-AC-2 | `RingIsQueue`'s `items` row builds its `seq` and `only` forms as expression forms, and `put -> enq(self.ring, _)` builds `Apply` with arguments `[self.ring, Open]`. FR-147's `CasTwice` builds abstract side `Protocol(Spec, Twice)`; a protocol step row `step fork Impl::P::par -> node Spec::Twice::a1;` builds a `Class` source of kind `fork` and a `Node` target. | Test (TC-889) |
+| FR-310-AC-2 | `RingIsQueue`'s `items` row builds its `seq` and `only` forms as expression forms, and `put -> enq(self.ring, _)` builds `Apply` with arguments `[self.ring, Open]`. FR-147's `CasTwice` builds abstract side `Protocol(Spec, Twice)`; a protocol step row `step fork Impl::P::par -> node Spec::Twice::a1;` builds a `Named` source of kind `fork` and a `Node` target; `step Impl::P::a::S -> stutter;` builds a `Named` source with no kind, whichever class the name later resolves to. | Test (TC-889) |
 | FR-310-AC-3 | A declaration whose abstract alias names no model, and one with a duplicate `population` row, both build forms; the refusals come from S3 (FR-135-AC-2). | Test (TC-889) |
 | FR-310-AC-4 | A history row with initial `-3`, `true`, `none`, `"a"`, `rational(1, 2)` and `Impl::Mode::idle` builds `Integer`, `Boolean`, `None`, `Text`, `Exact` and `EnumMember` literal forms respectively, with no expression form; a fairness row `assume fair strong Impl::Counter::retryA;` builds kind `Strong` with granularity absent. | Test (TC-889) |
 
@@ -122,6 +131,8 @@ pub enum StepTargetForm {
   to [FR-139](FR-139-type-and-evaluate-population-valued-expressions.md)
   and [FR-147](FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md)
   check the form.
+- [FR-136](FR-136-check-a-refinement-s-step-rows.md) classifies step
+  sources at S3.
 - QSpec owns the surface grammar: FR-375 (rows, `history-literal`, fairness
   rows) and FR-432 (protocol step rows) (ADR-020 QS-1, QS-11).
 
