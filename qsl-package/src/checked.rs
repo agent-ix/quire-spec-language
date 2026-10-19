@@ -37,7 +37,7 @@
 //! computed from the package, never accepted from a caller).
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use qsl_foundation::Code;
 use qsl_semantics::check::{
@@ -154,6 +154,11 @@ pub struct CheckedPackage {
     /// FR-304, FR-306: this package's checked abstraction relation, when it
     /// declares one. The checked package is its only authority.
     abstraction: Option<CheckedAbstractionRelation>,
+    /// The `package_id` of this package's last complete emission, set only by
+    /// the emitter ([`Self::remember_emitted_id`], ADR-013 O-02) so a package
+    /// reached again as a dependency is not emitted again. Reset when the
+    /// package changes.
+    emitted_id: OnceLock<PackageId>,
 }
 
 /// One library identity's selection in a package's resolved closure, and the
@@ -374,6 +379,7 @@ impl CheckedPackage {
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
             abstraction: None,
+            emitted_id: OnceLock::new(),
         }
     }
 
@@ -422,6 +428,7 @@ impl CheckedPackage {
             dependencies,
             selections,
             abstraction: None,
+            emitted_id: OnceLock::new(),
         })
     }
 
@@ -437,6 +444,7 @@ impl CheckedPackage {
         bindings: &[AuthoredBinding],
     ) -> Result<(), Vec<AbstractionRefusal>> {
         self.abstraction = Some(self.graph.check_abstraction(bindings)?);
+        self.emitted_id = OnceLock::new();
         Ok(())
     }
 
@@ -444,6 +452,18 @@ impl CheckedPackage {
     /// one.
     pub fn abstraction(&self) -> Option<&CheckedAbstractionRelation> {
         self.abstraction.as_ref()
+    }
+
+    /// Records the `package_id` of a complete emission of this package. Only
+    /// the emitter calls this, with the id it just minted (ADR-013 O-02).
+    pub(crate) fn remember_emitted_id(&self, package_id: PackageId) {
+        let _ = self.emitted_id.set(package_id);
+    }
+
+    /// This package's `package_id` from its last complete emission, if it has
+    /// been emitted.
+    fn emitted_id(&self) -> Option<PackageId> {
+        self.emitted_id.get().copied()
     }
 
     /// This package's own checked declarations (S3's stage output) -- the
@@ -476,6 +496,9 @@ impl CheckedPackage {
 
 /// `import`'s dependency `package_id`, recomputed by emitting its package.
 fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
+    if let Some(package_id) = import.package.emitted_id() {
+        return Ok(package_id);
+    }
     let emission =
         emit_checked(&import.package).map_err(|refusal| LinkRefusal::DependencyEmission {
             identity: import.identity.clone(),
@@ -612,6 +635,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
             abstraction: None,
+            emitted_id: OnceLock::new(),
         },
         |dependency, link| CheckedPackage {
             graph: Arc::clone(&graph),
@@ -621,6 +645,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             )]),
             selections: BTreeMap::new(),
             abstraction: None,
+            emitted_id: OnceLock::new(),
         },
     )
 }

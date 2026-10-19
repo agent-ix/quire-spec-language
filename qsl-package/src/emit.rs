@@ -1006,13 +1006,17 @@ pub fn emit_checked_with_cancel(
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package_inner(
+    let emission = emit_package_inner(
         package,
         graph.memoized_regions(),
         |_| None,
         cancel,
         &ir_decodes,
-    )
+    )?;
+    if emission.omitted().is_empty() {
+        package.remember_emitted_id(emission.package().package_id());
+    }
+    Ok(emission)
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
