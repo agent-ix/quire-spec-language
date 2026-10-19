@@ -18,7 +18,7 @@ use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::Identifier;
 use quire_semantic_value::checking::CheckingLimits;
 
-use super::{export_bindings, ExportRefusal};
+use super::{export_bindings, BoundItem, ExportRefusal};
 use crate::CheckedPackage;
 
 #[path = "../../../qsl-semantics/tests/support/abstraction.rs"]
@@ -590,4 +590,45 @@ fn bind_abstraction_resets_the_remembered_emission() {
         .bind_abstraction(&[config_object()])
         .expect("the relation checks");
     assert!(package.remembered_emission().is_none());
+}
+
+#[test]
+#[trace("TC-1082", "FR-307-AC-6")]
+fn with_nothing_bound_every_item_is_refused_and_the_export_succeeds() {
+    let package = package(CLAUSES);
+    let items = [function_item(&package), clause_item(&package, "Versioned")];
+    let results = export_bindings(&package, &items);
+    assert_eq!(results.len(), items.len());
+    for (result, item) in results.iter().zip(&items) {
+        let Err(refusal @ ExportRefusal::Unbound { item: refused, .. }) = result else {
+            panic!("{result:?}: an unbound item must be refused");
+        };
+        assert_eq!(refused, item);
+        assert_eq!(refusal.code(), Code::MissingDeclaration);
+    }
+    assert!(results.iter().all(Result::is_err));
+}
+
+#[test]
+#[trace("TC-1082", "FR-307-AC-6")]
+fn an_item_that_references_no_element_is_bound_with_no_bindings() {
+    let package = package(
+        "function addBoth using v(x: Int[0, 9], y: Int[0, 9]): Int[0, 18] pure { x + y }\n",
+    );
+    let mut items = package
+        .graph()
+        .requirements()
+        .iter()
+        .map(|(key, _)| key.clone());
+    let (Some(item), None) = (items.next(), items.next()) else {
+        panic!("one requirement record");
+    };
+    let results = export_bindings(&package, std::slice::from_ref(&item));
+    assert_eq!(
+        results,
+        [Ok(BoundItem {
+            item,
+            bindings: Vec::new()
+        })]
+    );
 }
