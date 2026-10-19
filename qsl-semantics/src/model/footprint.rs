@@ -534,6 +534,11 @@ impl Derivation<'_> {
                     observation,
                 ));
             }
+            // The population operand is a population-typed parameter, which
+            // names no population, so every population related to the result
+            // type is read. A clause that names one population (`M::P`,
+            // FR-391) reads that population's membership alone; that form
+            // cannot reach this derivation until S3 resolves it.
             NodeKind::AllInstances { .. } | NodeKind::Lookup { .. } => {
                 let mut targets = Vec::new();
                 referenced_types(node.value_type(), &mut targets);
