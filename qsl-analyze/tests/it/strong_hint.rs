@@ -331,12 +331,12 @@ fn mutex(fairness: &str) -> crate::liveness::Fixture {
 /// `Sub` type of `Counter` that declares `bump` adds `bump` after `Counter`'s
 /// `inc` and `setTo` (declared in either order), each listed once under
 /// `Counter`.
-#[trace("TC-534")]
+#[trace("TC-534", "FR-133-AC-4")]
 #[test]
 fn operations_are_ordered_by_declaring_type_then_name() {
     use qsl_eval::simulation::model::ModelSystem;
     let mut orders = Vec::new();
-    for reversed in [false, true] {
+    for (reversed, members) in [(false, 2), (true, 2), (false, 1), (true, 1)] {
         let mut domain: serde_json::Value =
             serde_json::from_slice(&document_with_ranged_parameter()).expect("JSON");
         let types = domain["types"].as_array_mut().expect("types");
@@ -390,7 +390,10 @@ fn operations_are_ordered_by_declaring_type_then_name() {
                 .collect::<Vec<_>>(),
         );
     }
-    assert_eq!(orders[0], orders[1], "declaration order does not matter");
+    assert!(
+        orders.iter().all(|order| *order == orders[0]),
+        "neither declaration order nor the admitting type matters: {orders:?}"
+    );
     assert_eq!(orders[0].iter().filter(|name| *name == "inc").count(), 1);
     assert_eq!(orders[0].len(), 3, "{:?}", orders[0]);
 }
