@@ -122,7 +122,7 @@ fn always_p() -> Gba {
 
 #[test]
 fn the_monitor_of_always_rejects_exactly_the_bad_prefixes() {
-    let mut monitor = Monitor::bad_prefix(&always_p(), 16).expect("a safety automaton");
+    let mut monitor = Monitor::bad_prefix(always_p(), 16).expect("a safety automaton");
     let start = monitor.initial().expect("within the limit");
     assert_eq!(monitor.is_rejecting(start), Ok(false));
     let good = monitor.step(start, letter(&[0])).expect("within the limit");
@@ -154,7 +154,7 @@ fn the_monitor_determinizes_by_subset_construction() {
             .add_transition(from, guard, to)
             .expect("both states were added");
     }
-    let mut monitor = Monitor::bad_prefix(&builder.build(), 16).expect("a safety automaton");
+    let mut monitor = Monitor::bad_prefix(builder.build(), 16).expect("a safety automaton");
     let start = monitor.initial().expect("within the limit");
     let miss = monitor.step(start, letter(&[])).expect("within the limit");
     assert_eq!(monitor.members(miss), Some(&BTreeSet::from([waiting])));
@@ -176,7 +176,7 @@ fn the_monitor_trims_states_with_no_infinite_run() {
     dead_end
         .add_transition(Gba::INITIAL, Guard::always().requiring(atom(0)), end)
         .expect("both states were added");
-    let mut monitor = Monitor::bad_prefix(&dead_end.build(), 16).expect("a safety automaton");
+    let mut monitor = Monitor::bad_prefix(dead_end.build(), 16).expect("a safety automaton");
     let start = monitor.initial().expect("within the limit");
     assert_eq!(monitor.is_rejecting(start), Ok(true));
 
@@ -189,7 +189,7 @@ fn the_monitor_trims_states_with_no_infinite_run() {
             Gba::INITIAL,
         )
         .expect("the initial state exists");
-    let mut monitor = Monitor::bad_prefix(&impossible.build(), 16).expect("a safety automaton");
+    let mut monitor = Monitor::bad_prefix(impossible.build(), 16).expect("a safety automaton");
     let start = monitor.initial().expect("within the limit");
     assert_eq!(monitor.is_rejecting(start), Ok(true));
 }
@@ -205,7 +205,7 @@ fn a_monitor_is_refused_for_an_automaton_with_acceptance_sets() {
 
 #[test]
 fn the_monitor_stops_at_the_state_limit_with_the_count_it_reached() {
-    let mut monitor = Monitor::bad_prefix(&always_p(), 2).expect("a safety automaton");
+    let mut monitor = Monitor::bad_prefix(always_p(), 2).expect("a safety automaton");
     let start = monitor.initial().expect("one state fits");
     let good = monitor.step(start, letter(&[0])).expect("two states fit");
     assert_eq!(
@@ -216,13 +216,13 @@ fn the_monitor_stops_at_the_state_limit_with_the_count_it_reached() {
     // A state already numbered is still reachable at the limit.
     assert_eq!(monitor.step(good, letter(&[0])), Ok(good));
 
-    let mut none = Monitor::bad_prefix(&always_p(), 0).expect("a safety automaton");
+    let mut none = Monitor::bad_prefix(always_p(), 0).expect("a safety automaton");
     assert_eq!(none.initial(), Err(AutomatonError::StateLimit { limit: 0 }));
 }
 
 #[test]
 fn a_monitor_refuses_a_state_it_did_not_number() {
-    let mut monitor = Monitor::bad_prefix(&always_p(), 16).expect("a safety automaton");
+    let mut monitor = Monitor::bad_prefix(always_p(), 16).expect("a safety automaton");
     monitor.initial().expect("within the limit");
     let foreign = foreign_state();
     assert_eq!(
