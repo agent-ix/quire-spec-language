@@ -170,15 +170,22 @@ pub struct BackendDescriptor {
 /// sole manifest conversion entry point shared by linked and process
 /// providers (FR-288, C-28).
 ///
-/// The manifest's `fairness_kinds` are not read here: the descriptor is built
-/// with no fairness kinds. Until the item path is wired, [`BackendDescriptor::with_fairness_kinds`]
-/// is the only way to set them.
+/// `fairness_kinds` is the FR-331 manifest's `fairness_kinds` member exactly
+/// as supplied, `None` when the manifest has none (FR-134 "Manifest
+/// `fairness_kinds` admission"). It is judged after every advertised pair and
+/// `domains`, and only for a backend that advertises `temporal-satisfaction`:
+/// a member of any other backend is ignored. For a temporal backend a member
+/// that is not a list or holds an element other than `weak` or `strong`
+/// refuses `unknown-fairness-kind` (the first in member order); a repeated
+/// label refuses `duplicate-fairness-kind`; an absent member refuses
+/// `absent-fairness-kinds`. An empty list is admitted and advertises none.
 pub fn descriptor_from_manifest<'a>(
     backend: Candidate,
     origin: ProviderOrigin,
     manifest_digest: ManifestDigest,
     advertised: impl IntoIterator<Item = (Option<&'a str>, Option<&'a str>)>,
     domains: Option<&[&str]>,
+    fairness_kinds: Option<FairnessKindsMember<'_>>,
 ) -> Result<BackendDescriptor, RegistrationRefusal> {
     let refuse = |cause| RegistrationRefusal {
         backend: backend.clone(),
@@ -203,14 +210,76 @@ pub fn descriptor_from_manifest<'a>(
         .any(|&(_, mode)| matches!(mode, Mode::Bounded));
     let domains = admit_domains(domains, advertises_bounded)
         .map_err(|defect| refuse(RegistrationCause::InvalidDomains(defect)))?;
+    let advertises_temporal = advertises
+        .iter()
+        .any(|&(kind, _)| matches!(kind, Capability::TemporalSatisfaction));
+    let fairness_kinds = if advertises_temporal {
+        admit_fairness_kinds(fairness_kinds).map_err(refuse)?
+    } else {
+        BTreeSet::new()
+    };
     Ok(BackendDescriptor {
         backend,
         origin,
         manifest_digest,
         advertises,
         domains,
-        fairness_kinds: BTreeSet::new(),
+        fairness_kinds,
     })
+}
+
+/// One element of a manifest's `fairness_kinds` list as the driver read it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FairnessLabel<'a> {
+    /// A string element, its exact bytes.
+    Text(&'a str),
+    /// An element that is not a string, rendered as the manifest wrote it
+    /// (such as `1` or `null`); it is never a fairness kind.
+    Other(&'a str),
+}
+
+/// A manifest's present `fairness_kinds` member, exactly as supplied.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FairnessKindsMember<'a> {
+    /// A list, in member order.
+    List(&'a [FairnessLabel<'a>]),
+    /// A value that is not a list, rendered as the manifest wrote it (such
+    /// as `null`, `"weak"` or `{}`).
+    NotAList(&'a str),
+}
+
+/// Admit a temporal backend's `fairness_kinds` member (FR-134-AC-3 to
+/// AC-5): the first unknown element wins over any repeat, and a repeat is
+/// never collapsed.
+fn admit_fairness_kinds(
+    member: Option<FairnessKindsMember<'_>>,
+) -> Result<BTreeSet<FairnessKind>, RegistrationCause> {
+    let labels = match member {
+        None => return Err(RegistrationCause::AbsentFairnessKinds),
+        Some(FairnessKindsMember::NotAList(value)) => {
+            return Err(RegistrationCause::UnknownFairnessKind(value.to_owned()))
+        }
+        Some(FairnessKindsMember::List(labels)) => labels,
+    };
+    let kinds = labels
+        .iter()
+        .map(|label| match *label {
+            FairnessLabel::Text("weak") => Ok((FairnessKind::Weak, "weak")),
+            FairnessLabel::Text("strong") => Ok((FairnessKind::Strong, "strong")),
+            FairnessLabel::Text(other) | FairnessLabel::Other(other) => {
+                Err(RegistrationCause::UnknownFairnessKind(other.to_owned()))
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut seen = BTreeSet::new();
+    for (kind, label) in &kinds {
+        if !seen.insert(*kind) {
+            return Err(RegistrationCause::DuplicateFairnessKind(
+                (*label).to_owned(),
+            ));
+        }
+    }
+    Ok(seen)
 }
 
 impl BackendDescriptor {
@@ -411,14 +480,26 @@ pub enum RegistrationCause {
     DuplicateBackend,
     /// An advertised pair names no kind.
     AbsentKind,
-    /// An advertised kind is not byte-equal to an FR-290 label; carries the
-    /// exact received bytes.
+    /// An advertised capability kind is not byte-equal to an FR-290 label;
+    /// carries the exact received bytes. A fairness label is never this
+    /// cause (see [`Self::UnknownFairnessKind`]).
     UnknownKind(String),
     /// An advertised mode is absent, or neither `bounded` nor `unbounded`;
     /// carries the exact received bytes, `None` when there were none.
     UnknownMode(Option<String>),
     /// The manifest's `domains` is defective (FR-290 "Advertised mode").
     InvalidDomains(DomainsDefect),
+    /// A `temporal-satisfaction` backend's `fairness_kinds` is not a list or
+    /// holds an element other than `weak` or `strong`; carries the first
+    /// such value as supplied (FR-134-AC-3). QSL-proposed cause.
+    UnknownFairnessKind(String),
+    /// A `temporal-satisfaction` backend's `fairness_kinds` repeats a label;
+    /// carries the first element that repeats an earlier one (FR-134-AC-4).
+    /// QSL-proposed cause.
+    DuplicateFairnessKind(String),
+    /// A `temporal-satisfaction` backend's manifest has no `fairness_kinds`
+    /// member (FR-134-AC-5). QSL-proposed cause.
+    AbsentFairnessKinds,
 }
 
 impl RegistrationCause {
@@ -430,6 +511,9 @@ impl RegistrationCause {
             Self::UnknownKind(_) => "unknown-kind",
             Self::UnknownMode(_) => "unknown-mode",
             Self::InvalidDomains(_) => "invalid-domains",
+            Self::UnknownFairnessKind(_) => "unknown-fairness-kind",
+            Self::DuplicateFairnessKind(_) => "duplicate-fairness-kind",
+            Self::AbsentFairnessKinds => "absent-fairness-kinds",
         }
     }
 }

@@ -23,6 +23,7 @@ use qsl_cst::{CstElement, CstNode, LosslessCst, ParsedSource, Production, Recove
 use qsl_foundation::selection::SourceSelections;
 use qsl_foundation::{Code, Span};
 
+use super::hyper_clause;
 use super::probabilistic;
 use super::protocol_clause;
 use super::state_graph;
@@ -31,6 +32,7 @@ use super::sum_case;
 use super::syntax::DeclarationForm;
 use super::temporal_clause;
 use super::terminal_declaration;
+use super::time_model;
 use super::value;
 
 /// A parsed form built from one declaration of a lossless CST with no
@@ -187,6 +189,19 @@ pub enum LeadingTokenKind {
     /// `terminal`: the `TemporalTrace` terminal declaration form, holding
     /// its `when` predicate or `any` (FR-382).
     Terminal,
+    /// `time`: a model's time source (`time M ...`) or a time invariant
+    /// (`time invariant ...`), the one production the CST holds (FR-393).
+    /// `time` is a declaration-head spelling only; elsewhere it stays an
+    /// identifier.
+    Time,
+    /// `urgent`: an urgency declaration (FR-393), a declaration-head
+    /// spelling only.
+    Urgent,
+    /// `hyper`: the `TemporalTrace` hyper clause form, over `behaviours` or
+    /// over a finite trace domain (FR-171).
+    Hyper,
+    /// `relation`: the `TemporalTrace` relation clause form (FR-171).
+    Relation,
     /// `random`: the `Probabilistic` random-parameter form (FR-311).
     Random,
     /// `reward`: the `Probabilistic` reward form (FR-311).
@@ -405,6 +420,10 @@ fn dispatch(
         LeadingTokenKind::Protocol => protocol_clause::protocol_declaration(construct),
         LeadingTokenKind::Temporal => temporal_clause::temporal_clause(construct),
         LeadingTokenKind::Terminal => terminal_declaration::terminal_declaration(construct),
+        LeadingTokenKind::Time => time_model::time_member(construct),
+        LeadingTokenKind::Urgent => time_model::urgent_declaration(construct),
+        LeadingTokenKind::Hyper => hyper_clause::hyper_clause(construct),
+        LeadingTokenKind::Relation => hyper_clause::relation_clause(construct),
         LeadingTokenKind::Random => probabilistic::random_declaration(construct),
         LeadingTokenKind::Reward => probabilistic::reward_declaration(construct),
         LeadingTokenKind::Workload => probabilistic::workload_declaration(construct),
@@ -450,6 +469,10 @@ fn from_spelling(spelling: &[u8]) -> Option<LeadingTokenKind> {
         b"protocol" => Some(LeadingTokenKind::Protocol),
         b"temporal" => Some(LeadingTokenKind::Temporal),
         b"terminal" => Some(LeadingTokenKind::Terminal),
+        b"time" => Some(LeadingTokenKind::Time),
+        b"urgent" => Some(LeadingTokenKind::Urgent),
+        b"hyper" => Some(LeadingTokenKind::Hyper),
+        b"relation" => Some(LeadingTokenKind::Relation),
         b"random" => Some(LeadingTokenKind::Random),
         b"reward" => Some(LeadingTokenKind::Reward),
         b"workload" => Some(LeadingTokenKind::Workload),

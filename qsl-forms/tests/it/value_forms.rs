@@ -59,6 +59,12 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Protocol(_)
         | DeclarationForm::Temporal(_)
         | DeclarationForm::Terminal(_)
+        | DeclarationForm::TimeSource(_)
+        | DeclarationForm::TimeInvariant(_)
+        | DeclarationForm::Urgent(_)
+        | DeclarationForm::HyperBehaviours(_)
+        | DeclarationForm::HyperFinite(_)
+        | DeclarationForm::ModelRelation(_)
         | DeclarationForm::Random(_)
         | DeclarationForm::Reward(_)
         | DeclarationForm::Workload(_)
@@ -160,6 +166,9 @@ fn show(expression: ExprRef<'_>) -> String {
         ExprNode::Result => "Result".into(),
         ExprNode::Reaches { edge, .. } => format!("Reaches[{edge}]"),
         ExprNode::ProtocolReference { target } => format!("ProtocolReference[{target}]"),
+        ExprNode::Indexed { trace, .. } => format!("Indexed[{trace}]"),
+        ExprNode::StepLabel { trace, label } => format!("StepLabel[{trace},{label:?}]"),
+        ExprNode::Stutter => "Stutter".into(),
     };
     if children.is_empty() {
         head
@@ -210,6 +219,12 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Protocol(_) => "protocol",
             DeclarationForm::Temporal(_) => "temporal",
             DeclarationForm::Terminal(_) => "terminal",
+            DeclarationForm::TimeSource(_) => "time",
+            DeclarationForm::TimeInvariant(_) => "time invariant",
+            DeclarationForm::Urgent(_) => "urgent",
+            DeclarationForm::HyperBehaviours(_) => "hyper_behaviours",
+            DeclarationForm::HyperFinite(_) => "hyper_finite",
+            DeclarationForm::ModelRelation(_) => "model_relation",
             DeclarationForm::Random(_) => "random",
             DeclarationForm::Reward(_) => "reward",
             DeclarationForm::Workload(_) => "workload",

@@ -43,7 +43,7 @@
 //! limit, profile ceiling or backend budget ever makes a domain bounded
 //! (ADR-014 §1).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::bound::{DomainKey, DomainKind};
 use qsl_foundation::diagnostic::LimitExceeded;
@@ -53,6 +53,7 @@ use quire_exact::{NodeKey, ValueType};
 
 use crate::check::Capability;
 use quire_semantic_value::declaration::{CompositeShape, TypeEnvironment};
+use quire_semantic_value::fairness::FairnessKind;
 
 /// The non-empty set of an item's unbounded domains, each with its kind,
 /// in [`DomainKey`] order.
@@ -117,17 +118,36 @@ impl ClaimExtent {
 }
 
 /// One item's requirements (ADR-012 §2, FR-062-AC-4; ADR-014 §4, §6 step
-/// 1): the FR-057 capability kind it requests and its extent.
+/// 1): the FR-057 capability kind it requests, its extent, and the fairness
+/// kinds its fairness set uses (FR-134; empty for an item with none).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Requirements {
     kind: Capability,
     extent: ClaimExtent,
+    fairness: BTreeSet<FairnessKind>,
 }
 
 impl Requirements {
     /// The requirements of an item requesting `kind` over `extent`.
     pub fn new(kind: Capability, extent: ClaimExtent) -> Self {
-        Self { kind, extent }
+        Self {
+            kind,
+            extent,
+            fairness: BTreeSet::new(),
+        }
+    }
+
+    /// The requirements with the fairness kinds the item's fairness set
+    /// uses (FR-134): a backend is a candidate only when it advertises each.
+    #[must_use]
+    pub fn with_fairness(mut self, kinds: impl IntoIterator<Item = FairnessKind>) -> Self {
+        self.fairness = kinds.into_iter().collect();
+        self
+    }
+
+    /// The fairness kinds the item's fairness set uses.
+    pub fn fairness(&self) -> &BTreeSet<FairnessKind> {
+        &self.fairness
     }
 
     /// The requested capability kind.

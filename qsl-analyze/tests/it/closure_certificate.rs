@@ -469,7 +469,7 @@ fn a_certificate_of_another_item_is_not_admitted() {
 /// `CertificateRejected{SuccessorMissing, at}`, never `proved`; settled
 /// against another `package_id` than the request's package it is
 /// `ReplayRefused(stale_dependency)`, never `proved`.
-#[trace("TC-525")]
+#[trace("TC-525", "FR-127-AC-1")]
 #[test]
 fn a_proof_settles_certified_only_when_its_certificate_is_accepted() {
     let world = world(CONTRACT, &[("c", 0)]);
@@ -658,6 +658,45 @@ fn a_clause_with_no_instance_is_never_certified() {
         ),
         Err(ClosureRefusal::NoInstance)
     ));
+}
+
+/// QSpec FR-361-AC-8 (QSpec TC-294) and FR-127: a clause
+/// whose empty universe gives it zero instances settles `inconclusive` with
+/// the wire cause `no-instance` and basis `unsettled`, never `proved` or
+/// `refuted`. The zero instances are made by clearing `Letters.bindings`;
+/// deriving them from the universes is QSL-886's.
+#[trace("TC-520", "QSpec-FR-361-AC-8")]
+#[test]
+fn a_clause_with_no_instance_settles_inconclusive_never_proved_or_refuted() {
+    let world = world(CONTRACT, &[("c", 0)]);
+    let mut invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
+    invariant.letters.bindings.clear();
+    let outcome = world.run(invariant.item());
+    assert!(matches!(
+        outcome,
+        ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInstance,
+            stats,
+        } if stats.product_states == 0
+    ));
+    let request = world.request(invariant.item(), UNLIMITED);
+    let record = settle_model_check(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &world.package_id(),
+        &request,
+        &Cancel::new(),
+        |_| panic!("no instance replays nothing"),
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::NoInstance)
+    );
+    assert_eq!(InconclusiveCause::NoInstance.as_str(), "no-instance");
+    assert_eq!(record.label, ResultLabel::Inconclusive);
+    assert_eq!(record.basis, SettlementBasis::Unsettled);
+    assert_eq!(record.execution, Execution::Completed);
+    assert!(record.counterexample.is_none());
 }
 
 /// ADR-016 EX-10: a subject with no initial state examines no behaviour, so

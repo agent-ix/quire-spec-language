@@ -129,7 +129,18 @@ productions! {
     Capture,
     #[doc = "`fair [weak | strong] [whole | each] <qualified-name> ;`: a fairness constraint over one model operation, before a `temporal` clause's captures."]
     Fairness,
-    Interval, TemporalExpression, TemporalImplication, TemporalDisjunction,
+    Interval,
+    #[doc = "`( [ | ( ) <quantity-literal> , <quantity-literal> ( ] | ) )`: a temporal operator's timed interval, each end closed or open (FR-393)."]
+    TimedInterval,
+    #[doc = "`time <identifier> (dense | tick <qualified-name> period <quantity-literal>) unit <qualified-name> ;`: a model's time source (FR-393)."]
+    TimeDeclaration,
+    #[doc = "`time invariant <identifier> when <block> { <clock-bound> (and <clock-bound>)* }`: a time invariant (FR-393)."]
+    TimeInvariant,
+    #[doc = "`<postfix> (< | <=) <quantity-literal>`: one upper bound on a clock (FR-393)."]
+    ClockBound,
+    #[doc = "`urgent <identifier> (when <block> | <qualified-name>) ;`: an urgency declaration (FR-393)."]
+    UrgentDeclaration,
+    TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
     TerminalDeclaration,
@@ -226,7 +237,21 @@ productions! {
     #[doc = "`related by <identifier> ( <expression>, <expression> )`: attached to an event node to correlate it with another by a named relation."]
     Related,
     EventNode, Check, Commit, Finish,
-    RelationClause, ExecutionBinding, HyperClause, TraceDomain, Quantifier,
+    RelationClause, ExecutionBinding, HyperClause, TraceDomain,
+    #[doc = "`behaviours [( <parameter> {, <parameter>} )]`: a `hyper` clause whose trace variables range over behaviours of model subjects."]
+    BehavioursDomain,
+    #[doc = "`(forall | exists) trace <identifier> [of <identifier> <fairness>*]`: one trace quantifier of a `hyper` clause."]
+    Quantifier,
+    #[doc = "`align skip { <qualified-name> {, <qualified-name>} }`: the operations whose steps a `hyper` clause skips when it aligns its traces."]
+    AlignSkip,
+    #[doc = "`match <block>`: the step labels a `hyper` clause's traces must agree on."]
+    MatchBlock,
+    #[doc = "`<identifier> . step . (op | receiver | <qualified-name> . <member>)`: one trace's step label, read in a `hyper` clause's `match` block."]
+    StepLabel,
+    #[doc = "`<postfix> @ <identifier>`: a model member read from the named trace of a `hyper` clause."]
+    IndexedRead,
+    HyperExpression, HyperImplication, HyperDisjunction, HyperConjunction,
+    HyperComparison, HyperSum, HyperProduct, HyperUnary, HyperPostfix, HyperPrimary,
     HybridDeclaration, HybridMode, Equation, SynthesisDeclaration,
     VerificationPlan, VerificationStep,
 }
