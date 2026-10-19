@@ -18,9 +18,9 @@ use std::ops::ControlFlow;
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::protocol_control::{
-    access_ordering, await_form, channel_form, choice_form, member_forms, parallel_form, repeat_form, role_form,
-    AwaitForm, ChannelOrdering, FenceForm, JoinPolicy, ParallelForm, ProtocolMemberForm, RepeatForm,
-    TerminalForm,
+    access_ordering, await_form, channel_form, choice_form, member_forms, parallel_form,
+    repeat_form, role_form, AwaitForm, ChannelOrdering, FenceForm, JoinPolicy, ParallelForm,
+    ProtocolMemberForm, RepeatForm, TerminalForm,
 };
 use super::spans::DeclarationSpans;
 use super::syntax::{

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located checking refusals and their closed codes and causes.
 
+use super::protocol_memory::AccessClass;
 use qsl_forms::{AccessOrdering, MemoryModelName};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::SourceRegion;
@@ -9,7 +10,6 @@ use qsl_foundation::Span;
 use quire_exact::Integer;
 use quire_exact::{EffectiveId, NodeKey};
 use quire_exact::{IllTyped, IllTypedCause};
-use super::protocol_memory::AccessClass;
 use quire_semantic_value::location::Location;
 use quire_semantic_value::semantic_node::IdentityRefusal;
 

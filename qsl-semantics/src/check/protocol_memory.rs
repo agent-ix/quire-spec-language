@@ -12,13 +12,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::{AccessOrdering, AttemptForm, JoinPolicy, MemoryModelName, ProtocolDeclarationForm};
+use qsl_forms::{
+    AccessOrdering, AttemptForm, JoinPolicy, MemoryModelName, ProtocolDeclarationForm,
+};
 use qsl_foundation::Span;
 
 use super::footprint::{FootprintRefusal, SymbolicFootprint, SymbolicLocation};
 use super::protocol_clause::{BoundAttempt, CheckedControlTree, CheckedProtocol, ProtocolNodeId};
-use crate::model::key::DeclarationKey;
 use super::refusal::{CheckCause, CheckRefusal, ProtocolAnchorCause};
+use crate::model::key::DeclarationKey;
 use quire_semantic_value::location::{Location, Origin};
 
 /// One checked `parallel` control's source default (FR-219 "Outputs").
@@ -252,7 +254,9 @@ impl Accesses {
                 }
                 SymbolicLocation::Membership { population, .. }
                 | SymbolicLocation::AnyMembership { population } => {
-                    accesses.writes.insert(Place::Membership(population.clone()));
+                    accesses
+                        .writes
+                        .insert(Place::Membership(population.clone()));
                     accesses.wide.insert(Place::Membership(population.clone()));
                 }
             }
@@ -299,8 +303,11 @@ pub(crate) fn classify(
     let mut refusals: Vec<(Span, CheckRefusal)> = Vec::new();
     // Each attempt inside a `parallel`, with its accesses and the branches
     // that hold it: (parallel, branch) from the innermost out.
-    let mut attempts: Vec<(&AttemptForm, Accesses, Vec<(ProtocolNodeId, ProtocolNodeId)>)> =
-        Vec::new();
+    let mut attempts: Vec<(
+        &AttemptForm,
+        Accesses,
+        Vec<(ProtocolNodeId, ProtocolNodeId)>,
+    )> = Vec::new();
     for form in &protocol.attempts {
         let node = ProtocolNodeId(form.declaration);
         let mut holders = Vec::new();
@@ -352,11 +359,11 @@ pub(crate) fn classify(
         }
     }
     let shared = |parallel: ProtocolNodeId, place: &Place| {
-        touched.get(&(parallel, place.clone())).is_some_and(|(readers, writers)| {
-            !readers.is_empty()
-                && !writers.is_empty()
-                && readers.union(writers).count() >= 2
-        })
+        touched
+            .get(&(parallel, place.clone()))
+            .is_some_and(|(readers, writers)| {
+                !readers.is_empty() && !writers.is_empty() && readers.union(writers).count() >= 2
+            })
     };
 
     let mut accesses = Vec::with_capacity(attempts.len());
@@ -366,8 +373,12 @@ pub(crate) fn classify(
             .places()
             .filter(|place| holders.iter().any(|&(parallel, _)| shared(parallel, place)))
             .collect();
-        let reads = shared_places.iter().any(|place| found.reads.contains(*place));
-        let writes = shared_places.iter().any(|place| found.writes.contains(*place));
+        let reads = shared_places
+            .iter()
+            .any(|place| found.reads.contains(*place));
+        let writes = shared_places
+            .iter()
+            .any(|place| found.writes.contains(*place));
         let class = match (reads, writes) {
             (false, false) => AccessClass::Local,
             (true, false) => AccessClass::Load,
@@ -382,7 +393,9 @@ pub(crate) fn classify(
             .copied()
             .find(|model| model.is_weak());
         if let Some(model) = weak {
-            let wide = shared_places.iter().any(|place| found.wide.contains(*place));
+            let wide = shared_places
+                .iter()
+                .any(|place| found.wide.contains(*place));
             if shared_places.len() >= 2 || wide {
                 refusals.push((
                     name.span,
