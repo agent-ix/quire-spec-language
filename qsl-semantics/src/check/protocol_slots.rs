@@ -5,7 +5,10 @@
 //! entries and guards and each `repeat`'s loop proof -- over the binders
 //! readable at it, and of each `choice`'s partition. The clause's own
 //! `terminal when` predicate (FR-211) is checked the same way, over the
-//! `over` input and, under `on origin`, the protocol captures.
+//! `over` input and, under `on origin`, the protocol captures; so is each
+//! end of an event node's `related by` clauses, against its relationship
+//! end's type, and each replicated role's `until` predicate, over `C0` and
+//! the role's own binder (QSpec FR-464 "Readable binders").
 //!
 //! The readable binders follow QSpec FR-466 "Binder scope": `In(n)` is
 //! what a control reads at its entry and `Out(n)` what is readable after it

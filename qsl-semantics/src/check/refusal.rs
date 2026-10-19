@@ -107,9 +107,10 @@ pub enum ProtocolAnchorCause {
         span: Span,
     },
     /// A protocol whose anchors, binders and attempt bindings all check,
-    /// but which holds a construct no checker reads yet (a relationship, a
-    /// requirement, a replicated role, a `related by` clause, a `predicate`
-    /// join or a `terminal when` member). Refused rather than compiled with
+    /// but which holds a construct no checker reads yet (a `predicate`
+    /// join, a `parallel`'s memory clause, an attempt's memory order, a
+    /// `fence`, or a relationship between two ends that are not object
+    /// types). Refused rather than compiled with
     /// unchecked content and silently missing from the emitted package
     /// (SR-753 FND-002, SR-761 FND-001, SR-770 FND-001).
     Unimplemented {

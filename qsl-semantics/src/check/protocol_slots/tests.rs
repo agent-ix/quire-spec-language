@@ -326,3 +326,104 @@ fn readers_are_recorded_and_a_scope_role_records_its_region() {
         CheckedLifetime::Scope(Some(node_id(&text, "Main")))
     );
 }
+
+/// ADR-027 §7.1's `Pay` over fixture R: an attempt, its effect with a
+/// refund template, and a failure event.
+const PAY: &str = "protocol Pay using v over (k: M::Node) on origin {\n\
+    role w on M::Node;\n\
+    compensate Refund for Main::Paid as (fwd: M::Receipt)\n\
+        by w on M::Node::undo using v clock \"c\" {\n\
+      activate first (f: M::Flag) when { f.ready } { }\n\
+      within [0, 10];\n\
+      attempts 1 of M::Attempt;\n\
+      retry (earlier: M::Attempt, later: M::Attempt) { false };\n\
+      commit never;\n\
+      recover (recovered: M::Receipt) { recovered.n = 0 };\n\
+    }\n\
+    run sequence Main {\n\
+      attempt C by w on M::Node::step contracts [] as (c: M::Flag) { true };\n\
+      effect Paid of Main::C as (pd: M::Receipt) { true };\n\
+      event Fail by w as (failure: M::Flag) { true };\n\
+    }\n\
+    finish Done as (d: M::Receipt) { true };\n\
+    }\n";
+
+/// FR-212's `Chatter` over fixture R: a send and an attempt in one branch,
+/// the receive in the other, over a channel of capacity 2.
+const CHATTER: &str = "protocol Chatter using v over (k: M::Node) on origin {\n\
+    role w on M::Node;\n\
+    channel ch from w to w carries M::Flag ordering unordered delivery unknown \
+    capacity 2 overflow block;\n\
+    terminal any;\n\
+    run parallel Both {\n\
+      branch s sequence Talk { send Tx via ch as (tx: M::Flag) { true };\n\
+        attempt Flip by w on M::Node::step contracts [] as (flipped: M::Flag) { true }; }\n\
+      branch r receive Rx via ch of s::Talk::Tx as (rx: M::Flag) { true };\n\
+    } join all [s, r];\n\
+    finish Done as (d: M::Receipt) { true };\n\
+    }\n";
+
+/// FR-218-AC-1: ADR-027 §7's `Fill`, §7.1's `Pay`, FR-212's `Chatter` and
+/// FR-208-AC-1's replicated-role protocol each check to a checked clause,
+/// none refusing `unsupported_construct`/`not-yet-implemented`; `Fill`'s
+/// relation holds in -> `A`, in -> `B`, `A` -> join and `B` -> join, and
+/// `Chatter`'s `Tx`.out -> `Rx`.in.
+#[trace("TC-663", "FR-218-AC-1")]
+#[test]
+fn the_reference_protocols_check_with_their_edges() {
+    use crate::check::protocol_clause::{CausalEdge, EdgeKind, Port, PortRef};
+    let port = |node, port| PortRef { node, port };
+
+    let fill_text = fill(ORIGIN, "");
+    let graph = checks(&fill_text);
+    let both = node_id(&fill_text, "Both");
+    let edges = &graph.protocol("Fill").expect("checked").edges;
+    for leaf in ["A", "B"] {
+        let leaf = node_id(&fill_text, leaf);
+        assert!(edges.contains(&CausalEdge {
+            kind: EdgeKind::Branch,
+            from: port(both, Port::Enter),
+            to: port(leaf, Port::Enter),
+        }));
+        assert!(edges.contains(&CausalEdge {
+            kind: EdgeKind::Join,
+            from: port(leaf, Port::Exit),
+            to: port(both, Port::Exit),
+        }));
+    }
+
+    let pay = format!("{HEADER}{PAY}");
+    let graph = checks(&pay);
+    assert_eq!(
+        graph
+            .protocol("Pay")
+            .expect("checked")
+            .obligations
+            .compensations
+            .len(),
+        1
+    );
+
+    let chatter = format!("{HEADER}{CHATTER}");
+    let graph = checks(&chatter);
+    assert!(graph
+        .protocol("Chatter")
+        .expect("checked")
+        .edges
+        .contains(&CausalEdge {
+            kind: EdgeKind::Message,
+            from: port(node_id(&chatter, "Tx"), Port::Exit),
+            to: port(node_id(&chatter, "Rx"), Port::Enter),
+        }));
+
+    let graph = checks(&workers("until(r.total > 0)"));
+    assert_eq!(
+        graph
+            .protocol("Workers")
+            .expect("checked")
+            .slots
+            .roles
+            .len(),
+        1
+    );
+}

@@ -1572,10 +1572,13 @@ impl PackageDeclarations {
         // (FR-218), `protocol_clause::content` checks the rest -- the `using`
         // aliases, roles, node roles and owners, and binder types -- and
         // refuses `unsupported_construct`/`not-yet-implemented` at any
-        // construct no checker reads yet (a `predicate` join, a `terminal
-        // when` member, relationships, requirements, replicated roles and
-        // `related by`). `protocol_slots::check` checks every body, guard,
-        // `visible` entry and loop proof over its readable binders, and
+        // construct no checker reads yet (a `predicate` join, a `parallel`'s
+        // memory clause, an attempt's memory order and a `fence`).
+        // `protocol_requirement::check` binds each `requires temporal` and
+        // `protocol_relationship::check` each `relationship` (FR-218).
+        // `protocol_slots::check` checks every body, guard, `visible` entry,
+        // loop proof, `related by` end, replicated role lifetime and the
+        // `terminal when` predicate over its readable binders, and
         // `protocol_controls::check` the channels with their FIFO keys,
         // messages, joins and `terminal`/`scheduling` members (FR-218). A
         // protocol compiles only when every part is checked.
