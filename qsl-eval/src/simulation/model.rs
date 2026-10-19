@@ -23,8 +23,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::{CatalogCode, IdentityLimits};
+use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
 use qsl_package::CheckedPackage;
+use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::domain_package::OperationEffect;
@@ -41,6 +42,7 @@ use quire_exact::{
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use crate::model_subject::ModelInstance;
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
 use crate::simulation::not_simulated::NotSimulated;
@@ -686,6 +688,96 @@ impl<'a> ModelSystem<'a> {
             root(declaration_enc(population), &ValueType::Population(bound));
         }
         roots
+    }
+
+    /// FR-125 Instancing: the instances of an `over (x: T)` parameter of
+    /// type `over` under this subject's universes, in the canonical order.
+    ///
+    /// A population admits `T` when one of its member types is `T`, a
+    /// subtype or a supertype of `T`; each key of each admitting
+    /// population's universe is one instance, however many of its member
+    /// types are comparable with `T`. Admitting populations are ordered by
+    /// declaration identity text, and the keys of each by its universe list.
+    /// A type no population admits, and a type that is not an object
+    /// reference, has no instance.
+    ///
+    /// # Errors
+    ///
+    /// [`NotSimulated::RequiresBound`] naming every admitting population
+    /// with no universe, before any instance is listed (FR-120 "Bounds");
+    /// [`NotSimulated::Extent`] when that classification stops or a
+    /// population's identity text does not encode.
+    pub fn instances(&self, over: &ValueType) -> Result<Vec<ModelInstance>, NotSimulated> {
+        let ValueType::Reference(parameter) = over else {
+            return Ok(Vec::new());
+        };
+        let mut admitting = Vec::new();
+        for population in &self.populations {
+            let admits = population.member_types.iter().any(|member| {
+                self.model.type_identity(member).is_some_and(|member| {
+                    self.types.conforms(member, *parameter)
+                        || self.types.conforms(*parameter, member)
+                })
+            });
+            if admits {
+                let text = declaration_text(&population.key, CanonicalLimits::new(u64::MAX))
+                    .map_err(|_| {
+                        NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
+                            "model-simulation",
+                            "population-identity-text",
+                        )))
+                    })?;
+                admitting.push((text, &population.key));
+            }
+        }
+        let mut unbounded = Vec::new();
+        for (_, population) in &admitting {
+            if !self.universes.contains_key(*population) {
+                let digest =
+                    quire_canonical::sha256(&declaration_enc(population), CanonicalLimits::new(u64::MAX))
+                        .map_err(|_| {
+                            NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
+                                "model-simulation",
+                                "population-root-digest",
+                            )))
+                        })?;
+                unbounded.push((
+                    WireNodeId::from_digest(*digest.as_bytes()),
+                    ValueType::Population(None),
+                ));
+            }
+        }
+        let roots: Vec<(WireNodeId, &ValueType)> =
+            unbounded.iter().map(|(id, root)| (*id, root)).collect();
+        crate::simulation::not_simulated::check_requires_bound(&roots, self.types, u64::MAX)?;
+        admitting.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(admitting
+            .into_iter()
+            .flat_map(|(_, population)| {
+                self.universes
+                    .get(population)
+                    .into_iter()
+                    .flatten()
+                    .map(|key| ModelInstance {
+                        population: population.clone(),
+                        key: key.clone(),
+                    })
+            })
+            .collect())
+    }
+
+    /// The typed value an FR-338 key context binds for `instance` of a
+    /// parameter of object type `over`: the reference to its key in the
+    /// universe of `over`'s declared type. It is a function of the instance
+    /// and the parameter alone, never of a state's object; `None` when no
+    /// selected model declares `over`.
+    pub fn bound_reference(
+        &self,
+        over: EffectiveId,
+        instance: &ModelInstance,
+    ) -> Option<ObjectReference> {
+        let type_key = self.model.type_key(over)?;
+        self.model.object_reference(type_key, &instance.key).ok()
     }
 
     /// The non-abstract object types `effect` creates (FR-013): each conforms

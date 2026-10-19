@@ -182,10 +182,6 @@ pub fn check_closure(
     limits: &ModelCheckLimits,
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
-    let instances = request.item.instances()?;
-    if instances.is_empty() {
-        return Err(ClosureRefusal::NoInstance);
-    }
     let simulation = request.subject.simulation.clone();
     let meter = simulation.meter;
     let max_candidates = simulation.expansion.max_candidates;
@@ -193,6 +189,16 @@ pub fn check_closure(
         .map_err(|failure| ClosureRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
+    let instances = request
+        .item
+        .instances(&system)
+        .map_err(|refusal| match refusal {
+            ItemRefusal::Unbounded(refusal) => ClosureRefusal::NotSimulated(Box::new(refusal)),
+            other => ClosureRefusal::Item(other),
+        })?;
+    if instances.is_empty() {
+        return Err(ClosureRefusal::NoInstance);
+    }
     if system.initial().is_empty() {
         return Err(ClosureRefusal::NoInitialState);
     }
@@ -538,7 +544,7 @@ impl Check<'_, '_> {
         &self,
         letters: &dyn ModelLetters,
         atom: qsl_semantics::check::FormulaNodeId,
-        object: &quire_exact::ObjectReference,
+        object: &qsl_eval::model_subject::ModelInstance,
         state: &ModelSimState,
     ) -> Step<Option<bool>> {
         self.poll()?;

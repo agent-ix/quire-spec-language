@@ -112,7 +112,7 @@ reports.
   objects conforming to `T`, the instances are the objects of all of them;
   instances are ordered by population declaration identity text, then by
   the order of the population's universe list, which is the canonical order.
-  QSL SHALL list instances, including in `ModelLetters::bindings`, in the
+  QSL SHALL list instances, including in `ModelSystem::instances`, in the
   canonical order.
 - A universe is a list of keys, and a key has no type until a state holds its
   object (FR-120). A population **admits `T`** when one of its member types is
@@ -220,7 +220,7 @@ reports.
 | FR-125-AC-7 | Over ADR-018 §6's subject (universe `{a, b}`), the state-graph claims `ReachesTwo` and `ReachesThree` (`over (c: Config::ConfigVersion)`) each yield two instances, `a` then `b`; `possible Anything using v { true }` with no `over` yields one instance with no bound object. `ReachesTwo`, checked once, yields `a`, `b` over `{a, b}` and `a` over a subject whose universe is `{a}`, without being re-checked. A claim over a subtype-conforming population yields its objects; a universe-less population is `RequiresBound`; an empty universe yields zero instances and the item reports `NoInstance`, settled `inconclusive`, never proved. | Test (TC-520) |
 | FR-125-AC-8 | (QSL-proposed rule, STD-196: instance is a key) For a population `P` declaring member types `Lamp` and `Switch`, both subtypes of `Thing`, each key of its universe is one instance of `over (x: Lamp)`, and one instance (not two) of `over (x: Thing)`. A population none of whose member types is `T`, a subtype or a supertype of `T` yields no instance. A population that admits `T` and has no universe is `RequiresBound`; when no population that admits `T` has a key the item gives `NoInstance`. | Test (TC-520) |
 | FR-125-AC-9 | (QSL-proposed rule, STD-196: instance is a key) With `Lamp`'s `DeclarationKey` ordering before `Switch`'s, an instance of `over (x: Thing)` reads at a position whose object under the key is a `Switch` as the reference with type `Switch`, and at one whose object is a `Lamp` as the reference with type `Lamp`; for `over (x: Lamp)` the position whose object is a `Switch`, or has no object, reads `absent-key` undefined. The instance is named by its population and key in the obligation identity and in a refuted binding, without a type. | Test (TC-520) |
-| FR-125-AC-10 | (QSL-proposed rule, STD-196) With populations `P1` and `P2`, whose declaration identity texts order `P1` before `P2`, holding universes `[d, c]` and `[b, a]` respectively, the instances of a claim admitted by both are ordered `P1/d`, `P1/c`, `P2/b`, `P2/a`, and `ModelLetters::bindings` returns that order, not an ascending reference order. | Test (TC-520) |
+| FR-125-AC-10 | (QSL-proposed rule, STD-196) With populations `P1` and `P2`, whose declaration identity texts order `P1` before `P2`, holding universes `[d, c]` and `[b, a]` respectively, the instances of a claim admitted by both are ordered `P1/d`, `P1/c`, `P2/b`, `P2/a`, and `ModelSystem::instances` returns that order, not an ascending reference order. | Test (TC-520) |
 | FR-125-AC-11 | (QSL-proposed rule, STD-196) For an instance of `over (x: Thing)` whose object is a `Switch` (not the least member type), `holds(x = r)` where `r` is the state's reference to that object, and `holds(contains(allInstances<Thing>(P), x))`, each evaluate `true`; for a `Lamp` object likewise. | Test (TC-520) |
 | FR-125-AC-12 | (QSL-proposed rule, STD-196: instance is a key) A population `Dogs` declaring `Dog` and a population `Animals` declaring `Animal` and holding a `Dog` object under key `k`, with `Dog` a subtype of `Animal`: `over (x: Dog)` instances every key of `Dogs` and every key of `Animals`, so `Animals/k` is checked and read as the `Dog` reference; a position where an `Animals` key holds a `Cat`, or no object, reads `absent-key` undefined. A population declaring only `Animal` with a `Dog` object is not `NoInstance` for `over (x: Dog)`. | Test (TC-520) |
 
@@ -243,10 +243,10 @@ reports.
   is no type-test operator. QSpec may add a guard operator, exclude such keys
   from the instances, or settle the item `inconclusive` with a named cause. If
   QSpec rules otherwise, its rule replaces these.
-- Code follow-up (QSL-886): `ModelLetters::bindings` in qsl-eval still returns
-  an `ObjectReference` whose object type this requirement no longer
-  specifies, and that value flows into the replay `ContextBinding`; the
-  binding should name the population and key only.
+- The FR-338 key context of an instance binds a typed value: the reference
+  to the instance's key in the universe of the `over` parameter's declared
+  type. Two admitting populations that share a key therefore share a key
+  context (Remaining work).
 - FR-169 (state-graph claims) instances under these rules. FR-182 (hyper
   clauses) instances by the hyper bullet above and takes the reference reading
   (the bound value is the state's own reference) and the `absent-key` rule;

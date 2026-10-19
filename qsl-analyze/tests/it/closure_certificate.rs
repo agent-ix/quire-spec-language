@@ -76,10 +76,7 @@ impl World {
     fn invariant(&self, formula: &str, atom: fn(i64) -> Option<bool>) -> Invariant {
         Invariant {
             clause: clause(&self.documents.document, "", formula),
-            letters: Letters {
-                bindings: self.objects(),
-                atom,
-            },
+            letters: Letters { atom },
             identity: identity(),
         }
     }
@@ -633,15 +630,14 @@ fn a_stopped_check_names_what_stopped_it() {
     assert_eq!(record.execution, Execution::ResourceIncomplete);
 }
 
-/// FR-125: a clause with no instance is `Undecided(NoInstance)` before any
-/// state is explored, and the checker refuses to certify it: an empty
+/// FR-125: a clause whose subject's universe is empty has no instance and
+/// is `Undecided(NoInstance)` before any state is explored, and the checker refuses to certify it: an empty
 /// certificate is never an acceptance.
 #[trace("TC-525")]
 #[test]
 fn a_clause_with_no_instance_is_never_certified() {
-    let world = world(CONTRACT, &[("c", 0)]);
-    let mut invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
-    invariant.letters.bindings.clear();
+    let world = world(CONTRACT, &[]);
+    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     assert!(matches!(
         world.run(invariant.item()),
         ModelCheckOutcome::Undecided {
@@ -663,14 +659,13 @@ fn a_clause_with_no_instance_is_never_certified() {
 /// QSpec FR-361-AC-8 (QSpec TC-294) and FR-127: a clause
 /// whose empty universe gives it zero instances settles `inconclusive` with
 /// the wire cause `no-instance` and basis `unsettled`, never `proved` or
-/// `refuted`. The zero instances are made by clearing `Letters.bindings`;
-/// deriving them from the universes is QSL-886's.
+/// `refuted`. The zero instances come from the subject's empty universe of
+/// `counters`.
 #[trace("TC-520", "QSpec-FR-361-AC-8")]
 #[test]
 fn a_clause_with_no_instance_settles_inconclusive_never_proved_or_refuted() {
-    let world = world(CONTRACT, &[("c", 0)]);
-    let mut invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
-    invariant.letters.bindings.clear();
+    let world = world(CONTRACT, &[]);
+    let invariant = world.invariant("always holds(c.value <= 3)", |v| Some(v <= 3));
     let outcome = world.run(invariant.item());
     assert!(matches!(
         outcome,

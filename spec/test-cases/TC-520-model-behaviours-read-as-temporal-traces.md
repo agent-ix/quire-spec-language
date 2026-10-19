@@ -43,7 +43,7 @@ Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7 to FR-125-AC-12.
    object is a `Lamp`, a `Switch`, and absent; read that of `over (x: Lamp)`
    at the same positions (FR-125-AC-9).
 9. Instantiate a claim holding populations `P1` (universe `[d, c]`) and `P2`
-   (universe `[b, a]`) and list `ModelLetters::bindings` (FR-125-AC-10).
+   (universe `[b, a]`) and list `ModelSystem::instances` (FR-125-AC-10).
 10. At a position where the key's object is a `Switch`, evaluate `x = r` and
     `contains(allInstances<Thing>(P), x)` for `over (x: Thing)`, then the same
     at a position holding a `Lamp` (FR-125-AC-11).

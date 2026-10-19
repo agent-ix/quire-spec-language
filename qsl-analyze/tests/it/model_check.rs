@@ -34,7 +34,7 @@ use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_exact::{Integer, ValueType};
 
 use crate::counter::{
-    clause, document, document_with_ranged_parameter, identity, package, reference, subject,
+    clause, document, document_with_ranged_parameter, identity, instance, package, subject,
     universe, value, Documents, Letters, CONTRACT, UNLIMITED, ZERO,
 };
 
@@ -328,15 +328,6 @@ fn the_deadlock_path_and_counts_match_an_explicit_enumeration() {
     assert_eq!((stats.product_states, stats.product_edges), (16, 96));
 }
 
-fn letters(world: &World, keys: &[&str], atom: fn(i64) -> Option<bool>) -> Letters {
-    Letters {
-        bindings: keys
-            .iter()
-            .map(|key| reference(&world.package, &world.documents, key))
-            .collect(),
-        atom,
-    }
-}
 
 fn invariant(
     world: &World,
@@ -345,7 +336,7 @@ fn invariant(
     atom: fn(i64) -> Option<bool>,
 ) -> ModelCheckOutcome {
     let clause = clause(&world.documents.document, "", formula);
-    let letters = letters(world, keys, atom);
+    let letters = Letters { atom };
     run(
         world,
         keys,
@@ -385,7 +376,7 @@ fn a_reachable_invariant_holds_or_is_violated_at_its_first_bad_state() {
     assert_eq!(values(&world, counterexample, "c"), [0, 1, 2]);
     assert_eq!(
         counterexample.over_binding,
-        Some(reference(&world.package, &world.documents, "c"))
+        Some(instance("c"))
     );
     assert_eq!(counterexample.trace_position(), Some(2));
 }
@@ -409,7 +400,7 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
     assert_eq!(last, (3, 0));
     assert_eq!(
         counterexample.over_binding,
-        Some(reference(&world.package, &world.documents, "a"))
+        Some(instance("a"))
     );
 }
 
@@ -677,7 +668,7 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
         "",
         "always (holds(c.value <= 0) and holds(c.value >= 0))",
     );
-    let letters = letters(&world, &["c"], |_| Some(true));
+    let letters = Letters { atom: |_| Some(true) };
     let refusal = run(
         &world,
         &["c"],
@@ -700,23 +691,24 @@ fn an_empty_or_unbounded_subject_and_an_undecided_form_explore_nothing() {
 /// QSpec FR-361-AC-8 (QSpec TC-294): a clause with zero instances is
 /// `Undecided(NoInstance)` before any state is explored; the same clause
 /// over a population with no universe is refused `RequiresBound` naming that
-/// population, never `NoInstance`. The zero instances are made by clearing
-/// `Letters.bindings`; deriving them from the universes is QSL-886's.
+/// population, never `NoInstance`. The zero instances come from the
+/// subject's empty universe of `counters`.
 #[trace("TC-520", "QSpec-FR-361-AC-8")]
 #[test]
 fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
+    let empty = self::world("", &[&[]]);
     let world = self::world("", &[&[("c", 0)]]);
     let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
-    let empty = letters(&world, &[], |_| Some(true));
+    let letters = Letters { atom: |_| Some(true) };
     let ident = identity();
     let item = || ModelCheckItem::Clause {
         clause: &clause,
-        letters: &empty,
+        letters: &letters,
         identity: &ident,
     };
     let outcome = run(
-        &world,
-        &["c"],
+        &empty,
+        &[],
         item(),
         None,
         ModelCheckLimits::default(),
@@ -769,14 +761,28 @@ fn zero_instances_report_no_instance_after_the_requires_bound_pre_check() {
     );
 }
 
-/// FR-125 Instancing (AC-4 stays untagged: its first sentence is QSL-886): a subject whose `initial` list is empty is `NoInitialState`
-/// before any state is explored, for a clause item.
-#[trace("TC-520")]
+/// FR-125-AC-4, over the Counter subject: a clause `over (c: M::Counter)`,
+/// checked once, has one instance per key of the subject's universe, in
+/// universe order, `b` then `a` over `[b, a]` and `a` alone over `[a]`; a
+/// subject whose `initial` list is empty is `NoInitialState` before any
+/// state is explored, for a clause item.
+#[trace("TC-520", "FR-125-AC-4")]
 #[test]
 fn a_clause_over_a_subject_with_no_initial_state_explores_nothing() {
+    let pair = self::world("", &[&[("a", 0), ("b", 1)]]);
+    let clause = clause(&pair.documents.document, "", "always holds(c.value <= 3)");
+    assert_eq!(
+        system(&pair, &["b", "a"]).instances(&clause.over().1),
+        Ok(vec![instance("b"), instance("a")])
+    );
+    let one = self::world("", &[&[("a", 0)]]);
+    assert_eq!(
+        system(&one, &["a"]).instances(&clause.over().1),
+        Ok(vec![instance("a")])
+    );
+
     let world = self::world("", &[]);
-    let clause = clause(&world.documents.document, "", "always holds(c.value <= 3)");
-    let bound = letters(&world, &["c"], |_| Some(true));
+    let bound = Letters { atom: |_| Some(true) };
     let ident = identity();
     let outcome = run(
         &world,

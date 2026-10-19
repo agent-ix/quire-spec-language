@@ -3,9 +3,10 @@
 //! core's closure checker checks, and the canonical safety translation of
 //! each of its instances (ADR-018 LA-2).
 //!
-//! A TP-1 clause binds one instance per object of its `over` population
-//! (FR-125); each instance is one concrete binding, so it has its own key
-//! context and its own translation. The deadlock-freedom item has one
+//! A TP-1 clause binds one instance per key of each population of the
+//! subject that admits its `over` type, derived from the subject's universes
+//! at request time (FR-125 Instancing); each instance is one concrete
+//! binding, so it has its own key context and its own translation. The deadlock-freedom item has one
 //! instance with the binding `[]`.
 //!
 //! The clause's checked occurrence and `over` parameter node are part of the
@@ -15,11 +16,14 @@
 use qsl_eval::automaton::{
     ContextBinding, SafetyTranslation, StateContext, TranslationRefusal, MAX_ATOMS,
 };
-use qsl_eval::model_subject::ModelLetters;
+use qsl_eval::model_subject::{ModelInstance, ModelLetters};
+use qsl_eval::simulation::model::ModelSystem;
+use qsl_eval::simulation::NotSimulated;
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::CheckedTemporalClause;
-use quire_exact::{ObjectReference, Value};
+use qsl_foundation::InternalFault;
+use quire_exact::{Value, ValueType};
 
 /// A clause's identity in its package: the checked occurrence and the node of
 /// its `over` parameter, `None` for a clause with no `over`.
@@ -49,12 +53,12 @@ pub enum ModelCheckItem<'a> {
     DeadlockFreedom,
 }
 
-/// One instance of an item: the bound object, `None` for the
+/// One instance of an item: the bound population key, `None` for the
 /// deadlock-freedom item, and the translation under its context.
 #[derive(Clone, Debug)]
 pub struct Instance {
-    /// The object the instance binds.
-    pub binding: Option<ObjectReference>,
+    /// The population key the instance binds.
+    pub binding: Option<ModelInstance>,
     /// The instance's canonical safety translation.
     pub translation: SafetyTranslation,
 }
@@ -76,15 +80,24 @@ pub enum ItemRefusal {
     /// The deadlock-freedom item's context did not encode.
     #[error("the deadlock-freedom context does not encode")]
     DeadlockContext,
+    /// FR-125: a population that admits the `over` type has no universe
+    /// (`RequiresBound`), or that check could not classify it.
+    #[error("the clause's instances are not finite: {0:?}")]
+    Unbounded(NotSimulated),
+    /// An invariant of the subject broke.
+    #[error("instancing broke invariant {0:?}")]
+    Fault(InternalFault),
 }
 
 impl ModelCheckItem<'_> {
-    /// Each instance of the item with its translation, in binding order.
+    /// Each instance of the item with its translation, in FR-125's
+    /// canonical instance order, derived from `system`'s universes.
     ///
     /// # Errors
     ///
-    /// [`ItemRefusal`] when the item has no canonical translation.
-    pub fn instances(&self) -> Result<Vec<Instance>, ItemRefusal> {
+    /// [`ItemRefusal`] when an admitting population has no universe, or the
+    /// item has no canonical translation.
+    pub fn instances(&self, system: &ModelSystem<'_>) -> Result<Vec<Instance>, ItemRefusal> {
         match self {
             Self::DeadlockFreedom => Ok(vec![Instance {
                 binding: None,
@@ -92,11 +105,10 @@ impl ModelCheckItem<'_> {
                     .map_err(|_| ItemRefusal::DeadlockContext)?,
             }]),
             Self::Clause {
-                clause,
-                letters,
-                identity,
+                clause, identity, ..
             } => {
-                let bindings = letters.bindings();
+                let over = &clause.over().1;
+                let bindings = system.instances(over).map_err(ItemRefusal::Unbounded)?;
                 if bindings.len() > MAX_ATOMS {
                     return Err(ItemRefusal::TooManyBindings {
                         count: bindings.len(),
@@ -105,20 +117,29 @@ impl ModelCheckItem<'_> {
                 }
                 bindings
                     .into_iter()
-                    .map(|object| {
-                        let binding = identity
-                            .over
-                            .map(|parameter| ContextBinding {
-                                parameter,
-                                value: Value::Reference(object.clone()),
-                            })
-                            .into_iter()
-                            .collect();
+                    .map(|instance| {
+                        let binding = match (identity.over, over) {
+                            (Some(parameter), ValueType::Reference(object_type)) => {
+                                let reference = system
+                                    .bound_reference(*object_type, &instance)
+                                    .ok_or_else(|| {
+                                        ItemRefusal::Fault(InternalFault::new(
+                                            "model-check-item",
+                                            "over-type-declared",
+                                        ))
+                                    })?;
+                                vec![ContextBinding {
+                                    parameter,
+                                    value: Value::Reference(reference),
+                                }]
+                            }
+                            _ => Vec::new(),
+                        };
                         let context =
                             StateContext::clause(clause, identity.occurrence.clone(), binding);
                         let translation = SafetyTranslation::reachable_invariant(clause, &context)?;
                         Ok(Instance {
-                            binding: Some(object),
+                            binding: Some(instance),
                             translation,
                         })
                     })
