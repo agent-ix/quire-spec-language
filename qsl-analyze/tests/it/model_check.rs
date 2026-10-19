@@ -437,7 +437,7 @@ fn a_violation_names_the_first_bound_instance_that_is_false() {
 
 /// Verifies the TP-1 half of FR-126-AC-9; its TP-4 claim, the `kind:
 /// Formula` conjunction and the TP-2 `Holds` are not verified. Over the
-/// Counter subject: `always holds(6 / (2 -
+/// Counter subject: `always holds(c.value / (2 -
 /// c.value) >= 0)` is violated with the prefix `0 -inc-> 1 -inc-> 2` and
 /// `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`,
 /// at the clause's atom.
