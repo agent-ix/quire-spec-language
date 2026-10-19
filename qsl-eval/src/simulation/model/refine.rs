@@ -16,7 +16,9 @@ use qsl_semantics::model::state::{ModelState, StateField};
 use quire_exact::{Meter, ObjectReference, Outcome, Value};
 
 use super::walk::stop;
-use super::{encode, identity_limits, state_document, ClauseOutcome, ModelSystem, BROKEN};
+use super::{
+    encode, identity_limits, state_document, ClauseOutcome, ModelSimState, ModelSystem, BROKEN,
+};
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::key;
 use crate::temporal::UndefinedCause;
@@ -43,6 +45,11 @@ impl ModelSystem<'_> {
     /// for a system over several selected models.
     pub fn model(&self) -> Option<&str> {
         self.over.as_deref()
+    }
+
+    /// The initial states, in the order the system was given them.
+    pub fn initial_states(&self) -> &[ModelSimState] {
+        &self.initial
     }
 
     /// Evaluate `row` over `observed`, with `bindings` for

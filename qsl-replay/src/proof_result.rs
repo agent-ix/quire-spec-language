@@ -373,6 +373,9 @@ pub enum InconclusiveCause {
     NoInitialState,
     /// The item has zero instances (FR-125).
     NoInstance,
+    /// `mapping-undetermined` (ADR-020 RE-4): a refinement's mapping row or
+    /// step-row argument was refused or incomplete at a reachable state.
+    MappingUndetermined,
     /// The core rejected a certificate, retaining its failing rule and locus.
     CertificateRejected {
         /// The check rule that failed.
@@ -443,6 +446,7 @@ impl InconclusiveCause {
             Self::UndecidedSuccessor => "undecided-successor",
             Self::NoInitialState => "no-initial-state",
             Self::NoInstance => "no-instance",
+            Self::MappingUndetermined => "mapping-undetermined",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
@@ -465,6 +469,7 @@ impl InconclusiveCause {
             | Self::UndecidedSuccessor
             | Self::NoInitialState
             | Self::NoInstance
+            | Self::MappingUndetermined
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive

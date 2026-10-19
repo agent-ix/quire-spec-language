@@ -505,6 +505,7 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
         fairness: Vec::new(),
         kind: qsl_replay::CounterexampleKind::Formula,
         lasso: None,
+        refinement: None,
     };
     let (cause, code, tag) = refusal(replay_with(&holds, empty, |value| Some(value >= 0)));
     assert!(

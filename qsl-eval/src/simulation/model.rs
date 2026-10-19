@@ -60,8 +60,10 @@ use crate::value::QualifiedName;
 
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
-pub use frames::judge::{AbstractApplication, Judged, Judgement, Rejection};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
+pub use frames::judge::{
+    operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,
+};
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;

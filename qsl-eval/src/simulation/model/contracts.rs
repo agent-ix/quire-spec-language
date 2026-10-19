@@ -167,7 +167,12 @@ pub(super) fn conjunction(
             let entry = evaluation
                 .results
                 .iter()
-                .find(|entry| matches!(verdict(&entry.evaluation.evaluation.outcome), Verdict::False))
+                .find(|entry| {
+                    matches!(
+                        verdict(&entry.evaluation.evaluation.outcome),
+                        Verdict::False
+                    )
+                })
                 .ok_or_else(|| stop(BROKEN))?;
             let name = clauses
                 .iter()

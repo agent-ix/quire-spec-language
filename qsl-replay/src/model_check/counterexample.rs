@@ -18,6 +18,7 @@ use quire_exact::{Origin, Role};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
 use crate::witness::FamilyPayload;
 
 /// The occurrence role of the derived deadlock-freedom item.
@@ -61,6 +62,14 @@ pub enum UndefinedLocus {
     Terminal(String),
     /// The request's state constraint (ADR-021 SC-2), by its clause name.
     Constraint(String),
+    /// A refinement's mapping row or step-row argument (ADR-020 RE-5), and
+    /// the concrete object it was evaluated for.
+    Mapping {
+        /// The row.
+        row: MappingRowRef,
+        /// The object, when the row is evaluated for one.
+        object: Option<ObjectKey>,
+    },
 }
 
 /// QSpec FR-364's `where` of an undefined evaluation.
@@ -132,6 +141,9 @@ pub struct TemporalCounterexample {
     pub kind: CounterexampleKind,
     /// The loop of a liveness refutation; `None` for a finite prefix.
     pub lasso: Option<Lasso>,
+    /// The failure of a refinement item (ADR-020 RC-1); `None` for every
+    /// other item.
+    pub refinement: Option<RefinementFailure>,
 }
 
 impl TemporalCounterexample {

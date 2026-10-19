@@ -313,6 +313,7 @@ impl ItemCause {
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
+                | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::SolverInconclusive,
             ) => {}

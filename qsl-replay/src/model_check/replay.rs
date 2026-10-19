@@ -889,7 +889,10 @@ fn undefined(
     // engine reads it: when the state is reached, before it is expanded.
     let constraint = match &claimed.site.locus {
         UndefinedLocus::Constraint(name) => Some(name.as_str()),
-        UndefinedLocus::Atom(_) | UndefinedLocus::Contract(_) | UndefinedLocus::Terminal(_) => None,
+        UndefinedLocus::Atom(_)
+        | UndefinedLocus::Contract(_)
+        | UndefinedLocus::Terminal(_)
+        | UndefinedLocus::Mapping { .. } => None,
     };
     if constraint.is_some_and(|name| !system.has_constraint(name)) {
         return Ok(disagrees(Category::Success));

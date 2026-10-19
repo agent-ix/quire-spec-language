@@ -1370,6 +1370,7 @@ impl<'r, 'a> Run<'r, 'a> {
             fairness: self.clause.fairness().to_vec(),
             kind,
             lasso: None,
+            refinement: None,
         })
     }
 
@@ -1411,6 +1412,7 @@ impl<'r, 'a> Run<'r, 'a> {
             fairness: self.clause.fairness().to_vec(),
             kind,
             lasso: None,
+            refinement: None,
         })
     }
 
@@ -1542,6 +1544,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 entry,
                 terminal_stutter,
             }),
+            refinement: None,
         })
     }
 }

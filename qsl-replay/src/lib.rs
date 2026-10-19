@@ -133,8 +133,9 @@ pub use model_check::step_settle::{
     STEP_INDUCTION_DEPTH,
 };
 pub use refinement::{
-    map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingFeature, MappingRowRef,
-    MappingUndetermined, ObjectKey,
+    check_initial, check_step, map_state, ConcreteStep, EvalFailure, HiddenSlot, MappedState,
+    MappingFailure, MappingRowRef, MappingUndetermined, ObjectKey, RefinementFailure,
+    RefinementPosition, StepArgument, StepRejection, StepVerdict, Taken, Undetermined,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;

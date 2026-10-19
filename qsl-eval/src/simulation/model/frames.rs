@@ -953,7 +953,8 @@ impl Run<'_, '_, '_> {
             if self.application.declaration.result().is_some() {
                 budget.charge()?;
             }
-            let verdict = self.post_conjunction(&mut evidence, &candidate, &effect, result.as_ref())?;
+            let verdict =
+                self.post_conjunction(&mut evidence, &candidate, &effect, result.as_ref())?;
             match verdict {
                 Conjunction::True => {
                     effect.result = result.as_ref().map(text_of).transpose()?;

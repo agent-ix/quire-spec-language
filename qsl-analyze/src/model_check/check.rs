@@ -1290,6 +1290,7 @@ impl Run<'_, '_> {
             fairness,
             kind,
             lasso: None,
+            refinement: None,
         })
     }
 
