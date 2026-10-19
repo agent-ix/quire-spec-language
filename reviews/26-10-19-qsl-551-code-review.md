@@ -48,6 +48,12 @@ The rest of `tuple.rs` is sound: the joint stem (max) and period (lcm via gcd wi
 | FND-007 | medium | Regression of FND-002, which round 1 had fixed. The position search runs on the caller's meter again, so locating `trace_position` re-charges node visits for every bisection step. Probe on an 8-period tuple violated at joint position 6: 40 work units, against 9 for the same tuple when it holds. A work limit of 11, above what the evaluation needs, returns `Incomplete` instead of `Violated`. FR-175 "Work" asks for one unit per (temporal node, joint position) visit. `the_position_search_reads_each_represented_position_once_on_the_callers_meter` asserts only that `work` fits and `work - 1` does not, so it pins the over-charge rather than the rule. Every lasso read is now cached by its matching represented position, so the search no longer reaches the caller's letters (except FND-008's terminal path). The search can therefore go back on its own meter without hiding letter work. Alternatively, get the spec to state that the search is charged. | qsl-eval/src/temporal/tuple.rs:222-275, 312-319 |
 | FND-008 | medium | Missed in the review pass. `Terminal { len }` is indexed as the lasso `(len - 1, 1)`, so the loop-entry joint position is the terminal state reached by a real step. The lasso evaluation reads every later joint step through that entry with `stutter = false`. Probe: `[Terminal{len:2}, lasso(0,1)]` gives stutter flags only `(0,[F,F])` and `(1,[F,F])`, never `true`, although `a` stutters at every joint step from 2 on (FR-175 "Terminal stutter", AC-3 "at every later joint step"). The AC-3 test sees `true` only because `b`'s period of 3 makes joint positions 2 and 3 represented. The position search does see the flag: `congruent` refuses the match there, so search steps make fresh letter reads at joint positions 2 and 3 with `stutter = true`. The main pass and the search therefore read different letters for the same position, and `false_position`'s doc ("Every atom it reads is a reading the first pass made") is false. Fix: give a terminal component one stutter position after its last state, as the lasso (len, 1) reading index len - 1. Add an AC-3 case whose other component has period 1. | qsl-eval/src/temporal/tuple.rs:55-77, 163-176 |
 
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The position search runs on a new `Meter` built from the caller's limits with no work cap. A `Meter` built that way has no cancel handle (and no injected denial), so a caller's FR-276 cancel is not seen during the search. `quire_exact::Meter` has no accessor to copy the handle across. The search's cost is bounded at about 1 + log2(bound) evaluations, so cancellation is delayed rather than lost, hence low. Fix: pass the caller's `Cancel` into `evaluate_tuple`, or add a `Meter` method that forks an uncapped meter sharing the handle. Otherwise defer with a reason. | qsl-eval/src/temporal/tuple.rs:248-252 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -59,3 +65,5 @@ The rest of `tuple.rs` is sound: the joint stem (max) and period (lcm via gcd wi
 | FND-001 | fixed | fixed at 158d7c97c |
 | FND-005 | fixed | fixed at 158d7c97c |
 | FND-006 | fixed | fixed at 158d7c97c |
+| FND-007 | fixed | fixed at f79c167d5 |
+| FND-008 | fixed | fixed at f79c167d5 |
