@@ -85,8 +85,9 @@ The FR-331 terminal record of the claim.
   with the published default 60 seconds. When a request is admitted with a
   fractional `max_solver_time`, the request writer SHALL round it up to the next
   whole second and give the solver that whole-second budget; the run uses the
-  rounded value. It is a wall-clock setting, so it is no member of the
-  canonical request key (FR-292) and no member of a stored record.
+  rounded value. It is a wall-clock setting, so it is outside the canonical
+  request key (FR-292) and no member of a stored record, and a result it
+  limits is never cached.
 - A solver that exhausts `max_solver_time` SHALL settle `incomplete` with the
   time-limit cause `IncompleteCause::TimedOut` (FR-293), not `LimitReached`
   and not `Cancelled(Deadline)`. The stored record SHALL hold no member that
@@ -106,7 +107,7 @@ The FR-331 terminal record of the claim.
 |----|----------|--------------|
 | FR-250-AC-1 | A model with a variable `v` of rate `-a` and a clock `t` classifies `v` as hybrid and `t` as a clock; its claim routes to the registered fixture provider. With no provider registered it settles `unsupported`, `unsupported-requested-capability`. | Test (TC-705) |
 | FR-250-AC-2 | Fixture results map as the table states: a δ-complete `Unsat` with horizon 10 and jumps 3 settles `Proved{BoundedSolver{…, horizon: 10, jumps: 3}, Uncertified}`; `DeltaSat` settles `inconclusive`, `SolverInconclusive`; `EnclosureDisjoint` from a flowpipe method without outward rounding settles `inconclusive`, `SolverInconclusive`; a `solver-steps` stop settles `incomplete`, `LimitReached{limit: solver-steps, ...}`; a `solver-time` stop settles `incomplete`, `TimedOut`. No fixture result settles `refuted`. | Test (TC-705) |
-| FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled(Deadline)` raised on a run with an FR-276 deadline; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: solver-steps, value: 1000, setting: max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
+| FR-250-AC-3 | A request with `max_solver_time` 1.5 s is admitted with a 2 s solver budget and the run uses 2; 2 s stays 2 and 0.2 s becomes 1; a request that sets none uses 60. A solver that exhausts the time budget, with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled(Deadline)` raised on a run with an FR-276 deadline; the stored record holds no wall-time member, and two requests that differ only in `max_solver_time` have equal canonical key bytes, a `TimedOut` result of the shorter one being stored by neither. A solver that stops at 1,000 steps settles `incomplete`, `LimitReached{limit: solver-steps, value: 1000, setting: max_solver_steps}`, unchanged and in steps; a request that sets none uses 1,000,000. | Test (TC-705) |
 
 ## Dependencies
 

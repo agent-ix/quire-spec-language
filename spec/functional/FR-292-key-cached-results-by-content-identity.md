@@ -43,10 +43,14 @@ QSL's part is what the cache reads from QSL:
   claims, the domains and bounds, the options that affect a result, and every
   deterministic budget that can move a result to `incomplete` (work units,
   state and transition budgets). It holds no path, timestamp, wall-clock
-  deadline, application version string or execution backend.
+  deadline, wall-clock solver budget (FR-250's `max_solver_time`), application
+  version string or execution backend.
 - **The `analyze` record as a function of the key.** `analyze` returns equal
   records for requests whose key members are equal, on the same
-  `package_id` and engine `BackendId` (FR-280, FR-288).
+  `package_id` and engine `BackendId` (FR-280, FR-288), for every result that
+  is neither timed out nor cancelled. A time-limited or cancelled `incomplete`
+  depends on wall time, is outside this rule and is never stored (QSpec
+  FR-306, FR-293).
 - **The typed reader.** QSL supplies the typed reader that reads an
   `analyze` terminal record from its RFC 8785 bytes, which the cache uses to
   check a stored value as it checks a fresh result.
@@ -74,7 +78,7 @@ reader's record or typed refusal.
 
 | ID | Criteria | Verification |
 | --- | --- | --- |
-| FR-292-AC-1 | Changing exactly one claim bound, one result-affecting option or the state budget of TC-762's request changes its canonical key-member bytes; changing the request file path, the working directory, the wall-clock deadline or the execution backend leaves them equal. | Test (TC-776) |
+| FR-292-AC-1 | Changing exactly one claim bound, one result-affecting option or the state budget of TC-762's request changes its canonical key-member bytes; changing the request file path, the working directory, the wall-clock deadline, `max_solver_time` or the execution backend leaves them equal. | Test (TC-776) |
 | FR-292-AC-2 | Two `analyze` runs of TC-762's request, with different working directories and request file paths, give records with equal RFC 8785 bytes. | Test (TC-776) |
 | FR-292-AC-3 | The typed reader reads each AC-2 record back equal to the record serialized; the same record with whitespace inserted between members, or with its members reordered, is refused. | Test (TC-776) |
 

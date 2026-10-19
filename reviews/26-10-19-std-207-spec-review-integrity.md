@@ -46,6 +46,12 @@ Findings: FND-001 (high), FND-002 (medium). The `solver-steps` statement agrees 
 | --- | --- | --- | --- |
 | FND-003 | medium | The fix routes a solver-time stop to `TimedOut` in a new bullet, but FR-250's verdict map still sends every `Stopped(limit)` to `Incomplete(LimitReached{limit, value, setting})`, and AC-2 still says "`Stopped` settles `incomplete`, `LimitReached`". FR-250 now gives two results for a solver-time stop. Split the map row (and AC-2) into a solver-steps stop, `LimitReached`, and a solver-time stop, `TimedOut`, or narrow both to the steps budget. | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:74,89-92,107 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | Leaving `max_solver_time` out of the key is consistent with QSpec FR-306's never-stored rule, but FR-292 as written contradicts it. Under FR-306 only a result that is not time-limited is stored, and the run that produced it finished within its budget, so serving it to a request that differs only in `max_solver_time` returns a sound result, the same treatment FR-306 gives a wall-clock deadline. FR-292, though, holds the key to "exactly the members the Description lists" ("the options that affect a result, and every deterministic budget"; outside: "path, timestamp, wall-clock deadline, application version string or execution backend"). `max_solver_time` is an option that affects a result and is not on the outside list. FR-292 also says "`analyze` shall return records with equal RFC 8785 bytes for requests whose key members ... are equal", which two requests at 1 s and 60 s break (`TimedOut` against `proved`), and AC-3 now asserts exactly those equal keys. Amend FR-292 in this PR: name wall-clock solver budgets beside the deadline outside the key, and limit the equal-records rule to results that are not time-limited or cancelled. QSpec FR-306's outside-the-key list needs the same entry (add it to the QSpec ask). | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:83-89,109; spec/functional/FR-292-key-cached-results-by-content-identity.md:43-48,65-68 |
+
 ## Dispositions
 
 Round 1, against head 594d3e3e1 (fix commit 594d3e3e1).
@@ -54,3 +60,10 @@ Round 1, against head 594d3e3e1 (fix commit 594d3e3e1).
 | --- | --- | --- |
 | FND-001 | still-open | The cause is fixed ("SHALL settle `incomplete` with the time-limit cause `IncompleteCause::TimedOut` (FR-293), not `LimitReached`"), but the record half is not: the bullet before it says the request writer SHALL "state it as `max_solver_time` in the record", a member holding seconds, while this bullet says "The stored record SHALL hold no member that records wall time" (FR-293-AC-2: "no member that records a time"). Pick one: keep the seconds out of the record, or state why a budget in seconds is not a member that records a time and amend FR-293 to match. |
 | FND-002 | deferred | Nothing for #1037 to change. PR #1031 (head f39f2a1f1, unchanged) still has its "`solver-time` ... the record's `value` SHALL be the budget's value" bullet, which now also contradicts #1037's `TimedOut` rule; `git merge-tree` of the two heads is still clean. Whichever merges second reconciles: with #1037 first, #1031 drops that bullet on rebase. Left for the lead and planner on STD-207 and QSL-586. |
+
+Round 2, against head 6a7c400df (fix commit 6a7c400df).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-250: "It is a wall-clock setting, so it is no member of the canonical request key (FR-292) and no member of a stored record." The "state it as `max_solver_time` in the record" clause is gone. |
+| FND-003 | fixed | Map rows: "`Stopped(solver-steps)`, or any deterministic budget ... `Incomplete(LimitReached{limit, value, setting})`" and "`Stopped(solver-time)` ... `Incomplete(TimedOut)` (FR-293), distinct from `Cancelled(Deadline)`"; AC-2: "a `solver-steps` stop settles `incomplete`, `LimitReached{limit: solver-steps, ...}`; a `solver-time` stop settles `incomplete`, `TimedOut`". |

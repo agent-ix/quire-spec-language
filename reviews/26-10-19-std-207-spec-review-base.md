@@ -55,3 +55,9 @@ Round 1, against head 594d3e3e1 (fix commit 594d3e3e1).
 | --- | --- | --- |
 | FND-001 | fixed | FR-250: "If it has a fractional part, then the request writer SHALL round it up to the next whole second when the request is admitted, give the solver that rounded budget, and state it as `max_solver_time` in the record." AC-3: "is admitted with `max_solver_time` 2 and the solver is given 2 s". The input it names is a new defect, FND-003. |
 | FND-002 | fixed | FR-250: "`max_solver_time` has the published default 60 seconds"; "with the published default 1,000,000 steps"; AC-3 checks both. The values are the author's picks; the planner should confirm them. |
+
+Round 2, against head 6a7c400df (fix commit 6a7c400df).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-003 | fixed | FR-250: "`max_solver_time` SHALL be a request setting of its own, independent of FR-276's deadline, that accepts a possibly fractional duration in seconds, with the published default 60 seconds." AC-3: "with no `Cancel` raised, settles `incomplete` with cause `TimedOut`, distinct from `Cancelled(Deadline)` raised on a run with an FR-276 deadline". |
