@@ -1124,9 +1124,24 @@ mod tests {
     #[test]
     fn a_predicate_join_and_a_terminal_predicate_are_not_compiled_unchecked() {
         let predicate_join = parallel("predicate(done) [east, west]");
+        let with_memory = |model: &str| {
+            parallel("all [east, west]").replacen(
+                "parallel P ",
+                &format!("parallel P memory {model} "),
+                1,
+            )
+        };
+        let (sc, tso, ra) = (with_memory("sc"), with_memory("tso"), with_memory("ra"));
+        let ordered = RUN.replacen("contracts", "ordering seq_cst contracts", 1);
+        let fence = "sequence Main { fence F ordering seq_cst; }";
         for (members, run, construct) in [
             ("", predicate_join.as_str(), "join predicate"),
             ("terminal when { true };", RUN, "terminal when"),
+            ("", sc.as_str(), "parallel memory"),
+            ("", tso.as_str(), "parallel memory"),
+            ("", ra.as_str(), "parallel memory"),
+            ("", ordered.as_str(), "attempt ordering"),
+            ("", fence, "fence"),
         ] {
             let (_, cause, code, tag) = only_refusal(&pipeline(members, run));
             assert_eq!(

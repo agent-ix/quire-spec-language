@@ -114,7 +114,7 @@ fn object_type(view: &EffectiveView) -> EffectiveId {
 fn declarations(body: &str, guard: bool) -> (PackageDeclarations, EffectiveView, String) {
     let view = view();
     let selection = view.model_selection();
-    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity, selection.version, qsl_semantics::model::key::hex(&selection.digest));
+    let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity, selection.version, qsl_semantics::model::key::hex(&selection.digest));
     let parsed = qsl_cst::parse(
         qsl_foundation::SourceIdentity::new("test", "sm1", "fixture", "1"),
         "sm1.native",
@@ -468,7 +468,7 @@ fn tc790_all_instances_missing_target_type_refuses_during_assembly() {
     let view = view();
     let selection = view.model_selection();
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure {{ allInstances<M::Missing>(p) }}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction F using v(p: Population<M::A>[3]): Set<M::A>[0,3] pure {{ allInstances<M::Missing>(p) }}\n",
         selection.identity,
         selection.version,
         qsl_semantics::model::key::hex(&selection.digest),
@@ -818,7 +818,7 @@ fn a_population_binding_over_a_non_object_target_refuses_type_mismatch() {
     let view = view();
     let selection = view.model_selection();
     let source = format!(
-        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
+        "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nrecord R {{ flag: Boolean; }}\nfunction F using v(p: Population<R>[3]): Boolean pure {{ true }}\n",
         selection.identity,
         selection.version,
         qsl_semantics::model::key::hex(&selection.digest),

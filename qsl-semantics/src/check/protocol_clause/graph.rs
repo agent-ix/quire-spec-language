@@ -32,7 +32,14 @@ pub(super) struct Compiled {
 fn is_leaf(kind: ProtocolNodeKind) -> bool {
     use ProtocolNodeKind as K;
     match kind {
-        K::Send | K::Receive | K::Attempt | K::Effect | K::Event | K::Commit | K::Check => true,
+        K::Send
+        | K::Receive
+        | K::Attempt
+        | K::Effect
+        | K::Event
+        | K::Commit
+        | K::Check
+        | K::Fence => true,
         K::Sequence
         | K::Choice
         | K::Parallel
@@ -239,6 +246,7 @@ impl Builder<'_> {
             | ProtocolNodeKind::Event
             | ProtocolNodeKind::Commit
             | ProtocolNodeKind::Check
+            | ProtocolNodeKind::Fence
             | ProtocolNodeKind::Branch
             | ProtocolNodeKind::Case
             | ProtocolNodeKind::Finish
@@ -549,7 +557,7 @@ fn progress(
         };
         use ProtocolNodeKind as K;
         let necessarily = match control.kind {
-            K::Send | K::Receive | K::Attempt | K::Effect | K::Event | K::Commit => true,
+            K::Send | K::Receive | K::Attempt | K::Effect | K::Event | K::Commit | K::Fence => true,
             K::Await | K::Parallel => true,
             K::Check | K::Repeat | K::Finish | K::CompensateTemplate => false,
             K::Branch | K::Case => child(0),

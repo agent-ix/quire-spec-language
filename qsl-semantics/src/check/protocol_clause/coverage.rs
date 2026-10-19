@@ -11,6 +11,33 @@ use super::refusal;
 use crate::check::refusal::{AliasKind, CheckRefusal, ProtocolAnchorCause};
 use crate::check::Scope;
 
+/// Whether this checker covers a static node of `kind`: every node kind of
+/// the `run` tree is checked (`graph`, `protocol_controls`, `protocol_slots`,
+/// `protocol_obligation`) except a `fence`, whose memory semantics nothing
+/// checks yet. Exhaustive, so a new node kind must be classified here.
+fn covered_kind(kind: ProtocolNodeKind) -> bool {
+    use ProtocolNodeKind as K;
+    match kind {
+        K::Sequence
+        | K::Parallel
+        | K::Branch
+        | K::Attempt
+        | K::Finish
+        | K::CompensateTemplate
+        | K::Send
+        | K::Receive
+        | K::Effect
+        | K::Event
+        | K::Commit
+        | K::Choice
+        | K::Repeat
+        | K::Case
+        | K::Await
+        | K::Check => true,
+        K::Fence => false,
+    }
+}
+
 /// Whether a protocol construct of `kind` is checked: a protocol-level
 /// `capture` and an `activation on each` are (FR-381, `protocol_obligation`),
 /// and a `channel` with its `fifo` key is (FR-218, `protocol_controls`).
@@ -24,7 +51,9 @@ fn covered_construct(kind: ProtocolConstructKind) -> bool {
         | K::Requirement
         | K::Related
         | K::JoinPredicate
-        | K::TerminalWhen => false,
+        | K::TerminalWhen
+        | K::MemoryClause
+        | K::AccessOrdering => false,
     }
 }
 
@@ -32,10 +61,12 @@ fn covered_construct(kind: ProtocolConstructKind) -> bool {
 /// [`check`](super::check) has resolved its anchors, binders and attempt
 /// bindings and compiled its control tree.
 ///
-/// Every node kind and expression slot of the `run` tree is checked
-/// (`graph`, `protocol_controls`, `protocol_slots`, `protocol_obligation`).
-/// A protocol holding a [`qsl_forms::ProtocolConstructKind`] that no
-/// checker reads yet ([`covered_construct`] says which are checked) refuses
+/// Every node kind and expression slot of the `run` tree but a `fence` is
+/// checked (`graph`, `protocol_controls`, `protocol_slots`,
+/// `protocol_obligation`).
+/// A protocol holding a node kind [`covered_kind`] rejects (a `fence`) or
+/// a [`qsl_forms::ProtocolConstructKind`] that no checker reads yet
+/// ([`covered_construct`] says which are checked) refuses
 /// `unsupported_construct`/`not-yet-implemented` once, at the earliest such
 /// construct, rather than compiling with unchecked content that the emitted
 /// package then silently omits (SR-753 FND-002, SR-761 FND-001).
@@ -53,10 +84,17 @@ pub fn content(
     scope: &Scope,
 ) -> Vec<CheckRefusal> {
     let uncovered = protocol
-        .constructs
+        .declarations
         .iter()
-        .filter(|construct| !covered_construct(construct.kind))
-        .map(|construct| (construct.span, construct.kind.label()))
+        .filter(|declaration| !covered_kind(declaration.kind))
+        .map(|declaration| (declaration.name.span, declaration.kind.label()))
+        .chain(
+            protocol
+                .constructs
+                .iter()
+                .filter(|construct| !covered_construct(construct.kind))
+                .map(|construct| (construct.span, construct.kind.label())),
+        )
         .min_by_key(|(span, _)| span.start);
     if let Some((span, construct)) = uncovered {
         return vec![refusal(ProtocolAnchorCause::Unimplemented {

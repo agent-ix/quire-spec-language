@@ -338,7 +338,8 @@ impl Checker<'_, '_> {
                     | ProtocolNodeKind::Branch
                     | ProtocolNodeKind::Case
                     | ProtocolNodeKind::Await
-                    | ProtocolNodeKind::Check => Eligibility::Never,
+                    | ProtocolNodeKind::Check
+                    | ProtocolNodeKind::Fence => Eligibility::Never,
                 }
             }
         })
@@ -1085,6 +1086,7 @@ impl Flow {
                     | ProtocolNodeKind::Repeat
                     | ProtocolNodeKind::Await
                     | ProtocolNodeKind::Check
+                    | ProtocolNodeKind::Fence
                     | ProtocolNodeKind::Finish
                     | ProtocolNodeKind::CompensateTemplate,
                 )

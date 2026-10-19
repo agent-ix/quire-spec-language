@@ -593,3 +593,35 @@ fn a_replicated_role_a_channel_and_an_activation_build_as_written() {
         }
     }
 }
+
+/// Verifies the parse only and claims no criterion.
+/// A `fence` control and a `parallel` with a `memory` clause
+/// build as protocol nodes beside the controls around them; the `memory`
+/// words do not become the parallel's name or join labels.
+#[test]
+fn a_fence_and_a_memory_clause_build_beside_their_controls() {
+    let run = format!(
+        "sequence Main {{ parallel P memory tso {PARALLEL_BRANCHES} join all [a, b]; \
+         fence Barrier ordering seq_cst; }}"
+    );
+    let text = source("", &run);
+    let unit = build(&text);
+    let form = protocol(&unit);
+    let [parallel] = &form.parallels[..] else {
+        panic!("one parallel: {:?}", form.parallels);
+    };
+    assert_eq!(parallel.name.name, "P");
+    let labels: Vec<&str> = parallel
+        .labels
+        .iter()
+        .map(|label| label.name.as_str())
+        .collect();
+    assert_eq!(labels, ["a", "b"]);
+    let fences: Vec<&str> = form
+        .declarations
+        .iter()
+        .filter(|declaration| declaration.kind == ProtocolNodeKind::Fence)
+        .map(|declaration| declaration.name.name.as_str())
+        .collect();
+    assert_eq!(fences, ["Barrier"]);
+}

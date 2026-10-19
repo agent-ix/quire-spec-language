@@ -26,10 +26,11 @@ relationships:
 
 S3 SHALL check an attempt's optional `ordering o` (`relaxed`, `acquire`,
 `release`, `acq_rel`, `seq_cst`) and the `fence Name ordering o;` control
-(`acquire`, `release`, `acq_rel`, `seq_cst`) (ADR-025 MM-6). S3 SHALL
-classify every attempt in every `parallel` as a load, store, read-modify-
-write (RMW) or local access over its shared footprint, atomic when it has
-an ordering and non-atomic otherwise, and SHALL refuse an ordering its kind
+(`acquire`, `release`, `acq_rel`, `seq_cst`) (ADR-025 MM-6); the shared
+grammar's `fence-order` does not admit `relaxed`, so S1 refuses a fence
+written with it. S3 SHALL classify every attempt in every `parallel` as a load, store,
+read-modify-write (RMW) or local access over its shared footprint, atomic
+when it has an ordering and non-atomic otherwise, and SHALL refuse an ordering its kind
 does not take (ADR-025 MA-1 to MA-3). Under a weak model, the checker SHALL
 admit only single-location accesses, refusing at S3 what it decides
 symbolically and settling the rest in the pre-check (ADR-025 MA-4).
@@ -54,7 +55,7 @@ weak model corresponds to real accesses.
   Rmw, Local}` symbolically over its shared footprint, and its
   `ordering: Option<Ordering>`.
 - A checked `fence` control with its ordering.
-- The S3 refusals `ill_typed`/`operator-ineligible` for an ordering and
+- The S3 refusals `ill_typed`/`operator-ineligible` for an attempt's ordering and
   `unsupported_construct`/`declaration-form` for an access shape, and the pre-check's V-8 `WeakAccessShape{site, transition, shape}`,
   with `shape` one of QSpec FR-439's two shapes: `MultiLocation{locations}`
   (`multi-location`) for an attempt of FR-220's shape, and `JoinPolicy`
@@ -84,7 +85,13 @@ weak model corresponds to real accesses.
   `seq_cst` on a fence.
 - When an access carries an ordering its kind does not take, or an RMW
   carries none, S3 SHALL refuse it with `ill_typed`/`operator-ineligible`, naming the
-  attempt or fence.
+  attempt.
+- A fence has no `relaxed` ordering: the shared grammar's `fence-order`
+  admits only `acquire`, `release`, `acq_rel` and `seq_cst`, so `fence F
+  ordering relaxed;` is a syntax error, and S1 SHALL refuse it with
+  `invalid_syntax` at the `relaxed` token before S3 sees it, as S2 refuses
+  a recovering CST (FR-309-AC-3). A relaxed fence orders nothing, so the
+  language has no spelling for one.
 - Under `sc`, orderings SHALL change no behaviour.
 
 ### Access shape
@@ -104,10 +111,11 @@ weak model corresponds to real accesses.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-220-AC-1 | Over ADR-025 §10's `SB` with source default `sc`, S3 classifies `Sx` and `Sy` as atomic stores, `Ly` and `Lx` as atomic loads, and (`c1`, `r`) and (`c2`, `r`) as branch-local. A variant whose loads carry no ordering classifies them as non-atomic loads. A `fetch_add` attempt with `ordering acq_rel` classifies as an atomic RMW. | Test (TC-665) |
-| FR-220-AC-2 | A load with `ordering release`, a store with `ordering acquire`, an RMW with no ordering, a local attempt with `ordering relaxed` and `fence F ordering relaxed;` each refuse `ill_typed`/`operator-ineligible`, naming the attempt or fence. A fence with each of `acquire`, `release`, `acq_rel` and `seq_cst` checks. | Test (TC-665) |
+| FR-220-AC-2 | A load with `ordering release`, a store with `ordering acquire`, an RMW with no ordering, a local attempt with `ordering relaxed` each refuse `ill_typed`/`operator-ineligible` at S3, naming the attempt. A fence with each of `acquire`, `release`, `acq_rel` and `seq_cst` checks. | Test (TC-665) |
 | FR-220-AC-3 | An attempt whose operation writes two shared fields of its receiver, in a `parallel` declaring `memory tso`, refuses `unsupported_construct`/`declaration-form`, naming both locations; in a `parallel` with source default `sc` it checks, and a request selecting `tso` for that `parallel` settles V-8 `WeakAccessShape` with shape `MultiLocation` naming both locations. | Test (TC-665) |
 | FR-220-AC-4 | `SB` under `sc` with every ordering `relaxed`, and again with every ordering `seq_cst`, reaches the same 16 states and settles `proved` both times. | Test (TC-665) |
 | FR-220-AC-5 | The pre-check's `WeakAccessShape.shape` takes exactly QSpec FR-439's two shapes: AC-3's two-field attempt with a request selecting `tso` settles V-8 with `MultiLocation{locations}` naming both locations, written `{"type":"multi-location","locations":[…]}`; FR-219-AC-4's `parallel` that joins `any`, with a request selecting `tso`, settles V-8 with `JoinPolicy`, written `{"type":"join-policy"}`. | Test (TC-665) |
+| FR-220-AC-6 | `fence F ordering relaxed;` refuses at S1 with `invalid_syntax` at the `relaxed` token and never reaches S3. | Test (TC-665) |
 
 ## Dependencies
 
@@ -115,7 +123,8 @@ weak model corresponds to real accesses.
 - [FR-114](FR-114-bind-a-protocol-attempt-to-its-operation-frame.md), FR-218
   (checked `parallel` and attempts, ADR-027), FR-219 (models).
 - QSpec owns the `ordering` member, the `fence` control and the catalog
-  spelling of the refusals (QSpec FR-435).
+  spelling of the refusals (QSpec FR-435), and QSpec FR-435-AC-6 states the S1 refusal of a `relaxed`
+  fence.
 
 ## References
 

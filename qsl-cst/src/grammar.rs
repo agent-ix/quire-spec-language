@@ -287,6 +287,7 @@ fn source_and_types(g: &mut Grammar) {
         r(P::TemporalClause),
         r(P::TerminalDeclaration),
         r(P::ProtocolClause),
+        r(P::Refinement),
         r(P::RelationClause),
         r(P::HyperClause),
         r(P::HybridDeclaration),
@@ -1404,6 +1405,7 @@ fn protocol(g: &mut Grammar) {
         s(vec![
             x("parallel"),
             ident(),
+            opt(r(P::MemoryClause)),
             x("{"),
             r(P::Branch),
             r(P::Branch),
@@ -1513,6 +1515,7 @@ fn protocol(g: &mut Grammar) {
                 ident(),
                 x("on"),
                 r(P::OperationName),
+                opt(s(vec![x("ordering"), r(P::MemoryOrder)])),
                 x("contracts"),
                 x("["),
                 opt(list(ident)),
@@ -1571,6 +1574,194 @@ fn protocol(g: &mut Grammar) {
             r(P::EventNode),
             r(P::Check),
             r(P::Commit),
+            r(P::Fence),
+        ]),
+    );
+    g.insert(
+        P::MemoryClause,
+        s(vec![
+            literal("memory"),
+            c(vec![literal("sc"), literal("tso"), literal("ra")]),
+        ]),
+    );
+    g.insert(
+        P::MemoryOrder,
+        c(vec![
+            literal("relaxed"),
+            literal("acquire"),
+            x("release"),
+            literal("acq_rel"),
+            literal("seq_cst"),
+        ]),
+    );
+    g.insert(
+        P::FenceOrder,
+        c(vec![
+            literal("acquire"),
+            x("release"),
+            literal("acq_rel"),
+            literal("seq_cst"),
+        ]),
+    );
+    g.insert(
+        P::Fence,
+        s(vec![
+            literal("fence"),
+            ident(),
+            x("ordering"),
+            r(P::FenceOrder),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::Refinement,
+        s(vec![
+            literal("refinement"),
+            ident(),
+            x("using"),
+            ident(),
+            literal("abstract"),
+            ident(),
+            literal("concrete"),
+            ident(),
+            x("{"),
+            star(c(vec![
+                r(P::PopulationRow),
+                r(P::ObjectRow),
+                r(P::StepRow),
+                r(P::HistoryRow),
+                r(P::FairnessRow),
+            ])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::PopulationRow,
+        s(vec![
+            literal("population"),
+            r(P::ModelName),
+            x("from"),
+            r(P::ModelName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ObjectRow,
+        s(vec![
+            literal("object"),
+            r(P::TypeName),
+            x("from"),
+            r(P::TypeName),
+            x("{"),
+            star(r(P::FieldRow)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::FieldRow,
+        s(vec![member(), x("="), r(P::Expression), x(";")]),
+    );
+    g.insert(
+        P::HistoryRow,
+        s(vec![
+            literal("history"),
+            r(P::TypeName),
+            x("."),
+            member(),
+            x(":"),
+            r(P::TypeReference),
+            x("="),
+            r(P::HistoryLiteral),
+            x("{"),
+            star(r(P::HistoryUpdate)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::HistoryUpdate,
+        s(vec![
+            x("on"),
+            r(P::OperationName),
+            x(":"),
+            r(P::Expression),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::HistoryLiteral,
+        c(vec![
+            r(P::SignedInteger),
+            x("true"),
+            x("false"),
+            x("none"),
+            text(),
+            r(P::ExactNumber),
+            r(P::QualifiedName),
+        ]),
+    );
+    g.insert(
+        P::FairnessRow,
+        s(vec![
+            c(vec![literal("assume"), literal("ensure")]),
+            x("fair"),
+            x("weak"),
+            opt(c(vec![x("each"), x("whole")])),
+            r(P::OperationName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::StepRow,
+        s(vec![
+            literal("step"),
+            r(P::StepSource),
+            x("->"),
+            r(P::StepTarget),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::StepSource,
+        c(vec![
+            s(vec![literal("memory"), ident()]),
+            s(vec![
+                opt(c(vec![
+                    literal("fork"),
+                    x("join"),
+                    literal("cend"),
+                    literal("duplicate"),
+                    literal("lose"),
+                    literal("spawn"),
+                    literal("retire"),
+                    x("activate"),
+                ])),
+                r(P::QualifiedName),
+            ]),
+        ]),
+    );
+    g.insert(P::StepArgument, c(vec![literal("_"), r(P::Expression)]));
+    g.insert(
+        P::StepTarget,
+        c(vec![
+            literal("stutter"),
+            x("any"),
+            s(vec![
+                literal("node"),
+                r(P::QualifiedName),
+                opt(s(vec![
+                    x("("),
+                    r(P::StepArgument),
+                    star(s(vec![x(","), r(P::StepArgument)])),
+                    x(")"),
+                ])),
+            ]),
+            s(vec![
+                r(P::OperationName),
+                x("("),
+                r(P::Expression),
+                star(s(vec![x(","), r(P::StepArgument)])),
+                x(")"),
+            ]),
         ]),
     );
     g.insert(

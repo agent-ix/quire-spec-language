@@ -2435,6 +2435,8 @@ pub enum ProtocolNodeKind {
     Await,
     /// A `check` control.
     Check,
+    /// A `fence` control.
+    Fence,
 }
 
 impl ProtocolNodeKind {
@@ -2458,6 +2460,7 @@ impl ProtocolNodeKind {
             Self::Case => "case",
             Self::Await => "await",
             Self::Check => "check",
+            Self::Fence => "fence",
         }
     }
 }
@@ -2666,6 +2669,10 @@ pub enum ProtocolConstructKind {
     JoinPredicate,
     /// A `terminal when { predicate };` member.
     TerminalWhen,
+    /// A `parallel`'s `memory sc | tso | ra` clause.
+    MemoryClause,
+    /// An `attempt`'s `ordering o` memory order.
+    AccessOrdering,
 }
 
 impl ProtocolConstructKind {
@@ -2682,6 +2689,8 @@ impl ProtocolConstructKind {
             Self::FifoOrdering => "channel ordering fifo",
             Self::JoinPredicate => "join predicate",
             Self::TerminalWhen => "terminal when",
+            Self::MemoryClause => "parallel memory",
+            Self::AccessOrdering => "attempt ordering",
         }
     }
 }

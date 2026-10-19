@@ -1062,6 +1062,22 @@ impl<'c> Mapping<'c> {
             | Production::Compensation
             | Production::ProtocolTerminal
             | Production::ProtocolScheduling
+            | Production::MemoryClause
+            | Production::MemoryOrder
+            | Production::FenceOrder
+            | Production::Fence
+            | Production::Refinement
+            | Production::StepRow
+            | Production::StepSource
+            | Production::StepTarget
+            | Production::StepArgument
+            | Production::PopulationRow
+            | Production::ObjectRow
+            | Production::FieldRow
+            | Production::HistoryRow
+            | Production::HistoryUpdate
+            | Production::HistoryLiteral
+            | Production::FairnessRow
             | Production::Control
             | Production::Sequence
             | Production::Visibility
@@ -1638,6 +1654,22 @@ impl<'c> Mapping<'c> {
             | Production::Compensation
             | Production::ProtocolTerminal
             | Production::ProtocolScheduling
+            | Production::MemoryClause
+            | Production::MemoryOrder
+            | Production::FenceOrder
+            | Production::Fence
+            | Production::Refinement
+            | Production::StepRow
+            | Production::StepSource
+            | Production::StepTarget
+            | Production::StepArgument
+            | Production::PopulationRow
+            | Production::ObjectRow
+            | Production::FieldRow
+            | Production::HistoryRow
+            | Production::HistoryUpdate
+            | Production::HistoryLiteral
+            | Production::FairnessRow
             | Production::Control
             | Production::Sequence
             | Production::Visibility

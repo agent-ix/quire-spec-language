@@ -43,7 +43,7 @@ left undecided, never guessed.
 
 - FR-167's `ExploredStateGraph` for the subject.
 - FR-166's sampled witnesses for each `Possible` instance.
-- Each state-graph item (FR-165) and its instances.
+- Each state-graph item (FR-165) and its instances (FR-125).
 
 ## Outputs
 

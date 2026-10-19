@@ -51,6 +51,7 @@ use super::lowering::{
     record_node_key, strongly_connected, variant_type_node_key, AdmittedModel, AuthoredBound,
     RecordKeyError,
 };
+use super::model_gate::{self, ModelGateRefusal};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
@@ -432,6 +433,10 @@ pub enum AssemblyCause {
         /// The form outside its admitted-form set.
         form: LayerForm,
     },
+    /// A model construct in a unit whose header does not select
+    /// `quire.model.complete/v1` (FR-361): `unsupported_construct`/
+    /// `declaration-form` or `expression-form`.
+    UnselectedModelConstruct(ModelGateRefusal),
 }
 
 impl AssemblyCause {
@@ -488,7 +493,9 @@ impl AssemblyCause {
             | Self::StorageAllocation { .. }
             | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
-            Self::UnsupportedLayerForm { .. } => Code::UnsupportedConstruct,
+            Self::UnsupportedLayerForm { .. } | Self::UnselectedModelConstruct(_) => {
+                Code::UnsupportedConstruct
+            }
         }
     }
 
@@ -571,6 +578,7 @@ impl AssemblyCause {
             Self::StorageCapacity { .. } => "reservation-size-overflow",
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
             Self::UnsupportedLayerForm { form, .. } => form.refusal_cause(),
+            Self::UnselectedModelConstruct(refusal) => refusal.family.refusal_cause(),
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -2484,6 +2492,17 @@ impl PackageDeclarations {
                 });
             }
         }
+        // FR-361: S3 refuses each model construct the unit writes unless its
+        // header selects the model profile.
+        errors.extend(model_gate::refusals(
+            &selections.profiles,
+            &model_gate::Declarations {
+                functions: &unit.functions,
+                state_clauses: &unit.state_clauses,
+                operation_bodies: &unit.operation_bodies,
+            },
+        ));
+        let selects_model = model_gate::selects_model(&selections.profiles);
         let mut function_selections = BTreeMap::new();
         for (index, function) in unit.functions.iter().enumerate() {
             if let Some(using) = function.using() {
@@ -2500,7 +2519,8 @@ impl PackageDeclarations {
                         // FR-110 "Layer selection".
                         if let Some(layer) = HeaderLayer::from_identity(&profile.identity) {
                             errors.extend(
-                                LayerAdmission::new(&lock, layer, &predicates).function(function),
+                                LayerAdmission::new(&lock, layer, &predicates, selects_model)
+                                    .function(function),
                             );
                         }
                     }
@@ -2961,7 +2981,8 @@ impl PackageDeclarations {
             &admitted,
             (&lock, &predicates),
         );
-        let operation_bodies = operation_bodies(unit.operation_bodies, &resolve);
+        let operation_bodies =
+            operation_bodies(unit.operation_bodies, &resolve, (&lock, &predicates));
         let protocol_attempts = protocol_attempts(
             &unit.protocols,
             &object_names,
@@ -3157,6 +3178,7 @@ fn state_clauses(
         operations,
         selected,
     } = *resolve;
+    let selects_model = model_gate::selects_model(profiles);
     let mut errors = Vec::new();
     let mut clauses = Vec::with_capacity(forms.len());
     for form in forms {
@@ -3175,7 +3197,10 @@ fn state_clauses(
             // FR-110 "Layer selection".
             Some(selection) => {
                 if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
-                    errors.extend(LayerAdmission::new(lock, layer, predicates).state_clause(&form));
+                    errors.extend(
+                        LayerAdmission::new(lock, layer, predicates, selects_model)
+                            .state_clause(&form),
+                    );
                 }
             }
         }
@@ -3594,6 +3619,7 @@ fn operation_key_of(
 fn operation_bodies(
     forms: Vec<OperationBodyForm>,
     resolve: &Resolve<'_>,
+    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
 ) -> Result<Vec<OperationBodyDeclaration>, AssemblyRefusal> {
     let Resolve {
         profiles,
@@ -3602,6 +3628,7 @@ fn operation_bodies(
         operations,
         selected,
     } = *resolve;
+    let selects_model = model_gate::selects_model(profiles);
     let mut errors = Vec::new();
     let mut bodies = Vec::with_capacity(forms.len());
     for form in forms {
@@ -3610,13 +3637,22 @@ fn operation_bodies(
             .iter()
             .find(|profile| profile.alias == form.profile.alias)
             .cloned();
-        if selection.is_none() {
-            errors.push(error(
+        match &selection {
+            None => errors.push(error(
                 AssemblyCause::UndeclaredAlias {
                     alias: form.profile.alias.clone(),
                 },
                 form.profile.span,
-            ));
+            )),
+            // FR-110 "Layer selection".
+            Some(selection) => {
+                if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
+                    errors.extend(
+                        LayerAdmission::new(lock, layer, predicates, selects_model)
+                            .operation_body(&form),
+                    );
+                }
+            }
         }
         let [model, object, member] = form.target.as_slice() else {
             // The grammar admits any qualified name; only
