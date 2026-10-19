@@ -595,15 +595,15 @@ impl<'a> ModelSystem<'a> {
 
     /// The operations of the subject's types, each once: its declaring type,
     /// name, and the text its transitions carry (see
-    /// [`Self::operation_text`]). They come in the subject's canonical
-    /// order: its types by effective identity, then each type's operations
-    /// in its effective view's order.
+    /// [`Self::operation_text`]). They come in canonical order: by the
+    /// declaring type's effective identity (not the admitted type that
+    /// inherits the operation), then by name bytes, so the order depends on
+    /// neither declaration order nor which type admits an operation.
     pub fn operations(&self) -> Vec<(EffectiveId, &str, &str)> {
-        let mut seen = BTreeSet::new();
-        self.applications
+        let mut operations: Vec<(EffectiveId, &str, &str)> = self
+            .applications
             .values()
             .flatten()
-            .filter(|application| seen.insert((application.declaring, application.name.as_str())))
             .map(|application| {
                 (
                     application.declaring,
@@ -611,7 +611,11 @@ impl<'a> ModelSystem<'a> {
                     application.text.as_str(),
                 )
             })
-            .collect()
+            .collect();
+        operations
+            .sort_by(|left, right| (left.0, left.1.as_bytes()).cmp(&(right.0, right.1.as_bytes())));
+        operations.dedup_by(|next, kept| (next.0, next.1) == (kept.0, kept.1));
+        operations
     }
 
     /// The operations in `identity`'s effective view (FR-103, FR-081), by name.

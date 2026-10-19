@@ -205,7 +205,7 @@ fn an_operation_the_loop_takes_in_part_is_named_each_with_the_identity_it_leaves
 /// refutation (`eventually[0,1] holds(c.value = 3)`, the prefix `0 -inc-> 1`)
 /// or the deadlock-freedom refutation (`0 -inc-> 1 -inc-> 2 -inc-> 3`), which
 /// are no lasso.
-#[trace("TC-534")]
+#[trace("TC-534", "FR-133-AC-3")]
 #[test]
 fn a_stutter_loop_a_bounded_prefix_and_a_deadlock_carry_no_hint() {
     let stutter = counter(document(false), "", "always eventually holds(c.value = 0)");
@@ -284,10 +284,9 @@ fn the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero() {
     assert_eq!(hints[0].first_enabled_position, 0);
 }
 
-/// The hints come in the model's operation order: its types by effective
-/// identity, then each type's operations in its effective view's order (the
-/// spec's "canonical declaration order" is not defined further). Over
-/// `Counter`'s `setTo` variant with no constraint, `inc` precedes `setTo`.
+/// The hints come in the model's operation order: by the declaring type's
+/// effective identity, then operation name bytes. Over `Counter`'s `setTo`
+/// variant with no constraint, `inc` precedes `setTo`.
 #[trace("TC-534")]
 #[test]
 fn hints_come_in_the_models_operation_order() {
@@ -325,4 +324,73 @@ fn mutex(fairness: &str) -> crate::liveness::Fixture {
         "always eventually holds(c.value = 1)",
         &[("c", 0)],
     )
+}
+
+/// The operation order is by declaring type, then name, whatever order a type
+/// declares its operations in and whichever admitted type inherits them: a
+/// `Sub` type of `Counter` that declares `bump` adds `bump` after `Counter`'s
+/// `inc` and `setTo` (declared in either order), each listed once under
+/// `Counter`.
+#[trace("TC-534")]
+#[test]
+fn operations_are_ordered_by_declaring_type_then_name() {
+    use qsl_eval::simulation::model::ModelSystem;
+    let mut orders = Vec::new();
+    for reversed in [false, true] {
+        let mut domain: serde_json::Value =
+            serde_json::from_slice(&document_with_ranged_parameter()).expect("JSON");
+        let types = domain["types"].as_array_mut().expect("types");
+        let counter = types
+            .iter_mut()
+            .find(|node| node["identity"] == "ix://test/counter/Counter")
+            .expect("Counter");
+        let mut operations = counter["operations"].as_array().expect("ops").clone();
+        let mut bump = operations[0].clone();
+        if reversed {
+            operations.reverse();
+        }
+        counter["operations"] = operations.into();
+        bump["identity"] = "ix://test/counter/Sub/bump".into();
+        bump["name"] = "bump".into();
+        let mut sub = counter.clone();
+        sub["identity"] = "ix://test/counter/Sub".into();
+        sub["supertypes"] = serde_json::json!(["ix://test/counter/Counter"]);
+        sub["fields"] = serde_json::json!([]);
+        sub["operations"] = serde_json::json!([bump]);
+        types.push(sub);
+        domain["populations"][0]["members"] =
+            serde_json::json!(["ix://test/counter/Counter", "ix://test/counter/Sub"]);
+        let document = domain.to_string().into_bytes();
+        let fixture = crate::liveness::fixture(
+            document,
+            CONTRACT,
+            "",
+            "always eventually holds(c.value = 3)",
+            &[("c", 0)],
+        );
+        let system = ModelSystem::new(
+            crate::counter::subject(
+                &fixture.package,
+                &fixture.documents,
+                fixture.initial.clone(),
+                &fixture.keys,
+                crate::counter::UNLIMITED,
+            )
+            .simulation,
+        )
+        .expect("admits");
+        let operations = system.operations();
+        let mut sorted = operations.clone();
+        sorted.sort_by(|a, b| (a.0, a.1.as_bytes()).cmp(&(b.0, b.1.as_bytes())));
+        assert_eq!(operations, sorted);
+        orders.push(
+            operations
+                .iter()
+                .map(|(_, name, _)| (*name).to_owned())
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(orders[0], orders[1], "declaration order does not matter");
+    assert_eq!(orders[0].iter().filter(|name| *name == "inc").count(), 1);
+    assert_eq!(orders[0].len(), 3, "{:?}", orders[0]);
 }
