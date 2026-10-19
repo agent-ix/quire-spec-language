@@ -38,9 +38,9 @@ Tag the tests `#[trace("TC-835", "FR-325-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `None` on the outer `always` and on `eventually`; `Some{0,
-  Finite(10)}` on the inner `always`; three distinct spans.
-- Step 2: `None`, `Some{2, Finite(4)}`, `Some{3, Open}`, `Some{5, Finite(3)}`;
+- Step 1: `None` on the outer `always` and on `eventually`; `Some(Steps{0,
+  Finite(10)})` on the inner `always`; three distinct spans.
+- Step 2: `None`, `Some(Steps{2, Finite(4)})`, `Some(Steps{3, Open})`, `Some(Steps{5, Finite(3)})`;
   no diagnostic.
 - Step 3: an S1 parse diagnostic at `x`'s span and no form.
 - Step 4: equal forms under `PartialEq` and equal `Debug` renderings.

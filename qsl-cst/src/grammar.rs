@@ -1774,8 +1774,89 @@ fn protocol(g: &mut Grammar) {
             literal("concrete"),
             ident(),
             x("{"),
-            star(r(P::StepRow)),
+            star(c(vec![
+                r(P::PopulationRow),
+                r(P::ObjectRow),
+                r(P::StepRow),
+                r(P::HistoryRow),
+                r(P::FairnessRow),
+            ])),
             x("}"),
+        ]),
+    );
+    g.insert(
+        P::PopulationRow,
+        s(vec![
+            literal("population"),
+            r(P::ModelName),
+            x("from"),
+            r(P::ModelName),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::ObjectRow,
+        s(vec![
+            literal("object"),
+            r(P::TypeName),
+            x("from"),
+            r(P::TypeName),
+            x("{"),
+            star(r(P::FieldRow)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::FieldRow,
+        s(vec![member(), x("="), r(P::Expression), x(";")]),
+    );
+    g.insert(
+        P::HistoryRow,
+        s(vec![
+            literal("history"),
+            r(P::TypeName),
+            x("."),
+            member(),
+            x(":"),
+            r(P::TypeReference),
+            x("="),
+            r(P::HistoryLiteral),
+            x("{"),
+            star(r(P::HistoryUpdate)),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::HistoryUpdate,
+        s(vec![
+            x("on"),
+            r(P::OperationName),
+            x(":"),
+            r(P::Expression),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::HistoryLiteral,
+        c(vec![
+            r(P::SignedInteger),
+            x("true"),
+            x("false"),
+            x("none"),
+            text(),
+            r(P::ExactNumber),
+            r(P::QualifiedName),
+        ]),
+    );
+    g.insert(
+        P::FairnessRow,
+        s(vec![
+            c(vec![literal("assume"), literal("ensure")]),
+            x("fair"),
+            x("weak"),
+            opt(c(vec![x("each"), x("whole")])),
+            r(P::OperationName),
+            x(";"),
         ]),
     );
     g.insert(
