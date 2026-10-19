@@ -55,3 +55,17 @@ git and in #971's gap-analysis FND-005. The TC-1026 step 5 oracle would fail
 if a relation were still refused `unsupported_construct` at S2 (first read must
 be only `NotEmitted`). FR-171's Description and Use case edits are correct and
 remove a "today" clause. Item 9 and AC-6 are in SR-12885.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | TC-1026 step 5's new fixture says "a `model` `V` with an operation `step(i)` and a field `versionNumber`" but its clauses name `V::ConfigVersion::step` and `(v: V::ConfigVersion)`, and `using v` assumes the header profile is aliased `v`. Name the object type `ConfigVersion` that holds `step(i)` and `versionNumber`, and the alias, as PR #971's `vault()` and `assemble_under` fixtures do. | spec/test-cases/TC-1026-one-source-yields-both-and-a-checked-unit-is-bound-by-digest.md:21 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | Fix commit 5a880303a corrected FR-362 item 8 and the TC-1026 step 5 expected result, but the FR-362-AC-7 table row (FR-362...md:110) is unchanged and still says "No `relation` or `hyper` clause is refused `unsupported_construct` or `UnrepresentedConstruct`", which PR #971 head becfb430c (HyperCause::code() mapping re-verified, unchanged) and FR-172-AC-2/AC-3 contradict. Rewrite AC-7 to "S2 refuses neither with NoDispatchEntry or UnrepresentedConstruct", as item 8 now reads. |
+| FND-002 | still-open | Item 8 now reads "a typed hyper cause or, for its temporal operators, fairness and profile selection, a typed temporal cause, and is never refused NotEmitted" (correct against #971 check_behaviours). The FR-362-AC-7 row (line 110) still says "is refused with its typed hyper cause and not with NotEmitted"; the AC, which the test binds to, was not edited. |
+| FND-003 | fixed | Step 5 now names the model.complete header, model V with step(i) and versionNumber, the infinite-trace profile `inf`, `relation Det ... over (x: V::ConfigVersion::step, y: V::ConfigVersion::step)`, `hyper NonInterference using inf over behaviours ... forall trace a of V forall trace b of V` with a match, and a relation reading `x.nope`; the fourth read expects `BodyMissing` at the `nope` read (`missing_declaration`), matching #971 (BodyMissing maps to Code::MissingDeclaration). Residual naming nit is FND-004. |

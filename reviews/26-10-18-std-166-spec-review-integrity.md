@@ -37,3 +37,12 @@ point in FND-001 and its deferred Outputs note (#971 FND-007) is consistent.
 Not mergeable until FND-001 to FND-003 are settled; each is a statement a test
 or inspection will now contradict. FND-002 may be answered by a sentence plus a
 ticket rather than code. TC-596..599, FR-173 and FR-171-AC-1..3 agree with #971.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-362 item 8 (lines 66-77) and the ADR-033 bullet (lines 224-229) now scope "moved" to a `relation` clause and a `hyper` clause over `behaviours`, and say a finite-domain `hyper` and a `relation` over non-operation names keep QSpec FR-191's finite reading, agreeing with FR-171 and FR-172. |
+| FND-002 | deferred | Recorded as open work, out of this PR's scope: FR-362 item 9 now names the composed lane paths and says its retirement is not owed by the change that moved relation and hyper, and ADR-033 Consequences says the same. No ticket id. Residual tension for the owner: item 9 and ADR-033 "Composed requirements" still say "the PR that moves the last family retires them", and AC-6's second sentence ("After the last family has moved ... no longer exist") is unchanged; TC-1027 will need that open work tracked before AC-6 can pass. |
+| FND-003 | fixed | FR-361-AC-4 now reads "is not refused by the model-profile gate (a `hyper` or `relation` clause is refused only as `NotEmitted`)" and TC-1015 expected result 2 says the same, matching #971's test tagged TC-1015/FR-361-AC-4. |
+| FND-004 | fixed | ADR-033 Context now reads "At the time of this decision, S2 had dispatch entries ... It had none for a `relation` or `hyper` clause, which `qsl-cst` parsed and S2 refused with `NoDispatchEntry`." |

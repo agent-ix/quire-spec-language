@@ -244,7 +244,8 @@ text. These points follow from it and are decided.
 - **Composed requirements.** FR-035, FR-036, FR-040 and FR-049 stay normative
   for the families that have not moved. The PR that moves a family retires or
   amends the parts of those requirements, and of their test cases, that name
-  that family; the last family's PR retires the remainder. This record
+  that family; retiring the rest of the composed lane is open work tracked as
+  QSL-868. This record
   amends none of them.
 
 The implementing slice is sequenced after the supplied-budget and union slices.
@@ -253,7 +254,7 @@ The implementing slice is sequenced after the supplied-budget and union slices.
 
 - One `Source` and one digest name the unit on every side of the checked unit.
 - The composed profile spelling and the composed parser disappear family by
-  family, with the last family's PR.
+  family; the remaining retirement is open work tracked as QSL-868.
 - The interim label match has no successor and no flag.
 - The owner-issued source inventory cannot be built from a graph and a type
   report that do not describe the same bytes.
@@ -262,7 +263,7 @@ The implementing slice is sequenced after the supplied-budget and union slices.
   disjoint families at every point.
   The composed lane (`src/linking/composed`, `src/checking/composed`,
   `src/parser/composed*`, `src/syntax/composed*`) is still present; its
-  retirement is open work.
+  retirement is open work tracked as QSL-868.
 
 ## Alternatives Considered
 
