@@ -78,6 +78,7 @@ mod state_clauses;
 mod state_graph_claims;
 #[cfg(feature = "test-support")]
 mod strong_fairness;
+#[cfg(feature = "test-support")]
 mod symmetric_population;
 #[cfg(feature = "test-support")]
 mod tc235_business_meanings;

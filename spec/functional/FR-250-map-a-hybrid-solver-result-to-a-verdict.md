@@ -74,6 +74,8 @@ The FR-331 terminal record of the claim.
 | `Stopped(solver-steps)`, or any deterministic budget | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
 | `Stopped(solver-time)` | `incomplete`, execution `resource-incomplete` | `unavailable` | `Incomplete(TimedOut)` (FR-293), distinct from `Cancelled(Deadline)` | incomplete |
 
+- A horizon SHALL be a non-negative exact rational number of seconds, and
+  the record SHALL write it in the `ExactRational` wire form.
 - No provider result SHALL settle `refuted`.
 - A `BoundedSolver` proof SHALL carry the label `uncertified`: a solver
   QSL runs is a native engine with no core certificate checker (ADR-018
