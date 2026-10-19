@@ -62,9 +62,14 @@ bind a graph, a type report and a selected formal source only when the
    or a `digest` after the identity. Profiles resolve through `DefinitionLock::pinned`
    and the spine's `LockEvidence`; a revision or digest never belongs to the
    source.
-8. **Moved and unmoved families.** The producer admits a family only once its
-   type phase runs in S3 over S2 forms. A construct of a family whose type phase has not
-   moved (`relation`, `hyper`) is refused with `unsupported_construct` at the construct, and no unit
+8. **Moved families.** The producer admits a family only once its
+   type phase runs in S3 over S2 forms. The `relation` and `hyper` clauses
+   run there: S2 builds their forms and S3 checks them. A checked `relation`
+   or `hyper` clause is refused only as not emitted, the typed temporal cause
+   `NotEmitted` that a checked `temporal` clause is refused with, because no S4
+   emission writes it. A clause whose body does not check is refused with its
+   typed hyper cause instead. A construct of a family whose type phase has not
+   moved is refused with `unsupported_construct` at the construct, and no unit
    is read by two parsers.
 9. **Composed requirements during the migration.** FR-035, FR-036, FR-040 and
    FR-049 stay normative for the families whose type phase has not moved to S3.
@@ -93,7 +98,7 @@ bind a graph, a type report and a selected formal source only when the
 | FR-362-AC-4 | A checked unit built from a graph and a type report of the same bytes yields the inventory rows of the producer's own unit. | Test (TC-1026) |
 | FR-362-AC-5 | No type or function compares only the authority and identity of a graph, a type report or a formal source: the label-only types and the label-only constructor do not exist. | Inspection (TC-1027) |
 | FR-362-AC-6 | The producer and the type phase it runs call no composed entry point (`parse_native`, `parse_native_source`) and name no composed type (`ComposedUnit`, `syntax::composed`), and no conversion from `ParsedUnit` to a composed tree exists. After the last family has moved, those symbols and the composed linker and checker no longer exist. | Inspection (TC-1027) |
-| FR-362-AC-7 | During the migration sequence, a unit that holds a `predicate` and a `relation` clause is refused with `unsupported_construct` at the `relation` clause, and produces no graph and no type report; the same unit without the `relation` clause yields both. A `hyper` clause is refused the same way. Once a family has moved, its constructs are admitted and the test for that family is retired with it. No second parser reads the unit. | Test (TC-1026) |
+| FR-362-AC-7 | A unit that holds a `predicate` and a `relation` clause whose body checks is refused only as `NotEmitted` for that clause (a typed temporal cause naming the clause and its span), and produces no graph and no type report; the same unit without the `relation` clause yields both. A `hyper` clause whose body checks is refused the same way. A `relation` or `hyper` clause whose body does not check is refused with its typed hyper cause and not with `NotEmitted`. No `relation` or `hyper` clause is refused `unsupported_construct` or `UnrepresentedConstruct`. No second parser reads the unit. | Test (TC-1026) |
 | FR-362-AC-8 | A unit that the S3 type phase refuses is an error outcome of `check` and yields no inventory rows. A unit whose type phase stops on `TypeWorkExhausted` or `TypeAdmissionUnfinished` yields an `Incomplete` inventory that retains the partial rows and carries the typed cause. | Test (TC-1026) |
 
 ## Dependencies

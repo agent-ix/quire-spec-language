@@ -221,11 +221,10 @@ text. These points follow from it and are decided.
 - **Moved and unmoved families.** The producer admits a family only once its
   type phase runs in S3 over S2 forms. It refuses a construct of a family
   whose type phase has not moved with `unsupported_construct`, at the
-  construct. A unit is therefore never read by two parsers. The unmoved
-  constructs are the `relation` and `hyper` clauses, which S2 refuses with
-  `NoDispatchEntry`. The refusal disappears for a family when the family
-  moves. `temporal` has an S2 dispatch entry; its S3 state is that family's
-  own.
+  construct. A unit is therefore never read by two parsers. The `relation`
+  and `hyper` clauses have moved: S2 builds their forms, S3 checks them, and
+  a checked clause is refused only as `NotEmitted`, as a checked `temporal`
+  clause is, until an S4 emission writes it.
 - **Profile selection.** A source selects a profile by identity alone
   (FR-110). A profile line that states `version` or `digest` after the
   identity is not the single grammar and is refused. The type phase resolves
