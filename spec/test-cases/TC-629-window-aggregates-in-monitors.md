@@ -22,7 +22,7 @@ Fixtures: the timestamped response trace of FR-194-AC-1; event-position traces o
 2. Evaluate the `count`, `fraction`, `sum`, `min` and `max` terms of FR-194-AC-2.
 3. Evaluate with `min_count 5` over the sparse trace; with `max_window_values` 10 over the dense trace; read the work meter.
 4. Evaluate the `sum of 6 / e.x`, guarded sum, undefined-filter `count` and undefined-predicate `fraction` terms of FR-194-AC-5 at every position and read the clause result and the atom at position 3, with and without `min_count 5`, and at `past[2, 3]`.
-5. Evaluate the trace `1, 0, 2, 3` of FR-194-AC-6 with and without `max_window_values` 2; read the atom at position 3, its visit charge, and the clause-level charge; read the visit charge over a filter rejecting 10 of 20 positions.
+5. Evaluate the trace `1, 0, 2, 3` of FR-194-AC-6 with and without `max_window_values` 2; read the atom at position 3, its visit charge, and the clause-level visit charge (window-visit units only); read the visit charge over a filter rejecting 10 of 20 positions.
 6. Check the four refused clauses; compare horizons; read the tl-mltl input and a holding result.
 
 Tag the tests `#[trace("TC-629", "FR-194-AC-n")]`.
@@ -33,5 +33,5 @@ Tag the tests `#[trace("TC-629", "FR-194-AC-n")]`.
 - Step 2: windows 0 to 4 and 6 to 15; `3/4`; 7, 1, 4.
 - Step 3: `Undefined(InsufficientData{3, 5})`; `Incomplete` naming `max_window_values` and 10; 20 units.
 - Step 4: clause result `UndefinedEvaluation{where: position 2, cause: division-by-zero}` (category violation) for the plain sum; at position 3 the unguarded sum, the undefined filter and the undefined predicate read `Undefined` with `division-by-zero`, also under `min_count 5`; the guarded sum is `10.5` and true, and `Undefined` with `InsufficientData{3, 5}` under `min_count 5`; at `past[2, 3]` the sum `9` true, count `2`, fraction `1`.
-- Step 5: clause result `UndefinedEvaluation{where: position 1, cause: division-by-zero}`; the atom at position 3 reads `Undefined` with `division-by-zero`, never `Incomplete`, charging 2 units; the clause-level charge is 3; 20 visit units over the 20-position filter window.
+- Step 5: clause result `UndefinedEvaluation{where: position 1, cause: division-by-zero}`; the atom at position 3 reads `Undefined` with `division-by-zero`, never `Incomplete`, charging 2 units; the clause-level visit charge (window-visit units only) is 3; 20 visit units over the 20-position filter window.
 - Step 6: all refused; equal horizons; a Boolean signal; `tested` with `Observed`.
