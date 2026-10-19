@@ -41,3 +41,19 @@ Ticket: STD-204. Base spec review of `git diff origin/main...HEAD` at ffc3b9d9f:
 ## Verdict
 
 Findings: FND-001 (medium), FND-002 (low), FND-003 (low). The engine-measured rows (15/30 product states, the no-granularity lasso shape, the shipped-unit `each` loop) match the spec; FR-120 is unchanged and the receiver-scoped frame is FR-154's; AC ids are kept and the text reads as behaviour.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The fix dropped AC-1's exchange clause but kept the literal loop `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0) -upd(a)-> (0,0)`. With the binding now neutral ("the instance the loop leaves at version 0"), the AC still names receiver `a` and states `(1,0)`, `(2,0)`, while the engine reports `over` = `a` with the loop `upd(b)` through `(0,1)`, `(0,2)`. Only §6's Subject paragraph carries the exchange rule; TC-521 step 1 is already neutral ("the three-step loop of one receiver"). Write the loop the same way in AC-1, or restore "up to exchanging `a` and `b`". | spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md:352 |
+
+## Dispositions
+
+Round 1, against head 439d37769 (fix commit 6cdb4afe3).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | PR #1030 title: "STD-204: ADR-018 s6 ConfigVersion example and FR-126-AC-1/AC-2 rows under the receiver-scoped frame (spec; TP-2 row pending QSL-528)"; body: "STD-204 (stays open for the TP-2 row)" and "Not engine-reproduced: the TP-2 `eventually[0,5]` five-step prefix (the engine returns FormNotDecided until QSL-528 / PR #1029 ...)" |
+| FND-002 | fixed | FR-126-AC-1: "... `Violated` with an empty stem and the loop ... bound to the instance the loop leaves at version 0, length 3." FR-126-AC-2: "... a five-step finite prefix for the bound instance, on which its version is never 2." (The literal `upd(a)` loop left in AC-1 is FND-004.) |
+| FND-003 | fixed | FR-126-AC-1: "returns `Holds{Exhaustive}` with 30 product states, the 15-state product of each of the two bound instances"; TC-521 step 1 matches. |

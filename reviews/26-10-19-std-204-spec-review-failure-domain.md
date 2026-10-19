@@ -40,3 +40,17 @@ Ticket: STD-204. Walked the failure cases the restated rows depend on: the candi
 ## Verdict
 
 Findings: FND-001 (medium). The engine-measured rows (15/30 product states, the no-granularity lasso shape, the shipped-unit `each` loop) match the spec; FR-120 is unchanged and the receiver-scoped frame is FR-154's; AC ids are kept and the text reads as behaviour.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | "a smaller setting such as TC-472's 1,000 stops the run ... at the first expansion" reads as any setting below 1,000,000 stopping it. Measured, 1000, 2002 and 3003 stop at depth 0 and 6006 already returns the AC-1 lasso; the threshold is about 6,000 (two receivers, 1001 candidates and their result pairs each). Say "a setting below about 6,000, such as TC-472's 1,000, stops ...". | spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md:375-379 |
+
+## Dispositions
+
+Round 1, against head 439d37769 (fix commit 6cdb4afe3).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | TC-521 fixtures: "and the subject's `max_candidates` set to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion)"; FR-126-AC-1: "and the subject's `max_candidates` 1,000,000"; ADR-018 §6 **Candidate limit** paragraph. |

@@ -374,8 +374,8 @@ other object as it is, so a state has one successor per receiver.
 
 **Candidate limit.** Even so, an application enumerates the receiver's 1001
 values with their result pairs. The example's request sets the subject's
-`max_candidates` to 1,000,000, and its rows assume it; a smaller setting
-such as TC-472's 1,000 stops the run with `Stopped{ResourceExhausted,
+`max_candidates` to 1,000,000, and its rows assume it; a setting below about
+6,000, such as TC-472's 1,000, stops the run with `Stopped{ResourceExhausted,
 {MaxCandidates, value}}` at the first expansion.
 
 The shipped unit's post clause `VersionUnchanged` keeps `versionNumber`
@@ -412,9 +412,8 @@ change the successor. The model has 9 reachable states, each with two successors
 `upd(a)` and `upd(b)`, both always enabled. The two instances are symmetric.
 The rows below name the instance a loop updates `a` and the instance `c`
 is bound to `b`; they hold with the two names exchanged, and which instance
-the reported counterexample binds is the ranking of `over` bindings (QSpec's
-shared grammar and FR-126 "Counterexamples"), not a property of the
-model.
+the reported counterexample binds depends on how `over` bindings are ranked,
+which is not yet specified; it is not a property of the model.
 
 **Product.** The form is TP-4. For `c = b`, the negation is `eventually
 always (b.versionNumber != 2)`, a two-state Büchi automaton: `q0` loops on

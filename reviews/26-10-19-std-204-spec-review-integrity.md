@@ -42,3 +42,19 @@ Ticket: STD-204. Consistency of the changed §6 text with FR-120 (unchanged), FR
 ## Verdict
 
 Findings: FND-001 (low), FND-002 (low), FND-003 (low). The engine-measured rows (15/30 product states, the no-granularity lasso shape, the shipped-unit `each` loop) match the spec; FR-120 is unchanged and the receiver-scoped frame is FR-154's; AC ids are kept and the text reads as behaviour.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The Subject paragraph says the reported binding "is the ranking of `over` bindings (QSpec's shared grammar and FR-126 "Counterexamples")", but FR-126 "Counterexamples" ranks no `over` bindings: it orders the BFS to the first passing SCC and the CX-5 loop walk only. That missing rule is STD-203 item 1, still open. Cite the ranking as not yet specified (or name only QSpec), so the pointer does not claim a rule FR-126 lacks. | spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md:412-417; spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md:298-330 |
+
+## Dispositions
+
+Round 1, against head 439d37769 (fix commit 6cdb4afe3).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | With two objects over `Int[0, 1000]` each application would then enumerate 1001 x 1001 candidates, so an expansion charges about two million candidates against the subject's `max_candidates` (FR-120). The example, and the shipped unit as this section uses it, frame `attemptUpdate` as `modifies self.versionNumber` (FR-154's receiver scope) instead: an update writes the receiver's `versionNumber` an |
+| FND-002 | fixed | ... so a state has one successor per receiver. |
+| FND-003 | fixed | ADR-018 §6: "frame `attemptUpdate` as `modifies self.versionNumber` (FR-154's receiver scope)"; FR-126-AC-1 and TC-521: "framed `modifies self.versionNumber` (FR-154)". |
