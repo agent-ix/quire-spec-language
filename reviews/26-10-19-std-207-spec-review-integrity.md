@@ -1,0 +1,90 @@
+---
+id: SR-13232
+title: "Integrity review of PR #1037: FR-250 solver budgets against FR-293 and PR #1031"
+type: SpecReview
+analysis: integrity
+scope: "agent-ix/quire-spec-language@25a16c9df; git diff origin/main...HEAD: FR-250 Behavior (solver-time, solver-steps), FR-250-AC-3; compared with PR #1031 head f39f2a1f1"
+review_set: subset
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-250
+    type: reviews
+  - target: ix://agent-ix/quire-spec-language/FR-293
+    type: reviews
+---
+
+## Summary
+
+Ticket: STD-207. Consistency of the new FR-250 solver budget text with the rest of the QSL spec and with open PR #1031 (QSL-586, head f39f2a1f1), which adds its own solver budget bullet to the same FR-250 Behavior list. `git merge-tree` of the two heads merges with no textual conflict (the hunks are a few lines apart), so git will not flag the overlap.
+
+## Scope
+
+| Unit | Path | Role |
+| --- | --- | --- |
+| FR-250 Behavior: solver-time bullet | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md | examined |
+| FR-250 Behavior: solver-steps bullet | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md | examined |
+| FR-250-AC-3 | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md | examined |
+| FR-293 Behavior | spec/functional/FR-293-never-cache-failed-cancelled-timed-out-or-plugin-results.md | context_only |
+| FR-293-AC-2 | spec/functional/FR-293-never-cache-failed-cancelled-timed-out-or-plugin-results.md | context_only |
+| QSpec FR-306 never-stored rule | agent-ix/quire-specification: spec/functional/tooling/FR-306-compile-and-cache-exactly.md | context_only |
+| PR #1031 FR-250 Behavior bullet (solver budgets) | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md@f39f2a1f1 | context_only |
+| `IncompleteCause::TimedOut`, `LimitReached` | qsl-replay/src/proof_result.rs | context_only |
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | high | Declaring `solver-time` a wall-clock budget and settling its stop as `LimitReached{limit: solver-time, value: 2, ...}` contradicts FR-293. FR-293 requires an `incomplete` record's typed cause to "distinguish cancellation, a time limit and a deterministic budget", and says "A QSL `analyze` record shall hold no member that records wall time" (FR-293-AC-2: "hold no member that records a time"), because QSpec FR-306 never stores "a time-limited `incomplete`" and stores a deterministic-budget `incomplete` as a function of the key. `LimitReached` is the deterministic-budget cause (ADR-018 V-7; `IncompleteCause::TimedOut` is QSL's time-budget cause), and AC-3's `value: 2` is a member recording seconds of wall time. The hybrid solver is a native engine, not a plugin (FR-250: "a solver QSL runs is a native engine"), so the plugin never-stored rule does not cover it: a solver-time stop would be cached as if deterministic. Either settle a `solver-time` stop with the time-limit cause and keep the seconds out of the stored record, or state that `solver-time` is the documented exception and amend FR-293 and QSpec FR-306 to match. `solver-steps` is a deterministic budget and fits `LimitReached` as written. | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:74,82-86,99; spec/functional/FR-293-never-cache-failed-cancelled-timed-out-or-plugin-results.md:29,38,43,60-61 |
+| FND-002 | medium | PR #1031 (QSL-586, code lane) adds a bullet to the same Behavior list: "A `Stopped(limit)` result SHALL name its budget as `solver-time` (the request member `max_solver_time`, in whole seconds of solver wall time) or `solver-steps` (`max_solver_steps`, in solver steps), and the record's `value` SHALL be the budget's value for the run in that unit." Both PRs merge cleanly, leaving FR-250 with two statements of each unit that differ: #1031's has no rounding and says `value` is "the budget's value for the run", #1037's rounds a fractional duration up and words the time as wall-clock. #1031's code (`qsl-replay/src/hybrid.rs`) passes `ReachedLimit.value: u64` through, with no fractional input and no rounding, so AC-3 has no implementation yet. Reconcile in whichever merges second, and prefer #1037 (STD-207, the spec owner) first: #1031 then drops its solver budget bullet on rebase (its `ExactRational` horizon bullet is separate) and the AC-3 test and rounding go to the code lane as follow-up work. If #1031 merges first, #1037 must delete #1031's bullet when it rebases. | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:82-89 |
+
+## Verdict
+
+Findings: FND-001 (high), FND-002 (medium). The `solver-steps` statement agrees with FR-293 and the deterministic-budget cause; AC-3's vectors agree with the Behavior bullets; TC-705 step 3 agrees with AC-3.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The fix routes a solver-time stop to `TimedOut` in a new bullet, but FR-250's verdict map still sends every `Stopped(limit)` to `Incomplete(LimitReached{limit, value, setting})`, and AC-2 still says "`Stopped` settles `incomplete`, `LimitReached`". FR-250 now gives two results for a solver-time stop. Split the map row (and AC-2) into a solver-steps stop, `LimitReached`, and a solver-time stop, `TimedOut`, or narrow both to the steps budget. | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:74,89-92,107 |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | Leaving `max_solver_time` out of the key is consistent with QSpec FR-306's never-stored rule, but FR-292 as written contradicts it. Under FR-306 only a result that is not time-limited is stored, and the run that produced it finished within its budget, so serving it to a request that differs only in `max_solver_time` returns a sound result, the same treatment FR-306 gives a wall-clock deadline. FR-292, though, holds the key to "exactly the members the Description lists" ("the options that affect a result, and every deterministic budget"; outside: "path, timestamp, wall-clock deadline, application version string or execution backend"). `max_solver_time` is an option that affects a result and is not on the outside list. FR-292 also says "`analyze` shall return records with equal RFC 8785 bytes for requests whose key members ... are equal", which two requests at 1 s and 60 s break (`TimedOut` against `proved`), and AC-3 now asserts exactly those equal keys. Amend FR-292 in this PR: name wall-clock solver budgets beside the deadline outside the key, and limit the equal-records rule to results that are not time-limited or cancelled. QSpec FR-306's outside-the-key list needs the same entry (add it to the QSpec ask). | spec/functional/FR-250-map-a-hybrid-solver-result-to-a-verdict.md:83-89,109; spec/functional/FR-292-key-cached-results-by-content-identity.md:43-48,65-68 |
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-292-AC-1 now says changing `max_solver_time` leaves the key bytes equal, but TC-776, the AC's only verification, still lists the non-meaning changes as "the request file path, the working directory, the wall-clock deadline or the execution backend" (step 1). No TC step changes `max_solver_time`, so a test that follows TC-776 never checks the new clause. Add `max_solver_time` to TC-776 step 1. FR-250-AC-3 also asserts the equal key bytes, through TC-705, so the behaviour has one test; the gap is FR-292-AC-1's trace. | spec/test-cases/TC-776-cache-keys-change-with-every-meaning-input-and-nothing-else-and-reads.md:19; spec/functional/FR-292-key-cached-results-by-content-identity.md:81 |
+| FND-006 | medium | ADR-029 CA-2, the decision FR-292 implements, still lists what stays outside the key as "Paths, timestamps, wall-clock deadlines, application version strings and the execution backend that ran", with the reason "Each either has no effect on the result or is already bound by a member above." `max_solver_time` has an effect on the result and is bound by no member, so that reason does not cover it. The ADR needs a line saying a wall-clock solver budget is also outside, because every result it limits is time-limited and never stored (CA-5). QSpec FR-306's outside-the-key list needs the same entry (part of the QSpec ask). | spec/decisions/ADR-029-lifecycle-cli-provider-plugin-cache-codegen-boundaries.md:595-614; spec/functional/FR-292-key-cached-results-by-content-identity.md:42-47 |
+
+## Dispositions
+
+Round 1, against head 594d3e3e1 (fix commit 594d3e3e1).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | The cause is fixed ("SHALL settle `incomplete` with the time-limit cause `IncompleteCause::TimedOut` (FR-293), not `LimitReached`"), but the record half is not: the bullet before it says the request writer SHALL "state it as `max_solver_time` in the record", a member holding seconds, while this bullet says "The stored record SHALL hold no member that records wall time" (FR-293-AC-2: "no member that records a time"). Pick one: keep the seconds out of the record, or state why a budget in seconds is not a member that records a time and amend FR-293 to match. |
+| FND-002 | deferred | Nothing for #1037 to change. PR #1031 (head f39f2a1f1, unchanged) still has its "`solver-time` ... the record's `value` SHALL be the budget's value" bullet, which now also contradicts #1037's `TimedOut` rule; `git merge-tree` of the two heads is still clean. Whichever merges second reconciles: with #1037 first, #1031 drops that bullet on rebase. Left for the lead and planner on STD-207 and QSL-586. |
+
+Round 2, against head 6a7c400df (fix commit 6a7c400df).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-250: "It is a wall-clock setting, so it is no member of the canonical request key (FR-292) and no member of a stored record." The "state it as `max_solver_time` in the record" clause is gone. |
+| FND-003 | fixed | Map rows: "`Stopped(solver-steps)`, or any deterministic budget ... `Incomplete(LimitReached{limit, value, setting})`" and "`Stopped(solver-time)` ... `Incomplete(TimedOut)` (FR-293), distinct from `Cancelled(Deadline)`"; AC-2: "a `solver-steps` stop settles `incomplete`, `LimitReached{limit: solver-steps, ...}`; a `solver-time` stop settles `incomplete`, `TimedOut`". |
+
+Round 3, against head 78dcc6f2d (fix commit 78dcc6f2d).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | still-open | The Description is qualified ("for every result that is neither timed out nor cancelled"), but the normative Behavior bullet, which AC-2 tests, is unchanged: "The `analyze` operation shall return records with equal RFC 8785 bytes for requests whose key members, `package_id` and engine `BackendId` are equal." With `max_solver_time` outside the key, that SHALL still fails for a 1 s and a 60 s request (`TimedOut` against `proved`). Add the same qualification to the Behavior bullet. The key-list half is fixed: "wall-clock solver budget (FR-250's `max_solver_time`)" is now outside the key, and FR-292-AC-1 tests it. |
+
+Round 4, against head 6e750715a (fix commit 6e750715a).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | FR-292 Behavior: "The `analyze` operation shall return records with equal RFC 8785 bytes for requests whose key members, `package_id` and engine `BackendId` are equal, for every result that is neither timed out nor cancelled." |
+| FND-005 | fixed | TC-776 step 1: "... then of requests that each change only the request file path, the working directory, the wall-clock deadline, `max_solver_time` or the execution backend." |
+| FND-006 | fixed | ADR-029 CA-2: "Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's `max_solver_time`), application version strings and the execution backend that ran are outside the key. Each either has no effect on the result or is already bound by a member above, except a wall-clock deadline and a wall-clock solver budget: they can change a result, but every result they limit is time-limited or cancelled and is never stored (CA-5), so the key never has to bind them." |
