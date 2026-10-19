@@ -435,8 +435,7 @@ impl Collector<'_> {
     }
 
     /// Records the one `{ e }` body block directly among `items`, owned by
-    /// declaration `owner`: whether it is a bare Boolean literal,
-    /// and its span. No expression tree is built.
+    /// declaration `owner`: its expression and span.
     fn body(
         &mut self,
         cst: &LosslessCst,
@@ -447,16 +446,9 @@ impl Collector<'_> {
         let block = only(items, Production::Block, node)?;
         let block_items = super::value::items(cst, block);
         let expression = only(&block_items, Production::Expression, block)?;
-        // A bare Boolean literal is exactly one significant token, `true`
-        // or `false`; `(true)` or `true and true` is not.
-        let constant = match super::value::significant_tokens(cst, expression)[..] {
-            [token] if token.spelling() == b"true" => Some(true),
-            [token] if token.spelling() == b"false" => Some(false),
-            _ => None,
-        };
         self.bodies.push(ProtocolBodyForm {
             owner,
-            constant,
+            expression: expression_form(cst, expression)?,
             span: expression.span(),
         });
         Ok(())

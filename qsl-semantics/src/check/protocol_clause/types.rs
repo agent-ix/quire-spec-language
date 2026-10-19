@@ -83,10 +83,12 @@ pub struct CheckedProtocol {
     /// The compiled causal edge relation, the `repeat` back edges included
     /// (FR-218 "Outputs").
     pub edges: Vec<CausalEdge>,
-    /// Each `choice` and `repeat` with its owner and its checked guards
-    /// (FR-218 "Choice and repeat decisions"), filled in by `check::mod`'s
-    /// own pipeline once the guards are checked.
-    pub decisions: crate::check::protocol_decisions::CheckedDecisions,
+    /// Every checked slot of the `run` tree and `finish` -- node bodies,
+    /// each `choice` and `repeat` with its owner, visible facts and guards
+    /// -- and each binder's readers (FR-218 "Scopes", "Choice and repeat
+    /// decisions"), filled in by `check::mod`'s own pipeline once the slots
+    /// are checked.
+    pub slots: crate::check::protocol_slots::CheckedSlots,
     /// The operation nodes each `compensate` template is bound to,
     /// index-aligned with `obligations.compensations`, filled in after S4
     /// (FR-381 "Compensation registration").

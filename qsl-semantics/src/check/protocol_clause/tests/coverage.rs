@@ -6,21 +6,27 @@ use super::attempt_fixture::attempt_flow;
 use super::{assemble, checks, only_cause, recovery_flow, refusals};
 use crate::check::refusal::ProtocolAnchorCause;
 
-/// SR-770 FND-001, now that `effect`, `event` and `commit` nodes are
-/// covered: a protocol whose anchors (FR-113) and attempt bindings (FR-114)
-/// all resolve and that holds an `effect`, an `event` and a `commit` checks,
-/// while the same protocol with a body that reads a binder still refuses
-/// `unsupported_construct`/`not-yet-implemented` once, at that body, rather
-/// than compiling with the body unchecked and silently missing from the
-/// emitted package.
+/// SR-770 FND-001, now that every node kind and body is checked: a
+/// protocol whose anchors (FR-113) and attempt bindings (FR-114) all resolve
+/// and that holds an `effect`, an `event` and a `commit` checks, and a body
+/// that reads its node's own binder checks too, while the same protocol
+/// with a `related by` clause still refuses
+/// `unsupported_construct`/`not-yet-implemented` once, at that clause,
+/// rather than compiling with the clause unchecked and silently missing
+/// from the emitted package.
 #[trace("TC-511", "FR-113")]
 #[test]
 fn a_resolving_protocol_with_unchecked_content_still_refuses() {
     let source = recovery_flow("Main::Committed", "");
     checks(&source);
-    let source = source.replacen(
+    checks(&source.replacen(
         "as (applied: Boolean) { true }",
         "as (applied: Boolean) { applied }",
+        1,
+    ));
+    let source = source.replacen(
+        "as (applied: Boolean) { true }",
+        "as (applied: Boolean) related by Pays (applied, applied) { true }",
         1,
     );
     let (refusal, cause) = only_cause(&source);
@@ -33,9 +39,9 @@ fn a_resolving_protocol_with_unchecked_content_still_refuses() {
             span,
         } => {
             assert_eq!(name, "RecoveryFlow");
-            assert_eq!(construct, "body");
+            assert_eq!(construct, "related by");
             let (text, _) = assemble(&source);
-            assert_eq!(&text[span.start..span.end], "applied");
+            assert!(text[span.start..].starts_with("related by Pays"), "{span:?}");
         }
         other => panic!("an Unimplemented cause, got {other:?}"),
     }
@@ -67,12 +73,12 @@ fn a_fully_covered_attempt_protocol_checks() {
 fn each_unchecked_part_of_an_attempt_protocol_refuses() {
     let base = attempt_flow("Flow", "");
     let cases: [(&str, &str, &str, &str); 7] = [
-        // An ill-typed body is not checked yet: refused, not accepted.
+        // An ill-typed body is refused by the clause checker.
         (
             "as (tried: Boolean) { true }",
             "as (tried: Boolean) { 1 + true }",
-            "unsupported_construct",
-            "not-yet-implemented",
+            "ill_typed",
+            "type-mismatch",
         ),
         // A `send` via a name that is no channel (FR-218 "Channels").
         (

@@ -119,9 +119,9 @@ mod operation_clause;
 mod profile;
 mod protocol_clause;
 mod protocol_controls;
-mod protocol_decisions;
 mod protocol_obligation;
 mod protocol_reference;
+mod protocol_slots;
 mod references;
 mod refusal;
 mod region;
@@ -259,8 +259,9 @@ pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedControl, CheckedControlTree, CheckedOperationNodes,
     CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
-pub use protocol_decisions::{
-    CheckedCase, CheckedChoice, CheckedDecisions, CheckedLoopProof, CheckedRepeat,
+pub use protocol_slots::{
+    CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRepeat,
+    CheckedSlots,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_obligation::{
@@ -269,7 +270,7 @@ pub use protocol_obligation::{
     ObligationCause, ObligationOwner, ObligationStage, ReadClass,
 };
 pub use refusal::{
-    AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
+    AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal, ObservationReason, SlotKind,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
     DispatchSubtypeFailure, InvalidDispatchDeclaration, JoinFault, KeyFault, MeasureObligation,
     MemberCandidate, NavigationBound, Obligation, ProtocolAnchorCause, ProtocolReferenceCause,
@@ -1620,39 +1621,37 @@ impl PackageDeclarations {
                         }
                         protocol_obligation::Obligations::Unresolved => {}
                     }
-                    // FR-218: each `choice`'s and `repeat`'s guards, over
-                    // the package's running node total after the
-                    // obligations.
-                    let decision_declarations = state_clause::ClauseDeclarations {
+                    // FR-218: every slot of the `run` tree and `finish`,
+                    // over the binders readable at it, after the
+                    // obligations' node total.
+                    let slot_declarations = state_clause::ClauseDeclarations {
                         nodes_used,
                         ..obligation_declarations
                     };
-                    let mut decision_cx = crate::family::CheckContext::new(
-                        &decision_declarations,
+                    let mut slot_cx = crate::family::CheckContext::new(
+                        &slot_declarations,
                         contract_limits,
                         &mut contract_meter,
                         &mut contract_diagnostics,
                         &mut contract_scopes,
                     );
-                    match protocol_decisions::check(
-                        protocol,
-                        &decision_declarations,
-                        &mut decision_cx,
-                    ) {
-                        protocol_decisions::Decisions::Checked(decisions, used) => {
-                            checked.decisions = decisions;
+                    match protocol_slots::check(protocol, &checked, &slot_declarations, &mut slot_cx)
+                    {
+                        protocol_slots::Slots::Checked(slots, used) => {
+                            checked.slots = slots;
                             nodes_used = used;
                         }
-                        protocol_decisions::Decisions::Refused(decision_refusals) => {
-                            refusals.extend(decision_refusals);
+                        protocol_slots::Slots::Refused(slot_refusals) => {
+                            refusals.extend(slot_refusals);
                         }
-                        // `content` refuses every part the decisions check
-                        // does not read; with none refused the protocol
-                        // would be compiled without its decisions.
-                        protocol_decisions::Decisions::Uncovered if !content_refused => {
+                        // `content` refuses a binder type that does not
+                        // resolve and an owner that is no role; with none
+                        // refused the protocol would be compiled without
+                        // its slots.
+                        protocol_slots::Slots::Unresolved if !content_refused => {
                             refusals.push(protocol_obligation::unresolved_fault());
                         }
-                        protocol_decisions::Decisions::Uncovered => {}
+                        protocol_slots::Slots::Unresolved => {}
                     }
                     // FR-218: the protocol's channels, joins and
                     // `terminal`/`scheduling` members.

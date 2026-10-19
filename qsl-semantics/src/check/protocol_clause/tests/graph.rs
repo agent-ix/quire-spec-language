@@ -8,14 +8,14 @@ use qsl_forms::ProtocolNodeKind;
 
 use super::{assemble, checks, protocol_causes, refusals};
 use crate::check::protocol_clause::{CausalEdge, EdgeKind, Port, PortRef, ProtocolNodeId};
-use crate::check::refusal::{ArmFault, ProtocolAnchorCause};
+use crate::check::refusal::{ArmFault, ObservationReason, ProtocolAnchorCause, SlotKind};
 use crate::check::{CheckRefusal, CheckedGraph};
 
 /// A protocol `Flow` with roles `R` and `S` on `M::Actor`, a record type
 /// `Plain`, the `members` written before `run` and the `run` control.
 fn flow(members: &str, run: &str) -> String {
     format!(
-        "record Plain {{ ready: Boolean; }}\n\
+        "record Plain {{ ready: Boolean; done: Boolean; }}\n\
          protocol Flow using v over (input: Boolean) on origin {{\n\
          role R on M::Actor;\n\
          role S on M::Actor;\n\
@@ -210,7 +210,7 @@ fn a_repeat_records_its_parts_and_needs_progress() {
             &format!("repeat Loop by R visible () {head} {body}{exhausted}"),
         );
         let graph = checks(&source);
-        let [repeat] = graph.protocol("Flow").expect("checked").decisions.repeats.as_slice()
+        let [repeat] = graph.protocol("Flow").expect("checked").slots.repeats.as_slice()
         else {
             panic!("one checked repeat");
         };
@@ -478,7 +478,7 @@ fn a_choice_owner_is_a_role_and_its_constant_guards_partition() {
     }
 
     let graph = checks(&choice("S", "true and true", "false"));
-    let [checked] = graph.protocol("Flow").expect("checked").decisions.choices.as_slice() else {
+    let [checked] = graph.protocol("Flow").expect("checked").slots.choices.as_slice() else {
         panic!("one checked choice");
     };
     assert_eq!(checked.owner, 1);
@@ -511,50 +511,325 @@ fn a_node_role_and_a_check_profile_resolve() {
     checks(&flow("", "sequence Main { check Fine using v { true }; }"));
 }
 
-/// A guard, `visible` entry or loop proof that reads a name is not checked
-/// yet, so it refuses `unsupported_construct`/`not-yet-implemented` rather
-/// than compiling unchecked.
-#[trace("TC-1056")]
+/// A `send Tx` via `ch` to `S` and its `receive Rx`, then `decision`: the
+/// receive's record `rx` is a fact of `S`, the channel's `to` role.
+fn received(decision: &str) -> String {
+    flow(
+        &channel("ch", "Plain"),
+        &format!(
+            "sequence Main {{ send Tx via ch as (tx: Plain) {{ true }}; \
+             receive Rx via ch of Tx as (rx: Plain) {{ true }}; {decision} }}"
+        ),
+    )
+}
+
+/// A two-case `choice Pick` by `owner` over `visible`, with the two guards.
+fn pick(owner: &str, visible: &str, yes: &str, no: &str) -> String {
+    format!(
+        "choice Pick by {owner} visible ({visible}) {{ \
+         case yes when {{ {yes} }} sequence Yes {{ }} \
+         case no when {{ {no} }} sequence No {{ }} }}"
+    )
+}
+
+/// The refusals of `source`, each as its cause and the text at its span.
+fn located_causes(source: &str) -> Vec<(ProtocolAnchorCause, String)> {
+    let (text, causes) = causes(source);
+    causes
+        .into_iter()
+        .map(|cause| {
+            let at = located(&text, &cause).to_owned();
+            (cause, at)
+        })
+        .collect()
+}
+
+/// FR-218-AC-17: a `choice` owned by an undeclared role refuses
+/// `missing-name` at the owner (above); an owner that is the channel's `to`
+/// role decides on its `receive` record's Boolean field listed individually
+/// in `visible`; the other role, a `send`, `effect` or `commit` record, the
+/// protocol's activation binder, an unlisted fact and a fact reachable only
+/// inside a composite entry each refuse `wrong_snapshot`/
+/// `wrong-observation` at the read, retaining node, owner, read and reason;
+/// a discarded `let` that reads a fact still needs the fact listed; a read
+/// of the `over` input refuses `ill_typed`/`operator-ineligible` at the read,
+/// naming the guard; a read of a protocol capture checks without listing.
+#[trace("TC-1056", "FR-218-AC-17")]
 #[test]
-fn a_decision_expression_that_reads_a_name_is_not_compiled_unchecked() {
-    for (run, construct) in [
-        (
-            format!(
-                "repeat Loop by R visible () while {{ input }} {}",
-                attempt("Work")
-            ),
-            "repeat guard",
-        ),
-        (
-            format!(
-                "repeat Loop by R visible (input) while {{ true }} {}",
-                attempt("Work")
-            ),
-            "visible",
-        ),
-        (
-            format!(
-                "repeat Loop by R visible () invariant {{ true }} variant {{ input }} \
-                 while {{ true }} {}",
-                attempt("Work")
-            ),
-            "variant",
-        ),
-        (
-            format!(
-                "choice Pick by R visible () {{ case yes when {{ input }} {} \
-                 case no when {{ not input }} {} }}",
-                attempt("Yes"),
-                attempt("No")
-            ),
-            "case guard",
-        ),
+fn a_decision_reads_only_listed_facts_of_its_owner() {
+    let graph = checks(&received(&pick("S", "rx.ready", "rx.ready", "not rx.ready")));
+    let [choice] = graph.protocol("Flow").expect("checked").slots.choices.as_slice() else {
+        panic!("one checked choice");
+    };
+    assert_eq!((choice.owner, choice.visible.len()), (1, 1));
+
+    let observed = |source: &str| -> Vec<(String, Option<String>, ObservationReason, String)> {
+        located_causes(source)
+            .into_iter()
+            .map(|(cause, at)| match cause {
+                ProtocolAnchorCause::WrongObservation {
+                    node,
+                    owner: _,
+                    binder,
+                    field,
+                    reason,
+                    ..
+                } => {
+                    assert_eq!(node, "Pick");
+                    (binder, field, reason, at)
+                }
+                other => panic!("a wrong observation, got {other:?}"),
+            })
+            .collect()
+    };
+    let read = |binder: &str, reason, at: &str| {
+        (binder.to_owned(), Some("ready".to_owned()), reason, at.to_owned())
+    };
+    assert_eq!(
+        observed(&received(&pick("R", "rx.ready", "rx.ready", "not rx.ready"))),
+        [read("rx", ObservationReason::OtherRole, "rx.ready")]
+    );
+    assert_eq!(
+        observed(&received(&pick("S", "tx.ready", "tx.ready", "not tx.ready"))),
+        [read("tx", ObservationReason::IneligibleKind, "tx.ready")]
+    );
+    assert_eq!(
+        observed(&received(&pick("S", "", "rx.ready", "not rx.ready"))),
+        [
+            read("rx", ObservationReason::Unlisted, "rx.ready"),
+            read("rx", ObservationReason::Unlisted, "rx.ready"),
+        ]
+    );
+    assert_eq!(
+        observed(&received(&pick(
+            "S",
+            "rx.ready and rx.done",
+            "rx.ready",
+            "not rx.ready"
+        ))),
+        [
+            read("rx", ObservationReason::Unlisted, "rx.ready"),
+            read("rx", ObservationReason::Unlisted, "rx.ready"),
+        ]
+    );
+    assert_eq!(
+        observed(&received(&pick(
+            "S",
+            "",
+            "let unused = rx.ready in true",
+            "false"
+        ))),
+        [read("rx", ObservationReason::Unlisted, "rx.ready")]
+    );
+    for (binder, node) in [
+        ("applied", format!("{} effect Applied of Did as (applied: Plain) {{ true }};", attempt("Did"))),
+        ("done_", "commit Done by R as (done_: Plain) { true };".to_owned()),
     ] {
-        let (_, refusal, cause) = only(&flow("", &run));
-        assert_eq!(catalog(&refusal), ("unsupported_construct", Some("not-yet-implemented")));
-        let ProtocolAnchorCause::Unimplemented { construct: found, .. } = &cause else {
-            panic!("an unimplemented refusal, got {cause:?}");
-        };
-        assert_eq!(*found, construct, "{run}");
+        let source = flow(
+            "",
+            &format!(
+                "sequence Main {{ {node} {} }}",
+                pick(
+                    "R",
+                    &format!("{binder}.ready"),
+                    &format!("{binder}.ready"),
+                    &format!("not {binder}.ready")
+                )
+            ),
+        );
+        assert_eq!(
+            observed(&source),
+            [read(binder, ObservationReason::IneligibleKind, &format!("{binder}.ready"))]
+        );
     }
+    let activated = flow("", &pick("R", "tick.ready", "tick.ready", "not tick.ready"))
+        .replacen("on origin", "on each (tick: Plain)", 1);
+    assert_eq!(
+        observed(&activated),
+        [read("tick", ObservationReason::IneligibleKind, "tick.ready")]
+    );
+
+    let over = located_causes(&received(&pick("S", "", "input", "not input")));
+    let [(ProtocolAnchorCause::SlotModelState { node, slot, .. }, at), _] = over.as_slice() else {
+        panic!("two model-state refusals, got {over:?}");
+    };
+    assert_eq!((node.as_str(), *slot, at.as_str()), ("Pick", SlotKind::Guard, "input"));
+
+    let captured = received(&pick("S", "", "kept", "not kept"))
+        .replacen("role R on", "capture kept: Boolean = input;\nrole R on", 1);
+    checks(&captured);
+}
+
+/// FR-218-AC-18: a sibling branch's record before its join, an optional
+/// choice branch's record, an `await` match read after the `await`, and a
+/// record bound inside a `repeat` body read by that `repeat`'s own `visible`
+/// entry or guard each refuse `missing_declaration`/`missing-name` at every
+/// original use, retaining `name`.
+#[trace("TC-1056", "FR-218-AC-18")]
+#[test]
+fn a_record_outside_its_scope_is_an_unresolved_name() {
+    let reader = |binder: &str| pick("R", &format!("{binder}.ready"), &format!("{binder}.ready"), &format!("not {binder}.ready"));
+    let event = |name: &str, binder: &str| {
+        format!("event {name} by R as ({binder}: Plain) {{ true }};")
+    };
+    let cases = [
+        (
+            "sibling",
+            format!(
+                "parallel Both {{ branch a {} branch b {} }} join all [a, b];",
+                event("Early", "early"),
+                reader("early")
+            ),
+        ),
+        (
+            "optional",
+            format!(
+                "sequence Main {{ choice Maybe by R visible () {{ \
+                 case filled when {{ true }} {} case vacant when {{ false }} sequence Skip {{ }} }} {} }}",
+                event("Early", "early"),
+                reader("early")
+            ),
+        ),
+        (
+            "await",
+            format!(
+                "sequence Main {{ {} await Wait after Start using v clock \"c\" within [0,1] \
+                 match {} then sequence Then {{ }} timeout sequence Timeout {{ }} {} }}",
+                attempt("Start"),
+                event("Early", "early"),
+                reader("early")
+            ),
+        ),
+        (
+            "repeat",
+            format!(
+                "repeat Loop by R visible (early.ready) while {{ early.ready }} {}",
+                event("Early", "early")
+            ),
+        ),
+    ];
+    for (case, run) in cases {
+        let found = located_causes(&flow("", &run));
+        let reads: Vec<(&str, &str)> = found
+            .iter()
+            .map(|(cause, at)| match cause {
+                ProtocolAnchorCause::SlotClause { cause, .. } => {
+                    let crate::check::CheckCause::MissingName(name) = cause.as_ref() else {
+                        panic!("{case}: a missing name, got {cause:?}");
+                    };
+                    (name.as_str(), at.as_str())
+                }
+                other => panic!("{case}: a slot refusal, got {other:?}"),
+            })
+            .collect();
+        let expected = if case == "repeat" { 2 } else { 3 };
+        assert_eq!(reads, vec![("early", "early"); expected], "{case}");
+    }
+    // The same reads where the record is readable check: after an
+    // all-branch join, and on the `await`'s `then` path.
+    checks(&flow(
+        "",
+        &format!(
+            "sequence Main {{ parallel Both {{ branch a {} branch b sequence B {{ }} }} \
+             join all [a, b]; {} }}",
+            event("Early", "early"),
+            reader("early")
+        ),
+    ));
+}
+
+/// FR-218-AC-19: over two visible facts, guards that leave both facts true
+/// uncovered, that overlap on both true, that read one fact alone, and
+/// constant guards `true`/`not false` or `false`/`not true` each refuse
+/// `undefined_expression`/`unproved-exhaustiveness` at the choice, retaining
+/// `failed` and the case names; complementary guards over the individually
+/// listed facts check.
+#[trace("TC-1056", "FR-218-AC-19")]
+#[test]
+fn guards_partition_the_visible_facts() {
+    let facts = "rx.ready, rx.done";
+    for (yes, no, failed) in [
+        (
+            "rx.ready and not rx.done",
+            "not rx.ready",
+            vec![ArmFault::MissingArm],
+        ),
+        (
+            "rx.ready",
+            "rx.done or not rx.ready",
+            vec![ArmFault::DuplicateArm],
+        ),
+        (
+            "rx.ready",
+            "rx.ready and rx.done",
+            vec![ArmFault::MissingArm, ArmFault::DuplicateArm],
+        ),
+        ("true", "not false", vec![ArmFault::DuplicateArm]),
+        ("false", "not true", vec![ArmFault::MissingArm]),
+    ] {
+        let source = received(&pick("S", facts, yes, no));
+        let (text, refusal, cause) = only(&source);
+        assert_eq!(
+            catalog(&refusal),
+            ("undefined_expression", Some("unproved-exhaustiveness")),
+            "{yes} / {no}"
+        );
+        let ProtocolAnchorCause::Exhaustiveness {
+            choice,
+            cases,
+            failed: found,
+            ..
+        } = &cause
+        else {
+            panic!("an exhaustiveness refusal, got {cause:?}");
+        };
+        assert_eq!(choice, "Pick");
+        assert_eq!(found, &failed, "{yes} / {no}");
+        assert!(!cases.is_empty());
+        assert_eq!(located(&text, &cause), "Pick");
+    }
+    checks(&received(&pick(
+        "S",
+        facts,
+        "rx.ready and rx.done",
+        "not (rx.ready and rx.done)",
+    )));
+}
+
+/// FR-218 "Scopes", the reader set (FR-218-AC-3 is not claimed: its
+/// replicated-role region is not checked yet): in `Fill` with a `check`
+/// after the join that reads `a`, the checked clause records that `check`
+/// as `a`'s only reader, and a node in branch `right` that reads `a` refuses
+/// as an unresolved name.
+#[trace("TC-663")]
+#[test]
+fn a_binder_records_the_nodes_that_read_it() {
+    let fill = |right: &str| {
+        flow(
+            "",
+            &format!(
+                "sequence Main {{ parallel Both {{ branch left {} branch right {right} }} \
+                 join all [left, right]; check Read using v {{ a }}; }}",
+                attempt("A")
+            ),
+        )
+    };
+    let source = fill(&attempt("B"));
+    let graph = checks(&source);
+    let readers = &graph.protocol("Flow").expect("checked").slots.readers;
+    let a = readers
+        .iter()
+        .find(|readers| readers.binder == "a")
+        .expect("a's readers");
+    assert_eq!(a.readers, [node(&source, "Read", ProtocolNodeKind::Check)]);
+
+    let found = located_causes(&fill(
+        "attempt B by R on M::Actor::op contracts [] as (b: Boolean) { a };",
+    ));
+    let [(ProtocolAnchorCause::SlotClause { node, cause, .. }, at)] = found.as_slice() else {
+        panic!("one slot refusal, got {found:?}");
+    };
+    assert_eq!(node, "B");
+    assert!(matches!(cause.as_ref(), crate::check::CheckCause::MissingName(name) if name == "a"));
+    assert_eq!(at, "a");
 }

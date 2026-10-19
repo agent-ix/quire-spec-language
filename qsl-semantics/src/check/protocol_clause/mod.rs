@@ -48,7 +48,6 @@ mod types;
 mod tests;
 
 pub use coverage::content;
-pub(crate) use coverage::{constant_formula, constant_integer};
 pub(crate) use graph::dominates;
 pub use types::{
     BoundAttempt, CausalEdge, CheckedAttempt, CheckedControl, CheckedControlTree,
@@ -205,7 +204,7 @@ pub fn check(
             channels: Vec::new(),
             controls: compiled.tree,
             edges: compiled.edges,
-            decisions: crate::check::protocol_decisions::CheckedDecisions::default(),
+            slots: crate::check::protocol_slots::CheckedSlots::default(),
             compensation_operations: Vec::new(),
         },
         bound_attempts,

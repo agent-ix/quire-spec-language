@@ -585,7 +585,7 @@ fn refuse_repeated_members(
 }
 
 #[cfg(test)]
-mod fifo_tests;
+mod model_state_tests;
 
 #[cfg(test)]
 mod tests {

@@ -1111,6 +1111,31 @@ impl<'a> ExprRef<'a> {
             .map(|id| self.at(id))
             .collect()
     }
+
+    /// Whether this subtree and `other`, of any arena, are the same
+    /// expression: equal node payloads, child for child. The nodes'
+    /// positions in their arenas play no part; a payload that records the
+    /// span of a type it names (a conversion's target, an accumulation's or
+    /// a count's result type) compares that span as part of the payload.
+    /// Runs on an explicit stack, so a deep tree compares in constant
+    /// native stack.
+    pub fn same_tree(self, other: ExprRef<'_>) -> bool {
+        let mut pending = vec![(self, other)];
+        while let Some((left, right)) = pending.pop() {
+            let (mut left_node, mut right_node) = (left.node.clone(), right.node.clone());
+            left_node.shift_children(|_| ExprId(0));
+            right_node.shift_children(|_| ExprId(0));
+            if left_node != right_node {
+                return false;
+            }
+            let (left_children, right_children) = (left.children(), right.children());
+            if left_children.len() != right_children.len() {
+                return false;
+            }
+            pending.extend(left_children.into_iter().zip(right_children));
+        }
+        true
+    }
 }
 
 impl fmt::Debug for ExprRef<'_> {
@@ -2788,17 +2813,15 @@ pub struct CompensationForm {
 }
 
 /// The `{ e }` body block of an event node, a `commit`, a `check` or the
-/// `finish` node, recorded by the index of the static declaration
-/// that owns it. `constant` is `Some(b)` exactly when the body is the bare
-/// Boolean literal `b` (`{ true }` or `{ false }`), `None` for any other
-/// body; S2 builds no expression tree for it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// `finish` node, recorded by the index of the static declaration that owns
+/// it, with its expression as written.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolBodyForm {
     /// The index into [`ProtocolDeclarationForm::declarations`] of the node
     /// that owns this body.
     pub owner: usize,
-    /// The literal the body consists of, when it is a bare Boolean literal.
-    pub constant: Option<bool>,
+    /// The body's expression.
+    pub expression: ExpressionForm,
     /// The span of the body's expression.
     pub span: Span,
 }

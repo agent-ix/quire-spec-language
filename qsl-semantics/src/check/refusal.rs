@@ -281,6 +281,50 @@ pub enum ProtocolAnchorCause {
         /// The key.
         span: Span,
     },
+    /// FR-218 "Scopes": a refusal inside one slot of a node -- a body, a
+    /// `check` condition, a `visible` entry, a guard or a loop proof -- by
+    /// the clause checker, or a read of a binder that is not readable at
+    /// the slot (`MissingName`, as FR-113 refuses an unresolved name). Its
+    /// code and cause are the wrapped cause's.
+    SlotClause {
+        /// The node's declared name.
+        node: String,
+        /// Which slot of the node.
+        slot: SlotKind,
+        /// The cause.
+        cause: Box<CheckCause>,
+        /// The located read or node.
+        span: Span,
+    },
+    /// FR-218 "Model state": a slot that bars model state (a `check`
+    /// condition, a guard, a `visible` entry) reads it, or reads the `over`
+    /// input. `ill_typed`/`operator-ineligible`, at the read, naming the
+    /// slot.
+    SlotModelState {
+        /// The node's declared name.
+        node: String,
+        /// Which slot of the node.
+        slot: SlotKind,
+        /// The read.
+        span: Span,
+    },
+    /// FR-218 "Choice and repeat decisions": a `visible` entry or a guard
+    /// reads a fact that is not an eligible, individually listed fact of the
+    /// owner. `wrong_snapshot`/`wrong-observation`, at the read.
+    WrongObservation {
+        /// The `choice` or `repeat` node's declared name.
+        node: String,
+        /// The owning role.
+        owner: String,
+        /// The binder read.
+        binder: String,
+        /// The field read, when the read is a field read.
+        field: Option<String>,
+        /// Why the fact is not observable.
+        reason: ObservationReason,
+        /// The read.
+        span: Span,
+    },
     /// FR-218 "Constructs": the compiled causal edge relation, without the
     /// `repeat` back edges, has a cycle. `invalid_package`/
     /// `definition-cycle`, naming the controls on the cycle in tree order,
@@ -317,6 +361,49 @@ pub enum ProtocolAnchorCause {
         /// The `choice`'s name span.
         span: Span,
     },
+}
+
+/// Which expression slot of a protocol node a refusal is about (FR-218
+/// "Scopes").
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SlotKind {
+    /// An event node's constraint body.
+    Constraint,
+    /// A `check`'s condition.
+    Condition,
+    /// The `finish` constraint.
+    Finish,
+    /// A `visible` entry of a `choice` or `repeat`.
+    Visible,
+    /// A `case` guard or a `repeat`'s `while` guard.
+    Guard,
+    /// A `repeat`'s invariant.
+    Invariant,
+    /// A `repeat`'s variant.
+    Variant,
+}
+
+/// Why a decision's read is not an observable fact of its owner (FR-218
+/// "Choice and repeat decisions").
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ObservationReason {
+    /// `other-role`: the binder is eligible only for a different role.
+    OtherRole,
+    /// `ineligible-kind`: the binder's kind is never eligible.
+    IneligibleKind,
+    /// `unlisted`: eligible, but no individual `visible` entry lists it.
+    Unlisted,
+}
+
+impl ObservationReason {
+    /// The `reason` member's value.
+    pub const fn identifier(self) -> &'static str {
+        match self {
+            Self::OtherRole => "other-role",
+            Self::IneligibleKind => "ineligible-kind",
+            Self::Unlisted => "unlisted",
+        }
+    }
 }
 
 /// What a valuation of a `choice`'s visible facts shows about its guards
@@ -501,7 +588,10 @@ impl ProtocolAnchorCause {
             | Self::Exhaustiveness { span, .. }
             | Self::KeyClause { span, .. }
             | Self::KeyModelState { span, .. }
-            | Self::KeyEquality { span, .. } => *span,
+            | Self::KeyEquality { span, .. }
+            | Self::SlotClause { span, .. }
+            | Self::SlotModelState { span, .. }
+            | Self::WrongObservation { span, .. } => *span,
         }
     }
 
@@ -521,8 +611,10 @@ impl ProtocolAnchorCause {
             | Self::ChannelMismatch { .. }
             | Self::CarriesMismatch { .. }
             | Self::KeyModelState { .. }
-            | Self::KeyEquality { .. } => Code::IllTyped,
-            Self::KeyClause { cause, .. } => cause.code(),
+            | Self::KeyEquality { .. }
+            | Self::SlotModelState { .. } => Code::IllTyped,
+            Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
+            Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
             Self::Unimplemented { .. } | Self::NoProgress { .. } => Code::UnsupportedConstruct,
             Self::CausalCycle { .. } => Code::InvalidPackage,
@@ -552,10 +644,15 @@ impl ProtocolAnchorCause {
             Self::WrongKind { .. } | Self::ChannelMismatch { .. } | Self::CarriesMismatch { .. } => {
                 "type-mismatch"
             }
-            Self::KeyModelState { .. } | Self::KeyEquality { .. } => "operator-ineligible",
+            Self::KeyModelState { .. }
+            | Self::KeyEquality { .. }
+            | Self::SlotModelState { .. } => "operator-ineligible",
             // Only a cause that has a tag is wrapped
-            // (`protocol_controls::check_fifo`).
-            Self::KeyClause { cause, .. } => cause.cause().unwrap_or_default(),
+            // (`protocol_controls::check_fifo`, `protocol_slots`).
+            Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => {
+                cause.cause().unwrap_or_default()
+            }
+            Self::WrongObservation { .. } => "wrong-observation",
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
             Self::NoProgress { .. } => "declaration-form",

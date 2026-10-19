@@ -518,12 +518,17 @@ fn s2_records_the_parts_s3_reads_to_decide_coverage() {
     assert!(at(form.constructs[3].span).starts_with("channel C"));
     assert!(at(form.constructs[5].span).starts_with("related by rel"));
 
-    let bodies: Vec<(&str, Option<bool>)> = form
+    let bodies: Vec<(&str, bool)> = form
         .bodies
         .iter()
-        .map(|body| (at(body.span), body.constant))
+        .map(|body| {
+            (
+                at(body.span),
+                matches!(body.expression.expression.root_node(), ExprNode::Boolean(false)),
+            )
+        })
         .collect();
-    assert_eq!(bodies, [("tried", None), ("false", Some(false))]);
+    assert_eq!(bodies, [("tried", false), ("false", true)]);
     assert_eq!(
         form.declarations[form.bodies[0].owner].kind,
         ProtocolNodeKind::Attempt
