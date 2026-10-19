@@ -10,12 +10,14 @@
 //! describes is data: a [`StepEffect`] holds the creations, deletions and field
 //! changes of one step, and nothing outside the returned values changes.
 
+mod constraint;
 mod contracts;
 mod domain;
 pub(crate) mod encode;
 mod footprints;
 mod frames;
 mod state_predicate;
+mod symmetry;
 mod terminal;
 mod walk;
 
@@ -48,6 +50,9 @@ use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
+use crate::simulation::reduction::{
+    ConstraintValue, OfferedReductions, Permutation, SymmetryGroup,
+};
 use crate::simulation::sample::{sample_request, sample_request_until, SampleRequest};
 use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
@@ -864,6 +869,32 @@ impl TransitionSystem for ModelSystem<'_> {
         state: &Self::State,
     ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
         walk::expand_state(self, state, None)
+    }
+
+    /// FR-162: symmetry and state constraints. Partial-order reduction has
+    /// no hook on this trait yet, so it is not offered.
+    fn offered_reductions(&self) -> OfferedReductions {
+        OfferedReductions {
+            symmetry: true,
+            partial_order: false,
+            constraint: true,
+        }
+    }
+
+    fn canonical(
+        &self,
+        state: &Self::State,
+        group: &SymmetryGroup,
+    ) -> Option<Result<(Self::State, Permutation), ExpansionStop>> {
+        Some(self.canonicalise(state, group))
+    }
+
+    fn holds_constraint(
+        &self,
+        state: &Self::State,
+        constraint: &str,
+    ) -> Option<Result<ConstraintValue, ExpansionStop>> {
+        Some(self.constraint_value(state, constraint))
     }
 }
 

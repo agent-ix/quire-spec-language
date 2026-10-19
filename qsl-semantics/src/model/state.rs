@@ -69,6 +69,8 @@ pub struct StatePopulation {
     pub key: DeclarationKey,
     /// The population's declared member types, in declaration order.
     pub member_types: Vec<DeclarationKey>,
+    /// Whether the population is declared `symmetric` (FR-150).
+    pub symmetric: bool,
 }
 
 /// FR-106's re-derived model views and the checked type environment.
@@ -167,6 +169,7 @@ impl StateModel {
                 DomainPackageRecord::Population(population) => Some(StatePopulation {
                     key: population.key.clone(),
                     member_types: population.member_types.clone(),
+                    symmetric: population.symmetric,
                 }),
                 _ => None,
             })
