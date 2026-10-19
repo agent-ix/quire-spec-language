@@ -72,7 +72,7 @@ pub enum ProbabilisticBody {                  // probabilistic-form
     LongRunFraction { predicate: Expression, weighting: Option<WeightingForm>, op: BoundOp, threshold: Spanned<ExactValue> },
     ExpectedUntil { quantity: ExpectedQuantity, target: Expression, op: BoundOp, threshold: Expression },
 }
-pub enum EventForm { Temporal(Expression), Compare { measure: MeasureForm, op: BoundOp, threshold: Expression } }
+pub enum EventForm { Temporal(TemporalFormulaForm), Compare { measure: MeasureForm, op: BoundOp, threshold: Expression } }
 ```
 
 `ExpectedQuantity` is `Accumulate(Spanned<Identifier>)` or `Elapsed`, and
@@ -84,8 +84,10 @@ predicate within a horizon, or a `FractionForm`), `FractionForm`,
 `weighting` and `bound-op`; each part carries its span. The scheduler
 variants, the fairness items, the `ActivationForm` and the temporal event
 reuse the forms S2 already builds for the same productions:
-`FairnessConstraintForm` and `ActivationForm::{Origin, Each{parameter,
-when}}` (FR-308, FR-325).
+`FairnessConstraintForm`, `ActivationForm::{Origin, Each{parameter,
+when}}` and FR-325's `TemporalFormulaForm`, which is the type of
+`EventForm::Temporal` (a temporal formula is not an `Expression`).
+`ExactValue` is FR-393's: an `exact-value` held as written.
 
 ## Behavior
 
