@@ -474,7 +474,14 @@ impl<'a> Definedness<'a> {
                 NodeKind::Attribute {
                     reference, field, ..
                 } => {
-                    let observation = self.observations?.of_read(current.location())?;
+                    // A function body reads one fixed model state (it is
+                    // pure and writes nothing), so its `deref(r).f` is keyed
+                    // by the single `Current` observation: a guard on it
+                    // discharges a later read of the same path (QSL-907).
+                    let observation = match self.observations {
+                        Some(observations) => observations.of_read(current.location())?,
+                        None => Observation::Current,
+                    };
                     steps.push(PathStep::Attribute(Step::Attribute(
                         field.clone(),
                         observation,

@@ -5557,3 +5557,47 @@ fn a_denied_frame_charge_ends_check_eleven_with_the_budget_record() {
         run(qsl_semantics::model::accounting::ModelNormalizationLimits::default().work_units);
     assert!(admitted.is_ok(), "expected admission, got {admitted:?}");
 }
+
+/// FR-104-AC-12 / FR-381-AC-10 for the function-body `deref(r).f` form: a
+/// guard on `deref(earlier).versionNumber` is a fact for the unproved-range
+/// check of `deref(earlier).versionNumber + 1` exactly as `self.versionNumber`
+/// is in a clause; the unguarded sum refuses `unproved-range`, and a guard on
+/// a different reference gives no fact for this one.
+///
+/// Mutation used (derived by reading, not executed): restoring the
+/// observation-only `Step::Attribute` keying in `facts.rs::stable_path` for a
+/// function body makes the guarded function refuse, so this test goes red.
+#[trace("TC-1084")]
+#[test]
+fn a_guard_on_deref_of_a_reference_is_a_range_fact_in_a_function_body() {
+    let document = config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    );
+    let function = |body: &str| {
+        format!(
+            "function f using v(earlier: Config::ConfigVersion, later: Config::ConfigVersion, \
+             n: Integer): Boolean pure {{ {body} }}\n"
+        )
+    };
+    let guarded = "deref(earlier).versionNumber < 1000 and \
+        deref(later).versionNumber = deref(earlier).versionNumber + 1";
+    assert!(check(&document, &function(guarded)).is_ok());
+
+    let unguarded = "deref(later).versionNumber = deref(earlier).versionNumber + 1";
+    let refusals = check(&document, &function(unguarded)).expect_err("unguarded refuses");
+    assert_eq!(
+        refusals,
+        vec![(Code::UndefinedExpression, Some("unproved-range"))]
+    );
+
+    let other = "deref(later).versionNumber < 1000 and \
+        deref(later).versionNumber = deref(earlier).versionNumber + 1";
+    let refusals = check(&document, &function(other)).expect_err("another reference's guard");
+    assert_eq!(
+        refusals,
+        vec![(Code::UndefinedExpression, Some("unproved-range"))]
+    );
+}
