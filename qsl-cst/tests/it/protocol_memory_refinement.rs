@@ -434,7 +434,7 @@ fn a_history_row_parses_each_initial_literal_spelling() {
 fn a_history_row_refuses_a_non_literal_initial_value_at_its_first_token() {
     for (initial, offending) in [
         ("[1, 2]", "["),
-        ("set[1]", "set"),
+        ("set[1]", "["),
         ("float64(bits: 0x3FF0000000000000)", "float64"),
         ("self.x", "self"),
         ("1 + 2", "+"),
