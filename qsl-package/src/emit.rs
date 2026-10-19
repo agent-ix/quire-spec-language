@@ -1005,6 +1005,12 @@ pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
+    if let Some(emission) = package.remembered_emission() {
+        return match cancellation(cancel) {
+            Some(refusal) => Err(refusal),
+            None => Ok(emission.clone()),
+        };
+    }
     let graph = package.graph();
     let emission = emit_package_inner(
         package,
@@ -1013,10 +1019,17 @@ pub fn emit_checked_with_cancel(
         cancel,
         &ir_decodes,
     )?;
-    if emission.omitted().is_empty() {
-        package.remember_emitted_id(emission.package().package_id());
-    }
+    package.remember_emission(&emission);
     Ok(emission)
+}
+
+/// The refusal for a cancelled `cancel`, if it is.
+fn cancellation(cancel: &Cancel) -> Option<EmitRefusal> {
+    cancel
+        .poll()
+        .then(|| cancel.cause())
+        .flatten()
+        .map(|cause| EmitRefusal::Cancelled { cause })
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
@@ -1124,13 +1137,7 @@ fn emit_package_inner(
     cancel: &Cancel,
     decodes: &dyn Fn(CheckedNodeTag, &str) -> bool,
 ) -> Result<Emission, EmitRefusal> {
-    let denied = || {
-        cancel
-            .poll()
-            .then(|| cancel.cause())
-            .flatten()
-            .map(|cause| EmitRefusal::Cancelled { cause })
-    };
+    let denied = || cancellation(cancel);
     if let Some(refusal) = denied() {
         return Err(refusal);
     }

@@ -53,7 +53,7 @@ use qsl_semantics::library::{LibraryName, PackageId};
 /// setting to raise.
 pub(crate) const EMIT_LIMITS: quire_canonical::Limits = quire_canonical::Limits::new(u64::MAX);
 
-use crate::emit::{emit_checked, EmitRefusal};
+use crate::emit::{emit_checked, Emission, EmitRefusal};
 
 /// S4 in-process checked package (ADR-013 T-1): this package's own checked
 /// declarations (a [`CheckedGraph`], S3's stage output) plus the checked
@@ -154,11 +154,11 @@ pub struct CheckedPackage {
     /// FR-304, FR-306: this package's checked abstraction relation, when it
     /// declares one. The checked package is its only authority.
     abstraction: Option<CheckedAbstractionRelation>,
-    /// The `package_id` of this package's last complete emission, set only by
-    /// the emitter ([`Self::remember_emitted_id`], ADR-013 O-02) so a package
-    /// reached again as a dependency is not emitted again. Reset when the
-    /// package changes.
-    emitted_id: OnceLock<PackageId>,
+    /// This package's checked emission, set only by the emitter
+    /// ([`Self::remember_emission`]; the `package_id` stays the emitter's own
+    /// output, ADR-013 O-02) so a package reached again, as a dependency or
+    /// by another emit, is not emitted again. Reset when the package changes.
+    emission: OnceLock<Emission>,
 }
 
 /// One library identity's selection in a package's resolved closure, and the
@@ -381,7 +381,7 @@ impl CheckedPackage {
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
             abstraction: None,
-            emitted_id: OnceLock::new(),
+            emission: OnceLock::new(),
         }
     }
 
@@ -433,7 +433,7 @@ impl CheckedPackage {
             dependencies,
             selections,
             abstraction: None,
-            emitted_id: OnceLock::new(),
+            emission: OnceLock::new(),
         })
     }
 
@@ -449,7 +449,7 @@ impl CheckedPackage {
         bindings: &[AuthoredBinding],
     ) -> Result<(), Vec<AbstractionRefusal>> {
         self.abstraction = Some(self.graph.check_abstraction(bindings)?);
-        self.emitted_id = OnceLock::new();
+        self.emission = OnceLock::new();
         Ok(())
     }
 
@@ -459,16 +459,15 @@ impl CheckedPackage {
         self.abstraction.as_ref()
     }
 
-    /// Records the `package_id` of a complete emission of this package. Only
-    /// the emitter calls this, with the id it just minted (ADR-013 O-02).
-    pub(crate) fn remember_emitted_id(&self, package_id: PackageId) {
-        let _ = self.emitted_id.set(package_id);
+    /// Records `emission`, the emitter's output for this package. Only the
+    /// emitter calls this (ADR-013 O-02).
+    pub(crate) fn remember_emission(&self, emission: &Emission) {
+        let _ = self.emission.set(emission.clone());
     }
 
-    /// This package's `package_id` from its last complete emission, if it has
-    /// been emitted.
-    fn emitted_id(&self) -> Option<PackageId> {
-        self.emitted_id.get().copied()
+    /// This package's emission, if it has been emitted.
+    pub(crate) fn remembered_emission(&self) -> Option<&Emission> {
+        self.emission.get()
     }
 
     /// This package's own checked declarations (S3's stage output) -- the
@@ -501,14 +500,19 @@ impl CheckedPackage {
 
 /// `import`'s dependency `package_id`, recomputed by emitting its package.
 fn recomputed_package_id(import: &Import) -> Result<PackageId, LinkRefusal> {
-    if let Some(package_id) = import.package.emitted_id() {
-        return Ok(package_id);
-    }
-    let emission =
-        emit_checked(&import.package).map_err(|refusal| LinkRefusal::DependencyEmission {
-            identity: import.identity.clone(),
-            refusal: Some(refusal),
-        })?;
+    let fresh;
+    let emission = match import.package.remembered_emission() {
+        Some(emission) => emission,
+        None => {
+            fresh = emit_checked(&import.package).map_err(|refusal| {
+                LinkRefusal::DependencyEmission {
+                    identity: import.identity.clone(),
+                    refusal: Some(refusal),
+                }
+            })?;
+            &fresh
+        }
+    };
     if !emission.omitted().is_empty() {
         return Err(LinkRefusal::DependencyEmission {
             identity: import.identity.clone(),
@@ -640,7 +644,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
             abstraction: None,
-            emitted_id: OnceLock::new(),
+            emission: OnceLock::new(),
         },
         |dependency, link| CheckedPackage {
             graph: Arc::clone(&graph),
@@ -650,7 +654,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             )]),
             selections: BTreeMap::new(),
             abstraction: None,
-            emitted_id: OnceLock::new(),
+            emission: OnceLock::new(),
         },
     )
 }
