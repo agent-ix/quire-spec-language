@@ -6,7 +6,10 @@ use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_contract_model::CheckedOccurrence;
+use quire_contract_model::{
+    read_checked_package, CheckedOccurrence, CheckedPackageDispatchResult,
+    CheckedPackageReadLimits,
+};
 use quire_exact::{Cancel, Integer, IntegerInterval, Origin, Role, Value};
 
 use super::*;
@@ -14,7 +17,7 @@ use crate::execute::scalar_site::{check_operands, equality_operator};
 use crate::scalar::{ScalarOperand, ScalarOperation};
 use crate::spine::call::tests::{lookup_driver_context, lookup_driver_fixture};
 use crate::spine::{
-    check, default_accounting, package, parse, run, select as select_models, CallArgument,
+    check, default_accounting, package as emit, parse, run, select as select_models, CallArgument,
     CallOutcome, DependencyInput, LockEvidence, ParseRequest, SpineLimits,
 };
 
@@ -71,7 +74,7 @@ fn compile_with(
     )
     .expect("the unit checks")
     .into_value();
-    let emitted = package(&checked, Default::default(), &cancel)
+    let emitted = emit(&checked, Default::default(), &cancel)
         .expect("the unit emits")
         .into_value();
     Unit {
@@ -88,14 +91,32 @@ fn compile(functions: &str) -> Unit {
     compile_source(format!("{HEADER}{functions}\n"), BTreeMap::new())
 }
 
-fn read(unit: &Unit) -> BindPackage<'_> {
-    BindPackage::read(
+/// The caller's one admission of `unit`'s emitted bytes.
+fn admit(unit: &Unit) -> Box<CheckedPackageV2> {
+    let evidence = admission_evidence(
         &unit.models,
         &unit.checked,
         &unit.emitted,
         SpineLimits::default().imports,
     )
-    .expect("the package reads")
+    .expect("the admission evidence assembles");
+    let CheckedPackageDispatchResult::AdmittedV2(admitted) = read_checked_package(
+        unit.emitted.package().bytes(),
+        CheckedPackageReadLimits::bounded(),
+        &evidence,
+    ) else {
+        panic!("the emitted package admits");
+    };
+    admitted
+}
+
+/// The binder's package inputs over `admitted`.
+fn inputs<'a>(unit: &'a Unit, admitted: &'a CheckedPackageV2) -> Package<'a> {
+    Package {
+        admitted,
+        models: &unit.models,
+        checked: unit.checked.package(),
+    }
 }
 
 fn arg(parameter: &str, value: i64) -> CallArgument {
@@ -120,7 +141,15 @@ fn bind_with(
     occurrence: &ScalarOccurrence,
     objects: &ObjectEnvironment,
 ) -> Result<BindOutcome, Box<RunRefusal>> {
-    bind_scalar_operands(&read(unit), call, occurrence, objects, &Cancel::new())
+    bind_scalar_operands(
+        &admit(unit),
+        &unit.models,
+        &unit.checked,
+        call,
+        occurrence,
+        objects,
+        &Cancel::new(),
+    )
 }
 
 fn bind_call(
@@ -265,7 +294,6 @@ fn tc_1053_step_1_operands_bind_in_application_order() {
         ]
     );
     assert_eq!(reversed.occurrence(), &occurrence);
-    assert_eq!(reversed.package_id(), unit.emitted.package().package_id());
 
     let listed = bound(
         &unit,
@@ -356,7 +384,8 @@ fn tc_1053_step_2_literals_repeats_and_unary_operands() {
 #[test]
 fn tc_1053_step_2_inline_literal_term_binds_without_a_node() {
     let unit = compile("function plus using v(a: Int[0, 9]): Int[1, 10] pure { a + 1 }");
-    let package = read(&unit);
+    let admitted = admit(&unit);
+    let package = inputs(&unit, &admitted);
     let occurrence = the_application(&unit, "plus", ScalarOperator::Add);
     let selected = select(unit.checked.package(), "plus").unwrap();
     let arguments = [Value::Integer(Integer::from(4_i64))];
@@ -678,7 +707,8 @@ fn tc_1053_step_5_unbounded_and_nested_operands() {
 
     // An operand that is a nested application (not a literal, not a
     // parameter) refuses `OperandNotParameter` and binds no partial list.
-    let package = read(&unit);
+    let admitted = admit(&unit);
+    let package = inputs(&unit, &admitted);
     let selected = select(unit.checked.package(), "n").unwrap();
     let arguments = [Value::Integer(Integer::from(4_i64))];
     let request = call("n", vec![arg("a", 4)]);
@@ -1092,4 +1122,37 @@ fn tc_1053_step_5_quantifier_binder_operand_is_not_an_argument() {
             level: "1".to_owned()
         }
     );
+}
+
+/// FR-367-AC-11: the entry binds from the caller's one admission. The
+/// emitted unit and its bytes are dropped before the entry runs, and the
+/// entry has no byte input, so nothing is read or admitted a second time.
+#[trace("TC-1053", "FR-367-AC-11")]
+#[test]
+fn tc_1053_step_9_binds_from_the_callers_admission_without_the_bytes() {
+    let unit = compile(SUB);
+    let occurrence = the_application(&unit, "sub", ScalarOperator::Subtract);
+    let admitted = admit(&unit);
+    let Unit {
+        models,
+        checked,
+        emitted,
+        ..
+    } = unit;
+    drop(emitted);
+
+    let outcome = bind_scalar_operands(
+        &admitted,
+        &models,
+        &checked,
+        &call("sub", vec![arg("b", 2), arg("a", 7)]),
+        &occurrence,
+        &ObjectEnvironment::default(),
+        &Cancel::new(),
+    );
+    let Ok(BindOutcome::Bound(bound)) = outcome else {
+        panic!("the admitted package binds, got {outcome:?}");
+    };
+    assert_eq!(bound.values(), [7, 2]);
+    assert_eq!(bound.occurrence(), &occurrence);
 }

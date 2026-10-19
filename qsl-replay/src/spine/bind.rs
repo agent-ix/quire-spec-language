@@ -7,20 +7,21 @@
 //! is admitted as [`super::run`] admits it (FR-100); the occurrence is
 //! checked as FR-357's operator entry checks a claim's scalar node; the
 //! operand structure comes from Contract IR's `scalar_application_operands`
-//! and `parameter_declaration`. Nothing here evaluates the function.
+//! and `parameter_declaration` on the caller's one admission of the emitted
+//! bytes; nothing here reads or admits those bytes. Nothing here evaluates
+//! the function.
 
 use qsl_foundation::diagnostic::{Code, InternalFault};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{checked_node_id, checked_occurrence, CheckedPackage};
 use qsl_semantics::check::NodeTag;
-use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_model::{
-    read_checked_package, CheckedNodeId, CheckedPackageDispatchResult, CheckedPackageReadLimits,
-    CheckedPackageV2, CheckedParameterDeclarationError, CheckedScalarOperand,
-    CheckedScalarOperandChild, CheckedScalarOperandError, CheckedScalarOperandRange,
+    CheckedNodeId, CheckedPackageEvidence, CheckedPackageV2, CheckedParameterDeclarationError,
+    CheckedScalarOperand, CheckedScalarOperandChild, CheckedScalarOperandError,
+    CheckedScalarOperandRange,
 };
 use quire_exact::{Cancel, Integer, Value, ValueType};
 use quire_semantic_value::location::Origin as BodyOrigin;
@@ -43,56 +44,33 @@ pub struct ScalarOccurrence {
     pub occurrence: OccurrenceKey,
 }
 
-/// The compiled and emitted package a call runs against, as [`super::run`]
-/// holds it after its compile and package stages, with Contract IR's reading
-/// of the emitted bytes.
-#[derive(Debug)]
-pub struct BindPackage<'a> {
-    models: &'a AdmittedModels,
-    checked: &'a CheckedUnit,
-    package_id: PackageId,
-    ir: Box<CheckedPackageV2>,
-}
-
-impl<'a> BindPackage<'a> {
-    /// Read `emitted` back through Contract IR. The bytes were just written
-    /// by the emitter, so a refusal is an internal failure.
-    ///
-    /// `imports` is the I2 reader's ceilings for the dependency closure the
-    /// unit's `import`s reached ([`super::SpineLimits::imports`]).
-    pub fn read(
-        models: &'a AdmittedModels,
-        checked: &'a CheckedUnit,
-        emitted: &'a EmittedUnit,
-        imports: qsl_package::V2ReadLimits,
-    ) -> Result<Self, Box<RunRefusal>> {
-        let mut evidence = emitted.evidence().clone();
-        for (digest, document) in models.packages() {
-            evidence
-                .insert_domain_package_document(hex(digest), document.as_slice())
-                .map_err(|_| fault("domain-package-documents-do-not-conflict"))?;
-        }
-        qsl_package::supply_closure(checked.package(), models.packages(), imports, &mut evidence)
-            .map_err(|_| fault("dependency-closure-reads-back"))?;
-        let CheckedPackageDispatchResult::AdmittedV2(ir) = read_checked_package(
-            emitted.package().bytes(),
-            CheckedPackageReadLimits::bounded(),
-            &evidence,
-        ) else {
-            return Err(fault("emitted-package-is-readable-by-contract-ir"));
-        };
-        Ok(Self {
-            models,
-            checked,
-            package_id: emitted.package().package_id(),
-            ir,
-        })
+/// The evidence Contract IR's reader needs to admit `emitted`'s bytes: the
+/// emitter's own evidence, every domain package document the unit's `model`
+/// declarations selected, and the admitted packages of the dependency
+/// closure the unit's `import`s reached.
+///
+/// It reads no byte of `emitted`'s package. The caller admits those bytes
+/// once with `quire_contract_model::read_checked_package` under this
+/// evidence and passes the admitted [`CheckedPackageV2`] to
+/// [`bind_scalar_operands`]. `imports` is the I2 reader's ceilings for the
+/// dependency closure ([`super::SpineLimits::imports`]). A refusal is an
+/// internal failure: the documents were admitted at I1 and the closure was
+/// linked at S4.
+pub fn admission_evidence(
+    models: &AdmittedModels,
+    checked: &CheckedUnit,
+    emitted: &EmittedUnit,
+    imports: qsl_package::V2ReadLimits,
+) -> Result<CheckedPackageEvidence, Box<RunRefusal>> {
+    let mut evidence = emitted.evidence().clone();
+    for (digest, document) in models.packages() {
+        evidence
+            .insert_domain_package_document(hex(digest), document.as_slice())
+            .map_err(|_| fault("domain-package-documents-do-not-conflict"))?;
     }
-
-    /// The emitted package's `package_id`.
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
-    }
+    qsl_package::supply_closure(checked.package(), models.packages(), imports, &mut evidence)
+        .map_err(|_| fault("dependency-closure-reads-back"))?;
+    Ok(evidence)
 }
 
 /// What [`bind_scalar_operands`] settled.
@@ -107,17 +85,11 @@ pub enum BindOutcome {
 /// The operands of one scalar application occurrence, bound to a call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoundScalarOperands {
-    package_id: PackageId,
     occurrence: ScalarOccurrence,
     operands: Vec<BoundOperand>,
 }
 
 impl BoundScalarOperands {
-    /// The package's `package_id`.
-    pub fn package_id(&self) -> PackageId {
-        self.package_id
-    }
-
     /// The occurrence as supplied.
     pub fn occurrence(&self) -> &ScalarOccurrence {
         &self.occurrence
@@ -288,30 +260,51 @@ fn fault(invariant: &'static str) -> Box<RunRefusal> {
 
 /// Bind `call`'s named values to the operands of `occurrence` (FR-367).
 ///
+/// `admitted` is Contract IR's admission of the unit's emitted bytes, made
+/// once by the caller under [`admission_evidence`]; `models` and `checked`
+/// are the I1 and S4 products those bytes were emitted from. The entry takes
+/// no bytes and admits nothing: the operands are read from `admitted` as
+/// given.
+///
 /// `Err` is [`super::run`]'s own refusal for the call's admission, and its
 /// internal failure. `cancel` is polled as [`super::run`] polls it.
 pub fn bind_scalar_operands(
-    package: &BindPackage<'_>,
+    admitted: &CheckedPackageV2,
+    models: &AdmittedModels,
+    checked: &CheckedUnit,
     call: &Call,
     occurrence: &ScalarOccurrence,
-    objects: &ObjectEnvironment,
+    environment: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<BindOutcome, Box<RunRefusal>> {
-    match bind(package, call, occurrence, objects, cancel) {
+    let package = Package {
+        admitted,
+        models,
+        checked: checked.package(),
+    };
+    match bind(&package, call, occurrence, environment, cancel) {
         Ok(bound) => Ok(BindOutcome::Bound(bound)),
         Err(Halt::Refused(refusal)) => Ok(BindOutcome::Refused(refusal)),
         Err(Halt::Run(refusal)) => Err(refusal),
     }
 }
 
+/// The entry's inputs that describe the package.
+#[derive(Clone, Copy)]
+struct Package<'a> {
+    admitted: &'a CheckedPackageV2,
+    models: &'a AdmittedModels,
+    checked: &'a CheckedPackage,
+}
+
 fn bind(
-    package: &BindPackage<'_>,
+    package: &Package<'_>,
     call: &Call,
     occurrence: &ScalarOccurrence,
     objects: &ObjectEnvironment,
     cancel: &Cancel,
 ) -> Result<BoundScalarOperands, Halt> {
-    let checked = package.checked.package();
+    let checked = package.checked;
     let selected = select(checked, &call.function)?;
     let arguments = bind_arguments(selected.parameters, &call.arguments)?;
     let types = checked.graph().scope().types();
@@ -332,13 +325,12 @@ fn bind(
     )?;
     let (application, origin) = locate(checked, call, occurrence)?;
     let operands = package
-        .ir
+        .admitted
         .scalar_application_operands(&application, &origin)
         .map_err(BindRefusal::Operands)?;
     let resolver = Resolver::new(package, call, selected.parameters, &arguments)?;
     let operands = resolver.bind(&operands)?;
     Ok(BoundScalarOperands {
-        package_id: package.package_id,
         occurrence: occurrence.clone(),
         operands,
     })
@@ -464,12 +456,12 @@ struct Resolver<'a> {
 
 impl<'a> Resolver<'a> {
     fn new(
-        package: &'a BindPackage<'_>,
+        package: &Package<'a>,
         call: &Call,
         parameters: &'a [(String, ValueType)],
         arguments: &'a [Value],
     ) -> Result<Self, Box<RunRefusal>> {
-        let checked = package.checked.package();
+        let checked = package.checked;
         let callable = checked
             .graph()
             .callable(&call.function)
@@ -480,7 +472,7 @@ impl<'a> Resolver<'a> {
             .map(|key| WireNodeId::from_digest(*key.as_bytes()))
             .collect();
         Ok(Self {
-            ir: &package.ir,
+            ir: package.admitted,
             checked,
             parameters,
             parameter_nodes,
