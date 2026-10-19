@@ -51,3 +51,18 @@ items must be stated is semantic. QSpec places it in FR-407
 correct. The index row and the FR-186 back-reference are correct. AC-1's
 four claims are all of ADR-024 §7. FR-186-AC-1's "five claims" miscounts
 that section, which is outside this diff.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | Two of the new AC-3 fixtures are not complete claims. `quantile 0.5 of (steps from holds(A) until holds(B) within 10)` and `… (elapsed … within 10 ms)` stop at the `)`. The production `'quantile', exact-value, 'of', '(', measure, ')', bound-op, expr` needs a `bound-op` and a threshold after it, so S1 refuses the text as written. Each test author has to invent a bound. Add `<= 5` and `<= 5 ms`, or similar. | spec/functional/FR-392-build-the-probabilistic-claim-form-at-s2.md:125 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8044d39f2: AC-5 now lists `P95` with threshold `5 m`, the case FR-186-AC-2 refuses "naming the dimension", where it used to list `0.005 s`, which FR-186-AC-2 checks and records as `5 ms`. The other cases in that list agree with FR-186: threshold `1` (FR-186-AC-2, qualitative form; QSpec FR-407 `qualitative-threshold`) and the trace subject (FR-186-AC-3). The lone `alpha` case (FR-186-AC-4; QSpec FR-407-AC-5 `partial-confidence`) is asserted as a build. TC-1077 step 5 follows. |
+| FND-002 | fixed | 8044d39f2: AC-3 covers `MeanOfFraction` with `weighted by`, `ExpectedUntil` with `Accumulate(duration)` and `Elapsed`, and the `steps` and `elapsed` measures with `Steps` and `Quantity` horizons. AC-4 covers `over (n: Node)`, `on each`, and the `fair weak` and `fair strong each` items. TC-1077 steps 3 and 4 read each one back. The fixture gap is FND-005. |
+| FND-003 | fixed | 8044d39f2: TC-1077 step 5 asserts one confidence item with no default, both `alpha` items in order, no S2 diagnostic for the trace-subject, threshold-`1` and `5 m` claims, and then the FR-186 refusals at S3. Step 4 reads back the kind and granularity of each fairness item. |
+| FND-004 | fixed | 8044d39f2 makes four corrections. It writes `DeclarationForm` in place of `ClauseForm`, and `FairnessConstraintForm` in place of `FairnessForm`. It defines `ExpectedQuantity` (`Accumulate(Spanned<Identifier>)` or `Elapsed`) and `HorizonForm::{Steps, Quantity}`. Behavior now says `LeadingTokenKind` gains `Probabilistic`. |

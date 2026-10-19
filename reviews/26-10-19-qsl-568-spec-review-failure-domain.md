@@ -33,3 +33,10 @@ present one because a present clause has at least one item. The S3 refusal
 is FR-186-AC-4's. The facet gate (FND-001) is the treatment the brief asked
 about: a construct that is recognised and then refused. It should be stated,
 as FR-308 does.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8044d39f2 adopts FR-308's rule. Description drops "that selects the complete facets", and Behavior says S2 builds the form whether or not the unit selects them, with the gate not enforced (FR-361 item 8). AC-6 and TC-1077 step 6 assert equal forms and no S2 diagnostic. |
+| FND-002 | fixed | 8044d39f2: AC-5 builds `alpha 0.01, alpha 0.05` and keeps both items in order, and Behavior says S2 "SHALL fill no default and drop no repeat". FR-186 still refuses only "one or two" of the three items, so QSL S3 has no rule that refuses a repeat. That gap is in FR-186, outside this diff, and the QSL-371 follow-up should take it. |

@@ -52,3 +52,16 @@ the FR-185 and FR-186 refusals: `partial-confidence`,
 (FR-407-AC-5). FR-185 and FR-186 should cite them. That change is outside
 this PR's diff and does not block it. It belongs in a follow-up on the
 FR-185/FR-186 owner ticket.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The new allocation sentence says "FR-204 checks `expected elapsed` and the `elapsed` measure". FR-204 does not check the `elapsed` measure. It is EN-5 engine admission: it admits `Reach`, deadline events and `expected elapsed until`, and any other shape settles `Unsupported(TimedFormShape)`. A quantile over `elapsed`, one of AC-3's own fixtures, is refused at S3 by FR-186 ("A quantile SHALL be over an `accumulate` or `steps` measure"). An `elapsed` measure inside a `probability` `Compare` event has no S3 rule in FR-186 at all, because FR-186's `BoundedMeasure` has no `Elapsed`. Name FR-186's quantile rule for a quantile over `elapsed`, and record the event case as an FR-186 gap. | spec/functional/FR-392-build-the-probabilistic-claim-form-at-s2.md:111-117; spec/functional/FR-204-check-probabilistic-timed-automata-through-digital-clocks.md:70-73; spec/functional/FR-186-check-probabilistic-claim-forms-at-s3.md:119 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8044d39f2 adds `traces_to` edges to FR-195 and FR-204, and Description and Dependencies now name all three. Behavior names an S3 requirement for each body: FR-186 for `probability`, `quantile`, `mean of` and `long_run_fraction`; FR-195 for `expected accumulate` and fairness under `every scheduler`; FR-204 for `expected elapsed`. Part of the `elapsed` wording is wrong: FND-003. |
+| FND-002 | fixed | 8044d39f2: "S2 SHALL resolve no name (FR-310): the profile, subject, workload, rewards, predicates and fairness operations stay as written". AC-2 asserts the names are unresolved and that dispatch makes one call (FR-102-AC-4). |
