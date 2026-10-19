@@ -2965,6 +2965,34 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             .success()
     }
 
+    #[test]
+    #[trace("TC-950", "NFR-014-AC-10")]
+    fn the_liveness_probe_sees_an_exited_child_until_it_is_waited_for() {
+        let mut child = Command::new("true").spawn().expect("spawn true");
+        let pid = child.id();
+        // Poll until the child has exited without reaping it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !is_zombie(pid) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the child never exited"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(is_unreaped(pid), "an unwaited child is still listed");
+        child.wait().expect("reap the child");
+        assert!(!is_unreaped(pid), "a waited child is gone");
+    }
+
+    /// Whether `ps` shows the process as exited-but-unwaited (state `Z`).
+    fn is_zombie(pid: u32) -> bool {
+        let out = Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .expect("run ps");
+        String::from_utf8_lossy(&out.stdout).trim().starts_with('Z')
+    }
+
     fn stream_failure(what: &'static str, message: &str) -> Result<()> {
         Err(Error::TestSuitesIo {
             what,

@@ -106,7 +106,7 @@ fn child() {
 }
 
 /// Run this test binary as the measured child.
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "macos"))]
 fn run_child() -> std::process::Output {
     Command::new(std::env::current_exe().expect("the test binary path"))
         .args(["--exact", TEST_PATH, "--nocapture", "--test-threads=1"])
@@ -132,6 +132,13 @@ fn run_child() -> std::process::Output {
 #[cfg(target_os = "linux")]
 fn child_peak_bytes(stdout: &str, _stderr: &str) -> u64 {
     measured(stdout, "VMHWM_BYTES")
+}
+
+/// No peak-resident measurement exists for this target: the test fails
+/// rather than passing without checking the ceiling.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn child_peak_bytes(_stdout: &str, _stderr: &str) -> u64 {
+    panic!("peak resident set is measured only on Linux (VmHWM) and macOS (/usr/bin/time -l)")
 }
 
 /// The child's peak resident set in bytes, from `/usr/bin/time -l`.
@@ -181,6 +188,11 @@ fn ten_thousand_edge_chain() {
     let wall_ms = measured(&stdout, "WALL_MS");
     let resident = child_peak_bytes(&stdout, &String::from_utf8_lossy(&output.stderr));
     println!("N19 wall_ms={wall_ms} peak_resident_bytes={resident}");
+    #[cfg(target_os = "linux")]
+    println!(
+        "N19 vmhwm_before_normalization_bytes={}",
+        measured(&stdout, "VMHWM_BASELINE_BYTES")
+    );
     assert!(
         Duration::from_millis(wall_ms) <= MAX_WALL,
         "wall time {wall_ms} ms"
