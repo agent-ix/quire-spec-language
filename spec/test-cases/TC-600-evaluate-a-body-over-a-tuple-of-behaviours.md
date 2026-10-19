@@ -16,7 +16,7 @@ Scope: FR-175-AC-1 to FR-175-AC-3.
 
 ## Test Procedure
 
-Fixtures: ADR-023 §8.1's vault traces; a pair of lassos with loop lengths 2 and 3; a pair where `a` ends at a terminal state.
+Fixtures: ADR-023 §8.1's vault traces; a pair of lassos with loop lengths 2 and 3, both loops entered at position 0 (equal stems), `a` = (0, 1) and `b` = (0, 1, 0); a pair where `a` ends at a terminal state.
 
 1. Evaluate `always holds(v.l @ a = v.l @ b)` over the leaky and secure pairs.
 2. Evaluate over the 2-and-3 loop pair; evaluate a past operator under `always` at a loop position and its unrolled copy.
