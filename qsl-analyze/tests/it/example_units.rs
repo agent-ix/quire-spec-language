@@ -67,10 +67,9 @@ fn config(shipped: bool, fairness: &str) -> World {
     )
 }
 
-fn reaches_two<'w>(world: &'w World, keys: &[&str]) -> Atoms<'w> {
+fn reaches_two(world: &World) -> Atoms<'_> {
     Atoms::new(
         world,
-        keys,
         vec![Box::new(move |state, object| {
             world.integer(state, object, "versionNumber") == 2
         })],
@@ -100,10 +99,10 @@ fn run(
     )
 }
 
-fn decide(world: &World, keys: &[&str]) -> Outcome {
+fn decide(world: &World) -> Outcome {
     run(
         world,
-        &reaches_two(world, keys),
+        &reaches_two(world),
         None,
         ModelCheckLimits::default(),
         &Cancel::new(),
@@ -173,8 +172,7 @@ fn explored(outcome: &Outcome) -> qsl_replay::RunStats {
 #[test]
 fn the_example_unit_has_a_fifteen_state_product_per_instance() {
     let world = config(false, EACH);
-    assert_eq!(explored(&decide(&world, &["b"])).product_states, 15);
-    assert_eq!(explored(&decide(&world, &["a", "b"])).product_states, 30);
+    assert_eq!(explored(&decide(&world)).product_states, 30);
 }
 
 /// FR-126-AC-1, the `Violated` row with no granularity (`Verifies` TC-521
@@ -186,7 +184,7 @@ fn the_example_unit_has_a_fifteen_state_product_per_instance() {
 #[test]
 fn without_granularity_the_loop_is_three_steps_of_the_other_object() {
     let world = config(false, WHOLE);
-    let outcome = decide(&world, &["a", "b"]);
+    let outcome = decide(&world);
     let counterexample = violated(&outcome);
     let lasso = counterexample.lasso.expect("a lasso");
     assert_eq!((lasso.entry, lasso.terminal_stutter), (0, false));
@@ -200,9 +198,8 @@ fn without_granularity_the_loop_is_three_steps_of_the_other_object() {
         .over_binding
         .as_ref()
         .expect("a bound object")
-        .object()
-        .as_str()
-        .to_owned();
+        .key
+        .clone();
     assert_ne!(
         bound,
         looping.to_string(),
@@ -230,7 +227,7 @@ fn without_granularity_the_loop_is_three_steps_of_the_other_object() {
 #[test]
 fn over_the_shipped_unit_each_needs_both_updates_in_the_loop() {
     let world = config(true, EACH);
-    let outcome = decide(&world, &["a", "b"]);
+    let outcome = decide(&world);
     let counterexample = violated(&outcome);
     let lasso = counterexample.lasso.expect("a lasso");
     assert_eq!((lasso.entry, lasso.terminal_stutter), (0, false));
@@ -254,7 +251,7 @@ fn over_the_shipped_unit_each_needs_both_updates_in_the_loop() {
 #[test]
 fn the_horizon_and_every_limit_stop_the_example_run_naming_what_stopped_it() {
     let world = config(false, WHOLE);
-    let letters = reaches_two(&world, &["a", "b"]);
+    let letters = reaches_two(&world);
     let defaults = ModelCheckLimits::default();
     let with = |max_depth, limits: ModelCheckLimits, cancel: &Cancel| {
         run(&world, &letters, max_depth, limits, cancel).expect("checked")
@@ -323,10 +320,10 @@ fn the_horizon_and_every_limit_stop_the_example_run_naming_what_stopped_it() {
 fn the_example_requests_give_the_same_answer_twice() {
     let each = config(false, EACH);
     let whole = config(false, WHOLE);
-    let refusal = |world: &World| format!("{:?}", decide(world, &["a", "b"]));
+    let refusal = |world: &World| format!("{:?}", decide(world));
     assert_eq!(refusal(&each), refusal(&each));
-    let first = decide(&whole, &["a", "b"]);
-    let second = decide(&whole, &["a", "b"]);
+    let first = decide(&whole);
+    let second = decide(&whole);
     assert_eq!(violated(&first), violated(&second));
 }
 
@@ -371,7 +368,6 @@ fn a_restless_system_has_a_lasso_that_never_recovers_for_three_positions() {
     );
     let letters = Atoms::new(
         &world,
-        &["s"],
         vec![
             Box::new(|state, object| !world.boolean(state, object, "healthy")),
             Box::new(|state, object| world.boolean(state, object, "healthy")),

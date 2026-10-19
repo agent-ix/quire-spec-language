@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::model_subject::{ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
@@ -37,7 +37,7 @@ fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
 }
 
-fn key(suffix: &str) -> DeclarationKey {
+pub(crate) fn key(suffix: &str) -> DeclarationKey {
     DeclarationKey {
         package: PACKAGE.to_owned(),
         node: ident(suffix),
@@ -180,18 +180,29 @@ pub(crate) fn document_digest(document: &[u8]) -> [u8; 32] {
 /// The native unit selecting `document` as `M`, with `body` after the
 /// header.
 pub(crate) fn unit_text(document: &[u8], body: &str) -> String {
+    unit_text_in(PACKAGE, document, body)
+}
+
+/// The native unit selecting `document`, the domain package `identity`, as
+/// `M`, with `body` after the header.
+pub(crate) fn unit_text_in(identity: &str, document: &[u8], body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{identity}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{body}",
         hex(&document_digest(document))
     )
 }
 
 fn declarations(document: &[u8], body: &str) -> PackageDeclarations {
-    let text = unit_text(document, body);
+    declarations_in(PACKAGE, document, body)
+}
+
+/// The S3 declarations of [`unit_text_in`]'s unit.
+pub(crate) fn declarations_in(identity: &str, document: &[u8], body: &str) -> PackageDeclarations {
+    let text = unit_text_in(identity, document, body);
     let packages = package_input([document]);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
@@ -324,6 +335,14 @@ impl Documents {
     }
 }
 
+/// The instance of the counter `key` of `counters`.
+pub(crate) fn instance(key: &str) -> ModelInstance {
+    ModelInstance {
+        population: self::key("counters"),
+        key: key.to_owned(),
+    }
+}
+
 /// The universe `{keys}` of `counters`.
 pub(crate) fn universe(keys: &[&str]) -> Vec<PopulationUniverse> {
     vec![PopulationUniverse {
@@ -416,23 +435,18 @@ pub(crate) fn value(state: &ModelSimState, object: &str) -> i64 {
 /// bound counter's `value`: `Some(truth)`, or `None` for an undefined
 /// division by zero.
 pub(crate) struct Letters {
-    pub(crate) bindings: Vec<ObjectReference>,
     pub(crate) atom: fn(i64) -> Option<bool>,
 }
 
 impl ModelLetters for Letters {
-    fn bindings(&self) -> Vec<ObjectReference> {
-        self.bindings.clone()
-    }
-
     fn atom(
         &self,
         _atom: FormulaNodeId,
-        binding: &ObjectReference,
+        instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete> {
-        Ok(match (self.atom)(value(state, binding.object().as_str())) {
+        Ok(match (self.atom)(value(state, &instance.key)) {
             Some(true) => AtomReading::True,
             Some(false) => AtomReading::False,
             None => AtomReading::Undefined(UndefinedCause::Kernel(

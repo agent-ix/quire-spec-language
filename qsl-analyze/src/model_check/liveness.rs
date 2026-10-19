@@ -43,11 +43,11 @@ use qsl_eval::automaton::{
 use qsl_eval::fairness::{
     analyze, Analysis, Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Vertex,
 };
-use qsl_eval::model_subject::ModelLetters;
+use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
-    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, NotSimulated,
-    Outcome, TransitionSystem,
+    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, Outcome,
+    TransitionSystem,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
@@ -59,11 +59,11 @@ use qsl_replay::{
 };
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
-use quire_exact::{Cancel, CancelCause, Meter, ObjectReference, ScalarLimits};
+use quire_exact::{Cancel, CancelCause, Meter, ScalarLimits};
 use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::check::{ModelCheckRefusal, ModelCheckRequest};
+use super::check::{not_simulated, ModelCheckRefusal, ModelCheckRequest};
 use super::graph::{retain, ProductStateId, RetainedEdge, RetainedGraph};
 use super::product::{ProductKey, ProductTransition};
 
@@ -139,17 +139,15 @@ pub(super) fn check(
         Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
         Err(refusal) => return Err(ModelCheckRefusal::Item(ItemRefusal::ClauseRoot(refusal))),
     };
-    let bindings = letters.bindings();
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
-    let system = ModelSystem::new(request.subject.simulation)
+    let system = ModelSystem::new(request.subject.simulation.clone())
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
-    check_model_bounds(&system, BOUND_POSITIONS).map_err(|refusal| match refusal {
-        NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
-        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
-        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
-    })?;
+    check_model_bounds(&system, BOUND_POSITIONS).map_err(not_simulated)?;
+    // The instances are the keys of the universes of the populations that
+    // admit the clause's `over` type (FR-125 Instancing).
+    let bindings = system.instances(&clause.over().1).map_err(not_simulated)?;
     let totals = Totals::default();
     if let Some(source) = root_cancelled {
         return Ok(stopped(
@@ -389,7 +387,7 @@ struct DeadRoot {
 struct LassoSystem<'r, 'a> {
     system: &'r ModelSystem<'a>,
     letters: &'r dyn ModelLetters,
-    binding: &'r ObjectReference,
+    binding: &'r ModelInstance,
     atoms: Vec<FormulaNodeId>,
     automaton: RefCell<PropertyAutomaton>,
     start: StateId,
@@ -637,7 +635,7 @@ enum Ending {
 struct Explored<'r, 'a> {
     product: LassoSystem<'r, 'a>,
     graph: RetainedGraph<LState, PT, Finding>,
-    binding: &'r ObjectReference,
+    binding: &'r ModelInstance,
     ending: Ending,
     /// Whether a model state reached where the automaton has no move was
     /// left unexpanded at the search horizon.
@@ -720,7 +718,7 @@ struct Run<'r, 'a> {
     system: &'r ModelSystem<'a>,
     clause: &'r CheckedTemporalClause,
     letters: &'r dyn ModelLetters,
-    bindings: &'r [ObjectReference],
+    bindings: &'r [ModelInstance],
     request: RunRequest,
     cancel: &'r Cancel,
 }
@@ -801,7 +799,7 @@ impl<'r, 'a> Run<'r, 'a> {
     /// before it had a graph to examine.
     fn explore(
         &self,
-        binding: &'r ObjectReference,
+        binding: &'r ModelInstance,
         totals: &mut Totals,
     ) -> Result<Result<Explored<'r, 'a>, ModelCheckOutcome>, ModelCheckRefusal> {
         let mut automaton = translate(self.clause, self.request.limits.max_automaton_states)

@@ -1458,6 +1458,16 @@ pub enum CheckCause {
         /// The span of the whole declaration.
         span: Span,
     },
+    /// A refinement declaration's checking refused (FR-135 to FR-137).
+    Refinement(Box<super::refinement::RefinementRefusal>),
+    /// A `refinement` declaration that checks but that no S4 emission writes
+    /// yet (FR-135): refused rather than compiled and silently missing.
+    RefinementNotEmitted {
+        /// The declared name.
+        name: String,
+        /// The span of the whole declaration.
+        span: Span,
+    },
     /// A timed construct S2 builds but no S3 check reads yet (FR-393;
     /// FR-230, FR-233, FR-234 own the checks): refused rather than compiled
     /// unchecked.
@@ -1912,6 +1922,10 @@ impl CheckCause {
         match self {
             Self::TypeInvariant(refusal) => refusal.cause.unwrapped(),
             Self::Terminal(refusal) => refusal.cause.unwrapped(),
+            Self::Refinement(refusal) => match &refusal.cause {
+                super::refinement::RefinementCause::Check(cause) => cause.unwrapped(),
+                _ => self,
+            },
             other => other,
         }
     }
@@ -1922,6 +1936,13 @@ impl CheckCause {
             Self::StateModel(cause) => cause.catalog_code(),
             Self::TypeInvariant(cause) => cause.cause.catalog_code(),
             Self::Terminal(cause) => cause.cause.catalog_code(),
+            Self::Refinement(cause) => match &cause.cause {
+                super::refinement::RefinementCause::Check(inner) => inner.catalog_code(),
+                other => Some(qsl_foundation::diagnostic::CatalogCode::new(
+                    other.code().as_str(),
+                    other.cause()?,
+                )),
+            },
             Self::DispatchLink(cause) => Some(cause.catalog),
             _ => Some(qsl_foundation::diagnostic::CatalogCode::new(
                 self.code().as_str(),
@@ -1950,9 +1971,10 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
-            Self::TerminalNotEmitted { .. } | Self::TimedNotChecked { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::TerminalNotEmitted { .. }
+            | Self::RefinementNotEmitted { .. }
+            | Self::TimedNotChecked { .. } => Code::UnsupportedConstruct,
+            Self::Refinement(cause) => cause.cause.code(),
             Self::Probabilistic(cause) => cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
@@ -2011,9 +2033,10 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::Terminal(cause) => cause.cause.cause(),
-            Self::TerminalNotEmitted { .. } | Self::TimedNotChecked { .. } => {
-                Some("not-yet-implemented")
-            }
+            Self::TerminalNotEmitted { .. }
+            | Self::RefinementNotEmitted { .. }
+            | Self::TimedNotChecked { .. } => Some("not-yet-implemented"),
+            Self::Refinement(cause) => cause.cause.cause(),
             Self::Probabilistic(cause) => Some(cause.tag()),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied

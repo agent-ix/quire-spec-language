@@ -216,7 +216,7 @@ productions! {
     HistoryUpdate,
     #[doc = "An integer, `true`, `false`, `none`, a string, an exact number or a qualified name: a history row's initial value."]
     HistoryLiteral,
-    #[doc = "`(assume | ensure) fair weak [each | whole] <operation-name> ;`: one member of a refinement's concrete or abstract fairness set."]
+    #[doc = "`(assume | ensure) fair (weak | strong) [each | whole] <operation-name> ;`: one member of a refinement's concrete or abstract fairness set."]
     FairnessRow,
     #[doc = "`step <step-source> -> <step-target> ;`: one explicit refinement row for a concrete step class."]
     StepRow,

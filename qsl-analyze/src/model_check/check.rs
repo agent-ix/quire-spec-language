@@ -37,7 +37,7 @@ use qsl_eval::automaton::{
     invariant_atom, Atom, AutomatonError, GbaBuilder, Guard, KeyRefusal, Letter, Monitor,
     SafetyState, StateId,
 };
-use qsl_eval::model_subject::{ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
@@ -56,7 +56,7 @@ use qsl_replay::{
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
-use quire_exact::{Cancel, Meter, ObjectReference};
+use quire_exact::{Cancel, Meter};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -96,14 +96,6 @@ pub enum ModelCheckRefusal {
         /// The clause's property form.
         form: Option<PropertyForm>,
     },
-    /// The clause binds more instances than one letter holds atoms.
-    #[error("the clause binds {count} instances; a letter holds at most {max}")]
-    TooManyBindings {
-        /// The number of instances.
-        count: usize,
-        /// The atoms one letter holds.
-        max: usize,
-    },
     /// A state or transition identity has no canonical encoding.
     #[error(transparent)]
     Encoding(#[from] EncodingRefusal),
@@ -127,7 +119,7 @@ pub enum ModelCheckRefusal {
 enum Item<'a> {
     Invariant {
         atom: FormulaNodeId,
-        bindings: Vec<ObjectReference>,
+        bindings: Vec<ModelInstance>,
         letters: &'a dyn ModelLetters,
         fairness: Vec<FairnessConstraint>,
     },
@@ -157,11 +149,11 @@ enum Finish {
 struct Violation {
     kind: CounterexampleKind,
     at: usize,
-    binding: Option<ObjectReference>,
+    binding: Option<ModelInstance>,
 }
 
 impl Finish {
-    fn violated(kind: CounterexampleKind, at: usize, binding: Option<ObjectReference>) -> Self {
+    fn violated(kind: CounterexampleKind, at: usize, binding: Option<ModelInstance>) -> Self {
         Self::Violated(Box::new(Violation { kind, at, binding }))
     }
 }
@@ -217,44 +209,43 @@ pub fn check_model(
             return super::liveness::check(request, cancel);
         }
     }
-    let item = match request.item {
+    // The form is refused before admission reads any snapshot.
+    let clause = match request.item {
         ModelCheckItem::Clause { clause, letters } => {
             let form = clause.property_form();
             let atom = reachable_invariant_atom(clause)
                 .ok_or(ModelCheckRefusal::FormNotDecided { form })?;
-            let bindings = letters.bindings();
-            if bindings.len() > qsl_eval::automaton::MAX_ATOMS {
-                return Err(ModelCheckRefusal::TooManyBindings {
-                    count: bindings.len(),
-                    max: qsl_eval::automaton::MAX_ATOMS,
-                });
-            }
-            Item::Invariant {
-                atom,
-                bindings,
-                letters,
-                fairness: clause.fairness().to_vec(),
-            }
+            Some((atom, letters, clause.fairness().to_vec()))
         }
-        ModelCheckItem::DeadlockFreedom => Item::Deadlock,
-    };
-    let (instances, root_cancelled) = match request.item.instances(&request.subject, cancel) {
-        Ok(instances) => (instances, None),
-        Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
-            (Vec::new(), Some(cause))
-        }
-        Err(refusal) => return Err(ModelCheckRefusal::Item(refusal)),
+        ModelCheckItem::DeadlockFreedom => None,
     };
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
-    let system = ModelSystem::new(request.subject.simulation)
+    let system = ModelSystem::new(request.subject.simulation.clone())
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
-    check_model_bounds(&system, BOUND_POSITIONS).map_err(|refusal| match refusal {
-        NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
-        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
-        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
-    })?;
+    check_model_bounds(&system, BOUND_POSITIONS).map_err(not_simulated)?;
+    let (instances, root_cancelled) =
+        match request.item.instances(&request.subject, &system, cancel) {
+            Ok(instances) => (instances, None),
+            Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
+                (Vec::new(), Some(cause))
+            }
+            Err(ItemRefusal::Unbounded(refusal)) => return Err(not_simulated(refusal)),
+            Err(refusal) => return Err(ModelCheckRefusal::Item(refusal)),
+        };
+    let item = match clause {
+        Some((atom, letters, fairness)) => Item::Invariant {
+            atom,
+            bindings: instances
+                .iter()
+                .filter_map(|instance| instance.binding.clone())
+                .collect(),
+            letters,
+            fairness,
+        },
+        None => Item::Deadlock,
+    };
     let mut run = Run {
         system: &system,
         item: &item,
@@ -318,6 +309,16 @@ pub fn check_model(
                 stats: run.stats(),
             })
         }
+    }
+}
+
+/// FR-336 and FR-125: an unbounded root, or an admitting population with no
+/// universe, is `RequiresBound`; a stopped classification is `Extent`.
+pub(super) fn not_simulated(refusal: NotSimulated) -> ModelCheckRefusal {
+    match refusal {
+        NotSimulated::RequiresBound(roots) => ModelCheckRefusal::RequiresBound(roots),
+        NotSimulated::Extent(failure) => ModelCheckRefusal::Extent(Box::new(failure)),
+        _ => fault("bounds-precheck-returns-only-requires-bound-or-extent"),
     }
 }
 
@@ -521,7 +522,7 @@ impl Run<'_, '_> {
         at: usize,
         letter: Letter,
         kind: CounterexampleKind,
-        binding: Option<ObjectReference>,
+        binding: Option<ModelInstance>,
     ) -> Step<StateId> {
         let after = self
             .monitor
@@ -630,7 +631,7 @@ impl Run<'_, '_> {
     /// The `over` binding a counterexample that is not a formula violation
     /// names: the first instance of a TP-1 clause, none for the
     /// deadlock-freedom item.
-    fn binding(&self) -> Option<ObjectReference> {
+    fn binding(&self) -> Option<ModelInstance> {
         match self.item {
             Item::Invariant { bindings, .. } => bindings.first().cloned(),
             Item::Deadlock => None,
@@ -695,7 +696,7 @@ impl Run<'_, '_> {
         &self,
         kind: CounterexampleKind,
         at: usize,
-        over_binding: Option<ObjectReference>,
+        over_binding: Option<ModelInstance>,
     ) -> TemporalCounterexample {
         let mut prefix = Vec::new();
         let mut cursor = at;

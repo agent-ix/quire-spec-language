@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::automaton::translate;
-use qsl_eval::model_subject::{ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
@@ -19,10 +19,8 @@ use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarat
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
-use qsl_semantics::model::observation::{
-    declared_type_universe_for, DocumentRef, ObservationLimits,
-};
-use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, ScalarLimits, Value};
+use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use quire_exact::{Incomplete, Meter, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -246,19 +244,6 @@ impl World {
         self.subject(UNLIMITED)
     }
 
-    /// The reference of the object `object`.
-    pub(crate) fn reference(&self, object: &str) -> ObjectReference {
-        let (effective, universe) = declared_type_universe_for(
-            self.package.graph().model_selections(),
-            &self.packages,
-            ModelNormalizationLimits::default(),
-            &self.domain.key(self.domain.object),
-        )
-        .expect("the universe derives")
-        .expect("the object type is declared");
-        ObjectReference::new(universe, effective, ObjectId::new(object).expect("an id"))
-    }
-
     /// The field `field` of the object `object` at `state`.
     pub(crate) fn field<'s>(
         &self,
@@ -293,18 +278,16 @@ pub(crate) type Read<'w> = Box<dyn Fn(&ModelSimState, &str) -> bool + 'w>;
 /// Letters over a world: atom `i` of the clause (in clause-node order) is
 /// read by `reads[i]` from the state and the bound object's key.
 pub(crate) struct Atoms<'w> {
-    pub(crate) bindings: Vec<ObjectReference>,
     pub(crate) atoms: Vec<FormulaNodeId>,
     pub(crate) reads: Vec<Read<'w>>,
 }
 
 impl<'w> Atoms<'w> {
-    /// Letters for the bindings `keys` of `world`'s first clause.
-    pub(crate) fn new(world: &World, keys: &[&str], reads: Vec<Read<'w>>) -> Self {
+    /// Letters for `world`'s first clause: instances are the universe's.
+    pub(crate) fn new(world: &World, reads: Vec<Read<'w>>) -> Self {
         let automaton = translate(&world.clauses[0], 1 << 20).expect("the clause translates");
         assert_eq!(automaton.atoms().len(), reads.len(), "one read per atom");
         Self {
-            bindings: keys.iter().map(|key| world.reference(key)).collect(),
             atoms: automaton.atoms().to_vec(),
             reads,
         }
@@ -312,14 +295,10 @@ impl<'w> Atoms<'w> {
 }
 
 impl ModelLetters for Atoms<'_> {
-    fn bindings(&self) -> Vec<ObjectReference> {
-        self.bindings.clone()
-    }
-
     fn atom(
         &self,
         atom: FormulaNodeId,
-        binding: &ObjectReference,
+        instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete> {
@@ -328,7 +307,7 @@ impl ModelLetters for Atoms<'_> {
             .iter()
             .position(|known| *known == atom)
             .expect("the clause's own atom");
-        Ok(if (self.reads[index])(state, binding.object().as_str()) {
+        Ok(if (self.reads[index])(state, &instance.key) {
             AtomReading::True
         } else {
             AtomReading::False

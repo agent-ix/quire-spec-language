@@ -9,11 +9,12 @@
 //! bounded clause's `interval` is not carried yet: no engine in this crate's
 //! callers builds one.
 
+use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::{ObjectReference, Origin, Role};
+use quire_exact::{Origin, Role};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -119,9 +120,10 @@ pub struct TemporalCounterexample {
     pub initial_state: usize,
     /// The prefix's steps, in order.
     pub prefix: Vec<ModelStep>,
-    /// The object the clause's `over` parameter is bound to; `None` for the
+    /// The instance the clause's `over` parameter is bound to, named by
+    /// population and key (FR-125 Instancing); `None` for the
     /// deadlock-freedom item.
-    pub over_binding: Option<ObjectReference>,
+    pub over_binding: Option<ModelInstance>,
     /// The item's fairness set; empty for the deadlock-freedom item.
     pub fairness: Vec<FairnessConstraint>,
     /// What the counterexample refutes.

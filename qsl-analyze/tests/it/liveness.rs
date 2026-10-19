@@ -20,6 +20,7 @@ use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
     check_model, LivenessRefusal, ModelCheckRefusal, ModelCheckRequest,
 };
+use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::UndefinedCause;
@@ -33,8 +34,8 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
 
 use crate::counter::{
-    document, document_with_ranged_parameter, package_with_clauses, reference, subject, value,
-    Documents, Letters, CONTRACT, UNLIMITED, ZERO,
+    document, document_with_ranged_parameter, key, package_with_clauses, subject, value, Documents,
+    Letters, CONTRACT, UNLIMITED, ZERO,
 };
 
 /// A Counter world with one declared clause.
@@ -44,8 +45,6 @@ pub(crate) struct Fixture {
     documents: Documents,
     initial: Vec<DocumentRef>,
     keys: Vec<&'static str>,
-    /// The instances the clause binds; the objects of the subject by default.
-    bindings: Vec<&'static str>,
 }
 
 /// The world over `document` with `body`, one start with the counters
@@ -66,7 +65,6 @@ fn fixture(
         documents,
         initial,
         keys: starts.iter().map(|(key, _)| *key).collect(),
-        bindings: starts.iter().map(|(key, _)| *key).collect(),
     }
 }
 
@@ -76,21 +74,8 @@ pub(crate) fn counter(document: Vec<u8>, fairness: &str, formula: &str) -> Fixtu
 }
 
 impl Fixture {
-    /// This fixture with the clause bound to `bindings` alone.
-    fn bound_to(mut self, bindings: &[&'static str]) -> Self {
-        self.bindings = bindings.to_vec();
-        self
-    }
-
     fn letters(&self, atom: fn(i64) -> Option<bool>) -> Letters {
-        Letters {
-            bindings: self
-                .bindings
-                .iter()
-                .map(|key| reference(&self.package, &self.documents, key))
-                .collect(),
-            atom,
-        }
+        Letters { atom }
     }
 
     pub(crate) fn run(
@@ -177,6 +162,14 @@ impl Fixture {
             .iter()
             .map(|state| value(state, object))
             .collect()
+    }
+}
+
+/// The instance of the clause that binds the counter `object`.
+fn instance(object: &str) -> ModelInstance {
+    ModelInstance {
+        population: key("counters"),
+        key: object.to_owned(),
     }
 }
 
@@ -300,10 +293,7 @@ fn a_behaviour_that_ends_is_the_lasso_whose_loop_is_the_terminal_stutter_step() 
     assert_eq!(counterexample.len(), 4);
     assert_eq!(counterexample.prefix.len(), 3);
     assert_eq!(counterexample.initial_state, 0);
-    assert_eq!(
-        counterexample.over_binding,
-        Some(reference(&fixture.package, &fixture.documents, "c"))
-    );
+    assert_eq!(counterexample.over_binding, Some(instance("c")));
     assert_eq!(counterexample.trace_position(), Some(0));
     assert!(counterexample
         .prefix
@@ -544,10 +534,7 @@ fn each_needs_every_transition_of_the_operation_and_whole_needs_one() {
         );
         let outcome = fixture.decide(is_three).expect("checked");
         let counterexample = violated(&outcome);
-        assert_eq!(
-            counterexample.over_binding,
-            Some(reference(&fixture.package, &fixture.documents, "a"))
-        );
+        assert_eq!(counterexample.over_binding, Some(instance("a")));
         assert_weakly_fair(&fixture, counterexample, "inc", each);
         let a = fixture.values(counterexample, "a");
         let lasso = lasso_of(counterexample);
@@ -727,49 +714,74 @@ fn a_strong_constraint_is_refused_not_ignored() {
     );
 }
 
+/// Letters that read the counter an instance binds by its key.
+struct ByKey(fn(&str, i64) -> bool);
+
+impl ModelLetters for ByKey {
+    fn atom(
+        &self,
+        _atom: qsl_semantics::check::FormulaNodeId,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        _meter: &mut quire_exact::Meter,
+    ) -> Result<qsl_eval::temporal::AtomReading, quire_exact::Incomplete> {
+        Ok(if (self.0)(&instance.key, value(state, &instance.key)) {
+            qsl_eval::temporal::AtomReading::True
+        } else {
+            qsl_eval::temporal::AtomReading::False
+        })
+    }
+}
+
 /// FR-126 "Explicit-state limits": the model-only pass's states are charged
-/// to the run's `max_states`, across instances. Over two counters, with the
-/// clause bound to `a` alone, to `b` alone and to both, the least `max_states`
-/// that lets a run finish (it ends in the certificate refusal) is the sum of
-/// the two single-instance least budgets: the second instance gets only what
-/// the first left, passes included.
+/// to the run's `max_states`, across instances. Over two counters, `eventually
+/// holds(c.value = 1)` is read as `value = 1` for `a` and as always true for
+/// `b`. For `b` the negation has no move at the first position, so `b` has no
+/// product state and its model-only pass reads all 16 model states. The least
+/// `max_states` that lets a run finish is then more than `a`'s product plus
+/// those 16: `a`'s own model-only pass has been charged too, so the budget
+/// `b` gets is what `a`'s product and pass left.
 #[test]
 fn the_model_only_pass_spends_the_budget_the_next_instance_gets() {
-    let formula = "eventually holds(c.value = 1)";
-    let build = |bindings: &[&'static str]| {
-        fixture(
-            document(false),
-            CONTRACT,
-            "",
-            formula,
-            &[("a", 0), ("b", 0)],
+    let fixture = fixture(
+        document(false),
+        CONTRACT,
+        "",
+        "eventually holds(c.value = 1)",
+        &[("a", 0), ("b", 0)],
+    );
+    let letters = ByKey(|object, value| object == "b" || value == 1);
+    let run = |budget: usize| {
+        let mut limits = ModelCheckLimits::default();
+        limits.limits.max_states = budget;
+        check_model(
+            ModelCheckRequest {
+                subject: subject(
+                    &fixture.package,
+                    &fixture.documents,
+                    fixture.initial.clone(),
+                    &fixture.keys,
+                    UNLIMITED,
+                ),
+                item: ModelCheckItem::Clause {
+                    clause: &fixture.clauses[0],
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits,
+            },
+            &Cancel::new(),
         )
-        .bound_to(bindings)
-    };
-    // The negation dies where the bound counter is 1; the rest of the model
-    // is read by the model-only pass.
-    let least = |bindings: &[&'static str]| {
-        let fixture = build(bindings);
-        (1..=200)
-            .find(|budget| {
-                let mut limits = ModelCheckLimits::default();
-                limits.limits.max_states = *budget;
-                !matches!(
-                    fixture
-                        .run(|v| Some(v == 1), None, limits, UNLIMITED, &Cancel::new())
-                        .expect("checked"),
-                    ModelCheckOutcome::Stopped { .. }
-                )
-            })
-            .expect("a budget finishes the run")
-    };
-    let (a, b, both) = (least(&["a"]), least(&["b"]), least(&["a", "b"]));
-    assert!(a > 1 && b > 1, "the model-only pass costs budget: {a} {b}");
-    assert_eq!(both, a + b);
-    // The reported product states leave the pass out.
-    let counted = build(&["a", "b"])
-        .decide(|v| Some(v == 1))
         .expect("checked")
-        .stats();
-    assert!(usize::try_from(counted.product_states).expect("small") < both);
+    };
+    let least = (1..=200)
+        .find(|budget| !matches!(run(*budget), ModelCheckOutcome::Stopped { .. }))
+        .expect("a budget finishes the run");
+    let counted = run(least).stats().product_states;
+    let counted = usize::try_from(counted).expect("small");
+    // `b` has no product state, so the product states are `a`'s alone.
+    assert!(
+        least > counted + 16,
+        "a's model-only pass is charged before b's: {least} against {counted} + 16"
+    );
 }
