@@ -54,3 +54,9 @@ Round 1, against head 439d37769 (fix commit 6cdb4afe3).
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-001 | fixed | TC-521 fixtures: "and the subject's `max_candidates` set to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion)"; FR-126-AC-1: "and the subject's `max_candidates` 1,000,000"; ADR-018 §6 **Candidate limit** paragraph. |
+
+Round 2, against head 83aa81567 (fix commit 83aa81567).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-002 | fixed | ADR-018 §6 Candidate limit: "a setting below about 6,000, such as TC-472's 1,000, stops the run with `Stopped{ResourceExhausted, {MaxCandidates, value}}` at the first expansion." |
