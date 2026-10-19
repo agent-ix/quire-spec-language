@@ -40,4 +40,26 @@ Interactions to watch (not findings of this PR):
 - **#1010 (QSL-876)** adds a population-key argument to `TemporalClaim::requirements`. The conflict is in the `Ok(...)` body. The resolution must keep `.with_fairness(self.fairness.iter().copied())`, otherwise the hazard comes back silently: a strong item gets a weak-only candidate again.
 - **#1008 (QSL-511)** lands temporal clause emission. Until it does, no temporal `RequirementRecord` reaches `items_from_requirements` (`not_emitted`). #1008 must build the record from `TemporalClaim::requirements`, not a fresh `Requirements::new`. Any #1008 fixture that registers a temporal backend through `descriptor_from_manifest(.., None)` now has no fairness kinds, so a fair item there gets an empty candidate set. Those fixtures need `Some(&["weak","strong"])`.
 
+## New findings (disposition pass 1)
+
+Reviewed at 8a09ad0b6 (fix commits 2b5ddc17e, 150d8368d, 8a09ad0b6, after the merge of main with #1008/#1009/#1012), against the merged STD-193 text: FR-134 "Manifest `fairness_kinds` admission" and AC-3..AC-6, the FR-057 registration handoff, and TC-535 V1..V17 and steps 4-5.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | `a_refusal_leaves_the_earlier_registration_standing` (tagged FR-134-AC-5) asserts that the earlier registration's candidates are unchanged. That assertion cannot fail. `registry` is an immutable binding, and the refused descriptor never reaches `Registry::register`, because `admit` is just `descriptor_from_manifest`. Only the `is_err()` check can fail. The property holds by construction, since every fairness refusal is a `descriptor_from_manifest` error before any insertion, so nothing is wrong in the code. But the test cannot fail on the AC-5 "earlier registration stands" clause it claims. Either drop the candidate assertion and state the structural reason, or pass the result through the same `register`-on-`Ok` step the driver uses. | qsl-route/tests/it/fairness_kinds.rs:316-330 |
+
+Re-checked and clean at 8a09ad0b6:
+
+- **Causes and order.** `admit_fairness_kinds` maps every element first, so the first unknown in member order wins over any repeat (V10). Only after that does it check repeats, naming the first element that repeats an earlier one (V8, V15). `NotAList` names the member as supplied (V12, V13). `Other` is never a kind, even when it renders as `weak`. `None` on a temporal backend refuses `absent-fairness-kinds`. `Some(List(&[]))` is admitted with no kind. The member is judged after the pair and `domains` checks (V16, V17), and only when a `temporal-satisfaction` pair is advertised, so a non-temporal member is neither validated nor kept (step 5).
+- **`RegistrationCause`.** It has three new variants with `as_str` spellings that match FR-134 and FR-057. `UnknownKind` is now documented as capability-kind only, and no fairness path produces it.
+- **Callers.** Every caller that passes `None` advertises only non-temporal kinds: `routing.rs`, `provider_origin.rs`, `route_registry.rs` (the generated kinds are value-validity, operation-contract, finite-replay and composition) and `spine_run.rs`. Every temporal caller passes `Some(List(..))`. No production caller exists.
+- **Catalog wiring.** `RegistrationRefusal::catalog_code` builds `invalid_capability/<as_str>`. There is no separate cause list in code, replay or `docs/native-error-codes.md`, which has no `invalid_capability` row, so nothing there disagrees. FR-057 "Diagnostic code" names the three causes as QSL-proposed and outside the QSpec catalog (STD-194).
+- **Item path.** #1008's emission builds temporal records through `TemporalClaim::requirements` (`check/mod.rs:2458`), so `.with_fairness(...)` reaches `items_from_requirements`. `tests/it/fairness_item_path.rs` shows it end to end. The #1010 note is in the PR body.
+- **Rust.** `FairnessLabel`/`FairnessKindsMember` are `Copy` borrowed views with no allocation until refusal. No `unwrap`/`expect`/indexing on a production path. `BTreeSet` output is deterministic.
+
 ## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 2b5ddc17e. A fairness label is now refused with the dedicated `unknown-fairness-kind` (or `duplicate-fairness-kind` / `absent-fairness-kinds`), never `unknown-kind`. The `UnknownKind` doc reads "An advertised capability kind is not byte-equal to an FR-290 label ... A fairness label is never this cause". The causes follow the merged STD-193 text, and the QSpec catalog ruling is STD-194. |
+| FND-002 | fixed | 2b5ddc17e. A repeated label refuses `duplicate-fairness-kind` and is never collapsed. An absent member on a temporal backend refuses `absent-fairness-kinds`. Both follow FR-134-AC-4/AC-5 (tests `v7_v8_v10_v15_...`, `v9_...`). |
