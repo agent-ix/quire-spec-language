@@ -48,3 +48,23 @@ The PR body's "Not built here" list matches the code. Neither the PR nor the tes
 | FND-005 | medium | Spec gap: FR-128 gives no replay rule for a bounded-profile finite prefix that neither ends at a terminal state nor covers the formula's horizon from every activation. ADR-018 CX-1 states that shape only as what an engine produces ("so the evaluator decides it exactly"), and FR-128's Behavior evaluates whatever prefix it receives, so a truncated prefix evaluates under false-extension and reproduces. Add the check, with its refusal or `ReplayParity` cause, to FR-128 and an AC-3 row. This is the root of SR-13322 FND-001. | spec/functional/FR-128-replay-a-model-counterexample.md (Behavior, kind: Formula); spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md (CX-1) |
 | FND-006 | medium | Spec gap: FR-128 says replay evaluates the formula "by FR-125 under the `over` binding", but FR-125/FR-328 return `MissingFairnessPremise` for a clause with a fairness set on any trace given as observations. That rule is for supplied traces with no enabledness. FR-128 does not say whether a model prefix, which replay re-executes with enabledness, is exempt. Say that a bad prefix of a fair clause is decided on the formula alone (fairness constrains only the infinite continuation), or say what it settles. This is the root of SR-13322 FND-002. | spec/functional/FR-128-replay-a-model-counterexample.md (Behavior); spec/functional/FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md |
 | FND-007 | low | Spec gap: `replay_model_trace` now takes a `&dyn ModelLetters`, the seam that reads the `holds` atoms. FR-128's Inputs list only the request and the envelope, and say replay needs no model checker. Name the letters seam in FR-128's Inputs: that it is the one clause evaluator (FR-107), so an auditor's replay reads the same atoms, and who supplies it. | spec/functional/FR-128-replay-a-model-counterexample.md (Inputs); qsl-replay/src/model_check/replay.rs:274-280 |
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at head 79cf36a47. The fix commit changes no spec file and does not touch `settle.rs`. The PR body now lists each spec gap and deferral under "Spec gaps and deferrals for the planner". QSL-895 has no comment recording the V-6 deferral.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | Spec gap: ADR-018 CX-1 says a bounded-profile prefix "covers the formula's horizon from every activation it reports, or ends at a terminal state". EN-1 does not produce that shape: its monitor stops at the first rejecting position (the empty prefix for a decided `until[0,3]`, 2 steps for `always[0,1] eventually[0,2]` with horizon 3). So a replay rule written to CX-1's words refuses EN-1's own refutations (SR-13322 FND-007). The planner should either state that a bounded prefix replays when it decides the formula (false under every continuation) or ends at a terminal state, or require EN-1 to extend its prefix to the horizon. Then align CX-1, FR-126 and FR-128. | spec/decisions/ADR-018-temporal-properties-over-every-behaviour.md (CX-1); spec/functional/FR-128-replay-a-model-counterexample.md |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | The PR body defers FR-127 V-6's `UnfairLasso` -> `ReplayParity` row to QSL-895 (FR-131); it still settles `ReplayRefused`. The deferral is not yet recorded on QSL-895 (no comment there); the planner note asks for it. |
+| FND-002 | deferred | Declared not built: `TemporalCounterexample` has no `interval` or `trace` member, so AC-3's two rows cannot be built in this PR. No follow-up ticket yet; one must be filed before QSL-530 closes. |
+| FND-003 | deferred | Declared not built: AC-1's ConfigVersion/`Branch` rows and AC-4's `upd(a)` lasso need fixtures this PR does not add. No follow-up ticket yet; one must be filed before QSL-530 closes. |
+| FND-004 | deferred | Declared not built: AC-5/AC-6 (TC-539) for an authored clause. These payloads now refuse `AuthoredUndefined` (SR-13322 FND-003 fixed). No follow-up ticket yet; one must be filed before QSL-530 closes. |
+| FND-005 | deferred | Spec gap, sent to the planner (Linear planner note of the review pass). The code now refuses `PrefixShort`, but FR-128 still has no rule; see FND-008 for the rule's shape. |
+| FND-006 | deferred | Spec gap, sent to the planner. The code evaluates a fair clause's prefix on the formula alone; FR-128 and FR-125 still do not say so. |
+| FND-007 | deferred | Spec gap, sent to the planner: FR-128's Inputs still omit the `ModelLetters` seam. |
