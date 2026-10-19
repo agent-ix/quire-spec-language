@@ -37,9 +37,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::{
-    check_model_bounds, ModelSimState, ModelSystem, PredicateReading,
-};
+use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PredicateReading};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_semantics::check::{
@@ -48,15 +46,12 @@ use qsl_semantics::check::{
 };
 use quire_exact::{Cancel, ObjectReference, ValueType};
 
-use crate::certificate::closure::{
-    expansion_halt, fault, widen, CertificateRejection, ClosureRefusal, TemporalCertificateCheck,
+use crate::certificate::check::{
+    admit, expansion_halt, finish, poll, stopped, widen, Budgets, Checker, Halt, Step,
 };
+use crate::certificate::closure::{CertificateRejection, ClosureRefusal, TemporalCertificateCheck};
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
-use crate::proof_result::IncompleteCause;
-
-/// The type positions the requires-bound pre-check may visit, as EN-1's.
-const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// FR-169's state-graph certificate of one item instance.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -106,23 +101,17 @@ pub fn check_state_graph(
         return Ok(TemporalCertificateCheck::Rejected(rejection));
     }
     let simulation = request.subject.simulation.clone();
-    let budgets = Budgets {
-        meter: simulation.meter.work_units,
-        max_candidates: simulation.expansion.max_candidates,
-    };
-    let system = ModelSystem::new(simulation)
-        .map_err(|failure| ClosureRefusal::Admission(Box::new(failure)))?;
-    check_model_bounds(&system, BOUND_POSITIONS)
-        .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
+    let budgets = Budgets::of(&simulation);
+    let system = admit(simulation)?;
     let over = bound_over(request, &system)?;
     if system.initial().is_empty() {
         return Err(ClosureRefusal::NoInitialState);
     }
     if certificate.closure.len() > limits.limits.max_states {
-        return Ok(stopped(
+        return finish(Err(stopped(
             ModelCheckLimit::MaxStates,
             widen(limits.limits.max_states),
-        ));
+        )));
     }
     let predicates = predicates(request.claim.form());
     let check = Check {
@@ -134,11 +123,7 @@ pub fn check_state_graph(
         over: over.as_ref(),
         predicates: &predicates,
     };
-    match check.run(request.claim.form()) {
-        Ok(()) => Ok(TemporalCertificateCheck::Accepted),
-        Err(Halt::Check(result)) => Ok(result),
-        Err(Halt::Refusal(refusal)) => Err(refusal),
-    }
+    finish(check.run(request.claim.form()))
 }
 
 /// The request's `over` binding, when it is one of the subject's instances
@@ -233,41 +218,11 @@ fn malformed(certificate: &StateGraphCertificate) -> Option<CertificateRejection
     None
 }
 
-fn stopped(limit: ModelCheckLimit, value: u64) -> TemporalCertificateCheck {
-    TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached { limit, value })
-}
-
-/// A finished check: a rejection or a stop, or a refusal.
-enum Halt {
-    Check(TemporalCertificateCheck),
-    Refusal(ClosureRefusal),
-}
-
-impl From<ClosureRefusal> for Halt {
-    fn from(refusal: ClosureRefusal) -> Self {
-        Self::Refusal(refusal)
-    }
-}
-
-impl From<qsl_eval::simulation::EncodingRefusal> for Halt {
-    fn from(refusal: qsl_eval::simulation::EncodingRefusal) -> Self {
-        Self::Refusal(refusal.into())
-    }
-}
-
-type Step<T> = Result<T, Halt>;
-
 fn reject(rule: CertificateRule, at: DigestRecord) -> Halt {
     Halt::Check(TemporalCertificateCheck::Rejected(CertificateRejection {
         rule,
         at: CertificateLocus::ModelState(at),
     }))
-}
-
-#[derive(Clone, Copy)]
-struct Budgets {
-    meter: u64,
-    max_candidates: u64,
 }
 
 /// A reached closure state: the successor of each of its edges, in
@@ -301,21 +256,11 @@ struct Check<'c, 'a> {
 
 impl Check<'_, '_> {
     fn poll(&self) -> Step<()> {
-        if self.cancel.poll() {
-            if let Some(source) = self.cancel.cause() {
-                return Err(Halt::Check(TemporalCertificateCheck::Stopped(
-                    IncompleteCause::Cancelled { source },
-                )));
-            }
-        }
-        Ok(())
+        poll(self.cancel)
     }
 
     fn halt(&self, stop: &qsl_eval::simulation::ExpansionStop) -> Halt {
-        match expansion_halt(stop, self.budgets.meter, self.budgets.max_candidates) {
-            Ok(check) => Halt::Check(check),
-            Err(refusal) => Halt::Refusal(refusal),
-        }
+        expansion_halt(stop, self.budgets, Checker::StateGraph)
     }
 
     fn member(&self, state: &DigestRecord) -> bool {
@@ -328,7 +273,7 @@ impl Check<'_, '_> {
             .ok()
             .and_then(|at| self.certificate.closure.get(at))
             .copied()
-            .ok_or_else(|| fault("admitted-entry-names-a-closure-state").into())
+            .ok_or_else(|| Checker::StateGraph.fault("admitted-entry-names-a-closure-state").into())
     }
 
     fn run(&self, form: &StateGraphForm) -> Step<()> {
@@ -393,7 +338,7 @@ impl Check<'_, '_> {
             let state = reached
                 .get(&at)
                 .map(|entry| entry.state.clone())
-                .ok_or_else(|| fault("queued-state-is-reached"))?;
+                .ok_or_else(|| Checker::StateGraph.fault("queued-state-is-reached"))?;
             let expansion = self
                 .system
                 .successors(&state)
@@ -406,10 +351,10 @@ impl Check<'_, '_> {
             let mut successors = Vec::with_capacity(expansion.successors.len());
             for (_, next) in expansion.successors {
                 if edges >= self.limits.limits.max_transitions {
-                    return Err(Halt::Check(stopped(
+                    return Err(stopped(
                         ModelCheckLimit::MaxTransitions,
                         widen(self.limits.limits.max_transitions),
-                    )));
+                    ));
                 }
                 edges = edges.saturating_add(1);
                 let (_, digest) = self.system.state_key(&next)?;
@@ -447,10 +392,10 @@ impl Check<'_, '_> {
     /// Charge one more reached state against `max_states`.
     fn admit(&self, reached: &BTreeMap<DigestRecord, Reached>) -> Step<()> {
         if reached.len() >= self.limits.limits.max_states {
-            return Err(Halt::Check(stopped(
+            return Err(stopped(
                 ModelCheckLimit::MaxStates,
                 widen(self.limits.limits.max_states),
-            )));
+            ));
         }
         Ok(())
     }
