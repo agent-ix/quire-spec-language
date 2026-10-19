@@ -437,6 +437,9 @@ pub struct CheckedGraph {
     /// FR-096: the span of each declared type's name read from the unit, by
     /// its declared name, so an `Origin::TypeDeclaration` resolves.
     type_spans: BTreeMap<String, qsl_foundation::Span>,
+    /// FR-096, FR-337: the expression spans of each declaration site an
+    /// `Origin::TypeDeclaration` site name locates, by that name.
+    site_spans: BTreeMap<String, qsl_forms::ExpressionSpans>,
     /// FR-096, FR-302: the declaration each function synthesized for
     /// dispatch without form spans was derived from, by function index.
     synthesized_spans: BTreeMap<usize, qsl_foundation::Span>,
@@ -458,6 +461,8 @@ pub struct CheckedGraph {
     terminals: Vec<CheckedTerminal>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
+    /// FR-337: every emitted temporal clause, in declaration order.
+    temporal_clauses: Vec<TemporalClauseNode>,
     /// FR-165: every checked state-graph claim, in declaration order.
     state_graph_claims: Vec<CheckedStateGraphClaim>,
     /// FR-115: every operation a state clause or attempt names, with its
@@ -494,6 +499,40 @@ pub struct CheckedGraph {
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
+}
+
+/// One emitted temporal clause (FR-337 "Outputs"): the checked clause, its
+/// `temporal`/`temporal_clause` node, the `claim` occurrence of this
+/// declaration and its `over` parameter's node. Two structurally equal
+/// declarations share one node and differ in their `claim` occurrence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TemporalClauseNode {
+    clause: CheckedTemporalClause,
+    identity: quire_exact::NodeKey,
+    claim: quire_exact::Origin,
+    over: quire_exact::NodeKey,
+}
+
+impl TemporalClauseNode {
+    /// The checked clause.
+    pub fn clause(&self) -> &CheckedTemporalClause {
+        &self.clause
+    }
+
+    /// The clause's `temporal`/`temporal_clause` node.
+    pub fn identity(&self) -> quire_exact::NodeKey {
+        self.identity
+    }
+
+    /// The `claim` occurrence of this declaration of the clause node.
+    pub fn claim(&self) -> &quire_exact::Origin {
+        &self.claim
+    }
+
+    /// The `value`/`parameter` node of the clause's `over` parameter.
+    pub fn over(&self) -> quire_exact::NodeKey {
+        self.over
+    }
 }
 
 /// A checked standalone expression over named parameters. Its constructor
@@ -981,6 +1020,7 @@ impl PackageDeclarations {
         }
         let source = self.source;
         let type_spans = self.declared_type_spans;
+        let site_spans = self.declared_site_spans;
         let synthesized_spans = self.synthesized_spans;
         let embedding = self.embedding;
         let form_spans = self
@@ -1709,10 +1749,12 @@ impl PackageDeclarations {
             }
         }
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
-        // family's contract under the unit's one temporal profile. No S4
-        // emission writes a temporal node yet (FR-337), so a clause that
-        // checks is refused rather than compiled and silently missing from
-        // the package (`temporal_clause::not_emitted`).
+        // family's contract under the unit's one temporal profile, then
+        // FR-337: its `holds` conditions typed over its `over` parameter,
+        // now that every function signature is known. A clause S4 does not
+        // emit (an `on each` activation or a capture) is refused rather
+        // than compiled and silently missing from the package
+        // (`temporal_clause::not_emitted`).
         let temporal_declarations = temporal_clause::TemporalDeclarations {
             scope: &scope,
             selections: &self.temporal_selections,
@@ -1721,7 +1763,8 @@ impl PackageDeclarations {
             position_limit: limits.nodes(),
             models: &models,
         };
-        for clause in &self.temporal_clauses {
+        let mut checked_temporal = Vec::with_capacity(self.temporal_clauses.len());
+        for (index, clause) in self.temporal_clauses.iter().enumerate() {
             let mut contract_cx = crate::family::CheckContext::new(
                 &temporal_declarations,
                 contract_limits,
@@ -1730,7 +1773,50 @@ impl PackageDeclarations {
                 &mut contract_scopes,
             );
             match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
-                Ok(staged) => refusals.push(temporal_clause::not_emitted(&staged.into_value())),
+                Ok(staged) if !temporal_clause::is_emitted(&clause.form) => {
+                    refusals.push(temporal_clause::not_emitted(&staged.into_value()));
+                }
+                Ok(staged) => {
+                    let checked = staged.into_value();
+                    let location =
+                        lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                    let condition_declarations = state_clause::ClauseDeclarations {
+                        scope: &scope,
+                        signatures: &signatures,
+                        dispatch_tables: &dispatch_tables,
+                        models: &models,
+                        checking_limits: limits,
+                        location: &location,
+                        nodes_used,
+                        cancel: Some(cancel),
+                        staged: None,
+                    };
+                    let mut condition_cx = crate::family::CheckContext::new(
+                        &condition_declarations,
+                        contract_limits,
+                        &mut contract_meter,
+                        &mut contract_diagnostics,
+                        &mut contract_scopes,
+                    );
+                    match temporal_clause::condition::check_conditions(
+                        index,
+                        &clause.form,
+                        &checked,
+                        &condition_declarations,
+                        &mut condition_cx.reborrow(&scope),
+                    ) {
+                        Ok((conditions, used)) => {
+                            nodes_used = used;
+                            checked_temporal.push((index, checked, conditions));
+                        }
+                        Err(refusal) => {
+                            refusals.push(refusal);
+                            if cancel.tripped().is_some() {
+                                return Err(refusals);
+                            }
+                        }
+                    }
+                }
                 Err(StageFailure::Limit(limit)) => {
                     refusals.push(CheckRefusal {
                         location: root(Origin::Expression),
@@ -1861,6 +1947,11 @@ impl PackageDeclarations {
         }
         for clause in &mut typed_clauses {
             units.append(std::mem::take(&mut clause.formed_units));
+        }
+        for (_, _, conditions) in &mut checked_temporal {
+            for condition in conditions.values_mut() {
+                units.append(std::mem::take(&mut condition.formed_units));
+            }
         }
         let mut lowering = lowering::Lowering::new(
             &scope,
@@ -2166,6 +2257,20 @@ impl PackageDeclarations {
                 }
             }
         }
+        // FR-337: each emitted temporal clause, after every function its
+        // conditions may call, minting its node identity and recording its
+        // `claim` occurrence.
+        let mut lowered_temporal = Vec::with_capacity(checked_temporal.len());
+        for (index, checked, conditions) in &checked_temporal {
+            match lowering.temporal_clause(&lowering::TemporalClauseInput {
+                index: *index,
+                clause: checked,
+                conditions,
+            }) {
+                Ok(lowered) => lowered_temporal.push(lowered),
+                Err(refusal) => refusals.push(refusal),
+            }
+        }
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
@@ -2320,6 +2425,66 @@ impl PackageDeclarations {
                     spans: form.spans,
                     has_result: typed.has_result,
                     bounds: typed.bounds,
+                })
+            })
+            .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
+        // FR-337: each emitted temporal clause's node, its `claim`
+        // occurrence and its `over` node; FR-326 "Requirement record": its
+        // `temporal-satisfaction` record, keyed by that occurrence.
+        if lowered_temporal.len() != checked_temporal.len() {
+            return Err(unlowered());
+        }
+        let temporal_clauses = checked_temporal
+            .into_iter()
+            .zip(lowered_temporal)
+            .map(|((index, checked, conditions), lowered)| {
+                let location = lowering::temporal_location(index, lowering::TemporalSite::Claim);
+                let unkeyable = || {
+                    vec![CheckRefusal {
+                        location: location.clone(),
+                        cause: CheckCause::InternalFault(Box::new(KeyFault::UnkeyableRequirements)),
+                    }]
+                };
+                let claim = occurrences
+                    .iter_role(family::OccurrenceRole::Claim)
+                    .find(|(node, _, at)| *node == lowered.key && **at == location)
+                    .map(|(_, origin, _)| origin)
+                    .ok_or_else(unkeyable)?;
+                let objects: std::collections::BTreeSet<_> = conditions
+                    .values()
+                    .flat_map(|condition| references::body_objects(condition.body.root()))
+                    .collect();
+                for claimed in temporal_clause::TemporalTraceFamily::requirements(&checked) {
+                    let extent = claimed
+                        .requirements(claims::wire(lowered.key), &[claims::wire(lowered.over)])
+                        .map_err(|fault| {
+                            vec![CheckRefusal {
+                                location: location.clone(),
+                                cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+                                    fault,
+                                ))),
+                            }]
+                        })?;
+                    let record = claims::RequirementRecord::unguarded(
+                        extent,
+                        ValueType::Boolean,
+                        claims::wire(lowered.boolean),
+                        references::ModelReferences::new(objects.clone(), [], None),
+                    );
+                    match requirements
+                        .entry(OccurrenceKey::new(claims::wire(lowered.key), claim.clone()))
+                    {
+                        std::collections::btree_map::Entry::Vacant(slot) => {
+                            slot.insert(record);
+                        }
+                        std::collections::btree_map::Entry::Occupied(_) => return Err(unkeyable()),
+                    }
+                }
+                Ok(TemporalClauseNode {
+                    clause: checked,
+                    identity: lowered.key,
+                    claim,
+                    over: lowered.over,
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
@@ -2497,6 +2662,7 @@ impl PackageDeclarations {
             effective_limits: limits,
             form_spans,
             type_spans,
+            site_spans,
             synthesized_spans,
             embedding,
             model_selections,
@@ -2505,6 +2671,7 @@ impl PackageDeclarations {
             type_invariants,
             terminals,
             protocols: checked_protocols,
+            temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
             operation_frames,
             model_objects,
@@ -2883,6 +3050,11 @@ impl CheckedGraph {
     /// FR-113: every checked protocol declaration, in declaration order.
     pub fn protocols(&self) -> &[CheckedProtocol] {
         &self.protocols
+    }
+
+    /// FR-337: every emitted temporal clause, in declaration order.
+    pub fn temporal_clauses(&self) -> &[TemporalClauseNode] {
+        &self.temporal_clauses
     }
 
     /// FR-113: the checked protocol declared `name`, or `None`.

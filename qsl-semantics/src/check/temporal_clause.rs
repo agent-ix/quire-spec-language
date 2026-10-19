@@ -34,10 +34,12 @@
 //! operation of an admitted model refuses `missing_declaration`/`missing-name`.
 //! A clause over a model subject is classified into one `PropertyForm`.
 //!
-//! A `holds` condition, the activation's `when` and a capture's value are
-//! not checked here, and the emitted node is FR-337's: until it lands,
-//! [`not_emitted`] refuses a clause that checks, so it is never compiled
-//! into a package that silently lacks it.
+//! A `holds` condition is typed by [`condition::check_conditions`] once the
+//! package's signatures are known, and the clause is emitted as FR-337's
+//! v2 temporal clause node. The activation's `when` and a capture's value
+//! are not checked: [`not_emitted`] refuses a clause that activates `on
+//! each` or declares a capture, so it is never compiled into a package
+//! that silently lacks them.
 
 use std::collections::BTreeMap;
 
@@ -69,6 +71,8 @@ use crate::family::requirements::{classify_domains, ClassifyFailure};
 use crate::family::requirements::{ClaimExtent, Requirements};
 use crate::family::{CheckContext, CheckOutcome, FamilyContract};
 use crate::model::operation::OperationLookup;
+
+pub(crate) mod condition;
 
 /// The stage name this module's faults report.
 const STAGE: &str = "check.temporal";
@@ -334,6 +338,10 @@ pub struct CheckedTemporalClause {
     span: Span,
     profile: TemporalProfile,
     profile_ref: DefinitionRef,
+    /// The `over` parameter's name and resolved type.
+    over: (String, ValueType),
+    /// The clock role, as written.
+    clock: String,
     clock_binding: WireNodeId,
     operators: Vec<CheckedOperator>,
     horizon: Option<u64>,
@@ -341,6 +349,9 @@ pub struct CheckedTemporalClause {
     formula: CheckedFormula,
     activation: Activation,
     fairness: Vec<FairnessConstraint>,
+    /// The index among the written constraints of each fairness set
+    /// member's first occurrence, in set order.
+    fairness_sources: Vec<usize>,
     property_form: Option<PropertyForm>,
 }
 
@@ -358,6 +369,22 @@ impl CheckedTemporalClause {
     /// The one profile the clause was checked under.
     pub fn profile(&self) -> TemporalProfile {
         self.profile
+    }
+
+    /// The `over` parameter's name and resolved type.
+    pub fn over(&self) -> &(String, ValueType) {
+        &self.over
+    }
+
+    /// The clock role, as written (`clock "model-steps"` is `model-steps`).
+    pub fn clock(&self) -> &str {
+        &self.clock
+    }
+
+    /// The index among the written fairness constraints of each fairness
+    /// set member's first occurrence, in set order.
+    pub(crate) fn fairness_sources(&self) -> &[usize] {
+        &self.fairness_sources
     }
 
     /// Every operator node of the formula (connectives included), in arena
@@ -585,7 +612,8 @@ fn check_clause(
             interval,
         });
     }
-    let fairness = checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
+    let (fairness, fairness_sources) =
+        checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
     if let Some(first) = refusals.into_iter().min_by_key(|cause| cause.span().start) {
         return Err(refuse(first));
     }
@@ -631,12 +659,18 @@ fn check_clause(
         _ => None,
     };
     let property_form = property_form(profile, model_subject, &formula);
+    let over_type = types
+        .into_iter()
+        .next()
+        .ok_or_else(|| fault("over-type-resolved"))?;
 
     Ok(CheckedTemporalClause {
         name: form.name.name.clone(),
         span: declaration.span,
         profile,
         profile_ref,
+        over: (form.over.name.name.clone(), over_type),
+        clock: form.clock.text.clone(),
         clock_binding: clock_binding(&form.clock.text),
         operators,
         horizon,
@@ -654,6 +688,7 @@ fn check_clause(
             },
         },
         fairness,
+        fairness_sources,
         property_form,
     })
 }
@@ -662,16 +697,18 @@ fn check_clause(
 /// source order of first occurrence. An unmarked kind is `weak` and an
 /// unmarked granularity is `whole` (ADR-018 FA-6). A constraint under a
 /// bounded profile, or naming no operation of an admitted model, pushes its
-/// refusal onto `refusals` and joins no set.
+/// refusal onto `refusals` and joins no set. Each member comes with the
+/// index of the written constraint it was first read from.
 fn checked_fairness(
     form: &TemporalClauseForm,
     bounded: bool,
     declarations: &TemporalDeclarations<'_>,
     over: Option<&ValueType>,
     refusals: &mut Vec<TemporalCause>,
-) -> Vec<FairnessConstraint> {
+) -> (Vec<FairnessConstraint>, Vec<usize>) {
     let mut set: Vec<FairnessConstraint> = Vec::new();
-    for written in &form.fairness {
+    let mut sources = Vec::new();
+    for (index, written) in form.fairness.iter().enumerate() {
         if bounded {
             refusals.push(TemporalCause::FairnessUnderBoundedProfile { span: written.span });
             continue;
@@ -696,9 +733,10 @@ fn checked_fairness(
         );
         if !set.contains(&constraint) {
             set.push(constraint);
+            sources.push(index);
         }
     }
-    set
+    (set, sources)
 }
 
 /// The operation a fairness constraint names, resolved in an admitted
@@ -1008,9 +1046,16 @@ fn formula_horizon(
         .ok_or_else(|| fault("root-in-arena"))
 }
 
-/// The refusal for a clause that checked but that no S4 emission writes yet
-/// (FR-337): refused rather than compiled and silently missing from the
-/// package.
+/// Whether S4 emits `form`'s clause (FR-337): one that activates `on
+/// origin` and declares no capture. The `on each` activation and the
+/// captures are not checked, so a clause with either is [`not_emitted`].
+pub(crate) fn is_emitted(form: &TemporalClauseForm) -> bool {
+    matches!(form.activation, ActivationForm::Origin) && form.captures.is_empty()
+}
+
+/// The refusal for a clause that checked but that no S4 emission writes
+/// (an `on each` activation or a capture, [`is_emitted`]): refused rather
+/// than compiled and silently missing from the package.
 pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
     refusal(TemporalCause::NotEmitted {
         name: checked.name.clone(),
@@ -1018,9 +1063,9 @@ pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
     })
 }
 
-/// Every `temporal` clause of `package`, checked as the assembler's check
-/// would (test-support only: the production check refuses a clause that
-/// checks until FR-337 emits it).
+/// Every `temporal` clause of `package`, checked by the family alone, as
+/// the package check runs it before its `holds` conditions are typed
+/// (test-support only).
 #[cfg(any(test, feature = "test-support"))]
 pub fn check_clauses(
     package: &crate::check::PackageDeclarations,
