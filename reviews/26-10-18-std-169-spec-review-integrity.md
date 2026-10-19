@@ -49,3 +49,17 @@ scope:
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | FR-214-AC-3's `step M::Fill::A` addresses an attempt node nested in `Main`/`Both`/`left` by the flat `<C>::<protocol>::<node>` form of FR-432 and ADR-027 PR-1. QSpec TC-386 addresses nested nodes by branch path without `<C>` (`Impl::P::a::S`), and PR #974's CST vectors use `Fill::Main::A`. No normative text says how a step row addresses a nested node, so a resolver built from TC-386 could reject `M::Fill::A`. Route to QSpec (FR-432 table plus TC-386) to state the node segment's form. This PR's choice is the normative one. | spec/functional/FR-214-require-an-explicit-refinement-row-for-every-protocol-step-class.md:78; quire-specification spec/test-cases/TC-386-explicit-protocol-step-rows.md SR-01/SR-02 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-002 | low | The fix for FND-001 put a sentence that is not a criterion into FR-214-AC-3: "The nested path form for a node inside a sequence, parallel or branch is owned by QSpec (FR-432, TC-386)." No test can check it. It belongs under `## Dependencies`, beside "QSpec owns ... the `step` row syntax". | spec/functional/FR-214-require-an-explicit-refinement-row-for-every-protocol-step-class.md:78 |
+
+## Dispositions
+
+Round 1, checked against fix commit 8b08289fa67a2707259bea9e7e0e83a0275d3ec2.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-214-AC-3 now states that QSpec (FR-432, TC-386) owns the path form for a node nested inside a sequence, parallel or branch. The upstream decision stays with QSpec. |
