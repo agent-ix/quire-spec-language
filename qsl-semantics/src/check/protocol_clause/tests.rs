@@ -212,8 +212,8 @@ fn recovery_flow(commit: &str, main_extra: &str) -> String {
          compensate Undo for Main::Applied as (failure: Boolean) by R \
          on M::Actor::op using v clock \"ticks\" {{\n\
          activate first (trigger: Boolean) when {{ true }} {{ }}\n\
-         within [0,10]; attempts 2 of M::Actor;\n\
-         retry (current_attempt: Boolean, prior: Boolean) {{ true }};\n\
+         within [0,10]; attempts 2 of M::Try;\n\
+         retry (current_attempt: M::Try, prior: M::Try) {{ true }};\n\
          commit {commit}; recover (recovery: Boolean) {{ true }}; }}\n\
          run sequence Main {{\n\
          attempt Tried by R on M::Actor::op contracts [] as (tried: Boolean) {{ true }};\n\

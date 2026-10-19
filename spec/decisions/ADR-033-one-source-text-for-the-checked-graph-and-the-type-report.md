@@ -100,11 +100,11 @@ Measured on main when this was written.
   `ParsedSource` with an `invalid_syntax` diagnostic at `version` for the
   composed binding source, and `build_unit` refuses it
   (`FormsCause::RecoveringCst`).
-- **The families.** S2 has dispatch entries for `function`, `type`, `record`,
+- **The families.** At the time of this decision, S2 had dispatch entries for `function`, `type`, `record`,
   `tuple`, `enum`, `predicate`, `dimension`, `unit`, `invariant`, `pre`,
   `post`, `body`, `protocol` and `temporal` (`qsl-forms/src/dispatch.rs`). It
-  has none for a `relation` or `hyper` clause, which `qsl-cst` parses and S2
-  refuses with `NoDispatchEntry`. A `temporal` clause passes S2; S3 refuses it
+  had none for a `relation` or `hyper` clause, which `qsl-cst` parsed and S2
+  refused with `NoDispatchEntry`. A `temporal` clause passes S2; S3 refuses it
   with `UnimplementedTemporalClause` (`unsupported_construct`) until its
   checker lands. The composed syntax has four declaration kinds (predicate,
   state, temporal, protocol); `relation` and `hyper` exist only in `qsl-cst`.
@@ -221,11 +221,12 @@ text. These points follow from it and are decided.
 - **Moved and unmoved families.** The producer admits a family only once its
   type phase runs in S3 over S2 forms. It refuses a construct of a family
   whose type phase has not moved with `unsupported_construct`, at the
-  construct. A unit is therefore never read by two parsers. The unmoved
-  constructs are the `relation` and `hyper` clauses, which S2 refuses with
-  `NoDispatchEntry`. The refusal disappears for a family when the family
-  moves. `temporal` has an S2 dispatch entry; its S3 state is that family's
-  own.
+  construct. A unit is therefore never read by two parsers. S2
+  builds a form for a `relation` clause and a `hyper` clause over
+  `behaviours`, S3 checks them, and a checked clause is refused only as
+  `NotEmitted`, as a checked `temporal` clause is, until an S4 emission writes
+  it. A `hyper` clause over a finite trace domain and a `relation` over names
+  that are not model operations keep the finite reading of QSpec FR-191.
 - **Profile selection.** A source selects a profile by identity alone
   (FR-110). A profile line that states `version` or `digest` after the
   identity is not the single grammar and is refused. The type phase resolves
@@ -243,7 +244,8 @@ text. These points follow from it and are decided.
 - **Composed requirements.** FR-035, FR-036, FR-040 and FR-049 stay normative
   for the families that have not moved. The PR that moves a family retires or
   amends the parts of those requirements, and of their test cases, that name
-  that family; the last family's PR retires the remainder. This record
+  that family; retiring the rest of the composed lane is open work tracked as
+  QSL-868. This record
   amends none of them.
 
 The implementing slice is sequenced after the supplied-budget and union slices.
@@ -252,13 +254,16 @@ The implementing slice is sequenced after the supplied-budget and union slices.
 
 - One `Source` and one digest name the unit on every side of the checked unit.
 - The composed profile spelling and the composed parser disappear family by
-  family, with the last family's PR.
+  family; the remaining retirement is open work tracked as QSL-868.
 - The interim label match has no successor and no flag.
 - The owner-issued source inventory cannot be built from a graph and a type
   report that do not describe the same bytes.
 - FR-035, FR-036, FR-040 and FR-049 keep describing the composed lane until
   each family's PR retires its part, so the two bodies of text apply to
   disjoint families at every point.
+  The composed lane (`src/linking/composed`, `src/checking/composed`,
+  `src/parser/composed*`, `src/syntax/composed*`) is still present; its
+  retirement is open work tracked as QSL-868.
 
 ## Alternatives Considered
 

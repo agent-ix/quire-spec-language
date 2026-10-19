@@ -42,7 +42,7 @@ pub struct Violated;
 /// `eventually[0,b]` and `until[0,b]` over an operand with no interval
 /// operator: the earliest open deadline. An obligation opened at position
 /// `i` needs the operand at some position in `[i, i + b]`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeadlineCounter {
     bound: u64,
     /// The positions after the current one that may still discharge the
@@ -109,7 +109,7 @@ impl DeadlineCounter {
 /// `always[0,b]` and `release[0,b]` over an operand with no interval
 /// operator: the furthest required position. An obligation opened at
 /// position `i` needs the operand at every position in `[i, i + b]`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ExtentCounter {
     bound: u64,
     /// The positions after the current one that still need the operand; 0
@@ -164,7 +164,7 @@ impl ExtentCounter {
 /// `once[0,b]` and `since[0,b]` (and, over the negated operand,
 /// `historically` and `triggered`): the positions since the operand last
 /// held, saturating past `b`.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PastAgeCounter {
     bound: u64,
     /// Positions since the operand last held; `None` when it never has or
@@ -212,7 +212,7 @@ impl PastAgeCounter {
 
 /// The shift of an `[a,*]` occurrence: the positions to wait before the
 /// unbounded operator's own states begin.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ShiftCounter {
     shift: u64,
     remaining: u64,

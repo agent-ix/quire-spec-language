@@ -257,8 +257,8 @@ impl DeclarationRegions {
 
     /// FR-096: the region a check refusal names. A stage limit a family
     /// `check` located carries its own region (a declaration's span, or the
-    /// node `Typer`'s depth stop failed at); a `ProtocolAnchor` or `Temporal` cause
-    /// (FR-113, FR-326) carries its own span directly, since a protocol has no
+    /// node `Typer`'s depth stop failed at); a `ProtocolAnchor`, `Temporal` or `ProtocolObligation` cause
+    /// (FR-113, FR-326, FR-381) carries its own span directly, since a protocol has no
     /// expression tree for a `Location` path to walk; every other refusal
     /// is located by its `location`.
     pub fn refusal_region(&self, refusal: &CheckRefusal) -> Option<SourceRegion> {
@@ -268,6 +268,9 @@ impl DeclarationRegions {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
             CheckCause::Temporal(cause) => {
+                region(&self.source, self.embedding.as_deref(), cause.span())
+            }
+            CheckCause::ProtocolObligation(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span())
             }
             CheckCause::TerminalNotEmitted { span, .. } => {
