@@ -1688,10 +1688,7 @@ impl PackageDeclarations {
         // `probabilistic` declarations. What the forms alone let S3 refuse is
         // refused; the rest refuses `not-yet-implemented`, so nothing
         // probabilistic compiles unchecked (`probabilistic::check`).
-        refusals.extend(probabilistic::check(
-            &self.probabilistic,
-            self.rational_bits,
-        ));
+        refusals.extend(probabilistic::check(&self.probabilistic));
         // FR-165: each state-graph claim, checked through the `StateGraph`
         // family's contract once every function signature is known, against
         // the same package-wide node total and contract meter.

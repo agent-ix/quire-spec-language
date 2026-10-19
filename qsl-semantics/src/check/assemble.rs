@@ -102,9 +102,6 @@ pub struct AssemblyLimits {
     /// assembler forms `10^s` for (FR-091 "Dimension and unit
     /// declarations").
     pub decimal_scale: u64,
-    /// The largest bit length one probabilistic exact value may be written
-    /// at (`s3.rational_bits`, FR-185), carried into the package it builds.
-    pub rational_bits: u64,
     /// The type-environment ceilings the unit's records, tuples and object
     /// types are admitted under (FR-082).
     pub environment: TypeEnvironmentLimits,
@@ -117,10 +114,7 @@ pub struct AssemblyLimits {
 /// settings of its `environment`.
 impl SettingLimits for AssemblyLimits {
     fn bounds(&self) -> Vec<(Setting, u64)> {
-        let mut bounds = vec![
-            (Setting::S3DecimalScale, self.decimal_scale),
-            (Setting::S3RationalBits, self.rational_bits),
-        ];
+        let mut bounds = vec![(Setting::S3DecimalScale, self.decimal_scale)];
         bounds.extend(super::environment_bounds(&self.environment));
         bounds.extend(self.identity.bounds());
         bounds
@@ -130,10 +124,6 @@ impl SettingLimits for AssemblyLimits {
         match setting {
             Setting::S3DecimalScale => {
                 self.decimal_scale = bound;
-                true
-            }
-            Setting::S3RationalBits => {
-                self.rational_bits = bound;
                 true
             }
             _ => {
@@ -150,14 +140,10 @@ const DEFAULT_ENVIRONMENT_STEPS: u64 = 16_777_216;
 /// The default decimal-scale bound (FR-091).
 pub const DEFAULT_DECIMAL_SCALE: u64 = 4096;
 
-/// The default rational-bits ceiling (FR-185, NFR-011).
-pub const DEFAULT_RATIONAL_BITS: u64 = 65_536;
-
 impl Default for AssemblyLimits {
     fn default() -> Self {
         Self {
             decimal_scale: DEFAULT_DECIMAL_SCALE,
-            rational_bits: DEFAULT_RATIONAL_BITS,
             // FR-255's published default, 16777216 edges and units.
             environment: TypeEnvironmentLimits {
                 ancestor_steps: DEFAULT_ENVIRONMENT_STEPS,
@@ -3129,7 +3115,6 @@ impl PackageDeclarations {
         }
 
         let mut package = PackageDeclarations::new(source, limits.identity);
-        package.rational_bits = limits.rational_bits;
         package.types = types;
         package.operations = operations;
         package.operation_clauses = operation_clauses;

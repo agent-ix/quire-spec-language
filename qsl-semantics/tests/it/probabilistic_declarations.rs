@@ -14,7 +14,7 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::Span;
-use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
+use qsl_semantics::check::CheckRefusal;
 use quire_exact::Integer;
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
@@ -221,116 +221,31 @@ fn integer_of_bits(bits: u64) -> String {
     Integer::one().shifted_left(bits - 1).to_string()
 }
 
-/// The code, cause, bound, counter and setting of every limit outcome among
-/// `body`'s refusals.
-fn limit_outcomes(body: &str) -> Vec<(Code, Option<&'static str>, u64, u128, &'static str)> {
-    refusals_of(body)
-        .iter()
-        .filter_map(|refusal| match &refusal.cause {
-            CheckCause::Probabilistic(cause) => match cause.as_ref() {
-                ProbabilisticCause::RationalBits { limit, .. } => Some((
-                    refusal.cause.code(),
-                    refusal.cause.cause(),
-                    limit.configured_bound(),
-                    limit.actual(),
-                    limit.setting().name(),
-                )),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect()
-}
-
 fn weight_of(value: &str) -> String {
     format!("random Server::attempt(d) ~ {{ 1 ms: {value} }};")
 }
 
-/// FR-185 "Exact values": the written bit length is measured before any
-/// reduction, against the inclusive `s3.rational_bits` ceiling (65,536 by
-/// default).
-#[trace("TC-620")]
+/// FR-185 "Exact values": a value is read as written and never reduced or
+/// expanded, so a huge scale or a huge `rational(n, n)` costs nothing. (The
+/// dedicated rational-bits ceiling waits on QSL-883.)
+#[trace("TC-620", "TC-621")]
 #[test]
-fn exact_values_past_the_rational_bits_ceiling_are_a_limit_outcome() {
-    let limit = (
-        Code::StageLimitExceeded,
-        Some("rational-bits-exceeded"),
-        65_536,
-    );
-    let outcome = |source: String, actual: u128| {
-        let [(code, cause, bound, counter, setting)] = limit_outcomes(&source)[..] else {
-            panic!(
-                "exactly one limit outcome for {}",
-                &source[..60.min(source.len())]
-            );
-        };
-        assert_eq!(
-            ((code, cause, bound), counter, setting),
-            (limit, actual, "s3.rational_bits")
-        );
-    };
-    outcome(weight_of("decimal(1, 4294967295)"), 14_267_572_524);
-    // `rational(n, n)` reduces to 1, and is refused as written.
+fn huge_written_exact_values_are_read_without_expansion() {
     let n = integer_of_bits(70_000);
-    outcome(weight_of(&format!("rational({n}, {n})")), 70_000);
-    outcome(
-        weight_of(&format!("rational({}, 1)", integer_of_bits(65_537))),
-        65_537,
-    );
-    outcome(weight_of("decimal(1, 19729)"), 65_539);
-    // Admitted: the ceiling is inclusive.
     for value in [
-        format!("rational({}, 1)", integer_of_bits(65_536)),
-        "decimal(1, 19728)".to_owned(),
+        "decimal(1, 4294967295)".to_owned(),
+        format!("rational({n}, {n})"),
         "decimal(25, 3)".to_owned(),
         "decimal(5, 0)".to_owned(),
     ] {
-        assert!(limit_outcomes(&weight_of(&value)).is_empty());
+        let source = weight_of(&value);
+        assert_eq!(located(&source), [not_yet(&source)]);
     }
-}
-
-/// The ceiling is the package's `s3.rational_bits` bound, and it applies to
-/// every exact value a claim reads, not only a weight.
-#[trace("TC-620", "TC-621")]
-#[test]
-fn the_rational_bits_bound_applies_to_every_exact_value() {
     let source = claim(
         "with alpha decimal(1, 4294967295), beta 0.01, indifference 0.0005 \
          { probability >= 0.999 [ holds(true) ] }",
     );
-    assert_eq!(
-        limit_outcomes(&source),
-        [(
-            Code::StageLimitExceeded,
-            Some("rational-bits-exceeded"),
-            65_536,
-            14_267_572_524,
-            "s3.rational_bits"
-        )]
-    );
-    // A lower bound refuses a value the default admits, and the weight of a
-    // workload and a threshold are measured too.
-    let mut declarations = admit_and_assemble_with_body(
-        &document(),
-        "workload Steady on Config { weight Server::request = 1000; }",
-    )
-    .expect("assembles");
-    declarations.rational_bits = 9;
-    let refusals = declarations
-        .check(CheckingLimits::default())
-        .expect_err("the unit refuses");
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals[0].cause.code(), Code::StageLimitExceeded);
-    let mut declarations = admit_and_assemble_with_body(
-        &document(),
-        "workload Steady on Config { weight Server::request = 1000; }",
-    )
-    .expect("assembles");
-    declarations.rational_bits = 10;
-    let refusals = declarations
-        .check(CheckingLimits::default())
-        .expect_err("the unit refuses");
-    assert_eq!(refusals[0].cause.code(), Code::UnsupportedConstruct);
+    assert_eq!(located(&source), [not_yet(&source)]);
 }
 
 fn claim(body: &str) -> String {

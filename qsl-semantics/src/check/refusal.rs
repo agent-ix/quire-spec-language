@@ -752,7 +752,6 @@ impl TryFrom<Setting> for CheckingLimitKind {
             | Setting::S1Tokens
             | Setting::S1Nodes
             | Setting::S1WorkUnits
-            | Setting::S3RationalBits
             | Setting::S3DecimalScale
             | Setting::DependencyLibraries
             | Setting::DependencyImportEdges
