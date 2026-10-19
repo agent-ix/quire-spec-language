@@ -157,7 +157,7 @@ fn clause(aliases: &[&str], declaration: &str) -> CheckedHyperClause {
 
 fn relation(declaration: &str) -> CheckedModelRelation {
     match check_under(&["V"], INFINITE, declaration) {
-        (_, Ok(CheckedHyper::Relation(relation))) => relation,
+        (_, Ok(CheckedHyper::Relation(relation))) => *relation,
         (_, other) => panic!("{declaration}: a checked relation, not {other:?}"),
     }
 }
@@ -562,7 +562,7 @@ fn the_adr_clauses_classify_into_their_forms() {
     }
     let det = relation(DET);
     assert_eq!(det.form(), HyperForm::StepRelation);
-    assert!(unbounded(&CheckedHyper::Relation(det)));
+    assert!(unbounded(&CheckedHyper::Relation(Box::new(det))));
 }
 
 /// FR-173-AC-2: each clause outside the admitted forms is `Other` and names
