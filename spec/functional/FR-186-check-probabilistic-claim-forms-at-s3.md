@@ -82,39 +82,54 @@ pub struct Confidence { pub alpha: Rational, pub beta: Rational, pub indifferenc
 ## Behavior
 
 Each refusal below that carries a bracketed string is an
-`invalid_probabilistic_model` diagnostic (QSpec FR-407) with that cause; it
-retains the claim's locus and names the offending part. A decimal literal is
-an exact rational only where the grammar takes an `exact-value` (a
-threshold, a quantile level, a confidence parameter); a threshold in an
-`expr` position, such as an event comparison's, is written `rational(n, d)`
-or `decimal(n, s)`.
+`invalid_probabilistic_model` diagnostic with that cause; it retains the
+claim's locus and names the offending part. `qualitative-threshold`,
+`partial-confidence`, `foreign-workload` and `fairness-under-workload` are
+in QSpec FR-272's closed set for that code (QSpec FR-407).
+`invalid-confidence` and `quantile-over-fraction` are QSL-proposed causes
+that QSpec does not yet define; they are requested of QSpec in STD-188, and
+QSL emits them until QSpec adds them or names others.
+
+A decimal literal denotes an exact rational only where the grammar takes an
+`exact-value`: a probability, mean-of-fraction or long-run threshold, a
+quantile level, a confidence parameter and the magnitude of a
+`quantity-literal`. A bare dimensionless threshold in an `expr` position,
+such as an event comparison's `>= rational(999, 1000)`, is written
+`rational(n, d)` or `decimal(n, s)`; a quantity threshold such as `5 ms` or
+`0.005 s` is a `quantity-literal` and keeps its decimal magnitude. S3 reduces
+every `exact-value` under the ceiling and refusal that FR-185 states
+(`resource_exhausted`/`exact-value-bits-exceeded`).
 
 ### Kind and subject
 
 - S3 SHALL classify a `probabilistic` claim with the QSpec FR-290 kind
   `probabilistic-satisfaction`.
-- S3 SHALL require a model subject (FR-125). A `probabilistic` claim over a
-  trace subject SHALL be refused, with a diagnostic that names window
-  aggregates (FR-194) as the form for observed statistics.
+- S3 SHALL require a model subject (FR-125).
+- If a `probabilistic` claim has a trace subject, S3 SHALL refuse it with a
+  diagnostic that names window aggregates (FR-194) as the form for observed
+  statistics.
 - S3 SHALL require exactly one scheduler: `under W` naming a workload of the
-  subject's model (FR-185), or `under every scheduler`.
-- A claim under a workload SHALL carry no fairness set (ADR-024 PM-7); a
+  subject's model (FR-185), or `under every scheduler`. A workload name is a
+  package-wide identifier, so `W` resolves to the one workload of that name.
+- If `under W` names a workload declared on another model than the claim's
+  subject, S3 SHALL refuse the claim [`foreign-workload`], naming the
+  workload and its model.
+- A claim under a workload carries no fairness set (ADR-024 PM-7); a
   fairness set belongs to `under every scheduler`. The grammar's
   `under ident` takes no fairness items, so source text cannot state one
-  under a workload: S1 refuses it `invalid_syntax`, and `SchedulerForm::Workload`
-  (FR-392) has nowhere to hold one. Any other producer of a scheduler that
-  pairs a workload with a fairness set SHALL be refused
-  [`fairness-under-workload`], naming PM-7.
-- A workload of another model than the subject's SHALL be refused
-  [`foreign-workload`].
+  under a workload: S1 refuses `under W fair weak Op` `invalid_syntax`, and
+  `SchedulerForm::Workload` (FR-392) cannot hold one. QSL has no producer of
+  a workload scheduler with a fairness set, so S3 has no
+  `fairness-under-workload` check; QSpec FR-407 defines that cause, and
+  STD-188 asks QSpec to settle whether the grammar or the cause changes.
 
 ### Events and measures
 
 - An `Event::Formula` SHALL be a formula under a bounded profile with
   activation `on origin` and only interval operators (ADR-018 TP-2). S3
-  SHALL record its horizon `h` (ADR-014 TR-4). A formula with an unbounded
-  operator SHALL be refused, with a diagnostic stating that a probabilistic
-  event needs a finite window.
+  SHALL record its horizon `h` (ADR-014 TR-4).
+- If a formula has an unbounded operator, S3 SHALL refuse the claim with a
+  diagnostic stating that a probabilistic event needs a finite window.
 - `accumulate R from holds(A) until holds(B) within h` SHALL name a reward
   `R` declared by at least one operation of the model; a step of an
   operation that declares no `R` contributes 0. `steps …` and `fraction holds(P) over [0, h]`
@@ -128,24 +143,33 @@ or `decimal(n, s)`.
 
 - Every probability threshold `θ`, quantile level `q`, mean-of-fraction
   threshold and long-run threshold SHALL be an exact rational with
-  `0 < θ < 1`. S3 SHALL refuse a threshold of 0 or 1, with a diagnostic
+  `0 < θ < 1`.
+- If a threshold is 0 or 1, S3 SHALL refuse the claim
   [`qualitative-threshold`], naming the qualitative form (an ADR-018 TP-2
   claim, or a possible property).
-- A quantile SHALL be over an `accumulate` or `steps` measure; S3 SHALL
-  refuse a quantile over a fraction measure [`quantile-over-fraction`]. A
+- A quantile SHALL be over an `accumulate` or `steps` measure, and a
   `mean of` SHALL be over a fraction measure.
+- If a quantile is over a fraction measure, S3 SHALL refuse the claim
+  [`quantile-over-fraction`] (QSL-proposed, STD-188).
 - A threshold with a dimension SHALL have the reward's dimension. A
   threshold in another unit of that dimension SHALL convert exactly by
-  QSpec FR-142; a threshold of another dimension SHALL be refused
-  (`ill_typed`/`unit-mismatch`), naming the dimension.
+  QSpec FR-142.
+- If a threshold has another dimension than the reward's, S3 SHALL refuse
+  the claim (`ill_typed`/`unit-mismatch`), naming the dimension.
 
 ### Confidence parameters
 
-- A claim MAY state `alpha`, `beta` and `indifference`, all three or none.
-  When it states one or two, S3 SHALL refuse it [`partial-confidence`].
+- A claim MAY state `alpha`, `beta` and `indifference`, each exactly once,
+  all three or none.
+- If a claim states one or two of them, S3 SHALL refuse it
+  [`partial-confidence`], naming the missing parameter.
+- If a claim states a parameter more than once, S3 SHALL refuse it
+  [`partial-confidence`], naming the repeated parameter.
 - When stated, S3 SHALL require `0 < α < 1`, `0 < β < 1`, `0 < ι`,
-  `θ − ι > 0` and `θ + ι < 1` for the claim's threshold `θ`, and refuse
-  the claim otherwise [`invalid-confidence`], naming the parameter.
+  `θ − ι > 0` and `θ + ι < 1` for the claim's threshold `θ`.
+- If a stated parameter breaks one of those bounds, S3 SHALL refuse the
+  claim [`invalid-confidence`] (QSL-proposed, STD-188), naming the
+  parameter.
 - The obligation identity SHALL bind the subject, the profile, the form, the
   scheduler (the workload's identity, or `every`), the `over` binding and,
   when stated, the confidence parameters. It SHALL bind no method and no
@@ -156,9 +180,9 @@ or `decimal(n, s)`.
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-186-AC-1 | ADR-024 §7's four claims check: `NoFault` as `Probability{AtLeast(999/1000), Formula{horizon: 1000}}`; `P95` as `Quantile{q: 19/20, Accumulate{duration, within: 10}, AtMost(5 ms)}`; `LongRun` as `LongRunFraction{AtLeast(999/1000)}`; `Monthly`, written with the threshold `rational(999, 1000)`, as `Probability` over `Compare{Fraction{window: 10000}, AtLeast(999/1000)}`; each with `Workload(Steady)` and its stated `Confidence`. | Test (TC-621) |
-| FR-186-AC-2 | `P95` with threshold `0.005 s` checks and records `5 ms`; with threshold `5 m` (length) it is refused `ill_typed`/`unit-mismatch` naming the dimension. `probability >= 1 [E]` and `probability >= 0 [E]` are refused `qualitative-threshold` naming the qualitative form. `quantile 0.95 of (fraction holds(v.up) over [0, 10]) <= rational(1, 2)` is refused `quantile-over-fraction`. | Test (TC-621) |
-| FR-186-AC-3 | `probability >= 0.99 [always holds(n.healthy)]` under event-position is refused as an unbounded event; `probability >= 0.99 [eventually[0,100] always[0,10] holds(n.healthy)]` checks with horizon 110. A `probabilistic` claim over a trace subject is refused, and its diagnostic names window aggregates. A claim `under Steady` naming a workload of another model is refused `foreign-workload`. `under every scheduler fair weak Node::tick` checks and carries the fairness set. `under Steady fair weak Node::tick` is refused at S1 `invalid_syntax`, because `under ident` takes no fairness items. | Test (TC-621) |
-| FR-186-AC-4 | `NoFault` with `indifference 0.002` is refused `invalid-confidence` (`θ + ι = 1.001`); with only `alpha` stated it is refused `partial-confidence`; with none stated it checks with `confidence: None`. `NoFault` at `alpha 0.01` and at `alpha 0.05` have different obligation identities; `NoFault` under `Steady` and under a second workload `Burst` have different obligation identities. | Test (TC-621) |
+| FR-186-AC-2 | `P95` with threshold `0.005 s` checks and records `5 ms`; with threshold `5 m` (length) it is refused `ill_typed`/`unit-mismatch` naming the dimension. `probability >= 1 [E]` and `probability >= 0 [E]` are refused `qualitative-threshold` naming the qualitative form. `quantile 0.95 of (fraction holds(v.up) over [0, 10]) <= rational(1, 2)` is refused `quantile-over-fraction` (QSL-proposed). | Test (TC-621) |
+| FR-186-AC-3 | `probability >= 0.99 [always holds(n.healthy)]` under event-position is refused as an unbounded event; `probability >= 0.99 [eventually[0,100] always[0,10] holds(n.healthy)]` checks with horizon 110. A `probabilistic` claim over a trace subject is refused, and its diagnostic names window aggregates. `NoFault` (on `Health`) with `under Throttle`, where `Throttle` is declared `on Service`, is refused `foreign-workload` naming `Throttle` and `Service`; `NoFault` with `under Steady`, `Steady` declared `on Health`, checks. `under every scheduler fair weak Node::tick` checks and carries the fairness set. `under Steady fair weak Node::tick` is refused at S1 `invalid_syntax`, because `under ident` takes no fairness items. | Test (TC-621) |
+| FR-186-AC-4 | `NoFault` with `indifference 0.002` is refused `invalid-confidence` (`θ + ι = 1.001`); with only `alpha` stated it is refused `partial-confidence`; with `alpha 0.01, alpha 0.05, beta 0.01, indifference 0.0005` it is refused `partial-confidence` naming `alpha`; with `alpha decimal(1, 4294967295)` it is refused `resource_exhausted`/`exact-value-bits-exceeded`; with none stated it checks with `confidence: None`. `NoFault` at `alpha 0.01` and at `alpha 0.05` have different obligation identities; `NoFault` under `Steady` and under a second workload `Burst` have different obligation identities. | Test (TC-621) |
 
 ## Dependencies
 
