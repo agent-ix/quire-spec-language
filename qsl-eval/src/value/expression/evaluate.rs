@@ -29,7 +29,7 @@ use qsl_semantics::check::{
 use qsl_semantics::family::FamilyOutcome;
 use qsl_semantics::family::FamilyResult;
 use qsl_semantics::model::key::DeclarationKey;
-use qsl_semantics::model::object_environment::ObjectEnvironment;
+use qsl_semantics::model::object_environment::{ObjectEnvironment, ObservedRead};
 use qsl_semantics::model::population::PopulationBinding;
 use qsl_semantics::value::model_query::{evaluate_all_instances, evaluate_lookup, ModelQueryHalt};
 use qsl_semantics::value::{divide as integer_divide, modulo as integer_modulo};
@@ -556,7 +556,12 @@ pub(crate) struct Machine<'a, 'm> {
     /// location (`CheckedStateClause::reads`), consulted only at an
     /// `Attribute` node to choose `objects` or `pre_objects`. Empty for the
     /// `Value` family.
-    reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+    reads: Option<
+        &'a std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        >,
+    >,
     /// Which family this `Machine` evaluates (SR-750 FND-011 round 2): set
     /// once, explicitly, by whichever constructor built it, rather than
     /// inferred from `reads.is_some()`. [`Self::new`] always builds
@@ -632,7 +637,12 @@ impl<'a, 'm> Machine<'a, 'm> {
         graph: &'a CheckedGraph,
         objects: &'a ObjectEnvironment,
         pre_objects: Option<&'a ObjectEnvironment>,
-        reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+        reads: Option<
+            &'a std::collections::BTreeMap<
+                Location,
+                qsl_semantics::model::clause_observation::Observation,
+            >,
+        >,
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
     ) -> Self {
@@ -654,7 +664,12 @@ impl<'a, 'm> Machine<'a, 'm> {
         graph: &'a CheckedGraph,
         objects: &'a ObjectEnvironment,
         pre_objects: Option<&'a ObjectEnvironment>,
-        reads: Option<&'a std::collections::BTreeMap<Location, qsl_semantics::check::Observation>>,
+        reads: Option<
+            &'a std::collections::BTreeMap<
+                Location,
+                qsl_semantics::model::clause_observation::Observation,
+            >,
+        >,
         meter: &'m mut Meter,
         dispatch_tables: &'a [DispatchTable],
         family: EvaluationFamily,
@@ -1703,7 +1718,8 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }
                 let read_reference = reference.clone();
                 let reference = if self.reads.is_some_and(|reads| {
-                    reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
+                    reads.get(node.location())
+                        == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
                 }) {
                     self.trail
                         .as_ref()
@@ -1728,6 +1744,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                     .objects()
                     .attribute(self.scope.types(), &reference, field)
                     .ok_or_else(|| invariant("attribute-slot-unresolved"))?;
+                self.log_field_read(node, objects, &reference, field)?;
                 let witnessed = objects.is_witnessed(self.scope.types(), &reference, field);
                 if witnessed {
                     self.witnessed_reads.insert(node.location().clone());
@@ -2004,6 +2021,7 @@ impl<'a, 'm> Machine<'a, 'm> {
                 };
                 let binding = self.resolve_population(population_id, *maximum)?;
                 let binding = self.select_anchor(binding)?;
+                self.log_membership_read(binding, None);
                 evaluate_all_instances(binding, collection_type, self.meter)?
             }
             NodeKind::Lookup {
@@ -2042,6 +2060,12 @@ impl<'a, 'm> Machine<'a, 'm> {
                     _ => return Err(invariant("lookup-reference-result-expected")),
                 };
                 let binding = self.select_anchor(binding)?;
+                let looked_up = if let Value::Reference(looked_up) = &reference_value {
+                    Some(looked_up.clone())
+                } else {
+                    None
+                };
+                self.log_membership_read(binding, looked_up);
                 evaluate_lookup(
                     binding,
                     target_key,
@@ -2155,7 +2179,8 @@ impl<'a, 'm> Machine<'a, 'm> {
     fn objects_for(&self, node: CheckedNode<'_>) -> Result<&'a ObjectEnvironment, Halt> {
         match self.reads {
             Some(reads)
-                if reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre) =>
+                if reads.get(node.location())
+                    == Some(&qsl_semantics::model::clause_observation::Observation::Pre) =>
             {
                 self.pre_objects.ok_or_else(|| {
                     Halt::Family(FamilyResult::Refused(Box::new(
@@ -2168,6 +2193,57 @@ impl<'a, 'm> Machine<'a, 'm> {
             }
             _ => Ok(self.objects),
         }
+    }
+
+    /// Records the read of `reference`'s `field` in `objects`' read log,
+    /// when it keeps one, under the instant the attribute node observes.
+    fn log_field_read(
+        &self,
+        node: CheckedNode<'_>,
+        objects: &ObjectEnvironment,
+        reference: &ObjectReference,
+        field: &FieldRef,
+    ) -> Result<(), Halt> {
+        let Some(log) = objects.read_log() else {
+            return Ok(());
+        };
+        let attribute = self
+            .scope
+            .types()
+            .attributes(reference.object_type())
+            .and_then(|attributes| {
+                attributes
+                    .iter()
+                    .find(|attribute| attribute.stands_for(field))
+            })
+            .ok_or_else(|| invariant("logged-attribute-unresolved"))?;
+        let observation = self
+            .reads
+            .and_then(|reads| reads.get(node.location()).copied())
+            .unwrap_or(qsl_semantics::model::clause_observation::Observation::Current);
+        log.record(ObservedRead::Field {
+            observation,
+            object: reference.clone(),
+            owner: attribute.owner(),
+            name: attribute.field().name().to_owned(),
+        });
+        Ok(())
+    }
+
+    /// Records the read of `binding`'s population, at the anchor the
+    /// evaluation selected, in the read log of the evaluation's objects.
+    fn log_membership_read(&self, binding: &PopulationBinding, object: Option<ObjectReference>) {
+        let Some(log) = self.objects.read_log() else {
+            return;
+        };
+        log.record(ObservedRead::Membership {
+            observation: match self.anchor {
+                Anchor::Pre => qsl_semantics::model::clause_observation::Observation::Pre,
+                Anchor::Post => qsl_semantics::model::clause_observation::Observation::Post,
+            },
+            population: binding.population_key().clone(),
+            object,
+        });
     }
 
     /// FR-364 "Runtime navigation reads only the extent of its relationship":
@@ -2778,7 +2854,8 @@ impl<'a, 'm> Machine<'a, 'm> {
             return;
         }
         let pre = self.reads.is_some_and(|reads| {
-            reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
+            reads.get(node.location())
+                == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
         });
         if let Some(trail) = self.trail.as_mut() {
             if trail.receiver_unlocated
@@ -2851,7 +2928,8 @@ impl<'a, 'm> Machine<'a, 'm> {
             self.located(operand)?
         };
         let under_pre = self.reads.is_some_and(|reads| {
-            reads.get(node.location()) == Some(&qsl_semantics::check::Observation::Pre)
+            reads.get(node.location())
+                == Some(&qsl_semantics::model::clause_observation::Observation::Pre)
         });
         if let (true, Some(pre)) = (under_pre, trail.pre.as_ref()) {
             path.observation = pre.clone();
@@ -3358,7 +3436,7 @@ mod tests {
         };
         let reads = BTreeMap::from([(
             checked.root().at(*left).location().clone(),
-            qsl_semantics::check::Observation::Pre,
+            qsl_semantics::model::clause_observation::Observation::Pre,
         )]);
         let reference = |universe| {
             ObjectReference::new(
@@ -3668,8 +3746,10 @@ mod tests {
             )
             .expect("allInstances<M::A>(p) checks as a standalone expression");
         let objects = ObjectEnvironment::default();
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::new();
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![Value::Population(PopulationId::from_digest([9; 32]))];
         let evaluation = Machine::with_pre(
@@ -3747,8 +3827,10 @@ mod tests {
             )
             .expect("lookup<M::A>(p, r) absent Refused checks as a standalone expression");
         let objects = ObjectEnvironment::default();
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::new();
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![
             Value::Population(PopulationId::from_digest([9; 32])),
@@ -3863,11 +3945,13 @@ mod tests {
         // `pre_objects` (below) is `None` -- exactly the caller-input
         // defect `objects_for` must now refuse rather than silently read
         // `objects` (the post/current environment) for.
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::from([(
-                expression.root().location().clone(),
-                qsl_semantics::check::Observation::Pre,
-            )]);
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::from([(
+            expression.root().location().clone(),
+            qsl_semantics::model::clause_observation::Observation::Pre,
+        )]);
         let objects = ObjectEnvironment::default();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let arguments = vec![Value::Reference(ObjectReference::new(
@@ -3971,11 +4055,13 @@ mod tests {
         // Marking this location `Current` (never `Pre`) makes `reads.is_some()`
         // true (`is_protocol_clause`) while `objects_for` reads `objects`
         // itself, no `pre_objects` needed.
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::from([(
-                expression.root().location().clone(),
-                qsl_semantics::check::Observation::Current,
-            )]);
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::from([(
+            expression.root().location().clone(),
+            qsl_semantics::model::clause_observation::Observation::Current,
+        )]);
         let reference = ObjectReference::new(
             quire_exact::UniverseId::from_digest([9; 32]),
             a,
@@ -4201,8 +4287,10 @@ mod tests {
             )
             .expect("x = y checks as a standalone expression");
         let objects = ObjectEnvironment::default();
-        let reads: std::collections::BTreeMap<Location, qsl_semantics::check::Observation> =
-            std::collections::BTreeMap::new();
+        let reads: std::collections::BTreeMap<
+            Location,
+            qsl_semantics::model::clause_observation::Observation,
+        > = std::collections::BTreeMap::new();
         let mut meter = Meter::new(qsl_semantics::check::SCALAR_LIMITS_UNLIMITED);
         let outside = Value::Integer(Integer::from(-1_i64));
         let fault = Machine::with_pre(

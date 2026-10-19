@@ -78,4 +78,162 @@ pub struct CheckedProtocol {
     pub obligations: CheckedObligations,
     /// Every channel with its premises, in source order (FR-218 "Channels").
     pub channels: Vec<CheckedChannel>,
+    /// The `run` control tree (FR-218 "Outputs").
+    pub controls: CheckedControlTree,
+    /// The compiled causal edge relation, the `repeat` back edges included
+    /// (FR-218 "Outputs").
+    pub edges: Vec<CausalEdge>,
+    /// Every checked slot of the `run` tree and `finish` -- node bodies,
+    /// each `choice` and `repeat` with its owner, visible facts and guards
+    /// -- and each binder's readers (FR-218 "Scopes", "Choice and repeat
+    /// decisions"), filled in by `check::mod`'s own pipeline once the slots
+    /// are checked.
+    pub slots: crate::check::protocol_slots::CheckedSlots,
+    /// The operation nodes each `compensate` template is bound to,
+    /// index-aligned with `obligations.compensations`, filled in after S4
+    /// (FR-381 "Compensation registration").
+    pub compensation_operations: Vec<CheckedOperationNodes>,
+    /// Every `await` with its clock and window, in source order (QSpec
+    /// FR-466 `await` layout).
+    pub awaits: Vec<CheckedAwait>,
+    /// Every `requires temporal` requirement, each bound to its temporal
+    /// clause, once per clause in the order of its first requirement
+    /// (FR-218 "Requirements"), filled in by `check::mod`'s own pipeline.
+    pub requirements: Vec<crate::check::protocol_requirement::CheckedRequirement>,
+    /// Every `relationship` member, bound to its model relationship, in
+    /// source order (FR-218 "Relationships"), filled in by `check::mod`'s
+    /// own pipeline before the slots, whose `related by` ends read it.
+    pub relationships: Vec<crate::check::protocol_relationship::CheckedRelationship>,
+}
+
+/// One checked `await` (QSpec FR-466 `await` layout): its node, the clock
+/// role it reads and its closed activation-relative `within` window.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAwait {
+    /// The `await` control.
+    pub node: ProtocolNodeId,
+    /// The `clock "<string>"` text: the clock role.
+    pub clock: String,
+    /// The `within [lower, upper]` window, `lower <= upper`.
+    pub within: crate::check::protocol_obligation::CheckedDeadline,
+}
+
+/// One port of a control (FR-218 "Outputs", QSpec FR-464 "Derived causal
+/// relation"): every control of the `run` tree has an enter and an exit
+/// port, and a leaf control is entered before it exits.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Port {
+    /// The point at which the control is entered.
+    Enter,
+    /// The point at which the control is left.
+    Exit,
+}
+
+/// One port of one control node.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PortRef {
+    /// The control the port belongs to.
+    pub node: ProtocolNodeId,
+    /// Which of its two ports.
+    pub port: Port,
+}
+
+/// Which rule of the compiled edge relation an edge comes from (QSpec
+/// FR-464 "Derived causal relation").
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum EdgeKind {
+    /// Into, through and out of a `sequence`'s children in authored order.
+    Sequence,
+    /// Into each case body of a `choice` or branch body of a `parallel`,
+    /// and out of each case body.
+    Branch,
+    /// Out of each branch body a `parallel`'s join list names.
+    Join,
+    /// Into and out of a `repeat`'s body and its `exhausted` control.
+    RepeatProgress,
+    /// A `repeat`'s back edge, from the exit of its body to its entry: the
+    /// one edge kind the acyclicity rule leaves out.
+    RepeatBack,
+    /// Into an `await`'s matched event, from it into `then`, and out of
+    /// `then`.
+    AwaitSuccess,
+    /// Into and out of an `await`'s `timeout` control.
+    AwaitTimeout,
+    /// From the control an `await`'s `after` names to the `await`.
+    AwaitAnchor,
+    /// From a `send` to each `receive` whose `of` names it.
+    Message,
+    /// From an `attempt` to each `effect` whose `of` names it.
+    Effect,
+}
+
+/// One edge of the compiled causal edge relation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CausalEdge {
+    /// The rule the edge comes from.
+    pub kind: EdgeKind,
+    /// The source port.
+    pub from: PortRef,
+    /// The target port.
+    pub to: PortRef,
+}
+
+/// One node of the checked control tree: a control, a `branch` or a `case`
+/// of the `run` tree, with the labels of the controls that hold it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedControl {
+    /// The node.
+    pub node: ProtocolNodeId,
+    /// Its kind.
+    pub kind: qsl_forms::ProtocolNodeKind,
+    /// Its own name.
+    pub name: String,
+    /// The names of the nodes from the `run` root down to and including
+    /// this one.
+    pub path: Vec<String>,
+    /// Its direct children, in authored order.
+    pub children: Vec<ProtocolNodeId>,
+}
+
+/// The checked control tree of a protocol's `run` control (FR-218
+/// "Outputs"), in tree order: each node before its children, children in
+/// authored order.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CheckedControlTree {
+    /// Every node of the tree, in tree order; the first is the root.
+    pub controls: Vec<CheckedControl>,
+}
+
+impl CheckedControlTree {
+    /// The tree's root, the `run` control.
+    pub fn root(&self) -> Option<&CheckedControl> {
+        self.controls.first()
+    }
+
+    /// The tree node of `node`, when it is in the tree.
+    pub fn control(&self, node: ProtocolNodeId) -> Option<&CheckedControl> {
+        self.controls.iter().find(|control| control.node == node)
+    }
+
+    /// The tree node whose path is `path`.
+    pub fn at_path(&self, path: &[&str]) -> Option<&CheckedControl> {
+        self.controls.iter().find(|control| {
+            control
+                .path
+                .iter()
+                .map(String::as_str)
+                .eq(path.iter().copied())
+        })
+    }
+}
+
+/// The operation's shared anchor and frame node a `compensate` template is
+/// bound to (FR-381 "Compensation registration"), the nodes every attempt
+/// and template naming the operation share.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CheckedOperationNodes {
+    /// The operation's `operation_anchor` node identity.
+    pub anchor: quire_exact::NodeKey,
+    /// The operation's `frame` node identity.
+    pub frame: quire_exact::NodeKey,
 }

@@ -43,7 +43,7 @@ Round 1, reviewed at `d3106bf0c52706799742af9fac544e9ca4c1fc47`.
 | FND | Outcome | sha/reason |
 | --- | --- | --- |
 | FND-001 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |
-| FND-002 | deferred | QSL-871 (Backlog) adds optional Boolean `symmetric` to the FCD population schema, bumps the rev and deletes the filter in the same QSL PR; its description states that expiry. The intake comment now cites QSL-871 and QSL-872. Keeping the shim until then is the user's decision under the global no-shim rule. |
+| FND-002 | fixed | The shim is deleted; the FCD population schema admits `symmetric` (filament-core-data PR #293, QSL-871) and QSL pins that merge. |
 | FND-003 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |
 | FND-004 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |
 | FND-005 | fixed | d3106bf0c52706799742af9fac544e9ca4c1fc47 |

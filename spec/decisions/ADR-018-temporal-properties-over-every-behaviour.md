@@ -148,7 +148,7 @@ is added.
 | V-3 | Proved by induction at `k` | The property is `k`-inductive: it holds in the first `k` steps of every behaviour, and any `k` consecutive states of the declared types that satisfy it have only satisfying successors | `proved` | `decisive-witness` | `Proved{basis: Inductive{depth: k}, certification}`: `Certified` once PC-6's check verifies the solver's certificate, `Uncertified` when the certificate is absent or unverifiable (PC-1, PC-6) | success |
 | V-4 | Refuted | A counterexample (§5) reproduced by replay, including one that ends where the claim evaluated undefined (UE-1) | `refuted` | `decisive-counterexample` | `Refuted` | violation |
 | V-5 | Bounded-to-`k` | The engine completed its analysis to depth `k` and found no counterexample of length at most `k` | `inconclusive` | `unsettled` | `Inconclusive(BoundReached{depth: k})` | inconclusive |
-| V-6 | Inconclusive, other cause | `InductionNotClosed{depth: k}`: base case holds to `k`, the step case has a counterexample-to-induction. `UndecidedSuccessor`: a contract conjunction was refused during expansion, with no clause false and none undefined, so the successor relation is not exactly known (FR-120 `ContractUndetermined` with a `Refused` evaluation); an undefined one refutes (UE-6). `CertificateRejected{rule, at}`: the core checker rejected EN-1's proof certificate (PC-2). `NoInitialState`: the subject has no initial state (ADR-016 EX-10). `ReplayParity` and `ReplayRefused`: as ADR-013 C-09. `MappingUndetermined`: a refinement mapping row, step-row argument or history update was refused or incomplete, or a history update left its declared type, at a reachable state (amended by ADR-020 RE-4). Amended by ADR-027 AE-4: `InstanceBoundReached{bound, states}`, a run over an `on each` protocol that completed with no counterexample and reached `max_live_instances` (default 3). Amended by ADR-025 MV-1: `MemoryBoundReached{bound, states}`, a run over a weak `parallel` that completed with no counterexample and reached `max_store_buffer` or `max_messages` (ADR-025 MB-4). | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
+| V-6 | Inconclusive, other cause | `InductionNotClosed{depth: k}`: base case holds to `k`, the step case has a counterexample-to-induction. `UndecidedSuccessor`: a contract conjunction was refused during expansion, with no clause false and none undefined, so the successor relation is not exactly known (FR-120 `ContractUndetermined` with a `Refused` evaluation); an undefined one refutes (UE-6). `CertificateRejected{rule, at}`: the core checker rejected EN-1's proof certificate (PC-2). `NoInitialState`: the subject has no initial state (ADR-016 EX-10). `ReplayParity` and `ReplayRefused`: as ADR-013 C-09. `MappingUndetermined`: a refinement mapping row, step-row argument or history update was refused or incomplete, or a history update left its declared type, at a reachable state (amended by ADR-020 RE-4). Amended by ADR-027 AE-4: `InstanceBoundReached{bound, states}`, a run over an `on each` protocol that completed with no counterexample and reached `max_live_instances` (default 3). Amended by ADR-025 MV-1: `MemoryBoundReached{bound, states}`, a run over a weak `parallel` that completed with no counterexample and reached `max_store_buffer` or `max_messages` (ADR-025 MB-4). Amended by FR-125 and FR-127: `NoInstance`, an item with zero instances, reported before any state is explored (wire cause `no-instance`, QSpec FR-331). | `inconclusive` | `unsettled` | `Inconclusive(cause)` | inconclusive |
 | V-7 | Limit reached | A run limit stopped the analysis before it completed its method: `max_states`, `max_transitions`, `max_automaton_states` (IV-6), the evaluation meter or `max_candidates`. Every limit has a published default, the request setting raises it, and every terminal record states the values used and whether one was reached. This is the one stop cause of every engine (QSpec FR-331 `limit-reached`). The `max_depth` horizon is not a limit: a run that completes it settles V-5 and the record states `k`. A cancelled run (ADR-029 FR-276) settles `incomplete` too, `Incomplete(Cancelled{source})`, written `cancelled{source}`, `source` the `CancelCause` (`requested` or `deadline`), FR-331 result `incomplete` (QSpec FR-331) | `failed`, execution `resource-incomplete` | `unavailable` | `Incomplete(LimitReached{limit, value, setting})`, naming the limit, its value and the request setting that raises it | incomplete |
 | V-8 | Unsupported | No candidate settles the form; or a profile the model subject does not admit. Amended by ADR-019 AM-4: no candidate advertises a fairness kind the clause uses (ADR-019 SV-1); or a clause with a fairness constraint is evaluated over a supplied trace, cause `MissingFairnessPremise{constraint}` (ADR-019 SV-2) | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported. Amended by ADR-025 MA-4, MV-1: an access shape the resolved weak memory model cannot run, `WeakAccessShape`; or no candidate advertises the subject's resolved memory model. |
 
@@ -164,7 +164,7 @@ member; it settles as `TerminalValue::Measured`, which is never `Proved`. `Incon
 `InductionNotClosed{depth}`, `UndecidedSuccessor`, `NoInitialState` and
 `CertificateRejected{rule, at}`; amended by ADR-022 RU-5, it also gains
 `WellDefinednessUnchecked{sources}`, witnesses found on a run that did not
-check well-definedness everywhere. `IncompleteCause` gains `LimitReached{limit, value,
+check well-definedness everywhere. Amended by FR-125 and FR-127: `InconclusiveCause` also gains `NoInstance`, written `no-instance` on the wire (QSpec FR-331). `IncompleteCause` gains `LimitReached{limit, value,
 setting}`, QSpec FR-331's `limit-reached`, and `Cancelled{source}`, written
 `cancelled{source}` (V-7). `TerminalValue::Proved` carries
 `certification: Certification`, `Certification::{Certified,
@@ -359,14 +359,32 @@ only (ADR-016 §6).
 The subject uses the ConfigVersion domain package from
 `examples/config-version` (FR-108): object type `ConfigVersion` with
 `versionNumber: Int[0, 1000]` and optional `parent`, population
-`config_history`, and operation `attemptUpdate` with frame `modifies
-[versionNumber]`, no parameters and a Boolean result.
+`config_history`, and operation `attemptUpdate` with no parameters and a
+Boolean result.
+
+**Frame.** The shipped package frames `attemptUpdate` as `modifies
+[versionNumber]`, which FR-120 reads as the field of every object of the
+population. With two objects over `Int[0, 1000]` each application would
+then enumerate 1001 x 1001 candidates, so an expansion charges about two
+million candidates against the subject's `max_candidates` (FR-120). The
+example, and the shipped unit as this section uses it, frame
+`attemptUpdate` as `modifies self.versionNumber` (FR-154's receiver scope)
+instead: an update writes the receiver's `versionNumber` and leaves the
+other object as it is, so a state has one successor per receiver.
+
+**Candidate limit.** Even so, an application enumerates the receiver's 1001
+values with their result pairs. The example's request sets the subject's
+`max_candidates` to 1,000,000, and its rows assume it; a setting below about
+6,000, such as TC-472's 1,000, stops the run with `Stopped{ResourceExhausted,
+{MaxCandidates, value}}` at the first expansion.
 
 The shipped unit's post clause `VersionUnchanged` keeps `versionNumber`
 fixed, so every transition is a self-loop. The example unit keeps the two
 invariants and replaces that post clause with one that advances the version
-modulo 3. The fairness clause spelling is illustrative; QSpec's shared
-grammar owns it (QS-4).
+modulo 3. The post clause spells the wrap out, because `(pre(self.versionNumber)
++ 1) mod 3` is an unbounded `Int` and does not type-check against the bounded
+field. The fairness clause spelling is illustrative; QSpec's shared grammar
+owns it (QS-4).
 
 ```text
 profile v   = "quire.value.complete/v1" …;
@@ -376,7 +394,8 @@ model Config = "example/config-version" …;
 invariant ParentOrder using v on Config::ConfigVersion at current { … }   // unchanged
 invariant NoCycle     using v on Config::ConfigVersion at current { … }   // unchanged
 post Cycles using v on Config::ConfigVersion::attemptUpdate {
-  self.versionNumber = (pre(self.versionNumber) + 1) mod 3
+  (pre(self.versionNumber) < 2 and self.versionNumber = pre(self.versionNumber) + 1)
+  or (pre(self.versionNumber) = 2 and self.versionNumber = 0)
 }
 
 temporal ReachesTwo using inf over (c: Config::ConfigVersion) clock "model-steps" on origin {
@@ -388,9 +407,13 @@ temporal ReachesTwo using inf over (c: Config::ConfigVersion) clock "model-steps
 **Subject.** Universe `config_history = {a, b}`. One initial snapshot: `a`
 and `b` both at version 0 with `parent` absent. Write a state as
 `(va, vb)` and the transition `attemptUpdate` with receiver `a` as `upd(a)`.
-The result value is not in the state key, so both result choices reach the
-same successor. The model has 9 reachable states, each with two successors,
-`upd(a)` and `upd(b)`, both always enabled.
+The result value is not in the state key, so the choice of result does not
+change the successor. The model has 9 reachable states, each with two successors,
+`upd(a)` and `upd(b)`, both always enabled. The two instances are symmetric.
+The rows below name the instance a loop updates `a` and the instance `c`
+is bound to `b`; they hold with the two names exchanged, and which instance
+the reported counterexample binds depends on how `over` bindings are ranked,
+which is not yet specified; it is not a property of the model.
 
 **Product.** The form is TP-4. For `c = b`, the negation is `eventually
 always (b.versionNumber != 2)`, a two-state Büchi automaton: `q0` loops on
@@ -401,7 +424,8 @@ on such states. The reachable product has 15 states: 9 with `q0` and 6 with
 
 **Verdict under `fair weak each`.** `upd(b)` is enabled at every state of
 both SCCs and taken in neither, so FA-4 rejects both. No fair accepting cycle
-exists for `c = b`; `c = a` is symmetric. The item settles `proved`, basis
+exists for `c = b`; `c = a` is symmetric. The request binds both instances
+and explores the 15-state product of each, 30 product states in all. The item settles `proved`, basis
 `closed-scope`, `TerminalValue::Proved{basis: Exhaustive, certification: Certified}` (V-1), over this
 subject.
 
@@ -410,7 +434,7 @@ whole, and `upd(a)` inside the SCC satisfies it. The unmarked spelling
 `fair weak Config::ConfigVersion::attemptUpdate` is this variant (FA-6); the
 clause above writes `each` because its verdict relies on it. The first
 accepting SCC in canonical order contains the initial product state
-`(0, 0, q1)`, so the stem is empty. The item settles `refuted` (V-4) with this lasso, bound to `c = b`:
+`(0, 0, q1)`, so the stem is empty. The item settles `refuted` (V-4) with this lasso, bound to the instance the loop leaves at version 0 (`b` here):
 
 | Position | State | Step into the next position |
 | --- | --- | --- |
@@ -426,7 +450,7 @@ formula is false at position 0, `trace_position` `0`. Under `each` the same
 lasso is unfair (`upd(b)` is enabled throughout and never taken) and replay
 refuses it.
 
-**The shipped unit.** With `VersionUnchanged` the only reachable state is
+**The shipped unit.** With `VersionUnchanged` and the receiver-scoped frame the only reachable state is
 `(0, 0)`. Under `fair weak each` the item settles `refuted` with the lasso
 whose loop is `(0, 0) -upd(a)-> (0, 0) -upd(b)-> (0, 0)`. Fairness makes
 every operation instance run, and the post clause still prevents progress.

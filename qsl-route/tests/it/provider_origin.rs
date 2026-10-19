@@ -47,6 +47,7 @@ fn descriptor_holds_the_origin_it_was_built_with() {
         manifest_digest(),
         [(Some("value-validity"), Some("bounded"))],
         Some(&["collection"]),
+        None,
     )
     .expect("a well-formed manifest is admitted");
     assert_eq!(admitted.origin(), ProviderOrigin::Process);

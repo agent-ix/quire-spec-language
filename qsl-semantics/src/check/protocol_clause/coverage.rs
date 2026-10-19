@@ -1,6 +1,6 @@
 //! The part of a protocol's content [`check`](super::check) does not read:
-//! which node kinds and constructs are not yet checked, and the grammar's
-//! required `using`, role and binder-type resolution.
+//! which constructs are not yet checked, and the grammar's required
+//! `using`, role and binder-type resolution.
 
 use std::collections::BTreeMap;
 
@@ -11,22 +11,20 @@ use super::refusal;
 use crate::check::refusal::{AliasKind, CheckRefusal, ProtocolAnchorCause};
 use crate::check::Scope;
 
-/// Whether this checker covers every part of a static node of `kind`:
-/// a `sequence` (a name and its children), a `parallel` and its `branch`es
-/// (their join, checked by `protocol_controls`), an `attempt` (its
-/// operation and `contracts`, FR-114; its role, binder and body are checked
-/// by [`content`]), the `finish` node (its binder and body, the same) and a
-/// `compensate` template (its stages, FR-381, are checked by
-/// `protocol_obligation`). Every other kind carries content -- a channel, a
-/// guard, a join policy, an anchor's target semantics -- that nothing checks
-/// yet. Exhaustive, so a new node kind must be classified here.
+/// Whether this checker covers a static node of `kind`: every node kind of
+/// the `run` tree is checked (`graph`, `protocol_controls`, `protocol_slots`,
+/// `protocol_obligation`) except a `fence`, whose memory semantics nothing
+/// checks yet. Exhaustive, so a new node kind must be classified here.
 fn covered_kind(kind: ProtocolNodeKind) -> bool {
     use ProtocolNodeKind as K;
     match kind {
-        K::Sequence | K::Parallel | K::Branch | K::Attempt | K::Finish | K::CompensateTemplate => {
-            true
-        }
-        K::Send
+        K::Sequence
+        | K::Parallel
+        | K::Branch
+        | K::Attempt
+        | K::Finish
+        | K::CompensateTemplate
+        | K::Send
         | K::Receive
         | K::Effect
         | K::Event
@@ -35,47 +33,56 @@ fn covered_kind(kind: ProtocolNodeKind) -> bool {
         | K::Repeat
         | K::Case
         | K::Await
-        | K::Check => false,
+        | K::Check => true,
+        K::Fence => false,
     }
 }
 
 /// Whether a protocol construct of `kind` is checked: a protocol-level
 /// `capture` and an `activation on each` are (FR-381, `protocol_obligation`),
-/// and a plain `channel` is (FR-218, `protocol_controls`).
-/// Exhaustive, so a new construct kind must be classified here.
+/// a `channel` with its `fifo` key is (FR-218, `protocol_controls`), a
+/// `terminal when` predicate is (FR-211, `protocol_slots`), a `requires
+/// temporal` requirement is (FR-218, `protocol_requirement`), a
+/// `relationship` is (FR-218, `protocol_relationship`), and a `related by`
+/// clause and a replicated role are (FR-218, `protocol_slots`). Exhaustive, so a new construct kind
+/// must be classified here.
 fn covered_construct(kind: ProtocolConstructKind) -> bool {
     use ProtocolConstructKind as K;
     match kind {
-        K::Capture | K::ActivationEach | K::Channel => true,
-        K::ReplicatedRole
-        | K::Relationship
-        | K::Requirement
-        | K::Related
+        K::Capture
+        | K::ActivationEach
+        | K::Channel
         | K::FifoOrdering
-        | K::JoinPredicate
-        | K::TerminalWhen => false,
+        | K::TerminalWhen
+        | K::Requirement
+        | K::Relationship
+        | K::Related
+        | K::ReplicatedRole => true,
+        K::JoinPredicate | K::MemoryClause | K::AccessOrdering => false,
     }
 }
 
 /// The rest of a protocol's content, once
-/// [`check`](super::check) has resolved its anchors, binders and attempt bindings.
+/// [`check`](super::check) has resolved its anchors, binders and attempt
+/// bindings and compiled its control tree.
 ///
-/// FR-113 and FR-114 check only those three parts. A protocol holding
-/// anything else -- a node kind [`covered_kind`] rejects, any
-/// [`qsl_forms::ProtocolConstructKind`] ([`covered_construct`] says which are
-/// checked), or a body
-/// other than a bare Boolean literal -- refuses `unsupported_construct`/
-/// `not-yet-implemented` once, at the earliest such construct, rather than
-/// compiling with unchecked content that the emitted package then silently
-/// omits (SR-753 FND-002, SR-761 FND-001).
+/// Every node kind and expression slot of the `run` tree but a `fence` is
+/// checked (`graph`, `protocol_controls`, `protocol_slots`,
+/// `protocol_obligation`).
+/// A protocol holding a node kind [`covered_kind`] rejects (a `fence`) or
+/// a [`qsl_forms::ProtocolConstructKind`] that no checker reads yet
+/// ([`covered_construct`] says which are checked) refuses
+/// `unsupported_construct`/`not-yet-implemented` once, at the earliest such
+/// construct, rather than compiling with unchecked content that the emitted
+/// package then silently omits (SR-753 FND-002, SR-761 FND-001).
 ///
 /// A protocol made only of covered parts still has content the grammar
-/// requires of every protocol, which is checked here: its `using` alias
-/// names a profile selection, each role's object type resolves and no two
-/// roles share a name, each attempt's `by` names a declared role, and each
-/// binder's declared type resolves against the package `scope`. A bare
-/// Boolean literal body names no binder and no declaration, so it has
-/// nothing further to resolve. Refusals are in source position order.
+/// requires of every protocol, which is checked here: its `using` alias,
+/// and each `check`'s and `await`'s, names a profile selection; each role's
+/// object type resolves and no two roles share a name; each attempt's,
+/// event's and commit's `by`, and each `choice`'s and `repeat`'s owner,
+/// names a declared role; and each binder's declared type resolves against
+/// the package `scope`. Refusals are in source position order.
 pub fn content(
     protocol: &ProtocolDeclarationForm,
     alias_names: &BTreeMap<String, AliasKind>,
@@ -92,13 +99,6 @@ pub fn content(
                 .iter()
                 .filter(|construct| !covered_construct(construct.kind))
                 .map(|construct| (construct.span, construct.kind.label())),
-        )
-        .chain(
-            protocol
-                .bodies
-                .iter()
-                .filter(|body| body.constant.is_none())
-                .map(|body| (body.span, "body")),
         )
         .min_by_key(|(span, _)| span.start);
     if let Some((span, construct)) = uncovered {
@@ -161,6 +161,55 @@ pub fn content(
                 refusal(ProtocolAnchorCause::MissingRole {
                     role: attempt.role.name.clone(),
                     span: attempt.role.span,
+                }),
+            ));
+        }
+    }
+    // FR-218: an `event` or `commit` written `by`, and a `choice` or
+    // `repeat` owned `by`, a role the protocol declares.
+    let owners = protocol
+        .declarations
+        .iter()
+        .filter(|declaration| declaration.kind != ProtocolNodeKind::Attempt)
+        .filter_map(|declaration| Some((&declaration.name.name, declaration.role.as_ref()?)))
+        .chain(
+            protocol
+                .choices
+                .iter()
+                .map(|choice| (&choice.name.name, &choice.owner)),
+        )
+        .chain(
+            protocol
+                .repeats
+                .iter()
+                .map(|repeat| (&repeat.name.name, &repeat.owner)),
+        );
+    for (node, owner) in owners {
+        if !roles.contains_key(owner.name.as_str()) {
+            refusals.push((
+                owner.span,
+                refusal(ProtocolAnchorCause::NodeRole {
+                    node: node.clone(),
+                    name: owner.name.clone(),
+                    span: owner.span,
+                }),
+            ));
+        }
+    }
+    // A `check` and an `await` are written `using` a profile selection, as
+    // the protocol itself is.
+    let usings = protocol
+        .checks
+        .iter()
+        .map(|check| &check.using)
+        .chain(protocol.awaits.iter().map(|await_form| &await_form.using));
+    for using in usings {
+        if alias_names.get(&using.alias) != Some(&AliasKind::Profile) {
+            refusals.push((
+                using.span,
+                refusal(ProtocolAnchorCause::MissingProfile {
+                    alias: using.alias.clone(),
+                    span: using.span,
                 }),
             ));
         }

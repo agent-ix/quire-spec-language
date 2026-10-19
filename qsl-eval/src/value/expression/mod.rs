@@ -73,6 +73,66 @@ pub fn evaluate_closed(
     .run(node, slots, Vec::new())
 }
 
+/// FR-124 (ADR-018 DL-1): evaluate the `terminal when` predicate
+/// `predicate` of `package` for the object `self_object` of the state whose
+/// objects are `current`, through the one clause evaluator (FR-107): the
+/// predicate is checked as an invariant is, so every read observes
+/// `current`.
+pub fn evaluate_terminal_predicate(
+    package: &CheckedPackage,
+    predicate: &qsl_semantics::check::CheckedTerminalPredicate,
+    current: &ObjectEnvironment,
+    self_object: quire_exact::ObjectReference,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    // An invariant's checked body reads no `pre(..)`, so every model read
+    // observes `current` (FR-104).
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(
+        predicate.body(),
+        predicate.slots(),
+        vec![Value::Reference(self_object)],
+    )
+}
+
+/// FR-167 (ADR-022 GM-3): evaluate the state-graph predicate `predicate` of
+/// `package` with its `over` parameter bound to `over` (`None` for a claim
+/// with no `over`) at the state whose objects are `current`, through the one
+/// clause evaluator (FR-107). The predicate is checked as an invariant body
+/// is, so every read observes `current`.
+pub fn evaluate_state_predicate(
+    package: &CheckedPackage,
+    predicate: &qsl_semantics::check::CheckedPredicateBody,
+    current: &ObjectEnvironment,
+    over: Option<quire_exact::ObjectReference>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(
+        predicate.body(),
+        predicate.slots(),
+        over.map(Value::Reference).into_iter().collect(),
+    )
+}
+
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
 /// names the same code as a string ([`InputRefusal::code`]) but cannot name
@@ -625,9 +685,13 @@ impl<'a> ClauseSetup<'a> {
         // post side (FR-104, FR-106), whether selected by `PreCall` or by
         // `Invocation`.
         let current = match declaration.observation() {
-            qsl_semantics::check::Observation::Current => observations.current.as_ref(),
-            qsl_semantics::check::Observation::Post => observations.post.as_ref(),
-            qsl_semantics::check::Observation::Pre => observations.pre.as_ref(),
+            qsl_semantics::model::clause_observation::Observation::Current => {
+                observations.current.as_ref()
+            }
+            qsl_semantics::model::clause_observation::Observation::Post => {
+                observations.post.as_ref()
+            }
+            qsl_semantics::model::clause_observation::Observation::Pre => observations.pre.as_ref(),
         }
         .ok_or_else(|| {
             CallFailure::Fault(InternalFault::new(
@@ -969,7 +1033,7 @@ impl CheckedPackageEvaluation for CheckedPackage {
         };
         let reads: std::collections::BTreeMap<
             quire_semantic_value::location::Location,
-            qsl_semantics::check::Observation,
+            qsl_semantics::model::clause_observation::Observation,
         > = declaration
             .reads()
             .map(|(location, observation)| (location.clone(), observation))

@@ -2954,10 +2954,42 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         (worker.join().expect("reap worker"), pid)
     }
 
-    /// A child that exists but has not been waited for still has a `/proc`
-    /// entry (as a zombie); a reaped one does not. Looking never reaps.
+    /// A child that exists but has not been waited for is still listed by
+    /// `ps` (as a zombie); a reaped one is not. Looking never reaps.
     fn is_unreaped(pid: u32) -> bool {
-        Path::new(&format!("/proc/{pid}")).exists()
+        Command::new("ps")
+            .args(["-p", &pid.to_string()])
+            .stdout(Stdio::null())
+            .status()
+            .expect("run ps")
+            .success()
+    }
+
+    #[test]
+    fn the_liveness_probe_sees_an_exited_child_until_it_is_waited_for() {
+        let mut child = Command::new("true").spawn().expect("spawn true");
+        let pid = child.id();
+        // Poll until the child has exited without reaping it.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !is_zombie(pid) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the child never exited"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(is_unreaped(pid), "an unwaited child is still listed");
+        child.wait().expect("reap the child");
+        assert!(!is_unreaped(pid), "a waited child is gone");
+    }
+
+    /// Whether `ps` shows the process as exited-but-unwaited (state `Z`).
+    fn is_zombie(pid: u32) -> bool {
+        let out = Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .expect("run ps");
+        String::from_utf8_lossy(&out.stdout).trim().starts_with('Z')
     }
 
     fn stream_failure(what: &'static str, message: &str) -> Result<()> {
@@ -3154,7 +3186,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// A one-crate workspace: a library with neither unit tests nor doc
         /// examples, and one integration test whose outcome the caller picks.
         fn project(test_body: &str) -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let write = |path: &str, text: &str| {
                 let path = dir.path().join(path);
                 fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
@@ -3354,7 +3386,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
         /// Two packages: `a` with a feature-gated integration test, and `b`.
         fn workspace() -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,
@@ -3385,7 +3417,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         /// feature; `user` has no features but depends on `featured`. Each
         /// library has one unit test and one doc-test.
         fn feature_workspace() -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,
@@ -3461,7 +3493,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
             kept_tail: &str,
             shared_default: &str,
         ) -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,
@@ -3588,7 +3620,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         #[test]
         #[trace("TC-915", "NFR-013-AC-5")]
         fn a_candidate_compiled_differently_by_the_default_lane_is_not_skipped() {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,
@@ -3731,7 +3763,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         #[trace("TC-950", "NFR-014-AC-1")]
         fn a_build_dir_outside_the_project_is_used_and_its_absolute_headers_resolve() {
             let dir = project("");
-            let elsewhere = tempfile::tempdir().expect("tempdir");
+            let elsewhere = crate::test_support::tempdir();
             run_lane(
                 dir.path(),
                 &lane(LIB_EMPTY),
@@ -3800,7 +3832,7 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         }
 
         fn doc_workspace(c_lib_options: &str) -> tempfile::TempDir {
-            let dir = tempfile::tempdir().expect("tempdir");
+            let dir = crate::test_support::tempdir();
             let root = dir.path();
             write(
                 root,

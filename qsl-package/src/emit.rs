@@ -78,7 +78,7 @@ use quire_contract_model::{
     encode_checked_package_v2, CheckedArtifactRef, CheckedCapability, CheckedCapabilityDisposition,
     CheckedDeclaration, CheckedDependencySelection, CheckedDiagnosticsV2, CheckedDomainPackageRef,
     CheckedNodeId, CheckedNodeKind, CheckedNodeOwner, CheckedNodeTag, CheckedOccurrence,
-    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageV2,
+    CheckedOccurrenceRole, CheckedPackageEvidence, CheckedPackageIdentityPreimageRefV2,
     CheckedPackageLockV2, CheckedRational, CheckedSelection, CheckedSelectionRole,
     CheckedSemanticGraphV2, CheckedSemanticId, CheckedSemanticNodeV2, CheckedSourceMapEntry,
     CheckedSourceRef, CheckedSourceRegion, NominalIdentityPreimage, NominalOwner, ProtocolForm,
@@ -96,7 +96,7 @@ use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::value::{
     native_diagnostics_catalog, CatalogEntry, CatalogRole, DefinitionLock, DefinitionReference,
-    HeaderLayer, Member, NodeOwner,
+    HeaderLayer, Member, ModelEntry, NodeOwner,
 };
 use quire_exact::{Cancel, Integer, NodeKey, Origin, NODE_KEY_DOMAIN};
 use quire_semantic_value::location::Location;
@@ -873,6 +873,15 @@ fn catalog_selections(
                 .filter(|role| **role != CatalogRole::Edition)
                 .map(|role| catalog_entry(lock, *role).reference()),
         )
+        // FR-361 item 3: the complete-model lock's `package_selection.always`
+        // rows, for a unit whose layers hold the model layer.
+        .chain(
+            closure
+                .contains(&HeaderLayer::ModelComplete)
+                .then(|| lock.model_catalog().iter().map(ModelEntry::reference))
+                .into_iter()
+                .flatten(),
+        )
         .chain(laws.iter().cloned());
     let mut definitions: Vec<CheckedArtifactRef> = Vec::new();
     for definition in selected {
@@ -985,25 +994,37 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
+///
+/// A package emitted before (by this function or
+/// [`emit_checked_with_cancel`]) returns its remembered emission: a checked
+/// package does not change, so a dependency reached again, or a caller that
+/// emits what the lifecycle already emitted, does not emit it twice.
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    if let Some(emission) = package.remembered_emission() {
+        return Ok(emission.clone());
+    }
     emit_checked_with_cancel(package, &Cancel::new())
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
 /// entry and at every node it writes (FR-276). A cancelled handle stops the
-/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes.
+/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes. It always
+/// emits, so every node is polled; the emission it returns is remembered for
+/// [`emit_checked`].
 pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package_inner(
+    let emission = emit_package_inner(
         package,
         graph.memoized_regions(),
         |_| None,
         cancel,
         &ir_decodes,
-    )
+    )?;
+    package.remember_emission(&emission);
+    Ok(emission)
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
@@ -1169,19 +1190,19 @@ fn emit_package_inner(
         required_features: vec![root.into()],
         dependency_selections: dependency_selections(package),
     };
-    let preimage = CheckedPackageIdentityPreimageV2 {
-        version: IDENTITY_PREIMAGE_V2.into(),
-        edition,
-        profile_selections,
-        definition_selections,
-        model_selections,
-        required_features: lock.required_features.clone(),
-        dependency_selections: lock.dependency_selections.clone(),
-        identity_projection: nodes.iter().map(Into::into).collect(),
-    };
     let semantic_graph = CheckedSemanticGraphV2 {
         graph_version: GRAPH_V2.into(),
         nodes,
+    };
+    let preimage = CheckedPackageIdentityPreimageRefV2 {
+        version: IDENTITY_PREIMAGE_V2,
+        edition: &edition,
+        profile_selections: &profile_selections,
+        definition_selections: &definition_selections,
+        model_selections: &model_selections,
+        required_features: &lock.required_features,
+        dependency_selections: &lock.dependency_selections,
+        identity_projection: &semantic_graph.nodes,
     };
     let capability_report = [CheckedCapability {
         feature: root.into(),

@@ -5,15 +5,22 @@
 //! ([`DefinitionLock::admitted_forms`]), and refuses a form outside it with
 //! `unsupported_construct` at the form's span, naming the layer.
 //!
+//! A model construct (FR-361 item 5) is admitted by the model layer alone. In
+//! a unit that does not select the model profile the unit-level gate
+//! ([`super::model_gate`]) is its only refusal, so this rule skips it there
+//! (FR-361 item 12).
+//!
 //! The classification of the unit language's forms is [`expression_form`]:
 //! one exhaustive `match` over [`ExprNode`] with no wildcard arm, so a new
-//! expression form does not compile until it is classified.
+//! expression form does not compile until it is classified. The reads and
+//! labels of a `hyper` clause belong to the temporal family, which no layer
+//! gates.
 
 use std::collections::BTreeSet;
 
 use qsl_forms::{
     BinaryOperator, BinderQuery, DeclarationKind, ExprNode, Expression, ExpressionSpans,
-    FunctionDeclaration, StateClauseForm,
+    FunctionDeclaration, OperationBodyForm, StateClauseForm, StateGraphClaimForm,
 };
 use qsl_foundation::Span;
 
@@ -28,20 +35,40 @@ pub(crate) struct LayerAdmission<'a> {
     layer: HeaderLayer,
     admitted: BTreeSet<LayerForm>,
     predicates: &'a BTreeSet<&'a str>,
+    /// Whether the unit selects the model profile (FR-361 item 1).
+    unit_selects_model: bool,
 }
 
 impl<'a> LayerAdmission<'a> {
-    /// The admission under `layer`'s `requires` closure.
+    /// The admission under `layer`'s `requires` closure, in a unit that
+    /// selects the model profile when `unit_selects_model`.
     pub(crate) fn new(
         lock: &DefinitionLock,
         layer: HeaderLayer,
         predicates: &'a BTreeSet<&'a str>,
+        unit_selects_model: bool,
     ) -> Self {
         Self {
             layer,
             admitted: lock.admitted_forms(layer),
             predicates,
+            unit_selects_model,
         }
+    }
+
+    /// Whether `form` is outside the admitted set and this rule, not the
+    /// unit-level model gate, refuses it.
+    fn refuses(&self, form: LayerForm) -> bool {
+        !self.admitted.contains(&form) && (self.unit_selects_model || !form.is_model_construct())
+    }
+
+    /// The refusal of an `operation-body` declaration whose `using` alias
+    /// resolved to this layer, at the declaration's span, else the first
+    /// expression form of its body, in source order, at its span.
+    pub(crate) fn operation_body(&self, body: &OperationBodyForm) -> Option<AssemblyError> {
+        let whole = body.spans.declaration;
+        self.declaration(LayerForm::OperationBody, whole)
+            .or_else(|| self.expression(&body.body, &body.spans.body, whole))
     }
 
     /// The refusal of the first form of `function` outside the set, if any:
@@ -79,8 +106,23 @@ impl<'a> LayerAdmission<'a> {
             .or_else(|| self.expression(&clause.body, &clause.spans.body, whole))
     }
 
+    /// The refusal of the first form of a state-graph claim outside the set,
+    /// if any: as a state clause is admitted, then each predicate's
+    /// expression forms in source order.
+    pub(crate) fn state_graph_claim(&self, claim: &StateGraphClaimForm) -> Option<AssemblyError> {
+        self.declaration(LayerForm::StateClause, claim.span)
+            .or_else(|| {
+                super::state_graph_claim::predicates(&claim.kind)
+                    .into_iter()
+                    .flat_map(|(_, predicate)| &predicate.operands)
+                    .find_map(|operand| {
+                        self.expression(&operand.expression, &operand.spans, claim.span)
+                    })
+            })
+    }
+
     fn declaration(&self, form: LayerForm, span: Span) -> Option<AssemblyError> {
-        (!self.admitted.contains(&form)).then(|| self.refusal(form, span))
+        self.refuses(form).then(|| self.refusal(form, span))
     }
 
     fn expression(
@@ -89,20 +131,13 @@ impl<'a> LayerAdmission<'a> {
         spans: &ExpressionSpans,
         whole: Span,
     ) -> Option<AssemblyError> {
-        let mut pending = vec![(body.root(), Some(spans.root()))];
-        while let Some((node, located)) = pending.pop() {
-            if let Some(form) = expression_form(node.node(), self.predicates) {
-                if !self.admitted.contains(&form) {
-                    let span = located.and_then(|id| spans.span(id)).unwrap_or(whole);
-                    return Some(self.refusal(form, span));
-                }
-            }
-            // Source order: the first child is popped first.
-            for (index, child) in node.children().into_iter().enumerate().rev() {
-                pending.push((child, located.and_then(|id| spans.child(id, index))));
-            }
-        }
-        None
+        let mut found = None;
+        visit_located(body, spans, whole, |node, span| {
+            let form = expression_form(node, self.predicates).filter(|form| self.refuses(*form))?;
+            found = Some(self.refusal(form, span));
+            Some(())
+        });
+        found
     }
 
     fn refusal(&self, form: LayerForm, span: Span) -> AssemblyError {
@@ -116,13 +151,34 @@ impl<'a> LayerAdmission<'a> {
     }
 }
 
+/// Visit the nodes of `body` in source order with the span each is written
+/// at, `whole` for a node with none, until `visit` returns `Some`.
+pub(super) fn visit_located(
+    body: &Expression,
+    spans: &ExpressionSpans,
+    whole: Span,
+    mut visit: impl FnMut(&ExprNode, Span) -> Option<()>,
+) {
+    let mut pending = vec![(body.root(), Some(spans.root()))];
+    while let Some((node, located)) = pending.pop() {
+        let span = located.and_then(|id| spans.span(id)).unwrap_or(whole);
+        if visit(node.node(), span).is_some() {
+            return;
+        }
+        // Source order: the first child is popped first.
+        for (index, child) in node.children().into_iter().enumerate().rev() {
+            pending.push((child, located.and_then(|id| spans.child(id, index))));
+        }
+    }
+}
+
 /// The form an expression node is, where a layer's admitted-form set
 /// decides it. `None` is a form every layer admits (a state-core scalar,
-/// presence or control form) or one another requirement gates: FR-361 owns
-/// the model constructs (a dispatched call, `lookup`, `allInstances`) and the
-/// protocol clause family owns a protocol reference.
+/// presence or control form) or one another requirement gates: FR-361 item 7
+/// leaves `allInstances` ungated and the protocol clause family owns a
+/// protocol reference.
 #[qsl_attrs::string_edge]
-fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> Option<LayerForm> {
+pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> Option<LayerForm> {
     match node {
         ExprNode::Call { name, .. } => Some(if predicates.contains(name.as_str()) {
             LayerForm::NamedPredicateCall
@@ -163,6 +219,7 @@ fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> Option<Layer
         ExprNode::Boolean(_)
         | ExprNode::Integer(_)
         | ExprNode::Rational(..)
+        | ExprNode::Quantity(_)
         | ExprNode::String(_)
         | ExprNode::Name(_)
         | ExprNode::Let { .. }
@@ -178,9 +235,12 @@ fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> Option<Layer
         | ExprNode::SelfRef
         | ExprNode::Result
         | ExprNode::AllInstances { .. }
-        | ExprNode::Lookup { .. }
-        | ExprNode::Dispatch { .. }
+        | ExprNode::Indexed { .. }
+        | ExprNode::StepLabel { .. }
+        | ExprNode::Stutter
         | ExprNode::ProtocolReference { .. } => None,
+        ExprNode::Lookup { .. } => Some(LayerForm::Lookup),
+        ExprNode::Dispatch { .. } => Some(LayerForm::DispatchCall),
         #[cfg(seam_probe)]
         ExprNode::__SeamProbe => None,
     }

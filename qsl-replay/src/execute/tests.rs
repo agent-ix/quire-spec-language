@@ -34,6 +34,8 @@ mod union;
 mod variant_fields;
 
 const PROFILE: &str = "profile v = \"quire.value.complete/v1\";\n";
+/// The model profile, for units that dereference or write model queries.
+const MODEL_PROFILE: &str = "profile v = \"quire.model.complete/v1\";\n";
 
 /// The proved unit: `small` is the predicate a counterexample refutes.
 ///

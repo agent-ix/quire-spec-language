@@ -66,6 +66,7 @@ mod family_outcome_layering;
 mod formal_source;
 mod formatter_identity;
 // The handoff writer is behind its feature; the all-features lane runs this.
+mod fairness_item_path;
 #[cfg(feature = "handoff-writer")]
 mod handoff_writer;
 mod layer_crate_reexports;

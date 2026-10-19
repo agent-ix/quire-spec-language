@@ -4,10 +4,15 @@
 //! [`zone`] holds the zone certificate checker's difference-bound matrices
 //! (ADR-026 CF-3, CF-6; FR-245): separate code from the zone engine's DBM in
 //! `qsl-analyze`, so a fault in one cannot hide a fault in the other.
-//! FR-338 and FR-314's rejection vocabulary retains the failing rule and
-//! query or proof-step locus independently of any checker implementation.
+//! [`closure`] holds FR-338's closure certificate and its checker (ADR-018
+//! PC-3); [`scc`] holds FR-339's component certificate witnesses and the
+//! partition check of them (ADR-018 PC-4). FR-338 and FR-314's rejection vocabulary retains the failing rule
+//! and product-state, query or proof-step locus independently of any checker
+//! implementation.
 
 use serde::{ser::SerializeStruct, Serialize, Serializer};
+
+use crate::certificate::closure::ProductStateRef;
 
 /// FR-314's part of an SMT proof obligation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -49,12 +54,15 @@ pub enum CertificateRule {
 
 /// FR-338 and FR-314: where a certificate rejection occurred.
 ///
-/// Query loci serialize with QSpec FR-331's query-part spelling. A proof-step
+/// A product-state locus serializes as [`ProductStateRef`]'s object. Query
+/// loci serialize with QSpec FR-331's query-part spelling. A proof-step
 /// locus serializes as an object containing its part and its canonical decimal
 /// `u64` index string.
 #[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CertificateLocus {
+    /// The product state of a closure certificate at which a rule failed.
+    ProductState(ProductStateRef),
     /// The query whose encoding or certificate shape failed.
     Query {
         /// The query's proof obligation part.
@@ -72,6 +80,7 @@ pub enum CertificateLocus {
 impl Serialize for CertificateLocus {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
+            Self::ProductState(state) => state.serialize(serializer),
             Self::Query { part } => part.serialize(serializer),
             Self::ProofStep { part, index } => {
                 let mut object = serializer.serialize_struct("CertificateLocus", 2)?;
@@ -85,4 +94,6 @@ impl Serialize for CertificateLocus {
 }
 
 pub mod closed_form;
+pub mod closure;
+pub mod scc;
 pub mod zone;

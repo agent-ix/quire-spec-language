@@ -29,7 +29,7 @@ fn unit(extra: &[(&str, &str)], declarations: &str) -> (String, DeclarationsOrRe
     let identity = package.model_selection.identity.clone();
     let text = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
-         profile v = \"quire.value.complete/v1\";\n\
+         profile v = \"quire.model.complete/v1\";\n\
          model M = {identity:?} version \"1\" digest \"sha256-jcs:{digest}\";\n\
          {declarations}\n"
     );

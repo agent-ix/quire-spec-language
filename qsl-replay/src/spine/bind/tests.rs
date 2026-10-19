@@ -19,7 +19,7 @@ use crate::spine::{
 };
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
-                      profile v = \"quire.value.complete/v1\";\n";
+                      profile v = \"quire.model.complete/v1\";\n";
 
 /// One compiled and emitted unit, as `run` holds it after its package stage.
 struct Unit {
