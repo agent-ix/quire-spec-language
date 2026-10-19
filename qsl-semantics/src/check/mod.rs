@@ -127,6 +127,7 @@ mod protocol_controls;
 mod protocol_obligation;
 mod protocol_reference;
 mod protocol_relationship;
+mod protocol_memory;
 mod protocol_requirement;
 mod protocol_slots;
 mod references;
@@ -290,6 +291,9 @@ pub use protocol_obligation::{
     CaptureOwner, CaptureStage, CheckedActivation, CheckedBinder, CheckedCapture, CheckedCommit,
     CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
     ObligationCause, ObligationOwner, ObligationStage, ReadClass,
+};
+pub use protocol_memory::{
+    AccessClass, CheckedAccess, CheckedFence, CheckedMemory, CheckedParallelMemory,
 };
 pub use protocol_relationship::CheckedRelationship;
 pub use protocol_requirement::CheckedRequirement;
@@ -1696,8 +1700,7 @@ impl PackageDeclarations {
         // (FR-218), `protocol_clause::content` checks the rest -- the `using`
         // aliases, roles, node roles and owners, and binder types -- and
         // refuses `unsupported_construct`/`not-yet-implemented` at any
-        // construct no checker reads yet (a `predicate` join, a `parallel`'s
-        // memory clause, an attempt's memory order and a `fence`).
+        // construct no checker reads yet (a `predicate` join).
         // `protocol_requirement::check` binds each `requires temporal` and
         // `protocol_relationship::check` each `relationship` (FR-218).
         // `protocol_slots::check` checks every body, guard, `visible` entry,
@@ -1812,6 +1815,11 @@ impl PackageDeclarations {
                     ) {
                         Ok(requirements) => checked.requirements = requirements,
                         Err(requirement_refusals) => refusals.extend(requirement_refusals),
+                    }
+                    match protocol_memory::check_models(protocol, &checked.controls) {
+                        Ok(memory) => checked.memory = memory,
+                        Err(memory_refusals) => refusals
+                            .extend(memory_refusals.into_iter().map(|(_, refusal)| refusal)),
                     }
                     match protocol_relationship::check(protocol, &models) {
                         Ok(relationships) => checked.relationships = relationships,

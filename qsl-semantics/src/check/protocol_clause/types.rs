@@ -104,6 +104,10 @@ pub struct CheckedProtocol {
     /// source order (FR-218 "Relationships"), filled in by `check::mod`'s
     /// own pipeline before the slots, whose `related by` ends read it.
     pub relationships: Vec<crate::check::protocol_relationship::CheckedRelationship>,
+    /// Every `parallel`'s source memory default, every `fence` and every
+    /// attempt's access class and ordering (FR-219, FR-220), filled in by
+    /// `check::mod`'s own pipeline.
+    pub memory: crate::check::protocol_memory::CheckedMemory,
 }
 
 /// One checked `await` (QSpec FR-466 `await` layout): its node, the clock
