@@ -80,3 +80,11 @@ Round 3, against head 78dcc6f2d (fix commit 78dcc6f2d).
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-004 | still-open | The Description is qualified ("for every result that is neither timed out nor cancelled"), but the normative Behavior bullet, which AC-2 tests, is unchanged: "The `analyze` operation shall return records with equal RFC 8785 bytes for requests whose key members, `package_id` and engine `BackendId` are equal." With `max_solver_time` outside the key, that SHALL still fails for a 1 s and a 60 s request (`TimedOut` against `proved`). Add the same qualification to the Behavior bullet. The key-list half is fixed: "wall-clock solver budget (FR-250's `max_solver_time`)" is now outside the key, and FR-292-AC-1 tests it. |
+
+Round 4, against head 6e750715a (fix commit 6e750715a).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | FR-292 Behavior: "The `analyze` operation shall return records with equal RFC 8785 bytes for requests whose key members, `package_id` and engine `BackendId` are equal, for every result that is neither timed out nor cancelled." |
+| FND-005 | fixed | TC-776 step 1: "... then of requests that each change only the request file path, the working directory, the wall-clock deadline, `max_solver_time` or the execution backend." |
+| FND-006 | fixed | ADR-029 CA-2: "Paths, timestamps, wall-clock deadlines, wall-clock solver budgets (FR-250's `max_solver_time`), application version strings and the execution backend that ran are outside the key. Each either has no effect on the result or is already bound by a member above, except a wall-clock deadline and a wall-clock solver budget: they can change a result, but every result they limit is time-limited or cancelled and is never stored (CA-5), so the key never has to bind them." |
