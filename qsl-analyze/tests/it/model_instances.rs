@@ -329,19 +329,31 @@ fn population_root(population: &str) -> DomainKey {
     }
 }
 
+/// One declared population: its name and its member types.
+type Declared<'a> = (&'a str, &'a [&'a str]);
+
 const P1: (&str, &[&str]) = ("P1", &["Lamp", "Switch"]);
 const P2: (&str, &[&str]) = ("P2", &["Thing"]);
 const Q: (&str, &[&str]) = ("Q", &["Other"]);
 
+// A checked clause names the one population that covers its `over` type, a
+// member type that is `T` or a proper supertype of it (FR-104), and S3 refuses
+// one that several cover (FR-336-AC-1). Admission is wider: a member type that
+// is `T`, a subtype or a supertype of it (FR-125). `over (x: Thing)` is covered
+// by `P2` alone and admitted by both `P1` (by its subtypes) and `P2`, so it is
+// the clause these tests read several admitting populations through; `P1` and
+// `P2` together both cover `Lamp`, so an `over (x: Lamp)` clause meets each of
+// them in a model without the other.
+
 /// FR-125-AC-8 and FR-125-AC-10: `P1` declares `Lamp` and `Switch`, `P2`
 /// declares their supertype `Thing`, `Q` declares the unrelated `Other`.
 /// Under universes `P1: [d, c]`, `P2: [b, a]`, `Q: [z]`, `over (x: Thing)`
-/// and `over (x: Lamp)` each have the instances `P1/d`, `P1/c`, `P2/b`,
-/// `P2/a`: one per key, though two of `P1`'s member types are comparable
-/// with `Thing`, ordered by population identity text then universe order,
-/// not by key; `P2` admits `Lamp` by its supertype. `Q` admits neither,
-/// and `over (x: Other)` has `Q/z` alone. A violation names the first
-/// instance in that order.
+/// has the instances `P1/d`, `P1/c`, `P2/b`, `P2/a`: one per key, though two
+/// of `P1`'s member types are comparable with `Thing`, ordered by population
+/// identity text then universe order, not by key. `Q` admits neither, and
+/// `over (x: Other)` has `Q/z` alone. `over (x: Lamp)` has each key of `P1`,
+/// which declares `Lamp`, and each key of `P2`, which admits `Lamp` by its
+/// supertype. A violation names the first instance in that order.
 #[trace("TC-520", "FR-125-AC-8", "FR-125-AC-10")]
 #[test]
 fn instances_are_each_key_of_each_admitting_population_in_canonical_order() {
@@ -354,22 +366,36 @@ fn instances_are_each_key_of_each_admitting_population_in_canonical_order() {
         ],
     );
     let bounded = || universes(&[("Q", &["z"]), ("P2", &["b", "a"]), ("P1", &["d", "c"])]);
-    let expected = vec![
-        instance("P1", "d"),
-        instance("P1", "c"),
-        instance("P2", "b"),
-        instance("P2", "a"),
-    ];
-    for over in ["Thing", "Lamp"] {
-        assert_eq!(
-            world.instances(over, bounded()).expect("bounded"),
-            expected,
-            "over {over}"
-        );
-    }
+    assert_eq!(
+        world.instances("Thing", bounded()).expect("bounded"),
+        vec![
+            instance("P1", "d"),
+            instance("P1", "c"),
+            instance("P2", "b"),
+            instance("P2", "a"),
+        ]
+    );
     assert_eq!(
         world.instances("Other", bounded()).expect("bounded"),
         vec![instance("Q", "z")]
+    );
+
+    let declared = self::world(
+        &[P1, Q],
+        &[("P1", &[("d", "Lamp"), ("c", "Switch")]), ("Q", &[])],
+    );
+    assert_eq!(
+        declared
+            .instances("Lamp", universes(&[("Q", &["z"]), ("P1", &["d", "c"])]))
+            .expect("bounded"),
+        vec![instance("P1", "d"), instance("P1", "c")]
+    );
+    let supertype = self::world(&[P2, Q], &[("P2", &[("b", "Lamp")]), ("Q", &[])]);
+    assert_eq!(
+        supertype
+            .instances("Lamp", universes(&[("Q", &["z"]), ("P2", &["b", "a"])]))
+            .expect("bounded"),
+        vec![instance("P2", "b"), instance("P2", "a")]
     );
 
     let outcome = world.run("Thing", bounded(), false).expect("checked");
@@ -385,17 +411,17 @@ fn instances_are_each_key_of_each_admitting_population_in_canonical_order() {
 }
 
 /// FR-125-AC-8: a population that admits `T` and has no universe is
-/// `RequiresBound` naming it, though no initial state holds it; one that
-/// does not admit `T` needs none. When no admitting population has a key,
-/// or no population admits `T`, the item is `NoInstance` before any state
-/// is explored.
+/// `RequiresBound` naming it, though no initial state holds it and it is not
+/// the population the clause names; one that does not admit `T` needs none.
+/// When no admitting population has a key, or no population admits `T`, the
+/// item is `NoInstance` before any state is explored.
 #[trace("TC-520", "FR-125-AC-8")]
 #[test]
 fn an_unbounded_admitting_population_requires_a_bound_and_no_key_is_no_instance() {
-    let world = world(&[P1, P2, Q], &[("P1", &[("d", "Lamp")])]);
+    let world = world(&[P1, P2, Q], &[("P2", &[("b", "Lamp")])]);
     let refusal = world
-        .run("Lamp", universes(&[("P1", &["d"])]), true)
-        .expect_err("P2 admits Lamp and has no universe");
+        .run("Thing", universes(&[("P2", &["b"])]), true)
+        .expect_err("P1 admits Thing and has no universe");
     let ModelCheckRefusal::RequiresBound(bound) = &refusal else {
         panic!("expected RequiresBound, got {refusal:?}");
     };
@@ -404,7 +430,7 @@ fn an_unbounded_admitting_population_requires_a_bound_and_no_key_is_no_instance(
         .iter()
         .map(|(key, kind)| (key.clone(), kind))
         .collect();
-    assert_eq!(roots, [(population_root("P2"), DomainKind::Population)]);
+    assert_eq!(roots, [(population_root("P1"), DomainKind::Population)]);
 
     let world = self::world(&[P1, Q], &[("P1", &[("d", "Lamp")])]);
     assert_eq!(
@@ -414,18 +440,30 @@ fn an_unbounded_admitting_population_requires_a_bound_and_no_key_is_no_instance(
         vec![instance("P1", "d")]
     );
 
-    let world = self::world(&[P1, P2, Q], &[("P1", &[]), ("P2", &[]), ("Q", &[])]);
-    let empty = || universes(&[("P1", &[]), ("P2", &[]), ("Q", &["z"])]);
-    for over in ["Thing", "Lamp"] {
+    let empty: [(&[Declared<'_>], &str); 3] = [
+        (&[P1, P2, Q], "Thing"),
+        (&[P1, Q], "Lamp"),
+        (&[P2, Q], "Lamp"),
+    ];
+    for (populations, over) in empty {
+        let held: Vec<Held<'_>> = populations
+            .iter()
+            .map(|(name, _)| (*name, &[][..]))
+            .collect();
+        let world = self::world(populations, &held);
+        let keys: Vec<(&str, &[&str])> = populations
+            .iter()
+            .map(|(name, _)| (*name, if *name == "Q" { &["z"][..] } else { &[][..] }))
+            .collect();
         assert!(
             matches!(
-                world.run(over, empty(), true).expect("checked"),
+                world.run(over, universes(&keys), true).expect("checked"),
                 ModelCheckOutcome::Undecided {
                     cause: UndecidedCause::NoInstance,
                     stats,
                 } if stats.product_states == 0
             ),
-            "over {over}"
+            "over {over} in {populations:?}"
         );
     }
     let world = self::world(&[P1, P2], &[("P1", &[]), ("P2", &[])]);
@@ -442,15 +480,16 @@ fn an_unbounded_admitting_population_requires_a_bound_and_no_key_is_no_instance(
 
 /// FR-125 and FR-338: the closure checker derives the same instances as
 /// EN-1, so a population that admits `T` and has no universe, held by no
-/// initial state, refuses the check `NotSimulated(RequiresBound)` naming that
-/// population, before any certificate state is read.
+/// initial state and not the population the clause names, refuses the check
+/// `NotSimulated(RequiresBound)` naming that population, before any
+/// certificate state is read.
 #[trace("TC-520", "FR-125-AC-8")]
 #[test]
 fn the_closure_checker_requires_a_bound_for_an_unbounded_admitting_population() {
-    let world = world(&[P1, P2, Q], &[("P1", &[("d", "Lamp")])]);
+    let world = world(&[P1, P2, Q], &[("P2", &[("b", "Lamp")])]);
     let refusal = world
-        .check("Lamp", universes(&[("P1", &["d"])]))
-        .expect_err("P2 admits Lamp and has no universe");
+        .check("Thing", universes(&[("P2", &["b"])]))
+        .expect_err("P1 admits Thing and has no universe");
     let ClosureRefusal::NotSimulated(refusal) = &refusal else {
         panic!("expected NotSimulated, got {refusal:?}");
     };
@@ -461,7 +500,7 @@ fn the_closure_checker_requires_a_bound_for_an_unbounded_admitting_population() 
         .iter()
         .map(|(key, kind)| (key.clone(), kind))
         .collect();
-    assert_eq!(roots, [(population_root("P2"), DomainKind::Population)]);
+    assert_eq!(roots, [(population_root("P1"), DomainKind::Population)]);
 }
 
 /// A universe key is an object identity, so the empty key is a caller's
