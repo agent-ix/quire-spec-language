@@ -455,24 +455,19 @@ impl<'g> Reader<'g> {
         path
     }
 
-    /// The canonical rank of each edge of `path` among its source's
-    /// retained edges: comparing these lexicographically compares two paths
-    /// from one node by canonical edge order.
-    fn ranks(&self, path: &[usize]) -> Vec<usize> {
-        path.iter()
-            .map(|edge| {
-                let source = self.graph.edges[*edge].source.0;
-                self.graph.outgoing[source]
-                    .iter()
-                    .position(|candidate| candidate == edge)
-                    .unwrap_or(usize::MAX)
-            })
-            .collect()
-    }
-
     /// The path pair from `node`: the shortest path to `to`, ties broken by
     /// canonical edge order, and the least, by length then canonical edge
     /// order, of the paths that first deviate from it.
+    ///
+    /// A deviation at a position of `first` by one of its node's other edges
+    /// has the length of the prefix, the edge and the target's distance, so
+    /// no candidate is built to compare it. Two of one length first differ
+    /// at the earlier deviation position, where the earlier one takes its
+    /// own edge and the later one takes `first`'s; edges out of one node
+    /// have distinct canonical ranks, so the earlier is the lesser exactly
+    /// when its edge ranks below `first`'s there. One scan of the edges out
+    /// of `first`'s nodes, in position then canonical order, finds the pair,
+    /// linear in nodes and edges.
     fn path_pair(
         &self,
         node: usize,
@@ -480,26 +475,43 @@ impl<'g> Reader<'g> {
         h_edge: &impl Fn(usize) -> bool,
     ) -> Result<Evidence, ModelCheckRefusal> {
         let first = self.descend_edges(node, d_y, h_edge);
-        let mut best: Option<Vec<usize>> = None;
+        let mut best: Option<Deviation> = None;
         for (position, taken) in first.iter().enumerate() {
             let source = self.graph.edges[*taken].source.0;
+            let mut below = true;
             for &edge in &self.graph.outgoing[source] {
-                let target = self.graph.edges[edge].target.0;
-                if edge == *taken || !h_edge(edge) || d_y[target] == FAR {
+                if edge == *taken {
+                    below = false;
                     continue;
                 }
-                let mut candidate = first[..position].to_vec();
-                candidate.push(edge);
-                candidate.extend(self.descend_edges(target, d_y, h_edge));
+                let target = self.graph.edges[edge].target.0;
+                if !h_edge(edge) || d_y[target] == FAR {
+                    continue;
+                }
+                let candidate = Deviation {
+                    length: position + 1 + d_y[target],
+                    position,
+                    edge,
+                    below,
+                };
+                // Scanning in position then canonical order, an equal-length
+                // candidate at the same position ranks above the best, and
+                // one at a later position is less unless the best is below.
                 let better = best.as_ref().is_none_or(|current| {
-                    (candidate.len(), self.ranks(&candidate)) < (current.len(), self.ranks(current))
+                    candidate.length < current.length
+                        || (candidate.length == current.length
+                            && candidate.position > current.position
+                            && !current.below)
                 });
                 if better {
                     best = Some(candidate);
                 }
             }
         }
-        let second = best.ok_or_else(|| fault("count-2-node-has-a-second-path"))?;
+        let deviation = best.ok_or_else(|| fault("count-2-node-has-a-second-path"))?;
+        let mut second = first[..deviation.position].to_vec();
+        second.push(deviation.edge);
+        second.extend(self.descend_edges(self.graph.edges[deviation.edge].target.0, d_y, h_edge));
         Ok(Evidence::PairOf {
             first: first.iter().map(|edge| self.step(*edge)).collect(),
             second: second.iter().map(|edge| self.step(*edge)).collect(),
@@ -559,6 +571,18 @@ enum Evidence {
         first: Vec<ModelStep>,
         second: Vec<ModelStep>,
     },
+}
+
+/// A path that first deviates from a path pair's first path.
+struct Deviation {
+    /// Its length in steps.
+    length: usize,
+    /// The position of the first path where it deviates.
+    position: usize,
+    /// The edge it takes there.
+    edge: usize,
+    /// Whether that edge ranks below the first path's edge there.
+    below: bool,
 }
 
 /// `index`, an initial-state index, as a [`ModelPath`] stores it.

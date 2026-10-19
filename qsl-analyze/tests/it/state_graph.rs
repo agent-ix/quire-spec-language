@@ -30,8 +30,9 @@ use quire_exact::{Cancel, CancelCause};
 
 use crate::counter::UNLIMITED;
 use crate::graph_world::{
-    config_version, config_world, config_world_over, fork_world, game_world, job_world, Field,
-    Model, Operation, World, CAN_STILL_WIN, DIVIDES, REACHES_THREE, REACHES_TWO,
+    config_version, config_world, config_world_over, fork_world, game_world, job_world,
+    ladder_world, Field, Model, Operation, World, CAN_STILL_WIN, DIVIDES, REACHES_THREE,
+    REACHES_TWO,
 };
 
 const AB: &[&str] = &["a", "b"];
@@ -974,6 +975,51 @@ fn unique_path_counts_paths() {
         names(&second),
         ["stepA", "reset", "stepA", "stepB", "finish"]
     );
+}
+
+/// FR-168's path-pair choice over `Ladder`: from `pos = 0` the first path is
+/// `a, c`; the deviations `b, e` (at position 0) and `a, d` (at position 1)
+/// are as short, and both deviate by an edge ranked above the first path's,
+/// so the later deviation, `a, d`, is the lesser by canonical edge order.
+#[test]
+fn the_second_path_is_the_least_deviation_by_canonical_edge_order() {
+    let world = ladder_world(
+        "unique path Once using v over (x: L::Ladder) from (x.pos = 0) to (x.pos = 3);\n",
+    );
+    let result = run(world.request(&["f"], vec![world.item("Once")], no_samples()));
+    let at = |pos| {
+        node_of(
+            &result,
+            digest_where(&world, &["f"], |state| {
+                world.value(state, "f", "pos") == pos
+            }),
+        )
+    };
+    // The premise: canonical order is `a` before `b` and `c` before `d`.
+    assert_eq!(edge_names(&result, at(0)), ["a", "b"]);
+    assert_eq!(edge_names(&result, at(1)), ["c", "d"]);
+    let StateGraphOutcome::PathPair {
+        stem,
+        first,
+        second,
+    } = &result.items[0][0].outcome
+    else {
+        panic!("a path pair: {:?}", result.items[0][0].outcome);
+    };
+    assert!(stem.steps.is_empty());
+    assert_eq!(names(first), ["a", "c"]);
+    assert_eq!(names(second), ["a", "d"]);
+    let last = positions(
+        &world,
+        &["f"],
+        &ModelPath {
+            initial: 0,
+            steps: second.clone(),
+        },
+    )
+    .pop()
+    .expect("a state");
+    assert_eq!(world.value(&last, "f", "pos"), 3);
 }
 
 /// A `unique path` item under a horizon: §7.3's jobs under `max_depth` 1
