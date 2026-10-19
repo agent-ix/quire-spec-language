@@ -16,6 +16,7 @@ use qsl_semantics::check::{
 };
 use qsl_semantics::model::domain_package::DomainPackageRecord;
 use qsl_semantics::model::intake::{read_records, PackageDocument};
+use qsl_semantics::model::refusal::{MemberSegment, ModelRefusalCause};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::json;
 
@@ -279,8 +280,9 @@ fn transparent_uses_of_an_annotated_population_check() {
 }
 
 /// `convert<Sequence<..>>` of a set of symmetric references reads the set in
-/// identity order, so it refuses as an order-sensitive traversal.
-#[trace("TC-566", "FR-150-AC-3")]
+/// identity order, so it refuses as an order-sensitive traversal. Verifies
+/// that conversion only; it is not one of FR-150-AC-3's listed forms.
+#[trace("TC-566")]
 #[test]
 fn a_set_converted_to_a_sequence_refuses() {
     let document = annotated(&with_peers(&document()));
@@ -294,8 +296,9 @@ fn a_set_converted_to_a_sequence_refuses() {
 }
 
 /// A reference typed as a supertype of a symmetric population's member type
-/// is a reference into that population.
-#[trace("TC-566", "FR-150-AC-3")]
+/// is a reference into that population. Verifies the supertype lookup, which
+/// no FR-150 AC lists.
+#[trace("TC-566")]
 #[test]
 fn a_supertype_reference_into_a_symmetric_subtype_population_refuses() {
     let mut envelope: serde_json::Value =
@@ -315,8 +318,9 @@ fn a_supertype_reference_into_a_symmetric_subtype_population_refuses() {
 }
 
 /// An identity conversion of a reference in an equality operand is not a
-/// conversion to another type, so it checks.
-#[trace("TC-566", "FR-150-AC-4")]
+/// conversion to another type, so it checks. Verifies that exemption only;
+/// FR-150-AC-4 lists no identity conversion.
+#[trace("TC-566")]
 #[test]
 fn an_identity_conversion_in_an_equality_operand_checks() {
     let document = annotated(&with_peers(&document()));
@@ -338,9 +342,19 @@ fn a_malformed_marker_and_another_extra_member_refuse() {
         let package = PackageDocument::parse(&bytes, IntakeLimits::default()).expect("parses");
         let refusals =
             read_records(PACKAGE_IDENTITY, &package).expect_err(&format!("{member} refuses"));
-        assert!(
-            format!("{refusals:?}").contains(member),
-            "{member}: {refusals:?}"
-        );
+        let [refusal] = &refusals[..] else {
+            panic!("{member}: one refusal, not {refusals:?}");
+        };
+        assert_eq!(refusal.cause.as_str(), "malformed-declaration", "{member}");
+        if member == "symmetric" {
+            let ModelRefusalCause::IntakeMalformedDeclaration { member: at, .. } = &refusal.cause
+            else {
+                panic!("{member}: an intake malformed declaration, not {refusal:?}");
+            };
+            assert_eq!(
+                at.segments().last(),
+                Some(&MemberSegment::Name("symmetric".to_owned()))
+            );
+        }
     }
 }
