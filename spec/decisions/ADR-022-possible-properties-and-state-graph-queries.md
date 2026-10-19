@@ -91,11 +91,12 @@ them as `ADR-022 GM-3`. Items of ADR-018 are cited as `ADR-018 SM-3`.
 | SG-2 | **`always possible`.** `always possible Name using v over (x: T) from (Q) { P }` states that from every reachable state where `Q` holds some finite path reaches a state where `P` holds. `from (Q)` is optional; without it `Q` is `true`. This is CTL `AG (Q implies EF P)`. |
 | SG-3 | **`unique path`.** `unique path Name using v over (x: T) from (X) to (Y)` states that from every reachable state where `X` holds there is exactly one path to `Y` (GM-5). It is the first state-graph query: a property of the graph's path structure with no CTL counterpart. |
 | SG-4 | **A family of its own.** SG-1 to SG-3 are **state-graph claims**, a property family separate from temporal claims. A state-graph claim has no temporal profile, no clock, no activation and no temporal operator in its predicates. Its form (SG-1, SG-2 or SG-3) is computed by S3 and recorded beside its requirement record, as ADR-018 §1 records a temporal form. S3 records it as `Requirements{kind: temporal-satisfaction, extent: Unbounded{domains}}`, with `domains` naming the claim, so it routes on the existing kind (ADR-014 §6), and each candidate's arm reads the form. |
-| SG-5 | **Spelling.** The keywords `possible`, `always possible`, `unique path`, `from` and `to` are illustrative; QSpec's shared grammar owns them (QS-1). The `over` binding is ADR-018 QS-5's: one claim instance per object of the universe. |
+| SG-5 | **Spelling.** The keywords `possible`, `always possible`, `unique path`, `from` and `to` are illustrative; QSpec's shared grammar owns them (QS-1). The `over` binding is ADR-018 QS-5's: one claim instance per object of the universe, made at request time (QSL FR-125), not at S3. `over` is optional in all three forms. |
 
 `P`, `Q`, `X` and `Y` are Boolean state clauses under the unit's value
 profile, as an invariant body is. A claim with no `over` parameter has one
-instance.
+instance. A predicate may hold a temporal operator at any position: S1
+parses it and S3 refuses it (GM-3's `expression-form`).
 
 **Why a family and not CTL operators in the temporal grammar.** Every
 temporal formula has a truth value on one trace, which replay, monitors and

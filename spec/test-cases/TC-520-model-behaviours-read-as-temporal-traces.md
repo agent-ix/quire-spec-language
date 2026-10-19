@@ -14,7 +14,7 @@ Verify positions and anchors of a model behaviour, the closed reading under
 a bounded profile and the terminal stutter under infinite-trace, interval
 and past operators over a lasso, the `over` binding, and the empty-initial subject.
 
-Scope: FR-125-AC-1 to FR-125-AC-5.
+Scope: FR-125-AC-1 to FR-125-AC-5 and FR-125-AC-7.
 
 ## Test Procedure
 
@@ -28,6 +28,9 @@ Scope: FR-125-AC-1 to FR-125-AC-5.
    §6's subject; build a subject with an empty `initial` list.
 5. Evaluate FR-125-AC-5's formula over ADR-018 §6's lasso, reading the
    conjunction at positions 0, 3 and 9.
+6. Instantiate the state-graph claims `ReachesTwo` and `ReachesThree` over
+   ADR-018 §6's subject, `possible Anything using v { true }` with no `over`,
+   and an `over` claim over a one-object universe (FR-125-AC-7).
 
 Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 
@@ -43,3 +46,6 @@ Tag the tests `#[trace("TC-520", "FR-125-AC-n")]`.
 - Step 5: past reach 1, two loop copies (6 positions); the conjunction is
   `false` at 0, `true` at 3 and `true` at 9 by congruence; the formula is
   `true`.
+- Step 6: two instances (`a`, `b`) for each of `ReachesTwo` and
+  `ReachesThree`; one instance with no bound object for the claim with no
+  `over`; one instance for the one-object universe.

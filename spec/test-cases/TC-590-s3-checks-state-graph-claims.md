@@ -16,7 +16,7 @@ constraint at their spans, record the form beside the requirement record,
 and that the request writer adds the deadlock-freedom item for subjects of
 state-graph items.
 
-Scope: FR-165-AC-1 to FR-165-AC-3.
+Scope: FR-165-AC-1 to FR-165-AC-5.
 
 ## Test Procedure
 
@@ -32,13 +32,17 @@ game unit, with and without `terminal any`; §7.3's job unit.
 3. Write requests for: `CanStillWin` and `InOneWay`; `ReachesTwo` with a
    temporal claim over the same subject; `CanStillWin` over the game with
    `terminal any`.
+4. Parse and check `possible Anything using v { true }` and three
+   `possible` claims whose predicates hold `eventually` after `and`, under
+   `not` and in parentheses; check a claim naming operation parameter
+   `newVersion`.
 
 Tag the tests `#[trace("TC-590", "FR-165-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `Possible` with two instances each for `ReachesTwo` and
-  `ReachesThree`; `AlwaysPossible` with `from` the constant `true`, and with
+- Step 1: `Possible` for `ReachesTwo` and
+  `ReachesThree`, each with its `over` binding recorded; `AlwaysPossible` with `from` the constant `true`, and with
   the written `from`; `UniquePath`. Each records (`temporal-satisfaction`,
   `Unbounded`) with its form. The two claims over `P` have different node
   identities.
@@ -46,3 +50,7 @@ Tag the tests `#[trace("TC-590", "FR-165-AC-n")]`.
   at the read, at `eventually`, and at the constraint, with no checked
   claim.
 - Step 3: two deadlock-freedom items, one per subject; one item; none.
+- Step 4: all four parse at S1; the no-`over` claim checks with `over` `None`;
+  the three temporal-operator claims refuse `unsupported_construct`/
+  `expression-form` at `eventually`; the parameter claim refuses
+  `missing-name` at the name; no checked claim for any refusal.

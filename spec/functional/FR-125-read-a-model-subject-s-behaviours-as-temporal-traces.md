@@ -57,7 +57,8 @@ reports.
   package input, snapshot provision and limits; `initial: Vec<DocumentRef>`,
   a list of FR-106 initial snapshots; `universes:
   Vec<PopulationUniverse>`; and any `ProofBound`s (ADR-014 B-4).
-- A checked temporal clause (FR-123) with its `over` parameter.
+- A checked temporal clause (FR-123) or a checked state-graph claim
+  (FR-165), each with its `over` parameter, if any.
 
 ## Outputs
 
@@ -90,6 +91,17 @@ reports.
   exist at a position as FR-107 evaluates a reference to an absent object.
 - When the subject's `initial` list is empty, QSL SHALL report
   `NoInitialState` before it explores any state.
+
+### Instancing
+
+- QSL SHALL instantiate a checked temporal clause or state-graph claim at
+  request time, from the subject's `universes`: one instance per object of
+  the universe of the `over` parameter's type, with the parameter bound to
+  that object, in the universe's canonical order. S3 records the `over`
+  binding and does not instantiate, because the universes are not an S3
+  input.
+- QSL SHALL give a clause or claim with no `over` parameter one instance, with
+  no bound object.
 
 ### Reading a lasso
 
@@ -147,6 +159,7 @@ reports.
 | FR-125-AC-4 | Over ADR-018 §6's subject, a clause with `over (c: Config::ConfigVersion)` yields one instance per object of `{a, b}`. A subject whose `initial` list is empty is `NoInitialState` before any state is explored. | Test (TC-520) |
 | FR-125-AC-5 | On the same lasso, `always eventually (holds(a.versionNumber = 0) and once[1,1] holds(a.versionNumber = 2))` has past reach 1 and is evaluated over `m = 2` loop copies, 6 positions: the conjunction is `false` at position 0, which has no previous position, and `true` at position 3, whose previous position holds version 2, and the formula evaluates `true`. The same conjunction read at position 9 by congruence is `true`. | Test (TC-520) |
 | FR-125-AC-6 | Over the `Counter` subject, the letter of `always holds(6 / (2 - c.value) >= 0)` under infinite-trace is defined at positions 0 and 1 and undefined at position 2, cause `division-by-zero`. `eventually[0,1] holds(6 / (2 - c.value) = 6)` under event-position false-extension, `on origin`, reads positions 0 and 1 only and evaluates `true`. | Test (TC-537) |
+| FR-125-AC-7 | Over ADR-018 §6's subject (universe `{a, b}`), the state-graph claims `ReachesTwo` and `ReachesThree` (`over (c: Config::ConfigVersion)`) each yield two instances, `a` then `b`; `possible Anything using v { true }` with no `over` yields one instance with no bound object; the same claim over a subject whose universe holds one object, with `over`, yields one instance. | Test (TC-520) |
 
 ## Dependencies
 
@@ -158,7 +171,8 @@ reports.
   evaluation), [FR-101](FR-101-explore-finite-models-with-canonical-order-and-the-qspec-sampler.md),
   [FR-123](FR-123-check-fairness-and-interval-operators-of-infinite-trace-clauses.md)
   (checked clause), [FR-124](FR-124-declare-intended-terminal-states-and-derive-deadlock-freedom.md)
-  (terminal states).
+  (terminal states), [FR-165](FR-165-check-state-graph-claims-at-s3.md)
+  (checked state-graph claim).
 
 ## References
 
