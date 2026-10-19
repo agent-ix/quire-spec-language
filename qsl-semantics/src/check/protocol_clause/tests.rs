@@ -22,6 +22,7 @@ mod anchors;
 mod attempts;
 mod binders;
 mod coverage;
+mod graph;
 mod node_keys;
 
 /// S1, S2 and the assembler over `declarations`, against
@@ -31,7 +32,12 @@ mod node_keys;
 /// regardless, so this module's fixtures need a real admitted model
 /// even though FR-113's own checks do not read it.
 fn assemble(declarations: &str) -> (String, PackageDeclarations) {
-    let text = format!("{HEADER}{declarations}\n");
+    assemble_with(HEADER, declarations)
+}
+
+/// [`assemble`] under `header` in place of [`HEADER`].
+fn assemble_with(header: &str, declarations: &str) -> (String, PackageDeclarations) {
+    let text = format!("{header}{declarations}\n");
     let parsed = qsl_cst::parse(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
@@ -92,6 +98,12 @@ fn resolve_protocol(declarations: &str) -> (String, ProtocolDeclarationForm, Che
         &signatures,
         &[],
         &[],
+        // The anchor-resolution oracle: an `await` here reads a selected
+        // temporal profile, as the fixtures' units would select one.
+        super::Selections {
+            protocol: None,
+            temporal: true,
+        },
     );
     (text, protocol, result)
 }

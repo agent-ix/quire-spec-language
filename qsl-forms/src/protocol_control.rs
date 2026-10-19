@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The control-construct and channel members of a protocol declaration's S2
 //! forms (FR-308): channels with their premises, `parallel` with its join
-//! policy, `repeat` with its optional maximum and loop proof, `await`, and
-//! the protocol's `terminal` and `scheduling` members.
+//! policy, `repeat` with its optional maximum and loop proof, `choice` with
+//! its owner, visible facts and case guards, `await`, roles static and
+//! replicated, and the protocol's `terminal` and `scheduling` members.
 //!
 //! Every builder reads one CST node and records what was written, each part
 //! with its span. Nothing is resolved here: a role, a label or a type stays
@@ -14,8 +15,8 @@ use qsl_foundation::{Span, Spanned};
 
 use super::dispatch::FormsRefusal;
 use super::syntax::{
-    ClockForm, DeclaredName, ExpressionForm, IntervalForm, NameForm, ParameterForm, TypeForm,
-    UsingAlias,
+    ChoiceCaseForm, ChoiceForm, ClockForm, DeclaredName, ExpressionForm, IntervalForm, NameForm,
+    ParameterForm, ReplicatedRoleForm, RoleForm, RoleLifetime, TypeForm, UsingAlias,
 };
 use super::temporal_clause::{expression_form, interval_form, parameter_form};
 use super::value::{
@@ -588,6 +589,88 @@ pub(crate) fn repeat_form(
         body: body.span(),
         exhausted,
         span: repeat.span(),
+    })
+}
+
+/// `role R on M::T;` or `role R each M::T from population max n lifetime
+/// l;` (FR-308): the name, the model and, for a replicated role, its
+/// population, maximum and lifetime, as written.
+pub(crate) fn role_form(cst: &LosslessCst, role: &CstNode) -> Result<RoleForm, FormsRefusal> {
+    let role_items = items(cst, role);
+    let context = name_form(cst, only(&role_items, Production::QualifiedName, role)?)?;
+    let replicated = if has_token(&role_items, b"each") {
+        // `role R each M::T from p max n lifetime l;`: the role's name and
+        // the population are its only direct identifier tokens.
+        let [_, population] = tokens_of(&role_items, TokenKind::Identifier)[..] else {
+            return Err(unexpected(role));
+        };
+        let [max] = tokens_of(&role_items, TokenKind::Integer)[..] else {
+            return Err(unexpected(role));
+        };
+        let lifetime = only(&role_items, Production::RoleLifetime, role)?;
+        let lifetime_items = items(cst, lifetime);
+        let lifetime = if let Some(token) = token_spelled(&lifetime_items, b"workflow") {
+            RoleLifetime::Workflow(token.span())
+        } else if let Some(token) = token_spelled(&lifetime_items, b"scope") {
+            RoleLifetime::Scope(token.span())
+        } else {
+            RoleLifetime::Until(expression_form(
+                cst,
+                only(&lifetime_items, Production::Expression, lifetime)?,
+            )?)
+        };
+        Some(ReplicatedRoleForm {
+            population: declared(population, role)?,
+            max: u64_token(max, role)?,
+            max_span: max.span(),
+            lifetime,
+        })
+    } else {
+        None
+    };
+    Ok(RoleForm {
+        name: declared_name(&role_items, role)?,
+        context,
+        replicated,
+        span: role.span(),
+    })
+}
+
+/// `choice N by R visible (..) { case a when { g } c ... }` (FR-308): the
+/// owner, the visible entries and each case's label and guard, as written.
+/// `declaration` is the index of the control's own declaration.
+pub(crate) fn choice_form(
+    cst: &LosslessCst,
+    choice: &CstNode,
+    declaration: usize,
+) -> Result<ChoiceForm, FormsRefusal> {
+    let choice_items = items(cst, choice);
+    let [name, owner] = tokens_of(&choice_items, TokenKind::Identifier)[..] else {
+        return Err(unexpected(choice));
+    };
+    let visibility = only(&choice_items, Production::Visibility, choice)?;
+    let visible = nodes_of(&items(cst, visibility), Production::Expression)
+        .into_iter()
+        .map(|entry| expression_form(cst, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cases = nodes_of(&choice_items, Production::Case)
+        .into_iter()
+        .map(|case| {
+            let case_items = items(cst, case);
+            Ok(ChoiceCaseForm {
+                name: declared_name(&case_items, case)?,
+                guard: block_expression(cst, only(&case_items, Production::Block, case)?)?,
+            })
+        })
+        .collect::<Result<Vec<_>, FormsRefusal>>()?;
+    Ok(ChoiceForm {
+        declaration,
+        name: declared(name, choice)?,
+        owner: declared(owner, choice)?,
+        visible,
+        visible_span: visibility.span(),
+        cases,
+        span: choice.span(),
     })
 }
 
