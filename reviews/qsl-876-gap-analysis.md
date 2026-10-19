@@ -58,3 +58,16 @@ explores half stays open on EN-1, as declared.
 | FND-001 | medium | The FR-336-AC-4 test's "two obligation identities that differ only in the subject's universe" holds by the test's own `Subject { universe, initial }` struct. `ModelRequest<S>` is generic and compares `S` with `==`, so the test cannot fail on whether a real subject's identity binds its universes. No production subject type can be the `S` (`qsl_eval::ModelSubject` is not `Eq`). The tag is honest for "each `proved` result joins only its own request index" and over-claims the universe half. Keep the tag and state the seam in the doc comment, or move the universe half to the EN-1 driver test once a real subject identity exists. | qsl-analyze/tests/it/universe_obligation.rs:23-28,96-107; qsl-route/src/model_request.rs:36-60 |
 | FND-002 | medium | FR-336-AC-2's explores half ("with `{a, b}` it explores and returns FR-126-AC-1's outcome") has no test. EN-1 refuses `always eventually` as `FormNotDecided`. Declared as blocked on EN-1. The refusal half's test carries only `TC-846`. Deferred to the EN-1 ticket. | qsl-analyze/tests/it/model_check.rs:772-800 |
 | FND-003 | low | FR-336-AC-1 names two requests, with universe `{a, b}` and with `{a, b, c}`. No test pairs the record with a request of each universe. The AC-4 test writes the one `requirements` value for both items, so its equal-extent check compares a value with itself. The property holds structurally (the record has no universe input), so this is weak evidence, not a wrong result. | qsl-semantics/tests/it/model_subject_bound.rs:63-104; qsl-analyze/tests/it/universe_obligation.rs:62-70,108-113 |
+
+## Dispositions
+
+Round 1, reviewed at 4f8faf59cbefe9b7d2662f69dd87a0d745460839. After the
+fix, FR-336-AC-4 has no tagged test. That is the honest state: the
+`ModelRequest` seam test carries `TC-846` only, and the AC waits for the
+EN-1 request path that builds a real subject.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d7440b8d5: the `FR-336-AC-4` tag is dropped, and the module doc states that the test checks the writer's dedup, index and join, not universe binding. |
+| FND-002 | deferred | FR-336-AC-2 explores half blocked on EN-1 (`FormNotDecided` for `always eventually`), as declared. |
+| FND-003 | deferred | Low, no wrong result: the record has no universe input. Not fixed in this PR under the major-bugs-only review cap. |

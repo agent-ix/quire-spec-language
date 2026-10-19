@@ -116,3 +116,19 @@ Neither breaks a result.
 | FND-003 | low | `TemporalClaim::requirements(.., population: Option<DomainKey>)` faults on `None` when the claim has a population, but silently drops a `Some` key when it has none. A caller can pass a key and have it ignored. Taking the key builder (or the graph) instead of a pre-built key would remove the mismatch. | qsl-semantics/src/check/temporal_clause.rs:293-330 |
 | FND-004 | low | `TemporalCause::AmbiguousPopulation { name: String }` joins `key.node` of each covering population into one string. `AssemblyCause::AmbiguousPopulation` and `ObligationCause::AmbiguousPopulation` keep `Vec<DeclarationKey>`. This one drops the package part of each key and is stringly typed, so two populations with one node name in two packages read "x, x". | qsl-semantics/src/check/refusal.rs:788-796; qsl-semantics/src/check/temporal_clause.rs:647-655 |
 | FND-005 | low | `a_bounded_population_joins_no_domain` is tagged bare `FR-336`, but what it checks is FR-380 "Meaning" (a bounded population is not an unbounded domain) applied to a temporal clause. FR-336's ACs speak only of the no-maximum case. Tag it FR-380. | qsl-semantics/tests/it/model_subject_bound.rs:106-127 |
+
+## Dispositions
+
+Round 1, reviewed at 4f8faf59cbefe9b7d2662f69dd87a0d745460839 (fix commits
+d7440b8d5 and 4f8faf59c; a0ea25120 merges main and changes none of this
+PR's files). Merge risk with #1011 still stands as described in the
+Summary: #1011 is open at 59d35a687, and `requirements` here still takes
+the population key and has no `.with_fairness`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | d7440b8d5: `two_populations_of_the_over_type_refuse_the_clause` drives a second population (`archive`) over `ConfigVersion` and asserts `AmbiguousPopulation`, `ambiguous_declaration`/`ambiguous-name` and both keys in order. The span and the qsl-replay text stay unasserted; the replay arm matches the existing `AssemblyCause::AmbiguousPopulation` arm. |
+| FND-002 | deferred | ModelRequest has no production caller. The coder declared this and says a wiring ticket for the EN-1 request path will follow. No such ticket is linked to QSL-876 at review time; it must name `ModelRequest` and the `S: Clone + Eq` fit with the real subject. |
+| FND-003 | deferred | Low, no wrong result: the one production caller always passes the key the claim needs. Not fixed in this PR under the major-bugs-only review cap. |
+| FND-004 | fixed | d7440b8d5, 4f8faf59c: the variant now carries `populations: Vec<DeclarationKey>`, and the replay message renders them as the existing assembly arm does. |
+| FND-005 | fixed | d7440b8d5: retagged `TC-846`, so it no longer claims an FR-336 criterion. |
