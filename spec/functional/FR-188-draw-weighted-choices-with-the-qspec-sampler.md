@@ -84,11 +84,12 @@ pub enum SampleStop {
   at each step, so the next drawing choice takes the index the one-item
   choice would have taken, as the generator definition states.
 - If the scaled total `N` exceeds 2^256, then `weighted_choice` SHALL refuse
-  with `TotalAboveDrawRange` before computing any digest. The generator
-  definition states no rule for this case (its acceptance test accepts no
-  draw, so a draw would never end); the refusal is QSL's behaviour.
+  with `TotalAboveDrawRange{total}` before computing any digest, as QSpec
+  FR-181-AC-14 states: the generator's acceptance test accepts no draw above
+  that total, so a draw would never end.
 - If a choice of a step reports `TotalAboveDrawRange`, then
   `sample_probabilistic` SHALL stop with `SampleStop::TotalAboveDrawRange`.
+  FR-189 settles that stop.
 - The sampler SHALL be selected by identity only: `sample_probabilistic`
   runs a supplied `DefinitionRef` whose identity is
   `quire.simulation.sampler/v1`, and refuses any other with
@@ -138,7 +139,7 @@ pub enum SampleStop {
 | FR-188-AC-2 | Over the weights `(1/3, 1/6, 1/2)` the scaled integers are `(2, 1, 3)` with `N = 6`. For one seed and 60,000 consecutive trace indices at step 0, choice 0, every index is selected and the selection at each point equals the reference computation of the generator definition. Choices 0 and 1 of the same step use different preimages, so their draws differ for at least one point among the first 100. | Test (TC-623) |
 | FR-188-AC-3 | Sampling `Service` under `Steady` from its initial state with seed 7, trace 12 and 11 positions twice gives equal behaviours. Every step records its selected item indices, its drawn values inside their supports, a step probability equal to FR-187's for that transition, and its `duration`. A sample that reaches `Done` and then `Idle` continues; the `Health` variant with a non-unique post-state stops with `SampleStop::NotMarkov`. | Test (TC-623) |
 | FR-188-AC-4 | QSpec TC-354's one-item vectors reproduce through `sample_probabilistic`, with the test-only digest counter. On `Lone` (one operation, one identity, no random parameter) a step selects item 0 of each one-item choice, leaves the digest counter at zero and records `choices = []`. On `Coin` (one operation, one identity, one random parameter whose support `false, true` in canonical value order has weights `(3, 1)`) at seed `424242`, trace 0, step 0 the parameter's choice is choice index 0 with preimage `{"choice":"0","draw":"0","seed":"424242","step":"0","trace":"0"}` (the TC-210 step-0 digest), and the digest's `v mod 4` is 2, below the first weight 3, so the choice selects index 0, `false`: the step records `choices = [0]` and `random = [false]`. `weighted_choice` over one weight returns 0 and the digest counter reads zero. | Test (TC-623) |
-| FR-188-AC-5 | `weighted_choice` over weights whose scaled total is `2^256` accepts every draw and selects as the generator definition states. Over weights `(1, 2^256)` (scaled total `2^256 + 1`) it returns `TotalAboveDrawRange{total: 2^256 + 1}` and the digest counter reads zero. `sample_probabilistic` on `Wide` (an operation with a random parameter of weights `(1, 2^256)`) stops with `SampleStop::TotalAboveDrawRange` at that parameter's choice. | Test (TC-623) |
+| FR-188-AC-5 | `weighted_choice` over weights whose scaled total is `2^256` accepts every draw and selects as the generator definition states. Over weights `(2^256, 1)` in canonical value order (scaled total `2^256 + 1`, QSpec TC-354 SM-09) it returns `TotalAboveDrawRange{total: 2^256 + 1}` and the digest counter reads zero. `sample_probabilistic` on `Wide` (an operation with a random parameter whose support `false, true` has weights `(2^256, 1)`) stops with `SampleStop::TotalAboveDrawRange` at that parameter's choice. | Test (TC-623) |
 | FR-188-AC-6 | `SampledStep`, `SampledBehaviour` and `SampleStop` resolve as public items of `qsl-eval`'s simulation module, and the public items of `quire-semantic-value` include none of them. | Test (TC-623) |
 
 ## Dependencies
@@ -154,6 +155,7 @@ pub enum SampleStop {
   with FR-408's step order (Linear STD-137). The sampler definition
   (`quire.simulation.sampler/v1`: weighted selection, the choice index in
   the preimage, the one-item rule) and TC-354 (its vectors, SM-05 and SM-07
-  for the one-item rule) are read from QSpec; neither states a rule for a
-  scaled total above 2^256, so that refusal is QSL's.
+  for the one-item rule, SM-08 and SM-09 for the total bound) are read from
+  QSpec, whose FR-181-AC-14 states the refusal of a total above 2^256 as
+  `unsupported`, cause `total-above-draw-range{total}`.
 - Owning ticket: Linear QSL-371.
