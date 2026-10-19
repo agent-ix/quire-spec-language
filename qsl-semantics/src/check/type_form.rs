@@ -129,6 +129,9 @@ pub enum TypeFormFault {
     /// A collection cardinality minimum above its maximum
     /// (`CardinalityBound`'s own refusal).
     EmptyCardinality,
+    /// The `Clock` type, which S2 builds (FR-393) and no S3 check resolves
+    /// yet (FR-230).
+    ClockNotChecked,
 }
 
 /// A [`TypeFormFault`] and the span of the type form it concerns.
@@ -150,6 +153,10 @@ impl TypeFormError {
                 loci: vec![location.clone()],
             },
             TypeFormFault::IntegerOutsideI128(outside) => CheckCause::IntegerOutsideI128(outside),
+            TypeFormFault::ClockNotChecked => CheckCause::TimedNotChecked {
+                construct: super::refusal::TimedConstruct::Clock,
+                span: self.span,
+            },
             TypeFormFault::Malformed
             | TypeFormFault::EmptyInterval
             | TypeFormFault::DenominatorBelowOne
@@ -374,6 +381,7 @@ fn resolve_builtin<'f>(
                 argument: only_argument(form)?,
             })
         }
+        BuiltinType::Clock => Err(fault(form, TypeFormFault::ClockNotChecked)),
         BuiltinType::Reference => {
             let target = only_argument(form)?;
             let TypeFormHead::Name(name) = &target.head else {

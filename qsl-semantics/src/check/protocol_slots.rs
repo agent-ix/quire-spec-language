@@ -3,7 +3,12 @@
 //! expression slot of a protocol's `run` tree and `finish` -- each node's
 //! body, each `check` condition, each `choice`'s and `repeat`'s `visible`
 //! entries and guards and each `repeat`'s loop proof -- over the binders
-//! readable at it, and of each `choice`'s partition.
+//! readable at it, and of each `choice`'s partition. The clause's own
+//! `terminal when` predicate (FR-211) is checked the same way, over the
+//! `over` input and, under `on origin`, the protocol captures; so is each
+//! end of an event node's `related by` clauses, against its relationship
+//! end's type, and each replicated role's `until` predicate, over `C0` and
+//! the role's own binder (QSpec FR-464 "Readable binders").
 //!
 //! The readable binders follow QSpec FR-466 "Binder scope": `In(n)` is
 //! what a control reads at its entry and `Out(n)` what is readable after it
@@ -28,8 +33,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
-    BinaryOperator, BinderKind, ExprNode, ExprRef, ExpressionForm, ProtocolDeclarationForm,
-    ProtocolNodeKind,
+    ActivationForm, BinaryOperator, BinderKind, ExprNode, ExprRef, ExpressionForm,
+    ProtocolDeclarationForm, ProtocolMemberForm, ProtocolNodeKind, RoleLifetime, TerminalForm,
 };
 use qsl_foundation::Span;
 use quire_exact::ValueType;
@@ -40,7 +45,8 @@ use super::ir::{CheckedBody, NodeKind};
 use super::protocol_clause::{record_binder, CheckedProtocol, ProtocolNodeId};
 use super::protocol_obligation::{model_state_reads, span_of, type_body, wraps, Goal};
 use super::refusal::{
-    ArmFault, CheckCause, CheckRefusal, ObservationReason, ProtocolAnchorCause, SlotKind,
+    ArmFault, CheckCause, CheckRefusal, ObservationReason, ProtocolAnchorCause, RelatedEnd,
+    SlotKind,
 };
 use super::state_clause::ClauseDeclarations;
 use super::type_form::resolve_form;
@@ -106,6 +112,49 @@ pub struct CheckedNodeBody {
     pub body: CheckedBody,
 }
 
+/// A checked replicated role's lifetime (FR-218 "Scopes", QSpec FR-428).
+#[derive(Clone, Debug, PartialEq)]
+pub enum CheckedLifetime {
+    /// `lifetime workflow`: the instance retires when its protocol
+    /// instance finishes.
+    Workflow,
+    /// `lifetime scope`: the smallest control of the `run` tree that holds
+    /// every node `by` the role, strictly (a node is not its own region);
+    /// `None` when no node of the tree is `by` the role.
+    Scope(Option<ProtocolNodeId>),
+    /// `lifetime until(p)`: the checked Boolean `p`, over `C0` and the
+    /// role's binder.
+    Until(CheckedBody),
+}
+
+/// One checked replicated role `role r each T from pop max n lifetime L`
+/// (FR-218 "Outputs", QSpec FR-465 "Role").
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckedReplicatedRole {
+    /// The index of the role among the protocol's roles; its binder is
+    /// named by the role and typed `Reference` to its object type.
+    pub role: usize,
+    /// The population the instances are drawn from, as written.
+    pub population: String,
+    /// The authored limit on live instances at once, at least 1.
+    pub max: u64,
+    /// The lifetime of one instance.
+    pub lifetime: CheckedLifetime,
+}
+
+/// One checked `related by r (a, b)` clause of an event node (FR-218
+/// "Relationships").
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckedRelated {
+    /// The event node.
+    pub node: ProtocolNodeId,
+    /// The index of the relationship among the checked protocol's
+    /// relationships.
+    pub relationship: usize,
+    /// The first and second end, each of its relationship end's type.
+    pub ends: [CheckedBody; 2],
+}
+
 /// The nodes that read one binder (FR-218 "Scopes").
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedReaders {
@@ -115,16 +164,36 @@ pub struct CheckedReaders {
     pub readers: Vec<ProtocolNodeId>,
 }
 
+/// A protocol's intended terminal states (FR-211 "Outputs", the three
+/// cases of FR-124's declaration).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum CheckedTerminalMember {
+    /// The protocol writes no `terminal` member.
+    #[default]
+    None,
+    /// `terminal when { P }`: the checked Boolean predicate.
+    When(CheckedBody),
+    /// `terminal any`: every terminal state is intended.
+    Any,
+}
+
 /// Every checked slot of a protocol's `run` tree and `finish`, each list in
 /// source order, and each binder's readers.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CheckedSlots {
+    /// The protocol's `terminal` member (FR-211).
+    pub terminal: CheckedTerminalMember,
     /// The node bodies.
     pub bodies: Vec<CheckedNodeBody>,
     /// The choices.
     pub choices: Vec<CheckedChoice>,
     /// The repeats.
     pub repeats: Vec<CheckedRepeat>,
+    /// Every replicated role, in source order.
+    pub roles: Vec<CheckedReplicatedRole>,
+    /// Every `related by` clause, by node in declaration order and each
+    /// node's clauses in source order.
+    pub related: Vec<CheckedRelated>,
     /// The readers of every binder the `run` tree and `finish` can read:
     /// the `over` input, the activation binder, the protocol captures and
     /// each node's binder, in that order.
@@ -184,10 +253,24 @@ fn refusal(cause: ProtocolAnchorCause) -> CheckRefusal {
     }
 }
 
-/// One slot to check: the node it belongs to, which slot, its form, its
-/// goal, the binders readable at it and whether it bars model state.
+/// What holds a slot: a node of the `run` tree or `finish`, whose reads
+/// are recorded as that node's, or the protocol clause itself (its
+/// `terminal when` predicate), which no node reads for.
+#[derive(Clone, Copy)]
+enum SlotOwner {
+    /// The node of this index.
+    Node(usize),
+    /// The protocol clause.
+    Clause,
+    /// The role of this index: its `until` predicate, read over `C0` and
+    /// the role's own binder only (QSpec FR-464 stage `role-lifetime`).
+    Role(usize),
+}
+
+/// One slot to check: what holds it, which slot, its form, its goal, the
+/// binders readable at it and whether it bars model state.
 struct Slot<'s> {
-    node: usize,
+    owner: SlotOwner,
     kind: SlotKind,
     form: &'s ExpressionForm,
     goal: Goal<'s>,
@@ -204,6 +287,12 @@ struct Checker<'c, 'a> {
     nodes: u64,
     readers: Vec<BTreeSet<usize>>,
     refusals: Vec<(Span, CheckRefusal)>,
+    /// The number of `C0` binders: the `over` input, the activation binder
+    /// and the protocol captures, the first entries of `binders`.
+    roots: usize,
+    /// Each replicated role's own binder, by role index: its name and
+    /// `Reference` to the role's object type.
+    role_binders: BTreeMap<usize, (String, ValueType)>,
 }
 
 impl Checker<'_, '_> {
@@ -222,11 +311,33 @@ impl Checker<'_, '_> {
     /// `slot` typed over every binder and checked against the slot's rules,
     /// in the order the module doc states; `None` when it refuses.
     fn slot(&mut self, slot: &Slot<'_>, cx: &mut CheckContext<'_, Scope>) -> Option<CheckedBody> {
-        let node_name = self.name(slot.node);
+        let node_name = match slot.owner {
+            SlotOwner::Node(node) => self.name(node),
+            SlotOwner::Clause => self.protocol.name.name.clone(),
+            SlotOwner::Role(role) => self
+                .protocol
+                .roles
+                .get(role)
+                .map(|role| role.name.name.clone())
+                .unwrap_or_default(),
+        };
+        // A role's `until` is typed over `C0` and the role's binder alone,
+        // so every name it binds is readable there.
+        let role_bound: Option<Vec<(String, ValueType)>> = match slot.owner {
+            SlotOwner::Role(role) => Some(
+                self.bound
+                    .iter()
+                    .take(self.roots)
+                    .chain(self.role_binders.get(&role))
+                    .cloned()
+                    .collect(),
+            ),
+            SlotOwner::Node(_) | SlotOwner::Clause => None,
+        };
         let mut nodes = self.nodes;
         let typed = type_body(
             slot.form,
-            &self.bound,
+            role_bound.as_deref().unwrap_or(&self.bound),
             slot.goal,
             self.declarations,
             &mut nodes,
@@ -269,6 +380,9 @@ impl Checker<'_, '_> {
                 return None;
             }
         }
+        if role_bound.is_some() {
+            return Some(body);
+        }
         let mut out_of_scope = Vec::new();
         let mut read = BTreeSet::new();
         for checked in body.root().descendants() {
@@ -296,9 +410,11 @@ impl Checker<'_, '_> {
             }
             return None;
         }
-        for local in read {
-            if let Some(readers) = self.readers.get_mut(local) {
-                readers.insert(slot.node);
+        if let SlotOwner::Node(node) = slot.owner {
+            for local in read {
+                if let Some(readers) = self.readers.get_mut(local) {
+                    readers.insert(node);
+                }
             }
         }
         Some(body)
@@ -624,6 +740,22 @@ pub(crate) fn check(
     }
 
     let flow = Flow::of(protocol, checked, &node_binder, (0..roots).collect());
+    // A replicated role whose type is no object type is refused by
+    // `protocol_clause::content` (no type) or `protocol_controls` (another
+    // kind of type), so it has no binder here.
+    let role_binders = protocol
+        .roles
+        .iter()
+        .enumerate()
+        .filter(|(_, role)| role.replicated.is_some())
+        .filter_map(|(index, role)| {
+            let object = scope.object_type_named(&role.context.name)?;
+            Some((
+                index,
+                (role.name.name.clone(), ValueType::Reference(object)),
+            ))
+        })
+        .collect();
     let mut checker = Checker {
         protocol,
         declarations,
@@ -640,6 +772,8 @@ pub(crate) fn check(
         binders,
         nodes: declarations.nodes_used,
         refusals: Vec::new(),
+        roots,
+        role_binders,
     };
     let mut slots = CheckedSlots::default();
 
@@ -670,7 +804,7 @@ pub(crate) fn check(
             _ => (SlotKind::Constraint, false),
         };
         let slot = Slot {
-            node,
+            owner: SlotOwner::Node(node),
             kind,
             form: &body.expression,
             goal: Goal::Boolean,
@@ -685,6 +819,80 @@ pub(crate) fn check(
         }
     }
 
+    // FR-218 "Relationships": each `related by r (a, b)` clause of an
+    // event node, checked independently. Each end is a value over the
+    // binders readable at the node and the `over` input, of its
+    // relationship end's type.
+    for (node, declaration) in protocol.declarations.iter().enumerate() {
+        for related in &declaration.related {
+            let name = &related.relationship;
+            if !protocol
+                .relationships
+                .iter()
+                .any(|relationship| relationship.name.name == name.name)
+            {
+                checker.refuse(ProtocolAnchorCause::MissingRelated {
+                    node: declaration.name.name.clone(),
+                    name: name.name.clone(),
+                    span: name.span,
+                });
+                continue;
+            }
+            // A declared relationship that did not resolve is refused by
+            // `protocol_relationship`, so the package does not compile.
+            let Some((relationship, checked_relationship)) = checked
+                .relationships
+                .iter()
+                .enumerate()
+                .find(|(_, relationship)| relationship.name == name.name)
+            else {
+                continue;
+            };
+            let mut readable = flow.input(node);
+            readable.extend(node_binder.get(&node));
+            let mut ends = Vec::with_capacity(2);
+            for ((form, expected), end) in related
+                .ends
+                .iter()
+                .zip(&checked_relationship.ends)
+                .zip([RelatedEnd::First, RelatedEnd::Second])
+            {
+                let Some(body) = checker.slot(
+                    &Slot {
+                        owner: SlotOwner::Node(node),
+                        kind: SlotKind::RelatedEnd,
+                        form,
+                        goal: Goal::Infer,
+                        readable: &readable,
+                        bars_model_state: false,
+                    },
+                    &mut cx,
+                ) else {
+                    continue;
+                };
+                let actual = body.root().value_type();
+                if actual != expected {
+                    checker.refuse(ProtocolAnchorCause::RelatedEnd {
+                        relationship: name.name.clone(),
+                        end,
+                        expected: Box::new(expected.clone()),
+                        actual: Box::new(actual.clone()),
+                        span: span_of(form, &Location::root(Origin::Expression)),
+                    });
+                    continue;
+                }
+                ends.push(body);
+            }
+            if let Ok(ends) = <[CheckedBody; 2]>::try_from(ends) {
+                slots.related.push(CheckedRelated {
+                    node: ProtocolNodeId(node),
+                    relationship,
+                    ends,
+                });
+            }
+        }
+    }
+
     for choice in &protocol.choices {
         let node = choice.declaration;
         let readable = flow.input(node);
@@ -695,7 +903,7 @@ pub(crate) fn check(
             .map(|entry| {
                 checker.slot(
                     &Slot {
-                        node,
+                        owner: SlotOwner::Node(node),
                         kind: SlotKind::Visible,
                         form: entry,
                         goal: Goal::Infer,
@@ -713,7 +921,7 @@ pub(crate) fn check(
                 checker
                     .slot(
                         &Slot {
-                            node,
+                            owner: SlotOwner::Node(node),
                             kind: SlotKind::Guard,
                             form: &case.guard,
                             goal: Goal::Boolean,
@@ -774,7 +982,7 @@ pub(crate) fn check(
                             bars_model_state: bool| {
             checker.slot(
                 &Slot {
-                    node,
+                    owner: SlotOwner::Node(node),
                     kind,
                     form,
                     goal,
@@ -846,6 +1054,95 @@ pub(crate) fn check(
         });
     }
 
+    // FR-218 "Scopes", QSpec FR-465 "Role": each replicated role's
+    // authored `max` is at least 1, and its lifetime is recorded: the
+    // `scope` region, or the `until` predicate over `C0` and the role's
+    // binder.
+    let no_reads = BTreeSet::new();
+    for (index, role) in protocol.roles.iter().enumerate() {
+        let Some(replicated) = &role.replicated else {
+            continue;
+        };
+        if replicated.max == 0 {
+            checker.refuse(ProtocolAnchorCause::RoleMax {
+                role: role.name.name.clone(),
+                minimum: 1,
+                actual: replicated.max,
+                span: replicated.max_span,
+            });
+        }
+        let lifetime = match &replicated.lifetime {
+            RoleLifetime::Workflow(_) => Some(CheckedLifetime::Workflow),
+            RoleLifetime::Scope(_) => Some(CheckedLifetime::Scope(region(
+                protocol,
+                checked,
+                &role.name.name,
+            ))),
+            RoleLifetime::Until(predicate) if checker.role_binders.contains_key(&index) => checker
+                .slot(
+                    &Slot {
+                        owner: SlotOwner::Role(index),
+                        kind: SlotKind::Lifetime,
+                        form: predicate,
+                        goal: Goal::Boolean,
+                        readable: &no_reads,
+                        bars_model_state: false,
+                    },
+                    &mut cx,
+                )
+                .map(CheckedLifetime::Until),
+            RoleLifetime::Until(_) => None,
+        };
+        if let (Some(lifetime), true) = (lifetime, replicated.max > 0) {
+            slots.roles.push(CheckedReplicatedRole {
+                role: index,
+                population: replicated.population.name.clone(),
+                max: replicated.max,
+                lifetime,
+            });
+        }
+    }
+
+    // FR-211 "The `terminal` member": `terminal when { P }` is a Boolean
+    // predicate over the model observation (the `over` input) and, under
+    // `on origin`, the protocol captures (QSpec FR-464 stage `terminal`,
+    // FR-429). Any other binder, the `on each` binder included, is out of
+    // scope. A second member is `protocol_controls`' refusal; the first is
+    // the one recorded.
+    let origin = matches!(protocol.activation, ActivationForm::Origin);
+    let terminal_readable: BTreeSet<usize> = checker
+        .binders
+        .iter()
+        .enumerate()
+        .filter(|(_, binder)| match binder.origin {
+            BinderOrigin::Input => true,
+            BinderOrigin::Capture => origin,
+            BinderOrigin::Activation | BinderOrigin::Node(_) => false,
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let terminal = protocol.members.iter().find_map(|member| match member {
+        ProtocolMemberForm::Terminal(terminal) => Some(terminal),
+        ProtocolMemberForm::Scheduling(_) => None,
+    });
+    slots.terminal = match terminal {
+        None => CheckedTerminalMember::None,
+        Some(TerminalForm::Any { .. }) => CheckedTerminalMember::Any,
+        Some(TerminalForm::When { predicate, .. }) => checker
+            .slot(
+                &Slot {
+                    owner: SlotOwner::Clause,
+                    kind: SlotKind::Terminal,
+                    form: predicate,
+                    goal: Goal::Boolean,
+                    readable: &terminal_readable,
+                    bars_model_state: false,
+                },
+                &mut cx,
+            )
+            .map_or(CheckedTerminalMember::None, CheckedTerminalMember::When),
+    };
+
     if !checker.refusals.is_empty() {
         checker.refusals.sort_by_key(|(span, _)| span.start);
         return Slots::Refused(
@@ -869,6 +1166,77 @@ pub(crate) fn check(
         })
         .collect();
     Slots::Checked(slots, checker.nodes)
+}
+
+/// FR-218 "Scopes": the smallest control of `checked`'s `run` tree that
+/// strictly holds every node `by` the role `role` (an `attempt`, `event` or
+/// `commit` written `by` it, a `choice` or `repeat` it owns): the lowest
+/// common ancestor of those nodes' parents, the root standing for itself.
+fn region(
+    protocol: &ProtocolDeclarationForm,
+    checked: &CheckedProtocol,
+    role: &str,
+) -> Option<ProtocolNodeId> {
+    let tree = &checked.controls;
+    let mut parents: BTreeMap<ProtocolNodeId, ProtocolNodeId> = BTreeMap::new();
+    for control in &tree.controls {
+        for child in &control.children {
+            parents.insert(*child, control.node);
+        }
+    }
+    let members = protocol
+        .declarations
+        .iter()
+        .enumerate()
+        .filter(|(_, declaration)| {
+            declaration
+                .role
+                .as_ref()
+                .is_some_and(|written| written.name == role)
+        })
+        .map(|(index, _)| index)
+        .chain(
+            protocol
+                .choices
+                .iter()
+                .filter(|choice| choice.owner.name == role)
+                .map(|choice| choice.declaration),
+        )
+        .chain(
+            protocol
+                .repeats
+                .iter()
+                .filter(|repeat| repeat.owner.name == role)
+                .map(|repeat| repeat.declaration),
+        )
+        .map(ProtocolNodeId)
+        .filter(|node| tree.control(*node).is_some());
+    // Each container's chain of ancestors, root first.
+    let chain = |node: ProtocolNodeId| {
+        let mut chain = vec![node];
+        let mut at = node;
+        while let Some(parent) = parents.get(&at) {
+            chain.push(*parent);
+            at = *parent;
+        }
+        chain.reverse();
+        chain
+    };
+    let mut common: Option<Vec<ProtocolNodeId>> = None;
+    for member in members {
+        let container = parents.get(&member).copied().unwrap_or(member);
+        let path = chain(container);
+        common = Some(match common {
+            None => path,
+            Some(shared) => shared
+                .into_iter()
+                .zip(path)
+                .take_while(|(left, right)| left == right)
+                .map(|(left, _)| left)
+                .collect(),
+        });
+    }
+    common?.last().copied()
 }
 
 /// The index of the role `name` among `protocol`'s roles.
@@ -971,6 +1339,9 @@ fn partition(
         span: choice.name.span,
     }))
 }
+
+#[cfg(test)]
+mod tests;
 
 /// The binders readable at each control's entry, and after the root.
 struct Flow {

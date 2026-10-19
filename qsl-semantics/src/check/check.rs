@@ -458,6 +458,10 @@ pub struct PackageDeclarations {
     /// checked under the one of them, or refuses when there is none or
     /// several.
     pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
+    /// FR-171, FR-172: the unit's `hyper` clauses and `relation`s in
+    /// declaration order, each as S2 built it, for the `TemporalTrace`
+    /// family's `check`.
+    pub hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
     /// FR-103: each domain-package operation `requires`/`ensures` clause the
     /// driver parsed, with its operation resolved, checked beside the state
     /// clauses. Checking yields a refusal or nothing.
@@ -583,6 +587,7 @@ impl PackageDeclarations {
             probabilistic: Vec::new(),
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
+            hyper_clauses: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),
             terminals: Vec::new(),
@@ -960,6 +965,11 @@ impl Scope {
     /// The index of the unit's protocol declaration written `name`.
     pub(crate) fn protocol_named(&self, name: &str) -> Option<usize> {
         self.index.protocols.get(name).copied()
+    }
+
+    /// Every name a type of the unit binds, in name order.
+    pub(crate) fn type_names(&self) -> impl Iterator<Item = &str> {
+        self.index.types.keys().map(String::as_str)
     }
 
     /// Whether `name` is a declared type or enum of the unit, which a

@@ -7,6 +7,7 @@
 //! itself is `qsl-analyze`'s; nothing here names it.
 
 pub mod counterexample;
+pub mod identity;
 pub mod item;
 pub mod limits;
 pub mod outcome;

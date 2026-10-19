@@ -47,10 +47,10 @@ use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
 use qsl_replay::{
-    ClosureCertificate, CounterexampleKind, IncompleteCause, Instance, ItemRefusal, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ProductStateRef, ReachedLimit,
-    RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
-    UndefinedSite,
+    ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause, Instance,
+    ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
+    ProductStateRef, ReachedLimit, RunStats, TemporalCounterexample, UndecidedCause,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::family::ClassifyFailure;
@@ -208,9 +208,7 @@ pub fn check_model(
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     let item = match request.item {
-        ModelCheckItem::Clause {
-            clause, letters, ..
-        } => {
+        ModelCheckItem::Clause { clause, letters } => {
             let form = clause.property_form();
             let atom = reachable_invariant_atom(clause)
                 .ok_or(ModelCheckRefusal::FormNotDecided { form })?;
@@ -230,7 +228,13 @@ pub fn check_model(
         }
         ModelCheckItem::DeadlockFreedom => Item::Deadlock,
     };
-    let instances = request.item.instances().map_err(ModelCheckRefusal::Item)?;
+    let (instances, root_cancelled) = match request.item.instances(&request.subject, cancel) {
+        Ok(instances) => (instances, None),
+        Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
+            (Vec::new(), Some(cause))
+        }
+        Err(refusal) => return Err(ModelCheckRefusal::Item(refusal)),
+    };
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
@@ -255,6 +259,13 @@ pub fn check_model(
         monitor: monitor(&item, request.limits.max_automaton_states)
             .map_err(|_| fault("monitor-builds"))?,
     };
+    if let Some(source) = root_cancelled {
+        return Ok(ModelCheckOutcome::Stopped {
+            cause: IncompleteCause::Cancelled { source },
+            limit: None,
+            stats: run.stats(),
+        });
+    }
     if no_initial {
         return Ok(ModelCheckOutcome::Undecided {
             cause: UndecidedCause::NoInitialState,

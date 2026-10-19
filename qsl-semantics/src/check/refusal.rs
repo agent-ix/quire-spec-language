@@ -107,9 +107,10 @@ pub enum ProtocolAnchorCause {
         span: Span,
     },
     /// A protocol whose anchors, binders and attempt bindings all check,
-    /// but which holds a construct no checker reads yet (a relationship, a
-    /// requirement, a replicated role, a `related by` clause, a `predicate`
-    /// join or a `terminal when` member). Refused rather than compiled with
+    /// but which holds a construct no checker reads yet (a `predicate`
+    /// join, a `parallel`'s memory clause, an attempt's memory order, a
+    /// `fence`, or a relationship between two ends that are not object
+    /// types). Refused rather than compiled with
     /// unchecked content and silently missing from the emitted package
     /// (SR-753 FND-002, SR-761 FND-001, SR-770 FND-001).
     Unimplemented {
@@ -391,13 +392,111 @@ pub enum ProtocolAnchorCause {
         /// The interval's span.
         span: Span,
     },
-    /// QSpec FR-464 "Profiles and laws": an `await` reads a clock role, so
-    /// the unit selects a `temporal_profile`; without one,
-    /// `missing_declaration`/`missing-selection` at the `await`.
+    /// QSpec FR-464 "Profiles and laws": an `await` or a `compensate` reads
+    /// a clock role, so the unit selects a `temporal_profile`; without one,
+    /// `missing_declaration`/`missing-selection` at the node.
     MissingTemporalProfile {
-        /// The `await` control's declared name.
+        /// The node's keyword, `await` or `compensate`.
+        construct: &'static str,
+        /// The `await` control's or `compensate` template's declared name.
         node: String,
-        /// The `await`'s name span.
+        /// The node's name span.
+        span: Span,
+    },
+    /// QSpec FR-465 "Role" 2: a replicated role whose authored `max` is
+    /// below 1. `ill_typed`/`type-mismatch`, at the maximum.
+    RoleMax {
+        /// The role's declared name.
+        role: String,
+        /// The least admitted maximum, 1.
+        minimum: u64,
+        /// The maximum as written.
+        actual: u64,
+        /// The maximum's span.
+        span: Span,
+    },
+    /// FR-218 "Relationships": a `relationship r = M::R;` whose `M::R` is no
+    /// export of a selected model. `missing_declaration`/`missing-name`, at
+    /// the name.
+    MissingRelationship {
+        /// The protocol-local relationship name.
+        relationship: String,
+        /// The model name as written.
+        name: String,
+        /// The model name's span.
+        span: Span,
+    },
+    /// FR-218 "Relationships": `M::R` names an export that is not a
+    /// relationship. `invalid_model_binding`/`wrong-export`, at the name.
+    RelationshipExport {
+        /// The protocol-local relationship name.
+        relationship: String,
+        /// The model name as written.
+        name: String,
+        /// The required kind, `relationship`.
+        required: &'static str,
+        /// The export's own kind, such as `port` or `object type`.
+        actual: &'static str,
+        /// The export's declaration key.
+        export: Box<crate::model::key::DeclarationKey>,
+        /// The model name's span.
+        span: Span,
+    },
+    /// FR-218 "Relationships": a `related by r (a, b)` clause whose `r` is
+    /// no relationship the protocol declares. `missing_declaration`/
+    /// `missing-name`, at the name.
+    MissingRelated {
+        /// The event node's declared name.
+        node: String,
+        /// The relationship name as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// FR-218 "Relationships": a `related by` end whose type is not its
+    /// relationship end's type. `ill_typed`/`type-mismatch`, at the end.
+    RelatedEnd {
+        /// The relationship name.
+        relationship: String,
+        /// Which end.
+        end: RelatedEnd,
+        /// The relationship end's type.
+        expected: Box<quire_exact::ValueType>,
+        /// The end expression's type.
+        actual: Box<quire_exact::ValueType>,
+        /// The end expression's span.
+        span: Span,
+    },
+    /// FR-218 "Requirements": a `requires temporal T;` names no declaration
+    /// of the unit, or a name the unit binds only as an alias.
+    /// `missing_declaration`/`missing-name`, at the name.
+    MissingRequirement {
+        /// The name as written.
+        name: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// FR-218 "Requirements": a `requires temporal T;` names a declaration
+    /// of the unit that is not a temporal clause. `ill_typed`/
+    /// `operator-ineligible`, at the name, naming the resolved kind.
+    RequirementKind {
+        /// The name as written.
+        name: String,
+        /// The resolved declaration's keyword, such as `predicate`.
+        kind: &'static str,
+        /// The name's span.
+        span: Span,
+    },
+    /// FR-218 "Requirements": the required temporal clause reaches the
+    /// requiring protocol through a protocol reference, directly or through
+    /// other clauses. `invalid_package`/`definition-cycle`, at the
+    /// requirement's name.
+    RequirementCycle {
+        /// The requiring protocol.
+        protocol: String,
+        /// The required temporal clause.
+        temporal: String,
+        /// The name's span.
         span: Span,
     },
 }
@@ -420,6 +519,33 @@ pub enum SlotKind {
     Invariant,
     /// A `repeat`'s variant.
     Variant,
+    /// The protocol's `terminal when` predicate (FR-211).
+    Terminal,
+    /// An end of an event node's `related by` clause (FR-218).
+    RelatedEnd,
+    /// A replicated role's `until` predicate (QSpec FR-464 stage
+    /// `role-lifetime`).
+    Lifetime,
+}
+
+/// Which end of a relationship a `related by` end fills (FR-218
+/// "Relationships").
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RelatedEnd {
+    /// `first`: the relationship's source end.
+    First,
+    /// `second`: the relationship's target end.
+    Second,
+}
+
+impl RelatedEnd {
+    /// The `end` member's value.
+    pub const fn identifier(self) -> &'static str {
+        match self {
+            Self::First => "first",
+            Self::Second => "second",
+        }
+    }
 }
 
 /// Why a decision's read is not an observable fact of its owner (FR-218
@@ -558,6 +684,35 @@ pub(super) fn type_fault_class(fault: &super::type_form::TypeFormFault) -> (Code
         | F::MalformedDecimal
         | F::EmptyTextBounds
         | F::EmptyCardinality => (Code::IllTyped, "type-mismatch"),
+        F::ClockNotChecked => (Code::UnsupportedConstruct, "not-yet-implemented"),
+    }
+}
+
+/// A timed construct of FR-393 that S2 builds and S3 does not yet check.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TimedConstruct {
+    /// A `time` declaration (FR-230).
+    TimeSource,
+    /// A `time invariant` declaration (FR-230).
+    TimeInvariant,
+    /// An `urgent` declaration (FR-230).
+    Urgent,
+    /// The `Clock` type (FR-230).
+    Clock,
+    /// A temporal operator's timed interval (FR-233, FR-234).
+    TimedInterval,
+}
+
+impl TimedConstruct {
+    /// The construct as a reader names it.
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::TimeSource => "a `time` declaration",
+            Self::TimeInvariant => "a `time invariant` declaration",
+            Self::Urgent => "an `urgent` declaration",
+            Self::Clock => "the `Clock` type",
+            Self::TimedInterval => "a timed interval",
+        }
     }
 }
 
@@ -633,7 +788,15 @@ impl ProtocolAnchorCause {
             | Self::WrongObservation { span, .. }
             | Self::AwaitedForm { span, .. }
             | Self::AwaitWindow { span, .. }
-            | Self::MissingTemporalProfile { span, .. } => *span,
+            | Self::MissingTemporalProfile { span, .. }
+            | Self::MissingRequirement { span, .. }
+            | Self::MissingRelationship { span, .. }
+            | Self::RoleMax { span, .. }
+            | Self::RelationshipExport { span, .. }
+            | Self::MissingRelated { span, .. }
+            | Self::RelatedEnd { span, .. }
+            | Self::RequirementKind { span, .. }
+            | Self::RequirementCycle { span, .. } => *span,
         }
     }
 
@@ -648,7 +811,10 @@ impl ProtocolAnchorCause {
             | Self::ChannelRole { .. }
             | Self::NodeRole { .. }
             | Self::MissingChannel { .. }
-            | Self::MissingTemporalProfile { .. } => Code::MissingDeclaration,
+            | Self::MissingTemporalProfile { .. }
+            | Self::MissingRequirement { .. }
+            | Self::MissingRelationship { .. }
+            | Self::MissingRelated { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } | Self::Shadow { .. } => Code::AmbiguousDeclaration,
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
@@ -656,19 +822,24 @@ impl ProtocolAnchorCause {
             | Self::AwaitWindow { .. }
             | Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
-            | Self::SlotModelState { .. } => Code::IllTyped,
+            | Self::SlotModelState { .. }
+            | Self::RequirementKind { .. }
+            | Self::RelatedEnd { .. }
+            | Self::RoleMax { .. } => Code::IllTyped,
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
             Self::Unimplemented { .. } | Self::NoProgress { .. } | Self::AwaitedForm { .. } => {
                 Code::UnsupportedConstruct
             }
-            Self::CausalCycle { .. } => Code::InvalidPackage,
+            Self::CausalCycle { .. } | Self::RequirementCycle { .. } => Code::InvalidPackage,
             Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).0
             }
-            Self::ChannelCarriesObject { .. } | Self::RoleModel { .. } => Code::InvalidModelBinding,
+            Self::ChannelCarriesObject { .. }
+            | Self::RoleModel { .. }
+            | Self::RelationshipExport { .. } => Code::InvalidModelBinding,
             Self::JoinList { .. } => Code::InvalidPackage,
         }
     }
@@ -685,15 +856,21 @@ impl ProtocolAnchorCause {
             | Self::MissingRole { .. }
             | Self::ChannelRole { .. }
             | Self::NodeRole { .. }
-            | Self::MissingChannel { .. } => "missing-name",
+            | Self::MissingChannel { .. }
+            | Self::MissingRequirement { .. }
+            | Self::MissingRelationship { .. }
+            | Self::MissingRelated { .. } => "missing-name",
             Self::Ambiguous { .. } | Self::Shadow { .. } => "ambiguous-name",
             Self::WrongKind { .. }
             | Self::ChannelMismatch { .. }
             | Self::CarriesMismatch { .. }
-            | Self::AwaitWindow { .. } => "type-mismatch",
-            Self::KeyModelState { .. } | Self::KeyEquality { .. } | Self::SlotModelState { .. } => {
-                "operator-ineligible"
-            }
+            | Self::AwaitWindow { .. }
+            | Self::RelatedEnd { .. }
+            | Self::RoleMax { .. } => "type-mismatch",
+            Self::KeyModelState { .. }
+            | Self::KeyEquality { .. }
+            | Self::SlotModelState { .. }
+            | Self::RequirementKind { .. } => "operator-ineligible",
             // Only a cause that has a tag is wrapped
             // (`protocol_controls::check_fifo`, `protocol_slots`).
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => {
@@ -704,12 +881,13 @@ impl ProtocolAnchorCause {
             Self::Unimplemented { .. } => "not-yet-implemented",
             Self::NoProgress { .. } | Self::AwaitedForm { .. } => "declaration-form",
             Self::MissingTemporalProfile { .. } => "missing-selection",
-            Self::CausalCycle { .. } => "definition-cycle",
+            Self::CausalCycle { .. } | Self::RequirementCycle { .. } => "definition-cycle",
             Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
                 type_fault_class(fault).1
             }
             Self::ChannelCarriesObject { .. } | Self::RoleModel { .. } => "malformed-declaration",
+            Self::RelationshipExport { .. } => "wrong-export",
             Self::JoinList { .. } => "invalid-value",
         }
     }
@@ -785,6 +963,13 @@ pub enum TemporalCause {
         /// The constraint's span.
         span: Span,
     },
+    /// A timed interval (FR-393), which no S3 check reads yet (FR-233,
+    /// FR-234): refused rather than checked as a step interval. Located at
+    /// the interval.
+    TimedIntervalNotChecked {
+        /// The interval's span.
+        span: Span,
+    },
     /// A clause whose checked parts all hold, but that no S4 emission
     /// writes yet (FR-337): refused rather than compiled and silently
     /// missing from the emitted package.
@@ -809,6 +994,7 @@ impl TemporalCause {
             | Self::UnresolvedFairnessOperation { span, .. }
             | Self::AmbiguousFairnessOperation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
+            | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. } => *span,
         }
     }
@@ -820,6 +1006,7 @@ impl TemporalCause {
             Self::MissingInterval { .. }
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. }
+            | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousFairnessOperation { .. } => Code::AmbiguousDeclaration,
@@ -838,7 +1025,7 @@ impl TemporalCause {
             Self::UnresolvedFairnessOperation { .. } => "missing-name",
             Self::AmbiguousFairnessOperation { .. } => "ambiguous-name",
             Self::InvertedInterval { .. } => "type-mismatch",
-            Self::NotEmitted { .. } => "not-yet-implemented",
+            Self::TimedIntervalNotChecked { .. } | Self::NotEmitted { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
         }
     }
@@ -1257,6 +1444,15 @@ pub enum CheckCause {
         /// The span of the whole declaration.
         span: Span,
     },
+    /// A timed construct S2 builds but no S3 check reads yet (FR-393;
+    /// FR-230, FR-233, FR-234 own the checks): refused rather than compiled
+    /// unchecked.
+    TimedNotChecked {
+        /// Which construct.
+        construct: TimedConstruct,
+        /// The construct's span.
+        span: Span,
+    },
     /// A completed model conformance stage retains every axis failure.
     ModelConformance(Box<super::model_conformance::ModelConformanceFailure>),
     /// An unfinished model stage exposes its exact five-field denial.
@@ -1430,6 +1626,9 @@ pub enum CheckCause {
     /// FR-326: the `TemporalTrace` family refused a `temporal` clause.
     /// Boxed for the same reason as `ProtocolAnchor` above.
     Temporal(Box<TemporalCause>),
+    /// FR-172: the `TemporalTrace` family refused a `hyper` clause or a
+    /// `relation`. Boxed for the same reason as `ProtocolAnchor` above.
+    Hyper(Box<super::hyper_clause::HyperCause>),
     /// FR-165: the `StateGraph` family refused a state-graph claim. Boxed
     /// for the same reason as `ProtocolAnchor` above.
     StateGraph(Box<StateGraphCause>),
@@ -1737,7 +1936,9 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.code(),
             Self::TypeInvariant(cause) => cause.cause.code(),
             Self::Terminal(cause) => cause.cause.code(),
-            Self::TerminalNotEmitted { .. } => Code::UnsupportedConstruct,
+            Self::TerminalNotEmitted { .. } | Self::TimedNotChecked { .. } => {
+                Code::UnsupportedConstruct
+            }
             Self::Probabilistic(cause) => cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
@@ -1771,6 +1972,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => cause.code(),
             Self::ProtocolReference(cause) => cause.code(),
             Self::Temporal(cause) => cause.code(),
+            Self::Hyper(cause) => cause.code(),
             Self::StateGraph(cause) => cause.code(),
             Self::ProtocolObligation(cause) => cause.code(),
             Self::DispatchLink(cause) => cause.code,
@@ -1795,7 +1997,9 @@ impl CheckCause {
             Self::StateModel(cause) => cause.cause.cause(),
             Self::TypeInvariant(cause) => cause.cause.cause(),
             Self::Terminal(cause) => cause.cause.cause(),
-            Self::TerminalNotEmitted { .. } => Some("not-yet-implemented"),
+            Self::TerminalNotEmitted { .. } | Self::TimedNotChecked { .. } => {
+                Some("not-yet-implemented")
+            }
             Self::Probabilistic(cause) => Some(cause.tag()),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied
@@ -1844,6 +2048,7 @@ impl CheckCause {
             Self::ProtocolAnchor(cause) => Some(cause.tag()),
             Self::ProtocolReference(cause) => Some(cause.tag()),
             Self::Temporal(cause) => Some(cause.tag()),
+            Self::Hyper(cause) => Some(cause.tag()),
             Self::StateGraph(cause) => cause.tag(),
             Self::ProtocolObligation(cause) => cause.tag(),
             Self::DispatchLink(cause) => Some(cause.catalog.cause()),
