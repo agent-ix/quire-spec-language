@@ -39,7 +39,7 @@ pub(super) struct Attempt<'a> {
     pub(super) declaring: EffectiveId,
     pub(super) operation: String,
     pub(super) receiver: EffectiveId,
-    pub(super) contracts: BTreeSet<NodeKey>,
+    pub(super) contracts: std::sync::Arc<BTreeSet<NodeKey>>,
     pub(super) constraint: Option<&'a CheckedBody>,
     /// The binder's slot when the operation's result is a value of the
     /// binder's type: the attempt binds its result (ADR-027 ST-1).
@@ -144,6 +144,15 @@ pub(super) enum Rest {
     Finish,
     /// The end of a branch body.
     End,
+}
+
+/// What a settling can do, whatever its guards decide.
+#[derive(Default)]
+pub(super) struct SettleWalk {
+    /// Whether it can end a branch body.
+    pub(super) ends: bool,
+    /// The `choice`, `repeat` and `check` nodes whose guards it can read.
+    pub(super) guards: BTreeSet<ProtocolNodeId>,
 }
 
 /// Where settling starts (ADR-027 FO-1).
@@ -365,7 +374,7 @@ impl<'a> Program<'a> {
                     declaring: attempt.operation.declaring,
                     operation: attempt.operation.declaration.name().to_owned(),
                     receiver: attempt.receiver,
-                    contracts: attempt.contracts.iter().copied().collect(),
+                    contracts: std::sync::Arc::new(attempt.contracts.iter().copied().collect()),
                     constraint: body_of(node),
                     binds,
                 },
@@ -729,11 +738,13 @@ impl<'a> Program<'a> {
             || (start <= end && readers.controls.range(start..=end).next().is_some())
     }
 
-    /// Whether settling from `from` can end a branch body, whatever the
-    /// guards and `check`s it passes decide (ADR-027 FT-1 "when the step ends
-    /// a branch"): a walk of FO-1's structural moves that takes every move a
-    /// guard could choose and stops at each rest point.
-    pub(super) fn may_end(&self, from: Cursor) -> Result<bool, ProtocolRefusal> {
+    /// Where settling from `from` can go, whatever the guards and `check`s
+    /// it passes decide: a walk of FO-1's structural moves that takes every
+    /// move a guard could choose and stops at each rest point. It gives
+    /// whether the settling can end a branch body (ADR-027 FT-1 "when the
+    /// step ends a branch") and every guard and `check` it can read.
+    pub(super) fn settle_walk(&self, from: Cursor) -> Result<SettleWalk, ProtocolRefusal> {
+        let mut walk = SettleWalk::default();
         let mut seen: BTreeSet<(u8, ProtocolNodeId)> = BTreeSet::new();
         let mut pending = vec![from];
         while let Some(cursor) = pending.pop() {
@@ -755,11 +766,19 @@ impl<'a> Program<'a> {
                                 .first()
                                 .map_or(Cursor::Exit(node), |first| Cursor::Enter(*first)),
                         ),
-                        ControlStep::Branch | ControlStep::Case | ControlStep::Choice => {
+                        ControlStep::Branch | ControlStep::Case => {
                             pending
                                 .extend(control.children.iter().map(|child| Cursor::Enter(*child)));
                         }
-                        ControlStep::Check => pending.push(Cursor::Exit(node)),
+                        ControlStep::Choice => {
+                            walk.guards.insert(node);
+                            pending
+                                .extend(control.children.iter().map(|child| Cursor::Enter(*child)));
+                        }
+                        ControlStep::Check => {
+                            walk.guards.insert(node);
+                            pending.push(Cursor::Exit(node));
+                        }
                         ControlStep::Repeat => pending.push(Cursor::Guard(node)),
                         ControlStep::Parallel
                         | ControlStep::Attempt
@@ -772,6 +791,7 @@ impl<'a> Program<'a> {
                 }
                 Cursor::Guard(node) => {
                     let repeat = self.repeat(node)?;
+                    walk.guards.insert(node);
                     pending.push(Cursor::Exit(node));
                     pending.push(Cursor::Enter(repeat.body));
                     if let Some(exhausted) = repeat.exhausted {
@@ -797,7 +817,7 @@ impl<'a> Program<'a> {
                                     .map_or(Cursor::Exit(parent), |next| Cursor::Enter(*next)),
                             );
                         }
-                        ControlStep::Branch => return Ok(true),
+                        ControlStep::Branch => walk.ends = true,
                         ControlStep::Case | ControlStep::Choice => {
                             pending.push(Cursor::Exit(parent));
                         }
@@ -827,7 +847,7 @@ impl<'a> Program<'a> {
                 }
             }
         }
-        Ok(false)
+        Ok(walk)
     }
 
     /// Whether the subtree of the control `node` holds a `parallel`, so a

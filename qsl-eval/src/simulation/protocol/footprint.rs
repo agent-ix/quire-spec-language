@@ -15,7 +15,17 @@
 //! over these footprints (FT-4): two steps of one thread both write its
 //! `ctl` and are always dependent.
 //!
-//! Three readings go past FT-1's text, each to keep a footprint sound:
+//! These readings go past FT-1's text, each to keep a footprint sound:
+//!
+//! - A `fork` reads every sibling parallel instance of its node, from
+//!   ordinal 0 to the one it takes, and every thread at or below each of
+//!   their branches: the ordinal is the smallest no live sibling holds
+//!   (PS-2), so a branch of an earlier instance ending changes it.
+//! - An `event`, `send` or `finish` whose record type holds a reference
+//!   lists its records over the state's objects, so it reads the any-object
+//!   membership of every population.
+//! - The binders the guards and `check`s of a step's settling read are in
+//!   its read footprint (FT-1's last sentence), not its enabling one.
 //!
 //! - The step that ends a branch body writes that branch's disposition in
 //!   its parallel instance's record ([`ProtocolLocation::Branch`]), not the
@@ -38,10 +48,14 @@ use std::collections::BTreeSet;
 
 use qsl_semantics::check::{ChannelOverflow, CheckedOutstanding, ControlStep, ProtocolNodeId};
 
+use qsl_semantics::check::footprint::FootprintRefusal;
+use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
+
 use super::identity::{ProtocolTransition, StepKind, ThreadPath};
 use super::memory::MemoryModel;
 use super::program::{Cursor, Rest};
 use super::{Instance, ProtocolRefusal, ProtocolState, ProtocolSystem, Thread};
+use crate::model_subject::ModelInstance;
 use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::FootprintError;
 
@@ -146,15 +160,18 @@ pub enum ProtocolFootprintError {
     UnknownStep,
 }
 
-/// What an atom of a claim reads its anchor for (ADR-021 POR-5): a node of
-/// the protocol, by its static declaration path, or an operation, by its
-/// qualified name.
+/// What an atom of a claim reads its anchor for (ADR-021 POR-5, ADR-027
+/// PB-2): a node of the protocol, by its static declaration path, an
+/// operation, by its qualified name, or a channel, by its qualified name.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum AnchorName {
     /// A protocol node: the `protocol` anchor of its steps.
     Node(String),
     /// An operation: the operation anchor of the attempts that apply it.
     Operation(String),
+    /// A channel, by its qualified name: the `protocol` anchor of its
+    /// `duplicate` and `lose` steps (PB-2).
+    Channel(String),
 }
 
 /// What the atoms of a claim read: model locations, and the anchors they
@@ -170,19 +187,26 @@ pub struct ClaimReads {
 /// ADR-027 FT-5 (ADR-021 POR-5): whether `step`, with footprint
 /// `footprint`, is visible to a claim whose atoms read `claim`: its write
 /// footprint affects a location an atom reads, or an atom reads its
-/// position's anchor and names its node or operation.
+/// position's anchor and names its node, operation or channel. FT-5 names
+/// only a node or an operation; PB-2 observes a `duplicate` or `lose` with a
+/// `protocol` anchor naming its channel, so an atom that reads it makes the
+/// step visible.
 pub fn visible(step: &ProtocolTransition, footprint: &Footprint, claim: &ClaimReads) -> bool {
     let writes = footprint
         .writes
         .iter()
         .any(|written| claim.locations.iter().any(|read| written.affects(read)));
-    let named = match step.application() {
-        Some(application) => claim
+    let named = if let Some(application) = step.application() {
+        claim
             .anchors
-            .contains(&AnchorName::Operation(application.operation().to_owned())),
-        None => step
-            .node()
-            .is_some_and(|node| claim.anchors.contains(&AnchorName::Node(node.to_owned()))),
+            .contains(&AnchorName::Operation(application.operation().to_owned()))
+    } else if let Some((channel, _)) = step.channel_queue() {
+        claim
+            .anchors
+            .contains(&AnchorName::Channel(channel.to_owned()))
+    } else {
+        step.node()
+            .is_some_and(|node| claim.anchors.contains(&AnchorName::Node(node.to_owned())))
     };
     writes || named
 }
@@ -193,6 +217,14 @@ fn protocol(location: ProtocolLocation) -> Location {
 
 fn control(thread: &ThreadPath) -> Location {
     protocol(ProtocolLocation::Control(thread.clone()))
+}
+
+/// Why a step reads a binder: its enabledness reads it, or only the
+/// settling after it does (FO-1, FO-2).
+#[derive(Clone, Copy)]
+enum Read {
+    Enabling,
+    Settling,
 }
 
 /// A footprint under construction: what the step reads, writes and needs
@@ -220,6 +252,39 @@ impl Builder {
 }
 
 impl<M: MemoryModel> ProtocolSystem<'_, M> {
+    /// ADR-027 FT-5's claim reads at `state`: the locations the `holds`
+    /// atoms `atoms` of `clause` read for the instance `over` of its `over`
+    /// parameter (FR-156 "Atom footprints"), each location read through the
+    /// memory model's atom values (SE-1 g). A node of `atoms` that is no
+    /// `holds` atom reads no model location. The anchors an atom reads are
+    /// not derived here, so the result names none.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintRefusal`] when an atom's condition reads through a form
+    /// QSpec FR-383 gives no footprint rule.
+    pub fn claim_reads(
+        &self,
+        clause: &TemporalClauseNode,
+        atoms: &[FormulaNodeId],
+        over: &ModelInstance,
+        state: &ProtocolState<M>,
+    ) -> Result<ClaimReads, FootprintRefusal> {
+        let observed = self.memory.atom_values(&state.memory, &state.model);
+        let mut locations = BTreeSet::new();
+        for atom in atoms {
+            let Some((condition, _)) = clause.condition(*atom) else {
+                continue;
+            };
+            let reads = self.model.atom_reads(clause.clause().over(), condition)?;
+            locations.extend(self.model.atom_locations(&reads, over, &observed));
+        }
+        Ok(ClaimReads {
+            locations,
+            anchors: BTreeSet::new(),
+        })
+    }
+
     /// FR-216: the footprint of `step` taken from `state`, enabled there or
     /// not: its read, write and enabling locations (ADR-027 FT-1, FT-3),
     /// each protocol location as [`Location::Protocol`].
@@ -264,13 +329,41 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 built.footprint.reads.extend(model.reads);
                 built.footprint.writes.extend(model.writes);
                 built.footprint.enabling.extend(model.enabling);
-                self.binders_read(&mut built, instance, path, node)?;
+                self.binders_read(&mut built, instance, path, node, Read::Enabling)?;
                 if attempt.binds.is_some() {
                     built.write(self.binder(node, path)?);
                 }
             }
             StepKind::Event | StepKind::Send | StepKind::Receive => {
-                self.binders_read(&mut built, instance, path, node)?;
+                self.binders_read(&mut built, instance, path, node, Read::Enabling)?;
+                // An `event` and a `send` enumerate their records over the
+                // state's objects; a `receive` takes its record from the queue.
+                let listed = match step.kind() {
+                    StepKind::Event => self
+                        .program
+                        .events
+                        .get(&node)
+                        .map(|record| &record.record_type),
+                    StepKind::Send => self
+                        .program
+                        .messages
+                        .get(&node)
+                        .map(|message| &message.record.record_type),
+                    StepKind::Receive
+                    | StepKind::Attempt
+                    | StepKind::Duplicate
+                    | StepKind::Lose
+                    | StepKind::Fork
+                    | StepKind::Join
+                    | StepKind::Timeout
+                    | StepKind::Finish
+                    | StepKind::Memory => None,
+                };
+                if let Some(record_type) = listed {
+                    for location in self.model.record_reads(record_type) {
+                        built.enabling(location);
+                    }
+                }
                 built.write(self.binder(node, path)?);
                 if step.kind() != StepKind::Event {
                     let channel = self.channel_of(node)?;
@@ -292,13 +385,32 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
                 let text = self.program.text(node)?;
                 let ordinal = Self::free_ordinal(instance, path, node, text, join)?;
+                // The ordinal is the smallest no live sibling holds (PS-2): the
+                // fork reads every sibling instance up to it, and every thread
+                // at or below each of their branches.
+                for sibling in 0..=ordinal {
+                    built.read(protocol(ProtocolLocation::Instance(ParallelInstance {
+                        parent: path.clone(),
+                        node: text.to_owned(),
+                        ordinal: sibling,
+                    })));
+                    for (label, _) in &join.branches {
+                        built.read(protocol(ProtocolLocation::Subtree(
+                            path.child(text, label, sibling),
+                        )));
+                    }
+                }
                 built.write(protocol(ProtocolLocation::Instance(ParallelInstance {
                     parent: path.clone(),
                     node: text.to_owned(),
                     ordinal,
                 })));
-                for (label, _) in &join.branches {
-                    built.write(control(&path.child(text, label, ordinal)));
+                for (label, body) in &join.branches {
+                    let child = path.child(text, label, ordinal);
+                    for guard in &self.program.settle_walk(Cursor::Enter(*body))?.guards {
+                        self.binders_read(&mut built, instance, &child, *guard, Read::Settling)?;
+                    }
+                    built.write(control(&child));
                 }
             }
             StepKind::Join => {
@@ -328,7 +440,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 built.enabling(protocol(ProtocolLocation::Subtree(ThreadPath::root(
                     path.instance,
                 ))));
-                self.binders_read(&mut built, instance, path, node)?;
+                self.binders_read(&mut built, instance, path, node, Read::Enabling)?;
+                for location in self.model.record_reads(&self.program.finish.binder.1) {
+                    built.enabling(location);
+                }
                 built.write(self.binder(node, path)?);
                 for channel in &self.program.channels {
                     built.write(protocol(ProtocolLocation::Queue {
@@ -339,8 +454,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             }
             StepKind::Duplicate | StepKind::Lose | StepKind::Memory => return Err(unknown()),
         }
-        if let (Some((key, label)), Some(after)) = (&thread.owner, after) {
-            if self.program.may_end(after)? {
+        if let Some(after) = after {
+            let walk = self.program.settle_walk(after)?;
+            for guard in &walk.guards {
+                self.binders_read(&mut built, instance, path, *guard, Read::Settling)?;
+            }
+            if let (Some((key, label)), true) = (&thread.owner, walk.ends) {
                 let parallel = ParallelInstance {
                     parent: key.parent.clone(),
                     node: self.program.text(key.node)?.to_owned(),
@@ -428,6 +547,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         instance: &Instance,
         path: &ThreadPath,
         node: ProtocolNodeId,
+        reads: Read,
     ) -> Result<(), ProtocolFootprintError> {
         for (slot, bound) in self.program.slots.iter().enumerate() {
             let Some(bound) = bound else {
@@ -437,7 +557,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 continue;
             }
             for by in instance.read_by(*bound, path) {
-                built.enabling(self.binder(*bound, &by)?);
+                let location = self.binder(*bound, &by)?;
+                match reads {
+                    Read::Enabling => built.enabling(location),
+                    Read::Settling => built.read(location),
+                }
             }
         }
         Ok(())

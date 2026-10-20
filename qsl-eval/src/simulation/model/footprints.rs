@@ -11,7 +11,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use qsl_semantics::check::footprint::{
     derive_atom_reads, derive_constraint_reads, derive_footprint, derive_selected_footprint,
@@ -91,12 +91,12 @@ type CacheKey = (
     EffectiveId,
     String,
     Vec<(String, EffectiveId)>,
-    Option<BTreeSet<NodeKey>>,
+    Option<Arc<BTreeSet<NodeKey>>>,
 );
 
 /// Symbolic footprints already derived, by the receiver's type, the operation,
 /// the types of the bound reference arguments and the clauses selected, all
-/// when `None`.
+/// when `None`. A selection is shared, so a lookup clones no set.
 #[derive(Default)]
 pub(super) struct FootprintCache(
     Mutex<BTreeMap<CacheKey, Result<SymbolicFootprint, FootprintRefusal>>>,
@@ -346,6 +346,30 @@ fn declared_target(value_type: &ValueType) -> Option<EffectiveId> {
     }
 }
 
+/// Whether a value of `value_type` can hold an object reference, through
+/// options and collections; a composite or population value is taken to.
+fn holds_reference(value_type: &ValueType) -> bool {
+    match value_type {
+        ValueType::Reference(_) => true,
+        ValueType::Option(payload) => holds_reference(payload),
+        ValueType::Collection(collection) => holds_reference(collection.element()),
+        // A composite's members are not followed; taken to hold one.
+        ValueType::Composite(_) | ValueType::Population(_) => true,
+        ValueType::Boolean
+        | ValueType::Int(_)
+        | ValueType::Integer
+        | ValueType::Rational(_)
+        | ValueType::Decimal(_)
+        | ValueType::Float(_)
+        | ValueType::Quantity(_)
+        | ValueType::Text(_)
+        | ValueType::String
+        | ValueType::Uuid
+        | ValueType::Timestamp
+        | ValueType::Enum(_) => false,
+    }
+}
+
 /// Whether `value_type` holds an object reference a footprint can bind.
 fn binds_object(value_type: &ValueType) -> bool {
     match value_type {
@@ -366,7 +390,7 @@ impl<'a> ModelSystem<'a> {
         application: &Application,
         receiver: &ObjectReference,
         arguments: &[(String, Option<ObjectReference>)],
-        selected: Option<&BTreeSet<NodeKey>>,
+        selected: Option<&Arc<BTreeSet<NodeKey>>>,
     ) -> Result<Footprint, FootprintRefusal> {
         let types: Vec<(String, EffectiveId)> = arguments
             .iter()
@@ -423,13 +447,30 @@ impl<'a> ModelSystem<'a> {
         self.footprint_selecting(transition, None)
     }
 
+    /// What enumerating the records of `value_type` reads (ADR-027 FT-3): a
+    /// type that holds an object reference ranges over the objects of the
+    /// state, so it reads the any-object membership of every population;
+    /// any other type reads nothing.
+    pub(crate) fn record_reads(&self, value_type: &ValueType) -> BTreeSet<Location> {
+        if !holds_reference(value_type) {
+            return BTreeSet::new();
+        }
+        self.model
+            .populations()
+            .into_iter()
+            .map(|population| Location::AnyMembership {
+                population: population.key,
+            })
+            .collect()
+    }
+
     /// [`Self::footprint`] over only the clauses `selected` names: a protocol
     /// attempt's application with the contracts its node selects (ADR-027
     /// FT-1).
     pub(crate) fn footprint_selecting(
         &self,
         transition: &ModelTransition,
-        selected: Option<&BTreeSet<NodeKey>>,
+        selected: Option<&Arc<BTreeSet<NodeKey>>>,
     ) -> Result<Footprint, FootprintError> {
         let unknown = || FootprintError::UnknownTransition;
         let receiver = transition

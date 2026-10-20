@@ -3,17 +3,18 @@
 //! footprints over model and protocol locations, from which independence and
 //! visibility follow (ADR-027 §5 FT-1 to FT-5).
 //!
-//! A claim's reads are supplied as the model locations its atoms read: the
-//! claim over `d.v` reads (`d`, `v`) and `always holds(k.v <= 3)`, with `k`
-//! bound to `c`, reads (`c`, `v`).
+//! A claim's reads are derived from its checked `holds` atoms: `always
+//! holds(k.v <= 3)` read for `k` bound to `c` reads (`c`, `v`), and read for
+//! `d`, the claim over `d.v`, reads (`d`, `v`).
 
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
+use qsl_eval::automaton::translate;
 use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::protocol::{
-    visible, ClaimReads, ParallelInstance, ProtocolLocation, ProtocolState, ProtocolSystem,
-    ProtocolTransition, Sc, StepKind, ThreadPath,
+    visible, AnchorName, ClaimReads, ParallelInstance, ProtocolLocation, ProtocolState,
+    ProtocolSystem, ProtocolTransition, Sc, StepKind, ThreadPath,
 };
 use qsl_eval::simulation::{independent, Footprint, Location};
 use qsl_package::CheckedPackage;
@@ -163,12 +164,26 @@ fn forked(system: &ProtocolSystem<'_, Sc>, reached: &[Reached]) -> usize {
     step(system, reached, 0, StepKind::Fork, "Both").2
 }
 
-/// The claim whose atoms read `locations`.
-fn claim(locations: impl IntoIterator<Item = Location>) -> ClaimReads {
-    ClaimReads {
-        locations: locations.into_iter().collect(),
-        anchors: BTreeSet::new(),
-    }
+/// The claim `always holds(k.v <= 3)` over a cell.
+const BOUNDED: &str = "temporal Bounded using t0 over (k: M::Cell) clock \"model-steps\" \
+                       on origin { always holds(k.v <= 3) }\n";
+
+/// What `BOUNDED`'s atoms read for `k` bound to the cell `over` at
+/// `state`, derived from its checked clause.
+fn bounded(
+    unit: &Cells,
+    system: &ProtocolSystem<'_, Sc>,
+    over: &str,
+    state: &ProtocolState<Sc>,
+) -> ClaimReads {
+    let clause = &unit.checked.graph().temporal_clauses()[0];
+    let atoms = translate(clause.clause(), 1 << 20)
+        .expect("the clause translates")
+        .atoms()
+        .to_vec();
+    system
+        .claim_reads(clause, &atoms, &instance(over), state)
+        .expect("the atoms have footprints")
 }
 
 /// FR-216-AC-1: in ADR-027 §7, `attempt(A)` and `attempt(B)` at s1 both
@@ -191,7 +206,7 @@ fn attempts_on_one_cell_are_dependent_and_on_two_cells_independent() {
     assert!(b.writes.contains(&field(&c, "v")), "{b:?}");
     assert!(!independent(&a, &b));
 
-    let two = Cells::new(&fill_unit("self.v = 0", ""), &["c", "d"]);
+    let two = Cells::new(&(fill_unit("self.v = 0", "") + BOUNDED), &["c", "d"]);
     let subject = two.subject("Fill");
     let system = sc_system(&subject);
     let reached = reachable(&system);
@@ -212,7 +227,8 @@ fn attempts_on_one_cell_are_dependent_and_on_two_cells_independent() {
     assert!(!a.writes.contains(&field(&d, "v")), "{a:?}");
     assert!(!b.writes.contains(&field(&c, "v")), "{b:?}");
     assert!(independent(&a, &b), "{a:?} {b:?}");
-    let over_d = claim([field(&d, "v")]);
+    let over_d = bounded(&two, &system, "d", &reached[s1].state);
+    assert_eq!(over_d.locations, BTreeSet::from([field(&d, "v")]));
     assert!(!visible(a_on_c, &a, &over_d));
     assert!(visible(b_on_d, &b, &over_d));
 }
@@ -224,7 +240,7 @@ fn attempts_on_one_cell_are_dependent_and_on_two_cells_independent() {
 #[trace("TC-661", "FR-216-AC-2")]
 #[test]
 fn control_steps_touch_only_protocol_locations_and_one_branch_is_dependent() {
-    let fill = Cells::new(&fill_unit("self.v = 0", ""), &["c"]);
+    let fill = Cells::new(&(fill_unit("self.v = 0", "") + BOUNDED), &["c"]);
     let subject = fill.subject("Fill");
     let system = sc_system(&subject);
     let reached = reachable(&system);
@@ -245,13 +261,14 @@ fn control_steps_touch_only_protocol_locations_and_one_branch_is_dependent() {
     let (join, join_footprint, s5) = step(&system, &reached, s4, StepKind::Join, "Both");
     assert!(join_footprint.reads.contains(&both()), "{join_footprint:?}");
     let (finish, finish_footprint, _) = step(&system, &reached, s5, StepKind::Finish, "Done");
-    let bounded = claim([field(&c, "v")]);
+    let claim = bounded(&fill, &system, "c", &reached[0].state);
+    assert_eq!(claim.locations, BTreeSet::from([field(&c, "v")]));
     for (transition, footprint) in [
         (fork, &fork_footprint),
         (join, &join_footprint),
         (finish, &finish_footprint),
     ] {
-        assert!(!visible(transition, footprint, &bounded), "{transition:?}");
+        assert!(!visible(transition, footprint, &claim), "{transition:?}");
     }
 
     let run = format!(
@@ -290,7 +307,9 @@ fn one_completed(system: &ProtocolSystem<'_, Sc>, reached: &[Reached]) -> usize 
 /// continue` none of theirs. A `receive`'s enabling footprint holds its
 /// channel's `queue`; in FR-212's `Chatter` the `send` and `receive` on
 /// `ch` are dependent, and `attempt(Done)` and `duplicate(ch, Tx)` are
-/// independent.
+/// independent. `Chatter` is built over this fixture's `Cell`, with `Done`
+/// applying `inc` where FR-212's applies `set` to `flag`; its branches,
+/// channel premises and nodes are FR-212's.
 #[trace("TC-661", "FR-216-AC-3")]
 #[test]
 fn a_cancelling_join_writes_its_branches_and_a_queue_orders_its_steps() {
@@ -361,7 +380,9 @@ fn a_cancelling_join_writes_its_branches_and_a_queue_orders_its_steps() {
     );
 }
 
-/// FR-216-AC-5: an attempt of `nudge(peer)` on receiver `c` with reference
+/// FR-216-AC-5: an attempt of `nudge(peer)`, the AC's `bump(by)` (`bump`
+/// is this fixture's parameterless operation, and `by` is a keyword of the
+/// attempt form), on receiver `c` with reference
 /// argument `d`, whose precondition reads `c.v`, whose postcondition reads
 /// `pre(d.w)` and whose binder constraint reads binder `a`, has an enabling
 /// footprint of exactly (`c`, `v`), (`d`, `w`), the membership of `c` and of
@@ -503,4 +524,226 @@ fn an_attempt_reads_only_the_clauses_it_selects() {
     assert_eq!(both_clauses, BTreeSet::from([field(&c, "v"), member(&c)]));
     let (post_only, c) = reads("TwoPost");
     assert_eq!(post_only, BTreeSet::from([member(&c)]));
+}
+
+/// The states both orders of the steps `first` then `second` reach from
+/// `reached[at]`: every successor of `first`, then every successor of
+/// `second` from there.
+fn after_both(
+    reached: &[Reached],
+    at: usize,
+    first: &ProtocolTransition,
+    second: &ProtocolTransition,
+) -> BTreeSet<usize> {
+    reached[at]
+        .steps
+        .iter()
+        .filter(|(step, _)| step == first)
+        .flat_map(|(_, next)| {
+            reached[*next]
+                .steps
+                .iter()
+                .filter(|(step, _)| step == second)
+                .map(|(_, last)| *last)
+        })
+        .collect()
+}
+
+/// ADR-027 FT-4 (ADR-021 POR-4): at every reachable state of `system`,
+/// every pair of enabled steps reported independent commutes: each stays
+/// enabled after the other, and both orders reach the same states. The
+/// number of independent pairs checked.
+fn assert_independent_steps_commute(system: &ProtocolSystem<'_, Sc>, reached: &[Reached]) -> usize {
+    let mut checked = 0;
+    for (at, state) in reached.iter().enumerate() {
+        let mut identities: Vec<&ProtocolTransition> = Vec::new();
+        for (step, _) in &state.steps {
+            if !identities.contains(&step) {
+                identities.push(step);
+            }
+        }
+        for (index, first) in identities.iter().enumerate() {
+            for second in &identities[index + 1..] {
+                let left = system.footprint(&state.state, first).expect("a footprint");
+                let right = system.footprint(&state.state, second).expect("a footprint");
+                if !independent(&left, &right) {
+                    continue;
+                }
+                checked += 1;
+                let forward = after_both(reached, at, first, second);
+                let backward = after_both(reached, at, second, first);
+                assert!(
+                    !forward.is_empty() && forward == backward,
+                    "from state {at}, {first:?} then {second:?} reach {forward:?}, \
+                     the other order {backward:?}"
+                );
+            }
+        }
+    }
+    checked
+}
+
+/// FR-216 and ADR-027 FT-4: over every protocol fixture of TC-661, every
+/// pair of steps the footprints report independent commutes. Among them, a
+/// `repeat` re-forks `parallel Both` while a branch of the earlier instance
+/// still runs under `outstanding continue`: the fork's ordinal depends on
+/// whether that branch has ended, so the fork reads the earlier instance.
+#[trace("TC-661")]
+#[test]
+fn every_independent_pair_of_steps_commutes() {
+    let parallel = |members: &str| format!("join any [a, b] outstanding {members}");
+    let two_touch_left = format!(
+        "sequence Main {{ parallel Both {{ branch left sequence L {{ {} {} }} branch right {} }} \
+         join all [left, right]; }}",
+        touch("TA"),
+        touch("TB"),
+        touch("TC"),
+    );
+    let join_any = |outstanding: &str| {
+        format!(
+            "sequence Main {{ parallel Both {{ branch a {} branch b {} }} {}; }}",
+            touch("TA"),
+            touch("TB"),
+            parallel(outstanding),
+        )
+    };
+    let refork = format!(
+        "sequence Main {{ repeat Loop by w visible () max 2 while {{ true }} sequence Body {{ \
+         parallel Both {{ branch a {} branch b sequence S {{ {} {} }} }} {}; }} \
+         exhausted sequence Out {{ }} }}",
+        touch("TA"),
+        touch("TB"),
+        touch("TC"),
+        parallel("continue"),
+    );
+    let chatter = format!(
+        "parallel Both {{ branch s sequence Sender {{ send Tx via ch as (tx: Boolean) {{ tx }}; {} }} \
+         branch r receive Rx via ch of s::Sender::Tx as (rx: Boolean) {{ true }}; }} join all [s, r];",
+        attempt("Done", "inc", "IncPre, IncPost", "done", "true"),
+    );
+    let channel = "channel ch from w to w carries Boolean \
+                   ordering unordered delivery unknown capacity 2 overflow block;";
+    let units: Vec<(String, &str, Vec<&'static str>)> = vec![
+        (fill_unit("self.v = 0", ""), "Fill", vec!["c"]),
+        (fill_unit("self.v = 0", ""), "Fill", vec!["c", "d"]),
+        (fill_unit("self.v <= 1", ""), "Fill", vec!["c", "d"]),
+        (
+            contracts("self.v = 0") + &protocol("P", "", &two_touch_left, "d"),
+            "P",
+            vec!["c"],
+        ),
+        (
+            contracts("self.v = 0") + &protocol("P", "", &join_any("cancel"), "d"),
+            "P",
+            vec!["c"],
+        ),
+        (
+            contracts("self.v = 0") + &protocol("P", "", &join_any("continue"), "d"),
+            "P",
+            vec!["c"],
+        ),
+        (
+            contracts("self.v = 0") + &protocol("P", "", &refork, "d"),
+            "P",
+            vec!["c"],
+        ),
+        (
+            contracts("self.v = 0") + &protocol("Chatter", channel, &chatter, "d"),
+            "Chatter",
+            vec!["c"],
+        ),
+        (
+            contracts("self.v = 0")
+                + "pre ByPre using v on M::Cell::nudge { self.v < 3 }\n\
+                   post ByPost using v on M::Cell::nudge { self.v >= pre(peer.w) }\n"
+                + &protocol(
+                    "P",
+                    "",
+                    &format!(
+                        "parallel Both {{ branch a sequence A {{ event E by w as (a: Boolean) {{ a }}; \
+                         attempt X by w on M::Cell::nudge contracts [ByPre, ByPost] as (x: Boolean) {{ a }}; }} \
+                         branch b {} }} join all [a, b];",
+                        touch("TB")
+                    ),
+                    "d",
+                ),
+            "P",
+            vec!["c", "d"],
+        ),
+    ];
+    let mut total = 0;
+    for (index, (body, name, keys)) in units.iter().enumerate() {
+        let unit = Cells::new(body, keys);
+        let subject = unit.subject(name);
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let checked = assert_independent_steps_commute(&system, &reached);
+        // The re-forking `repeat` has independent pairs of its own.
+        assert!(index != 6 || checked > 0, "{body}");
+        total += checked;
+    }
+    assert!(total > 0);
+}
+
+/// ADR-027 FT-3 and PB-2: an `event` whose record type holds a reference
+/// lists its records over the state's objects, so its enabling footprint
+/// reads the membership of every population; a step's settling reads the
+/// binders of the guards it passes, which do not enable it; and a
+/// `duplicate` is visible to an atom that reads its channel's anchor.
+#[trace("TC-661")]
+#[test]
+fn records_guards_and_channel_anchors_are_read() {
+    let run = format!(
+        "sequence Main {{ event F by w as (f: Boolean) {{ true }}; event E by w as (e: M::Cell) {{ true }}; \
+         {} choice Pick by w visible (f) {{ case yes when {{ f }} {} case no when {{ not f }} {} }} }}",
+        touch("T"),
+        touch("Y"),
+        touch("N"),
+    );
+    let unit = Cells::new(
+        &(contracts("self.v = 0") + &protocol("P", "", &run, "d")),
+        &["c"],
+    );
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let bound = steps(&system, &reached, 0, StepKind::Event, "F")[0].2;
+    let any_cell = Location::AnyMembership {
+        population: key("cells"),
+    };
+    let (_, event, listed) = step(&system, &reached, bound, StepKind::Event, "E");
+    assert!(event.enabling.contains(&any_cell), "{event:?}");
+    let (_, touched, _) = step(&system, &reached, listed, StepKind::Attempt, "T");
+    let guard = Location::Protocol(ProtocolLocation::Binder {
+        node: "Main/F".to_owned(),
+        thread: root(),
+    });
+    assert!(touched.reads.contains(&guard), "{touched:?}");
+    assert!(!touched.enabling.contains(&guard), "{touched:?}");
+
+    let members = "channel ch from w to w carries Boolean \
+                   ordering unordered delivery unknown capacity 2 overflow block;";
+    let run = "sequence Main { send Tx via ch as (tx: Boolean) { tx }; }";
+    let unit = Cells::new(
+        &(contracts("self.v = 0") + &protocol("P", members, run, "d")),
+        &["c"],
+    );
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let sent = step(&system, &reached, 0, StepKind::Send, "Tx").2;
+    let (duplicate, _) = reached[sent]
+        .steps
+        .iter()
+        .find(|(transition, _)| transition.kind() == StepKind::Duplicate)
+        .expect("a duplicate step");
+    let footprint = system
+        .footprint(&reached[sent].state, duplicate)
+        .expect("a footprint");
+    let mut claim = ClaimReads::default();
+    assert!(!visible(duplicate, &footprint, &claim));
+    claim
+        .anchors
+        .insert(AnchorName::Channel("P::ch".to_owned()));
+    assert!(visible(duplicate, &footprint, &claim));
 }
