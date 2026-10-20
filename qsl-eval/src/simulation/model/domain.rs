@@ -12,7 +12,7 @@ use quire_semantic_value::declaration::TypeEnvironment;
 /// Whether this module can enumerate `value_type`: `Boolean`, `Int[..]`,
 /// `Option<T>`, `Reference<T>` and a sequence with a declared maximum over
 /// one of them. Every other type is an unbounded domain (FR-120 "Bounds").
-pub(super) fn enumerable(value_type: &ValueType) -> bool {
+pub(crate) fn enumerable(value_type: &ValueType) -> bool {
     match value_type {
         ValueType::Boolean | ValueType::Int(_) | ValueType::Reference(_) => true,
         ValueType::Option(payload) => enumerable(payload),

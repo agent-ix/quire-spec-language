@@ -27,8 +27,10 @@ mod key;
 pub mod model;
 mod not_simulated;
 mod order;
+pub mod protocol;
 mod reduction;
 mod sample;
+mod subject;
 mod trace;
 
 pub use choice::{weighted_choice, ChoicePoint, Weights, WeightsRefusal};
@@ -42,4 +44,5 @@ pub use reduction::{
     ConstraintValue, OfferedReductions, Permutation, SymmetryClass, SymmetryGroup,
 };
 pub use sample::{sample_request, sample_request_until, SampleRequest};
+pub use subject::SubjectSystem;
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

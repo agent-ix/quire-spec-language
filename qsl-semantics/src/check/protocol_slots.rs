@@ -213,6 +213,27 @@ pub struct CheckedSlots {
     /// the `over` input, the activation binder, the protocol captures and
     /// each node's binder, in that order.
     pub readers: Vec<CheckedReaders>,
+    /// The same binders, index-aligned with `readers`: binder `i` is local
+    /// slot `i` of every node body, guard and `terminal when` predicate the
+    /// slots hold.
+    pub binders: Vec<CheckedSlotBinder>,
+}
+
+/// One binder a protocol's slots read (FR-218 "Scopes"), at the local slot
+/// of its index in [`CheckedSlots::binders`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedSlotBinder {
+    /// The binder's name.
+    pub name: String,
+    /// Its declared type.
+    pub value_type: ValueType,
+    /// The node whose record binder it is; `None` for the `over` input, the
+    /// activation binder and a protocol capture.
+    pub node: Option<ProtocolNodeId>,
+    /// Whether the binder ranges over its record type's values: the binder
+    /// of an `event`, `effect`, `commit`, `send`, `receive` or `finish` step
+    /// (ADR-027 TS-5), which a model check classifies as a root.
+    pub ranged: bool,
 }
 
 /// What [`check`] found.
@@ -1187,6 +1208,32 @@ pub(crate) fn check(
         .map(|(binder, readers)| CheckedReaders {
             binder: binder.name.clone(),
             readers: readers.iter().copied().map(ProtocolNodeId).collect(),
+        })
+        .collect();
+    slots.binders = checker
+        .binders
+        .iter()
+        .map(|binder| CheckedSlotBinder {
+            name: binder.name.clone(),
+            value_type: binder.value_type.clone(),
+            node: match binder.origin {
+                BinderOrigin::Node(node) => Some(ProtocolNodeId(node)),
+                BinderOrigin::Input | BinderOrigin::Activation | BinderOrigin::Capture => None,
+            },
+            ranged: match binder.origin {
+                BinderOrigin::Node(node) => protocol.declarations.get(node).is_some_and(|declaration| {
+                    matches!(
+                        declaration.kind,
+                        ProtocolNodeKind::Event
+                            | ProtocolNodeKind::Effect
+                            | ProtocolNodeKind::Commit
+                            | ProtocolNodeKind::Send
+                            | ProtocolNodeKind::Receive
+                            | ProtocolNodeKind::Finish
+                    )
+                }),
+                BinderOrigin::Input | BinderOrigin::Activation | BinderOrigin::Capture => false,
+            },
         })
         .collect();
     Slots::Checked(slots, checker.nodes)

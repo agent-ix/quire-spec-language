@@ -19,9 +19,11 @@ use qsl_package::CheckedPackage;
 use quire_exact::Cancel;
 
 use crate::certificate::closure::{
-    check_closure, CertificateRejection, CertificateRequest, ClosureRefusal,
-    TemporalCertificateCheck,
+    check_closure, check_protocol_closure, CertificateRejection, CertificateRequest,
+    ClosureCertificate, ClosureRefusal, ProtocolCertificateRequest, TemporalCertificateCheck,
 };
+use qsl_eval::simulation::protocol::ProtocolTransition;
+use quire_semantic_value::model_transition::ModelTransition;
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
@@ -96,7 +98,7 @@ pub enum Truth {
 
 /// One EN-1 item's terminal record (FR-127 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelCheckRecord {
+pub struct ModelCheckRecord<T = ModelTransition> {
     /// The terminal value.
     pub value: TerminalValue,
     /// Its QSpec FR-360 label.
@@ -116,7 +118,7 @@ pub struct ModelCheckRecord {
     /// The limit the run reached, when one stopped it.
     pub limit_reached: Option<ReachedLimit>,
     /// The counterexample a `refuted` record carries.
-    pub counterexample: Option<TemporalCounterexample>,
+    pub counterexample: Option<TemporalCounterexample<T>>,
     /// The strong constraints that would exclude a `refuted` liveness
     /// lasso (FR-133), each a warning diagnostic beside the counterexample.
     /// They are outside it, its replay identity and the obligation
@@ -149,23 +151,66 @@ pub fn settle_model_check(
     cancel: &Cancel,
     replay: impl FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ModelCheckRecord {
+    settle(
+        outcome,
+        limits,
+        package_id,
+        certificate.subject.simulation.package,
+        cancel,
+        |closure| check_closure(certificate, closure, limits, cancel),
+        replay,
+    )
+}
+
+/// FR-215 and FR-217 (ADR-027 TS-6, PX-1): [`settle_model_check`]'s one
+/// settlement map over an outcome of a protocol subject. A `Holds` outcome's
+/// certificate is checked by [`check_protocol_closure`] over `certificate`;
+/// a `Violated` outcome's counterexample is handed to `replay` (in
+/// production [`replay_protocol_trace`]).
+///
+/// [`replay_protocol_trace`]: crate::model_check::replay::replay_protocol_trace
+pub fn settle_protocol_check(
+    outcome: &ModelCheckOutcome<ProtocolTransition>,
+    limits: &ModelCheckLimits,
+    package_id: &DigestRecord,
+    certificate: &ProtocolCertificateRequest<'_>,
+    cancel: &Cancel,
+    replay: impl FnOnce(
+        &TemporalCounterexample<ProtocolTransition>,
+    ) -> Result<ModelTraceReplayResult, ReplayRefusal>,
+) -> ModelCheckRecord<ProtocolTransition> {
+    settle(
+        outcome,
+        limits,
+        package_id,
+        certificate.subject.model.simulation.package,
+        cancel,
+        |closure| check_protocol_closure(certificate, closure, limits, cancel),
+        replay,
+    )
+}
+
+fn settle<T: Clone>(
+    outcome: &ModelCheckOutcome<T>,
+    limits: &ModelCheckLimits,
+    package_id: &DigestRecord,
+    package: &CheckedPackage,
+    cancel: &Cancel,
+    closure: impl FnOnce(&ClosureCertificate) -> Result<TemporalCertificateCheck, ClosureRefusal>,
+    replay: impl FnOnce(&TemporalCounterexample<T>) -> Result<ModelTraceReplayResult, ReplayRefusal>,
+) -> ModelCheckRecord<T> {
     let mut counterexample = None;
     let mut hints = Vec::new();
     let mut depth = None;
     let row = match outcome {
         ModelCheckOutcome::Holds {
-            certificate: closure,
+            certificate,
             ..
-        } => Row::bound(
-            package_id,
-            certificate.subject.simulation.package,
-            cancel,
-            || {
-                Row::of_check(check_closure(certificate, closure, limits, cancel), || {
-                    Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
-                })
-            },
-        ),
+        } => Row::bound(package_id, package, cancel, || {
+            Row::of_check(closure(certificate), || {
+                Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+            })
+        }),
         // ADR-021 RV-1: a reduced proof is its own technique, and a
         // constraint-only proof explored the subject without a certificate.
         ModelCheckOutcome::HoldsReduced { reductions, .. } => Row::proof(

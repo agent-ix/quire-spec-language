@@ -213,13 +213,13 @@ fn envelope(
 
 /// The envelope carrying `payload` at `package_id`, from `unit`, naming the
 /// item by `node` and `occurrence`.
-pub(crate) fn envelope_at(
+pub(crate) fn envelope_at<T: Clone + std::fmt::Debug + Eq>(
     unit: &[u8],
     package_id: DigestRecord,
-    payload: TemporalCounterexample,
+    payload: TemporalCounterexample<T>,
     node: WireNodeId,
     occurrence: OccurrenceKey,
-) -> WitnessEnvelope<TemporalCounterexample> {
+) -> WitnessEnvelope<TemporalCounterexample<T>> {
     WitnessEnvelope::reconstruct(
         WitnessPacket {
             obligation_identity: Some([3; 32]),

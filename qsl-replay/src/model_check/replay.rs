@@ -36,12 +36,15 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::fairness::{check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep};
-use qsl_eval::model_subject::{ModelInstance, ModelLetters};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
-    ExpansionLimits, ModelFinding, ModelSimState, ModelSimulationRequest, ModelSystem,
-    PopulationUniverse, TerminalClass,
+    ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+    TerminalClass,
 };
-use qsl_eval::simulation::{ConstraintValue, ExpansionStop, TransitionSystem};
+use qsl_eval::simulation::protocol::{
+    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
+};
+use qsl_eval::simulation::{ConstraintValue, Expansion, ExpansionStop, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
 use qsl_eval::temporal::{
     evaluate_open_prefix, evaluate_with_enabledness, LetterStop, TemporalLetters, TemporalOutcome,
@@ -61,7 +64,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::bounds::ReplayLimits;
 use crate::execute::{recompile, request_limits, ReplayRefusal};
 use crate::model_check::counterexample::{
-    deadlock_freedom_clause, CounterexampleKind, Lasso, TemporalCounterexample,
+    deadlock_freedom_clause, undefined_finding, CounterexampleKind, Lasso, TemporalCounterexample,
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use crate::request::{ReplayRequest, ReplayRequestWire};
@@ -79,6 +82,20 @@ pub struct ModelTraceSubject {
     pub universes: Vec<PopulationUniverse>,
     /// The subject's expansion limits.
     pub expansion: ExpansionLimits,
+}
+
+/// FR-217's subject members beside FR-098's: the model subject's, the
+/// protocol clause and its bindings (ADR-027 PS-1).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProtocolTraceSubject {
+    /// The model subject's members.
+    pub model: ModelTraceSubject,
+    /// The protocol clause's declared name.
+    pub protocol: String,
+    /// The object bound to its `over` parameter.
+    pub over: ModelInstance,
+    /// Each static role's binding.
+    pub roles: Vec<RoleBinding>,
 }
 
 /// Why [`replay_model_trace`] settled no result (FR-128).
@@ -176,6 +193,22 @@ pub enum ModelTraceRefusal {
         /// Its transition identity.
         transition: Box<ModelTransition>,
     },
+    /// A protocol step's transition identity is not enabled at its
+    /// pre-state (FR-217).
+    #[error("invalid_runtime_input/invalid-value: protocol step {step} is not enabled")]
+    ProtocolNotEnabled {
+        /// The step's zero-based index in the prefix.
+        step: usize,
+        /// Its transition identity.
+        transition: Box<ProtocolTransition>,
+    },
+    /// A protocol counterexample with a loop, whose replay against FR-212's
+    /// fairness classes is not built.
+    #[error("unsupported_construct/not-yet-implemented: replay of a protocol lasso")]
+    ProtocolLasso,
+    /// The subject's protocol system does not build (FR-205).
+    #[error("{0}")]
+    Protocol(ProtocolRefusal),
     /// No successor of a step's transition identity has the recorded
     /// post-state digest (FR-101's key mismatch).
     #[error("stale_dependency/content-mismatch: step {step} reaches no state {}", .recorded.hex())]
@@ -195,11 +228,14 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::PostState { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
-            Self::StrongFairness | Self::AuthoredUndefined | Self::GuardedActivation => {
-                Code::UnsupportedConstruct
-            }
+            Self::StrongFairness
+            | Self::AuthoredUndefined
+            | Self::GuardedActivation
+            | Self::ProtocolLasso => Code::UnsupportedConstruct,
+            Self::Protocol(refusal) => refusal.code(),
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
+            | Self::ProtocolNotEnabled { .. }
             | Self::OverBinding
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
@@ -214,11 +250,14 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
             | Self::PostState { .. } => "content-mismatch",
-            Self::StrongFairness | Self::AuthoredUndefined | Self::GuardedActivation => {
-                "not-yet-implemented"
-            }
+            Self::StrongFairness
+            | Self::AuthoredUndefined
+            | Self::GuardedActivation
+            | Self::ProtocolLasso => "not-yet-implemented",
+            Self::Protocol(refusal) => refusal.cause(),
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
+            | Self::ProtocolNotEnabled { .. }
             | Self::OverBinding
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
@@ -334,6 +373,114 @@ pub fn replay_model_trace(
     letters: &dyn ModelLetters,
     replay_limits: ReplayLimits,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
+    replay_on(wire, envelope, replay_limits, |package, simulation, meter| {
+        let clause = resolve_item(envelope, package.0, &package.1)?;
+        let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
+        let formula = clause.map(|clause| FormulaReplay {
+            clause,
+            letters,
+            meter,
+        });
+        settle(&system, envelope.family_payload(), formula)
+    })
+}
+
+/// FR-217 (ADR-027 PX-2): replay `envelope`'s protocol counterexample over
+/// `subject` by [`replay_model_trace`]'s rules, re-executing each step
+/// through the subject's `ProtocolSystem<Sc>`. For a deadlock it checks
+/// that no protocol step is enabled at the last state, that some protocol
+/// instance is live there, and that the blocked threads recompute equal
+/// to the payload's.
+///
+/// # Errors
+///
+/// [`ReplayRefusal`] as [`replay_model_trace`] returns it; a protocol that
+/// does not build refuses with its own code, and a protocol lasso refuses
+/// `unsupported_construct`/`not-yet-implemented`.
+pub fn replay_protocol_trace(
+    wire: ReplayRequestWire,
+    subject: &ProtocolTraceSubject,
+    envelope: &WitnessEnvelope<TemporalCounterexample<ProtocolTransition>>,
+    letters: &dyn ModelLetters,
+    replay_limits: ReplayLimits,
+) -> Result<ModelTraceReplayResult, ReplayRefusal> {
+    replay_on(wire, envelope, replay_limits, |package, simulation, meter| {
+        let clause = resolve_item(envelope, package.0, &package.1)?;
+        let payload = envelope.family_payload();
+        if payload.lasso.is_some() {
+            return Err(refused(ModelTraceRefusal::ProtocolLasso));
+        }
+        let simulation = simulation(&subject.model);
+        let protocol = package
+            .0
+            .graph()
+            .protocol(&subject.protocol)
+            .ok_or_else(|| {
+                refused(ModelTraceRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
+                    protocol: subject.protocol.clone(),
+                }))
+            })?;
+        let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
+        check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
+            .map_err(|_| fault("a-checked-protocol-subject-is-bounded"))?;
+        let protocol_subject = ProtocolSubject {
+            model: ModelSubject {
+                simulation,
+                proof_bounds: Vec::new(),
+            },
+            protocol: subject.protocol.clone(),
+            over: subject.over.clone(),
+            roles: subject.roles.clone(),
+        };
+        let system = ProtocolSystem::new(model, &protocol_subject, Sc)
+            .map_err(|refusal| refused(ModelTraceRefusal::Protocol(refusal)))?;
+        let positions = match replay_prefix(&system, payload, protocol_not_enabled)? {
+            Some(positions) => positions,
+            None => return Ok((no_value(), Vec::new())),
+        };
+        let settlement = match (&payload.kind, clause) {
+            (CounterexampleKind::Deadlock, _) => deadlock(&system, payload, &positions)?,
+            (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
+                undefined(&system, &NoConstraints, payload, &positions, claimed)?
+            }
+            (CounterexampleKind::Formula, Some(clause)) => {
+                let formula = FormulaReplay {
+                    clause,
+                    letters,
+                    meter,
+                };
+                check_formula(&system, payload, &positions, &formula, |_| {
+                    Err(fault("a-protocol-lasso-is-refused-before-replay"))
+                })?
+                .0
+            }
+            (CounterexampleKind::Formula, None) => {
+                return Err(fault("formula-counterexample-names-a-clause"))
+            }
+        };
+        Ok((settlement, Vec::new()))
+    })
+}
+
+/// The type positions the requires-bound pre-check may visit.
+const BOUND_POSITIONS: u64 = 1 << 20;
+
+/// The recompiled package and its `package_id` record.
+type Recompiled<'p> = (&'p CheckedPackage, DigestRecord);
+
+/// FR-128's recompile, `package_id` check and subject re-admission, then
+/// `replay` over the recompiled package, the subject's simulation request
+/// and the request's evaluation meter.
+fn replay_on<P: crate::witness::FamilyPayload>(
+    wire: ReplayRequestWire,
+    envelope: &WitnessEnvelope<P>,
+    replay_limits: ReplayLimits,
+    replay: impl for<'p> FnOnce(
+        Recompiled<'p>,
+        &dyn Fn(&ModelTraceSubject) -> ModelSimulationRequest<'p>,
+        ScalarLimits,
+    ) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal>,
+) -> Result<ModelTraceReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
     let limits = request_limits(
         request.stage_limits(),
@@ -348,16 +495,16 @@ pub fn replay_model_trace(
             recompiled: package_id,
         });
     }
-    let payload = envelope.family_payload();
-    let clause = resolve_item(envelope, compiled.checked.package(), &package_id.record())?;
     let documents: BTreeMap<[u8; 32], Vec<u8>> = request
         .byte_provision()
         .entries()
         .filter(|(digest, _)| digest.domain() == DigestDomain::Sha256Jcs)
         .map(|(digest, bytes)| (*digest.as_bytes(), bytes.to_vec()))
         .collect();
-    let system = ModelSystem::new(ModelSimulationRequest {
-        package: compiled.checked.package(),
+    let meter = request.accounting_limits();
+    let package = compiled.checked.package();
+    let simulation = |subject: &ModelTraceSubject| ModelSimulationRequest {
+        package,
         packages: &compiled.packages,
         normalization: limits.spine.model,
         snapshots: &documents,
@@ -365,15 +512,9 @@ pub fn replay_model_trace(
         universes: subject.universes.clone(),
         observation: limits.observation,
         expansion: subject.expansion,
-        meter: request.accounting_limits(),
-    })
-    .map_err(ReplayRefusal::Admission)?;
-    let formula = clause.map(|clause| FormulaReplay {
-        clause,
-        letters,
-        meter: request.accounting_limits(),
-    });
-    let (settlement, hints) = settle(&system, payload, formula)?;
+        meter,
+    };
+    let (settlement, hints) = replay((package, package_id.record()), &simulation, meter)?;
     Ok(ModelTraceReplayResult {
         settlement,
         hints,
@@ -395,8 +536,8 @@ fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 /// `clause_node`, whose `claim` occurrence the envelope must carry and whose
 /// fairness set the payload must equal. A package with no such node refuses
 /// [`ModelTraceRefusal::UnknownTemporalClause`].
-fn resolve_item<'p>(
-    envelope: &WitnessEnvelope<TemporalCounterexample>,
+fn resolve_item<'p, T: Clone + std::fmt::Debug + Eq>(
+    envelope: &WitnessEnvelope<TemporalCounterexample<T>>,
     package: &'p CheckedPackage,
     package_id: &DigestRecord,
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
@@ -454,7 +595,7 @@ fn resolve_item<'p>(
 
 /// Whether the payload's shape is one only the deadlock-freedom item has: a
 /// deadlock, or an undefined model-side expression with no `over` binding.
-fn names_deadlock_item(payload: &TemporalCounterexample) -> bool {
+fn names_deadlock_item<T>(payload: &TemporalCounterexample<T>) -> bool {
     match &payload.kind {
         CounterexampleKind::Deadlock => true,
         CounterexampleKind::UndefinedEvaluation(evaluation) => {
@@ -470,22 +611,24 @@ fn fault(invariant: &'static str) -> ReplayRefusal {
 }
 
 /// One replayed position: its state and digest.
-struct Position {
-    state: ModelSimState,
+struct Position<State = ModelSimState> {
+    state: State,
     digest: DigestRecord,
 }
 
+/// One expansion of a subject's state.
+type SubjectExpansion<S> = Expansion<
+    <S as TransitionSystem>::TransitionId,
+    <S as TransitionSystem>::State,
+    qsl_eval::simulation::model::ModelFinding,
+>;
+
 /// The successors of `state`, or the stop an expansion returned.
-fn expand(
-    system: &ModelSystem<'_>,
-    state: &ModelSimState,
-) -> Result<
-    Result<
-        qsl_eval::simulation::Expansion<ModelTransition, ModelSimState, ModelFinding>,
-        ExpansionStop,
-    >,
-    ReplayRefusal,
-> {
+#[allow(clippy::type_complexity, reason = "an expansion or its stop, or a refusal")]
+fn expand<S: SubjectSystem>(
+    system: &S,
+    state: &S::State,
+) -> Result<Result<SubjectExpansion<S>, ExpansionStop>, ReplayRefusal> {
     match system.successors(state) {
         Ok(expansion) => Ok(Ok(expansion)),
         Err(stop) if stop.is_internal_failure() => Err(fault("model-expansion")),
@@ -502,12 +645,74 @@ struct FormulaReplay<'a> {
     meter: ScalarLimits,
 }
 
+/// The refusal of a model step that is not enabled.
+fn model_not_enabled(step: usize, transition: &ModelTransition) -> ModelTraceRefusal {
+    ModelTraceRefusal::NotEnabled {
+        step,
+        transition: Box::new(transition.clone()),
+    }
+}
+
+/// The refusal of a protocol step that is not enabled.
+fn protocol_not_enabled(step: usize, transition: &ProtocolTransition) -> ModelTraceRefusal {
+    ModelTraceRefusal::ProtocolNotEnabled {
+        step,
+        transition: Box::new(transition.clone()),
+    }
+}
+
 /// Re-execute the payload's prefix and check what it claims.
 fn settle(
     system: &ModelSystem<'_>,
     payload: &TemporalCounterexample,
     formula: Option<FormulaReplay<'_>>,
 ) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
+    let Some(positions) = replay_prefix(system, payload, model_not_enabled)? else {
+        return Ok((no_value(), Vec::new()));
+    };
+    if let Some(lasso) = payload.lasso {
+        close_loop(system, &positions, lasso)?;
+    }
+    match (&payload.kind, formula) {
+        (CounterexampleKind::Deadlock, _) => {
+            deadlock(system, payload, &positions).map(|settlement| (settlement, Vec::new()))
+        }
+        (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
+            undefined(system, system, payload, &positions, claimed)
+                .map(|settlement| (settlement, Vec::new()))
+        }
+        (CounterexampleKind::Formula, Some(formula)) => {
+            let (settlement, loop_states) =
+                check_formula(system, payload, &positions, &formula, |lasso| {
+                    let Some(states) = loop_states_of(system, payload, &positions, lasso)? else {
+                        return Ok(Err(no_value()));
+                    };
+                    if let Some(constraint) =
+                        unfair_constraint(system, &states, lasso, formula.clause)?
+                    {
+                        return Err(ReplayRefusal::UnfairLasso { constraint });
+                    }
+                    Ok(Ok(states))
+                })?;
+            let hints = if matches!(settlement, ModelTraceSettlement::Reproduced { .. }) {
+                strong_hints(system, formula.clause, &loop_states)
+            } else {
+                Vec::new()
+            };
+            Ok((settlement, hints))
+        }
+        (CounterexampleKind::Formula, None) => Err(fault("formula-counterexample-names-a-clause")),
+    }
+}
+
+/// Re-execute the payload's prefix from its initial state: each step's
+/// identity must be enabled (else `not_enabled` refuses) and reach its
+/// recorded post-state digest. `None` when an expansion stops.
+fn replay_prefix<S: SubjectSystem>(
+    system: &S,
+    payload: &TemporalCounterexample<S::TransitionId>,
+    not_enabled: fn(usize, &S::TransitionId) -> ModelTraceRefusal,
+) -> Result<Option<Vec<Position<S::State>>>, ReplayRefusal> {
     let initial = system.initial();
     let count = initial.len();
     let state = initial
@@ -525,7 +730,7 @@ fn settle(
         let current = positions.last().ok_or_else(|| fault("a-position-exists"))?;
         let expansion = match expand(system, &current.state)? {
             Ok(expansion) => expansion,
-            Err(_) => return Ok((no_value(), Vec::new())),
+            Err(_) => return Ok(None),
         };
         let mut enabled = false;
         let mut reached = None;
@@ -544,10 +749,7 @@ fn settle(
             }
         }
         if !enabled {
-            return Err(refused(ModelTraceRefusal::NotEnabled {
-                step: index,
-                transition: Box::new(step.transition.clone()),
-            }));
+            return Err(refused(not_enabled(index, &step.transition)));
         }
         let next = reached.ok_or_else(|| {
             refused(ModelTraceRefusal::PostState {
@@ -557,22 +759,7 @@ fn settle(
         })?;
         positions.push(next);
     }
-    if let Some(lasso) = payload.lasso {
-        close_loop(system, &positions, lasso)?;
-    }
-    match (&payload.kind, formula) {
-        (CounterexampleKind::Deadlock, _) => {
-            deadlock(system, payload, &positions).map(|settlement| (settlement, Vec::new()))
-        }
-        (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
-            undefined(system, payload, &positions, claimed)
-                .map(|settlement| (settlement, Vec::new()))
-        }
-        (CounterexampleKind::Formula, Some(formula)) => {
-            check_formula(system, payload, &positions, &formula)
-        }
-        (CounterexampleKind::Formula, None) => Err(fault("formula-counterexample-names-a-clause")),
-    }
+    Ok(Some(positions))
 }
 
 /// FR-128: the lasso's loop must end at its entry state; a
@@ -617,13 +804,14 @@ fn close_loop(
 /// instance the counterexample binds, as FR-125's temporal evaluator reads
 /// them (ADR-018 SM-8: a lasso's positions past the prefix read the loop's
 /// states).
-struct ReplayedLetters<'a> {
+struct ReplayedLetters<'a, S: SubjectSystem> {
+    system: &'a S,
     letters: &'a dyn ModelLetters,
     instance: &'a ModelInstance,
-    positions: &'a [Position],
+    positions: &'a [Position<S::State>],
 }
 
-impl TemporalLetters for ReplayedLetters<'_> {
+impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
     fn atom(
         &mut self,
         atom: FormulaNodeId,
@@ -639,9 +827,12 @@ impl TemporalLetters for ReplayedLetters<'_> {
                     "the-evaluator-reads-a-replayed-position",
                 ))
             })?;
-        Ok(self
-            .letters
-            .atom(atom, self.instance, &state.state, meter)?)
+        Ok(self.letters.atom(
+            atom,
+            self.instance,
+            &self.system.atom_state(&state.state),
+            meter,
+        )?)
     }
 
     fn activation(
@@ -662,17 +853,20 @@ impl TemporalLetters for ReplayedLetters<'_> {
 /// reproduces; `true`, or no value, settles `inconclusive`. A reproduced
 /// lasso also names the strong constraints that would exclude it (FR-133),
 /// from the same enabled sets.
-fn check_formula(
-    system: &ModelSystem<'_>,
-    payload: &TemporalCounterexample,
-    positions: &[Position],
+#[allow(clippy::type_complexity, reason = "the loop's states, its stop, or a refusal")]
+fn check_formula<S: SubjectSystem>(
+    system: &S,
+    payload: &TemporalCounterexample<S::TransitionId>,
+    positions: &[Position<S::State>],
     formula: &FormulaReplay<'_>,
-) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
+    fair_loop: impl FnOnce(Lasso) -> Result<Result<Vec<LoopState>, ModelTraceSettlement>, ReplayRefusal>,
+) -> Result<(ModelTraceSettlement, Vec<LoopState>), ReplayRefusal> {
     let instance = payload
         .over_binding
         .as_ref()
         .ok_or_else(|| refused(ModelTraceRefusal::OverBinding))?;
     let mut letters = ReplayedLetters {
+        system,
         letters: formula.letters,
         instance,
         positions,
@@ -690,14 +884,9 @@ fn check_formula(
             {
                 return Err(refused(ModelTraceRefusal::StrongFairness));
             }
-            match loop_states_of(system, payload, positions, lasso)? {
-                Some(states) => loop_states = states,
-                None => return Ok((no_value(), Vec::new())),
-            }
-            if let Some(constraint) =
-                unfair_constraint(system, &loop_states, lasso, formula.clause)?
-            {
-                return Err(ReplayRefusal::UnfairLasso { constraint });
+            match fair_loop(lasso)? {
+                Ok(states) => loop_states = states,
+                Err(settlement) => return Ok((settlement, Vec::new())),
             }
             let steps = positions.len() - 1;
             TemporalTrace::Lasso {
@@ -755,7 +944,7 @@ fn check_formula(
                 value: ModelTraceValue::Truth(false),
                 trace_position: payload.trace_position(),
             },
-            strong_hints(system, formula.clause, &loop_states),
+            loop_states,
         ),
         Ok(TemporalOutcome::Holds) => (disagrees(Category::Success), Vec::new()),
         Ok(_) => (no_value(), Vec::new()),
@@ -768,7 +957,10 @@ fn check_formula(
 
 /// Whether the last replayed state is terminal: no transition identity is
 /// enabled at it (ADR-018 SM-4).
-fn ends_terminal(system: &ModelSystem<'_>, positions: &[Position]) -> Result<bool, ReplayRefusal> {
+fn ends_terminal<S: SubjectSystem>(
+    system: &S,
+    positions: &[Position<S::State>],
+) -> Result<bool, ReplayRefusal> {
     Ok(match positions.last() {
         Some(position) => matches!(
             expand(system, &position.state)?,
@@ -948,33 +1140,44 @@ fn strong_hints(
     hints
 }
 
-fn digest_of(
-    system: &ModelSystem<'_>,
-    state: &ModelSimState,
-) -> Result<DigestRecord, ReplayRefusal> {
-    system
-        .state_key(state)
+fn digest_of<S: SubjectSystem>(system: &S, state: &S::State) -> Result<DigestRecord, ReplayRefusal> {
+    SubjectSystem::state_key(system, state)
         .map(|(_, digest)| digest)
         .map_err(|_| fault("replayed-state-encodes"))
 }
 
-/// ADR-018 DL-5: the last replayed state enables no transition identity and
-/// no declaration intends it.
-fn deadlock(
-    system: &ModelSystem<'_>,
-    payload: &TemporalCounterexample,
-    positions: &[Position],
+/// ADR-018 DL-5 and ADR-027 PX-2: the last replayed state enables no
+/// transition identity and no declaration intends it, and its blocked
+/// threads recompute equal to the payload's (none for a model subject).
+fn deadlock<S: SubjectSystem>(
+    system: &S,
+    payload: &TemporalCounterexample<S::TransitionId>,
+    positions: &[Position<S::State>],
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     let last = positions.last().ok_or_else(|| fault("a-position-exists"))?;
     let expansion = match expand(system, &last.state)? {
         Ok(expansion) => expansion,
         Err(_) => return Ok(no_value()),
     };
-    let class = match system.terminal_class(&last.state, !expansion.successors.is_empty()) {
+    let class = match SubjectSystem::terminal_class(
+        system,
+        &last.state,
+        !expansion.successors.is_empty(),
+    ) {
         Ok(class) => class,
         Err(stop) if stop.is_internal_failure() => return Err(fault("terminal-predicate")),
         Err(_) => return Ok(no_value()),
     };
+    if class == TerminalClass::Deadlocked {
+        let blocked = match system.blocked(&last.state) {
+            Ok(blocked) => blocked,
+            Err(stop) if stop.is_internal_failure() => return Err(fault("blocked-threads")),
+            Err(_) => return Ok(no_value()),
+        };
+        if blocked != payload.blocked {
+            return Ok(disagrees(Category::Violation));
+        }
+    }
     Ok(match class {
         TerminalClass::Deadlocked => ModelTraceSettlement::Reproduced {
             value: ModelTraceValue::Truth(false),
@@ -1005,10 +1208,11 @@ fn position_of(index: usize) -> u64 {
 /// position at which a contract conjunction of the expansion, or the
 /// `terminal when` predicate at a terminal state, is undefined must be the
 /// payload's `where`, at its locus, with its cause.
-fn undefined(
-    system: &ModelSystem<'_>,
-    payload: &TemporalCounterexample,
-    positions: &[Position],
+fn undefined<S: SubjectSystem>(
+    system: &S,
+    constraints: &dyn Constraints<S::State>,
+    payload: &TemporalCounterexample<S::TransitionId>,
+    positions: &[Position<S::State>],
     claimed: &UndefinedEvaluation,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     // ADR-021 SC-2, EI-7: a counterexample of an undefined state constraint
@@ -1016,9 +1220,12 @@ fn undefined(
     // engine reads it: when the state is reached, before it is expanded.
     let constraint = match &claimed.site.locus {
         UndefinedLocus::Constraint(name) => Some(name.as_str()),
-        UndefinedLocus::Atom(_) | UndefinedLocus::Contract(_) | UndefinedLocus::Terminal(_) => None,
+        UndefinedLocus::Atom(_)
+        | UndefinedLocus::Contract(_)
+        | UndefinedLocus::Terminal(_)
+        | UndefinedLocus::Protocol(_) => None,
     };
-    if constraint.is_some_and(|name| !system.has_constraint(name)) {
+    if constraint.is_some_and(|name| !constraints.has_constraint(name)) {
         return Ok(disagrees(Category::Success));
     }
     for (index, position) in positions.iter().enumerate() {
@@ -1029,7 +1236,7 @@ fn undefined(
             transition,
         };
         if let Some(name) = constraint {
-            match system.constraint_value(&position.state, name) {
+            match constraints.constraint_value(&position.state, name) {
                 Ok(ConstraintValue::Undefined { cause, .. }) => {
                     let found = UndefinedEvaluation {
                         site: site(UndefinedLocus::Constraint(name.to_owned()), None),
@@ -1053,17 +1260,18 @@ fn undefined(
             Ok(expansion) => expansion,
             Err(_) => return Ok(no_value()),
         };
-        let found = if let Some(contract) = expansion
-            .findings
-            .iter()
-            .find_map(ModelFinding::undefined_contract)
+        let found = if let Some((locus, guard_of, cause)) = undefined_finding(&expansion.findings)
         {
             Some(UndefinedEvaluation {
-                site: site(UndefinedLocus::Contract(contract.clause), contract.guard_of),
-                cause: contract.cause,
+                site: site(locus, guard_of),
+                cause,
             })
         } else {
-            match system.terminal_class(&position.state, !expansion.successors.is_empty()) {
+            match SubjectSystem::terminal_class(
+                system,
+                &position.state,
+                !expansion.successors.is_empty(),
+            ) {
                 Ok(TerminalClass::Undefined { model, cause }) => Some(UndefinedEvaluation {
                     site: site(UndefinedLocus::Terminal(model), None),
                     cause,
@@ -1085,4 +1293,38 @@ fn undefined(
         }
     }
     Ok(disagrees(Category::Success))
+}
+
+/// FR-158's state constraints of a replayed subject (ADR-021 SC-2).
+trait Constraints<State> {
+    fn has_constraint(&self, name: &str) -> bool;
+
+    fn constraint_value(&self, state: &State, name: &str) -> Result<ConstraintValue, ExpansionStop>;
+}
+
+impl Constraints<ModelSimState> for ModelSystem<'_> {
+    fn has_constraint(&self, name: &str) -> bool {
+        ModelSystem::has_constraint(self, name)
+    }
+
+    fn constraint_value(
+        &self,
+        state: &ModelSimState,
+        name: &str,
+    ) -> Result<ConstraintValue, ExpansionStop> {
+        ModelSystem::constraint_value(self, state, name)
+    }
+}
+
+/// A protocol subject's run takes no state constraint.
+struct NoConstraints;
+
+impl<State> Constraints<State> for NoConstraints {
+    fn has_constraint(&self, _name: &str) -> bool {
+        false
+    }
+
+    fn constraint_value(&self, _state: &State, _name: &str) -> Result<ConstraintValue, ExpansionStop> {
+        Ok(ConstraintValue::Holds)
+    }
 }
