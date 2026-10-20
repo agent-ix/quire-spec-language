@@ -1922,11 +1922,9 @@ fn the_normal_form_binds_what_the_claim_asserts() {
     // The `over` binder's name is not content.
     let renamed_binder = checked(&service(
         None,
-        &format!(
-            "probabilistic C using ev on Service over (t: Service::Server) \
-             under Steady on origin {{ long_run_fraction holds(t.phase = Service::Phase::Idle) \
-             >= 0.999 }}"
-        ),
+        "probabilistic C using ev on Service over (t: Service::Server) \
+         under Steady on origin { long_run_fraction holds(t.phase = Service::Phase::Idle) \
+         >= 0.999 }",
     ));
     assert_eq!(
         claim_of(&renamed_binder).normal_form.as_bytes(),
