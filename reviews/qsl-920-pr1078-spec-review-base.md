@@ -49,3 +49,26 @@ Ticket: QSL-920. PR: quire-spec-language#1078, head e4d0be107, scoped to `git di
 ## Verdict
 
 Not mergeable. FND-001 (high) must be fixed: the Quantity<Time> gap is stated as existing behaviour, but no domain package can supply a quantity type. FND-002 to FND-004 (medium) should be fixed or explicitly deferred. What holds: QSpec FR-322 really has no wire form for the three declarations, so an S4 refusal is the right conservative rule. The distribution half of the derived-sum bound matches the engine's inclusive 65,536-bit RATIONAL_BITS_CEILING and its per-addition cancel poll. The text reads as system behaviour, except the 'today' clause (EARS SR-13390).
+
+## New findings (disposition pass 1)
+
+Round 1, head be629264f (fix commit be629264f over merge 04fb7d23, which brings in main 50518689). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-185, TC-620 or FR-091; tools/check-index-completeness.sh passes. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Re-measured on main 40f8707b with the scratch probes: `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` refuses StageLimitExceeded/work-budget-exceeded with limit 65,536; `Steady on Service` plus `Steady on Other` (a second package selected as `Other`) refuses duplicate-declaration, and `Steady on Other` alone checks; a check of the over-ceiling distribution with a handle cancelled before it starts trips the handle (Requested) and returns stand-in StageLimitExceeded/work-budget-exceeded refusals with limit 0, not the 65,536 ceiling refusal.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | FR-185 now says a quantity-typed parameter is not available and support values use the parameter's own type (`Millis = Int[1, 12]`), and AC-7 uses that fixture. FR-185-AC-1 still expects `d` with support `1 ms`, `3 ms`, `12 ms` and the reward `duration` typed `Quantity<Time>`. FR-185-AC-2 still uses `1 ms` listed twice, `true` on a `Quantity<Time>` parameter and `pre ... d < 5 ms`. The Use case and TC-620 step 1's expected result (`duration: Quantity<Time>`) do the same. These cannot pass against the requirement's own fixture. Measured: with `d: Millis`, `1 ms` refuses value-outside-type and `duration = d` types Int. Restate AC-1, AC-2, the Use case and TC-620 step 1 in `Millis` terms (`1`, `3`, `12`; `duration` an integer type; `d < 5`), or move the quantity rows to an open question with the quantity section. | spec/functional/FR-185-declare-random-parameters-workloads-and-rewards.md:30-33, 207-208 |
+| FND-007 | low | 'a check cancelled before it starts SHALL end with its cancelled outcome, not with the limit refusal' does not say how the outcome shows. Measured: S3's cancelled stop returns the same code and cause as the limit refusal (stand-in StageLimitExceeded/work-budget-exceeded, limit 0), and the caller tells the two apart only by the tripped handle (FR-276). State that the caller's handle reads tripped and that the refusal is not the ceiling refusal (limit 65,536), and cite FR-276, so AC-6's third clause has a stated oracle. | spec/functional/FR-185-declare-random-parameters-workloads-and-rewards.md:109-111 |
+
+## Dispositions
+
+Round 1, head be629264f (fix commit be629264f over merge 04fb7d23, which brings in main 50518689). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-185, TC-620 or FR-091; tools/check-index-completeness.sh passes. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Re-measured on main 40f8707b with the scratch probes: `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` refuses StageLimitExceeded/work-budget-exceeded with limit 65,536; `Steady on Service` plus `Steady on Other` (a second package selected as `Other`) refuses duplicate-declaration, and `Steady on Other` alone checks; a check of the over-ceiling distribution with a handle cancelled before it starts trips the handle (Requested) and returns stand-in StageLimitExceeded/work-budget-exceeded refusals with limit 0, not the 65,536 ceiling refusal.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+
+Round 1 verdict: Not mergeable until FND-006 (medium) is fixed or explicitly deferred: AC-1, AC-2, the Use case and TC-620 step 1 still expect quantity supports, which the new text says do not exist. FND-001 to FND-005 are fixed, and the AC-6 fixtures behave on the engine as stated. FND-007 is low.

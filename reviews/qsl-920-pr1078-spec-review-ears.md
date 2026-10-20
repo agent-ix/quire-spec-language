@@ -39,3 +39,23 @@ Ticket: QSL-920. PR: quire-spec-language#1078, head e4d0be107, scoped to `git di
 ## Verdict
 
 Three low findings, all wording. None blocks merge on its own, and they can be fixed with the base and integrity findings. Each refusal is still stated as an If/SHALL with a code and cause. quire's grammar lint reports no warning in FR-185, so these were found by reading the text.
+
+## New findings (disposition pass 1)
+
+Round 1, head be629264f (fix commit be629264f over merge 04fb7d23, which brings in main 50518689). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-185, TC-620 or FR-091; tools/check-index-completeness.sh passes. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Re-measured on main 40f8707b with the scratch probes: `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` refuses StageLimitExceeded/work-budget-exceeded with limit 65,536; `Steady on Service` plus `Steady on Other` (a second package selected as `Other`) refuses duplicate-declaration, and `Steady on Other` alone checks; a check of the over-ceiling distribution with a handle cancelled before it starts trips the handle (Requested) and returns stand-in StageLimitExceeded/work-budget-exceeded refusals with limit 0, not the 65,536 ceiling refusal.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The quantity section restates an existing requirement in prose: 'S3 SHALL refuse a support value that is not of the parameter's type `value-outside-type`' repeats the Random parameters bullet ('If a value is not of the parameter's type, S3 SHALL refuse the distribution [`value-outside-type`], naming the parameter') with a weaker statement that names nothing. Drop the SHALL here and keep the section as a note or Open Question about the missing quantity type. | spec/functional/FR-185-declare-random-parameters-workloads-and-rewards.md:182-192 |
+
+## Dispositions
+
+Round 1, head be629264f (fix commit be629264f over merge 04fb7d23, which brings in main 50518689). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-185, TC-620 or FR-091; tools/check-index-completeness.sh passes. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Re-measured on main 40f8707b with the scratch probes: `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` refuses StageLimitExceeded/work-budget-exceeded with limit 65,536; `Steady on Service` plus `Steady on Other` (a second package selected as `Other`) refuses duplicate-declaration, and `Steady on Other` alone checks; a check of the over-ceiling distribution with a handle cancelled before it starts trips the handle (Requested) and returns stand-in StageLimitExceeded/work-budget-exceeded refusals with limit 0, not the 65,536 ceiling refusal.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+
+Round 1 verdict: FND-001 to FND-003 are fixed: the duplicate-workload and derived-sum statements are split into single-SHALL statements with notes, and S4 is an If/then statement. One new low finding (FND-004), which does not block merge.

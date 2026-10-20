@@ -48,3 +48,15 @@ Ticket: QSL-920. PR: quire-spec-language#1078, head e4d0be107, scoped to `git di
 ## Verdict
 
 Not mergeable. FND-001 (high) puts FR-185 in contradiction with FR-186 and the engine on workload-name scope, and must be fixed. What holds: the code/cause pair and the subject/related wording match QSpec FR-272's conflicting_declaration row. TC-620's scope and steps 5 to 8 cover AC-5 to AC-8 one to one. Index completeness passes.
+
+## Dispositions
+
+Round 1, head be629264f (fix commit be629264f over merge 04fb7d23, which brings in main 50518689). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-185, TC-620 or FR-091; tools/check-index-completeness.sh passes. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Re-measured on main 40f8707b with the scratch probes: `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` refuses StageLimitExceeded/work-budget-exceeded with limit 65,536; `Steady on Service` plus `Steady on Other` (a second package selected as `Other`) refuses duplicate-declaration, and `Steady on Other` alone checks; a check of the over-ceiling distribution with a handle cancelled before it starts trips the handle (Requested) and returns stand-in StageLimitExceeded/work-budget-exceeded refusals with limit 0, not the 65,536 ceiling refusal.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+
+Round 1 verdict: All three findings are fixed. Workload names are package-wide, matching FR-186 and the engine. The relationship now targets QSpec FR-272. TC-620's Fixtures line and step 6 match AC-5 to AC-7. Nothing new from integrity; base FND-006 covers the AC-1/AC-2 cross-AC inconsistency.

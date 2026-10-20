@@ -30,10 +30,10 @@ Tag the tests `#[trace("TC-620", "FR-185-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: supports and probabilities `9/10`, `7/100`, `3/100` and `49/50`, `1/50`; `duration: Quantity<Time>`; weight 1 per operation.
+- Step 1: supports and probabilities `9/10`, `7/100`, `3/100` and `49/50`, `1/50`; `duration: Millis`; weight 1 per operation.
 - Step 2: each variant refused with a diagnostic naming the parameter and carrying its FR-185-AC-2 cause; `rational(-1, 1)` refused `invalid-weight`, `decimal(1, 4294967295)` and `rational(n, n)` (`n` of 70,000 bits) each refused with a limit refusal (`LimitExceeded`) pending QSL-883 without expanding or reducing, `rational(m, 1)` at 65,536 bits and `decimal(1, 19728)` admitted, `rational(m, 1)` at 65,537 bits and `decimal(1, 19729)` refused with the limit refusal, `decimal(25, 3)` admitted as `1/40`, `decimal(5, 0)` admitted, the bare `-1` refused `invalid_syntax` at S1.
 - Step 3: each variant refused naming the workload and the operation, with its FR-185-AC-3 cause.
 - Step 4: the three variants refused naming the reward, with their FR-185-AC-4 causes (including `duplicate-reward`); `cost` checks.
 - Step 5: each second `Steady` refused `conflicting_declaration`/`duplicate-declaration` with both declarations related.
-- Step 6: the 65,536-bit sum admitted; the 65,537-bit sum refused with the limit refusal naming the parameter; the cancelled check ends cancelled.
+- Step 6: the 65,536-bit sum admitted; the 65,537-bit sum refused with the limit refusal naming the parameter; the check with a tripped handle ends cancelled with the handle requested and a reported limit that is not the 65,536-bit ceiling.
 - Step 7: S3 checks, S4 refuses `unsupported_construct`/`not-yet-implemented` naming the first random parameter, `random-parameter` and the profile.
