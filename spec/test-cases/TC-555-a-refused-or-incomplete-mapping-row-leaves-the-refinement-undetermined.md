@@ -35,7 +35,7 @@ the row `put -> enq(self.ring, g(self.index))` of FR-141-AC-7.
 3. Settle the refinement item for step 1's run and for the variant, the
    variant after FR-145 replay.
 4. Inject a fault into `check_step`'s mapping, and pass it a swapped system.
-5. Over `HeavyEnq` (FR-141-AC-9) with the per-evaluation meter at B, run `check_step` on `put(1)`, run FR-142's check, and settle the item; then repeat `check_step` with the row of FR-141-AC-7 and receiver `s0`, with `g` over-budget, with a heavy abstract `enq` precondition and `P` undefined after `put`, and with a mapping fault injected into `P`.
+5. Over `HeavyEnq` (FR-141-AC-9) with the per-evaluation meter at B, run `check_step` on `put(1)`, run FR-142's check, and settle the item; then repeat `check_step` with the row of FR-141-AC-7 and receiver `s0`, with `g` over-budget, with a heavy abstract `enq` precondition and `P` (a `Queue` field mapped by `1 div (1 - self.size)`) undefined after `put`, and with a mapping fault injected into `P` and the heavy precondition kept.
 6. Over `Reads` (FR-141-AC-10), run `check_step` for each choice of the receiver, arguments, post-history update and post-state row it lists, and once with a swapped system.
 
 Tag the tests `#[trace("TC-555", "<AC id>")]`.

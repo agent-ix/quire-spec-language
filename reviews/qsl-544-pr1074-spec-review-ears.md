@@ -1,5 +1,5 @@
 ---
-id: SR-13375
+id: SR-13384
 title: 'Spec review of PR #1074: FR-141 cites QSpec FR-377-AC-12/13, EARS'
 type: SpecReview
 analysis: ears-conformance
