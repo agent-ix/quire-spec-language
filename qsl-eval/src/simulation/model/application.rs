@@ -170,9 +170,11 @@ impl<'a> ModelSystem<'a> {
                 application,
                 &clauses,
                 budget,
-                &mut contract,
-                &mut successors,
-                None,
+                frames::Outputs {
+                    contract: &mut contract,
+                    successors: &mut successors,
+                    enabled: None,
+                },
             )?;
         }
         Ok(Applications {

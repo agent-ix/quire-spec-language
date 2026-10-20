@@ -142,10 +142,13 @@ pub(super) fn apply(
     application: &Application,
     clauses: &Selected<'_>,
     budget: &mut Budget,
-    contract: &mut Vec<ContractFinding>,
-    successors: &mut Vec<Applied>,
-    mut enabled: Option<&mut Vec<EnabledVector>>,
+    outputs: Outputs<'_>,
 ) -> Result<(), ExpansionStop> {
+    let Outputs {
+        contract,
+        successors,
+        mut enabled,
+    } = outputs;
     let system = walk.system;
     let domains = argument_domains(walk, application)?;
     let preconditions = &clauses.preconditions;
@@ -260,6 +263,17 @@ pub(super) fn first_precondition(
         }
     }
     Ok(Some((transition, None)))
+}
+
+/// Where [`apply`] records what one application found: its contract
+/// findings, its successors and, when given, its enabled argument vectors.
+pub(super) struct Outputs<'o> {
+    /// The contract findings.
+    pub(super) contract: &'o mut Vec<ContractFinding>,
+    /// The successors.
+    pub(super) successors: &'o mut Vec<Applied>,
+    /// Each enabled argument vector, when the caller records them.
+    pub(super) enabled: Option<&'o mut Vec<EnabledVector>>,
 }
 
 /// One argument vector of an application whose effective precondition holds
