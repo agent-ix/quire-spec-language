@@ -168,6 +168,13 @@ pub enum ModelTraceRefusal {
     /// whose lasso check (ADR-019 FS-8) is not built.
     #[error("unsupported_construct/not-yet-implemented: the clause's fairness set holds a strong constraint")]
     StrongFairness,
+    /// A refinement counterexample that names no refinement failure.
+    #[error("invalid_runtime_input/invalid-value: the payload names no refinement failure")]
+    NoRefinementFailure,
+    /// A refinement counterexample that is a lasso, which FR-143's liveness
+    /// failures write and replay does not build yet.
+    #[error("unsupported_construct/not-yet-implemented: replay of a refinement lasso")]
+    RefinementLasso,
     /// A step's transition identity is not enabled at its pre-state.
     #[error("invalid_runtime_input/invalid-value: step {step} is not enabled")]
     NotEnabled {
@@ -195,12 +202,14 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::PostState { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
-            Self::StrongFairness | Self::AuthoredUndefined | Self::GuardedActivation => {
-                Code::UnsupportedConstruct
-            }
+            Self::StrongFairness
+            | Self::AuthoredUndefined
+            | Self::GuardedActivation
+            | Self::RefinementLasso => Code::UnsupportedConstruct,
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
+            | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => Code::InvalidRuntimeInput,
@@ -214,12 +223,14 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
             | Self::PostState { .. } => "content-mismatch",
-            Self::StrongFairness | Self::AuthoredUndefined | Self::GuardedActivation => {
-                "not-yet-implemented"
-            }
+            Self::StrongFairness
+            | Self::AuthoredUndefined
+            | Self::GuardedActivation
+            | Self::RefinementLasso => "not-yet-implemented",
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
+            | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => "invalid-value",
@@ -253,30 +264,67 @@ pub enum ModelTraceSettlement {
     Inconclusive(DisagreementCause),
 }
 
-/// The result of [`replay_model_trace`]: the settlement and the recompiled
+/// FR-133 (ADR-019 SV-6): a strong constraint that would exclude a
+/// reproduced lasso and that its clause does not carry. It is a
+/// warning-severity diagnostic, [`Self::CODE`], on the item's terminal
+/// record, outside the counterexample, its replay identity and the
+/// obligation identity, and it changes no verdict.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StrongFairnessHint {
+    /// The suggested constraint: kind `Strong`, the operation and the
+    /// granularity.
+    pub suggested: FairnessConstraint,
+    /// For a `Each` hint, the transition identity that is enabled in the
+    /// loop and never taken.
+    pub identity: Option<ModelTransition>,
+    /// The first loop position (zero-based from the loop's entry, so the
+    /// loop's first state is 0 whatever the stem's length) at which the
+    /// operation, or for `Each` the identity, is enabled.
+    pub first_enabled_position: u64,
+}
+
+impl StrongFairnessHint {
+    /// The diagnostic code of a hint.
+    pub const CODE: &'static str = "fairness.strong-would-exclude";
+}
+
+/// The result of [`replay_model_trace`]: the settlement, the strong-fairness
+/// hints of a reproduced liveness lasso (FR-133) and the recompiled
 /// `package_id` it was settled against.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelTraceReplayResult {
     /// The settlement.
     pub settlement: ModelTraceSettlement,
+    /// The hints, in the model's canonical operation order; empty unless the
+    /// settlement reproduced a lasso.
+    pub hints: Vec<StrongFairnessHint>,
     /// The recompiled `package_id`.
     pub package_id: PackageId,
 }
 
-/// A model counterexample refutes its item: the proved verdict is
-/// `violation`.
-fn disagrees(replayed: Category) -> ModelTraceSettlement {
-    ModelTraceSettlement::Inconclusive(DisagreementCause::Verdicts {
+/// The disagreement of a replay that reads `replayed` where a model
+/// counterexample refutes its item: the proved verdict is `violation`.
+pub(super) fn disagreement(replayed: Category) -> DisagreementCause {
+    DisagreementCause::Verdicts {
         proved: Verdict::from_category(Category::Violation),
         replayed: Verdict::from_category(replayed),
-    })
+    }
+}
+
+/// The disagreement of a replay that completed no value.
+pub(super) fn no_value_cause() -> DisagreementCause {
+    DisagreementCause::NoValue {
+        proved: Verdict::from_category(Category::Violation),
+        replayed: Verdict::from_category(Category::Incomplete),
+    }
+}
+
+fn disagrees(replayed: Category) -> ModelTraceSettlement {
+    ModelTraceSettlement::Inconclusive(disagreement(replayed))
 }
 
 fn no_value() -> ModelTraceSettlement {
-    ModelTraceSettlement::Inconclusive(DisagreementCause::NoValue {
-        proved: Verdict::from_category(Category::Violation),
-        replayed: Verdict::from_category(Category::Incomplete),
-    })
+    ModelTraceSettlement::Inconclusive(no_value_cause())
 }
 
 /// FR-128: replay `envelope`'s model counterexample over `subject`, with
@@ -345,14 +393,15 @@ pub fn replay_model_trace(
         letters,
         meter: request.accounting_limits(),
     });
-    let settlement = settle(&system, payload, formula)?;
+    let (settlement, hints) = settle(&system, payload, formula)?;
     Ok(ModelTraceReplayResult {
         settlement,
+        hints,
         package_id,
     })
 }
 
-fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
+pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
     ReplayRefusal::ModelTrace(Box::new(refusal))
 }
 
@@ -436,14 +485,14 @@ fn names_deadlock_item(payload: &TemporalCounterexample) -> bool {
     }
 }
 
-fn fault(invariant: &'static str) -> ReplayRefusal {
+pub(super) fn fault(invariant: &'static str) -> ReplayRefusal {
     ReplayRefusal::Fault(InternalFault::new("replay-model-trace", invariant))
 }
 
 /// One replayed position: its state and digest.
-struct Position {
-    state: ModelSimState,
-    digest: DigestRecord,
+pub(super) struct Position {
+    pub(super) state: ModelSimState,
+    pub(super) digest: DigestRecord,
 }
 
 /// The successors of `state`, or the stop an expansion returned.
@@ -473,12 +522,19 @@ struct FormulaReplay<'a> {
     meter: ScalarLimits,
 }
 
-/// Re-execute the payload's prefix and check what it claims.
-fn settle(
+/// Re-execute the payload's prefix from its initial state, one position per
+/// state: a step's post-state digest selects its successor among the
+/// post-states of its transition identity. `None` when an expansion stops
+/// (the replay then completes no value).
+///
+/// # Errors
+///
+/// [`ModelTraceRefusal::InitialState`], [`ModelTraceRefusal::NotEnabled`] or
+/// [`ModelTraceRefusal::PostState`].
+pub(super) fn reexecute(
     system: &ModelSystem<'_>,
     payload: &TemporalCounterexample,
-    formula: Option<FormulaReplay<'_>>,
-) -> Result<ModelTraceSettlement, ReplayRefusal> {
+) -> Result<Option<Vec<Position>>, ReplayRefusal> {
     let initial = system.initial();
     let count = initial.len();
     let state = initial
@@ -496,7 +552,7 @@ fn settle(
         let current = positions.last().ok_or_else(|| fault("a-position-exists"))?;
         let expansion = match expand(system, &current.state)? {
             Ok(expansion) => expansion,
-            Err(_) => return Ok(no_value()),
+            Err(_) => return Ok(None),
         };
         let mut enabled = false;
         let mut reached = None;
@@ -528,13 +584,28 @@ fn settle(
         })?;
         positions.push(next);
     }
+    Ok(Some(positions))
+}
+
+/// Re-execute the payload's prefix and check what it claims.
+fn settle(
+    system: &ModelSystem<'_>,
+    payload: &TemporalCounterexample,
+    formula: Option<FormulaReplay<'_>>,
+) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
+    let Some(positions) = reexecute(system, payload)? else {
+        return Ok((no_value(), Vec::new()));
+    };
     if let Some(lasso) = payload.lasso {
         close_loop(system, &positions, lasso)?;
     }
     match (&payload.kind, formula) {
-        (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions),
+        (CounterexampleKind::Deadlock, _) => {
+            deadlock(system, payload, &positions).map(|settlement| (settlement, Vec::new()))
+        }
         (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
             undefined(system, payload, &positions, claimed)
+                .map(|settlement| (settlement, Vec::new()))
         }
         (CounterexampleKind::Formula, Some(formula)) => {
             check_formula(system, payload, &positions, &formula)
@@ -627,13 +698,15 @@ impl TemporalLetters for ReplayedLetters<'_> {
 /// FR-128 for `kind: Formula`: a lasso is checked against the fairness set,
 /// reading enabledness from `ModelSystem` at every loop state, and then both
 /// it and a finite prefix are evaluated by FR-125. The formula `false`
-/// reproduces; `true`, or no value, settles `inconclusive`.
+/// reproduces; `true`, or no value, settles `inconclusive`. A reproduced
+/// lasso also names the strong constraints that would exclude it (FR-133),
+/// from the same enabled sets.
 fn check_formula(
     system: &ModelSystem<'_>,
     payload: &TemporalCounterexample,
     positions: &[Position],
     formula: &FormulaReplay<'_>,
-) -> Result<ModelTraceSettlement, ReplayRefusal> {
+) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
     let instance = payload
         .over_binding
         .as_ref()
@@ -644,14 +717,26 @@ fn check_formula(
         positions,
     };
     let mut meter = Meter::new(formula.meter);
+    let mut loop_states = Vec::new();
     let trace = match payload.lasso {
         Some(lasso) => {
-            match loop_fairness(system, payload, positions, lasso, formula.clause)? {
-                LoopFairness::Fair => {}
-                LoopFairness::Unfair(constraint) => {
-                    return Err(ReplayRefusal::UnfairLasso { constraint })
-                }
-                LoopFairness::Stopped => return Ok(no_value()),
+            // Refuse a strong constraint before any expansion is read.
+            if formula
+                .clause
+                .fairness()
+                .iter()
+                .any(|constraint| constraint.kind() == FairnessKind::Strong)
+            {
+                return Err(refused(ModelTraceRefusal::StrongFairness));
+            }
+            match loop_states_of(system, payload, positions, lasso)? {
+                Some(states) => loop_states = states,
+                None => return Ok((no_value(), Vec::new())),
+            }
+            if let Some(constraint) =
+                unfair_constraint(system, &loop_states, lasso, formula.clause)?
+            {
+                return Err(ReplayRefusal::UnfairLasso { constraint });
             }
             let steps = positions.len() - 1;
             TemporalTrace::Lasso {
@@ -702,18 +787,21 @@ fn check_formula(
         // A lasso is evaluated from its origin (ADR-018 section 6): a clause
         // false only at a later activation is not the refutation EN-1 found.
         Ok(TemporalOutcome::Violated { at }) if payload.lasso.is_some() && at.index() != 0 => {
-            disagrees(Category::Success)
+            (disagrees(Category::Success), Vec::new())
         }
-        Ok(TemporalOutcome::Violated { .. }) => ModelTraceSettlement::Reproduced {
-            value: ModelTraceValue::Truth(false),
-            trace_position: payload.trace_position(),
-        },
-        Ok(TemporalOutcome::Holds) => disagrees(Category::Success),
-        Ok(_) => no_value(),
+        Ok(TemporalOutcome::Violated { .. }) => (
+            ModelTraceSettlement::Reproduced {
+                value: ModelTraceValue::Truth(false),
+                trace_position: payload.trace_position(),
+            },
+            strong_hints(system, formula.clause, &loop_states),
+        ),
+        Ok(TemporalOutcome::Holds) => (disagrees(Category::Success), Vec::new()),
+        Ok(_) => (no_value(), Vec::new()),
         Err(qsl_eval::temporal::TemporalRefusal::Fault(_)) => {
             return Err(fault("temporal-evaluation"))
         }
-        Err(_) => no_value(),
+        Err(_) => (no_value(), Vec::new()),
     })
 }
 
@@ -729,36 +817,61 @@ fn ends_terminal(system: &ModelSystem<'_>, positions: &[Position]) -> Result<boo
     })
 }
 
-/// Whether a lasso's loop is fair under the clause's fairness set.
-enum LoopFairness {
-    /// Fair under every constraint.
-    Fair,
-    /// Unfair under this constraint of the clause's fairness set.
-    Unfair(FairnessConstraint),
-    /// An expansion stopped while enabledness was read.
-    Stopped,
+/// One model step of a lasso's loop: where it starts, the transition
+/// identities enabled there (FA-2) and the one it takes.
+struct LoopState {
+    /// The step's position in the loop, from its entry.
+    position: usize,
+    enabled: Vec<ModelTransition>,
+    taken: ModelTransition,
 }
 
-/// ADR-018 FA-3: the first constraint of the clause's fairness set that the
-/// lasso's loop is unfair under, enabledness read at every loop state from
-/// the model's own successor relation (FA-2). The terminal stutter step is
-/// outside every constraint and enables none (SM-4). A `each` constraint is
-/// one constraint per transition identity of its operation that the loop
-/// takes or enables; a `whole` constraint is one over all of them.
-fn loop_fairness(
+/// The model steps of the lasso's loop with the identities enabled at each
+/// state they leave, read from the model's own successor relation. The
+/// terminal stutter step is outside every constraint and enables none
+/// (SM-4), so a stutter loop has none. `None` when an expansion stops.
+fn loop_states_of(
     system: &ModelSystem<'_>,
     payload: &TemporalCounterexample,
     positions: &[Position],
     lasso: Lasso,
-    clause: &CheckedTemporalClause,
-) -> Result<LoopFairness, ReplayRefusal> {
-    if clause
-        .fairness()
-        .iter()
-        .any(|constraint| constraint.kind() == FairnessKind::Strong)
-    {
-        return Err(refused(ModelTraceRefusal::StrongFairness));
+) -> Result<Option<Vec<LoopState>>, ReplayRefusal> {
+    let mut states = Vec::new();
+    if lasso.terminal_stutter {
+        return Ok(Some(states));
     }
+    for (index, (position, step)) in positions
+        .iter()
+        .zip(&payload.prefix)
+        .enumerate()
+        .skip(lasso.entry)
+    {
+        let Ok(expansion) = expand(system, &position.state)? else {
+            return Ok(None);
+        };
+        states.push(LoopState {
+            position: index - lasso.entry,
+            enabled: expansion
+                .successors
+                .into_iter()
+                .map(|(transition, _)| transition)
+                .collect(),
+            taken: step.transition.clone(),
+        });
+    }
+    Ok(Some(states))
+}
+
+/// ADR-018 FA-3: the first constraint of the clause's fairness set that the
+/// lasso's loop is unfair under. A `each` constraint is one constraint per
+/// transition identity of its operation that the loop takes or enables; a
+/// `whole` constraint is one over all of them.
+fn unfair_constraint(
+    system: &ModelSystem<'_>,
+    states: &[LoopState],
+    lasso: Lasso,
+    clause: &CheckedTemporalClause,
+) -> Result<Option<FairnessConstraint>, ReplayRefusal> {
     let mut numbered: BTreeMap<ModelTransition, Identity> = BTreeMap::new();
     let mut number = |transition: &ModelTransition| {
         let next = u64::try_from(numbered.len()).unwrap_or(u64::MAX);
@@ -769,21 +882,13 @@ fn loop_fairness(
     let mut steps = Vec::new();
     if lasso.terminal_stutter {
         steps.push(LoopStep::new([], EdgeLabel::Stutter));
-    } else {
-        for (position, step) in positions.iter().zip(&payload.prefix).skip(lasso.entry) {
-            let Ok(expansion) = expand(system, &position.state)? else {
-                return Ok(LoopFairness::Stopped);
-            };
-            let enabled: Vec<Identity> = expansion
-                .successors
-                .iter()
-                .map(|(transition, _)| number(transition))
-                .collect();
-            steps.push(LoopStep::new(
-                enabled,
-                EdgeLabel::Transition(number(&step.transition)),
-            ));
-        }
+    }
+    for state in states {
+        let enabled: Vec<Identity> = state.enabled.iter().map(&mut number).collect();
+        steps.push(LoopStep::new(
+            enabled,
+            EdgeLabel::Transition(number(&state.taken)),
+        ));
     }
     // The constraints, each remembering the authored constraint it came from.
     let mut constraints = Vec::new();
@@ -812,13 +917,74 @@ fn loop_fairness(
         }
     }
     match check_loop(&steps, &constraints) {
-        Ok(LassoFairness::Fair) => Ok(LoopFairness::Fair),
+        Ok(LassoFairness::Fair) => Ok(None),
         Ok(LassoFairness::Unfair { constraint }) => authored
             .get(constraint)
-            .map(|constraint| LoopFairness::Unfair((*constraint).clone()))
+            .map(|constraint| Some((*constraint).clone()))
             .ok_or_else(|| fault("an-unfair-constraint-is-one-of-the-set")),
         Err(_) => Err(fault("a-lasso-loop-has-a-step")),
     }
+}
+
+/// FR-133 (ADR-019 SV-6): for each operation of the model in canonical
+/// order, the strong constraint that would exclude the lasso. An operation
+/// enabled at some loop state and taken by no loop step is named `Whole`;
+/// otherwise the first transition identity of it, in canonical transition
+/// order, that is enabled at a loop state and taken by no loop step is named
+/// `Each`. An operation the clause already constrains that way gets none, and
+/// a terminal stutter loop, where nothing is enabled, gets none.
+fn strong_hints(
+    system: &ModelSystem<'_>,
+    clause: &CheckedTemporalClause,
+    states: &[LoopState],
+) -> Vec<StrongFairnessHint> {
+    let mut hints = Vec::new();
+    for (declaring, name, text) in system.operations() {
+        let of_operation = |transition: &ModelTransition| transition.operation() == text;
+        let taken =
+            |identity: &ModelTransition| states.iter().any(|state| state.taken == *identity);
+        let first_enabled = |wanted: &dyn Fn(&ModelTransition) -> bool| {
+            states
+                .iter()
+                .find(|state| state.enabled.iter().any(wanted))
+                .map(|state| position_of(state.position))
+        };
+        let operation =
+            quire_semantic_value::fairness::FairnessOperation::new(declaring, name.to_owned());
+        let named = |granularity| {
+            FairnessConstraint::new(FairnessKind::Strong, operation.clone(), granularity)
+        };
+        let whole = first_enabled(&of_operation)
+            .filter(|_| !states.iter().any(|state| of_operation(&state.taken)));
+        let (suggested, identity, position) = if let Some(position) = whole {
+            (named(FairnessGranularity::Whole), None, position)
+        } else {
+            let never_taken = states
+                .iter()
+                .flat_map(|state| &state.enabled)
+                .filter(|transition| of_operation(transition) && !taken(transition))
+                .min();
+            let Some(identity) = never_taken else {
+                continue;
+            };
+            let Some(position) = first_enabled(&|transition| transition == identity) else {
+                continue;
+            };
+            (
+                named(FairnessGranularity::Each),
+                Some(identity.clone()),
+                position,
+            )
+        };
+        if !clause.fairness().contains(&suggested) {
+            hints.push(StrongFairnessHint {
+                suggested,
+                identity,
+                first_enabled_position: position,
+            });
+        }
+    }
+    hints
 }
 
 fn digest_of(
@@ -889,7 +1055,10 @@ fn undefined(
     // engine reads it: when the state is reached, before it is expanded.
     let constraint = match &claimed.site.locus {
         UndefinedLocus::Constraint(name) => Some(name.as_str()),
-        UndefinedLocus::Atom(_) | UndefinedLocus::Contract(_) | UndefinedLocus::Terminal(_) => None,
+        UndefinedLocus::Atom(_)
+        | UndefinedLocus::Contract(_)
+        | UndefinedLocus::Terminal(_)
+        | UndefinedLocus::Mapping { .. } => None,
     };
     if constraint.is_some_and(|name| !system.has_constraint(name)) {
         return Ok(disagrees(Category::Success));

@@ -104,8 +104,8 @@ pub use identity::{
 };
 pub use limits::{AccountingLimits, CallerLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, CounterexampleKind, Lasso, ModelStep, TemporalCounterexample,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    deadlock_freedom_clause, CounterexampleKind, Lasso, MappingSite, ModelStep,
+    TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::graph_settle::{
     settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
@@ -118,9 +118,11 @@ pub use model_check::limits::{
     DEFAULT_MAX_WALK_STEPS, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
 pub use model_check::outcome::{ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause};
+pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};
+pub use model_check::refinement_settle::settle_refinement_safety;
 pub use model_check::replay::{
     replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ModelTraceValue,
+    ModelTraceSubject, ModelTraceValue, StrongFairnessHint,
 };
 pub use model_check::settle::{
     settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
@@ -134,8 +136,10 @@ pub use model_check::step_settle::{
     STEP_INDUCTION_DEPTH,
 };
 pub use refinement::{
-    map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingFeature, MappingRowRef,
-    MappingUndetermined, ObjectKey,
+    check_initial, check_step, map_state, open_systems, ConcreteStep, EvalFailure, HiddenSlot,
+    MappedState, MappingFailure, MappingRowRef, MappingUndetermined, ObjectKey, RefinementFailure,
+    RefinementOutcome, RefinementPosition, RefinementSystems, SafetyOutcome, SafetyUndecided,
+    StepArgument, StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken, Undetermined,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;

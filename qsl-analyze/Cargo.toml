@@ -18,6 +18,7 @@ description = "ADR-011 §6.1 layer A: in-process analysis engines, including ret
 [dependencies]
 qsl-eval = { path = "../qsl-eval" }
 qsl-foundation = { path = "../qsl-foundation" }
+qsl-package = { path = "../qsl-package" }
 qsl-replay = { path = "../qsl-replay" }
 # EN-1 reads the checked temporal clause and the subject's admission
 # failure (layer 3), and the fairness set and property form (SV).
@@ -36,7 +37,6 @@ ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main"
 # its temporal clauses with `qsl-semantics`' test-only `check_clauses`.
 qsl-cst = { path = "../qsl-cst" }
 qsl-forms = { path = "../qsl-forms" }
-qsl-package = { path = "../qsl-package" }
 # FR-124-AC-2: the request writer's deadlock-freedom item over the Counter
 # subject's checked package.
 qsl-route = { path = "../qsl-route" }
