@@ -2145,6 +2145,68 @@ fn exact_only_marks_the_claims_only_exact_evidence_decides() {
     }
 }
 
+/// FR-195-AC-1, AC-2 and FR-186 "Normal form": the obligation identity of an
+/// exact-only claim binds its form: `eventually`, `until` and `always` of
+/// one predicate, a different predicate, and two expected rewards that differ
+/// only in the reward are six different claims.
+#[trace("TC-630", "FR-195-AC-1")]
+#[test]
+fn exact_only_forms_have_distinct_normal_forms() {
+    let idle = format!("holds({IDLE})");
+    let done = format!("holds({})", done());
+    let claim = |name: &str, body: &str| {
+        format!(
+            "probabilistic {name} using inf on Service {OVER} under Steady on origin \
+             {{ {body} }}"
+        )
+    };
+    let source = service(
+        None,
+        &[
+            LATENCY.to_owned(),
+            claim(
+                "Eventually",
+                &format!("probability >= 0.9 [ eventually {idle} ]"),
+            ),
+            claim("Always", &format!("probability >= 0.9 [ always {idle} ]")),
+            claim(
+                "Until",
+                &format!("probability >= 0.9 [ {idle} until {done} ]"),
+            ),
+            claim(
+                "Other",
+                &format!("probability >= 0.9 [ eventually {done} ]"),
+            ),
+            claim(
+                "Cost",
+                &format!("expected accumulate duration until {idle} <= 3"),
+            ),
+            claim(
+                "Latency",
+                &format!("expected accumulate latency until {idle} <= 3 ms"),
+            ),
+        ]
+        .join("\n"),
+    );
+    let graph = checked(&source);
+    let forms: Vec<_> = ["Eventually", "Always", "Until", "Other", "Cost", "Latency"]
+        .iter()
+        .map(|name| {
+            graph
+                .probabilistic_model()
+                .claim(name)
+                .unwrap_or_else(|| panic!("{name} checks"))
+                .normal_form
+                .clone()
+        })
+        .collect();
+    for (at, form) in forms.iter().enumerate() {
+        for other in &forms[at + 1..] {
+            assert_ne!(form, other);
+        }
+    }
+}
+
 /// FR-186-AC-4 (TC-621 step 4): the claim's normal form binds the subject,
 /// the profile, the form, the scheduler, its fairness set, the `over` type and
 /// the stated confidence, and nothing else: claims that differ in any of those

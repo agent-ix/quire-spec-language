@@ -5,7 +5,7 @@
 //! over an event (ADR-024 PF-4).
 
 use qsl_replay::statistical::{ClaimForm, Confidence, StatisticalRefusal};
-use qsl_semantics::check::{CheckedProbabilisticClaim, ProbForm, ProbScheduler};
+use qsl_semantics::check::{CheckedProbabilisticClaim, ProbScheduler};
 use quire_exact::Rational;
 
 use super::bounds::int;
@@ -185,28 +185,29 @@ pub fn reduce_quantile(
 
 /// Whether statistical evidence can decide `claim` at all (ADR-024 SV-5,
 /// ADR-028 XF-7): the refusal EN-4 gives at negotiation, before it draws a
-/// sample, for a claim only exact evidence decides.
+/// sample, for a claim only exact evidence decides. A caller runs it on the
+/// checked claim before it builds a [`StatisticalClaim`] for
+/// [`check_statistical`](super::check_statistical); that function takes the
+/// reduced claim and cannot see the scheduler or the form.
 ///
-/// A claim under every scheduler is refused first, then an unbounded
-/// reachability or expected-reward form, then a claim that states no
-/// confidence parameters.
+/// It refuses exactly the claims [`CheckedProbabilisticClaim::exact_only`]
+/// marks. The cause is the first that applies: a claim under every scheduler,
+/// then an exact-only form, then a claim that states no confidence
+/// parameters.
 ///
 /// # Errors
 ///
 /// [`StatisticalRefusal::EveryScheduler`], [`StatisticalRefusal::ExactOnlyForm`]
 /// or [`StatisticalRefusal::MissingConfidence`].
 pub fn require_statistical(claim: &CheckedProbabilisticClaim) -> Result<(), StatisticalRefusal> {
-    if claim.scheduler == ProbScheduler::Every {
-        return Err(StatisticalRefusal::EveryScheduler);
+    if !claim.exact_only() {
+        return Ok(());
     }
-    if matches!(
-        claim.form,
-        ProbForm::Reach { .. } | ProbForm::ExpectedReward { .. }
-    ) {
-        return Err(StatisticalRefusal::ExactOnlyForm);
-    }
-    if claim.confidence.is_none() {
-        return Err(StatisticalRefusal::MissingConfidence);
-    }
-    Ok(())
+    Err(if claim.scheduler == ProbScheduler::Every {
+        StatisticalRefusal::EveryScheduler
+    } else if claim.exact_only_form() {
+        StatisticalRefusal::ExactOnlyForm
+    } else {
+        StatisticalRefusal::MissingConfidence
+    })
 }

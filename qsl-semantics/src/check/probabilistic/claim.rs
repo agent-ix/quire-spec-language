@@ -373,11 +373,18 @@ impl CheckedProbabilisticClaim {
     /// (ADR-024 PF-10). Statistical evidence for such a claim is refused at
     /// negotiation.
     pub fn exact_only(&self) -> bool {
+        self.exact_only_form()
+            || self.scheduler == ProbScheduler::Every
+            || self.confidence.is_none()
+    }
+
+    /// Whether the claim's form is one only exact evidence decides: an
+    /// unbounded reachability or expected-reward form.
+    pub fn exact_only_form(&self) -> bool {
         matches!(
             self.form,
             ProbForm::Reach { .. } | ProbForm::ExpectedReward { .. }
-        ) || self.scheduler == ProbScheduler::Every
-            || self.confidence.is_none()
+        )
     }
 }
 
@@ -980,7 +987,9 @@ impl Pass<'_, '_> {
 
     /// An unbounded reachability claim's state predicates (ADR-028 XF-4):
     /// each operand of the one operator is a `holds(P)`. A nested temporal
-    /// operator, or a constant, is not a state predicate.
+    /// operator is not a state predicate (FR-195). A constant (`eventually
+    /// true`) is refused too, which FR-195 does not say: it has no checked
+    /// predicate to label the states with. A judgment call, open for the spec.
     fn reach(
         &mut self,
         claim: &ClaimCx<'_>,

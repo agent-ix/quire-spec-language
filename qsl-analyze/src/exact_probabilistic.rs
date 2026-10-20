@@ -299,7 +299,9 @@ pub struct ProbEdge {
     /// (summed over draws merged into the edge) over every scheduler, and 1
     /// at a resolution.
     pub probability: Rational,
-    /// Every reward of the model for the step, in ascending name order.
+    /// Every reward of the model for the step, in ascending name order. A
+    /// resolution edge carries each reward at 0: the draw's rewards are on the
+    /// edge that took the draw, once.
     pub rewards: Vec<(quire_exact::Identifier, Value)>,
 }
 
@@ -371,6 +373,10 @@ pub struct PathStep {
     pub draw: Option<Vec<Value>>,
     /// The step's probability.
     pub probability: Rational,
+    /// Over every scheduler, when the draw has several post-states: the
+    /// model state the scheduler took, as its complete state-key bytes. The
+    /// path names one state only with it (SCH-2).
+    pub resolved: Option<Vec<u8>>,
 }
 
 /// A path to a product state at which the claim reads an undefined value

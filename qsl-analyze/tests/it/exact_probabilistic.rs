@@ -671,6 +671,7 @@ fn the_undefined_path_lists_every_step_in_order() {
     );
     assert_eq!(path.probability, ratio(1, 2));
     assert_eq!(path.position, 2);
+    assert!(path.steps.iter().all(|step| step.resolved.is_none()));
 }
 
 const GHOST: &str = "probabilistic Ghost using ev on M over (c: M::Coin) under Even on origin \
@@ -1185,12 +1186,13 @@ const NEGOTIATED: &str = "probabilistic Seeded using ev on M over (p: M::Proc) u
      probabilistic Unseeded using ev on M over (p: M::Proc) under Even on origin \
      { probability >= 0.9 [ always[0,3] holds(not p.done) ] }";
 
-/// FR-195-AC-4 (TC-630 step 4): a claim only exact evidence decides is
+/// FR-195-AC-4, refusal half only (TC-630 step 4; the manifest and the
+/// FR-192 settlement are not built): a claim only exact evidence decides is
 /// refused at negotiation, before any sample, with the cause that names why:
 /// `EveryScheduler` for `FairTerminates`, `ExactOnlyForm` for an
 /// expected-reward claim under a workload, `MissingConfidence` for a bounded
 /// event with no confidence parameters; a statistical claim passes.
-#[trace("TC-630", "FR-195-AC-4")]
+#[trace("TC-630")]
 #[test]
 fn statistical_evidence_is_refused_for_a_claim_only_exact_evidence_decides() {
     use qsl_analyze::statistical::require_statistical;
@@ -1198,6 +1200,22 @@ fn statistical_evidence_is_refused_for_a_claim_only_exact_evidence_decides() {
 
     let process = World::new(&prob_world::process(&format!("{REACH}\n{NEGOTIATED}")));
     let verdict = |claim: &str| require_statistical(process.claim(claim));
+    // The gate refuses exactly the claims `exact_only` marks.
+    for name in [
+        "FairTerminates",
+        "Terminates",
+        "Anywhere",
+        "Reached",
+        "Unless",
+        "Unseeded",
+        "Seeded",
+    ] {
+        assert_eq!(
+            verdict(name).is_err(),
+            process.claim(name).exact_only(),
+            "{name}"
+        );
+    }
     assert_eq!(
         verdict("FairTerminates"),
         Err(StatisticalRefusal::EveryScheduler)
@@ -1222,4 +1240,222 @@ fn statistical_evidence_is_refused_for_a_claim_only_exact_evidence_decides() {
         require_statistical(link.claim("Cost")),
         Err(StatisticalRefusal::ExactOnlyForm)
     );
+}
+
+const HORIZON: &str =
+    "probabilistic Idle using ev on M over (s: M::Server) under Steady on origin \
+     { probability >= 0.5 [ steps from holds(s.phase = 1 and s.attempts = 2) \
+     until holds(s.phase = 2) within 3 <= 5 ] }\n\
+     probabilistic Source using ev on M over (s: M::Server) under Steady on origin \
+     { probability >= 0.5 [ fraction holds(s.phase = 0) over [0, 2] >= rational(1, 2) ] }";
+
+/// FR-196 "Behavior": a measure whose `A` never holds is unactivated when the
+/// window ends, decided with amount zero; a fraction reads its predicate at
+/// the position the step leaves, not at the position it reaches.
+#[trace("TC-631")]
+#[test]
+fn an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source() {
+    let world = World::new(&prob_world::service(HORIZON));
+    let idle = built(&world, "Idle");
+    let ended: Vec<_> = idle
+        .states
+        .iter()
+        .filter(|key| key.monitor.is_some_and(MonitorState::is_decided))
+        .collect();
+    assert!(!ended.is_empty());
+    for key in ended {
+        assert_eq!(
+            key.monitor,
+            Some(MonitorState::Measure {
+                remaining: 0,
+                phase: MeasurePhase::Unactivated
+            })
+        );
+        assert_eq!(
+            key.accumulator,
+            Some(Accumulator::Steps {
+                activated: false,
+                amount: Amount::Exact(ratio(0, 1))
+            })
+        );
+    }
+
+    // Idle holds only at the first position; the positions reached never do.
+    let source = built(&world, "Source");
+    let complete = distinct(
+        source
+            .states
+            .iter()
+            .filter(|key| key.monitor == Some(MonitorState::Fraction { remaining: 0 }))
+            .map(|key| match key.accumulator {
+                Some(Accumulator::CountFraction {
+                    true_count,
+                    position_count,
+                }) => (true_count, position_count),
+                ref other => panic!("a count accumulator: {other:?}"),
+            })
+            .collect(),
+    );
+    assert_eq!(complete, [(1, 3)]);
+}
+
+const LOOSE_COST: &str = "reward cost on Node::tick = 2;\n\
+     probabilistic Cost using ev on M over (n: M::Node) under every scheduler on origin \
+     { probability >= 0.5 [ accumulate cost from holds(n.healthy) \
+     until holds(not n.healthy) within 3 >= 5 ] }";
+
+/// FR-196 "Behavior", SCH-2: a draw with several post-states advances the
+/// accumulator once, at the resolution, with the draw's rewards; the edge
+/// that took the draw carries them, and the resolution edges carry every
+/// reward at 0.
+#[trace("TC-631")]
+#[test]
+fn a_resolution_advances_the_accumulator_with_the_draws_rewards() {
+    let world = World::new(&prob_world::health(
+        "self.healthy = (pre(self.healthy) and not fault)",
+        "true: 1, false: 9999999",
+        true,
+        LOOSE_COST,
+    ));
+    let product = built(&world, "Cost");
+    let held = distinct(
+        product
+            .states
+            .iter()
+            .filter(|key| key.monitor.is_some_and(MonitorState::is_decided))
+            .filter_map(|key| match &key.accumulator {
+                Some(Accumulator::Reward { amount, .. }) => Some(amount.clone()),
+                _ => None,
+            })
+            .collect(),
+    );
+    // A fault at the first tick ends at 2, at the second at 4; a third tick
+    // without a fault is above 5.
+    for value in [2, 4] {
+        assert!(
+            held.contains(&Amount::Exact(ratio(value, 1))),
+            "{value}: {held:?}"
+        );
+    }
+    let cost = |edge: &ProbEdge| {
+        let [(name, value)] = &edge.rewards[..] else {
+            panic!("one reward: {:?}", edge.rewards);
+        };
+        assert_eq!(name.as_str(), "cost");
+        integer_of(value)
+    };
+    let mut draws = 0;
+    for edge in &product.edges {
+        match edge.choice {
+            ProductAction::Identity(_) => {
+                draws += 1;
+                assert_eq!(cost(edge), 2);
+            }
+            ProductAction::PostState(_) => assert_eq!(cost(edge), 0),
+            ProductAction::TerminalStutter => {}
+        }
+    }
+    assert!(draws > 0);
+}
+
+const BINDINGS: &str = "probabilistic Terminates using inf on M over (p: M::Proc) \
+     under every scheduler on origin \
+     { probability >= 0.99 [ eventually holds(p.done) ] }";
+
+/// FR-196 "Behavior": the initial product states are each initial state per
+/// `over` binding, and the binding is part of a state's identity: the same
+/// model state under two bindings has different futures and labels.
+#[trace("TC-631")]
+#[test]
+fn each_over_binding_has_its_own_states() {
+    let world = World::with_objects(&prob_world::process(BINDINGS), &["p", "q"]);
+    let product = built(&world, "Terminates");
+    let [(_, first, a), (_, second, b)] = &product.initial[..] else {
+        panic!("one initial state per binding: {:?}", product.initial);
+    };
+    assert_ne!(a, b);
+    assert!(first.is_some() && second.is_some() && first != second);
+    assert_eq!(product.states[a.index()].binding, *first);
+    assert_eq!(product.states[b.index()].binding, *second);
+    // One model state, two readings: where `p` is done and `q` is not.
+    let differing = product.ids().any(|left| {
+        product.ids().any(|right| {
+            let (x, y) = (
+                &product.states[left.index()],
+                &product.states[right.index()],
+            );
+            x.model == y.model
+                && x.binding != y.binding
+                && product.labels[left.index()] != product.labels[right.index()]
+        })
+    });
+    assert!(differing);
+}
+
+/// FR-196 "Behavior": reaching `max_states` or `max_transitions` stops the
+/// build, and a build of exactly that size completes.
+#[trace("TC-631")]
+#[test]
+fn a_budget_equal_to_the_product_size_completes() {
+    let world = World::new(&prob_world::no_fault(NO_FAULT));
+    let product = built(&world, "NoFault");
+    let (states, edges) = (product.states.len(), product.edges.len());
+    assert_eq!((states, edges), (1002, 2000));
+    let defaults = ModelCheckLimits::default();
+    let with = |max_states, max_transitions| ModelCheckLimits {
+        limits: Limits {
+            max_states,
+            max_transitions,
+        },
+        ..defaults
+    };
+    let ran = |limits| build_product(world.request("NoFault", limits), &Cancel::new());
+    assert!(matches!(ran(with(states, edges)), Ok(ProbBuild::Built(_))));
+    assert!(matches!(
+        ran(with(states - 1, edges)),
+        Err(ProductRefusal::Stopped(ProductStop::Limit {
+            limit: ModelCheckLimit::MaxStates,
+            ..
+        }))
+    ));
+    assert!(matches!(
+        ran(with(states, edges - 1)),
+        Err(ProductRefusal::Stopped(ProductStop::Limit {
+            limit: ModelCheckLimit::MaxTransitions,
+            ..
+        }))
+    ));
+}
+
+const TOSS: &str = "probabilistic Tossed using ev on M over (c: M::Coin) under every scheduler \
+     on origin { probability >= 0.5 [ always[0,3] holds(c.v = 0) ] }\n\
+     probabilistic Plain using ev on M under every scheduler on origin \
+     { probability >= 0.5 [ always[0,2] holds(true) ] }";
+
+/// FR-196 "Behavior", SCH-2: an undefined path over every scheduler names
+/// the post-state the scheduler took at a draw with several post-states, so
+/// it replays to one state.
+#[trace("TC-641")]
+#[test]
+fn an_mdp_undefined_path_names_the_post_state_taken_at_each_draw() {
+    let world = World::new(&prob_world::tossed_coin(TOSS));
+    let ProbBuild::Undefined(path) = build_product(
+        world.request("Tossed", ModelCheckLimits::default()),
+        &Cancel::new(),
+    )
+    .expect("the build ends with a refutation") else {
+        panic!("an undefined path");
+    };
+    let [step] = &path.steps[..] else {
+        panic!("one step: {:?}", path.steps);
+    };
+    assert_eq!(path.position, 1);
+    assert_eq!(step.probability, ratio(1, 2));
+    let resolved = step.resolved.as_ref().expect("the post-state taken");
+    // The coin is gone: a model state of the claim-free product, and not the
+    // initial one.
+    let plain = built(&world, "Plain");
+    let initial = &plain.states[start(&plain).index()].model;
+    assert_ne!(resolved, initial);
+    assert!(plain.states.iter().any(|key| key.model == *resolved));
 }

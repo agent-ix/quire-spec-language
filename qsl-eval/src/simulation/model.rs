@@ -77,8 +77,8 @@ pub use frames::judge::{
     operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,
 };
 pub use probabilistic::{
-    same_rewards, same_values, Action, Draw, NotMarkov, ScheduledIdentity, TransitionId,
-    UndecidedSuccessor, Unsteppable, WeightedStep,
+    same_rewards, Action, Draw, NotMarkov, ScheduledIdentity, TransitionId, UndecidedSuccessor,
+    Unsteppable, WeightedStep,
 };
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;

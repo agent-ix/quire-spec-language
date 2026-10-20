@@ -224,7 +224,7 @@ impl Builder<'_, '_> {
             for binding in 0..self.bindings.len() {
                 let truths = match self.truths(&state, binding)? {
                     Ok(truths) => truths,
-                    Err(hit) => return Err(self.undefined(None, None, hit)),
+                    Err(hit) => return Err(self.undefined(None, None, None, hit)),
                 };
                 let (monitor, accumulator) = self.plan.start(&truths)?;
                 let key = self.key_of(&state, binding, monitor, accumulator, None)?;
@@ -381,15 +381,31 @@ impl Builder<'_, '_> {
     }
 
     /// The path to the state `hit` names: the steps to node `parent`, then
-    /// `step`.
-    fn undefined(&self, parent: Option<usize>, step: Option<&PathStep>, hit: Hit) -> Halt {
+    /// `step`. A resolution has no step of its own: `resolved` is the model
+    /// state it chose, which the path records on the draw step before it.
+    fn undefined(
+        &self,
+        parent: Option<usize>,
+        step: Option<&PathStep>,
+        resolved: Option<Vec<u8>>,
+        hit: Hit,
+    ) -> Halt {
         let mut steps: Vec<PathStep> = step.cloned().into_iter().collect();
+        let mut chosen = resolved;
         let mut cursor = parent;
         while let Some(at) = cursor {
             let Some((before, taken)) = &self.nodes[at].parent else {
                 break;
             };
-            steps.extend(taken.clone());
+            match taken {
+                Some(taken) => steps.push(PathStep {
+                    resolved: chosen.take(),
+                    ..taken.clone()
+                }),
+                // The edge into `at` resolved a draw: `at` is the chosen
+                // post-state.
+                None => chosen = Some(self.nodes[at].key.model.clone()),
+            }
             cursor = Some(*before);
         }
         steps.reverse();
@@ -428,7 +444,18 @@ impl Builder<'_, '_> {
         let binding = self.binding_of(at)?;
         let truths = match self.truths(post, binding)? {
             Ok(truths) => truths,
-            Err(hit) => return Err(self.undefined(Some(at), step, hit)),
+            Err(hit) => {
+                let resolved = match step {
+                    Some(_) => None,
+                    None => Some(
+                        self.system
+                            .state_key(post)
+                            .map_err(|_| fault("state-key-encodes"))?
+                            .0,
+                    ),
+                };
+                return Err(self.undefined(Some(at), step, resolved, hit));
+            }
         };
         let source = &self.nodes[at];
         let (monitor, accumulator) = self.plan.step(
@@ -491,7 +518,7 @@ impl Builder<'_, '_> {
                 draw: None,
                 target,
                 probability: Rational::from_integer(Integer::one()),
-                rewards: Vec::new(),
+                rewards: self.system.zero_rewards(),
                 step: None,
             });
         }
@@ -523,6 +550,7 @@ impl Builder<'_, '_> {
                 action: Some(identity.clone()),
                 draw: Some(step.random.clone()),
                 probability: step.probability.clone(),
+                resolved: None,
             };
             let target = self.advance(at, &step.post, &step.rewards, Some(&taken))?;
             planned.push(Planned {
@@ -573,6 +601,7 @@ impl Builder<'_, '_> {
                 action: Some(action.identity.clone()),
                 draw: Some(draw.random.clone()),
                 probability: draw.probability.clone(),
+                resolved: None,
             };
             let mut successors = draw.successors;
             match successors.len() {
@@ -604,6 +633,7 @@ impl Builder<'_, '_> {
                             action: taken.action,
                             draw: None,
                             probability: merged.probability.clone(),
+                            resolved: None,
                         });
                         continue;
                     }
@@ -679,6 +709,7 @@ impl Builder<'_, '_> {
             action: None,
             draw: None,
             probability: probability.clone(),
+            resolved: None,
         };
         let target = if self.plan.closes_at_terminal() {
             let Some(MonitorState::Formula(FormulaState::Running(running))) =

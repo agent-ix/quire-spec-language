@@ -92,6 +92,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::ample::{Atoms, Por};
 use super::concretise::{Lift, LiftStop};
+use super::false_extension::false_extension_rejects;
 use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
 
 pub(super) use qsl_eval::simulation::BOUND_POSITIONS;
@@ -1654,20 +1655,10 @@ impl<S: SubjectSystem> Run<'_, S> {
             return Ok(());
         }
         let reached = self.nodes[at].monitor.clone();
-        for (instance, mut state) in reached.into_iter().enumerate() {
-            let mut seen = BTreeSet::from([state]);
-            loop {
-                state = self
-                    .monitor
-                    .step(state, Letter::default())
-                    .map_err(Self::automaton)?;
-                if self.rejects(state)? {
-                    let binding = self.binding_of(instance);
-                    return Err(Finish::violated(CounterexampleKind::Formula, at, binding).into());
-                }
-                if !seen.insert(state) {
-                    break;
-                }
+        for (instance, state) in reached.into_iter().enumerate() {
+            if false_extension_rejects(&mut self.monitor, state).map_err(Self::automaton)? {
+                let binding = self.binding_of(instance);
+                return Err(Finish::violated(CounterexampleKind::Formula, at, binding).into());
             }
         }
         Ok(())

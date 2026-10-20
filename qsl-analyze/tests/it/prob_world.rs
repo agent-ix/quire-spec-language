@@ -230,12 +230,22 @@ const UNLIMITED: ScalarLimits = ScalarLimits {
 impl World {
     /// `model`, checked.
     pub(crate) fn new(model: &Model) -> Self {
-        Self::with_universe(model, &[model.key])
+        Self::build(model, &[model.key], &[model.key])
+    }
+
+    /// `model`, checked, over a universe of `keys`, every one of them live in
+    /// the initial snapshot.
+    pub(crate) fn with_objects(model: &Model, keys: &[&str]) -> Self {
+        Self::build(model, keys, keys)
     }
 
     /// `model`, checked, over a universe of `keys`; only the object under
     /// `model.key` is in the initial snapshot.
     pub(crate) fn with_universe(model: &Model, keys: &[&str]) -> Self {
+        Self::build(model, keys, &[model.key])
+    }
+
+    fn build(model: &Model, keys: &[&str], live: &[&str]) -> Self {
         let document = model.document();
         let packages = package_input([document.as_slice()]);
         let digest = *packages.keys().next().expect("one model");
@@ -287,8 +297,9 @@ impl World {
             "observation": "current", "model": header,
             "anchor": {"kind": "initialization", "name": "start"},
             "populations": [{"population": model.ident(model.population), "complete": true,
-                "objects": [{"key": model.key, "type": model.ident(model.object),
-                    "fields": model.initial}]}],
+                "objects": live.iter().map(|key| json!({"key": key,
+                    "type": model.ident(model.object), "fields": model.initial}))
+                    .collect::<Vec<_>>()}],
         })
         .to_string()
         .into_bytes();
@@ -529,6 +540,32 @@ pub(crate) fn coin(extra: &str) -> Model {
              post Drop using v on M::Coin::drop {{ count(o in M::coins where true) = b }}\n\
              random Coin::drop(b) ~ {{ 0: 1, 1: 1 }};\n\
              workload Even on M {{ weight Coin::drop = 1; }}\n{extra}"
+        ),
+        initial: json!({"v": {"integer": "0"}}),
+    }
+}
+
+/// A coin that is tossed with `toss(b: Int[0, 1])`: `b` is drawn with equal
+/// weights and the frame may delete the coin, with no postcondition, so each
+/// draw has two post-states, the coin kept and the coin gone.
+pub(crate) fn tossed_coin(extra: &str) -> Model {
+    const PACKAGE: &str = "test/tossed";
+    Model {
+        package: PACKAGE,
+        object: "Coin",
+        population: "coins",
+        key: "c",
+        integers: vec![("Bit", 0, 1)],
+        fields: vec![("v", int(PACKAGE, "Bit"))],
+        operations: vec![Operation {
+            name: "toss",
+            parameters: vec![("b", int(PACKAGE, "Bit"))],
+            modifies: vec![],
+            deletes: true,
+        }],
+        body: format!(
+            "random Coin::toss(b) ~ {{ 0: 1, 1: 1 }};\n\
+             workload Even on M {{ weight Coin::toss = 1; }}\n{extra}"
         ),
         initial: json!({"v": {"integer": "0"}}),
     }

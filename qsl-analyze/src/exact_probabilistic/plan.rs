@@ -3,8 +3,6 @@
 //! monitor for a bounded event, the accumulator of a bounded measure, and no
 //! control at all for an unbounded form (FR-196 "Behavior").
 
-use std::collections::BTreeSet;
-
 use qsl_eval::automaton::{
     translate_body, Atom, AutomatonError, Letter, Monitor, PropertyAutomaton, StateId,
 };
@@ -13,6 +11,8 @@ use qsl_semantics::check::{
     ReachTarget, TemporalProfile,
 };
 use quire_exact::{Identifier, Integer, Rational, Value};
+
+use crate::model_check::false_extension::false_extension_rejects;
 
 use super::{
     Accumulator, Amount, FormulaState, MeasurePhase, MonitorState, MonitorVerdict, PredicateRole,
@@ -366,17 +366,11 @@ impl<'c> Plan<'c> {
         let Self::Formula(monitor) = self else {
             return Err(PlanFault::Broken("only-an-event-closes"));
         };
-        let mut state = running;
-        let mut seen = BTreeSet::from([state]);
-        loop {
-            state = monitor.step(state, Letter::default())?;
-            if monitor.is_rejecting(state)? {
-                return Ok(MonitorVerdict::Reject);
-            }
-            if !seen.insert(state) {
-                return Ok(MonitorVerdict::Accept);
-            }
-        }
+        Ok(if false_extension_rejects(monitor, running)? {
+            MonitorVerdict::Reject
+        } else {
+            MonitorVerdict::Accept
+        })
     }
 
     /// Whether a terminal model state closes the event instead of
