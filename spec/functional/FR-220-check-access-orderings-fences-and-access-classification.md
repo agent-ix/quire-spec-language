@@ -127,7 +127,7 @@ possible takes it.
   language has no spelling for one.
 - Under `sc`, orderings SHALL change no behaviour.
 
-**EN-1 ordering rule (gap).** The orderings a kind admits are ADR-025 MA-3's
+**EN-1 ordering rule.** The orderings a kind admits are ADR-025 MA-3's
 (a load takes `relaxed`, `acquire`, `seq_cst` or none; a store `relaxed`,
 `release`, `seq_cst` or none; an RMW one of the five and always has one).
 
@@ -135,10 +135,9 @@ possible takes it.
   `WeakAccessShape` for an instantiated load that carries `release` or
   `acq_rel`, an instantiated store that carries `acquire` or `acq_rel`, and an
   instantiated RMW that carries no ordering.
-- This rule has no code owner today, and QSpec FR-439 names only the shapes
-  `MultiLocation` and `JoinPolicy`, so a shape for it is a QSpec decision. Until
-  both exist, such an attempt is checked with the semantics of the ordering it
-  carries, which MA-3 says its kind does not have.
+- Until the pre-check applies this rule, an attempt whose instantiated kind does
+  not take its ordering SHALL be explored with the semantics of the ordering it
+  carries.
 
 ### Access shape
 
@@ -163,7 +162,7 @@ possible takes it.
 | FR-220-AC-2 | S3 refuses, naming the attempt and with `ill_typed`/`operator-ineligible`, an ordering on an attempt that touches no data place, `release` on an attempt that only reads, and `acquire` on an attempt that only writes. S3 admits an RMW with no ordering and a `release` load that also writes a register, which AC-14 leaves to EN-1. A fence with each of `acquire`, `release`, `acq_rel` and `seq_cst` checks. | Test (TC-665) |
 | FR-220-AC-3 | In a `parallel` declaring `memory tso`, an attempt whose operation writes two fields of its receiver checks at S3 with no refusal and no class, as it does with source default `sc`, and an attempt that writes an any-object field refuses `unsupported_construct`/`declaration-form`, naming the attempt and the location. | Test (TC-665) |
 | FR-220-AC-4 | `SB` under `sc` with every ordering `relaxed`, and again with every ordering `seq_cst`, reaches the same 16 states and settles `proved` both times. | Test (TC-665) |
-| FR-220-AC-5 | The pre-check's `WeakAccessShape.shape` takes exactly QSpec FR-439's two shapes: AC-3's two-field attempt with a request selecting `tso` settles V-8 with `MultiLocation{locations}` naming both locations, written `{"type":"multi-location","locations":[…]}`; FR-219-AC-4's `parallel` that joins `any`, with a request selecting `tso`, settles V-8 with `JoinPolicy`, written `{"type":"join-policy"}`. | Test (TC-665) |
+| FR-220-AC-5 | The pre-check's `WeakAccessShape.shape` takes QSpec FR-439's shapes `MultiLocation` and `JoinPolicy` for the access shapes AC-3 and FR-219-AC-4 name: AC-3's two-field attempt with a request selecting `tso` settles V-8 with `MultiLocation{locations}` naming both locations, written `{"type":"multi-location","locations":[…]}`; FR-219-AC-4's `parallel` that joins `any`, with a request selecting `tso`, settles V-8 with `JoinPolicy`, written `{"type":"join-policy"}`. | Test (TC-665) |
 | FR-220-AC-6 | `fence F ordering relaxed;` refuses at S1 with `invalid_syntax` at the `relaxed` token and never reaches S3. | Test (TC-665) |
 | FR-220-AC-7 | Two branches, each with a `relaxed` store attempt to the same cell field of one object, and no attempt that reads it, check at S3 with no refusal under `tso` and under `ra`, each attempt atomic with ordering `relaxed` and no class recorded. | Test (TC-665) |
 | FR-220-AC-8 | A branch whose attempts write a register field of its core and then read that register again (the register-read-again shape of message passing and load buffering) checks at S3 with no refusal and no class recorded. | Test (TC-665) |
@@ -172,7 +171,7 @@ possible takes it.
 | FR-220-AC-11 | EN-1 classifies ADR-025 §10's `SB` instantiated under `tso` and under `ra` with `Sx` and `Sy` as stores, `Ly` and `Lx` as loads, and (`c1`, `r`), (`c2`, `r`) branch-local. | Test (EN-1 sharing; TC-665 step 10) |
 | FR-220-AC-12 | EN-1 classifies AC-7's two `relaxed` stores as two stores to one shared location. | Test (EN-1 sharing; TC-665 step 11) |
 | FR-220-AC-13 | EN-1 treats the register of AC-8 as branch-local, because attempts of one branch only touch it. | Test (EN-1 sharing; TC-665 step 12) |
-| FR-220-AC-14 | The EN-1 pre-check settles V-8 `WeakAccessShape` for an instantiated load with `release`, a store with `acquire`, and an RMW with no ordering, under `tso` and under `ra`. This is a stated gap: no code owner or QSpec shape exists yet. | Test (EN-1 pre-check, pending; TC-665 step 13) |
+| FR-220-AC-14 | The EN-1 pre-check settles V-8 `WeakAccessShape` for an instantiated load with `release`, a store with `acquire`, and an RMW with no ordering, under `tso` and under `ra`. | Test (EN-1 pre-check; TC-665 step 13) |
 
 ## Dependencies
 
@@ -186,4 +185,8 @@ possible takes it.
 ## References
 
 - Owning ticket: Linear QSL-372. QSpec half: QSpec FR-435 (Linear STD-138),
-  and QSpec FR-439 for the `weak-access-shape` cause and its two shapes.
+  and QSpec FR-439 for the `weak-access-shape` cause and its shapes.
+- EN-1 sharing, classification and the ordering rule (FR-220-AC-11 to
+  FR-220-AC-14): Linear QSL-910 under QSL-565. The ordering rule's outcome
+  needs a shape in QSpec FR-439 beyond `MultiLocation` and `JoinPolicy`; that
+  decision is open, and AC-5 changes with it.

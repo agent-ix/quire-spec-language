@@ -44,3 +44,13 @@ Ticket: STD-218. PR: quire-spec-language#1087, head 7f7f7545b, scoped to `git di
 ## Verdict
 
 Three low findings. The AC-10 behaviour bullet ('When an attempt carries an `ordering` and lies outside every `parallel`, S3 SHALL refuse it ...') is a well-formed event-driven statement, and AC-10 is a direct, falsifiable assertion that the engine meets. AC-7 and AC-9 are direct assertions; their S3-or-EN-1 ambiguity is base FND-004. The changed text describes the system's behaviour and its reason, not a log of edits. The grammar lint raises no warning in the changed files.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: - S3 SHALL record `class: Local` on an attempt whose footprint touches no data place. - S3 SHALL record no access class on any other attempt. - S3 SHALL NOT refuse an attempt on grounds of sharing. - S3 SHALL NOT label a location shared or branch-local. - S3 SHALL refuse an ordering that no access kind the attempt's footprint leaves possible takes (Admitted orderings). - S3 SHALL refuse an ordering on an attempt outside every `parallel` with `ill_typed`/`operator-ineligible`, naming the attempt: an ordering applies only to an access of a `parallel` branch. - EN-1 SHALL decide which location... |
+| FND-002 | fixed | after: \| FR-220-AC-8 \| A branch whose attempts write a register field of its core and then read that register again (the register-read-again shape of message passing and load buffering) checks at S3 with no refusal and no class recorded. \| Test (TC-665) \| \| FR-220-AC-13 \| EN-1 treats the register of AC-8 as branch-local, because attempts of one branch only touch it. \| Test (EN-1 sharing; TC-665 step 12) \| |
+| FND-003 | fixed | after: S3 knows the types of an attempt's receiver and parameters and its operation's declared footprint, but not which objects they are: the grammar's `attempt N by R on M::T::op` carries no receiver, and the objects are drawn from the finite domains at each application (ADR-027 ST-1). Whether a field the operation touches is shared or branch-local is therefore not decidable at S3, because sharing is a property of instantiated footprints (ADR-025 MA-1), and the access class depends on sharing. |
+
+Round 1 verdict: Round 1: FND-001 to FND-003 are fixed. The new What-S3-decides list has one SHALL per bullet, AC-8 is S3-only and AC-13 carries its EN-1 half, and the preamble says S3 knows types, not objects (ADR-027 ST-1). The grammar lint raises no warning in the changed files. Mergeable as far as this method goes.

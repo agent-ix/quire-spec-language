@@ -12,7 +12,7 @@ relationships:
 
 Verify access classification, admitted orderings with their refusal, the access-shape rule at S3 and in the pre-check, and that orderings change nothing under `sc`.
 
-Scope: FR-220-AC-1 to FR-220-AC-14. Steps 1 to 9 are S3 and pre-check checks; steps 10 to 13 are EN-1 checks, owned by the EN-1 pre-check and run when EN-1 sharing exists (steps 10 to 12) or when the ordering rule has an owner (step 13).
+Scope: FR-220-AC-1 to FR-220-AC-14. Steps 1 to 9 are S3 and pre-check checks; steps 10 to 13 are EN-1 checks, owned by the EN-1 pre-check and run against the EN-1 pre-check.
 
 ## Test Procedure
 
@@ -58,4 +58,4 @@ Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 - Step 10: `Sx` and `Sy` are stores, `Ly` and `Lx` are loads, and (`c1`, `r`), (`c2`, `r`) are branch-local.
 - Step 11: two stores to one shared location.
 - Step 12: the register is branch-local.
-- Step 13: V-8 `WeakAccessShape` for each (pending: no owner or QSpec shape yet).
+- Step 13: V-8 `WeakAccessShape` for each.
