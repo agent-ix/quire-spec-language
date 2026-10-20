@@ -745,7 +745,7 @@ fn check_formula(
                 value: ModelTraceValue::Truth(false),
                 trace_position: payload.trace_position(),
             },
-            strong_hints(system, formula.clause, &loop_states),
+            strong_hints(system, &loop_states),
         ),
         Ok(TemporalOutcome::Holds) => (disagrees(Category::Success), Vec::new()),
         Ok(_) => (no_value(), Vec::new()),
@@ -845,10 +845,7 @@ fn unfair_constraint(
     let mut constraints = Vec::new();
     let mut authored = Vec::new();
     for constraint in clause.fairness() {
-        let strength = match constraint.kind() {
-            FairnessKind::Weak => Strength::Weak,
-            FairnessKind::Strong => Strength::Strong,
-        };
+        let strength = Strength::from(constraint.kind());
         let operation = constraint.operation();
         let text = system
             .operation_text(operation.declaring_type(), operation.name())
@@ -888,11 +885,7 @@ fn unfair_constraint(
 /// order, that is enabled at a loop state and taken by no loop step is named
 /// `Each`. An operation the clause already constrains that way gets none, and
 /// a terminal stutter loop, where nothing is enabled, gets none.
-fn strong_hints(
-    system: &ModelSystem<'_>,
-    clause: &CheckedTemporalClause,
-    states: &[LoopState],
-) -> Vec<StrongFairnessHint> {
+fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFairnessHint> {
     let mut hints = Vec::new();
     for (declaring, name, text) in system.operations() {
         let of_operation = |transition: &ModelTransition| transition.operation() == text;
@@ -931,13 +924,11 @@ fn strong_hints(
                 position,
             )
         };
-        if !clause.fairness().contains(&suggested) {
-            hints.push(StrongFairnessHint {
-                suggested,
-                identity,
-                first_enabled_position: position,
-            });
-        }
+        hints.push(StrongFairnessHint {
+            suggested,
+            identity,
+            first_enabled_position: position,
+        });
     }
     hints
 }

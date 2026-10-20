@@ -5,10 +5,7 @@
 //!
 //! Over ADR-018 section 6's ConfigVersion unit (`crate::example_units`), the
 //! `Counter` subject (`crate::counter`) and ADR-019 section 6's mutex written
-//! over `Counter`. Not covered: the suppression of a hint for a constraint the
-//! clause already holds, which needs a refutation that leaves an operation
-//! untaken under a strong constraint on it, and EN-1 builds only lassos that
-//! take it.
+//! over `Counter`.
 
 use ix_trace_rs::trace;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -245,7 +242,7 @@ fn a_stutter_loop_a_bounded_prefix_and_a_deadlock_carry_no_hint() {
 /// holds(value = 1)` is refuted by `0 -acq(2)-> 2 -rel-> 0` with an empty
 /// stem; the one hint is `{Strong, acquire, Each}`, identity `acq(1)`, loop
 /// position 0, and `release`, taken in the loop, gets none.
-#[trace("TC-534")]
+#[trace("TC-534", "FR-133-AC-1")]
 #[test]
 fn the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero() {
     let fixture = mutex("fair weak each M::Counter::setTo;");
@@ -256,6 +253,13 @@ fn the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero() {
     assert_eq!(fixture.values(counterexample, "c"), [0, 2, 0]);
     assert_eq!(counterexample.lasso.map(|lasso| lasso.entry), Some(0));
     let hints = hints_of(&fixture, counterexample, is_one);
+    let record = crate::strong_fairness::settle_en1(&fixture, &outcome, is_one);
+    assert_eq!(record.value, TerminalValue::Refuted);
+    assert_eq!(
+        record.counterexample.as_ref(),
+        Some(counterexample.as_ref())
+    );
+    assert_eq!(record.hints, hints);
     assert_eq!(hints.len(), 1, "{hints:?}");
     let hint = &hints[0];
     assert_eq!(hint.suggested.kind(), FairnessKind::Strong);
@@ -296,6 +300,13 @@ fn the_strong_whole_mutex_refutation_carries_the_same_hint() {
     };
     assert_eq!(fixture.values(counterexample, "c"), [0, 2, 0]);
     let hints = hints_of(&fixture, counterexample, is_one);
+    let record = crate::strong_fairness::settle_en1(&fixture, &outcome, is_one);
+    assert_eq!(record.value, TerminalValue::Refuted);
+    assert_eq!(
+        record.counterexample.as_ref(),
+        Some(counterexample.as_ref())
+    );
+    assert_eq!(record.hints, hints);
     assert_eq!(hints.len(), 1, "{hints:?}");
     let hint = &hints[0];
     assert_eq!(hint.suggested.kind(), FairnessKind::Strong);

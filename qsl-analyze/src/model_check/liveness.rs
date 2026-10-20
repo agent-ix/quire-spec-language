@@ -89,7 +89,7 @@ use qsl_replay::{
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits};
-use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{
@@ -262,14 +262,6 @@ struct Binding {
     instance: ModelInstance,
     group: SymmetryGroup,
     applied: Option<AppliedReduction>,
-}
-
-/// The kernels' strength of a clause's fairness kind.
-fn strength_of(kind: FairnessKind) -> Strength {
-    match kind {
-        FairnessKind::Weak => Strength::Weak,
-        FairnessKind::Strong => Strength::Strong,
-    }
 }
 
 fn widen(value: usize) -> u64 {
@@ -1677,8 +1669,8 @@ impl<'r, 'a> Run<'r, 'a> {
     /// as the annotated quotient.
     fn second_phase(&self, run: &Explored<'_, '_>) -> Result<Second, ModelCheckRefusal> {
         // A reduced run reads its product as the annotated quotient even
-        // under a trivial stabiliser: only the quotient decides strong
-        // fairness, which the request admits under symmetry.
+        // under a trivial stabiliser: the quotient is what concretises a
+        // reduced run's loop and what decides `each` fairness over orbits.
         if run.binding.applied.is_some() {
             return self.quotient_phase(run);
         }
@@ -1854,7 +1846,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 }
             }
             constraints.push(QuotientConstraint {
-                strength: strength_of(constraint.kind()),
+                strength: Strength::from(constraint.kind()),
                 granularity: constraint.granularity(),
                 identities,
             });
@@ -2080,7 +2072,7 @@ impl FairModel {
         }
         let mut constraints = Vec::new();
         for constraint in clause.fairness() {
-            let strength = strength_of(constraint.kind());
+            let strength = Strength::from(constraint.kind());
             let operation = constraint.operation();
             let text = system
                 .operation_text(operation.declaring_type(), operation.name())

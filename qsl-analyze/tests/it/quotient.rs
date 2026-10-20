@@ -14,8 +14,9 @@
 //! The unreduced comparison FR-153-AC-4 asks for is made where the
 //! unreduced engine decides the item: a refutation is `Violated` both
 //! ways, and the unreduced proof is refused only for want of FR-339's
-//! component certificate after exploring the whole product; a strong
-//! constraint is decided unreduced since FR-130, but AC-4 stays untagged. Every concretised lasso also replays through FR-128.
+//! component certificate after exploring the whole product. AC-4's
+//! comparison of a strong constraint, reduced against unreduced, is not made
+//! here, so AC-4 stays untagged. Every concretised lasso also replays through FR-128.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{

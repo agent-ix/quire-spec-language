@@ -12,8 +12,8 @@ relationships:
 
 Verify that a TP-4 item whose negation automaton has no move still has the
 letters and contracts of the positions past it read, that the read is charged
-to the run's budgets and joins no product total, and that the strong-fairness,
-guarded-activation and unbuilt-certificate cases refuse.
+to the run's budgets and joins no product total, and that the guarded-activation
+and unbuilt-certificate cases refuse.
 
 Scope: FR-126-AC-12 to FR-126-AC-15.
 
