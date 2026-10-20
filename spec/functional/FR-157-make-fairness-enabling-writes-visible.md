@@ -26,7 +26,7 @@ path may add a transition the behaviour never takes, and if that transition
 changes whether a fairness class is enabled, the only representative of a
 fair behaviour can be unfair, and the fairness filter then discards a real
 violation. Under a non-empty fairness set, QSL's `model_check` SHALL treat as
-visible every transition whose write footprint meets the enabling footprint
+visible every transition whose write footprint affects the enabling footprint
 of a member of a fairness class it does not belong to (ADR-021 POR-10),
 where the enabling footprint is the member's whole read footprint, its
 membership included (FR-155). With
@@ -61,7 +61,7 @@ reads.
   and for a protocol subject the steps ADR-027 PA-1 assigns to the target.
 - **Fairness visibility.** When the fairness set is non-empty, a transition
   `t` SHALL be visible when, for some class `K` with `t ∉ K` and some member
-  `k ∈ K`, a location of `t`'s write footprint meets a location of `k`'s
+  `k ∈ K`, a location of `t`'s write footprint affects a location of `k`'s
   enabling footprint (FR-155 "Meeting"). This adds to FR-156's visibility
   rule; it does not remove any visible transition.
 - **Class membership.** A transition that adds a member to a class or
@@ -86,7 +86,7 @@ pre `not self.c`, post `self.c`); `arm2()` (`modifies self.d`, pre `self.c
 and not self.d`, post `self.d`); `go()` (`modifies self.done`, pre `self.c
 and self.d and not self.done`, post `self.done`); and `toggle()` (`modifies
 self.a`, post `self.a = not pre(self.a)`). Canonical transition order is
-`arm`, `arm2`, `go`, `toggle`. A state is written (`a`, `c`, `d`, `done`).
+FR-181's identity-byte order, in which `arm2` precedes `arm` (the operation text inside the escaped identity makes `arm` end in `"`, which sorts after `2`), then `go` and `toggle`. A state is written (`a`, `c`, `d`, `done`).
 The claim `Opens` is `eventually holds(x.done)` over `(x: M::Gate)`. The
 enabling footprint of `go(g)` is `{Field{g, c}, Field{g, d}, Field{g, done},
 Membership{gates, g}}`:
@@ -99,8 +99,8 @@ write.
 | FR-157-AC-2 | Why the rule matters, over the same subject and claim. With `arm` and `arm2` invisible, `{arm}` satisfies C0 to C3 at `(F,F,F,F)`: `arm2` and `go` cannot run before `arm`, `arm` is invisible, and its successor is new. It wins the tie with `{toggle}` on canonical order. `{arm2}` then wins at `(F,T,F,F)`. The only accepting cycle left is `(F,T,T,F) ⇄ (T,T,T,F)`, on which `go` is enabled throughout and never taken, so the filter rejects it and the run would return `Holds`, a wrong proof. The test computes both ample-set choices at `(F,F,F,F)` through the visibility function, once with the fairness set and once with the empty set. It asserts `{toggle}` with the fairness set and `{arm}` with the empty set, and asserts that the AC-1 run returns `Violated`. | Test (TC-578) |
 | FR-157-AC-3 | `Opens` with the empty fairness set and partial-order reduction: no fairness visibility applies, `arm` and `arm2` are invisible, and the ample sets are `{arm}` at `(F,F,F,F)` and `{arm2}` at `(F,T,F,F)`. The run returns `Violated` with stem `arm, arm2` and loop `toggle, toggle`. The unreduced run returns `Violated` with an empty stem and loop `toggle, toggle`. Both replay (FR-128). | Test (TC-579) |
 | FR-157-AC-4 | Granularity: with `fair weak each go` the classes are one identity each, and AC-1's visibility and verdict are unchanged. ADR-021 §7.4 over `ProtocolSystem` (ADR-027 footprints and default scheduler constraints, partial-order reduction): `fork`, `send(S)` and `attempt(D)` are visible; `duplicate`, `lose`, `join` and `finish` are invisible. The item returns `Holds`, which settles `proved` with basis `Reduced{[PartialOrder{BreadthFirstRevisit}]}`. With `scheduling adversarial` the fairness set is empty and the item returns `Violated` with the lasso `fork`, `send(S)`, then the loop `duplicate`, `lose`. Each verdict equals the unreduced verdict. | Test (TC-579) |
-| FR-157-AC-5 | ADR-021 §7.6's `Gate` with `go()`'s pre `not self.done` and post `self.done and pre(self.c) and pre(self.d)`, under `fair weak go` with partial-order reduction: `go(g)`'s enabling footprint still holds `Field{g, c}` and `Field{g, d}`, so `arm` and `arm2` are visible; the ample set at `(F,F,F,F)` is `{toggle}`, and the run returns `Violated` with the loop `toggle, toggle` over 6 states, as the unreduced run does. | Test (TC-617) |
-| FR-157-AC-6 | `Gate` with an operation `spawn()` framed `creates Gate`, under `fair weak whole go`: `spawn` writes `AnyMembership{gates}`, which meets `Membership{gates, g}` in `go(g)`'s enabling footprint, so `spawn` is visible. | Test (TC-617) |
+| FR-157-AC-5 | ADR-021 §7.6's `Gate` with `go()`'s pre `not self.done` and post `self.done and pre(self.c) and pre(self.d)`, under `fair weak go` with partial-order reduction: `go(g)`'s enabling footprint still holds `Field{g, c}` and `Field{g, d}`, so `arm` and `arm2` are visible; the ample set at `(F,F,F,F)` is `{toggle}`, and the run returns `Violated` with the loop `toggle, toggle` (6 model states in the model-level reduced search), as the unreduced run does. | Test (TC-617) |
+| FR-157-AC-6 | `Gate` with an operation `spawn()` framed `creates Gate`, under `fair weak whole go`: `spawn` writes `AnyMembership{gates}`, which affects `Membership{gates, g}` in `go(g)`'s enabling footprint, so `spawn` is visible. | Test (TC-617) |
 
 ## Dependencies
 
