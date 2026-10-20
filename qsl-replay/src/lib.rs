@@ -53,6 +53,7 @@ mod request;
 mod result;
 mod scalar;
 pub mod spine;
+pub mod statistical;
 mod supplied_limits;
 mod witness;
 

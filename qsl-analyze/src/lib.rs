@@ -8,6 +8,9 @@
 //! `qsl-replay` keeps its own DBM code and never calls this one (ADR-026
 //! CF-6).
 //!
+//! [`statistical`] holds EN-4, statistical model checking of probabilistic
+//! claims (ADR-024 ST-1, FR-189 to FR-191).
+//!
 //! [`schedulability`] holds EN-7, the closed-form schedulability engine
 //! (ADR-026 §12, FR-247).
 
@@ -15,4 +18,5 @@
 
 pub mod model_check;
 pub mod schedulability;
+pub mod statistical;
 pub mod zone_check;
