@@ -17,6 +17,7 @@ use qsl_eval::simulation::model::{
     operation_identity_text, AbstractApplication, Judgement, ModelFinding, ModelSimState,
     ModelSystem, Rejection, RowReading,
 };
+use qsl_eval::simulation::ExpansionStop;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
 use qsl_semantics::check::{CheckedRefinement, CheckedRow, StepClass, StepRow, StepTarget};
@@ -29,7 +30,7 @@ use crate::model_check::counterexample::{
     MappingSite, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use crate::refinement::failure::{
-    RefinementFailure, StepRejection, StepVerdict, Taken, Undetermined,
+    RefinementFailure, StepOutcome, StepRejection, StepVerdict, Taken, Undetermined,
 };
 use crate::refinement::map::{
     lift_value, map_state, EvalFailure, Lifting, MappedState, MappingFailure, MappingRowRef,
@@ -117,9 +118,77 @@ pub fn check_initial(
 
 /// FR-141 "Deciding the step rules" (RS-3 to RS-6): `step` taken from `pre`.
 ///
-/// `abstract_successors` counts every abstract transition identity this call
+/// The outcome also counts every abstract transition identity the check
 /// judged or expanded, which FR-142 adds to the run's `max_transitions`.
 pub fn check_step(
+    refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,
+    abstract_system: &ModelSystem<'_>,
+    pre: &RefinementPosition,
+    step: &ConcreteStep<'_>,
+) -> StepOutcome {
+    let mut abstract_successors = 0;
+    let verdict = decide_step(
+        refinement,
+        concrete_system,
+        abstract_system,
+        pre,
+        step,
+        &mut abstract_successors,
+    );
+    StepOutcome {
+        verdict,
+        abstract_successors,
+    }
+}
+
+/// The first undefined and the first undetermined outcome of the step-row
+/// arguments and the post-state's rows, in reading order. Of the row
+/// outcomes the first undefined one outranks the first undetermined one
+/// (QSpec FR-377 "Failure precedence").
+#[derive(Default)]
+struct Soft {
+    undefined: Option<StepVerdict>,
+    undetermined: Option<StepVerdict>,
+}
+
+impl Soft {
+    /// Keep `verdict` if it is a row outcome; hand back any other verdict,
+    /// which ends the check at once.
+    #[allow(
+        clippy::result_large_err,
+        reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
+    )]
+    fn record(&mut self, verdict: StepVerdict) -> Result<(), StepVerdict> {
+        let slot = match verdict {
+            StepVerdict::Undefined(_) => &mut self.undefined,
+            StepVerdict::Undetermined(_) => &mut self.undetermined,
+            other => return Err(other),
+        };
+        slot.get_or_insert(verdict);
+        Ok(())
+    }
+
+    fn first(self) -> Option<StepVerdict> {
+        self.undefined.or(self.undetermined)
+    }
+}
+
+/// A verdict for an `ExpansionStop` of a system: a budget stop is a
+/// [`StepVerdict::Stopped`], a broken invariant a fault.
+fn stop_verdict(stop: ExpansionStop) -> StepVerdict {
+    if stop.is_internal_failure() {
+        fault("system-invariant")
+    } else {
+        StepVerdict::Stopped(stop)
+    }
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
+)]
+fn decide_step(
     refinement: &CheckedRefinement,
     concrete_system: &ModelSystem<'_>,
     abstract_system: &ModelSystem<'_>,
@@ -137,38 +206,53 @@ pub fn check_step(
             None => return fault("every-concrete-operation-has-a-step-row"),
         },
     };
-    // The row's receiver and arguments are read at the pre-state, before the
-    // post-state is mapped.
-    let arguments = match (row.map(|row| &row.target), step.transition) {
-        (Some(StepTarget::Abstract { .. }), Some(transition)) => {
-            match evaluate_arguments(
-                refinement,
-                concrete_system,
-                abstract_system,
-                pre,
-                step,
-                (row, transition),
-            ) {
-                Ok(arguments) => Some(arguments),
-                Err(verdict) => return verdict,
+    // Every receiver and argument of the row is read at the pre-state, and
+    // every row of the post-state is mapped; the first undefined outcome of
+    // them outranks the first undetermined one.
+    let mut soft = Soft::default();
+    let mut arguments = None;
+    if let (Some(StepTarget::Abstract { .. }), Some(transition)) =
+        (row.map(|row| &row.target), step.transition)
+    {
+        match evaluate_arguments(
+            refinement,
+            concrete_system,
+            abstract_system,
+            pre,
+            step,
+            (row, transition),
+        ) {
+            Ok((evaluated, found)) => {
+                arguments = evaluated;
+                soft = found;
             }
+            Err(verdict) => return verdict,
         }
-        _ => None,
-    };
+    }
     let mapped = match map_state(
         refinement,
         concrete_system,
         abstract_system,
         step.post.state(),
     ) {
-        Ok(mapped) => mapped,
+        Ok(mapped) => Some(mapped),
         Err(failure) => {
-            return mapping_verdict(
+            let verdict = mapping_verdict(
                 || state_digest(concrete_system, step.post.state()),
                 step.position,
                 failure,
-            )
+            );
+            if let Err(ended) = soft.record(verdict) {
+                return ended;
+            }
+            None
         }
+    };
+    if let Some(verdict) = soft.first() {
+        return verdict;
+    }
+    let Some(mapped) = mapped else {
+        return fault("a-mapping-gives-a-state-or-a-verdict");
     };
     if !mapped.hidden.is_empty() {
         return fault("hidden-fields-need-candidate-sets");
@@ -196,8 +280,9 @@ pub fn check_step(
             if stuttered {
                 return passes(Taken::Stutter);
             }
-            let Ok(expansion) = abstract_system.expand_state(before) else {
-                return fault("abstract-expansion");
+            let expansion = match abstract_system.expand_state(before) {
+                Ok(expansion) => expansion,
+                Err(stop) => return stop_verdict(stop),
             };
             let mut matched = Vec::new();
             for (transition, successor) in &expansion.successors {
@@ -313,7 +398,7 @@ fn evaluate_arguments(
     pre: &RefinementPosition,
     step: &ConcreteStep<'_>,
     (row, transition): (Option<&StepRow>, &ModelTransition),
-) -> Result<Arguments, StepVerdict> {
+) -> Result<(Option<Arguments>, Soft), StepVerdict> {
     let Some(StepRow {
         class: StepClass::Operation(concrete_operation),
         target:
@@ -327,9 +412,9 @@ fn evaluate_arguments(
     else {
         return Err(fault("an-abstract-row-names-an-operation"));
     };
-    let Ok(resolved) = concrete_system.resolve_step(&pre.concrete, transition, step.post) else {
-        return Err(fault("concrete-step-resolves"));
-    };
+    let resolved = concrete_system
+        .resolve_step(&pre.concrete, transition, step.post)
+        .map_err(stop_verdict)?;
     let Some(resolved) = resolved else {
         return Err(fault("concrete-step-names-an-argument-vector"));
     };
@@ -338,7 +423,7 @@ fn evaluate_arguments(
     };
     let mut bindings = vec![Value::Reference(resolved.receiver.clone())];
     bindings.extend(resolved.arguments.iter().cloned());
-    let object = object_of(&pre.concrete, &resolved.receiver);
+    let object = object_of(concrete_system, &pre.concrete, &resolved.receiver);
     let evaluate =
         |expression: &CheckedRow, argument: StepArgument| -> Result<Value, StepVerdict> {
             let at = MappingRowRef::Argument {
@@ -387,22 +472,34 @@ fn evaluate_arguments(
                 )),
             }
         };
-    let receiver = match evaluate(receiver, StepArgument::Receiver)? {
-        Value::Reference(reference) => reference,
-        _ => return Err(fault("a-receiver-row-is-a-reference")),
-    };
+    let mut soft = Soft::default();
+    let mut read =
+        |expression: &CheckedRow, argument: StepArgument| match evaluate(expression, argument) {
+            Ok(value) => Ok(Some(value)),
+            Err(verdict) => soft.record(verdict).map(|()| None),
+        };
+    let receiver = read(receiver, StepArgument::Receiver)?;
     let mut supplied = Vec::with_capacity(arguments.len());
+    let mut complete = receiver.is_some();
     for (index, argument) in arguments.iter().enumerate() {
-        supplied.push(match argument {
-            None => None,
-            Some(expression) => Some(evaluate(expression, StepArgument::Parameter(index))?),
-        });
+        match argument {
+            None => supplied.push(None),
+            Some(expression) => match read(expression, StepArgument::Parameter(index))? {
+                Some(value) => supplied.push(Some(value)),
+                None => complete = false,
+            },
+        }
     }
-    Ok(Arguments {
-        receiver,
-        supplied,
-        result: if *binds_result { resolved.result } else { None },
-    })
+    let evaluated = match receiver {
+        Some(Value::Reference(receiver)) if complete => Some(Arguments {
+            receiver,
+            supplied,
+            result: if *binds_result { resolved.result } else { None },
+        }),
+        Some(Value::Reference(_)) | None => None,
+        Some(_) => return Err(fault("a-receiver-row-is-a-reference")),
+    };
+    Ok((evaluated, soft))
 }
 
 /// RS-4: the abstract operation `operation` over the evaluated `arguments`,
@@ -426,7 +523,7 @@ fn judge_operation(
         result: arguments.result.as_ref(),
     }) {
         Ok(judged) => judged,
-        Err(_) => return fault("abstract-judgement"),
+        Err(stop) => return stop_verdict(stop),
     };
     *abstract_successors =
         abstract_successors.saturating_add(u64::try_from(judged.len()).unwrap_or(u64::MAX));
@@ -478,12 +575,19 @@ fn state_digest(system: &ModelSystem<'_>, state: &ModelState) -> Option<DigestRe
     system.state_key_of(state).ok().map(|(_, digest)| digest)
 }
 
-/// The population and key of `reference` in `state`.
-fn object_of(state: &ModelState, reference: &ObjectReference) -> Option<ObjectKey> {
+/// The population and key of `reference` in `state`: the object of that key
+/// whose most-specific type is the reference's.
+fn object_of(
+    system: &ModelSystem<'_>,
+    state: &ModelState,
+    reference: &ObjectReference,
+) -> Option<ObjectKey> {
+    let type_key = system.type_key_of(reference)?;
     state.populations.iter().find_map(|(population, objects)| {
         objects
-            .contains_key(reference.object().as_str())
-            .then(|| ObjectKey {
+            .get(reference.object().as_str())
+            .filter(|object| object.type_identity == *type_key)
+            .map(|_| ObjectKey {
                 population: population.clone(),
                 key: reference.object().as_str().to_owned(),
             })
@@ -526,6 +630,26 @@ mod tests {
     use qsl_foundation::CatalogCode;
 
     use super::*;
+
+    /// FR-141 (TC-555): an undetermined row outcome is kept for the
+    /// precedence, and any other verdict ends the check at once.
+    #[trace("TC-555")]
+    #[test]
+    fn an_undetermined_row_is_kept_and_any_other_verdict_ends_the_check() {
+        let mut soft = Soft::default();
+        assert!(soft
+            .record(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor))
+            .is_ok());
+        assert!(soft
+            .record(StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+                position: 1
+            }))
+            .is_err());
+        assert!(matches!(
+            soft.first(),
+            Some(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor))
+        ));
+    }
 
     /// FR-141-AC-8 (TC-555 step 4): a `Fault` and a `WrongSystem` from
     /// FR-140 are each a `StepVerdict::Fault`, never `Undefined`,

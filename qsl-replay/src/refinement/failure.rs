@@ -2,6 +2,7 @@
 //! ADR-020 RC-1 and QSpec FR-379: the failure a refinement counterexample
 //! names, and the verdict of one step check (FR-141).
 
+use qsl_eval::simulation::ExpansionStop;
 use qsl_foundation::{CatalogCode, InternalFault};
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -110,6 +111,17 @@ impl Undetermined {
     }
 }
 
+/// What `check_step` returns: the verdict and the number of abstract
+/// transition identities it judged or expanded, which FR-142 adds to the
+/// run's `max_transitions`.
+#[derive(Clone, Debug)]
+pub struct StepOutcome {
+    /// The verdict.
+    pub verdict: StepVerdict,
+    /// The abstract transitions judged or expanded.
+    pub abstract_successors: u64,
+}
+
 /// What deciding one concrete initial state or step gave (FR-141).
 #[derive(Clone, Debug)]
 pub enum StepVerdict {
@@ -127,6 +139,10 @@ pub enum StepVerdict {
     Undefined(UndefinedEvaluation),
     /// The check could not decide.
     Undetermined(Undetermined),
+    /// A run budget stopped the check: the evaluation meter, the candidate
+    /// bound, or a result domain too large to order. It is no fault of QSL
+    /// and no verdict; the run stops (FR-142).
+    Stopped(ExpansionStop),
     /// An internal fault of the evaluator, or of the calling engine code
     /// that passed a system that is not the refinement's own. It is not a
     /// verdict: the item settles `failed` (QSpec FR-383).

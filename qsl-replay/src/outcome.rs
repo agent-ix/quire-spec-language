@@ -314,6 +314,7 @@ impl ItemCause {
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
                 | InconclusiveCause::MappingUndetermined
+                | InconclusiveCause::SimulationCertificateNotBuilt
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::SolverInconclusive,
             ) => {}

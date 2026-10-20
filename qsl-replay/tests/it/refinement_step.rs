@@ -77,8 +77,8 @@ fn verdict(
             transition: Some(&transition),
             post: &reached,
         },
-        &mut 0,
     )
+    .verdict
 }
 
 /// The one abstract transition `inc(c)` from `value`, as the abstract
@@ -296,8 +296,8 @@ fn a_swapped_system_is_a_fault_not_a_verdict() {
             transition: Some(&transition),
             post: &reached,
         },
-        &mut 0,
-    );
+    )
+    .verdict;
     assert!(matches!(verdict, StepVerdict::Fault(_)), "{verdict:?}");
     let verdict = check_initial(world.refinement(), &abstracted, &concrete, 0, &pre);
     assert!(matches!(verdict, StepVerdict::Fault(_)), "{verdict:?}");

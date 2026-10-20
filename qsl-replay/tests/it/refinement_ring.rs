@@ -204,6 +204,7 @@ fn position(world: &RingWorld, concrete: &ModelState) -> RefinementPosition {
 fn verdict_with(
     world: &RingWorld,
     concrete: &ModelSystem<'_>,
+    abstracted: &ModelSystem<'_>,
     pre: &ModelState,
     operation: &str,
     post: &ModelState,
@@ -212,21 +213,22 @@ fn verdict_with(
     check_step(
         world.refinement(),
         concrete,
-        &world.abstract_system(UNLIMITED),
+        abstracted,
         &position(world, pre),
         &ConcreteStep {
             position: 1,
             transition: Some(&transition),
             post: &reached,
         },
-        &mut 0,
     )
+    .verdict
 }
 
 fn verdict(world: &RingWorld, pre: &ModelState, operation: &str, post: &ModelState) -> StepVerdict {
     verdict_with(
         world,
         &world.concrete_system(UNLIMITED),
+        &world.abstract_system(UNLIMITED),
         pre,
         operation,
         post,
@@ -414,6 +416,7 @@ fn an_incomplete_step_row_argument_is_undetermined() {
     let StepVerdict::Undetermined(Undetermined::Mapping(undetermined)) = verdict_with(
         &world,
         &starved,
+        &world.abstract_system(UNLIMITED),
         &ring_state(&concrete, 0, 0, [0, 0]),
         "put",
         &ring_state(&concrete, 0, 1, [1, 0]),
@@ -426,5 +429,31 @@ fn an_incomplete_step_row_argument_is_undetermined() {
             operation: key(RING, "Slot/put"),
             argument: StepArgument::Receiver,
         }
+    );
+}
+
+/// FR-142 (TC-547): an abstract system whose evaluation meter admits no
+/// charge stops the step check with `Stopped`, not a fault: `take` from
+/// `head = 1`, `size = 2` exhausts the meter at `deq`'s precondition.
+#[trace("TC-547")]
+#[test]
+fn an_exhausted_abstract_meter_stops_the_step_check() {
+    let world = RingWorld::new();
+    let concrete = world.concrete_system(UNLIMITED);
+    let starved = world.abstract_system(ZERO);
+    let verdict = verdict_with(
+        &world,
+        &concrete,
+        &starved,
+        &ring_state(&concrete, 1, 2, [0, 1]),
+        "take",
+        &ring_state(&concrete, 0, 1, [0, 1]),
+    );
+    let StepVerdict::Stopped(stop) = verdict else {
+        panic!("the check stops: {verdict:?}");
+    };
+    assert_eq!(
+        stop.limit,
+        Some(qsl_eval::simulation::ExpansionLimit::EvaluationMeter)
     );
 }

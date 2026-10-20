@@ -238,7 +238,7 @@ fn a_system_over_another_model_than_the_refinements_is_a_wrong_system() {
 
 /// FR-140-AC-14 (TC-1086 step 9): a concrete state its own system cannot
 /// observe is an internal fault, which is no row's outcome.
-#[trace("TC-1086", "FR-140-AC-14")]
+#[trace("TC-1086")]
 #[test]
 fn a_state_the_evaluator_cannot_observe_is_a_fault() {
     let world = World::new(&cas_refines_counter());

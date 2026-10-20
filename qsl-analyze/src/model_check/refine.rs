@@ -32,8 +32,8 @@ use qsl_replay::{
     check_initial, check_step, open_systems, ConcreteStep, CounterexampleKind, IncompleteCause,
     ModelCheckLimit, ModelCheckLimits, ModelStep, ReachedLimit, RefinementFailure,
     RefinementOutcome, RefinementPosition, RefinementSystems, RunStats, SafetyOutcome,
-    SafetyUndecided, StepVerdict, SubjectRefusal, TemporalCounterexample, UndefinedEvaluation,
-    Undetermined,
+    SafetyUndecided, StepOutcome, StepVerdict, SubjectRefusal, TemporalCounterexample,
+    UndefinedEvaluation, Undetermined,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
@@ -340,8 +340,10 @@ impl Run<'_, '_> {
             }
             self.transitions += 1;
             self.edges += 1;
-            let mut abstract_successors = 0;
-            let verdict = check_step(
+            let StepOutcome {
+                verdict,
+                abstract_successors,
+            } = check_step(
                 self.refinement,
                 self.concrete,
                 self.abstract_system,
@@ -351,7 +353,6 @@ impl Run<'_, '_> {
                     transition: transition.as_ref(),
                     post: &state,
                 },
-                &mut abstract_successors,
             );
             self.transitions = self
                 .transitions
@@ -421,6 +422,7 @@ impl Run<'_, '_> {
             StepVerdict::Undetermined(undetermined) => {
                 Err(End::Undecided(SafetyUndecided::Undetermined(undetermined)))
             }
+            StepVerdict::Stopped(stop) => Err(self.expansion_stop(stop)),
             StepVerdict::Fault(fault) => Err(End::Fault(fault)),
         }
     }

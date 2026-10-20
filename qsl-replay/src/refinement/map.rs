@@ -274,7 +274,7 @@ pub fn map_state(
 /// The identities of the two domain packages `refinement` maps between,
 /// concrete first, read off the declarations its rows name; `None` for a
 /// refinement with no population or object row.
-pub fn subject_models(refinement: &CheckedRefinement) -> Option<(&str, &str)> {
+pub(crate) fn subject_models(refinement: &CheckedRefinement) -> Option<(&str, &str)> {
     if let Some(row) = refinement.populations().first() {
         return Some((
             &row.concrete_population.package,
@@ -569,7 +569,7 @@ mod tests {
     /// keeps the option value unchanged, so `none` stays an explicit `none`.
     /// The constructors `none` and `Some(e)` are not yet a spelling of a
     /// refinement row (S2), so the rule is exercised on the values.
-    #[trace("TC-1086", "FR-140-AC-11")]
+    #[trace("TC-1086")]
     #[test]
     fn an_optional_field_is_unset_for_none_and_takes_the_payload_of_some() {
         let none = quire_exact::OptionValue::none(ValueType::Boolean);

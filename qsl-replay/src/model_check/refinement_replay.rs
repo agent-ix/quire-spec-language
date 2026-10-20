@@ -79,7 +79,7 @@ pub fn replay_refinement_trace(
     payload: &TemporalCounterexample,
 ) -> Result<RefinementTraceSettlement, ReplayRefusal> {
     let Some(recorded) = payload.refinement.as_ref() else {
-        return Err(fault("a-refinement-payload-names-its-failure"));
+        return Err(refused(ModelTraceRefusal::NoRefinementFailure));
     };
     if payload.lasso.is_some() {
         return Err(refused(ModelTraceRefusal::RefinementLasso));
@@ -106,8 +106,8 @@ pub fn replay_refinement_trace(
                         transition: Some(&taken.transition),
                         post: &position.state,
                     },
-                    &mut 0,
                 )
+                .verdict
             }
             _ => check_initial(
                 refinement,
@@ -140,7 +140,7 @@ pub fn replay_refinement_trace(
                 found = Found::Undefined(Box::new(evaluation));
                 break;
             }
-            StepVerdict::Undetermined(_) => {
+            StepVerdict::Undetermined(_) | StepVerdict::Stopped(_) => {
                 found = Found::Undetermined;
                 break;
             }

@@ -168,6 +168,9 @@ pub enum ModelTraceRefusal {
     /// whose lasso check (ADR-019 FS-8) is not built.
     #[error("unsupported_construct/not-yet-implemented: the clause's fairness set holds a strong constraint")]
     StrongFairness,
+    /// A refinement counterexample that names no refinement failure.
+    #[error("invalid_runtime_input/invalid-value: the payload names no refinement failure")]
+    NoRefinementFailure,
     /// A refinement counterexample that is a lasso, which FR-143's liveness
     /// failures write and replay does not build yet.
     #[error("unsupported_construct/not-yet-implemented: replay of a refinement lasso")]
@@ -206,6 +209,7 @@ impl ModelTraceRefusal {
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
+            | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => Code::InvalidRuntimeInput,
@@ -226,6 +230,7 @@ impl ModelTraceRefusal {
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
+            | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => "invalid-value",

@@ -10,10 +10,10 @@ use qsl_eval::simulation::model::ModelSimulationRequest;
 use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    open_systems, replay_refinement_trace, settle_refinement_safety, Certification,
-    CounterexampleKind, InconclusiveCause, ModelCheckLimits, ModelCheckRecord, ModelTraceRefusal,
-    ProofBasis, RefinementFailure, RefinementOutcome, RefinementTraceSettlement, ReplayRefusal,
-    ResultLabel, RunStats, SafetyOutcome, SettlementBasis, TemporalCounterexample, TerminalValue,
+    open_systems, replay_refinement_trace, settle_refinement_safety, CounterexampleKind,
+    InconclusiveCause, ModelCheckLimits, ModelCheckRecord, ModelTraceRefusal, RefinementFailure,
+    RefinementOutcome, RefinementTraceSettlement, ReplayRefusal, ResultLabel, RunStats,
+    SafetyOutcome, SettlementBasis, TemporalCounterexample, TerminalValue,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
@@ -114,7 +114,7 @@ fn reproduced(
 /// FR-145-AC-1 (TC-550 step 1): the lost-update counterexample replays,
 /// recomputing the mapped values 0, 0, 0, 1, 1, to the recorded
 /// `AbstractStepRejected{position: 4, ..}`.
-#[trace("TC-550", "FR-145-AC-1")]
+#[trace("TC-550")]
 #[test]
 fn the_lost_update_counterexample_replays_with_its_mapped_values() {
     let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());
@@ -158,7 +158,7 @@ fn the_lost_update_counterexample_replays_with_its_mapped_values() {
 
 /// FR-145-AC-1 (TC-550 step 1): the `InitialNotAbstract` and
 /// `StutterChanged` counterexamples each reproduce.
-#[trace("TC-550", "FR-145-AC-1")]
+#[trace("TC-550")]
 #[test]
 fn the_initial_and_stutter_counterexamples_replay() {
     let initial = World::with(
@@ -191,7 +191,7 @@ fn the_initial_and_stutter_counterexamples_replay() {
 /// FR-145-AC-3 (TC-550 step 3): the lost-update counterexample with its
 /// recorded failure changed to position 3 settles `inconclusive`,
 /// `ReplayParity`.
-#[trace("TC-550", "FR-145-AC-3")]
+#[trace("TC-550")]
 #[test]
 fn a_failure_recorded_at_another_position_disagrees() {
     let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());
@@ -218,7 +218,7 @@ fn a_failure_recorded_at_another_position_disagrees() {
 /// of range, whose step is not enabled or whose post-state digest differs
 /// refuses with no result, and replaying one counterexample twice gives
 /// equal results.
-#[trace("TC-550", "FR-145-AC-4")]
+#[trace("TC-550")]
 #[test]
 fn a_counterexample_that_does_not_re_execute_refuses() {
     let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());
@@ -249,32 +249,46 @@ fn a_counterexample_that_does_not_re_execute_refuses() {
     ));
 }
 
-/// FR-144-AC-2 (TC-549 step 2), safety half: `CasRefinesCounter`'s safety
-/// half holds and settles `proved`, `closed-scope`, exhaustive. It is labelled
-/// `Uncertified` until the simulation certificate (FR-149) can certify it.
-#[trace("TC-549", "FR-144-AC-2")]
+/// FR-144 (TC-549 step 2), safety half: `CasRefinesCounter`'s safety half
+/// holds, but FR-144 settles `proved` only after FR-149's checker accepts a
+/// certificate, which does not exist yet, so the record is `inconclusive`
+/// with `SimulationCertificateNotBuilt`.
+#[trace("TC-549")]
 #[test]
-fn a_safety_half_that_holds_settles_proved_uncertified() {
+fn a_safety_half_that_holds_settles_inconclusive_until_the_certificate_exists() {
     let world = World::new(&cas_refines_counter());
     let subject = cas(&world);
     let outcome = check(&subject);
+    assert!(matches!(outcome, SafetyOutcome::Holds { .. }));
     let record = settle(&subject, &outcome);
     assert_eq!(
         record.value,
-        TerminalValue::Proved {
-            basis: ProofBasis::Exhaustive,
-            certification: Certification::Uncertified,
-        }
+        TerminalValue::Inconclusive(InconclusiveCause::SimulationCertificateNotBuilt)
     );
-    assert_eq!(record.label, ResultLabel::Proved);
-    assert_eq!(record.basis, SettlementBasis::ClosedScope);
+    assert_eq!(record.label, ResultLabel::Inconclusive);
+    assert_eq!(record.basis, SettlementBasis::Unsettled);
     assert_eq!(record.method, "explicit-state");
+}
+
+/// FR-145 (TC-550): a payload that names no refinement failure is bad input,
+/// refused `invalid_runtime_input`/`invalid-value`, not a fault.
+#[trace("TC-550")]
+#[test]
+fn a_payload_with_no_refinement_failure_is_refused() {
+    let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());
+    let subject = cas(&world);
+    let mut payload = counterexample(check(&subject));
+    payload.refinement = None;
+    assert!(matches!(
+        replay(&subject, &payload),
+        Err(ReplayRefusal::ModelTrace(refusal)) if matches!(*refusal, ModelTraceRefusal::NoRefinementFailure)
+    ));
 }
 
 /// FR-144-AC-3 (TC-549 step 3) and FR-144-AC-6 (TC-555 step 3): a violated
 /// half settles `refuted` through its replay, for a failed step and for an
 /// undefined mapping row, carrying the counterexample.
-#[trace("TC-549", "FR-144-AC-3")]
+#[trace("TC-549")]
 #[trace("TC-555", "FR-144-AC-6")]
 #[test]
 fn a_violated_half_settles_refuted_once_it_replays() {

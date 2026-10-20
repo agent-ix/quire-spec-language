@@ -9,10 +9,10 @@
 //! `UndecidedSuccessor`, and a fault of the engine or the mapping settles
 //! `failed` (QSpec FR-383).
 //!
-//! A `Holds` half settles `Proved{basis: Exhaustive}` labelled `Uncertified`:
-//! the proof is exhaustive exploration of the concrete subject, and no core
-//! checker stands behind it until the simulation certificate (FR-149) exists,
-//! which FR-144 requires before it settles `Certified`.
+//! A `Holds` half settles `inconclusive` with
+//! `SimulationCertificateNotBuilt`: FR-144 settles `proved` only after
+//! FR-149's checker accepts the simulation certificate, which does not exist
+//! yet, so no proof is claimed. The certificate's ticket flips this row.
 //!
 //! What this does not do yet: the requirement record and its `Refinement`
 //! property form, the obligation identity, the liveness half and the
@@ -23,7 +23,7 @@ use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ModelCheckLimits;
 use crate::model_check::refinement_replay::RefinementTraceSettlement;
 use crate::model_check::settle::{ModelCheckRecord, Row, EXPLICIT_STATE};
-use crate::proof_result::{Certification, InconclusiveCause, ProofBasis, SettlementBasis};
+use crate::proof_result::{InconclusiveCause, SettlementBasis};
 use crate::refinement::SafetyOutcome;
 
 /// FR-144: settle `outcome`, a safety run under `limits`, as one terminal
@@ -37,11 +37,9 @@ pub fn settle_refinement_safety(
     let mut counterexample = None;
     let mut depth = None;
     let row = match outcome {
-        SafetyOutcome::Holds { .. } => Row::proof(
-            ProofBasis::Exhaustive,
-            Certification::Uncertified,
-            SettlementBasis::ClosedScope,
-        ),
+        SafetyOutcome::Holds { .. } => {
+            Row::inconclusive(InconclusiveCause::SimulationCertificateNotBuilt)
+        }
         SafetyOutcome::Violated {
             counterexample: payload,
             ..
