@@ -44,3 +44,14 @@ There are no stubs or tautological tests in the diff. Every tag is on a fully co
 ## Verdict
 
 **FAIL: not mergeable, one major (FND-001).** FR-228-AC-3 is covered as written, but the AC's SCC rule is unsound, and the code inherits the defect. Spec and code have to be fixed together, and a test with a sub-cycle that avoids the loads has to be added. FR-226-AC-3's candidate kernel is correct and correctly tagged only `TC-671`, and FR-228-AC-4's flush refusal is correctly tagged only `TC-673`. FND-002 to FND-004 are declared-remainder or ticket-state items and do not block.
+
+## Dispositions
+
+Round 1, reviewed at 220ee2b43e1d460dc23c9279cdd0c69e55b3d37c against the merged spec text. The spec was amended by bf027b4fb (#1084, edge Streett form; FR-228-AC-3 restated and AC-5 to AC-9 added) and fbfa6e303 (#1083, the FR-331 `memory_models` member; a descriptor without models advertises `sc` only). FR-228-AC-5 to AC-9 have tests tagged `TC-673` in `qsl-eval/tests/it/fairness_kernels.rs` and `qsl-analyze/src/model_check/liveness.rs`. The narrow runs pass: `fairness_kernels` 30 passed and `liveness` 5 passed.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bf027b4fb (spec, on main) / 220ee2b43 (code): MF-2 and FR-228 now state the edge Streett refinement, and the filter, the lasso check and the certificate checker agree on a load-free sub-cycle. |
+| FND-002 | deferred | The request writer still calls `candidates_for_fairness` (qsl-route/src/request.rs:511). The item's resolved models belong to E16a (QSL-565), declared remainder of QSL-567. |
+| FND-003 | deferred | `descriptor_from_manifest` still does not read FR-331-AC-30's `memory_models`. A descriptor with no models now advertises `sc` only, as the merged FR-226 states, but FR-226-AC-2 stays open. Declared in the code ("Remaining work") and in the PR body. |
+| FND-004 | deferred | A lead action at merge: QSL-567's attachments for PR #1080 still read `linkKind: closes`. Keep QSL-567 open for the declared remainder. |

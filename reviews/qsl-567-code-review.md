@@ -40,3 +40,28 @@ FND-001 is a major soundness defect. I reproduced it with a scratch test that I 
 ## Verdict
 
 **FAIL: not mergeable, one major (FND-001).** Discharge (fresh load only) is correct in all three places. The SCC filter and the certificate checker agree with each other, and the lasso check is correct for each loop. But the SCC-level obligation ("owed if any edge in the SCC loads the pair") is unsound, because a sub-cycle that avoids every load is fair, the lasso check confirms this, and yet the filter rejects it. That can produce a false `proved`. The kernel has no production caller yet, because the FR-228 derivation is not built, so nothing ships wrong today. But the PR delivers FR-228-AC-3's rule, and that rule is wrong. Routing by memory model is correct: it never weakens the model, and it returns an empty set when nothing matches. The type move has no shim. FND-002 and FND-003 are low.
+
+## New findings (disposition pass 1)
+
+Round 1 reviewed at 220ee2b43e1d460dc23c9279cdd0c69e55b3d37c against the merged spec (ADR-025 MF-2 and MF-5, FR-228 Behavior and AC-3 to AC-9, FR-339, ADR-019 FS-2), merged on main by bf027b4fb (#1084) and fbfa6e303 (#1083). Narrow tests at this head: `qsl-eval --test it fairness_kernels` (30 passed), `qsl-replay --lib certificate::scc` (13 passed), `qsl-analyze --lib liveness` (5 passed), `qsl-route --test it memory_models` (1 passed).
+
+The original repro (a→b `STALE`, b→a `OTHER`, a→a `OTHER`, all states accepting) now gives `UnfairVisibility{[0], sub: [{a} Fair, {b} Trivial]}` with `removed = {10, 11}`, and `first_fair_in` returns `{a}`. The load-free self-loop is found as a fair accepting cycle, which agrees with the lasso check. The certificate checker is sound for the nesting:
+- `UnfairVisibility` adds its pairs' loads to the level's removed set.
+- `UnfairStrong` keeps its parent's removed set.
+- A removed edge is exempt from `BackwardEdge` and from every rule below its witness, and nowhere above it.
+
+A cycle that crosses sub-components on a removed edge loads a pair that has no fresh load in the enclosing component, so that cycle is unfair. A probe certificate shaped as the spec's one combined refinement step (`UnfairStrong` over `UnfairVisibility` over trivial leaves) is accepted.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | The combined strong-plus-visibility step builds a witness tree that the checker rejects. The step removes the loads of `visibility`: the pairs that fail on the whole component C. But the wrapper `UnfairVisibility` over the remaining states lists `still = failing_visibility(&remaining, removed)`. That is recomputed on the remaining states, and it also contains a pair whose only fresh-load edge touched a removed vertex. The step did not remove that pair's loads, so `refined` decomposes with those edges present and classifies the pair again one level down. The tree then has `UnfairVisibility{P}` directly inside `UnfairVisibility{P}`, and the checker rejects the inner one with `WitnessFails`, because its R edges are already removed at that level. Probe: states 0, 1, 2; strong `s` enabled only at 0 and never taken; edges 0→1 `FRESH`, 1→0, 1→2 `STALE`, 2→1; states 1 and 2 accepting. The filter's verdict is still correct (no fair component). The same tree written as a certificate is `Rejected(WitnessFails)`, and the spec-shaped tree is `Accepted`. QSL builds no certificate from `Analysis` today, so nothing ships wrong. But the module claims to keep "every witness the certificate checker reads", and the tree does not match FR-228's "every failing visibility pair in one refinement step". Fix: set `still` to `visibility` filtered to the pairs that a kept edge inside `remaining` still loads. | qsl-eval/src/fairness/refine.rs:213,247-259 |
+
+## Dispositions
+
+Round 1, reviewed at 220ee2b43e1d460dc23c9279cdd0c69e55b3d37c.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 18c9bafd2 / 220ee2b43: the SCC filter and the certificate checker refine by removing a failing pair's load edges and decomposing again (`UnfairVisibility{constraints, sub}`). The CX-5 walk uses only kept edges. The repro's load-free self-loop is now the first fair component. |
+| FND-002 | fixed | 18c9bafd2 / 220ee2b43: `is_enabled_in` returns `Option<bool>` (`None` for visibility), and `Obligation::Enablement(Strength)` makes a strong-enablement visibility constraint unrepresentable. Visibility reports kind strong (MF-5). |
+| FND-003 | fixed | 18c9bafd2: the module doc and the `UnfairWeak` and `UnfairVisibility` docs state the enablement and load-edge rules separately. |
