@@ -23,27 +23,44 @@
 //! candidates are two states. A run that holds hands over the simulation relation it found
 //! (FR-149): every stored product state, the position of each initial state
 //! and every edge with the `Taken` that `check_step` returned, for the
-//! core's checker to recompute. The liveness half (FR-143) is not built.
+//! core's checker to recompute.
+//!
+//! The liveness half (FR-143) runs on that retained graph when `F_A` is
+//! non-empty and the safety half holds. For each class of `F_A`, in source
+//! order and then canonical identity order, it decomposes the subgraph of the
+//! product states that enable the class and the edges that do not take it,
+//! and the first component that passes the `F_C` filter violates the class:
+//! the stem is the breadth-first tree path to it and the loop is FR-126's
+//! greedy walk inside it, so the lasso is the one a liveness clause gets.
+//! A class is enabled at a product state when the abstract subject has a
+//! successor of the class from the state's mapped abstract state, and taken by
+//! an edge when the edge's `check_step` result lists an identity of it.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use qsl_eval::fairness::{analyze, Analysis, EdgeLabel, FairnessError, Graph, Identity, Vertex};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, TransitionSystem};
 use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_initial, check_step, open_systems, CertifiedEdge, CertifiedPosition, ConcreteStep,
-    CounterexampleKind, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelStep,
-    ReachedLimit, RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems,
-    RunStats, SafetyOutcome, SafetyUndecided, SimulationCertificate, StepResult, StepVerdict,
-    SubjectRefusal, Taken, TemporalCounterexample, UndefinedEvaluation, Undetermined,
+    abstract_classes, check_initial, check_step, open_systems, AbstractClass, CertifiedEdge,
+    CertifiedPosition, ConcreteStep, CounterexampleKind, IncompleteCause, Lasso, LivenessHalf,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ReachedLimit,
+    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems, RunStats,
+    SafetyOutcome, SafetyUndecided, SimulationCertificate, StepResult, StepVerdict, SubjectRefusal,
+    Taken, TemporalCounterexample, UnavailabilityCause, UndecidedCause, UndefinedEvaluation,
+    Undetermined,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
+use quire_semantic_value::fairness::{FairnessConstraint, FairnessKind};
+use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
+use super::fair_walk::{fairness_constraints, FairModel};
 
 /// One refinement safety run (FR-142 Inputs).
 pub struct RefinementCheckRequest<'a> {
@@ -104,16 +121,36 @@ impl From<ModelCheckRefusal> for End {
     }
 }
 
-/// FR-142: decide the safety half of `request`'s refinement, polling
-/// `cancel` before every expansion and every edge.
+/// FR-142 and FR-143: decide the safety half of `request`'s refinement and,
+/// when `F_A` is non-empty and the safety half holds, its liveness half,
+/// polling `cancel` before every expansion and every edge.
 ///
 /// # Errors
 ///
-/// [`ModelCheckRefusal`] when a subject does not admit, a root of either is
-/// unbounded, or the refinement has a hidden field; nothing is explored then.
+/// [`ModelCheckRefusal`] when a subject does not admit or a root of either is
+/// unbounded, nothing being explored then, and when the liveness half meets
+/// an internal fault. A fault of the liveness half is a refusal, not a
+/// `Fault` outcome, as FR-126's liveness phase returns it; the safety half
+/// and its certificate are discarded with it.
 pub fn check_refinement(
     request: RefinementCheckRequest<'_>,
     cancel: &Cancel,
+) -> Result<RefinementOutcome, ModelCheckRefusal> {
+    check_with(request, cancel, abstract_classes)
+}
+
+/// How the second phase reads the classes of `F_A`: [`abstract_classes`] in
+/// production, so a unit test can have the phase meet an internal fault.
+type ClassesOf = fn(
+    &ModelSystem<'_>,
+    &[FairnessConstraint],
+    &[ModelTransition],
+) -> Result<Vec<AbstractClass>, InternalFault>;
+
+fn check_with(
+    request: RefinementCheckRequest<'_>,
+    cancel: &Cancel,
+    classes_of: ClassesOf,
 ) -> Result<RefinementOutcome, ModelCheckRefusal> {
     let refinement = request.refinement;
     let RefinementSystems {
@@ -150,6 +187,7 @@ pub fn check_refinement(
         transitions: 0,
         edges: 0,
         horizon_cut: false,
+        classes_of,
     };
     let safety = if concrete.initial_states().is_empty() {
         SafetyOutcome::Undecided {
@@ -192,7 +230,34 @@ pub fn check_refinement(
             },
         }
     };
-    Ok(RefinementOutcome { safety })
+    let liveness = if refinement.abstract_fairness().is_empty() {
+        None
+    } else if refinement
+        .objects()
+        .iter()
+        .any(|object| !object.hidden.is_empty())
+    {
+        Some(LivenessHalf::Unsupported(
+            UnavailabilityCause::HiddenFieldLiveness,
+        ))
+    } else if refinement
+        .abstract_fairness()
+        .iter()
+        .any(|constraint| constraint.kind() == FairnessKind::Strong)
+    {
+        // A hidden field is reported first (above), so a refinement with
+        // both gets `HiddenFieldLiveness`. The second phase reads a class as weak (enabled at every state of
+        // the loop); a strong class needs another reading the spec has not
+        // given, so the half is not decided.
+        Some(LivenessHalf::Unsupported(
+            UnavailabilityCause::StrongAbstractFairness,
+        ))
+    } else if matches!(safety, SafetyOutcome::Holds { .. }) {
+        Some(LivenessHalf::Checked(run.liveness()?))
+    } else {
+        None
+    };
+    Ok(RefinementOutcome { safety, liveness })
 }
 
 struct Run<'r, 'a> {
@@ -218,6 +283,7 @@ struct Run<'r, 'a> {
     /// The concrete edges explored.
     edges: usize,
     horizon_cut: bool,
+    classes_of: ClassesOf,
 }
 
 impl Run<'_, '_> {
@@ -560,5 +626,342 @@ impl Run<'_, '_> {
             refinement: Some(failure.failure),
             blocked: Vec::new(),
         }
+    }
+}
+
+/// FR-143: the liveness half.
+impl Run<'_, '_> {
+    /// Decide the liveness half over the retained graph of a safety half
+    /// that holds.
+    fn liveness(&mut self) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+        match self.second_phase() {
+            Ok(outcome) => Ok(outcome),
+            // The phase asks only the abstract model's successors, so the one
+            // thing it cannot decide is a contract conjunction.
+            Err(End::Undecided(_)) => Ok(ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::UndecidedSuccessor,
+                stats: self.stats(),
+            }),
+            Err(End::Stopped(cause, limit)) => Ok(ModelCheckOutcome::Stopped {
+                cause,
+                limit,
+                stats: self.stats(),
+            }),
+            Err(End::Fault(fault)) => Err(ModelCheckRefusal::Fault(fault)),
+            Err(End::Refusal(refusal)) => Err(refusal),
+            Err(End::Violated(_)) => Err(fault("the-second-phase-returns-its-lasso")),
+        }
+    }
+
+    /// The transition identities the abstract subject enables from each
+    /// product state's mapped state (CO-2), in the order of `nodes`.
+    fn abstract_enabled(&mut self) -> Result<Vec<Vec<ModelTransition>>, End> {
+        let mut enabled = Vec::with_capacity(self.nodes.len());
+        let mut transitions = self.transitions;
+        for node in &self.nodes {
+            self.poll()?;
+            let mut here = Vec::new();
+            for candidate in &node.position.abstract_states {
+                if transitions >= self.limits.limits.max_transitions {
+                    return Err(Self::stopped(
+                        ModelCheckLimit::MaxTransitions,
+                        widen(self.limits.limits.max_transitions),
+                    ));
+                }
+                let expansion = self
+                    .abstract_system
+                    .expand_state(candidate)
+                    .map_err(|stop| self.expansion_stop(stop))?;
+                transitions = transitions.saturating_add(expansion.successors.len());
+                if expansion
+                    .findings
+                    .iter()
+                    .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+                {
+                    return Err(End::Undecided(SafetyUndecided::Undetermined(
+                        Undetermined::UndecidedSuccessor,
+                    )));
+                }
+                here.extend(
+                    expansion
+                        .successors
+                        .into_iter()
+                        .map(|(transition, _)| transition),
+                );
+            }
+            enabled.push(here);
+        }
+        self.transitions = transitions;
+        Ok(enabled)
+    }
+
+    /// The second phase: the first violated class of `F_A`, as its lasso, or
+    /// `Holds` when none is violated.
+    fn second_phase(&mut self) -> Result<ModelCheckOutcome, End> {
+        self.poll()?;
+        let enabled = self.abstract_enabled()?;
+        let mut identities = BTreeMap::new();
+        for transition in enabled.iter().flatten() {
+            let order = Self::encoding(self.abstract_system.transition_key(transition))?;
+            identities
+                .entry(order)
+                .or_insert_with(|| transition.clone());
+        }
+        let identities: Vec<ModelTransition> = identities.into_values().collect();
+        let classes = (self.classes_of)(
+            self.abstract_system,
+            self.refinement.abstract_fairness(),
+            &identities,
+        )
+        .map_err(End::Fault)?;
+        let transitions: Vec<ModelTransition> = self
+            .nodes
+            .iter()
+            .flat_map(|node| &node.edges)
+            .filter_map(|edge| edge.transition.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let numbered: BTreeMap<&ModelTransition, Identity> = transitions
+            .iter()
+            .enumerate()
+            .map(|(index, transition)| (transition, Identity::new(widen(index))))
+            .collect();
+        let identity = |transition: &ModelTransition| {
+            numbered
+                .get(transition)
+                .copied()
+                .ok_or_else(|| fault("every-edge-transition-is-numbered"))
+        };
+        let constraints = fairness_constraints(
+            self.concrete,
+            self.refinement.concrete_fairness(),
+            &transitions,
+            identity,
+        )?;
+        for class in &classes {
+            let (graph, vertices) = self.fair_graph(class, &identity)?;
+            let within: BTreeSet<Vertex> = vertices
+                .iter()
+                .zip(&enabled)
+                .filter(|(_, here)| class.is_enabled_in(here))
+                .map(|(vertex, _)| *vertex)
+                .collect();
+            let analyses = match analyze(&graph, &within, &constraints, self.cancel) {
+                Ok(analyses) => analyses,
+                Err(FairnessError::Cancelled) => {
+                    self.poll()?;
+                    return Err(End::Fault(InternalFault::new(
+                        "refinement-check",
+                        "a-cancelled-run-has-a-cause",
+                    )));
+                }
+                Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
+                    return Err(fault("the-fairness-graph-is-built-from-the-product").into())
+                }
+            };
+            if let Some(passing) = Analysis::first_fair_in(&analyses) {
+                let model = FairModel { graph, constraints };
+                return self.lasso(class, &model, passing, &transitions);
+            }
+        }
+        Ok(ModelCheckOutcome::HoldsReduced {
+            reductions: Vec::new(),
+            stats: self.stats(),
+        })
+    }
+
+    /// The retained graph as the fairness kernels read it for `class`: a
+    /// vertex per product state holding the concrete identities enabled
+    /// there, and an edge per retained edge that does not take `class`.
+    fn fair_graph(
+        &self,
+        class: &AbstractClass,
+        identity: &impl Fn(&ModelTransition) -> Result<Identity, ModelCheckRefusal>,
+    ) -> Result<(Graph, Vec<Vertex>), ModelCheckRefusal> {
+        let mut graph = Graph::new();
+        let mut vertices = Vec::with_capacity(self.nodes.len());
+        for node in &self.nodes {
+            let enabled = node
+                .edges
+                .iter()
+                .filter_map(|edge| edge.transition.as_ref())
+                .map(identity)
+                .collect::<Result<Vec<_>, _>>()?;
+            vertices.push(graph.add_vertex(enabled));
+        }
+        let vertex = |at: usize| {
+            vertices
+                .get(at)
+                .copied()
+                .ok_or_else(|| fault("an-edge-names-a-product-state"))
+        };
+        for (source, node) in self.nodes.iter().enumerate() {
+            for edge in node
+                .edges
+                .iter()
+                .filter(|edge| !class.is_taken_by(&edge.taken))
+            {
+                let label = match &edge.transition {
+                    Some(transition) => EdgeLabel::Transition(identity(transition)?),
+                    None => EdgeLabel::Stutter,
+                };
+                let target = usize::try_from(edge.post)
+                    .map_err(|_| fault("an-edge-names-a-product-state"))?;
+                graph
+                    .add_edge(vertex(source)?, vertex(target)?, label)
+                    .map_err(|_| fault("an-edge-joins-two-vertices"))?;
+            }
+        }
+        Ok((graph, vertices))
+    }
+
+    /// The canonical lasso into the passing component `passing`, which
+    /// violates `class`: the tree path to its first state, then CX-5's greedy
+    /// walk inside it. `Divergence` when every loop edge is a `stutter`,
+    /// the concrete terminal stutter included, `AbstractUnfair` otherwise.
+    fn lasso(
+        &self,
+        class: &AbstractClass,
+        model: &FairModel,
+        passing: &Analysis,
+        transitions: &[ModelTransition],
+    ) -> Result<ModelCheckOutcome, End> {
+        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
+        let entry = *passing
+            .vertices()
+            .first()
+            .ok_or_else(|| fault("a-component-has-a-vertex"))?;
+        let walk = model.greedy_loop(&component, passing.removed(), entry)?;
+        let mut prefix = Vec::new();
+        let mut cursor = entry.index();
+        while let Some((parent, step)) = &self.nodes[cursor].parent {
+            prefix.push(step.clone());
+            cursor = *parent;
+        }
+        prefix.reverse();
+        let initial_state = self.nodes[cursor].initial_index;
+        let entry_position = prefix.len();
+        let mut stutters = 0;
+        let mut taking = false;
+        for (from, edge) in &walk {
+            let transition = match edge.label {
+                EdgeLabel::Transition(identity) => Some(
+                    usize::try_from(identity.value())
+                        .ok()
+                        .and_then(|index| transitions.get(index))
+                        .ok_or_else(|| fault("a-loop-edge-is-a-numbered-transition"))?
+                        .clone(),
+                ),
+                EdgeLabel::Stutter => None,
+            };
+            let target = edge.target.index();
+            let certified = self.nodes[from.index()]
+                .edges
+                .iter()
+                .find(|certified| {
+                    certified.post == widen(target) && certified.transition == transition
+                })
+                .ok_or_else(|| fault("a-loop-edge-is-a-retained-edge"))?;
+            taking |= certified.taken != Taken::Stutter;
+            match transition {
+                Some(transition) => {
+                    let (_, post_state) =
+                        Self::encoding(self.concrete.state_key(&self.nodes[target].state))?;
+                    prefix.push(ModelStep {
+                        transition,
+                        post_state,
+                    });
+                }
+                None => stutters += 1,
+            }
+        }
+        // A terminal state has only its stutter edge, so a loop holds
+        // stutter edges alone or model edges alone.
+        if stutters > 0 && stutters != walk.len() {
+            return Err(fault("a-loop-is-all-stutter-or-all-model-steps").into());
+        }
+        let constraint = self
+            .refinement
+            .abstract_fairness()
+            .get(class.constraint())
+            .ok_or_else(|| fault("a-class-names-a-constraint-of-the-set"))?
+            .clone();
+        let failure = if taking {
+            RefinementFailure::AbstractUnfair { constraint }
+        } else {
+            RefinementFailure::Divergence { constraint }
+        };
+        Ok(ModelCheckOutcome::Violated {
+            counterexample: Box::new(TemporalCounterexample {
+                initial_state,
+                prefix,
+                over_binding: None,
+                fairness: self.refinement.concrete_fairness().to_vec(),
+                kind: CounterexampleKind::Formula,
+                lasso: Some(Lasso {
+                    entry: entry_position,
+                    terminal_stutter: stutters > 0,
+                }),
+                refinement: Some(failure),
+                blocked: Vec::new(),
+            }),
+            stats: self.stats(),
+        })
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../tests/support/refinement_cas.rs"]
+mod cas_fixture;
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::cas_fixture::{cas_refines_counter, World, UNLIMITED};
+    use super::*;
+
+    fn request(world: &World) -> RefinementCheckRequest<'_> {
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        }
+    }
+
+    fn failing(
+        _: &ModelSystem<'_>,
+        _: &[FairnessConstraint],
+        _: &[ModelTransition],
+    ) -> Result<Vec<AbstractClass>, InternalFault> {
+        Err(InternalFault::new("refinement-liveness", "injected"))
+    }
+
+    /// FR-143-AC-7 (TC-548 step 7): an internal fault of the second phase,
+    /// injected into a refinement whose safety half holds, makes the check
+    /// return a refusal carrying the fault and no outcome; with the real
+    /// classes the same request returns its outcome.
+    #[trace("TC-548", "FR-143-AC-7")]
+    #[test]
+    fn a_second_phase_fault_is_a_refusal_carrying_the_fault_and_no_outcome() {
+        let world = World::new(&cas_refines_counter());
+        let cancel = Cancel::new();
+        let outcome = check_with(request(&world), &cancel, abstract_classes)
+            .expect("the refinement is checked");
+        assert!(matches!(outcome.safety, SafetyOutcome::Holds { .. }));
+        assert!(outcome.liveness.is_some());
+
+        let Err(ModelCheckRefusal::Fault(fault)) = check_with(request(&world), &cancel, failing)
+        else {
+            panic!("the second phase's fault is a refusal");
+        };
+        assert_eq!(fault, InternalFault::new("refinement-liveness", "injected"));
     }
 }

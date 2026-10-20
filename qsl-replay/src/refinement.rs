@@ -8,6 +8,7 @@
 
 mod failure;
 mod history;
+mod liveness;
 mod map;
 mod outcome;
 mod step;
@@ -15,10 +16,13 @@ mod subject;
 
 pub use failure::{RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, Undetermined};
 pub use history::{initial_history, step_history, HistoryValues};
+pub use liveness::{abstract_classes, AbstractClass};
 pub use map::{
     map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingRowRef,
     MappingUndetermined, ObjectKey, StepArgument,
 };
-pub use outcome::{RefinementOutcome, SafetyOutcome, SafetyUndecided};
+pub use outcome::{LivenessHalf, RefinementOutcome, SafetyOutcome, SafetyUndecided};
 pub use step::{check_initial, check_step, ConcreteStep, RefinementPosition};
 pub use subject::{open_systems, RefinementSystems, SubjectRefusal};
+
+pub(crate) use step::stop_verdict;

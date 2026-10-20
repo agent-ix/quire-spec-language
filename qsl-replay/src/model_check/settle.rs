@@ -25,15 +25,15 @@ use crate::certificate::closure::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCause};
+use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause, UndecidedCause};
 use crate::model_check::replay::{
     no_value_cause, ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
 };
 use crate::proof_result::{
-    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
-    UnavailabilityCause,
+    Certification, IncompleteCause, InconclusiveCause, MemoryBound, MemoryBoundMember, ProofBasis,
+    SettlementBasis, StatedMemoryBound, TerminalValue, UnavailabilityCause,
 };
-use qsl_eval::simulation::protocol::ProtocolTransition;
+use qsl_eval::simulation::protocol::{ProtocolTransition, SubjectMemory, WeakAccessShape};
 use quire_semantic_value::model_transition::ModelTransition;
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -124,6 +124,10 @@ pub struct ModelCheckRecord<T = ModelTransition> {
     /// They are outside it, its replay identity and the obligation
     /// identity, and change no verdict.
     pub hints: Vec<StrongFairnessHint>,
+    /// The memory bound the run used and whether it was reached (ADR-025
+    /// MB-2, FR-225); `None` for a subject whose memory model has no bound,
+    /// such as one under `sc`.
+    pub memory_bound: Option<StatedMemoryBound>,
 }
 
 /// FR-127: settle `outcome`, a run under `limits` over the package
@@ -179,7 +183,7 @@ pub fn settle_protocol_check(
         &TemporalCounterexample<ProtocolTransition>,
     ) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ModelCheckRecord<ProtocolTransition> {
-    settle(
+    let mut record = settle(
         outcome,
         limits,
         package_id,
@@ -187,7 +191,42 @@ pub fn settle_protocol_check(
         cancel,
         |closure| check_protocol_closure(certificate, closure, limits, cancel),
         replay,
-    )
+    );
+    record.memory_bound =
+        match SubjectMemory::of(&certificate.subject.memory, certificate.max_store_buffer) {
+            SubjectMemory::Sc => None,
+            SubjectMemory::Tso(tso) => Some(StatedMemoryBound {
+                bound: MemoryBound {
+                    member: MemoryBoundMember::MaxStoreBuffer,
+                    value: tso.max_store_buffer(),
+                },
+                reached: matches!(
+                    record.value,
+                    TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached { .. })
+                ),
+            }),
+        };
+    record
+}
+
+/// FR-439's `weak-access-shape` cause of `shape`: its site, its
+/// transition's and its shape's canonical texts; `None` when either has no
+/// canonical text.
+fn weak_access_shape(shape: &WeakAccessShape) -> Option<UnavailabilityCause> {
+    let limits = quire_canonical::Limits::new(u64::MAX);
+    let transition = match &shape.transition {
+        Some(transition) => Some(
+            quire_canonical::to_vec(transition, limits)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())?,
+        ),
+        None => None,
+    };
+    Some(UnavailabilityCause::WeakAccessShape {
+        site: shape.site.clone(),
+        transition,
+        shape: shape.shape_text().ok()?,
+    })
 }
 
 fn settle<T: Clone>(
@@ -224,16 +263,11 @@ fn settle<T: Clone>(
             SettlementBasis::ClosedScope,
         ),
         ModelCheckOutcome::Reduction { cause, .. } => match cause {
-            ReductionCause::Unsupported { reduction } => Row {
-                value: TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+            ReductionCause::Unsupported { reduction } => {
+                Row::unsupported(UnavailabilityCause::UnsupportedReduction {
                     reduction: *reduction,
-                }),
-                label: ResultLabel::Unsupported,
-                basis: SettlementBasis::Unavailable,
-                execution: Execution::Completed,
-                truth: Truth::Unavailable,
-                limit_reached: None,
-            },
+                })
+            }
             ReductionCause::NotPreserving { reduction, form } => {
                 Row::inconclusive(InconclusiveCause::ReductionNotPreserving {
                     reduction: *reduction,
@@ -254,6 +288,27 @@ fn settle<T: Clone>(
             ReductionCause::Horizon { max_depth } => {
                 Row::inconclusive(InconclusiveCause::ReductionHorizon {
                     max_depth: *max_depth,
+                })
+            }
+        },
+        ModelCheckOutcome::Memory { cause, .. } => match cause {
+            // A transition or shape with no canonical text is a broken
+            // invariant: the item fails rather than settle a degraded cause.
+            MemoryCause::WeakAccessShape(shape) => match weak_access_shape(shape) {
+                Some(cause) => Row {
+                    value: TerminalValue::Unsupported(cause),
+                    label: ResultLabel::Unsupported,
+                    basis: SettlementBasis::Unavailable,
+                    execution: Execution::Completed,
+                    truth: Truth::Unavailable,
+                    limit_reached: None,
+                },
+                None => Row::failed(),
+            },
+            MemoryCause::BoundReached { bound, states } => {
+                Row::inconclusive(InconclusiveCause::MemoryBoundReached {
+                    bound: *bound,
+                    states: *states,
                 })
             }
         },
@@ -310,6 +365,7 @@ fn settle<T: Clone>(
         limit_reached: row.limit_reached,
         counterexample,
         hints,
+        memory_bound: None,
     }
 }
 
@@ -359,6 +415,18 @@ impl Row {
             basis,
             execution: Execution::Completed,
             truth: Truth::Violated,
+            limit_reached: None,
+        }
+    }
+
+    /// `unsupported`, `unavailable`, for `cause`.
+    pub(super) fn unsupported(cause: UnavailabilityCause) -> Self {
+        Self {
+            value: TerminalValue::Unsupported(cause),
+            label: ResultLabel::Unsupported,
+            basis: SettlementBasis::Unavailable,
+            execution: Execution::Completed,
+            truth: Truth::Unavailable,
             limit_reached: None,
         }
     }
@@ -452,6 +520,9 @@ impl Row {
                     | IncompleteCause::ResourceExhausted => None,
                 };
                 Self::incomplete(cause, limit_reached)
+            }
+            Ok(TemporalCertificateCheck::MemoryBoundReached { bound, states }) => {
+                Self::inconclusive(InconclusiveCause::MemoryBoundReached { bound, states })
             }
             Err(ClosureRefusal::NoInstance) => Self::inconclusive(InconclusiveCause::NoInstance),
             Err(ClosureRefusal::NoInitialState) => {

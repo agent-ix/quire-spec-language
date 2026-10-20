@@ -129,9 +129,13 @@ pub use model_check::limits::{
     DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,
     DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
-pub use model_check::outcome::{ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause};
+pub use model_check::outcome::{
+    MemoryCause, ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause,
+};
 pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};
-pub use model_check::refinement_settle::settle_refinement_safety;
+pub use model_check::refinement_settle::{
+    settle_refinement, settle_refinement_refusal, settle_refinement_safety, RefinementRecord,
+};
 pub use model_check::replay::{
     replay_model_trace, replay_protocol_trace, ModelTraceRefusal, ModelTraceReplayResult,
     ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProtocolTraceSubject,
@@ -150,11 +154,12 @@ pub use model_check::step_settle::{
     STEP_INDUCTION_DEPTH,
 };
 pub use refinement::{
-    check_initial, check_step, initial_history, map_state, open_systems, step_history,
-    ConcreteStep, EvalFailure, HiddenSlot, HistoryValues, MappedState, MappingFailure,
-    MappingRowRef, MappingUndetermined, ObjectKey, RefinementFailure, RefinementOutcome,
-    RefinementPosition, RefinementSystems, SafetyOutcome, SafetyUndecided, StepArgument,
-    StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken, Undetermined,
+    abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
+    step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
+    LivenessHalf, MappedState, MappingFailure, MappingRowRef, MappingUndetermined, ObjectKey,
+    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems, SafetyOutcome,
+    SafetyUndecided, StepArgument, StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken,
+    Undetermined,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
@@ -168,10 +173,10 @@ pub use outcome::{
 };
 pub use proof_result::{
     read_backend_provider_envelope, AppliedReduction, BackendProviderSource, Certification,
-    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, ProofBasis,
-    ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, ReductionKind,
-    ReportedInconclusiveCause, SettlementBasis, SymmetryBrokenCause, TerminalRecord,
-    TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, MemoryBound,
+    MemoryBoundMember, ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
+    Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedMemoryBound,
+    SymmetryBrokenCause, TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
