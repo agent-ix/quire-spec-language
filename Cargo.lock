@@ -1366,6 +1366,7 @@ dependencies = [
  "num-bigint",
  "num-integer",
  "num-traits",
+ "qsl-analyze",
  "qsl-cst",
  "qsl-eval",
  "qsl-forms",

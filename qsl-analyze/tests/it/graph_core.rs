@@ -8,8 +8,12 @@ use qsl_analyze::model_check::{
     retain, Product, ProductFinding, ProductKey, ProductTransition, PropertyComponent,
     RetainedGraph,
 };
-use qsl_eval::simulation::{Expansion, ExpansionStop, Limit, Limits, Outcome, TransitionSystem};
+use qsl_eval::simulation::{
+    Expansion, ExpansionStop, Footprint, Limit, Limits, Location, OfferedReductions, Outcome,
+    TransitionSystem,
+};
 use qsl_foundation::{CatalogCode, IdentityLimits};
+use qsl_semantics::model::key::DeclarationKey;
 
 type Graph = RetainedGraph<usize, String, usize>;
 
@@ -65,6 +69,28 @@ impl TransitionSystem for Model {
             successors: self.edges.get(state).cloned().unwrap_or_default(),
             findings: vec![*state],
         })
+    }
+
+    fn offered_reductions(&self) -> OfferedReductions {
+        OfferedReductions {
+            partial_order: true,
+            ..OfferedReductions::NONE
+        }
+    }
+
+    /// A transition writes the field that carries its name.
+    fn footprint(&self, transition: &String) -> Option<Result<Footprint, ExpansionStop>> {
+        let written = Location::AnyField {
+            field: DeclarationKey {
+                package: "toy".to_owned(),
+                node: transition.clone(),
+            },
+        };
+        Some(Ok(Footprint {
+            writes: [written.clone()].into(),
+            reads: [written].into(),
+            ..Footprint::default()
+        }))
     }
 }
 
@@ -480,6 +506,40 @@ fn counters() -> Model {
         }
     }
     model
+}
+
+/// FR-162-AC-2's footprint half: the product offers the partial-order
+/// reduction its model component offers and nothing else, a model
+/// transition has its model component's footprint, and the terminal stutter
+/// edge has an empty one, so no ample-set candidate holds it.
+#[trace("TC-587", "FR-162-AC-2")]
+#[test]
+fn product_delegates_the_footprint_hook_and_the_stutter_edge_has_none() {
+    let model = counters();
+    let property = Property { stop: false };
+    let product = Product::infinite(&model, &property);
+    assert_eq!(
+        product.offered_reductions(),
+        OfferedReductions {
+            partial_order: true,
+            ..OfferedReductions::NONE
+        }
+    );
+    for name in ["a", "b"] {
+        let transition = name.to_owned();
+        assert_eq!(
+            product.footprint(&ProductTransition::Model(transition.clone())),
+            model.footprint(&transition),
+        );
+        assert!(matches!(
+            product.footprint(&ProductTransition::Model(transition)),
+            Some(Ok(footprint)) if !footprint.writes.is_empty()
+        ));
+    }
+    assert_eq!(
+        product.footprint(&ProductTransition::TerminalStutter),
+        Some(Ok(Footprint::default()))
+    );
 }
 
 #[trace("TC-587", "FR-162-AC-2")]

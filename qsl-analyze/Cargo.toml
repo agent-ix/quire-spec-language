@@ -31,7 +31,14 @@ num-integer = "0.1.47"
 num-traits = "0.2.19"
 thiserror = "2.0.20"
 
+# `Por::visible` and `Por::candidate_seeded_by` let a test read the visibility
+# and the candidate that `Por::ample` decides on. Only the dev-dependency on
+# this crate enables the feature; no shipped build has the methods.
+[features]
+test-support = []
+
 [dev-dependencies]
+qsl-analyze = { path = ".", features = ["test-support"] }
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # The model-check tests compile a modelled unit through S1 to S4 and check
 # its temporal clauses with `qsl-semantics`' test-only `check_clauses`.

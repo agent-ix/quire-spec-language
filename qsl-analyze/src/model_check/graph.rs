@@ -9,11 +9,39 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use qsl_eval::simulation::{
-    Limit, Limits, Outcome, Permutation, Stats, SymmetryGroup, TransitionSystem,
+    ExpansionStop, Limit, Limits, Outcome, Permutation, Stats, SymmetryGroup, TransitionSystem,
 };
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{ByteDigest, CatalogCode, IdentityLimits};
 use quire_canonical::Encode;
+
+/// The successors a state is expanded through under partial-order reduction.
+pub enum Choice<T> {
+    /// Every successor: the state is fully expanded.
+    All,
+    /// The successors reached through these transitions: an ample set.
+    Only(Vec<T>),
+}
+
+/// ADR-021 EI-2 and POR-6: the choice of an ample set at one state of a
+/// system, made by the caller that knows the system's footprints and the
+/// item's visibility.
+pub trait Ample<S: TransitionSystem> {
+    /// The transitions to expand `state` through. `findings` are the
+    /// expansion's, and `successors` its canonical successors in
+    /// exploration order, each with the transition that reaches it and
+    /// whether its target is a state not yet discovered (C3).
+    ///
+    /// # Errors
+    ///
+    /// The [`ExpansionStop`] that ends the run when no choice can be made.
+    fn choose(
+        &self,
+        state: &S::State,
+        findings: &[S::Finding],
+        successors: &[(&S::TransitionId, bool)],
+    ) -> Result<Choice<S::TransitionId>, ExpansionStop>;
+}
 
 /// A state handle in one retained graph, assigned in discovery order.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -192,6 +220,7 @@ pub fn retain<S: TransitionSystem>(
     retain_reduced(
         system,
         &SymmetryGroup::default(),
+        None,
         limits,
         identity,
         max_depth,
@@ -222,13 +251,17 @@ fn canonical<S: TransitionSystem>(
 /// is keyed, so states coalesce by canonical key, and each edge keeps the
 /// permutation of its target. A canonicalisation that stops ends the run
 /// `Stopped` with its cause, as an expansion stop does; a system that offers
-/// no symmetry stops it with `runtime_invariant`.
+/// no symmetry stops it with `runtime_invariant`. With `ample`, each state
+/// is expanded through the successors it chooses (ADR-021 POR-6): the
+/// canonical successors are judged against the states discovered so far,
+/// and the edges to the rest are never retained.
 ///
 /// # Errors
 /// As [`retain`].
 pub fn retain_reduced<S: TransitionSystem>(
     system: &S,
     group: &SymmetryGroup,
+    ample: Option<&dyn Ample<S>>,
     limits: Limits,
     identity: IdentityLimits,
     max_depth: Option<usize>,
@@ -321,6 +354,30 @@ pub fn retain_reduced<S: TransitionSystem>(
             successors.push((order, key, transition, state, permutation));
         }
         successors.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        if let Some(ample) = ample {
+            let candidates: Vec<_> = successors
+                .iter()
+                .map(|(_, key, transition, ..)| (transition, !known.contains_key(key)))
+                .collect();
+            let choice = ample.choose(
+                &graph.states[source.0].state,
+                &expansion.findings,
+                &candidates,
+            );
+            match choice {
+                Ok(Choice::All) => {}
+                Ok(Choice::Only(chosen)) => {
+                    successors.retain(|(_, _, transition, ..)| chosen.contains(transition));
+                }
+                Err(stop) => {
+                    break 'run Outcome::Stopped {
+                        stats: graph.stats(transitions),
+                        frontier: graph.frontier(source, &queue),
+                        cause: stop.cause,
+                    }
+                }
+            }
+        }
         for (_, key, transition, state, permutation) in successors {
             if transitions >= limits.max_transitions {
                 break 'run Outcome::Bounded {
