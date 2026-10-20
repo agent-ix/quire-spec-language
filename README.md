@@ -2,22 +2,14 @@
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20us-5865F2?logo=discord&logoColor=white)](https://discord.gg/k8DVhuYBR2)
 
-A specification is a set of rules about a system: *a config version's parent
-always has a lower version number*, *a refund is issued within five steps of a
-failed charge*, *the payments service only answers requests the orders service
-sent*. Most specifications state those rules in prose, and prose cannot be run.
+QSL (Quire Specification Language) is a formal language for rules about a
+system's data and behavior. This repository contains its compiler, `quire-spec`,
+and its reference evaluator.
 
-The Quire Specification Language (QSL) is a small formal language for writing
-those rules so a machine can check them, and this repository is its compiler and
-reference evaluator. You write a rule once, next to the prose it formalizes. QSL
-checks that the rule is well formed against your domain model, packages it with
-an exact identity, and then either evaluates it against real data or hands it to
-proof and code-generation backends.
-
-QSL has one rule of its own that shapes everything else: **it never answers
-"false" when the honest answer is "I couldn't tell."** Stale data, a missing
-observation, an unsupported construct or a spent budget each get their own
-outcome, so a reported violation always means the rule was really broken.
+The compiler checks a rule against a domain model and writes a checked package.
+The evaluator runs a checked rule against data and returns one of five
+outcomes: holds, violated, refused, unsupported or incomplete. Proof and
+code-generation backends read the same checked package.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg">
@@ -29,8 +21,8 @@ outcome, so a reported violation always means the rule was really broken.
 
 ## A first rule
 
-Here is a complete QSL unit. It states three rules about a `ConfigVersion`
-object from a domain model called `example/config-version`:
+This unit states three rules about the `ConfigVersion` objects of the domain
+model `example/config-version`:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/first-rule-dark.svg">
@@ -55,30 +47,25 @@ post VersionUnchanged using v on Config::ConfigVersion::attemptUpdate {
 }
 ```
 
-Read it top to bottom:
-
-- **`language … edition`** says which version of the language the file uses, so
-  old files keep their meaning when the language grows.
-- **`profile`** selects the part of the language the rules are allowed to use.
-  `quire.value.complete/v1` is values, records and expressions. The line binds
-  it to the short name `v`, and each rule says `using v`.
-- **`model`** imports the domain model the rules talk about. It names the model
-  by identity, version *and* content digest, so a rule can never silently be
-  checked against a different model than the one it was written for.
+- **`language … edition`** sets the language version of the file.
+- **`profile`** selects the part of the language the rules may use.
+  `quire.value.complete/v1` covers values, records and expressions. The line
+  binds it to the name `v`, and each rule says `using v`.
+- **`model`** imports the domain model by identity, version and content digest.
+  A rule is always checked against that exact model.
 - **`invariant … at current`** must hold for every `ConfigVersion` in the data.
-  `ParentOrder` says a parent, when there is one, has a lower number:
-  `self.parent` is an optional reference, `present` asks whether it is set,
-  `value` takes the reference out and `deref` follows it to the parent object.
-  `NoCycle` says following `parent` links never leads back to where you started.
+  `ParentOrder`: a parent, when present, has a lower version number.
+  `self.parent` is an optional reference; `present` tests it, `value` unwraps
+  it and `deref` follows it. `NoCycle`: following `parent` links never returns
+  to the start.
 - **`post … on …::attemptUpdate`** is checked around an operation. `pre(x)` is
-  the value of `x` before the operation ran, so `VersionUnchanged` says an update
-  attempt must not change the version number.
+  the value of `x` before the operation. `VersionUnchanged`: an update attempt
+  keeps the version number.
 
-### Rules live in your spec
+### Rules in Markdown specs
 
-You don't have to keep rules in separate files. Quire spec artifacts are
-Markdown documents, and a rule can sit in a fenced block right under the prose
-it formalizes:
+A rule can also sit in an `ix:native` fenced block in a Quire Markdown spec,
+under the prose it formalizes:
 
 ````markdown
 ### ParentOrder
@@ -92,48 +79,43 @@ invariant ParentOrder using v on Config::ConfigVersion at current {
 ```
 ````
 
-With the optional `quire-extraction` feature, QSL takes the block's exact bytes
-from the Markdown file (the extraction is done by
-[quire-rs](https://github.com/agent-ix/quire-rs)) and keeps a map back to the
-original document. An error in the rule is reported at its line and column in
-the Markdown file, not in some temporary copy. This is a library API today;
-the `run` command does not yet take Markdown for `1-draft` rules.
+The optional `quire-extraction` feature reads the block's bytes from the
+Markdown file, using [quire-rs](https://github.com/agent-ix/quire-rs), and keeps
+a source map to the document. Errors are reported at their line and column in
+the Markdown file. This is a library API; the `run` command does not yet accept
+Markdown for `1-draft` rules.
 
-## Five answers, not two
+## Outcomes
 
-A checker that only says *true* or *false* has to pick one when it can't
-actually decide, and either pick is a lie. QSL keeps every way a check can end
-apart, all the way out to the process exit code:
+Every check ends in one outcome, and the process exit code matches it:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/outcomes-dark.svg">
   <img alt="Every QSL check ends in exactly one outcome with its own exit code: success 0; violation or undefined 10; refused 20; unsupported 21; incomplete or inconclusive 22; internal failure 30. Only success and violation are answers about the rule; the others say why no answer was given." src="docs/images/outcomes-light.svg">
 </picture>
 
-| Outcome | Exit | What it means |
+| Outcome | Exit | Meaning |
 | --- | --- | --- |
 | success | 0 | The check completed and the rule holds. |
-| violation, undefined | 10 | The check completed and the rule is broken, or the rule asked for something with no defined value. |
+| violation, undefined | 10 | The check completed and the rule is broken, or the rule asked for a value that is not defined. |
 | refused | 20 | The input was rejected before any rule ran: bad syntax, a wrong model digest, a malformed request. |
 | unsupported | 21 | The construct is valid QSL, but the selected profile or backend cannot check it. |
-| incomplete, inconclusive | 22 | Data was missing or the work budget ran out. No truth value is reported at all. |
-| internal failure | 30 | A bug in QSL itself. |
+| incomplete, inconclusive | 22 | Data was missing or the work budget ran out. |
+| internal failure | 30 | A bug in QSL. |
 
-Internal failure is not one of the five answers: it means QSL is broken, not
-that the rule or the data is. Two consequences follow. A refused or incomplete result carries no truth field
-in its output, so a script cannot accidentally read one as *false*. And every
-result names the exact source, model and input it was computed from, so you can
-always say which rule, at which revision, produced it.
+Only success and violation carry a truth value. Refused and incomplete results
+have no truth field in their output. Every result names the source, model and
+input it was computed from.
 
-## What you can say
+## Language
 
-Every QSL unit chooses its profiles, and each profile opens up one family of
-rules. The families below are all in the `1-draft` edition. The snippets are
-excerpts: names such as `G`, `T` and `P` are profiles, and `M` is a model,
-each declared at the top of the unit as in the first example.
+Each unit declares its profiles. Each profile enables one family of rules. All
+of the families below are in the `1-draft` edition. In the excerpts, `G`, `T`
+and `P` are profiles and `M` is a model, declared at the top of the unit as in
+the first example.
 
 **Values and functions.** Bounded integers, exact rationals, records, unions
-and pure functions. There is no floating point, so arithmetic is exact.
+and pure functions. There is no floating point.
 
 ```
 type Digit = Int[0, 9];
@@ -141,8 +123,8 @@ record Point { x: Digit; y: Digit; }
 function px using v(p: Point): Digit pure { if p.x > p.y then p.x else p.y }
 ```
 
-**State.** Invariants over the current objects, and `pre`/`post` rules around
-operations, including sums and sizes over collections.
+**State.** Invariants over the current objects, `pre`/`post` rules around
+operations, and sums and sizes over collections.
 
 ```
 invariant Healthy using G on M::Workflow at current {
@@ -152,8 +134,8 @@ invariant Healthy using G on M::Workflow at current {
 ```
 
 **Time.** Temporal rules over a sequence of events, with explicit clocks and
-bounded windows: "from the origin, for the next 30 events, the ratio stays
-allowed".
+bounded windows. This one says the ratio stays allowed for the 30 events after
+the origin:
 
 ```
 temporal Due using T over (view: M::Workflow) clock "events" on origin {
@@ -163,7 +145,7 @@ temporal Due using T over (view: M::Workflow) clock "events" on origin {
 
 **Protocols.** Choreographies between services: roles, channels with ordering
 and delivery bounds, sequences, choices, parallel branches, retries, timeouts
-and compensation when something fails. An excerpt:
+and compensation. An excerpt:
 
 ```
 protocol Orders using P over (view: M::WorkflowView) on each (started: M::StartView) when (started.ready) {
@@ -179,7 +161,7 @@ protocol Orders using P over (view: M::WorkflowView) on each (started: M::StartV
 }
 ```
 
-The full version, with compensation, retries and timeouts, is
+The full example, with compensation, retries and timeouts, is
 [`tests/fixtures/composed-choreography.native`](tests/fixtures/composed-choreography.native).
 
 | Profile | Family |
@@ -192,48 +174,45 @@ The full version, with compensation, retries and timeouts, is
 | `quire.temporal.infinite-trace/v1` | temporal rules over unbounded traces (model checking) |
 | `quire.protocol.finite-global/v1` | protocols between roles |
 
-The complete `1-draft` language is defined as a closed list of capabilities,
-grouped into nine families. QSL checks a package against that whole list, so
-"supported" is never a matter of opinion:
+The `1-draft` language is a closed list of capabilities in nine families. QSL
+checks every package against that list.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/capabilities-dark.svg">
   <img alt="The complete 1-draft language is a closed list of capabilities in nine families: source, types, expressions, temporal, protocol, runtime, backend, evidence and tooling." src="docs/images/capabilities-light.svg">
 </picture>
 
-**Editions.** Everything here is the `1-draft` edition, the complete version-1
-language. An older `0-draft` edition is still in the tree for historical
-fixtures and is being deleted; don't write new rules in it.
+**Editions.** This README covers the `1-draft` edition, the complete version-1
+language. The older `0-draft` edition remains for historical fixtures and is
+being removed. Do not write new rules in it.
 
-## How it works
+## Compiler stages
 
-QSL is a staged compiler. Each stage takes the previous stage's output type and
-produces a new one, and no stage can be skipped. The type system enforces this:
-an unchecked rule and a checked rule are different Rust types, so unchecked
-input can't reach an evaluator or backend by accident.
+QSL compiles in stages. Each stage consumes the previous stage's output type
+and produces a new one. Unchecked and checked rules are different Rust types,
+so unchecked input cannot reach an evaluator or backend.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/pipeline-dark.svg">
   <img alt="QSL compiles source through a lossless syntax tree and parsed forms into a checked graph, resolving names against domain models and dependency packages, then links a checked package. The package goes three ways: to the reference evaluator, to native model checking, or as checked-package/v2 bytes to Contract IR and proof backends. A counterexample from any engine is replayed through the same compiler and evaluator to confirm it." src="docs/images/pipeline-light.svg">
 </picture>
 
-| Stage | What it guarantees |
+| Stage | Guarantees |
 | --- | --- |
-| **Source** | Exact bytes with an identity: authority, id and revision. Markdown fences enter here too. |
-| **Syntax tree** | A byte-exact tree of the source, comments and spacing included. The formatter works from it. Parsing alone means nothing about correctness. |
+| **Source** | Exact bytes with an identity: authority, id and revision. Markdown fences enter here. |
+| **Syntax tree** | A byte-exact tree of the source, including comments and spacing. The formatter works from it. A file that parses is not yet checked. |
 | **Parsed forms** | One unchecked form per declaration, each with its source span. |
-| **Checked graph** | Every name is resolved against the imported domain model and dependency packages, every expression is typed, and every partial operation (a division, a dereference) is proved defined or turned into an explicit runtime obligation. |
-| **Checked package** | The checked rules plus their dependencies' checked rules, with a package identity and a source map. It can be written out as `quire.checked-package/v2` bytes for other tools. |
-| **Reference evaluation** | Deterministic, side-effect-free execution against supplied data, ending in one of the five outcomes above. |
+| **Checked graph** | Every name is resolved against the imported domain model and dependency packages. Every expression is typed. Every partial operation, such as a division or a dereference, is proved defined or becomes an explicit runtime obligation. |
+| **Checked package** | The checked rules and their dependencies' checked rules, with a package identity and a source map. It can be written as `quire.checked-package/v2` bytes. |
+| **Reference evaluation** | Deterministic, side-effect-free execution against supplied data. Ends in one of the outcomes above. |
 | **Model checking** | In-process engines for temporal and protocol rules: model checking, timed-zone search, schedulability and probabilistic analysis. |
-| **Proof backends** | [Contract IR](https://github.com/agent-ix/quire-contract-ir) reads the v2 bytes, and [contract codegen](https://github.com/agent-ix/quire-contract-codegen) generates code, property tests and bounded proofs from it. |
-| **Replay** | A counterexample from any engine is recompiled from its original source and re-run on the reference evaluator. A backend's "violated" only stands if QSL's own evaluator agrees. |
+| **Proof backends** | [Contract IR](https://github.com/agent-ix/quire-contract-ir) reads the v2 bytes. [Contract codegen](https://github.com/agent-ix/quire-contract-codegen) generates code, property tests and bounded proofs from it. |
+| **Replay** | A counterexample from any engine is recompiled from its source and re-run on the reference evaluator. A backend's "violated" result is accepted only if the reference evaluator returns the same outcome. |
 
-## Try it
+## Usage
 
-You need Rust; [`rust-toolchain.toml`](rust-toolchain.toml) pins the exact
-toolchain, so `rustup` picks it up automatically. Nothing else: no Node, no JVM,
-no network service.
+Install Rust. [`rust-toolchain.toml`](rust-toolchain.toml) pins the toolchain,
+and `rustup` installs it automatically. No other tools or services are needed.
 
 ```sh
 git clone https://github.com/agent-ix/quire-spec-language
@@ -241,18 +220,18 @@ cd quire-spec-language
 cargo build --locked --bin quire-spec
 ```
 
-**Format.** `format` prints the canonically formatted source and leaves the
-file unchanged. The four labels before the path are the source's identity
-(authority, id, revision namespace, revision); every diagnostic carries them.
+**Format.** `format` prints the formatted source and leaves the file unchanged.
+The four arguments before the path are the source identity (authority, id,
+revision namespace, revision). Every diagnostic carries them.
 
 ```sh
 target/debug/quire-spec format agent-ix test:spine fixture fixture:1 tests/fixtures/spine-compile.native
 ```
 
-**Run a rule against data.** The ConfigVersion example writes one directory
-per case: the `1-draft` unit from [A first rule](#a-first-rule), its domain
-model and a snapshot of `ConfigVersion` objects. A small script then writes a
-`run.json` request that selects one rule, checked for the object keyed `child`:
+**Run a rule against data.** The ConfigVersion example writes one directory per
+case, holding the unit from [A first rule](#a-first-rule), its domain model and
+a snapshot of `ConfigVersion` objects. `requests.sh` writes a `run.json` request
+that checks one rule for the object keyed `child`:
 
 ```sh
 cargo run --locked --example config_version_fixtures -- /tmp/config-version
@@ -269,42 +248,40 @@ done
 | `dangling-parent` | the parent is not in the snapshot | refused | 20 |
 | `incomplete-population` | the snapshot's population is not complete | incomplete | 22 |
 
-`requests.sh /tmp/config-version/cycle NoCycle` checks the other invariant,
-which the `cycle` case breaks (exit 10). Each result is one JSON document on
-stdout that names the source, model and snapshot it was computed from.
+`requests.sh /tmp/config-version/cycle NoCycle` checks the other invariant; the
+`cycle` case breaks it (exit 10). Each result is one JSON document on stdout
+that names its source, model and snapshot.
 
-**Compile a package.** The same script writes `compile.json`. `compile` prints
-the checked package as `quire.checked-package/v2` JSON, for other tools to read:
+**Compile a package.** `requests.sh` also writes `compile.json`. `compile`
+prints the checked package as `quire.checked-package/v2` JSON:
 
 ```sh
 target/debug/quire-spec compile /tmp/config-version/healthy-parent/compile.json > package.json
 ```
 
 The [ConfigVersion example](examples/config-version/README.md) lists all
-seventeen cases, covering parents, cycles, object identity, operation frames,
-and refused and incomplete runs. `run` also evaluates a single pure function
-from a unit; [`tests/it/spine_run.rs`](tests/it/spine_run.rs) shows that
-request.
+seventeen cases: parents, cycles, object identity, operation frames, and refused
+and incomplete runs. `run` can also evaluate one pure function;
+[`tests/it/spine_run.rs`](tests/it/spine_run.rs) shows that request.
 
 **Optional features.**
 
 | Feature | Adds |
 | --- | --- |
-| `quire-extraction` | Rules read straight out of Quire Markdown spec artifacts, with locations mapped back to the document. |
-| `handoff-writer` | The producer for the compiled-protocol handoff files that protocol tools consume. |
-| `population-fixtures` | The writer for the population fixtures used by the admission tests. |
+| `quire-extraction` | Reads rules from Quire Markdown spec artifacts, with locations mapped to the document. |
+| `handoff-writer` | Writes the compiled-protocol handoff files that protocol tools consume. |
+| `population-fixtures` | Writes the population fixtures used by the admission tests. |
 
-`quire-spec` is the compiler's own command line. The everyday front door will be
-`quire` from quire-driver (private), which runs QSL, Contract IR and the
+`quire-spec` is the compiler's own command line. The planned main entry point
+is `quire` from quire-driver (private), which runs QSL, Contract IR and the
 backends as one tool.
 
 ## The Quire ecosystem
 
-QSL is one part of a family of repositories. The standard defines what the
-language means; QSL compiles rules into checked packages; Contract IR turns
-those into contracts that code generation, the runtime and the analyzers work
-from. The driver runs that chain, and small shared libraries sit underneath
-all of it.
+The standard defines the language. QSL compiles rules into checked packages.
+Contract IR turns them into contracts for code generation, the runtime and the
+analyzers. The driver runs the chain. All of them use a set of shared `no_std` libraries.
+
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/ecosystem-dark.svg">
@@ -313,34 +290,34 @@ all of it.
 
 | Repository | Role | Relation to QSL |
 | --- | --- | --- |
-| quire-specification (private) | The language standard: what each rule means, the profiles, the interchange formats and the conformance tests every implementation must pass. | QSL implements it; `make ci` checks QSL against the standard's test vectors. |
-| [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes, with no floating point; `no_std`. | QSL depends on it. |
-| [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, on top of quire-exact; `no_std`. | QSL depends on it. |
-| [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack instead of the call stack; `no_std`. | QSL depends on it. |
-| [quire-canonical](https://github.com/agent-ix/quire-canonical) | Canonical JSON (RFC 8785) that hashes as it writes, so equal content gets equal identity. | QSL depends on it. |
-| [quire-contract-ir](https://github.com/agent-ix/quire-contract-ir) | The target-neutral contract model that backends work from. | QSL depends on its model crate; IR reads QSL's checked packages. |
+| quire-specification (private) | The language standard: rule semantics, profiles, interchange formats and the conformance tests. | QSL implements it; `make ci` checks QSL against its test vectors. |
+| [quire-exact](https://github.com/agent-ix/quire-exact) | Exact numbers and closed outcomes; `no_std`. | QSL depends on it. |
+| [quire-semantic-value](https://github.com/agent-ix/quire-semantic-value) | Semantic values with their origin, built on quire-exact; `no_std`. | QSL depends on it. |
+| [quire-walk](https://github.com/agent-ix/quire-walk) | Walks deep trees on a heap stack; `no_std`. | QSL depends on it. |
+| [quire-canonical](https://github.com/agent-ix/quire-canonical) | Canonical JSON (RFC 8785), hashed while it is written. | QSL depends on it. |
+| [quire-contract-ir](https://github.com/agent-ix/quire-contract-ir) | The target-neutral contract model that backends use. | QSL depends on its model crate; IR reads QSL's checked packages. |
 | [quire-contract-codegen](https://github.com/agent-ix/quire-contract-codegen) | Generates Rust, property tests, bounded proofs and evidence from contracts. | Depends on QSL to replay counterexamples. |
-| [quire-contract-runtime](https://github.com/agent-ix/quire-contract-runtime) | The small `no_std` runtime that generated checks run on. | Used by codegen's output. |
+| [quire-contract-runtime](https://github.com/agent-ix/quire-contract-runtime) | The `no_std` runtime for generated checks. | Used by codegen's output. |
 | [quire-analyze](https://github.com/agent-ix/quire-analyze) | SMT-based consistency and implication checks across contracts. | Works on Contract IR. |
-| [quire-verification-contracts](https://github.com/agent-ix/quire-verification-contracts) | The shared vocabulary of verification records the tools exchange. | Used by IR, codegen and the standard. |
-| [quire-observation](https://github.com/agent-ix/quire-observation) | Turns raw signals into qualified observations that rules can be evaluated over. | Supplies data for temporal checks. |
+| [quire-verification-contracts](https://github.com/agent-ix/quire-verification-contracts) | The verification record types the tools exchange. | Used by IR, codegen and the standard. |
+| [quire-observation](https://github.com/agent-ix/quire-observation) | Turns raw signals into qualified observations for rule evaluation. | Supplies data for temporal checks. |
 | [quire-mltl](https://github.com/agent-ix/quire-mltl) | Connects the MLTL temporal-logic engine to quire-observation. | No direct dependency. |
-| quire-protocol (private) | Checks real systems against compiled protocols, including compensation. | Consumes QSL's compiled protocols. |
-| quire-verification (private) | Chooses verification techniques and plans for each requirement. | No direct dependency. |
+| quire-protocol (private) | Checks running systems against compiled protocols, including compensation. | Consumes QSL's compiled protocols. |
+| quire-verification (private) | Selects verification techniques and plans for each requirement. | No direct dependency. |
 | quire-driver (private) | The `quire` command line that runs the whole chain. | Depends on QSL. |
-| quire-integration (private) | Pins a working set of versions and tests the whole chain together. | Depends on QSL. |
+| quire-integration (private) | Pins a working set of versions and tests the chain together. | Depends on QSL. |
 
-## Inside this repository
+## Crates
 
-The compiler is a Cargo workspace. Its crates form strict layers: a crate may
-only depend on the layers below it, and a lint (`make arch-lint`) enforces that.
+The compiler is a Cargo workspace in strict layers. A crate depends only on
+layers below it; `make arch-lint` enforces this.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/layers-dark.svg">
   <img alt="The QSL workspace in layers, bottom to top: the shared no_std libraries quire-exact, quire-semantic-value, quire-walk and quire-canonical; qsl-foundation; qsl-cst; qsl-forms; qsl-semantics; qsl-package; then qsl-eval and qsl-route; and at the top qsl-replay, qsl-analyze and the quire-spec command line." src="docs/images/layers-light.svg">
 </picture>
 
-| Crate | Does |
+| Crate | Contents |
 | --- | --- |
 | `qsl-foundation` | Source identity, source maps, diagnostics and exit codes, wire-format names. |
 | `qsl-cst` | Lexer, grammar, the lossless syntax tree and the formatter. |
@@ -348,36 +325,37 @@ only depend on the layers below it, and a lint (`make arch-lint`) enforces that.
 | `qsl-semantics` | Model intake, name resolution, type checking and definedness proofs. The largest crate. |
 | `qsl-package` | Checked packages and the `quire.checked-package/v2` writer and reader. |
 | `qsl-eval` | The reference evaluator, including temporal automata and finite simulation. |
-| `qsl-route` | Matches what a package needs to the backends that can check it. |
+| `qsl-route` | Matches a package's requirements to the backends that can check it. |
 | `qsl-analyze` | In-process model checking, timed zones and schedulability. |
-| `qsl-replay` | Recompiles and re-runs counterexamples; the entry point codegen calls. |
-| `qsl-source` | Reads rules out of Quire Markdown (feature `quire-extraction`). |
+| `qsl-replay` | Recompiles and re-runs counterexamples; codegen calls it. |
+| `qsl-source` | Reads rules from Quire Markdown (feature `quire-extraction`). |
 | `qsl-attrs`, `qsl-walk-grow`, `qsl-bench` | A lint marker attribute, deep-recursion stack growth, benchmarks. |
 | root crate | The `quire-spec` binary and the library facade. |
 | `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, conformance. |
 
-The rest of the tree:
+Other directories:
 
-- [`spec/`](spec/) holds the requirements. Each requirement, acceptance
-  criterion and test case is its own Markdown file, and tests are tagged with the
-  criteria they check.
-- [`spec/decisions/`](spec/decisions/) holds the architecture decisions,
-  including the stage design above.
-- [`docs/`](docs/) holds reference pages: the
-  [library notes](docs/library-notes.md), the
-  [diagnostic codes](docs/native-error-codes.md), the
-  [run and compile requests](docs/native-standalone.md), the
-  [compiled protocol wire format](docs/compiled-protocol-v2.md) and others.
+- [`spec/`](spec/): requirements. Each requirement, acceptance criterion and
+  test case is a Markdown file. Tests are tagged with the criteria they check.
+- [`spec/decisions/`](spec/decisions/): architecture decisions, including the
+  stage design.
+- [`docs/`](docs/): reference pages, including the
+  [library notes](docs/library-notes.md),
+  [diagnostic codes](docs/native-error-codes.md),
+  [run and compile requests](docs/native-standalone.md) and the
+  [compiled protocol wire format](docs/compiled-protocol-v2.md).
 
 ## Contributing
 
-`make ci` is the full local gate: formatting, clippy, tests with every feature
-combination, docs and the architecture lints. It reads the standard's test
-vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`).
-Hosted CI runs only when dispatched by hand, so run the gate locally before
-opening a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) and
-[AGENTS.md](AGENTS.md).
+`make ci` is the local gate: formatting, clippy, tests across feature
+combinations, docs and the architecture lints. It reads the standard's test
+vectors from a sibling `quire-specification` checkout (`QSPEC_DIR`). Hosted CI
+runs only on manual dispatch, so run the gate before opening a pull request.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 
-Contributions need the [CLA](CLA.md). QSL is licensed under
-[AGPL-3.0-or-later](LICENSE); fixtures keep the `AGPL-3.0-only` header they were
-written with. See [LICENSE-DECISION.md](LICENSE-DECISION.md).
+Contributions require the [CLA](CLA.md).
+
+## License
+
+QSL is licensed under [AGPL-3.0-or-later](LICENSE). Fixtures keep their
+`AGPL-3.0-only` headers. See [LICENSE-DECISION.md](LICENSE-DECISION.md).

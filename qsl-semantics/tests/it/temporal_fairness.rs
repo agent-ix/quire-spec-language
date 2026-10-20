@@ -366,6 +366,7 @@ fn clauses_over_a_model_subject_classify_into_their_property_form() {
                     member_type: WireNodeId::from_digest([3; 32]),
                     ordinal: 0,
                 }),
+                &[],
             )
             .expect("the record is keyed");
         assert_eq!(record.kind(), Capability::TemporalSatisfaction);
@@ -437,6 +438,7 @@ fn a_clauses_requirements_carry_its_fairness_kinds() {
                     member_type: WireNodeId::from_digest([3; 32]),
                     ordinal: 0,
                 }),
+                &[],
             )
             .expect("the record is keyed")
             .fairness()

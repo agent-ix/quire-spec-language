@@ -195,15 +195,15 @@ fn a_non_boolean_condition_refuses_at_the_condition() {
     );
 }
 
-/// FR-139-AC-2 (TC-544 step 2): an invariant of `R::Ring` reading `count(s
-/// in R::slots where s.ring = self)` refuses `unsupported_construct`/
-/// `expression-form`: state-clause bodies keep ADR-016 FE-4.
+/// FR-139-AC-2 (TC-544 step 2): a `seq` in an invariant of `R::Ring` refuses
+/// `unsupported_construct`/`expression-form`; the `count(s in R::slots where
+/// s.ring = self)` FR-139 once refused there FR-391 now admits.
 #[trace("TC-544", "FR-139-AC-2", "QSpec-TC-311", "QSpec-FR-376-AC-4")]
 #[test]
-fn a_population_form_in_an_invariant_refuses_as_an_expression_form() {
+fn a_seq_in_an_invariant_refuses_as_an_expression_form() {
     let found = refused(
         "invariant Total using v on R::Ring at current { \
-         count(s in R::slots where s.ring = self) = 2 }",
+         size(seq(i in 0 .. 1: i)) = 2 }",
     );
     let [refusal] = &found[..] else {
         panic!(
@@ -215,7 +215,12 @@ fn a_population_form_in_an_invariant_refuses_as_an_expression_form() {
         (refusal.refusal.cause.code(), refusal.refusal.cause.cause()),
         (Code::UnsupportedConstruct, Some("expression-form"))
     );
-    assert_eq!(refusal.at, "count(s in R::slots where s.ring = self)");
+    assert_eq!(refusal.at, "seq(i in 0 .. 1: i)");
+    checked(
+        "invariant Total using v on R::Ring at current { \
+         count(s in R::slots where s.ring = self) = 2 }\n\
+         invariant Anything using v on R::Ring at current { true }",
+    );
 }
 
 /// FR-139 behavior: a binder over a name that is not a concrete population
@@ -321,29 +326,38 @@ fn a_sum_records_its_bound_and_is_checked_at_admission() {
     )));
 }
 
-/// FR-139: a population name or `seq` in a state clause, a temporal clause
-/// body or a function body refuses `unsupported_construct`/`expression-form`
-/// at its span.
+/// FR-139 with FR-391: outside a refinement a population is no value in a
+/// state clause or a `holds` atom (`ill_typed`/`operator-ineligible`), names
+/// nothing in a function body (`missing_declaration`/`missing-name`), and
+/// `seq` refuses `unsupported_construct`/`expression-form` at its span.
 #[trace("TC-544", "FR-139-AC-2")]
 #[test]
-fn a_population_name_and_a_seq_outside_a_refinement_refuse_as_expression_forms() {
-    for (declaration, at) in [
+fn a_population_name_and_a_seq_outside_a_refinement_refuse() {
+    for (declaration, at, code, cause) in [
         (
             "invariant Total using v on R::Ring at current { size(R::slots) = 2 }",
             "R::slots",
+            Code::IllTyped,
+            "operator-ineligible",
         ),
         (
             "invariant Total using v on R::Ring at current { size(seq(i in 0 .. 1: i)) = 2 }",
             "seq(i in 0 .. 1: i)",
+            Code::UnsupportedConstruct,
+            "expression-form",
         ),
         (
             "temporal W using inf over (r: R::Ring) clock \"t\" on origin \
              { always holds(size(R::slots) = 2) }",
             "R::slots",
+            Code::IllTyped,
+            "operator-ineligible",
         ),
         (
             "function f using v(): Boolean pure { size(R::slots) = 2 }",
-            "R::slots",
+            "slots",
+            Code::MissingDeclaration,
+            "missing-name",
         ),
     ] {
         let found = refused(declaration);
@@ -352,7 +366,7 @@ fn a_population_name_and_a_seq_outside_a_refinement_refuse_as_expression_forms()
         };
         assert_eq!(
             (refusal.refusal.cause.code(), refusal.refusal.cause.cause()),
-            (Code::UnsupportedConstruct, Some("expression-form")),
+            (code, Some(cause)),
             "{declaration}"
         );
         assert_eq!(refusal.at, at);
