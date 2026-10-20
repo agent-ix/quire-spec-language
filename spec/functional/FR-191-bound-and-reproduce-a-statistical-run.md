@@ -38,7 +38,7 @@ first run drew.
 ```rust
 pub struct StatisticalLimits {
     pub max_samples: u64,      // counted samples or cycles per test; default 16_777_216 (2^24)
-    pub max_draws: u64,        // samples drawn, counted or not, per test; default 67_108_864 (2^26)
+    pub max_draws: u64,        // samples drawn, counted or not, per test (steps taken, for the regenerative method); default 67_108_864 (2^26)
     pub max_cycle_steps: u64,  // steps in one regeneration cycle; default 16_777_216 (2^24)
 }
 pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps }  // setting() = `statistical.<member>`
@@ -73,7 +73,7 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps }  // setting() 
   needs another, EN-4 SHALL stop and return `Stopped` with
   `Limit{MaxSamples, value}`, before it draws the next sample; a method that decides
   at exactly `max_samples` completes. When a test has drawn `max_draws`
-  samples, or taken `max_cycle_steps` steps in one cycle, it SHALL stop the same
+  samples (for the regenerative method, taken `max_draws` walk steps in total, as FR-190 counts steps as draws), or taken `max_cycle_steps` steps in one cycle, it SHALL stop the same
   way before the next draw or step. The stop carries the limit, its value, the
   setting name (`statistical.max_samples`, `statistical.max_draws`,
   `statistical.max_cycle_steps`) and the counts reached, and settles

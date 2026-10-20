@@ -92,7 +92,8 @@ pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 `MissingConfidence` for a claim without confidence parameters,
 `NoTest` for a subject with no (initial state, binding) pair, `TooManyTests`
 for more tests than a test index counts, `TraceIndexRange` when `max_draws · m`
-overflows the trace index, `ConfidenceBeyondPrecision` when `min(α', β')` has
+overflows the trace index of Okamoto or SPRT (the regenerative test `j` uses
+trace index `j` alone, so the method never raises it), `ConfidenceBeyondPrecision` when `min(α', β')` has
 no normal-quantile bound for the regenerative method, `FractionForEvent` for a
 fraction a Bernoulli test cannot take, `Internal` for a broken exact-arithmetic
 invariant,
@@ -148,7 +149,10 @@ the claim's form does not admit (FR-190, SPRT below).
   counts alone.
 - EN-4 SHALL decide a mean of a fraction by the fixed-sample method over
   the sample mean of the fraction. A request naming the sequential method
-  for it SHALL be refused as `NotStatistical`, as FR-408 states.
+  for it SHALL be refused as `NotStatistical`, as FR-408 states. A sampler
+  that returns an event sample for a mean-of-fraction claim SHALL be read as
+  the fraction 1 when the event holds and 0 when it does not, and EN-4 SHALL
+  not refuse it.
 
 ### Decision and stops
 

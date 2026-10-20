@@ -97,6 +97,8 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | `Completed`, Rejected by a test whose `undefined` is set | `measured` | `completed` | `rejected`, cause `UndefinedEvaluation{where, cause}` | `Measured{decision: Rejected, …}` | violation |
 | `Completed`, Undecided | `measured` | `completed` | `undecided` | `Measured{decision: Undecided(cause), …}` | inconclusive |
 | `Stopped` by a limit | `incomplete` | `limit-reached{limit, value, setting}` | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped` by a sample expansion (`Expansion(ExpansionStop)`) that names a limit (`EvaluationMeter` or `MaxCandidates`, FR-126) | `incomplete` | `limit-reached{limit, value, setting}` with the stop's limit, the value it was set to and the request setting that raises it (FR-126's setting for that limit) | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped` by a sample expansion that names no limit and is not an internal failure | `incomplete` | `resource-exhausted` | none | `Incomplete(ResourceExhausted)` (ADR-018 V-7) | incomplete |
 | `Stopped` by a cancelled `Cancel` handle | `incomplete` | `cancelled{source}` | none | `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
 | `Unsupported` outcome | `unsupported` | cause `not-markov{…}` or `total-above-draw-range{total}` | none | `Unsupported(cause)` | unsupported |
 | `GeneratorMismatch`, `TooManyTests`, `TraceIndexRange`, `ConfidenceBeyondPrecision` or `FractionForEvent` refusal | `unsupported` | diagnostic `unsupported_projection`/`unsupported-requested-capability` naming the refusal | none | `Unsupported(diagnostic)` | unsupported |
