@@ -76,13 +76,13 @@ computes it and what it writes.
     order.
 - The executor SHALL record with each hint the first loop position at which
   the named operation, or for `Each` the named identity, is enabled.
-- A hint names only a constraint the lasso starves. Replay SHALL check the
-  lasso fair under every constraint of the clause's fairness set (FR-131,
-  ADR-019 FS-8) and SHALL refuse a lasso that is not with
-  `ReplayRefusal::UnfairLasso` and no result, so no hint is computed for a
-  refused lasso. A hint therefore never repeats a constraint the clause
-  holds; a held `strong` whole constraint still leaves the `Each` hint,
-  which is a different granularity.
+- A hint names only a constraint the lasso starves. The executor SHALL
+  compute hints only for a lasso that replay accepts as fair under every
+  constraint of the clause's fairness set (FR-131, ADR-019 FS-8); a lasso that
+  is not fair is refused with `ReplayRefusal::UnfairLasso` and no result. A
+  hint therefore never repeats a constraint the clause holds; a held `strong`
+  whole constraint still leaves the `Each` hint, which is a different
+  granularity.
 - The executor SHALL return the hints in the replay result. The writer of
   the item's terminal record SHALL write them on it beside the
   counterexample: the `qsl-replay` settlement map (FR-127) for an EN-1

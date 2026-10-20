@@ -54,6 +54,6 @@ Tag the tests `#[trace("TC-534", "FR-133-AC-n")]`.
   under the reordered and renamed declarations.
 - Step 5: two hints in the order `U.m`, `S.a`: `a` is listed under its declaring
   supertype `S`, not under the admitting subtype `U`.
-- Step 6: `ReplayRefusal::UnfairLasso` naming the constraint, no result and no
-  hint; the `strong` (whole) settlement carries `{Strong, acquire, Each}`,
+- Step 6: `ReplayRefusal::UnfairLasso{constraint: {Strong, acquire, Each}}`,
+  no result and no hint; the `strong` (whole) settlement carries `{Strong, acquire, Each}`,
   identity `acq(1)`, and no hint for the held `Whole` constraint.

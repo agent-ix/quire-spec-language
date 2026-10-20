@@ -36,3 +36,11 @@ Ticket: QSL-532. PR: quire-spec-language#1076, head 080408b8c, scoped to `git di
 ## Verdict
 
 Mergeable: one low wording finding; the edited requirement statement conforms.
+
+## Dispositions
+
+Round 1 checked at head a54220159 (fix commit a54220159 on top of merge ff6a60244 with main 40f8707b1); gates: make check-spec-validation exit 0, 17 warnings, same 17 as main 40f8707b1, none in FR-133, TC-534, ADR-019 or reviews/; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | The bullet now has SHALLs, but (a) the garble persists: 'SHALL refuse a lasso that is not with ReplayRefusal::UnfairLasso and no result' (and SV-6 'refuses one that is not with UnfairLasso') still drop the word 'fair'; and (b) the SHALLs restate FR-131's obligation with subject 'Replay' (two SHALLs in one statement) instead of stating FR-133's own. Suggested: 'The executor SHALL compute hints only for a lasso that replay accepts as fair under every constraint of the clause's fairness set (FR-131, ADR-019 FS-8); a lasso that is not fair is refused with ReplayRefusal::UnfairLasso and no result.' and in SV-6 'refuses a lasso that is not fair with UnfairLasso'. |

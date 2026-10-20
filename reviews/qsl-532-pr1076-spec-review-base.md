@@ -44,3 +44,12 @@ Ticket: QSL-532. PR: quire-spec-language#1076, head 080408b8c, scoped to `git di
 ## Verdict
 
 Mergeable after FND-001 is fixed or deferred: the removal is sound (suppression is unreachable given FR-131) and matches QSpec FR-369; one medium (AC-5 compound, second half untested) and one low (step 6 does not name the refused constraint).
+
+## Dispositions
+
+Round 1 checked at head a54220159 (fix commit a54220159 on top of merge ff6a60244 with main 40f8707b1); gates: make check-spec-validation exit 0, 17 warnings, same 17 as main 40f8707b1, none in FR-133, TC-534, ADR-019 or reviews/; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: ADR-019 §6's mutex refuted under `strong` (whole) on `acquire` carries the hint `{Strong, acquire, Each}`, identity `acq(1)`, and no hint for the held `Whole` constraint; FR-131-AC-1's lasso under `strong each` on `acquire` is refused `ReplayRefusal::UnfairLasso` by replay (FR-131) and carries no hint. |
+| FND-002 | still-open | Step 6's expected result still reads 'ReplayRefusal::UnfairLasso naming the constraint, no result and no hint' without naming it; FR-131-AC-1 fixes it as {Strong, acquire, Each}. Write 'UnfairLasso{constraint: {Strong, acquire, Each}}'. |

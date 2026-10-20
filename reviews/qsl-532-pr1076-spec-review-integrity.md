@@ -42,3 +42,12 @@ Ticket: QSL-532. PR: quire-spec-language#1076, head 080408b8c, scoped to `git di
 ## Verdict
 
 Mergeable: two low findings (an SF-4 citation where FS-8 is meant; line wrap). Numbering, scope and edges are consistent.
+
+## Dispositions
+
+Round 1 checked at head a54220159 (fix commit a54220159 on top of merge ff6a60244 with main 40f8707b1); gates: make check-spec-validation exit 0, 17 warnings, same 17 as main 40f8707b1, none in FR-133, TC-534, ADR-019 or reviews/; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: A hint names only a constraint the lasso starves: replay checks the lasso fair under every constraint of the clause (FS-8, SF-4) and refuses one that is not with `UnfairLasso`, so no hint repeats a constraint the clause holds. |
+| FND-002 | fixed | after: Description: Verify the `fairness.strong-would-exclude` hint: its suggested constraint, identity and position; its absence for non-liveness items, for a stutter loop and for a lasso that replay refuses as unfair under the clause's own constraint; and that it leaves the verdict, counterexample and identities unchanged. \| Step 6: 6. Give replay the lasso of FR-131-AC-1 under the clause's `strong each` constraint on `acquire`, which that lasso starves; and settle the mutex refutation under `strong` (whole) on `acquire` (FR-133-AC-5). |
