@@ -324,7 +324,7 @@ mod tests {
     /// `runtime_invariant`/`established-invariant-broken` when internal and
     /// its own cause otherwise; an unsupported run settles `unsupported`
     /// with its cause.
-    #[trace("TC-627")]
+    #[trace("TC-627", "FR-192-AC-1")]
     #[test]
     fn each_outcome_row_settles_as_the_map_states() {
         for (decision, category) in [
@@ -344,6 +344,9 @@ mod tests {
             assert_eq!(record.measured(), Some(decision));
             assert_eq!(record.category(), category);
             assert_eq!(record.diagnostic, None);
+            let json = wire(record);
+            assert_eq!(json["result"], "measured");
+            assert!(json.get("basis").is_none() && json.get("certification").is_none());
         }
 
         let budget = settle(&stopped(StatisticalStop::Limit {
@@ -356,6 +359,9 @@ mod tests {
         assert_eq!(max_samples.as_str(), "max-samples");
         assert_eq!(budget.category(), Category::Incomplete);
         assert_eq!(budget.measured(), None);
+        let json = wire(budget);
+        assert_eq!(json["cause"]["setting"], "statistical.max_samples");
+        assert!(json.get("basis").is_none());
 
         let expansion = |limit, cause| {
             settle(&stopped(StatisticalStop::Expansion(ExpansionStop {
@@ -364,10 +370,17 @@ mod tests {
             })))
         };
         let exhausted = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
+        let metered = expansion(Some(ExpansionLimit::EvaluationMeter), exhausted);
         assert_eq!(
-            expansion(Some(ExpansionLimit::EvaluationMeter), exhausted).value,
+            metered.value,
             incomplete(ModelCheckLimit::EvaluationMeter, 4_096)
         );
+        let json = wire(metered);
+        assert_eq!(json["result"], "incomplete");
+        assert_eq!(json["cause"]["kind"], "limit-reached");
+        assert_eq!(json["cause"]["limit"], "evaluation-meter");
+        assert_eq!(json["cause"]["value"], 4_096);
+        assert_eq!(json["cause"]["setting"], "meter");
         assert_eq!(
             expansion(Some(ExpansionLimit::MaxCandidates), exhausted).value,
             incomplete(ModelCheckLimit::MaxCandidates, 512)
@@ -402,6 +415,7 @@ mod tests {
             TerminalValue::Unsupported(UnavailabilityCause::NotMarkov)
         );
         assert_eq!(not_markov.category(), Category::Unsupported);
+        assert!(wire(not_markov).get("basis").is_none());
         let total = Integer::from(7_i64);
         let range = settle(&StatisticalOutcome::Unsupported {
             cause: StatisticalUnsupported::TotalAboveDrawRange {
@@ -425,7 +439,7 @@ mod tests {
     /// naming the refusal; `Internal` settles `failed` with
     /// `runtime_invariant`/`established-invariant-broken`; `NotStatistical`
     /// settles no record, with `invalid_capability`/`not-statistical`.
-    #[trace("TC-627")]
+    #[trace("TC-627", "FR-192-AC-1")]
     #[test]
     fn each_refusal_row_settles_as_the_map_states() {
         let settled = |refusal: StatisticalRefusal| {
