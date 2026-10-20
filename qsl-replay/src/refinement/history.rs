@@ -159,10 +159,10 @@ pub(super) struct Advanced {
     /// The history at the post-state. An update that failed wrote nothing:
     /// its field holds the value the step started from, which no row may read.
     pub(super) values: HistoryValues,
-    /// The history fields whose update failed (undefined, refused,
+    /// The history fields, by object, whose update failed (undefined, refused,
     /// incomplete or out of type). A post-state row that reads one is not
     /// evaluated (FR-141 "Undetermined history update").
-    pub(super) failed: BTreeSet<String>,
+    pub(super) failed: BTreeSet<(ObjectKey, String)>,
     /// The updates that evaluated undefined or could not be decided.
     pub(super) outcomes: Outcomes,
 }
@@ -289,7 +289,7 @@ pub(super) fn advance(
                 if row.declared.admits(&value) {
                     written.push((row.field.clone(), value));
                 } else {
-                    failed.insert(row.field.clone());
+                    failed.insert((receiver.clone(), row.field.clone()));
                     outcomes.record(MappingFailure::Undetermined(MappingUndetermined {
                         row: at,
                         object: Some(receiver.clone()),
@@ -298,7 +298,7 @@ pub(super) fn advance(
                 }
             }
             RowReading::Undefined(cause) => {
-                failed.insert(row.field.clone());
+                failed.insert((receiver.clone(), row.field.clone()));
                 outcomes.record(MappingFailure::Undefined {
                     row: at,
                     object: Some(receiver.clone()),
@@ -306,7 +306,7 @@ pub(super) fn advance(
                 });
             }
             RowReading::Undetermined(outcome) => {
-                failed.insert(row.field.clone());
+                failed.insert((receiver.clone(), row.field.clone()));
                 outcomes.record(MappingFailure::Undetermined(MappingUndetermined {
                     row: at,
                     object: Some(receiver.clone()),

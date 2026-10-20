@@ -453,3 +453,48 @@ fn an_undecided_successor_elsewhere_does_not_make_an_any_step_undetermined() {
     let (revealed, _) = passes(verdict);
     assert_eq!(sides(&world, &revealed), ["0"]);
 }
+
+/// FR-141 (TC-546): in an `any` row an undecided successor whose visible part
+/// is the mapped one, beside an accepted one, leaves the set unknown. The
+/// abstract `show` postcondition `1 mod (1 - self.side) = 0 and ..` holds for the
+/// `side` 0 candidate and is undefined for `side` 1, and both complete the
+/// mapped `reveal` to `face` 0.
+#[trace("TC-546", "FR-141")]
+#[test]
+fn an_undecided_matching_successor_beside_an_accepted_one_is_undetermined() {
+    let unit = Unit::coin_with_contracts(
+        "post SpecShown using v on Spec::Coin::show { self.shown and self.face = self.side }",
+        "post SpecShown using v on Spec::Coin::show { 1 mod (1 - self.side) = 0 and self.shown and self.face = self.side }",
+    );
+    let rows = coin_refines("").replace(
+        "step Impl::Coin::reveal -> Spec::Coin::show(self);",
+        "step Impl::Coin::reveal -> any;",
+    );
+    let world = unit.world(&rows);
+    let start = initial(&world);
+    let (tossed, _) = passes(
+        decide(
+            &world,
+            &unit,
+            &start,
+            ("toss", &coin(&world, true, false, 0)),
+            1,
+        )
+        .verdict,
+    );
+    let verdict = decide(
+        &world,
+        &unit,
+        &tossed,
+        ("reveal", &coin(&world, true, true, 0)),
+        2,
+    )
+    .verdict;
+    assert!(
+        matches!(
+            verdict,
+            StepVerdict::Undetermined(Undetermined::UndecidedSuccessor)
+        ),
+        "{verdict:?}"
+    );
+}

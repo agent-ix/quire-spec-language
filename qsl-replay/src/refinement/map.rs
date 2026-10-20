@@ -229,8 +229,10 @@ pub fn map_state(
 }
 
 /// [`map_state`] that does not evaluate a row reading a history field of
-/// `failed`, whose update failed at this step: such a row counts as read and
-/// maps no object, and the failed update's outcome decides in its place.
+/// `failed` (by object), whose update failed at this step: a row of that
+/// object that reads the field counts as read and maps no object, and the
+/// failed update's outcome decides in its place. The same row of another
+/// object is evaluated.
 #[allow(
     clippy::result_large_err,
     reason = "FR-140 fixes MappingFailure's shape: a row, an object and the evaluator's cause"
@@ -239,7 +241,7 @@ pub(super) fn map_state_without(
     refinement: &CheckedRefinement,
     (concrete_system, abstract_system): (&ModelSystem<'_>, &ModelSystem<'_>),
     state: &ModelState,
-    (history, failed): (&HistoryValues, &BTreeSet<String>),
+    (history, failed): (&HistoryValues, &BTreeSet<(ObjectKey, String)>),
 ) -> Result<MappedState, MappingFailure> {
     check_systems(refinement, concrete_system, abstract_system)?;
     let mut populations: Vec<&PopulationRow> = refinement.populations().iter().collect();
@@ -404,7 +406,7 @@ fn map_object(
     abstract_system: &ModelSystem<'_>,
     observed: &StateObservation,
     (object_row, at): (&ObjectRow, &ObjectKey),
-    failed: &BTreeSet<String>,
+    failed: &BTreeSet<(ObjectKey, String)>,
     outcomes: &mut Outcomes,
 ) -> Result<Option<StateObject>, MappingFailure> {
     let receiver = concrete_system
@@ -428,7 +430,10 @@ fn map_object(
     let mut fields = BTreeMap::new();
     let mut mapped = true;
     for (row, field) in rows {
-        if failed.iter().any(|name| row.expression.reads_history(name)) {
+        if failed
+            .iter()
+            .any(|(object, name)| object == at && row.expression.reads_history(name))
+        {
             mapped = false;
             continue;
         }

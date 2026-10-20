@@ -928,3 +928,56 @@ fn an_undefined_row_that_does_not_read_the_failed_field_wins() {
         MappingRowRef::Field { field, .. } if field == unit.abstract_key("Register/value")
     ));
 }
+
+/// FR-141 (TC-554): a failed update skips the rows that read its field for
+/// its own object only. `writes` leaves its type for `r` and not for `s`; the
+/// `value` row reads `writes` and is undefined at `s`, so the step is
+/// `Undefined` there, not `Undetermined` for the skipped row of `r`.
+#[trace("TC-554")]
+#[test]
+fn a_failed_update_skips_the_rows_of_its_own_object_only() {
+    let unit = Unit::registers(&["r", "s"], &["r", "s"], Shape::Lifecycle);
+    let text = LIFE
+        .replace(
+            "{ value = self.value; }",
+            "{ value = if 1 mod (self.value + self.writes - self.writes) = 0 then self.value else self.value; }",
+        )
+        .replace(
+            "step Impl::Register::write",
+            "history Impl::Register.writes : Int[0, 1] = 0 { on Impl::Register::write : pre(self.writes) + 2; }\nstep Impl::Register::write",
+        );
+    let world = unit.world(&text);
+    let system = world.concrete_system(UNLIMITED);
+    let pre = registers(&world, &[("r", 0), ("s", 0)]);
+    let position = RefinementPosition {
+        history: initial_history(world.refinement(), &system, &pre),
+        concrete: pre.clone(),
+        abstract_states: vec![world.abstract_state(&[("value", int(0)), ("prev", int(0))])],
+    };
+    let (written, reached) = transition(
+        &world,
+        &unit,
+        &pre,
+        "write",
+        &registers(&world, &[("r", 1), ("s", 0)]),
+    );
+    let verdict = check_step(
+        world.refinement(),
+        &system,
+        &world.abstract_system(UNLIMITED),
+        &position,
+        &ConcreteStep {
+            position: 1,
+            transition: Some(&written),
+            post: &reached,
+        },
+    )
+    .verdict;
+    let StepVerdict::Undefined(evaluation) = verdict else {
+        panic!("the row of s is undefined: {verdict:?}");
+    };
+    let qsl_replay::UndefinedLocus::Mapping(site) = evaluation.site.locus else {
+        panic!("a mapping locus");
+    };
+    assert_eq!(site.object, Some(key_of(&unit, "s")));
+}
