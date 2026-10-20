@@ -1,5 +1,5 @@
 ---
-id: SR-13367
+id: SR-13370
 title: 'Spec review of PR #1072: FR-141 Stopped, StepResult, read precedence, base'
 type: SpecReview
 analysis: base
@@ -58,3 +58,27 @@ Ticket: QSL-544. Spec-only amendments from the #1071 review (SR-13362/13363): FR
 ## Verdict
 
 Findings: 4 medium, 3 low; no high. The new ACs (AC-9 to AC-11) are not yet checkable as written: no fixtures, a self-referential count, and an FR-142 clause the concrete side passes on its own. Fix FND-001 to FND-004 before merge.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | AC-9's `HeavyEnq` requires only that 'every concrete contract evaluation fits in B'. The mapping rows (`items` over the slots) and the step-row arguments are also evaluated under the concrete meter B, so a fixture that meets the AC as written can return `Undetermined(MappingUndetermined)` before the abstract side runs. 'After the concrete expansion completed its states' also misdescribes FR-142, which runs `check_step` on each edge as it explores, so the stop comes at the first `put` edge, not after all concrete states. Say 'every concrete contract, mapping-row and step-row-argument evaluation fits in B', and 'after the concrete expansion of the initial state completed'. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:241 |
+| FND-009 | low | In `Coin3`, indexes 0 and 1 both have `tossed` false. Two distinct initial states must then differ in `shown` or `face`, and those are mapped by name. So index 1 maps to a non-initial abstract state and also fails `InitialNotAbstract`, and FR-142 over `Coin3` would report index 1, not 2. 'Coin's `toss` ... from its initial state' does not say which of the three. Give index 1's field values (or make it pass), and say `toss` runs from index 0. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:243 |
+| FND-010 | low | FR-145-AC-6 replays 'a payload whose prefix reaches `HeavyEnq`'s `put(1)` step' but does not say where the payload comes from. Under B, `HeavyEnq` stops with no counterexample, and under a larger meter it has a counterexample only if it fails. FR-145's use case says a hand-edited counterexample does not count. FR-149-AC-5's 'certificate for `HeavyEnq`' likewise needs `HeavyEnq` to hold under a larger meter, and the AC does not state that. Name the sources: for example, a `HeavyEnq` variant with the broken `take` run under a larger meter and replayed under B, and the certificate from a `Holds` run under a larger meter. | spec/functional/FR-145-replay-a-refinement-counterexample.md:128; spec/functional/FR-149-check-a-refinement-s-simulation-certificate.md:139 |
+
+## Dispositions
+
+Round 1, head 989dfbe67 (fix commit 989dfbe67 over merge e74b107e3 of main fe54ec4b6). Renumbered from SR-13367 to SR-13370: quire-specification#291 holds SR-13367 to SR-13369. make check-spec-validation exits 0 (17 warnings, none in the touched files); tools/check-index-completeness.sh passes; git diff --check is clean; quoin matrix lists the new ACs (FR-140-AC-15, FR-141-AC-9 to AC-11, FR-145-AC-6, FR-149-AC-5) as untagged, which is expected for a spec-only PR. Counts checked by hand: AC-11's lost-update `commitB` judges one identity `inc(c)` against one `a'`, so 1; `Coin` `toss` with `side` hidden judges `toss(c)` against the two candidates `side` 0 and 1, so 2. Engine probe on the #1071 code (qsl-544-part2 1c3b7fae6, `qsl-replay/tests/it/refinement_step.rs` world): `commitB` from (1, 0, f, 0, t) at position 3 returns `Fails(AbstractStepRejected{position: 3, inc(c), Postcondition})` with `abstract_successors` 1. The `toss` count of 2 is hand-derived only: that code accepts a single abstract state, and the hidden-field candidate set is unbuilt. HeavyEnq and Reads are checked by hand against FR-120's fresh-meter-per-clause rule and the joint-read order; the engine has no `Stopped` arm yet.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+
+Verdict after round 1: all 7 original findings fixed; 3 new low findings (FND-008 to FND-010) on the new fixtures. No blocker from this lane.

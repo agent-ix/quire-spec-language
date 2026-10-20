@@ -1,5 +1,5 @@
 ---
-id: SR-13368
+id: SR-13371
 title: 'Spec review of PR #1072: FR-141 Stopped, StepResult, read precedence, integrity'
 type: SpecReview
 analysis: integrity
@@ -62,3 +62,24 @@ Ticket: QSL-544. Consistency of the amended FR-140/141/142 with FR-120, FR-126, 
 ## Verdict
 
 Findings: 5 medium, 1 low; no high. The Stopped arm is sound for FR-142 and leaves the Fault arm and FR-141-AC-8 intact. But FR-145 and FR-149 do not handle it, the 65,536-value rule lives on one side only, and the joint read precedence leaves out OutOfType, UnmappedType and Fault. Fix FND-001, FND-002, FND-004, FND-005 and FND-006 before merge.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | FR-149's output is `CertificateCheck::Stopped(IncompleteCause, ModelCheckLimit)`. `ModelCheckLimit` is the bare limit kind, so the result has no value field. The new Limits sentence ('naming that limit and its value') and FR-149-AC-5 ('with value B') require a value the type cannot carry, and FR-144 needs one to settle V-7 as `Incomplete(LimitReached{limit, value, setting})`. AC-5's 'value B' cannot be checked against the declared output. Make the arm `Stopped(IncompleteCause, ReachedLimit)` (FR-126's `{limit, value}`), as FR-141's `Stopped` already carries. | spec/functional/FR-149-check-a-refinement-s-simulation-certificate.md:83,119-123,139 |
+
+## Dispositions
+
+Round 1, head 989dfbe67 (fix commit 989dfbe67 over merge e74b107e3 of main fe54ec4b6). Renumbered from SR-13368 to SR-13371: quire-specification#291 holds SR-13367 to SR-13369. make check-spec-validation exits 0 (17 warnings, none in the touched files); tools/check-index-completeness.sh passes; git diff --check is clean; quoin matrix lists the new ACs (FR-140-AC-15, FR-141-AC-9 to AC-11, FR-145-AC-6, FR-149-AC-5) as untagged, which is expected for a spec-only PR. Counts checked by hand: AC-11's lost-update `commitB` judges one identity `inc(c)` against one `a'`, so 1; `Coin` `toss` with `side` hidden judges `toss(c)` against the two candidates `side` 0 and 1, so 2. Engine probe on the #1071 code (qsl-544-part2 1c3b7fae6, `qsl-replay/tests/it/refinement_step.rs` world): `commitB` from (1, 0, f, 0, t) at position 3 returns `Fails(AbstractStepRejected{position: 3, inc(c), Postcondition})` with `abstract_successors` 1. The `toss` count of 2 is hand-derived only: that code accepts a single abstract state, and the hidden-field candidate set is unbuilt. HeavyEnq and Reads are checked by hand against FR-120's fresh-meter-per-clause rule and the joint-read order; the engine has no `Stopped` arm yet.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+
+Verdict after round 1: all 6 original findings fixed; 1 new medium (FND-007): FR-149's `Stopped` carries no value while AC-5 and the Limits bullet require one. Not mergeable until FND-007 is fixed.

@@ -31,7 +31,7 @@ row, and its lost-update model.
    another refinement node, and the AC-1 certificate twice.
 5. Settle `CasRefinesCounter` without and with its `ensure` row, and with
    step 2's first tampered certificate.
-6. Check a `HeavyEnq` certificate (FR-141-AC-9) under the meter B.
+6. Build a `HeavyEnq` certificate under a larger meter, then check it under the meter B (FR-141-AC-9).
 
 Tag the tests `#[trace("TC-556", "<AC id>")]`.
 
@@ -42,8 +42,8 @@ Tag the tests `#[trace("TC-556", "<AC id>")]`.
   each FR-338's `CertificateRejection` with a `SimulationStep` locus.
 - Step 3: rule `StepFails` with verdict `AbstractStepRejected{transition:
   inc(c), cause: Postcondition}`.
-- Step 4: `Stopped(ResourceExhausted, MaxTransitions)`;
+- Step 4: `Stopped(ResourceExhausted, ReachedLimit{MaxTransitions, 1})`;
   `stale_dependency`/`content-mismatch`; equal results.
 - Step 5: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`,
   `CertificateRejected`.
-- Step 6: `Stopped(ResourceExhausted, EvaluationMeter)` with value B, not `Rejected`.
+- Step 6: `Stopped(ResourceExhausted, ReachedLimit{EvaluationMeter, B})`, not `Rejected`.
