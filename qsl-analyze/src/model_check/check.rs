@@ -258,6 +258,10 @@ type Step<T> = Result<T, Halt>;
 /// What reading a position found, and the instance that found it.
 type Finding = (CounterexampleKind, usize);
 
+/// Each instance's monitor state after reading a position, and what the read
+/// found.
+type Reading = (Vec<StateId>, Option<Finding>);
+
 /// One successor of an expansion: the transition identity's order bytes, the
 /// successor's state-key bytes and digest, the transition (none for the
 /// terminal stutter), the canonical state and the permutation that
@@ -950,7 +954,7 @@ impl Run<'_, '_> {
                 permutation,
                 boundary: false,
             };
-            self.create(key, node, &before)?;
+            self.create(key, node, &before, None)?;
         }
         while let Some(at) = self.queue.pop_front() {
             self.poll()?;
@@ -1030,7 +1034,7 @@ impl Run<'_, '_> {
                 self.horizon_cut |= unexplored;
                 continue;
             }
-            self.ample(at, &before, &mut steps)?;
+            let mut reads = self.ample(at, &before, &mut steps)?.into_iter();
             for (_, key, digest, transition, state, permutation) in steps {
                 if self.edges >= self.limits.limits.max_transitions {
                     return Err(Self::stopped(
@@ -1050,7 +1054,7 @@ impl Run<'_, '_> {
                     permutation,
                     boundary: false,
                 };
-                self.create(key, node, &before)?;
+                self.create(key, node, &before, reads.next().flatten())?;
                 if self.first_bad.is_some() {
                     break;
                 }
@@ -1063,21 +1067,31 @@ impl Run<'_, '_> {
     /// through its ample set. A step through the terminal stutter edge or a
     /// state with a single enabled transition is kept; so is every step when
     /// no candidate satisfies C2 and C3.
-    fn ample(&mut self, at: usize, before: &[StateId], steps: &mut Vec<Successor>) -> Step<()> {
+    ///
+    /// Judging C3 reads each successor's letter, so the readings come back,
+    /// one per kept step, for `create` to use instead of reading the letter
+    /// again; they are all `None` when nothing was judged.
+    fn ample(
+        &mut self,
+        at: usize,
+        before: &[StateId],
+        steps: &mut Vec<Successor>,
+    ) -> Step<Vec<Option<Reading>>> {
         if self.por.is_none() {
-            return Ok(());
+            return Ok(vec![None; steps.len()]);
         }
         let mut enabled: Vec<ModelTransition> =
             steps.iter().filter_map(|step| step.3.clone()).collect();
         enabled.sort();
         enabled.dedup();
         if enabled.len() <= 1 {
-            return Ok(());
+            return Ok(vec![None; steps.len()]);
         }
         // C3 on product states (POR-8): a step is fresh when its product
         // state is bad, which is always created, or not yet discovered.
         let depth = self.nodes[at].depth;
         let mut fresh: Vec<bool> = Vec::with_capacity(steps.len());
+        let mut readings: Vec<Reading> = Vec::with_capacity(steps.len());
         for (_, key, digest, _, state, permutation) in steps.iter() {
             let node = Node {
                 state: state.clone(),
@@ -1090,7 +1104,8 @@ impl Run<'_, '_> {
                 boundary: false,
             };
             let (after, bad) = self.advance(&node, before)?;
-            fresh.push(bad.is_some() || !self.known.contains_key(&(key.clone(), after)));
+            fresh.push(bad.is_some() || !self.known.contains_key(&(key.clone(), after.clone())));
+            readings.push((after, bad));
         }
         let reaches_known = |transition: &ModelTransition| {
             steps
@@ -1106,12 +1121,21 @@ impl Run<'_, '_> {
                 .map_err(|stop| self.expansion_stop(stop))?,
             None => return Err(fault("partial-order-run-has-its-inputs").into()),
         };
-        steps.retain(|step| {
-            step.3
-                .as_ref()
-                .is_none_or(|transition| chosen.contains(transition))
-        });
-        Ok(())
+        let kept: Vec<bool> = steps
+            .iter()
+            .map(|step| {
+                step.3
+                    .as_ref()
+                    .is_none_or(|transition| chosen.contains(transition))
+            })
+            .collect();
+        let mut kept_flags = kept.iter();
+        steps.retain(|_| *kept_flags.next().unwrap_or(&true));
+        Ok(readings
+            .into_iter()
+            .zip(kept)
+            .filter_map(|(reading, kept)| kept.then_some(Some(reading)))
+            .collect())
     }
 
     /// `state`'s canonical form under the run's group and the permutation
@@ -1139,8 +1163,17 @@ impl Run<'_, '_> {
     /// the monitor, then coalesce it with an existing state of the same key
     /// or add it to the frontier. A state whose letter is undefined or whose
     /// monitor rejects is added as the run's first bad state.
-    fn create(&mut self, key: Vec<u8>, mut node: Node, before: &[StateId]) -> Step<()> {
-        let (after, mut bad) = self.advance(&node, before)?;
+    fn create(
+        &mut self,
+        key: Vec<u8>,
+        mut node: Node,
+        before: &[StateId],
+        read: Option<Reading>,
+    ) -> Step<()> {
+        let (after, mut bad) = match read {
+            Some(read) => read,
+            None => self.advance(&node, before)?,
+        };
         node.monitor = after;
         let product = (key, node.monitor.clone());
         if bad.is_none() && self.known.contains_key(&product) {

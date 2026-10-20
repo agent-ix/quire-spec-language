@@ -331,6 +331,15 @@ fn lower(
     }
 }
 
+/// The object type a reference or optional-reference parameter binds.
+fn declared_target(value_type: &ValueType) -> Option<EffectiveId> {
+    match value_type {
+        ValueType::Reference(target) => Some(*target),
+        ValueType::Option(payload) => declared_target(payload),
+        _ => None,
+    }
+}
+
 /// Whether `value_type` holds an object reference a footprint can bind.
 fn binds_object(value_type: &ValueType) -> bool {
     match value_type {
@@ -427,6 +436,39 @@ impl<'a> ModelSystem<'a> {
             }
         }
         Ok(self.footprint_for(application, &receiver, &arguments)?)
+    }
+
+    /// Whether every operation of the subject has a derivable footprint, each
+    /// reference parameter taken at its declared type. A partial-order run
+    /// asks for this before it expands a state, so an operation whose clauses
+    /// read through a form with no footprint rule refuses the run instead of
+    /// stopping an expansion.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintError::Refused`] naming the first clause with no rule.
+    pub fn check_footprints_derivable(&self) -> Result<(), FootprintError> {
+        for (receiver_type, applications) in &self.applications {
+            for application in applications {
+                let arguments: Vec<(String, EffectiveId)> = application
+                    .declaration
+                    .parameters()
+                    .iter()
+                    .filter_map(|(name, value_type)| {
+                        declared_target(value_type).map(|target| (name.clone(), target))
+                    })
+                    .collect();
+                derive_footprint(
+                    self.package.graph(),
+                    &self.model,
+                    *receiver_type,
+                    application.declaring,
+                    &application.declaration,
+                    &arguments,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// FR-156 "Visibility": the locations the state constraint `name` reads.

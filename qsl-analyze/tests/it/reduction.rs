@@ -970,6 +970,7 @@ fn model_hooks_answer_and_simulation_stays_unreduced() {
 
 /// FR-162-AC-4's limit clause: `max_states` 5 over §7.3's constrained run
 /// stops `ResourceExhausted` at `MaxStates`, boundary states counted.
+#[trace("TC-587", "FR-162-AC-4")]
 #[test]
 fn boundary_states_count_toward_max_states() {
     let world = count(&[infinite("always holds(x.v <= 2)")]);

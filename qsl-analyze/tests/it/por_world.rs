@@ -691,12 +691,22 @@ pub(crate) enum Guard {
 /// universe `{g}` or `{g, h}`. `fairness` is written before the formula of
 /// each of `claims`.
 pub(crate) fn gate(guard: Guard, spawn: bool, claims: &[&str]) -> Fixture {
+    gate_with(guard, spawn, false, claims)
+}
+
+/// [`gate`] with `setd()` (framed `modifies self.d`, pre `not self.d`) when
+/// `setd` is set: it reads nothing `arm` writes, and writes what `arm2`'s
+/// and `go`'s enablings read.
+pub(crate) fn gate_with(guard: Guard, spawn: bool, setd: bool, claims: &[&str]) -> Fixture {
     let mut operations = vec![
         operation("Gate", "arm", None, &writes("Gate", &["c"])),
         operation("Gate", "arm2", None, &writes("Gate", &["d"])),
         operation("Gate", "go", None, &writes("Gate", &["done"])),
         operation("Gate", "toggle", None, &writes("Gate", &["a"])),
     ];
+    if setd {
+        operations.push(operation("Gate", "setd", None, &writes("Gate", &["d"])));
+    }
     if spawn {
         operations.push(operation(
             "Gate",
@@ -715,6 +725,18 @@ pub(crate) fn gate(guard: Guard, spawn: bool, claims: &[&str]) -> Fixture {
              post GoQ using v on M::Gate::go { self.done and pre(self.c) and pre(self.d) }"
         }
     };
+    let mut contracts = vec![
+        "pre ArmP using v on M::Gate::arm { not self.c }",
+        "post ArmQ using v on M::Gate::arm { self.c }",
+        "pre Arm2P using v on M::Gate::arm2 { self.c and not self.d }",
+        "post Arm2Q using v on M::Gate::arm2 { self.d }",
+        go,
+        "post ToggleQ using v on M::Gate::toggle { self.a = not pre(self.a) }",
+    ];
+    if setd {
+        contracts.push("pre SetdP using v on M::Gate::setd { not self.d }");
+        contracts.push("post SetdQ using v on M::Gate::setd { self.d }");
+    }
     let clauses: Vec<Temporal<'_>> = claims
         .iter()
         .map(|body| Temporal {
@@ -735,14 +757,7 @@ pub(crate) fn gate(guard: Guard, spawn: bool, claims: &[&str]) -> Fixture {
             operations,
         )],
         &[("gates", "Gate")],
-        &[
-            "pre ArmP using v on M::Gate::arm { not self.c }",
-            "post ArmQ using v on M::Gate::arm { self.c }",
-            "pre Arm2P using v on M::Gate::arm2 { self.c and not self.d }",
-            "post Arm2Q using v on M::Gate::arm2 { self.d }",
-            go,
-            "post ToggleQ using v on M::Gate::toggle { self.a = not pre(self.a) }",
-        ],
+        &contracts,
         &clauses,
         &[Obj {
             population: "gates",
@@ -1160,5 +1175,145 @@ pub(crate) fn deleting_any_job() -> Fixture {
             target(false),
         ],
         "always holds(not x.bad)",
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Transitions over objects no state holds yet (FR-155-AC-7, FR-162)
+// ---------------------------------------------------------------------------
+
+/// An operation of `owner` over `(name, type)` reference parameters.
+fn operation_over(owner: &str, name: &str, params: &[(&str, &str)], frame: &Json) -> Json {
+    let mut node = operation(owner, name, None, frame);
+    let identity = ident(&format!("{owner}/{name}"));
+    node["params"] = json!(params
+        .iter()
+        .map(|(parameter, of)| {
+            let parameter_identity = format!("{identity}/{parameter}");
+            json!({
+                "identity": parameter_identity, "name": parameter, "typeRef": type_ref(of),
+                "presence": "required", "nullable": false, "defaultKind": "none",
+                "multiplicity": one(), "origin": origin(&parameter_identity),
+            })
+        })
+        .collect::<Vec<_>>());
+    node
+}
+
+/// `x` of `Job` (`cancel()` deletes its receiver), `y` of `Maker` (`spawn()`
+/// creates an `Item`; `spin()`; `probe(it, j)` over an item and a job) and the
+/// `Item` universe `{d}`, which starts empty. `probe(y, d, x)` reads the
+/// membership of `d` and of `x`, though `d` is held by no state until `spawn`
+/// creates it. `Item` has `touch()`.
+pub(crate) fn makers(claims: &[&str]) -> Fixture {
+    let clauses: Vec<Temporal<'_>> = claims
+        .iter()
+        .map(|body| Temporal {
+            over: "x: M::Maker",
+            body,
+        })
+        .collect();
+    Fixture::new(
+        vec![
+            object_type(
+                "Job",
+                vec![flag("Job", "f")],
+                vec![operation(
+                    "Job",
+                    "cancel",
+                    None,
+                    &frame(&json!({"deletes_receiver": true})),
+                )],
+            ),
+            object_type(
+                "Maker",
+                vec![flag("Maker", "f"), flag("Maker", "g")],
+                vec![
+                    operation(
+                        "Maker",
+                        "spawn",
+                        None,
+                        &frame(&json!({"creates": [ident("Item")]})),
+                    ),
+                    operation("Maker", "spin", None, &writes("Maker", &["g"])),
+                    operation_over(
+                        "Maker",
+                        "probe",
+                        &[("it", "Item"), ("j", "Job")],
+                        &writes("Maker", &["f"]),
+                    ),
+                ],
+            ),
+            object_type(
+                "Item",
+                vec![flag("Item", "h")],
+                vec![operation("Item", "touch", None, &writes("Item", &["h"]))],
+            ),
+        ],
+        &[("jobs", "Job"), ("makers", "Maker"), ("items", "Item")],
+        &[
+            "pre SpinP using v on M::Maker::spin { not self.f }",
+            "post SpinQ using v on M::Maker::spin { self.g = not pre(self.g) }",
+            "pre ProbeP using v on M::Maker::probe { not self.f }",
+            "post ProbeQ using v on M::Maker::probe { self.f }",
+            "pre TouchP using v on M::Item::touch { not self.h }",
+            "post TouchQ using v on M::Item::touch { self.h }",
+        ],
+        &clauses,
+        &[
+            Obj {
+                population: "jobs",
+                key: "x",
+                object_type: "Job",
+                fields: json!({"f": boolean(false)}),
+            },
+            Obj {
+                population: "makers",
+                key: "y",
+                object_type: "Maker",
+                fields: json!({"f": boolean(false), "g": boolean(false)}),
+            },
+        ],
+        &[("jobs", &["x"]), ("makers", &["y"]), ("items", &["d"])],
+    )
+}
+
+/// `not x.f`, read of the bound maker.
+pub(crate) fn no_f() -> Vec<Atom> {
+    vec![Box::new(|state, key| {
+        truth(state, "makers", key, "Maker/f").map(|f| !f)
+    })]
+}
+
+/// A maker whose `spin()` has a function call in its precondition, which
+/// FR-383 gives no footprint rule: unreduced the claim `always holds(not
+/// x.f)` is refuted by `set()`.
+pub(crate) fn call_in_a_precondition() -> Fixture {
+    Fixture::new(
+        vec![object_type(
+            "Maker",
+            vec![flag("Maker", "f"), flag("Maker", "g")],
+            vec![
+                operation("Maker", "spin", None, &writes("Maker", &["g"])),
+                operation("Maker", "set", None, &writes("Maker", &["f"])),
+            ],
+        )],
+        &[("makers", "Maker")],
+        &[
+            "pre SpinP using v on M::Maker::spin { Noop() }",
+            "post SpinQ using v on M::Maker::spin { self.g = not pre(self.g) }",
+            "post SetQ using v on M::Maker::set { self.f }",
+        ],
+        &[Temporal {
+            over: "x: M::Maker",
+            body: "always holds(not x.f)",
+        }],
+        &[Obj {
+            population: "makers",
+            key: "y",
+            object_type: "Maker",
+            fields: json!({"f": boolean(false), "g": boolean(false)}),
+        }],
+        &[("makers", &["y"])],
     )
 }

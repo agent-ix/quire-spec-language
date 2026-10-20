@@ -63,8 +63,8 @@ impl<'r, 'a> Por<'r, 'a> {
     ///
     /// # Errors
     ///
-    /// [`ModelCheckRefusal::Footprint`] when an atom or the constraint reads
-    /// through a form with no footprint rule, and
+    /// [`ModelCheckRefusal::Footprint`] when an operation, an atom or the
+    /// constraint reads through a form with no footprint rule, and
     /// [`LivenessRefusal::UnknownOperation`] for a fairness constraint that
     /// names an operation the subject does not declare.
     pub fn new(
@@ -74,6 +74,9 @@ impl<'r, 'a> Por<'r, 'a> {
         fairness: &[FairnessConstraint],
         constraint: Option<&str>,
     ) -> Result<Self, ModelCheckRefusal> {
+        system
+            .check_footprints_derivable()
+            .map_err(ModelCheckRefusal::Footprint)?;
         let mut atom_reads = BTreeSet::new();
         if let Some(atoms) = &atoms {
             for node in atoms.nodes {
@@ -180,13 +183,14 @@ impl<'r, 'a> Por<'r, 'a> {
     }
 
     /// FR-156 "Visibility" and FR-157 "Fairness visibility": whether
-    /// `transition` is visible at `state`.
+    /// `transition` is visible at `state`. A test hook.
     ///
     /// # Errors
     ///
     /// An [`ExpansionStop`] when the state's identities cannot be listed, a
     /// transition has no footprint, or `transition` is no identity of
     /// `state`.
+    #[cfg(feature = "test-support")]
     pub fn visible(
         &self,
         state: &ModelSimState,
@@ -206,6 +210,7 @@ impl<'r, 'a> Por<'r, 'a> {
     /// # Errors
     ///
     /// As [`Self::visible`].
+    #[cfg(feature = "test-support")]
     pub fn candidate_seeded_by(
         &self,
         state: &ModelSimState,

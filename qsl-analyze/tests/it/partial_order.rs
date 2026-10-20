@@ -32,7 +32,7 @@ use qsl_semantics::check::footprint::{FootprintObject, SymbolicLocation};
 use quire_exact::Cancel;
 use quire_semantic_value::model_transition::ModelTransition;
 
-use crate::por_world::{self, gate, gate_state, ring, ring_state, Fixture, Guard};
+use crate::por_world::{self, gate, gate_state, gate_with, ring, ring_state, Fixture, Guard};
 use crate::reduction_world::{
     atom, counters, start, value, values, Clause, Shape, World, INFINITE,
 };
@@ -331,6 +331,17 @@ fn the_deadlock_item_sees_no_visible_transition_and_reaches_the_terminal_state()
     assert_eq!(counterexample.prefix.len(), 6);
     let positions = world.positions(counterexample);
     assert_eq!(values(&positions[6]), (2, 2, 2));
+    // With nothing visible the first singleton candidate in canonical order
+    // is `bump(a)`: the path is `a, a, b, b, c, c`.
+    let moved: Vec<&str> = positions
+        .windows(2)
+        .map(|pair| {
+            KEYS.into_iter()
+                .find(|key| value(&pair[0], key) != value(&pair[1], key))
+                .expect("a step changes its receiver")
+        })
+        .collect();
+    assert_eq!(moved, ["a", "a", "b", "b", "c", "c"]);
     // One interleaving: 7 states, 6 edges.
     assert_eq!((stats.product_states, stats.product_edges), (7, 6));
     let unreduced = world
@@ -570,13 +581,6 @@ fn the_candidate_reaches_through_a_disabled_member_and_the_choice_is_determinist
         .collect();
     candidate.sort();
     assert_eq!(candidate, ["arm", "arm2", "go"]);
-    let mut enabled_part: Vec<String> = enabled
-        .iter()
-        .filter(|transition| operation_of(transition) != "toggle")
-        .map(operation_of)
-        .collect();
-    enabled_part.sort();
-    assert_eq!(enabled_part, ["arm"]);
 
     let first = ample_sets(&holder.system, &por, gate_state, labelled);
     let second = ample_sets(&holder.system, &holder.por(0), gate_state, labelled);
@@ -585,6 +589,83 @@ fn the_candidate_reaches_through_a_disabled_member_and_the_choice_is_determinist
         fixture.run(Some(0), done(), reduced()).expect("checks"),
         fixture.run(Some(0), done(), reduced()).expect("checks")
     );
+}
+
+/// FR-156-AC-4's closure through a disabled member: `setd` writes `d`, which
+/// the disabled `arm2` and `go` read to be enabled, and reads nothing `arm`
+/// writes, so it is independent of `arm`. The candidate seeded by `arm` holds
+/// it only through those disabled members' enabling footprints, and its
+/// enabled part is `{arm, setd}`.
+#[trace("TC-577", "FR-156-AC-4")]
+#[test]
+fn the_candidate_holds_the_writers_of_a_disabled_members_enabling_footprint() {
+    let fixture = gate_with(Guard::Pre, false, true, &OPENS);
+    let holder = GatePor::new(&fixture, 0);
+    let por = holder.por(0);
+    let start = fixture.start();
+    let mut enabled: Vec<ModelTransition> = holder
+        .system
+        .successors(&start)
+        .expect("expands")
+        .successors
+        .into_iter()
+        .map(|(transition, _)| transition)
+        .collect();
+    enabled.sort();
+    let arm = named(&holder.system, &start, "arm");
+    let candidate = por
+        .candidate_seeded_by(&start, &enabled, &arm)
+        .expect("a candidate");
+    let mut names: Vec<String> = candidate.iter().map(operation_of).collect();
+    names.sort();
+    assert_eq!(names, ["arm", "arm2", "go", "setd"]);
+    let mut enabled_part: Vec<String> = candidate
+        .iter()
+        .filter(|transition| enabled.contains(transition))
+        .map(operation_of)
+        .collect();
+    enabled_part.sort();
+    assert_eq!(enabled_part, ["arm", "setd"]);
+}
+
+/// FR-155-AC-7's candidate clause and FR-162: `spawn(y)` creates an `Item`
+/// and writes the membership of any item, which `touch(d)` reads, though no
+/// state holds `d` yet; the candidate seeded by `spawn(y)` holds the disabled
+/// `touch(d)`. `cancel(x)` deletes `x`, and `probe(y, d, x)` over the absent
+/// `d` reads the membership of `x`, so the candidate seeded by `cancel(x)`
+/// holds it too. Without it the initial state's ample set `{cancel(x)}`
+/// would hide the deadlock the probe leads to.
+#[trace("TC-1075", "FR-155-AC-7")]
+#[test]
+fn the_candidate_holds_transitions_over_objects_no_state_holds_yet() {
+    let fixture = por_world::makers(&[]);
+    let system = fixture.system();
+    let start = fixture.start();
+    let por = Por::new(&system, None, &[], &[], None).expect("the footprints derive");
+    let mut enabled: Vec<ModelTransition> = system
+        .successors(&start)
+        .expect("expands")
+        .successors
+        .into_iter()
+        .map(|(transition, _)| transition)
+        .collect();
+    enabled.sort();
+    let candidate_of = |operation: &str| {
+        let seed = enabled
+            .iter()
+            .find(|transition| operation_of(transition) == operation)
+            .unwrap_or_else(|| panic!("{operation} is enabled"));
+        let mut names: Vec<String> = por
+            .candidate_seeded_by(&start, &enabled, seed)
+            .expect("a candidate")
+            .iter()
+            .map(operation_of)
+            .collect();
+        names.sort();
+        names
+    };
+    assert!(candidate_of("spawn").contains(&"touch".to_owned()));
+    assert!(candidate_of("cancel").contains(&"probe".to_owned()));
 }
 
 /// FR-157-AC-3: with the empty fairness set no fairness visibility applies,
@@ -625,20 +706,20 @@ fn with_no_fairness_the_arming_ample_sets_remain_and_the_violation_is_found() {
             ));
             (
                 counterexample.lasso.expect("a lasso").entry,
-                fixture
-                    .positions(counterexample)
+                counterexample
+                    .prefix
                     .iter()
-                    .map(gate_state)
+                    .map(|step| operation_of(&step.transition))
                     .collect::<Vec<_>>(),
             )
         })
         .collect();
-    // Reduced: the stem `arm, arm2`, then `toggle, toggle`.
+    // Reduced: the stem `arm, arm2`, then the loop `toggle, toggle`.
     assert_eq!(shapes[0].0, 2);
-    assert_eq!(shapes[0].1.len(), 5);
-    // Unreduced: an empty stem and `toggle, toggle`.
+    assert_eq!(shapes[0].1, ["arm", "arm2", "toggle", "toggle"]);
+    // Unreduced: an empty stem and the loop `toggle, toggle`.
     assert_eq!(shapes[1].0, 0);
-    assert_eq!(shapes[1].1.len(), 3);
+    assert_eq!(shapes[1].1, ["toggle", "toggle"]);
 }
 
 /// FR-157-AC-5 and ADR-021 §7.6's second vector: with `go`'s guard moved
@@ -980,7 +1061,7 @@ fn both() -> Reductions {
 /// concrete successor to its canonical target; the run proves the claim and
 /// settles `Proved{Reduced{[Symmetry{..}, PartialOrder{BreadthFirstRevisit}]},
 /// Uncertified}`. Two runs retain equal edge lists.
-#[trace("TC-587", "FR-162-AC-3")]
+#[trace("TC-587", "FR-162-AC-3", "FR-162-AC-4")]
 #[test]
 fn symmetry_and_partial_order_reduce_together_on_canonical_states() {
     let world = symmetric_bumps();
@@ -1094,7 +1175,7 @@ fn run_reaches_two(
 /// FR-160-AC-1's partial-order row and FR-160-AC-7's completed proof: §7.2's
 /// instance settles `proved`, `closed-scope`, `Proved{Reduced{[PartialOrder{
 /// BreadthFirstRevisit}]}, Uncertified}`, success.
-#[trace("TC-584", "FR-160-AC-7")]
+#[trace("TC-584", "FR-160-AC-1", "FR-160-AC-7")]
 #[test]
 fn a_completed_partial_order_proof_settles_as_a_reduced_proof() {
     let world = reaches_two();
@@ -1261,4 +1342,53 @@ fn a_state_constraint_makes_the_transitions_it_reads_visible() {
             .expect("checks")
     };
     assert_eq!(constrained(true), constrained(false));
+}
+
+/// ADR-021 §7.6's operation with no footprint rule: `spin()` calls a function
+/// in its precondition. The unreduced run refutes the claim; partial-order
+/// reduction refuses before it expands a state, naming the clause, instead of
+/// stopping an expansion as a broken invariant.
+#[trace("TC-587")]
+#[test]
+fn an_operation_with_no_footprint_rule_refuses_partial_order_reduction() {
+    let fixture = por_world::call_in_a_precondition();
+    let plain = fixture
+        .run(Some(0), por_world::no_f(), Reductions::default())
+        .expect("checks");
+    assert!(matches!(plain, ModelCheckOutcome::Violated { .. }));
+    let refused = fixture
+        .run(Some(0), por_world::no_f(), reduced())
+        .expect_err("a footprint-less operation refuses");
+    assert!(
+        matches!(
+            refused,
+            ModelCheckRefusal::Footprint(qsl_eval::simulation::model::FootprintError::Refused(_))
+        ),
+        "{refused:?}"
+    );
+}
+
+/// FR-162's absent objects, end to end: reduced and unreduced runs agree on
+/// the deadlock-freedom item and on a safety claim of a subject whose probe
+/// is over an item no state holds yet.
+#[trace("TC-587")]
+#[test]
+fn a_probe_over_an_absent_object_keeps_the_verdicts() {
+    let fixture = por_world::makers(&["always holds(not x.f)"]);
+    for clause in [None, Some(0)] {
+        let atoms = || {
+            if clause.is_some() {
+                por_world::no_f()
+            } else {
+                Vec::new()
+            }
+        };
+        let violated = |selection: Reductions| {
+            matches!(
+                fixture.run(clause, atoms(), selection),
+                Ok(ModelCheckOutcome::Violated { .. })
+            )
+        };
+        assert_eq!(violated(Reductions::default()), violated(reduced()));
+    }
 }
