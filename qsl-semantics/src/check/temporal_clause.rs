@@ -1047,16 +1047,28 @@ fn binary(
     }
 }
 
+/// Why a formula's horizon could not be computed.
+pub(crate) enum HorizonFault {
+    /// A sum of interval upper bounds past `u64`, at the operator whose
+    /// interval overflowed.
+    Overflow {
+        /// The operator's span.
+        span: Span,
+        /// The greatest reach of its operands.
+        deepest: u64,
+        /// Its own interval's upper bound.
+        own: u64,
+    },
+    /// A broken invariant of the formula's arena.
+    Broken(&'static str),
+}
+
 /// A bounded formula's horizon (ADR-014 TR-4): the greatest sum of interval
 /// upper bounds along a path from the root. Each node's operands follow it
 /// in the arena, so one reverse pass computes every reach from its
-/// operands'. A sum past `u64` is a work-budget stage limit located at the
-/// operator whose interval overflowed.
-fn formula_horizon(
-    declaration: &TemporalDeclaration,
-    declarations: &TemporalDeclarations<'_>,
-) -> Result<u64, StageFailure<CheckRefusal>> {
-    let formula = &declaration.form.formula;
+/// operands'. A timed interval never reaches here: its caller refuses it
+/// before the horizon is computed.
+pub(crate) fn horizon(formula: &TemporalFormulaForm) -> Result<u64, HorizonFault> {
     let nodes = formula.nodes();
     let mut reach = vec![0_u64; nodes.len()];
     for (index, node) in nodes.iter().enumerate().rev() {
@@ -1066,16 +1078,14 @@ fn formula_horizon(
         let mut deepest = 0_u64;
         for operand in &operator.operands {
             if operand.index() <= index {
-                return Err(fault("operands-follow-operator"));
+                return Err(HorizonFault::Broken("operands-follow-operator"));
             }
             deepest = deepest.max(
                 *reach
                     .get(operand.index())
-                    .ok_or_else(|| fault("operand-in-arena"))?,
+                    .ok_or(HorizonFault::Broken("operand-in-arena"))?,
             );
         }
-        // A timed interval never reaches here: `check_clause` refuses it
-        // before the horizon is computed.
         let own = match &operator.interval {
             Some(OperatorInterval::Steps(IntervalForm {
                 upper: IntervalUpper::Finite(upper),
@@ -1084,21 +1094,39 @@ fn formula_horizon(
             Some(OperatorInterval::Steps(_) | OperatorInterval::Timed(_)) | None => 0,
         };
         let Some(total) = deepest.checked_add(own) else {
+            return Err(HorizonFault::Overflow {
+                span: operator.operator_span,
+                deepest,
+                own,
+            });
+        };
+        *reach
+            .get_mut(index)
+            .ok_or(HorizonFault::Broken("operator-in-arena"))? = total;
+    }
+    reach
+        .get(formula.root().index())
+        .copied()
+        .ok_or(HorizonFault::Broken("root-in-arena"))
+}
+
+/// The horizon of the clause `declaration`: a sum past `u64` is a work-budget
+/// stage limit located at the operator whose interval overflowed.
+fn formula_horizon(
+    declaration: &TemporalDeclaration,
+    declarations: &TemporalDeclarations<'_>,
+) -> Result<u64, StageFailure<CheckRefusal>> {
+    horizon(&declaration.form.formula).map_err(|fault| match fault {
+        HorizonFault::Overflow { span, deepest, own } => {
             let limit = LimitExceeded::new(
                 Setting::S3WorkUnits,
                 u64::MAX,
                 u128::from(deepest) + u128::from(own),
             );
-            return Err(located(limit, declarations, operator.operator_span));
-        };
-        *reach
-            .get_mut(index)
-            .ok_or_else(|| fault("operator-in-arena"))? = total;
-    }
-    reach
-        .get(formula.root().index())
-        .copied()
-        .ok_or_else(|| fault("root-in-arena"))
+            located(limit, declarations, span)
+        }
+        HorizonFault::Broken(invariant) => self::fault(invariant),
+    })
 }
 
 /// Whether S4 emits `form`'s clause (FR-337): one that activates `on

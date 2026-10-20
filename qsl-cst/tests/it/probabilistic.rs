@@ -227,6 +227,32 @@ fn a_malformed_probabilistic_declaration_fails_at_the_token_the_grammar_refuses(
     }
 }
 
+/// FR-186-AC-3 (TC-621 step 3): `under ident` takes no fairness items, so
+/// `under Steady fair weak Node::tick` is refused `invalid_syntax` at S1, at
+/// the first token the grammar does not admit; the fairness set belongs to
+/// `under every scheduler`, which S1 admits.
+#[trace("TC-621", "FR-186-AC-3")]
+#[test]
+fn fairness_under_a_workload_is_refused_at_s1() {
+    let workload = source(
+        "probabilistic C using ev on M under Steady fair weak Node::tick on origin \
+         { probability >= 0.5 [ holds(a) ] }",
+    );
+    let parsed = parse(&workload);
+    assert!(!parsed.is_admissible());
+    let diagnostic = &parsed.diagnostics()[0];
+    assert_eq!(diagnostic.code, CompleteCode::InvalidSyntax);
+    let located = diagnostic.byte_span().expect("located");
+    assert_eq!(slice(&workload, located), "fair");
+
+    let every = source(
+        "probabilistic C using ev on M under every scheduler fair weak Node::tick on origin \
+         { probability >= 0.5 [ holds(a) ] }",
+    );
+    let parsed = parse(&every);
+    assert!(parsed.is_admissible(), "{:?}", parsed.diagnostics());
+}
+
 /// A decimal literal is an `exact-value` only: as an ordinary expression it is
 /// still refused, and a quantity literal is an ordinary expression.
 #[trace("TC-890")]
