@@ -46,13 +46,11 @@ Tag the tests `#[trace("TC-589", "<AC id>")]`.
   `boom(j)`; `cancel(k)` reads `AnyField{peer}`, which `unlink(j)` writes;
   the navigation subject's `boom` reads `(g, cell)`, which `point` writes.
 - Step 2: guard-in-postcondition: the initial state is fully expanded and
-  both runs return `Violated` with prefix `set, boom`, 6 states each.
+  both runs return `Violated` with prefix `set, boom` (6 model states in the model-level reduced search).
   Deleting the receiver: `{cancel(j)}` is not chosen and both runs return
-  `Violated` by `boom(j)`, 4 states each. Type-wide delete: `{cancel(m)}`
-  is not chosen and both runs return `Violated` by `boom(j)`, 4 states
-  each. Blocked delete: `{lock(k)}` is not chosen and both runs return
-  `Violated` with `UndefinedEvaluation` after `unlink(j), cancel(k)`, 5
-  states each. Navigation: `{disarm}` is not chosen and both runs return
-  `Violated` by `point, boom`, 6 states each. No reduced run returns
+  `Violated` by `boom(j)`. Type-wide delete: `{cancel(m)}`
+  is not chosen and both runs return `Violated` by `boom(j)`. Blocked delete: `{lock(k)}` is not chosen and both runs return
+  `Violated` with `UndefinedEvaluation` after `unlink(j), cancel(k)` (5 model states in the model-level reduced search). Navigation: `{disarm}` is not chosen and both runs return
+  `Violated` by `point, boom` (6 model states in the model-level reduced search). No reduced run returns
   `Holds`.
-- `result` subject: `pick`'s enabling footprint holds `AnyField{v}` and `AnyMembership{cells}`; `{disarm}` is not chosen and both runs return `Violated` by `set, pick`, 6 states each.
+- `result` subject: `pick`'s enabling footprint holds `AnyField{v}` and `AnyMembership{cells}`; `{disarm}` is not chosen and both runs return `Violated` by `set, pick` (6 model states in the model-level reduced search).
