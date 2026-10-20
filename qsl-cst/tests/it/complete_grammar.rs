@@ -225,6 +225,9 @@ fn parse(id: &str, text: &str) -> ParsedSource {
 
 fn corpus() -> Vec<(&'static str, String)> {
     vec![
+        // The last quoted string of the unit is a `ParameterBinding`'s, so its
+        // right-boundary mutation leaves a string no later quote closes.
+        ("abstraction", source("abstraction Link using Complete { type M::Thing to \"store::Thing\" { ready to \"is_ready\"; }; population M::Things to \"things\"; operation M::Thing::act to \"store::act\" receiver \"self\" (amount to \"amount\"); }")),
         ("sum-case", source("union Shape { Empty, Circle(Integer), Rect(Integer, Integer), } function area using Complete(s: Shape): Integer pure { case s { Circle(r): r; Shape::Rect(w, h): w * h; Empty: 0; } }")),
         (
             "values",
@@ -256,7 +259,7 @@ fn corpus() -> Vec<(&'static str, String)> {
                     "hybrid Plant using Complete { mode Idle invariant { true } flow { M::x' = 0; } transition to Idle when { true } reset { true }; }\n",
                     "synthesis Find using Complete grammar M::Grammar domain M::Domain satisfies { true };\n",
                     "verify Portfolio using Complete { check Safety claim M::Claim method M::Method domain M::Domain depends [Earlier] bound 10; }\n",
-                    "abstraction Link using Complete { type M::Thing to \"store::Thing\" { ready to \"is_ready\"; } population M::Things to \"things\"; operation M::Thing::act to \"store::act\" receiver \"self\" (amount to \"amount\", extra to \"extra\"); }",
+                    "abstraction Link using Complete { type M::Thing to \"store::Thing\" { ready to \"is_ready\"; }; population M::Things to \"things\"; operation M::Thing::act to \"store::act\" receiver \"self\" (amount to \"amount\", extra to \"extra\"); }",
                 ),
             ),
         ),

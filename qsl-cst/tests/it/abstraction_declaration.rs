@@ -50,7 +50,7 @@ fn slice(text: &str, span: Span) -> &str {
 /// last token.
 #[test]
 fn an_abstraction_declaration_parses_its_three_binding_forms() {
-    let object = "type M::Thing to \"store::Thing\" { ready to \"is_ready\"; label to \"0\"; }";
+    let object = "type M::Thing to \"store::Thing\" { ready to \"is_ready\"; label to \"0\"; };";
     let population = "population M::Things to \"things\";";
     let frame = "operation M::Thing::act to \"store::act\" receiver \"self\" (amount to \"amount\", extra to \"extra\");";
     let declaration =
