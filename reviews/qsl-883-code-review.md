@@ -51,3 +51,9 @@ What was checked:
 ## Verdict
 
 Mergeable: no high or medium code findings. The interim path is deleted. Every check reads the configured `s3.rational_bits` and reports it. The transitive quire-exact bump is additive and does not change behaviour.
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f81aad06e: `limit_refusal(excess: Excess, location)` takes a named-field `Excess { bits, ceiling }`, so a swap is visible at each call site. |

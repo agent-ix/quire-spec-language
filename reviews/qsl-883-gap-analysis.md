@@ -47,3 +47,16 @@ The PR re-lands spec text that hotfix PR #1007 removed. Measured against #1007's
 | FND-004 | low | Two branches are uncovered at the AC level. First, the configured-ceiling test `a_configured_rational_bits_ceiling_is_named_by_the_refusal` is tagged `TC-620` with no `FR-185-AC-n`, although TC-620 says to tag the AC, and no FR-185 AC states that a configured `s3.rational_bits` replaces the default. Second, no test drives a quantity literal (FR-393, `typing.rs` `quantity_magnitude`) past the ceiling, default or configured, and none drives the weight-sum path under a configured ceiling. Add the configured case to FR-185-AC-2 or AC-6, tag the test with it, and add one quantity-literal case. | qsl-semantics/tests/it/probabilistic_declarations.rs:619-640; qsl-semantics/src/check/check/typing.rs:869-873 |
 | FND-005 | low | This predates the PR, but the PR's spec edit restates it. FR-186-AC-4 and TC-621 step 4 expect a `rational-bits-exceeded` refusal for `alpha decimal(1, 4294967295)`. The claim path never bounds confidence or threshold values: `magnitude`/`ratio` read them without the ceiling, and the claim refuses `not-yet-implemented` (`a_huge_written_confidence_value_is_read_without_expansion`). That arm has no backing test until claim checking lands. Deferred to the FR-186 implementation ticket. | qsl-semantics/src/check/probabilistic.rs:593-720; qsl-semantics/tests/it/probabilistic_declarations.rs:1135-1145 |
 | FND-006 | low | TC-427 step 1 reads "`diagnostic-count-exceeded` and `work-budget-exceeded` and `rational-bits-exceeded` for the eight kinds": a doubled "and" left by the list edit. Write it as "`diagnostic-count-exceeded`, `work-budget-exceeded` and `rational-bits-exceeded`". | spec/test-cases/TC-427-a-stage-limit-names-its-kind-bound-counter-and-locus.md:36-39 |
+
+## Dispositions
+
+Round 1, reviewed at 5117af0a9 (fix commit f81aad06e). `make check-spec-validation` (QSPEC_DIR=qspec-main-now) exits 0, and no `QSL-883`/`pending` marker remains under `spec/`.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f81aad06e: FR-185-AC-2 and FR-186-AC-4 name the `rational-bits-exceeded` limit refusal and `s3.rational_bits`; `pending QSL-883` removed. |
+| FND-002 | deferred | QSpec owns the native-diagnostics catalog and FR-272; QSpec is read-only for this PR. Needs a QSpec ticket that adds `rational-bits-exceeded` as the eighth `stage_limit_exceeded` cause. |
+| FND-003 | fixed | f81aad06e: NFR-011 Scope names the rational-bit ceiling, including for a standalone expression's quantity literals; the metric row covers the running weight sum; Verification cites TC-620; Dependencies cite FR-185. |
+| FND-004 | fixed | f81aad06e: `a_quantity_literal_is_bounded_by_the_configured_rational_bits` (255 ms admitted past S3, 256 ms refused naming `s3.rational_bits`, 8, 9) and `a_distribution_total_is_bounded_by_the_configured_rational_bits` (tagged FR-185-AC-6; 1/3 + 1/5 = 8/15 refused at ceiling 3, actual 4, admitted at 7). |
+| FND-005 | deferred | Predates this PR: claim checking refuses `not-yet-implemented`, so FR-186-AC-4's limit arm waits on the FR-186 claim-checking implementation. |
+| FND-006 | fixed | f81aad06e: TC-427 step 1 reads "`diagnostic-count-exceeded`, `work-budget-exceeded` and `rational-bits-exceeded` for the eight kinds". |
