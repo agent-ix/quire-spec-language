@@ -12,11 +12,11 @@ relationships:
 
 Verify EN-4's Okamoto and SPRT decisions on `P95`, the exact sample counts and thresholds, Bonferroni and symmetry, activation, and the stops and refusals.
 
-Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7, FR-189-AC-8.
+Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7 to FR-189-AC-12.
 
 ## Test Procedure
 
-Fixtures: `Service` and `P95` at `5 ms` and `2 ms`; a two-initial-state variant; a two-server variant with an admitted symmetry declaration and an asymmetric workload; the activation variant and the two-point `M` variant of FR-189-AC-4; `NoFault`; the `Health` variants; a `mean of` claim; the `Wide` model of FR-189-AC-7. Seed 7 throughout.
+Fixtures: the `Undef` model and its two-initial-state variant (FR-189-AC-8), `BehaviourSampler` stubs giving FR-189-AC-10's (decision, estimate) pairs, an empty-subject request, the activation-probability-0 variant of FR-189-AC-4 with `max_draws` 1,000; `Service` and `P95` at `5 ms` and `2 ms`; a two-initial-state variant; a two-server variant with an admitted symmetry declaration and an asymmetric workload; the activation variant and the two-point `M` variant of FR-189-AC-4; `NoFault`; the `Health` variants; a `mean of` claim; the `Wide` model of FR-189-AC-7. Seed 7 throughout.
 
 1. `P95` at `5 ms` and `2 ms` with Okamoto, then with SPRT.
 2. Compute Okamoto's `N` for `m = 1` and `m = 2`, and the SPRT thresholds; run step 1's first request twice.
@@ -24,7 +24,10 @@ Fixtures: `Service` and `P95` at `5 ms` and `2 ms`; a two-initial-state variant;
 4. Run the activation variant with Okamoto; reduce `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) over the two-point variant.
 5. Compute `N` for `NoFault`; run the `Health` variants; request `mean of` with SPRT.
 6. Run the `Wide` claim of FR-189-AC-7 with Okamoto.
-7. Run FR-189-AC-8's edge cases: the undefined first sample, the two-test rejecting and all-accepting runs, the empty subject and the all-non-activated quantile claim.
+7. Run `Undef` and its two-initial-state variant (FR-189-AC-8).
+8. Read the estimates and intervals of FR-189-AC-9's three methods after one counted sample.
+9. Select the least favourable test for each case of FR-189-AC-10.
+10. Run the empty-subject request (FR-189-AC-11) and the activation-probability-0 variant (FR-189-AC-12).
 
 Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 
@@ -36,4 +39,7 @@ Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 - Step 4: `samples = 23,026`, `draws > samples`; the event `M < 3` with the strict bound `< 1/2`, false at `Pr(M < 3) = 1/2`.
 - Step 5: 9,210,341; `Unsupported(NotMarkov)` and Undecided `UndecidedSuccessor`; `NotStatistical`.
 - Step 6: `Unsupported(TotalAboveDrawRange{total})` with `total` `2^256 + 1`, settled `unsupported`, cause `total-above-draw-range`, `total` the decimal string `"115792089237316195423570985008687907853269984665640564039457584007913129639937"`.
-- Step 7: `estimate` `None`; the least favourable test as AC-8 states; `NoInitialState`; `max_draws` stop.
+- Step 7: the rejected test with `estimate` `None`, `undefined` naming test 0, trace 0, position 0, and the verdict's `estimate` `None`; the variant keeps test 0's Accepted result.
+- Step 8: the sample's value as the estimate; the interval for Okamoto only; `None` for `LongRun` until `Σ L_k > 0`.
+- Step 9: the verdict's `estimate` and `interval` of the test AC-10 names for each case.
+- Step 10: `NoTest`, settled `inconclusive`, `no-initial-state`; `Stopped` `Limit{MaxDraws, 1000}` with 0 counted.
