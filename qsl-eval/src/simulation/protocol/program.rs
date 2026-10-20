@@ -2,8 +2,9 @@
 //! The static structure a protocol system walks, read once from the checked
 //! protocol clause: each control's kind, name, path, parent and children;
 //! each attempt's operation and selected contracts; each join's policy;
-//! each binder's slot and readers; and the nodes each rest point can still
-//! reach (ADR-027 PS-3, PS-5, FO-1).
+//! each binder's slot and readers; and each control's place in the tree,
+//! from which a rest point's reachable readers follow (ADR-027 PS-3, PS-5,
+//! FO-1).
 //!
 //! Every walk keeps its own explicit order (tree order, or its reverse), so a
 //! control tree of any depth is read without recursion.
@@ -97,12 +98,33 @@ pub(super) struct Program<'a> {
     pub(super) binder_of: BTreeMap<ProtocolNodeId, usize>,
     /// The protocol's `terminal` member.
     pub(super) terminal: &'a CheckedTerminalMember,
-    /// The nodes still reachable from each rest point.
-    reach: BTreeMap<Rest, BTreeSet<ProtocolNodeId>>,
+    /// Each control's place in the `run` tree.
+    spans: BTreeMap<ProtocolNodeId, Span>,
+    /// Each binder slot's readers by tree position.
+    reader_positions: Vec<ReaderPositions>,
 }
 
-fn unsupported(construct: &'static str) -> ProtocolRefusal {
-    ProtocolRefusal::Unsupported(Unsupported { construct })
+/// A control's place in the `run` tree: its preorder position, the last
+/// position of its subtree, and the last position of its scope (its nearest
+/// enclosing `branch`, else the whole tree).
+struct Span {
+    first: usize,
+    last: usize,
+    scope_last: usize,
+    /// Whether its scope is the root thread's, which ends at `finish`.
+    root_scope: bool,
+}
+
+/// One binder slot's readers: the preorder positions of the controls among
+/// them, and whether the `finish` node reads it.
+#[derive(Default)]
+struct ReaderPositions {
+    controls: BTreeSet<usize>,
+    finish: bool,
+}
+
+fn unsupported(construct: Unsupported) -> ProtocolRefusal {
+    ProtocolRefusal::Unsupported(construct)
 }
 
 /// The constructs this protocol system steps: `sequence`, `parallel` and its
@@ -111,7 +133,7 @@ fn unsupported(construct: &'static str) -> ProtocolRefusal {
 fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal> {
     for control in &protocol.controls.controls {
         if let ControlStep::Unstepped(construct) = control.step() {
-            return Err(unsupported(construct));
+            return Err(unsupported(Unsupported::Control(construct)));
         }
     }
     if protocol
@@ -120,25 +142,25 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
         .iter()
         .any(|parallel| !parallel.is_sequentially_consistent())
     {
-        return Err(unsupported("memory"));
+        return Err(unsupported(Unsupported::WeakMemory));
     }
     if !protocol.channels.is_empty() {
-        return Err(unsupported("channel"));
+        return Err(unsupported(Unsupported::Channel));
     }
     if !protocol.obligations.compensations.is_empty() {
-        return Err(unsupported("compensation"));
+        return Err(unsupported(Unsupported::Compensation));
     }
     if !protocol.obligations.captures.is_empty() {
-        return Err(unsupported("capture"));
+        return Err(unsupported(Unsupported::Capture));
     }
     if matches!(
         protocol.obligations.activation,
         CheckedActivation::OnEach { .. }
     ) {
-        return Err(unsupported("activation on each"));
+        return Err(unsupported(Unsupported::ActivationOnEach));
     }
     if protocol.roles.iter().any(|role| role.replicated) {
-        return Err(unsupported("replicated role"));
+        return Err(unsupported(Unsupported::ReplicatedRole));
     }
     Ok(())
 }
@@ -194,6 +216,17 @@ impl<'a> Program<'a> {
         if readers.len() != slots.len() {
             return Err(ProtocolRefusal::fault("readers-align-with-binders"));
         }
+        // Slot 0 is the `over` input. Any other binder with no node (the
+        // activation binder, a capture) has no value this system binds, so a
+        // slot that reads one is refused before any state is built.
+        let nodeless_read = slots
+            .iter()
+            .zip(&readers)
+            .skip(1)
+            .any(|(node, readers)| node.is_none() && !readers.is_empty());
+        if nodeless_read {
+            return Err(unsupported(Unsupported::NodelessBinder));
+        }
         let body_of = |node: ProtocolNodeId| {
             protocol
                 .slots
@@ -216,7 +249,7 @@ impl<'a> Program<'a> {
             // no slot may read it (ADR-027 ST-1).
             if let (Some(slot), None) = (binder, binds) {
                 if readers.get(slot).is_some_and(|readers| !readers.is_empty()) {
-                    return Err(unsupported("a read of an attempt binder with no result"));
+                    return Err(unsupported(Unsupported::UnboundAttemptBinder));
                 }
             }
             attempts.insert(
@@ -235,12 +268,10 @@ impl<'a> Program<'a> {
         let mut joins = BTreeMap::new();
         for parallel in &protocol.parallels {
             if parallel.policy == CheckedJoinPolicy::Predicate {
-                return Err(unsupported("join predicate"));
+                return Err(unsupported(Unsupported::JoinPredicate));
             }
             if parallel.outstanding.is_none() && parallel.policy != CheckedJoinPolicy::All {
-                return Err(unsupported(
-                    "a join that may leave branches outstanding with no `outstanding` rule",
-                ));
+                return Err(unsupported(Unsupported::UnruledOutstanding));
             }
             let control = controls
                 .get(&parallel.node)
@@ -297,9 +328,21 @@ impl<'a> Program<'a> {
             readers,
             binder_of,
             terminal: &protocol.slots.terminal,
-            reach: BTreeMap::new(),
+            spans: BTreeMap::new(),
+            reader_positions: Vec::new(),
         };
-        program.reach = program.reachability(tree.iter().map(|control| control.node).collect());
+        program.spans = program.spans()?;
+        program.reader_positions = program
+            .readers
+            .iter()
+            .map(|readers| ReaderPositions {
+                controls: readers
+                    .iter()
+                    .filter_map(|node| program.spans.get(node).map(|span| span.first))
+                    .collect(),
+                finish: readers.contains(&program.finish.node),
+            })
+            .collect();
         Ok(program)
     }
 
@@ -372,83 +415,87 @@ impl<'a> Program<'a> {
         Err(ProtocolRefusal::fault("settling-reaches-a-rest-point"))
     }
 
-    /// The nodes a thread resting at `rest` can still reach (ADR-027 PS-5).
-    pub(super) fn reach(&self, rest: Rest) -> &BTreeSet<ProtocolNodeId> {
-        static EMPTY: BTreeSet<ProtocolNodeId> = BTreeSet::new();
-        self.reach.get(&rest).unwrap_or(&EMPTY)
+    /// Whether a thread resting at `rest` can still reach a node that reads
+    /// binder slot `slot` (ADR-027 PS-5).
+    ///
+    /// A thread reaches the controls of its own body from where it rests to
+    /// the end of its scope: the nearest enclosing `branch`, or the whole
+    /// `run` tree and then `finish` for a root thread. In tree order that is
+    /// one interval, so the test is one range query per slot.
+    pub(super) fn reads_from(&self, rest: Rest, slot: usize) -> bool {
+        let Some(readers) = self.reader_positions.get(slot) else {
+            return false;
+        };
+        let span = |node| self.spans.get(&node);
+        let (range, finish) = match rest {
+            Rest::Node(node) | Rest::Fork(node) => match span(node) {
+                Some(span) => (Some(span.first..=span.scope_last), span.root_scope),
+                None => (None, false),
+            },
+            Rest::Join(node) => match span(node) {
+                Some(span) => (
+                    span.last
+                        .checked_add(1)
+                        .map(|after| after..=span.scope_last),
+                    span.root_scope,
+                ),
+                None => (None, false),
+            },
+            Rest::Finish => (None, true),
+            Rest::End => (None, false),
+        };
+        (finish && readers.finish)
+            || range.is_some_and(|range| {
+                !range.is_empty() && readers.controls.range(range).next().is_some()
+            })
     }
 
-    /// Every rest point's reachable nodes, from `order`, the `run` tree in
-    /// tree order (each node before its children). A thread reaches the
-    /// nodes of the control it rests in and of every later control of its
-    /// own body; a branch thread's reach ends with its branch, and the
-    /// root's ends at `finish`.
-    fn reachability(&self, order: Vec<ProtocolNodeId>) -> BTreeMap<Rest, BTreeSet<ProtocolNodeId>> {
-        let mut subtree: BTreeMap<ProtocolNodeId, BTreeSet<ProtocolNodeId>> = BTreeMap::new();
-        for node in order.iter().rev() {
-            let mut nodes = BTreeSet::from([*node]);
-            if let Some(control) = self.controls.get(node) {
-                for child in &control.children {
-                    nodes.extend(subtree.get(child).into_iter().flatten().copied());
-                }
+    /// Each control's [`Span`], from a preorder walk of the `run` tree.
+    fn spans(&self) -> Result<BTreeMap<ProtocolNodeId, Span>, ProtocolRefusal> {
+        let mut order: Vec<(ProtocolNodeId, Option<ProtocolNodeId>)> = Vec::new();
+        let mut stack = vec![(self.root, None)];
+        while let Some((node, scope)) = stack.pop() {
+            if order.len() >= self.controls.len() {
+                return Err(ProtocolRefusal::fault("the-run-controls-form-a-tree"));
             }
-            subtree.insert(*node, nodes);
-        }
-        let mut after: BTreeMap<ProtocolNodeId, BTreeSet<ProtocolNodeId>> = BTreeMap::new();
-        for node in &order {
-            let reached = match self.controls.get(node).and_then(|control| control.parent) {
-                None => BTreeSet::from([self.finish.node]),
-                Some(parent) => {
-                    let Some(holder) = self.controls.get(&parent) else {
-                        continue;
-                    };
-                    match holder.step {
-                        ControlStep::Sequence => {
-                            let mut reached = after.get(&parent).cloned().unwrap_or_default();
-                            let later = holder
-                                .children
-                                .iter()
-                                .skip_while(|child| *child != node)
-                                .skip(1);
-                            for sibling in later {
-                                reached.extend(subtree.get(sibling).into_iter().flatten().copied());
-                            }
-                            reached
-                        }
-                        // A branch body's end is its thread's end; the
-                        // children of a `parallel` are its branches, which
-                        // the forking thread does not walk.
-                        ControlStep::Branch
-                        | ControlStep::Parallel
-                        | ControlStep::Attempt
-                        | ControlStep::Unstepped(_) => BTreeSet::new(),
-                    }
-                }
+            order.push((node, scope));
+            let control = self.control(node)?;
+            let inner = if matches!(control.step, ControlStep::Branch) {
+                Some(node)
+            } else {
+                scope
             };
-            after.insert(*node, reached);
+            stack.extend(control.children.iter().rev().map(|child| (*child, inner)));
         }
-        let mut reach = BTreeMap::new();
-        for node in &order {
-            let Some(control) = self.controls.get(node) else {
-                continue;
-            };
-            let mut entered = subtree.get(node).cloned().unwrap_or_default();
-            entered.extend(after.get(node).into_iter().flatten().copied());
-            match control.step {
-                ControlStep::Parallel => {
-                    reach.insert(Rest::Fork(*node), entered);
-                    reach.insert(
-                        Rest::Join(*node),
-                        after.get(node).cloned().unwrap_or_default(),
-                    );
-                }
-                ControlStep::Attempt => {
-                    reach.insert(Rest::Node(*node), entered);
-                }
-                ControlStep::Sequence | ControlStep::Branch | ControlStep::Unstepped(_) => {}
+        let first: BTreeMap<ProtocolNodeId, usize> = order
+            .iter()
+            .enumerate()
+            .map(|(position, (node, _))| (*node, position))
+            .collect();
+        let mut size: BTreeMap<ProtocolNodeId, usize> = BTreeMap::new();
+        for (node, _) in order.iter().rev() {
+            let children = self.control(*node)?.children.iter();
+            let below: usize = children.filter_map(|child| size.get(child)).sum();
+            size.insert(*node, below + 1);
+        }
+        let last = |node: ProtocolNodeId| -> Result<usize, ProtocolRefusal> {
+            match (first.get(&node), size.get(&node)) {
+                (Some(first), Some(size)) => Ok(first + size - 1),
+                _ => Err(ProtocolRefusal::fault("a-control-is-in-the-run-tree")),
             }
+        };
+        let mut spans = BTreeMap::new();
+        for (position, (node, scope)) in order.iter().enumerate() {
+            spans.insert(
+                *node,
+                Span {
+                    first: position,
+                    last: last(*node)?,
+                    scope_last: last(scope.unwrap_or(self.root))?,
+                    root_scope: scope.is_none(),
+                },
+            );
         }
-        reach.insert(Rest::Finish, BTreeSet::from([self.finish.node]));
-        reach
+        Ok(spans)
     }
 }

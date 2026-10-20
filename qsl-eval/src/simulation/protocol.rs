@@ -54,9 +54,53 @@ use program::{Program, Rest};
 
 /// A construct this protocol system does not step yet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Unsupported {
-    /// The construct, as the source names it.
-    pub construct: &'static str,
+pub enum Unsupported {
+    /// A `run` control of this kind, by its keyword.
+    Control(&'static str),
+    /// A `parallel` whose resolved memory model is not `sc`.
+    WeakMemory,
+    /// A `channel` member.
+    Channel,
+    /// A `compensate` obligation.
+    Compensation,
+    /// A protocol capture.
+    Capture,
+    /// `activation on each`.
+    ActivationOnEach,
+    /// A replicated role.
+    ReplicatedRole,
+    /// `join predicate(...)`.
+    JoinPredicate,
+    /// A join whose policy may leave branches running, with no
+    /// `outstanding` rule.
+    UnruledOutstanding,
+    /// An `over` input whose type is not an object type.
+    OverNotAnObject,
+    /// A slot that reads an attempt binder whose operation returns no value
+    /// of the binder's type, so the binder is never bound.
+    UnboundAttemptBinder,
+    /// A slot that reads a binder with no node other than the `over` input.
+    NodelessBinder,
+}
+
+impl Unsupported {
+    /// The construct, as a diagnostic names it.
+    pub fn construct(self) -> &'static str {
+        match self {
+            Self::Control(keyword) => keyword,
+            Self::WeakMemory => "memory",
+            Self::Channel => "channel",
+            Self::Compensation => "compensation",
+            Self::Capture => "capture",
+            Self::ActivationOnEach => "activation on each",
+            Self::ReplicatedRole => "replicated role",
+            Self::JoinPredicate => "join predicate",
+            Self::UnruledOutstanding => "join with no outstanding rule",
+            Self::OverNotAnObject => "over input of no object type",
+            Self::UnboundAttemptBinder => "read of an unbound attempt binder",
+            Self::NodelessBinder => "read of a nodeless binder",
+        }
+    }
 }
 
 /// Why [`ProtocolSystem::new`] built no system (FR-205 "Subject").
@@ -87,7 +131,7 @@ pub enum ProtocolRefusal {
     },
     /// The protocol holds a construct this system does not step
     /// (`unsupported_construct`/`not-yet-implemented`).
-    #[error("unsupported_construct/not-yet-implemented: {}", .0.construct)]
+    #[error("unsupported_construct/not-yet-implemented: {}", .0.construct())]
     Unsupported(Unsupported),
     /// An invariant of the checked protocol broke.
     #[error("the protocol system broke invariant {0:?}")]
@@ -437,9 +481,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             object: over.key.clone(),
         };
         let ValueType::Reference(object_type) = input.value_type else {
-            return Err(ProtocolRefusal::Unsupported(Unsupported {
-                construct: "an `over` input that is no object",
-            }));
+            return Err(ProtocolRefusal::Unsupported(Unsupported::OverNotAnObject));
         };
         let instances = model.instances(&input.value_type).map_err(|_| refused())?;
         if !instances.contains(over) {
@@ -488,32 +530,44 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     }
 
     /// The live threads of `state`, by instance and path.
-    pub fn threads(&self, state: &ProtocolState<M>) -> Vec<ThreadView> {
+    ///
+    /// # Errors
+    ///
+    /// [`ProtocolRefusal::Fault`] when a thread rests at a node the protocol
+    /// does not name.
+    pub fn threads(&self, state: &ProtocolState<M>) -> Result<Vec<ThreadView>, ProtocolRefusal> {
         let mut views = Vec::new();
         for instance in state.instances.values() {
             for (path, thread) in &instance.threads {
-                if let Ok(rest_point) = self.rest_point(thread.rest) {
-                    views.push(ThreadView {
-                        path: path.clone(),
-                        rest_point,
-                        disposition: thread.disposition,
-                    });
-                }
+                views.push(ThreadView {
+                    path: path.clone(),
+                    rest_point: self.rest_point(thread.rest)?,
+                    disposition: thread.disposition,
+                });
             }
         }
-        views
+        Ok(views)
     }
 
     /// The bound binders of `state`: each binder's node and thread.
-    pub fn binders(&self, state: &ProtocolState<M>) -> Vec<(String, ThreadPath)> {
-        state
+    ///
+    /// # Errors
+    ///
+    /// [`ProtocolRefusal::Fault`] when a binder's node is not one the
+    /// protocol names.
+    pub fn binders(
+        &self,
+        state: &ProtocolState<M>,
+    ) -> Result<Vec<(String, ThreadPath)>, ProtocolRefusal> {
+        let mut binders = Vec::new();
+        for (node, thread) in state
             .instances
             .values()
             .flat_map(|instance| instance.binders.keys())
-            .filter_map(|(node, thread)| {
-                Some((self.program.text(*node).ok()?.to_owned(), thread.clone()))
-            })
-            .collect()
+        {
+            binders.push((self.program.text(*node)?.to_owned(), thread.clone()));
+        }
+        Ok(binders)
     }
 
     /// QSpec FR-425's `<rest>` of `rest`.
@@ -634,39 +688,45 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         ]
     }
 
-    /// The value of the binder in `slot` that a node of the thread `path`
-    /// reads: the `over` input, or the binder of its node bound by `path`,
-    /// an ancestor of it, or a thread it forked, in that order.
-    fn frame(&self, instance: &Instance, path: &ThreadPath) -> Vec<Option<Value>> {
-        self.program
-            .slots
-            .iter()
-            .map(|node| match node {
-                None => Some(self.over.clone()),
+    /// The value of each binder slot that a node of the thread `path` reads:
+    /// slot 0, the `over` input; a binder of a node, the one bound by a
+    /// thread `path` sees, that is `path` itself, an ancestor of it, or a
+    /// thread it forked.
+    ///
+    /// Each node of a protocol is bound at most once per instance by the
+    /// threads one reader sees, so at most one bound value qualifies. A
+    /// `repeat` (FR-205-AC-3) re-binds a node under reused ordinals; it must
+    /// say which binding a reader sees before it is admitted, and until then
+    /// a second qualifying binding is a broken invariant, never a silent
+    /// choice.
+    fn frame(
+        &self,
+        instance: &Instance,
+        path: &ThreadPath,
+    ) -> Result<Vec<Option<Value>>, ProtocolRefusal> {
+        let mut frame = Vec::with_capacity(self.program.slots.len());
+        for (slot, node) in self.program.slots.iter().enumerate() {
+            let value = match node {
+                None if slot == 0 => Some(self.over.clone()),
+                // Refused in `Program::new` when any slot reads one.
+                None => None,
                 Some(node) => {
-                    let mut candidates: Vec<&ThreadPath> = instance
+                    let mut seen = instance
                         .binders
-                        .keys()
-                        .filter(|(bound, _)| bound == node)
-                        .map(|(_, thread)| thread)
-                        .collect();
-                    candidates.sort_by_key(|thread| {
-                        if *thread == path {
-                            0
-                        } else if thread.is_prefix_of(path) {
-                            1
-                        } else {
-                            2
-                        }
-                    });
-                    candidates
-                        .first()
-                        .filter(|thread| thread.is_prefix_of(path) || path.is_prefix_of(thread))
-                        .and_then(|thread| instance.binders.get(&(*node, (*thread).clone())))
-                        .map(|bound| bound.value.clone())
+                        .iter()
+                        .filter(|((bound, thread), _)| bound == node && sees(path, thread));
+                    let first = seen.next();
+                    if seen.next().is_some() {
+                        return Err(ProtocolRefusal::fault(
+                            "a-reader-sees-one-binding-of-a-node",
+                        ));
+                    }
+                    first.map(|(_, bound)| bound.value.clone())
                 }
-            })
-            .collect()
+            };
+            frame.push(value);
+        }
+        Ok(frame)
     }
 
     /// One slot body at the observation `observed`, over `frame`.
@@ -735,6 +795,12 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             }
         }
     }
+}
+
+/// Whether the thread `reader` sees a binder bound by `bound_by`: its own,
+/// an ancestor's, or one of a thread it forked.
+fn sees(reader: &ThreadPath, bound_by: &ThreadPath) -> bool {
+    bound_by.is_prefix_of(reader) || reader.is_prefix_of(bound_by)
 }
 
 /// `runtime_invariant`/`established-invariant-broken`.

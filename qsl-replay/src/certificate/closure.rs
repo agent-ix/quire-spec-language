@@ -40,6 +40,7 @@ use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, Term
 use qsl_eval::simulation::protocol::{check_protocol_bounds, ProtocolRefusal, ProtocolSystem, Sc};
 use qsl_eval::simulation::{
     EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
+    BOUND_POSITIONS,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
@@ -252,9 +253,6 @@ pub fn check_protocol_closure(
         cancel,
     )
 }
-
-/// The type positions the requires-bound pre-check may visit.
-const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// [`check_closure`] over `system`, whose model is `model`.
 fn check_system<S: SubjectSystem>(

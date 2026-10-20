@@ -346,7 +346,14 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     let recorded = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
     altered.prefix[1].post_state = recorded;
     let (cause, code, tag) = refusal(replay(&case, altered));
-    assert_eq!(cause, ModelTraceRefusal::PostState { step: 1, recorded });
+    assert_eq!(
+        cause,
+        ModelTraceRefusal::PostState {
+            step: 1,
+            recorded,
+            reached: vec![payload.prefix[1].post_state]
+        }
+    );
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
 
     let mut extended = payload.clone();

@@ -49,7 +49,8 @@ use qsl_eval::simulation::protocol::{
     check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
 };
 use qsl_eval::simulation::{
-    ConstraintValue, Expansion, ExpansionStop, SubjectSystem, TransitionSystem,
+    ConstraintValue, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
+    BOUND_POSITIONS,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_eval::temporal::{
@@ -220,13 +221,26 @@ pub enum ModelTraceRefusal {
     Protocol(ProtocolRefusal),
     /// No successor of a step's transition identity has the recorded
     /// post-state digest (FR-101's key mismatch).
-    #[error("stale_dependency/content-mismatch: step {step} reaches no state {}", .recorded.hex())]
+    #[error(
+        "stale_dependency/content-mismatch: step {step} reaches no state {}; it reaches {}",
+        .recorded.hex(),
+        .reached.iter().map(DigestRecord::hex).collect::<Vec<_>>().join(", ")
+    )]
     PostState {
         /// The step's zero-based index in the prefix.
         step: usize,
         /// The recorded post-state digest.
         recorded: DigestRecord,
+        /// The post-state digests the step's transition identity does
+        /// reach, in successor order.
+        reached: Vec<DigestRecord>,
     },
+    /// The subject's roots are not simulated (FR-215's requires-bound
+    /// pre-check): a ranged root of an unbounded type, which no check
+    /// explores, so no counterexample of the subject is one a check wrote;
+    /// or the classification stopped at a limit.
+    #[error("the subject is not simulated: {0}")]
+    NotSimulated(Box<NotSimulated>),
 }
 
 impl ModelTraceRefusal {
@@ -242,6 +256,7 @@ impl ModelTraceRefusal {
             | Self::RefinementLasso
             | Self::ProtocolLasso => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
+            Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
@@ -265,6 +280,10 @@ impl ModelTraceRefusal {
             | Self::RefinementLasso
             | Self::ProtocolLasso => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
+            Self::NotSimulated(refusal) => match refusal.catalog_code() {
+                Some(code) => code.cause(),
+                None => "invalid-value",
+            },
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
@@ -274,6 +293,29 @@ impl ModelTraceRefusal {
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => "invalid-value",
         }
+    }
+}
+
+/// The code of a subject that is not simulated: a requires-bound subject
+/// has no counterexample a check wrote (`invalid_runtime_input`), and a
+/// classification that stopped keeps its own code.
+fn not_simulated_code(refusal: &NotSimulated) -> Code {
+    use qsl_semantics::family::ClassifyFailure;
+    match refusal {
+        NotSimulated::RequiresBound(_)
+        | NotSimulated::EmptyInitial
+        | NotSimulated::GeneratorMismatch { .. }
+        | NotSimulated::KeyEncoding(qsl_eval::simulation::EncodingRefusal::NoEncoding(_)) => {
+            Code::InvalidRuntimeInput
+        }
+        NotSimulated::Extent(ClassifyFailure::Limit(_))
+        | NotSimulated::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Limit(_)) => {
+            Code::StageLimitExceeded
+        }
+        NotSimulated::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Allocation { .. }) => {
+            Code::ResourceExhausted
+        }
+        NotSimulated::Extent(ClassifyFailure::Fault(_)) => Code::RuntimeInvariant,
     }
 }
 
@@ -453,7 +495,7 @@ pub fn replay_protocol_trace(
                 })?;
             let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
             check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
-                .map_err(|_| fault("a-checked-protocol-subject-is-bounded"))?;
+                .map_err(|refusal| refused(ModelTraceRefusal::NotSimulated(Box::new(refusal))))?;
             let protocol_subject = ProtocolSubject {
                 model: ModelSubject {
                     simulation,
@@ -493,9 +535,6 @@ pub fn replay_protocol_trace(
         },
     )
 }
-
-/// The type positions the requires-bound pre-check may visit.
-const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// The recompiled package and its `package_id` record.
 type ReplayPackage<'p> = (&'p CheckedPackage, DigestRecord);
@@ -788,6 +827,7 @@ fn replay_prefix<S: SubjectSystem>(
         };
         let mut enabled = false;
         let mut reached = None;
+        let mut digests = Vec::new();
         for (transition, next) in expansion.successors {
             if transition != step.transition {
                 continue;
@@ -801,6 +841,7 @@ fn replay_prefix<S: SubjectSystem>(
                 });
                 break;
             }
+            digests.push(digest);
         }
         if !enabled {
             return Err(refused(not_enabled(index, &step.transition)));
@@ -809,6 +850,7 @@ fn replay_prefix<S: SubjectSystem>(
             refused(ModelTraceRefusal::PostState {
                 step: index,
                 recorded: step.post_state,
+                reached: digests,
             })
         })?;
         positions.push(next);

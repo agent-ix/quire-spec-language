@@ -11,7 +11,7 @@
 
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::ModelFinding;
-use qsl_eval::simulation::protocol::BlockedThread;
+use qsl_eval::simulation::protocol::{BlockedThread, ThreadPath, WaitCause};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -214,7 +214,8 @@ impl<T> TemporalCounterexample<T> {
 }
 
 impl<T: Clone + std::fmt::Debug + Eq> FamilyPayload for TemporalCounterexample<T> {
-    /// The inline size plus each step's and each constraint's.
+    /// The inline size plus each step's, each constraint's and each blocked
+    /// thread's, its paths and names included.
     fn measured_bytes(&self) -> usize {
         std::mem::size_of_val(self)
             .saturating_add(
@@ -227,5 +228,40 @@ impl<T: Clone + std::fmt::Debug + Eq> FamilyPayload for TemporalCounterexample<T
                     .len()
                     .saturating_mul(std::mem::size_of::<FairnessConstraint>()),
             )
+            .saturating_add(
+                self.blocked
+                    .iter()
+                    .map(blocked_bytes)
+                    .fold(0, usize::saturating_add),
+            )
     }
+}
+
+/// One blocked thread's measured size: its inline size, its path, its rest
+/// point's node and the paths its wait cause names.
+fn blocked_bytes(thread: &BlockedThread) -> usize {
+    let cause = match &thread.cause {
+        WaitCause::JoinWaiting { threads } => threads
+            .iter()
+            .map(path_bytes)
+            .fold(0, usize::saturating_add),
+        WaitCause::Precondition { clause } => clause.len(),
+        WaitCause::NoPostState | WaitCause::Constraint | WaitCause::Gate => 0,
+    };
+    std::mem::size_of::<BlockedThread>()
+        .saturating_add(path_bytes(&thread.path))
+        .saturating_add(thread.rest_point.node.as_ref().map_or(0, String::len))
+        .saturating_add(cause)
+}
+
+/// A thread path's measured size: its inline size and each step's.
+fn path_bytes(path: &ThreadPath) -> usize {
+    path.steps
+        .iter()
+        .fold(std::mem::size_of::<ThreadPath>(), |bytes, step| {
+            bytes
+                .saturating_add(std::mem::size_of_val(step))
+                .saturating_add(step.node.len())
+                .saturating_add(step.branch.len())
+        })
 }

@@ -10,13 +10,15 @@ use std::collections::BTreeSet;
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal, ProtocolCheckRequest};
 use qsl_eval::model_subject::ProtocolSubject;
-use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState, ModelSystem, TerminalClass};
+use qsl_eval::simulation::model::{
+    ExpansionLimits, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
+};
 use qsl_eval::simulation::protocol::{
     explore_protocol, BlockedThread, Disposition, GatedStep, MemoryModel, MemoryStep,
     ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, RestKind, RestPoint, Sc,
     ScComponent, StepKind, ThreadPath, WaitCause,
 };
-use qsl_eval::simulation::{Limits, Outcome, SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::{Limits, NotSimulated, Outcome, SubjectSystem, TransitionSystem};
 use qsl_foundation::diagnostic::Code;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
@@ -24,7 +26,7 @@ use qsl_replay::{
     InconclusiveCause, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord,
     ModelStep, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject,
     ProofBasis, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ReplayRefusal,
-    ResultLabel, TemporalCounterexample, TerminalValue,
+    ResultLabel, TemporalCounterexample, TerminalValue, UndefinedLocus,
 };
 use qsl_route::deadlock::{protocol_deadlock_freedom_items, ProtocolTemporalItem};
 use qsl_semantics::model::observation::DocumentRef;
@@ -35,8 +37,9 @@ use serde_json::{json, Value as Json};
 
 use crate::counter::Letters;
 use crate::fill::{
-    attempt, contracts, document, fill_unit, instance, json_of, package, package_id, projections,
-    protocol, reachable, sc_system, subject, unit_text, universe, v, Documents, Reached, PACKAGE,
+    attempt, compiled, contracts, document, fill_unit, instance, json_of, package, package_id,
+    projections, protocol, reachable, sc_system, subject, unit_text, universe, v, Documents,
+    Reached, PACKAGE,
 };
 use crate::model_settle::{envelope_at, request};
 
@@ -282,7 +285,7 @@ fn fill_reaches_exactly_the_seven_states_of_its_table() {
     assert_eq!(values, [0, 0, 1, 2, 3, 3, 3]);
     let rests: BTreeSet<Option<String>> = reached
         .iter()
-        .flat_map(|state| system.threads(&state.state))
+        .flat_map(|state| system.threads(&state.state).expect("threads"))
         .map(|thread| thread.rest_point.node)
         .collect();
     let allowed: BTreeSet<Option<String>> =
@@ -381,7 +384,10 @@ fn binder_lives(
     } else {
         Vec::new()
     };
-    assert_eq!(system.binders(&reached[at].state), expected);
+    assert_eq!(
+        system.binders(&reached[at].state).expect("binders"),
+        expected
+    );
     for (transition, next) in &reached[at].steps {
         let node = transition.node().unwrap_or_default();
         binder_lives(
@@ -435,7 +441,7 @@ fn a_binder_lives_exactly_until_its_last_reader_steps() {
         assert_eq!(thread["disposition"], "running");
     }
     for state in reachable(&system) {
-        assert!(system.binders(&state.state).is_empty());
+        assert!(system.binders(&state.state).expect("binders").is_empty());
     }
 
     // A variant: `A` is `flag`, whose Boolean result binds `a`, and `C`
@@ -510,7 +516,7 @@ fn each_initial_snapshot_gives_one_initial_protocol_state() {
     let initial = system.initial();
     assert_eq!(initial.len(), 2);
     for state in &initial {
-        let threads = system.threads(state);
+        let threads = system.threads(state).expect("threads");
         assert_eq!(threads.len(), 1);
         assert_eq!(
             threads[0].rest_point,
@@ -643,7 +649,7 @@ fn at_join(
     reached
         .iter()
         .position(|state| {
-            let threads = system.threads(&state.state);
+            let threads = system.threads(&state.state).expect("threads");
             threads
                 .iter()
                 .any(|thread| thread.path == root() && thread.rest_point.kind == RestKind::Join)
@@ -690,6 +696,7 @@ fn a_join_policy_decides_when_its_join_is_enabled() {
             .expect("the join is enabled after one completion");
         let running = system
             .threads(&reached[joined].state)
+            .expect("threads")
             .into_iter()
             .filter(|thread| thread.disposition == Running && thread.path != root())
             .count();
@@ -736,19 +743,25 @@ fn finish_waits_for_every_other_thread_of_its_instance() {
     let system = sc_system(&subject);
     let reached = reachable(&system);
     let at_finish = |state: &Reached| {
-        system.threads(&state.state).iter().any(|thread| {
-            thread.path == root() && thread.rest_point.node.as_deref() == Some("Done")
-        })
+        system
+            .threads(&state.state)
+            .expect("threads")
+            .iter()
+            .any(|thread| {
+                thread.path == root() && thread.rest_point.node.as_deref() == Some("Done")
+            })
     };
     let b_running = |state: &Reached| {
         system
             .threads(&state.state)
+            .expect("threads")
             .iter()
             .any(|thread| thread.path == branch("b") && thread.disposition == Disposition::Running)
     };
     let others_running = |state: &Reached| {
         system
             .threads(&state.state)
+            .expect("threads")
             .iter()
             .any(|thread| thread.path != root() && thread.disposition == Disposition::Running)
     };
@@ -1115,7 +1128,8 @@ fn sc_is_the_identity_of_the_memory_seam() {
 
 /// FR-217-AC-2 (TC-662): the deadlock counterexample reproduces; changing
 /// its second step's post-state digest refuses `stale_dependency`/
-/// `content-mismatch` naming the step and the digest; replacing the second
+/// `content-mismatch` naming the step, the recorded digest and the digest
+/// the step reaches; replacing the second
 /// step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`;
 /// replaying the steps against the repaired `Fill` refuses on the package
 /// identity.
@@ -1137,7 +1151,14 @@ fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
     let Err(ReplayRefusal::ModelTrace(refusal)) = case.replay("Fill", stale) else {
         panic!("a stale digest refuses");
     };
-    assert_eq!(*refusal, ModelTraceRefusal::PostState { step: 1, recorded });
+    assert_eq!(
+        *refusal,
+        ModelTraceRefusal::PostState {
+            step: 1,
+            recorded,
+            reached: vec![counterexample.prefix[1].post_state]
+        }
+    );
     assert_eq!(
         (refusal.code(), refusal.cause()),
         (Code::StaleDependency, "content-mismatch")
@@ -1245,5 +1266,233 @@ fn check_protocol_refuses_an_unstepped_construct() {
     assert_eq!(
         (refusal.code(), refusal.cause()),
         (Code::UnsupportedConstruct, "not-yet-implemented")
+    );
+}
+
+/// Part of FR-211-AC-1 (TC-656): `Fill` checks and compiles with no
+/// `terminal` member, with `terminal when` a predicate over `k.v` and with
+/// `terminal any`. A second `terminal` member refuses
+/// `ambiguous_declaration`/`ambiguous-name`, and a `terminal when` predicate
+/// that reads binder `a` refuses `missing_declaration`/`missing-name`, as
+/// FR-104 refuses a non-state read in an invariant. Not covered: the three
+/// packages' pairwise different identities. The compiled `package_id` does
+/// not bind the `terminal` member until FR-383 emits it, so today the three
+/// identities are equal.
+#[test]
+fn fill_checks_under_each_terminal_form() {
+    for form in ["", "terminal when { k.v = 1 };", "terminal any;"] {
+        let body = fill_unit("self.v = 0", form);
+        package(&body);
+        package_id(&body);
+    }
+    let refusal = |members: &str| {
+        let refusal = compiled(&fill_unit("self.v = 0", members))
+            .err()
+            .unwrap_or_else(|| panic!("{members} refuses"));
+        (refusal.code(), refusal.cause(), refusal.to_string())
+    };
+    let (code, cause, message) = refusal("terminal any; terminal when { k.v = 1 };");
+    assert_eq!(
+        (code, cause),
+        (Code::AmbiguousDeclaration, Some("ambiguous-name")),
+        "{message}"
+    );
+    let (code, cause, message) = refusal("terminal when { a = a };");
+    assert_eq!(
+        (code, cause),
+        (Code::MissingDeclaration, Some("missing-name")),
+        "{message}"
+    );
+}
+
+/// The protocol `P` with `run` over `contracts` whose `BumpPost` is
+/// `post_body`, from `c.v = value`.
+fn bump_case(post_body: &str, run: &str, value: i64) -> Case {
+    let contracts = contracts("self.v = 0").replace(
+        "post BumpPost using v on M::Cell::bump { self.v - pre(self.v) >= 1 }",
+        &format!("post BumpPost using v on M::Cell::bump {{ {post_body} }}"),
+    );
+    Case::new(&(contracts + &protocol("P", "", run, "d")), &[value])
+}
+
+/// Part of FR-215-AC-2 (TC-660): for the attempt `bump()` of FR-206-AC-2
+/// the successor model states and FR-120 transition identities
+/// `ProtocolSystem` gives equal those `ModelSystem` gives. A postcondition
+/// the evaluator finds undefined records `ContractUndetermined` and the
+/// model check ends UE-6's undefined-evaluation counterexample at the
+/// contract; an undefined binder constraint records
+/// `ProtocolExpressionUndetermined` and ends one at the attempt's node (the
+/// protocol locus of ADR-027 TS-4). Not covered: a postcondition the
+/// evaluator refuses, neither undefined nor incomplete, which settles V-6
+/// `UndecidedSuccessor`; no fixture of this suite yields such an
+/// evaluation.
+#[test]
+fn an_undefined_contract_or_constraint_ends_an_undefined_evaluation() {
+    let run = |constraint: &str| {
+        format!(
+            "sequence Main {{ {} }}",
+            attempt("X", "bump", "BumpPost", "x", constraint)
+        )
+    };
+    let decided = bump_case("self.v - pre(self.v) >= 1", &run("true"), 0);
+    let subject = decided.subject("P");
+    let system = sc_system(&subject);
+    let stepped: BTreeSet<(String, i64)> = system
+        .successors(&system.initial()[0])
+        .expect("expands")
+        .successors
+        .iter()
+        .map(|(transition, state)| {
+            let application = transition.application().expect("an application");
+            (format!("{application:?}"), v(state.model(), "c"))
+        })
+        .collect();
+    let model = ModelSystem::new(subject.model.simulation.clone()).expect("admits");
+    let direct: BTreeSet<(String, i64)> = model
+        .successors(&model.initial()[0])
+        .expect("expands")
+        .successors
+        .iter()
+        .filter(|(transition, _)| transition.operation().contains("Cell/bump"))
+        .map(|(transition, state)| (format!("{transition:?}"), v(state, "c")))
+        .collect();
+    assert_eq!(stepped, direct);
+    assert!(!stepped.is_empty());
+
+    let undefined_at = |case: &Case| {
+        let counterexample = violated(&case.deadlock("P"));
+        let CounterexampleKind::UndefinedEvaluation(undefined) = counterexample.kind else {
+            panic!("{counterexample:?}");
+        };
+        undefined.site.locus
+    };
+    // The postcondition divides by zero at the post-state `c.v = 2`.
+    let post = bump_case("6 mod (2 - self.v) >= 0", &run("true"), 0);
+    let subject = post.subject("P");
+    let system = sc_system(&subject);
+    let findings = system
+        .successors(&system.initial()[0])
+        .expect("expands")
+        .findings;
+    assert!(
+        findings
+            .iter()
+            .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. })),
+        "{findings:?}"
+    );
+    assert_eq!(
+        undefined_at(&post),
+        UndefinedLocus::Contract("BumpPost".to_owned())
+    );
+
+    // The constraint divides by zero at the pre-state `c.v = 2`.
+    let constraint = bump_case("self.v - pre(self.v) >= 1", &run("6 mod (2 - k.v) >= 0"), 2);
+    let subject = constraint.subject("P");
+    let system = sc_system(&subject);
+    let findings = system
+        .successors(&system.initial()[0])
+        .expect("expands")
+        .findings;
+    assert!(
+        findings.iter().any(|finding| matches!(
+            finding,
+            ModelFinding::ProtocolExpressionUndetermined { node, .. } if node == "Main/X"
+        )),
+        "{findings:?}"
+    );
+    assert_eq!(
+        undefined_at(&constraint),
+        UndefinedLocus::Protocol("Main/X".to_owned())
+    );
+}
+
+/// Part of FR-206-AC-3 (TC-651): `outstanding cancel` cancels a running
+/// branch together with every thread it forked. `b` forks the inner
+/// `parallel Q`; once `a` completes, `join any [a, b]` cancels `b`, after
+/// which neither of `Q`'s attempts is enabled and only the root is left.
+#[test]
+fn a_cancelled_branch_takes_the_threads_it_forked_with_it() {
+    let inner = format!(
+        "sequence Inner {{ parallel Q {{ branch c {} branch d {} }} join all [c, d]; }}",
+        touch("TY"),
+        touch("TZ")
+    );
+    let run = parallel(
+        &[("a", touch("TX")), ("b", inner)],
+        "join any [a, b] outstanding cancel",
+    );
+    let case = p_case(&run, 0);
+    let subject = case.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let mut joined = 0;
+    for state in &reached {
+        for (transition, next) in &state.steps {
+            if transition.kind() != StepKind::Join || transition.node() != Some("Main/Both") {
+                continue;
+            }
+            joined += 1;
+            let after = &reached[*next];
+            let threads = system.threads(&after.state).expect("threads");
+            assert_eq!(
+                threads
+                    .iter()
+                    .map(|thread| &thread.path)
+                    .collect::<Vec<_>>(),
+                vec![&root()],
+                "{threads:?}"
+            );
+            assert!(after.steps.iter().all(|(step, _)| {
+                step.kind() != StepKind::Attempt
+                    || !step
+                        .node()
+                        .is_some_and(|node| node.ends_with("/TY") || node.ends_with("/TZ"))
+            }));
+        }
+    }
+    // `a` completes before, between or after any of `b`'s inner steps.
+    assert!(joined > 1, "{joined}");
+}
+
+/// FR-215's requires-bound pre-check over a replayed protocol subject: a
+/// `finish` binder of the unbounded type `Integer` refuses the check
+/// `RequiresBound`, and the replay of a counterexample over the same subject
+/// refuses `invalid_runtime_input`/`invalid-value` with the typed
+/// `RequiresBound`, not an internal fault.
+#[test]
+fn a_replay_over_an_unbounded_protocol_subject_refuses_requires_bound() {
+    let unbounded = Case::new(
+        &(contracts("self.v = 0")
+            + &protocol("Fill", "", &crate::fill::fill_run(), "d = 0")
+                .replace("(d: Boolean)", "(d: Integer)")),
+        &[0],
+    );
+    let refusal = check_protocol(
+        ProtocolCheckRequest {
+            subject: unbounded.subject("Fill"),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("the finish binder is unbounded");
+    assert!(
+        matches!(refusal, ModelCheckRefusal::RequiresBound(_)),
+        "{refusal:?}"
+    );
+    let bounded = Case::new(&fill_unit("self.v = 0", ""), &[0]);
+    let payload = violated(&bounded.deadlock("Fill"));
+    let Err(ReplayRefusal::ModelTrace(refusal)) = unbounded.replay("Fill", payload) else {
+        panic!("the replay refuses");
+    };
+    assert!(
+        matches!(&*refusal, ModelTraceRefusal::NotSimulated(cause)
+            if matches!(**cause, NotSimulated::RequiresBound(_))),
+        "{refusal:?}"
+    );
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::InvalidRuntimeInput, "invalid-value")
     );
 }

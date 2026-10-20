@@ -39,7 +39,7 @@ pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, Transiti
 pub use footprint::{independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};
 pub use key::EncodingRefusal;
-pub use not_simulated::{NotSimulated, RequiresBound};
+pub use not_simulated::{NotSimulated, RequiresBound, BOUND_POSITIONS};
 pub use reduction::{
     ConstraintValue, OfferedReductions, Permutation, SymmetryClass, SymmetryGroup,
 };

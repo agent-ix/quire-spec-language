@@ -7,16 +7,13 @@
 //! drift from each other.
 
 use qsl_eval::simulation::model::{check_model_bounds, ModelSimulationRequest, ModelSystem};
-use qsl_eval::simulation::{EncodingRefusal, ExpansionLimit, ExpansionStop};
+use qsl_eval::simulation::{EncodingRefusal, ExpansionLimit, ExpansionStop, BOUND_POSITIONS};
 use qsl_foundation::InternalFault;
 use quire_exact::Cancel;
 
 use crate::certificate::closure::{ClosureRefusal, TemporalCertificateCheck};
 use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::IncompleteCause;
-
-/// The type positions the requires-bound pre-check may visit, as EN-1's.
-const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// The fault component of the checker that broke an invariant.
 #[derive(Clone, Copy)]

@@ -91,8 +91,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use super::concretise::{Lift, LiftStop};
 use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
 
-/// The type positions the requires-bound pre-check may visit.
-pub(super) const BOUND_POSITIONS: u64 = 1 << 20;
+pub(super) use qsl_eval::simulation::BOUND_POSITIONS;
 
 /// One EN-1 run (FR-126 Inputs).
 pub struct ModelCheckRequest<'a> {

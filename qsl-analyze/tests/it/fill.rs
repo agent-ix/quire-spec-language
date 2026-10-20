@@ -399,6 +399,13 @@ pub(crate) fn v(state: &ModelSimState, object: &str) -> i64 {
 /// The compiled `package_id` of the unit with `body`, through FR-098's
 /// compile.
 pub(crate) fn package_id(body: &str) -> qsl_replay::DigestRecord {
+    compiled(body).expect("the unit compiles").package_id()
+}
+
+/// FR-098's compile of the unit with `body`.
+pub(crate) fn compiled(
+    body: &str,
+) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {
     let document = document();
     qsl_replay::compile_package(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
@@ -409,8 +416,6 @@ pub(crate) fn package_id(body: &str) -> qsl_replay::DigestRecord {
         qsl_replay::StageLimits::default(),
         qsl_replay::ReplayLimits::default(),
     )
-    .expect("the unit compiles")
-    .package_id()
 }
 
 /// One reachable state of a protocol system: its key digest, the state, and

@@ -242,11 +242,21 @@ fn a_lasso_that_does_not_close_or_does_not_stutter_at_a_terminal_state_refuses()
     assert_eq!(cause, ModelTraceRefusal::StutterNotTerminal { position: 0 });
     assert_eq!(code, Code::InvalidRuntimeInput);
 
+    let original = payload.prefix[0].post_state;
     let mut altered = payload;
     let recorded = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
     altered.prefix[0].post_state = recorded;
     let (cause, code, tag) = refusal(replay_with(&fixture, altered, is_three));
-    assert_eq!(cause, ModelTraceRefusal::PostState { step: 0, recorded });
+    let ModelTraceRefusal::PostState {
+        step: 0,
+        recorded: named,
+        reached,
+    } = cause
+    else {
+        panic!("{cause:?}");
+    };
+    assert_eq!(named, recorded);
+    assert!(reached.contains(&original), "{reached:?}");
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
 }
 
