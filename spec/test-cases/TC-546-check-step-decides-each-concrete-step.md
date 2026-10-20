@@ -14,7 +14,7 @@ Verify `check_initial` and `check_step` over functional mappings, with `_`
 arguments and bound results, with hidden fields tracked as a candidate set,
 and with protocol step-class rows.
 
-Scope: FR-141-AC-1 to FR-141-AC-5 and FR-141-AC-11.
+Scope: FR-141-AC-1 to FR-141-AC-5, FR-141-AC-11, FR-141-AC-12 and FR-138-AC-8.
 
 ## Test Procedure
 
@@ -28,6 +28,7 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
    self.face`.
 5. Run the protocol attempt-node step and the `fork` step of FR-141-AC-5.
 6. On `Coin3` (FR-141-AC-11), check the initial state at index 2, the lost-update `commitB` step at `position` 3, and `toss` with `side` hidden, and read each `abstract_successors`.
+7. On `Coin` with a `reveal` no candidate allows, with a completion undecided while another is accepted, and over FR-138-AC-8's failed `writes` update (FR-141-AC-12, FR-138-AC-8).
 
 Tag the tests `#[trace("TC-546", "FR-141-AC-n")]`.
 
@@ -46,3 +47,4 @@ Tag the tests `#[trace("TC-546", "FR-141-AC-n")]`.
 - Step 6: `InitialNotAbstract{initial: 2}`; `AbstractStepRejected{position: 3, …}` with `abstract_successors` 1; `toss` passes with `abstract_successors` 2.
 
 Every call passes the concrete `ModelSystem` and the abstract system (FR-141).
+- Step 7: `NoAbstractMatch{position}`; `Undetermined(UndecidedSuccessor)`; `Undetermined(MappingUndetermined)` naming the `writes` update.
