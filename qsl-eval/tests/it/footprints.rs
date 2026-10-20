@@ -684,9 +684,9 @@ fn a_receiver_scoped_bump_touches_only_its_own_counter() {
 /// post clause reading a navigated field reads the reference and the field
 /// on any object; a reference parameter's field and membership are in the
 /// enabling footprint; a creation writes the population's membership. The
-/// two quantification clauses of FR-155-AC-2 are not covered, because no state
-/// clause can name a population, so the test claims no criterion.
-#[trace("TC-574")]
+/// two quantification clauses of FR-155-AC-2, over `M::counters` (FR-391),
+/// are `named_population`'s.
+#[trace("TC-574", "FR-155-AC-2")]
 #[test]
 fn every_object_frames_navigation_parameters_and_creation_widen_the_footprint() {
     let mut subject = counters_subject();

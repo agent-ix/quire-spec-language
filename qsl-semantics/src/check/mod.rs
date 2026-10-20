@@ -170,7 +170,7 @@ pub use type_invariant::{
 use crate::model::domain_package::DomainPackageRef;
 use std::collections::BTreeMap;
 
-use check::{bind_parameters, Typer};
+use check::{bind_parameters, NamedScope, Typer};
 // `Signature` is public only under `test-support`: the layer-5 evaluator's
 // tests build the resolved `Signature` `declarations_for` takes as
 // `own_signature`; no shipped caller outside `check` names it.
@@ -2786,6 +2786,7 @@ impl PackageDeclarations {
         if lowered_temporal.len() != checked_temporal.len() {
             return Err(unlowered());
         }
+        let named_scope = NamedScope::of(&models, &scope);
         let temporal_clauses = checked_temporal
             .into_iter()
             .zip(lowered_temporal)
@@ -2806,6 +2807,23 @@ impl PackageDeclarations {
                     .values()
                     .flat_map(|condition| references::body_objects(condition.body.root()))
                     .collect();
+                // FR-391 "Requirements": every unbounded population a `holds`
+                // atom names is a domain of the clause's record.
+                let named_keys = {
+                    let mut domains = std::collections::BTreeSet::new();
+                    for condition in conditions.values() {
+                        domains.extend(
+                            state_clause::named_domains(condition.body.root(), &named_scope)
+                                .into_iter()
+                                .map(|(domain, _)| domain)
+                                .filter(|domain| domain.maximum.is_none()),
+                        );
+                    }
+                    domains
+                        .into_iter()
+                        .map(|domain| population_domain_key(&object_types, &object_nodes, domain))
+                        .collect::<Result<Vec<_>, _>>()
+                };
                 for claimed in temporal_clause::TemporalTraceFamily::requirements(&checked) {
                     let extent = claimed
                         .population()
@@ -2816,6 +2834,7 @@ impl PackageDeclarations {
                                 claims::wire(lowered.key),
                                 &[claims::wire(lowered.over)],
                                 population,
+                                named_keys.as_ref().map_err(Clone::clone)?,
                             )
                         })
                         .map_err(|fault| {
@@ -3567,6 +3586,16 @@ impl CheckedGraph {
             return Ok(None);
         };
         self.population_key(*domain).map(Some)
+    }
+
+    /// The declaration of the object type `id`, when the package admits one.
+    pub fn object_type_key(
+        &self,
+        id: quire_exact::EffectiveId,
+    ) -> Option<&crate::model::key::DeclarationKey> {
+        self.object_types
+            .iter()
+            .find_map(|(key, known)| (*known == id).then_some(key))
     }
 
     /// ADR-012 §15.7: the domain key of `domain`, a population a checked

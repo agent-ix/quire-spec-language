@@ -1079,6 +1079,18 @@ pub enum NodeKind {
         /// The concrete population.
         population: DeclarationKey,
     },
+    /// A domain-package population named `M::P` in a population position
+    /// (FR-391): the population operand of `allInstances` or `lookup`,
+    /// typed `Population<U>[N]`, carrying the population's declaration key.
+    /// It is never evaluated on its own: its parent reads the population
+    /// from the snapshot of the clause's observation.
+    NamedPopulation {
+        /// The population's declaration.
+        population: DeclarationKey,
+        /// The population's declared member types, which a queried type
+        /// must be covered by (FR-084).
+        members: Vec<EffectiveId>,
+    },
     /// `seq(i in low .. high: body)` (FR-139): the sequence of `body` for
     /// each integer `slot` takes from `low` to `high`, empty when `high <
     /// low`.
@@ -1217,7 +1229,8 @@ impl NodeKind {
             NodeKind::Literal(_)
             | NodeKind::Local(_)
             | NodeKind::ProtocolReference { .. }
-            | NodeKind::PopulationObjects { .. } => Vec::new(),
+            | NodeKind::PopulationObjects { .. }
+            | NodeKind::NamedPopulation { .. } => Vec::new(),
             NodeKind::Seq {
                 low, high, body, ..
             } => vec![*low, *high, *body],

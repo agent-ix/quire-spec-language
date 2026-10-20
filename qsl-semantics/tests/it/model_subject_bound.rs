@@ -88,7 +88,7 @@ fn an_unbounded_population_stays_in_the_requirement_record() {
         WireNodeId::from_digest([2; 32]),
     );
     let record = claim
-        .requirements(clause_node, &[over], Some(population.clone()))
+        .requirements(clause_node, &[over], Some(population.clone()), &[])
         .expect("keyed");
     assert_eq!(record.kind(), Capability::TemporalSatisfaction);
     let ClaimExtent::Unbounded(domains) = record.extent() else {
@@ -103,7 +103,7 @@ fn an_unbounded_population_stays_in_the_requirement_record() {
         Some(DomainKind::InfiniteTrace)
     );
     // A population domain is keyed by the caller; none is invented.
-    assert!(claim.requirements(clause_node, &[over], None).is_err());
+    assert!(claim.requirements(clause_node, &[over], None, &[]).is_err());
 }
 
 /// FR-380: an authored `bound` makes the population finite, so the record
@@ -121,6 +121,7 @@ fn a_bounded_population_joins_no_domain() {
             WireNodeId::from_digest([1; 32]),
             &[WireNodeId::from_digest([2; 32])],
             None,
+            &[],
         )
         .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {

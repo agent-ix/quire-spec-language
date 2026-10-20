@@ -375,6 +375,7 @@ fn is_scalar_application(node: CheckedNode<'_>) -> bool {
         | NodeKind::ReachesEnd { .. }
         | NodeKind::ProtocolReference { .. }
         | NodeKind::PopulationObjects { .. }
+        | NodeKind::NamedPopulation { .. }
         | NodeKind::Seq { .. }
         | NodeKind::Case { .. } => false,
         #[cfg(seam_probe)]

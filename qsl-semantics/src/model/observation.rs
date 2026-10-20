@@ -81,6 +81,11 @@ pub struct ClauseFacts {
     /// the invocation's own is resolved in the machine it names (FR-106
     /// check 5).
     pub operations: OperationTable,
+    /// The domain-package populations the clause names (FR-391), by
+    /// declaration identity, each with the observation it reads them at:
+    /// FR-106 requires each complete in that observation's snapshot.
+    /// `check::CheckedStateClause::named_reads` gives them.
+    pub named_populations: Vec<(String, crate::model::clause_observation::Observation)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1843,7 +1848,7 @@ pub fn admit_observations(
             .ok_or_else(|| fault("clause-declares-no-operation"))
     };
 
-    match &selection.input {
+    let admitted = match &selection.input {
         ClauseSelectionInput::Current {
             snapshot,
             anchor,
@@ -1943,7 +1948,37 @@ pub fn admit_observations(
                 model_limits,
             ),
         },
+    }?;
+    require_named_populations(&admitted, &clause.named_populations)?;
+    Ok(admitted)
+}
+
+/// FR-391 "Evaluation": each population the clause names is required
+/// (FR-106 check 7) in the snapshot of the observation it is read at, so a
+/// population the snapshot does not list as `complete` is `Incomplete`
+/// before evaluation.
+fn require_named_populations(
+    admitted: &AdmittedObservations,
+    named: &[(String, crate::model::clause_observation::Observation)],
+) -> Result<(), AdmissionFailure> {
+    use crate::model::clause_observation::Observation as Read;
+    for (population, observation) in named {
+        let instant = match observation {
+            Read::Current => admitted.current.as_ref(),
+            Read::Pre => admitted.pre.as_ref(),
+            Read::Post => admitted.post.as_ref(),
+        };
+        let Some(instant) = instant else {
+            continue;
+        };
+        if instant.populations.get(population).copied() != Some(true) {
+            return Err(incomplete(
+                AdmissionRecord::new(Code::IncompletePopulation, "incomplete-scope")
+                    .with("population", population.clone()),
+            ));
+        }
     }
+    Ok(())
 }
 
 // The remainder of this module (document reading, the eleven checks, and

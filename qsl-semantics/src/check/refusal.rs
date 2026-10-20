@@ -1601,10 +1601,10 @@ pub enum CheckCause {
     /// population. A record or event value is evaluated with no object
     /// universe, so there is nothing for the read to observe.
     ObjectReadInValueInvariant,
-    /// FR-139: a concrete population name or one of the population-valued
-    /// forms outside a refinement declaration's rows:
-    /// `unsupported_construct` / `expression-form`, at the form. State-clause
-    /// bodies keep ADR-016 FE-4.
+    /// FR-139: a `seq` outside a refinement declaration's rows:
+    /// `unsupported_construct` / `expression-form`, at the form. FR-391
+    /// admits the other population forms in a state clause and a `holds`
+    /// atom.
     PopulationFormOutsideRefinement,
     /// FR-139: a population-valued form that S3 does not check yet:
     /// `unsupported_construct` / `not-yet-implemented`, naming what is

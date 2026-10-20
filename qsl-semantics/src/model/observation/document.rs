@@ -2798,6 +2798,18 @@ pub(super) fn finish_populations(
         .iter()
         .map(|(reference, _)| reference.clone())
         .collect();
+    // The objects each population lists, ascending, so a clause that names
+    // a population can read it (FR-391 "Evaluation").
+    let mut members: BTreeMap<String, Vec<ObjectReference>> = BTreeMap::new();
+    for (holder, reference) in values.holders.iter().zip(&references) {
+        members
+            .entry(holder.clone())
+            .or_default()
+            .push(reference.clone());
+    }
+    for listed in members.values_mut() {
+        listed.sort();
+    }
     let environment = ObjectEnvironment::new(
         ObjectClosure::new(closure_types, values.objects, &tolerated)
             .map_err(map_environment_refusal)?,
@@ -2805,7 +2817,8 @@ pub(super) fn finish_populations(
     .with_references(references)
     .with_out_of_range(out_of_range.clone())
     .with_extents(extents)
-    .with_population_sizes(population_sizes);
+    .with_population_sizes(population_sizes)
+    .with_population_members(members);
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,

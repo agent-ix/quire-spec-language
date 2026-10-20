@@ -91,6 +91,38 @@ fn seq_binder(
     Ok((ValueType::Int(interval), Some(maximum)))
 }
 
+/// The population operand node of `population` at `location` (FR-391).
+fn population_operand(population: &super::NamedPopulation, location: &Location) -> Node {
+    node(
+        NodeKind::NamedPopulation {
+            population: population.key.clone(),
+            members: population.members.clone(),
+        },
+        ValueType::Population(population.domain.maximum),
+        location,
+    )
+}
+
+/// `Int[low, high]`.
+fn int_type(low: Integer, high: Integer, location: &Location) -> Result<ValueType, CheckRefusal> {
+    IntegerInterval::new(low, high)
+        .map(ValueType::Int)
+        .map_err(|_| refuse(location, CheckCause::UnrepresentableBound))
+}
+
+/// A two-segment name whose alias also names an enum of the unit (FR-391
+/// "Resolution"): ambiguous, naming both.
+fn ambiguous_alias(name: &str, location: &Location) -> CheckRefusal {
+    let alias = name.split_once("::").map_or(name, |(alias, _)| alias);
+    refuse(
+        location,
+        CheckCause::AmbiguousName {
+            name: format!("{alias} (model alias and enum)"),
+            loci: vec![location.clone()],
+        },
+    )
+}
+
 /// Where a typed operand is admitted.
 enum Expected<'r> {
     /// Where this type is expected ([`Typer::check_as`]): an integer is
@@ -886,6 +918,16 @@ impl<'a> Typer<'a> {
                 )
             }
             ExprNode::Name(name)
+                if self
+                    .named
+                    .as_ref()
+                    .is_some_and(|named| named.is_ambiguous(name)) =>
+            {
+                return Err(ambiguous_alias(name, &location));
+            }
+            // FR-391: in a population position a population is no value;
+            // anywhere else outside a refinement `M::P` names nothing.
+            ExprNode::Name(name)
                 if self.populations.is_none()
                     && self
                         .scope
@@ -893,10 +935,11 @@ impl<'a> Typer<'a> {
                         .iter()
                         .any(|known| known == name) =>
             {
-                return Err(refuse(
-                    &location,
-                    CheckCause::PopulationFormOutsideRefinement,
-                ));
+                return Err(if self.named.is_some() {
+                    CheckRefusal::ill_typed(&location, IllTypedCause::OperatorIneligible)
+                } else {
+                    refuse(&location, CheckCause::MissingName(name.to_owned()))
+                });
             }
             ExprNode::Name(name) if self.population_named(name).is_some() => {
                 self.population_objects(name, &location)?
@@ -1158,6 +1201,13 @@ impl<'a> Typer<'a> {
                 body,
             } => {
                 let source_location = location.child(0);
+                // FR-391: a quantifier ranges over a named population.
+                let domain = match query {
+                    BinderQuery::Forall | BinderQuery::Exists => {
+                        self.named_domain(expression.at(*source), &source_location)?
+                    }
+                    BinderQuery::Map | BinderQuery::Filter | BinderQuery::FlatMap => None,
+                };
                 frames.push(Frame::Query(Box::new(QueryFrame {
                     query: *query,
                     binder,
@@ -1165,11 +1215,12 @@ impl<'a> Typer<'a> {
                     location,
                     source: None,
                 })));
-                return Ok(Step::Descend(Goal::Infer(
-                    expression.at(*source),
-                    None,
-                    source_location,
-                )));
+                return Ok(match domain {
+                    Some(domain) => Step::Typed(domain),
+                    None => {
+                        Step::Descend(Goal::Infer(expression.at(*source), None, source_location))
+                    }
+                });
             }
             ExprNode::Flatten(source) => {
                 let goal = Goal::Infer(expression.at(*source), None, location.child(0));
@@ -1296,13 +1347,11 @@ impl<'a> Typer<'a> {
             }
             ExprNode::AllInstances { target, population } => {
                 let target = self.population_target(target, &location)?;
-                let goal = Goal::Infer(expression.at(*population), None, location.child(0));
-                return Ok(Self::unary(
-                    Unary::AllInstances(target),
-                    goal,
-                    location,
-                    frames,
-                ));
+                let population_location = location.child(0);
+                let named = self.named_operand(expression.at(*population), &population_location)?;
+                let goal = Goal::Infer(expression.at(*population), None, population_location);
+                let step = Self::unary(Unary::AllInstances(target), goal, location, frames);
+                return Ok(named.map_or(step, Step::Typed));
             }
             ExprNode::Lookup {
                 target,
@@ -1312,6 +1361,7 @@ impl<'a> Typer<'a> {
             } => {
                 let target = self.population_target(target, &location)?;
                 let population_location = location.child(0);
+                let named = self.named_operand(expression.at(*population), &population_location)?;
                 frames.push(Frame::Lookup(Box::new(LookupFrame {
                     target,
                     reference: expression.at(*reference),
@@ -1319,11 +1369,14 @@ impl<'a> Typer<'a> {
                     location,
                     population: None,
                 })));
-                return Ok(Step::Descend(Goal::Infer(
-                    expression.at(*population),
-                    None,
-                    population_location,
-                )));
+                return Ok(match named {
+                    Some(named) => Step::Typed(named),
+                    None => Step::Descend(Goal::Infer(
+                        expression.at(*population),
+                        None,
+                        population_location,
+                    )),
+                });
             }
             ExprNode::Dispatch {
                 receiver,
@@ -1687,7 +1740,7 @@ impl<'a> Typer<'a> {
     /// Start `count<N>(x in c: p)` or `sum<N>(x in c: e)`: `N` names an
     /// integer type.
     fn tally<'e, 'r>(
-        &self,
+        &mut self,
         tally: Tally,
         (result_type, binder): (&str, &'e str),
         (source, body): (ExprRef<'e>, ExprRef<'e>),
@@ -1699,6 +1752,7 @@ impl<'a> Typer<'a> {
             return Err(mismatch(&location));
         }
         let source_location = location.child(0);
+        let domain = self.named_domain(source, &source_location)?;
         frames.push(Frame::Tally(Box::new(TallyFrame {
             tally,
             value_type,
@@ -1707,7 +1761,10 @@ impl<'a> Typer<'a> {
             location,
             source: None,
         })));
-        Ok(Step::Descend(Goal::Infer(source, None, source_location)))
+        Ok(match domain {
+            Some(domain) => Step::Typed(domain),
+            None => Step::Descend(Goal::Infer(source, None, source_location)),
+        })
     }
 
     /// Check a dispatch call's next argument, or build the call once every
@@ -2583,6 +2640,68 @@ impl<'a> Typer<'a> {
         ))
     }
 
+    /// The population `expression` names in a population position (FR-391),
+    /// when it is a `M::P` name of one; a two-segment name under an alias
+    /// that is also an enum refuses as ambiguous.
+    fn named_population(
+        &self,
+        expression: ExprRef<'_>,
+        location: &Location,
+    ) -> Result<Option<super::NamedPopulation>, CheckRefusal> {
+        let (Some(named), ExprNode::Name(name)) = (&self.named, expression.node()) else {
+            return Ok(None);
+        };
+        if named.is_ambiguous(name) {
+            return Err(ambiguous_alias(name, location));
+        }
+        Ok(named.named(name).cloned())
+    }
+
+    /// The population operand `expression` of `allInstances` or `lookup`,
+    /// when it names a population in a population position (FR-391):
+    /// `Population<U>[N]`, carrying the population's declaration key.
+    fn named_operand(
+        &mut self,
+        expression: ExprRef<'_>,
+        location: &Location,
+    ) -> Result<Option<Node>, CheckRefusal> {
+        let Some(population) = self.named_population(expression, location)? else {
+            return Ok(None);
+        };
+        self.enter(location)?;
+        Ok(Some(population_operand(&population, location)))
+    }
+
+    /// The domain `expression` of a quantifier or tally, when it names a
+    /// population in a population position (FR-391).
+    fn named_domain(
+        &mut self,
+        expression: ExprRef<'_>,
+        location: &Location,
+    ) -> Result<Option<Node>, CheckRefusal> {
+        let Some(population) = self.named_population(expression, location)? else {
+            return Ok(None);
+        };
+        self.population_domain(&population, location).map(Some)
+    }
+
+    /// A named population read as a domain (FR-391 "Lowering"):
+    /// `allInstances<U>(M::P)` for its canonical member type `U`, typed
+    /// `Set<Reference<U>>[0,N]`.
+    fn population_domain(
+        &mut self,
+        population: &super::NamedPopulation,
+        location: &Location,
+    ) -> Result<Node, CheckRefusal> {
+        self.enter(location)?;
+        let operand = population_operand(population, &location.child(0));
+        self.all_instances(
+            &ValueType::Reference(population.domain.object),
+            operand,
+            location,
+        )
+    }
+
     /// Start `form(binder in population where c [: e])` (FR-139).
     fn population_form<'e, 'r>(
         &mut self,
@@ -2591,13 +2710,29 @@ impl<'a> Typer<'a> {
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
     ) -> Result<Step<'e, 'r>, CheckRefusal> {
-        if self.populations.is_none() {
-            return Err(refuse(
-                &location,
-                CheckCause::PopulationFormOutsideRefinement,
-            ));
-        }
-        let source = self.population_objects(population, &location)?;
+        // FR-139 in a refinement row; FR-391 in a population position;
+        // anywhere else `M::P` names no population.
+        let source = match (&self.populations, &self.named) {
+            (Some(_), _) => self.population_objects(population, &location)?,
+            (None, Some(named)) => {
+                if named.is_ambiguous(population) {
+                    return Err(ambiguous_alias(population, &location));
+                }
+                let Some(named) = named.named(population).cloned() else {
+                    return Err(refuse(
+                        &location,
+                        CheckCause::MissingName(population.to_owned()),
+                    ));
+                };
+                self.population_domain(&named, &location.child(0))?
+            }
+            (None, None) => {
+                return Err(refuse(
+                    &location,
+                    CheckCause::MissingName(population.to_owned()),
+                ))
+            }
+        };
         let element = self.element_type(&source)?;
         let slot = self.bind(binder, element, &location, LocalKind::Bound)?;
         let (awaiting, first) = match (condition, body) {
@@ -2706,14 +2841,23 @@ impl<'a> Typer<'a> {
             let body = condition.unwrap_or_else(|| truth(location));
             query(typer, visit, source, body, value_type)
         };
+        // FR-391: over a named population with an authored maximum `N` the
+        // bounds are `N`'s, not the universe size's.
+        let maximum = match &source.value_type {
+            ValueType::Collection(collection) => collection.bound().map(|bound| bound.maximum()),
+            _ => None,
+        };
+        let named = matches!(source.kind, NodeKind::AllInstances { .. });
         match form {
-            PopulationForm::Count => Ok(tally(
-                self,
-                Visit::Count,
-                ValueType::Integer,
-                source,
-                condition,
-            )),
+            PopulationForm::Count => {
+                let value_type = match (named, maximum) {
+                    (true, Some(maximum)) => {
+                        int_type(Integer::zero(), Integer::from(maximum), location)?
+                    }
+                    _ => ValueType::Integer,
+                };
+                Ok(tally(self, Visit::Count, value_type, source, condition))
+            }
             PopulationForm::Exists => Ok(tally(
                 self,
                 Visit::Exists,
@@ -2769,7 +2913,20 @@ impl<'a> Typer<'a> {
                             },
                         ));
                     }
-                    Ok(query(self, Visit::Sum, source, body, ValueType::Integer))
+                    let value_type = match (named, maximum, self.static_range(&body)) {
+                        (true, Some(maximum), Some((low, high))) => {
+                            let count = Integer::from(maximum);
+                            let product_low = count.mul(&low);
+                            let product_high = count.mul(&high);
+                            int_type(
+                                product_low.min(Integer::zero()),
+                                product_high.max(Integer::zero()),
+                                location,
+                            )?
+                        }
+                        _ => ValueType::Integer,
+                    };
+                    Ok(query(self, Visit::Sum, source, body, value_type))
                 } else {
                     let value_type = body.value_type.clone();
                     Ok(query(self, Visit::Only, source, body, value_type))

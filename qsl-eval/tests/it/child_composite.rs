@@ -969,6 +969,7 @@ fn admit_invocation(
             declaration: operation.declaration.clone(),
         }),
         operations: Default::default(),
+        named_populations: checked.named_reads(),
     };
     admit_observations(
         package.graph().model_selections(),

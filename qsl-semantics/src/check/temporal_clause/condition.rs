@@ -58,6 +58,7 @@ pub(crate) fn check_conditions(
     let mut nodes = input.nodes_used;
     let bound = [checked.over().clone()];
     let mut conditions = BTreeMap::new();
+    let named = crate::check::check::NamedScope::of(input.models, input.scope);
     for (id, node) in form.formula.iter() {
         let TemporalNodeForm::Holds { condition, .. } = node else {
             continue;
@@ -71,7 +72,9 @@ pub(crate) fn check_conditions(
             ClauseKind::Invariant,
         )
         .with_cancel(input.cancel)
-        .with_context(cx.reborrow(input.scope));
+        .with_context(cx.reborrow(input.scope))
+        // FR-391: a `holds` atom is a population position.
+        .with_named_populations(named.clone());
         bind_parameters(&mut typer, &bound, &location)?;
         typer.enter_state_clause(StateContext {
             parent_projections: BTreeMap::new(),

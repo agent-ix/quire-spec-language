@@ -94,6 +94,7 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | NodeKind::Pre(_)
         | NodeKind::ProtocolReference { .. }
         | NodeKind::PopulationObjects { .. }
+        | NodeKind::NamedPopulation { .. }
         | NodeKind::Seq { .. }
         | NodeKind::Case { .. } => return None,
         #[cfg(seam_probe)]
