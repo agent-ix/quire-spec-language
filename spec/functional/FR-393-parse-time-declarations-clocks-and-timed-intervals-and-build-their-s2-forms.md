@@ -114,7 +114,7 @@ scale of any size costs nothing at S2 and the form keeps what was written
 (`decimal(1, 4294967295)` builds). S3 bounds the value as written (FR-185). S3 reduces it to a
 numerator and denominator in lowest terms, after bounding the value as
 written against the rational-bits ceiling of the S3 checking limits and refusing one
-past it with the limit refusal FR-185 states (pending QSL-883).
+past it with the limit refusal FR-185 states (`s3.rational_bits`).
 FR-311 uses the same type.
 
 `Expression` gains a `Quantity(QuantityForm)` variant. The type builder maps
