@@ -42,3 +42,13 @@ Ticket: QSL-544. PR: quire-spec-language#1074, head 673da86ac, scoped to `git di
 ## Verdict
 
 Mergeable: three low findings (one citation quotes the body rather than AC-13; a bare FR-383; no cross-repo depends_on edge). The AC-12 citation, the (k)-(n) cases and the EvaluationMeter naming are accurate.
+
+## Dispositions
+
+Round 1, head bd198c950 (fix commit bd198c950 over 673da86ac). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-141 or TC-555; tools/check-index-completeness.sh passes; quire validate on FR-141 reports no new diagnostic. The fix commit also adds this review's round-0 SR files under reviews/; this file supersedes them.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

@@ -43,3 +43,21 @@ Ticket: QSL-544. PR: quire-spec-language#1074, head 673da86ac, scoped to `git di
 ## Verdict
 
 Not mergeable until FND-001 is fixed or explicitly deferred: one medium (AC-13's read-over-stop precedence is cited but not stated or tested) and one low. The four new AC-10 cases and TC-555 step 6 match QSpec TC-315 (k)-(n) exactly.
+
+## New findings (disposition pass 1)
+
+Round 1, head bd198c950 (fix commit bd198c950 over 673da86ac). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-141 or TC-555; tools/check-index-completeness.sh passes; quire validate on FR-141 reports no new diagnostic. The fix commit also adds this review's round-0 SR files under reviews/; this file supersedes them.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | The new FR-141-AC-9 cases and TC-555 step 5 make `A1` undefined or over-budget over `HeavyEnq`, but `HeavyEnq` is `RingIsQueue`, whose row is `put -> enq(self.ring, _)` (FR-141-AC-3): it has no argument expression called `A1`, and `_` ranges over the parameter domain and cannot be undefined or over-budget. `A1` is a name from the `Reads` fixture (AC-10). As written the cases cannot be built. Say which read is made to fail, for example FR-141-AC-7's argument `g(self.index)` (undefined at index 0) and that argument made over-budget, on the `HeavyEnq` postcondition. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:257 |
+| FND-004 | low | The new cases cannot tell a correct engine from the one the new rule warns about. An abstract precondition or postcondition needs the arguments, so no engine can exhaust the abstract meter before it has read a failed argument; and a swapped system faults on `WrongSystem` before anything is evaluated, so it never reaches the meter (TC-315 (j) puts the fault in a post-state read instead). The rule's own example, the abstract meter exhausted before the post-state row `P` is found undefined, is not tested. To pin the rule, add a case whose abstract precondition is the heavy part (it needs only the receiver and arguments) with `P` undefined, expecting `Undefined` at `P`, and one with a fault injected into `P` (TC-555 step 4's mapping fault), expecting `Fault`. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:257 |
+
+## Dispositions
+
+Round 1, head bd198c950 (fix commit bd198c950 over 673da86ac). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-141 or TC-555; tools/check-index-completeness.sh passes; quire validate on FR-141 reports no new diagnostic. The fix commit also adds this review's round-0 SR files under reviews/; this file supersedes them.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
