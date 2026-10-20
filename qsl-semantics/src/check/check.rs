@@ -753,6 +753,10 @@ pub struct Scope {
     pub(crate) ieee_profile: Option<AdmittedIeeeProfile>,
     pub(crate) integer_division: Option<AdmittedIntegerDivision>,
     pub(crate) complete_value: bool,
+    /// The names of the concrete populations of the unit's models, which
+    /// refuse `unsupported_construct`/`expression-form` where no refinement
+    /// reads them (FR-139).
+    pub(crate) known_populations: Vec<String>,
     /// Every admitted model currently uses `quire.model.complete/v1`; an
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
@@ -824,6 +828,10 @@ struct ScopeIndex {
     /// Each protocol declaration's name to its index in the unit's
     /// protocols (FR-218: a protocol reference binds a local protocol only).
     protocols: BTreeMap<String, usize>,
+    /// Each unit the unit declares, by its declared name (FR-091 "Dimension
+    /// and unit declarations": a unit is used by name outside a type form).
+    /// A quantity literal names its unit here (FR-185).
+    units: BTreeMap<String, quire_exact::UnitId>,
 }
 
 impl ScopeIndex {
@@ -922,6 +930,7 @@ impl Scope {
             ieee_profile,
             integer_division: None,
             complete_value: false,
+            known_populations: Vec::new(),
             complete_model: false,
             dispatch_operations,
             symmetric_objects: BTreeMap::new(),
@@ -1003,6 +1012,11 @@ impl Scope {
         self
     }
 
+    pub(crate) fn with_known_populations(mut self, names: Vec<String>) -> Self {
+        self.known_populations = names;
+        self
+    }
+
     /// This scope with where its record values keep the fields their
     /// ancestors name.
     pub(crate) fn with_model_records(mut self, model_records: ModelRecords) -> Self {
@@ -1031,6 +1045,38 @@ impl Scope {
     pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
         self.complete_model = complete_model;
         self
+    }
+
+    /// This scope with the unit's admitted dimension and unit declarations
+    /// (FR-091): every unit of `graph` joins the type environment's unit
+    /// table, so a quantity of it types and lowers (FR-094), and is named by
+    /// its declared name for a quantity literal (FR-185). An empty graph
+    /// leaves the scope unchanged.
+    pub(crate) fn with_declared_units(
+        mut self,
+        graph: &quire_semantic_value::unit::UnitGraph,
+    ) -> Self {
+        if graph.units().next().is_none() {
+            return self;
+        }
+        let declared = quire_semantic_value::quantity::UnitTable::declared(graph);
+        for unit in graph.units() {
+            let name = declared
+                .nominal_node(unit.key().as_bytes())
+                .map(|node| node.declaration.qualified_declaration.as_slice());
+            if let Some([name]) = name {
+                self.index.units.insert(name.clone(), unit.id());
+            }
+        }
+        let mut units = self.types.units().clone();
+        units.append(declared);
+        self.types = std::mem::take(&mut self.types).with_units(units);
+        self
+    }
+
+    /// The unit the unit declares under `name`, as a quantity's unit id.
+    pub(crate) fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
+        self.index.units.get(name).copied()
     }
 
     /// This scope with the unit's protocol declarations named `names`, in
@@ -1445,6 +1491,29 @@ pub(crate) struct Typer<'a> {
     units: UnitScope<'a>,
     /// The nodes typed so far, each stored once a parent names it.
     body: BodyBuilder,
+    /// The concrete populations a refinement row reads (FR-139); `None`
+    /// outside a refinement declaration, where a population name or form
+    /// refuses `unsupported_construct`/`expression-form`.
+    populations: Option<PopulationScope>,
+}
+
+/// The concrete populations a refinement row's expression may name (FR-139,
+/// ADR-020 RM-8).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PopulationScope {
+    pub(crate) populations: Vec<ScopedPopulation>,
+}
+
+/// One concrete population a row may name, with the name a row spells it
+/// by.
+#[derive(Clone, Debug)]
+pub(crate) struct ScopedPopulation {
+    /// The qualified name a row writes, `Alias::name`.
+    pub(crate) name: String,
+    /// The population's declaration.
+    pub(crate) key: DeclarationKey,
+    /// The object type its members are, `T` of `Set<Reference<T>>[0, n]`.
+    pub(crate) member: EffectiveId,
 }
 
 /// A state clause's own typing context (FR-104 "Typing"): its kind, the
@@ -1681,7 +1750,25 @@ impl<'a> Typer<'a> {
             state: None,
             units: UnitScope::new(scope.types.units()),
             body: BodyBuilder::default(),
+            populations: None,
         }
+    }
+
+    /// The static range of the integer `node` computes (FR-139).
+    pub(crate) fn static_range(&self, node: &Node) -> Option<super::ir::IntegerRange> {
+        super::ir::static_integer_range((&node.kind, &node.value_type), &|id| {
+            self.body
+                .get(id)
+                .map(|found| (&found.kind, &found.value_type))
+        })
+    }
+
+    /// This pass reading the concrete populations `populations` as a
+    /// refinement row does (FR-139).
+    #[must_use]
+    pub(crate) fn with_populations(mut self, populations: PopulationScope) -> Self {
+        self.populations = Some(populations);
+        self
     }
 
     /// This pass polling `cancel` at every node charge (FR-276). A cancelled

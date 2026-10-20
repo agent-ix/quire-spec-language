@@ -1823,6 +1823,8 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Record { .. }
                 | ExprNode::Collection { .. }
                 | ExprNode::Query { .. }
+                | ExprNode::Population { .. }
+                | ExprNode::Seq { .. }
                 | ExprNode::Flatten(_)
                 | ExprNode::Size(_)
                 | ExprNode::Contains { .. }
@@ -3309,6 +3311,9 @@ impl PackageDeclarations {
                 );
             }
         }
+        // FR-185: each random parameter's support values and each reward's
+        // expression are located at their own sites.
+        declared_site_spans.extend(super::probabilistic::site_spans(&unit.probabilistic));
         package.declared_site_spans = declared_site_spans;
         // FR-381: a template's operation anchor occurrence is recorded at
         // the template's name.
@@ -4195,6 +4200,7 @@ fn protocol_attempts(
             attempts.push(AttemptDeclaration {
                 declaration: attempt.declaration,
                 operation,
+                receiver: context,
                 frame_population,
             });
         }

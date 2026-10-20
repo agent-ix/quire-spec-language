@@ -36,16 +36,20 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::{Cancel, CancelCause, Identifier, Origin, Role};
 
 use crate::counter::{
-    document, document_digest, package, subject, unit_text, universe, Documents, CONTRACT,
+    document, document_digest, package, subject, unit_text, universe, Documents, Letters, CONTRACT,
     UNLIMITED,
 };
+
+/// The letters of a replay that reads no atom: the deadlock-freedom item has
+/// none.
+const NO_ATOMS: Letters = Letters { atom: |_| None };
 
 const AUTHORITY: &str = "agent-ix";
 const IDENTITY: &str = "counter";
 
 /// A compiled Counter unit with its documents, initial snapshots and the
 /// engine's deadlock-freedom outcome over universe `{c}`.
-struct Case {
+pub(crate) struct Case {
     unit: Vec<u8>,
     documents: Documents,
     initial: Vec<DocumentRef>,
@@ -71,7 +75,7 @@ impl Case {
     }
 }
 
-fn case(body: &str, values: &[i64]) -> Case {
+pub(crate) fn case(body: &str, values: &[i64]) -> Case {
     let document = document(false);
     let unit = unit_text(&document, body).into_bytes();
     let package_id = compile_package(
@@ -98,6 +102,7 @@ fn case(body: &str, values: &[i64]) -> Case {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             limits: ModelCheckLimits::default(),
+            reductions: Default::default(),
         },
         &Cancel::new(),
     )
@@ -122,7 +127,7 @@ fn source_digest(bytes: &[u8]) -> DigestRecord {
 /// A source reference as the request and the envelope spell it.
 type SourceWire = (String, String, String, String, Option<String>, String);
 
-fn source_wire(bytes: &[u8]) -> SourceWire {
+pub(crate) fn source_wire(bytes: &[u8]) -> SourceWire {
     (
         AUTHORITY.to_owned(),
         IDENTITY.to_owned(),
@@ -145,7 +150,12 @@ fn selected() -> QualifiedName {
 
 /// FR-098's request for `unit` at `package_id`, with the domain package and
 /// the snapshots in the byte provision.
-fn request(case: &Case, unit: &[u8], package_id: DigestRecord) -> ReplayRequestWire {
+pub(crate) fn request<'a>(
+    document: &[u8],
+    snapshots: impl Iterator<Item = (&'a [u8; 32], &'a Vec<u8>)>,
+    unit: &[u8],
+    package_id: DigestRecord,
+) -> ReplayRequestWire {
     let sha256_jcs = |digest: [u8; 32]| {
         (
             Some(DigestDomain::Sha256Jcs.as_str().to_owned()),
@@ -160,11 +170,11 @@ fn request(case: &Case, unit: &[u8], package_id: DigestRecord) -> ReplayRequestW
             unit.to_vec(),
         ),
         {
-            let (domain, hex) = sha256_jcs(document_digest(&case.documents.document));
-            (domain, hex, case.documents.document.clone())
+            let (domain, hex) = sha256_jcs(document_digest(document));
+            (domain, hex, document.to_vec())
         },
     ];
-    for (digest, bytes) in case.documents.snapshot_bytes() {
+    for (digest, bytes) in snapshots {
         let (domain, hex) = sha256_jcs(*digest);
         byte_provision.push((domain, hex, bytes.clone()));
     }
@@ -203,7 +213,7 @@ fn envelope(
 
 /// The envelope carrying `payload` at `package_id`, from `unit`, naming the
 /// item by `node` and `occurrence`.
-fn envelope_at(
+pub(crate) fn envelope_at(
     unit: &[u8],
     package_id: DigestRecord,
     payload: TemporalCounterexample,
@@ -244,19 +254,25 @@ fn trace_subject(case: &Case) -> ModelTraceSubject {
     }
 }
 
-fn replay(
+pub(crate) fn replay(
     case: &Case,
     payload: TemporalCounterexample,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
     replay_model_trace(
-        request(case, &case.unit, case.package_id),
+        request(
+            &case.documents.document,
+            case.documents.snapshot_bytes(),
+            &case.unit,
+            case.package_id,
+        ),
         &trace_subject(case),
         &envelope(&case.unit, case.package_id, payload),
+        &NO_ATOMS,
         ReplayLimits::default(),
     )
 }
 
-fn counterexample(case: &Case) -> TemporalCounterexample {
+pub(crate) fn counterexample(case: &Case) -> TemporalCounterexample {
     match &case.outcome {
         ModelCheckOutcome::Violated { counterexample, .. } => counterexample.as_ref().clone(),
         other => panic!("expected a violation, got {other:?}"),
@@ -361,9 +377,15 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     )
     .into_bytes();
     let stale = replay_model_trace(
-        request(&case, &edited, case.package_id),
+        request(
+            &case.documents.document,
+            case.documents.snapshot_bytes(),
+            &edited,
+            case.package_id,
+        ),
         &trace_subject(&case),
         &envelope(&edited, case.package_id, payload),
+        &NO_ATOMS,
         ReplayLimits::default(),
     );
     assert!(
@@ -390,9 +412,15 @@ fn a_counterexample_resolves_its_item_by_clause_node_and_occurrence_key() {
     let (node, occurrence) = deadlock_freedom_clause(&case.package_id);
     let replay_at = |payload: TemporalCounterexample, node, occurrence| {
         replay_model_trace(
-            request(&case, &case.unit, case.package_id),
+            request(
+                &case.documents.document,
+                case.documents.snapshot_bytes(),
+                &case.unit,
+                case.package_id,
+            ),
             &trace_subject(&case),
             &envelope_at(&case.unit, case.package_id, payload, node, occurrence),
+            &NO_ATOMS,
             ReplayLimits::default(),
         )
     };

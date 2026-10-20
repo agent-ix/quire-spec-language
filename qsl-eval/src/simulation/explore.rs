@@ -16,6 +16,9 @@ use crate::simulation::frontier::{Frontier, Limit};
 use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
+use crate::simulation::reduction::{
+    ConstraintValue, OfferedReductions, Permutation, SymmetryGroup,
+};
 use qsl_foundation::{IdentityLimits, Setting, SettingLimits};
 
 /// A finite-branching transition system the engine explores.
@@ -61,6 +64,35 @@ pub trait TransitionSystem {
         &self,
         state: &Self::State,
     ) -> ExpansionResult<Self::TransitionId, Self::State, Self::Finding>;
+
+    /// The reductions this system offers a model checker (ADR-021 EI-4,
+    /// FR-159): exactly the hooks below it implements. Exploration and
+    /// sampling never read it (ADR-021 RD-2).
+    fn offered_reductions(&self) -> OfferedReductions {
+        OfferedReductions::NONE
+    }
+
+    /// FR-152: the canonical representative of `state`'s orbit under
+    /// `group`, with the permutation of `group` that maps `state` to it;
+    /// `None` when the system does not offer symmetry.
+    fn canonical(
+        &self,
+        _state: &Self::State,
+        _group: &SymmetryGroup,
+    ) -> Option<Result<(Self::State, Permutation), ExpansionStop>> {
+        None
+    }
+
+    /// FR-158: how the state constraint `constraint`, a checked clause name
+    /// the caller resolved, reads at `state`; `None` when the system does
+    /// not offer state constraints.
+    fn holds_constraint(
+        &self,
+        _state: &Self::State,
+        _constraint: &str,
+    ) -> Option<Result<ConstraintValue, ExpansionStop>> {
+        None
+    }
 }
 
 /// What [`TransitionSystem::successors`] returns: an [`Expansion`] or an

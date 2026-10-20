@@ -125,6 +125,7 @@ mod probabilistic;
 mod profile;
 mod protocol_clause;
 mod protocol_controls;
+mod protocol_memory;
 mod protocol_obligation;
 mod protocol_reference;
 mod protocol_relationship;
@@ -138,11 +139,14 @@ mod settings;
 mod state_clause;
 mod state_graph_claim;
 mod state_model;
+mod step_simulation;
 mod sum_case;
 mod temporal_clause;
 mod terminal;
 pub use probabilistic::{
-    ConfidenceFault, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner,
+    CheckedProbabilisticModel, ConfidenceFault, PreconditionSite, ProbabilisticCause,
+    ProbabilisticDeclaration, ProbabilisticOperation, RandomParameter, Reward, SupportValue,
+    WeightOwner, Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
@@ -150,9 +154,9 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 pub mod stratum;
 mod termination;
 pub use refinement::{
-    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, RefinementCause,
-    RefinementDeclaration, RefinementRefusal, RowClass, StepClass, StepRow, StepTarget,
-    UnsupportedFeature,
+    CheckedRefinement, CheckedRow, FieldRow, ObjectRow, PopulationRow, PopulationUse,
+    PopulationValue, RefinementCause, RefinementDeclaration, RefinementRefusal, RowClass,
+    StepClass, StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -257,6 +261,7 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
+pub use step_simulation::{step_row_refs, step_simulation_records, StepRowOverflow};
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -288,6 +293,9 @@ pub use protocol_clause::{
     CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
+pub use protocol_memory::{
+    AccessClass, CheckedAccess, CheckedFence, CheckedMemory, CheckedParallelMemory,
+};
 pub use protocol_obligation::{
     CaptureOwner, CaptureStage, CheckedActivation, CheckedBinder, CheckedCapture, CheckedCommit,
     CheckedCompensation, CheckedDeadline, CheckedObligations, CheckedRecovery, CheckedRetry,
@@ -297,7 +305,7 @@ pub use protocol_relationship::CheckedRelationship;
 pub use protocol_requirement::CheckedRequirement;
 pub use protocol_slots::{
     CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRelated,
-    CheckedRepeat, CheckedSlots, CheckedTerminalMember,
+    CheckedRepeat, CheckedScheduling, CheckedSlots, CheckedTerminalMember,
 };
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
@@ -500,6 +508,8 @@ pub struct CheckedGraph {
     temporal_clauses: Vec<TemporalClauseNode>,
     /// FR-165: every checked state-graph claim, in declaration order.
     state_graph_claims: Vec<CheckedStateGraphClaim>,
+    /// FR-185: every checked random parameter, reward and workload.
+    probabilistic: CheckedProbabilisticModel,
     /// FR-115: every operation a state clause or attempt names, with its
     /// frame node, one per (declaring type, operation name).
     operation_frames: Vec<CheckedOperationFrame>,
@@ -966,7 +976,9 @@ impl PackageDeclarations {
         .with_imports(self.imports)
         .with_integer_division(self.integer_division)
         .with_complete_value(complete_value)
+        .with_known_populations(refinement::population_names(&self.models))
         .with_complete_model(complete_model)
+        .with_declared_units(&self.units)
         .with_protocols(
             self.protocols
                 .iter()
@@ -1406,6 +1418,9 @@ impl PackageDeclarations {
         // node total and contract meter.
         let state_clause_forms = self.state_clauses;
         let mut typed_clauses = Vec::with_capacity(state_clause_forms.len());
+        // FR-185: every read of an operation parameter by a checked
+        // precondition, so a read of a random parameter refuses.
+        let mut precondition_reads = Vec::new();
         for (index, clause) in state_clause_forms.iter().enumerate() {
             let location = clause_location(index, &clause.name);
             let declarations = state_clause::ClauseDeclarations {
@@ -1430,6 +1445,16 @@ impl PackageDeclarations {
                 Ok(staged) => {
                     let checked = staged.into_value();
                     nodes_used = checked.nodes_used;
+                    if let (qsl_forms::StateClauseKind::Precondition, Some(operation)) =
+                        (clause.kind, &clause.operation)
+                    {
+                        precondition_reads.extend(probabilistic::precondition_reads(
+                            operation,
+                            &checked.parameters,
+                            checked.body.root(),
+                            &probabilistic::PreconditionSite::Clause(clause.name.clone()),
+                        ));
+                    }
                     typed_clauses.push(checked);
                 }
                 Err(StageFailure::Limit(limit)) => {
@@ -1483,7 +1508,19 @@ impl PackageDeclarations {
                 &mut contract_scopes,
             );
             match state_clause::check_operation_clause(clause, &declarations, &mut contract_cx) {
-                Ok(used) => nodes_used = used,
+                Ok(checked) => {
+                    nodes_used = checked.nodes_used;
+                    if clause.clause.kind
+                        == quire_semantic_value::location::OperationClauseKind::Requires
+                    {
+                        precondition_reads.extend(probabilistic::precondition_reads(
+                            &clause.operation,
+                            &checked.parameters,
+                            checked.body.root(),
+                            &probabilistic::PreconditionSite::Requires(clause.clause.position),
+                        ));
+                    }
+                }
                 Err(refusal) => {
                     let exhausted = matches!(refusal.cause, CheckCause::ResourceExhausted(_));
                     refusals.push(refusal);
@@ -1642,6 +1679,20 @@ impl PackageDeclarations {
         if !refusals.is_empty() {
             return Err(refusals);
         }
+        // FR-220: the model's views, for the symbolic footprints the access
+        // classification of a protocol's `parallel` attempts reads.
+        let access_views: Option<Vec<crate::model::normalize::EffectiveView>> = model_inputs
+            .as_ref()
+            .filter(|_| {
+                self.protocols.iter().any(|protocol| {
+                    !protocol.parallels.is_empty()
+                        || protocol
+                            .attempts
+                            .iter()
+                            .any(|attempt| attempt.ordering.is_some())
+                })
+            })
+            .map(|(selected, _)| selected.iter().map(|model| model.view.clone()).collect());
         if let Some((selected, mut model_meter)) = model_inputs {
             match model_conformance::check(
                 &selected,
@@ -1707,8 +1758,7 @@ impl PackageDeclarations {
         // (FR-218), `protocol_clause::content` checks the rest -- the `using`
         // aliases, roles, node roles and owners, and binder types -- and
         // refuses `unsupported_construct`/`not-yet-implemented` at any
-        // construct no checker reads yet (a `predicate` join, a `parallel`'s
-        // memory clause, an attempt's memory order and a `fence`).
+        // construct no checker reads yet (a `predicate` join).
         // `protocol_requirement::check` binds each `requires temporal` and
         // `protocol_relationship::check` each `relationship` (FR-218).
         // `protocol_slots::check` checks every body, guard, `visible` entry,
@@ -1823,6 +1873,12 @@ impl PackageDeclarations {
                     ) {
                         Ok(requirements) => checked.requirements = requirements,
                         Err(requirement_refusals) => refusals.extend(requirement_refusals),
+                    }
+                    match protocol_memory::check_models(protocol, &checked.controls) {
+                        Ok(memory) => checked.memory = memory,
+                        Err(memory_refusals) => {
+                            refusals.extend(memory_refusals.into_iter().map(|(_, refusal)| refusal))
+                        }
                     }
                     match protocol_relationship::check(protocol, &models) {
                         Ok(relationships) => checked.relationships = relationships,
@@ -2010,11 +2066,36 @@ impl PackageDeclarations {
                 Err(StageFailure::Refused(refusal)) => refusals.push(refusal),
             }
         }
-        // FR-185, FR-186: the `random`, `reward`, `workload` and
-        // `probabilistic` declarations. What the forms alone let S3 refuse is
-        // refused; the rest refuses `not-yet-implemented`, so nothing
-        // probabilistic compiles unchecked (`probabilistic::check`).
-        refusals.extend(probabilistic::check(&self.probabilistic));
+        // FR-185: the `random`, `reward` and `workload` declarations,
+        // resolved, typed and recorded; FR-186: a `probabilistic` claim,
+        // checked as far as its form allows and otherwise refused
+        // `not-yet-implemented`, so nothing probabilistic compiles unchecked.
+        let probabilistic_input = probabilistic::ProbabilisticInput {
+            scope: &scope,
+            signatures: &signatures,
+            dispatch_tables: &dispatch_tables,
+            models: &models,
+            model_objects: &model_objects,
+            object_types: &object_types,
+            preconditions: &precondition_reads,
+            limits,
+            cancel,
+        };
+        let mut probabilistic_cx = crate::family::CheckContext::new(
+            &scope,
+            contract_limits,
+            &mut contract_meter,
+            &mut contract_diagnostics,
+            &mut contract_scopes,
+        );
+        let checked_probabilistic = probabilistic::check(
+            &self.probabilistic,
+            &probabilistic_input,
+            &mut probabilistic_cx,
+            &mut nodes_used,
+        );
+        refusals.extend(checked_probabilistic.refusals);
+        let probabilistic_model = checked_probabilistic.model;
         // FR-165: each state-graph claim, checked through the `StateGraph`
         // family's contract once every function signature is known, against
         // the same package-wide node total and contract meter.
@@ -2655,6 +2736,60 @@ impl PackageDeclarations {
                 })
             })
             .collect::<Result<Vec<_>, Vec<CheckRefusal>>>()?;
+        // FR-220: each attempt inside a `parallel` classified as a load, a
+        // store, a read-modify-write or local over the places its enclosing
+        // `parallel` controls share, with its ordering admitted and, under a
+        // weak default, its shape.
+        if let Some(views) = access_views {
+            let model = crate::model::state::StateModel::from_views(
+                views,
+                scope.types(),
+                crate::model::accounting::ModelNormalizationLimits::default(),
+            );
+            let mut access_refusals = Vec::new();
+            for (index, protocol) in self.protocols.iter().enumerate() {
+                let (Some(checked), Some(bound)) =
+                    (checked_protocols.get(index), protocol_bindings.get(index))
+                else {
+                    continue;
+                };
+                let classified = protocol_memory::classify(protocol, checked, bound, |binding| {
+                    let declaring = binding.operation.declaring;
+                    let arguments: Vec<(String, quire_exact::EffectiveId)> = binding
+                        .operation
+                        .declaration
+                        .parameters()
+                        .iter()
+                        .filter_map(|(name, value_type)| {
+                            footprint::parameter_target(value_type)
+                                .map(|target| (name.clone(), target))
+                        })
+                        .collect();
+                    footprint::derive_from(
+                        scope.types(),
+                        &state_clauses,
+                        &model,
+                        binding.receiver,
+                        declaring,
+                        &binding.operation.declaration,
+                        &arguments,
+                    )
+                });
+                match classified {
+                    Ok(accesses) => {
+                        if let Some(checked) = checked_protocols.get_mut(index) {
+                            checked.memory.accesses = accesses;
+                        }
+                    }
+                    Err(found) => {
+                        access_refusals.extend(found.into_iter().map(|(_, refusal)| refusal));
+                    }
+                }
+            }
+            if !access_refusals.is_empty() {
+                return Err(access_refusals);
+            }
+        }
         // FR-337: each emitted temporal clause's node, its `claim`
         // occurrence and its `over` node; FR-326 "Requirement record": its
         // `temporal-satisfaction` record, keyed by that occurrence.
@@ -2924,6 +3059,7 @@ impl PackageDeclarations {
             protocols: checked_protocols,
             temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
+            probabilistic: probabilistic_model,
             operation_frames,
             model_objects,
             object_types,
@@ -3317,6 +3453,12 @@ impl CheckedGraph {
     /// FR-165: every checked state-graph claim, in declaration order.
     pub fn state_graph_claims(&self) -> &[CheckedStateGraphClaim] {
         &self.state_graph_claims
+    }
+
+    /// FR-185: the package's checked random parameters, rewards and
+    /// workloads.
+    pub fn probabilistic_model(&self) -> &CheckedProbabilisticModel {
+        &self.probabilistic
     }
 
     /// FR-366: every checked type-level invariant.

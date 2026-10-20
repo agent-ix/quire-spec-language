@@ -122,7 +122,12 @@ productions! {
     Hex64,
     HexDigit,
     EnumValue, CollectionValue, RecordValue, FieldValue, TupleValue,
-    CollectionCall, SignedInteger, TemporalClause,
+    CollectionCall,
+    #[doc = "`(count | exists | all) ( <population-binder> )`, `(sum | only) ( <population-binder> : <expression> )` or `seq ( <identifier> in <expression> .. <expression> : <expression> )`: a population-valued form of a refinement row (FR-139)."]
+    PopulationCall,
+    #[doc = "`<identifier> in <model-name> [where <expression>]`: the binder of a population-valued form (FR-139)."]
+    PopulationBinder,
+    SignedInteger, TemporalClause,
     #[doc = "`on origin` or `on each ( <parameter> ) [when ( <expression> )]`: which events start a `temporal` clause."]
     Activation,
     #[doc = "`capture <parameter> = <expression> ;`: binds a named value inside a `temporal` clause body."]

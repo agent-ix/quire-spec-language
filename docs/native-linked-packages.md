@@ -1,5 +1,9 @@
 # Native checked-package artifact and reconstruction
 
+> **Historical: `0-draft` edition.** This page describes the original `0-draft`
+> native path, which is being deleted. For `1-draft`, start from the
+> [README](../README.md) and the [run request reference](native-standalone.md).
+
 Draft LC02 contract for FR-019/020/021 and NFR-007. This is the compiler-owned payload
 inside any separately selected transport/reference envelope. B owns shared
 references/results; Contract IR owns executable binding. Plan-007 tracks

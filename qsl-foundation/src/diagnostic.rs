@@ -1294,6 +1294,9 @@ pub enum UndefinedReason {
     /// FR-090-AC-21: an `allInstances<T>` query cannot establish subtype
     /// closure for the admitted population declaration.
     IncompleteClosure,
+    /// FR-139: an `only(x in P where c: e)` form found no object of the
+    /// population satisfying `c`, or several.
+    OnlyNotOne,
 }
 
 impl UndefinedReason {
@@ -1303,6 +1306,7 @@ impl UndefinedReason {
             Self::PreconditionFalse => "precondition-false",
             Self::AbsentKey => "absent-key",
             Self::IncompleteClosure => "incomplete-closure",
+            Self::OnlyNotOne => "only-not-one",
         }
     }
 }

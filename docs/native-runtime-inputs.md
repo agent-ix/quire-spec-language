@@ -1,5 +1,9 @@
 # Native runtime input and validation contract
 
+> **Historical: `0-draft` edition.** This page describes the original `0-draft`
+> native path, which is being deleted. For `1-draft`, start from the
+> [README](../README.md) and the [run request reference](native-standalone.md).
+
 LC03 contract reviewed before implementation. FR-018's structural constructors
 are qualified; model-aware validation is qualified by SR-097,
 with 35 passing public API tests. Native evaluation and combined execution are

@@ -39,28 +39,6 @@ fn a_resolving_protocol_with_unchecked_content_still_refuses() {
     assert_eq!(&text[span.start..span.end], "Pays");
 }
 
-/// A `fence` control, whose memory semantics nothing checks yet, refuses
-/// `unsupported_construct`/`not-yet-implemented` at its name rather than
-/// compiling with the fence unchecked.
-#[test]
-fn a_fence_still_refuses_as_not_yet_implemented() {
-    let source = recovery_flow("Main::Committed", "fence Barrier ordering seq_cst;\n");
-    let (refusal, cause) = only_cause(&source);
-    assert_eq!(
-        (refusal.cause.code().as_str(), refusal.cause.cause()),
-        ("unsupported_construct", Some("not-yet-implemented"))
-    );
-    let ProtocolAnchorCause::Unimplemented {
-        construct, span, ..
-    } = cause
-    else {
-        panic!("an Unimplemented cause, got {cause:?}");
-    };
-    assert_eq!(construct, "fence");
-    let (text, _) = assemble(&source);
-    assert_eq!(&text[span.start..span.end], "Barrier");
-}
-
 /// A protocol made only of parts the checker covers in full
 /// (a role, a `sequence`, an `attempt` and a `finish`, each body a bare
 /// Boolean literal) checks through the whole pipeline, and its checked

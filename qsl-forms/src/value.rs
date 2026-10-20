@@ -25,8 +25,8 @@ use super::syntax::{
     DeclarationForm, DeclarationKind, DeclaredName, DimensionForm, DimensionTermForm, EnumForm,
     EnumMemberForm, ExactNumberForm, ExactNumberKind, ExactValueForm, ExactValueKind, ExprId,
     ExprNode, Expression, ExpressionBuilder, FieldInitializer, FunctionDeclaration, NameForm,
-    QuantityForm, RecordFieldForm, RecordForm, StepLabelForm, TermOperator, TupleForm, TypeForm,
-    TypeFormHead, UnitForm, UsingAlias,
+    PopulationForm, QuantityForm, RecordFieldForm, RecordForm, StepLabelForm, TermOperator,
+    TupleForm, TypeForm, TypeFormHead, UnitForm, UsingAlias,
 };
 
 /// One significant child of a CST node: a token or a node.
@@ -674,6 +674,17 @@ enum Shape {
     },
     Count(DeclaredName, String),
     Sum(DeclaredName, String),
+    /// A population-valued form: the form, its binder, the population and
+    /// whether a `where` condition and a body are written.
+    Population {
+        form: PopulationForm,
+        binder: String,
+        population: DeclaredName,
+        condition: bool,
+        body: bool,
+    },
+    /// `seq(i in lo .. hi: e)`: the binder.
+    Seq(String),
     Size,
     Contains,
     /// `self` (FR-102, ADR-012 §15.2, `ProtocolClause`).
@@ -929,6 +940,36 @@ impl Shape {
                     summand: operands.next()?,
                 }
             }
+            Self::Population {
+                form,
+                binder,
+                population,
+                condition,
+                body,
+            } => {
+                arity(usize::from(condition) + usize::from(body))?;
+                ExprNode::Population {
+                    form,
+                    binder,
+                    population: population.name,
+                    population_span: population.span,
+                    condition: if condition {
+                        Some(operands.next()?)
+                    } else {
+                        None
+                    },
+                    body: if body { Some(operands.next()?) } else { None },
+                }
+            }
+            Self::Seq(binder) => {
+                arity(3)?;
+                ExprNode::Seq {
+                    binder,
+                    low: operands.next()?,
+                    high: operands.next()?,
+                    body: operands.next()?,
+                }
+            }
             Self::Contains => {
                 arity(2)?;
                 ExprNode::Contains {
@@ -1143,6 +1184,8 @@ impl<'c> Mapping<'c> {
             | Production::FieldValue
             | Production::TupleValue
             | Production::CollectionCall
+            | Production::PopulationCall
+            | Production::PopulationBinder
             | Production::SignedInteger
             | Production::TemporalClause
             | Production::Activation
@@ -1745,6 +1788,7 @@ impl<'c> Mapping<'c> {
                 self.with_children(Shape::Call(name), &task, arguments)
             }
             Production::CollectionCall => self.collection_call(task, child, &items),
+            Production::PopulationCall => self.population_call(task, child, &items),
             Production::StepLabel => self.step_label(task, child, &items),
             Production::UnionDeclaration
             | Production::UnionMember
@@ -1769,6 +1813,7 @@ impl<'c> Mapping<'c> {
             | Production::Declaration
             | Production::TypeReference
             | Production::ModelName
+            | Production::PopulationBinder
             | Production::TypeName
             | Production::OperationName
             | Production::ParameterType
@@ -2013,6 +2058,62 @@ impl<'c> Mapping<'c> {
         };
         let task = Task { node, ..task };
         self.with_children(shape, &task, operands)
+    }
+
+    /// `count`/`exists`/`all`/`sum`/`only` over a concrete population, and
+    /// `seq` (FR-139).
+    fn population_call(
+        &mut self,
+        task: Task<'c>,
+        node: &'c CstNode,
+        items: &[Item<'c>],
+    ) -> Result<(), FormsRefusal> {
+        let Some(Item::Token(head)) = items.first() else {
+            return Err(unexpected(node));
+        };
+        let operands = nodes_of(items, Production::Expression);
+        let binder_node = nodes_of(items, Production::PopulationBinder);
+        let Some(binder_node) = binder_node.first() else {
+            // `seq` is an identifier token itself; the binder follows it.
+            let binder = tokens_of(items, TokenKind::Identifier)
+                .get(1)
+                .map_or_else(|| Err(unexpected(node)), |token| text(token, node))?;
+            let task = Task { node, ..task };
+            return self.with_children(Shape::Seq(binder), &task, operands);
+        };
+        let form = match head.spelling() {
+            b"count" => PopulationForm::Count,
+            b"sum" => PopulationForm::Sum,
+            b"exists" => PopulationForm::Exists,
+            b"all" => PopulationForm::All,
+            b"only" => PopulationForm::Only,
+            _ => return Err(unexpected(node)),
+        };
+        let binder_items = self::items(self.cst, binder_node);
+        let binder = tokens_of(&binder_items, TokenKind::Identifier)
+            .first()
+            .map_or_else(|| Err(unexpected(binder_node)), |token| text(token, node))?;
+        let name = only(&binder_items, Production::ModelName, binder_node)?;
+        let population = DeclaredName {
+            name: spelled(self.cst, name)?,
+            span: name.span(),
+        };
+        let mut children = nodes_of(&binder_items, Production::Expression);
+        let condition = !children.is_empty();
+        children.extend(operands.iter().copied());
+        let body = matches!(form, PopulationForm::Sum | PopulationForm::Only);
+        let task = Task { node, ..task };
+        self.with_children(
+            Shape::Population {
+                form,
+                binder,
+                population,
+                condition,
+                body,
+            },
+            &task,
+            children,
+        )
     }
 
     /// The expression and its spans, from the finished pending list: spans

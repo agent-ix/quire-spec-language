@@ -158,6 +158,9 @@ pub struct AttemptDeclaration {
     pub declaration: usize,
     /// The resolved operation `on M::T::op` names.
     pub operation: ClauseOperation,
+    /// The object type the attempt's `on M::T::op` names: the type of its
+    /// receiver.
+    pub receiver: quire_exact::EffectiveId,
     /// The population domain of the type declaring the operation, resolved
     /// the same way a state clause's own `frame_population` is
     /// (FR-104 "Requirements"): `None` when the declaring type shares no
@@ -608,19 +611,19 @@ fn parent_slot_refusal(
 }
 
 /// FR-103: checks a kept operation clause as `check_clause` checks a unit
-/// state clause, and returns the package's running node total after it. The
-/// checked body is dropped: a kept clause yields a refusal or nothing.
+/// state clause. The caller keeps the running node total and reads the
+/// body's parameter reads (FR-185); a kept clause adds no checked state
+/// clause, so it yields a refusal or nothing else.
 pub(crate) fn check_operation_clause<'a>(
     clause: &super::operation_clause::OperationClauseDeclaration,
     declarations: &ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
-) -> Result<u64, CheckRefusal> {
+) -> Result<TypedStateClause, CheckRefusal> {
     check_clause(
         &clause.view(),
         declarations,
         &mut cx.reborrow(declarations.scope),
     )
-    .map(|checked| checked.nodes_used)
 }
 
 /// Type `form`'s body as a Boolean under its clause kind, give each model

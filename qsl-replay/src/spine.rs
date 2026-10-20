@@ -32,8 +32,8 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause, ProfileRefusal,
-    ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
+    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -787,6 +787,49 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::JoinList {
                     parallel, fault, ..
                 } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
+                ProtocolAnchorCause::MemoryConflict {
+                    outermost, nested, ..
+                } => format!(
+                    "{message}: `{nested}` declares a memory default other than its outermost \
+                     `{outermost}`'s"
+                ),
+                ProtocolAnchorCause::WeakJoin {
+                    parallel,
+                    model,
+                    policy,
+                    ..
+                } => format!(
+                    "{message}: `{parallel}` declares `memory {}` and joins `{policy}`",
+                    model.label()
+                ),
+                ProtocolAnchorCause::AccessOrdering {
+                    attempt,
+                    class,
+                    ordering,
+                    ..
+                } => {
+                    let kind = match class {
+                        AccessClass::Load => "load",
+                        AccessClass::Store => "store",
+                        AccessClass::Rmw => "read-modify-write",
+                        AccessClass::Local => "local",
+                    };
+                    match ordering {
+                        Some(ordering) => format!(
+                            "{message}: `{attempt}` is a {kind} access and takes no `{}` ordering",
+                            ordering.label()
+                        ),
+                        None => format!(
+                            "{message}: `{attempt}` is a {kind} access and needs an `ordering`"
+                        ),
+                    }
+                }
+                ProtocolAnchorCause::AccessShape {
+                    attempt, locations, ..
+                } => format!(
+                    "{message}: `{attempt}` is not one memory access ({})",
+                    locations.join(", ")
+                ),
                 ProtocolAnchorCause::NodeRole { node, name, .. } => {
                     format!("{message}: `{node}` names `{name}`, which is no role of the protocol")
                 }
@@ -955,12 +998,59 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProbabilisticCause::InvalidConfidence {
                     claim, parameter, ..
                 } => format!("{message}: `{parameter}` of claim `{claim}` is out of range"),
-                ProbabilisticCause::QuantityLiteral => {
-                    format!("{message}: a quantity literal is not checked in this position yet")
+                ProbabilisticCause::UnresolvedOperation { name, .. } => {
+                    format!("{message}: `{name}` names no operation of a selected model")
                 }
-                ProbabilisticCause::NotYetImplemented {
-                    construct, name, ..
-                } => format!("{message}: `{construct} {name}` is not checked or emitted yet"),
+                ProbabilisticCause::AmbiguousOperation { name, .. } => {
+                    format!("{message}: `{name}` names more than one operation")
+                }
+                ProbabilisticCause::UnresolvedParameter {
+                    operation,
+                    parameter,
+                    ..
+                } => format!("{message}: `{operation}` has no parameter `{parameter}`"),
+                ProbabilisticCause::UnresolvedModel {
+                    workload, model, ..
+                } => format!("{message}: workload `{workload}` names no model `{model}`"),
+                ProbabilisticCause::ValueOutsideType {
+                    operation,
+                    parameter,
+                    ..
+                } => format!(
+                    "{message}: a value of `{operation}({parameter})` is not a literal of its type"
+                ),
+                ProbabilisticCause::RandomReadInPrecondition {
+                    operation,
+                    parameter,
+                    precondition,
+                } => format!(
+                    "{message}: precondition {precondition:?} of `{operation}` reads its random \
+                     parameter `{parameter}`"
+                ),
+                ProbabilisticCause::IncompleteWorkload {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` gives `{operation}` no weight"),
+                ProbabilisticCause::UnknownOperation {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` weights `{operation}`, which is not in its model"),
+                ProbabilisticCause::RewardType {
+                    reward, operation, ..
+                } => format!(
+                    "{message}: reward `{reward}` on `{operation}` is neither an integer nor a quantity"
+                ),
+                ProbabilisticCause::DuplicateWorkload { workload, .. } => {
+                    format!("{message}: a workload `{workload}` is already declared")
+                }
+                ProbabilisticCause::QuantityLiteral => {
+                    format!("{message}: a quantity literal is not emitted in this position yet")
+                }
+                ProbabilisticCause::NotYetImplemented { claim, .. } => {
+                    format!("{message}: `probabilistic {claim}` is not checked or emitted yet")
+                }
             };
         }
         // FR-326: name what the `TemporalTrace` check refused.

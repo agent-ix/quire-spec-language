@@ -370,7 +370,7 @@ nodes and the claim without `from` settles `proved` (V-1).
 
 #### 7.3 `unique path`: two steps in either order
 
-Object type `Job` with `a`, `b` and `done`, all `Bool`; population `jobs`,
+Object type `Job` with `a`, `b` and `done`, all `Boolean`; population `jobs`,
 universe `{j}`, initial state all false. Operations: `stepA` (pre `not a`,
 post `a`, frame `[a]`), `stepB` (pre `not b`, post `b`, frame `[b]`) and
 `finish` (pre `a and b and not done`, post `done`, frame `[done]`). States

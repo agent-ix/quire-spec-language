@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Located checking refusals and their closed codes and causes.
 
+use super::protocol_memory::AccessClass;
+use qsl_forms::{AccessOrdering, MemoryModelName};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::SourceRegion;
 use qsl_foundation::Setting;
@@ -212,6 +214,61 @@ pub enum ProtocolAnchorCause {
         /// What is unsound.
         fault: JoinFault,
         /// The list's span, or the quorum count's.
+        span: Span,
+    },
+    /// FR-219: a nested `parallel` declares a memory default other than its
+    /// outermost `parallel`'s. `invalid_model_binding`/`conflicting-binding`,
+    /// at the nested control's `memory` clause, naming both controls.
+    MemoryConflict {
+        /// The outermost `parallel`'s declared name.
+        outermost: String,
+        /// The outermost `parallel`'s default.
+        outermost_model: MemoryModelName,
+        /// The nested `parallel`'s declared name.
+        nested: String,
+        /// The nested `parallel`'s default.
+        nested_model: MemoryModelName,
+        /// The nested control's `memory` clause.
+        span: Span,
+    },
+    /// FR-219: a `parallel` declaring a weak default joins another way than
+    /// `all` with no `outstanding` clause. `unsupported_construct`/
+    /// `declaration-form`, at the join.
+    WeakJoin {
+        /// The `parallel`'s declared name.
+        parallel: String,
+        /// The weak default declared.
+        model: MemoryModelName,
+        /// The join policy as written, with any `outstanding` clause.
+        policy: String,
+        /// The join policy's span.
+        span: Span,
+    },
+    /// FR-220: an access carries an ordering its kind does not take, or a
+    /// read-modify-write carries none. `ill_typed`/`operator-ineligible`,
+    /// at the ordering, or at the attempt when none is written.
+    AccessOrdering {
+        /// The attempt's declared name.
+        attempt: String,
+        /// The access kind the attempt classifies as.
+        class: AccessClass,
+        /// The ordering written, if any.
+        ordering: Option<AccessOrdering>,
+        /// The ordering's span, or the attempt's name.
+        span: Span,
+    },
+    /// FR-220: under a weak default an attempt's shared footprint holds two
+    /// or more locations, an any-object location or a population
+    /// membership. `unsupported_construct`/`declaration-form`, at the
+    /// attempt.
+    AccessShape {
+        /// The attempt's declared name.
+        attempt: String,
+        /// The weak default of the enclosing `parallel`.
+        model: MemoryModelName,
+        /// The locations, canonical text, in order.
+        locations: Vec<String>,
+        /// The attempt's name.
         span: Span,
     },
     /// FR-218 "Constructs": an `event` or `commit` written `by`, or a
@@ -774,6 +831,10 @@ impl ProtocolAnchorCause {
             | Self::ChannelCarriesObject { span, .. }
             | Self::RoleModel { span, .. }
             | Self::JoinList { span, .. }
+            | Self::MemoryConflict { span, .. }
+            | Self::WeakJoin { span, .. }
+            | Self::AccessOrdering { span, .. }
+            | Self::AccessShape { span, .. }
             | Self::NodeRole { span, .. }
             | Self::MissingChannel { span, .. }
             | Self::CarriesMismatch { span, .. }
@@ -824,14 +885,17 @@ impl ProtocolAnchorCause {
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. }
             | Self::RequirementKind { .. }
+            | Self::AccessOrdering { .. }
             | Self::RelatedEnd { .. }
             | Self::RoleMax { .. } => Code::IllTyped,
             Self::KeyClause { cause, .. } | Self::SlotClause { cause, .. } => cause.code(),
             Self::WrongObservation { .. } => Code::WrongSnapshot,
             Self::WrongContractAnchor { .. } => Code::WrongSnapshot,
-            Self::Unimplemented { .. } | Self::NoProgress { .. } | Self::AwaitedForm { .. } => {
-                Code::UnsupportedConstruct
-            }
+            Self::Unimplemented { .. }
+            | Self::NoProgress { .. }
+            | Self::AwaitedForm { .. }
+            | Self::WeakJoin { .. }
+            | Self::AccessShape { .. } => Code::UnsupportedConstruct,
             Self::CausalCycle { .. } | Self::RequirementCycle { .. } => Code::InvalidPackage,
             Self::Exhaustiveness { .. } => Code::UndefinedExpression,
             Self::BinderType { fault, .. } | Self::ChannelType { fault, .. } => {
@@ -839,6 +903,7 @@ impl ProtocolAnchorCause {
             }
             Self::ChannelCarriesObject { .. }
             | Self::RoleModel { .. }
+            | Self::MemoryConflict { .. }
             | Self::RelationshipExport { .. } => Code::InvalidModelBinding,
             Self::JoinList { .. } => Code::InvalidPackage,
         }
@@ -870,6 +935,7 @@ impl ProtocolAnchorCause {
             Self::KeyModelState { .. }
             | Self::KeyEquality { .. }
             | Self::SlotModelState { .. }
+            | Self::AccessOrdering { .. }
             | Self::RequirementKind { .. } => "operator-ineligible",
             // Only a cause that has a tag is wrapped
             // (`protocol_controls::check_fifo`, `protocol_slots`).
@@ -879,7 +945,10 @@ impl ProtocolAnchorCause {
             Self::WrongObservation { .. } => "wrong-observation",
             Self::WrongContractAnchor { .. } => "wrong-anchor",
             Self::Unimplemented { .. } => "not-yet-implemented",
-            Self::NoProgress { .. } | Self::AwaitedForm { .. } => "declaration-form",
+            Self::NoProgress { .. }
+            | Self::AwaitedForm { .. }
+            | Self::WeakJoin { .. }
+            | Self::AccessShape { .. } => "declaration-form",
             Self::MissingTemporalProfile { .. } => "missing-selection",
             Self::CausalCycle { .. } | Self::RequirementCycle { .. } => "definition-cycle",
             Self::Exhaustiveness { .. } => "unproved-exhaustiveness",
@@ -888,6 +957,7 @@ impl ProtocolAnchorCause {
             }
             Self::ChannelCarriesObject { .. } | Self::RoleModel { .. } => "malformed-declaration",
             Self::RelationshipExport { .. } => "wrong-export",
+            Self::MemoryConflict { .. } => "conflicting-binding",
             Self::JoinList { .. } => "invalid-value",
         }
     }
@@ -1532,6 +1602,18 @@ pub enum CheckCause {
     /// population. A record or event value is evaluated with no object
     /// universe, so there is nothing for the read to observe.
     ObjectReadInValueInvariant,
+    /// FR-139: a concrete population name or one of the population-valued
+    /// forms outside a refinement declaration's rows:
+    /// `unsupported_construct` / `expression-form`, at the form. State-clause
+    /// bodies keep ADR-016 FE-4.
+    PopulationFormOutsideRefinement,
+    /// FR-139: a population-valued form that S3 does not check yet:
+    /// `unsupported_construct` / `not-yet-implemented`, naming what is
+    /// unbuilt.
+    PopulationFormNotChecked {
+        /// What the check does not read.
+        what: &'static str,
+    },
     /// `ill_typed` / `type-mismatch` (FR-091): an integer literal outside
     /// `i128::MIN..=i128::MAX`, at the literal. Never a nonzero-magnitude
     /// rewrite: a literal is refused, not truncated.
@@ -1996,9 +2078,10 @@ impl CheckCause {
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
-            Self::UnsupportedNavigation(_) | Self::ObjectReadInValueInvariant => {
-                Code::UnsupportedConstruct
-            }
+            Self::UnsupportedNavigation(_)
+            | Self::ObjectReadInValueInvariant
+            | Self::PopulationFormOutsideRefinement
+            | Self::PopulationFormNotChecked { .. } => Code::UnsupportedConstruct,
             Self::Unproved(_) | Self::UnprovedDecrease { .. } => Code::UndefinedExpression,
             Self::SumCase(cause) => cause.code(),
             Self::ResourceExhausted(_) => Code::StageLimitExceeded,
@@ -2064,9 +2147,10 @@ impl CheckCause {
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }
-            Self::UnsupportedNavigation(_) | Self::ObjectReadInValueInvariant => {
-                Some("expression-form")
-            }
+            Self::UnsupportedNavigation(_)
+            | Self::ObjectReadInValueInvariant
+            | Self::PopulationFormOutsideRefinement => Some("expression-form"),
+            Self::PopulationFormNotChecked { .. } => Some("not-yet-implemented"),
             Self::Unproved(Obligation::Nonzero) => Some("unproved-nonzero"),
             Self::Unproved(Obligation::Presence) => Some("unproved-presence"),
             Self::Unproved(
