@@ -20,7 +20,7 @@ use crate::scalar::ScalarAgreement;
 use crate::statistical::{Decision, StatisticalVerdict};
 use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
-use qsl_foundation::diagnostic::{Category, Code};
+use qsl_foundation::diagnostic::{CatalogCode, Category, Code};
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
 use qsl_semantics::model::key::DeclarationKey;
@@ -811,6 +811,11 @@ pub struct TerminalRecord {
     backend: Option<BackendId>,
     value: TerminalValue,
     replay: Option<ReplayResult>,
+    /// The one diagnostic a `failed` record carries, when its settlement
+    /// names one (FR-192: an internal failure's
+    /// `runtime_invariant`/`established-invariant-broken`, or an expansion
+    /// stop's own cause).
+    diagnostic: Option<CatalogCode>,
 }
 
 impl TerminalRecord {
@@ -882,6 +887,7 @@ impl TerminalRecord {
             backend: Some(backend),
             value: TerminalValue::Refuted,
             replay: Some(replay.clone()),
+            diagnostic: None,
         })
     }
 
@@ -961,6 +967,7 @@ impl TerminalRecord {
             backend: Some(backend),
             value,
             replay: None,
+            diagnostic: None,
         }
     }
 
@@ -977,6 +984,7 @@ impl TerminalRecord {
             backend: None,
             value,
             replay: None,
+            diagnostic: None,
         }
     }
 
@@ -1000,6 +1008,20 @@ impl TerminalRecord {
     /// through [`Self::new`].
     pub fn replay_result(&self) -> Option<&ReplayResult> {
         self.replay.as_ref()
+    }
+
+    /// The diagnostic a `failed` record carries, when its settlement names
+    /// one.
+    pub fn diagnostic(&self) -> Option<CatalogCode> {
+        self.diagnostic
+    }
+
+    /// This record with `diagnostic`, the one diagnostic its settlement
+    /// names.
+    #[must_use]
+    pub(crate) fn with_diagnostic(mut self, diagnostic: Option<CatalogCode>) -> Self {
+        self.diagnostic = diagnostic;
+        self
     }
 }
 

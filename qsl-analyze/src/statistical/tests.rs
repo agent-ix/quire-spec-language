@@ -1845,6 +1845,14 @@ fn an_undefined_sample_settles_measured_rejected() {
     let json = serde_json::to_value(&entry).expect("an item");
     assert_eq!(json["measured"], "rejected");
     assert_eq!(json["cause"]["kind"], "undefined-evaluation");
+    assert_eq!(
+        json["cause"]["where"],
+        format!(
+            "test 0, trace {}, position {}",
+            undefined.trace, undefined.evaluation.site.position
+        )
+    );
+    assert_eq!(json["cause"]["cause"], "division-by-zero");
     let gate =
         qsl_replay::OutcomeDocument::settled(qsl_replay::Operation::Analyze, None, vec![entry]);
     assert_eq!(gate.category(), qsl_replay::Category::Violation);
@@ -1932,11 +1940,17 @@ fn witnesses_interleave_across_tests_by_trace_index() {
         kept.iter().map(|(_, trace)| *trace).collect::<Vec<_>>(),
         expected
     );
-    for (test, trace) in kept {
+    for (test, trace) in &kept {
         assert_eq!(
-            u64::from(test),
+            u64::from(*test),
             trace % 2,
             "trace i · 2 + j belongs to test j"
+        );
+    }
+    for test in 0..2 {
+        assert!(
+            kept.iter().any(|(kept, _)| *kept == test),
+            "test {test} contributes a witness: {kept:?}"
         );
     }
 }

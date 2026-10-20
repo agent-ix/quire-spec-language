@@ -88,9 +88,10 @@ impl StatisticalRecord {
     }
 
     /// This record as the FR-331 terminal record of the item at
-    /// `request_index`, produced by `backend`.
+    /// `request_index`, produced by `backend`, with its diagnostic.
     pub fn into_terminal(self, request_index: RequestIndex, backend: BackendId) -> TerminalRecord {
         TerminalRecord::with_backend(request_index, backend, self.value)
+            .with_diagnostic(self.diagnostic)
     }
 }
 
@@ -304,6 +305,12 @@ mod tests {
         )
     }
 
+    /// `record`'s outcome item, as the wire writes it.
+    fn wire(record: StatisticalRecord) -> serde_json::Value {
+        let terminal = record.into_terminal(RequestIndex::new(0), BackendId::new("en-4"));
+        serde_json::to_value(OutcomeItem::from_terminal(&terminal)).expect("an item")
+    }
+
     fn incomplete(limit: ModelCheckLimit, value: u64) -> TerminalValue {
         TerminalValue::Incomplete(IncompleteCause::LimitReached { limit, value })
     }
@@ -346,7 +353,7 @@ mod tests {
         let max_samples = ModelCheckLimit::Statistical(StatisticalLimit::MaxSamples);
         assert_eq!(budget.value, incomplete(max_samples, 5));
         assert_eq!(max_samples.setting(), "statistical.max_samples");
-        assert_eq!(max_samples.as_str(), "max_samples");
+        assert_eq!(max_samples.as_str(), "max-samples");
         assert_eq!(budget.category(), Category::Incomplete);
         assert_eq!(budget.measured(), None);
 
@@ -408,6 +415,7 @@ mod tests {
         assert_eq!(cause, &UnavailabilityCause::TotalAboveDrawRange { total });
         assert_eq!(cause.as_str(), "total-above-draw-range");
         assert_eq!(cause.code(), None);
+        assert_eq!(wire(range)["cause"]["total"], "7");
     }
 
     /// FR-192's refusal rows: `NoTest` settles `inconclusive`,
@@ -462,6 +470,9 @@ mod tests {
             assert_eq!(cause, &UnavailabilityCause::StatisticalRequest(named));
             assert_eq!(cause.code(), Some("unsupported_projection"));
             assert_eq!(cause.as_str(), "unsupported-requested-capability");
+            let json = wire(record);
+            assert_eq!(json["cause"]["refusal"], named.as_str());
+            assert_eq!(json["cause"]["code"], "unsupported_projection");
         }
 
         let internal = settled(StatisticalRefusal::Internal(InternalFault::new(
@@ -470,6 +481,14 @@ mod tests {
         )));
         assert_eq!(internal.value, TerminalValue::Failed);
         assert_eq!(internal.diagnostic, Some(BROKEN));
+        let terminal = internal
+            .clone()
+            .into_terminal(RequestIndex::new(0), BackendId::new("en-4"));
+        assert_eq!(terminal.diagnostic(), Some(BROKEN));
+        let json = wire(internal);
+        assert_eq!(json["result"], "failed");
+        assert_eq!(json["cause"]["kind"], "established-invariant-broken");
+        assert_eq!(json["cause"]["code"], "runtime_invariant");
 
         let negotiation = settle_statistical_refusal(&StatisticalRefusal::NotStatistical {
             method: StatisticalMethod::Sprt,
