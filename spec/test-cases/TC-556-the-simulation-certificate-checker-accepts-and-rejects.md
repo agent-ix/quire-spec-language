@@ -17,7 +17,7 @@ proved safety half, rejects each kind of tampered or false certificate,
 stops at a limit, and that settlement labels a proof certified, uncertified
 or rejected.
 
-Scope: FR-149-AC-1 to FR-149-AC-5, FR-144-AC-7.
+Scope: FR-149-AC-1 to FR-149-AC-8, FR-144-AC-7.
 
 ## Test Procedure
 
@@ -32,6 +32,9 @@ row, and its lost-update model.
 5. Settle `CasRefinesCounter` without and with its `ensure` row, and with
    step 2's first tampered certificate.
 6. Build a `HeavyEnq` certificate under a larger meter, then check it under the meter B (FR-141-AC-9).
+7. Check a certificate with a terminal state, with and without its stutter edge (FR-149-AC-6).
+8. Check the malformed certificates and the undecided-contract position of FR-149-AC-7.
+9. Serialize the rejections of AC-3 and AC-2 (FR-149-AC-8).
 
 Tag the tests `#[trace("TC-556", "<AC id>")]`.
 
@@ -42,8 +45,11 @@ Tag the tests `#[trace("TC-556", "<AC id>")]`.
   each FR-338's `CertificateRejection` with a `SimulationStep` locus.
 - Step 3: rule `StepFails` with verdict `AbstractStepRejected{transition:
   inc(c), cause: Postcondition}`.
-- Step 4: `Stopped(ResourceExhausted, ReachedLimit{MaxTransitions, 1})`;
+- Step 4: `Stopped(LimitReached{MaxTransitions, 1})`;
   `stale_dependency`/`content-mismatch`; equal results.
 - Step 5: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`,
   `CertificateRejected`.
-- Step 6: `Stopped(ResourceExhausted, ReachedLimit{EvaluationMeter, B})`, not `Rejected`.
+- Step 6: `Stopped(LimitReached{EvaluationMeter, B})`, not `Rejected`.
+- Step 7: `Accepted`; rule `SuccessorsDiffer`.
+- Step 8: rule `Malformed` three times; rule `BadState`.
+- Step 9: the locus of FR-149-AC-8.
