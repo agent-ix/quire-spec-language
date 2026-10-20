@@ -26,20 +26,20 @@ fn probabilistic_package() -> CheckedPackage {
     CheckedPackage::link(graph)
 }
 
-/// The checked workload and reward are recorded on the graph, and the
-/// emitter refuses `unsupported_construct`/`not-yet-implemented`, naming how
-/// many of each it cannot write. Untagged: TC-620 has no S4 step, and no
-/// requirement states this refusal yet; it is this PR's decision that S4
-/// refuses rather than drops what FR-322 has no node for.
+/// FR-185 "Package emission": the checked workload and reward are recorded
+/// on the graph, and the emitter refuses
+/// `unsupported_construct`/`not-yet-implemented`, naming the first of them in
+/// source order (the workload `Steady`), its feature and the unit's profile.
+#[trace("TC-620")]
 #[test]
 fn a_checked_probabilistic_model_refuses_emission() {
     let refusal = emit_checked(&probabilistic_package()).expect_err("emission refuses");
     assert_eq!(
         refusal,
         EmitRefusal::ProbabilisticModelNotEmitted {
-            random_parameters: 0,
-            rewards: 1,
-            workloads: 1,
+            declaration: "Steady".to_owned(),
+            feature: qsl_semantics::check::ProbabilisticFeature::Workload,
+            profile: Some("quire.model.complete/v1"),
         }
     );
     assert_eq!(

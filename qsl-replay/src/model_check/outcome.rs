@@ -8,6 +8,7 @@ use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::{AppliedReduction, IncompleteCause, ReductionKind, SymmetryBrokenCause};
 use qsl_semantics::model::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
+use quire_semantic_value::model_transition::ModelTransition;
 
 /// The counts of one run, whatever ended it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -77,7 +78,7 @@ pub enum ReductionCause {
 
 /// One EN-1 run's outcome (FR-126 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ModelCheckOutcome {
+pub enum ModelCheckOutcome<T = ModelTransition> {
     /// Every reachable product state was examined and none is bad (V-1),
     /// with the closure certificate the core checks before the proof
     /// settles (ADR-018 PC-3).
@@ -109,7 +110,7 @@ pub enum ModelCheckOutcome {
     /// The canonical counterexample, to be replayed before it counts (V-4).
     Violated {
         /// The counterexample.
-        counterexample: Box<TemporalCounterexample>,
+        counterexample: Box<TemporalCounterexample<T>>,
         /// The run's counts.
         stats: RunStats,
     },
@@ -139,7 +140,7 @@ pub enum ModelCheckOutcome {
     },
 }
 
-impl ModelCheckOutcome {
+impl<T> ModelCheckOutcome<T> {
     /// The run's counts.
     pub fn stats(&self) -> RunStats {
         match self {

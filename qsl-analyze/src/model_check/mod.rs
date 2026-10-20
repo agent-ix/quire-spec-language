@@ -22,7 +22,9 @@ mod scc;
 mod state_graph;
 
 pub use ample::{Atoms, Por};
-pub use check::{check_model, ModelCheckRefusal, ModelCheckRequest};
+pub use check::{
+    check_model, check_protocol, ModelCheckRefusal, ModelCheckRequest, ProtocolCheckRequest,
+};
 pub use graph::{
     retain, retain_reduced, Ample, Choice, GraphExploration, ProductStateId, RetainedEdge,
     RetainedGraph, RetainedState,

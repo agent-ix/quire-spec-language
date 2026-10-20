@@ -12,7 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::{AccessOrdering, JoinPolicy, MemoryModelName, ProtocolDeclarationForm};
+use qsl_forms::{AccessOrdering, JoinPolicy, ProtocolDeclarationForm};
+use qsl_foundation::MemoryModelName;
 use qsl_foundation::Span;
 
 use super::footprint::{FootprintRefusal, SymbolicFootprint, SymbolicLocation};
@@ -27,6 +28,14 @@ pub struct CheckedParallelMemory {
     pub node: ProtocolNodeId,
     /// Its `memory` clause's model, `Sc` when none is written.
     pub memory: MemoryModelName,
+}
+
+impl CheckedParallelMemory {
+    /// Whether the source default is the sequentially consistent model
+    /// (ADR-027 SE-2).
+    pub fn is_sequentially_consistent(&self) -> bool {
+        self.memory == MemoryModelName::Sc
+    }
 }
 
 /// One checked `fence` control (FR-220 "Outputs").

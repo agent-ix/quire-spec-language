@@ -60,17 +60,21 @@ use qsl_eval::automaton::{
     translate, Atom, AutomatonError, AutomatonKind, Gba, GbaBuilder, Guard, KeyRefusal, Letter,
     Monitor, SafetyAutomaton, SafetyState, StateId,
 };
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
+use qsl_eval::simulation::protocol::{
+    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
+};
 use qsl_eval::simulation::{
-    ConstraintValue, EncodingRefusal, ExpansionLimit, ExpansionStop, NotSimulated, Permutation,
-    RequiresBound, SymmetryGroup, TransitionSystem,
+    ConstraintValue, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, NotSimulated,
+    Permutation, RequiresBound, SubjectSystem, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
+use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
     Instance, ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
@@ -88,8 +92,7 @@ use super::ample::{Atoms, Por};
 use super::concretise::{Lift, LiftStop};
 use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
 
-/// The type positions the requires-bound pre-check may visit.
-pub(super) const BOUND_POSITIONS: u64 = 1 << 20;
+pub(super) use qsl_eval::simulation::BOUND_POSITIONS;
 
 /// One EN-1 run (FR-126 Inputs).
 pub struct ModelCheckRequest<'a> {
@@ -120,6 +123,9 @@ pub enum ModelCheckRefusal {
     /// FR-101's pre-check could not classify the subject's extent.
     #[error("the subject's extent could not be classified: {0:?}")]
     Extent(Box<ClassifyFailure>),
+    /// The subject's protocol system does not build (FR-205).
+    #[error(transparent)]
+    Protocol(ProtocolRefusal),
     /// The clause's property form is not one this engine decides yet: a
     /// liveness clause (TP-4), or a clause with no property form.
     #[error("EN-1 does not decide the property form {form:?} yet")]
@@ -215,11 +221,11 @@ impl Item<'_> {
 /// reached it (`None` for the terminal stutter step), and the monitor state
 /// of each instance after reading this position. An instance whose atom is
 /// undefined there keeps the state it read the position from.
-struct Node {
-    state: ModelSimState,
+struct Node<State, Transition> {
+    state: State,
     digest: DigestRecord,
     depth: usize,
-    parent: Option<(usize, Option<ModelTransition>)>,
+    parent: Option<(usize, Option<Transition>)>,
     initial_index: usize,
     monitor: Vec<StateId>,
     /// The permutation the canonicaliser mapped the reached state to
@@ -266,12 +272,12 @@ type Reading = (Vec<StateId>, Option<Finding>);
 /// successor's state-key bytes and digest, the transition (none for the
 /// terminal stutter), the canonical state and the permutation that
 /// canonicalised it.
-type Successor = (
+type Successor<S> = (
     Vec<u8>,
     Vec<u8>,
     DigestRecord,
-    Option<ModelTransition>,
-    ModelSimState,
+    Option<<S as TransitionSystem>::TransitionId>,
+    <S as TransitionSystem>::State,
     Permutation,
 );
 
@@ -383,6 +389,7 @@ pub fn check_model(
     }
     let mut run = Run {
         system: &system,
+        reducer: Some(&system),
         item: &item,
         limits: request.limits,
         max_depth: request.max_depth,
@@ -400,7 +407,7 @@ pub fn check_model(
         group: SymmetryGroup::default(),
         constraint: None,
         boundary: 0,
-        por: None,
+        chooser: None,
     };
     if let Some(source) = root_cancelled {
         return Ok(ModelCheckOutcome::Stopped {
@@ -421,43 +428,128 @@ pub fn check_model(
             stats: run.stats(),
         });
     }
-    match run.explore() {
-        Ok(()) => Ok(if run.horizon_cut {
-            ModelCheckOutcome::BoundReached {
-                depth: widen(run.max_depth.unwrap_or(0)),
-                stats: run.stats(),
-            }
-        } else {
-            ModelCheckOutcome::Holds {
-                certificate: run.certificate(&instances)?,
-                stats: run.stats(),
-            }
-        }),
-        Err(Halt::Refusal(refusal)) => Err(refusal),
-        Err(Halt::Finish(Finish::Undecided(cause))) => Ok(ModelCheckOutcome::Undecided {
-            cause,
-            stats: run.stats(),
-        }),
-        Err(Halt::Finish(Finish::Stopped(cause, limit))) => Ok(ModelCheckOutcome::Stopped {
-            cause,
-            limit,
-            stats: run.stats(),
-        }),
-        Err(Halt::Finish(Finish::Violated(violation))) => {
-            let Violation { kind, at, binding } = *violation;
-            // Under the trivial group the path is already concrete, so no
-            // expansion runs that could stop.
-            let counterexample = match run.counterexample(kind, at, binding) {
-                Ok(counterexample) => counterexample,
-                Err(Halt::Refusal(refusal)) => return Err(refusal),
-                Err(Halt::Finish(_)) => return Err(fault("an-unreduced-path-is-concrete")),
-            };
-            Ok(ModelCheckOutcome::Violated {
-                counterexample: Box::new(counterexample),
-                stats: run.stats(),
+    run.decide(&instances)
+}
+
+/// FR-215 "Model checking a protocol subject" (ADR-027 TS-6): one EN-1 run
+/// over a protocol subject.
+pub struct ProtocolCheckRequest<'a> {
+    /// The protocol subject.
+    pub subject: ProtocolSubject<'a>,
+    /// The item: a safety clause over the subject's model, or the
+    /// deadlock-freedom item, whose deadlocks are FR-211's.
+    pub item: ModelCheckItem<'a>,
+    /// The search horizon `k`; `None` sets none.
+    pub max_depth: Option<usize>,
+    /// The run's caller-raisable budgets.
+    pub limits: ModelCheckLimits,
+}
+
+/// FR-215 (ADR-027 TS-5, TS-6): decide `request`'s item over every
+/// behaviour of its protocol subject with [`check_model`]'s engine, over
+/// the subject's `ProtocolSystem<Sc>`. The requires-bound pre-check reads
+/// the model's roots and the protocol's before any state is explored. A
+/// deadlock counterexample names the waiting threads of its last state
+/// (ADR-027 PD-4).
+///
+/// # Errors
+///
+/// [`ModelCheckRefusal`] as [`check_model`] returns it,
+/// [`ModelCheckRefusal::FormNotDecided`] for a liveness clause, whose
+/// scheduler fairness (FR-212) this engine does not read yet, and
+/// [`ModelCheckRefusal::Protocol`] when the protocol system does not build.
+pub fn check_protocol(
+    request: ProtocolCheckRequest<'_>,
+    cancel: &Cancel,
+) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+    let max_automaton_states = request.limits.max_automaton_states;
+    let (mut item, automaton, certified) = prepare(request.item, max_automaton_states)?;
+    let subject = &request.subject;
+    let simulation = subject.model.simulation.clone();
+    let meter = simulation.meter;
+    let max_candidates = simulation.expansion.max_candidates;
+    let no_initial = simulation.initial.is_empty();
+    let model = ModelSystem::new(simulation)
+        .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
+    let protocol = subject
+        .model
+        .simulation
+        .package
+        .graph()
+        .protocol(&subject.protocol)
+        .ok_or_else(|| {
+            ModelCheckRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
+                protocol: subject.protocol.clone(),
             })
+        })?;
+    check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
+    let (instances, root_cancelled) = if certified {
+        match request.item.instances(&subject.model, &model, cancel) {
+            Ok(instances) => (instances, None),
+            Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
+                (Vec::new(), Some(cause))
+            }
+            Err(ItemRefusal::Unbounded(refusal)) => return Err(not_simulated(refusal)),
+            Err(refusal) => return Err(ModelCheckRefusal::Item(refusal)),
         }
+    } else {
+        (Vec::new(), None)
+    };
+    if let (Item::Clause { bindings, .. }, ModelCheckItem::Clause { clause, .. }) =
+        (&mut item, request.item)
+    {
+        *bindings = if certified {
+            instances
+                .iter()
+                .filter_map(|instance| instance.binding.clone())
+                .collect()
+        } else {
+            model.instances(&clause.over().1).map_err(not_simulated)?
+        };
     }
+    let system = ProtocolSystem::new(model, subject, Sc).map_err(ModelCheckRefusal::Protocol)?;
+    let mut run = Run {
+        system: &system,
+        reducer: None,
+        item: &item,
+        limits: request.limits,
+        max_depth: request.max_depth,
+        meter,
+        max_candidates,
+        cancel,
+        nodes: Vec::new(),
+        known: BTreeMap::new(),
+        queue: VecDeque::new(),
+        edges: 0,
+        horizon_cut: false,
+        first_bad: None,
+        monitor: Monitor::bad_prefix(automaton, max_automaton_states)
+            .map_err(|_| fault("a-safety-item-has-a-safety-automaton"))?,
+        group: SymmetryGroup::default(),
+        constraint: None,
+        boundary: 0,
+        chooser: None,
+    };
+    if let Some(source) = root_cancelled {
+        return Ok(ModelCheckOutcome::Stopped {
+            cause: IncompleteCause::Cancelled { source },
+            limit: None,
+            stats: run.stats(),
+        });
+    }
+    if no_initial {
+        return Ok(ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInitialState,
+            stats: run.stats(),
+        });
+    }
+    if item.instance_count() == 0 {
+        return Ok(ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::NoInstance,
+            stats: run.stats(),
+        });
+    }
+    run.decide(&instances)
 }
 
 /// An outcome the reduction pre-check settles, with no state explored.
@@ -558,8 +650,14 @@ fn check_reduced(
         if let Item::Clause { bindings, .. } = &mut item {
             *bindings = plan.bindings;
         }
+        let ample = if reductions.partial_order {
+            Some(ample_of(&system, &item, reductions.constraint.as_deref())?)
+        } else {
+            None
+        };
         let mut run = Run {
             system: &system,
+            reducer: Some(&system),
             item: &item,
             limits: request.limits,
             max_depth: request.max_depth,
@@ -577,11 +675,7 @@ fn check_reduced(
             group: plan.group.clone(),
             constraint: reductions.constraint.as_deref(),
             boundary: 0,
-            por: if reductions.partial_order {
-                Some(por_of(&system, &item, reductions.constraint.as_deref())?)
-            } else {
-                None
-            },
+            chooser: ample.as_ref().map(|ample| ample as &dyn Chooser<_, _>),
         };
         let explored = run.explore();
         total = sum(total, run.stats());
@@ -615,7 +709,7 @@ fn check_reduced(
                 let Violation { kind, at, binding } = *violation;
                 // FR-161 "Length and limits": a stop while concretising
                 // settles V-7.
-                return match run.counterexample(kind, at, binding) {
+                return match run.model_counterexample(kind, at, binding) {
                     Ok(counterexample) => Ok(ModelCheckOutcome::Violated {
                         counterexample: Box::new(counterexample),
                         stats: total,
@@ -674,14 +768,61 @@ fn check_reduced(
     })
 }
 
+/// The ample-set choice and the enforcing expansion of a partial-order run
+/// (FR-156, FR-155 "Read enforcement"), read by [`Run`] through [`Chooser`].
+trait Chooser<State, Transition> {
+    /// `state`'s expansion, holding every step to its footprint.
+    fn expand(
+        &self,
+        state: &State,
+    ) -> Result<Expansion<Transition, State, ModelFinding>, ExpansionStop>;
+
+    /// The ample set among `enabled` at `state`, where `fresh` says whether
+    /// every successor through a transition is a product state not yet
+    /// discovered (C3).
+    fn choose(
+        &self,
+        state: &State,
+        enabled: &[Transition],
+        fresh: &dyn Fn(&Transition) -> bool,
+    ) -> Result<Vec<Transition>, ExpansionStop>;
+}
+
+/// A model subject's ample sets: [`Por`] over its `ModelSystem`.
+struct ModelAmple<'r, 'a> {
+    system: &'r ModelSystem<'a>,
+    por: Por<'r, 'a>,
+}
+
+impl Chooser<ModelSimState, ModelTransition> for ModelAmple<'_, '_> {
+    fn expand(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+        self.system.successors_enforced(state)
+    }
+
+    fn choose(
+        &self,
+        state: &ModelSimState,
+        enabled: &[ModelTransition],
+        fresh: &dyn Fn(&ModelTransition) -> bool,
+    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
+        let mut enabled = enabled.to_vec();
+        enabled.sort();
+        enabled.dedup();
+        self.por.ample(state, &enabled, fresh)
+    }
+}
+
 /// The inputs of ample-set choice for `item` over `system` under the state
 /// constraint `constraint` (FR-156 "Atom footprints", "Visibility").
-fn por_of<'r, 'a>(
+fn ample_of<'r, 'a>(
     system: &'r ModelSystem<'a>,
     item: &'r Item<'r>,
     constraint: Option<&str>,
-) -> Result<Por<'r, 'a>, ModelCheckRefusal> {
-    match item {
+) -> Result<ModelAmple<'r, 'a>, ModelCheckRefusal> {
+    let por = match item {
         Item::Clause {
             bindings,
             letters,
@@ -699,7 +840,8 @@ fn por_of<'r, 'a>(
             constraint,
         ),
         Item::Deadlock => Por::new(system, None, &[], &[], constraint),
-    }
+    }?;
+    Ok(ModelAmple { system, por })
 }
 
 /// What FR-159's pre-check admits: the run's group, or an outcome it
@@ -825,15 +967,49 @@ fn deadlock_automaton() -> Result<Gba, ModelCheckRefusal> {
     Ok(builder.build())
 }
 
-struct Run<'r, 'a> {
-    system: &'r ModelSystem<'a>,
+/// FR-152 and FR-158 over a subject's states: what a reduced run reads of a
+/// model subject. A protocol subject offers no reduction, so its run has no
+/// reducer and a trivial group.
+trait Reducer<State> {
+    fn canonicalise(
+        &self,
+        state: &State,
+        group: &SymmetryGroup,
+    ) -> Result<(State, Permutation), ExpansionStop>;
+
+    fn constraint_value(&self, state: &State, name: &str)
+        -> Result<ConstraintValue, ExpansionStop>;
+}
+
+impl Reducer<ModelSimState> for ModelSystem<'_> {
+    fn canonicalise(
+        &self,
+        state: &ModelSimState,
+        group: &SymmetryGroup,
+    ) -> Result<(ModelSimState, Permutation), ExpansionStop> {
+        ModelSystem::canonicalise(self, state, group)
+    }
+
+    fn constraint_value(
+        &self,
+        state: &ModelSimState,
+        name: &str,
+    ) -> Result<ConstraintValue, ExpansionStop> {
+        ModelSystem::constraint_value(self, state, name)
+    }
+}
+
+struct Run<'r, S: SubjectSystem> {
+    system: &'r S,
+    /// The system's reductions; `None` for a subject that offers none.
+    reducer: Option<&'r dyn Reducer<S::State>>,
     item: &'r Item<'r>,
     limits: ModelCheckLimits,
     max_depth: Option<usize>,
     meter: quire_exact::ScalarLimits,
     max_candidates: u64,
     cancel: &'r Cancel,
-    nodes: Vec<Node>,
+    nodes: Vec<Node<S::State, S::TransitionId>>,
     /// Each product state's index by its key: the model state's key bytes
     /// and the monitor state of each instance.
     known: BTreeMap<(Vec<u8>, Vec<StateId>), usize>,
@@ -851,12 +1027,12 @@ struct Run<'r, 'a> {
     constraint: Option<&'r str>,
     /// The boundary states stored.
     boundary: usize,
-    /// The inputs of ample-set choice when partial-order reduction is
-    /// selected (FR-156).
-    por: Option<Por<'r, 'a>>,
+    /// The ample-set choice when partial-order reduction is selected
+    /// (FR-156); `None` for a subject that offers none.
+    chooser: Option<&'r dyn Chooser<S::State, S::TransitionId>>,
 }
 
-impl Run<'_, '_> {
+impl<S: SubjectSystem> Run<'_, S> {
     fn stats(&self) -> RunStats {
         RunStats {
             product_states: widen(self.nodes.len()),
@@ -919,6 +1095,50 @@ impl Run<'_, '_> {
         self.monitor.is_rejecting(state).map_err(Self::automaton)
     }
 
+    /// An unreduced run's outcome: explore, then settle what it found. Under
+    /// the trivial group the path to a violation is already concrete, so no
+    /// expansion runs that could stop.
+    fn decide(
+        &mut self,
+        instances: &[Instance],
+    ) -> Result<ModelCheckOutcome<S::TransitionId>, ModelCheckRefusal> {
+        match self.explore() {
+            Ok(()) => Ok(if self.horizon_cut {
+                ModelCheckOutcome::BoundReached {
+                    depth: widen(self.max_depth.unwrap_or(0)),
+                    stats: self.stats(),
+                }
+            } else {
+                ModelCheckOutcome::Holds {
+                    certificate: self.certificate(instances)?,
+                    stats: self.stats(),
+                }
+            }),
+            Err(Halt::Refusal(refusal)) => Err(refusal),
+            Err(Halt::Finish(Finish::Undecided(cause))) => Ok(ModelCheckOutcome::Undecided {
+                cause,
+                stats: self.stats(),
+            }),
+            Err(Halt::Finish(Finish::Stopped(cause, limit))) => Ok(ModelCheckOutcome::Stopped {
+                cause,
+                limit,
+                stats: self.stats(),
+            }),
+            Err(Halt::Finish(Finish::Violated(violation))) => {
+                let Violation { kind, at, binding } = *violation;
+                let counterexample = match self.counterexample(kind, at, binding) {
+                    Ok(counterexample) => counterexample,
+                    Err(Halt::Refusal(refusal)) => return Err(refusal),
+                    Err(Halt::Finish(_)) => return Err(fault("an-unreduced-path-is-concrete")),
+                };
+                Ok(ModelCheckOutcome::Violated {
+                    counterexample: Box::new(counterexample),
+                    stats: self.stats(),
+                })
+            }
+        }
+    }
+
     /// The breadth-first first phase.
     fn explore(&mut self) -> Step<()> {
         self.poll()?;
@@ -968,10 +1188,9 @@ impl Run<'_, '_> {
             if self.nodes[at].boundary {
                 continue;
             }
-            let expanded = if self.por.is_some() {
-                self.system.successors_enforced(&self.nodes[at].state)
-            } else {
-                self.system.successors(&self.nodes[at].state)
+            let expanded = match self.chooser {
+                Some(chooser) => chooser.expand(&self.nodes[at].state),
+                None => self.system.successors(&self.nodes[at].state),
             };
             let expansion = match expanded {
                 Ok(expansion) => expansion,
@@ -1075,15 +1294,17 @@ impl Run<'_, '_> {
         &mut self,
         at: usize,
         before: &[StateId],
-        steps: &mut Vec<Successor>,
+        steps: &mut Vec<Successor<S>>,
     ) -> Step<Vec<Option<Reading>>> {
-        if self.por.is_none() {
+        let Some(chooser) = self.chooser else {
             return Ok(vec![None; steps.len()]);
+        };
+        let mut enabled: Vec<S::TransitionId> = Vec::new();
+        for transition in steps.iter().filter_map(|step| step.3.as_ref()) {
+            if !enabled.contains(transition) {
+                enabled.push(transition.clone());
+            }
         }
-        let mut enabled: Vec<ModelTransition> =
-            steps.iter().filter_map(|step| step.3.clone()).collect();
-        enabled.sort();
-        enabled.dedup();
         if enabled.len() <= 1 {
             return Ok(vec![None; steps.len()]);
         }
@@ -1107,20 +1328,17 @@ impl Run<'_, '_> {
             fresh.push(bad.is_some() || !self.known.contains_key(&(key.clone(), after.clone())));
             readings.push((after, bad));
         }
-        let reaches_known = |transition: &ModelTransition| {
+        let reaches_known = |transition: &S::TransitionId| {
             steps
                 .iter()
                 .zip(&fresh)
                 .any(|(step, fresh)| step.3.as_ref() == Some(transition) && !fresh)
         };
-        let chosen = match self.por.as_ref() {
-            Some(por) => por
-                .ample(&self.nodes[at].state, &enabled, &|transition| {
-                    !reaches_known(transition)
-                })
-                .map_err(|stop| self.expansion_stop(stop))?,
-            None => return Err(fault("partial-order-run-has-its-inputs").into()),
-        };
+        let chosen = chooser
+            .choose(&self.nodes[at].state, &enabled, &|transition| {
+                !reaches_known(transition)
+            })
+            .map_err(|stop| self.expansion_stop(stop))?;
         let kept: Vec<bool> = steps
             .iter()
             .map(|step| {
@@ -1141,11 +1359,12 @@ impl Run<'_, '_> {
     /// `state`'s canonical form under the run's group and the permutation
     /// that maps `state` to it (FR-152); `state` itself and the identity
     /// under the trivial group.
-    fn canonical(&self, state: ModelSimState) -> Step<(ModelSimState, Permutation)> {
+    fn canonical(&self, state: S::State) -> Step<(S::State, Permutation)> {
         if self.group.is_trivial() {
             return Ok((state, Permutation::identity()));
         }
-        self.system
+        self.reducer
+            .ok_or_else(|| fault("a-reduced-run-has-a-reducer"))?
             .canonicalise(&state, &self.group)
             .map_err(|stop| self.expansion_stop(stop))
     }
@@ -1166,7 +1385,7 @@ impl Run<'_, '_> {
     fn create(
         &mut self,
         key: Vec<u8>,
-        mut node: Node,
+        mut node: Node<S::State, S::TransitionId>,
         before: &[StateId],
         read: Option<Reading>,
     ) -> Step<()> {
@@ -1188,7 +1407,10 @@ impl Run<'_, '_> {
         }
         if bad.is_none() {
             if let Some(name) = self.constraint {
-                match self.system.constraint_value(&node.state, name) {
+                let reducer = self
+                    .reducer
+                    .ok_or_else(|| fault("a-constrained-run-has-a-reducer"))?;
+                match reducer.constraint_value(&node.state, name) {
                     Ok(ConstraintValue::Holds) => {}
                     Ok(ConstraintValue::Boundary) => {
                         node.boundary = true;
@@ -1232,7 +1454,7 @@ impl Run<'_, '_> {
     /// else the first rejecting monitor state.
     fn advance(
         &mut self,
-        node: &Node,
+        node: &Node<S::State, S::TransitionId>,
         before: &[StateId],
     ) -> Step<(Vec<StateId>, Option<Finding>)> {
         if matches!(self.item, Item::Deadlock) {
@@ -1264,7 +1486,7 @@ impl Run<'_, '_> {
     /// undefined atom, or a rejecting monitor state.
     fn read(
         &mut self,
-        node: &Node,
+        node: &Node<S::State, S::TransitionId>,
         instance: usize,
         from: StateId,
     ) -> Step<(StateId, Option<CounterexampleKind>)> {
@@ -1290,7 +1512,12 @@ impl Run<'_, '_> {
             self.poll()?;
             let mut meter = Meter::new(self.meter);
             let reading = letters
-                .atom(*formula_atom, binding, &node.state, &mut meter)
+                .atom(
+                    *formula_atom,
+                    binding,
+                    &self.system.atom_state(&node.state),
+                    &mut meter,
+                )
                 .map_err(|_| {
                     Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units)
                 })?;
@@ -1341,7 +1568,7 @@ impl Run<'_, '_> {
     }
 
     fn site(
-        node: &Node,
+        node: &Node<S::State, S::TransitionId>,
         locus: UndefinedLocus,
         transition: Option<ModelTransition>,
     ) -> UndefinedSite {
@@ -1353,21 +1580,14 @@ impl Run<'_, '_> {
         }
     }
 
-    /// ADR-018 UE-6 and V-6: the first contract conjunction the expansion
-    /// evaluated undefined ends the run with a violation; otherwise a
-    /// refused one leaves it undecided.
+    /// ADR-018 UE-6 and V-6 (ADR-027 TS-4): the first contract conjunction
+    /// or protocol constraint the expansion evaluated undefined ends the run
+    /// with a violation; otherwise a refused one leaves it undecided.
     fn contracts(&self, at: usize, findings: &[ModelFinding]) -> Step<()> {
-        if let Some(contract) = findings.iter().find_map(ModelFinding::undefined_contract) {
-            let site = Self::site(
-                &self.nodes[at],
-                UndefinedLocus::Contract(contract.clause),
-                contract.guard_of,
-            );
+        if let Some((locus, guard_of, cause)) = undefined_finding(findings) {
+            let site = Self::site(&self.nodes[at], locus, guard_of);
             return Err(Finish::violated(
-                CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
-                    site,
-                    cause: contract.cause,
-                }),
+                CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation { site, cause }),
                 at,
                 self.binding_of(0),
             )
@@ -1454,12 +1674,7 @@ impl Run<'_, '_> {
     /// concretised under symmetry (FR-161). A terminal stutter step is no
     /// model step: the behaviour is the model prefix to the terminal state,
     /// stuttered forever.
-    fn counterexample(
-        &self,
-        mut kind: CounterexampleKind,
-        at: usize,
-        over_binding: Option<ModelInstance>,
-    ) -> Step<TemporalCounterexample> {
+    fn path(&self, at: usize) -> Vec<usize> {
         let mut path = vec![at];
         let mut cursor = at;
         while let Some((parent, _)) = &self.nodes[cursor].parent {
@@ -1467,25 +1682,58 @@ impl Run<'_, '_> {
             path.push(cursor);
         }
         path.reverse();
-        let (initial_state, prefix) = if self.group.is_trivial() {
-            let prefix = path
-                .iter()
-                .filter_map(|index| {
-                    let node = &self.nodes[*index];
-                    let (_, transition) = node.parent.as_ref()?;
-                    Some(ModelStep {
-                        transition: transition.clone()?,
-                        post_state: node.digest,
-                    })
+        path
+    }
+
+    /// The canonical path to node `at` of an unreduced run, its steps the
+    /// tree path's. A terminal stutter step is no step: the behaviour is the
+    /// prefix to the terminal state, stuttered forever. A deadlock names the
+    /// waiting threads of its last state (ADR-027 PD-4).
+    fn counterexample(
+        &self,
+        kind: CounterexampleKind,
+        at: usize,
+        over_binding: Option<ModelInstance>,
+    ) -> Step<TemporalCounterexample<S::TransitionId>> {
+        if !self.group.is_trivial() {
+            return Err(fault("an-unreduced-path-is-concrete").into());
+        }
+        let path = self.path(at);
+        let prefix = path
+            .iter()
+            .filter_map(|index| {
+                let node = &self.nodes[*index];
+                let (_, transition) = node.parent.as_ref()?;
+                Some(ModelStep {
+                    transition: transition.clone()?,
+                    post_state: node.digest,
                 })
-                .collect();
-            (self.nodes[cursor].initial_index, prefix)
-        } else {
-            self.concretise(&path, &mut kind)?
-        };
+            })
+            .collect();
+        let initial_state = path
+            .first()
+            .map_or(0, |root| self.nodes[*root].initial_index);
+        self.finished(kind, at, over_binding, initial_state, prefix)
+    }
+
+    fn finished(
+        &self,
+        kind: CounterexampleKind,
+        at: usize,
+        over_binding: Option<ModelInstance>,
+        initial_state: usize,
+        prefix: Vec<ModelStep<S::TransitionId>>,
+    ) -> Step<TemporalCounterexample<S::TransitionId>> {
         let fairness = match self.item {
             Item::Clause { fairness, .. } => fairness.clone(),
             Item::Deadlock => Vec::new(),
+        };
+        let blocked = if matches!(kind, CounterexampleKind::Deadlock) {
+            self.system
+                .blocked(&self.nodes[at].state)
+                .map_err(|stop| self.expansion_stop(stop))?
+        } else {
+            Vec::new()
         };
         Ok(TemporalCounterexample {
             initial_state,
@@ -1494,8 +1742,27 @@ impl Run<'_, '_> {
             fairness,
             kind,
             lasso: None,
+            blocked,
             refinement: None,
         })
+    }
+}
+
+impl Run<'_, ModelSystem<'_>> {
+    /// The canonical path to node `at`: its breadth-first tree path,
+    /// concretised under symmetry (FR-161).
+    fn model_counterexample(
+        &self,
+        mut kind: CounterexampleKind,
+        at: usize,
+        over_binding: Option<ModelInstance>,
+    ) -> Step<TemporalCounterexample> {
+        if self.group.is_trivial() {
+            return self.counterexample(kind, at, over_binding);
+        }
+        let path = self.path(at);
+        let (initial_state, prefix) = self.concretise(&path, &mut kind)?;
+        self.finished(kind, at, over_binding, initial_state, prefix)
     }
 
     /// ADR-021 EI-6 (FR-161 "Start", "Steps"): the subject's initial state
