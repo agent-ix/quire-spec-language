@@ -14,9 +14,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, PoisonError};
 
 use qsl_semantics::check::footprint::{
-    derive_selected_footprint, FootprintObject, FootprintRefusal, SymbolicFootprint,
-    SymbolicLocation,
+    derive_atom_reads, derive_constraint_reads, derive_footprint, derive_selected_footprint,
+    FootprintObject, FootprintRefusal, SymbolicFootprint, SymbolicLocation,
 };
+use qsl_semantics::check::CheckedNode;
 use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObservedRead, ReadLog};
@@ -24,6 +25,8 @@ use qsl_semantics::model::observation::AdmittedObservations;
 use qsl_semantics::model::state::StateModel;
 use quire_exact::{EffectiveId, NodeKey, ObjectReference, Value, ValueType};
 use quire_semantic_value::model_transition::ModelTransition;
+
+use crate::model_subject::ModelInstance;
 
 use super::encode::{parse_optional_reference, parse_reference};
 use super::walk::stop;
@@ -42,6 +45,9 @@ pub enum FootprintError {
     /// receiver or reference argument that is no reference text.
     #[error("the transition names no operation of its receiver's type")]
     UnknownTransition,
+    /// The package declares no state clause of the name.
+    #[error("the package declares no state constraint of that name")]
+    UnknownConstraint,
 }
 
 /// A step read a location outside its footprint (FR-155 "Read
@@ -295,32 +301,48 @@ fn instantiate(
     let locations = |symbolic: &BTreeSet<SymbolicLocation>| -> BTreeSet<Location> {
         symbolic
             .iter()
-            .filter_map(|location| match location {
-                SymbolicLocation::Field { object, field } => {
-                    bind(object).map(|object| Location::Field {
-                        object,
-                        field: field.clone(),
-                    })
-                }
-                SymbolicLocation::AnyField { field } => Some(Location::AnyField {
-                    field: field.clone(),
-                }),
-                SymbolicLocation::Membership { population, object } => {
-                    bind(object).map(|object| Location::Membership {
-                        population: population.clone(),
-                        object,
-                    })
-                }
-                SymbolicLocation::AnyMembership { population } => Some(Location::AnyMembership {
-                    population: population.clone(),
-                }),
-            })
+            .filter_map(|location| lower(location, &bind))
             .collect()
     };
     Footprint {
         reads: locations(&symbolic.reads),
         writes: locations(&symbolic.writes),
         enabling: locations(&symbolic.enabling),
+    }
+}
+
+/// `location` with the object it names replaced by `bind`'s object; `None`
+/// when a location about one object has no object to name.
+fn lower(
+    location: &SymbolicLocation,
+    bind: &dyn Fn(&FootprintObject) -> Option<ObjectReference>,
+) -> Option<Location> {
+    match location {
+        SymbolicLocation::Field { object, field } => bind(object).map(|object| Location::Field {
+            object,
+            field: field.clone(),
+        }),
+        SymbolicLocation::AnyField { field } => Some(Location::AnyField {
+            field: field.clone(),
+        }),
+        SymbolicLocation::Membership { population, object } => {
+            bind(object).map(|object| Location::Membership {
+                population: population.clone(),
+                object,
+            })
+        }
+        SymbolicLocation::AnyMembership { population } => Some(Location::AnyMembership {
+            population: population.clone(),
+        }),
+    }
+}
+
+/// The object type a reference or optional-reference parameter binds.
+fn declared_target(value_type: &ValueType) -> Option<EffectiveId> {
+    match value_type {
+        ValueType::Reference(target) => Some(*target),
+        ValueType::Option(payload) => declared_target(payload),
+        _ => None,
     }
 }
 
@@ -442,6 +464,151 @@ impl<'a> ModelSystem<'a> {
             }
         }
         Ok(self.footprint_for(application, &receiver, &arguments, selected)?)
+    }
+
+    /// Whether every operation of the subject has a derivable footprint, each
+    /// reference parameter taken at its declared type. A partial-order run
+    /// asks for this before it expands a state, so an operation whose clauses
+    /// read through a form with no footprint rule refuses the run instead of
+    /// stopping an expansion.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintError::Refused`] naming the first clause with no rule.
+    pub fn check_footprints_derivable(&self) -> Result<(), FootprintError> {
+        for (receiver_type, applications) in &self.applications {
+            for application in applications {
+                let arguments: Vec<(String, EffectiveId)> = application
+                    .declaration
+                    .parameters()
+                    .iter()
+                    .filter_map(|(name, value_type)| {
+                        declared_target(value_type).map(|target| (name.clone(), target))
+                    })
+                    .collect();
+                derive_footprint(
+                    self.package.graph(),
+                    &self.model,
+                    *receiver_type,
+                    application.declaring,
+                    &application.declaration,
+                    &arguments,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// FR-156 "Visibility": the locations the state constraint `name` reads.
+    /// The constraint is evaluated for every object of its context type, so
+    /// its reads are on any object.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintError::UnknownConstraint`] when the package declares no
+    /// such clause, and [`FootprintError::Refused`] when the clause reads
+    /// through a form QSpec FR-383 gives no footprint rule.
+    pub fn constraint_reads(&self, name: &str) -> Result<BTreeSet<Location>, FootprintError> {
+        let graph = self.package.graph();
+        let clause = graph
+            .state_clauses()
+            .iter()
+            .find(|clause| clause.name() == name)
+            .ok_or(FootprintError::UnknownConstraint)?;
+        let symbolic = derive_constraint_reads(graph, &self.model, clause)?;
+        Ok(symbolic
+            .iter()
+            .filter_map(|location| lower(location, &|_| None))
+            .collect())
+    }
+
+    /// FR-156 "Atom footprints": the symbolic locations the `holds` atom
+    /// whose checked condition is `condition` reads, with the clause's `over`
+    /// parameter `over` as the receiver. A [`ModelLetters`] over a checked
+    /// package answers its `reads` with this.
+    ///
+    /// [`ModelLetters`]: crate::model_subject::ModelLetters
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintRefusal`] when the condition reads through a form QSpec
+    /// FR-383 gives no footprint rule.
+    pub fn atom_reads(
+        &self,
+        over: &(String, ValueType),
+        condition: CheckedNode<'_>,
+    ) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+        derive_atom_reads(self.package.graph(), &self.model, over, condition)
+    }
+
+    /// FR-156 "Atom footprints": the locations an atom reads for `instance`
+    /// at `state`, from the atom's symbolic reads, which name the instance's
+    /// object as the receiver. An instance whose object `state` does not
+    /// hold reads the field on any object and the population's membership of
+    /// any object: a dependence kept, never an independence denied.
+    pub fn atom_locations(
+        &self,
+        reads: &BTreeSet<SymbolicLocation>,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+    ) -> BTreeSet<Location> {
+        let object = state
+            .state
+            .populations
+            .get(&instance.population)
+            .and_then(|objects| objects.get(&instance.key))
+            .and_then(|object| {
+                self.model
+                    .object_reference(&object.type_identity, &instance.key)
+                    .ok()
+            });
+        reads
+            .iter()
+            .filter_map(|location| match (location, &object) {
+                (
+                    SymbolicLocation::Field {
+                        object: FootprintObject::Receiver,
+                        field,
+                    },
+                    None,
+                ) => Some(Location::AnyField {
+                    field: field.clone(),
+                }),
+                (
+                    SymbolicLocation::Membership {
+                        population,
+                        object: FootprintObject::Receiver,
+                    },
+                    None,
+                ) => Some(Location::AnyMembership {
+                    population: population.clone(),
+                }),
+                _ => lower(location, &|bound| match bound {
+                    FootprintObject::Receiver => object.clone(),
+                    FootprintObject::Param(_) => None,
+                }),
+            })
+            .collect()
+    }
+
+    /// Expand `state` for a partial-order run (FR-155 "Read enforcement"):
+    /// as [`Self::successors_within`] with nothing withheld, a read outside
+    /// a step's footprint stopping the expansion as an internal failure.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] as `successors` returns it, or
+    /// `runtime_invariant`/`established-invariant-broken` when a step reads
+    /// outside its footprint or a transition has none.
+    pub fn successors_enforced(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<Expansion<ModelTransition, ModelSimState, super::ModelFinding>, ExpansionStop> {
+        self.successors_within(state, &|_| BTreeSet::new())
+            .map_err(|stopped| match stopped {
+                WithinStop::Expansion(stop) => stop,
+                WithinStop::Footprint(_) | WithinStop::Violation(_) => stop(BROKEN),
+            })
     }
 
     /// Expand `state` as `successors` does, holding every step's `pre` and

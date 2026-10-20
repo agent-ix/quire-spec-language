@@ -251,6 +251,11 @@ fn settle<T: Clone>(
                     boundary_states: *boundary_states,
                 })
             }
+            ReductionCause::Horizon { max_depth } => {
+                Row::inconclusive(InconclusiveCause::ReductionHorizon {
+                    max_depth: *max_depth,
+                })
+            }
         },
         ModelCheckOutcome::BoundReached { depth: reached, .. } => {
             depth = Some(*reached);

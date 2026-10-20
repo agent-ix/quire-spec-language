@@ -169,13 +169,13 @@ pub struct ClaimReads {
 
 /// ADR-027 FT-5 (ADR-021 POR-5): whether `step`, with footprint
 /// `footprint`, is visible to a claim whose atoms read `claim`: its write
-/// footprint meets a location an atom reads, or an atom reads its
+/// footprint affects a location an atom reads, or an atom reads its
 /// position's anchor and names its node or operation.
 pub fn visible(step: &ProtocolTransition, footprint: &Footprint, claim: &ClaimReads) -> bool {
     let writes = footprint
         .writes
         .iter()
-        .any(|written| claim.locations.iter().any(|read| written.meets(read)));
+        .any(|written| claim.locations.iter().any(|read| written.affects(read)));
     let named = match step.application() {
         Some(application) => claim
             .anchors
