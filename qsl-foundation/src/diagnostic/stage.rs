@@ -41,11 +41,14 @@ pub enum LimitKind {
     DiagnosticCount,
     /// Work budget: a stage's cumulative work units.
     WorkBudget,
+    /// Rational bits: the bit length of an exact rational's numerator or
+    /// denominator.
+    RationalBits,
 }
 
 impl LimitKind {
     /// Every kind, in the catalog row's order.
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::InputBytes,
         Self::TokenCount,
         Self::NodeCount,
@@ -53,6 +56,7 @@ impl LimitKind {
         Self::OccurrenceCount,
         Self::DiagnosticCount,
         Self::WorkBudget,
+        Self::RationalBits,
     ];
 
     /// The catalog's own cause tag for this kind, exactly
@@ -66,6 +70,7 @@ impl LimitKind {
             Self::OccurrenceCount => "occurrence-count-exceeded",
             Self::DiagnosticCount => "diagnostic-count-exceeded",
             Self::WorkBudget => "work-budget-exceeded",
+            Self::RationalBits => "rational-bits-exceeded",
         }
     }
 
@@ -80,6 +85,7 @@ impl LimitKind {
             Self::OccurrenceCount => "occurrence",
             Self::DiagnosticCount => "diagnostic",
             Self::WorkBudget => "work",
+            Self::RationalBits => "rational bit",
         }
     }
 }
