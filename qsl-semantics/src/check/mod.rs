@@ -289,7 +289,7 @@ pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedParallel, CheckedProtocol,
-    CheckedRole, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_memory::{
@@ -306,6 +306,9 @@ pub use protocol_slots::{
     CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRelated,
     CheckedRepeat, CheckedScheduling, CheckedSlotBinder, CheckedSlots, CheckedTerminalMember,
 };
+/// The premises a [`CheckedChannel`] records exactly as written (FR-218
+/// "Channels"), which its readers match on.
+pub use qsl_forms::{ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector};
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,

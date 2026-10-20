@@ -54,7 +54,7 @@ pub(crate) use graph::dominates;
 pub use types::{
     BoundAttempt, CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
     CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedParallel, CheckedProtocol,
-    CheckedRole, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -251,9 +251,22 @@ pub fn check(
         .find(|(_, declaration)| declaration.kind == qsl_forms::ProtocolNodeKind::Finish)
         .map(|(index, declaration)| (ProtocolNodeId(index), declaration.name.name.clone()));
 
+    let vias = protocol
+        .declarations
+        .iter()
+        .enumerate()
+        .filter_map(|(index, declaration)| {
+            declaration.channel.as_ref().map(|channel| CheckedVia {
+                node: ProtocolNodeId(index),
+                channel: channel.name.clone(),
+            })
+        })
+        .collect();
+
     Ok((
         CheckedProtocol {
             name: protocol.name.name.clone(),
+            vias,
             roles,
             parallels,
             finish,
