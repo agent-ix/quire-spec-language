@@ -102,3 +102,22 @@ Narrow test run at the reviewed sha:
 `cargo test -p qsl-eval --test it named_population` passed its 3 tests. The 2
 scratch probes printed the FND-001 fault and the FND-002 `Boolean(true)`. A
 temporal-only unit refused at emission.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | One exception to the FND-005 fix remains. When the domain of a population form (`count`, `sum`, `exists`, `all`, `only`) names a missing `M::P` under a model alias, the refusal is still `MissingName` located at the whole form, not at the second segment. Operand, quantifier-domain and value positions now use `MissingSegment`. | qsl-semantics/src/check/check/typing.rs:2760-2765 |
+| FND-009 | medium | A `holds` atom over a population that is not `complete` no longer decides, so FND-002 is fixed, but the stop's category differs from AC-7's. `named_members` returns `FamilyResult::Refused(NamedPopulationIncomplete)` with code `incomplete_population`/`incomplete-scope`. `ObservedLetters::atom` stores it as `HoldsStop::Refused`, and replay reports it as an S6a refusal (`ClauseDisposition::Evaluate`). FR-391-AC-7 says it "returns `Incomplete`", and state clauses get `AdmissionFailure::Incomplete`. The result is fail-closed, so it is not unsound, but the outcome class (refusal vs incomplete) is visible to anything that aggregates verdicts. Either amend FR-391 "Evaluation"/AC-7 to state the refusal for a `holds` atom, or make it a real `Incomplete`. The second option needs no ruling: pass the temporal clause's named populations as `required` to the trace's snapshot admission, which `admit_populations` now accepts, so the trace admits `Incomplete` exactly as state clauses do. | qsl-eval/src/value/expression/evaluate.rs:2441-2457, qsl-eval/src/temporal/observed.rs:140-148, qsl-replay/src/spine/clause/temporal.rs:223-231 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9accfb8bf: `finish_populations` seeds `members` from `values.completeness.keys()`, so every listed population has an entry. `a_complete_population_with_no_objects_is_an_empty_domain` asserts `Grow` holds and `Some` does not over an empty, complete `counters`. |
+| FND-002 | fixed | 9accfb8bf: `ObjectEnvironment::population_complete` (default `false`) is set by `finish_populations` and `observe_state`. `named_members` stops `incomplete_population`/`incomplete-scope` before reading any member, on every path. The test asserts it for the atom over an environment admitted for `Seen`, so the atom no longer decides. The outcome category is FND-009. |
+| FND-003 | fixed | 9accfb8bf: `named_lookup` calls `named_covers` (FR-084 typed incomplete result) and checks `conforms(reference.object_type(), T)`, refusing `ill_typed`/`type-mismatch` through the new `ModelRefusal::type_mismatch`, which `population::lookup` now shares. `a_named_lookup_finds_a_member_and_an_uncovered_type_is_incomplete` covers found, undefined and uncovered. The conformance refusal has no test of its own. |
+| FND-004 | fixed | 9accfb8bf: `require_named_populations` is deleted. `NamedReads` feeds each observation's named populations into FR-106 check 7's `required` set: pre-call, invocation pre and post, and the invariant through `admit_populations(required)`. `check_population_completeness` then closes the set transitively and treats an absent population as not complete. `a_named_population_requires_the_populations_its_objects_reference` asserts `Incomplete` when `others` is open and `dangling_reference` when it is closed. |
+| FND-005 | fixed | 9accfb8bf: `CheckCause::MissingSegment { name, offset }`, with `DeclarationRegions` offsetting the span. Tests now assert `nothing`, `Counter` and `counters`. The population-form exception is FND-008. |
+| FND-006 | fixed | 9accfb8bf: a form domain that is not a known population, or not under a model alias, refuses `PopulationFormOutsideRefinement` (`expression-form`). |
+| FND-007 | fixed | 9accfb8bf: `alias_of` without allocating, a single `if let` guard in the footprint arm (kept through the main merge in `Reader::node_reads`), and an ambiguity name that is just the alias. Rebuilding `NamedScope` per clause is unchanged, which is acceptable at this cost. |

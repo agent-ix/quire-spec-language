@@ -60,3 +60,14 @@ over-claim (mediums), and the AC-2, AC-3 and AC-8 location assertions encode
 a spec deviation (medium). FND-004 to FND-006 are lows. AC-1, AC-3, AC-4,
 AC-5, AC-6, the FR-139-AC-2 retag and the FR-155-AC-2 tag are backed by
 tests that can fail.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9accfb8bf: `a_population_domain_evaluates_as_its_all_instances_spelling` asserts `Incomplete` at admission for `P`, `Q`, `GrowQ` and `Cap`, and a stop with `incomplete_population`/`incomplete-scope` for the `holds` atom. That stop is a refusal, not `Incomplete` (SR-12229 FND-009). |
+| FND-002 | fixed | 9accfb8bf: the AC-8 tag was dropped from `a_function_body_names_no_population_and_seq_stays_refused`, which keeps `TC-1076`. |
+| FND-003 | fixed | 9accfb8bf: the AC-2, AC-3 and AC-8 tests assert the second-segment spans `nothing`, `Counter` and `counters`. |
+| FND-004 | deferred | Declared gap. TC-1076 row 7's per-member `population.visit` charge is still not asserted. AC-5's text does not name it, so this stays a TC-row gap only. |
+| FND-005 | fixed | 9accfb8bf: `a_named_lookup_finds_a_member_and_an_uncovered_type_is_incomplete`. |
+| FND-006 | fixed | 9accfb8bf: `a_holds_atom_naming_a_population_is_not_emitted` and `a_complete_population_with_no_objects_is_an_empty_domain`. |
