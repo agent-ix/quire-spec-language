@@ -9,7 +9,11 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::spine::{CompileRefusal, SuppliedLibrary};
-use qsl_semantics::check::{AssemblyCause, AssemblyError, ModelFamily, OwnerKind, ProfileCause};
+use qsl_semantics::check::{
+    AbstractionKey, AbstractionRefusal, AssemblyCause, AssemblyError, AuthoredBinding, CheckCause,
+    FrameBinding, MalformedEntry, ModelFamily, ObjectBinding, OperationKey, OwnerKind,
+    PopulationBinding, ProfileCause, RustField, RustPath, RustReceiver,
+};
 use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer, LayerForm};
 
 const CORE: &str = "quire.state.core/v1";
@@ -21,6 +25,11 @@ const MODEL: &str = "quire.model.complete/v1";
 const BODY: &str = "body ok using v on Config::ConfigVersion::size() { 1 }";
 const CALL: &str = "pre c using v on Config::ConfigVersion::probe { self.size() > 0 }";
 const NOOP: &str = "function noop using v(): Boolean pure { true }";
+const ABSTRACTION: &str = "abstraction A using v {\n\
+    type Config::ConfigVersion to \"store::Version\" { versionNumber to \"number\"; };\n\
+    population Config::config_history to \"store::history\";\n\
+    operation Config::ConfigVersion::attemptUpdate to \"store::update\" receiver \"self\" ();\n\
+    }";
 const LOOKUP: &str = "function q using v(p: Population<Config::ConfigVersion>[1], \
                       r: Config::ConfigVersion): Config::ConfigVersion pure \
                       { lookup<Config::ConfigVersion>(p, r) absent refused }";
@@ -219,13 +228,11 @@ fn state_clauses_need_no_model_profile() {
 
 /// FR-361-AC-6: a value-profile unit holding a construct of every family
 /// refuses once per construct, in source order, each retaining the selected
-/// layers and the required layer, though nothing uses a declaration. Verifies
-/// the `operation-body`, `dispatch-call` and `lookup` families; `abstraction`
-/// has no form yet, so FR-361-AC-6 is not bound.
+/// layers and the required layer, though nothing uses a declaration.
 #[trace("TC-1017")]
 #[test]
 fn every_construct_is_refused_once_in_source_order() {
-    let declarations = format!("{LOOKUP}\n{BODY}\n{CALL}");
+    let declarations = format!("{LOOKUP}\n{ABSTRACTION}\n{BODY}\n{CALL}");
     let found = refusals(&[("v", VALUE), ("c", CORE)], &declarations);
     let seen: Vec<_> = found
         .iter()
@@ -245,6 +252,7 @@ fn every_construct_is_refused_once_in_source_order() {
                 "lookup<Config::ConfigVersion>(p, r) absent refused",
                 layers.clone()
             ),
+            (ModelFamily::Abstraction, ABSTRACTION, layers.clone()),
             (ModelFamily::OperationBody, BODY, layers.clone()),
             (ModelFamily::DispatchCall, "self.size()", layers),
         ]
@@ -488,6 +496,360 @@ fn object_navigation_is_not_a_value_layer_form() {
             compile(&[("a", identity)], declaration)
                 .1
                 .unwrap_or_else(|refusal| panic!("{identity} refuses navigation: {refusal:?}"));
+        }
+    }
+}
+
+/// FR-361-AC-3, FR-304-AC-8: a value-profile unit holding an `abstraction`
+/// declaration refuses once at the declaration, `unsupported_construct`/
+/// `declaration-form`, family `abstraction`; under the model profile the same
+/// source compiles to the package's relation, the one `check_abstraction`
+/// gives the same bindings (FR-304-AC-1), located at the declaration.
+#[trace("FR-361-AC-3", "FR-304-AC-8", "TC-1014", "TC-811")]
+#[test]
+fn an_abstraction_declaration_needs_the_model_profile() {
+    let (refusal, located) = gate(&[("v", VALUE)], ABSTRACTION);
+    assert_eq!(located, ABSTRACTION);
+    assert_eq!(refusal.family, ModelFamily::Abstraction);
+    assert_eq!(refusal.owner_kind, OwnerKind::Abstraction);
+    assert_eq!(refusal.owner, "A");
+    assert_eq!(
+        refusals(&[("v", VALUE)], ABSTRACTION)[0]
+            .0
+            .cause
+            .catalog_code()
+            .to_string(),
+        "unsupported_construct/declaration-form"
+    );
+
+    let (_, compiled) = compile(&[("v", MODEL)], ABSTRACTION);
+    let compiled = compiled.expect("the model profile admits the declaration");
+    let relation = compiled
+        .package
+        .abstraction()
+        .expect("the package carries the relation");
+    assert_eq!(relation.len(), 3);
+    assert_eq!(relation.sites().len(), 1);
+
+    // The relation FR-304-AC-1 gives: the keys written out from the names the
+    // source writes (`Config::ConfigVersion`, `Config::config_history`,
+    // `Config::ConfigVersion::attemptUpdate`) in the domain package, not read
+    // back from the compiled relation.
+    let object = qsl_semantics::model::key::DeclarationKey {
+        package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
+        node: config_version_type(),
+    };
+    let population = qsl_semantics::model::key::DeclarationKey {
+        package: CONFIG_VERSION_PACKAGE_IDENTITY.to_owned(),
+        node: config_version_population_identity(),
+    };
+    let ident = |name: &str| quire_exact::Identifier::new(name).expect("an identifier");
+    let authored = [
+        AuthoredBinding::Object {
+            key: object.clone(),
+            value: ObjectBinding {
+                rust_type: RustPath::new("store::Version"),
+                fields: BTreeMap::from([(ident("versionNumber"), RustField::new("number"))]),
+            },
+        },
+        AuthoredBinding::Population {
+            key: population,
+            value: PopulationBinding {
+                collection: RustPath::new("store::history"),
+            },
+        },
+        AuthoredBinding::Frame {
+            key: OperationKey {
+                declaring: object,
+                operation: ident("attemptUpdate"),
+            },
+            value: FrameBinding {
+                function: RustPath::new("store::update"),
+                receiver: RustReceiver::SelfValue,
+                parameters: BTreeMap::new(),
+            },
+        },
+    ];
+    let expected = compiled
+        .package
+        .graph()
+        .check_abstraction(&authored)
+        .expect("the bindings check")
+        .with_sites(relation.sites().to_vec());
+    assert_eq!(*relation, expected);
+    assert_eq!(
+        relation
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>(),
+        authored
+            .iter()
+            .map(AuthoredBinding::key)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// The abstraction refusals of a model-profile unit, in order, with the text
+/// the first is located at.
+fn abstraction_refusals(declarations: &str) -> (Vec<AbstractionRefusal>, String) {
+    let (unit, compiled) = compile(&[("v", MODEL)], declarations);
+    let CompileRefusal::Check { refusals, region } = *compiled.expect_err("the unit refuses")
+    else {
+        panic!("a check refusal");
+    };
+    let causes = refusals
+        .iter()
+        .map(|refusal| match &refusal.cause {
+            CheckCause::Abstraction(cause) => (**cause).clone(),
+            other => panic!("an abstraction refusal, not {other:?}"),
+        })
+        .collect();
+    let region = region.expect("the first refusal is located");
+    let (start, end) = (
+        usize::try_from(region.start()).expect("a start offset"),
+        usize::try_from(region.end()).expect("an end offset"),
+    );
+    (causes, unit[start..end].to_owned())
+}
+
+const OBJECT_A: &str =
+    "abstraction A using v { type Config::ConfigVersion to \"store::Version\"; }";
+
+/// FR-304-AC-7: two declarations of one unit check into one relation with a
+/// site for each; a second binding of one key refuses `invalid_model_binding`/
+/// `conflicting-binding` whether its value is equal or different, naming both
+/// bindings and the key, at the second declaration.
+#[trace("FR-304-AC-7", "TC-810")]
+#[test]
+fn two_abstraction_declarations_make_one_relation() {
+    let population = "abstraction B using v { population Config::config_history to \"store::h\"; }";
+    let (_, compiled) = compile(&[("v", MODEL)], &format!("{OBJECT_A}\n{population}"));
+    let compiled = compiled.expect("two declarations check");
+    let relation = compiled.package.abstraction().expect("one relation");
+    assert_eq!(relation.len(), 2);
+    assert_eq!(relation.sites().len(), 2);
+
+    for (value, label) in [("store::Version", "equal"), ("store::Other", "different")] {
+        let again =
+            format!("abstraction B using v {{ type Config::ConfigVersion to \"{value}\"; }}");
+        let (found, located) = abstraction_refusals(&format!("{OBJECT_A}\n{again}"));
+        let [AbstractionRefusal::ConflictingBinding { key, first, second }] = &found[..] else {
+            panic!("{label}: one conflicting binding: {found:?}");
+        };
+        assert!(matches!(key, AbstractionKey::Object(_)), "{label}");
+        let rust_type = |binding: &AuthoredBinding| match binding {
+            AuthoredBinding::Object { value, .. } => value.rust_type.as_str().to_owned(),
+            other => panic!("an object binding, not {other:?}"),
+        };
+        assert_eq!(rust_type(first), "store::Version", "{label}");
+        assert_eq!(rust_type(second), value, "{label}");
+        assert_eq!(first.key(), *key, "{label}");
+        assert_eq!(second.key(), *key, "{label}");
+        assert_eq!(found[0].code().as_str(), "invalid_model_binding", "{label}");
+        assert_eq!(found[0].cause(), "conflicting-binding", "{label}");
+        assert_eq!(located, "B", "{label}: the second declaration");
+    }
+}
+
+/// FR-304-AC-3, QSpec FR-450 rule 1: a name that resolves to no declaration
+/// of its model refuses `missing_declaration`/`missing-name` at the name,
+/// naming the owning domain package; an operation its type does not declare
+/// refuses the same.
+#[trace("FR-304-AC-3")]
+#[test]
+fn an_abstraction_binding_naming_nothing_refuses_at_the_name() {
+    let declaration = "abstraction A using v { type Config::Absent to \"store::Version\"; }";
+    let (unit, compiled) = compile(&[("v", MODEL)], declaration);
+    let CompileRefusal::Check { refusals, region } = *compiled.expect_err("the name is absent")
+    else {
+        panic!("a check refusal");
+    };
+    assert_eq!(
+        refusals[0]
+            .cause
+            .catalog_code()
+            .expect("a catalog pair")
+            .to_string(),
+        "missing_declaration/missing-name"
+    );
+    let CheckCause::Abstraction(cause) = &refusals[0].cause else {
+        panic!("an abstraction refusal");
+    };
+    let AbstractionRefusal::UnresolvedName { package, name, .. } = &**cause else {
+        panic!("an unresolved name: {cause:?}");
+    };
+    assert_eq!(package.as_deref(), Some(CONFIG_VERSION_PACKAGE_IDENTITY));
+    assert_eq!(name, "Config::Absent");
+    let region = region.expect("the refusal is located");
+    let (start, end) = (
+        usize::try_from(region.start()).expect("a start offset"),
+        usize::try_from(region.end()).expect("an end offset"),
+    );
+    assert_eq!(&unit[start..end], "Config::Absent");
+
+    let (found, _) = abstraction_refusals(
+        "abstraction A using v { operation Config::ConfigVersion::nope to \"f\" receiver \"self\" (); }",
+    );
+    assert!(
+        matches!(&found[..], [AbstractionRefusal::MissingDeclaration { .. }]),
+        "{found:?}"
+    );
+    assert_eq!(found[0].cause(), "missing-name");
+}
+
+/// QSpec FR-450 rule 2: a name that resolves to a declaration of another kind
+/// refuses `invalid_model_binding`/`malformed-declaration`, not
+/// `missing-name`.
+#[test]
+fn a_name_of_another_kind_refuses_malformed_declaration() {
+    for (declaration, entry) in [
+        (
+            "abstraction A using v { population Config::ConfigVersion to \"store::h\"; }",
+            MalformedEntry::NotAPopulation,
+        ),
+        (
+            "abstraction A using v { type Config::config_history to \"store::T\"; }",
+            MalformedEntry::NotAnObjectType,
+        ),
+    ] {
+        let (found, _) = abstraction_refusals(declaration);
+        let [AbstractionRefusal::MalformedDeclaration {
+            entry: found_entry, ..
+        }] = &found[..]
+        else {
+            panic!("{declaration}: one malformed declaration: {found:?}");
+        };
+        assert_eq!(*found_entry, entry, "{declaration}");
+        assert_eq!(found[0].code().as_str(), "invalid_model_binding");
+        assert_eq!(found[0].cause(), "malformed-declaration");
+    }
+}
+
+/// QSpec FR-450 rule 4: a field bound twice refuses `invalid_model_binding`/
+/// `conflicting-binding`, naming both field bindings and the field; a
+/// parameter bound twice is `malformed-declaration`.
+#[test]
+fn a_field_or_parameter_bound_twice_refuses() {
+    let (found, located) = abstraction_refusals(
+        "abstraction A using v { type Config::ConfigVersion to \"store::T\" \
+         { versionNumber to \"a\"; versionNumber to \"b\"; }; }",
+    );
+    let [AbstractionRefusal::ConflictingField {
+        field,
+        first,
+        second,
+        first_span,
+        second_span,
+        ..
+    }] = &found[..]
+    else {
+        panic!("one conflicting field: {found:?}");
+    };
+    assert_eq!(field.as_str(), "versionNumber");
+    assert_eq!((first.as_str(), second.as_str()), ("a", "b"));
+    assert!(first_span.start < second_span.start);
+    assert_eq!(found[0].code().as_str(), "invalid_model_binding");
+    assert_eq!(found[0].cause(), "conflicting-binding");
+    assert_eq!(located, "A");
+
+    let (found, _) = abstraction_refusals(
+        "abstraction A using v { operation Config::ConfigVersion::attemptUpdate to \"f\" \
+         receiver \"self\" (n to \"a\", n to \"b\"); }",
+    );
+    let [AbstractionRefusal::MalformedDeclaration {
+        entry: MalformedEntry::DuplicateEntry(name),
+        ..
+    }] = &found[..]
+    else {
+        panic!("one duplicate parameter: {found:?}");
+    };
+    assert_eq!(name.as_str(), "n");
+    assert_eq!(found[0].cause(), "malformed-declaration");
+}
+
+/// FR-304 "Refusals": refusals come in source order of the bindings across the
+/// unit's declarations, each located at its own declaration.
+#[test]
+fn abstraction_refusals_come_in_source_order() {
+    let first = "abstraction A using v { type Config::config_history to \"store::T\"; }";
+    let second = "abstraction B using v { type Config::Absent to \"store::T\"; }";
+    let (found, located) = abstraction_refusals(&format!("{second}\n{first}"));
+    assert!(
+        matches!(
+            &found[..],
+            [
+                AbstractionRefusal::UnresolvedName { .. },
+                AbstractionRefusal::MalformedDeclaration { .. }
+            ]
+        ),
+        "{found:?}"
+    );
+    assert_eq!(located, "Config::Absent");
+    let (found, _) = abstraction_refusals(&format!("{first}\n{second}"));
+    assert!(
+        matches!(
+            &found[..],
+            [
+                AbstractionRefusal::MalformedDeclaration { .. },
+                AbstractionRefusal::UnresolvedName { .. }
+            ]
+        ),
+        "{found:?}"
+    );
+    assert_eq!(located_declaration(&format!("{first}\n{second}")), "A");
+}
+
+/// The text the first refusal of `declarations` is located at, when that
+/// refusal names no span of its own.
+fn located_declaration(declarations: &str) -> String {
+    abstraction_refusals(declarations).1
+}
+
+/// FR-304: an `abstraction` declaration's `using` alias names one of the
+/// unit's profile selections.
+#[test]
+fn an_abstraction_declaration_using_no_profile_refuses_at_the_alias() {
+    let declaration = "abstraction A using missing { type Config::ConfigVersion to \"store::T\"; }";
+    let found = refusals(&[("v", MODEL)], declaration);
+    assert!(
+        found.iter().any(|(error, located)| {
+            matches!(&error.cause, AssemblyCause::UndeclaredAlias { alias } if alias == "missing")
+                && located == "missing"
+        }),
+        "{found:?}"
+    );
+}
+
+/// FR-304-AC-8, TC-811 steps 3 and 4: a declaration with no binding, and a
+/// binding with an unquoted Rust path, refuse `invalid_syntax` at the
+/// offending token, under either profile.
+#[trace("FR-304-AC-8", "TC-811")]
+#[test]
+fn a_malformed_abstraction_declaration_refuses_invalid_syntax_at_the_token() {
+    for (declaration, offending) in [
+        ("abstraction A using v { }", "}"),
+        (
+            "abstraction A using v { type Config::ConfigVersion to store::T; }",
+            "store",
+        ),
+    ] {
+        for profile in [VALUE, MODEL] {
+            let (unit, compiled) = compile(&[("v", profile)], declaration);
+            let CompileRefusal::Source(diagnostic) = *compiled.expect_err("the unit refuses")
+            else {
+                panic!("{declaration}: a source refusal");
+            };
+            assert_eq!(diagnostic.code, qsl_foundation::Code::InvalidSyntax);
+            let region = diagnostic.region.expect("the refusal is located");
+            let at = unit
+                .find(declaration)
+                .expect("the declaration is in the unit")
+                + declaration.find(offending).expect("the token is in it");
+            assert_eq!(
+                usize::try_from(region.start()).expect("an offset"),
+                at,
+                "{declaration} under {profile}"
+            );
         }
     }
 }
