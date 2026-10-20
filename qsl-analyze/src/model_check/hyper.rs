@@ -601,11 +601,13 @@ impl<'a> Run<'_, 'a> {
         for instance in instances {
             // Only a finding at position 0 can bound a later instance: an
             // empty witness set at a later position needs the fair cycle
-            // beyond it. At position 0 the set is empty rank 2, which no
-            // later finding of rank 2 can precede.
+            // beyond it. A later instance is explored to its first phase
+            // alone; no later finding of rank 2 can precede one of rank 2.
             let cap = match best {
                 Some((0, 0, _)) => break,
-                Some((0, _, _)) => Some(0),
+                // Horizon 1 expands the initial states, where a position-0
+                // finding of a later instance is made.
+                Some((0, _, _)) => Some(1),
                 _ => None,
             };
             let run = match self.explore(instance, cap, &mut totals)? {
@@ -1533,18 +1535,19 @@ impl<'a> Run<'_, 'a> {
                 conjunct,
                 cause,
             } => {
-                // An HP-3 clause names the universal variables alone, and the
-                // existential paths end at the pre-state: the first member's.
-                let named = if self.witness {
-                    partner = Some(Self::first_partner(&state.state)?);
-                    variables.into_iter().take(universals).collect()
-                } else {
-                    variables
-                };
+                // An HP-3 clause's existential paths end at the pre-state, the
+                // first member's, and the evaluation names every variable
+                // with its state there (QSpec FR-400's reader rule).
+                let mut keys = posts.clone();
+                if self.witness {
+                    let first = Self::first_partner(&state.state)?;
+                    keys.extend_from_slice(first.digests());
+                    partner = Some(first);
+                }
                 (
                     stem.saturating_add(1),
-                    posts.clone(),
-                    named,
+                    keys,
+                    variables,
                     HyperLocus::Match { conjunct },
                     None,
                     cause,

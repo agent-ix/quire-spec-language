@@ -67,3 +67,27 @@ Declared out of scope, and confirmed not built: FR-184-AC-3 (no HP-1 engine; `ma
 | FND-007 | medium | No test has an empty-`X` state whose fair cycle is reached through a connecting path, as opposed to lying on the cycle. Mutant M10, which reports `position` as the stem length (tree path plus connecting path), survives every PR test. The reviewer oracle kills M10 at once: 62 of 300 random cases disagree on `position` and the first empty `X`. In every TC-602 fixture the first empty state is already in its fair component, so `connect` is always empty. Add one fixture where it is not, for example a reset-only loop after the exhaustion with weak fairness on `reset`. | qsl-analyze/tests/it/hyper_witness.rs:1-713 |
 | FND-008 | low | Several HP-3 paths have no test: an existential member's contract that evaluates refused or undefined (mutants M13 and M21 survive), more than one instance (M20 survives), strong-fairness refinement in the universal filter (M17 survives), a universal contract that is undefined in a witness state, two universal variables, and `max_automaton_states` on the witness product. These are the paths behind code-review FND-002 and FND-006. The reviewer oracle covers weak whole constraints with one universal variable, or none. | qsl-analyze/tests/it/hyper_witness.rs:1-713 |
 | FND-009 | low | FR-177-AC-6 asks for a `match` conjunct that calls a function whose evaluation exhausts its meter. The test replaces the whole `StepMatch` with a stub whose `existential` charges a zero meter, so no conjunct, no function and no evaluator meter path runs. Production has no `StepMatch` implementor yet, because S3 does not lower hyper `match` blocks. The HP-2 suite uses the same stub pattern, so this is the seam's limit, not a defect of this PR alone. Say so in the test doc, or tag the test TC-602 only until the evaluator seam exists. | qsl-analyze/tests/it/hyper_witness.rs:301-363 |
+
+## New findings (disposition pass 1)
+
+Re-review at 952d953d5. The oracle was re-run at 952d953d5. The first oracle covered 1,300 cases (seeds 7, 11 and 23) with 0 mismatches. A second oracle, new this round, adds undefined `μ_U` and `μ_E` conjuncts (division by `i` = 0) and checks each Undefined counterexample: its position; the locus; `variables`/`state_keys`; trace lengths (`μ_U`: existential path one step short); the partner tuple being a member of X at every position; and the evaluation being undefined exactly at the last step. That gave 1,300 cases with 0 mismatches: 396 stated Undefined, 11 refused `NoPartnerPath` (every candidate at the first position had an empty X) and 7 mixed ties.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | Three round-1 paths have no test. (1) A later instance beating an earlier instance's position-0 empty X with a position-0 finding of lower rank: mutant N2 (`Some((0, _, _)) => break`) survives. (2) An Unstated undefined evaluation tied with an empty X at one position: mutant N3 (Unstated ranked 3) survives. (3) An undefined `μ_U` with two universal variables, the shape behind code-review FND-010. The other round-1 mutants are killed: N4 (sooner) by a_state_keeps_its_earliest_refused_finding, N5 (name every variable) by an_undefined_universal_match_with_a_witness_ends_the_item_with_the_partners_path, and N6 (no cap) by a_violation_at_position_zero_bounds_the_later_instances. N1 (no break at a rank-0 finding at position 0) is equivalent and only costs exploration. M14 and M18 are equivalent, as in round 0. | qsl-analyze/tests/it/hyper_witness.rs:918-960 |
+
+## Dispositions
+
+Round 1, at 952d953d5. 
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | still-open | The #[trace] now reads TC-609 only, but the doc comment opens `/// FR-184-AC-1, its first half: ...` (hyper_witness.rs:732), and `quire matrix` still binds FR-184-AC-1 to hyper_witness.rs:738 by that prose citation, the same mechanism SR-13451 recorded on #1092. The matrix therefore still claims the AC. Reword the doc so it does not start with the AC id. |
+| FND-002 | fixed | Renamed to an_undefined_universal_match_with_no_witness_is_refused_not_guessed and tagged TC-602 only; the behaviour now follows FR-177 when X is non-empty. |
+| FND-003 | still-open | Two of the three are fixed (fairness lasso and replay refusal: TC-602 only, and matrix-clean). the_leaky_request_run_twice_gives_equal_outcomes is tagged TC-602, but its doc opens `/// FR-177-AC-1, last sentence of FR-176-AC-4 applied` (hyper_witness.rs:720), and the matrix still binds FR-177-AC-1 to hyper_witness.rs:724. |
+| FND-004 | fixed | Tagged TC-602 only; the matrix binds FR-177-AC-2 to :154 alone. |
+| FND-005 | fixed | Tagged TC-602 only; the matrix binds FR-177-AC-4 to :234 alone. |
+| FND-006 | fixed | Both letter tests are tagged TC-602 only; the matrix binds FR-177-AC-5 to :270 alone. |
+| FND-007 | fixed | Connect-path test added; mutant M10 killed by the_lasso_reaches_its_fair_cycle_by_a_connecting_path. |
+| FND-008 | fixed | New tests: two instances (M20 killed), two universals, max_automaton_states, member contract (M13 and M21 killed), and fair_in (M17 killed). Mutation status this round: 30 mutants, 25 killed; 5 survived: M14, M18 and N1 are equivalent, N2 and N3 are untested ranking edges (gap FND-010). |
+| FND-009 | fixed | The test doc now states it covers the engine half, because no S3 lowering exists; accepted. |
