@@ -12,8 +12,8 @@ use qsl_foundation::InternalFault;
 use crate::certificate::simulation::SimulationCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
-use crate::model_check::outcome::RunStats;
-use crate::proof_result::{IncompleteCause, InconclusiveCause};
+use crate::model_check::outcome::{ModelCheckOutcome, RunStats};
+use crate::proof_result::{IncompleteCause, InconclusiveCause, UnavailabilityCause};
 use crate::refinement::failure::Undetermined;
 
 /// Why the safety phase decided nothing (ADR-018 V-6).
@@ -91,10 +91,26 @@ pub enum SafetyOutcome {
     },
 }
 
-/// FR-142's `RefinementOutcome`: the safety half. The liveness half (FR-143)
-/// is a member beside it once it is built.
+/// The liveness half of a refinement (FR-143 Outputs, ADR-020 RE-1).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LivenessHalf {
+    /// The second phase ran. It holds with `HoldsReduced` and no reduction:
+    /// every behaviour of the concrete subject that is fair under `F_C`
+    /// satisfies `F_A`, with no certificate, since the core has no checker
+    /// for it (ADR-020 CT-4). A violation is a lasso whose failure is
+    /// `Divergence` or `AbstractUnfair`.
+    Checked(ModelCheckOutcome),
+    /// The second phase did not run (ADR-020 AX-5).
+    Unsupported(UnavailabilityCause),
+}
+
+/// FR-142's and FR-143's `RefinementOutcome`: the safety half and, when
+/// `F_A` is non-empty, the liveness half.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RefinementOutcome {
     /// The safety half.
     pub safety: SafetyOutcome,
+    /// The liveness half: `None` with `F_A` empty, and with a non-empty `F_A`
+    /// when the safety half is other than `Holds`.
+    pub liveness: Option<LivenessHalf>,
 }

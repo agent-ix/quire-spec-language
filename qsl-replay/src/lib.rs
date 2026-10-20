@@ -130,7 +130,9 @@ pub use model_check::limits::{
 };
 pub use model_check::outcome::{ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause};
 pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};
-pub use model_check::refinement_settle::settle_refinement_safety;
+pub use model_check::refinement_settle::{
+    settle_refinement, settle_refinement_safety, RefinementRecord,
+};
 pub use model_check::replay::{
     replay_model_trace, replay_protocol_trace, ModelTraceRefusal, ModelTraceReplayResult,
     ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProtocolTraceSubject,
@@ -149,11 +151,12 @@ pub use model_check::step_settle::{
     STEP_INDUCTION_DEPTH,
 };
 pub use refinement::{
-    check_initial, check_step, initial_history, map_state, open_systems, step_history,
-    ConcreteStep, EvalFailure, HiddenSlot, HistoryValues, MappedState, MappingFailure,
-    MappingRowRef, MappingUndetermined, ObjectKey, RefinementFailure, RefinementOutcome,
-    RefinementPosition, RefinementSystems, SafetyOutcome, SafetyUndecided, StepArgument,
-    StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken, Undetermined,
+    abstract_classes, check_initial, check_step, initial_history, map_state, open_systems,
+    step_history, AbstractClass, ConcreteStep, EvalFailure, HiddenSlot, HistoryValues,
+    LivenessHalf, MappedState, MappingFailure, MappingRowRef, MappingUndetermined, ObjectKey,
+    RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems, SafetyOutcome,
+    SafetyUndecided, StepArgument, StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken,
+    Undetermined,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;

@@ -247,6 +247,11 @@ impl FailedStep {
             Self::Fails(RefinementFailure::Undefined { position, .. }) => {
                 json!({"kind": "Undefined", "position": decimal(*position)})
             }
+            // The liveness half has no certificate, so no step check writes
+            // these.
+            Self::Fails(
+                RefinementFailure::Divergence { .. } | RefinementFailure::AbstractUnfair { .. },
+            ) => return Err("a step check fails with a safety kind".to_owned()),
             Self::Undefined(evaluation) => json!({
                 "kind": "UndefinedEvaluation",
                 "where": {

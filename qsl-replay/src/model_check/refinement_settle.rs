@@ -16,10 +16,16 @@
 //! or a cancellation stops settles V-7 naming the limit, and a certificate
 //! that names another refinement settles `ReplayRefused(stale_dependency)`.
 //!
+//! [`settle_refinement`] settles the whole item from its two halves. A
+//! liveness half that holds settles `proved` `Uncertified`, since the core
+//! has no checker for it (ADR-020 CT-4); a `Violated` one settles `refuted`
+//! only through the replay of its lasso, as a safety half does. The item's
+//! value is the safety half's unless the safety half is `proved`, and then it
+//! is the liveness half's: `Unsupported` carries the proved safety half
+//! beside it (ADR-020 AX-5).
+//!
 //! What this does not do yet: the requirement record and its `Refinement`
-//! property form, the obligation identity, the liveness half and the
-//! item-level combination of the two halves, which also settles an item with
-//! a liveness half `Uncertified` (FR-144-AC-7's `ensure` row).
+//! property form and the obligation identity.
 
 use quire_exact::Cancel;
 
@@ -29,10 +35,127 @@ use crate::certificate::simulation::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ModelCheckLimits;
+use crate::model_check::outcome::{ModelCheckOutcome, UndecidedCause};
 use crate::model_check::refinement_replay::RefinementTraceSettlement;
 use crate::model_check::settle::{ModelCheckRecord, Row, EXPLICIT_STATE};
-use crate::proof_result::{IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis};
-use crate::refinement::SafetyOutcome;
+use crate::proof_result::{
+    Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+};
+use crate::refinement::{LivenessHalf, RefinementOutcome, SafetyOutcome};
+
+/// FR-144's terminal record of one refinement item: the item's own record
+/// and the value each half settled.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefinementRecord {
+    /// The item's record, with the counterexample a `refuted` item carries.
+    pub record: ModelCheckRecord,
+    /// The safety half's value.
+    pub safety: TerminalValue,
+    /// The liveness half's value; `None` when the refinement has none.
+    pub liveness: Option<TerminalValue>,
+}
+
+/// FR-144: settle `outcome` as one terminal record, each half by its own
+/// rows. The safety half's certificate is checked by
+/// [`check_simulation_certificate`] over `certified`, and each `Violated`
+/// half's counterexample is handed to `replay` (FR-145).
+pub fn settle_refinement(
+    outcome: &RefinementOutcome,
+    limits: &ModelCheckLimits,
+    certified: &SimulationCertificateRequest<'_>,
+    cancel: &Cancel,
+    mut replay: impl FnMut(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
+) -> RefinementRecord {
+    let safety = settle_refinement_safety(&outcome.safety, limits, certified, cancel, &mut replay);
+    let liveness = match &outcome.liveness {
+        None => None,
+        Some(LivenessHalf::Unsupported(cause)) => Some(record_of(
+            Row::unsupported(cause.clone()),
+            limits,
+            None,
+            None,
+        )),
+        Some(LivenessHalf::Checked(checked)) => Some(settle_liveness(checked, limits, replay)),
+    };
+    let proved = matches!(safety.value, TerminalValue::Proved { .. });
+    RefinementRecord {
+        safety: safety.value.clone(),
+        liveness: liveness.as_ref().map(|record| record.value.clone()),
+        record: match liveness {
+            Some(liveness) if proved => liveness,
+            _ => safety,
+        },
+    }
+}
+
+/// The liveness half's record: `proved` `Uncertified` when it holds, `refuted`
+/// when its lasso replays, and the same rows as the safety half's otherwise.
+fn settle_liveness(
+    outcome: &ModelCheckOutcome,
+    limits: &ModelCheckLimits,
+    replay: impl FnOnce(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
+) -> ModelCheckRecord {
+    let mut counterexample = None;
+    let row = match outcome {
+        // No core checker covers the liveness half (ADR-020 CT-4).
+        ModelCheckOutcome::HoldsReduced { .. } => Row::proof(
+            ProofBasis::Exhaustive,
+            Certification::Uncertified,
+            SettlementBasis::ClosedScope,
+        ),
+        ModelCheckOutcome::Violated {
+            counterexample: payload,
+            ..
+        } => match replay(payload) {
+            Ok(RefinementTraceSettlement::Reproduced { .. }) => {
+                counterexample = Some(payload.as_ref().clone());
+                Row::refuted(SettlementBasis::DecisiveCounterexample)
+            }
+            Ok(RefinementTraceSettlement::Inconclusive(cause)) => {
+                Row::inconclusive(InconclusiveCause::ReplayParity(cause))
+            }
+            Ok(RefinementTraceSettlement::Stopped(reached)) => {
+                Row::stopped_run(IncompleteCause::ResourceExhausted, Some(reached))
+            }
+            Err(refusal) => Row::refused(&refusal),
+        },
+        ModelCheckOutcome::Undecided { cause, .. } => Row::inconclusive(match cause {
+            UndecidedCause::UndecidedSuccessor => InconclusiveCause::UndecidedSuccessor,
+            UndecidedCause::NoInitialState => InconclusiveCause::NoInitialState,
+            UndecidedCause::NoInstance => InconclusiveCause::NoInstance,
+            UndecidedCause::MatchUndetermined => InconclusiveCause::MatchUndetermined,
+            UndecidedCause::VacuousMatch => InconclusiveCause::VacuousMatch,
+        }),
+        ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
+        // The second phase of a refinement returns no other outcome.
+        ModelCheckOutcome::Holds { .. }
+        | ModelCheckOutcome::Reduction { .. }
+        | ModelCheckOutcome::BoundReached { .. } => Row::failed(),
+    };
+    record_of(row, limits, None, counterexample)
+}
+
+/// The record of `row` for a run under `limits`.
+fn record_of(
+    row: Row,
+    limits: &ModelCheckLimits,
+    depth: Option<u64>,
+    counterexample: Option<TemporalCounterexample>,
+) -> ModelCheckRecord {
+    ModelCheckRecord {
+        value: row.value,
+        label: row.label,
+        basis: row.basis,
+        execution: row.execution,
+        truth: row.truth,
+        method: EXPLICIT_STATE,
+        depth,
+        limits: limits.used(),
+        limit_reached: row.limit_reached,
+        counterexample,
+        hints: Vec::new(),
+    }
+}
 
 /// FR-144: settle `outcome`, a safety run under `limits`, as one terminal
 /// record. A `Holds` outcome's certificate is checked by
@@ -84,17 +207,5 @@ pub fn settle_refinement_safety(
         SafetyOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         SafetyOutcome::Fault { .. } => Row::failed(),
     };
-    ModelCheckRecord {
-        value: row.value,
-        label: row.label,
-        basis: row.basis,
-        execution: row.execution,
-        truth: row.truth,
-        method: EXPLICIT_STATE,
-        depth,
-        limits: limits.used(),
-        limit_reached: row.limit_reached,
-        counterexample,
-        hints: Vec::new(),
-    }
+    record_of(row, limits, depth, counterexample)
 }

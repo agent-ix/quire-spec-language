@@ -25,7 +25,7 @@ use crate::refinement_aux::{
 };
 
 fn run(world: &World<'_>) -> SafetyOutcome {
-    let RefinementOutcome { safety } = check_refinement(
+    let RefinementOutcome { safety, .. } = check_refinement(
         RefinementCheckRequest {
             refinement: world.refinement(),
             concrete: ModelSubject {
@@ -358,7 +358,7 @@ fn the_product_key_holds_the_history_values() {
 fn the_product_key_holds_the_candidate_set() {
     let unit = Unit::coin_extended();
     let world = unit.world(&coin_refines_extended(""));
-    let RefinementOutcome { safety } = check_refinement(
+    let RefinementOutcome { safety, .. } = check_refinement(
         RefinementCheckRequest {
             refinement: world.refinement(),
             concrete: ModelSubject {

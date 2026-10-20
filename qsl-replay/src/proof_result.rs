@@ -315,6 +315,10 @@ pub enum UnavailabilityCause {
         /// partial-order, constraint, that is not offered.
         reduction: ReductionKind,
     },
+    /// ADR-020 AX-5: a refinement with a hidden abstract field and a
+    /// non-empty `F_A` has no liveness half to decide. Wire cause
+    /// `unsupported_projection`/`unsupported-requested-capability`.
+    HiddenFieldLiveness,
 }
 
 impl UnavailabilityCause {
@@ -324,7 +328,9 @@ impl UnavailabilityCause {
             Self::SolverAbsent => "solver-absent",
             Self::BackendAbsent => "backend-absent",
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
-            Self::UnsupportedReduction { .. } => "unsupported-requested-capability",
+            Self::UnsupportedReduction { .. } | Self::HiddenFieldLiveness => {
+                "unsupported-requested-capability"
+            }
         }
     }
 
@@ -333,9 +339,9 @@ impl UnavailabilityCause {
     pub const fn code(&self) -> Option<&'static str> {
         match self {
             Self::SolverAbsent | Self::BackendAbsent => None,
-            Self::MissingFairnessPremise { .. } | Self::UnsupportedReduction { .. } => {
-                Some("unsupported_projection")
-            }
+            Self::MissingFairnessPremise { .. }
+            | Self::UnsupportedReduction { .. }
+            | Self::HiddenFieldLiveness => Some("unsupported_projection"),
         }
     }
 
