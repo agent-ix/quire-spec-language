@@ -71,3 +71,17 @@ Judgement calls accepted:
 - `position() -> Option<u64>`: it has no callers.
 
 `ModelTraceRefusal::RefinementLasso` is deleted, with no remaining code reference. No shim, compatibility layer or dead code was found. The extraction of `fairness_constraints` is behaviour-preserving, and the FR-126 suite is green. Mutation results are in SR-13596.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | FR-144 on main (#1117) says a `check_refinement` refusal (a second-phase internal fault, FR-143) "settles the item `failed` with that fault and no half value". Head 5884e0302 has no code that does this: `settle_refinement` takes only a `RefinementOutcome`, and `RefinementRecord.safety` is a required `TerminalValue`, so a record with no half value cannot be built. There is also no FR-143-AC-7 fault-injection test, although TC-548 step 7 calls for one. | qsl-replay/src/model_check/refinement_settle.rs:49-56, 62; qsl-analyze/src/model_check/refine.rs:632 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | A strong `F_A` constraint now gives `Unsupported(StrongAbstractFairness)` whatever the safety half is, and a hidden field is still reported first. Replay never reproduces a lasso that records a strong constraint. Oracle at 5884e0302: 266/266 strong cases are Unsupported, safety-failing ones included, with 0 mismatches. Weak `F_A`: 2100 cases, 0 mismatches. M29 and M31 are killed. |
+| FND-002 | fixed | The `RefinementOutcome.liveness` doc now names the hidden-field and strong cases, which hold whatever the safety half is. |
+| FND-003 | accepted-no-change | FR-143 on main (#1117) adopts the refusal: a second-phase fault returns a refusal and the safety half is not returned. The doc on `check_refinement` says so. The missing settlement path is the new FND-004. |

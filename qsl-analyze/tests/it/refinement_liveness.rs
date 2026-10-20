@@ -284,8 +284,9 @@ fn operation_of(outcome: RefinementOutcome) -> String {
 /// `Unsupported` with the proved safety half kept beside it, whatever else
 /// `F_A` holds; a weak `F_A` is decided as before. The loop `flipA, flipA`
 /// of the refinement visits `a = 0` forever and never takes the strong
-/// `flipB`.
-#[trace("TC-548")]
+/// `flipB`. The same beside a violated safety half, decided by the engine:
+/// `flipA` as a `stutter` changes the mapped state.
+#[trace("TC-548", "FR-143-AC-6")]
 #[test]
 fn a_strong_abstract_fairness_constraint_is_unsupported() {
     let unit = probe(
@@ -319,6 +320,19 @@ fn a_strong_abstract_fairness_constraint_is_unsupported() {
             );
         }
     }
+
+    let violated = probe_refinement(&[flip_a, strong]).replace(
+        "step Impl::Pair::flipA -> Spec::Pair::flipA(self);",
+        "step Impl::Pair::flipA -> stutter;",
+    );
+    let outcome = check_aux(&unit.world(&violated));
+    assert!(matches!(outcome.safety, SafetyOutcome::Violated { .. }));
+    assert_eq!(
+        outcome.liveness,
+        Some(LivenessHalf::Unsupported(
+            UnavailabilityCause::StrongAbstractFairness
+        ))
+    );
 }
 
 /// FR-143 Second phase (TC-548): the classes are taken in `F_A`'s source
@@ -528,7 +542,7 @@ fn an_undecided_abstract_contract_leaves_the_liveness_half_undecided() {
 /// FR-143 Behavior (TC-548): a refinement with a hidden abstract field and a
 /// strong `F_A` constraint is reported `HiddenFieldLiveness`, which is
 /// checked first.
-#[trace("TC-548")]
+#[trace("TC-548", "FR-143-AC-6")]
 #[test]
 fn a_hidden_field_is_reported_before_a_strong_constraint() {
     let unit = Unit::register();
@@ -540,4 +554,53 @@ fn a_hidden_field_is_reported_before_a_strong_constraint() {
             UnavailabilityCause::HiddenFieldLiveness
         ))
     );
+}
+
+/// The charges a run of `Pair`'s refinement with `refinement` makes against
+/// its cancellation handle.
+fn charges_of(refinement: &str) -> u32 {
+    let unit = Unit::pair();
+    let world = unit.world(refinement);
+    let charges = Arc::new(AtomicU32::new(0));
+    let counter = Arc::clone(&charges);
+    let counting = Cancel::observing(move || {
+        counter.fetch_add(1, Ordering::Relaxed);
+    });
+    let outcome = run_cancel(&world, &counting);
+    holds(&outcome);
+    charges.load(Ordering::Relaxed)
+}
+
+fn run_cancel(world: &AuxWorld<'_>, cancel: &Cancel) -> RefinementOutcome {
+    check_refinement(
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(AUX_UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        cancel,
+    )
+    .expect("the refinement is checked")
+}
+
+/// FR-143 Behavior (TC-548): the fairness decomposition of each class is
+/// made under the run's own cancellation handle. A second class adds the
+/// charges of its decomposition to the one the class loop polls, so a handle
+/// that the decomposition did not see would add one charge, not more.
+#[trace("TC-548")]
+#[test]
+fn the_decomposition_of_each_class_charges_the_runs_cancellation_handle() {
+    let one = pair_refinement(&["flipA", "flipB"]);
+    let two = one.replace(
+        "ensure fair weak each Spec::Pair::flipB;",
+        "ensure fair weak each Spec::Pair::flipB;\nensure fair weak each Spec::Pair::flipA;",
+    );
+    assert_ne!(one, two);
+    assert!(charges_of(&two) >= charges_of(&one) + 2);
 }

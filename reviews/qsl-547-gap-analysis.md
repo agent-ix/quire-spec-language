@@ -56,3 +56,20 @@ Mutation probes were run against `cargo test -p qsl-analyze --test it refinement
 ## Verdict
 
 Not mergeable while SR-13595 FND-001 stands, and the two medium coverage gaps should close in the same PR. Coverage of the delivered ACs is honest. FR-143-AC-1..4, FR-144-AC-2/3(hidden-field part)/7 and FR-145-AC-2/3/4(drift and determinism parts) each have a tagged test that asserts the AC's stated outcome, with the right TC tags (TC-548, TC-549, TC-550, TC-556). No tagged test that cannot fail was found. Untagged ACs FR-143-AC-5, FR-144-AC-1 and FR-144-AC-5 are declared remaining work.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | Head 5884e0302 does not contain main's d2e3c128b (#1117), so the branch's spec copy has no FR-143-AC-6, FR-143-AC-7 or AX-6. The new tests carry only `TC-548`, and no test is tagged FR-143-AC-6 or FR-143-AC-7. Two parts of AC-6/AC-7 have no test: AC-6's "strong variant whose safety half is violated" through the engine (the settle test uses a hand-built outcome with the hidden-field cause), and AC-7 (no fault-injection test). The branch merges main cleanly (merge-tree). | qsl-analyze/tests/it/refinement_liveness.rs:287-322, 530-543 |
+| FND-007 | low | Cancellation inside the second phase's fairness analysis is untested. Mutant M10' (pass a fresh `Cancel` to `analyze`) survives. `a_cancellation_during_the_second_phase_stops_it` only needs some phase-2 charge point to stop, and the `abstract_enabled` polls give it one. Removing the per-class poll (the original M10) is equivalent, because `analyze` charges the same handle before each decomposition. | qsl-analyze/src/model_check/refine.rs:724-734; qsl-analyze/tests/it/refinement_liveness.rs:460-502 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | M12 (a_loop_open_in_the_concrete_model_is_refused), M15, M16, M19 (a_loop_reproduces_only_when_the_recorded_constraint_is_owed_and_never_taken) are each killed by the PR suite. |
+| FND-002 | fixed | M08, M09 and M26 are killed, as is M27' (wrong Undecided cause). The per-class poll is removed: the original M10 is equivalent, since `analyze` polls the same handle. In-analyze cancel is untested: FND-007. |
+| FND-003 | fixed | Spec ruling merged on main (#1117): ADR-020 AX-6 and FR-143's strong bullet settle strong `F_A` as `unsupported`, and the code matches. The branch still has to merge main: FND-006. |
+| FND-004 | fixed | M06, M07, M17, M18, M23 and M25 are each killed by a new PR-suite test. |
+| FND-005 | fixed | FR-143 on main (#1117) names `Checked(HoldsReduced{reductions: []})` and the typed `UnavailabilityCause`. |

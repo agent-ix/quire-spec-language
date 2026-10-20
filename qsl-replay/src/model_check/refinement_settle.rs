@@ -27,6 +27,7 @@
 //! What this does not do yet: the requirement record and its `Refinement`
 //! property form and the obligation identity.
 
+use qsl_foundation::InternalFault;
 use quire_exact::Cancel;
 
 use crate::certificate::simulation::{
@@ -49,10 +50,31 @@ use crate::refinement::{LivenessHalf, RefinementOutcome, SafetyOutcome};
 pub struct RefinementRecord {
     /// The item's record, with the counterexample a `refuted` item carries.
     pub record: ModelCheckRecord,
-    /// The safety half's value.
-    pub safety: TerminalValue,
-    /// The liveness half's value; `None` when the refinement has none.
+    /// The safety half's value; `None` when `check_refinement` refused and
+    /// no half was decided.
+    pub safety: Option<TerminalValue>,
+    /// The liveness half's value; `None` when the refinement has none, and
+    /// when `check_refinement` refused.
     pub liveness: Option<TerminalValue>,
+    /// The internal fault `check_refinement` refused with, which the item
+    /// settles `failed` with; `None` for an item that has an outcome.
+    pub fault: Option<InternalFault>,
+}
+
+/// FR-144: settle the refusal `check_refinement` returned for an internal
+/// fault of its second phase (FR-143): the item is `failed` with that fault
+/// and no half value, the safety half and its certificate having been
+/// discarded with the outcome.
+pub fn settle_refinement_refusal(
+    fault: &InternalFault,
+    limits: &ModelCheckLimits,
+) -> RefinementRecord {
+    RefinementRecord {
+        record: record_of(Row::failed(), limits, None, None),
+        safety: None,
+        liveness: None,
+        fault: Some(fault.clone()),
+    }
 }
 
 /// FR-144: settle `outcome` as one terminal record, each half by its own
@@ -79,8 +101,9 @@ pub fn settle_refinement(
     };
     let proved = matches!(safety.value, TerminalValue::Proved { .. });
     RefinementRecord {
-        safety: safety.value.clone(),
+        safety: Some(safety.value.clone()),
         liveness: liveness.as_ref().map(|record| record.value.clone()),
+        fault: None,
         record: match liveness {
             Some(liveness) if proved => liveness,
             _ => safety,

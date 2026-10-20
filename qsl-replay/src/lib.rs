@@ -131,7 +131,7 @@ pub use model_check::limits::{
 pub use model_check::outcome::{ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause};
 pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};
 pub use model_check::refinement_settle::{
-    settle_refinement, settle_refinement_safety, RefinementRecord,
+    settle_refinement, settle_refinement_refusal, settle_refinement_safety, RefinementRecord,
 };
 pub use model_check::replay::{
     replay_model_trace, replay_protocol_trace, ModelTraceRefusal, ModelTraceReplayResult,

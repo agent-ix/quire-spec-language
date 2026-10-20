@@ -11,13 +11,14 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    open_systems, replay_refinement_trace, settle_refinement, settle_refinement_safety,
-    Certification, CounterexampleKind, Execution, IncompleteCause, InconclusiveCause, Lasso,
-    LivenessHalf, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord,
-    ModelStep, ModelTraceRefusal, ProofBasis, ReachedLimit, RefinementFailure, RefinementOutcome,
-    RefinementRecord, RefinementTraceSettlement, ReplayRefusal, ResultLabel, RunStats,
-    SafetyOutcome, SafetyUndecided, SettlementBasis, SimulationCertificateRequest,
-    TemporalCounterexample, TerminalValue, UnavailabilityCause, UndecidedCause,
+    abstract_classes, open_systems, replay_refinement_trace, settle_refinement,
+    settle_refinement_refusal, settle_refinement_safety, Certification, CounterexampleKind,
+    Execution, IncompleteCause, InconclusiveCause, Lasso, LivenessHalf, ModelCheckLimit,
+    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelStep, ModelTraceRefusal,
+    ProofBasis, ReachedLimit, RefinementFailure, RefinementOutcome, RefinementRecord,
+    RefinementTraceSettlement, ReplayRefusal, ResultLabel, RunStats, SafetyOutcome,
+    SafetyUndecided, SettlementBasis, SimulationCertificateRequest, TemporalCounterexample,
+    TerminalValue, UnavailabilityCause, UndecidedCause,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
@@ -640,7 +641,7 @@ fn a_proved_liveness_half_is_uncertified_and_a_replayed_lasso_refutes() {
     assert_eq!(settled.record.label, ResultLabel::Proved);
     assert_eq!(settled.record.basis, SettlementBasis::ClosedScope);
     assert_eq!(settled.record.method, "explicit-state");
-    assert_eq!(settled.safety, proved(Certification::Certified));
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
     assert_eq!(settled.liveness, Some(proved(Certification::Uncertified)));
 
     let safety_only = World::new(&mutated(
@@ -651,7 +652,7 @@ fn a_proved_liveness_half_is_uncertified_and_a_replayed_lasso_refutes() {
     let subject = cas(&safety_only);
     let settled = settle_item(&subject, &outcome(&subject));
     assert_eq!(settled.record.value, proved(Certification::Certified));
-    assert_eq!(settled.safety, proved(Certification::Certified));
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
     assert_eq!(settled.liveness, None);
 
     let world = World::new(&divergence_refinement());
@@ -664,7 +665,7 @@ fn a_proved_liveness_half_is_uncertified_and_a_replayed_lasso_refutes() {
         SettlementBasis::DecisiveCounterexample
     );
     assert!(settled.record.counterexample.is_some());
-    assert_eq!(settled.safety, proved(Certification::Certified));
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
     assert_eq!(settled.liveness, Some(TerminalValue::Refuted));
 }
 
@@ -683,7 +684,7 @@ fn liveness_through_a_hidden_field_settles_unsupported_beside_a_proved_safety_ha
     assert_eq!(settled.record.value, cause);
     assert_eq!(settled.record.label, ResultLabel::Unsupported);
     assert_eq!(settled.record.basis, SettlementBasis::Unavailable);
-    assert_eq!(settled.safety, proved(Certification::Certified));
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
     assert_eq!(settled.liveness, Some(cause));
     let TerminalValue::Unsupported(cause) = &settled.record.value else {
         panic!("unsupported");
@@ -970,7 +971,7 @@ fn a_stopped_or_undecided_liveness_half_settles_by_its_cause() {
         settled.record.value,
         TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor)
     );
-    assert_eq!(settled.safety, proved(Certification::Certified));
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
 }
 
 /// FR-144 Settlement (TC-549): the item's value is the safety half's unless
@@ -997,11 +998,41 @@ fn an_unsupported_liveness_half_does_not_replace_a_safety_half_that_is_not_prove
         settled.record.value,
         TerminalValue::Inconclusive(InconclusiveCause::NoInitialState)
     );
-    assert_eq!(settled.safety, settled.record.value);
+    assert_eq!(settled.safety, Some(settled.record.value.clone()));
     assert_eq!(
         settled.liveness,
         Some(TerminalValue::Unsupported(
             UnavailabilityCause::HiddenFieldLiveness
         ))
     );
+}
+
+/// FR-143-AC-7 (TC-548 step 7): a fault of the second phase makes
+/// `check_refinement` refuse with the fault and return no outcome, and the
+/// item settles `failed` with that fault and no half value. The fault is
+/// injected at its source: the classes of `F_A` are read from a system that
+/// is not the abstract subject's, which does not declare `F_A`'s operation.
+#[trace("TC-548", "FR-143-AC-7")]
+#[test]
+fn a_second_phase_fault_settles_the_item_failed_with_no_half_value() {
+    let world = World::new(&cas_refines_counter());
+    let swapped = world.concrete_system(UNLIMITED);
+    let Err(fault) = abstract_classes(&swapped, world.refinement().abstract_fairness(), &[]) else {
+        panic!("the swapped system declares no operation of F_A");
+    };
+    assert_eq!(
+        fault,
+        InternalFault::new(
+            "refinement-liveness",
+            "an-abstract-fairness-names-a-declared-operation"
+        )
+    );
+
+    let settled = settle_refinement_refusal(&fault, &ModelCheckLimits::default());
+    assert_eq!(settled.record.value, TerminalValue::Failed);
+    assert_eq!(settled.record.label, ResultLabel::Failed);
+    assert_eq!(settled.record.execution, Execution::Failed);
+    assert_eq!(settled.safety, None);
+    assert_eq!(settled.liveness, None);
+    assert_eq!(settled.fault, Some(fault));
 }
