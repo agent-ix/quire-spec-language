@@ -44,7 +44,11 @@ the `duration` reward of the step.
 ## Outputs
 
 ```rust
-pub struct ScheduledIdentity { pub operation: WireNodeId, pub receiver: ObjectKey, pub arguments: Vec<Value> } // non-random
+pub struct ScheduledIdentity {
+    pub operation: String,            // the operation's declaration identity text, as ModelTransition::operation carries it
+    pub receiver: ObjectReference,
+    pub arguments: Vec<Value>,        // one per non-random parameter, declared order
+}
 pub struct Action {
     pub identity: ScheduledIdentity,
     pub draws: Vec<Draw>,                       // canonical order of random vectors
@@ -52,15 +56,16 @@ pub struct Action {
 pub struct Draw {
     pub random: Vec<Value>,                     // one per random parameter, declared order
     pub probability: Rational,                  // product of the PM-1 probabilities
-    pub successors: Vec<(TransitionId, ModelState)>, // FR-120 post-states, canonical order
+    pub successors: Vec<(ModelTransition, ModelSimState)>, // FR-120 post-states, canonical order
     pub rewards: Vec<(Identifier, Value)>,
 }
-pub struct WeightedStep { pub transition: TransitionId, pub post: ModelState, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
-pub struct NotMarkov { pub state: StateKey, pub transition: ScheduledIdentity, pub random: Vec<Value>, pub post_states: u32 }
+pub enum TransitionId { Operation(ModelTransition), Stutter } // the terminal stutter step is no operation's
+pub struct WeightedStep { pub transition: TransitionId, pub post: ModelSimState, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
+pub struct NotMarkov { pub state: DigestRecord, pub transition: ScheduledIdentity, pub random: Vec<Value>, pub post_states: u32 } // state: the state-key digest
 
 impl ModelSystem {
-    pub fn actions(&self, state: &ModelState) -> Result<Vec<Action>, ExpansionStop>;
-    pub fn weighted_steps(&self, state: &ModelState, workload: &Workload)
+    pub fn actions(&self, state: &ModelSimState) -> Result<Vec<Action>, ExpansionStop>;
+    pub fn weighted_steps(&self, state: &ModelSimState, workload: &Workload)
         -> Result<Result<Vec<WeightedStep>, NotMarkov>, ExpansionStop>;
 }
 ```
@@ -95,11 +100,18 @@ impl ModelSystem {
   transition's arguments, random ones included; an operation without a
   reward of a name contributes 0 for it.
 - When `ModelSystem::new` admits a model, it SHALL evaluate every reward on
-  every argument vector of its operation's finite parameter domains and
-  refuse admission with `AdmissionFailure::NegativeReward{operation, reward,
-  arguments}` for the first negative value in canonical order.
-- An undecided contract conjunction during expansion SHALL stop with
-  FR-120's `ContractUndetermined`, as today.
+  every argument vector of its operation's finite parameter domains, a random
+  parameter ranging over its support, and refuse admission with the
+  refusal record `invalid_probabilistic_model`/`negative-reward`, carrying
+  `operation`, `reward` and `arguments`, for the first negative value in
+  canonical order.
+- When a contract conjunction is undecided during expansion, the expansion
+  SHALL report FR-120's `ContractUndetermined` finding, and the sampler (FR-188)
+  SHALL stop with `SampleStop::UndecidedSuccessor`.
+- FR-120's state key and transition identity encode `Boolean` and bounded
+  `Int` values and no enumeration value, so a model whose state, parameter
+  or random value is an enumeration cannot be expanded here; a fixture
+  declares such a field as a bounded `Int` or a `Boolean`.
 - Weights play no part in the support graph: the transitions that
   `weighted_steps` gives positive probability SHALL be exactly FR-120's
   successors (ADR-024 PM-6).
@@ -108,10 +120,10 @@ impl ModelSystem {
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-187-AC-1 | `Service` (ADR-024 §7.2) at the state `phase = Busy, attempts = 0` under `Steady`: `weighted_steps` returns six steps of `attempt`, with probabilities `441/500` (`1 ms`, `Ok`), `9/500` (`1 ms`, `Fail`), `343/5000`, `7/5000`, `147/5000`, `3/5000`, summing to 1; the `duration` reward is the drawn `d`. At `phase = Idle` the only step is `request` with probability 1 and `duration` 0. | Test (TC-622) |
+| FR-187-AC-1 | `Service` (ADR-024 §7.2) with `Phase` declared `Int[0, 2]` (`Idle` 0, `Busy` 1, `Done` 2), `outcome` a `Boolean` (true for `Ok`) and `d` typed `Millis`, at the state `phase = 1, attempts = 0` under `Steady`: `weighted_steps` returns six steps of `attempt`, with probabilities `441/500` (`d = 1`, `outcome = true`), `9/500` (`d = 1`, `false`), `343/5000` (`d = 3`, `true`), `7/5000` (`d = 3`, `false`), `147/5000` (`d = 12`, `true`), `3/5000` (`d = 12`, `false`), summing to 1; the `duration` reward is the drawn `d`. At `phase = 0` the only step is `request` with probability 1 and `duration` 0. | Test (TC-622) |
 | FR-187-AC-2 | The `Link` model (object `m: Msg { delivered: Boolean, attempts: Int[0, 2] }`, initially undelivered with 0 attempts; operations `send_a(lost: Boolean)` with `random Msg::send_a(lost) ~ { true: 1, false: 9 };` and `send_b(lost: Boolean)` with `random Msg::send_b(lost) ~ { true: 1, false: 4 };`, each with precondition `not self.delivered and self.attempts < 2` and postcondition `self.attempts = pre(self.attempts) + 1 and self.delivered = not lost`; `terminal when self.delivered or self.attempts = 2`) under the workload `Even` (weight 1 on each operation) at its initial state: `send_a` with `lost = false` has probability `9/20`, `send_a` lost `1/20`, `send_b` delivered `2/5`, `send_b` lost `1/10`. `actions` at the same state returns two actions in canonical order, each with draws summing to 1. At a delivered state the only step is the stutter step with probability 1. | Test (TC-622) |
 | FR-187-AC-3 | A variant of `Health` (ADR-024 §7.1) whose `tick` postcondition leaves a second Boolean field unconstrained: `weighted_steps` at the initial state returns `NotMarkov` naming the state key, `tick`, the drawn `fault` value and 2 post-states; `actions` returns one action whose draws each carry two successors. A variant whose postcondition is unsatisfiable for `fault = true` returns `NotMarkov` with 0 post-states from both. | Test (TC-622) |
-| FR-187-AC-4 | A reward `refund = n - 3` on an operation with parameter `n: Int[0, 5]` refuses admission with `NegativeReward` naming `n = 0`. Over every state of `Service`, the set of transitions with positive probability under `Steady` equals FR-120's successor set. | Test (TC-622) |
+| FR-187-AC-4 | A reward `refund = n - 3` on an operation with parameter `n: Int[0, 5]` refuses admission with `invalid_probabilistic_model`/`negative-reward` naming the operation, `refund` and `n = 0`. Over every state of `Service`, the set of transitions with positive probability under `Steady` equals FR-120's successor set. | Test (TC-622) |
 
 ## Dependencies
 
