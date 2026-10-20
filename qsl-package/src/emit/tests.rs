@@ -41,6 +41,7 @@ mod identity_depth;
 mod navigation;
 mod owners;
 mod population_bound;
+mod probabilistic;
 mod protocol_reference;
 mod reachability;
 mod receiver_frames;
@@ -1371,6 +1372,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
                 panic!("the fixture set holds no protocol reference")
+            }
+            Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
+                panic!("the fixture set declares no random parameter, reward or workload")
             }
         }
     }
