@@ -22,6 +22,7 @@ mod model_world;
 mod partial_order;
 mod por_world;
 mod protocol_constructs;
+mod protocol_footprints;
 mod protocol_system;
 mod quotient;
 mod reduction;

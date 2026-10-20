@@ -22,7 +22,7 @@ use quire_exact::Value;
 
 use super::identity::{BlockedThread, ProtocolTransition, StepKind, ThreadPath, WaitCause};
 use super::memory::{GatedStep, MemoryModel};
-use super::program::{Cursor, Rest};
+use super::program::{Cursor, Join, Rest};
 use super::settle::Settled;
 use super::{
     undetermined, Bound, Disposition, Instance, Parallel, ParallelKey, ProtocolRefusal,
@@ -437,26 +437,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let text = self.program.text(node)?.to_owned();
         let mut next = state.clone();
         let instance = Self::instance_mut(&mut next, ordinal)?;
-        // PS-2's "no live sibling holds" reads a sibling as live while its
-        // instance is, or while any thread its branch threads forked still
-        // runs: a reused path would otherwise become the nearest ancestor of
-        // that running descendant, and the clear below would take bindings
-        // it still reads.
-        let free = (0u64..)
-            .find(|candidate| {
-                !instance.parallels.contains_key(&ParallelKey {
-                    parent: path.clone(),
-                    node,
-                    ordinal: *candidate,
-                }) && !join.branches.iter().any(|(label, _)| {
-                    let branch = path.child(&text, label, *candidate);
-                    instance
-                        .threads
-                        .keys()
-                        .any(|thread| branch.is_prefix_of(thread))
-                })
-            })
-            .ok_or_else(|| ProtocolRefusal::fault("an-ordinal-is-free"))?;
+        let free = Self::free_ordinal(instance, path, node, &text, join)?;
         let owner = ParallelKey {
             parent: path.clone(),
             node,
@@ -518,9 +499,42 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(())
     }
 
+    /// The ordinal of the parallel instance `path`'s fork of `node`, whose
+    /// static declaration path is `text`, creates in `instance` (PS-2): the
+    /// smallest no live sibling holds.
+    ///
+    /// PS-2's "no live sibling holds" reads a sibling as live while its
+    /// instance is, or while any thread its branch threads forked still
+    /// runs: a reused path would otherwise become the nearest ancestor of
+    /// that running descendant, and the fork's clearing of the reused paths
+    /// would take bindings it still reads.
+    pub(super) fn free_ordinal(
+        instance: &Instance,
+        path: &ThreadPath,
+        node: ProtocolNodeId,
+        text: &str,
+        join: &Join,
+    ) -> Result<u64, ProtocolRefusal> {
+        (0u64..)
+            .find(|candidate| {
+                !instance.parallels.contains_key(&ParallelKey {
+                    parent: path.clone(),
+                    node,
+                    ordinal: *candidate,
+                }) && !join.branches.iter().any(|(label, _)| {
+                    let branch = path.child(text, label, *candidate);
+                    instance
+                        .threads
+                        .keys()
+                        .any(|thread| branch.is_prefix_of(thread))
+                })
+            })
+            .ok_or_else(|| ProtocolRefusal::fault("an-ordinal-is-free"))
+    }
+
     /// The parallel instance `path` waits at the join of `node` for: the one
     /// it forked and has not yet joined.
-    fn joined_instance<'i>(
+    pub(super) fn joined_instance<'i>(
         instance: &'i Instance,
         path: &ThreadPath,
         node: ProtocolNodeId,
