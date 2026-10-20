@@ -9,6 +9,10 @@
 //! counted against [`ExpansionLimits::max_candidates`]. Every effect a model
 //! describes is data: a [`StepEffect`] holds the creations, deletions and field
 //! changes of one step, and nothing outside the returned values changes.
+//!
+//! A random parameter (FR-185) ranges over its support, and FR-187's
+//! [`ModelSystem::actions`] and [`ModelSystem::weighted_steps`] give the
+//! probabilistic structure of a state's successors.
 
 mod constraint;
 mod contracts;
@@ -16,6 +20,7 @@ mod domain;
 pub(crate) mod encode;
 mod footprints;
 mod frames;
+pub(crate) mod probabilistic;
 mod refine;
 mod state_predicate;
 mod symmetry;
@@ -64,6 +69,10 @@ pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 pub use frames::judge::{
     operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,
 };
+pub use probabilistic::{
+    Action, Draw, NotMarkov, ScheduledIdentity, TransitionId, UndecidedSuccessor, Unsteppable,
+    WeightedStep,
+};
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
@@ -73,7 +82,8 @@ pub use terminal::TerminalClass;
 const EXHAUSTED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
 /// `runtime_invariant`/`established-invariant-broken`: the simulator built an
 /// input itself, so a refusal of it is a broken internal invariant.
-const BROKEN: CatalogCode = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+pub(crate) const BROKEN: CatalogCode =
+    CatalogCode::new("runtime_invariant", "established-invariant-broken");
 
 /// One simulated population and its finite key set (FR-120 "Inputs").
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -363,6 +373,8 @@ pub struct ModelSystem<'a> {
     limits: ExpansionLimits,
     meter: ScalarLimits,
     footprints: footprints::FootprintCache,
+    /// FR-185's random parameters and rewards, as FR-187 reads them.
+    probabilistic: probabilistic::Tables,
 }
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
@@ -537,7 +549,7 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
-        Ok(Self {
+        let system = Self {
             over: match selections {
                 [only] => Some(only.identity.clone()),
                 _ => None,
@@ -555,7 +567,10 @@ impl<'a> ModelSystem<'a> {
             limits: request.expansion,
             meter: request.meter,
             footprints: footprints::FootprintCache::default(),
-        })
+            probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
+        };
+        system.check_rewards()?;
+        Ok(system)
     }
 
     /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its
@@ -732,7 +747,17 @@ impl<'a> ModelSystem<'a> {
                     package: owner.package.clone(),
                     node: format!("{}/{}", owner.node, operation.name()),
                 };
-                for (name, value_type) in operation.parameters() {
+                for (position, (name, value_type)) in operation.parameters().iter().enumerate() {
+                    // A random parameter's finite domain is its support
+                    // (ADR-024 PM-1), whatever its declared type.
+                    if !domain::enumerable(value_type)
+                        && self
+                            .probabilistic
+                            .support(declaration.key(), operation.name(), position)
+                            .is_some()
+                    {
+                        continue;
+                    }
                     root(
                         Enc::Object(vec![
                             ("operation", declaration_enc(&key)),

@@ -144,8 +144,8 @@ mod temporal_clause;
 mod terminal;
 pub use probabilistic::{
     CheckedProbabilisticModel, ConfidenceFault, PreconditionSite, ProbabilisticCause,
-    ProbabilisticDeclaration, ProbabilisticOperation, RandomParameter, Reward, SupportValue,
-    WeightOwner, Workload,
+    ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticOperation, RandomParameter,
+    Reward, SupportValue, WeightOwner, Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
