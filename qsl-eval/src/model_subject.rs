@@ -23,6 +23,7 @@ use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{Incomplete, Meter};
 
 use crate::simulation::model::{ModelSimState, ModelSimulationRequest};
+use crate::simulation::protocol::ResolvedMemory;
 use crate::temporal::AtomReading;
 
 /// FR-125's model subject.
@@ -46,6 +47,10 @@ pub struct ProtocolSubject<'a> {
     pub over: ModelInstance,
     /// A binding for each static role.
     pub roles: Vec<RoleBinding>,
+    /// The resolved memory model of each outermost `parallel` (FR-219,
+    /// ADR-027 SE-4): part of the subject, and so of the obligation
+    /// identity.
+    pub memory: ResolvedMemory,
 }
 
 /// One static role's binding (ADR-027 PS-1): the role and the identity of

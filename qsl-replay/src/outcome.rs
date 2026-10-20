@@ -252,6 +252,34 @@ pub struct ItemCause {
     /// (FR-189-AC-7).
     #[serde(skip_serializing_if = "Option::is_none")]
     total: Option<String>,
+    /// A `memory-bound-reached` cause's request member (QSpec FR-439).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bound: Option<&'static str>,
+    /// A `memory-bound-reached` cause's count of bound-limited states.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    states: Option<u64>,
+    /// A `weak-access-shape` cause's site (QSpec FR-439).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    site: Option<String>,
+    /// A `weak-access-shape` cause's transition identity, in its canonical
+    /// text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transition: Option<String>,
+    /// A `weak-access-shape` cause's shape, in its canonical text, written
+    /// to the wire as the JSON it is.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "raw_json")]
+    shape: Option<String>,
+}
+
+/// `text`, canonical JSON, written as the JSON value it spells; text that is
+/// not JSON fails the serialization.
+fn raw_json<S: Serializer>(text: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> {
+    match text {
+        Some(text) => serde_json::value::RawValue::from_string(text.clone())
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer),
+        None => serializer.serialize_none(),
+    }
 }
 
 /// A property form's spelling on the outcome wire.
@@ -300,6 +328,11 @@ impl ItemCause {
             sources: None,
             refusal: None,
             total: None,
+            bound: None,
+            states: None,
+            site: None,
+            transition: None,
+            shape: None,
         }
     }
 
@@ -368,6 +401,14 @@ impl ItemCause {
             }
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionHorizon { max_depth }) => {
                 item.max_depth = Some(*max_depth);
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::MemoryBoundReached {
+                bound,
+                states,
+            }) => {
+                item.bound = Some(bound.member.as_str());
+                item.value = Some(bound.value);
+                item.states = Some(*states);
             }
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
@@ -495,6 +536,15 @@ impl OutcomeItem {
                     }
                     UnavailabilityCause::TotalAboveDrawRange { total } => {
                         item.total = Some(total.to_string());
+                    }
+                    UnavailabilityCause::WeakAccessShape {
+                        site,
+                        transition,
+                        shape,
+                    } => {
+                        item.site = Some(site.clone());
+                        item.transition.clone_from(transition);
+                        item.shape = Some(shape.clone());
                     }
                     UnavailabilityCause::SolverAbsent
                     | UnavailabilityCause::BackendAbsent

@@ -5,11 +5,19 @@
 
 use std::borrow::Cow;
 
+use qsl_foundation::MemoryModelName;
+use qsl_semantics::check::AccessClass;
+use qsl_semantics::check::AccessOrdering;
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_semantic_value::fairness::FairnessConstraint;
 
+use std::collections::BTreeSet;
+
+use super::footprint::ProtocolLocation;
 use super::identity::ThreadPath;
-use crate::simulation::model::ModelSimState;
+use crate::simulation::footprint::{Footprint, Location};
+use crate::simulation::model::encode::Enc;
+use crate::simulation::model::{Cell, ModelSimState};
 
 /// The step of a thread a memory model's gate is read for (SE-1 e).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -26,16 +34,118 @@ pub enum GatedStep {
     Attempt,
 }
 
-/// One internal step of a memory model (SE-1 d): its identity, a canonical
-/// text its model gives, and its effect.
+/// One internal step's typed canonical identity (SE-1 d, QSpec FR-436):
+/// `{"type":"memory-step","model":<model>,"step":<step>,"thread":<path>}`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MemoryStepId {
+    /// The memory model that owns the step.
+    pub model: MemoryModelName,
+    /// The step's name, such as `flush`.
+    pub step: &'static str,
+    /// The thread the step is about.
+    pub thread: ThreadPath,
+}
+
+impl MemoryStepId {
+    pub(crate) fn enc(&self) -> Enc {
+        Enc::tagged(
+            "memory-step",
+            vec![
+                ("model", Enc::text(self.model.label())),
+                ("step", Enc::text(self.step)),
+                ("thread", self.thread.enc()),
+            ],
+        )
+    }
+}
+
+/// One internal step of a memory model (SE-1 d): its identity and its
+/// effect.
 #[derive(Clone, Debug)]
 pub struct MemoryStep<C> {
     /// The step's identity.
-    pub identity: String,
+    pub identity: MemoryStepId,
     /// The memory component after the step.
     pub component: C,
     /// The model state after the step.
     pub model: ModelSimState,
+}
+
+/// The one shared location of an access (ADR-025 MA-2) and the cell of the
+/// model state it names.
+#[derive(Clone, Copy, Debug)]
+pub struct SharedCell<'a> {
+    /// The location.
+    pub location: &'a Location,
+    /// Its cell.
+    pub cell: &'a Cell,
+}
+
+/// What an attempt's application is, as EN-1 classifies it (FR-220): its
+/// class over the shared locations of its weak `parallel`, its ordering,
+/// and its one shared location. An attempt outside every weak `parallel`
+/// is local.
+#[derive(Clone, Copy, Debug)]
+pub struct Access<'a> {
+    /// The access class.
+    pub class: AccessClass,
+    /// The attempt's `ordering`.
+    pub ordering: Option<AccessOrdering>,
+    /// The shared location of a load, store or read-modify-write.
+    pub shared: Option<SharedCell<'a>>,
+}
+
+impl Access<'_> {
+    /// A local access, which applies in place under every model.
+    pub fn local() -> Self {
+        Self {
+            class: AccessClass::Local,
+            ordering: None,
+            shared: None,
+        }
+    }
+}
+
+/// A step as a memory model's footprint reads it (ADR-025 MR-1).
+#[derive(Clone, Copy, Debug)]
+pub enum FootprintStep<'a> {
+    /// An attempt, as EN-1 classified its application: its class, its
+    /// ordering and its one shared location.
+    Attempt {
+        /// The access class.
+        class: AccessClass,
+        /// The attempt's `ordering`.
+        ordering: Option<AccessOrdering>,
+        /// The shared location of a load, store or read-modify-write.
+        shared: Option<&'a Location>,
+    },
+    /// A step the model gates (SE-1 e).
+    Gated(GatedStep),
+    /// One of the model's own internal steps, and every shared location of
+    /// the subject, which its thread may store.
+    Memory {
+        /// The step's identity.
+        identity: &'a MemoryStepId,
+        /// The shared locations.
+        stored: &'a BTreeSet<Location>,
+    },
+}
+
+/// `buf(thread)`: `thread`'s part of the memory component (ADR-025 MR-1).
+pub(crate) fn buffer_location(thread: &ThreadPath) -> Location {
+    Location::Protocol(ProtocolLocation::Buffer(thread.clone()))
+}
+
+/// Where an attempt's delta went (SE-1 c).
+#[derive(Clone, Debug)]
+pub enum Written<C> {
+    /// The model state and component after the step.
+    Applied(ModelSimState, C),
+    /// The model's gate disables this application (SE-1 e), such as a
+    /// locked access whose thread's buffer is not empty.
+    Disabled,
+    /// A store a memory bound does not expand at this state (ADR-025 MB-3).
+    Cut,
 }
 
 /// ADR-027 SE-1: the memory model a `parallel` runs under, through its
@@ -43,6 +153,12 @@ pub struct MemoryStep<C> {
 pub trait MemoryModel {
     /// (a) The memory state, a member of the state key.
     type Component: Clone + Eq + std::fmt::Debug + Encode;
+
+    /// The resolved models (FR-219) this memory model implements: a
+    /// protocol subject whose `parallel` resolves to another is refused.
+    fn models(&self) -> &'static [MemoryModelName] {
+        &[MemoryModelName::Sc]
+    }
 
     /// (a) The component of an initial state.
     fn initial(&self) -> Self::Component;
@@ -56,15 +172,17 @@ pub trait MemoryModel {
         model: &'s ModelSimState,
     ) -> Cow<'s, ModelSimState>;
 
-    /// (c) Where `thread`'s attempt from `pre` to `post` writes its delta:
-    /// the model state and component after the step.
+    /// (c) and (e) Where `thread`'s attempt `access` from `pre` to `post`
+    /// writes its delta, `post` computed over the thread's observation; or
+    /// that the gate disables it, or a memory bound cuts it.
     fn write(
         &self,
         component: &Self::Component,
         thread: &ThreadPath,
+        access: &Access<'_>,
         pre: &ModelSimState,
         post: ModelSimState,
-    ) -> (ModelSimState, Self::Component);
+    ) -> Written<Self::Component>;
 
     /// (d) The internal steps enabled at (`component`, `model`), each with
     /// its identity and effect.
@@ -77,12 +195,14 @@ pub trait MemoryModel {
     /// (e) Whether `thread`'s `step` is enabled by the model.
     fn gate(&self, component: &Self::Component, thread: &ThreadPath, step: GatedStep) -> bool;
 
-    /// (f) The component after `parent` forks `branches`.
+    /// (f) The component after `parent` forks `branches` of a `parallel`
+    /// whose resolved model is `model`.
     fn split(
         &self,
         component: &Self::Component,
         parent: &ThreadPath,
         branches: &[ThreadPath],
+        model: MemoryModelName,
     ) -> Self::Component;
 
     /// (f) The component after `parent` joins `branches`.
@@ -103,6 +223,19 @@ pub trait MemoryModel {
     /// (h) The constraints the model adds to every infinite-trace clause,
     /// with a `memory` origin.
     fn fairness(&self) -> Vec<FairnessConstraint>;
+
+    /// ADR-025 MR-1: add to `footprint`, `thread`'s `step`'s protocol and
+    /// model footprint, the memory-component locations it reads, writes or
+    /// is enabled by, and take out a model write the model does not apply in
+    /// place; `false` when `step` is not a step of this model at
+    /// `component`.
+    fn footprint(
+        &self,
+        component: &Self::Component,
+        thread: &ThreadPath,
+        step: FootprintStep<'_>,
+        footprint: &mut Footprint,
+    ) -> bool;
 }
 
 /// SE-2: the sequentially consistent memory model.
@@ -148,10 +281,11 @@ impl MemoryModel for Sc {
         &self,
         _component: &ScComponent,
         _thread: &ThreadPath,
+        _access: &Access<'_>,
         _pre: &ModelSimState,
         post: ModelSimState,
-    ) -> (ModelSimState, ScComponent) {
-        (post, ScComponent)
+    ) -> Written<ScComponent> {
+        Written::Applied(post, ScComponent)
     }
 
     /// None.
@@ -174,6 +308,7 @@ impl MemoryModel for Sc {
         _component: &ScComponent,
         _parent: &ThreadPath,
         _branches: &[ThreadPath],
+        _model: MemoryModelName,
     ) -> ScComponent {
         ScComponent
     }
@@ -200,5 +335,16 @@ impl MemoryModel for Sc {
     /// None.
     fn fairness(&self) -> Vec<FairnessConstraint> {
         Vec::new()
+    }
+
+    /// Nothing: `sc` names no memory location and has no memory step.
+    fn footprint(
+        &self,
+        _component: &ScComponent,
+        _thread: &ThreadPath,
+        step: FootprintStep<'_>,
+        _footprint: &mut Footprint,
+    ) -> bool {
+        !matches!(step, FootprintStep::Memory { .. })
     }
 }

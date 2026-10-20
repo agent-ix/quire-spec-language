@@ -50,5 +50,5 @@ pub use sampled::{
     replay_sampled, sample_probabilistic, SampleStop, SampledBehaviour, SampledDisagreement,
     SampledRecord, SampledReplay, SampledReplayRefusal, SampledStep,
 };
-pub use subject::SubjectSystem;
+pub use subject::{Bounded, SubjectSystem};
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

@@ -5,7 +5,10 @@
 use crate::certificate::closure::ClosureCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
-use crate::proof_result::{AppliedReduction, IncompleteCause, ReductionKind, SymmetryBrokenCause};
+use crate::proof_result::{
+    AppliedReduction, IncompleteCause, MemoryBound, ReductionKind, SymmetryBrokenCause,
+};
+use qsl_eval::simulation::protocol::WeakAccessShape;
 use qsl_semantics::model::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -82,6 +85,23 @@ pub enum ReductionCause {
     },
 }
 
+/// Why a run over a subject with a weak `parallel` settles by its memory
+/// model (ADR-025 MV-1, MB-4).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MemoryCause {
+    /// V-8: the pre-check found an access shape that is not one access, or
+    /// a weak `parallel` whose join is not `all`; no state was explored.
+    WeakAccessShape(Box<WeakAccessShape>),
+    /// V-6: the run completed with no counterexample and at least one
+    /// bound-limited state.
+    BoundReached {
+        /// The bound.
+        bound: MemoryBound,
+        /// The bound-limited states.
+        states: u64,
+    },
+}
+
 /// One EN-1 run's outcome (FR-126 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelCheckOutcome<T = ModelTransition> {
@@ -111,6 +131,14 @@ pub enum ModelCheckOutcome<T = ModelTransition> {
     Reduction {
         /// Why.
         cause: ReductionCause,
+        /// The run's counts.
+        stats: RunStats,
+    },
+    /// A run over a subject with a weak `parallel` settled by its memory
+    /// model (ADR-025 MV-1, MB-4).
+    Memory {
+        /// Why.
+        cause: MemoryCause,
         /// The run's counts.
         stats: RunStats,
     },
@@ -154,6 +182,7 @@ impl<T> ModelCheckOutcome<T> {
             Self::Holds { stats, .. }
             | Self::HoldsReduced { stats, .. }
             | Self::Reduction { stats, .. }
+            | Self::Memory { stats, .. }
             | Self::Violated { stats, .. }
             | Self::BoundReached { stats, .. }
             | Self::Undecided { stats, .. }
