@@ -121,7 +121,7 @@ pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTrac
 pub use model_check::refinement_settle::settle_refinement_safety;
 pub use model_check::replay::{
     replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ModelTraceValue,
+    ModelTraceSubject, ModelTraceValue, StrongFairnessHint,
 };
 pub use model_check::settle::{
     settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,

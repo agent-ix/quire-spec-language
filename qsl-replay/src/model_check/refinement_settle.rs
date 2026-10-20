@@ -78,5 +78,6 @@ pub fn settle_refinement_safety(
         limits: limits.used(),
         limit_reached: row.limit_reached,
         counterexample,
+        hints: Vec::new(),
     }
 }

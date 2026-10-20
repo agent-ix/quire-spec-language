@@ -166,7 +166,7 @@ impl Fixture {
         states
     }
 
-    fn values(&self, counterexample: &TemporalCounterexample, object: &str) -> Vec<i64> {
+    pub(crate) fn values(&self, counterexample: &TemporalCounterexample, object: &str) -> Vec<i64> {
         self.positions(counterexample)
             .iter()
             .map(|state| value(state, object))

@@ -34,8 +34,8 @@ use crate::counter::{document, UNLIMITED, ZERO};
 use crate::liveness::{counter, is_zero};
 use crate::units::{clause, config_object, health, shipped_unit_text, unit, Atoms, Domain, World};
 
-const FORMULA: &str = "always eventually holds(c.versionNumber = 2)";
-const WHOLE: &str = "fair weak Config::ConfigVersion::attemptUpdate;";
+pub(crate) const FORMULA: &str = "always eventually holds(c.versionNumber = 2)";
+pub(crate) const WHOLE: &str = "fair weak Config::ConfigVersion::attemptUpdate;";
 const EACH: &str = "fair weak each Config::ConfigVersion::attemptUpdate;";
 const OVER: &str = "c: Config::ConfigVersion";
 
@@ -54,7 +54,12 @@ fn config(shipped: bool, fairness: &str) -> World {
 
 /// [`config`] with the claim `formula` and the initial versions of `a` and
 /// `b`.
-fn config_over(shipped: bool, fairness: &str, formula: &str, versions: (i64, i64)) -> World {
+pub(crate) fn config_over(
+    shipped: bool,
+    fairness: &str,
+    formula: &str,
+    versions: (i64, i64),
+) -> World {
     let domain = Domain::config_version();
     let clause = clause(OVER, fairness, formula);
     let text = if shipped {
@@ -112,7 +117,7 @@ fn run(
     )
 }
 
-fn decide(world: &World) -> Outcome {
+pub(crate) fn decide(world: &World) -> Outcome {
     run(
         world,
         &reaches_two(world),
@@ -122,7 +127,7 @@ fn decide(world: &World) -> Outcome {
     )
 }
 
-fn violated(outcome: &Outcome) -> &TemporalCounterexample {
+pub(crate) fn violated(outcome: &Outcome) -> &TemporalCounterexample {
     match outcome {
         Ok(ModelCheckOutcome::Violated { counterexample, .. }) => counterexample,
         other => panic!("expected a violation, got {other:?}"),
@@ -154,7 +159,7 @@ fn positions(world: &World, counterexample: &TemporalCounterexample) -> Vec<Mode
 
 /// Which object a step's receiver is: the receiver text carries the object
 /// id as hex (`a` is 61, `b` is 62).
-fn receiver(step: &qsl_replay::ModelStep) -> char {
+pub(crate) fn receiver(step: &qsl_replay::ModelStep) -> char {
     let text = step.transition.receiver().expect("a receiver");
     if text.contains("\"identity\":\"61\"") {
         'a'
@@ -420,14 +425,14 @@ fn a_restless_system_has_a_lasso_that_never_recovers_for_three_positions() {
 /// The example world's letters, each atom of the clause (in clause-node
 /// order) a function of the bound object's version: `Some(truth)`, or `None`
 /// for an undefined division by zero.
-struct Versions<'w> {
+pub(crate) struct Versions<'w> {
     world: &'w World,
     atoms: Vec<FormulaNodeId>,
     reads: Vec<fn(i64) -> Option<bool>>,
 }
 
 impl<'w> Versions<'w> {
-    fn new(world: &'w World, reads: Vec<fn(i64) -> Option<bool>>) -> Self {
+    pub(crate) fn new(world: &'w World, reads: Vec<fn(i64) -> Option<bool>>) -> Self {
         let atoms = qsl_eval::automaton::translate(&world.clauses[0], 1 << 20)
             .expect("the clause translates")
             .atoms()
