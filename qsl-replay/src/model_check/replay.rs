@@ -883,8 +883,7 @@ fn unfair_constraint(
 /// enabled at some loop state and taken by no loop step is named `Whole`;
 /// otherwise the first transition identity of it, in canonical transition
 /// order, that is enabled at a loop state and taken by no loop step is named
-/// `Each`. An operation the clause already constrains that way gets none, and
-/// a terminal stutter loop, where nothing is enabled, gets none.
+/// `Each`. A terminal stutter loop, where nothing is enabled, gets none.
 fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFairnessHint> {
     let mut hints = Vec::new();
     for (declaring, name, text) in system.operations() {

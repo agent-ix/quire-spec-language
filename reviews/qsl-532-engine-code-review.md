@@ -153,3 +153,37 @@ analysis.
 | FND-005 | low | FR-133's suppression rule ("an operation the clause already constrains that way gets none"), coded as `if !clause.fairness().contains(&suggested)`, can no longer be reached. A `Whole` hint is computed only when the operation is enabled at a loop state and taken by no loop step. An `Each` hint is computed only when an identity is enabled at a loop state and taken by no loop step. If the clause held that same strong constraint, the strong check in `unfair_constraint`, which this PR adds, would refuse the lasso `UnfairLasso` before `strong_hints` runs. That holds for any lasso, not only EN-1's. The new `strong_hint.rs` header gives the wrong reason the case is uncovered ("EN-1 builds only lassos that take it"). Fix: correct the header, and raise with the spec owner whether FR-133 should drop the suppression bullet, or keep it with a note that the strong replay check makes it unreachable. | qsl-replay/src/model_check/replay.rs:934, qsl-analyze/tests/it/strong_hint.rs:8-11 |
 | FND-006 | low | Small comment and idiom issues. (1) The new `quotient.rs` module doc line is about 150 columns wide and reads as history ("decided unreduced since FR-130, but AC-4 stays untagged"), with no reason given for leaving AC-4 untagged. (2) `decided`'s doc says "with a refinement-free outcome", but it is also used for the `Handoff` run, whose outcome comes from a refinement. (3) The `FairnessKind` to `Strength` mapping is now written twice, as `strength_of` in liveness.rs and as an inline `match` in replay.rs. Both crates and qsl-eval already depend on `quire-semantic-value`, so one `impl From<FairnessKind> for Strength` in `qsl_eval::fairness` would serve both. | qsl-analyze/tests/it/quotient.rs:14-18, qsl-analyze/tests/it/strong_fairness.rs:39-42, qsl-analyze/src/model_check/liveness.rs:267-273, qsl-replay/src/model_check/replay.rs:848-851 |
 | FND-007 | low | `FR-133-AC-1` is now tagged on just one test, `the_strong_whole_mutex_refutation_carries_the_same_hint`, the `strong` (whole) half, so the matrix shows AC-1 as covered. But the test for its `weak each` half, `the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero`, still carries only `TC-534`. AC-1's last sentence ("Both records still settle `refuted`, with the same counterexample and obligation identity as when the hint is not computed") is asserted by neither test. Neither one settles the mutex refutations; both stop at `hints_of`. Fix: tag the weak test `FR-133-AC-1` too, and settle both refutations through `settled` (as the AC-2 test does), asserting `refuted` and the unchanged counterexample and obligation identity. | qsl-analyze/tests/it/strong_hint.rs:248-310 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The fix round deleted the FR-133 suppression branch and the `clause` parameter of `strong_hints`. That is correct: the merged spec PR #1076 removed the bullet, and a probe confirms the branch was never reached. But the function's doc comment still says "An operation the clause already constrains that way gets none". That now describes behaviour the function no longer has, and that the merged FR-133 no longer states. Fix: drop that clause from the doc comment, keeping "a terminal stutter loop, where nothing is enabled, gets none". | qsl-replay/src/model_check/replay.rs:881-888 |
+
+## Dispositions
+
+Round 1, head 377989edb. Re-checked by me:
+
+- Gates (own target dir): fmt, clippy `-D warnings`, string-edge and all
+  three arch-lint targets exit 0 (FR-100-AC-8 PASS).
+- Tests: qsl-eval 681, qsl-replay 783, qsl-analyze 223, qsl-semantics
+  1163, root `--test it` 975; 0 failed.
+- Both scratch oracles, rerun at 377989edb, still agree (60,000 random
+  graphs: fair 33,474 / refined 188 / not fair 26,526; 1,032 engine runs,
+  644 refutations replayed).
+- Suppression probe: I put the deleted check back as `if
+  clause.fairness().contains(&suggested) { panic!(..) }`. Then I ran all
+  qsl-analyze tests (both oracles included, so all 644 replays computed
+  hints under weak, strong and mixed sets), all qsl-replay tests and the
+  root `--test it`. The probe never fired, so nothing depended on the
+  branch.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `two_strong_constraints_failing_on_one_component_refine_together` now carries only `#[trace("TC-531")]`, and its doc names it the engine half of FR-130-AC-5 |
+| FND-002 | fixed | TC-1085's Description now reads "the guarded-activation and unbuilt-certificate cases refuse" |
+| FND-003 | fixed | The `second_phase` comment now gives the reasons that still hold (the quotient concretises a reduced run's loop and decides `each` fairness over orbits) |
+| FND-004 | fixed | The AC-3 test now finds the first charge at which a cancelled run has the full proof's statistics, and asserts that the charge before it stops with fewer. The determinism loop covers `weak each`, `strong` (whole) and `Handoff`, and re-checks the `strong each` proof's statistics |
+| FND-005 | fixed | The unreachable suppression branch and the stale `strong_hint.rs` header are deleted. Spec PR #1076, merged 2026-10-20, removed the FR-133 bullet. The probe above confirms nothing reached the branch. The doc comment left behind is FND-008 |
+| FND-006 | fixed | `impl From<FairnessKind> for Strength` now lives once in `qsl_eval::fairness` and serves liveness.rs and replay.rs. `decided`'s doc is corrected. The `quotient.rs` header gives a reason instead of history |
+| FND-007 | fixed | Both mutex tests carry `#[trace("TC-534", "FR-133-AC-1")]`. Each settles its refutation through `settle_en1` and asserts `Refuted`, the unchanged counterexample, and record hints equal to the replayed hints |

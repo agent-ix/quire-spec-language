@@ -90,3 +90,15 @@ three tickets that claim the certificate remainder before closing QSL-532.
 | FND-002 | low | FR-133's Behavior bullet "When the clause's fairness set already holds the named constraint, the executor SHALL emit no hint for that operation" cannot be reached now that replay checks strong constraints. A lasso that would yield such a hint is refused `UnfairLasso` first (SR-13374 FND-005). This is a spec question, not a code defect, and no ticket owns it. Fix (spec owner): decide whether FR-133 keeps the bullet as a stated invariant or drops it. Record the decision on the FR-133 owner's ticket. | spec/functional/FR-133-name-the-strong-constraint-that-would-exclude-a-refutation.md (Behavior, suppression bullet) |
 | FND-003 | low | FR-127-AC-3's clause "replayed in an envelope for the weak `each` clause, whose fairness it fails, it settles `inconclusive`, `ReplayParity`, since EN-1 builds only fair lassos" is now built by the new `Err(ReplayRefusal::UnfairLasso { .. })` arm in `settle_model_check`. Before this PR a weak unfair lasso fell through to `Row::refused`. No test asserts the weak case. FR-131-AC-3's test covers only the strong-each refusal. Fix: add the weak `each` envelope case next to FR-131-AC-3's test, or under TC-522, and tag it `FR-127-AC-3` once its other clauses are covered. | qsl-replay/src/model_check/settle.rs:242-246 |
 | FND-004 | low | FR-153-AC-4's agreement clause for the strong (AC-3) run was blocked only by the missing unreduced strong filter. This PR delivers that filter. The edited `quotient.rs` header records "AC-4 stays untagged" but names neither the remaining blocker nor an owner. Fix: name the owner (QSL-541's follow-up), or add the reduced = unreduced comparison for FR-153-AC-3's strong run now that both sides decide it. | qsl-analyze/tests/it/quotient.rs:14-18 |
+
+## Dispositions
+
+Round 1, head 377989edb. The matrix tags and ticket state were re-read
+for this round.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The planner recorded the owner decision on Linear. QSL-893 (comment 899ff84f) is now the single owner of FR-130-AC-4, the certificate halves of AC-5, and liveness `Holds{Exhaustive}`/`ComponentCertificate`. QSL-896 (comment 68f0a352) is to be cancelled once #1073 merges and is verified |
+| FND-002 | fixed | Spec PR #1076, merged 2026-10-20, removed FR-133's suppression bullet (QSL-532 comment 8f0cbac2). #1073 deleted the matching code |
+| FND-003 | fixed | Added `a_weakly_unfair_en1_lasso_settles_replay_parity`, tagged TC-522. It replays a lasso that fails the weak `inc` constraint and asserts `inconclusive` / `ReplayParity`. Without the new `settle.rs` arm this would be `ReplayRefused`. The test is not tagged FR-127-AC-3, because that AC's other clauses are not covered here |
+| FND-004 | fixed | The `quotient.rs` header now states that FR-153-AC-4's strong comparison (reduced against unreduced) is not made, which is why AC-4 stays untagged. The open item stays recorded under QSL-541's gap analysis (FND-002 there). Nothing in #1073's scope depends on it |
