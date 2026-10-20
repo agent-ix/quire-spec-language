@@ -56,3 +56,12 @@ are recorded.
 | --- | --- | --- | --- |
 | FND-001 | low | FR-217-AC-6 says the shape refusals run "before replay … and run no step". The test asserts only the refusal value. A misplaced record on step 0 or step 1 would refuse the same way if it were checked during replay, so no test pins the order. Asserting it needs a prefix whose earlier step would refuse first, for example a corrupted digest on step 0 with a missing record on step 1, expecting `SendRecordShape`. | qsl-analyze/tests/it/protocol_system.rs:1553-1570; qsl-replay/src/model_check/replay.rs:552 |
 | FND-002 | low | FT-5's new channel visibility is tested for `send` only. The `receive` arm of `visible` (`StepKind::Receive` with a `Queue` write) and the new FT-1 read of the joined branches' `ctl` at an `all` join have no direct assertion. The commutation test covers the join only indirectly. | qsl-eval/src/simulation/protocol/footprint.rs:219-226; qsl-eval/src/simulation/protocol/footprint.rs:446-450 |
+
+## Dispositions
+
+Round 1, reviewed at dccdc13b9735e5ad6df04b5ce5b7a457c538aa2e.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dccdc13b9: a new case gives step 0 a stale post-state digest and removes step 3's record. It expects `SendRecordShape { step: 3 }`, which pins the check before replay. |
+| FND-002 | fixed | dccdc13b9: `a_cancelling_join_writes_its_branches_and_a_queue_orders_its_steps` asserts that `receive` is visible to `Chatter::ch` and invisible to `Chatter::other`. It also asserts that `join(Both)` under `all` reads `ctl` of `s` and `r`. |

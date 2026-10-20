@@ -114,3 +114,14 @@ block.
 | FND-001 | high | A `fence` step's transition identity has no `ordering` member. FR-215 "Transition identity" says the identity SHALL carry "for a `fence` and an access with an ordering, the ordering". ADR-027 TS-2 and QSpec FR-426's identity table (row `ordering`: `fence`) say the same. `fence()` builds `ProtocolTransition::control(StepKind::Fence, …)`, which has no further member. `a_fence_moves_its_thread_and_changes_nothing_under_sc` asserts the identity `{"type","step":"fence","node","thread"}`, so the test fixes the defect in place. The ordering is available in `CheckedMemory::fences`. Fix: add an ordering member to the fence identity and assert it in the test. | qsl-eval/src/simulation/protocol/steps.rs:371-389; qsl-eval/src/simulation/protocol/identity.rs:366-375; qsl-analyze/tests/it/protocol_constructs.rs:353-357 |
 | FND-002 | low | `SendRecord::with_outcome` is public API that only a test calls. It exists so the test can forge a wrong record. `ProtocolTransition::carrying` is also public and is set outside the crate only by tests. No wire decoder exists yet that would need it. Either keep `carrying` for the coming decoder and remove `with_outcome`, or gate both behind a test-support feature. | qsl-eval/src/simulation/protocol/identity.rs:288-291; qsl-eval/src/simulation/protocol/identity.rs:450-453 |
 | FND-003 | low | `Instance::environment(holder)` scans every entry of every thread, because the map is keyed with the node first. `fork` calls it once per fork, and `join` once per joined branch. This costs time only and gives no wrong result. Keying by (thread, node) would allow a range lookup. | qsl-eval/src/simulation/protocol.rs:322-330 |
+
+## Dispositions
+
+Round 1, reviewed at dccdc13b9735e5ad6df04b5ce5b7a457c538aa2e. Narrow tests:
+42 passed. A default `cargo check -p qsl-eval -p qsl-replay` (no feature) builds.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | dccdc13b9: `ProtocolTransition::fence(thread, node, ordering)` with `Members::Fence { ordering }` encodes `"ordering"`. The value is `AccessOrdering::label()` from `CheckedProtocol.memory.fences`, and the test asserts `"ordering": "seq_cst"` and `"acquire"`. A commutation fixture with one fence per branch was added. |
+| FND-002 | fixed | dccdc13b9: `with_outcome` and `carrying` are `#[cfg(any(test, feature = "test-support"))]`. Production uses `pub(crate) recording`. Only qsl-analyze's dev-dependency enables the feature (resolver 2), and the default build has neither method. |
+| FND-003 | fixed | dccdc13b9: `environments` is `BTreeMap<ThreadPath, BTreeMap<ProtocolNodeId, Bound>>`. `environment` is a single lookup, and empty environments are removed in `normalize`. The key's `observations` is still sorted by `map_enc`. |
