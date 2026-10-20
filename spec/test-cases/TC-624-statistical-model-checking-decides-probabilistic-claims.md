@@ -12,7 +12,7 @@ relationships:
 
 Verify EN-4's Okamoto and SPRT decisions on `P95`, the exact sample counts and thresholds, Bonferroni and symmetry, activation, and the stops and refusals.
 
-Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7 to FR-189-AC-12.
+Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7 to FR-189-AC-12, FR-189-AC-13, FR-189-AC-14.
 
 ## Test Procedure
 
@@ -29,6 +29,9 @@ Fixtures: the `Undef` model and its two-initial-state variant (FR-189-AC-8), `Be
 9. Select the least favourable test for each case of FR-189-AC-10.
 10. Run the empty-subject request (FR-189-AC-11) and the activation-probability-0 variant (FR-189-AC-12).
 
+11. Give a mean-of-fraction claim event samples from a stub: 3 holding of 4 (FR-189-AC-13).
+12. Run a two-test regenerative request and a two-test Okamoto request, each at `max_draws` `u64::MAX` (FR-189-AC-14).
+
 Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 
 ## Expected Results
@@ -43,3 +46,5 @@ Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 - Step 8: the first sample's value as the estimate and no interval for the ended tests; an interval for the decided Okamoto test only; `None` for the `LongRun` test.
 - Step 9: the verdict's `estimate` and `interval` of the test AC-10 names for each case.
 - Step 10: `NoTest`, settled `inconclusive`, `no-initial-state`; `Stopped` `Limit{MaxDraws, 1000}` with 0 counted.
+- Step 11: estimate `3/4`, no refusal.
+- Step 12: the regenerative request runs; the Okamoto request is refused `TraceIndexRange`.

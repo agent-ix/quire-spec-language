@@ -45,6 +45,8 @@ counts none of the three as proved.
 
 - A `StatisticalOutcome` (FR-189, FR-190) or a `StatisticalRefusal`
   (FR-189).
+- The request's FR-120 limits (the evaluation meter budget and `max_candidates`),
+  from which a `Stopped` by an expansion takes its value.
 
 ## Outputs
 
@@ -97,6 +99,9 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | `Completed`, Rejected by a test whose `undefined` is set | `measured` | `completed` | `rejected`, cause `UndefinedEvaluation{where, cause}` | `Measured{decision: Rejected, …}` | violation |
 | `Completed`, Undecided | `measured` | `completed` | `undecided` | `Measured{decision: Undecided(cause), …}` | inconclusive |
 | `Stopped` by a limit | `incomplete` | `limit-reached{limit, value, setting}` | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped` by a sample expansion (`Expansion(ExpansionStop)`) that names a limit (`EvaluationMeter` or `MaxCandidates`, FR-126) | `incomplete` | `limit-reached{limit, value, setting}`: `limit` the stop's, `value` the configured bound of that limit in the request's FR-120 limits (the evaluation meter's budget, or `max_candidates`), which the map receives with the outcome because the stop carries only its cause and limit, and `setting` the name the request raises it by (`model_check.meter`, `model_check.max_candidates`) | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
+| `Stopped` by a sample expansion that names no limit and is an internal failure (`ExpansionStop::is_internal_failure`) | `failed` | diagnostic `runtime_invariant`/`established-invariant-broken` | none | `Failed` | failed (ADR-013 O-16 internal failure) |
+| `Stopped` by a sample expansion that names no limit and is not an internal failure (for example a state-constraint family that evaluation refuses) | `failed` | the stop's own `ExpansionStop.cause` (QSL FR-120), as the one diagnostic (QSpec FR-331, FR-408 "stops the run with that cause") | none | `Failed` carrying that diagnostic | failed |
 | `Stopped` by a cancelled `Cancel` handle | `incomplete` | `cancelled{source}` | none | `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
 | `Unsupported` outcome | `unsupported` | cause `not-markov{…}` or `total-above-draw-range{total}` | none | `Unsupported(cause)` | unsupported |
 | `GeneratorMismatch`, `TooManyTests`, `TraceIndexRange`, `ConfidenceBeyondPrecision` or `FractionForEvent` refusal | `unsupported` | diagnostic `unsupported_projection`/`unsupported-requested-capability` naming the refusal | none | `Unsupported(diagnostic)` | unsupported |
@@ -126,7 +131,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-192-AC-1 | Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`) `Completed` outcome; a `Stopped` naming `max_samples`, settling `Incomplete(LimitReached{limit, value, setting})` with setting `statistical.max_samples`; an `Unsupported` outcome with cause `NotMarkov`; a `NoTest` refusal settling `inconclusive`, `no-initial-state`; an `Internal` refusal settling `failed`. None of the measured, stopped and unsupported records carries an FR-242 truth or an FR-243 basis. | Test (TC-627) |
+| FR-192-AC-1 | Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`) `Completed` outcome; a `Stopped` naming `max_samples`, settling `Incomplete(LimitReached{limit, value, setting})` with setting `statistical.max_samples`; an `Unsupported` outcome with cause `NotMarkov`; a `NoTest` refusal settling `inconclusive`, `no-initial-state`; an `Internal` refusal settling `failed`; a `Stopped` by an expansion naming `EvaluationMeter` settling `incomplete`, `limit-reached` with that limit, its configured value and setting `model_check.meter`, one by an internal-failure expansion naming no limit settling `failed`, `runtime_invariant`/`established-invariant-broken`, and one by a non-internal expansion naming no limit settling `failed` with the stop's own `ExpansionStop.cause` (QSL FR-120) as its one diagnostic. None of the measured, stopped and unsupported records carries an FR-242 truth or an FR-243 basis. | Test (TC-627) |
 | FR-192-AC-2 | FR-189-AC-1's Okamoto result at `5 ms` settles `measured`, `accepted`, with `interval` present, `coverage: FiniteSample`, `samples = 23,026`, `tests = 1`, `alpha_per_test = 1/100`; the SPRT result at `2 ms` settles `measured`, `rejected` with no `interval`; FR-190-AC-1's result settles `accepted` with `coverage: Asymptotic`. | Test (TC-627) |
 | FR-192-AC-3 | A request with `P95` accepted and the `2 ms` claim rejected fails the pipeline gate with the same status as a request holding one O-16 violation; the same request without the rejected item passes. Its proof summary counts 0 proved items. | Test (TC-627) |
 | FR-192-AC-4 | EN-4's manifest lists exactly (`probabilistic-satisfaction`, `statistical`). `check_statistical` given a claim `under every scheduler` refuses `EveryScheduler`; given `NoFault` with no confidence parameters refuses `MissingConfidence`; given `expected accumulate duration until holds(c.phase = Replied)` refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-627) |

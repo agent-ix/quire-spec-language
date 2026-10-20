@@ -92,7 +92,8 @@ pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 `MissingConfidence` for a claim without confidence parameters,
 `NoTest` for a subject with no (initial state, binding) pair, `TooManyTests`
 for more tests than a test index counts, `TraceIndexRange` when `max_draws · m`
-overflows the trace index, `ConfidenceBeyondPrecision` when `min(α', β')` has
+overflows the trace index of Okamoto or SPRT (the regenerative test `j` uses
+trace index `j` alone, so the method never raises it), `ConfidenceBeyondPrecision` when `min(α', β')` has
 no normal-quantile bound for the regenerative method, `FractionForEvent` for a
 fraction a Bernoulli test cannot take, `Internal` for a broken exact-arithmetic
 invariant,
@@ -148,7 +149,9 @@ the claim's form does not admit (FR-190, SPRT below).
   counts alone.
 - EN-4 SHALL decide a mean of a fraction by the fixed-sample method over
   the sample mean of the fraction. A request naming the sequential method
-  for it SHALL be refused as `NotStatistical`, as FR-408 states.
+  for it SHALL be refused as `NotStatistical`, as FR-408 states. If the sampler
+  returns an event sample for a mean-of-fraction claim, then EN-4 SHALL count
+  it as the fraction 1 when the event holds and 0 when it does not.
 
 ### Decision and stops
 
@@ -216,6 +219,8 @@ the claim's form does not admit (FR-190, SPRT below).
 | FR-189-AC-10 | Through the `BehaviourSampler` seam, with the SPRT method over a claim `>= 19/20` (so no Okamoto sample count applies), tests with these (decision, estimate) pairs give the verdict's `estimate` of: Rejected `9/10` and Rejected `4/5` the test at `4/5`; Rejected `9/10` and Rejected `9/10` the test at index 0; Accepted `97/100` and Rejected with no estimate (test 1, since an undefined test stops the run) the test with no estimate; Undecided `19/20` and Accepted `99/100` the Undecided test; Accepted `97/100` and Accepted `99/100` the test at `97/100`; for a claim `<= 1/20` Accepted `1/100` and Accepted `3/100` the test at `3/100`; for a quantile `>= 3` claim reduced to `< 1/2` with estimates `2/5` and `9/20` the test at `9/20`. | Test (TC-624) |
 | FR-189-AC-11 | A request whose subject has no (initial state, binding) pair is refused `NoTest`, and FR-192 settles it `inconclusive` with the cause `no-initial-state`; it is never Accepted. | Test (TC-624) |
 | FR-189-AC-12 | The activation variant of FR-189-AC-4 with the activation probability 0 and `max_draws` 1,000 stops `MaxDraws` with 0 samples counted and no decision. | Test (TC-624) |
+| FR-189-AC-13 | A sampler stub that returns event samples for a mean-of-fraction claim with Okamoto, `θ = 1/2`, `α = β = 1/3` and `ι = 2/5` and a non-strict bound (a strict `Below` bound on a mean of a fraction is refused `StrictBound`) (so `N = ⌈ln 3 / (2ι²)⌉ = ⌈3.43⌉ = 4`), 3 holding of the 4 counted, gives the estimate `3/4` and no refusal. | Test (TC-624) |
+| FR-189-AC-14 | A regenerative request over two tests with `max_draws` `u64::MAX` is not refused `TraceIndexRange`, and the same `max_draws` under Okamoto with two tests is. | Test (TC-624) |
 
 ## Dependencies
 
