@@ -84,6 +84,7 @@ use quire_exact::{Cancel, Meter};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use quire_semantic_value::model_transition::ModelTransition;
 
+use super::concretise::{Lift, LiftStop};
 use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
 
 /// The type positions the requires-bound pre-check may visit.
@@ -158,9 +159,9 @@ pub enum ModelCheckRefusal {
         /// The request's constraint name.
         name: String,
     },
-    /// A liveness clause with a reduction selected: the liveness engine
-    /// does not run reduced yet.
-    #[error("EN-1 does not decide a reduced liveness clause yet")]
+    /// A liveness clause with a state constraint or partial-order reduction
+    /// selected: the liveness engine runs reduced under symmetry only.
+    #[error("EN-1 does not decide a liveness clause under a state constraint or partial-order reduction yet")]
     ReducedLiveness,
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
@@ -298,21 +299,21 @@ pub fn check_model(
 ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
     if let ModelCheckItem::Clause { clause, .. } = request.item {
         if clause.property_form() == Some(PropertyForm::Liveness) {
-            if request.reductions.is_empty() {
-                return super::liveness::check(request, cancel);
-            }
             // FR-159 (a) reads the clause alone, so it settles before the
-            // refusal of a reduced liveness run.
-            let form = TableForm::of(&request.item).ok_or(ModelCheckRefusal::FormNotDecided {
-                form: clause.property_form(),
-            })?;
-            if let Some(reduction) = reduce::not_preserving(&request.reductions, form) {
-                return Ok(settled(ReductionCause::NotPreserving {
-                    reduction,
-                    form: PropertyForm::Liveness,
-                }));
+            // liveness engine reads its fairness set.
+            if !request.reductions.is_empty() {
+                let form =
+                    TableForm::of(&request.item).ok_or(ModelCheckRefusal::FormNotDecided {
+                        form: clause.property_form(),
+                    })?;
+                if let Some(reduction) = reduce::not_preserving(&request.reductions, form) {
+                    return Ok(settled(ReductionCause::NotPreserving {
+                        reduction,
+                        form: PropertyForm::Liveness,
+                    }));
+                }
             }
-            return Err(ModelCheckRefusal::ReducedLiveness);
+            return super::liveness::check(request, cancel);
         }
     }
     if !request.reductions.is_empty() {
@@ -477,34 +478,10 @@ fn check_reduced(
     let system = ModelSystem::new(request.subject.simulation.clone())
         .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
     check_model_bounds(&system, BOUND_POSITIONS).map_err(not_simulated)?;
-    let form =
-        TableForm::of(&request.item).ok_or_else(|| fault("a-decided-item-has-a-table-row"))?;
-    if let Some(reduction) = reduce::not_preserving(reductions, form) {
-        let form = match request.item {
-            ModelCheckItem::Clause { clause, .. } => clause
-                .property_form()
-                .ok_or_else(|| fault("a-decided-clause-has-a-form"))?,
-            ModelCheckItem::DeadlockFreedom => PropertyForm::ReachableInvariant,
-        };
-        return Ok(settled(ReductionCause::NotPreserving { reduction, form }));
-    }
-    let group =
-        reduce::admit(&system, &reductions.symmetry).map_err(ModelCheckRefusal::Symmetry)?;
-    let closed = reduce::closure(&system, &group).map_err(|refusal| match refusal {
-        reduce::ClosureRefusal::Encoding(refusal) => ModelCheckRefusal::Encoding(refusal),
-        reduce::ClosureRefusal::Unordered => fault("a-permuted-collection-is-ordered"),
-    })?;
-    if let Some(cause) = closed {
-        return Ok(settled(cause));
-    }
-    if let Some(reduction) = reduce::unoffered(reductions, &system) {
-        return Ok(settled(ReductionCause::Unsupported { reduction }));
-    }
-    if let Some(name) = &reductions.constraint {
-        if !system.has_constraint(name) {
-            return Err(ModelCheckRefusal::UnknownConstraint { name: name.clone() });
-        }
-    }
+    let group = match precheck(reductions, &request.item, &system)? {
+        Admitted::Group(group) => group,
+        Admitted::Settled(outcome) => return Ok(outcome),
+    };
     if no_initial {
         return Ok(ModelCheckOutcome::Undecided {
             cause: UndecidedCause::NoInitialState,
@@ -649,6 +626,64 @@ fn check_reduced(
             stats: total,
         }
     })
+}
+
+/// What FR-159's pre-check admits: the run's group, or an outcome it
+/// settles before any state is explored.
+pub(super) enum Admitted {
+    /// Every selected reduction admits; the group is trivial with no
+    /// symmetry.
+    Group(SymmetryGroup),
+    /// The pre-check settled the item.
+    Settled(ModelCheckOutcome),
+}
+
+/// FR-159's pre-check over `system`, in its order: (a) the preservation
+/// table, (b) admission of the symmetry declarations and closure of the
+/// initial states under their group, (c) the reductions the system offers,
+/// (d) resolution of the state constraint.
+///
+/// # Errors
+///
+/// [`ModelCheckRefusal`] for a malformed declaration, an unknown
+/// constraint, or an identity with no canonical encoding.
+pub(super) fn precheck(
+    reductions: &Reductions,
+    item: &ModelCheckItem<'_>,
+    system: &ModelSystem<'_>,
+) -> Result<Admitted, ModelCheckRefusal> {
+    let form = TableForm::of(item).ok_or_else(|| fault("a-decided-item-has-a-table-row"))?;
+    if let Some(reduction) = reduce::not_preserving(reductions, form) {
+        let form = match item {
+            ModelCheckItem::Clause { clause, .. } => clause
+                .property_form()
+                .ok_or_else(|| fault("a-decided-clause-has-a-form"))?,
+            ModelCheckItem::DeadlockFreedom => PropertyForm::ReachableInvariant,
+        };
+        return Ok(Admitted::Settled(settled(ReductionCause::NotPreserving {
+            reduction,
+            form,
+        })));
+    }
+    let group = reduce::admit(system, &reductions.symmetry).map_err(ModelCheckRefusal::Symmetry)?;
+    let closed = reduce::closure(system, &group).map_err(|refusal| match refusal {
+        reduce::ClosureRefusal::Encoding(refusal) => ModelCheckRefusal::Encoding(refusal),
+        reduce::ClosureRefusal::Unordered => fault("a-permuted-collection-is-ordered"),
+    })?;
+    if let Some(cause) = closed {
+        return Ok(Admitted::Settled(settled(cause)));
+    }
+    if let Some(reduction) = reduce::unoffered(reductions, system) {
+        return Ok(Admitted::Settled(settled(ReductionCause::Unsupported {
+            reduction,
+        })));
+    }
+    if let Some(name) = &reductions.constraint {
+        if !system.has_constraint(name) {
+            return Err(ModelCheckRefusal::UnknownConstraint { name: name.clone() });
+        }
+    }
+    Ok(Admitted::Group(group))
 }
 
 /// FR-336 and FR-125: an unbounded root, or an admitting population with no
@@ -1265,8 +1300,9 @@ impl Run<'_, '_> {
             path.push(cursor);
         }
         path.reverse();
-        let prefix = if self.group.is_trivial() {
-            path.iter()
+        let (initial_state, prefix) = if self.group.is_trivial() {
+            let prefix = path
+                .iter()
                 .filter_map(|index| {
                     let node = &self.nodes[*index];
                     let (_, transition) = node.parent.as_ref()?;
@@ -1275,7 +1311,8 @@ impl Run<'_, '_> {
                         post_state: node.digest,
                     })
                 })
-                .collect()
+                .collect();
+            (self.nodes[cursor].initial_index, prefix)
         } else {
             self.concretise(&path, &mut kind)?
         };
@@ -1284,7 +1321,7 @@ impl Run<'_, '_> {
             Item::Deadlock => Vec::new(),
         };
         Ok(TemporalCounterexample {
-            initial_state: self.nodes[cursor].initial_index,
+            initial_state,
             prefix,
             over_binding,
             fairness,
@@ -1293,85 +1330,42 @@ impl Run<'_, '_> {
         })
     }
 
-    /// ADR-021 EI-6 (FR-161 "Start", "Steps"): the concrete steps of the
-    /// canonical tree path `path`. The concrete state is `σ(canonical
-    /// state)`, with `σ` starting as the inverse of the first node's
-    /// permutation; each retained edge `(source, t, target, π)` becomes the
-    /// concrete step `σ(t)` to `σ ∘ π⁻¹ (target)`, and `σ` becomes `σ ∘
-    /// π⁻¹`. Each concrete step is checked against an expansion of the
-    /// concrete source. An undefined evaluation's site is concretised with
-    /// the last `σ`.
-    fn concretise(&self, path: &[usize], kind: &mut CounterexampleKind) -> Step<Vec<ModelStep>> {
+    /// ADR-021 EI-6 (FR-161 "Start", "Steps"): the subject's initial state
+    /// and the concrete steps of the canonical tree path `path`, each edge
+    /// lifted by [`Lift`] and counted against what is left of
+    /// `max_transitions`. An undefined evaluation's site is concretised at
+    /// the path's end.
+    fn concretise(
+        &self,
+        path: &[usize],
+        kind: &mut CounterexampleKind,
+    ) -> Step<(usize, Vec<ModelStep>)> {
         let first = &self.nodes[*path.first().ok_or_else(|| fault("a-path-has-a-root"))?];
-        let mut sigma = first.permutation.inverse();
-        let mut concrete = self
-            .system
-            .permute(&first.state, &sigma)
-            .map_err(|stop| self.expansion_stop(stop))?;
-        let mut digest = self.system.state_key(&concrete)?.1;
-        let mut prefix = Vec::with_capacity(path.len());
-        for index in path.iter().skip(1) {
-            let node = &self.nodes[*index];
-            let Some((_, Some(transition))) = &node.parent else {
-                // The terminal stutter edge: no model step, the identity.
-                continue;
-            };
-            let step = self
-                .system
-                .permute_transition(transition, &sigma)
-                .map_err(|_| fault("a-concretised-step-encodes"))?;
-            let next_sigma = sigma.compose(&node.permutation.inverse());
-            let next = self
-                .system
-                .permute(&node.state, &next_sigma)
-                .map_err(|stop| self.expansion_stop(stop))?;
-            let next_digest = self.system.state_key(&next)?.1;
-            let expansion = self
-                .system
-                .successors(&concrete)
-                .map_err(|stop| self.expansion_stop(stop))?;
-            let mut matched = false;
-            for (candidate, state) in &expansion.successors {
-                if *candidate == step && self.system.state_key(state)?.1 == next_digest {
-                    matched = true;
-                    break;
+        let budget = self
+            .limits
+            .limits
+            .max_transitions
+            .saturating_sub(self.edges);
+        let lifted = (|| {
+            let (initial, mut lift) = Lift::start(self.system, &self.group, &first.state, budget)?;
+            for index in path.iter().skip(1) {
+                let node = &self.nodes[*index];
+                // The terminal stutter edge is no model step.
+                if let Some((_, Some(transition))) = &node.parent {
+                    lift.edge(transition, &node.state, &node.permutation)?;
                 }
             }
-            if !matched {
-                return Err(fault("a-concretised-step-is-a-subject-step").into());
-            }
-            prefix.push(ModelStep {
-                transition: step,
-                post_state: next_digest,
-            });
-            sigma = next_sigma;
-            concrete = next;
-            digest = next_digest;
-        }
-        if let CounterexampleKind::UndefinedEvaluation(evaluation) = kind {
-            evaluation.site.state_key = digest;
-            if let Some(guard) = &evaluation.site.transition {
-                let guard = self
-                    .system
-                    .permute_transition(guard, &sigma)
-                    .map_err(|_| fault("a-concretised-guard-encodes"))?;
-                // The concrete guard is checked against the concrete state's
-                // own expansion, as each step is.
-                let expansion = self
-                    .system
-                    .successors(&concrete)
-                    .map_err(|stop| self.expansion_stop(stop))?;
-                let found = expansion.findings.iter().any(|finding| {
-                    finding
-                        .undefined_contract()
-                        .is_some_and(|contract| contract.guard_of.as_ref() == Some(&guard))
-                });
-                if !found {
-                    return Err(fault("a-concretised-guard-is-a-subject-guard").into());
-                }
-                evaluation.site.transition = Some(guard);
-            }
-        }
-        Ok(prefix)
+            lift.site(kind)?;
+            Ok((initial, lift.into_steps()))
+        })();
+        lifted.map_err(|stop| match stop {
+            LiftStop::Expansion(stop) => self.expansion_stop(stop),
+            LiftStop::Transitions => Self::stopped(
+                ModelCheckLimit::MaxTransitions,
+                widen(self.limits.limits.max_transitions),
+            )
+            .into(),
+            LiftStop::Refusal(refusal) => refusal.into(),
+        })
     }
 }
