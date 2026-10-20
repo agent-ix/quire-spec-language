@@ -18,7 +18,7 @@ Scope: FR-187-AC-1 to FR-187-AC-4.
 
 Fixtures: `Service` (ADR-024 §7.2); the `Link` model and workload `Even` of FR-187-AC-2; the two `Health` variants of FR-187-AC-3; the `refund` model of FR-187-AC-4.
 
-1. `weighted_steps` on `Service` at `Busy, attempts = 0` and at `Idle` under `Steady`.
+1. `weighted_steps` on `Service` (with `Phase` as `Int[0, 2]`) at `phase = 1, attempts = 0` and at `phase = 0` under `Steady`.
 2. `weighted_steps` and `actions` on `Link` at its initial state under `Even`, and at a delivered state.
 3. `weighted_steps` and `actions` on each `Health` variant at its initial state.
 4. Admit the `refund` model; compare positive-probability transitions with FR-120's successors over every state of `Service`.
@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-622", "FR-187-AC-n")]`.
 - Step 1: six steps with the probabilities of FR-187-AC-1 summing to 1 and `duration = d`; one `request` step with probability 1.
 - Step 2: `9/20`, `1/20`, `2/5`, `1/10`; two actions with draws summing to 1; the stutter step with probability 1.
 - Step 3: `NotMarkov` with 2 post-states and an action whose draws carry two successors; `NotMarkov` with 0 post-states.
-- Step 4: `NegativeReward` naming `n = 0`; equal sets.
+- Step 4: `invalid_probabilistic_model`/`negative-reward` naming the operation, `refund` and `n = 0`; equal sets.

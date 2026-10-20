@@ -184,19 +184,21 @@ pub enum EmitRefusal {
         cause: quire_exact::CancelCause,
     },
     /// The package declares checked random parameters, rewards or
-    /// workloads (FR-185), which FR-322's v2 vocabulary has no node for:
-    /// the emitter refuses rather than write a package without them.
+    /// workloads (FR-185 "Package emission"), which FR-322's v2 vocabulary
+    /// has no node for: the emitter refuses rather than write a package
+    /// without them, naming the first such declaration in source order.
     #[error(
-        "the package declares {random_parameters} random parameters, {rewards} rewards and \
-         {workloads} workloads, which a checked-package/v2 graph cannot hold yet"
+        "{} `{declaration}` cannot be written to a checked-package/v2 graph yet",
+        feature.name()
     )]
     ProbabilisticModelNotEmitted {
-        /// How many random parameters it declares.
-        random_parameters: usize,
-        /// How many rewards it declares.
-        rewards: usize,
-        /// How many workloads it declares.
-        workloads: usize,
+        /// The first such declaration's name: `operation(parameter)` for a
+        /// random parameter, the declared name of a reward or a workload.
+        declaration: String,
+        /// Its feature.
+        feature: qsl_semantics::check::ProbabilisticFeature,
+        /// The unit's selected header profile identity, when it selects one.
+        profile: Option<&'static str>,
     },
 }
 
@@ -1004,12 +1006,11 @@ fn occurrence_role(node: NodeKey, origin: &Origin) -> Result<CheckedOccurrenceRo
     })
 }
 
-/// `package`'s FR-322 `dependency_selections`, in its closure's ascending
+/// `package`'s FR-322 direct `dependency_selections`, in ascending
 /// UTF-8 byte order of identity.
 fn dependency_selections(package: &CheckedPackage) -> Vec<CheckedDependencySelection> {
     package
-        .dependency_selections()
-        .iter()
+        .direct_dependency_selections()
         .map(|(identity, resolved)| CheckedDependencySelection {
             identity: identity.as_str().into(),
             package_id: semantic_id(resolved.package_id),
@@ -1230,12 +1231,13 @@ fn emit_package_inner(
         .map(|relation| graph.abstraction_nodes(relation))
         .transpose()
         .map_err(EmitRefusal::Abstraction)?;
-    let probabilistic = graph.probabilistic_model();
-    if !probabilistic.is_empty() {
+    if let Some((feature, declaration)) = graph.probabilistic_model().first_declaration() {
         return Err(EmitRefusal::ProbabilisticModelNotEmitted {
-            random_parameters: probabilistic.random_parameters().len(),
-            rewards: probabilistic.rewards().len(),
-            workloads: probabilistic.workloads().len(),
+            declaration,
+            feature,
+            // The header layers ascend; the widest is the profile the unit
+            // selects its probabilistic declarations under.
+            profile: graph.header_layers().last().map(|layer| layer.identity()),
         });
     }
     let candidates = candidates_of(graph, abstraction.as_ref())?;

@@ -145,8 +145,8 @@ mod temporal_clause;
 mod terminal;
 pub use probabilistic::{
     CheckedProbabilisticModel, ConfidenceFault, PreconditionSite, ProbabilisticCause,
-    ProbabilisticDeclaration, ProbabilisticOperation, RandomParameter, Reward, SupportValue,
-    WeightOwner, Workload,
+    ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticOperation, RandomParameter,
+    Reward, SupportValue, WeightOwner, Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
@@ -290,7 +290,8 @@ pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relations
 pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
-    CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedParallel, CheckedProtocol,
+    CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_memory::{
@@ -305,8 +306,11 @@ pub use protocol_relationship::CheckedRelationship;
 pub use protocol_requirement::CheckedRequirement;
 pub use protocol_slots::{
     CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRelated,
-    CheckedRepeat, CheckedScheduling, CheckedSlots, CheckedTerminalMember,
+    CheckedRepeat, CheckedScheduling, CheckedSlotBinder, CheckedSlots, CheckedTerminalMember,
 };
+/// The premises a [`CheckedChannel`] records exactly as written (FR-218
+/// "Channels"), which its readers match on.
+pub use qsl_forms::{ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector};
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,
@@ -2929,6 +2933,8 @@ impl PackageDeclarations {
                     .ok_or_else(unkeyable)?;
                 attempts.push(protocol_clause::CheckedAttempt {
                     declaration: bound.declaration,
+                    operation: bound.operation.clone(),
+                    receiver: bound.receiver,
                     anchor,
                     frame,
                     contracts,

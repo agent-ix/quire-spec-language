@@ -18,8 +18,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::CheckedLiteral;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, PreconditionSite,
-    ProbabilisticCause, WeightOwner,
+    CheckCause, CheckRefusal, CheckedGraph, CheckingLimitKind, PackageDeclarations,
+    PreconditionSite, ProbabilisticCause, WeightOwner,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -205,7 +205,8 @@ fn service_document_with(requires: &[&str]) -> Vec<u8> {
 }
 
 /// The unit selecting `Service`, with `dimension Time` and `unit ms`, and
-/// `body` after them.
+/// `body` after them; a `model` line of `body` is a second selection and
+/// goes in the header.
 fn service_unit(body: &str) -> (String, std::collections::BTreeMap<[u8; 32], Vec<u8>>) {
     service_unit_over(&service_document(), body)
 }
@@ -220,10 +221,19 @@ fn service_unit_over(
         panic!("one supplied document");
     };
     let digest = qsl_semantics::model::key::hex(digest);
+    let (selections, body): (Vec<&str>, Vec<&str>) =
+        body.lines().partition(|line| line.starts_with("model "));
+    let packages = if selections.is_empty() {
+        packages
+    } else {
+        package_input([document, other_document().as_slice()])
+    };
+    let (selections, body) = (selections.join("\n"), body.join("\n"));
     let unit = format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.model.complete/v1\";\n\
          model Service = {P:?} version \"1.0.0\" digest \"sha256-jcs:{digest}\";\n\
+         {selections}\n\
          dimension Time;\n\
          unit ms : Time = rational(1, 1);\n\
          {body}\n"
@@ -1062,23 +1072,6 @@ fn a_second_weight_after_an_invalid_one_is_still_a_duplicate() {
     );
 }
 
-/// FR-185 "Workloads": a claim names a workload by its name alone, so a
-/// second workload of one name refuses `conflicting_declaration`/
-/// `duplicate-declaration` at its name (FR-185 names no cause: a spec gap).
-#[trace("TC-620")]
-#[test]
-fn a_second_workload_of_one_name_refuses() {
-    let body = service(None, STEADY);
-    assert_eq!(
-        located(&body),
-        [(
-            Code::ConflictingDeclaration,
-            Some("duplicate-declaration"),
-            "Steady".to_owned()
-        )]
-    );
-}
-
 /// FR-185 "Rewards": a reward that reads state still declares its name, so a
 /// later reward of that name on that operation is a duplicate.
 #[trace("TC-620")]
@@ -1150,5 +1143,170 @@ fn an_event_window_is_not_refused_before_profiles_resolve() {
             [not_yet(&source)],
             "{event}"
         );
+    }
+}
+
+/// The identity of [`other_document`]'s package.
+const OTHER: &str = "example/other-service";
+
+/// The `Service` document as a second domain package, `example/other-service`.
+fn other_document() -> Vec<u8> {
+    String::from_utf8(service_document())
+        .expect("UTF-8")
+        .replace(P, OTHER)
+        .into_bytes()
+}
+
+/// The `model Other` selection of [`other_document`]: a second model of
+/// the package.
+fn other_model() -> String {
+    let packages = package_input([other_document().as_slice()]);
+    let [(digest, _)] = packages.iter().collect::<Vec<_>>()[..] else {
+        panic!("one supplied document");
+    };
+    format!(
+        "model Other = {OTHER:?} version \"1.0.0\" digest \"sha256-jcs:{}\";",
+        qsl_semantics::model::key::hex(digest)
+    )
+}
+
+/// FR-185-AC-5 (TC-620 step 5): a second `workload Steady on Service`, and a
+/// `workload Steady on Other` on a second model of the package, are each
+/// refused `conflicting_declaration`/`duplicate-declaration` with `subject`
+/// `Steady` and `related` both declarations' names in source order; the
+/// first remains the package's `Steady`: `related[0]` is the first, earlier
+/// in the source. A refused
+/// unit has no graph to read `Steady` from, so the related regions are where
+/// the clause is observable.
+#[trace("TC-620", "FR-185-AC-5")]
+#[test]
+fn a_workload_name_is_package_wide() {
+    let other = "workload Steady on Other { weight Server::request = 1; \
+         weight Server::attempt = 1; weight Server::reset = 1; }";
+    let selection = other_model();
+    for (prefix, second) in [("", STEADY), (selection.as_str(), other)] {
+        // With two models, a `random` or `reward` names its model.
+        let declarations = service(None, second)
+            .replace("random Server::", "random Service::Server::")
+            .replace("on Server::attempt =", "on Service::Server::attempt =");
+        let body = format!("{prefix}\n{declarations}");
+        let declarations = assemble(&body);
+        let regions = declarations.regions();
+        let (text, _) = service_unit(&body);
+        let refusals = declarations
+            .check(CheckingLimits::default())
+            .expect_err("the unit refuses");
+        let [refusal] = &refusals[..] else {
+            panic!("{second}: one refusal: {refusals:?}");
+        };
+        let CheckCause::Probabilistic(cause) = &refusal.cause else {
+            panic!("a probabilistic cause: {refusal:?}");
+        };
+        assert!(matches!(
+            cause.as_ref(),
+            ProbabilisticCause::DuplicateWorkload { workload, .. } if workload == "Steady"
+        ));
+        assert_eq!(
+            (refusal.cause.code(), refusal.cause.cause()),
+            (Code::ConflictingDeclaration, Some("duplicate-declaration"))
+        );
+        let related: Vec<(u64, &str)> = regions
+            .related_regions(refusal)
+            .iter()
+            .map(|region| {
+                (
+                    region.start(),
+                    &text[region.start() as usize..region.end() as usize],
+                )
+            })
+            .collect();
+        assert_eq!(related.len(), 2);
+        assert!(related[0].0 < related[1].0);
+        assert_eq!(
+            related.iter().map(|(_, text)| *text).collect::<Vec<_>>(),
+            ["Steady", "Steady"]
+        );
+    }
+}
+
+/// FR-185-AC-6 (TC-620 step 6): the running total of a distribution's
+/// weights is bounded by the 65,536-bit ceiling after each addition:
+/// `1/3 + 1/(2^65534 + 1)` has a 65,536-bit denominator and checks;
+/// `1/3 + 1/(2^65535 + 5)` has a 65,537-bit one and is refused with the
+/// limit refusal at the parameter `d`.
+#[trace("TC-620", "FR-185-AC-6")]
+#[test]
+fn a_distribution_total_is_bounded_after_each_addition() {
+    let random = |offset: u64, shift: u64| {
+        let denominator = Integer::one()
+            .shifted_left(shift)
+            .add(&Integer::from(offset));
+        format!(
+            "random Server::attempt(d) ~ {{ 1: rational(1, 3), 3: rational(1, {denominator}) }};"
+        )
+    };
+    checked(&service(Some((D, &random(1, 65_534))), ""));
+    let refused = service(Some((D, &random(5, 65_535))), "");
+    assert_eq!(located(&refused), [limit("d")]);
+    let refusals = refusals_of(&refused);
+    let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
+        panic!("a limit refusal: {refusals:?}");
+    };
+    assert_eq!((limit.limit, limit.actual), (65_536, 65_537));
+}
+
+/// FR-185-AC-6 (TC-620 step 6): a check of the 65,537-bit distribution,
+/// which unhindered refuses with the 65,536-bit ceiling, ends cancelled when
+/// its handle is tripped: before it starts, or at its first meter charge
+/// once it runs. The check itself observes the cancellation (the handle's
+/// `tripped` cause is `Requested`), and its refusals are the cancelled
+/// work-budget refusal, never the ceiling.
+#[trace("TC-620", "FR-185-AC-6")]
+#[test]
+fn a_cancelled_check_ends_cancelled() {
+    let denominator = Integer::one()
+        .shifted_left(65_535)
+        .add(&Integer::from(5u64));
+    let refused = service(
+        Some((
+            D,
+            &format!(
+                "random Server::attempt(d) ~ {{ 1: rational(1, 3), 3: rational(1, {denominator}) }};"
+            ),
+        )),
+        "",
+    );
+    let before = quire_exact::Cancel::new();
+    before.cancel(quire_exact::CancelCause::Requested);
+    let handle = std::sync::Arc::new(std::sync::OnceLock::<quire_exact::Cancel>::new());
+    let tripping = {
+        let handle = std::sync::Arc::clone(&handle);
+        quire_exact::Cancel::observing(move || {
+            if let Some(cancel) = handle.get() {
+                cancel.cancel(quire_exact::CancelCause::Requested);
+            }
+        })
+    };
+    assert!(handle.set(tripping.clone()).is_ok());
+    for (when, cancel) in [("before", before), ("at the first charge", tripping)] {
+        let refusals = assemble(&refused)
+            .check_with_cancel(CheckingLimits::default(), &cancel)
+            .expect_err("a cancelled check refuses");
+        assert_eq!(
+            cancel.tripped(),
+            Some(quire_exact::CancelCause::Requested),
+            "{when}: the check observed the cancellation"
+        );
+        assert!(!refusals.is_empty(), "{when}");
+        for refusal in &refusals {
+            let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+                panic!("{when}: a cancelled refusal: {refusal:?}");
+            };
+            assert_eq!(
+                (limit.kind, limit.limit, limit.actual),
+                (CheckingLimitKind::WorkBudget, 0, 0),
+                "{when}: {refusal:?}"
+            );
+        }
     }
 }

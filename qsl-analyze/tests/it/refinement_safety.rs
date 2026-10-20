@@ -82,7 +82,7 @@ fn operations(counterexample: &TemporalCounterexample) -> Vec<String> {
 #[trace("TC-547", "FR-142-AC-1")]
 #[test]
 fn the_compare_and_set_counter_holds_over_twenty_eight_states() {
-    let SafetyOutcome::Holds { stats } = run(&World::new(&cas_refines_counter())) else {
+    let SafetyOutcome::Holds { stats, .. } = run(&World::new(&cas_refines_counter())) else {
         panic!("the refinement holds");
     };
     assert_eq!(stats.product_states, 28);
@@ -243,7 +243,7 @@ fn run_ring(world: &RingWorld) -> SafetyOutcome {
 #[trace("TC-547", "FR-142-AC-6")]
 #[test]
 fn the_ring_buffer_refines_the_queue() {
-    let SafetyOutcome::Holds { stats } = run_ring(&RingWorld::new()) else {
+    let SafetyOutcome::Holds { stats, .. } = run_ring(&RingWorld::new()) else {
         panic!("the refinement holds");
     };
     assert!(stats.product_states > 1);

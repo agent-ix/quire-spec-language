@@ -2,9 +2,10 @@
 //! Located checking refusals and their closed codes and causes.
 
 use super::protocol_memory::AccessClass;
-use qsl_forms::{AccessOrdering, MemoryModelName};
+use qsl_forms::AccessOrdering;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::SourceRegion;
+use qsl_foundation::MemoryModelName;
 use qsl_foundation::Setting;
 use qsl_foundation::Span;
 use quire_exact::Integer;

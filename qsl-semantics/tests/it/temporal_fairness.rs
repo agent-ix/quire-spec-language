@@ -222,6 +222,24 @@ fn same_named_operations_of_different_types_stay_distinct() {
     }
 }
 
+/// FR-228 (ADR-025 MF-4): an authored constraint names one of FR-212's
+/// targets, and `flush` is a memory step, not one of them, so
+/// `fair weak flush` refuses `missing_declaration`/`missing-name` at the name.
+#[trace("TC-673")]
+#[test]
+fn an_authored_constraint_cannot_name_the_flush_memory_step() {
+    let (text, cause) = refused(INFINITE, &format!("fair weak flush; {EVENTUALLY_TWO}"));
+    assert_eq!(
+        cause,
+        TemporalCause::UnresolvedFairnessOperation {
+            name: "flush".into(),
+            span: first(&text, "flush")
+        }
+    );
+    assert_eq!(cause.code(), Code::MissingDeclaration);
+    assert_eq!(cause.tag(), "missing-name");
+}
+
 /// FR-123-AC-2: a constraint naming no operation refuses
 /// `missing_declaration`/`missing-name` at the name; a constraint under the
 /// event-position profile refuses `unsupported_construct`/`expression-form`

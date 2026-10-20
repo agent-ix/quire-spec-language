@@ -376,11 +376,6 @@ pub enum InconclusiveCause {
     /// `mapping-undetermined` (ADR-020 RE-4): a refinement's mapping row or
     /// step-row argument was refused or incomplete at a reachable state.
     MappingUndetermined,
-    /// A refinement's safety half holds by exhaustive exploration, and the
-    /// simulation certificate (FR-149) that FR-144 requires before `proved`
-    /// is not built, so no proof is settled. Interim: no spec names this
-    /// cause; QSL-549 removes it when the certificate exists.
-    SimulationCertificateNotBuilt,
     /// The core rejected a certificate, retaining its failing rule and locus.
     CertificateRejected {
         /// The check rule that failed.
@@ -452,7 +447,6 @@ impl InconclusiveCause {
             Self::NoInitialState => "no-initial-state",
             Self::NoInstance => "no-instance",
             Self::MappingUndetermined => "mapping-undetermined",
-            Self::SimulationCertificateNotBuilt => "simulation-certificate-not-built",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
@@ -476,7 +470,6 @@ impl InconclusiveCause {
             | Self::NoInitialState
             | Self::NoInstance
             | Self::MappingUndetermined
-            | Self::SimulationCertificateNotBuilt
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive

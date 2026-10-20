@@ -5,13 +5,13 @@
 
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::Observation;
-use quire_exact::{EffectiveId, ObjectReference};
+use quire_exact::{EffectiveId, ObjectReference, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::footprints::Enforcement;
 use super::{
-    contracts, encode, frames, identity_limits, state_document, ClauseInfo, ModelFinding,
-    ModelSimState, ModelSystem, BROKEN, EXHAUSTED,
+    contracts, encode, frames, identity_limits, state_document, Application, ClauseInfo,
+    ModelFinding, ModelSimState, ModelSystem, BROKEN, EXHAUSTED,
 };
 use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::key;
@@ -32,12 +32,17 @@ pub(super) const fn exhausted(limit: ExpansionLimit) -> ExpansionStop {
 
 /// The candidates one expansion has generated, against its bound
 /// (FR-120 "Post-states", ADR-016 G-4).
-pub(super) struct Budget {
+pub(crate) struct Budget {
     used: u64,
     max: u64,
 }
 
 impl Budget {
+    /// A budget of `max` candidates, none used.
+    pub(super) const fn new(max: u64) -> Self {
+        Self { used: 0, max }
+    }
+
     /// Count one candidate or (candidate, result) pair.
     ///
     /// # Errors
@@ -86,6 +91,29 @@ impl Walk<'_, '_> {
         self.rows.iter().map(|row| row.reference.clone()).collect()
     }
 
+    /// The `pre` and `post` clauses of `application` at `row` that
+    /// `select` admits by their checked identity: every applicable clause
+    /// for a model step, the clauses an attempt's `contracts` select for a
+    /// protocol attempt (ADR-027 ST-1).
+    pub(super) fn selected<'c>(
+        &'c self,
+        row: &Row,
+        application: &Application,
+        select: impl Fn(quire_exact::NodeKey) -> bool,
+    ) -> Selected<'c> {
+        let clauses = &self.system.clauses;
+        let pick = |group: &'c [ClauseInfo]| {
+            self.applicable(group, row, application.declaring, &application.name)
+                .into_iter()
+                .filter(|clause| select(clause.identity))
+                .collect()
+        };
+        Selected {
+            preconditions: pick(&clauses.preconditions),
+            postconditions: pick(&clauses.postconditions),
+        }
+    }
+
     /// The clauses in `group` that apply to `row` as the receiver of the
     /// operation `name` declared by `declaring`: the clause resolves to that
     /// operation and the receiver's type conforms to the clause's context
@@ -110,6 +138,13 @@ impl Walk<'_, '_> {
     }
 }
 
+/// The `pre` and `post` clauses one application evaluates, each kind in
+/// ascending name order.
+pub(super) struct Selected<'c> {
+    pub(super) preconditions: Vec<&'c ClauseInfo>,
+    pub(super) postconditions: Vec<&'c ClauseInfo>,
+}
+
 /// A contract finding with the keys its position among its siblings follows:
 /// ascending transition-identity bytes, then candidate state-key bytes (none
 /// first), then clause name (FR-120 "Invariants").
@@ -120,8 +155,21 @@ pub(super) struct ContractFinding {
     pub(super) finding: ModelFinding,
 }
 
-/// One successor: the transition and the state it reaches.
-pub(super) type Successor = (ModelTransition, ModelSimState);
+/// One successor of one application (FR-120 "Applications and transition
+/// identities"): its transition identity, the state it reaches, and the
+/// receiver, argument vector and result the application chose.
+pub(crate) struct Applied {
+    /// The FR-120 transition identity.
+    pub(crate) transition: ModelTransition,
+    /// The post-state.
+    pub(crate) state: ModelSimState,
+    /// The receiver.
+    pub(crate) receiver: ObjectReference,
+    /// The arguments, in parameter order.
+    pub(crate) arguments: Vec<Value>,
+    /// The result; `None` for an operation with no result.
+    pub(crate) result: Option<Value>,
+}
 
 /// The objects of `state`, in ascending (population, key) order.
 pub(super) fn rows_of(
@@ -169,17 +217,38 @@ pub(super) fn walk_of<'s, 'a>(
     })
 }
 
+/// One model state's expansion.
+type ModelExpansion = Expansion<ModelTransition, ModelSimState, ModelFinding>;
+
 /// Expand `state`: its findings and every successor (FR-120).
 pub(super) fn expand_state(
     system: &ModelSystem<'_>,
     state: &ModelSimState,
     enforcement: Option<&Enforcement<'_>>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+    expand(system, state, enforcement, None)
+}
+
+/// [`expand_state`] with no footprint enforcement, also returning every
+/// argument vector whose effective precondition holds, each with the
+/// positions of its successors in the expansion's list (FR-187).
+pub(super) fn expand_enabled(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+) -> Result<(ModelExpansion, Vec<frames::EnabledVector>), ExpansionStop> {
+    let mut enabled = Vec::new();
+    let expansion = expand(system, state, None, Some(&mut enabled))?;
+    Ok((expansion, enabled))
+}
+
+fn expand(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    enforcement: Option<&Enforcement<'_>>,
+    mut enabled: Option<&mut Vec<frames::EnabledVector>>,
+) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
     let walk = walk_of(system, state, enforcement)?;
-    let mut budget = Budget {
-        used: 0,
-        max: system.limits.max_candidates,
-    };
+    let mut budget = system.budget();
 
     let mut findings = contracts::invariants(&walk)?;
     let mut contract = Vec::new();
@@ -189,25 +258,40 @@ pub(super) fn expand_state(
             continue;
         };
         for application in applications {
+            let clauses = walk.selected(row, application, |_| true);
             frames::apply(
                 &walk,
                 row,
                 application,
+                &clauses,
                 &mut budget,
-                &mut contract,
-                &mut successors,
+                frames::Outputs {
+                    contract: &mut contract,
+                    successors: &mut successors,
+                    enabled: enabled.as_deref_mut(),
+                },
             )?;
         }
     }
+    findings.extend(sorted_contract_findings(contract));
+    Ok(Expansion {
+        successors: successors
+            .into_iter()
+            .map(|applied| (applied.transition, applied.state))
+            .collect(),
+        findings,
+    })
+}
+
+/// Contract findings in the order their siblings follow (FR-120
+/// "Invariants"): ascending transition-identity bytes, then candidate
+/// state-key bytes (none first), then clause name.
+pub(super) fn sorted_contract_findings(mut contract: Vec<ContractFinding>) -> Vec<ModelFinding> {
     contract.sort_by(|left: &ContractFinding, right: &ContractFinding| {
         left.transition
             .cmp(&right.transition)
             .then_with(|| left.candidate.cmp(&right.candidate))
             .then_with(|| left.clause.cmp(&right.clause))
     });
-    findings.extend(contract.into_iter().map(|entry| entry.finding));
-    Ok(Expansion {
-        successors,
-        findings,
-    })
+    contract.into_iter().map(|entry| entry.finding).collect()
 }

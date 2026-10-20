@@ -51,6 +51,13 @@ pub struct CheckedAttempt {
     /// The index into the owning `ProtocolDeclarationForm::declarations` of
     /// this attempt's own static declaration.
     pub declaration: usize,
+    /// The resolved operation `on M::T::op` names: the type that declares
+    /// it and its declaration, which FR-120's application of the attempt
+    /// reads (ADR-027 TS-3).
+    pub operation: ClauseOperation,
+    /// The object type `on M::T::op` names: the type of the attempt's
+    /// receiver.
+    pub receiver: quire_exact::EffectiveId,
     /// The operation's `operation_anchor` node identity.
     pub anchor: quire_exact::NodeKey,
     /// The operation's `frame` node identity.
@@ -111,6 +118,133 @@ pub struct CheckedProtocol {
     /// attempt's access class and ordering (FR-219, FR-220), filled in by
     /// `check::mod`'s own pipeline.
     pub memory: crate::check::protocol_memory::CheckedMemory,
+    /// Every role, in source order, with the object type it is `on` or
+    /// `each` (ADR-027 PS-1: the subject binds each static role).
+    pub roles: Vec<CheckedRole>,
+    /// Every `parallel`'s join as written: its policy, the labels it awaits
+    /// and its `outstanding` rule (ADR-027 ST-7), in source order.
+    pub parallels: Vec<CheckedParallel>,
+    /// The `finish` node and its name (ADR-027 ST-9); `None` only for a
+    /// form that declares none, which the grammar does not admit.
+    pub finish: Option<(ProtocolNodeId, String)>,
+    /// Each `send` and `receive` with the channel it is written `via`, in
+    /// declaration order (ADR-027 ST-3, ST-4).
+    pub vias: Vec<CheckedVia>,
+}
+
+/// One `send` or `receive` and the channel it is written `via` (ADR-027
+/// ST-3, ST-4: the queue a message step appends to or takes from).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedVia {
+    /// The `send` or `receive` node.
+    pub node: ProtocolNodeId,
+    /// The channel's declared name.
+    pub channel: String,
+}
+
+/// One role of a checked protocol (ADR-027 PS-1).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedRole {
+    /// The declared role name.
+    pub name: String,
+    /// The object type the role is `on` or `each`; `None` when the name is
+    /// no object type, which the controls check refuses.
+    pub context: Option<quire_exact::EffectiveId>,
+    /// Whether the role is replicated (`each`).
+    pub replicated: bool,
+}
+
+/// One `parallel`'s join as written (ADR-027 ST-7, QSpec FR-171).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedParallel {
+    /// The `parallel` control.
+    pub node: ProtocolNodeId,
+    /// The join policy.
+    pub policy: CheckedJoinPolicy,
+    /// The branch labels the join awaits, each once, in source order.
+    pub joined: Vec<String>,
+    /// The `outstanding` rule; `None` when the source writes none, which
+    /// carries no default (QSpec FR-466).
+    pub outstanding: Option<CheckedOutstanding>,
+}
+
+/// A checked join policy (QSpec FR-171).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedJoinPolicy {
+    /// `join all`.
+    All,
+    /// `join any`.
+    Any,
+    /// `join quorum(n)`.
+    Quorum(u64),
+    /// `join predicate(name)`, whose function no checker reads yet.
+    Predicate,
+}
+
+/// What a join does with the branches it leaves outstanding (QSpec FR-228).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedOutstanding {
+    /// `outstanding continue`: they keep running.
+    Continue,
+    /// `outstanding cancel`: they are cancelled in the join step.
+    Cancel,
+}
+
+/// How a protocol system walks one checked control (ADR-027 FO-1, §2.2):
+/// the structural move it takes through it or the step it rests at. A
+/// construct no protocol system steps yet is named by its keyword.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ControlStep {
+    /// A `sequence`: its children in authored order.
+    Sequence,
+    /// A `branch` of a `parallel`: its one body.
+    Branch,
+    /// A `parallel`: the `fork` and `join` steps.
+    Parallel,
+    /// An `attempt`: ST-1.
+    Attempt,
+    /// A `choice`: the one case whose guard is true.
+    Choice,
+    /// A `case` of a `choice`: its one body.
+    Case,
+    /// A `repeat`: its guard, its body and its `exhausted` control.
+    Repeat,
+    /// An `await`: its matched event's step or `timeout` (ST-8).
+    Await,
+    /// A `check`: continue while true, rest while false.
+    Check,
+    /// A `send`: ST-3.
+    Send,
+    /// A `receive`: ST-4.
+    Receive,
+    /// A domain `event` or a `commit`: ST-2.
+    Event,
+    /// Another construct, by its keyword.
+    Unstepped(&'static str),
+}
+
+impl CheckedControl {
+    /// How a protocol system walks this control.
+    pub fn step(&self) -> ControlStep {
+        use qsl_forms::ProtocolNodeKind as K;
+        match self.kind {
+            K::Sequence => ControlStep::Sequence,
+            K::Branch => ControlStep::Branch,
+            K::Parallel => ControlStep::Parallel,
+            K::Attempt => ControlStep::Attempt,
+            K::Choice => ControlStep::Choice,
+            K::Case => ControlStep::Case,
+            K::Repeat => ControlStep::Repeat,
+            K::Await => ControlStep::Await,
+            K::Check => ControlStep::Check,
+            K::Send => ControlStep::Send,
+            K::Receive => ControlStep::Receive,
+            K::Event | K::Commit => ControlStep::Event,
+            K::Effect | K::Finish | K::CompensateTemplate | K::Fence => {
+                ControlStep::Unstepped(self.kind.label())
+            }
+        }
+    }
 }
 
 /// One checked `await` (QSpec FR-466 `await` layout): its node, the clock

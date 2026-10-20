@@ -31,12 +31,36 @@ pub struct ModelSubject<'a> {
     pub proof_bounds: Vec<ProofBound>,
 }
 
+/// FR-205 (ADR-027 PS-1): a protocol subject, a model subject together with
+/// one checked protocol clause of its package and the clause's bindings.
+pub struct ProtocolSubject<'a> {
+    /// The model subject the protocol's roles act on.
+    pub model: ModelSubject<'a>,
+    /// The declared name of one protocol clause of the subject's package.
+    pub protocol: String,
+    /// The object bound to the clause's `over` parameter, by population and
+    /// key.
+    pub over: ModelInstance,
+    /// A binding for each static role.
+    pub roles: Vec<RoleBinding>,
+}
+
+/// One static role's binding (ADR-027 PS-1): the role and the identity of
+/// the domain package whose model plays it.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RoleBinding {
+    /// The role's declared name.
+    pub role: String,
+    /// The domain package identity of the model bound to it.
+    pub model: String,
+}
+
 /// FR-125 Instancing: one instance of a clause's `over` parameter, a key
 /// of a population that admits the parameter's type. The pair is the
 /// instance in the obligation identity and the name of a refuted binding;
 /// it carries no object type, since a key has no type until a state holds
 /// its object.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ModelInstance {
     /// The population's declaration key.
     pub population: DeclarationKey,
