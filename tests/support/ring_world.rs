@@ -32,7 +32,7 @@ use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
 #[path = "ring_queue.rs"]
-mod ring_queue;
+pub(crate) mod ring_queue;
 
 pub use ring_queue::{key, node, QUEUE, RING};
 

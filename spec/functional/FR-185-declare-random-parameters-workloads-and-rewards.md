@@ -11,6 +11,12 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-272
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-142
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-056
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-322
+    type: depends_on
 ---
 # FR-185: Declare random parameters, workloads and rewards
 
@@ -182,15 +188,22 @@ name.
 
 ### Quantity-typed parameters
 
-A quantity-typed operation parameter, such as `d: Quantity<Time>` in ADR-024
-§7.2, is not available: no domain package defines a quantity type for a
-parameter, and complete-V1 source has no quantity type reference
-(FR-091-OQ-11(d), STD-113). A distribution's support values are written in
-the parameter's own type, an integer range such as `Millis = Int[1, 12]` in
-the `Service` fixture, and a support value outside that type is refused
-`value-outside-type` (Random parameters). Admitting `1 ms`-style supports
-needs a quantity native or a package quantity type reference from QSpec
-(STD-113) and is open.
+A quantity-typed operation parameter, such as ADR-024 §7.2's duration `d`, has
+the type `Quantity<u>` of a declared unit `u`. The domain package names the
+unit with a unit `typeRef` (`ix://quire/unit/<name>`, QSpec FR-322 "Model-owned
+members" step 4 and FR-322-AC-80), which resolves to the unit's own type node
+(QSpec FR-142). A distribution's support values are quantity literals of that
+unit (`1 ms`, `3 ms`, `12 ms` for `Quantity<ms>`). S3 SHALL refuse a support
+value that is not a `Quantity<u>` value, another unit of the same dimension
+included, with `value-outside-type` (Random parameters), the cause QSpec
+FR-405-AC-3 assigns to a support, not FR-142's `type-mismatch`.
+
+A parameter whose declared type is an integer range, such as
+`Millis = Int[1, 12]`, takes integer supports.
+
+Dependencies: the unit `typeRef` and the quantity literal form are QSpec's
+(FR-142, FR-322); reading the unit `typeRef` is an intake rule (FR-056-AC-42), and
+resolving it is the assembler's (FR-091).
 
 ### Package emission
 
@@ -212,6 +225,7 @@ it from the checked package, not from the emitted wire.
 | FR-185-AC-5 | A second `workload Steady on Service` and a `workload Steady on Other` (a second model of the package) are each refused `conflicting_declaration`/`duplicate-declaration` with `subject` `Steady` and `related` both declarations in source order, and the first remains the package's `Steady`. | Test (TC-620) |
 | FR-185-AC-6 | The distribution `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` (running-sum denominator of 65,536 bits) checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` (65,537 bits) is refused with the limit refusal naming the parameter; a check whose cancellation handle is tripped before it starts ends cancelled (FR-276), the handle reporting requested and the reported limit not being the 65,536-bit ceiling. | Test (TC-620) |
 | FR-185-AC-7 | `Service` (with `d` typed `Millis = Int[1, 12]`) checks at S3 and refuses at S4 with `unsupported_construct`/`not-yet-implemented` naming the first random parameter in source order, `random-parameter` and the selected profile, with the checked record intact. | Test (TC-620) |
+| FR-185-AC-8 | With the dimension `Time`, the unit `s` (root) and the unit `ms` (target `s`, scale `1/1000`), `Server::attempt` with `d: Quantity<ms>` records `d` with the supports `1 ms`, `3 ms` and `12 ms` and the probabilities of AC-1; the values `1 s` and `true` listed for `d` are each refused `value-outside-type` naming the parameter; a precondition reading `d` as `d < 5 ms` is refused `random-read-in-precondition`. | Test (TC-620) |
 
 ## Dependencies
 

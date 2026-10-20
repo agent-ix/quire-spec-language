@@ -71,7 +71,7 @@ pub enum RefinementRowForm {
     /// `step source -> target;`.
     Step(StepRowForm),
     /// `history C::T.field : Type = initial { on C::T::op : e; ... }`.
-    History(HistoryRowForm),
+    History(Box<HistoryRowForm>),
     /// `assume fair ... C::T::op;` or `ensure fair ... A::T::op;`.
     Fairness(FairnessRowForm),
 }
@@ -225,6 +225,8 @@ pub struct HistoryRowForm {
     pub ty: TypeForm,
     /// The initial value, a literal.
     pub initial: HistoryLiteralForm,
+    /// The span of the initial literal.
+    pub initial_span: Span,
     /// The updates, in source order.
     pub updates: Vec<HistoryUpdateForm>,
     /// The span of the row, closing brace included.
@@ -524,15 +526,16 @@ fn history_form(
     let Some(Item::Token(keyword)) = row_items.first() else {
         return Err(unexpected(row));
     };
-    Ok(RefinementRowForm::History(HistoryRowForm {
+    Ok(RefinementRowForm::History(Box::new(HistoryRowForm {
         keyword: keyword.span(),
         object: name_form(cst, only(row_items, Production::TypeName, row)?)?,
         field: declared(field, row)?,
         ty: type_form(cst, only(row_items, Production::TypeReference, row)?)?,
         initial: history_literal(cst, only(row_items, Production::HistoryLiteral, row)?)?,
+        initial_span: only(row_items, Production::HistoryLiteral, row)?.span(),
         updates,
         span: row.span(),
-    }))
+    })))
 }
 
 fn history_literal(

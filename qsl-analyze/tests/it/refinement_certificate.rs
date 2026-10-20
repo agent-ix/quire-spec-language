@@ -15,10 +15,10 @@ use qsl_eval::simulation::TransitionSystem;
 use qsl_replay::{
     check_simulation_certificate, check_step, map_state, open_systems, settle_refinement_safety,
     CertificateLocus, CertificateRule, Certification, CertifiedEdge, CertifiedPosition,
-    ConcreteStep, DigestRecord, FailedStep, IncompleteCause, InconclusiveCause, ModelCheckLimit,
-    ModelCheckLimits, ProofBasis, RefinementFailure, RefinementPosition, SafetyOutcome,
-    SettlementBasis, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
-    StepRejection, StepVerdict, Taken, TemporalCertificateCheck, TerminalValue,
+    ConcreteStep, DigestRecord, FailedStep, HistoryValues, IncompleteCause, InconclusiveCause,
+    ModelCheckLimit, ModelCheckLimits, ProofBasis, RefinementFailure, RefinementPosition,
+    SafetyOutcome, SettlementBasis, SimulationCertificate, SimulationCertificateRequest,
+    SimulationRefusal, StepRejection, StepVerdict, Taken, TemporalCertificateCheck, TerminalValue,
 };
 use qsl_replay::{EvalFailure, MappingRowRef, MappingUndetermined, Undetermined, UndeterminedStep};
 use qsl_semantics::model::state::ModelState;
@@ -349,6 +349,7 @@ fn a_malformed_certificate_is_rejected() {
     let mut stray = certificate.clone();
     stray.positions.push(CertifiedPosition {
         concrete: certificate.positions[0].concrete,
+        history: Vec::new(),
         abstract_states: Vec::new(),
     });
     stray.successors.push(Vec::new());
@@ -374,14 +375,22 @@ fn listed(world: &World) -> SimulationCertificate {
     let abstract_system = &systems.abstract_system;
     let position = |state: &ModelState| RefinementPosition {
         concrete: state.clone(),
+        history: HistoryValues::default(),
         abstract_states: vec![
-            map_state(world.refinement(), concrete, abstract_system, state)
-                .expect("the state maps")
-                .visible,
+            map_state(
+                world.refinement(),
+                concrete,
+                abstract_system,
+                state,
+                &HistoryValues::default(),
+            )
+            .expect("the state maps")
+            .visible,
         ],
     };
     let certified = |position: &RefinementPosition| CertifiedPosition {
         concrete: digest(concrete, &position.concrete),
+        history: position.history.key(concrete).expect("a key"),
         abstract_states: position
             .abstract_states
             .iter()

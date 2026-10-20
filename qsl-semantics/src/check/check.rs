@@ -757,6 +757,10 @@ pub struct Scope {
     /// refuse `unsupported_construct`/`expression-form` where no refinement
     /// reads them (FR-139).
     pub(crate) known_populations: Vec<String>,
+    /// The names of the history fields the unit's refinements declare
+    /// (FR-138). A field of that name is the refinement's own, so a state
+    /// clause that reads it refuses `missing-name`.
+    pub(crate) history_names: Vec<String>,
     /// Every admitted model currently uses `quire.model.complete/v1`; an
     /// absent model keeps the historical exact-edge typing rule.
     pub(crate) complete_model: bool,
@@ -931,6 +935,7 @@ impl Scope {
             integer_division: None,
             complete_value: false,
             known_populations: Vec::new(),
+            history_names: Vec::new(),
             complete_model: false,
             dispatch_operations,
             symmetric_objects: BTreeMap::new(),
@@ -1014,6 +1019,11 @@ impl Scope {
 
     pub(crate) fn with_known_populations(mut self, names: Vec<String>) -> Self {
         self.known_populations = names;
+        self
+    }
+
+    pub(crate) fn with_history_names(mut self, names: Vec<String>) -> Self {
+        self.history_names = names;
         self
     }
 
@@ -1495,6 +1505,33 @@ pub(crate) struct Typer<'a> {
     /// outside a refinement declaration, where a population name or form
     /// refuses `unsupported_construct`/`expression-form`.
     populations: Option<PopulationScope>,
+    /// The history fields a refinement row reads (FR-138); empty outside a
+    /// refinement declaration, where the name of one is a missing field.
+    history: Vec<ScopedHistory>,
+}
+
+/// One history field a refinement row's expression may read (FR-138).
+#[derive(Clone, Debug)]
+pub(crate) struct ScopedHistory {
+    /// The concrete object type the refinement adds the field to.
+    pub(crate) object_type: EffectiveId,
+    /// The field's name.
+    pub(crate) name: String,
+    /// The field's declared type.
+    pub(crate) value_type: ValueType,
+}
+
+/// The value of the enum member `member` of `binding`: its identity and its
+/// own canonical rank (ADR-013 O-14/OQ-D), which `member.position()` is,
+/// verified at `AdmittedEnumDeclaration::admit_member`
+/// (`value/enumeration.rs`).
+pub(crate) fn enum_value(binding: &EnumBinding, member: &EnumValue) -> Value {
+    let rank = u32::try_from(member.position())
+        .expect("an admitted enum has far fewer than u32::MAX members");
+    Value::Enum(EnumMember::new(
+        mint_variant_id(binding.declaration.key(), member.case()),
+        rank,
+    ))
 }
 
 /// The concrete populations a refinement row's expression may name (FR-139,
@@ -1751,6 +1788,7 @@ impl<'a> Typer<'a> {
             units: UnitScope::new(scope.types.units()),
             body: BodyBuilder::default(),
             populations: None,
+            history: Vec::new(),
         }
     }
 
@@ -1768,6 +1806,14 @@ impl<'a> Typer<'a> {
     #[must_use]
     pub(crate) fn with_populations(mut self, populations: PopulationScope) -> Self {
         self.populations = Some(populations);
+        self
+    }
+
+    /// This pass reading the history fields `history` as a refinement row
+    /// does (FR-138).
+    #[must_use]
+    pub(crate) fn with_history(mut self, history: Vec<ScopedHistory>) -> Self {
+        self.history = history;
         self
     }
 
@@ -2288,13 +2334,8 @@ impl<'a> Typer<'a> {
                 // canonical position, never a value this site invents --
                 // `member.position()` is exactly that, verified at
                 // `AdmittedEnumDeclaration::admit_member` (`value/enumeration.rs`).
-                let rank = u32::try_from(member.position())
-                    .expect("an admitted enum has far fewer than u32::MAX members");
                 Ok(node(
-                    NodeKind::Literal(CheckedLiteral(Value::Enum(EnumMember::new(
-                        mint_variant_id(binding.declaration.key(), member.case()),
-                        rank,
-                    )))),
+                    NodeKind::Literal(CheckedLiteral(enum_value(binding, member))),
                     ValueType::Enum(binding.shape()),
                     location,
                 ))
@@ -2695,6 +2736,23 @@ impl<'a> Typer<'a> {
         location: &Location,
         derefed: bool,
     ) -> Result<Node, CheckRefusal> {
+        if let ValueType::Reference(object) = reference.value_type {
+            let history = self.history.iter().find(|history| {
+                history.name == field && self.scope.types.conforms(object, history.object_type)
+            });
+            if let Some(history) = history {
+                let (object_type, value_type) = (history.object_type, history.value_type.clone());
+                return Ok(node(
+                    NodeKind::History {
+                        reference: self.push(reference),
+                        object_type,
+                        field: field.to_owned(),
+                    },
+                    value_type,
+                    location,
+                ));
+            }
+        }
         let field_reads = derefed || self.in_state_clause();
         let value_type = reference.value_type.clone();
         let on_self = self.state.as_ref().is_some_and(

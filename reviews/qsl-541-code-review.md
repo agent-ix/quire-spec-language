@@ -97,3 +97,4 @@ plus the scratch probe for FND-001, which failed as described.
 | FND-004 | fixed | 8bd6b9d24: `Walker::step` and `cycle`'s length walk call `charge()`. |
 | FND-005 | fixed | 8bd6b9d24: `Run.meter: RefCell<Meter>` is borrowed by every product's quotient phase. No nested borrow exists on that path. |
 | FND-006 | fixed | 8bd6b9d24: the meter tests carry `TC-571` and the `max_transitions` test carries `TC-586`. |
+| FND-007 | fixed | 3245323dd (PR #1104): `Run` holds one `transitions_left`/`lifted` budget. Every lift starts at `concrete_budget()` and is charged through `steps_of`/`charge_lifted`, once. Verified at 44b0e3035: `every_binding_concretises_within_the_one_max_transitions_budget` stops at `explored + 2*steps - 1` and refutes at `explored + 2*steps`. It fails with the old per-binding budget. |

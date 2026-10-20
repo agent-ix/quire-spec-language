@@ -578,6 +578,15 @@ position, when the node has a source origin) and the typed member path
 cause: FR-360 admits it, and the refusal path for the other meanings is
 unchanged.
 
+A field, operation parameter or operation result `typeRef` of the form
+`ix://quire/unit/<name>` names a unit of the compiling unit (QSpec FR-322
+"Model-owned members" step 4; FR-322-AC-80). Intake SHALL admit it unresolved
+and carry it on the member. The assembler SHALL resolve `<name>`, the unit's
+qualified name, in the unit namespace of the compiling unit (FR-091). A name
+that matches no unit SHALL refuse `missing_declaration`/`missing-name`, naming
+the member and its typed member path. Admitting the form depends on the
+semantic-IR reader accepting it (QSpec FR-208 "Field types").
+
 The same rule holds for the other `malformed-declaration` refusals the compiler
 raises at normalization on a node it holds: a relationship end naming a record
 value type refuses at the relationship node, path `Relationship.source` or
@@ -908,6 +917,7 @@ the assembler SHALL refuse it with `missing_declaration` at the name.
 | FR-056-AC-39 | A Text slot admits the retained sequence whose profile length is in `[min, max]` by every surface: over `Title` (`Text[1, 8; nfc]`), a snapshot value, a replayed call argument and a `Witness` entry holding U+0065 U+0301 eight times (eight retained scalars) admit; the same holding nine, or an empty text, refuse by the surface's own code (`invalid-value` for a snapshot value; `WrongValueKind` for a replayed argument, `Input` assignment or `Witness` entry) before any value, call or clause runs; under `binary-utf8` the length is bytes. A String in a Text slot and a Text in a String slot refuse as FR-106 states. Depends on the validator applicability change of the Text paragraph. | Test (TC-1044) |
 | FR-056-AC-40 | Over `function s using v(x: String): Boolean pure { x = "abc" }`, `x` = `abc` gives `true`, and `ABC`, `abc ` and the empty String give `false`. `"a" = "a"` and `"\u00e9" = "é"` are `true`; `"\u00e9" = "e\u0301"` and `"A" = "a"` are `false`. Over `u: UUID`, `u = UUID("00112233-4455-6677-8899-aabbccddeeff")` is `true` for that value and `u != UUID("00112233-4455-6677-8899-aabbccddeefe")` is `true`. Over `t: Timestamp`, `t = Timestamp(5)` is `true` for `5` and `false` for `6`; `Timestamp(0) = Timestamp(-0)` is `true`, `Timestamp(0) = Timestamp(1)` is `false`, and `Timestamp(-170141183460469231731687303715884105728) = Timestamp(170141183460469231731687303715884105727)` is `false`. A literal compares in a call argument, a `let` binding and a field-read comparison (`x.label = "a"`) by the same rules. The String functions `s` and its `!=` counterpart replay through the real spine (FR-098) with the evaluated value and settlement of the Boolean in the `abc`, `ABC` and empty-text rows; the other rows check and evaluate without replay. | Test (TC-1052) |
 | FR-056-AC-41 | A literal never changes type to fit its slot. `x = "abc"` over `x: Text[0, 8; nfc]`, `u = "00112233-4455-6677-8899-aabbccddeeff"` over `u: UUID`, `x = UUID("00112233-4455-6677-8899-aabbccddeeff")` over `x: String`, `t = 5` over `t: Timestamp`, `n = Timestamp(5)` over `n: Integer`, and `r = "abc"` over `r: Reference<T>` each refuse `ill_typed`/`type-mismatch` at the comparison; the bodies `5` of a function whose result is `Timestamp`, `UUID("00112233-4455-6677-8899-aabbccddeeff")` of one whose result is `String` and `"abc"` of one whose result is `Text[0, 8; nfc]` refuse the same way at the literal. `"abc" < "abd"`, `UUID("00112233-4455-6677-8899-aabbccddeeff") <= UUID("00112233-4455-6677-8899-aabbccddeefe")` and `Timestamp(1) > Timestamp(2)` each refuse `ill_typed`/`operator-ineligible`. | Test (TC-1052) |
+| FR-056-AC-42 | A domain package whose operation parameter has `typeRef` `ix://quire/unit/ms` is admitted by intake with the `typeRef` unresolved; the assembler resolves it to the unit `ms` of a compiling unit that declares `ms`, and refuses it `missing_declaration`/`missing-name` naming `Operation.params[0].typeRef` when the unit declares no `ms`. A `typeRef` of the form `ix://quire/unit/<name>` on a field and on a result behave the same. | Test (TC-147) |
 | FR-056-AC-8 | End to end, the filament-core-data#173 architecture fixture runs bundle → quire-rs → lift → intake seam; its ports resolve with owning part, direction, interface type and multiplicity, a connection between them is admitted under FR-152, and the model linker binds a native package's references to those declarations. | Test (TC-148) |
 
 ### FR-056-AC-17
