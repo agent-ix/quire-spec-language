@@ -11,6 +11,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-126
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-141
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-142
@@ -80,7 +82,7 @@ pub struct CertifiedEdge {
 pub enum CertificateCheck {
     Accepted,
     Rejected(CertificateRejection),        // FR-338's: first failing rule and locus
-    Stopped(IncompleteCause, ModelCheckLimit),
+    Stopped(IncompleteCause, ReachedLimit),   // FR-126's ReachedLimit{limit, value}
 }
 ```
 
@@ -118,7 +120,9 @@ the certificate position, the edge when the rule concerns one, and
   the first rejection.
 - **Limits.** The checker SHALL count positions against `max_states` and
   edges against `max_transitions`, with checked arithmetic, and SHALL stop
-  at a reached limit with `Stopped`, naming the limit and its value.
+  at a reached limit with `Stopped`, naming the limit and its value. A
+  `StepVerdict::Stopped` from a `check_step` it calls SHALL end the check with
+  `Stopped`, naming that limit and its value.
 - **Purity.** The checker SHALL read no path, environment variable, clock
   or search location, and its result SHALL be a function of the
   certificate, the byte provision and the limits.
@@ -133,7 +137,8 @@ the certificate position, the edge when the rule concerns one, and
 | FR-149-AC-1 | ADR-020 §8's `CasRefinesCounter` without its `ensure` row: the engine's certificate holds one position per stored product state, and the checker returns `Accepted`. | Test (TC-556) |
 | FR-149-AC-2 | The same certificate with the `Taken` of the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter` returns `Rejected` with rule `PostDiffers` at that position and edge; with that edge's post index pointing at the initial position, rule `PostDiffers`; with one listed edge removed, rule `SuccessorsDiffer` at that position. Each settles `inconclusive`, `CertificateRejected{rule, at}`. | Test (TC-556) |
 | FR-149-AC-3 | A certificate built for the lost-update model by listing its states with the `commitB` edge from `(1, 0, f, 0, t)` returns `Rejected` with rule `StepFails` and verdict `AbstractStepRejected{transition: inc(c), cause: Postcondition}` in its locus, so a false relation is never accepted. | Test (TC-556) |
-| FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(ResourceExhausted, MaxTransitions)`; a certificate naming another refinement node is refused `stale_dependency`/`content-mismatch`. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
+| FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(ResourceExhausted, ReachedLimit{MaxTransitions, 1})`; a certificate naming another refinement node is refused `stale_dependency`/`content-mismatch`. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
+| FR-149-AC-5 | A certificate for `HeavyEnq` (FR-141-AC-9), built under a meter larger than B so that `HeavyEnq` holds and the checker accepts it there, checked under the meter B returns `Stopped(ResourceExhausted, ReachedLimit{EvaluationMeter, B})`, not `Rejected`. | Test (TC-556) |
 
 ## Dependencies
 

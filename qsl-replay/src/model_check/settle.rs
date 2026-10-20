@@ -26,7 +26,9 @@ use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCause};
-use crate::model_check::replay::{ModelTraceReplayResult, ModelTraceSettlement};
+use crate::model_check::replay::{
+    ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
+};
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
     UnavailabilityCause,
@@ -115,6 +117,11 @@ pub struct ModelCheckRecord {
     pub limit_reached: Option<ReachedLimit>,
     /// The counterexample a `refuted` record carries.
     pub counterexample: Option<TemporalCounterexample>,
+    /// The strong constraints that would exclude a `refuted` liveness
+    /// lasso (FR-133), each a warning diagnostic beside the counterexample.
+    /// They are outside it, its replay identity and the obligation
+    /// identity, and change no verdict.
+    pub hints: Vec<StrongFairnessHint>,
 }
 
 /// FR-127: settle `outcome`, a run under `limits` over the package
@@ -143,6 +150,7 @@ pub fn settle_model_check(
     replay: impl FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ModelCheckRecord {
     let mut counterexample = None;
+    let mut hints = Vec::new();
     let mut depth = None;
     let row = match outcome {
         ModelCheckOutcome::Holds {
@@ -220,8 +228,10 @@ pub fn settle_model_check(
             }) if !replayed.matches(package_id) => Row::stale(),
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Reproduced { .. },
+                hints: replayed_hints,
                 ..
             }) => {
+                hints = replayed_hints;
                 counterexample = Some(payload.as_ref().clone());
                 Row::refuted(SettlementBasis::DecisiveCounterexample)
             }
@@ -243,6 +253,7 @@ pub fn settle_model_check(
         limits: limits.used(),
         limit_reached: row.limit_reached,
         counterexample,
+        hints,
     }
 }
 

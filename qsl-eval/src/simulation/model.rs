@@ -593,6 +593,31 @@ impl<'a> ModelSystem<'a> {
             .map(|application| application.text.as_str())
     }
 
+    /// The operations of the subject's types, each once: its declaring type,
+    /// name, and the text its transitions carry (see
+    /// [`Self::operation_text`]). They come in canonical order: by the
+    /// declaring type's effective identity (not the admitted type that
+    /// inherits the operation), then by name bytes, so the order depends on
+    /// neither declaration order nor which type admits an operation.
+    pub fn operations(&self) -> Vec<(EffectiveId, &str, &str)> {
+        let mut operations: Vec<(EffectiveId, &str, &str)> = self
+            .applications
+            .values()
+            .flatten()
+            .map(|application| {
+                (
+                    application.declaring,
+                    application.name.as_str(),
+                    application.text.as_str(),
+                )
+            })
+            .collect();
+        operations
+            .sort_by(|left, right| (left.0, left.1.as_bytes()).cmp(&(right.0, right.1.as_bytes())));
+        operations.dedup_by(|next, kept| (next.0, next.1) == (kept.0, kept.1));
+        operations
+    }
+
     /// The operations in `identity`'s effective view (FR-103, FR-081), by name.
     fn applications_of(
         graph: &qsl_semantics::check::CheckedGraph,

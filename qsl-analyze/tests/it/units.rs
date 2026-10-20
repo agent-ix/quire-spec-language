@@ -155,6 +155,8 @@ pub(crate) fn checked(domain: &Domain, text: &str) -> (CheckedPackage, Vec<Check
 
 /// A world: a checked unit, its provisioned snapshots and initial states.
 pub(crate) struct World {
+    /// The native unit the package was checked from.
+    pub(crate) unit: Vec<u8>,
     pub(crate) domain: Domain,
     pub(crate) package: CheckedPackage,
     pub(crate) clauses: Vec<CheckedTemporalClause>,
@@ -171,6 +173,7 @@ impl World {
         let (package, clauses) = checked(&domain, text);
         let packages = package_input([domain.document.as_slice()]);
         let mut world = Self {
+            unit: text.as_bytes().to_vec(),
             package,
             clauses,
             packages,
