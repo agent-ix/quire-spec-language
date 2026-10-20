@@ -89,9 +89,9 @@ use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
 use qsl_replay::{
     AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind, IncompleteCause,
-    ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, Proviso, ReachedLimit,
-    ReductionCause, RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation,
-    UndefinedLocus, UndefinedSite,
+    ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, ModelStep, Proviso,
+    ReachedLimit, ReductionCause, RunStats, TemporalCounterexample, UndecidedCause,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
@@ -257,6 +257,8 @@ pub(super) fn check(
         },
         cancel,
         meter: RefCell::new(Meter::new(meter)),
+        transitions_left: Cell::new(request.limits.limits.max_transitions),
+        lifted: Cell::new(0),
     };
     run.decide(totals)
 }
@@ -838,9 +840,6 @@ struct Explored<'r, 'a> {
     product: LassoSystem<'r, 'a>,
     graph: RetainedGraph<LState, PT, Finding>,
     binding: &'r Binding,
-    /// What is left of the run's `max_transitions` for concrete
-    /// counterexample steps (FR-161 "Length and limits").
-    budget: usize,
     ending: Ending,
     /// Whether a model state reached where the automaton has no move was
     /// left unexpanded at the search horizon.
@@ -985,6 +984,13 @@ struct Run<'r, 'a> {
     /// The run's meter, which the annotated quotient's work of every
     /// product charges (FR-153 "Limits").
     meter: RefCell<Meter>,
+    /// What was left of the run's `max_transitions` when the products'
+    /// exploration and the lifted steps were last charged to the totals.
+    /// Every binding's concretisation draws on this one budget (FR-161
+    /// "Length and limits").
+    transitions_left: Cell<usize>,
+    /// The concrete steps lifted since that charge.
+    lifted: Cell<usize>,
 }
 
 impl<'r, 'a> Run<'r, 'a> {
@@ -1245,7 +1251,7 @@ impl<'r, 'a> Run<'r, 'a> {
         };
         let automaton_states = widen(product.automaton.borrow().reached_states());
         totals.add(&exploration.graph, transitions, automaton_states);
-        let budget = totals.remaining(spent).1;
+        self.charge_lifted(totals);
         let ending = match &exploration.outcome {
             Outcome::Exhaustive(_) => Ending::Complete,
             Outcome::Bounded { limit, .. } => {
@@ -1277,7 +1283,6 @@ impl<'r, 'a> Run<'r, 'a> {
             product,
             graph: exploration.graph,
             binding,
-            budget,
             ending,
             dead_cut: false,
         }))
@@ -1404,6 +1409,7 @@ impl<'r, 'a> Run<'r, 'a> {
         bound: Option<usize>,
         spent: &mut Totals,
     ) -> Result<DeadPhase, ModelCheckRefusal> {
+        self.charge_lifted(spent);
         let (mut states_left, mut edges_left) = spent.remaining(self.request.limits.limits);
         let (states_before, edges_before) = (states_left, edges_left);
         let phase = self.dead_walk(run, bound, &mut states_left, &mut edges_left);
@@ -1413,7 +1419,35 @@ impl<'r, 'a> Run<'r, 'a> {
         spent.charged_edges = spent
             .charged_edges
             .saturating_add(widen(edges_before - edges_left));
+        self.charge_lifted(spent);
         phase
+    }
+
+    /// Charge the concrete steps lifted since the last charge to `totals`,
+    /// as transitions the run spent, and note what is left of
+    /// `max_transitions` (FR-161 "Length and limits").
+    fn charge_lifted(&self, totals: &mut Totals) {
+        totals.charged_edges = totals
+            .charged_edges
+            .saturating_add(widen(self.lifted.take()));
+        self.transitions_left
+            .set(totals.remaining(self.request.limits.limits).1);
+    }
+
+    /// `lift`'s concrete steps, noting the ones it charged to the run's
+    /// budget.
+    fn steps_of(&self, lift: Lift<'_, '_>) -> Vec<ModelStep> {
+        self.lifted
+            .set(self.lifted.get().saturating_add(lift.charged()));
+        lift.into_steps()
+    }
+
+    /// What is left of `max_transitions` for the next concretisation: the
+    /// run's budget less the steps lifted since it was charged.
+    fn concrete_budget(&self) -> usize {
+        self.transitions_left
+            .get()
+            .saturating_sub(self.lifted.get())
     }
 
     /// [`Self::dead_phase`]'s walk, decrementing the budget it is given.
@@ -1521,6 +1555,12 @@ impl<'r, 'a> Run<'r, 'a> {
                     locus,
                     transition,
                 };
+                // The walk's own transitions are charged once it returns;
+                // until then they bound the concretisation here. `dead_phase`
+                // charged every earlier lift, so none is pending to be
+                // subtracted from this budget twice.
+                debug_assert_eq!(self.lifted.get(), 0, "no lift pending at a dead walk");
+                self.transitions_left.set(*edges_left);
                 let counterexample = self.dead_counterexample(
                     run,
                     &roots,
@@ -1647,7 +1687,7 @@ impl<'r, 'a> Run<'r, 'a> {
                     self.system,
                     &SymmetryGroup::default(),
                     &root.model,
-                    run.budget,
+                    self.concrete_budget(),
                 )?,
             };
             for index in chain.iter().skip(1) {
@@ -1663,7 +1703,7 @@ impl<'r, 'a> Run<'r, 'a> {
         })();
         self.built(lifted.map(|(initial_state, lift)| TemporalCounterexample {
             initial_state,
-            prefix: lift.into_steps(),
+            prefix: self.steps_of(lift),
             over_binding: Some(run.binding.instance.clone()),
             fairness: self.clause.fairness().to_vec(),
             kind,
@@ -1708,7 +1748,7 @@ impl<'r, 'a> Run<'r, 'a> {
         })();
         self.built(lifted.map(|(initial_state, lift)| TemporalCounterexample {
             initial_state,
-            prefix: lift.into_steps(),
+            prefix: self.steps_of(lift),
             over_binding: Some(run.binding.instance.clone()),
             fairness: self.clause.fairness().to_vec(),
             kind,
@@ -1732,7 +1772,7 @@ impl<'r, 'a> Run<'r, 'a> {
             self.system,
             &run.binding.group,
             &state.state.model,
-            run.budget,
+            self.concrete_budget(),
         )
     }
 
@@ -2058,7 +2098,7 @@ impl<'r, 'a> Run<'r, 'a> {
             }
             Ok(TemporalCounterexample {
                 initial_state,
-                prefix: lift.into_steps(),
+                prefix: self.steps_of(lift),
                 over_binding: Some(run.binding.instance.clone()),
                 fairness: self.clause.fairness().to_vec(),
                 kind: CounterexampleKind::Formula,
