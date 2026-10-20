@@ -45,7 +45,7 @@ pub fn key(package: &str, path: &str) -> DeclarationKey {
     }
 }
 
-fn origin(package: &str, path: &str) -> Value {
+pub fn origin(package: &str, path: &str) -> Value {
     let identity = node(package, path);
     json!({"generated": {
         "generatorIdentity": identity,
@@ -54,7 +54,7 @@ fn origin(package: &str, path: &str) -> Value {
     }})
 }
 
-fn construct(package: &str, name: &str, semantic_meaning: &str) -> Value {
+pub fn construct(package: &str, name: &str, semantic_meaning: &str) -> Value {
     json!({
         "kind": {"module": package, "name": name},
         "moduleVersion": "1.0.0",
@@ -66,7 +66,7 @@ fn construct(package: &str, name: &str, semantic_meaning: &str) -> Value {
     })
 }
 
-fn declaration(package: &str, path: &str, kind: &str, members: Value) -> Value {
+pub fn declaration(package: &str, path: &str, kind: &str, members: Value) -> Value {
     let mut value = json!({
         "identity": node(package, path), "displayName": node(package, path),
         "kind": {"module": package, "name": kind},
@@ -81,7 +81,7 @@ fn declaration(package: &str, path: &str, kind: &str, members: Value) -> Value {
 }
 
 /// `Int[0, upper]` as a declared value type.
-fn bounded(package: &str, name: &str, upper: u32) -> Value {
+pub fn bounded(package: &str, name: &str, upper: u32) -> Value {
     let constraints: Vec<Value> = [("min", "0".to_owned()), ("max", upper.to_string())]
         .iter()
         .map(|(keyword, value)| {
@@ -105,7 +105,7 @@ fn bounded(package: &str, name: &str, upper: u32) -> Value {
 
 /// A field with the multiplicity `lower..upper`: `(1, 1, false)` is a single
 /// value, `(0, n, true)` a sequence and `(0, n, false)` a set.
-fn field(
+pub fn field(
     package: &str,
     owner: &str,
     name: &str,
@@ -121,13 +121,13 @@ fn field(
     })
 }
 
-fn single(package: &str, owner: &str, name: &str, type_ref: &str) -> Value {
+pub fn single(package: &str, owner: &str, name: &str, type_ref: &str) -> Value {
     field(package, owner, name, type_ref, (1, 1, false))
 }
 
 /// The operation `name` of `owner`, taking `parameters` (name, type) and
 /// returning `returns`, whose frame modifies `modifies`.
-fn operation(
+pub fn operation(
     package: &str,
     owner: &str,
     name: &str,
@@ -174,7 +174,7 @@ fn operation(
     value
 }
 
-fn object_type(package: &str, name: &str, fields: Vec<Value>, operations: Vec<Value>) -> Value {
+pub fn object_type(package: &str, name: &str, fields: Vec<Value>, operations: Vec<Value>) -> Value {
     declaration(
         package,
         name,
@@ -188,7 +188,7 @@ fn object_type(package: &str, name: &str, fields: Vec<Value>, operations: Vec<Va
     )
 }
 
-fn population(package: &str, name: &str, member: &str) -> Value {
+pub fn population(package: &str, name: &str, member: &str) -> Value {
     json!({
         "identity": node(package, name), "displayName": node(package, name),
         "kind": {"module": package, "name": "population"},
@@ -197,7 +197,7 @@ fn population(package: &str, name: &str, member: &str) -> Value {
     })
 }
 
-fn document(package: &str, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
+pub fn document(package: &str, types: Vec<Value>, populations: Vec<Value>) -> Vec<u8> {
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
