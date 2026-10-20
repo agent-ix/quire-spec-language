@@ -28,7 +28,7 @@ use qsl_eval::simulation::ExpansionStop;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::InternalFault;
 use qsl_replay::statistical::{
-    Decision, SampledUndefined, StatisticalBasis, StatisticalLimit, StatisticalLimits,
+    ClaimForm, Decision, SampledUndefined, StatisticalBasis, StatisticalLimit, StatisticalLimits,
     StatisticalMethod, StatisticalOutcome, StatisticalProvenance, StatisticalRefusal,
     StatisticalStop, StatisticalUnsupported, StatisticalVerdict, TestProvenance, TestResult,
     TraceRange, UndecidedCause,
@@ -418,7 +418,9 @@ impl Plan<'_> {
                     }
                 }
                 Ok(Sample::Fraction(UnitFraction(value))) => {
-                    if sequential.is_some() {
+                    // Only a mean of a fraction takes fractions; every other
+                    // form's test is Bernoulli, under Okamoto as under SPRT.
+                    if sequential.is_some() || claim.form() != ClaimForm::MeanOfFraction {
                         return Err(StatisticalRefusal::FractionForEvent);
                     }
                     tally.counted += 1;
@@ -559,10 +561,10 @@ fn severity(decision: Decision) -> u8 {
     }
 }
 
-/// The least favourable test (FR-192 "estimate"): the most severe
-/// decision, then the estimate furthest on the failing side of the bound,
-/// then the first in order. A test with no estimate is least favourable
-/// among its peers.
+/// The least favourable test (FR-189): the worst decision (Rejected, then
+/// Undecided, then Accepted), then the smallest margin (`estimate − θ` for
+/// `>= θ`, `θ − estimate` for `<= θ` and the strict `< θ`; no estimate is
+/// the worst margin), then the lowest index.
 fn least_favourable(tests: &[TestResult], comparison: Cmp) -> Option<&TestResult> {
     let worse = |candidate: &TestResult, current: &TestResult| -> bool {
         let (a, b) = (severity(candidate.decision), severity(current.decision));
@@ -611,12 +613,12 @@ fn claim_decision(tests: &[TestResult]) -> Decision {
 /// not admit, [`StatisticalRefusal::NoTest`] and
 /// [`StatisticalRefusal::TooManyTests`] for a test list of no or too many
 /// tests, [`StatisticalRefusal::TraceIndexRange`] when `max_draws · m`
-/// overflows the trace index, and
+/// overflows the trace index for Okamoto or SPRT, and
 /// [`StatisticalRefusal::ConfidenceBeyondPrecision`] for a regenerative
 /// request whose `min(α', β')` has no normal-quantile bound, each before any
 /// sample is drawn; [`StatisticalRefusal::GeneratorMismatch`] when the
 /// sampler refuses its generator; [`StatisticalRefusal::FractionForEvent`]
-/// when the sampler returns a fraction for an SPRT test;
+/// when the sampler returns a fraction for a Bernoulli test;
 /// [`StatisticalRefusal::Internal`] when an exact-arithmetic invariant
 /// breaks.
 pub fn check_statistical<S: BehaviourSampler>(
@@ -638,11 +640,15 @@ pub fn check_statistical<S: BehaviourSampler>(
         u32::try_from(request.tests.len()).map_err(|_| StatisticalRefusal::TooManyTests {
             count: request.tests.len(),
         })?;
-    if request
-        .limits
-        .max_draws
-        .checked_mul(u64::from(tests))
-        .is_none()
+    // Only Okamoto and SPRT step through `i · m + j`; regenerative test `j`
+    // walks one behaviour at trace index `j < m`.
+    let interleaved = !matches!(request.method, StatisticalMethod::Regenerative { .. });
+    if interleaved
+        && request
+            .limits
+            .max_draws
+            .checked_mul(u64::from(tests))
+            .is_none()
     {
         return Err(StatisticalRefusal::TraceIndexRange {
             max_draws: request.limits.max_draws,

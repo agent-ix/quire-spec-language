@@ -19,7 +19,7 @@ use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::statistical::{
     ClaimForm, Confidence, Coverage, Decision, StatisticalLimit, StatisticalLimits,
     StatisticalMethod, StatisticalOutcome, StatisticalRefusal, StatisticalStop,
-    StatisticalUnsupported, StatisticalVerdict, UndecidedCause,
+    StatisticalUnsupported, StatisticalVerdict, TestResult, UndecidedCause,
 };
 use qsl_replay::{UndefinedEvaluation, UndefinedLocus, UndefinedSite};
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
@@ -206,7 +206,7 @@ impl BehaviourSampler for Service {
 /// samples with an interval of half-width 1/100 whose lower end is at least
 /// 19/20, and rejects at 2 ms with an upper end below 19/20; SPRT accepts
 /// at 5 ms and rejects at 2 ms, each below 23,026 samples.
-#[trace("TC-624", "FR-189-AC-1")]
+#[trace("TC-624")]
 #[test]
 fn p95_settles_by_okamoto_and_by_sprt() {
     let tests = one_test();
@@ -276,7 +276,7 @@ fn one_request_twice_gives_equal_outcomes() {
 
 /// FR-189-AC-3: two initial states run `m = 2` tests at `α' = β' = 1/200`,
 /// sample `i` of test `j` at trace index `2i + j`.
-#[trace("TC-624", "FR-189-AC-3")]
+#[trace("TC-624")]
 #[test]
 fn two_initial_states_run_two_bonferroni_tests_at_interleaved_traces() {
     let claim = p95();
@@ -391,7 +391,7 @@ fn no_fault() -> StatisticalClaim {
 /// undecided contract conjunction ends its test Undecided,
 /// `UndecidedSuccessor`; a `mean of` claim with SPRT is refused
 /// `NotStatistical`.
-#[trace("TC-624", "FR-189-AC-5")]
+#[trace("TC-624")]
 #[test]
 fn not_markov_undecided_successor_and_sequential_mean_settle_as_stated() {
     let claim = no_fault();
@@ -440,7 +440,7 @@ fn claim_of_mean() -> StatisticalClaim {
 
 /// FR-189 "Methods": a mean of a fraction is decided by the fixed-sample
 /// method over the sample mean.
-#[trace("TC-624", "FR-189-AC-5")]
+#[trace("TC-624")]
 #[test]
 fn okamoto_decides_a_mean_of_a_fraction_over_the_sample_mean() {
     let claim = claim_of_mean();
@@ -849,7 +849,7 @@ impl BehaviourSampler for Identical {
 /// half-width rule needs, the run closes exactly `min_cycles` cycles. A
 /// degenerate sample's half-width is `z / n`, so with `min_cycles` 1000 it
 /// stops at exactly 11,632 cycles (QSpec FR-408-AC-12).
-#[trace("TC-625", "FR-190-AC-2")]
+#[trace("TC-625", "FR-190-AC-2", "FR-191-AC-2")]
 #[test]
 fn a_transient_start_stops_on_max_cycle_steps_and_min_cycles_is_a_floor() {
     let claim = long_run(Comparison::AtLeast, ratio(999, 1000));
@@ -1044,7 +1044,7 @@ fn max_draws_and_cancellation_stop_with_no_decision() {
 /// run stopped by `max_samples` 100 and the rerun with the default limit
 /// draw equal samples at trace indices 0 to 99; seed 8 is recorded and
 /// draws a different sample at some trace index.
-#[trace("TC-626", "FR-191-AC-3")]
+#[trace("TC-626")]
 #[test]
 fn a_rerun_reproduces_every_sample_from_its_seed() {
     let claim = p95();
@@ -1100,7 +1100,7 @@ fn a_rerun_reproduces_every_sample_from_its_seed() {
 /// FR-191-AC-4: a two-test run records per test its initial state index,
 /// binding and trace-index range, test 1 starting at trace 1 in steps of 2;
 /// changing the method from Okamoto to SPRT changes the result's method.
-#[trace("TC-626", "FR-191-AC-4")]
+#[trace("TC-626")]
 #[test]
 fn provenance_records_each_test_and_its_trace_range() {
     let claim = p95();
@@ -1138,10 +1138,12 @@ fn provenance_records_each_test_and_its_trace_range() {
     assert_eq!(sprt.basis.method, StatisticalMethod::Sprt);
 }
 
-/// A request is refused before any draw for no test or a trace-index
+/// A request is refused before any draw for no test (FR-189-AC-11's
+/// refusal; its `no-initial-state` settlement is FR-192's) or a trace-index
 /// overflow, and on the sampler's generator mismatch; a claim whose
 /// indifference region leaves `(0, 1)`, or a strict bound off a quantile,
 /// is not a claim EN-4 decides.
+#[trace("TC-624")]
 #[test]
 fn requests_and_claims_outside_the_method_are_refused() {
     let claim = p95();
@@ -1203,4 +1205,385 @@ fn requests_and_claims_outside_the_method_are_refused() {
         StatisticalClaim::new(ClaimForm::Probability, strict, confidence(ratio(1, 10))),
         Err(ClaimRefusal::StrictBound)
     );
+}
+
+/// A sampler whose sample is a function of the test's initial state and
+/// the trace index.
+struct ByInitial(fn(u32, u64) -> Sample);
+
+impl BehaviourSampler for ByInitial {
+    type Walk = UndefinedWalk;
+
+    fn sample(&mut self, test: &TestSubject, _seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
+        Ok((self.0)(test.initial, trace))
+    }
+
+    fn walk(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> UndefinedWalk {
+        UndefinedWalk
+    }
+}
+
+/// A walk whose first position evaluates `P` undefined.
+struct UndefinedWalk;
+
+impl RegenerationWalk for UndefinedWalk {
+    fn step(&mut self) -> Result<WalkStep, SampleHalt> {
+        Ok(WalkStep::Undefined(undefined_evaluation(0)))
+    }
+}
+
+fn two_tests() -> Vec<TestSubject> {
+    (0..2)
+        .map(|initial| TestSubject {
+            initial,
+            binding: None,
+        })
+        .collect()
+}
+
+fn half_claim() -> StatisticalClaim {
+    claim(
+        ClaimForm::Probability,
+        Comparison::AtLeast,
+        ratio(1, 2),
+        ratio(1, 10),
+    )
+}
+
+/// FR-189-AC-8's `Undef`: `1 / (1 - z.v)` with `z.v = 1` from the start is
+/// undefined at `position`.
+fn undefined_evaluation(position: u64) -> UndefinedEvaluation {
+    UndefinedEvaluation {
+        site: UndefinedSite {
+            position,
+            state_key: DigestRecord::raw_artifact(b"z.v = 1"),
+            locus: UndefinedLocus::Contract("holds(1 / (1 - z.v) = 1)".to_owned()),
+            transition: None,
+        },
+        cause: UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero),
+    }
+}
+
+fn undefined_at(position: u64) -> Sample {
+    Sample::Undefined(undefined_evaluation(position))
+}
+
+/// FR-189-AC-8: an undefined first sample rejects the one test with no
+/// estimate, no counted sample and the undefined evaluation at test 0,
+/// trace 0, position 0, and the verdict has no estimate; with two initial
+/// states, test 1 undefined keeps test 0's Accepted result beside it.
+#[trace("TC-624", "FR-189-AC-8")]
+#[test]
+fn an_undefined_first_sample_rejects_with_no_estimate() {
+    let claim = half_claim();
+    let sampler = sampler_ref();
+    let tests = one_test();
+    let verdict = completed(run(
+        request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut ByInitial(|_, _| undefined_at(0)),
+    ));
+    assert_eq!(verdict.decision, Decision::Rejected);
+    assert_eq!(verdict.estimate, None);
+    let test = &verdict.tests[0];
+    assert_eq!(
+        (test.decision, &test.estimate, test.samples),
+        (Decision::Rejected, &None, 0)
+    );
+    let undefined = test.undefined.as_ref().expect("the undefined evaluation");
+    assert_eq!((undefined.test, undefined.trace), (0, 0));
+    assert_eq!(undefined.evaluation.site.position, 0);
+
+    let pair = two_tests();
+    let kept = completed(run(
+        request(&claim, &pair, StatisticalMethod::Okamoto, &sampler),
+        &mut ByInitial(|initial, _| {
+            if initial == 1 {
+                undefined_at(0)
+            } else {
+                Sample::Event(true)
+            }
+        }),
+    ));
+    assert_eq!(kept.tests.len(), 2);
+    assert_eq!(kept.tests[0].decision, Decision::Accepted);
+    assert_eq!(kept.tests[1].decision, Decision::Rejected);
+    assert_eq!(kept.decision, Decision::Rejected);
+}
+
+/// `Service` with an undefined second sample: trace 1's event evaluates
+/// undefined.
+struct SecondUndefined(Service);
+
+impl BehaviourSampler for SecondUndefined {
+    type Walk = NoWalk;
+
+    fn sample(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt> {
+        if trace == 1 {
+            Ok(undefined_at(1))
+        } else {
+            self.0.sample(test, seed, trace)
+        }
+    }
+
+    fn walk(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> NoWalk {
+        NoWalk
+    }
+}
+
+/// FR-189-AC-9: a P95 Okamoto test ended by an undefined second sample has
+/// the first sample's value as its estimate and no interval; a decided
+/// Okamoto test has an interval and an SPRT test none; a mean of a fraction
+/// ended the same way has its first sample as its estimate; a regenerative
+/// test that ends before its first positive-weight cycle has no estimate.
+#[trace("TC-624", "FR-189-AC-9")]
+#[test]
+fn a_test_ended_early_keeps_the_estimate_its_counts_define() {
+    let claim = p95();
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let mut service = SecondUndefined(Service::new(5));
+    let verdict = completed(run(
+        request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut service,
+    ));
+    let first = service.0.latencies[&0];
+    let expected = int(i64::from(first <= 5));
+    assert_eq!(verdict.tests[0].estimate, Some(expected));
+    assert_eq!(verdict.tests[0].interval, None);
+
+    let decided = completed(run(
+        request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut Service::new(5),
+    ));
+    assert!(decided.tests[0].interval.is_some());
+    let sequential = completed(run(
+        request(&claim, &tests, StatisticalMethod::Sprt, &sampler),
+        &mut Service::new(5),
+    ));
+    assert_eq!(sequential.tests[0].interval, None);
+
+    let mean = claim_of_mean();
+    let fraction = completed(run(
+        request(&mean, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut ByInitial(|_, trace| {
+            if trace == 0 {
+                Sample::Fraction(UnitFraction::try_from(ratio(3, 4)).expect("a fraction"))
+            } else {
+                undefined_at(1)
+            }
+        }),
+    ));
+    assert_eq!(fraction.tests[0].estimate, Some(ratio(3, 4)));
+    assert_eq!(fraction.tests[0].interval, None);
+
+    let long = long_run(Comparison::AtLeast, ratio(999, 1000));
+    let regenerative = completed(run(
+        request(
+            &long,
+            &tests,
+            StatisticalMethod::Regenerative { min_cycles: 100 },
+            &sampler,
+        ),
+        &mut ByInitial(|_, _| Sample::NotActivated),
+    ));
+    assert_eq!(regenerative.tests[0].estimate, None);
+}
+
+fn finished(index: u32, decision: Decision, estimate: Option<Rational>) -> TestResult {
+    TestResult {
+        index,
+        initial: index,
+        binding: None,
+        decision,
+        estimate,
+        interval: None,
+        samples: 1,
+        draws: 1,
+        undefined: None,
+    }
+}
+
+/// FR-189-AC-10: the least favourable test is the worst decision, then the
+/// smallest margin to the threshold, then the lowest index, a test with no
+/// estimate having the worst margin.
+#[trace("TC-624", "FR-189-AC-10")]
+#[test]
+fn the_least_favourable_test_follows_decision_margin_and_index() {
+    let rejected = Decision::Rejected;
+    let accepted = Decision::Accepted;
+    let undecided = Decision::Undecided(UndecidedCause::IndifferenceRegion);
+    let at_least = Bound {
+        comparison: Comparison::AtLeast,
+        threshold: ratio(19, 20),
+    };
+    let chosen = |tests: &[TestResult], bound: &Bound| {
+        least_favourable(tests, bound.comparison).map(|test| test.index)
+    };
+    let cases = [
+        (
+            (rejected, Some(ratio(9, 10))),
+            (rejected, Some(ratio(4, 5))),
+            1,
+        ),
+        (
+            (rejected, Some(ratio(9, 10))),
+            (rejected, Some(ratio(9, 10))),
+            0,
+        ),
+        ((accepted, Some(ratio(97, 100))), (rejected, None), 1),
+        (
+            (undecided, Some(ratio(19, 20))),
+            (accepted, Some(ratio(99, 100))),
+            0,
+        ),
+        (
+            (accepted, Some(ratio(97, 100))),
+            (accepted, Some(ratio(99, 100))),
+            0,
+        ),
+    ];
+    for ((first, first_estimate), (second, second_estimate), expected) in cases {
+        let tests = [
+            finished(0, first, first_estimate),
+            finished(1, second, second_estimate),
+        ];
+        assert_eq!(chosen(&tests, &at_least), Some(expected));
+    }
+    let at_most = Bound {
+        comparison: Comparison::AtMost,
+        threshold: ratio(1, 20),
+    };
+    let tests = [
+        finished(0, accepted, Some(ratio(1, 100))),
+        finished(1, accepted, Some(ratio(3, 100))),
+    ];
+    assert_eq!(chosen(&tests, &at_most), Some(1));
+    let (_, below) = reduce_quantile(ratio(1, 2), QuantileComparison::AtLeast, int(3));
+    let tests = [
+        finished(0, accepted, Some(ratio(2, 5))),
+        finished(1, accepted, Some(ratio(9, 20))),
+    ];
+    assert_eq!(chosen(&tests, &below), Some(1));
+}
+
+/// FR-189-AC-12: the activation variant with activation probability 0 and
+/// `max_draws` 1,000 stops `MaxDraws` with no sample counted and no
+/// decision.
+#[trace("TC-624", "FR-189-AC-12")]
+#[test]
+fn a_quantile_claim_never_activated_stops_at_max_draws() {
+    let claim = p95();
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let mut limited = request(&claim, &tests, StatisticalMethod::Okamoto, &sampler);
+    limited.limits.max_draws = 1_000;
+    let outcome = run(limited, &mut ByInitial(|_, _| Sample::NotActivated));
+    let StatisticalOutcome::Stopped { stop, partial, .. } = outcome else {
+        panic!("expected Stopped, got {outcome:?}");
+    };
+    assert_eq!(
+        stop,
+        StatisticalStop::Limit {
+            limit: StatisticalLimit::MaxDraws,
+            value: 1_000
+        }
+    );
+    assert_eq!((partial.samples, partial.draws), (0, 1_000));
+}
+
+/// FR-191-AC-5: `NoFault` one sample short of `N` stops `Limit{MaxSamples,
+/// 9,210,340}` after counting 9,210,340 samples without drawing another; a
+/// `Stopped` and an `Unsupported` (`Wide`) outcome each carry the run's
+/// provenance; a cancelled handle stops `Cancelled`.
+#[trace("TC-626", "FR-191-AC-5")]
+#[test]
+fn max_samples_stops_before_the_next_draw_and_stops_carry_provenance() {
+    let claim = no_fault();
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let mut limited = request(&claim, &tests, StatisticalMethod::Okamoto, &sampler);
+    limited.limits.max_samples = 9_210_340;
+    let mut probe = fixed(Ok(Sample::Event(true)));
+    let outcome = run(limited, &mut probe);
+    let StatisticalOutcome::Stopped {
+        stop,
+        partial,
+        provenance,
+    } = outcome
+    else {
+        panic!("expected Stopped, got {outcome:?}");
+    };
+    assert_eq!(
+        stop,
+        StatisticalStop::Limit {
+            limit: StatisticalLimit::MaxSamples,
+            value: 9_210_340
+        }
+    );
+    assert_eq!(partial.samples, 9_210_340);
+    assert_eq!(probe.calls, 9_210_340);
+    assert_eq!(provenance.tests[0].traces.count, 9_210_340);
+
+    let wide_claim = half_claim();
+    let outcome = run(
+        request(&wide_claim, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut Wide { calls: 0 },
+    );
+    let StatisticalOutcome::Unsupported { provenance, .. } = outcome else {
+        panic!("expected Unsupported, got {outcome:?}");
+    };
+    assert_eq!((provenance.seed, provenance.tests.len()), (7, 1));
+    assert_eq!(provenance.tests[0].traces.count, 1);
+
+    let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Requested);
+    let outcome = check_statistical(
+        request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut fixed(Ok(Sample::Event(true))),
+        &cancel,
+    )
+    .expect("an outcome");
+    assert!(matches!(
+        outcome,
+        StatisticalOutcome::Stopped {
+            stop: StatisticalStop::Cancelled(CancelCause::Requested),
+            ..
+        }
+    ));
+}
+
+/// Okamoto refuses a fraction for a Bernoulli test, as SPRT does.
+#[test]
+fn okamoto_refuses_a_fraction_for_a_probability_claim() {
+    let claim = half_claim();
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let fraction = UnitFraction::try_from(ratio(1, 2)).expect("a fraction");
+    assert_eq!(
+        check_statistical(
+            request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+            &mut fixed(Ok(Sample::Fraction(fraction))),
+            &Cancel::new(),
+        ),
+        Err(StatisticalRefusal::FractionForEvent)
+    );
+}
+
+/// The `max_draws · m` trace-index check applies only to the interleaved
+/// methods: regenerative test `j` uses trace index `j` alone.
+#[test]
+fn a_regenerative_request_is_not_refused_for_the_interleaved_trace_range() {
+    let claim = long_run(Comparison::AtLeast, ratio(999, 1000));
+    let tests = two_tests();
+    let sampler = sampler_ref();
+    let mut huge = request(
+        &claim,
+        &tests,
+        StatisticalMethod::Regenerative { min_cycles: 1000 },
+        &sampler,
+    );
+    huge.limits.max_draws = u64::MAX;
+    let verdict = completed(run(huge, &mut Identical));
+    assert_eq!(verdict.decision, Decision::Accepted);
+    assert_eq!(verdict.provenance.tests[1].traces.first, 1);
 }

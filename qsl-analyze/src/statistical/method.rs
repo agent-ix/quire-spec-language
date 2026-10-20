@@ -159,7 +159,7 @@ mod tests {
 
     /// `N` is 23,026 at `α' = β' = ι = 1/100`, 26,492 at `α' = 1/200` (two
     /// tests) and 9,210,341 at `ι = 1/2000` (ADR-024 §7.1's `NoFault`).
-    #[trace("TC-624", "FR-189-AC-2", "FR-189-AC-5")]
+    #[trace("TC-624", "FR-189-AC-2")]
     #[test]
     fn okamoto_sample_counts_match_the_spec_vectors() {
         let hundredth = ratio(1, 100);
@@ -250,5 +250,25 @@ mod tests {
         }
         failing.count(false);
         assert_eq!(failing.decision(), Some(Decision::Rejected));
+    }
+
+    /// QSpec FR-408-AC-7: a sum within the rounding error of a threshold
+    /// gives no decision. With `p0 = 2/5`, `p1 = 1/5` a holding sample adds
+    /// exactly `ln(1/2)`, so four of them reach `ln(β') = ln(1/16)` exactly;
+    /// the outward sums do not, and the test decides only at the fifth.
+    #[test]
+    fn a_sum_on_the_threshold_within_rounding_is_undecided() {
+        let bound = Bound {
+            comparison: Comparison::AtLeast,
+            threshold: ratio(3, 10),
+        };
+        let sixteenth = ratio(1, 16);
+        let mut test = Sprt::new(&bound, &ratio(1, 10), &sixteenth, &sixteenth).expect("sprt");
+        for _ in 0..4 {
+            test.count(true);
+        }
+        assert_eq!(test.decision(), None);
+        test.count(true);
+        assert_eq!(test.decision(), Some(Decision::Accepted));
     }
 }

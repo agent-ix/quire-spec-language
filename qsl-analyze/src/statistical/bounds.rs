@@ -10,15 +10,16 @@ use qsl_foundation::InternalFault;
 use quire_exact::{Integer, Rational};
 
 /// The bit precision of every series tail bound: a series stops once its
-/// tail is below `2^-70`.
+/// tail is below `2^-70` (QSpec FR-408).
 const TAIL_BITS: u64 = 70;
 /// The fixed-point scale of a square-root bound: `⌊√⌊x · 2^140⌋⌋ / 2^70`.
 const SQRT_BITS: u64 = 70;
-/// The width the normal-quantile bisection narrows its bracket below.
-const QUANTILE_BITS: u64 = 64;
-/// The largest upper end the normal-quantile search tries. Within the
-/// `Φ` bounds' precision no `δ` that admits a quantile at all lies beyond
-/// it: `1 − Φ(16) < 10^-57`.
+/// The width the normal-quantile bisection narrows its bracket below:
+/// `2^-65`, half QSpec's `2^-64`, leaving the other half for the `Φ`
+/// bounds' own width.
+const QUANTILE_BITS: u64 = 65;
+/// The largest upper end the normal-quantile search tries: `1 − Φ(16) <
+/// 10^-57`, so a smaller `δ` is refused rather than searched.
 const QUANTILE_CEILING: i64 = 16;
 
 const DIVISOR: InternalFault = InternalFault::new("statistical-bounds", "nonzero-divisor");
@@ -89,13 +90,13 @@ pub(crate) fn ceil(value: &Rational) -> Integer {
 }
 
 /// `atanh(u) = Σ u^(2n+1) / (2n + 1)` for `0 <= u < 1`, summed until the
-/// geometric tail bound `u^(2n+3) / ((2n + 3)(1 − u²))` is below `2^-70`:
-/// the partial sum is the lower bound and the partial sum plus the tail
-/// bound the upper.
-fn atanh(u: &Rational) -> Result<Bounds, InternalFault> {
+/// geometric tail bound `u^(2n+3) / ((2n + 3)(1 − u²))` is below
+/// `2^-bits`: the partial sum is the lower bound and the partial sum plus
+/// the tail bound the upper.
+fn atanh(u: &Rational, bits: u64) -> Result<Bounds, InternalFault> {
     let square = u.mul(u);
     let complement = int(1).sub(&square);
-    let limit = epsilon(TAIL_BITS);
+    let limit = epsilon(bits);
     let mut power = u.clone();
     let mut sum = int(0);
     let mut index: i64 = 0;
@@ -114,10 +115,10 @@ fn atanh(u: &Rational) -> Result<Bounds, InternalFault> {
     }
 }
 
-/// `ln 2 = 2 · atanh(1/3)`.
-fn ln_two() -> Result<Bounds, InternalFault> {
+/// `ln 2 = 2 · atanh(1/3)`, its tail below `2^-bits`.
+fn ln_two(bits: u64) -> Result<Bounds, InternalFault> {
     let third = quotient(&int(1), &int(3))?;
-    let half = atanh(&third)?;
+    let half = atanh(&third, bits)?;
     Ok(Bounds {
         lower: half.lower.mul(&int(2)),
         upper: half.upper.mul(&int(2)),
@@ -126,6 +127,9 @@ fn ln_two() -> Result<Bounds, InternalFault> {
 
 /// Bounds on `ln x` for a rational `x > 0`: `x = 2^k · y` with
 /// `1 <= y < 2`, and `ln x = k · ln 2 + 2 · atanh((y − 1) / (y + 1))`.
+/// `ln 2`'s tail is taken below `2^-(71 + bits(|k|))`, so `k · ln 2` adds at
+/// most `2^-70` to the width whatever `k` is, and the bound stays within
+/// `2^-64`.
 pub(crate) fn ln(x: &Rational) -> Result<Bounds, InternalFault> {
     if *x <= int(0) {
         return Err(LOG_ARGUMENT);
@@ -149,8 +153,9 @@ pub(crate) fn ln(x: &Rational) -> Result<Bounds, InternalFault> {
         mantissa = scale(exponent)?;
     }
     let u = quotient(&mantissa.sub(&int(1)), &mantissa.add(&int(1)))?;
-    let series = atanh(&u)?;
-    let two = ln_two()?;
+    let series = atanh(&u, TAIL_BITS)?;
+    let exponent_bits = u64::from(128 - exponent.unsigned_abs().leading_zeros());
+    let two = ln_two(TAIL_BITS + 1 + exponent_bits)?;
     let k = big(BigInt::from(exponent));
     let (k_lower, k_upper) = if exponent >= 0 {
         (k.mul(&two.lower), k.mul(&two.upper))
@@ -166,21 +171,26 @@ pub(crate) fn ln(x: &Rational) -> Result<Bounds, InternalFault> {
 /// Bounds on `√x` for a rational `x >= 0`: the integer square root of
 /// `⌊x · 2^140⌋` and its successor, each scaled by `2^-70`.
 pub(crate) fn sqrt(x: &Rational) -> Result<Bounds, InternalFault> {
+    sqrt_at(x, SQRT_BITS)
+}
+
+/// `√x` bounded as [`sqrt`] at the fixed-point scale `2^-bits`.
+fn sqrt_at(x: &Rational, bits: u64) -> Result<Bounds, InternalFault> {
     if *x < int(0) {
         return Err(ROOT_ARGUMENT);
     }
-    let scaled = x.numerator().as_big() << (2 * SQRT_BITS);
+    let scaled = x.numerator().as_big() << (2 * bits);
     let floor = scaled.div_floor(x.denominator().as_big());
     let root = floor.sqrt();
     Ok(Bounds {
-        lower: big(root.clone()).divided_by_power_of_two(SQRT_BITS),
-        upper: big(root + 1).divided_by_power_of_two(SQRT_BITS),
+        lower: big(root.clone()).divided_by_power_of_two(bits),
+        upper: big(root + 1).divided_by_power_of_two(bits),
     })
 }
 
-/// Bounds on an alternating series `Σ (−1)^n a_n` whose terms decrease in
-/// magnitude from `first` on: the partial sum through `first` terms and
-/// the partial sum plus the next term.
+/// Bounds on an alternating series whose terms decrease in magnitude past
+/// `partial`: the partial sum and the partial sum plus the next, signed,
+/// term.
 fn alternating(partial: Rational, next_term: &Rational) -> Bounds {
     let other = partial.add(next_term);
     if other < partial {
@@ -197,10 +207,10 @@ fn alternating(partial: Rational, next_term: &Rational) -> Bounds {
 }
 
 /// `atan(x) = Σ (−1)^n x^(2n+1) / (2n + 1)` for `0 < x < 1`, summed until
-/// the next term is below `2^-70`.
-fn atan(x: &Rational) -> Result<Bounds, InternalFault> {
+/// the next term is below `2^-bits`.
+fn atan(x: &Rational, bits: u64) -> Result<Bounds, InternalFault> {
     let square = x.mul(x);
-    let limit = epsilon(TAIL_BITS);
+    let limit = epsilon(bits);
     let mut power = x.clone();
     let mut sum = int(0);
     let mut index: i64 = 0;
@@ -221,21 +231,22 @@ fn atan(x: &Rational) -> Result<Bounds, InternalFault> {
     }
 }
 
-/// `π = 16 · atan(1/5) − 4 · atan(1/239)` (Machin).
-fn pi() -> Result<Bounds, InternalFault> {
-    let fifth = atan(&quotient(&int(1), &int(5))?)?;
-    let small = atan(&quotient(&int(1), &int(239))?)?;
+/// `π = 16 · atan(1/5) − 4 · atan(1/239)` (Machin), each tail below
+/// `2^-bits`.
+fn pi(bits: u64) -> Result<Bounds, InternalFault> {
+    let fifth = atan(&quotient(&int(1), &int(5))?, bits)?;
+    let small = atan(&quotient(&int(1), &int(239))?, bits)?;
     Ok(Bounds {
         lower: fifth.lower.mul(&int(16)).sub(&small.upper.mul(&int(4))),
         upper: fifth.upper.mul(&int(16)).sub(&small.lower.mul(&int(4))),
     })
 }
 
-/// Bounds on `1/√(2π)`.
-fn inverse_root_two_pi() -> Result<Bounds, InternalFault> {
-    let pi = pi()?;
-    let lower_root = sqrt(&pi.lower.mul(&int(2)))?.lower;
-    let upper_root = sqrt(&pi.upper.mul(&int(2)))?.upper;
+/// Bounds on `1/√(2π)` at precision `2^-bits`.
+fn inverse_root_two_pi(bits: u64) -> Result<Bounds, InternalFault> {
+    let pi = pi(bits)?;
+    let lower_root = sqrt_at(&pi.lower.mul(&int(2)), bits)?.lower;
+    let upper_root = sqrt_at(&pi.upper.mul(&int(2)), bits)?.upper;
     Ok(Bounds {
         lower: quotient(&int(1), &upper_root)?,
         upper: quotient(&int(1), &lower_root)?,
@@ -244,31 +255,11 @@ fn inverse_root_two_pi() -> Result<Bounds, InternalFault> {
 
 /// Bounds on `Φ(z) = 1/2 + c · Σ (−1)^n z^(2n+1) / (2^n n! (2n + 1))` for
 /// `z >= 0`, `c` bounded by [`inverse_root_two_pi`]. The series stops at the
-/// first term past `z²` whose successor is below `2^-70`; from there its
+/// first term past `z²` whose successor is below `2^-bits`; from there its
 /// terms decrease in magnitude, so the partial sum and the next term bound
 /// it.
-fn phi(z: &Rational, c: &Bounds) -> Result<Bounds, InternalFault> {
-    let square = z.mul(z);
-    let limit = epsilon(TAIL_BITS);
-    // `term` is `z^(2n+1) / (2^n n!)`, without its sign and its `2n + 1`.
-    let mut term = z.clone();
-    let mut sum = int(0);
-    let mut index: i64 = 0;
-    let series = loop {
-        let value = quotient(&term, &int(2 * index + 1))?;
-        sum = if index % 2 == 0 {
-            sum.add(&value)
-        } else {
-            sum.sub(&value)
-        };
-        term = quotient(&term.mul(&square), &int(2 * (index + 1)))?;
-        let next = quotient(&term, &int(2 * index + 3))?;
-        if next < limit && int(index + 1) >= square {
-            let signed = if index % 2 == 0 { next.neg() } else { next };
-            break alternating(sum, &signed);
-        }
-        index += 1;
-    };
+fn phi(z: &Rational, c: &Bounds, bits: u64) -> Result<Bounds, InternalFault> {
+    let series = phi_series(z, bits)?;
     let product_lower = if series.lower >= int(0) {
         c.lower.mul(&series.lower)
     } else {
@@ -286,27 +277,107 @@ fn phi(z: &Rational, c: &Bounds) -> Result<Bounds, InternalFault> {
     })
 }
 
+/// `Σ (−1)^n z^(2n+1) / (2^n n! (2n + 1))` bounded as [`phi`] states, summed
+/// in integers over one running common denominator, so no partial sum is
+/// reduced: with `z = p/q`, term `n` is `p^(2n+1) / (q^(2n+1) 2^n n! (2n+1))`,
+/// and the denominator `q^(2n+1) 2^n n! · lcm(1, 3, …, 2n + 1)` grows by an
+/// integer factor at each step.
+fn phi_series(z: &Rational, bits: u64) -> Result<Bounds, InternalFault> {
+    use num_traits::One;
+    let p = z.numerator().as_big().clone();
+    let q = z.denominator().as_big().clone();
+    let (p_square, q_square) = (&p * &p, &q * &q);
+    // `z²` rounded up, for the monotone-tail condition `n + 1 >= z²`.
+    let square_ceiling = p_square.div_ceil(&q_square);
+    // `base = q^(2n+1) 2^n n!`, `odd = lcm(1, 3, …, 2n + 1)`, the running
+    // sum is `sum / (base · odd)`, and `power = p^(2n+1)`.
+    let mut base = q;
+    let mut odd = BigInt::one();
+    let mut power = p;
+    let mut sum = power.clone();
+    let mut index: u64 = 0;
+    loop {
+        let step = BigInt::from(2 * (index + 1));
+        let next_odd = BigInt::from(2 * index + 3);
+        let next_base = &base * &q_square * &step;
+        let next_power = &power * &p_square;
+        // The next term `next_power / (next_base (2n + 3))` against `2^-bits`.
+        let small = (&next_power << bits) < &next_base * &next_odd;
+        if small && BigInt::from(index + 1) >= square_ceiling {
+            let denominator = &base * &odd;
+            let partial = Rational::new(Integer::from_big(sum), Integer::from_big(denominator))
+                .map_err(|_| DIVISOR)?;
+            let next = Rational::new(
+                Integer::from_big(next_power),
+                Integer::from_big(next_base * next_odd),
+            )
+            .map_err(|_| DIVISOR)?;
+            let signed = if index.is_multiple_of(2) { next.neg() } else { next };
+            return Ok(alternating(partial, &signed));
+        }
+        let gcd = odd.gcd(&next_odd);
+        let widened = &next_odd / &gcd;
+        let next_lcm = &odd * &widened;
+        // Rescale the sum to the new denominator `next_base · next_lcm`.
+        sum = sum * &q_square * &step * &widened;
+        let term = &next_power * (&next_lcm / &next_odd);
+        if index.is_multiple_of(2) {
+            sum -= term;
+        } else {
+            sum += term;
+        }
+        base = next_base;
+        odd = next_lcm;
+        power = next_power;
+        index += 1;
+    }
+}
+
+/// The `Φ` precision that keeps the quantile within `2^-65` of `z_{1−δ}`
+/// for any `z_{1−δ} <= upper`.
+///
+/// A `Φ` bound of width `W` places the bisection's lower end within
+/// `W / φ(z)` of the quantile, and `φ` falls as `z` grows:
+/// `log2(1/φ(z)) < 3z²/4 + 2`. QSpec FR-408's `2^-70` tails give `W` near
+/// `2^-68`, which meets `2^-64` only while `φ(z)` is large (`δ` near 1/100);
+/// at `δ = 10^-10` it misses by a factor of about `4·10^6`. So the tails
+/// deepen by `3·upper²/4` bits, plus 2 for the factor `W` carries from `c`
+/// and the series, making `W / φ(z) <= 2^-65`.
+fn quantile_bits(upper: &Rational) -> u64 {
+    let ceiling = ceil(&upper.mul(upper).mul(&int(3)).divided_by_power_of_two(2));
+    TAIL_BITS + ceiling.to_u64().map_or(256, |extra| extra.min(256)) + 2
+}
+
 /// An upper bound on the standard normal quantile `z_{1−δ}` for
-/// `0 < δ < 1`: bisection over rationals on `Φ`, keeping as the upper end
-/// a point whose lower `Φ` bound reaches `1 − δ`, until the bracket is
-/// narrower than `2^-64`. The upper end is never below 0, so it bounds a
+/// `0 < δ < 1`, within `2^-64` of it: bisection over rationals on `Φ`,
+/// keeping as the upper end a point whose lower `Φ` bound reaches `1 − δ`,
+/// until the bracket is narrower than `2^-65`, with `Φ` bounded at
+/// [`quantile_bits`]. The upper end is never below 0, so it bounds a
 /// negative quantile too.
 pub(crate) fn normal_quantile_upper(delta: &Rational) -> Result<Rational, QuantileFailure> {
     let target = int(1).sub(delta);
-    let c = inverse_root_two_pi()?;
     let mut lower = int(0);
     let mut upper = int(1);
-    while phi(&upper, &c)?.lower < target {
+    loop {
+        let bits = quantile_bits(&upper);
+        let c = inverse_root_two_pi(bits)?;
+        if phi(&upper, &c, bits)?.lower >= target {
+            break;
+        }
         if upper >= int(QUANTILE_CEILING) {
             return Err(QuantileFailure::BeyondPrecision);
         }
         lower = upper.clone();
         upper = upper.mul(&int(2));
     }
+    // `φ` is least at the bracket's upper end, so its precision covers the
+    // whole bracket.
+    let bits = quantile_bits(&upper);
+    let c = inverse_root_two_pi(bits)?;
     let width = epsilon(QUANTILE_BITS);
     while upper.sub(&lower) >= width {
         let middle = lower.add(&upper).divided_by_power_of_two(1);
-        if phi(&middle, &c)?.lower >= target {
+        if phi(&middle, &c, bits)?.lower >= target {
             upper = middle;
         } else {
             lower = middle;
@@ -372,25 +443,53 @@ mod tests {
         // π = 3.14159265358979323846264338327950288419716939937510…
         let lower = decimal("314159265358979323846264338327950288419", 38);
         let upper = decimal("314159265358979323846264338327950288420", 38);
-        within(&pi().expect("π"), &lower, &upper);
+        within(&pi(TAIL_BITS).expect("π"), &lower, &upper);
     }
 
+    /// The quantile's upper end lies at or above `z_{1−δ}` and within
+    /// `2^-64` of it, at `δ = 1/100` (QSpec FR-408-AC-12's
+    /// `z_0.99 ≈ 2.3263478740`) and at `δ = 10^-10`, where `φ(z)` is small.
     #[test]
-    fn the_upper_normal_quantile_at_one_percent_is_just_above_its_value() {
-        // z_0.99 = 2.32634787404084110089… (QSpec FR-408-AC-12: ≈ 2.3263478740).
-        let delta = quotient(&int(1), &int(100)).expect("1/100");
-        let z = normal_quantile_upper(&delta).expect("z_0.99");
-        let truth = decimal("232634787404084110089", 20);
-        assert!(z >= truth, "the upper end is below z_0.99");
-        assert!(
-            z.sub(&truth) < decimal("1", 12),
-            "the upper end is far above z_0.99"
-        );
+    fn the_upper_normal_quantile_is_within_two_to_the_minus_64() {
+        for (delta, digits) in [
+            (
+                quotient(&int(1), &int(100)).expect("1/100"),
+                "2326347874040841100885606163346911723351817",
+            ),
+            (
+                int(1).divided_by_power_of_ten(10),
+                "6361340902404056204695375828265221679203937",
+            ),
+        ] {
+            let z = normal_quantile_upper(&delta).expect("a quantile");
+            let lower = decimal(digits, 42);
+            let upper = lower.add(&int(1).divided_by_power_of_ten(42));
+            assert!(z >= upper, "the upper end is below the quantile");
+            assert!(
+                z.sub(&lower) < epsilon(64),
+                "the upper end is not within 2^-64"
+            );
+        }
     }
 
+    /// `ln(2^-40) = −40 ln 2`, bracketed within `2^-64` although the binary
+    /// exponent is large.
     #[test]
-    fn a_vanishing_delta_is_beyond_the_quantile_precision() {
-        let delta = int(1).divided_by_power_of_two(80);
+    fn ln_of_a_large_binary_exponent_stays_within_two_to_the_minus_64() {
+        // 40 ln 2 = 27.7258872223978123766892848583270627230200053744…
+        let lower = decimal("-277258872223978123766892848583270627231", 37);
+        let upper = decimal("-277258872223978123766892848583270627230", 37);
+        let x = int(1).divided_by_power_of_two(40);
+        within(&ln(&x).expect("ln 2^-40"), &lower, &upper);
+        let big = Rational::from_integer(Integer::one().shifted_left(200));
+        let width = ln(&big).expect("ln 2^200");
+        assert!(width.upper.sub(&width.lower) < epsilon(64));
+    }
+
+    /// `1 − Φ(16) ≈ 2^-190`: a `δ` below it is refused, not searched.
+    #[test]
+    fn a_delta_beyond_the_search_ceiling_is_refused() {
+        let delta = int(1).divided_by_power_of_two(200);
         assert_eq!(
             normal_quantile_upper(&delta),
             Err(QuantileFailure::BeyondPrecision)
