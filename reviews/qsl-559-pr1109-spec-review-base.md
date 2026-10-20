@@ -74,6 +74,12 @@ Not mergeable. FR-211-AC-5 cannot pass under the default delivery policy (FND-00
 | --- | --- | --- | --- |
 | FND-009 | low | FR-206-AC-9's state ('`b` has forked `Inner` and `y` is `running` and `a` has completed') does not say where `x` and `b` are. If `x` has completed, `Inner`'s `join any` may have settled and `b` may rest at `After`, and `x` may already have left the state. In that state 'the `join(Outer)` step makes `b`, `x` and `y` `cancelled`' cannot hold for `x`. Fix: name the state as `x` and `y` both `running` and `b` resting at `Inner`'s join, or state the outcome for each thread that is still `running`. | spec/functional/FR-206-take-the-protocol-step-kinds-with-folded-structural-moves.md:101 |
 
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | The fix commits added reviews/round0-base.md, reviews/round0-ears.md and reviews/round0-integrity.md. These are the reviewer's scratch snapshots of the round-0 SR files, copied in with the folder. They repeat the ids SR-13583, SR-13584 and SR-13585, so each id now names two documents, which `quire validate` does not catch. Fix: delete the three round0-*.md files, and copy only the qsl-559-pr1109-spec-review-*.md files. | reviews/round0-base.md:2 |
+
 ## Dispositions
 
 Round 1, head ccae02a7d: one fix commit over 389b22c99, base main still 5474b9125. The three SR files the commit adds to reviews/ are byte-equal to the reviewer's round-0 files. Gates on the head: make check-spec-validation exits 0 with the same 17 warnings, none in a changed file; tools/check-index-completeness.sh exits 0. FR-211-AC-5's cases were checked one by one under the new PD-4 order. FullQueue: queue [P] at capacity 1. HeadBlocked: queue [P, Q] with head P. Constraint: head P fails the constraint, fifo and unordered. Displaced by loss head: [Q]. Displaced by loss new: Q lost, queue [P]. Displaced by `lose` under at-most-once. EmptyQueue: the second P displaces the first, R1 receives it, and R2 waits after a `receive`. All give the stated causes, and `exactly-once-premise` leaves no `lose` or `duplicate` enabled.
@@ -88,3 +94,9 @@ Round 1, head ccae02a7d: one fix commit over 389b22c99, base main still 5474b912
 | FND-006 | fixed | - |
 | FND-007 | fixed | - |
 | FND-008 | fixed | - |
+
+Round 2, head 771649f1d (one fix commit over ccae02a7d; base main still 5474b9125). FR-206-AC-9 now fixes the state: `a` completed, `b` resting at `Inner`'s join, `x` and `y` both `running`. In that state `join(Outer)` cancels all three, and `Inner`, now settled with no running branch, is removed (steps.rs:593-615, normalize at steps.rs:823-829). Gates: make check-spec-validation exits 0 with the same 17 warnings, none in a changed file; tools/check-index-completeness.sh exits 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-009 | fixed | - |

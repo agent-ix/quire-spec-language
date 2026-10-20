@@ -73,8 +73,9 @@ order gives the same answer.
 - `fork(p)` by `t`: `R` SHALL be `ctl(t)` and, for every ordinal `o` from 0
   up to the ordinal the fork takes (the smallest ordinal no live sibling
   holds), `inst(i_o)` of the parallel instance of `p` forked by `t` with
-  ordinal `o` and the `ctl` of every thread at or below each of its branch
-  threads; `W` SHALL be `ctl(t)`, the new instance and its threads' `ctl`, and the
+  ordinal `o`, the `ctl` of every thread at or below each of its branch
+  threads and, because a reader of a binder under that ordinal holds it,
+  the `ctl` of every live thread at or below `t`; `W` SHALL be `ctl(t)`, the new instance and its threads' `ctl`, and the
   `bind` locations of every path it reuses. An
   ordinal is held while any live thread's path extends the instance's
   branch paths, so those threads' `ctl` are read as stated.
