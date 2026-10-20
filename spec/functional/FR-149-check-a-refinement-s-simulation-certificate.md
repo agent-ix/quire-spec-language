@@ -155,8 +155,7 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
   `SimulationStep{position: initial[i], edge: None}` unless it passes with that
   position or Meter stops applies.
 - **Undecided state.** For each position, when a contract of the concrete
-  model is undecided there for a reason other than the evaluation meter, so its
-  successors are not known, the checker SHALL reject with rule `BadState` at
+  model is undefined or refused there, so its successors are not known, the checker SHALL reject with rule `BadState` at
   that position.
 - **Successors.** For each position, the checker SHALL compute the concrete
   successors with FR-120's `ModelSystem` and SHALL reject with rule
@@ -193,13 +192,16 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
 - **Step stop.** When a `check_step` it calls returns `StepVerdict::Stopped`, the
   checker SHALL end the check with `Stopped(LimitReached{limit, value})` naming
   that limit.
-- **Expansion stop.** When an FR-120 expansion of a position stops at a named
-  limit, the checker SHALL end the check with `Stopped(LimitReached{limit, value})`;
-  a concrete contract that runs out of the evaluation meter stops the expansion
-  this way, with limit `EvaluationMeter`, because FR-120 turns an incomplete
-  contract into an expansion stop and never into a finding. When it stops
-  naming no limit and is not an internal failure, the checker SHALL end the
-  check with `Stopped(ResourceExhausted)`.
+- **Named expansion stop.** When an FR-120 expansion of a position stops at a
+  named limit, the checker SHALL end the check with
+  `Stopped(LimitReached{limit, value})`. A concrete contract that is
+  incomplete stops the expansion this way, because FR-120 turns every
+  incomplete contract into an expansion stop and never into a finding; FR-120
+  labels each such stop, the counter limits of the exact kernel included, with
+  limit `EvaluationMeter`.
+- **Unnamed expansion stop.** When an FR-120 expansion stops naming no limit
+  and is not an internal failure, the checker SHALL end the check with
+  `Stopped(ResourceExhausted)`.
 - **Cancellation.** The checker SHALL end a cancelled check with
   `Stopped(Cancelled{source})`.
 - **Purity.** The checker SHALL read no path, environment variable, clock
