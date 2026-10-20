@@ -140,7 +140,7 @@ the type reference `Clock` to `TypeForm::Clock{span}`. `TemporalOperatorForm`
   `urgent_decl`. Each selects exactly one production.
 - S2 SHALL build these forms under every facet selection, including none.
   It SHALL NOT refuse a form for its facet; whether the unit admits the form
-  is decided after S2, by S3.
+  is decided after S2, by S3 (FR-230, "Timed facet gate").
 - S1 SHALL read a temporal operator's `(` followed by a `quantity-literal`
   as the opener of a `timed-interval`, and a `(` followed by anything else
   as a parenthesized operand (the shared grammar's second-token rule). A `[`
