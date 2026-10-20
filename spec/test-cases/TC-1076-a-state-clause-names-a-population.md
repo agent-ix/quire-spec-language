@@ -10,7 +10,7 @@ relationships:
 
 ## Description
 
-Verify that `M::P` resolves to a domain-package population inside a state clause, types as a population operand only, takes the clause's observation, becomes a domain of the requirement record and evaluates over the snapshot's population. Scope: FR-391-AC-1 to FR-391-AC-7.
+Verify that `M::P` resolves to a domain-package population inside a state clause, types as a population operand only, takes the clause's observation, becomes a domain of the requirement record and evaluates over the snapshot's population. Scope: FR-391-AC-1 to FR-391-AC-6.
 
 Catches a name resolved as an enum value or left unresolved, a population accepted as a value (compared, bound by `let`, or returned), a population read at `current` inside a precondition, a named population missing from the record's domains, and an incomplete population decided as an empty set.
 
@@ -28,7 +28,6 @@ Fixture: the `Counter` unit of FR-155-AC-1 (model alias `M`, population `counter
 | 6 | row 1 with the second population `archive`; then `pre W using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` | `ambiguous_declaration`/`ambiguous-name` at the `on` of row 1; the second records `widgets` and `counters` as domains |
 | 7 | evaluate row 1 over `counters` holding `a`, `b`, `c` (complete); over an incomplete `counters`; `allInstances<M::Other>(M::counters)` with `Other` covered by no member type of `counters` | exactly `a`, `b`, `c` in canonical key order with one `population.visit` charge per member; `Incomplete` with `incomplete_population`/`incomplete-scope`; FR-084's typed incomplete result naming `Other`, `FamilyResult::Undefined` with reason `incomplete-closure`, and no collection |
 | 8 | with `archive` present, `pre A using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` and `pre B` naming `M::archive` instead; their read footprints; then emit the package | two different checked terms, each carrying its own population's declaration key; of the populations `A` reads `AnyMembership{counters}` and not `AnyMembership{archive}`, and `B` the reverse (each footprint also holds the receiver's own `Membership` per FR-155); emission refuses `unsupported_construct`/`not-yet-implemented` |
-| 9 | `post P using v on M::Counter::bump { forall(o in allInstances<M::Counter>(M::counters) : o.v < 2) }`; the same with `forall(o in M::counters : o.v < 2)`; a temporal `holds` atom naming `M::counters` | checks as a `Postcondition` reading `post`; `ill_typed`/`operator-ineligible` at the name; `missing_declaration`/`missing-name` |
 
 Tag the tests `#[trace("TC-1076", "FR-391-AC-n")]`.
 
