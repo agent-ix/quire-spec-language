@@ -4,7 +4,9 @@
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::CatalogCode;
-use qsl_replay::{map_state, EvalFailure, HiddenSlot, MappingFailure, MappingRowRef, ObjectKey};
+use qsl_replay::{
+    map_state, EvalFailure, HiddenSlot, HistoryValues, MappingFailure, MappingRowRef, ObjectKey,
+};
 use qsl_semantics::model::observation::AdmissionFailure;
 use qsl_semantics::model::state::ModelState;
 use quire_exact::ScalarLimits;
@@ -23,6 +25,7 @@ fn mapped_key(world: &World, concrete: &ModelState) -> Vec<u8> {
         &world.concrete_system(UNLIMITED),
         &abstract_system,
         concrete,
+        &HistoryValues::default(),
     )
     .expect("the state maps");
     assert!(mapped.hidden.is_empty(), "{:?}", mapped.hidden);
@@ -38,6 +41,7 @@ fn failure(world: &World, meter: ScalarLimits, concrete: &ModelState) -> Mapping
         &world.concrete_system(meter),
         &world.abstract_system(UNLIMITED),
         concrete,
+        &HistoryValues::default(),
     )
     .expect_err("the state does not map")
 }
@@ -74,6 +78,7 @@ fn the_image_object_keeps_its_key_and_takes_the_mapped_type() {
         &world.concrete_system(UNLIMITED),
         &world.abstract_system(UNLIMITED),
         &cas_state(2, 1, true, 0, false),
+        &HistoryValues::default(),
     )
     .expect("the state maps");
     let objects = &mapped.visible.populations[&key(SPEC, "counters")];
@@ -122,6 +127,7 @@ fn a_field_with_no_row_is_listed_as_hidden() {
         &world.concrete_system(UNLIMITED),
         &world.abstract_system(UNLIMITED),
         &cas_state(1, 0, false, 0, true),
+        &HistoryValues::default(),
     )
     .expect("the state maps");
     assert_eq!(
@@ -224,9 +230,13 @@ fn a_system_over_another_model_than_the_refinements_is_a_wrong_system() {
         (&concrete, &third),
         (&third, &abstracted),
     ] {
-        let Err(MappingFailure::WrongSystem(code)) =
-            map_state(refinement, concrete, abstracted, &state)
-        else {
+        let Err(MappingFailure::WrongSystem(code)) = map_state(
+            refinement,
+            concrete,
+            abstracted,
+            &state,
+            &HistoryValues::default(),
+        ) else {
             panic!("the systems are not the refinement's");
         };
         assert_eq!(

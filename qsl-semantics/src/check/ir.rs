@@ -1091,6 +1091,18 @@ pub enum NodeKind {
         /// must be covered by (FR-084).
         members: Vec<EffectiveId>,
     },
+    /// `r.f` of a refinement's history field `f` (FR-138): the value the
+    /// refinement keeps for the object `reference` names, which the
+    /// object's concrete type does not declare. Only a refinement row's
+    /// expression contains one.
+    History {
+        /// The object reference.
+        reference: NodeId,
+        /// The concrete object type the refinement adds the field to.
+        object_type: EffectiveId,
+        /// The history field's name.
+        field: String,
+    },
     /// `seq(i in low .. high: body)` (FR-139): the sequence of `body` for
     /// each integer `slot` takes from `low` to `high`, empty when `high <
     /// low`.
@@ -1239,6 +1251,9 @@ impl NodeKind {
             | NodeKind::Not(operand)
             | NodeKind::Field { operand, .. }
             | NodeKind::Attribute {
+                reference: operand, ..
+            }
+            | NodeKind::History {
                 reference: operand, ..
             }
             | NodeKind::Navigate {

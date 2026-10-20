@@ -15,11 +15,12 @@
 //! population's universe is the concrete universe of its source population
 //! (ADR-020 RM-2).
 //!
-//! A concrete state's abstract state is a function of the concrete state
-//! alone until history fields and hidden fields exist, so a product state is
-//! keyed by the concrete state's key and its mapped state's key. Hidden
-//! fields need the AX-2 candidate set and are refused before any state is
-//! explored. A run that holds hands over the simulation relation it found
+//! A product state is the concrete state, its history values (FR-138) and,
+//! when the refinement has a hidden field, the AX-2 set of abstract states
+//! consistent with the behaviour so far (FR-142). Its key is the concrete
+//! state's key, the history values' key and the candidates' sorted state
+//! keys, so two paths that reach one concrete state with different history or
+//! candidates are two states. A run that holds hands over the simulation relation it found
 //! (FR-149): every stored product state, the position of each initial state
 //! and every edge with the `Taken` that `check_step` returned, for the
 //! core's checker to recompute. The liveness half (FR-143) is not built.
@@ -60,6 +61,10 @@ pub struct RefinementCheckRequest<'a> {
     /// The run's caller-raisable budgets.
     pub limits: ModelCheckLimits,
 }
+
+/// A product state's key: the concrete state's key bytes, its history
+/// values' key and its candidates' sorted state keys.
+type ProductKey = (Vec<u8>, Vec<u8>, Vec<Vec<u8>>);
 
 /// One product state: the concrete state, the position `check_step` gave it,
 /// the step that first reached it (`None` for an initial state) and its
@@ -111,13 +116,6 @@ pub fn check_refinement(
     cancel: &Cancel,
 ) -> Result<RefinementOutcome, ModelCheckRefusal> {
     let refinement = request.refinement;
-    if refinement
-        .objects()
-        .iter()
-        .any(|object| !object.hidden.is_empty())
-    {
-        return Err(ModelCheckRefusal::HiddenFields);
-    }
     let RefinementSystems {
         concrete,
         abstract_system,
@@ -208,8 +206,9 @@ struct Run<'r, 'a> {
     cancel: &'r Cancel,
     nodes: Vec<Node>,
     /// Each product state's index by its key: the concrete state's key
-    /// bytes and the mapped state's.
-    known: BTreeMap<(Vec<u8>, Vec<u8>), usize>,
+    /// bytes, its history values' key and its candidates' sorted state
+    /// keys.
+    known: BTreeMap<ProductKey, usize>,
     queue: VecDeque<usize>,
     /// The position of each concrete initial state, in the subject's order.
     initial_positions: Vec<usize>,
@@ -475,14 +474,12 @@ impl Run<'_, '_> {
     /// The index of the product state of `node`: the one with its key if it
     /// exists, else the new one.
     fn create(&mut self, key: Vec<u8>, node: Node) -> Result<usize, End> {
-        let [mapped] = node.position.abstract_states.as_slice() else {
-            return Err(End::Fault(InternalFault::new(
-                "refinement-check",
-                "one-abstract-state-without-hidden-fields",
-            )));
-        };
-        let (mapped_key, _) = Self::encoding(self.abstract_system.state_key_of(mapped))?;
-        let product = (key, mapped_key);
+        let history = Self::encoding(node.position.history.key(self.concrete))?;
+        let mut candidates = Vec::with_capacity(node.position.abstract_states.len());
+        for candidate in &node.position.abstract_states {
+            candidates.push(Self::encoding(self.abstract_system.state_key_of(candidate))?.0);
+        }
+        let product = (key, history, candidates);
         if let Some(&existing) = self.known.get(&product) {
             return Ok(existing);
         }
@@ -522,8 +519,10 @@ impl Run<'_, '_> {
                         .map_err(encodes)
                 })
                 .collect::<Result<_, _>>()?;
+            let history = node.position.history.key(self.concrete).map_err(encodes)?;
             positions.push(CertifiedPosition {
                 concrete,
+                history,
                 abstract_states,
             });
         }

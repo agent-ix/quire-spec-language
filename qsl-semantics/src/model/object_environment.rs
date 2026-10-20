@@ -17,7 +17,7 @@ use crate::model::clause_observation::Observation;
 use crate::model::key::DeclarationKey;
 use crate::model::observation::{OutOfRange, RelationshipExtents};
 use crate::model::population::PopulationBinding;
-use quire_exact::{EffectiveId, ObjectReference, PopulationId};
+use quire_exact::{EffectiveId, ObjectReference, PopulationId, Value};
 use quire_semantic_value::declaration::{FieldRef, TypeEnvironment};
 use quire_semantic_value::object_closure::ObjectClosure;
 
@@ -64,6 +64,9 @@ pub struct ObjectEnvironment {
     /// the population's declaration identity (FR-106); empty for an
     /// environment no snapshot document admitted.
     population_completeness: BTreeMap<String, bool>,
+    /// The history fields a refinement keeps for these objects, by object
+    /// and field name (FR-138); empty for every other environment.
+    history: BTreeMap<(ObjectReference, String), Value>,
     /// Where an evaluation over this environment records what it reads.
     read_log: Option<ReadLog>,
 }
@@ -81,8 +84,23 @@ impl ObjectEnvironment {
             references: Vec::new(),
             population_members: BTreeMap::new(),
             population_completeness: BTreeMap::new(),
+            history: BTreeMap::new(),
             read_log: None,
         }
+    }
+
+    /// Records the history fields a refinement keeps for these objects, so
+    /// a refinement row that reads one finds its value (FR-138).
+    #[must_use]
+    pub fn with_history(mut self, history: BTreeMap<(ObjectReference, String), Value>) -> Self {
+        self.history = history;
+        self
+    }
+
+    /// The value of the history field `field` of `object`, when the
+    /// refinement keeps one.
+    pub fn history(&self, object: &ObjectReference, field: &str) -> Option<&Value> {
+        self.history.get(&(object.clone(), field.to_owned()))
     }
 
     /// Records how many objects each population of the admitted snapshot

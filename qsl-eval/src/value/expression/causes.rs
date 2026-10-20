@@ -296,6 +296,27 @@ impl CatalogCoded for ReferenceUnresolved {
     }
 }
 
+/// A read of a history field (FR-138) that holds no value at the instant the
+/// read observes: the update of the step that reached the instant failed, so
+/// the value is not known and a row must not read a stand-in. The read is
+/// undetermined, naming the field.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct HistoryUnresolved {
+    /// The history field's name.
+    pub(crate) field: String,
+}
+
+impl CatalogCoded for HistoryUnresolved {
+    /// `missing_declaration`/`missing-name`, naming the history field.
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("missing_declaration", "missing-name")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("history", self.field.clone())]))
+    }
+}
+
 /// FR-115: `ProtocolClause`'s refusal when a `Frame` run's check 11 cannot
 /// evaluate the frame over the admitted invocation -- a declared delta that
 /// disagrees (`population_delta_mismatch`/`delta-disagreement`), or the
