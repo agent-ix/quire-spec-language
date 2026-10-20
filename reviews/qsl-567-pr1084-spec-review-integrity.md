@@ -1,0 +1,48 @@
+---
+id: SR-13403
+title: 'Spec review of PR #1084: visibility fairness as an edge Streett condition, integrity'
+type: SpecReview
+analysis: integrity
+scope: 'agent-ix/quire-spec-language@0455abebf; git diff refs/remotes/origin/main...0455abebf (PR #1084, base main 47047b1df): spec/decisions/ADR-025-weak-memory-models-for-parallel.md, spec/functional/FR-228-derive-memory-fairness-constraints.md, spec/test-cases/TC-673-memory-fairness.md; read against ADR-018, ADR-019, FR-126, FR-339 on the head, QSpec main FR-437, QSpec PR #294 head cb8f1d8, and code PR #1080 head 18c9bafd2; ticket QSL-567'
+review_set: subset
+date: '2026-10-20'
+relationships:
+- target: ix://agent-ix/quire-spec-language/FR-228
+  type: reviews
+- target: ix://agent-ix/quire-spec-language/TC-673
+  type: reviews
+- target: ix://agent-ix/quire-spec-language/ADR-025
+  type: reviews
+---
+
+## Summary
+
+Ticket: QSL-567. PR: quire-spec-language#1084, head 0455abebf, scoped to `git diff refs/remotes/origin/main...0455abebf` (one commit, three files, +18/-7). Spec-only. It replaces the whole-SCC visibility-fairness rule of ADR-025 MF-2 and FR-228, under which a load-free sub-cycle of an SCC with a stale load was rejected (a false `proved`, SR-12218 FND-001 on code PR #1080), with an edge Streett condition decided by recursive SCC decomposition. It also restates MF-5, changes FR-228's Description, Behavior and AC-3, and adds FR-228-AC-5 and TC-673 step 5. Integrity review: stale whole-SCC or weak-row text across ADR-025, ADR-018, ADR-019, FR-126, FR-339 and TC-673, and consistency with QSpec. Independent checks. (1) Exactness of the decomposition, by brute force: sr-1084-tools/streett_oracle.py builds random graphs (1 to 5 states, up to 9 edges, self-loops and parallel edges), 1 to 3 visibility pairs with random R and G ⊆ R, a random accepting set and, in half the cases, one weak constraint. The oracle enumerates every edge set, keeps the nonempty strongly connected ones (exactly the edge sets of closed walks), and applies the per-loop (lasso) check. The decomposition is MF-2 with FA-4's acceptance and weak tests. Over 21,000 cases (seeds 1 to 5) the two agree on every case: 0 mismatches, about 40% of cases fair. Removing every failing pair's R at once (FR-228's wording) also gives 0 mismatches in 6,000 cases. The old whole-SCC rule rejects a graph that has a fair cycle in 461 of 6,000 cases (a false `proved`), and it never accepts a graph with no fair cycle. For every passing SCC, the closed walk that covers all of its edges passes the per-loop check, so the SCC form and the lasso form agree. The proof by hand: a closed walk lies in one SCC. A passing SCC holds a covering walk, which takes a G edge for every pair whose R it touches. A fair walk in an SCC with R_i but no G_i takes no R_i edge, so removing R_i loses no fair walk. A failing acceptance or weak test is inherited by every sub-SCC, so rejecting there is exact. Each removal drops at least one edge and empties R_i below it, so the recursion ends, with depth at most the number of pairs plus one. (2) Machine closure: RA-2 lets a load read any message at or after cur_b(ℓ), and the mo-last message always qualifies. An RMW may read it (it has no attached successor). An SC read of it adds no outgoing fr edge, so P stays acyclic and the choice is never pruned. So wherever an R edge is enabled, a G edge is too, and MF-3 holds. (3) AC-5 checked by hand and by the script: R = {q→r}, G = ∅. Removing q→r leaves p→q, q→p and r→q, with SCCs {p,q} and {r} (trivial). {p,q} is accepting and holds no R edge, so it passes. The whole-SCC rule rejects. (4) Repository grep: MF-2, MF-5, 'weak rows', FA-4, CX-5, FS-2, FS-6, FS-7, PC-4, FR-339, FR-126 certificates, TC-673. (5) QSpec PR #294 states the same rule and the same p q r example (AC-7, LT-12). QSpec main FR-437 still states the whole-SCC rule. (6) Code PR #1080 (qsl-567-impl, 18c9bafd2) already has `ComponentWitness::UnfairVisibility{constraints, sub}`, under which an edge a visibility refinement removed is in no rule below it. No spec defines that witness. Methods: spec-review/base (SR-13401), spec-review/ears (SR-13402), spec-review/integrity (SR-13403). code-review and gap-analysis were not run, because no code or test file changed. Gates on the head: make check-spec-validation exits 0 with 17 warnings, the same as main 47047b1df, none in the changed files. tools/check-index-completeness.sh passes. quoin 0.28.3, quire 0.36.2 (engine 0.50.2), newer than the rollout note's 0.36.1/0.50.1.
+
+## Scope
+
+| Unit | Path | Role |
+| --- | --- | --- |
+| ADR-025-MF-2 | spec/decisions/ADR-025-weak-memory-models-for-parallel.md | examined |
+| ADR-025-MF-5 | spec/decisions/ADR-025-weak-memory-models-for-parallel.md | examined |
+| ADR-025-s11-strong-fairness | spec/decisions/ADR-025-weak-memory-models-for-parallel.md | examined |
+| ADR-025-amendments-ADR-019 | spec/decisions/ADR-025-weak-memory-models-for-parallel.md | examined |
+| FR-228-description | spec/functional/FR-228-derive-memory-fairness-constraints.md | examined |
+| TC-673-scope | spec/test-cases/TC-673-memory-fairness.md | examined |
+| TC-673-step-5 | spec/test-cases/TC-673-memory-fairness.md | examined |
+| ADR-019-FS-2 | spec/decisions/ADR-019-strong-fairness.md | context_only |
+| ADR-019-FS-7 | spec/decisions/ADR-019-strong-fairness.md | context_only |
+| FR-339-witnesses | spec/functional/FR-339-check-an-en-1-component-certificate.md | context_only |
+| QSpec-FR-437-visibility-main | quire-specification@origin/main:spec/functional/memory/FR-437-explore-release-acquire-memory.md | context_only |
+| QSpec-PR-294-FR-437-AC-7 | quire-specification#294 (head cb8f1d8): spec/functional/memory/FR-437-explore-release-acquire-memory.md | context_only |
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | medium | Two places in ADR-025 still state the old reading and contradict the amended MF-5. §11 says 'The memory constraints are weak rows in ADR-019's filter (MF-5)', and 'Amendments to make on acceptance' says 'ADR-019 §3: the memory constraints are weak rows (MF-5)'. ADR-019 FS-2's filter has only (a) acceptance, (b) weak constraints and (c) strong constraints refined by removing states. FS-4 (termination and depth), FS-6 (canonical result) and FS-7 (the loop is fair by construction) are stated for that refinement only. So MF-5's 'ADR-019's filter ... decomposes the visibility pairs as MF-2 states' has no counterpart in the record it amends. Fix: §11 and the amendment row should say that the flush constraints are weak rows and that FS-2 gains MF-2's edge-removal step, with FS-4's depth bound counting visibility pairs and FS-6 and FS-7 covering an edge refinement. The ADR-018 PC-4 and FR-339 amendment for the certificate is base FND-001. | spec/decisions/ADR-025-weak-memory-models-for-parallel.md:472-474, 647 |
+| FND-002 | low | Step 5 follows AC-5, including its gaps (base FND-003): 'a protocol with that shape' is not named, and its expected result 'the certificate check accepts the decomposition' has no certificate for a `refuted` claim to check (base FND-001). It also has no vector for a removed edge inside the passing component (base FND-002), and none for two pairs where removing one pair's R edges leaves a sub-SCC that the other pair then rejects, which is the recursion's second level and the analogue of ADR-019 QS-7 (c). Add both vectors. | spec/test-cases/TC-673-memory-fairness.md:27-29, 41 |
+
+## Verdict
+
+One medium finding (stale 'weak rows' text in ADR-025 §11 and the amendment list) and one low one (TC-673 step 5 coverage). What holds: TC-673's scope now runs to AC-5, step 5 and its expected result exist, and the tag convention is unchanged. FR-228, MF-2 and QSpec #294 state the same rule and the same example. ADR-027's 'MF-1 and MF-2 sit beside the scheduler constraints' still holds. Index completeness passes. Merge order: FR-228 reads visibility fairness 'as QSpec FR-436 and FR-437 define it', and QSpec main still states the whole-SCC rule, so merge this PR with or after QSpec #294.

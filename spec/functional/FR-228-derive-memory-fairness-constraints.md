@@ -55,24 +55,34 @@ visible.
 
 - The memory constraints in the clause's fairness set, each with origin
   `memory`: `fair weak each flush(b)` per thread under `tso`; one
-  visibility constraint per (thread, location) under `ra`.
+  one visibility fairness member under `ra`, of kind `strong`, whose
+  (thread, location) pairs are derived from the resolved program.
 
 ## Behavior
 
 - The checker SHALL add `fair weak each flush(b)` for each thread `b` of
-  each `tso` `parallel`, and one visibility constraint per (thread,
-  location) the thread loads for each `ra` `parallel`, each with origin
-  `memory`.
-- FR-126's fairness filter SHALL accept an SCC or lasso only when it meets
-  each memory constraint as QSpec FR-436 and FR-437 define it. For
-  visibility fairness on an SCC, the filter SHALL decompose it per ADR-025
-  MF-2: it SHALL remove the loads of every (thread, location) pair that the
-  SCC loads without a fresh load of the location by that thread, decompose
-  the remainder again, and accept an SCC only when every pair it still loads
-  has a fresh load in it. It SHALL NOT reject an SCC for a stale load alone.
+  each `tso` `parallel`, and, for the item, one visibility fairness member of kind `strong` with
+  target `{"type":"visibility","model":"ra"}` when it has an `ra` `parallel`,
+  each with origin `memory`; the member's (thread, location) pairs are
+  derived from the resolved program, one per location a thread loads.
+- FR-126's fairness filter SHALL accept a lasso only when it meets each
+  memory constraint as QSpec FR-436 and FR-437 define it.
+- For visibility fairness on an SCC, the filter SHALL remove the edges on
+  which a thread `b` loads a location `ℓ`, for each pair (`b`, `ℓ`) whose
+  edges in the SCC include a load of `ℓ` by `b` but none from `ℓ`'s mo-last
+  message, SHALL decompose what remains into SCCs again, and SHALL repeat
+  this on each (ADR-025 MF-2).
+- The filter SHALL accept a component only when, for every pair it still
+  loads, it holds an edge on which `b` loads `ℓ` from `ℓ`'s mo-last message.
+  A component is its states with the edges the decomposition kept.
 - The memory constraints SHALL be part of the clause's fairness set, its
   obligation identity, every counterexample and replay (FR-227). ADR-018
-  CX-5's walk SHALL take each as a weak obligation.
+  CX-5's walk SHALL take each flush constraint as a weak obligation, and each
+  visibility pair the passing component still loads as ADR-025 MF-2 states,
+  using only the edges the decomposition kept.
+- The certificate of a `proved` item SHALL carry `UnfairVisibility{constraints,
+  sub}` for each removal (ADR-018 PC-4, FR-339); a `refuted` claim carries no
+  certificate.
 - The memory constraints SHALL change liveness verdicts only: a safety
   item's verdict SHALL be the same with and without them.
 - An authored constraint SHALL name one of FR-212's targets, whose classes
@@ -82,11 +92,13 @@ visible.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-228-AC-1 | `eventually holds(c1.r <= 1)` under infinite-trace over `SB` resolved to `tso` carries `fair weak each flush(left)` and `fair weak each flush(right)` with origin `memory` beside the three `scheduler` constraints; resolved to `ra` it carries one visibility constraint per (thread, loaded location) with origin `memory`; resolved to `sc` it carries no memory constraint. | Test (TC-673) |
+| FR-228-AC-1 | `eventually holds(c1.r <= 1)` under infinite-trace over `SB` resolved to `tso` carries `fair weak each flush(left)` and `fair weak each flush(right)` with origin `memory` beside the three `scheduler` constraints; resolved to `ra` it carries one visibility member of kind `strong` with origin `memory`, whose pairs are the (thread, loaded location) pairs of the resolved program; resolved to `sc` it carries no memory constraint. | Test (TC-673) |
 | FR-228-AC-2 | A weak `parallel` with branch `w`, one `relaxed` store `x := 1`, and branch `r`, a `repeat` with no maximum whose body is one `relaxed` load of `x` into `c.r` and whose guard is that load's binder reading 0, so that `x` is shared, under `tso`: `eventually holds(c.r = 1)` settles `proved`. The lasso whose stem is `fork`, `w`'s store, and whose loop is `r`'s load reading 0, with `w`'s buffer `[x := 1]` throughout, meets every scheduler constraint, since `w` has no enabled step and `r` steps on every edge, and is rejected by the fairness filter only under `fair weak each flush(w)`; with the memory constraints ignored the claim settles `refuted` with that lasso. | Test (TC-673) |
-| FR-228-AC-3 | The fairness filter, given an SCC on which thread `b` loads `ℓ` only from a message that is not mo-last and that has no other cycle, rejects it under visibility fairness; given one that also holds a load by `b` of `ℓ`'s mo-last message, it passes it. | Test (TC-673) |
+| FR-228-AC-3 | The fairness filter, given an SCC every cycle of which takes a load by thread `b` of `ℓ` from a message that is not mo-last, and none of whose edges loads `ℓ`'s mo-last message by `b`, rejects it under visibility fairness; given one that also holds a load by `b` of `ℓ`'s mo-last message, it passes it. | Test (TC-673) |
 | FR-228-AC-4 | The TP-1 claim of ADR-025 §10 settles the same verdicts under `tso` and `ra` with the memory constraints present as when the fairness filter ignores them. A `fair weak` constraint naming `flush` refuses `missing_declaration`/`missing-name`. | Test (TC-673) |
-| FR-228-AC-5 | Given an accepting SCC on states `p`, `q`, `r` with the edges `p → q` and `q → p` (thread `a`, no load by `b`), `q → r` (thread `b` loads `ℓ` from a message that is not mo-last) and `r → q` (thread `a`), where `p` is accepting, the filter does not reject the SCC: it removes the load edge `q → r`, decomposes `{p, q, r}` into `{p, q}` and `{r}`, passes `{p, q}`, and the claim is `refuted` with the lasso `p q p q …`, replayed as fair under visibility fairness; the whole-SCC rule would reject the SCC and settle the claim `proved`. The certificate check of the same SCC accepts the same decomposition. | Test (TC-673) |
+| FR-228-AC-5 | A synthesized accepting product SCC on states `p`, `q`, `r`, passed straight to the visibility filter as AC-3's SCCs are, with the edges `p → q`, `q → p` and `r → q` (thread `a`, which loads nothing) and `q → r` (thread `b` loads `ℓ` from a message that is not mo-last), `p` the only accepting state: the filter removes `q → r`, decomposes `{p, q, r}` into `{r}` then `{p, q}`, passes `{p, q}`, and the lasso `p q p q …` meets the lasso form of visibility fairness. (A protocol form of this vector needs `scheduling adversarial;`, since the default scheduler constraint for `b` would reject `{p, q}` unless `b` is disabled at `p`.) | Test (TC-673) |
+| FR-228-AC-6 | Given an accepting SCC on `p`, `q` with the edges `p → p` (thread `b` loads `ℓ` from a message that is not mo-last), `p → q` and `q → p` (thread `a`, loading nothing), `p` accepting, the filter removes `p → p` and passes `{p, q}` with the edges `p → q`, `q → p` only; the loop CX-5 builds is `p q`, never `p p`, and replay accepts it. | Test (TC-673) |
+| FR-228-AC-7 | Given an accepting SCC on `p`, `q`, `r`, `s` with the edges `p → q` (thread `c` loads `ℓ₂` from `ℓ₂`'s mo-last message), `q → p`, `r → s` (thread `a`), `s → q` (thread `a`), `q → r` (thread `b` loads `ℓ₁` from a message that is not mo-last) and `s → r` (thread `c` loads `ℓ₂` from a message that is not mo-last), `p` accepting, the filter removes `q → r` for the pair (`b`, `ℓ₁`), finds `{r, s}` holding a stale load of `ℓ₂` by `c` and no fresh one, removes `s → r` at the second level, and passes `{p, q}`; whichever pair it takes first, the passing component is `{p, q}`. | Test (TC-673) |
 
 ## Dependencies
 
@@ -94,7 +106,7 @@ visible.
   FA-6, CX-5; ADR-027 PA-1 to PA-3, SE-1 (h).
 - [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (fairness filter), FR-212 (fairness set and scheduler constraints),
-  FR-221, FR-222.
+  FR-221, FR-222, FR-339 (the component certificate).
 - QSpec FR-436 and FR-437 own memory fairness and its `memory` origin.
 
 ## References

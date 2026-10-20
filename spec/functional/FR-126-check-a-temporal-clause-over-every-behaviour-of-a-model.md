@@ -407,7 +407,7 @@ automaton states and the depth reached.
   state, and the second phase's SCCs in topological order, each with the
   first witness that holds for it in the order `Trivial`,
   `MissingAcceptance{set}` (the lowest such set), `UnfairWeak{constraint}`
-  (the first such constraint of the fairness set) (ADR-018 PC-4).
+  (the first such constraint of the fairness set), and, for an `ra` subject, `UnfairVisibility{constraints, sub}` (ADR-025 MF-2) (ADR-018 PC-4).
 - The certificate SHALL be a function of the subject, the item and the
   limits.
 
