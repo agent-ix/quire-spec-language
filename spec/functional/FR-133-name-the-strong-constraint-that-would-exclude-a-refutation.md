@@ -21,8 +21,8 @@ relationships:
 When replay reproduces the lasso of a refuted liveness (TP-4) item, the
 replay executor SHALL add to the item's FR-331 terminal record one warning diagnostic
 `fairness.strong-would-exclude` for each operation of the model whose
-strong fairness would exclude that lasso and that the clause does not
-already constrain that way (ADR-019 SV-6). The diagnostic is outside the
+strong fairness would exclude that lasso (ADR-019 SV-6), that is, for each
+operation the lasso starves. The diagnostic is outside the
 counterexample, its replay identity and the obligation identity, and it
 changes no verdict.
 
@@ -76,8 +76,11 @@ computes it and what it writes.
     order.
 - The executor SHALL record with each hint the first loop position at which
   the named operation, or for `Each` the named identity, is enabled.
-- When the clause's fairness set already holds the named constraint, the
-  executor SHALL emit no hint for that operation.
+- A hint names only a constraint the lasso starves. Replay has already
+  checked the lasso fair under every constraint of the clause's fairness set
+  (FR-131), and refused one that is not as `ReplayRefusal::UnfairLasso` with no
+  result, so no hint is computed for it; a hint therefore never repeats a
+  constraint the clause holds.
 - The executor SHALL return the hints in the replay result. The writer of
   the item's terminal record SHALL write them on it beside the
   counterexample: the `qsl-replay` settlement map (FR-127) for an EN-1
@@ -97,6 +100,7 @@ computes it and what it writes.
 | FR-133-AC-2 | ADR-018 §6's ConfigVersion claim refuted under weak `attemptUpdate` with no granularity, the lasso FR-126-AC-1 returns (bound to `a`, both bindings giving length 3; loop `upd(b)` three times), carries one hint: `{Strong, attemptUpdate, Each}`, identity `upd(a)`, the update the loop never takes, position 0. | Test (TC-534) |
 | FR-133-AC-3 | FR-126-AC-3's terminal stutter refutation over `Counter`, its deadlock-freedom refutation and FR-126-AC-2's bounded refutation carry no hint. | Test (TC-534) |
 | FR-133-AC-4 | Hints come in canonical operation order. Over a model whose types `T1` and `T2` have `EffectiveId` order `T1 < T2`, where `T1` declares `setTo` before `inc` in source and `tick`, `T2` declares `bump`, and the loop takes `tick` (one identity), a lasso that leaves `inc`, `setTo` and `bump` each enabled and untaken yields exactly the hints `T1.inc`, `T1.setTo`, `T2.bump` in that order, whatever the source order or display names. Over a model whose subtype `U` of `S` has `U < S`, where `U` declares `m` and `tick`, `S` declares `a`, both types are admitted and the loop takes `tick`, the hints come as `U.m`, `S.a` (declaring-type order), not `a`, `m` (the order of listing `a` under the admitting subtype `U`). | Test (TC-534) |
+| FR-133-AC-5 | A lasso that starves a constraint of the clause's own fairness set (FR-131-AC-1's lasso under `strong each` on `acquire`) is refused `ReplayRefusal::UnfairLasso` with no result and no hint; a lasso that replay accepts carries hints only for constraints the clause does not hold. | Test (TC-534) |
 
 ## Dependencies
 

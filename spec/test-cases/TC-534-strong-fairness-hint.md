@@ -11,11 +11,11 @@ relationships:
 ## Description
 
 Verify the `fairness.strong-would-exclude` hint: its suggested constraint,
-identity and position; its absence when the clause already carries the
-constraint, for non-liveness items and for a stutter loop; and that it
+identity and position; its absence for non-liveness items, for a stutter loop and for
+a lasso that replay refuses as unfair under the clause's own constraint; and that it
 leaves the verdict, counterexample and identities unchanged.
 
-Scope: FR-133-AC-1 to FR-133-AC-4.
+Scope: FR-133-AC-1 to FR-133-AC-5.
 
 ## Test Procedure
 
@@ -35,6 +35,8 @@ Scope: FR-133-AC-1 to FR-133-AC-4.
    its subtype `U` declaring `m` and `tick`, with `U < S`, whose loop takes
    `tick` and leaves `a` and `m` enabled and untaken.
 
+6. Give replay the lasso of FR-131-AC-1 under the clause's `strong each` constraint on `acquire`, which that lasso starves.
+
 Tag the tests `#[trace("TC-534", "FR-133-AC-n")]`.
 
 ## Expected Results
@@ -49,3 +51,4 @@ Tag the tests `#[trace("TC-534", "FR-133-AC-n")]`.
   under the reordered and renamed declarations.
 - Step 5: two hints in the order `U.m`, `S.a`: `a` is listed under its declaring
   supertype `S`, not under the admitting subtype `U`.
+- Step 6: `ReplayRefusal::UnfairLasso` naming the constraint, no result and no hint.
