@@ -405,6 +405,7 @@ mod tests {
         mapped.set_bound(Setting::S3Nodes, 32);
         mapped.set_bound(Setting::S3InputBytes, 33);
         mapped.set_bound(Setting::S3WorkUnits, 34);
+        mapped.set_bound(Setting::S3RationalBits, 37);
         mapped.set_bound(Setting::IntakeInputBytes, 35);
         mapped.set_bound(Setting::FormatOutputBytes, 36);
         let built = CallerLimits {
@@ -417,7 +418,8 @@ mod tests {
                 checking: quire_semantic_value::checking::CheckingLimits::default()
                     .with_nodes(32)
                     .with_input_bytes(33)
-                    .with_work_budget(34),
+                    .with_work_budget(34)
+                    .with_rational_bits(37),
                 assembly: qsl_semantics::check::AssemblyLimits {
                     identity: qsl_foundation::IdentityLimits::default().with_input_bytes(27),
                     ..qsl_semantics::check::AssemblyLimits::default()

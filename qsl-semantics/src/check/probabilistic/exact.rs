@@ -12,10 +12,6 @@
 use qsl_forms::{ExactValueForm, ExactValueKind};
 use quire_exact::{Integer, Rational};
 
-/// FR-185's default rational-bits ceiling, inclusive. It is fixed: no
-/// `CheckingLimits` setting changes it yet (FR-255 has no rational-bits row).
-pub(crate) const RATIONAL_BITS_CEILING: u64 = 65_536;
-
 /// A lower bound of `log₂ 10`, as `LOG2_10_LOWER / 10^28`, truncated from
 /// `3.32192809488736234787031942948…`.
 const LOG2_10_LOWER: u128 = 33_219_280_948_873_623_478_703_194_294;
@@ -28,7 +24,8 @@ const LOG2_10_SCALE: u128 = 10_000_000_000_000_000_000_000_000_000;
 pub(crate) enum ExactFault {
     /// A `rational(n, 0)`.
     ZeroDenominator,
-    /// The value as written is past [`RATIONAL_BITS_CEILING`]; `bits` is its
+    /// The value as written is past the rational-bits ceiling
+    /// (`s3.rational_bits`); `bits` is its
     /// measure (a lower bound once a decimal scale reaches `2^32`, where
     /// every measure is past the ceiling).
     AboveCeiling {
@@ -72,10 +69,11 @@ pub(crate) fn written_bits(value: &ExactValueForm) -> u64 {
     first.max(second)
 }
 
-/// `value` reduced to lowest terms, once its measure is within the ceiling.
-pub(crate) fn value(value: &ExactValueForm) -> Result<Rational, ExactFault> {
+/// `value` reduced to lowest terms, once its measure is within `ceiling`
+/// (the inclusive `s3.rational_bits` bound).
+pub(crate) fn value(value: &ExactValueForm, ceiling: u64) -> Result<Rational, ExactFault> {
     let bits = written_bits(value);
-    if bits > RATIONAL_BITS_CEILING {
+    if bits > ceiling {
         return Err(ExactFault::AboveCeiling { bits });
     }
     match value.kind {
@@ -112,7 +110,7 @@ mod tests {
         assert_eq!(power_of_ten_bits(&Integer::from(0_u64)), 1);
         assert_eq!(power_of_ten_bits(&Integer::from(19_728_u64)), 65_535);
         assert_eq!(power_of_ten_bits(&Integer::from(19_729_u64)), 65_539);
-        assert!(power_of_ten_bits(&Integer::from(4_294_967_295_u64)) > RATIONAL_BITS_CEILING);
-        assert!(power_of_ten_bits(&Integer::from(u64::MAX)) > RATIONAL_BITS_CEILING);
+        assert!(power_of_ten_bits(&Integer::from(4_294_967_295_u64)) > 65_536);
+        assert!(power_of_ten_bits(&Integer::from(u64::MAX)) > 65_536);
     }
 }

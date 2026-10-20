@@ -14,6 +14,7 @@ pub fn checking_bounds(limits: &CheckingLimits) -> Vec<(Setting, u64)> {
         (Setting::S3Nodes, limits.nodes()),
         (Setting::S3InputBytes, limits.input_bytes()),
         (Setting::S3WorkUnits, limits.work_budget()),
+        (Setting::S3RationalBits, limits.rational_bits()),
     ]
 }
 
@@ -25,6 +26,7 @@ pub fn set_checking_bound(limits: &mut CheckingLimits, setting: Setting, bound: 
         Setting::S3Nodes => *limits = limits.with_nodes(bound),
         Setting::S3InputBytes => *limits = limits.with_input_bytes(bound),
         Setting::S3WorkUnits => *limits = limits.with_work_budget(bound),
+        Setting::S3RationalBits => *limits = limits.with_rational_bits(bound),
         _ => return false,
     }
     true

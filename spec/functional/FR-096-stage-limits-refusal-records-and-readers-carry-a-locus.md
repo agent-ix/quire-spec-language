@@ -148,12 +148,14 @@ resolves `Evaluation.location` without the forms.
 
 ### A stage limit names its kind, bound, counter and locus
 
-`LimitKind` SHALL have seven variants: input bytes, token count, node
-count, edge count, occurrence count, diagnostic count and work budget. Its
+`LimitKind` SHALL have eight variants: input bytes, token count, node
+count, edge count, occurrence count, diagnostic count, work budget and
+rational bits. Its
 `catalog_code()` SHALL be `stage_limit_exceeded` with cause
 `input-bytes-exceeded`, `token-count-exceeded`, `node-count-exceeded`,
 `edge-count-exceeded`, `occurrence-count-exceeded`,
-`diagnostic-count-exceeded` or `work-budget-exceeded` respectively
+`diagnostic-count-exceeded`, `work-budget-exceeded` or
+`rational-bits-exceeded` respectively
 (ADR-030 D-1).
 
 `LimitExceeded` SHALL carry its `LimitKind`, the configured bound, the
@@ -388,7 +390,7 @@ name.
 | ID | Criteria | Verification |
 | --- | --- | --- |
 | FR-096-AC-1 | For function `0` with body `if a then b else c + d` and measure `n`, under a unit reference `r`: location (`Body{0}`, `[]`) resolves to the region of the `If` node's span, (`Body{0}`, `[2]`) to the span of `c + d`, (`Body{0}`, `[2, 1]`) to the span of `d`, and (`Measure{0}`, `[]`) to the span of `n`. Each region is under `r`. The checked package of those declarations resolves the same four locations to the same four regions. When the unit is a body embedded at byte offset `k` of a document with reference `d`, with no layout deletions, the same locations resolve under `d` to the same spans shifted by `k`. When the embedding's map splits one of those spans into more than one document region (a layout deletion), the location resolves to no region. A location in an FR-151 synthesized function and a location with `Origin::Expression` resolve to no region. | Test |
-| FR-096-AC-2 | `LimitKind`'s `catalog_code()` gives `stage_limit_exceeded` with causes `input-bytes-exceeded`, `token-count-exceeded`, `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`, `diagnostic-count-exceeded` and `work-budget-exceeded` for its seven variants, and a `LimitExceeded` gives its kind's code and carries its setting name. | Test |
+| FR-096-AC-2 | `LimitKind`'s `catalog_code()` gives `stage_limit_exceeded` with causes `input-bytes-exceeded`, `token-count-exceeded`, `node-count-exceeded`, `edge-count-exceeded`, `occurrence-count-exceeded`, `diagnostic-count-exceeded`, `work-budget-exceeded` and `rational-bits-exceeded` for its eight variants, and a `LimitExceeded` gives its kind's code and carries its setting name. | Test |
 | FR-096-AC-3 | S1 over a function body of `not`×8 `a`, with `s1.nodes` one below the unit's syntax-node count, returns `stage_limit_exceeded`/`node-count-exceeded` with that bound, the count reached and setting `s1.nodes`, at the region S1's diagnostic names under the unit's `RawSourceRef`; S2 over the same body, parsed at the default S1 limits, builds its form. | Test |
 | FR-096-AC-4 | A declaration whose preimage input bytes exceed a configured bound `B` returns `StageFailure::Limit` with kind input bytes, bound `B`, actual equal to the measured bytes, and `Locus::Region` over the declaration's span. The same limit reached for an FR-151 synthesized function carries no locus. | Test |
 | FR-096-AC-5 | A declaration whose work charge is denied by a work budget `W` returns `StageFailure::Limit` with kind work budget, bound `W`, actual equal to the spend the denied charge would have reached, and `Locus::Region` over the declaration's span. | Test |
