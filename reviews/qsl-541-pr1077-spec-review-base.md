@@ -89,3 +89,11 @@ Disposition pass 1 against fix-round head 95822c0db (merge of main 505186892 plu
 | FND-004 | fixed | - |
 | FND-005 | fixed | - |
 | FND-006 | fixed | - |
+
+### Disposition pass 2
+
+Disposition pass 2 against fix-round head f394d6817 (main 94020c902 merged in). Re-measured at S1/S3 on main 94020c902 (probe patch /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1077-r2-probe-patch.diff, output /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1077-r2-probe.log; clone reverted): AC-7's `count(o in M::counters where o.value = 0) < 4` (with and without `bound B on M::counters [3]`) and AC-1's `forall(o in allInstances<M::Counter>(M::counters) : o.value < 4)` both parse and both reach the population at S3, refusing only with today's `PopulationFormOutsideRefinement` (the FR-391 gate, depth 1 at the form and depth 2 at the operand), with no `IllTyped` before it. The `Int[0,3]` count bound cannot be measured until FR-391 is built. No `count<M::...>` remains under spec/. make check-spec-validation exits 0 (17 pre-existing warnings), check-index-completeness passes, the head merges cleanly onto main.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-007 | fixed | - |

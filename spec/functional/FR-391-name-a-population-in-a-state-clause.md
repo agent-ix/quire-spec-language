@@ -114,8 +114,9 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
   then the assembler SHALL refuse `ambiguous_declaration`/`ambiguous-name`
   at the name, naming both.
 - The assembler SHALL refuse a two-segment `M::P` name in a function body
-  `missing_declaration`/`missing-name` at the second segment, since only a
-  population position resolves one. In a declaration header or an `on`
+  or in the type-level invariant of an object type, a state machine or a
+  process (FR-366) `missing_declaration`/`missing-name` at the second
+  segment, since only a population position resolves one. In a declaration header or an `on`
   target, `M::X` names the type or operation of the alias's domain package.
 
 ### Typing
@@ -209,7 +210,7 @@ read as a domain, `forall(o in M::counters : o.v < 2)`, means the same.
 | FR-391-AC-5 | Evaluated at S6a over a snapshot whose `counters` holds `a`, `b` and `c`, the precondition of AC-1 decides over exactly those three, in canonical reference-key order; over a snapshot in which `counters` is not marked `complete`, it returns `Incomplete` with `incomplete_population`/`incomplete-scope`, as for a parameter operand; `allInstances<M::Other>(M::counters)` with `Other` uncovered by the population is FR-084's typed incomplete result. | Test (TC-1076) |
 | FR-391-AC-6 | With populations `counters` and `archive` of `Counter` and an operation `grow` on `Widget`, a type covered only by `widgets`, the preconditions `pre A using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` and `pre B using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::archive) : true) }` check to two different terms, each carrying its own population's declaration key, and of the populations `A` reads `AnyMembership{counters}` and not `AnyMembership{archive}`, and `B` the reverse (each footprint also holds the receiver's own `Membership` per FR-155); the precondition of FR-155-AC-2 over `counters` holds `AnyField{v}` and `AnyMembership{counters}`. A package with such a clause refuses at emission with `unsupported_construct`/`not-yet-implemented` until the IR encoding exists. | Test (TC-1076) |
 | FR-391-AC-7 | On the `Counter` unit with `bound B on M::counters [3]` and a `Watch` type with population `watchers`: `post P using v on M::Counter::bump { forall(o in M::counters : o.v < 2) }` checks as a `Postcondition` reading `post`; `pre Q using v on M::Counter::bump { exists(o in M::counters : o.v = 2) }` checks as a `Precondition` reading `pre`; `invariant Cap using v on M::Counter at current { count(o in M::counters where o.v = 0) < 4 }` checks with the `count` result typed `Int[0,3]`, and without the bound the result is unbounded above; `temporal C using t0 over (w: M::Watch) clock "model-steps" on origin { eventually holds(forall(x in M::counters : x.v < 2)) }` checks with `counters` a domain of the temporal clause's record. Each is evaluated at S6a over a snapshot whose `counters` is `complete` to the same result as its `allInstances<M::Counter>(M::counters)` spelling, and over a `counters` that is not `complete` it returns `Incomplete` with `incomplete_population`/`incomplete-scope`. | Test (TC-1076) |
-| FR-391-AC-8 | `M::counters` in a function body refuses `missing_declaration`/`missing-name` at `counters`, and `seq(i in 0 .. 2: i)` in an invariant refuses `unsupported_construct`/`expression-form` at its span. | Test (TC-1076) |
+| FR-391-AC-8 | `M::counters` in a function body and in the type-level invariant of an object type refuses `missing_declaration`/`missing-name` at `counters`, and `seq(i in 0 .. 2: i)` in an invariant refuses `unsupported_construct`/`expression-form` at its span. | Test (TC-1076) |
 
 ## Dependencies
 
