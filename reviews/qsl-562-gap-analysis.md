@@ -63,3 +63,12 @@ it.
 | FND-002 | low | The FR-216-AC-1 and AC-2 visibility checks build `ClaimReads` by hand, (`d`, `v`) and (`c`, `v`), instead of deriving them from the claims the ACs name (`always holds(k.v <= 3)`, a claim over `d.v`). The test covers `visible` over a given read set, but not that a claim's atoms give that set. | qsl-analyze/tests/it/protocol_footprints.rs:166-172 |
 | FND-003 | low | FR-216-AC-3 names FR-212's `Chatter`, but the test builds its own `Chatter` from the fixture (one sender branch, one receiver branch, `overflow block`). FR-216-AC-5 names `bump(by)`, and the test uses `nudge(peer)`. Both keep the AC's structure, but they are not the named artifacts. | qsl-analyze/tests/it/protocol_footprints.rs:323-336; qsl-analyze/tests/it/protocol_footprints.rs:374-377 |
 | FND-004 | low | Spec: TC-661's Description says "Scope: FR-216-AC-1 to FR-216-AC-4", but its procedure step 5 and the tests cover FR-216-AC-5 as well. | spec/test-cases/TC-661-protocol-step-footprints.md |
+
+## Dispositions
+
+| Finding | Outcome | Note |
+| --- | --- | --- |
+| FND-001 | fixed 64b082d85 | Added `every_independent_pair_of_steps_commutes`, a diamond check over the §7 fixtures, the join-policy fixtures, `Chatter`, a fixture shaped like AC-5 and the `repeat` / `outstanding continue` re-fork. |
+| FND-002 | fixed 64b082d85 | `ProtocolSystem::claim_reads` derives the reads from the checked `holds` atoms. The AC-1 and AC-2 tests read `temporal Bounded … { always holds(k.v <= 3) }` for `d` and for `c`, and assert the derived set. |
+| FND-003 | accepted-no-change | `Chatter` keeps FR-212's branches, channel and nodes over this fixture's `Cell`. `nudge(peer)` stands for `bump(by)`: `bump` is the fixture's operation with no parameter, and `by` is an attempt-form keyword. Both are stated in the test docs. |
+| FND-004 | deferred: spec | The TC-661 scope text is a spec change, and the spec author owns it. |

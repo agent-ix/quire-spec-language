@@ -81,3 +81,13 @@ was reproduced. Two mediums and two lows are recorded and do not block.
 
 The findings table holds defects only. The checks that were verified and found
 clean are listed under Summary.
+
+## Dispositions
+
+| Finding | Outcome | Note |
+| --- | --- | --- |
+| FND-001 | fixed 64b082d85 | The fork reads `Instance(parent, node, o)` and `Subtree(parent.child(node, label, o))` for every `o` up to and including the ordinal it takes. `every_independent_pair_of_steps_commutes` runs both orders of every independent pair across the TC-661 fixtures, including the re-forking `repeat`. Without the fix it fails at that fixture's state 8. |
+| FND-002 | fixed 64b082d85 | The checker admits reference-typed records: `enumerable` takes `Reference`. An `event`, a `send` or a `finish` whose record type holds a reference now has the any-object membership of every population in its enabling footprint. A `receive` takes its record from the queue and lists none. |
+| FND-003 | fixed 64b082d85 | Added `AnchorName::Channel`: a `duplicate` or `lose` is visible to an atom that reads its channel's anchor. This is the PB-2 reading, the sound one. |
+| FND-004 | fixed 64b082d85 | The binders read by every `choice`, `repeat` guard and `check` the step's settling can pass, and by the branches a fork settles, are in `reads` but not in `enabling`. |
+| FND-005 | fixed 64b082d85 | The selection is an `Arc<BTreeSet<NodeKey>>` shared with the attempt, so a cache lookup clones no set. `Some(every clause)` and `None` remain separate entries, which costs one derivation. |
