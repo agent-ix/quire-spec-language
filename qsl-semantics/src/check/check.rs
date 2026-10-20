@@ -1594,9 +1594,8 @@ impl NamedScope {
     /// Whether `name` is two segments whose first is a model alias that
     /// also names an enum of the unit.
     pub(crate) fn is_ambiguous(&self, name: &str) -> bool {
-        name.split_once("::").is_some_and(|(alias, rest)| {
-            !rest.contains("::") && self.ambiguous.iter().any(|known| known == alias)
-        })
+        let segments: Vec<&str> = name.split("::").collect();
+        matches!(segments[..], [alias, _] if self.ambiguous.iter().any(|known| known == alias))
     }
 }
 
