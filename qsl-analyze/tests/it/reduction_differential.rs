@@ -292,6 +292,12 @@ fn corpus() -> Vec<Case> {
             por_world::not_bad,
         ),
         fixture_case(
+            "7.6 a type-wide delete",
+            por_world::deleting_any_job,
+            Some(0),
+            por_world::not_bad,
+        ),
+        fixture_case(
             "7.6 a delete blocked by a reference",
             por_world::blocked_delete,
             Some(0),
