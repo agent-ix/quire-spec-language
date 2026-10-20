@@ -441,7 +441,7 @@ the first paragraph of the Description states.
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
 arguments. A quantity-typed parameter in source (AC-10) depends on
-STD-113; the quantity conversion is tested directly.
+QSpec FR-142's `Quantity<u>` (STD-113) and QSL intake; the quantity conversion is tested directly.
 
 ## Dependencies
 

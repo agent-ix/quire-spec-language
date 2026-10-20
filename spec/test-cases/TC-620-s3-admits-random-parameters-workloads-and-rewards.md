@@ -12,7 +12,7 @@ relationships:
 
 Verify S3's checks of random parameters, workloads and rewards on ADR-024 §7.2's `Service` model and its malformed variants.
 
-Scope: FR-185-AC-1 to FR-185-AC-7.
+Scope: FR-185-AC-1 to FR-185-AC-8.
 
 ## Test Procedure
 
@@ -25,6 +25,7 @@ Fixtures: ADR-024 §7.2's `Service` model (with `d` typed `Millis = Int[1, 12]`)
 5. Declare a second workload `Steady` on `Service`, and one on `Other` (FR-185-AC-5).
 6. Check the two coprime-weight distributions of FR-185-AC-6, and one with a check cancelled before it starts.
 7. Emit `Service` (FR-185-AC-7).
+8. Check `Server::attempt` with `d: Quantity<ms>` and its supports, then with `1 s` and `true` (FR-185-AC-8; waits on QSL intake resolving a unit type reference).
 
 Tag the tests `#[trace("TC-620", "FR-185-AC-n")]`.
 
@@ -37,3 +38,4 @@ Tag the tests `#[trace("TC-620", "FR-185-AC-n")]`.
 - Step 5: each second `Steady` refused `conflicting_declaration`/`duplicate-declaration` with both declarations related.
 - Step 6: the 65,536-bit sum admitted; the 65,537-bit sum refused with the limit refusal naming the parameter; the check with a tripped handle ends cancelled with the handle requested and a reported limit that is not the 65,536-bit ceiling.
 - Step 7: S3 checks, S4 refuses `unsupported_construct`/`not-yet-implemented` naming the first random parameter, `random-parameter` and the profile.
+- Step 8: the quantity supports check; `1 s` and `true` refused `value-outside-type`.

@@ -182,15 +182,15 @@ name.
 
 ### Quantity-typed parameters
 
-A quantity-typed operation parameter, such as `d: Quantity<Time>` in ADR-024
-§7.2, is not available: no domain package defines a quantity type for a
-parameter, and complete-V1 source has no quantity type reference
-(FR-091-OQ-11(d), STD-113). A distribution's support values are written in
-the parameter's own type, an integer range such as `Millis = Int[1, 12]` in
-the `Service` fixture, and a support value outside that type is refused
-`value-outside-type` (Random parameters). Admitting `1 ms`-style supports
-needs a quantity native or a package quantity type reference from QSpec
-(STD-113) and is open.
+A quantity-typed operation parameter, such as ADR-024 §7.2's duration `d`, is
+typed `Quantity<u>` over a declared unit `u` (QSpec FR-142-AC-11, STD-113;
+FR-091-OQ-11(d)). A distribution's support values are quantity literals of
+that unit (`1 ms`, `3 ms`, `12 ms` for `Quantity<ms>`), and a support value of
+another type, another unit of the same dimension included, is refused
+`value-outside-type` (Random parameters). A parameter whose declared type is an
+integer range, such as `Millis = Int[1, 12]`, takes integer supports as before.
+Reading a domain package's parameter type reference that names a unit needs
+QSL intake (FR-056) to resolve it to the unit's type, which is not built yet.
 
 ### Package emission
 
@@ -212,6 +212,7 @@ it from the checked package, not from the emitted wire.
 | FR-185-AC-5 | A second `workload Steady on Service` and a `workload Steady on Other` (a second model of the package) are each refused `conflicting_declaration`/`duplicate-declaration` with `subject` `Steady` and `related` both declarations in source order, and the first remains the package's `Steady`. | Test (TC-620) |
 | FR-185-AC-6 | The distribution `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` (running-sum denominator of 65,536 bits) checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` (65,537 bits) is refused with the limit refusal naming the parameter; a check whose cancellation handle is tripped before it starts ends cancelled (FR-276), the handle reporting requested and the reported limit not being the 65,536-bit ceiling. | Test (TC-620) |
 | FR-185-AC-7 | `Service` (with `d` typed `Millis = Int[1, 12]`) checks at S3 and refuses at S4 with `unsupported_construct`/`not-yet-implemented` naming the first random parameter in source order, `random-parameter` and the selected profile, with the checked record intact. | Test (TC-620) |
+| FR-185-AC-8 | `Server::attempt` with `d: Quantity<ms>` records `d` with the supports `1 ms`, `3 ms` and `12 ms` and the probabilities of AC-1; the value `1 s` listed for `d`, and the value `true`, are each refused `value-outside-type` naming the parameter; a precondition reading `d` as `d < 5 ms` is refused `random-read-in-precondition`. | Test (TC-620) |
 
 ## Dependencies
 

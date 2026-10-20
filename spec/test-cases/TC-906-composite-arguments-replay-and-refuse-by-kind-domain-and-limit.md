@@ -157,7 +157,7 @@ missing-premise negative control; no runnable trace or execution is
 claimed for that source-proof analysis.
 
 The union cases depend on QSL-503; a quantity-typed parameter in source
-depends on STD-113.
+depends on QSpec FR-142's `Quantity<u>` (STD-113) and QSL intake.
 
 ## Expected Results
 
