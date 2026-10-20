@@ -197,3 +197,33 @@ Mutations:
 absent rows removed. Today's engine hides that case end to end (a no-op
 successor that fails C3), so the candidate-level test is the one that guards
 it.
+
+Round 2, reviewed at `21fa47c9b346ab914e216f2f35c892a7597507f0` (fix commit
+8d9e0be2d, then a merge of main at 7e28a47ae).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-011 | fixed | 8d9e0be2d: `gate_with` adds `touch()` (framed `modifies self.d`, pre `not self.d`, so enabled at the initial state), and the test seeds with `touch`. It asserts candidate `{arm, arm2, go, touch}` with enabled part `{arm, touch}`, read from `candidate_seeded_by`. That is FR-156-AC-4 as merged on main by #1096 (d9e3560a2): seed `touch`, a candidate holding `arm2` and `arm`, enabled part `{touch, arm}`. Removing the disabled-member closure fails the test (mutation M2). |
+| FND-012 | fixed | 8d9e0be2d: the `affects` doc comment states the rule by the cells each location stands for. It no longer claims POR-4 and FR-383 are symmetric. |
+
+Gates at 21fa47c9b, all green:
+
+- `cargo test -p qsl-eval -p qsl-replay -p qsl-analyze -p qsl-semantics`
+- root `cargo test --test it`
+- `cargo clippy --locked --workspace --all-targets -- -D warnings`
+- `make string-edge`
+- `make arch-lint-api-surface-qsl`
+- `make arch-lint-canonical-encoder`
+- `make arch-lint-qualified-core`
+
+Mutations at 21fa47c9b:
+
+- Disabled-member closure removed: 5 tests fail, the FR-156-AC-4 test and the
+  differential among them.
+- `affects` replaced by `meets`: the 9 Gate tests fail.
+- Absent-object identities removed: the FR-155-AC-7 candidate test fails.
+- The up-front footprint check removed: the refusal test fails.
+
+The branch merged main at 7e28a47ae, one commit before #1096 (d9e3560a2).
+`git merge-tree` against the current main is clean, and the only files it adds
+are `spec/` and `reviews/`.
