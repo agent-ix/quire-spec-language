@@ -2395,7 +2395,9 @@ impl<'a, 'm> Machine<'a, 'm> {
             let queried = self
                 .graph
                 .object_type_key(*target)
-                .map_or_else(|| target.to_string(), |key| key.node.clone());
+                .ok_or_else(|| invariant("all-instances-queried-type-declared"))?
+                .node
+                .clone();
             return Err(ModelQueryHalt::IncompleteClosure {
                 queried_type: queried.clone(),
                 uncovered_subtypes: vec![queried],
@@ -2477,14 +2479,10 @@ impl<'a, 'm> Machine<'a, 'm> {
                 }),
             ))),
             (false, AbsenceMode::Refused) => Err(Halt::Family(FamilyResult::Refused(Box::new(
-                ModelQueryRefusal::from(qsl_semantics::model::normalize::ModelRefusal {
-                    code: qsl_foundation::diagnostic::Code::InvalidRuntimeInput,
-                    cause: qsl_semantics::model::normalize::ModelRefusalCause::AbsentKey {
-                        binding: population.node.clone(),
-                        key: reference.object().as_str().as_bytes().to_vec(),
-                    },
-                    detail: format!("{key} is not a member of the population"),
-                }),
+                ModelQueryRefusal::from(qsl_semantics::model::normalize::ModelRefusal::absent_key(
+                    population.node.clone(),
+                    reference.object().as_str().as_bytes().to_vec(),
+                )),
             )))),
         }
     }
