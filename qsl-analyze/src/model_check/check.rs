@@ -155,6 +155,10 @@ pub enum ModelCheckRefusal {
     /// cannot certify yet.
     #[error(transparent)]
     Liveness(#[from] super::liveness::LivenessRefusal),
+    /// A hyper clause EN-1 does not decide, or whose subjects the request
+    /// does not supply (FR-176).
+    #[error(transparent)]
+    Hyper(#[from] super::hyper::HyperRefusal),
     /// FR-151: a symmetry declaration is malformed.
     #[error(transparent)]
     Symmetry(SymmetryRefusal),

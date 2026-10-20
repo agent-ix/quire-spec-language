@@ -76,7 +76,7 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 27 | a `choice Decide by Nobody visible (true) {...}` | `missing_declaration`/`missing-name` at `Nobody` |
 | 28 | after `Got`, `choice Decide by Buyer visible (got.ready) { case yes when { got.ready } check A using P { true }; case no when { not got.ready } check B using P { true }; }` | checks; the checked choice holds owner `Buyer` and the listed fact |
 | 29 | row 28 with owner `Seller` | `wrong_snapshot`/`wrong-observation` at each read of `got.ready`; `owner` `Seller`, `reason` `other-role` |
-| 30 | row 28 reading `sent.ready` | `wrong_snapshot`/`wrong-observation`; `reason` `ineligible-kind` (a `send` record) |
+| 30 | row 28 reading `sent.ready` | `wrong_snapshot`/`wrong-observation`; `reason` `ineligible-kind` (a `send` binder, which holds the payload) |
 | 31 | row 28 with `visible (true)` | `wrong_snapshot`/`wrong-observation` at each guard read; `reason` `unlisted` |
 | 32 | row 28 with two receives `gotA`, `gotB`, `visible (gotA.ready and gotB.ready)` and guards reading `gotA.ready` | `wrong_snapshot`/`wrong-observation`; `reason` `unlisted`: a composite entry discloses none of its operands |
 | 33 | row 28 with guards `let d = got.ready in true` and `false` and `visible (true)` | `wrong_snapshot`/`wrong-observation` at `got.ready`; `reason` `unlisted`; with `visible (got.ready)` it checks |
