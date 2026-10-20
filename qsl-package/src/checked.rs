@@ -380,11 +380,11 @@ impl CheckedPackage {
     /// ```
     pub fn link(graph: CheckedGraph) -> Self {
         Self {
+            abstraction: graph.abstraction().cloned(),
             graph: Arc::new(graph),
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
             direct_imports: BTreeSet::new(),
-            abstraction: None,
             emission: OnceLock::new(),
         }
     }
@@ -437,11 +437,11 @@ impl CheckedPackage {
             dependencies.insert(recompiled, import.package);
         }
         Ok(Self {
+            abstraction: graph.abstraction().cloned(),
             graph: Arc::new(graph),
             dependencies,
             selections,
             direct_imports,
-            abstraction: None,
             emission: OnceLock::new(),
         })
     }
@@ -459,6 +459,24 @@ impl CheckedPackage {
     ) -> Result<(), Vec<AbstractionRefusal>> {
         self.abstraction = Some(self.graph.check_abstraction(bindings)?);
         self.emission = OnceLock::new();
+        Ok(())
+    }
+
+    /// As [`Self::bind_abstraction`], for a relation read from the
+    /// `abstraction` declarations located at `sites`, one per declaration:
+    /// the emitter writes one `declaration` occurrence of the relation node at
+    /// each (QSpec FR-451).
+    ///
+    /// # Errors
+    ///
+    /// Every refusal of the bindings; a refusal leaves the package unchanged.
+    pub fn bind_abstraction_at(
+        &mut self,
+        bindings: &[AuthoredBinding],
+        sites: Vec<quire_semantic_value::location::Location>,
+    ) -> Result<(), Vec<AbstractionRefusal>> {
+        let relation = self.graph.check_abstraction(bindings)?;
+        self.abstraction = Some(relation.with_sites(sites));
         Ok(())
     }
 
