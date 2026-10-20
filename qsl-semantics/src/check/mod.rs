@@ -145,10 +145,10 @@ mod temporal_clause;
 mod terminal;
 pub use probabilistic::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
-    CheckedTemporalFormula, Confidence, ConfidenceFault, Event, FractionMeasure, ModelSubjectRef,
-    OverBinding, PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause,
-    ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticObligationIdentity,
-    ProbabilisticOperation, RandomParameter, Reward, SupportValue, WeightOwner, Workload,
+    CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Event, FractionMeasure,
+    ModelSubjectRef, OverBinding, PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause,
+    ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticOperation, RandomParameter,
+    Reward, SupportValue, WeightOwner, Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};

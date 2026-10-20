@@ -393,6 +393,8 @@ pub(super) enum Site {
     /// The exact value at this position of a claim's
     /// [`claim_exact_values`](super::claim::claim_exact_values).
     Exact(usize),
+    /// The operator at this arena index of a claim's temporal event.
+    Operator(usize),
     /// A random declaration's parameter name.
     Parameter,
 }
@@ -409,6 +411,7 @@ fn site_name(declaration: usize, site: Site) -> String {
             format!("probabilistic {declaration} expression {position}")
         }
         Site::Exact(position) => format!("probabilistic {declaration} exact {position}"),
+        Site::Operator(node) => format!("probabilistic {declaration} operator {node}"),
         Site::Parameter => format!("probabilistic {declaration} parameter"),
     }
 }
@@ -457,6 +460,20 @@ pub(crate) fn site_spans(
                         .enumerate()
                     {
                         sites.push((Site::Expression(position), Some(expression.spans.clone())));
+                    }
+                    if let qsl_forms::ProbabilisticBody::Probability {
+                        event: qsl_forms::EventForm::Temporal(formula),
+                        ..
+                    } = &form.body
+                    {
+                        for (id, node) in formula.iter() {
+                            if let qsl_forms::TemporalNodeForm::Operator(operator) = node {
+                                sites.push((
+                                    Site::Operator(id.index()),
+                                    spanned(operator.operator_span),
+                                ));
+                            }
+                        }
                     }
                     for (position, value) in super::claim::claim_exact_values(form)
                         .into_iter()

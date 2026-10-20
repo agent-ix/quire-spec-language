@@ -1098,6 +1098,20 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: a threshold of claim `{claim}` has dimension `{threshold}`, not \
                      the reward's `{reward}`"
                 ),
+                ProbabilisticCause::FractionBound { claim, .. } => format!(
+                    "{message}: a fraction compared in an event of claim `{claim}` must be an \
+                     exact rational strictly between 0 and 1"
+                ),
+                ProbabilisticCause::ThresholdNotLiteral { claim, .. } => format!(
+                    "{message}: a threshold of claim `{claim}` must be a literal of the type of \
+                     the measure it bounds"
+                ),
+                ProbabilisticCause::OverNotObjectType {
+                    claim, parameter, ..
+                } => format!(
+                    "{message}: the `over` parameter `{parameter}` of claim `{claim}` must have \
+                     an object type of the claim's model"
+                ),
                 ProbabilisticCause::NotYetImplemented {
                     claim, construct, ..
                 } => format!("{message}: `probabilistic {claim}` uses {construct}, which is not checked yet"),
@@ -1653,6 +1667,54 @@ mod tests {
         assert!(message.contains("qualitative-threshold"), "{message}");
         assert!(message.contains("ADR-018 TP-2 claim"), "{message}");
         assert!(message.contains("possible property"), "{message}");
+    }
+
+    /// FR-186-AC-3 (TC-621 step 3): the diagnostics of an unbounded event and
+    /// of a foreign workload read as the FR states them, and a fraction bound
+    /// outside (0, 1) is not advised as a qualitative claim.
+    #[trace("TC-621", "FR-186-AC-3")]
+    #[test]
+    fn the_event_and_workload_diagnostics_read_as_the_requirement_states_them() {
+        use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
+        use quire_semantic_value::location::{Location, Origin};
+        let render = |cause: ProbabilisticCause| {
+            CompileRefusal::Check {
+                refusals: vec![CheckRefusal {
+                    location: Location::root(Origin::Expression),
+                    cause: CheckCause::Probabilistic(Box::new(cause)),
+                }],
+                region: None,
+            }
+            .to_string()
+        };
+        let span = qsl_foundation::Span { start: 0, end: 1 };
+        let message = render(ProbabilisticCause::UnboundedEvent {
+            claim: "NoFault".to_owned(),
+            span,
+        });
+        assert!(message.contains("unbounded-event"), "{message}");
+        assert!(message.contains("needs a finite window"), "{message}");
+        let message = render(ProbabilisticCause::ForeignWorkload {
+            claim: "NoFault".to_owned(),
+            workload: "Throttle".to_owned(),
+            model: "Service".to_owned(),
+            span,
+        });
+        assert!(message.contains("foreign-workload"), "{message}");
+        assert!(
+            message.contains("`Throttle`") && message.contains("`Service`"),
+            "{message}"
+        );
+        let message = render(ProbabilisticCause::FractionBound {
+            claim: "Monthly".to_owned(),
+            span,
+        });
+        assert!(message.contains("fraction-bound"), "{message}");
+        assert!(message.contains("strictly between 0 and 1"), "{message}");
+        assert!(
+            !message.contains("TP-2") && !message.contains("possible property"),
+            "{message}"
+        );
     }
 
     /// FR-186-AC-2 (TC-621 step 2): the diagnostic of a threshold whose

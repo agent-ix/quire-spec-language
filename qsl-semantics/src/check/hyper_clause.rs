@@ -1704,7 +1704,7 @@ fn text_segment(text: &str) -> Vec<u8> {
 
 /// The trace variables `a` and `b` exchanged, or none.
 #[derive(Clone, Copy)]
-struct Swap<'s>(Option<(&'s str, &'s str)>);
+struct Swap<'s>(Option<(&'s str, &'s str)>, Option<&'s str>);
 
 impl Swap<'_> {
     fn apply(&self, trace: &str) -> String {
@@ -1902,6 +1902,8 @@ fn binary_tag(operator: BinaryOperator) -> (u8, Commutes) {
 /// its operands by arena position: equal for equal clauses.
 fn leaf_payload(node: &ExprNode, swap: Swap<'_>) -> (Vec<u8>, Vec<u8>) {
     match node {
+        // A claim's `over` binder is not content: it encodes as a binder.
+        ExprNode::Name(name) if swap.1 == Some(name.as_str()) => (b"binder".to_vec(), Vec::new()),
         ExprNode::Name(name) => (b"name".to_vec(), text_segment(name)),
         ExprNode::Boolean(value) => (b"bool".to_vec(), vec![u8::from(*value)]),
         ExprNode::Integer(value) => (b"int".to_vec(), text_segment(&value.to_string())),
@@ -2051,15 +2053,16 @@ fn temporal_tag(operator: TemporalOperator) -> u8 {
 }
 
 /// The normal form of a probabilistic claim's state predicate (FR-174's
-/// encoding of one expression), for its obligation identity (FR-186).
-pub(super) fn encode_predicate(expression: &Expression) -> Vec<u8> {
-    encode_expression(expression, Swap(None), &[]).root
+/// encoding of one expression), for the claim's normal form (FR-186). The
+/// `over` binder, when named, is encoded as a binder, not as its name.
+pub(super) fn encode_predicate(expression: &Expression, binder: Option<&str>) -> Vec<u8> {
+    encode_expression(expression, Swap(None, binder), &[]).root
 }
 
 /// The normal form of a probabilistic claim's temporal event, for its
-/// obligation identity (FR-186).
-pub(super) fn encode_event(formula: &TemporalFormulaForm) -> Vec<u8> {
-    encode_formula(formula, Swap(None)).0
+/// normal form (FR-186).
+pub(super) fn encode_event(formula: &TemporalFormulaForm, binder: Option<&str>) -> Vec<u8> {
+    encode_formula(formula, Swap(None, binder)).0
 }
 
 /// The encoding of the `match` conjuncts `predicates` of `expression`, as one
@@ -2095,13 +2098,16 @@ fn copy_group(
         .iter()
         .filter(|quantifier| quantifier.kind == QuantifierKind::Forall)
         .collect();
-    let (plain_body, _) = encode_formula(body, Swap(None));
-    let (plain_mu, _) = encode_conjuncts(match_expression, mu_universal, Swap(None));
+    let (plain_body, _) = encode_formula(body, Swap(None, None));
+    let (plain_mu, _) = encode_conjuncts(match_expression, mu_universal, Swap(None, None));
     let swappable = |first: &CheckedQuantifier, second: &CheckedQuantifier| {
         if first.alias != second.alias || !same_set(&first.fairness, &second.fairness) {
             return false;
         }
-        let swap = Swap(Some((first.variable.as_str(), second.variable.as_str())));
+        let swap = Swap(
+            Some((first.variable.as_str(), second.variable.as_str())),
+            None,
+        );
         let (swapped_body, body_opaque) = encode_formula(body, swap);
         let (swapped_mu, mu_opaque) = encode_conjuncts(match_expression, mu_universal, swap);
         !body_opaque && !mu_opaque && swapped_body == plain_body && swapped_mu == plain_mu
@@ -2164,10 +2170,10 @@ fn identity(
                 (quantifier.kind, quantifier.alias.clone(), fairness)
             })
             .collect(),
-        mu_universal: encode_conjuncts(match_expression, mu_universal, Swap(None)).0,
-        mu_existential: encode_conjuncts(match_expression, mu_existential, Swap(None)).0,
+        mu_universal: encode_conjuncts(match_expression, mu_universal, Swap(None, None)).0,
+        mu_existential: encode_conjuncts(match_expression, mu_existential, Swap(None, None)).0,
         align_skip: align_skip.to_vec(),
-        body: encode_formula(body, Swap(None)).0,
+        body: encode_formula(body, Swap(None, None)).0,
     }
 }
 

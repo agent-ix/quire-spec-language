@@ -32,8 +32,8 @@ mod model;
 
 pub use claim::{
     Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedTemporalFormula,
-    Confidence, Event, FractionMeasure, ModelSubjectRef, OverBinding, ProbForm, ProbScheduler,
-    ProbabilisticObligationIdentity,
+    ClaimNormalForm, Confidence, Event, FractionMeasure, ModelSubjectRef, OverBinding, ProbForm,
+    ProbScheduler,
 };
 pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput};
 pub use model::{
@@ -419,6 +419,34 @@ pub enum ProbabilisticCause {
         /// The threshold's span.
         span: Span,
     },
+    /// A comparison's threshold in an event's `fraction` measure that is not
+    /// an exact rational strictly between 0 and 1.
+    /// `invalid_probabilistic_model`/`fraction-bound` (QSL-proposed, STD-188).
+    FractionBound {
+        /// The claim.
+        claim: String,
+        /// The threshold's span.
+        span: Span,
+    },
+    /// A comparison's threshold that is not a literal of its measure's type.
+    /// `ill_typed`/`type-mismatch`.
+    ThresholdNotLiteral {
+        /// The claim.
+        claim: String,
+        /// The threshold's span.
+        span: Span,
+    },
+    /// A claim's `over` parameter whose type is not an object type of the
+    /// subject's model. `invalid_probabilistic_model`/`over-not-object-type`
+    /// (QSL-proposed, STD-188).
+    OverNotObjectType {
+        /// The claim.
+        claim: String,
+        /// The parameter.
+        parameter: String,
+        /// The parameter name's span.
+        span: Span,
+    },
     /// A construct of a claim that S3 does not check yet: a form FR-195 owns
     /// (`expected ... until`, `elapsed`), a timed window or an `on each`
     /// activation. `unsupported_construct`/`not-yet-implemented`.
@@ -467,6 +495,9 @@ impl ProbabilisticCause {
             | Self::UnresolvedReward { span, .. }
             | Self::AmbiguousReward { span, .. }
             | Self::UnitMismatch { span, .. }
+            | Self::FractionBound { span, .. }
+            | Self::ThresholdNotLiteral { span, .. }
+            | Self::OverNotObjectType { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
             Self::QuantityLiteral | Self::RandomReadInPrecondition { .. } => None,
         }
@@ -503,8 +534,10 @@ impl ProbabilisticCause {
             | Self::TraceSubject { .. }
             | Self::NotTemporalProfile { .. }
             | Self::UnboundedEvent { .. }
-            | Self::ForeignWorkload { .. } => Code::InvalidProbabilisticModel,
-            Self::UnitMismatch { .. } => Code::IllTyped,
+            | Self::ForeignWorkload { .. }
+            | Self::FractionBound { .. }
+            | Self::OverNotObjectType { .. } => Code::InvalidProbabilisticModel,
+            Self::UnitMismatch { .. } | Self::ThresholdNotLiteral { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::UnresolvedOperation { .. }
             | Self::UnresolvedParameter { .. }
@@ -553,6 +586,9 @@ impl ProbabilisticCause {
             Self::UnboundedEvent { .. } => "unbounded-event",
             Self::ForeignWorkload { .. } => "foreign-workload",
             Self::UnitMismatch { .. } => "unit-mismatch",
+            Self::ThresholdNotLiteral { .. } => "type-mismatch",
+            Self::FractionBound { .. } => "fraction-bound",
+            Self::OverNotObjectType { .. } => "over-not-object-type",
             Self::DuplicateWorkload { .. } => "duplicate-declaration",
             Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",
         }
@@ -578,10 +614,11 @@ fn limit_refusal(bits: u64, location: Location) -> CheckRefusal {
 }
 
 /// The limit refusal of an event's horizon, a sum of interval bounds `actual`
-/// past the largest `u64` (FR-186 "Events and measures"; ADR-014 TR-4).
-fn horizon_refusal(actual: u128) -> CheckRefusal {
+/// past the largest `u64` (FR-186 "Events and measures"; ADR-014 TR-4),
+/// located at the operator whose interval overflowed it.
+fn horizon_refusal(actual: u128, location: Location) -> CheckRefusal {
     CheckRefusal {
-        location: Location::root(Origin::Expression),
+        location,
         cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {
             stage: CheckingStage::Typing,
             kind: CheckingLimitKind::WorkBudget,

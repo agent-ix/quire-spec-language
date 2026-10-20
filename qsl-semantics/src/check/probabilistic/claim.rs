@@ -13,9 +13,10 @@
 //! and a threshold in another unit of the reward's dimension converts exactly
 //! (QSpec FR-142).
 //!
-//! The result is a [`CheckedProbabilisticClaim`] with its obligation identity
-//! (ADR-013 O-09, ADR-024 PM-8, PF-10): the normal-form bytes of everything the
-//! claim asserts and nothing of how a run meets it. FR-125's model subject is
+//! The result is a [`CheckedProbabilisticClaim`] with its normal form
+//! (ADR-024 PM-8, PF-10): the normal-form bytes of everything the claim
+//! asserts and nothing of how a run meets it, from which S4 and CG derive the
+//! ADR-013 O-09 obligation identity. It is not that identity. FR-125's model subject is
 //! a request input; this check names it by the `model` alias and the domain
 //! package the alias selects.
 //!
@@ -38,7 +39,9 @@ use quire_exact::{
     Identifier, IllTypedCause, Integer, IntegerInterval, Meter, Quantity, Rational, RationalDomain,
     UnitId, Value, ValueType,
 };
-use quire_semantic_value::fairness::{FairnessConstraint, FairnessOperation};
+use quire_semantic_value::fairness::{
+    FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
+};
 use quire_semantic_value::location::Location;
 use quire_semantic_value::quantity::{convert_quantity, ConvertedValue, QuantityTarget};
 
@@ -62,8 +65,8 @@ use crate::model::domain_package::DomainPackageRef;
 const NO_SLOT: usize = usize::MAX;
 
 /// The model a claim is over: the `model` alias it names, and the domain
-/// package the alias selects (FR-125). The subject is part of every
-/// obligation identity over it (ADR-013 O-09).
+/// package the alias selects (FR-125). The subject is part of every claim's
+/// normal form.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelSubjectRef {
     /// The `model` alias, as written.
@@ -116,7 +119,7 @@ impl Bound {
 pub struct CheckedPredicate {
     body: CheckedBody,
     slots: usize,
-    /// The predicate's normal form (FR-174), which its obligation identity
+    /// The predicate's normal form (FR-174), which the claim's normal form
     /// binds.
     normal_form: Vec<u8>,
 }
@@ -271,17 +274,19 @@ pub struct OverBinding {
     pub value_type: ValueType,
 }
 
-/// The identity of a claim's obligation (ADR-013 O-09, ADR-024 PM-8, PF-10):
-/// the normal-form bytes of its subject, profile, form, scheduler, fairness
-/// set, `over` binding and stated confidence parameters. It binds no source
-/// span, no method and no budget. The obligation's digest is minted from
-/// these bytes downstream, not here; two claims are one obligation exactly
-/// when their identities are equal.
+/// The normal form of a claim: the content its S4 claim node will be keyed
+/// over, from which S4 and CG derive the ADR-013 O-09 obligation identity. It
+/// is not an identity (R-04): it carries no occurrence key and no digest.
+/// It is the length-prefixed normal-form bytes of the subject, profile,
+/// form, scheduler, fairness set, `over` type and stated confidence
+/// parameters, and binds no source span, no `over` binder name, no method and
+/// no budget. Two claims have equal normal forms exactly when they assert the
+/// same content.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ProbabilisticObligationIdentity(Vec<u8>);
+pub struct ClaimNormalForm(Vec<u8>);
 
-impl ProbabilisticObligationIdentity {
-    /// The identity's bytes.
+impl ClaimNormalForm {
+    /// The normal form's bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
@@ -309,8 +314,8 @@ pub struct CheckedProbabilisticClaim {
     pub confidence: Option<Confidence>,
     /// The `over` binding, when the claim states one.
     pub over: Option<OverBinding>,
-    /// The claim's obligation identity.
-    pub obligation: ProbabilisticObligationIdentity,
+    /// The claim's normal form.
+    pub normal_form: ClaimNormalForm,
     /// The declaration's source order, as [`Reward`](super::Reward)'s.
     pub(super) declared: usize,
 }
@@ -413,21 +418,28 @@ impl ClaimCx<'_> {
     }
 
     /// The location of `expression`, one of this claim's own.
-    fn location(&self, expression: &ExpressionForm) -> Location {
+    fn location(&self, expression: &ExpressionForm) -> Result<Location, CheckRefusal> {
         let position = self
             .expressions
             .iter()
-            .position(|candidate| std::ptr::eq(*candidate, expression));
-        site_location(self.index, Site::Expression(position.unwrap_or(0)))
+            .position(|candidate| std::ptr::eq(*candidate, expression))
+            .ok_or_else(|| broken("claim-expression-has-a-site"))?;
+        Ok(site_location(self.index, Site::Expression(position)))
     }
 
     /// The location of `value`, one of this claim's own exact values.
-    fn exact_location(&self, value: &ExactValueForm) -> Location {
+    fn exact_location(&self, value: &ExactValueForm) -> Result<Location, CheckRefusal> {
         let position = self
             .exact_values
             .iter()
-            .position(|candidate| std::ptr::eq(*candidate, value));
-        site_location(self.index, Site::Exact(position.unwrap_or(0)))
+            .position(|candidate| std::ptr::eq(*candidate, value))
+            .ok_or_else(|| broken("claim-exact-value-has-a-site"))?;
+        Ok(site_location(self.index, Site::Exact(position)))
+    }
+
+    /// The `over` binder's name, which is not content.
+    fn binder(&self) -> Option<&str> {
+        self.over.map(|over| over.name.as_str())
     }
 }
 
@@ -534,14 +546,17 @@ impl Pass<'_, '_> {
         if !refusals.is_empty() {
             return None;
         }
-        let obligation = self.obligation(
-            &claim,
-            &profile,
-            &scheduler,
-            &fairness,
-            &form_checked,
-            confidence.as_ref(),
-        );
+        let normal_form = keep(
+            refusals,
+            self.normal_form(
+                &claim,
+                &profile,
+                &scheduler,
+                &fairness,
+                &form_checked,
+                confidence.as_ref(),
+            ),
+        )?;
         Some(CheckedProbabilisticClaim {
             name: form.name.name.clone(),
             span: form.span,
@@ -552,7 +567,7 @@ impl Pass<'_, '_> {
             form: form_checked,
             confidence,
             over,
-            obligation,
+            normal_form,
             declared: index,
         })
     }
@@ -693,6 +708,13 @@ impl Pass<'_, '_> {
                         span: error.span,
                     })
                 })?;
+        if !matches!(value_type, ValueType::Reference(_)) {
+            return Err(refusal(ProbabilisticCause::OverNotObjectType {
+                claim: form.name.name.clone(),
+                parameter: parameter.name.name.clone(),
+                span: parameter.name.span,
+            }));
+        }
         Ok(Some(OverBinding {
             name: parameter.name.name.clone(),
             value_type,
@@ -725,8 +747,8 @@ impl Pass<'_, '_> {
 
     /// `value` reduced under the written-value bound (FR-185 "Exact values").
     fn exact(&self, claim: &ClaimCx<'_>, value: &ExactValueForm) -> Result<Rational, CheckRefusal> {
-        exact::value(value)
-            .map_err(|fault| exact_refusal(fault, value.span, claim.exact_location(value)))
+        let location = claim.exact_location(value)?;
+        exact::value(value).map_err(|fault| exact_refusal(fault, value.span, location))
     }
 
     /// The claim's form, typed. Every refusal goes onto `refusals`.
@@ -921,10 +943,20 @@ impl Pass<'_, '_> {
         };
         let horizon = match horizon(formula) {
             Ok(horizon) => horizon,
-            Err(HorizonFault::Overflow { deepest, own, .. }) => {
-                refusals.push(super::horizon_refusal(
-                    u128::from(deepest) + u128::from(own),
-                ));
+            Err(HorizonFault::Overflow { span, deepest, own }) => {
+                let operator = formula.iter().find_map(|(id, node)| match node {
+                    TemporalNodeForm::Operator(operator) if operator.operator_span == span => {
+                        Some(id.index())
+                    }
+                    _ => None,
+                });
+                refusals.push(match operator {
+                    Some(operator) => super::horizon_refusal(
+                        u128::from(deepest) + u128::from(own),
+                        site_location(claim.index, Site::Operator(operator)),
+                    ),
+                    None => broken("overflowing-operator-is-in-the-event"),
+                });
                 return None;
             }
             Err(HorizonFault::Broken(invariant)) => {
@@ -936,7 +968,7 @@ impl Pass<'_, '_> {
             CheckedTemporalFormula {
                 formula: checked,
                 conditions,
-                normal_form: encode_event(formula),
+                normal_form: encode_event(formula, claim.binder()),
             },
             horizon,
         ))
@@ -1100,7 +1132,7 @@ impl Pass<'_, '_> {
         cx: &mut CheckContext<'_, Scope>,
         nodes: &mut u64,
     ) -> Result<CheckedPredicate, CheckRefusal> {
-        let location = claim.location(expression);
+        let location = claim.location(expression)?;
         let bound: Vec<(String, ValueType)> = claim
             .over
             .map(|over| (over.name.clone(), over.value_type.clone()))
@@ -1143,7 +1175,7 @@ impl Pass<'_, '_> {
         Ok(CheckedPredicate {
             body,
             slots,
-            normal_form: encode_predicate(&expression.expression),
+            normal_form: encode_predicate(&expression.expression, claim.binder()),
         })
     }
 
@@ -1159,7 +1191,7 @@ impl Pass<'_, '_> {
         cx: &mut CheckContext<'_, Scope>,
         nodes: &mut u64,
     ) -> Result<Rational, CheckRefusal> {
-        let location = claim.location(expression);
+        let location = claim.location(expression)?;
         let span = root_span(expression, claim.form.span);
         let input = self.input;
         let hint = match measured {
@@ -1174,7 +1206,10 @@ impl Pass<'_, '_> {
                 .infer(&expression.expression, hint.as_ref(), &location)?;
         let mismatch = || CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch);
         let Some(literal) = literal(body.root()) else {
-            return Err(mismatch());
+            return Err(refusal(ProbabilisticCause::ThresholdNotLiteral {
+                claim: claim.claim().to_owned(),
+                span,
+            }));
         };
         match (measured, literal.0) {
             (Measured::Steps | Measured::Reward(RewardValue::Integer), Value::Integer(steps))
@@ -1193,7 +1228,7 @@ impl Pass<'_, '_> {
                 if above_zero && rational.numerator() < rational.denominator() {
                     Ok(rational)
                 } else {
-                    Err(refusal(ProbabilisticCause::QualitativeThreshold {
+                    Err(refusal(ProbabilisticCause::FractionBound {
                         claim: claim.claim().to_owned(),
                         span,
                     }))
@@ -1265,8 +1300,8 @@ impl Pass<'_, '_> {
         .unwrap_or_else(|| "dimensionless".to_owned())
     }
 
-    /// The claim's obligation identity (ADR-013 O-09).
-    fn obligation(
+    /// The claim's normal form: what its S4 claim node will be keyed over.
+    fn normal_form(
         &self,
         claim: &ClaimCx<'_>,
         profile: &DefinitionRef,
@@ -1274,7 +1309,7 @@ impl Pass<'_, '_> {
         fairness: &[FairnessConstraint],
         form: &ProbForm,
         confidence: Option<&Confidence>,
-    ) -> ProbabilisticObligationIdentity {
+    ) -> Result<ClaimNormalForm, CheckRefusal> {
         let subject = &claim.subject.package;
         let text = |text: &str| text.as_bytes().to_vec();
         let subject = node_bytes(
@@ -1291,23 +1326,20 @@ impl Pass<'_, '_> {
             &[text(profile.authority()), text(profile.identity())],
         );
         let scheduler = match scheduler {
-            ProbScheduler::Workload(name) => self.workload_bytes(name),
+            ProbScheduler::Workload(name) => self.workload_bytes(name)?,
             ProbScheduler::Every => node_bytes(b"every", &[]),
         };
         let mut fairness: Vec<Vec<u8>> = fairness
             .iter()
             .map(|constraint| self.fairness_bytes(&claim.subject.alias, constraint))
-            .collect();
+            .collect::<Result<_, _>>()?;
         fairness.sort();
-        let over = claim.over.map_or_else(
-            || node_bytes(b"no-over", &[]),
-            |over| {
-                node_bytes(
-                    b"over",
-                    &[text(&over.name), self.type_bytes(&over.value_type)],
-                )
-            },
-        );
+        // The binder's name is not content: the predicates encode it as a
+        // binder, and only its type is bound here.
+        let over = match claim.over {
+            None => node_bytes(b"no-over", &[]),
+            Some(over) => node_bytes(b"over", &[self.type_bytes(&over.value_type)?]),
+        };
         let confidence = confidence.map_or_else(
             || node_bytes(b"no-confidence", &[]),
             |confidence| {
@@ -1321,7 +1353,7 @@ impl Pass<'_, '_> {
                 )
             },
         );
-        ProbabilisticObligationIdentity(node_bytes(
+        Ok(ClaimNormalForm(node_bytes(
             b"probabilistic-satisfaction",
             &[
                 subject,
@@ -1332,28 +1364,46 @@ impl Pass<'_, '_> {
                 self.form_bytes(&claim.subject.alias, form),
                 confidence,
             ],
-        ))
+        )))
     }
 
-    /// A workload's identity: its name, its model and each weight.
-    fn workload_bytes(&self, name: &str) -> Vec<u8> {
-        let mut parts = vec![name.as_bytes().to_vec()];
-        if let Some(workload) = self.model.workload(name) {
-            parts.push(workload.model().as_bytes().to_vec());
-            for (operation, weight) in workload.weights() {
-                parts.push(node_bytes(
+    /// A workload's content: its name, its model and each weight, the
+    /// weights in operation order (the order they are written in is not
+    /// content).
+    fn workload_bytes(&self, name: &str) -> Result<Vec<u8>, CheckRefusal> {
+        let workload = self
+            .model
+            .workload(name)
+            .ok_or_else(|| broken("claim-workload-is-recorded"))?;
+        let mut weights: Vec<Vec<u8>> = workload
+            .weights()
+            .iter()
+            .map(|(operation, weight)| {
+                node_bytes(
                     b"weight",
                     &[
                         operation.key().node.as_bytes().to_vec(),
                         rational_bytes(weight),
                     ],
-                ));
-            }
-        }
-        node_bytes(b"workload", &parts)
+                )
+            })
+            .collect();
+        weights.sort();
+        Ok(node_bytes(
+            b"workload",
+            &[
+                name.as_bytes().to_vec(),
+                workload.model().as_bytes().to_vec(),
+                node_bytes(b"weights", &weights),
+            ],
+        ))
     }
 
-    fn fairness_bytes(&self, alias: &str, constraint: &FairnessConstraint) -> Vec<u8> {
+    fn fairness_bytes(
+        &self,
+        alias: &str,
+        constraint: &FairnessConstraint,
+    ) -> Result<Vec<u8>, CheckRefusal> {
         let operation = constraint.operation();
         let declaring = self
             .input
@@ -1361,33 +1411,39 @@ impl Pass<'_, '_> {
             .iter()
             .filter(|model| model.alias() == Some(alias))
             .find_map(|model| model.declaration_key(operation.declaring_type()))
-            .map(|key| key.node.as_bytes().to_vec())
-            .unwrap_or_default();
-        node_bytes(
+            .ok_or_else(|| broken("fairness-operation-is-declared"))?;
+        let kind: &[u8] = match constraint.kind() {
+            FairnessKind::Weak => b"weak",
+            FairnessKind::Strong => b"strong",
+        };
+        let granularity: &[u8] = match constraint.granularity() {
+            FairnessGranularity::Whole => b"whole",
+            FairnessGranularity::Each => b"each",
+        };
+        Ok(node_bytes(
             b"constraint",
             &[
-                format!("{:?}", constraint.kind()).into_bytes(),
-                format!("{:?}", constraint.granularity()).into_bytes(),
-                declaring,
+                kind.to_vec(),
+                granularity.to_vec(),
+                declaring.node.as_bytes().to_vec(),
                 operation.name().as_bytes().to_vec(),
             ],
-        )
+        ))
     }
 
-    /// A type's identity: an object type by its declaration in its model,
-    /// any other by its structure.
-    fn type_bytes(&self, value_type: &ValueType) -> Vec<u8> {
-        if let ValueType::Reference(object) = value_type {
-            if let Some(key) = self
-                .input
-                .models
-                .iter()
-                .find_map(|model| model.declaration_key(*object))
-            {
-                return node_bytes(b"reference", &[key.node.as_bytes().to_vec()]);
-            }
-        }
-        format!("{value_type:?}").into_bytes()
+    /// An `over` type's content: an object type, by its declaration in its
+    /// model. No other type has an encoding ([`Self::over`] refuses it).
+    fn type_bytes(&self, value_type: &ValueType) -> Result<Vec<u8>, CheckRefusal> {
+        let ValueType::Reference(object) = value_type else {
+            return Err(broken("over-type-is-an-object-type"));
+        };
+        let key = self
+            .input
+            .models
+            .iter()
+            .find_map(|model| model.declaration_key(*object))
+            .ok_or_else(|| broken("over-type-is-declared"))?;
+        Ok(node_bytes(b"reference", &[key.node.as_bytes().to_vec()]))
     }
 
     fn reward_bytes(&self, subject: &str, name: &Identifier) -> Vec<u8> {

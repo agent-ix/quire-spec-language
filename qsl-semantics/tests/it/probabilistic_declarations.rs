@@ -1200,7 +1200,7 @@ fn a_threshold_converts_within_the_rewards_dimension_and_refuses_another() {
 /// FR-186 "Events and measures": a comparison's threshold has the type of its
 /// measure: a natural number for `steps`, an exact rational in `(0, 1)` for
 /// `fraction`, the reward's type for `accumulate`.
-#[trace("TC-621", "FR-186-AC-2")]
+#[trace("TC-621")]
 #[test]
 fn a_comparison_threshold_has_the_type_of_its_measure() {
     let steps = "steps from holds(s.phase = Service::Phase::Busy) \
@@ -1227,7 +1227,12 @@ fn a_comparison_threshold_has_the_type_of_its_measure() {
     assert_eq!((*within, compared), (5, &Bound::AtLeast(ratio(3, 1))));
 
     let fraction = format!("fraction holds({IDLE}) over [0, 10]");
-    for threshold in ["rational(1, 1)", "rational(0, 1)", "rational(3, 2)"] {
+    for threshold in [
+        "rational(1, 1)",
+        "rational(0, 1)",
+        "rational(3, 2)",
+        "rational(-1, 2)",
+    ] {
         let body = service(
             None,
             &claim(&format!(
@@ -1236,7 +1241,7 @@ fn a_comparison_threshold_has_the_type_of_its_measure() {
         );
         assert_eq!(
             located(&body),
-            [invalid("qualitative-threshold", threshold)],
+            [invalid("fraction-bound", threshold)],
             "{threshold}"
         );
     }
@@ -1753,16 +1758,19 @@ fn what_s3_does_not_check_yet_refuses_not_yet_implemented() {
     assert_eq!(located(&service(None, &each)), [not_yet("m")]);
 }
 
-/// FR-186-AC-4 (TC-621 step 4): the obligation identity binds the subject,
-/// the profile, the form, the scheduler, its fairness set, the `over` binding
-/// and the stated confidence, and nothing else: claims that differ in any of
-/// those are distinct obligations, and claims that differ only in their name,
-/// spacing or the commutation of an equality are one.
+/// FR-186-AC-4 (TC-621 step 4): the claim's normal form binds the subject,
+/// the profile, the form, the scheduler, its fairness set, the `over` type and
+/// the stated confidence, and nothing else: claims that differ in any of those
+/// have distinct normal forms, and claims that differ only in their name, the
+/// spacing, the commutation of an equality, the `over` binder's name or the
+/// order a workload's weights are written in have equal ones.
 #[trace("TC-621", "FR-186-AC-4")]
 #[test]
-fn the_obligation_identity_binds_what_the_claim_asserts() {
+fn the_normal_form_binds_what_the_claim_asserts() {
     const BURST: &str = "workload Burst on Service { weight Server::request = 3; \
                          weight Server::attempt = 1; weight Server::reset = 1; }";
+    const BURST_REORDERED: &str = "workload Burst on Service { weight Server::reset = 1; \
+                         weight Server::attempt = 1; weight Server::request = 3; }";
     let source = |name: &str, header: &str, scheduler: &str, confidence: &str, body: &str| {
         service(
             None,
@@ -1774,15 +1782,15 @@ fn the_obligation_identity_binds_what_the_claim_asserts() {
     };
     const WITH: &str = "with alpha 0.01, beta 0.01, indifference 0.0005";
     let event = format!("probability >= 0.999 [ always[0,1000] holds({IDLE}) ]");
-    let identity = |header: &str, scheduler: &str, confidence: &str, body: &str| {
+    let form = |header: &str, scheduler: &str, confidence: &str, body: &str| {
         let graph = checked(&source("C", header, scheduler, confidence, body));
-        claim_of(&graph).obligation.as_bytes().to_vec()
+        claim_of(&graph).normal_form.as_bytes().to_vec()
     };
-    let base = identity("ev", "Steady", WITH, &event);
+    let base = form("ev", "Steady", WITH, &event);
     let variants = [
         (
             "alpha 0.05",
-            identity(
+            form(
                 "ev",
                 "Steady",
                 "with alpha 0.05, beta 0.01, indifference 0.0005",
@@ -1791,7 +1799,7 @@ fn the_obligation_identity_binds_what_the_claim_asserts() {
         ),
         (
             "beta",
-            identity(
+            form(
                 "ev",
                 "Steady",
                 "with alpha 0.01, beta 0.02, indifference 0.0005",
@@ -1800,22 +1808,22 @@ fn the_obligation_identity_binds_what_the_claim_asserts() {
         ),
         (
             "indifference",
-            identity(
+            form(
                 "ev",
                 "Steady",
                 "with alpha 0.01, beta 0.01, indifference 0.0004",
                 &event,
             ),
         ),
-        ("no confidence", identity("ev", "Steady", "", &event)),
-        ("workload Burst", identity("ev", "Burst", WITH, &event)),
+        ("no confidence", form("ev", "Steady", "", &event)),
+        ("workload Burst", form("ev", "Burst", WITH, &event)),
         (
             "every scheduler",
-            identity("ev", "every scheduler", WITH, &event),
+            form("ev", "every scheduler", WITH, &event),
         ),
         (
-            "fairness",
-            identity(
+            "weak fairness",
+            form(
                 "ev",
                 "every scheduler fair weak Server::attempt",
                 WITH,
@@ -1823,24 +1831,42 @@ fn the_obligation_identity_binds_what_the_claim_asserts() {
             ),
         ),
         (
+            "strong fairness",
+            form(
+                "ev",
+                "every scheduler fair strong Server::attempt",
+                WITH,
+                &event,
+            ),
+        ),
+        (
+            "each-granular fairness",
+            form(
+                "ev",
+                "every scheduler fair weak each Server::attempt",
+                WITH,
+                &event,
+            ),
+        ),
+        (
             "weaker threshold",
-            identity("ev", "Steady", WITH, &event.replace("0.999", "0.99")),
+            form("ev", "Steady", WITH, &event.replace("0.999", "0.99")),
         ),
         (
             "at most",
-            identity("ev", "Steady", WITH, &event.replace(">=", "<=")),
+            form("ev", "Steady", WITH, &event.replace(">=", "<=")),
         ),
         (
             "window",
-            identity("ev", "Steady", WITH, &event.replace("1000", "999")),
+            form("ev", "Steady", WITH, &event.replace("1000", "999")),
         ),
         (
             "predicate",
-            identity("ev", "Steady", WITH, &event.replace("Idle", "Busy")),
+            form("ev", "Steady", WITH, &event.replace("Idle", "Busy")),
         ),
         (
             "another form",
-            identity(
+            form(
                 "ev",
                 "Steady",
                 WITH,
@@ -1849,21 +1875,21 @@ fn the_obligation_identity_binds_what_the_claim_asserts() {
         ),
     ];
     for (name, found) in &variants {
-        assert_ne!(*found, base, "{name} is another obligation");
+        assert_ne!(*found, base, "{name} is another claim");
     }
     for (index, (first, one)) in variants.iter().enumerate() {
         for (second, other) in &variants[index + 1..] {
-            assert_ne!(one, other, "{first} and {second} are distinct obligations");
+            assert_ne!(one, other, "{first} and {second} are distinct claims");
         }
     }
-    // The profile is part of the identity: the same long-run claim under the
-    // event-position and the infinite-trace profile.
+    // The profile is part of the normal form: the same long-run claim under
+    // the event-position and the infinite-trace profile.
     let long_run = format!("long_run_fraction holds({IDLE}) >= 0.999");
     assert_ne!(
-        identity("ev", "Steady", WITH, &long_run),
-        identity("inf", "Steady", WITH, &long_run)
+        form("ev", "Steady", WITH, &long_run),
+        form("inf", "Steady", WITH, &long_run)
     );
-    // The name, the spacing and the commuted equality bind nothing.
+    // The name, the spacing and a commuted equality bind nothing.
     let renamed = checked(&source(
         "Renamed",
         "ev",
@@ -1876,22 +1902,159 @@ fn the_obligation_identity_binds_what_the_claim_asserts() {
             .probabilistic_model()
             .claim("Renamed")
             .expect("Renamed")
-            .obligation
+            .normal_form
             .as_bytes(),
         &base[..]
     );
-    // Stated twice in one unit, the identities of two equal claims are equal.
-    let twin = format!("{}\n{}", source("C", "ev", "Steady", WITH, &event), {
-        format!(
-            "probabilistic D using ev on Service {OVER} under Steady on origin {WITH} {{ {event} }}"
-        )
-    });
-    let graph = checked(&twin);
-    let model = graph.probabilistic_model();
+    // A commuted equality in a predicate that is no formula atom: the
+    // predicate's own normal form is what is bound.
+    let commuted = |predicate: &str| {
+        let graph = checked(&service(
+            None,
+            &claim(&format!(
+                "{{ long_run_fraction holds({predicate}) >= 0.999 }}"
+            )),
+        ));
+        claim_of(&graph).normal_form.as_bytes().to_vec()
+    };
+    assert_eq!(commuted(IDLE), commuted("Service::Phase::Idle = s.phase"));
+    assert_ne!(commuted(IDLE), commuted("s.phase = Service::Phase::Busy"));
+    // The `over` binder's name is not content.
+    let renamed_binder = checked(&service(
+        None,
+        &format!(
+            "probabilistic C using ev on Service over (t: Service::Server) \
+             under Steady on origin {{ long_run_fraction holds(t.phase = Service::Phase::Idle) \
+             >= 0.999 }}"
+        ),
+    ));
     assert_eq!(
-        model.claim("C").expect("C").obligation,
-        model.claim("D").expect("D").obligation
+        claim_of(&renamed_binder).normal_form.as_bytes(),
+        commuted(IDLE).as_slice()
     );
+    // The order a workload's weights are written in is not content.
+    let burst = |declaration: &str| {
+        let graph = checked(&service(
+            None,
+            &format!(
+                "{declaration}\nprobabilistic C using ev on Service {OVER} under Burst \
+                 on origin {{ long_run_fraction holds({IDLE}) >= 0.999 }}"
+            ),
+        ));
+        claim_of(&graph).normal_form.as_bytes().to_vec()
+    };
+    assert_eq!(burst(BURST), burst(BURST_REORDERED));
+    assert_ne!(
+        burst(BURST),
+        burst(&BURST.replace("request = 3", "request = 4"))
+    );
+    // Only the subject differs, or only the `over` binding.
+    let subject = |model: &str| {
+        let selection = other_model();
+        let declarations = service(
+            None,
+            &format!(
+                "probabilistic C using ev on {model} under every scheduler on origin \
+                 {{ probability >= 0.9 [ holds(true) ] }}"
+            ),
+        )
+        .replace("random Server::", "random Service::Server::")
+        .replace("on Server::attempt =", "on Service::Server::attempt =");
+        let graph = checked(&format!("{selection}\n{declarations}"));
+        claim_of(&graph).normal_form.as_bytes().to_vec()
+    };
+    assert_ne!(subject("Service"), subject("Other"));
+    let over = |binding: &str| {
+        let graph = checked(&service(
+            None,
+            &format!(
+                "probabilistic C using ev on Service {binding} under Steady on origin \
+                 {{ probability >= 0.9 [ holds(true) ] }}"
+            ),
+        ));
+        claim_of(&graph).normal_form.as_bytes().to_vec()
+    };
+    assert_ne!(over(OVER), over(""));
+}
+
+/// FR-186 "Events and measures": `accumulate R` names a reward of the
+/// subject's own model: a reward only another model declares is
+/// `missing-name`.
+#[trace("TC-621")]
+#[test]
+fn a_reward_declared_only_by_another_model_is_not_the_subjects() {
+    let selection = other_model();
+    let weights =
+        "{ weight Server::request = 1; weight Server::attempt = 1; weight Server::reset = 1; }";
+    let declarations = service(
+        None,
+        &format!(
+            "workload Calm on Other {weights}\n\
+             probabilistic C using ev on Other over (s: Other::Server) under Calm on origin \
+             {{ quantile 0.5 of (accumulate duration from holds(s.phase = Other::Phase::Idle) \
+             until holds(s.phase = Other::Phase::Idle) within 3) <= 4 }}"
+        ),
+    )
+    .replace("random Server::", "random Service::Server::")
+    .replace("on Server::attempt =", "on Service::Server::attempt =");
+    assert_eq!(
+        located(&format!("{selection}\n{declarations}")),
+        [(
+            Code::MissingDeclaration,
+            Some("missing-name"),
+            "duration".to_owned()
+        )]
+    );
+}
+
+/// An event whose interval bounds sum past `u64` is refused with the limit
+/// refusal, located at the operator whose interval overflowed the sum.
+#[trace("TC-621")]
+#[test]
+fn an_event_horizon_past_u64_is_refused_at_its_operator() {
+    let huge = "9223372036854775808";
+    let body = service(
+        None,
+        &claim(&format!(
+            "{{ probability >= 0.9 [ eventually[0,{huge}] eventually[0,{huge}] holds({IDLE}) ] }}"
+        )),
+    );
+    let found = located(&body);
+    assert_eq!(
+        found,
+        [(
+            Code::StageLimitExceeded,
+            Some("work-budget-exceeded"),
+            "eventually".to_owned()
+        )]
+    );
+}
+
+/// An `over` parameter must be of an object type of the model; a threshold
+/// that is not a literal is refused as such.
+#[trace("TC-621")]
+#[test]
+fn an_over_type_and_a_threshold_have_their_required_shape() {
+    let scalar = service(
+        None,
+        "probabilistic C using ev on Service over (n: Integer) under Steady on origin \
+         { probability >= 0.5 [ holds(true) ] }",
+    );
+    assert_eq!(located(&scalar), [invalid("over-not-object-type", "n")]);
+    let steps = "steps from holds(s.phase = Service::Phase::Busy) \
+                 until holds(s.phase = Service::Phase::Done) within 5";
+    let body = service(
+        None,
+        &claim(&format!("{{ probability >= 0.5 [ {steps} >= 1 + 2 ] }}")),
+    );
+    assert_eq!(
+        located(&body),
+        [(Code::IllTyped, Some("type-mismatch"), "1 + 2".to_owned())]
+    );
+    assert!(matches!(
+        &causes(&body)[..],
+        [ProbabilisticCause::ThresholdNotLiteral { .. }]
+    ));
 }
 
 /// FR-186 "Thresholds": a probability threshold, quantile level, mean
