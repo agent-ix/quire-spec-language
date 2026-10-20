@@ -1555,6 +1555,7 @@ impl<'r, 'a> Run<'r, 'a> {
             fairness: self.clause.fairness().to_vec(),
             kind,
             lasso: None,
+            blocked: Vec::new(),
             refinement: None,
         }))
     }
@@ -1599,6 +1600,7 @@ impl<'r, 'a> Run<'r, 'a> {
             fairness: self.clause.fairness().to_vec(),
             kind,
             lasso: None,
+            blocked: Vec::new(),
             refinement: None,
         }))
     }
@@ -1951,6 +1953,7 @@ impl<'r, 'a> Run<'r, 'a> {
                     entry: entry_index,
                     terminal_stutter,
                 }),
+                blocked: Vec::new(),
                 refinement: None,
             })
         })();

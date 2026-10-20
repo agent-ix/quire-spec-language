@@ -37,7 +37,7 @@ use qsl_eval::simulation::model::{
     check_model_bounds, ClauseOutcome, ModelFinding, ModelSimState, ModelSimulationRequest,
     ModelSystem,
 };
-use qsl_eval::simulation::TransitionSystem;
+use qsl_eval::simulation::{TransitionSystem, BOUND_POSITIONS};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
 use qsl_package::CheckedPackage;
@@ -48,7 +48,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use serde::{Serialize, Serializer};
 
 use crate::certificate::check::{
-    expansion_halt, finish, poll, stopped, widen, Budgets, Checker, Halt, Step, BOUND_POSITIONS,
+    expansion_halt, finish, poll, stopped, widen, Budgets, Checker, Halt, Step,
 };
 use crate::certificate::closure::DigestWire;
 use crate::certificate::closure::{CertificateRejection, ClosureRefusal, TemporalCertificateCheck};
@@ -292,6 +292,7 @@ fn locus_kind(locus: &UndefinedLocus) -> &'static str {
         UndefinedLocus::Contract(_) => "contract",
         UndefinedLocus::Terminal(_) => "terminal",
         UndefinedLocus::Constraint(_) => "constraint",
+        UndefinedLocus::Protocol(_) => "protocol",
         UndefinedLocus::Mapping(_) => "mapping",
     }
 }
