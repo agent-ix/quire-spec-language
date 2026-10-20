@@ -311,13 +311,12 @@ fn invalid(cause: &'static str, at: &str) -> (Code, Option<&'static str>, String
     (Code::InvalidProbabilisticModel, Some(cause), at.to_owned())
 }
 
-/// The limit refusal of an exact value past the 65,536-bit ceiling, at
-/// `at`: FR-255 has no rational-bits setting yet, so it reports the S3 work
-/// budget's (see the PR's spec gaps).
+/// The limit refusal of an exact value past the 65,536-bit default
+/// `s3.rational_bits` ceiling, at `at`.
 fn limit(at: &str) -> (Code, Option<&'static str>, String) {
     (
         Code::StageLimitExceeded,
-        Some("work-budget-exceeded"),
+        Some("rational-bits-exceeded"),
         at.to_owned(),
     )
 }
@@ -617,6 +616,29 @@ fn steady_with_request(weight: &str) -> String {
     )
 }
 
+/// FR-185 "Exact values": a configured `s3.rational_bits` replaces the
+/// default ceiling, inclusive, and the limit refusal names that setting and
+/// the configured limit.
+#[trace("TC-620")]
+#[test]
+fn a_configured_rational_bits_ceiling_is_named_by_the_refusal() {
+    let within = service(Some((STEADY, &steady_with_request("255"))), "");
+    assemble(&within)
+        .check(CheckingLimits::default().with_rational_bits(8))
+        .expect("255 is eight bits");
+    let past = service(Some((STEADY, &steady_with_request("256"))), "");
+    let refusals = assemble(&past)
+        .check(CheckingLimits::default().with_rational_bits(8))
+        .expect_err("256 is nine bits");
+    let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
+        panic!("a limit refusal: {:?}", refusals[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 8, 9)
+    );
+}
+
 /// TC-620 step 2 (FR-185 "Exact values"), each as the weight of
 /// `Server::request`: a value past 65,536 bits as written refuses before it
 /// is reduced or expanded, with the limit refusal, even when it reduces to
@@ -872,6 +894,52 @@ fn quantity_literals_type_against_the_declared_units() {
     );
     let refusals = refusals_of("function lag using v(): Boolean pure { 5 ms }");
     assert_eq!(refusals[0].cause.code(), Code::IllTyped, "{refusals:?}");
+}
+
+/// FR-185 "Exact values": a quantity literal's magnitude is bounded by the
+/// configured `s3.rational_bits`, inclusive, in a function body.
+#[trace("TC-620")]
+#[test]
+fn a_quantity_literal_is_bounded_by_the_configured_rational_bits() {
+    let limits = CheckingLimits::default().with_rational_bits(8);
+    let within = assemble("function lag using v(): Boolean pure { 255 ms <= 3 ms }")
+        .check(limits)
+        .expect_err("a quantity literal has no S4 form yet");
+    assert_eq!(within[0].cause.cause(), Some("not-yet-implemented"));
+    let past = assemble("function lag using v(): Boolean pure { 256 ms <= 3 ms }")
+        .check(limits)
+        .expect_err("256 is nine bits");
+    let CheckCause::ResourceExhausted(limit) = &past[0].cause else {
+        panic!("a limit refusal: {:?}", past[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 8, 9)
+    );
+}
+
+/// FR-185-AC-6 under a configured ceiling: weights `1/3` and `1/5` are each
+/// within 3 bits, their sum `8/15` has 4, so the distribution is refused at
+/// `d` naming `s3.rational_bits` and the configured limit.
+#[trace("TC-620", "FR-185-AC-6")]
+#[test]
+fn a_distribution_total_is_bounded_by_the_configured_rational_bits() {
+    let random = "random Server::attempt(d) ~ { 1: rational(1, 3), 3: rational(1, 5) };";
+    let body = service(Some((D, random)), "");
+    let limits = CheckingLimits::default().with_rational_bits(3);
+    let refusals = assemble(&body)
+        .check(limits)
+        .expect_err("the sum is four bits");
+    let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
+        panic!("a limit refusal: {:?}", refusals[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 3, 4)
+    );
+    assemble(&body)
+        .check(CheckingLimits::default().with_rational_bits(7))
+        .expect("the sum is within seven bits (the other declarations' 98)");
 }
 
 fn claim(body: &str) -> String {
