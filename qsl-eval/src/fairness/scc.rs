@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use quire_exact::Cancel;
 
 use crate::fairness::error::{charge, FairnessError};
-use crate::fairness::graph::{Graph, Vertex};
+use crate::fairness::graph::{Edge, EdgeLabel, Graph, Identity, Vertex};
 
 /// One strongly connected component.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,7 +21,7 @@ impl Component {
         &self.vertices
     }
 
-    /// Whether some edge of the graph runs between two vertices of the
+    /// Whether some edge of the subgraph runs between two vertices of the
     /// component.
     pub const fn has_edge(&self) -> bool {
         self.has_edge
@@ -119,6 +119,26 @@ pub fn components(
     within: &BTreeSet<Vertex>,
     cancel: &Cancel,
 ) -> Result<Vec<Component>, FairnessError> {
+    live_components(graph, within, &BTreeSet::new(), cancel)
+}
+
+/// Whether `edge` is in the subgraph that leaves out every edge taking one
+/// of `removed` (a visibility refinement's load edges, ADR-025 MF-2).
+pub(crate) fn is_live(edge: &Edge, removed: &BTreeSet<Identity>) -> bool {
+    match edge.label {
+        EdgeLabel::Transition(identity) => !removed.contains(&identity),
+        EdgeLabel::Stutter => true,
+    }
+}
+
+/// [`components`] of the subgraph induced by `within` with every edge that
+/// takes one of `removed` left out.
+pub(crate) fn live_components(
+    graph: &Graph,
+    within: &BTreeSet<Vertex>,
+    removed: &BTreeSet<Identity>,
+    cancel: &Cancel,
+) -> Result<Vec<Component>, FairnessError> {
     charge(cancel)?;
     for vertex in within {
         graph.require_vertex(*vertex)?;
@@ -137,7 +157,7 @@ pub fn components(
                 if let Some(frame) = frames.last_mut() {
                     frame.1 = position.saturating_add(1);
                 }
-                if !within.contains(&edge.target) {
+                if !within.contains(&edge.target) || !is_live(edge, removed) {
                     continue;
                 }
                 let target = edge.target.index();
@@ -162,18 +182,18 @@ pub fn components(
     found.sort_unstable();
     Ok(found
         .into_iter()
-        .map(|members| component_of(graph, &members))
+        .map(|members| component_of(graph, &members, removed))
         .collect())
 }
 
 /// The component holding `members`, ascending.
-fn component_of(graph: &Graph, members: &[usize]) -> Component {
+fn component_of(graph: &Graph, members: &[usize], removed: &BTreeSet<Identity>) -> Component {
     let set: BTreeSet<usize> = members.iter().copied().collect();
     let has_edge = members.iter().any(|member| {
         graph
             .edges_from(Vertex::new(*member))
             .iter()
-            .any(|edge| set.contains(&edge.target.index()))
+            .any(|edge| set.contains(&edge.target.index()) && is_live(edge, removed))
     });
     Component {
         vertices: members.iter().copied().map(Vertex::new).collect(),

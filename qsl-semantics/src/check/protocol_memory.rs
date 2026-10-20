@@ -12,7 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_forms::{AccessOrdering, JoinPolicy, MemoryModelName, ProtocolDeclarationForm};
+use qsl_forms::{AccessOrdering, JoinPolicy, ProtocolDeclarationForm};
+use qsl_foundation::MemoryModelName;
 use qsl_foundation::Span;
 
 use super::footprint::{FootprintRefusal, SymbolicFootprint, SymbolicLocation};

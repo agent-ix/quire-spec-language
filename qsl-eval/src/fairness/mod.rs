@@ -12,10 +12,13 @@
 //!
 //! - [`components`] is iterative SCC decomposition of a given subgraph.
 //! - [`Constraint`] is membership: which identities a fairness constraint
-//!   covers, when it is enabled, and when an edge takes it.
+//!   covers, what owes it ([`Obligation`]: enabledness, or ADR-025 MF-2's
+//!   visibility loads), and when an edge takes it.
 //! - [`analyze`] is ADR-019 FS-2's `fair` function: it decomposes a vertex set
 //!   into SCCs and classifies each, refining a component that fails a strong
-//!   constraint, and keeps every witness the certificate checker reads.
+//!   constraint (removing its enabled vertices) or a visibility constraint
+//!   (removing its load edges), and keeps every witness the certificate
+//!   checker reads.
 //! - [`check_loop`] is lasso fairness: whether the loop of a given lasso is
 //!   fair, as replay reads it (ADR-018 CX-3).
 
@@ -26,7 +29,7 @@ mod lasso;
 mod refine;
 mod scc;
 
-pub use constraint::{Constraint, Strength};
+pub use constraint::{visibility_constraints, Constraint, Obligation, Strength, VisibilityPair};
 pub use error::FairnessError;
 pub use graph::{Edge, EdgeLabel, Graph, Identity, Vertex};
 pub use lasso::{check_loop, LassoFairness, LoopStep};

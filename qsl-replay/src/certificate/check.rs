@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The plumbing the model-state certificate checkers share: FR-338's
-//! [`check_closure`](super::closure::check_closure) and FR-169's
-//! [`check_state_graph`](super::state_graph::check_state_graph). Each
+//! [`check_closure`](super::closure::check_closure), FR-169's
+//! [`check_state_graph`](super::state_graph::check_state_graph) and FR-149's
+//! [`check_simulation_certificate`](super::simulation::check_simulation_certificate)
+//! (which shares the bound pre-check and the fault vocabulary). Each
 //! re-admits the subject the same way, stops at the same budgets with the
 //! same causes and polls cancellation the same way, so the checkers cannot
 //! drift from each other.
@@ -22,6 +24,8 @@ pub(super) enum Checker {
     Closure,
     /// FR-169's state-graph checker.
     StateGraph,
+    /// FR-149's simulation checker.
+    Simulation,
 }
 
 impl Checker {
@@ -29,6 +33,7 @@ impl Checker {
         match self {
             Self::Closure => "closure-check",
             Self::StateGraph => "state-graph-check",
+            Self::Simulation => "simulation-check",
         }
     }
 

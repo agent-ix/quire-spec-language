@@ -4,12 +4,12 @@
 //!
 //! The safety half is not a [`crate::ModelCheckOutcome`]: that outcome's
 //! `Holds` carries a closure certificate of a temporal clause's product, and
-//! a refinement's product has no such certificate until the simulation
-//! certificate (FR-149) exists. [`SafetyOutcome::Holds`] therefore carries
-//! none.
+//! a refinement's product has a simulation certificate (FR-149) instead,
+//! which [`SafetyOutcome::Holds`] carries.
 
 use qsl_foundation::InternalFault;
 
+use crate::certificate::simulation::SimulationCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
 use crate::model_check::outcome::RunStats;
@@ -43,6 +43,9 @@ pub enum SafetyOutcome {
     /// Every reachable product state was examined and every initial state
     /// and step passed (V-1).
     Holds {
+        /// The simulation relation the product found, for the core to check
+        /// (FR-149).
+        certificate: Box<SimulationCertificate>,
         /// The run's counts.
         stats: RunStats,
     },

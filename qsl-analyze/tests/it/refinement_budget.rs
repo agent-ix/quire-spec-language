@@ -8,10 +8,11 @@ use qsl_analyze::model_check::{check_refinement, RefinementCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{operation_identity_text, ModelSimState};
 use qsl_replay::{
-    check_step, map_state, open_systems, replay_refinement_trace, settle_refinement_safety,
-    ConcreteStep, CounterexampleKind, Execution, IncompleteCause, ModelCheckLimit,
-    ModelCheckLimits, ModelStep, ReachedLimit, RefinementFailure, RefinementPosition,
-    RefinementSystems, RefinementTraceSettlement, SafetyOutcome, StepRejection, StepVerdict,
+    check_simulation_certificate, check_step, map_state, open_systems, replay_refinement_trace,
+    settle_refinement_safety, ConcreteStep, CounterexampleKind, Execution, IncompleteCause,
+    ModelCheckLimit, ModelCheckLimits, ModelStep, ReachedLimit, RefinementFailure,
+    RefinementPosition, RefinementSystems, RefinementTraceSettlement, SafetyOutcome,
+    SimulationCertificateRequest, StepRejection, StepVerdict, TemporalCertificateCheck,
     TemporalCounterexample, TerminalValue,
 };
 use quire_exact::{Cancel, ScalarLimits};
@@ -60,6 +61,16 @@ fn budget() -> u64 {
         }
     }
     low
+}
+
+/// The certificate request of `world` under the work-unit budget `work`.
+fn certified(world: &RingWorld, work: u64) -> SimulationCertificateRequest<'_> {
+    SimulationCertificateRequest {
+        refinement: world.refinement(),
+        concrete: world.concrete_request(meter(work)),
+        abstract_package: world.package(),
+        abstract_initial: vec![world.abstract_initial()],
+    }
 }
 
 fn heavy() -> RingWorld {
@@ -174,9 +185,13 @@ fn a_run_over_the_budget_stops_and_settles_incomplete() {
         value: b,
     };
     assert_eq!(*limit, Some(reached));
-    let record = settle_refinement_safety(&outcome, &ModelCheckLimits::default(), |_| {
-        panic!("a stopped run has no counterexample")
-    });
+    let record = settle_refinement_safety(
+        &outcome,
+        &ModelCheckLimits::default(),
+        &certified(&world, b),
+        &Cancel::new(),
+        |_| panic!("a stopped run has no counterexample"),
+    );
     assert_eq!(
         record.value,
         TerminalValue::Incomplete(IncompleteCause::LimitReached {
@@ -186,6 +201,71 @@ fn a_run_over_the_budget_stops_and_settles_incomplete() {
     );
     assert_eq!(record.execution, Execution::ResourceIncomplete);
     assert_eq!(record.limit_reached, Some(reached));
+}
+
+/// FR-149-AC-5 (TC-556 step 6): a `HeavyEnq` certificate built under a meter
+/// larger than `B` is accepted there, and checked under the meter `B` stops
+/// with `EvaluationMeter` and `B`, never `Rejected`.
+#[trace("TC-556", "FR-149-AC-5")]
+#[test]
+fn a_certificate_checked_over_the_budget_stops_not_rejects() {
+    let b = budget();
+    let world = heavy();
+    let SafetyOutcome::Holds { certificate, .. } = run(&world, UNLIMITED.work_units) else {
+        panic!("HeavyEnq holds under a larger meter");
+    };
+    let check = |work| {
+        check_simulation_certificate(
+            &certified(&world, work),
+            &certificate,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the certificate is checked")
+    };
+    assert_eq!(
+        check(UNLIMITED.work_units),
+        TemporalCertificateCheck::Accepted
+    );
+    assert_eq!(
+        check(b),
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::EvaluationMeter,
+            value: b
+        })
+    );
+}
+
+/// FR-149-AC-5 and ADR-018 PC-2 (TC-556): a true certificate checked under a
+/// smaller meter is never `Rejected`: when the meter runs out in a mapping
+/// row, a step-row argument or a concrete contract the check stops naming
+/// `EvaluationMeter`.
+#[trace("TC-556", "FR-149-AC-5")]
+#[test]
+fn a_true_certificate_under_a_small_meter_never_rejects() {
+    let world = RingWorld::new();
+    let SafetyOutcome::Holds { certificate, .. } = run(&world, UNLIMITED.work_units) else {
+        panic!("the light ring holds under a large meter");
+    };
+    let mut stopped = 0;
+    for work in [1, 5, 20, 50, 100, 200, 400, 800, 1600] {
+        let check = check_simulation_certificate(
+            &certified(&world, work),
+            &certificate,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the certificate is checked");
+        match check {
+            TemporalCertificateCheck::Accepted => {}
+            TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached { limit, value }) => {
+                assert_eq!((limit, value), (ModelCheckLimit::EvaluationMeter, work));
+                stopped += 1;
+            }
+            other => panic!("work {work}: a true certificate is not rejected: {other:?}"),
+        }
+    }
+    assert!(stopped > 1);
 }
 
 /// FR-145-AC-6 (TC-550 step 5): replaying a hand-built payload, a recorded
@@ -239,6 +319,8 @@ fn a_replay_over_the_budget_settles_incomplete_not_parity() {
             stats: Default::default(),
         },
         &ModelCheckLimits::default(),
+        &certified(&world, b),
+        &Cancel::new(),
         |payload| replay_refinement_trace(world.refinement(), &systems, payload),
     );
     assert_eq!(
