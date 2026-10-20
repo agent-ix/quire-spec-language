@@ -1243,7 +1243,9 @@ fn deadlock<S: SubjectSystem>(
         Err(_) => return Ok(no_value()),
     };
     if class == TerminalClass::Deadlocked {
-        let blocked = match system.blocked(&last.state) {
+        let steps: Vec<&S::TransitionId> =
+            payload.prefix.iter().map(|step| &step.transition).collect();
+        let blocked = match system.blocked(&last.state, &steps) {
             Ok(blocked) => blocked,
             Err(stop) if stop.is_internal_failure() => return Err(fault("blocked-threads")),
             Err(_) => return Ok(no_value()),

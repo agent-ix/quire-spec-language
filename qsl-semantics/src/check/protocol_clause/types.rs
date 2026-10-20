@@ -219,6 +219,8 @@ pub enum ControlStep {
     Receive,
     /// A domain `event` or a `commit`: ST-2.
     Event,
+    /// A `fence`: its memory model's fence step (ADR-027 SE-5).
+    Fence,
     /// Another construct, by its keyword.
     Unstepped(&'static str),
 }
@@ -240,7 +242,8 @@ impl CheckedControl {
             K::Send => ControlStep::Send,
             K::Receive => ControlStep::Receive,
             K::Event | K::Commit => ControlStep::Event,
-            K::Effect | K::Finish | K::CompensateTemplate | K::Fence => {
+            K::Fence => ControlStep::Fence,
+            K::Effect | K::Finish | K::CompensateTemplate => {
                 ControlStep::Unstepped(self.kind.label())
             }
         }

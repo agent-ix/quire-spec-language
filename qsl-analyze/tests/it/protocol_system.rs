@@ -371,46 +371,62 @@ fn thread_state(entries: &[Json], path: &ThreadPath) -> Json {
         .unwrap_or_else(|| panic!("{path:?} is in control"))
 }
 
-/// Walk every behaviour from `at`: `A`'s binder is bound exactly after
-/// `attempt(A)` and before `C`'s step.
-fn binder_lives(
+/// The steps a behaviour has taken, each as its kind and node.
+type Taken = Vec<(StepKind, String)>;
+
+/// Walk every behaviour from `at`, asserting that each state's binder
+/// environments hold exactly what `expected` gives for the steps taken to
+/// reach it: each entry as its binder node's last segment and the thread
+/// whose environment holds it.
+fn environments_follow(
     system: &ProtocolSystem<'_, Sc>,
     reached: &[Reached],
     at: usize,
-    after_a: bool,
-    after_c: bool,
+    taken: &mut Taken,
+    expected: &dyn Fn(&Taken) -> BTreeSet<(String, ThreadPath)>,
 ) {
-    let expected = if after_a && !after_c {
-        vec![("Main/Both/left/A".to_owned(), branch("left"))]
-    } else {
-        Vec::new()
-    };
-    assert_eq!(
-        system.binders(&reached[at].state).expect("binders"),
-        expected
-    );
+    let held: BTreeSet<(String, ThreadPath)> = system
+        .binders(&reached[at].state)
+        .expect("binders")
+        .into_iter()
+        .map(|(node, thread)| {
+            let last = node.rsplit('/').next().unwrap_or_default().to_owned();
+            (last, thread)
+        })
+        .collect();
+    assert_eq!(held, expected(taken), "after {taken:?}");
     for (transition, next) in &reached[at].steps {
-        let node = transition.node().unwrap_or_default();
-        binder_lives(
-            system,
-            reached,
-            *next,
-            after_a || node == "Main/Both/left/A",
-            after_c || node == "Main/C",
-        );
+        taken.push((
+            transition.kind(),
+            transition.node().unwrap_or_default().to_owned(),
+        ));
+        environments_follow(system, reached, *next, taken, expected);
+        taken.pop();
     }
+}
+
+/// Whether `taken` holds a step of `kind` at a node whose last segment is
+/// `node`.
+fn took(taken: &Taken, kind: StepKind, node: &str) -> bool {
+    taken
+        .iter()
+        .any(|(step, at)| *step == kind && at.rsplit('/').next() == Some(node))
 }
 
 /// FR-205-AC-2 (TC-650): `Fill`'s initial key holds the root at `fork
 /// Both`, empty `observations`, `queues` and `bounds`, and `roles` binding
 /// `w`; after `fork(Both)` its `control` holds the root at `join Both` and
 /// both branches at their attempts, running; its maps are sorted and it
-/// serializes twice equal. No state of `Fill` holds a binder; in a variant
-/// whose node after the join reads `a`, `A`'s binder is in every state from
-/// `attempt(A)` to that node's step and in none after.
+/// serializes twice equal. No state of `Fill` holds a binder. In a variant
+/// whose node after the join reads `a`, `a` is held from `attempt(A)` to
+/// that node's step, under `left` until the join and under the root after
+/// it, and in no state after the node's step; so it is when `left` takes a
+/// second attempt after `A`; and a binder of a branch of an all-joined
+/// `parallel` inside `left` is held by that branch through its join, by
+/// `left` through `Both`'s join, and by the root until its reader steps.
 #[trace("TC-650", "FR-205-AC-2")]
 #[test]
-fn a_binder_lives_exactly_until_its_last_reader_steps() {
+fn a_binder_is_held_by_each_environment_that_reaches_its_reader() {
     let case = Case::new(&fill_unit("self.v = 0", ""), &[0]);
     let subject = case.subject("Fill");
     let system = sc_system(&subject);
@@ -445,13 +461,63 @@ fn a_binder_lives_exactly_until_its_last_reader_steps() {
         assert!(system.binders(&state.state).expect("binders").is_empty());
     }
 
-    // A variant: `A` is `flag`, whose Boolean result binds `a`, and `C`
-    // after the join reads it.
-    let run = format!(
-        "sequence Main {{ parallel Both {{ branch left {} branch right {} }} join all [left, right]; {} }}",
+    // Variants: `A` is `flag`, whose Boolean result binds `a`, and `C` after
+    // the join reads it. `left` holds `a` until the join, then the root
+    // holds it until `C`'s step.
+    let reader = attempt("C", "touch", "TouchPre", "cc", "a or not a");
+    let lefts = [
         attempt("A", "flag", "FlagPre, FlagPost", "a", "true"),
-        attempt("B", "touch", "TouchPre", "b", "true"),
-        attempt("C", "touch", "TouchPre", "cc", "a or not a"),
+        format!(
+            "sequence L {{ {} {} }}",
+            attempt("A", "flag", "FlagPre, FlagPost", "a", "true"),
+            attempt("A2", "touch", "TouchPre", "a2", "true"),
+        ),
+    ];
+    for left in &lefts {
+        let run = format!(
+            "sequence Main {{ parallel Both {{ branch left {left} branch right {} }} \
+             join all [left, right]; {reader} }}",
+            attempt("B", "touch", "TouchPre", "b", "true"),
+        );
+        let variant = Case::new(
+            &(contracts("true") + &protocol("Read", "", &run, "d")),
+            &[0],
+        );
+        let subject = variant.subject("Read");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let expected = |taken: &Taken| {
+            let holder =
+                if !took(taken, StepKind::Attempt, "A") || took(taken, StepKind::Attempt, "C") {
+                    None
+                } else if took(taken, StepKind::Join, "Both") {
+                    Some(root())
+                } else {
+                    Some(branch("left"))
+                };
+            holder
+                .map(|thread| ("A".to_owned(), thread))
+                .into_iter()
+                .collect()
+        };
+        environments_follow(&system, &reached, 0, &mut Vec::new(), &expected);
+        assert!(reached.iter().any(|state| state
+            .steps
+            .iter()
+            .any(|(transition, _)| transition.node() == Some("Main/C"))));
+    }
+
+    // A variant: `left` forks `R`, whose branch `x` binds `b`, read after
+    // `Both`'s join. `x` keeps `b` through `join(R)`, `left` through
+    // `join(Both)`, and the root until the reading node's step.
+    let run = format!(
+        "sequence Main {{ parallel Both {{ branch left sequence L {{ parallel R {{ branch x {} branch y {} }} \
+         join all [x, y]; {} }} branch right {} }} join all [left, right]; {} }}",
+        attempt("X", "flag", "FlagPre, FlagPost", "b", "true"),
+        attempt("Y", "touch", "TouchPre", "y", "true"),
+        attempt("L2", "touch", "TouchPre", "l2", "true"),
+        attempt("B", "touch", "TouchPre", "bb", "true"),
+        attempt("C", "touch", "TouchPre", "cc", "b or not b"),
     );
     let variant = Case::new(
         &(contracts("true") + &protocol("Read", "", &run, "d")),
@@ -460,11 +526,27 @@ fn a_binder_lives_exactly_until_its_last_reader_steps() {
     let subject = variant.subject("Read");
     let system = sc_system(&subject);
     let reached = reachable(&system);
-    binder_lives(&system, &reached, 0, false, false);
-    assert!(reached.iter().any(|state| state
-        .steps
+    let x = branch("left").child("Main/Both/left/L/R", "x", 0);
+    let expected = |taken: &Taken| {
+        let holder = if !took(taken, StepKind::Attempt, "X") || took(taken, StepKind::Attempt, "C")
+        {
+            None
+        } else if took(taken, StepKind::Join, "Both") {
+            Some(root())
+        } else if took(taken, StepKind::Join, "R") {
+            Some(branch("left"))
+        } else {
+            Some(x.clone())
+        };
+        holder
+            .map(|thread| ("X".to_owned(), thread))
+            .into_iter()
+            .collect()
+    };
+    environments_follow(&system, &reached, 0, &mut Vec::new(), &expected);
+    assert!(reached
         .iter()
-        .any(|(transition, _)| transition.node() == Some("Main/C"))));
+        .any(|state| !system.binders(&state.state).expect("binders").is_empty()));
 }
 
 /// Part of FR-205-AC-1 (TC-650): the `Fill` subject builds; naming an
@@ -614,7 +696,7 @@ fn an_attempt_is_the_model_application_over_its_selected_clauses() {
         .successors
         .is_empty());
     assert_eq!(
-        system.blocked(start).expect("blocked threads"),
+        system.blocked(start, &[]).expect("blocked threads"),
         vec![BlockedThread {
             path: root(),
             rest_point: RestPoint {
@@ -944,6 +1026,141 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
         protocol,
     }];
     assert!(protocol_deadlock_freedom_items(&items).is_empty());
+}
+
+/// FR-211-AC-5 (TC-656, ADR-027 PD-4): each channel wait cause is reported
+/// for a thread blocked by exactly that condition, with the channel in its
+/// qualified name, in the model checker's deadlock counterexample, and
+/// replay recomputes it from the prefix. Every channel has `delivery
+/// exactly-once-premise` unless stated. At capacity 1 under `block` a
+/// second send waits with `FullQueue`, or `Constraint` when no payload
+/// satisfies it although the queue is full. At capacity 2 a `fifo` receive
+/// of `Q` behind `P` waits with `HeadBlocked`, and a receive of `P` whose
+/// constraint fails with `Constraint`, `unordered` too. At capacity 1,
+/// `loss head` displaces `P` and `loss new` loses `Q`, each reported
+/// `Displaced`, and so is a `lose(ch, P)` under `at-most-once`; when the
+/// last removal of `P`'s entries was a `receive`, the cause is
+/// `EmptyQueue`.
+#[trace("TC-656", "FR-211-AC-5")]
+#[test]
+fn each_channel_wait_cause_names_its_condition() {
+    let fifo = "ordering fifo by (m: Boolean) { true }";
+    let channel = |ordering: &str, delivery: &str, capacity: u64, overflow: &str| {
+        format!(
+            "channel ch from w to w carries Boolean {ordering} delivery {delivery} \
+             capacity {capacity} overflow {overflow};"
+        )
+    };
+    let once = "exactly-once-premise";
+    let sends = |q: &str, receive: &str| {
+        format!(
+            "sequence Main {{ send P via ch as (p: Boolean) {{ p }}; \
+             send Q via ch as (q: Boolean) {{ {q} }}; {receive} }}"
+        )
+    };
+    let receive = |name: &str, of: &str, constraint: &str| {
+        let binder = name.to_lowercase();
+        format!("receive {name} via ch of {of} as ({binder}: Boolean) {{ {constraint} }};")
+    };
+    let channel_name = || "P::ch".to_owned();
+    let cases = [
+        (
+            channel(fifo, once, 1, "block"),
+            sends("q", ""),
+            "Q",
+            WaitCause::FullQueue {
+                channel: channel_name(),
+            },
+        ),
+        (
+            channel(fifo, once, 1, "block"),
+            sends("false", ""),
+            "Q",
+            WaitCause::Constraint,
+        ),
+        (
+            channel(fifo, once, 2, "block"),
+            sends("q", &receive("RQ", "Q", "true")),
+            "RQ",
+            WaitCause::HeadBlocked {
+                channel: channel_name(),
+            },
+        ),
+        (
+            channel(fifo, once, 2, "block"),
+            sends("q", &receive("RP", "P", "false")),
+            "RP",
+            WaitCause::Constraint,
+        ),
+        (
+            channel("ordering unordered", once, 2, "block"),
+            sends("q", &receive("RP", "P", "false")),
+            "RP",
+            WaitCause::Constraint,
+        ),
+        (
+            channel(fifo, once, 1, "loss head"),
+            sends("q", &receive("RP", "P", "true")),
+            "RP",
+            WaitCause::Displaced {
+                channel: channel_name(),
+            },
+        ),
+        (
+            channel(fifo, once, 1, "loss new"),
+            sends("q", &receive("RQ", "Q", "true")),
+            "RQ",
+            WaitCause::Displaced {
+                channel: channel_name(),
+            },
+        ),
+        (
+            channel(fifo, "at-most-once", 1, "block"),
+            format!(
+                "sequence Main {{ send P via ch as (p: Boolean) {{ p }}; {} }}",
+                receive("RP", "P", "true")
+            ),
+            "RP",
+            WaitCause::Displaced {
+                channel: channel_name(),
+            },
+        ),
+        (
+            channel(fifo, once, 1, "loss head"),
+            format!(
+                "sequence Main {{ repeat Loop by w visible () max 2 while {{ true }} \
+                 send P via ch as (p: Boolean) {{ p }}; exhausted sequence Out {{ }} {} {} }}",
+                receive("R1", "Loop::P", "true"),
+                receive("R2", "Loop::P", "true"),
+            ),
+            "R2",
+            WaitCause::EmptyQueue {
+                channel: channel_name(),
+            },
+        ),
+    ];
+    for (members, run, node, cause) in cases {
+        let case = Case::new(
+            &(contracts("self.v = 0") + &protocol("P", &members, &run, "d")),
+            &[0],
+        );
+        let outcome = case.deadlock("P");
+        let counterexample = violated(&outcome);
+        let [blocked] = &counterexample.blocked[..] else {
+            panic!("one waiting thread: {:?}", counterexample.blocked);
+        };
+        assert_eq!(blocked.cause, cause, "{members} {run}");
+        assert!(
+            blocked
+                .rest_point
+                .node
+                .as_deref()
+                .is_some_and(|at| at.rsplit('/').next() == Some(node)),
+            "{blocked:?}"
+        );
+        let record = case.settle("P", &outcome);
+        assert_eq!(record.label, ResultLabel::Refuted, "{run}: {record:?}");
+    }
 }
 
 /// FR-211-AC-3 (TC-656): over `Fill` with `TwoPre: self.v <= 1` the
@@ -1282,8 +1499,9 @@ fn a_protocol_replay_recomputes_the_blocked_threads() {
 #[test]
 fn check_protocol_refuses_an_unstepped_construct() {
     let run = format!(
-        "sequence Main {{ {} fence Barrier ordering seq_cst; }}",
-        touch("T")
+        "parallel Both memory tso {{ branch left {} branch right {} }} join all [left, right];",
+        touch("T"),
+        touch("U")
     );
     let case = p_case(&run, 0);
     let refusal = check_protocol(
@@ -1295,7 +1513,7 @@ fn check_protocol_refuses_an_unstepped_construct() {
         },
         &Cancel::new(),
     )
-    .expect_err("`fence` is not stepped yet");
+    .expect_err("`memory tso` is not stepped yet");
     let ModelCheckRefusal::Protocol(refusal) = refusal else {
         panic!("{refusal:?}");
     };

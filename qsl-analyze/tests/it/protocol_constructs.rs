@@ -128,7 +128,7 @@ fn channel_premises_admit_exactly_their_queue_steps() {
     let full = follow(&reached, &[(StepKind::Send, "S1")]);
     assert_eq!(steps_at(&reached, full), []);
     assert_eq!(queues(&system, &reached[full].state)[0].1, [true]);
-    let blocked_threads = system.blocked(&reached[full].state).expect("blocked");
+    let blocked_threads = system.blocked(&reached[full].state, &[]).expect("blocked");
     assert_eq!(
         blocked_threads[0].cause,
         WaitCause::FullQueue {
@@ -145,12 +145,12 @@ fn channel_premises_admit_exactly_their_queue_steps() {
     assert_eq!(transition.kind(), StepKind::Send);
     assert_eq!(
         identity(&system, transition)["record"],
-        json!({"type": "send-record", "outcome": "rejected",
-            "payload": {"type": "boolean", "value": true}})
+        json!({"type": "send-record", "channel": "P::ch", "outcome": "rejected",
+            "payload": {"type": "boolean", "value": true}, "displaced": null})
     );
     assert_eq!(queues(&system, &reached[*after].state)[0].1, [true]);
     let (first, _) = &reached[0].steps[0];
-    assert_eq!(identity(&system, first)["record"]["outcome"], "sent");
+    assert_eq!(identity(&system, first)["record"]["outcome"], "accepted");
 
     // `duplicate` and `lose` over one queued entry of a capacity-2 queue.
     let delivered = |delivery: &str| {
@@ -234,6 +234,167 @@ fn channel_premises_admit_exactly_their_queue_steps() {
     assert_eq!(records.len(), 2);
     let (records, queued) = receives("fifo by (m: Boolean) { true }");
     assert_eq!(records, [json!(queued[0])]);
+}
+
+/// FR-206-AC-7 (TC-651, ADR-027 ST-3): over a `fifo` channel `ch` of
+/// capacity 2, each `send` binds the send record `{channel, payload,
+/// outcome, displaced}` with `channel` in its qualified name. On an empty
+/// queue the outcome is `accepted` with nothing displaced. With the queue
+/// holding `P1` (`true`) then `P2` (`false`), a third send `N` (`true`) is
+/// `rejected` under `overflow reject` and `lost` under `overflow loss new`,
+/// each leaving `[P1, P2]`; `overflow loss head` accepts it displacing `P1`,
+/// leaving `[P2, N]`, and `overflow loss tail` accepts it displacing `P2`,
+/// leaving `[P1, N]`.
+#[trace("TC-651", "FR-206-AC-7")]
+#[test]
+fn a_send_binds_its_send_record() {
+    let run = "sequence Main { send P1 via ch as (p1: Boolean) { p1 }; \
+               send P2 via ch as (p2: Boolean) { not p2 }; \
+               send N via ch as (n: Boolean) { n }; }";
+    let entry = |send: &str, value: bool| {
+        json!({"type": "queue-entry", "send": send,
+            "thread": {"type": "thread-path", "instance": "0", "steps": []},
+            "payload": {"type": "boolean", "value": value}})
+    };
+    let cases = [
+        ("reject", "rejected", Json::Null, vec![true, false]),
+        ("loss new", "lost", Json::Null, vec![true, false]),
+        (
+            "loss head",
+            "accepted",
+            entry("Main/P1", true),
+            vec![false, true],
+        ),
+        (
+            "loss tail",
+            "accepted",
+            entry("Main/P2", false),
+            vec![true, true],
+        ),
+    ];
+    for (overflow, outcome, displaced, queued) in cases {
+        let unit = case(
+            &channel(
+                "ch",
+                &format!(
+                    "ordering fifo by (m: Boolean) {{ true }} delivery exactly-once-premise \
+                     capacity 2 overflow {overflow}"
+                ),
+            ),
+            run,
+        );
+        let subject = unit.subject("P");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let (first, _) = &reached[0].steps[0];
+        assert_eq!(
+            identity(&system, first)["record"],
+            json!({"type": "send-record", "channel": "P::ch", "outcome": "accepted",
+                "payload": {"type": "boolean", "value": true}, "displaced": null}),
+            "{overflow}"
+        );
+        let full = follow(&reached, &[(StepKind::Send, "P1"), (StepKind::Send, "P2")]);
+        assert_eq!(queues(&system, &reached[full].state)[0].1, [true, false]);
+        let (third, after) = &reached[full].steps[0];
+        assert_eq!(last(third), "N");
+        assert_eq!(
+            identity(&system, third)["record"],
+            json!({"type": "send-record", "channel": "P::ch", "outcome": outcome,
+                "payload": {"type": "boolean", "value": true}, "displaced": displaced}),
+            "{overflow}"
+        );
+        assert_eq!(
+            queues(&system, &reached[*after].state)[0].1,
+            queued,
+            "{overflow}"
+        );
+    }
+}
+
+/// Part of FR-206-AC-8 (TC-651, ADR-027 SE-5): a thread resting at `fence
+/// F ordering seq_cst;` has one `fence` step, which changes no model state
+/// and moves the thread to its next sibling; under `sc` it is enabled in
+/// every state the thread rests there. Two branches that each hold a fence
+/// reach no deadlock under `sc` that the same protocol without the fences
+/// does not reach, and give the same orders of their counted steps. Not
+/// covered: the `tso` fence rule, which this system refuses as weak memory.
+#[test]
+fn a_fence_moves_its_thread_and_changes_nothing_under_sc() {
+    let run = format!(
+        "sequence Main {{ fence F ordering seq_cst; {} }}",
+        touch("T")
+    );
+    let unit = case("", &run);
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    assert_eq!(steps_at(&reached, 0), [(StepKind::Fence, "F".to_owned())]);
+    let (fence, after) = &reached[0].steps[0];
+    assert_eq!(
+        identity(&system, fence),
+        json!({"type": "protocol-transition", "step": "fence", "node": "Main/F",
+            "thread": {"type": "thread-path", "instance": "0", "steps": []}})
+    );
+    assert_eq!(
+        key(&system, &reached[0].state)["semantic"],
+        key(&system, &reached[*after].state)["semantic"]
+    );
+    assert_eq!(
+        steps_at(&reached, *after),
+        [(StepKind::Attempt, "T".to_owned())]
+    );
+
+    let branches = |left: &str, right: &str| {
+        format!(
+            "parallel Both {{ branch l sequence L {{ {left} {} }} \
+             branch r sequence R {{ {right} {} }} }} join all [l, r];",
+            touch("A"),
+            touch("B"),
+        )
+    };
+    let deadlocks = |run: &str| {
+        let unit = case("", run);
+        let subject = unit.subject("P");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let fences_enabled = reached.iter().all(|state| {
+            system
+                .threads(&state.state)
+                .expect("threads")
+                .iter()
+                .filter(|thread| {
+                    thread
+                        .rest_point
+                        .node
+                        .as_deref()
+                        .is_some_and(|node| node.ends_with("/Fl") || node.ends_with("/Fr"))
+                })
+                .all(|thread| {
+                    state.steps.iter().any(|(transition, _)| {
+                        transition.kind() == StepKind::Fence
+                            && transition.thread() == Some(&thread.path)
+                    })
+                })
+        });
+        assert!(fences_enabled, "{run}");
+        let deadlocked = reached
+            .iter()
+            .filter(|state| {
+                state.steps.is_empty()
+                    && system
+                        .terminal_class(&state.state, false)
+                        .expect("classifies")
+                        == qsl_eval::simulation::model::TerminalClass::Deadlocked
+            })
+            .count();
+        (deadlocked, projections(&reached))
+    };
+    let fenced = deadlocks(&branches(
+        "fence Fl ordering seq_cst;",
+        "fence Fr ordering acquire;",
+    ));
+    let plain = deadlocks(&branches("", ""));
+    assert_eq!(fenced, plain);
 }
 
 /// FR-210-AC-3 (TC-655): branch `s` sends `Ping` and then attempts `S`;
@@ -403,7 +564,9 @@ fn structural_moves_add_no_step() {
         ],
     );
     assert!(reached[last_state].steps.is_empty());
-    let blocked = system.blocked(&reached[last_state].state).expect("blocked");
+    let blocked = system
+        .blocked(&reached[last_state].state, &[])
+        .expect("blocked");
     assert!(blocked.iter().any(|thread| thread.path == left
         && thread.cause
             == WaitCause::CheckFalse {
@@ -631,6 +794,184 @@ fn a_branch_reads_its_parents_binding_as_of_its_fork() {
     );
 }
 
+/// The value of the Boolean binder whose node ends in `node` in the
+/// environment of `thread`, read from `state`'s key; `None` when that
+/// environment holds no entry for it.
+fn entry(
+    system: &ProtocolSystem<'_, Sc>,
+    state: &ProtocolState<Sc>,
+    node: &str,
+    thread: &ThreadPath,
+) -> Option<bool> {
+    let wanted = path_json(thread);
+    key(system, state)["observations"]["entries"]
+        .as_array()
+        .expect("observations")
+        .iter()
+        .find(|observed| {
+            observed["key"]["thread"] == wanted
+                && observed["key"]["node"]
+                    .as_str()
+                    .is_some_and(|text| text.rsplit('/').next() == Some(node))
+        })
+        .map(|observed| observed["value"]["value"].as_bool().expect("a Boolean"))
+}
+
+/// `thread`'s path as the state key encodes it.
+fn path_json(thread: &ThreadPath) -> Json {
+    let steps: Vec<Json> = thread
+        .steps
+        .iter()
+        .map(|step| {
+            json!({"node": step.node, "branch": step.branch,
+                "ordinal": step.ordinal.to_string()})
+        })
+        .collect();
+    json!({"type": "thread-path", "instance": thread.instance.to_string(), "steps": steps})
+}
+
+/// The last segment of the node `thread` rests at in `state`; `None` when
+/// the thread is not live.
+fn resting(
+    system: &ProtocolSystem<'_, Sc>,
+    state: &ProtocolState<Sc>,
+    thread: &ThreadPath,
+) -> Option<String> {
+    system
+        .threads(state)
+        .expect("threads")
+        .into_iter()
+        .find(|view| view.path == *thread)
+        .map(|view| {
+            view.rest_point
+                .node
+                .and_then(|node| node.rsplit('/').next().map(str::to_owned))
+                .unwrap_or_default()
+        })
+}
+
+/// FR-205-AC-7 (TC-650, ADR-027 PS-5): inside a `repeat` of maximum 2,
+/// `parallel P` joined `all` binds `a` in its branch `left`, and `parallel
+/// Q` joined `any … outstanding continue` reads it in branch `u`'s `check
+/// Ck`. After `join(P)` the root's environment holds `a`, and `fork(Q)`
+/// copies it into `u`. With iteration 1's `u` still resting at `U1`, the
+/// second `fork(P)` takes ordinal 0 and the second `fork(Q)` ordinal 1;
+/// each `u` evaluates `Ck` over its own copy, so a `u` rests at `Ck` exactly
+/// when its copy is false, and no state refuses. Every entry is held by a
+/// live thread, so a completed `u`'s entry leaves with it.
+#[trace("TC-650", "FR-205-AC-7")]
+#[test]
+fn each_thread_reads_its_own_copy_of_a_rebound_binder() {
+    let run = format!(
+        "sequence Main {{ repeat Loop by w visible () max 2 while {{ true }} sequence Body {{ \
+         parallel P {{ branch left {} branch right {} }} join all [left, right]; \
+         parallel Q {{ branch u sequence U {{ {} check Ck using v {{ a }}; }} branch v {} }} \
+         join any [u, v] outstanding continue; }} exhausted sequence Out {{ }} }}",
+        "event A1 by w as (a: Boolean) { true };",
+        touch("B1"),
+        touch("U1"),
+        touch("V1"),
+    );
+    let unit = case("", &run);
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    // Exploration completes: no state refuses.
+    let reached = reachable(&system);
+    let root = ThreadPath::root(0);
+    let u = |ordinal: u64| root.child("Main/Loop/Body/Q", "u", ordinal);
+    let v = |ordinal: u64| root.child("Main/Loop/Body/Q", "v", ordinal);
+    let mut both_iterations = 0;
+    let mut checked = 0;
+    for state in &reached {
+        // Every entry is held by a live thread.
+        let live: BTreeSet<ThreadPath> = system
+            .threads(&state.state)
+            .expect("threads")
+            .into_iter()
+            .map(|view| view.path)
+            .collect();
+        for (_, holder) in system.binders(&state.state).expect("binders") {
+            assert!(
+                live.contains(&holder),
+                "{holder:?} holds an entry but is not live"
+            );
+        }
+        for ordinal in [0, 1] {
+            let thread = u(ordinal);
+            if let Some(copy) = entry(&system, &state.state, "A1", &thread) {
+                // `U1` settles `u` through `Ck` over its own copy: it rests at
+                // `Ck` exactly when that copy is false.
+                for (transition, after) in &state.steps {
+                    if transition.thread() == Some(&thread) && last(transition) == "U1" {
+                        let rest = resting(&system, &reached[*after].state, &thread);
+                        assert_eq!(rest.as_deref() == Some("Ck"), !copy, "u@{ordinal}");
+                        checked += 1;
+                    }
+                }
+            }
+            // `v` reads no binder, so its copy is dropped once it is forked.
+            assert_eq!(entry(&system, &state.state, "A1", &v(ordinal)), None);
+        }
+        let first = entry(&system, &state.state, "A1", &u(0));
+        let second = entry(&system, &state.state, "A1", &u(1));
+        if let (Some(first), Some(second)) = (first, second) {
+            if first != second {
+                both_iterations += 1;
+            }
+        }
+    }
+    assert!(
+        both_iterations > 0,
+        "two `u` threads read different copies of `a` in one state"
+    );
+    assert!(checked > 0);
+
+    // The forks: after `join(P)` the root holds `a`; `fork(Q)` copies it
+    // into `u`; the second `fork(P)`, with iteration 1's `u` still at `U1`,
+    // takes ordinal 0 while `Q`'s instance 0 is still live, and the second
+    // `fork(Q)` takes ordinal 1.
+    let joined_p = follow(
+        &reached,
+        &[
+            (StepKind::Fork, "P"),
+            (StepKind::Event, "A1"),
+            (StepKind::Attempt, "B1"),
+            (StepKind::Join, "P"),
+        ],
+    );
+    let held = entry(&system, &reached[joined_p].state, "A1", &root);
+    assert!(held.is_some());
+    let next = |at: usize, kind: StepKind, node: &str| {
+        reached[at]
+            .steps
+            .iter()
+            .find(|(transition, _)| transition.kind() == kind && last(transition) == node)
+            .map(|(_, next)| *next)
+            .unwrap_or_else(|| panic!("no {kind:?} {node} from {at}"))
+    };
+    let forked_q = next(joined_p, StepKind::Fork, "Q");
+    assert_eq!(entry(&system, &reached[forked_q].state, "A1", &u(0)), held);
+    let joined_q = next(next(forked_q, StepKind::Attempt, "V1"), StepKind::Join, "Q");
+    assert_eq!(
+        resting(&system, &reached[joined_q].state, &u(0)).as_deref(),
+        Some("U1")
+    );
+    let refork = next(joined_q, StepKind::Fork, "P");
+    let p0 = root.child("Main/Loop/Body/P", "left", 0);
+    assert!(resting(&system, &reached[refork].state, &p0).is_some());
+    let second_q = next(
+        next(
+            next(next(refork, StepKind::Event, "A1"), StepKind::Attempt, "B1"),
+            StepKind::Join,
+            "P",
+        ),
+        StepKind::Fork,
+        "Q",
+    );
+    assert!(resting(&system, &reached[second_q].state, &u(1)).is_some());
+    assert!(resting(&system, &reached[second_q].state, &u(0)).is_some());
+}
+
 /// ADR-027 PS-2's "no live sibling holds" over a sibling whose branch
 /// threads left the state while a thread they forked still runs: a
 /// `repeat` with maximum 2 around `parallel Outer`, whose branch `p` binds
@@ -701,7 +1042,9 @@ fn a_waiting_receive_names_why_it_waits() {
         let reached = reachable(&system);
         let waiting = follow(&reached, &[(StepKind::Send, "S1"), (StepKind::Send, "S2")]);
         assert!(reached[waiting].steps.is_empty());
-        system.blocked(&reached[waiting].state).expect("blocked")[0]
+        system
+            .blocked(&reached[waiting].state, &[])
+            .expect("blocked")[0]
             .cause
             .clone()
     };
@@ -728,7 +1071,10 @@ fn a_waiting_receive_names_why_it_waits() {
         &[(StepKind::Send, "S1"), (StepKind::Receive, "R")],
     );
     assert_eq!(
-        system.blocked(&reached[waiting].state).expect("blocked")[0].cause,
+        system
+            .blocked(&reached[waiting].state, &[])
+            .expect("blocked")[0]
+            .cause,
         WaitCause::EmptyQueue {
             channel: channel_name()
         }

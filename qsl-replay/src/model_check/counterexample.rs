@@ -248,7 +248,8 @@ fn blocked_bytes(thread: &BlockedThread) -> usize {
         WaitCause::Precondition { clause } => clause.len(),
         WaitCause::EmptyQueue { channel }
         | WaitCause::HeadBlocked { channel }
-        | WaitCause::FullQueue { channel } => channel.len(),
+        | WaitCause::FullQueue { channel }
+        | WaitCause::Displaced { channel } => channel.len(),
         WaitCause::CheckFalse { node } => node.len(),
         WaitCause::NoPostState | WaitCause::Constraint | WaitCause::Gate => 0,
     };

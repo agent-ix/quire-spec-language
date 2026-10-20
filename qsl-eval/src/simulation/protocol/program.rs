@@ -225,7 +225,7 @@ fn unsupported(construct: Unsupported) -> ProtocolRefusal {
 
 /// The constructs this protocol system steps: `sequence`, `parallel` and its
 /// branches, `choice`, `repeat`, `check`, `await`, `attempt`, `send`,
-/// `receive`, domain `event`, `commit` and `finish`, channels with a
+/// `receive`, domain `event`, `commit`, `fence` and `finish`, channels with a
 /// literal capacity, under `activation on origin`, every `parallel` under
 /// `sc` (ADR-027 §9 sequencing steps 3 and 4).
 fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal> {
@@ -785,6 +785,7 @@ impl<'a> Program<'a> {
                         | ControlStep::Send
                         | ControlStep::Receive
                         | ControlStep::Event
+                        | ControlStep::Fence
                         | ControlStep::Await
                         | ControlStep::Unstepped(_) => {}
                     }
@@ -840,6 +841,7 @@ impl<'a> Program<'a> {
                         | ControlStep::Send
                         | ControlStep::Receive
                         | ControlStep::Event
+                        | ControlStep::Fence
                         | ControlStep::Unstepped(_) => {
                             return Err(ProtocolRefusal::fault("a-parent-holds-controls"))
                         }
@@ -848,6 +850,19 @@ impl<'a> Program<'a> {
             }
         }
         Ok(walk)
+    }
+
+    /// Whether the control `inner` lies in the subtree of the control
+    /// `outer`, `outer` itself included.
+    pub(super) fn encloses(
+        &self,
+        outer: ProtocolNodeId,
+        inner: ProtocolNodeId,
+    ) -> Result<bool, ProtocolRefusal> {
+        match (self.spans.get(&outer), self.spans.get(&inner)) {
+            (Some(outer), Some(inner)) => Ok((outer.first..=outer.last).contains(&inner.first)),
+            _ => Err(ProtocolRefusal::fault("a-control-is-in-the-run-tree")),
+        }
     }
 
     /// Whether the subtree of the control `node` holds a `parallel`, so a

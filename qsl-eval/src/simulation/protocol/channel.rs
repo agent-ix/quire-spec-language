@@ -9,17 +9,19 @@
 //! A queue's capacity bounds each queue, one per FIFO key. A `send` at
 //! capacity waits under `block`; under `reject` it leaves the queue
 //! unchanged; under `loss` it drops the oldest (`head`) or newest (`tail`)
-//! entry and appends, or drops its own (`new`). Its binder records its
-//! outcome, `sent`, `rejected`, `displaced` (another entry was lost for
-//! it) or `lost` (its own entry was), in the `send-record` the step binds,
-//! beside the payload its readers read.
+//! entry and appends, or drops its own (`new`). Its binder is bound to the
+//! send record `{channel, payload, outcome, displaced}` (ST-3): `outcome` is
+//! `accepted` when its entry was appended, `rejected` or `lost` when it was
+//! not, and `displaced` the queued entry a `head` or `tail` selector removed
+//! for it. A slot that reads the binder reads its payload, the channel's
+//! `carries` type S3 gives the binder.
 
 use qsl_semantics::check::ProtocolNodeId;
 use qsl_semantics::check::{ChannelOverflow, LossSelector};
 use qsl_semantics::family::FamilyOutcome;
 use quire_exact::{Meter, Outcome, Value};
 
-use super::identity::{ProtocolTransition, StepKind, ThreadPath, WaitCause};
+use super::identity::{ProtocolTransition, QueueEvent, Removal, StepKind, ThreadPath, WaitCause};
 use super::memory::MemoryModel;
 use super::program::{Channel, Cursor, Message};
 use super::steps::{jcs, Gathered, Reader};
@@ -32,39 +34,45 @@ use crate::simulation::model::encode::{value_enc, Enc};
 use crate::simulation::model::{verdict, ModelFinding, ModelSimState, Verdict};
 use crate::value::evaluate_protocol_slot;
 
-/// What a `send` did with its entry (QSpec FR-170).
+/// What a `send` did with its entry (ADR-027 ST-3, QSpec FR-170).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SendOutcome {
-    /// Appended.
-    Sent,
+    /// Appended, displacing a queued entry or not.
+    Accepted,
     /// Refused at capacity under `overflow reject`.
     Rejected,
-    /// Not queued: at capacity under `overflow loss new`, its own entry
-    /// was lost.
+    /// Dropped at capacity under `overflow loss new`.
     Lost,
-    /// Queued at capacity under `overflow loss head` or `tail`, which lost
-    /// another entry in its place.
-    Displaced,
 }
 
 impl SendOutcome {
     fn text(self) -> &'static str {
         match self {
-            Self::Sent => "sent",
+            Self::Accepted => "accepted",
             Self::Rejected => "rejected",
             Self::Lost => "lost",
-            Self::Displaced => "displaced",
         }
     }
 }
 
-/// The record a `send` binds: its payload and its outcome.
-fn send_record(payload: &Value, outcome: SendOutcome) -> Enc {
+/// The send record a `send` binds (ADR-027 ST-3): its channel's qualified
+/// name, its payload, its outcome and the entry it displaced, if any.
+fn send_record(
+    channel: &str,
+    payload: &Value,
+    outcome: SendOutcome,
+    displaced: Option<&Entry>,
+) -> Enc {
     Enc::tagged(
         "send-record",
         vec![
+            ("channel", Enc::text(channel)),
             ("payload", value_enc(payload)),
             ("outcome", Enc::text(outcome.text())),
+            (
+                "displaced",
+                displaced.map_or(Enc::Null, |entry| entry.enc.clone()),
+            ),
         ],
     )
 }
@@ -201,8 +209,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             };
             let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
             let fifo = key.fifo.is_some();
+            let mut displaced = None;
             let outcome = if queue.len() < channel.capacity {
-                SendOutcome::Sent
+                if fifo {
+                    queue.push(entry);
+                } else {
+                    insert_sorted(&mut queue, entry);
+                }
+                SendOutcome::Accepted
             } else {
                 match channel.overflow {
                     ChannelOverflow::Block => continue,
@@ -216,27 +230,20 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             LossSelector::Head | LossSelector::New => None,
                         };
                         if let Some(at) = dropped {
-                            queue.remove(at);
-                            queue.push(entry.clone());
-                            SendOutcome::Displaced
+                            displaced = Some(queue.remove(at));
+                            queue.push(entry);
+                            SendOutcome::Accepted
                         } else {
                             SendOutcome::Lost
                         }
                     }
                 }
             };
-            if outcome == SendOutcome::Sent {
-                if fifo {
-                    queue.push(entry);
-                } else {
-                    insert_sorted(&mut queue, entry);
-                }
-            }
-            let record = send_record(&payload, outcome);
+            let record = send_record(&channel.name, &payload, outcome, displaced.as_ref());
             let mut next = state.clone();
             let target = Self::instance_mut(&mut next, ordinal)?;
             store(target, key, queue);
-            self.bind(
+            Self::bind(
                 target,
                 node,
                 path,
@@ -244,13 +251,25 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     value: payload,
                     enc: record.clone(),
                 },
-            )?;
+            );
+            let mut transition =
+                ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), record);
+            let dropped = match (outcome, &displaced) {
+                (SendOutcome::Lost, _) => Some(text.clone()),
+                (_, Some(entry)) => Some(self.program.text(entry.send)?.to_owned()),
+                (SendOutcome::Accepted | SendOutcome::Rejected, None) => None,
+            };
+            if let Some(send) = dropped {
+                transition = transition.removing(QueueEvent {
+                    channel: channel.name.clone(),
+                    instance: ordinal,
+                    send,
+                    removal: Removal::Lost,
+                });
+            }
             if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
                 self.normalize(&mut next, ordinal)?;
-                gathered.successors.push((
-                    ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), record),
-                    next,
-                ));
+                gathered.successors.push((transition, next));
             }
         }
         Ok(())
@@ -271,6 +290,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         gathered: &mut Gathered<M>,
     ) -> Result<(), ExpansionStop> {
         let message = self.message(node)?;
+        let channel = self.channel_of(node)?.name.clone();
         let text = self.program.text(node)?.to_owned();
         let instance = Self::instance(state, ordinal)?;
         for (at, entry) in Self::deliverable(instance, message) {
@@ -297,7 +317,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 queue.remove(at.1);
             }
             store(target, at.0, queue);
-            self.bind(
+            Self::bind(
                 target,
                 node,
                 path,
@@ -305,13 +325,18 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     value: payload,
                     enc: enc.clone(),
                 },
-            )?;
+            );
+            let transition =
+                ProtocolTransition::record(StepKind::Receive, path.clone(), text.clone(), enc)
+                    .removing(QueueEvent {
+                        channel: channel.clone(),
+                        instance: ordinal,
+                        send: self.program.text(entry.send)?.to_owned(),
+                        removal: Removal::Received,
+                    });
             if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
                 self.normalize(&mut next, ordinal)?;
-                gathered.successors.push((
-                    ProtocolTransition::record(StepKind::Receive, path.clone(), text.clone(), enc),
-                    next,
-                ));
+                gathered.successors.push((transition, next));
             }
         }
         Ok(())
@@ -345,14 +370,18 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         found
     }
 
-    /// PD-4 for a waiting `receive`: `constraint` when an entry it could
-    /// take fails its constraint; `head-blocked` when its send's entries
-    /// wait behind another send's head of a `fifo` queue; else
-    /// `empty-queue`.
+    /// PD-4 for a waiting `receive` of instance `ordinal`, over the steps
+    /// `prefix` took to reach the state: `constraint` when an entry it could
+    /// take fails its constraint; `head-blocked` when its send's entries wait
+    /// behind another send's head of a `fifo` queue; `displaced` when none of
+    /// its send's entries is queued and the last step of `prefix` that took
+    /// one off the channel was a loss; else `empty-queue`.
     pub(super) fn receive_cause(
         &self,
         instance: &Instance,
+        ordinal: u64,
         node: ProtocolNodeId,
+        prefix: &[&ProtocolTransition],
     ) -> Result<WaitCause, ProtocolRefusal> {
         let message = self.message(node)?;
         let channel = self.channel_of(node)?.name.clone();
@@ -365,10 +394,23 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .filter(|(key, _)| key.channel == message.channel)
             .flat_map(|(_, queue)| queue.iter())
             .any(|entry| Some(entry.send) == message.from);
-        Ok(if queued {
-            WaitCause::HeadBlocked { channel }
-        } else {
-            WaitCause::EmptyQueue { channel }
+        if queued {
+            return Ok(WaitCause::HeadBlocked { channel });
+        }
+        let send = match message.from {
+            Some(from) => Some(self.program.text(from)?),
+            None => None,
+        };
+        let last = prefix.iter().rev().find_map(|step| {
+            step.removed().filter(|removed| {
+                removed.channel == channel
+                    && removed.instance == ordinal
+                    && Some(removed.send.as_str()) == send
+            })
+        });
+        Ok(match last.map(|removed| removed.removal) {
+            Some(Removal::Lost) => WaitCause::Displaced { channel },
+            Some(Removal::Received) | None => WaitCause::EmptyQueue { channel },
         })
     }
 
@@ -458,15 +500,21 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             key.clone(),
                             changed,
                         );
-                        gathered.successors.push((
-                            ProtocolTransition::channel(
-                                kind,
-                                channel.name.clone(),
-                                *ordinal,
-                                entry.enc.clone(),
-                            ),
-                            next,
-                        ));
+                        let mut transition = ProtocolTransition::channel(
+                            kind,
+                            channel.name.clone(),
+                            *ordinal,
+                            entry.enc.clone(),
+                        );
+                        if kind == StepKind::Lose {
+                            transition = transition.removing(QueueEvent {
+                                channel: channel.name.clone(),
+                                instance: *ordinal,
+                                send: self.program.text(entry.send)?.to_owned(),
+                                removal: Removal::Lost,
+                            });
+                        }
+                        gathered.successors.push((transition, next));
                     }
                 }
             }

@@ -24,6 +24,8 @@ pub enum GatedStep {
     Receive,
     /// ST-1.
     Attempt,
+    /// A `fence` (SE-5): the gate is the model's fence rule.
+    Fence,
 }
 
 /// One internal step of a memory model (SE-1 d): its identity, a canonical

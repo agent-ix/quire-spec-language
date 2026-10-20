@@ -449,7 +449,13 @@ fn an_enabling_footprint_holds_exactly_what_enables_the_step() {
     let subject = unit.subject("P");
     let system = sc_system(&subject);
     let reached = reachable(&system);
-    let sent = step(&system, &reached, 0, StepKind::Send, "Tx").2;
+    let (send, sending, sent) = step(&system, &reached, 0, StepKind::Send, "Tx");
+    let naming = |channel: &str| ClaimReads {
+        locations: BTreeSet::new(),
+        anchors: BTreeSet::from([AnchorName::Channel(channel.to_owned())]),
+    };
+    assert!(visible(send, &sending, &naming("P::ch")));
+    assert!(!visible(send, &sending, &naming("P::other")));
     let duplicate: &ProtocolTransition = reached[sent]
         .steps
         .iter()
@@ -468,7 +474,9 @@ fn an_enabling_footprint_holds_exactly_what_enables_the_step() {
 /// ADR-027 FT-1: the step that ends a branch writes that branch's
 /// disposition in its parallel instance, so the ends of two sibling branches
 /// are independent while each meets the join that reads the whole record;
-/// a step of a thread the state does not hold has no footprint.
+/// the step that ends the last running branch of an instance whose join has
+/// settled writes the whole record, which it removes; a step of a thread
+/// the state does not hold has no footprint.
 #[trace("TC-661")]
 #[test]
 fn a_branch_end_writes_its_own_disposition() {
@@ -490,6 +498,29 @@ fn a_branch_end_writes_its_own_disposition() {
     assert!(left.meets(&both()) && !left.meets(&ctl(&branch("left"))));
     // From s2, `A`'s thread has completed: its step is no step of s2.
     assert!(system.footprint(&reached[s2].state, attempt_a).is_err());
+
+    // Under `outstanding continue`, the step that ends the last running
+    // branch after the join has settled removes the instance, so it writes
+    // the whole record.
+    let run = format!(
+        "sequence Main {{ parallel Both {{ branch a {} branch b {} }} \
+         join any [a, b] outstanding continue; }}",
+        touch("TA"),
+        touch("TB"),
+    );
+    let unit = Cells::new(
+        &(contracts("self.v = 0") + &protocol("P", "", &run, "d")),
+        &["c"],
+    );
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let ended = one_completed(&system, &reached);
+    let joined = step(&system, &reached, ended, StepKind::Join, "Both").2;
+    let (_, last_branch, _) = step(&system, &reached, joined, StepKind::Attempt, "TB");
+    assert!(last_branch.writes.contains(&both()), "{last_branch:?}");
+    let (_, early, _) = step(&system, &reached, ended, StepKind::Attempt, "TB");
+    assert!(!early.writes.contains(&both()), "{early:?}");
 }
 
 /// ADR-027 FT-1: an attempt's model reads are those of the clauses its
@@ -588,6 +619,10 @@ fn assert_independent_steps_commute(system: &ProtocolSystem<'_, Sc>, reached: &[
 /// `repeat` re-forks `parallel Both` while a branch of the earlier instance
 /// still runs under `outstanding continue`: the fork's ordinal depends on
 /// whether that branch has ended, so the fork reads the earlier instance.
+/// Two more read binders through their environments (PS-5): a re-forked
+/// branch reads its own copy of a binder its parent gained at an `all`
+/// join, and a binder is copied up through two nested `all` joins to the
+/// root while a sibling branch reads its own copy of the root's binder.
 #[trace("TC-661")]
 #[test]
 fn every_independent_pair_of_steps_commutes() {
@@ -623,6 +658,30 @@ fn every_independent_pair_of_steps_commutes() {
     );
     let channel = "channel ch from w to w carries Boolean \
                    ordering unordered delivery unknown capacity 2 overflow block;";
+    // Binder environments (PS-5): each `u` of a re-forked `Q` reads its own
+    // copy of `a`, which the root gained at `join(P)`.
+    let environments = format!(
+        "sequence Main {{ repeat Loop by w visible () max 2 while {{ true }} sequence Body {{ \
+         parallel P {{ branch left event A1 by w as (a: Boolean) {{ true }}; branch right {} }} \
+         join all [left, right]; \
+         parallel Q {{ branch u sequence U {{ {} check Ck using v {{ a }}; }} branch v {} }} \
+         join any [u, v] outstanding continue; }} exhausted sequence Out {{ }} }}",
+        touch("B1"),
+        touch("U1"),
+        touch("V1"),
+    );
+    // An inner all-joined branch's binder, copied up by two joins and read
+    // by the root, beside a sibling branch that reads its own copy of `f`.
+    let nested = format!(
+        "sequence Main {{ event F by w as (f: Boolean) {{ true }}; \
+         parallel Both {{ branch left sequence L {{ parallel R {{ \
+         branch x event X by w as (x: Boolean) {{ f }}; branch y {} }} join all [x, y]; {} }} \
+         branch right {} }} join all [left, right]; {} }}",
+        touch("Y"),
+        touch("L2"),
+        attempt("B", "touch", "TouchPre", "b", "f"),
+        attempt("C", "touch", "TouchPre", "cc", "x or not x"),
+    );
     let units: Vec<(String, &str, Vec<&'static str>)> = vec![
         (fill_unit("self.v = 0", ""), "Fill", vec!["c"]),
         (fill_unit("self.v = 0", ""), "Fill", vec!["c", "d"]),
@@ -670,6 +729,16 @@ fn every_independent_pair_of_steps_commutes() {
             "P",
             vec!["c", "d"],
         ),
+        (
+            contracts("self.v = 0") + &protocol("P", "", &environments, "d"),
+            "P",
+            vec!["c"],
+        ),
+        (
+            contracts("self.v = 0") + &protocol("P", "", &nested, "d"),
+            "P",
+            vec!["c"],
+        ),
     ];
     let mut total = 0;
     for (index, (body, name, keys)) in units.iter().enumerate() {
@@ -678,8 +747,9 @@ fn every_independent_pair_of_steps_commutes() {
         let system = sc_system(&subject);
         let reached = reachable(&system);
         let checked = assert_independent_steps_commute(&system, &reached);
-        // The re-forking `repeat` has independent pairs of its own.
-        assert!(index != 6 || checked > 0, "{body}");
+        // The re-forking `repeat` and the environment fixtures have
+        // independent pairs of their own.
+        assert!(![6, 9, 10].contains(&index) || checked > 0, "{body}");
         total += checked;
     }
     assert!(total > 0);
@@ -688,8 +758,10 @@ fn every_independent_pair_of_steps_commutes() {
 /// ADR-027 FT-3 and PB-2: an `event` whose record type holds a reference
 /// lists its records over the state's objects, so its enabling footprint
 /// reads the membership of every population; a step's settling reads the
-/// binders of the guards it passes, which do not enable it; and a
-/// `duplicate` is visible to an atom that reads its channel's anchor.
+/// binders of the guards it passes, which do not enable it; and a `send`
+/// and a `duplicate` are visible to an atom that reads their position's
+/// anchor naming their channel, and a `send` invisible to one naming
+/// another channel.
 #[trace("TC-661")]
 #[test]
 fn records_guards_and_channel_anchors_are_read() {
@@ -731,7 +803,13 @@ fn records_guards_and_channel_anchors_are_read() {
     let subject = unit.subject("P");
     let system = sc_system(&subject);
     let reached = reachable(&system);
-    let sent = step(&system, &reached, 0, StepKind::Send, "Tx").2;
+    let (send, sending, sent) = step(&system, &reached, 0, StepKind::Send, "Tx");
+    let naming = |channel: &str| ClaimReads {
+        locations: BTreeSet::new(),
+        anchors: BTreeSet::from([AnchorName::Channel(channel.to_owned())]),
+    };
+    assert!(visible(send, &sending, &naming("P::ch")));
+    assert!(!visible(send, &sending, &naming("P::other")));
     let (duplicate, _) = reached[sent]
         .steps
         .iter()

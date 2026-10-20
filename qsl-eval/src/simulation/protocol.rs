@@ -4,8 +4,8 @@
 //! beside [`ModelSystem`], and its steps' footprints.
 //!
 //! A protocol state is the model state, the live protocol instances (each
-//! with its threads, parallel instances and binders) and the memory
-//! component (ADR-027 PS-8). Its successors are every enabled step of every
+//! with its threads, their binder environments and its parallel instances)
+//! and the memory component (ADR-027 PS-8). Its successors are every enabled step of every
 //! running thread and every internal step of the memory model; a step
 //! settles each thread it moves or creates to its next rest point, so a
 //! structural move is never a step (FO-1). An attempt is one FR-120
@@ -16,8 +16,8 @@
 //! This system steps `sequence`, `parallel` with its join policies `all`,
 //! `any` and `quorum`, `choice`, `repeat`, `check`, `await` with its
 //! `timeout`, `attempt`, `send`, `receive`, domain `event`, `commit`,
-//! channel `duplicate` and `lose`, and `finish`, under `activation on origin`
-//! (ADR-027 §9 steps 3 and 4). A protocol that holds any other construct is
+//! `fence` (SE-5), channel `duplicate` and `lose`, and `finish`, under
+//! `activation on origin` (ADR-027 §9 steps 3 and 4). A protocol that holds any other construct is
 //! refused, before any state is built, with
 //! `unsupported_construct`/`not-yet-implemented` naming it.
 
@@ -296,7 +296,10 @@ struct Entry {
 struct Instance {
     threads: BTreeMap<ThreadPath, Thread>,
     parallels: BTreeMap<ParallelKey, Parallel>,
-    binders: BTreeMap<(qsl_semantics::check::ProtocolNodeId, ThreadPath), Bound>,
+    /// Every live thread's binder environment (ADR-027 PS-5), by (binder
+    /// node, the thread whose environment holds the entry): each thread
+    /// reads its own entry, and holds its own copy of every value it reads.
+    environments: BTreeMap<(qsl_semantics::check::ProtocolNodeId, ThreadPath), Bound>,
     /// Each `repeat` counter, by (repeat node, thread) (ADR-027 PS-6).
     counters: BTreeMap<(qsl_semantics::check::ProtocolNodeId, ThreadPath), u64>,
     /// Each non-empty queue, a `fifo` one in delivery order and an
@@ -305,67 +308,25 @@ struct Instance {
 }
 
 impl Instance {
-    /// The binding of `node` the thread `reader` reads (ADR-027 PS-5): the
-    /// binding by the nearest of `reader` and its ancestors, else the one
-    /// binding by a thread it forked. A thread's binding is its own until
-    /// it binds the node again, so `reader` reads its ancestor's binding as
-    /// of its fork (a re-binding copies the old one to each descendant
-    /// branch that still reads it). Two bindings by threads `reader` forked
-    /// break an invariant: a reader reads a branch's binder only after an
-    /// `all` join, whose instance leaves the state, and a fork that reuses
-    /// an ordinal clears what the old threads of that path bound.
-    fn binding(
+    /// The value the thread `reader` reads for the binder of `node`: its own
+    /// environment's entry (ADR-027 PS-5).
+    fn entry(
         &self,
         node: qsl_semantics::check::ProtocolNodeId,
         reader: &ThreadPath,
-    ) -> Result<Option<(&ThreadPath, &Bound)>, ProtocolRefusal> {
-        let mut nearest: Option<(&ThreadPath, &Bound)> = None;
-        let mut below: Option<(&ThreadPath, &Bound)> = None;
-        for ((_, by), bound) in self
-            .binders
-            .range((node, ThreadPath::root(0))..)
-            .take_while(|((bound, _), _)| *bound == node)
-        {
-            if by.is_prefix_of(reader) {
-                if nearest.is_none_or(|(path, _)| path.steps.len() < by.steps.len()) {
-                    nearest = Some((by, bound));
-                }
-            } else if reader.is_prefix_of(by) {
-                if below.is_some() {
-                    return Err(ProtocolRefusal::fault(
-                        "a-reader-sees-one-binding-of-a-node",
-                    ));
-                }
-                below = Some((by, bound));
-            }
-        }
-        Ok(nearest.or(below))
+    ) -> Option<&Bound> {
+        self.environments.get(&(node, reader.clone()))
     }
 
-    /// The threads whose binding of `node` the thread `reader` may read: the
-    /// nearest of `reader` and its ancestors with one, else every thread it
-    /// forked with one ([`Self::binding`] refuses two of those when read).
-    fn read_by(
-        &self,
-        node: qsl_semantics::check::ProtocolNodeId,
-        reader: &ThreadPath,
-    ) -> Vec<ThreadPath> {
-        let bound = || {
-            self.binders
-                .range((node, ThreadPath::root(0))..)
-                .take_while(move |((bound, _), _)| *bound == node)
-                .map(|((_, by), _)| by)
-        };
-        let nearest = bound()
-            .filter(|by| by.is_prefix_of(reader))
-            .max_by_key(|by| by.steps.len());
-        match nearest {
-            Some(by) => vec![by.clone()],
-            None => bound()
-                .filter(|by| reader.is_prefix_of(by))
-                .cloned()
-                .collect(),
-        }
+    /// The entries of the thread `holder`'s environment.
+    fn environment<'i>(
+        &'i self,
+        holder: &'i ThreadPath,
+    ) -> impl Iterator<Item = (qsl_semantics::check::ProtocolNodeId, &'i Bound)> + 'i {
+        self.environments
+            .iter()
+            .filter(move |((_, thread), _)| thread == holder)
+            .map(|((node, _), bound)| (*node, bound))
     }
 }
 
@@ -710,7 +671,8 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         Ok(views)
     }
 
-    /// The bound binders of `state`: each binder's node and thread.
+    /// The binder environments of `state` (ADR-027 PS-5): each entry's
+    /// binder node and the thread whose environment holds it.
     ///
     /// # Errors
     ///
@@ -724,7 +686,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         for (node, thread) in state
             .instances
             .values()
-            .flat_map(|instance| instance.binders.keys())
+            .flat_map(|instance| instance.environments.keys())
         {
             binders.push((self.program.text(*node)?.to_owned(), thread.clone()));
         }
@@ -817,7 +779,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     ),
                 ));
             }
-            for ((node, thread), bound) in &instance.binders {
+            for ((node, thread), bound) in &instance.environments {
                 let node = self
                     .program
                     .text(*node)
@@ -892,15 +854,15 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     }
 
     /// The value of each binder slot the node `reader` of the thread `path`
-    /// reads: slot 0, the `over` input; a binder of a node, the binding
-    /// [`Instance::binding`] selects. A slot `reader` does not read is
-    /// `None`.
+    /// reads: slot 0, the `over` input; a binder of a node, the entry of
+    /// `path`'s own environment (ADR-027 PS-5). A slot `reader` does not
+    /// read is `None`.
     fn frame(
         &self,
         instance: &Instance,
         path: &ThreadPath,
         reader: qsl_semantics::check::ProtocolNodeId,
-    ) -> Result<Vec<Option<Value>>, ProtocolRefusal> {
+    ) -> Vec<Option<Value>> {
         let mut frame = Vec::with_capacity(self.program.slots.len());
         for (slot, node) in self.program.slots.iter().enumerate() {
             let value = match node {
@@ -908,13 +870,11 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 // Refused in `Program::new` when any slot reads one.
                 None => None,
                 Some(_) if !self.program.reads(slot, reader) => None,
-                Some(node) => instance
-                    .binding(*node, path)?
-                    .map(|(_, bound)| bound.value.clone()),
+                Some(node) => instance.entry(*node, path).map(|bound| bound.value.clone()),
             };
             frame.push(value);
         }
-        Ok(frame)
+        frame
     }
 
     /// One slot body at the observation `observed`, over `frame`.
@@ -1048,8 +1008,12 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
         self.memory.atom_values(&state.memory, &state.model)
     }
 
-    fn blocked(&self, state: &Self::State) -> Result<Vec<BlockedThread>, ExpansionStop> {
-        self.blocked_threads(state)
+    fn blocked(
+        &self,
+        state: &Self::State,
+        prefix: &[&ProtocolTransition],
+    ) -> Result<Vec<BlockedThread>, ExpansionStop> {
+        self.blocked_threads(state, prefix)
     }
 }
 

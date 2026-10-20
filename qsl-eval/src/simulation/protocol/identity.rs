@@ -174,6 +174,8 @@ pub enum StepKind {
     Finish,
     /// ST-10: a step of the memory model.
     Memory,
+    /// SE-5: a `fence`.
+    Fence,
 }
 
 impl StepKind {
@@ -190,6 +192,7 @@ impl StepKind {
             Self::Timeout => "timeout",
             Self::Finish => "finish",
             Self::Memory => "memory",
+            Self::Fence => "fence",
         }
     }
 }
@@ -220,15 +223,43 @@ enum Members {
     Memory { identity: String },
 }
 
+/// How a step took an entry of one send node off a channel's queue, as
+/// ADR-027 PD-4's `Displaced` cause reads the reported prefix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Removal {
+    /// A `receive` took it.
+    Received,
+    /// A loss dropped it: a `lose` step, an overflow loss selector that
+    /// displaced it, or a `lost` send of it.
+    Lost,
+}
+
+/// One entry a step removed from, or dropped on, a channel of a protocol
+/// instance (PD-4).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct QueueEvent {
+    /// The channel's qualified name.
+    pub(crate) channel: String,
+    /// The protocol instance's ordinal.
+    pub(crate) instance: u64,
+    /// The static declaration path of the entry's send node.
+    pub(crate) send: String,
+    /// How it was removed.
+    pub(crate) removal: Removal,
+}
+
 /// A protocol step's typed canonical transition identity (ADR-027 TS-2,
 /// QSpec FR-426): `{"type":"protocol-transition","step":<kind>,...}` with
-/// exactly the members its kind lists.
+/// exactly the members its kind lists. The entry it removed from a queue,
+/// if any, is a fact of those members that PD-4 reads; it is not encoded
+/// apart from them.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolTransition {
     kind: StepKind,
     thread: Option<ThreadPath>,
     node: Option<String>,
     members: Members,
+    removed: Option<QueueEvent>,
 }
 
 impl ProtocolTransition {
@@ -243,13 +274,14 @@ impl ProtocolTransition {
     }
 
     /// A step of `kind` by `thread` at `node` with no further member: a
-    /// `fork`, `join` or `timeout`.
+    /// `fork`, `join`, `timeout` or `fence`.
     pub(crate) fn control(kind: StepKind, thread: ThreadPath, node: String) -> Self {
         Self {
             kind,
             thread: Some(thread),
             node: Some(node),
             members: Members::Control,
+            removed: None,
         }
     }
 
@@ -270,6 +302,7 @@ impl ProtocolTransition {
                 receiver,
                 arguments,
             },
+            removed: None,
         }
     }
 
@@ -281,6 +314,7 @@ impl ProtocolTransition {
             thread: Some(thread),
             node: Some(node),
             members: Members::Record { record },
+            removed: None,
         }
     }
 
@@ -297,6 +331,7 @@ impl ProtocolTransition {
                 instance,
                 entry,
             },
+            removed: None,
         }
     }
 
@@ -306,7 +341,19 @@ impl ProtocolTransition {
             thread: None,
             node: None,
             members: Members::Memory { identity },
+            removed: None,
         }
+    }
+
+    /// This step, recording that it took `removed` off its queue.
+    pub(crate) fn removing(mut self, removed: QueueEvent) -> Self {
+        self.removed = Some(removed);
+        self
+    }
+
+    /// The entry this step took off a channel's queue, if any.
+    pub(crate) fn removed(&self) -> Option<&QueueEvent> {
+        self.removed.as_ref()
     }
 
     /// The step's kind.
@@ -416,7 +463,8 @@ pub enum WaitCause {
     /// An event, attempt or `finish` whose constraint no record satisfies,
     /// or a `send` whose constraint no payload satisfies.
     Constraint,
-    /// A `receive` with no entry of its send queued.
+    /// A `receive` with no entry of its send queued, and none lost since
+    /// the last was received.
     EmptyQueue {
         /// The channel's qualified name.
         channel: String,
@@ -430,6 +478,12 @@ pub enum WaitCause {
     /// A `send` under `overflow block` whose queue is at capacity for every
     /// payload its constraint admits.
     FullQueue {
+        /// The channel's qualified name.
+        channel: String,
+    },
+    /// A `receive` with no entry of its send queued, whose last removal on
+    /// the reported prefix was a loss, not a `receive`.
+    Displaced {
         /// The channel's qualified name.
         channel: String,
     },
