@@ -15,7 +15,7 @@ object rows into a `CheckedRefinement`, refuses each missing, duplicated,
 misplaced or ill-typed row at its span, lifts references, records hidden
 fields and puts the declaration in the package identity.
 
-Scope: FR-135-AC-1 to FR-135-AC-8.
+Scope: FR-135-AC-1 to FR-135-AC-9.
 
 ## Test Procedure
 
@@ -31,12 +31,11 @@ Fixtures: ADR-020 §8's `CasRefinesCounter` unit, with `Spec` local and with
 4. Check `CasRefinesCounter` with the `value` row removed; check it with
    `value = self.tmpA` and compare node identities and `package_id`s with
    step 1.
-5. Check `CasTwice`, a refinement given a non-empty resolved internal list, and
-   `CasRefinesCounter`, each in the build as it stands, that is, for each
-   feature the build has not built; check `RegisterHistory`, whose `history`
-   feature the build holds. The step does not choose a support set; it
-   runs only while a feature is unbuilt, and is rewritten when the feature
-   lands.
+5. Check `CasTwice` and `CasRefinesCounter`, each in the build as it stands
+   (FR-135-AC-5); check a refinement given a non-empty resolved internal list
+   (FR-135-AC-9); check `RegisterHistory`, whose `history` feature the build
+   holds for an `Int[0, 1]` row. The step does not choose a support set; it runs
+   only while a feature is unbuilt, and is rewritten when the feature lands.
 6. Check `RingIsQueue` with a nested `Sequence<Reference<Ring>>` row, and
    with the same field as a plain reference.
 7. Check `RingIsQueue` with a relationship declared on the abstract `Queue`.
@@ -56,7 +55,7 @@ Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
   checks; the `Reference<R::Slot>` row refuses `ill_typed`/`type-mismatch`.
 - Step 4: `hidden = [value]`; different node identity and different
   `package_id`.
-- Step 5: `CasTwice` refuses `unsupported_construct`/`not-yet-implemented` at `Twice` naming `protocol-abstract-side`, `CasTwice` and the profile; the internal-list refinement refuses the same pair naming `refinement-internal-list`; each classifies `unsupported`; no `CheckedRefinement` for either; `CasRefinesCounter` and `RegisterHistory` check.
+- Step 5: `CasTwice` refuses `unsupported_construct`/`not-yet-implemented` at `Twice` naming `protocol-abstract-side`, `CasTwice` and the profile, with no `subject` member; the internal-list refinement refuses the same pair naming `refinement-internal-list`; each classifies `unsupported`; no `CheckedRefinement` for either; `CasRefinesCounter` and `RegisterHistory` check.
 - Step 6: `unsupported_construct`/`not-yet-implemented` at the row's
   expression; then it checks.
 - Step 7: `unsupported_construct`/`declaration-form` at the alias `Q`; no

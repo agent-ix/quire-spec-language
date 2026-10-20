@@ -17,7 +17,7 @@ proved safety half, rejects each kind of tampered or false certificate,
 stops at a limit, and that settlement labels a proof certified, uncertified
 or rejected.
 
-Scope: FR-149-AC-1 to FR-149-AC-10, FR-144-AC-7.
+Scope: FR-149-AC-1 to FR-149-AC-11, FR-144-AC-7.
 
 ## Test Procedure
 
@@ -52,6 +52,9 @@ whose state constraint has a refused family, for an unnamed expansion stop.
     `obligation` (FR-149-AC-9).
 11. Cancel a check between positions, and force an expansion stop that names no
     limit (FR-149-AC-10).
+12. Check the `RegisterHistory` certificate whose positions differ only in
+    history, then the same certificate with one position's history key
+    replaced by another's (FR-149-AC-11).
 
 Tag the tests `#[trace("TC-556", "<AC id>")]`.
 
@@ -72,3 +75,4 @@ Tag the tests `#[trace("TC-556", "<AC id>")]`.
 - Step 9: the locus of FR-149-AC-8; `null` verdict for `PostDiffers`; each kind's members.
 - Step 10: `stale_dependency`/`content-mismatch` twice; the checker is not called.
 - Step 11: `Stopped(Cancelled{source})`; `Stopped(ResourceExhausted)`; each settles V-7.
+- Step 12: `Accepted`; then `Rejected`.
