@@ -50,7 +50,7 @@ fn slice(text: &str, span: Span) -> &str {
 #[test]
 fn a_declaration_builds_its_three_binding_forms() {
     let declaration = r#"abstraction Link using t {
-        type Config::ConfigVersion to "store::ConfigVersion" { version to "version"; note to "0"; }
+        type Config::ConfigVersion to "store::ConfigVersion" { version to "version"; note to "0"; };
         population Config::configs to "state::configs";
         operation Config::ConfigVersion::attemptUpdate to "update" receiver "self" (n to "count", m to "limit");
     }"#;
@@ -143,7 +143,7 @@ fn an_object_binding_without_braces_has_no_fields_and_a_frame_may_have_no_parame
 fn a_rust_spelling_is_kept_as_the_bytes_between_its_quotes() {
     let (_, unit) = build(
         r#"abstraction Link using t {
-            type Config::ConfigVersion to "aA" { version to "r#type"; }
+            type Config::ConfigVersion to "aA" { version to "r#type"; };
         }"#,
     );
     let form = sole_abstraction(&unit);

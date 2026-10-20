@@ -24,7 +24,7 @@ const BODY: &str = "body ok using v on Config::ConfigVersion::size() { 1 }";
 const CALL: &str = "pre c using v on Config::ConfigVersion::probe { self.size() > 0 }";
 const NOOP: &str = "function noop using v(): Boolean pure { true }";
 const ABSTRACTION: &str = "abstraction A using v {\n\
-    type Config::ConfigVersion to \"store::Version\" { versionNumber to \"number\"; }\n\
+    type Config::ConfigVersion to \"store::Version\" { versionNumber to \"number\"; };\n\
     population Config::config_history to \"store::history\";\n\
     operation Config::ConfigVersion::attemptUpdate to \"store::update\" receiver \"self\" ();\n\
     }";
