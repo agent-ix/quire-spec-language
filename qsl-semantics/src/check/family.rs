@@ -181,6 +181,16 @@ fn binary_operator_tag(operator: BinaryOperator) -> &'static str {
     }
 }
 
+fn population_form_tag(form: qsl_forms::PopulationForm) -> &'static str {
+    match form {
+        qsl_forms::PopulationForm::Count => "count",
+        qsl_forms::PopulationForm::Sum => "sum",
+        qsl_forms::PopulationForm::Exists => "exists",
+        qsl_forms::PopulationForm::All => "all",
+        qsl_forms::PopulationForm::Only => "only",
+    }
+}
+
 fn binder_query_tag(query: BinderQuery) -> &'static str {
     match query {
         BinderQuery::Map => "map",
@@ -415,6 +425,12 @@ fn encode_expression(
                 out.write_str(&numerator.to_string());
                 out.write_str(&denominator.to_string());
             }
+            ExprNode::Quantity(quantity) => {
+                out.write_str("quantity");
+                out.write_str(&quantity.magnitude.first.to_string());
+                out.write_str(&quantity.magnitude.second.to_string());
+                out.write_str(&quantity.unit.name);
+            }
             ExprNode::String(text) => {
                 out.write_str("string");
                 out.write_str(text);
@@ -577,6 +593,32 @@ fn encode_expression(
                 out.write_str(binder);
                 pending.extend([expr.at(*source), expr.at(*summand)]);
             }
+            ExprNode::Population {
+                form,
+                binder,
+                population,
+                population_span: _,
+                condition,
+                body,
+            } => {
+                out.write_str("population");
+                out.write_str(population_form_tag(*form));
+                out.write_str(binder);
+                out.write_str(population);
+                out.write_bool(condition.is_some());
+                out.write_bool(body.is_some());
+                pending.extend(condition.iter().chain(body.iter()).map(|id| expr.at(*id)));
+            }
+            ExprNode::Seq {
+                binder,
+                low,
+                high,
+                body,
+            } => {
+                out.write_str("seq");
+                out.write_str(binder);
+                pending.extend([expr.at(*low), expr.at(*high), expr.at(*body)]);
+            }
             ExprNode::Size(operand) => {
                 out.write_str("size");
                 pending.push(expr.at(*operand));
@@ -632,6 +674,30 @@ fn encode_expression(
                 out.write_str(edge);
                 pending.extend([expr.at(*source), expr.at(*target)]);
             }
+            ExprNode::Indexed { read, trace } => {
+                out.write_str("indexed");
+                out.write_str(trace);
+                pending.push(expr.at(*read));
+            }
+            ExprNode::StepLabel { trace, label } => {
+                out.write_str("step_label");
+                out.write_str(trace);
+                match label {
+                    qsl_forms::StepLabelForm::Operation => out.write_str("op"),
+                    qsl_forms::StepLabelForm::Receiver => out.write_str("receiver"),
+                    qsl_forms::StepLabelForm::Argument {
+                        operation,
+                        parameter,
+                    } => {
+                        out.write_str("argument");
+                        out.write_str(operation);
+                        out.write_str(parameter);
+                    }
+                }
+            }
+            ExprNode::Stutter => {
+                out.write_str("stutter");
+            }
             // Not the S2 seam (`Typer::infer_form`'s own doc,
             // `qsl-semantics/src/check/check/typing.rs`): an unconditional
             // probe arm so this match keeps compiling under `--cfg
@@ -664,6 +730,7 @@ fn measure_model_target(out: &mut DeclarationMeter, root: &qsl_forms::TypeForm) 
                 BuiltinType::Text => "Text",
                 BuiltinType::Option => "Option",
                 BuiltinType::Reference => "Reference",
+                BuiltinType::Clock => "Clock",
             },
         });
         out.write_u64(quire_exact::length_amount(form.arguments.len()));

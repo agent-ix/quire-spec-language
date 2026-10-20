@@ -3,19 +3,22 @@
 //! UE-2): a model counterexample, the payload of a
 //! `WitnessEnvelope<TemporalCounterexample>`.
 //!
-//! This is the finite-prefix shape of QSpec FR-364's model arm: the safety,
-//! deadlock and undefined-evaluation refutations that EN-1's first phase
-//! returns. A liveness lasso's `loop` and a bounded clause's `interval` are
-//! not carried yet: no engine in this crate's callers builds either.
+//! This is QSpec FR-364's model arm: the finite-prefix safety, deadlock and
+//! undefined-evaluation refutations that EN-1's first phase returns, and the
+//! lasso a liveness refutation returns from its second phase ([`Lasso`]). A
+//! bounded clause's `interval` is not carried yet: no engine in this crate's
+//! callers builds one.
 
+use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::FormulaNodeId;
-use quire_exact::{ObjectReference, Origin, Role};
+use quire_exact::{Origin, Role};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
 use crate::witness::FamilyPayload;
 
 /// The occurrence role of the derived deadlock-freedom item.
@@ -57,6 +60,20 @@ pub enum UndefinedLocus {
     Contract(String),
     /// The `terminal when` predicate declared for the model alias.
     Terminal(String),
+    /// The request's state constraint (ADR-021 SC-2), by its clause name.
+    Constraint(String),
+    /// A refinement's mapping row or step-row argument (ADR-020 RE-5).
+    Mapping(Box<MappingSite>),
+}
+
+/// The row and object a refinement's undefined mapping names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MappingSite {
+    /// The row.
+    pub row: MappingRowRef,
+    /// The concrete object the row was evaluated for, when it is evaluated
+    /// for one.
+    pub object: Option<ObjectKey>,
 }
 
 /// QSpec FR-364's `where` of an undefined evaluation.
@@ -92,7 +109,25 @@ pub enum CounterexampleKind {
     UndefinedEvaluation(UndefinedEvaluation),
 }
 
-/// A finite-prefix counterexample over a model subject.
+/// The loop of a liveness refutation (ADR-018 CX-1): where the behaviour
+/// re-enters, and whether the loop is the terminal stutter step.
+///
+/// The steps of the lasso are [`TemporalCounterexample::prefix`]: the stem,
+/// then the loop. The loop re-enters at the position `entry`, so its steps
+/// are the prefix's steps from `entry` on and the last post-state of the
+/// prefix is the state at position `entry`. A loop that is the terminal
+/// stutter step (ADR-018 SM-4) has no model step: `entry` is the prefix's
+/// length, the position of the terminal state, and the marker is set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Lasso {
+    /// The position the loop re-enters, in `0..=prefix.len()`.
+    pub entry: usize,
+    /// Whether the loop is the one terminal stutter step.
+    pub terminal_stutter: bool,
+}
+
+/// A counterexample over a model subject: a finite prefix, or with a
+/// [`Lasso`] the stem and loop of a liveness refutation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TemporalCounterexample {
     /// The index of the behaviour's initial state in the subject's ordered
@@ -100,35 +135,47 @@ pub struct TemporalCounterexample {
     pub initial_state: usize,
     /// The prefix's steps, in order.
     pub prefix: Vec<ModelStep>,
-    /// The object the clause's `over` parameter is bound to; `None` for the
+    /// The instance the clause's `over` parameter is bound to, named by
+    /// population and key (FR-125 Instancing); `None` for the
     /// deadlock-freedom item.
-    pub over_binding: Option<ObjectReference>,
+    pub over_binding: Option<ModelInstance>,
     /// The item's fairness set; empty for the deadlock-freedom item.
     pub fairness: Vec<FairnessConstraint>,
     /// What the counterexample refutes.
     pub kind: CounterexampleKind,
+    /// The loop of a liveness refutation; `None` for a finite prefix.
+    pub lasso: Option<Lasso>,
+    /// The failure of a refinement item (ADR-020 RC-1); `None` for every
+    /// other item.
+    pub refinement: Option<RefinementFailure>,
 }
 
 impl TemporalCounterexample {
-    /// The counterexample's length: its number of transitions (ADR-018
-    /// "Length").
+    /// The counterexample's length: its number of transitions, stem and loop
+    /// together (ADR-018 "Length"). A terminal stutter loop is one transition
+    /// (ADR-018 SM-4) that [`Self::prefix`] does not list.
     pub fn len(&self) -> usize {
-        self.prefix.len()
+        self.prefix.len().saturating_add(usize::from(
+            self.lasso.is_some_and(|lasso| lasso.terminal_stutter),
+        ))
     }
 
     /// Whether the counterexample has no transition: it ends at an initial
     /// state.
     pub fn is_empty(&self) -> bool {
-        self.prefix.is_empty()
+        self.len() == 0
     }
 
     /// QSpec FR-364's `trace_position`: the prefix's last position for a
     /// formula and an undefined-evaluation counterexample, `None` for a
-    /// deadlock.
+    /// deadlock. A formula lasso is evaluated from its origin (ADR-018 §6),
+    /// so its position is 0.
     pub fn trace_position(&self) -> Option<u64> {
-        match &self.kind {
-            CounterexampleKind::Deadlock => None,
-            CounterexampleKind::Formula | CounterexampleKind::UndefinedEvaluation(_) => {
+        match (&self.kind, self.lasso) {
+            (CounterexampleKind::Deadlock, _) => None,
+            (CounterexampleKind::Formula, Some(_)) => Some(0),
+            (CounterexampleKind::Formula | CounterexampleKind::UndefinedEvaluation(_), None)
+            | (CounterexampleKind::UndefinedEvaluation(_), Some(_)) => {
                 u64::try_from(self.prefix.len()).ok()
             }
         }

@@ -76,12 +76,19 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::FieldValue,
     Production::TupleValue,
     Production::CollectionCall,
+    Production::PopulationCall,
+    Production::PopulationBinder,
     Production::SignedInteger,
     Production::TemporalClause,
     Production::Activation,
     Production::Capture,
     Production::Fairness,
     Production::Interval,
+    Production::TimedInterval,
+    Production::TimeDeclaration,
+    Production::TimeInvariant,
+    Production::ClockBound,
+    Production::UrgentDeclaration,
     Production::TemporalExpression,
     Production::TemporalImplication,
     Production::TemporalDisjunction,
@@ -90,6 +97,32 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::TemporalUnary,
     Production::TemporalPrimary,
     Production::TerminalDeclaration,
+    Production::RandomDeclaration,
+    Production::WeightedValue,
+    Production::RewardDeclaration,
+    Production::WorkloadDeclaration,
+    Production::WorkloadWeight,
+    Production::ProbabilisticClause,
+    Production::SchedulerClause,
+    Production::FairnessItem,
+    Production::Confidence,
+    Production::ConfidenceItem,
+    Production::ProbabilisticForm,
+    Production::Event,
+    Production::Measure,
+    Production::Fraction,
+    Production::Weighting,
+    Production::Horizon,
+    Production::ExactValue,
+    Production::QuantityLiteral,
+    Production::StateGraphClaim,
+    Production::StateGraphBody,
+    Production::StateGraphPredicate,
+    Production::StateGraphImplication,
+    Production::StateGraphDisjunction,
+    Production::StateGraphConjunction,
+    Production::StateGraphRelation,
+    Production::StateGraphUnary,
     Production::ProtocolClause,
     Production::Role,
     Production::RoleLifetime,
@@ -139,7 +172,22 @@ const ACCEPTED_PRODUCTIONS: &[Production] = &[
     Production::ExecutionBinding,
     Production::HyperClause,
     Production::TraceDomain,
+    Production::BehavioursDomain,
     Production::Quantifier,
+    Production::AlignSkip,
+    Production::MatchBlock,
+    Production::StepLabel,
+    Production::IndexedRead,
+    Production::HyperExpression,
+    Production::HyperImplication,
+    Production::HyperDisjunction,
+    Production::HyperConjunction,
+    Production::HyperComparison,
+    Production::HyperSum,
+    Production::HyperProduct,
+    Production::HyperUnary,
+    Production::HyperPostfix,
+    Production::HyperPrimary,
     Production::HybridDeclaration,
     Production::HybridMode,
     Production::Equation,
@@ -218,10 +266,57 @@ fn corpus() -> Vec<(&'static str, String)> {
             ),
         ),
         (
+            "time",
+            source(concat!(
+                "time Rpc dense unit ms;\n",
+                "time Rpc tick Call::send period rational(1, 2) ms unit ms;\n",
+                "time invariant inflight when { self.inflight } { self.x <= 3 ms and self.y < 0.5 ms }\n",
+                "urgent hurry Call::timeout;\n",
+                "urgent stalled when { self.waiting };\n",
+                "record Call { x: Clock; }\n",
+                "temporal Deadline using Complete over (k: M::Call) clock \"model-time\" on origin { eventually[0 ms, 3 ms) holds(k.done) and once(1 ms, 2 ms] holds(k.done) }",
+            )),
+        ),
+        (
+            "hyper-behaviours",
+            source(concat!(
+                "hyper NonInterference using Complete over behaviours (v: M::Vault)\n",
+                "forall trace a of M fair weak M::Vault::step;\n",
+                "exists trace b of M\n",
+                "align skip { M::Vault::mix }\n",
+                "match { a.step.op = b.step.op and a.step.M::Vault::step.i = b.step.M::Vault::step.i and (a.step.receiver = b.step.receiver) and b.step.op != stutter }\n",
+                "{ always holds(not (v.l @ a = v.l @ b)) }",
+            )),
+        ),
+        (
             "terminal",
             source(concat!(
                 "terminal Done using Complete on M when { true };\n",
                 "terminal Halt using Complete on M any;",
+            )),
+        ),
+        (
+            "probabilistic",
+            source(concat!(
+                "random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, };\n",
+                "reward duration on Server::attempt = d;\n",
+                "workload Steady on Service { weight Server::request = 1; weight Server::attempt = 1; }\n",
+                "probabilistic P95 using ev on Service under Steady on origin with alpha 0.01, beta 0.01, indifference 0.01 { quantile 0.95 of (accumulate duration from holds(s.phase = Busy) until holds(s.phase = Done) within 10) <= 5 ms }\n",
+                "probabilistic Monthly using ev on Avail over (n: M::Node) under every scheduler fair weak each Node::tick on origin { probability >= 0.99 [ fraction holds(v.up) over [0, 10 ms] weighted by cost >= rational(999, 1000) ] }\n",
+                "probabilistic Safe using ev on Health under Steady on origin { probability >= 0.999 [ always[0,1000] holds(n.healthy) ] }\n",
+                "probabilistic Mean using ev on Avail under Steady on origin { mean of (fraction holds(v.up) over [0, 100]) >= 0.99 }\n",
+                "probabilistic Run using ev on Avail under Steady on origin { long_run_fraction holds(v.up) >= 0.999 }\n",
+                "probabilistic Done using ev on Avail under Steady on origin { expected accumulate duration until holds(v.done) <= 5 ms }",
+            )),
+        ),
+        (
+            "state-graph",
+            source(concat!(
+                "possible Reach using Complete over (c: M::Thing) { fair weak M::Thing::act; c.n = 2 }\n",
+                "always possible Still using Complete over (c: M::Thing) from (c.n != 0) { c.n = 2 }\n",
+                "always possible Always using Complete over (c: M::Thing) { eventually[0,3] c.n = 2 until once c.n = 1 }\n",
+                "possible Mixed using Complete over (c: M::Thing) { not (c.n = 1 and eventually c.n = 2) }\n",
+                "unique path One using Complete over (c: M::Thing) from (c.n = 0) to (c.n = 2);",
             )),
         ),
         (
@@ -278,6 +373,7 @@ fn corpus() -> Vec<(&'static str, String)> {
                 "step memory fence -> node Main::Tried(_);\n",
                 "population Spec::Things from Impl::Things;\n",
                 "object Spec::Thing from Impl::Thing { size = self.count; }\n",
+                "object Spec::Bag from Impl::Ring { items = seq(i in 0 .. self.size - 1: only(s in Impl::slots where s.ring = self: s.value)); total = sum(s in Impl::slots: s.value) + count(s in Impl::slots where s.ring = self); has = exists(s in Impl::slots) and all(s in Impl::slots where s.value = 1); }\n",
                 "history Impl::Thing.last : Int[0, 4] = 0 { on M::Thing::act : pre(self.count); }\n",
                 "assume fair weak each M::Thing::act;\n",
                 "ensure fair weak M::Spec::act;\n",
@@ -325,7 +421,7 @@ fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
         let (id, source, span) = occurrences.get(production).unwrap();
         assert!(span.start < source.len(), "{production:?} must own a token");
         let mut invalid = source.clone().into_bytes();
-        invalid[span.start] = b'@';
+        invalid[span.start] = b'#';
         let invalid = String::from_utf8(invalid).unwrap();
         let parsed = parse(id, &invalid);
         assert!(!parsed.is_admissible(), "{production:?} mutation admitted");
@@ -337,7 +433,7 @@ fn every_named_production_has_positive_boundary_and_located_negative_vectors() {
 
         let boundary = span.end - 1;
         let mut invalid = source.clone().into_bytes();
-        invalid[boundary] = b'@';
+        invalid[boundary] = b'#';
         let invalid = String::from_utf8(invalid).unwrap();
         let parsed = parse(id, &invalid);
         assert!(

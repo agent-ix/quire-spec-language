@@ -199,7 +199,7 @@ pub fn recognize(source: &Source, limits: Limits) -> Result<Vec<Token>, Box<Diag
         // invalid-syntax result rather than reclassifying them as unsupported.
         if matches!(
             kind,
-            Kind::Caret | Kind::Question | Kind::Apostrophe | Kind::Hex(_)
+            Kind::Caret | Kind::Question | Kind::Apostrophe | Kind::Tilde | Kind::Hex(_)
         ) {
             return Err(error(
                 source,

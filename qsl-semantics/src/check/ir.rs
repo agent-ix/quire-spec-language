@@ -11,7 +11,7 @@ use quire_exact::EffectiveId;
 use quire_exact::NodeKey;
 use quire_exact::RoundingMode;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
-use quire_exact::{CollectionKind, CollectionType, IntegerInterval, RationalDomain};
+use quire_exact::{CollectionKind, CollectionType, Integer, IntegerInterval, RationalDomain};
 use quire_exact::{Value, ValueType};
 use quire_semantic_value::declaration::{
     CheckedEquality, EqualityOperand, EqualityOperator, FieldRef,
@@ -54,21 +54,6 @@ impl RecordField {
     pub fn name(&self) -> &str {
         &self.name
     }
-}
-
-/// The state a model read in a state clause observes (FR-104
-/// "Observations of reads"): `current` in an invariant, `pre` in a
-/// precondition and `post` in a postcondition, except inside `pre(e)`,
-/// where reads of `self` and reads through references obtained inside `e`
-/// observe `pre`.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Observation {
-    /// An invariant's `at current` state.
-    Current,
-    /// The operation's pre-state.
-    Pre,
-    /// The operation's post-state.
-    Post,
 }
 
 /// The typed index of one node of a [`CheckedBody`]: its position there.
@@ -586,6 +571,9 @@ pub enum Visit {
     Count,
     /// `sum<N>` over integer summands.
     Sum,
+    /// `only` (FR-139): the body's value at the one occurrence; undefined
+    /// when there is none or several.
+    Only,
 }
 
 /// A collection property a kind conversion can discard.
@@ -1062,11 +1050,124 @@ pub enum NodeKind {
         /// The payload arguments, in the member's declared position order.
         arguments: Vec<NodeId>,
     },
+    /// A concrete population's objects in the observed state (FR-139): the
+    /// objects of `population` in ascending key order, typed
+    /// `Set<Reference<T>>` with the universe size left symbolic. Only a
+    /// refinement row's expression contains one.
+    PopulationObjects {
+        /// The concrete population.
+        population: DeclarationKey,
+    },
+    /// `seq(i in low .. high: body)` (FR-139): the sequence of `body` for
+    /// each integer `slot` takes from `low` to `high`, empty when `high <
+    /// low`.
+    Seq {
+        /// The slot the integer binds.
+        slot: Slot,
+        /// The first integer.
+        low: NodeId,
+        /// The last integer.
+        high: NodeId,
+        /// The element expression.
+        body: NodeId,
+    },
     /// FR-063/S3: exists only so `--cfg seam_probe` makes every
     /// match over `NodeKind` outside this module non-exhaustive. Never
     /// constructed outside the probe build.
     #[cfg(seam_probe)]
     __SeamProbe,
+}
+
+/// The inclusive range of an integer: its lower and upper bound.
+pub(crate) type IntegerRange = (Integer, Integer);
+
+/// The static range of the integer a node computes (FR-139; QSpec FR-376's
+/// "declared bounds" of a `seq` bound or a `sum` summand): the interval of an
+/// `Int[..]` node, the value of a literal, and the interval arithmetic of
+/// `+`, `-`, `*` and negation over those. `None` when a node on the way has
+/// no static range. `node` names the operands of `root`.
+///
+/// The walk keeps its pending nodes on a heap stack, so no depth of checked
+/// expression is a limit (ADR-030 D-1).
+pub(crate) fn static_integer_range<'n>(
+    root: (&'n NodeKind, &'n ValueType),
+    node: &dyn Fn(NodeId) -> Option<(&'n NodeKind, &'n ValueType)>,
+) -> Option<IntegerRange> {
+    enum Work<'n> {
+        Enter((&'n NodeKind, &'n ValueType)),
+        Exit(&'n NodeKind),
+    }
+    let mut work = vec![Work::Enter(root)];
+    let mut ranges: Vec<(Integer, Integer)> = Vec::new();
+    while let Some(step) = work.pop() {
+        match step {
+            Work::Enter((kind, value_type)) => {
+                if let ValueType::Int(interval) = value_type {
+                    ranges.push((interval.lower().clone(), interval.upper().clone()));
+                    continue;
+                }
+                match kind {
+                    NodeKind::Literal(CheckedLiteral(Value::Integer(value))) => {
+                        ranges.push((value.clone(), value.clone()));
+                    }
+                    NodeKind::Arithmetic(_, left, right) => {
+                        work.push(Work::Exit(kind));
+                        work.push(Work::Enter(node(*right)?));
+                        work.push(Work::Enter(node(*left)?));
+                    }
+                    NodeKind::Negate(operand) => {
+                        work.push(Work::Exit(kind));
+                        work.push(Work::Enter(node(*operand)?));
+                    }
+                    // Either branch: the range spans both.
+                    NodeKind::If {
+                        then, otherwise, ..
+                    } => {
+                        work.push(Work::Exit(kind));
+                        work.push(Work::Enter(node(*otherwise)?));
+                        work.push(Work::Enter(node(*then)?));
+                    }
+                    _ => return None,
+                }
+            }
+            Work::Exit(NodeKind::Negate(_)) => {
+                let (lower, upper) = ranges.pop()?;
+                ranges.push((upper.neg(), lower.neg()));
+            }
+            Work::Exit(NodeKind::If { .. }) => {
+                let (otherwise_lower, otherwise_upper) = ranges.pop()?;
+                let (then_lower, then_upper) = ranges.pop()?;
+                ranges.push((
+                    then_lower.min(otherwise_lower),
+                    then_upper.max(otherwise_upper),
+                ));
+            }
+            Work::Exit(NodeKind::Arithmetic(operator, _, _)) => {
+                let (right_lower, right_upper) = ranges.pop()?;
+                let (left_lower, left_upper) = ranges.pop()?;
+                ranges.push(match operator {
+                    Arithmetic::Add => (left_lower.add(&right_lower), left_upper.add(&right_upper)),
+                    Arithmetic::Subtract => {
+                        (left_lower.sub(&right_upper), left_upper.sub(&right_lower))
+                    }
+                    Arithmetic::Multiply => {
+                        let products = [
+                            left_lower.mul(&right_lower),
+                            left_lower.mul(&right_upper),
+                            left_upper.mul(&right_lower),
+                            left_upper.mul(&right_upper),
+                        ];
+                        let lowest = products.iter().min()?.clone();
+                        let highest = products.iter().max()?.clone();
+                        (lowest, highest)
+                    }
+                });
+            }
+            Work::Exit(_) => return None,
+        }
+    }
+    let range = ranges.pop()?;
+    ranges.is_empty().then_some(range)
 }
 
 /// Whether FR-093 lowers a [`NodeKind::Coerce`] of an `operand`-typed node
@@ -1092,9 +1193,13 @@ impl NodeKind {
     /// Direct operands in evaluation order.
     pub fn children(&self) -> Vec<NodeId> {
         match self {
-            NodeKind::Literal(_) | NodeKind::Local(_) | NodeKind::ProtocolReference { .. } => {
-                Vec::new()
-            }
+            NodeKind::Literal(_)
+            | NodeKind::Local(_)
+            | NodeKind::ProtocolReference { .. }
+            | NodeKind::PopulationObjects { .. } => Vec::new(),
+            NodeKind::Seq {
+                low, high, body, ..
+            } => vec![*low, *high, *body],
             NodeKind::Coerce(operand, _)
             | NodeKind::Negate(operand)
             | NodeKind::Not(operand)

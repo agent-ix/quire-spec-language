@@ -200,7 +200,7 @@ certificate, so the engine's soundness does not decide the verdict.
 | PC-1 | **Certification label.** Every `proved` carries exactly one `Certification`, which says who stands behind the proof. `Certified`: the qualified core produced or checked the proof, either because a core checker accepted its certificate (PC-3, PC-4, PC-6, and the checkers of ADR-020, ADR-022, ADR-023, ADR-026 and ADR-028) or because it is a Kani `Checks` proof, whose prove path is part of the qualified core (ADR-029 CB-2). `Uncertified`: a first-party engine or solver outside the core proved it and no core checker re-checked it: a native engine or method with no core certificate checker, a symmetry- or partial-order-reduced proof (ADR-021 RV-1), a proof under a state constraint (ADR-021, FR-160), a hybrid `BoundedSolver` proof (ADR-026 HY-2), or an SMT `BoundedComplete` or `Inductive` proof (EN-2, EN-3) whose certificate is absent or that PC-6's checker cannot verify. `Trusted`: a third-party plugin proved it, and the core runs no check of it (ADR-029 RU-4). Each value settles `proved`, with its basis and O-16 category success, and never `inconclusive`. A certificate a checker rejects settles `inconclusive` instead (PC-2). The label is the `certification` member of the QSpec FR-331 `proved` result (QS-6), and a renderer shows it beside the verdict. QSL's settlement map sets it for EN-1 and, by running PC-6's checker, for an SMT `Proved` that CG's SMT map hands it (FR-127, DS-2); CG's C-09 map sets `Certified` on a Kani proof (ADR-013 C-09). |
 | PC-2 | **Rejected certificate.** A certificate the checker rejects settles the item `inconclusive`, basis `unsettled`, `Inconclusive(CertificateRejected{rule, at})`, naming the check rule that failed and the product state it failed at. It never settles `proved`. |
 | PC-3 | **Closure certificate (safety).** For a TP-1, TP-2 or TP-3 item and the deadlock-freedom item, EN-1 returns `ClosureCertificate{states}`: the product states it explored, each as its model state's `quire.simulation.state-key/v1` digest and its automaton state's canonical key (the translation's canonical encoding of the automaton state, independent of the order states were materialized). The check: (a) every initial product state is in `states`; (b) from the initial product states, the checker expands each reached state through `ModelSystem`, the property automaton and the terminal rules (SM-4), and every successor product state is in `states`, so the reached set is closed under the transitions and contains every reachable product state; (c) no reached state is bad: its monitor state rejects (a TP-2 closure at a terminal state included), it is deadlocked (DL-2) and the item is the deadlock-freedom item (a deadlock changes no authored claim, DL-6), its letter is undefined (UE-1), or its expansion evaluates a contract conjunction undefined (UE-6) or refused (V-6). The checker expands only states in the certificate, so its work is bounded by the certificate's size. Specified by FR-338. |
-| PC-4 | **Component certificate (liveness).** For a TP-4 item, EN-1 returns `ComponentCertificate{closure, components}`: a PC-3 closure and a partition of its states into components listed in topological order, each with a witness: `Trivial` (one state with no edge to itself), `MissingAcceptance{set}` (no state of the component lies in that acceptance set of the generalized Büchi automaton), or `UnfairWeak{constraint}` (a weak constraint of the clause's fairness set enabled at every state of the component and taken by no edge with both ends in it). The check: (a) PC-3 (a) and (b), and PC-3 (c) without the monitor rule; (b) the components partition the reached states; (c) every edge the checker computes goes from a component to itself or to a later one; (d) every component's witness holds. By (c) every cycle lies inside one component, so no fair accepting cycle exists. Amended by ADR-019 AM-7: a fourth witness, `UnfairStrong{constraints, sub}`: every strong constraint the component fails, each taken by no edge with both ends in it, and `sub`, the component's states at which none of them is enabled, partitioned in topological order with a witness each; the check applies (b) to (d) to `sub` within the component. EN-1 builds the certificate from its second-phase SCC decomposition, listing each SCC with the first witness that holds for it. Specified by FR-339. |
+| PC-4 | **Component certificate (liveness).** For a TP-4 item, EN-1 returns `ComponentCertificate{closure, components}`: a PC-3 closure and a partition of its states into components listed in topological order, each with a witness: `Trivial` (one state with no edge to itself), `MissingAcceptance{set}` (no state of the component lies in that acceptance set of the generalized Büchi automaton), or `UnfairWeak{constraint}` (a weak constraint of the clause's fairness set enabled at every state of the component and taken by no edge with both ends in it). The check: (a) PC-3 (a) and (b), and PC-3 (c) without the monitor rule; (b) the components partition the reached states; (c) every edge the checker computes goes from a component to itself or to a later one; (d) every component's witness holds. By (c) every cycle lies inside one component, so no fair accepting cycle exists. Amended by ADR-019 AM-7: a fourth witness, `UnfairStrong{constraints, sub}`: every strong constraint the component fails, each taken by no edge with both ends in it, and `sub`, the component's states at which none of them is enabled, partitioned in topological order with a witness each; the check applies (b) to (d) to `sub` within the component. EN-1 builds the certificate from its second-phase SCC decomposition, listing each SCC with the first witness that holds for it. Specified by FR-339. Amended by ADR-025 MF-2: a fifth witness, `UnfairVisibility{constraints, sub}`: every listed visibility pair has an edge with both ends in the component on which the thread loads the location and no edge of the component on which it loads the location from its mo-last message, and `sub` partitions the component's states over the subgraph without those edges; the check applies (b) to (d) to `sub` over that subgraph, and an edge so removed is exempt from (c) and from every witness below it. The visibility fairness member resolves to one resolved constraint per (thread, location) pair, in ascending order of the thread's identity bytes and then the location's identity bytes, after the clause's other resolved constraints; `constraints` indexes them. |
 | PC-5 | **Where the checkers run.** The checkers are layer-6 entries in `qsl-replay` beside `replay_model_trace`, inside the qualified core (LA-3), and the settlement map calls them: `check_closure` and `check_components` for EN-1, `check_smt_proof` for an SMT result (FR-127). They use `qsl-eval`'s `ModelSystem` and property-automaton translation (LA-2) and no `qsl-analyze` code. |
 | PC-6 | **SMT proof certificate.** An SMT `BoundedComplete{depth}` or `Inductive{depth}` result may carry the solver's proof certificate: the SMT-LIB query it refuted and its proof in a named format, cvc5's Alethe first. An `Inductive` certificate carries two queries and proofs, base and step, and both must be refuted. The core checker encodes each query with FR-315 from the recompiled package and subject at that depth, requires each carried query to equal it byte for byte, and checks each proof as a step-by-step refutation using only a named set of checked Alethe rules; a proof that uses `hole`, `lia_generic` or any other unchecked rule, and is not shown wrong, cannot be verified and stays `Uncertified`, as a proof with no certificate does. Accepted: `proved`, `Certified`. Shown wrong (`QueryMismatch`, `ProofStepInvalid`, `NotRefutation`, `ShapeMismatch`): `inconclusive`, `CertificateRejected{rule, at}`. Absent: `proved`, `Uncertified`. Specified by FR-314. |
 
@@ -214,7 +214,7 @@ subject.
 | UE-1 | **Rule.** At each position a claim reads, it reads a *letter*: the value of every atom of the claim there, a `holds` atom through the one clause evaluator (ADR-016 FE-3), and for the deadlock-freedom item DL-1's `P` at a terminal state. A TP-2 `on origin` claim reads positions 0 to `h`; every other form reads every position of the behaviour. A position that a bounded profile's closed-boundary rule supplies past a terminal state is read by that rule and evaluates no atom. When an atom evaluates `Undefined` (the kernel `Outcome::Undefined`, or a family's `FamilyResult::Undefined`) at a position the claim reads on an admitted behaviour, the claim evaluates undefined there, and the item settles `refuted`, basis `decisive-counterexample`, `TerminalValue::Refuted` (V-4), with cause `UndefinedEvaluation{where, cause}`. |
 | UE-2 | **Cause.** `where` is QSpec FR-363's site of the undefined evaluation; QSL records it as FR-363 states and keeps no field list of its own. Its position is the counterexample's `trace_position` (ADR-014 TR-2). `cause` is the evaluator's undefined cause as its `UndefinedRecord` (ADR-013 O-16), taken from the first atom in clause-node order that evaluated undefined at `where`. `UndefinedEvaluation{where, cause}` is a `TemporalCounterexample` `kind` (DL-4), so the refuted record carries it with its counterexample. No label, basis, `TerminalValue` variant or O-16 category is added: ADR-013 O-16 and QSpec FR-360 are unchanged. |
 | UE-3 | **Counterexample.** The counterexample is a finite prefix from an initial state to the position `where` (CX-1), for every form, safety and liveness alike. Weak fairness is machine-closed (§4), so the prefix extends to a fair behaviour, and the claim is undefined on an admitted behaviour. |
-| UE-4 | **First refuting evidence.** An engine reports the first refuting evidence in its canonical order, whether that is an undefined evaluation or a violation. EN-1 reads a position's letter when it creates the product state for that position, since the automaton steps on the letter. Its first phase ends at the first product state, in QSpec FR-181 canonical breadth-first order, whose letter is undefined or whose monitor state rejects: an undefined position ranks like any other violation, the shortest prefix first and canonical transition order after that. A TP-4 item's second phase runs only when the first phase found no undefined evaluation. With `max_depth = k`, EN-1 creates product states up to depth `k`, so V-5 still means no counterexample of length at most `k`. EN-2 and EN-3 conjoin the definedness of every atom the claim reads to the property they encode, so an undefined evaluation is a violation to them as well. |
+| UE-4 | **First refuting evidence.** An engine reports the first refuting evidence in its canonical order, whether that is an undefined evaluation or a violation. EN-1 reads a position's letter when it creates the product state for that position, since the automaton steps on the letter. Its first phase ends at the first product state, in QSpec FR-181 canonical breadth-first order, whose letter is undefined or whose monitor state rejects: an undefined position ranks like any other violation, the shortest prefix first and canonical transition order after that. For a TP-4 item the order across `over` bindings is the shallowest first, then the earlier binding in canonical order; the safety engines (TP-1 to TP-3) rank by depth, then canonical state order, then binding. A TP-4 item's second phase runs only when the first phase found no undefined evaluation. With `max_depth = k`, EN-1 creates product states up to depth `k`, so V-5 still means no counterexample of length at most `k`. EN-2 and EN-3 conjoin the definedness of every atom the claim reads to the property they encode, so an undefined evaluation is a violation to them as well. |
 | UE-5 | **Replay.** CX-3 replays the prefix unchanged, then evaluates the letters of the replayed positions in order. When the first position whose letter is undefined is `where`, with an undefined cause equal to the payload's `cause`, replay settles `reproduced-with-evaluated-witness` and the item `refuted`: reproducing the undefined value at `where` is what reproducing this counterexample means. A defined letter at `where`, an undefined letter before it, a `where` past the replayed positions, or a different cause is a disagreement and settles `inconclusive`, `ReplayParity`. No fairness check applies (UE-3). |
 | UE-6 | **Model-side expressions.** An undefined model-side expression at a reachable state refutes the item as an undefined claim does: a contract conjunction that evaluates undefined during expansion (FR-120 `ContractUndetermined` with an `Undefined` evaluation, an undefined precondition guard included) and DL-1's `terminal when P` that evaluates undefined at a terminal state settle `refuted`, cause `UndefinedEvaluation{where, cause}`, with a prefix to that state; it is never read as a disabled step. Replay re-executes the prefix and reproduces it when it evaluates the same expression undefined at `where` with an equal cause. A contract conjunction that is refused, with no clause false and none undefined, leaves the successor relation unknown and settles V-6 `UndecidedSuccessor`. Every engine that settles a claim over a model subject, a tuple of behaviours or a sample applies UE-1 to UE-5 with its own site, which its record names. |
 
@@ -359,14 +359,32 @@ only (ADR-016 §6).
 The subject uses the ConfigVersion domain package from
 `examples/config-version` (FR-108): object type `ConfigVersion` with
 `versionNumber: Int[0, 1000]` and optional `parent`, population
-`config_history`, and operation `attemptUpdate` with frame `modifies
-[versionNumber]`, no parameters and a Boolean result.
+`config_history`, and operation `attemptUpdate` with no parameters and a
+Boolean result.
+
+**Frame.** The shipped package frames `attemptUpdate` as `modifies
+[versionNumber]`, which FR-120 reads as the field of every object of the
+population. With two objects over `Int[0, 1000]` each application would
+then enumerate 1001 x 1001 candidates, so an expansion charges about two
+million candidates against the subject's `max_candidates` (FR-120). The
+example, and the shipped unit as this section uses it, frame
+`attemptUpdate` as `modifies self.versionNumber` (FR-154's receiver scope)
+instead: an update writes the receiver's `versionNumber` and leaves the
+other object as it is, so a state has one successor per receiver.
+
+**Candidate limit.** Even so, an application enumerates the receiver's 1001
+values with their result pairs. The example's request sets the subject's
+`max_candidates` to 1,000,000, and its rows assume it; a setting below about
+6,000, such as TC-472's 1,000, stops the run with `Stopped{ResourceExhausted,
+{MaxCandidates, value}}` at the first expansion.
 
 The shipped unit's post clause `VersionUnchanged` keeps `versionNumber`
 fixed, so every transition is a self-loop. The example unit keeps the two
 invariants and replaces that post clause with one that advances the version
-modulo 3. The fairness clause spelling is illustrative; QSpec's shared
-grammar owns it (QS-4).
+modulo 3. The post clause spells the wrap out, because `(pre(self.versionNumber)
++ 1) mod 3` is an unbounded `Int` and does not type-check against the bounded
+field. The fairness clause spelling is illustrative; QSpec's shared grammar
+owns it (QS-4).
 
 ```text
 profile v   = "quire.value.complete/v1" …;
@@ -376,7 +394,8 @@ model Config = "example/config-version" …;
 invariant ParentOrder using v on Config::ConfigVersion at current { … }   // unchanged
 invariant NoCycle     using v on Config::ConfigVersion at current { … }   // unchanged
 post Cycles using v on Config::ConfigVersion::attemptUpdate {
-  self.versionNumber = (pre(self.versionNumber) + 1) mod 3
+  (pre(self.versionNumber) < 2 and self.versionNumber = pre(self.versionNumber) + 1)
+  or (pre(self.versionNumber) = 2 and self.versionNumber = 0)
 }
 
 temporal ReachesTwo using inf over (c: Config::ConfigVersion) clock "model-steps" on origin {
@@ -388,45 +407,51 @@ temporal ReachesTwo using inf over (c: Config::ConfigVersion) clock "model-steps
 **Subject.** Universe `config_history = {a, b}`. One initial snapshot: `a`
 and `b` both at version 0 with `parent` absent. Write a state as
 `(va, vb)` and the transition `attemptUpdate` with receiver `a` as `upd(a)`.
-The result value is not in the state key, so both result choices reach the
-same successor. The model has 9 reachable states, each with two successors,
-`upd(a)` and `upd(b)`, both always enabled.
+The result value is not in the state key, so the choice of result does not
+change the successor. The model has 9 reachable states, each with two successors,
+`upd(a)` and `upd(b)`, both always enabled. The two instances are symmetric.
+The reported counterexample is the shortest across the `over` bindings, and
+a tie goes to the first binding in canonical order (`a`); the same order
+decides which undefined letter is reported first. The two instances are
+symmetric, so the rows below bind `c` to `a`, whose loop updates `b`; with
+the names exchanged they describe the other binding.
 
-**Product.** The form is TP-4. For `c = b`, the negation is `eventually
-always (b.versionNumber != 2)`, a two-state Büchi automaton: `q0` loops on
-any state and moves to accepting `q1` on a state with `vb != 2`; `q1` loops
+**Product.** The form is TP-4. For `c = a`, the negation is `eventually
+always (a.versionNumber != 2)`, a two-state Büchi automaton: `q0` loops on
+any state and moves to accepting `q1` on a state with `va != 2`; `q1` loops
 on such states. The reachable product has 15 states: 9 with `q0` and 6 with
-`q1` (`vb` in `{0, 1}`). It has two accepting SCCs, `{(*, 0, q1)}` and
-`{(*, 1, q1)}`, three states each, whose internal edges are all `upd(a)`.
+`q1` (`va` in `{0, 1}`). It has two accepting SCCs, `{(0, *, q1)}` and
+`{(1, *, q1)}`, three states each, whose internal edges are all `upd(b)`.
 
-**Verdict under `fair weak each`.** `upd(b)` is enabled at every state of
+**Verdict under `fair weak each`.** `upd(a)` is enabled at every state of
 both SCCs and taken in neither, so FA-4 rejects both. No fair accepting cycle
-exists for `c = b`; `c = a` is symmetric. The item settles `proved`, basis
+exists for `c = a`; `c = b` is symmetric. The request binds both instances
+and explores the 15-state product of each, 30 product states in all. The item settles `proved`, basis
 `closed-scope`, `TerminalValue::Proved{basis: Exhaustive, certification: Certified}` (V-1), over this
 subject.
 
 **Verdict under `fair weak whole`.** The constraint is `attemptUpdate` as a
-whole, and `upd(a)` inside the SCC satisfies it. The unmarked spelling
+whole, and `upd(b)` inside the SCC satisfies it. The unmarked spelling
 `fair weak Config::ConfigVersion::attemptUpdate` is this variant (FA-6); the
 clause above writes `each` because its verdict relies on it. The first
 accepting SCC in canonical order contains the initial product state
-`(0, 0, q1)`, so the stem is empty. The item settles `refuted` (V-4) with this lasso, bound to `c = b`:
+`(0, 0, q1)`, so the stem is empty. The item settles `refuted` (V-4) with this lasso, bound to `a` (a tie of length 3 between the bindings, decided by canonical binding order):
 
 | Position | State | Step into the next position |
 | --- | --- | --- |
-| 0 (loop entry) | `(0, 0)` | `upd(a)` |
-| 1 | `(1, 0)` | `upd(a)` |
-| 2 | `(2, 0)` | `upd(a)`, back to position 0 |
+| 0 (loop entry) | `(0, 0)` | `upd(b)` |
+| 1 | `(0, 1)` | `upd(b)` |
+| 2 | `(0, 2)` | `upd(b)`, back to position 0 |
 
-Replay (CX-3) re-executes the three `upd(a)` steps from the initial snapshot,
+Replay (CX-3) re-executes the three `upd(b)` steps from the initial snapshot,
 checks the last post-state digest equals position 0's, checks the loop takes
 `attemptUpdate` (fair under `whole`), and evaluates `always eventually holds(
-b.versionNumber = 2)` over the lasso: `vb` is 0 at every position, so the
+a.versionNumber = 2)` over the lasso: `va` is 0 at every position, so the
 formula is false at position 0, `trace_position` `0`. Under `each` the same
-lasso is unfair (`upd(b)` is enabled throughout and never taken) and replay
+lasso is unfair (`upd(a)` is enabled throughout and never taken) and replay
 refuses it.
 
-**The shipped unit.** With `VersionUnchanged` the only reachable state is
+**The shipped unit.** With `VersionUnchanged` and the receiver-scoped frame the only reachable state is
 `(0, 0)`. Under `fair weak each` the item settles `refuted` with the lasso
 whose loop is `(0, 0) -upd(a)-> (0, 0) -upd(b)-> (0, 0)`. Fairness makes
 every operation instance run, and the post clause still prevents progress.
@@ -438,9 +463,9 @@ unit's one state has its two self-loops and settles the same way.
 
 **A bounded variant.** `eventually[0,5] holds(c.versionNumber = 2)` under
 event-position false-extension, `on origin`, is TP-2 with `h = 5`. It settles
-`refuted` under EN-1 with a six-position finite prefix for `c = b`, such as
-`(0,0) (1,0) (2,0) (0,0) (1,0) (2,0)` reached by five `upd(a)` steps, on
-which `vb` is never 2. EN-2 unrolled to 5 finds a counterexample of the same
+`refuted` under EN-1 with a six-position finite prefix for `c = a` (both bindings give five steps, and the tie goes to `a`), such as
+`(0,0) (0,1) (0,2) (0,0) (0,1) (0,2)` reached by five `upd(b)` steps, on
+which `va` is never 2. EN-2 unrolled to 5 finds a counterexample of the same
 length; with no counterexample at depth 5 it would settle V-2. Fairness is not admitted on it (§4).
 
 ### 7. Downstream impact and sequencing

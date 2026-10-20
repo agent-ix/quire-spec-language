@@ -804,6 +804,23 @@ impl Renaming<'_, '_, '_> {
                         outer.extend(*identity);
                         scoped(children, id, &outer, 2, *step);
                     }
+                    // The condition and the body both read the binder.
+                    ExprNode::Population {
+                        condition, body, ..
+                    } => {
+                        children.push(Rewrite::Bind(id, 0));
+                        children.extend(
+                            condition
+                                .iter()
+                                .chain(body.iter())
+                                .copied()
+                                .map(Rewrite::Node),
+                        );
+                        children.push(Rewrite::Unbind);
+                    }
+                    ExprNode::Seq {
+                        low, high, body, ..
+                    } => scoped(children, id, &[*low, *high], 1, *body),
                     other => children.extend(other.children().into_iter().map(Rewrite::Node)),
                 }
             }
@@ -1314,7 +1331,8 @@ mod tests {
     }
     use crate::model::normalize::ModelRefusalCause;
     use qsl_forms::{
-        Accumulation, BinaryOperator, BinderQuery, DeclaredName, ExprNode, Expression, TypeForm,
+        Accumulation, BinaryOperator, BinderQuery, DeclaredName, ExprNode, Expression,
+        PopulationForm, TypeForm,
     };
     use qsl_foundation::absence::AbsenceMode;
     use quire_exact::{CollectionKind, Integer, ValueType};
@@ -1658,6 +1676,19 @@ mod tests {
             Expression::boolean(true),
             Expression::integer(3_i64),
             Expression::rational(Integer::from(1_i64), Integer::from(3_i64)),
+            Expression::quantity(qsl_forms::QuantityForm {
+                magnitude: qsl_forms::ExactValueForm {
+                    kind: qsl_forms::ExactValueKind::Natural,
+                    first: Integer::from(5_i64),
+                    second: Integer::from(1_i64),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                unit: qsl_forms::NameForm {
+                    name: "ms".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                span: qsl_foundation::Span { start: 0, end: 0 },
+            }),
             Expression::string("abc"),
             o(),
         ];
@@ -1732,6 +1763,17 @@ mod tests {
                 boxed(),
                 boxed(),
             ),
+            Expression::population_form(
+                PopulationForm::Only,
+                bound(),
+                DeclaredName {
+                    name: "C::p".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                },
+                Some(boxed()),
+                Some(boxed()),
+            ),
+            Expression::seq(bound(), boxed(), boxed(), boxed()),
             Expression::size(boxed()),
             Expression::contains(boxed(), boxed()),
             Expression::all_instances(form(), boxed()),
@@ -1752,11 +1794,12 @@ mod tests {
     }
 
     /// Every name [`form_name`] gives, one per `Expression` form.
-    const FORM_NAMES: [&str; 33] = [
+    const FORM_NAMES: [&str; 36] = [
         "Case",
         "Boolean",
         "Integer",
         "Rational",
+        "Quantity",
         "String",
         "Name",
         "Let",
@@ -1777,6 +1820,8 @@ mod tests {
         "Accumulate",
         "Count",
         "Sum",
+        "Population",
+        "Seq",
         "Size",
         "Contains",
         "AllInstances",
@@ -1798,6 +1843,7 @@ mod tests {
             ExprNode::Boolean(_) => "Boolean",
             ExprNode::Integer(_) => "Integer",
             ExprNode::Rational(..) => "Rational",
+            ExprNode::Quantity(_) => "Quantity",
             ExprNode::String(_) => "String",
             ExprNode::Name(_) => "Name",
             ExprNode::Let { .. } => "Let",
@@ -1818,6 +1864,8 @@ mod tests {
             ExprNode::Accumulate { .. } => "Accumulate",
             ExprNode::Count { .. } => "Count",
             ExprNode::Sum { .. } => "Sum",
+            ExprNode::Population { .. } => "Population",
+            ExprNode::Seq { .. } => "Seq",
             ExprNode::Size(_) => "Size",
             ExprNode::Contains { .. } => "Contains",
             ExprNode::AllInstances { .. } => "AllInstances",
@@ -1828,6 +1876,9 @@ mod tests {
             ExprNode::Result => "Result",
             ExprNode::Reaches { .. } => "Reaches",
             ExprNode::ProtocolReference { .. } => "ProtocolReference",
+            ExprNode::Indexed { .. } => "Indexed",
+            ExprNode::StepLabel { .. } => "StepLabel",
+            ExprNode::Stutter => "Stutter",
         }
     }
 

@@ -109,7 +109,8 @@ beside it as a separate item.
   settling `reproduced-with-evaluated-witness`; a replay that settles
   `inconclusive` SHALL settle V-6 with `ReplayParity` (wire cause
   `replay-parity`, QSpec FR-379), a refusal V-6 with
-  `ReplayRefused`, and a fault `failed`.
+  `ReplayRefused`, and a fault `failed`. A `StepVerdict::Fault` (FR-141), from
+  an internal fault in the mapping, settles the item `failed` likewise.
 - The record SHALL read neither model's `terminal` declaration; its value SHALL
   be the same under every combination of them.
 - **Certificate.** A safety half that the product proves SHALL settle

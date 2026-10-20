@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The control-construct and channel members of a protocol declaration's S2
 //! forms (FR-308): channels with their premises, `parallel` with its join
-//! policy, `repeat` with its optional maximum and loop proof, `await`, and
-//! the protocol's `terminal` and `scheduling` members.
+//! policy, `repeat` with its optional maximum and loop proof, `choice` with
+//! its owner, visible facts and case guards, `await`, roles static and
+//! replicated, and the protocol's `terminal` and `scheduling` members.
 //!
 //! Every builder reads one CST node and records what was written, each part
 //! with its span. Nothing is resolved here: a role, a label or a type stays
@@ -14,8 +15,8 @@ use qsl_foundation::{Span, Spanned};
 
 use super::dispatch::FormsRefusal;
 use super::syntax::{
-    ClockForm, DeclaredName, ExpressionForm, IntervalForm, NameForm, ParameterForm, TypeForm,
-    UsingAlias,
+    ChoiceCaseForm, ChoiceForm, ClockForm, DeclaredName, ExpressionForm, IntervalForm, NameForm,
+    ParameterForm, ReplicatedRoleForm, RoleForm, RoleLifetime, TypeForm, UsingAlias,
 };
 use super::temporal_clause::{expression_form, interval_form, parameter_form};
 use super::value::{
@@ -129,6 +130,73 @@ pub enum Outstanding {
     Cancel,
 }
 
+/// A `parallel`'s memory model name (FR-219): `sc`, `tso` or `ra`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MemoryModelName {
+    /// `memory sc`, the interleaving meaning and the default.
+    Sc,
+    /// `memory tso`.
+    Tso,
+    /// `memory ra`.
+    Ra,
+}
+
+impl MemoryModelName {
+    /// The model's spelling in source.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Sc => "sc",
+            Self::Tso => "tso",
+            Self::Ra => "ra",
+        }
+    }
+
+    /// Whether the model is `tso` or `ra`.
+    pub fn is_weak(self) -> bool {
+        self != Self::Sc
+    }
+}
+
+/// An attempt's `ordering o` or a `fence`'s ordering (FR-220).
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AccessOrdering {
+    /// `relaxed`.
+    Relaxed,
+    /// `acquire`.
+    Acquire,
+    /// `release`.
+    Release,
+    /// `acq_rel`.
+    AcqRel,
+    /// `seq_cst`.
+    SeqCst,
+}
+
+impl AccessOrdering {
+    /// The ordering's spelling in source.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Relaxed => "relaxed",
+            Self::Acquire => "acquire",
+            Self::Release => "release",
+            Self::AcqRel => "acq_rel",
+            Self::SeqCst => "seq_cst",
+        }
+    }
+}
+
+/// One `fence Name ordering o;` control as written (FR-220).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FenceForm {
+    /// The index into `ProtocolDeclarationForm::declarations` of the node
+    /// this control declares.
+    pub declaration: usize,
+    /// The declared control name.
+    pub name: DeclaredName,
+    /// The ordering, with the span of its text.
+    pub ordering: Spanned<AccessOrdering>,
+}
+
 /// One `parallel` control as written (FR-308).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParallelForm {
@@ -139,6 +207,9 @@ pub struct ParallelForm {
     pub name: DeclaredName,
     /// The branch labels, in source order.
     pub branches: Vec<DeclaredName>,
+    /// The `memory` clause's model with the span of the clause, when
+    /// written (FR-219).
+    pub memory: Option<Spanned<MemoryModelName>>,
     /// The join policy, with the span of its text.
     pub join: Spanned<JoinPolicy>,
     /// The span of the `quorum` count, written exactly for `Quorum`.
@@ -472,6 +543,54 @@ fn outstanding(
     }))
 }
 
+/// A `memory sc | tso | ra` clause (FR-219): the model and the clause's
+/// span.
+fn memory_model(
+    cst: &LosslessCst,
+    clause: &CstNode,
+) -> Result<Spanned<MemoryModelName>, FormsRefusal> {
+    let clause_items = items(cst, clause);
+    let model = own_tokens(&clause_items)
+        .into_iter()
+        .nth(1)
+        .ok_or_else(|| unexpected(clause))?;
+    let value = match model.spelling() {
+        b"sc" => MemoryModelName::Sc,
+        b"tso" => MemoryModelName::Tso,
+        b"ra" => MemoryModelName::Ra,
+        _ => return Err(unexpected(clause)),
+    };
+    Ok(Spanned {
+        value,
+        span: clause.span(),
+    })
+}
+
+/// A `MemoryOrder` or `FenceOrder` node (FR-220): the ordering and the span
+/// of its text.
+pub(crate) fn access_ordering(
+    cst: &LosslessCst,
+    order: &CstNode,
+) -> Result<Spanned<AccessOrdering>, FormsRefusal> {
+    let order_items = items(cst, order);
+    let token = own_tokens(&order_items)
+        .into_iter()
+        .next()
+        .ok_or_else(|| unexpected(order))?;
+    let value = match token.spelling() {
+        b"relaxed" => AccessOrdering::Relaxed,
+        b"acquire" => AccessOrdering::Acquire,
+        b"release" => AccessOrdering::Release,
+        b"acq_rel" => AccessOrdering::AcqRel,
+        b"seq_cst" => AccessOrdering::SeqCst,
+        _ => return Err(unexpected(order)),
+    };
+    Ok(Spanned {
+        value,
+        span: order.span(),
+    })
+}
+
 /// `parallel P { branch a ..; branch b ..; } join policy [a, b]
 /// [outstanding rule];` (FR-308). `declaration` is the index of the
 /// control's own declaration.
@@ -503,10 +622,15 @@ pub(crate) fn parallel_form(
     ) else {
         return Err(unexpected(parallel));
     };
+    let memory = nodes_of(&parallel_items, Production::MemoryClause)
+        .first()
+        .map(|clause| memory_model(cst, clause))
+        .transpose()?;
     Ok(ParallelForm {
         declaration,
         name: declared(name, parallel)?,
         branches,
+        memory,
         join: Spanned {
             value: policy,
             span: join_node.span(),
@@ -588,6 +712,88 @@ pub(crate) fn repeat_form(
         body: body.span(),
         exhausted,
         span: repeat.span(),
+    })
+}
+
+/// `role R on M::T;` or `role R each M::T from population max n lifetime
+/// l;` (FR-308): the name, the model and, for a replicated role, its
+/// population, maximum and lifetime, as written.
+pub(crate) fn role_form(cst: &LosslessCst, role: &CstNode) -> Result<RoleForm, FormsRefusal> {
+    let role_items = items(cst, role);
+    let context = name_form(cst, only(&role_items, Production::QualifiedName, role)?)?;
+    let replicated = if has_token(&role_items, b"each") {
+        // `role R each M::T from p max n lifetime l;`: the role's name and
+        // the population are its only direct identifier tokens.
+        let [_, population] = tokens_of(&role_items, TokenKind::Identifier)[..] else {
+            return Err(unexpected(role));
+        };
+        let [max] = tokens_of(&role_items, TokenKind::Integer)[..] else {
+            return Err(unexpected(role));
+        };
+        let lifetime = only(&role_items, Production::RoleLifetime, role)?;
+        let lifetime_items = items(cst, lifetime);
+        let lifetime = if let Some(token) = token_spelled(&lifetime_items, b"workflow") {
+            RoleLifetime::Workflow(token.span())
+        } else if let Some(token) = token_spelled(&lifetime_items, b"scope") {
+            RoleLifetime::Scope(token.span())
+        } else {
+            RoleLifetime::Until(expression_form(
+                cst,
+                only(&lifetime_items, Production::Expression, lifetime)?,
+            )?)
+        };
+        Some(ReplicatedRoleForm {
+            population: declared(population, role)?,
+            max: u64_token(max, role)?,
+            max_span: max.span(),
+            lifetime,
+        })
+    } else {
+        None
+    };
+    Ok(RoleForm {
+        name: declared_name(&role_items, role)?,
+        context,
+        replicated,
+        span: role.span(),
+    })
+}
+
+/// `choice N by R visible (..) { case a when { g } c ... }` (FR-308): the
+/// owner, the visible entries and each case's label and guard, as written.
+/// `declaration` is the index of the control's own declaration.
+pub(crate) fn choice_form(
+    cst: &LosslessCst,
+    choice: &CstNode,
+    declaration: usize,
+) -> Result<ChoiceForm, FormsRefusal> {
+    let choice_items = items(cst, choice);
+    let [name, owner] = tokens_of(&choice_items, TokenKind::Identifier)[..] else {
+        return Err(unexpected(choice));
+    };
+    let visibility = only(&choice_items, Production::Visibility, choice)?;
+    let visible = nodes_of(&items(cst, visibility), Production::Expression)
+        .into_iter()
+        .map(|entry| expression_form(cst, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cases = nodes_of(&choice_items, Production::Case)
+        .into_iter()
+        .map(|case| {
+            let case_items = items(cst, case);
+            Ok(ChoiceCaseForm {
+                name: declared_name(&case_items, case)?,
+                guard: block_expression(cst, only(&case_items, Production::Block, case)?)?,
+            })
+        })
+        .collect::<Result<Vec<_>, FormsRefusal>>()?;
+    Ok(ChoiceForm {
+        declaration,
+        name: declared(name, choice)?,
+        owner: declared(owner, choice)?,
+        visible,
+        visible_span: visibility.span(),
+        cases,
+        span: choice.span(),
     })
 }
 

@@ -201,7 +201,8 @@ vocabulary! {
     Grammar => "grammar", Satisfies => "satisfies", Verify => "verify", Claim => "claim",
     Method => "method", Domain => "domain", Depends => "depends", Bound => "bound",
     Body => "body",
-    Arrow => "->", Caret => "^", Question => "?", Apostrophe => "'"
+    Possible => "possible", Unique => "unique", Path => "path",
+    Arrow => "->", DotDot => "..", Caret => "^", Question => "?", Apostrophe => "'", AtSign => "@", Tilde => "~"
 }
 
 impl Kind {

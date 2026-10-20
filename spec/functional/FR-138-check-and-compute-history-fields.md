@@ -140,6 +140,9 @@ and not its range, so the range is left only at run time.
 
 ## References
 
+- A build whose refinement support set omits `history-row` refuses each row
+  `unsupported_construct`/`not-yet-implemented` instead of checking it (FR-135
+  "Refinement features the build does not check").
 - The QSpec half (history field semantics): QSpec FR-378 (Linear STD-133).
 - The history-row production, the `history-literal` spellings and the
   history-literal conformance rule: QSpec FR-375. The covering test for the

@@ -6,14 +6,13 @@
 
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::selection::DefinitionRef;
-use quire_canonical::FixedShape;
 use quire_exact::ValueType;
 use quire_semantic_value::declaration::TypeEnvironment;
-use serde::Serialize;
 
+use crate::simulation::choice::{choose, ChoicePoint, Weights};
 use crate::simulation::expansion::StateFindings;
 use crate::simulation::explore::TransitionSystem;
-use crate::simulation::key::{plain_digest, EncodingRefusal};
+use crate::simulation::key::EncodingRefusal;
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::trace::{SampleProvenance, Step, StopReason, Trace};
@@ -21,10 +20,6 @@ use qsl_foundation::IdentityLimits;
 
 /// The one generator `sample_request` runs (FR-101).
 const SAMPLER_IDENTITY: &str = "quire.simulation.sampler/v1";
-
-/// The choice index of a step's one uniform choice over its enabled
-/// successors, as its decimal preimage spelling (QSpec FR-181).
-const STEP_CHOICE: &str = "0";
 
 /// A source of draws for sampled exploration.
 ///
@@ -37,62 +32,16 @@ pub(crate) trait Sampler {
     fn next_index(&mut self, n: usize) -> usize;
 }
 
-/// An unsigned 256-bit integer, big-endian limbs, wide enough to hold one
-/// SHA-256 digest read as a number (FR-101's `v`).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct U256([u64; 4]);
-
-impl U256 {
-    const MAX: Self = Self([u64::MAX; 4]);
-
-    fn from_be_bytes(bytes: [u8; 32]) -> Self {
-        let mut limbs = [0u64; 4];
-        for (index, limb) in limbs.iter_mut().enumerate() {
-            let start = index * 8;
-            let mut octet = [0u8; 8];
-            octet.copy_from_slice(&bytes[start..start + 8]);
-            *limb = u64::from_be_bytes(octet);
-        }
-        Self(limbs)
-    }
-
-    /// `(self / n, self % n)`, by schoolbook long division limb by limb,
-    /// most significant first. Each step's partial remainder stays below
-    /// `n`, so `remainder << 64 | limb` always fits `u128` exactly (at most
-    /// `(n - 1) * 2^64 + (2^64 - 1) == u128::MAX`).
-    fn divmod_u64(self, n: u64) -> (Self, u64) {
-        let mut quotient = [0u64; 4];
-        let mut remainder: u64 = 0;
-        for (index, limb) in self.0.iter().enumerate() {
-            let dividend = (u128::from(remainder) << 64) | u128::from(*limb);
-            let n128 = u128::from(n);
-            quotient[index] = (dividend / n128) as u64;
-            remainder = (dividend % n128) as u64;
-        }
-        (Self(quotient), remainder)
-    }
-
-    /// `self * n`, valid only when the true product is representable in 256
-    /// bits (the one call site below establishes this before calling).
-    fn mul_u64(self, n: u64) -> Self {
-        let mut limbs = [0u64; 4];
-        let mut carry: u128 = 0;
-        for index in (0..4).rev() {
-            let product = u128::from(self.0[index]) * u128::from(n) + carry;
-            limbs[index] = product as u64;
-            carry = product >> 64;
-        }
-        Self(limbs)
-    }
-}
-
-/// The `quire.simulation.sampler/v1` generator: a counter-mode SHA-256
-/// rejection sampler over `{choice, draw, seed, step, trace}`. Each step
-/// makes one uniform choice, choice index 0 (QSpec FR-181).
+/// The `quire.simulation.sampler/v1` generator without a workload: each step
+/// makes one uniform choice over its enabled successors, at choice index 0
+/// (QSpec FR-181), which is FR-188's weighted choice over unit weights.
 pub(crate) struct PinnedSampler {
     seed: u64,
     trace: u64,
     step: u64,
+    /// The last step's uniform weights, kept while the successor count
+    /// stays the same, so a step does not recompute `⌊2^256 / n⌋`.
+    uniform: Option<Weights>,
     /// How many draw digests this sampler has computed so far (TC-454
     /// step 3b): `n = 1` never computes one, so this is the observable
     /// signal that a call actually drew rather than taking the no-digest
@@ -102,24 +51,13 @@ pub(crate) struct PinnedSampler {
     digests_computed: u64,
 }
 
-/// One draw's JCS preimage: `{"choice":"<decimal>","draw":"<decimal>",
-/// "seed":"<decimal>","step":"<decimal>","trace":"<decimal>"}` (QSpec
-/// FR-181).
-#[derive(Serialize, FixedShape)]
-struct DrawPreimage {
-    choice: String,
-    draw: String,
-    seed: String,
-    step: String,
-    trace: String,
-}
-
 impl PinnedSampler {
     pub(crate) fn new(seed: u64, trace: u64) -> Self {
         Self {
             seed,
             trace,
             step: 0,
+            uniform: None,
             #[cfg(test)]
             digests_computed: 0,
         }
@@ -136,54 +74,24 @@ impl Sampler for PinnedSampler {
     fn next_index(&mut self, n: usize) -> usize {
         let step = self.step;
         self.step = self.step.wrapping_add(1);
-        if n == 1 {
-            return 0;
+        let weights = match self.uniform.take() {
+            Some(weights) if weights.len() == n => weights,
+            _ => Weights::uniform(n).expect("next_index is called with n >= 1"),
+        };
+        let at = ChoicePoint {
+            seed: self.seed,
+            trace: self.trace,
+            step,
+            choice: 0,
+        };
+        let (index, _digests) = choose(at, &weights);
+        self.uniform = Some(weights);
+        #[cfg(test)]
+        {
+            self.digests_computed += _digests;
         }
-        // `n` is a successor count: a `Vec::len()`, always representable in
-        // `u64` on every target Rust supports.
-        let n64 = n as u64;
-        // `floor(2^256 / n)`: `floor((MAX + 1) / n)`, which is
-        // `floor(MAX / n)` unless `n` divides `MAX + 1` exactly (i.e. `MAX %
-        // n == n - 1`), in which case it is one more and the threshold below
-        // is exactly `2^256` -- unrepresentable in 256 bits, so that case
-        // always accepts instead of multiplying. Fixed for this draw's `n`,
-        // so computed once, not per rejected draw.
-        let (quotient, remainder) = U256::MAX.divmod_u64(n64);
-        let always_accepts = remainder == n64 - 1;
-        let mut draw: u64 = 0;
-        loop {
-            let preimage = DrawPreimage {
-                choice: STEP_CHOICE.to_owned(),
-                draw: draw.to_string(),
-                seed: self.seed.to_string(),
-                step: step.to_string(),
-                trace: self.trace.to_string(),
-            };
-            let digest = plain_digest(&preimage);
-            #[cfg(test)]
-            {
-                self.digests_computed += 1;
-            }
-            let v = U256::from_be_bytes(digest);
-            let (_, v_remainder) = v.divmod_u64(n64);
-            if accepts(v, quotient, n64, always_accepts) {
-                // `v_remainder < n64 == n as u64`, so it fits `usize`.
-                return v_remainder as usize;
-            }
-            draw += 1;
-        }
+        index
     }
-}
-
-/// FR-101's rejection-sampling acceptance test: draw digest `v`, read as a
-/// big-endian `u256`, is accepted when `v < n * floor(2^256 / n)`
-/// (`quotient * n64`), or unconditionally when `always_accepts` (`n64`
-/// divides `2^256` exactly, so the threshold itself is `2^256` and
-/// unrepresentable in 256 bits). Split out from [`PinnedSampler::
-/// next_index`] so the real threshold, not a synthetic one, can be
-/// exercised directly (R1-FND-001, PR #467 review).
-fn accepts(v: U256, quotient: U256, n64: u64, always_accepts: bool) -> bool {
-    always_accepts || v < quotient.mul_u64(n64)
 }
 
 /// [`sample`]'s result: the trace, `None` for a system with no initial
@@ -192,10 +100,11 @@ type SampleResult<T, F> = Result<Option<Trace<T, F>>, EncodingRefusal>;
 
 /// Draw one sampled run from `system`, starting at trace `trace_index mod m`
 /// among `system`'s `m` distinct initial states (no draw selects the
-/// start). Every state on the trace is expanded, the last included, and its
-/// findings recorded at its step index. The run ends at the first state
-/// whose expansion stops, after `max_steps` transitions, or at the first
-/// state with no successors, checked in that order.
+/// start). The run ends at the first state where `end` holds, unexpanded
+/// ([`StopReason::Reached`]); at the first state whose expansion stops;
+/// after `max_steps` transitions; or at the first state with no successors,
+/// checked in that order. Every other state on the trace is expanded, the
+/// last included, and its findings recorded at its step index.
 ///
 /// Returns `Ok(None)` when `system.initial()` returns no states.
 ///
@@ -210,6 +119,7 @@ pub(crate) fn sample<S: TransitionSystem>(
     trace_index: u64,
     max_steps: usize,
     identity: IdentityLimits,
+    mut end: impl FnMut(&S::State) -> bool,
 ) -> SampleResult<S::TransitionId, S::Finding> {
     let mut initial = sorted_initial(system, identity)?;
     if initial.is_empty() {
@@ -227,6 +137,9 @@ pub(crate) fn sample<S: TransitionSystem>(
     let mut steps = Vec::new();
     let mut findings = Vec::new();
     let stopped = loop {
+        if end(&current) {
+            break StopReason::Reached;
+        }
         let (mut successors, state_findings) = match expand(system, &current, identity)? {
             Expanded::Successors {
                 successors,
@@ -312,14 +225,73 @@ pub fn sample_request<S: TransitionSystem>(
     max_steps: usize,
     identity: IdentityLimits,
 ) -> Result<Trace<S::TransitionId, S::Finding>, NotSimulated> {
-    if !is_pinned_sampler(sampler) {
+    sample_request_until(
+        system,
+        SampleRequest {
+            domains,
+            types,
+            position_limit,
+            sampler,
+            seed,
+            trace,
+            max_steps,
+            identity,
+        },
+        |_| false,
+    )
+}
+
+/// [`sample_request`]'s inputs.
+pub struct SampleRequest<'r> {
+    /// The requires-bound roots.
+    pub domains: &'r [(WireNodeId, &'r ValueType)],
+    /// The type environment the roots are classified under.
+    pub types: &'r TypeEnvironment,
+    /// The requires-bound pre-check's position budget.
+    pub position_limit: u64,
+    /// The sampler's `DefinitionRef`.
+    pub sampler: &'r DefinitionRef,
+    /// The run's seed.
+    pub seed: u64,
+    /// The trace's index within the run.
+    pub trace: u64,
+    /// The most steps the trace takes.
+    pub max_steps: usize,
+    /// The identity limits states and transitions encode under.
+    pub identity: IdentityLimits,
+}
+
+/// [`sample_request`], ending the trace at the first state, position 0
+/// included, where `end` holds, before that state is expanded:
+/// [`StopReason::Reached`]. The draws are those of `sample_request` for the
+/// same seed and trace index, so the trace is the prefix of the one
+/// `sample_request` draws, up to that state (FR-166: a phase 0 walk ends at
+/// its first target state).
+///
+/// # Errors
+///
+/// As [`sample_request`].
+pub fn sample_request_until<S: TransitionSystem>(
+    system: &S,
+    request: SampleRequest<'_>,
+    end: impl FnMut(&S::State) -> bool,
+) -> Result<Trace<S::TransitionId, S::Finding>, NotSimulated> {
+    if !is_pinned_sampler(request.sampler) {
         return Err(NotSimulated::GeneratorMismatch {
-            supplied: sampler.clone(),
+            supplied: request.sampler.clone(),
         });
     }
-    check_requires_bound(domains, types, position_limit)?;
-    sample(system, sampler.clone(), seed, trace, max_steps, identity)?
-        .ok_or(NotSimulated::EmptyInitial)
+    check_requires_bound(request.domains, request.types, request.position_limit)?;
+    sample(
+        system,
+        request.sampler.clone(),
+        request.seed,
+        request.trace,
+        request.max_steps,
+        request.identity,
+        end,
+    )?
+    .ok_or(NotSimulated::EmptyInitial)
 }
 
 #[cfg(test)]
@@ -327,6 +299,8 @@ mod tests {
     use ix_trace_rs::trace;
 
     use super::*;
+    use crate::simulation::choice::DrawPreimage;
+    use crate::simulation::key::plain_digest;
 
     /// TC-454 step 1b: the sampler's step-0 preimage bytes and digest at
     /// seed 424242, trace 0, choice 0, `n = 5` -- QSpec TC-210's vector
@@ -393,61 +367,5 @@ mod tests {
         let mut seven = PinnedSampler::new(424_242, 0);
         let indices: Vec<usize> = (0..5).map(|_| seven.next_index(7)).collect();
         assert_eq!(indices, vec![6, 2, 6, 6, 1]);
-    }
-
-    /// SR-672 FND-005: `divmod_u64` and `mul_u64` on synthetic values whose
-    /// quotient and remainder are trivial to check by hand: `100 / 7 == 14`
-    /// remainder `2`, and `14 * 7 == 98`. `U256([0, 0, 0, n])` is exactly
-    /// the small value `n`, since limb 0 is most significant
-    /// (`from_be_bytes`'s own convention) and limb 3 least.
-    #[trace("TC-454", "FR-101-AC-3")]
-    #[test]
-    fn u256_divmod_and_mul_on_a_synthetic_value() {
-        let v = U256([0, 0, 0, 100]);
-        let (quotient, remainder) = v.divmod_u64(7);
-        assert_eq!(quotient, U256([0, 0, 0, 14]));
-        assert_eq!(remainder, 2);
-        assert_eq!(quotient.mul_u64(7), U256([0, 0, 0, 98]));
-
-        // `98` and `97` are values chosen purely to make `divmod_u64` easy
-        // to check by hand (98 divides 7 exactly, 97 does not); they are
-        // not the sampler's real `n = 7` rejection threshold, which is
-        // `floor(2^256 / 7) * 7` -- see
-        // `accepts_at_the_real_n7_threshold_and_one_below` below for that.
-        let (_, boundary_remainder) = U256([0, 0, 0, 98]).divmod_u64(7);
-        assert_eq!(boundary_remainder, 0);
-        let (_, below_boundary_remainder) = U256([0, 0, 0, 97]).divmod_u64(7);
-        assert_eq!(below_boundary_remainder, 6);
-    }
-
-    /// R1-FND-001: `accepts` at the sampler's real `n = 7` threshold,
-    /// `floor(2^256 / 7) * 7`, and at one below it -- not a synthetic
-    /// stand-in. `n = 7` does not divide `2^256` exactly, so
-    /// `always_accepts` is `false` and the threshold is representable.
-    #[trace("TC-454", "FR-101-AC-3")]
-    #[test]
-    fn accepts_at_the_real_n7_threshold_and_one_below() {
-        let n64 = 7u64;
-        let (quotient, remainder) = U256::MAX.divmod_u64(n64);
-        let always_accepts = remainder == n64 - 1;
-        assert!(!always_accepts, "n = 7 does not divide 2^256 exactly");
-        let threshold = quotient.mul_u64(n64);
-        assert!(accepts(sub_one(threshold), quotient, n64, always_accepts));
-        assert!(!accepts(threshold, quotient, n64, always_accepts));
-    }
-
-    /// `v - 1` over the 256-bit limbs, borrowing across limb boundaries.
-    /// Test-only: production code never needs to decrement a draw value.
-    fn sub_one(v: U256) -> U256 {
-        let mut limbs = v.0;
-        for limb in limbs.iter_mut().rev() {
-            if *limb == 0 {
-                *limb = u64::MAX;
-            } else {
-                *limb -= 1;
-                break;
-            }
-        }
-        U256(limbs)
     }
 }

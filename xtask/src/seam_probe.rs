@@ -246,6 +246,12 @@ pub fn checked_in_locations() -> BTreeSet<SeamLocation> {
             file: "qsl-replay/src/spine/call.rs".to_owned(),
             item: "convert_outcome".to_owned(),
         },
+        // FR-337: the temporal letter reader's `match` over `FamilyOutcome`
+        // (`ObservedLetters::atom`), mirroring `execute::replay`'s above.
+        SeamLocation {
+            file: "qsl-eval/src/temporal/observed.rs".to_owned(),
+            item: "ObservedLetters::atom".to_owned(),
+        },
         // FR-357: `replay_value_parity`'s own seam over `FamilyOutcome`,
         // mirroring `execute::replay`'s above.
         SeamLocation {

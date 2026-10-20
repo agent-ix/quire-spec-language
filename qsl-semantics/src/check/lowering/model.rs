@@ -470,6 +470,25 @@ impl AdmittedModel {
         self.population_bounds.get(population)
     }
 
+    /// The effective identity of `key` when it declares an object type.
+    pub(crate) fn object_type_id(&self, key: &DeclarationKey) -> Option<EffectiveId> {
+        matches!(
+            self.records.get(key),
+            Some(DomainPackageRecord::ObjectType(_))
+        )
+        .then(|| self.effective_id(key))
+        .flatten()
+    }
+
+    /// The export whose artifact id is `artifact`: the record keyed
+    /// `ix://<package>/<artifact>`, as a model name `M::<artifact>` names it.
+    pub(crate) fn export(&self, artifact: &str) -> Option<&DomainPackageRecord> {
+        self.records.iter().find_map(|(key, record)| {
+            (crate::model::intake::type_identity_segment(&key.package, &key.node) == Some(artifact))
+                .then_some(record)
+        })
+    }
+
     /// The alias of the `model` declaration this package is admitted for,
     /// if any.
     pub(crate) fn alias(&self) -> Option<&str> {
@@ -566,6 +585,38 @@ impl AdmittedModel {
                     canonical,
                     self.population_bounds.get(&population.key),
                 )
+            })
+            .collect()
+    }
+
+    /// FR-150: each object type of this package that a `symmetric`
+    /// population covers, with the least such population's declaration key.
+    /// A population covers a type as in [`Self::populations_of`]: a member
+    /// type is the type itself or a supertype of it, by `conforms`.
+    pub(crate) fn symmetric_object_types(
+        &self,
+        conforms: impl Fn(EffectiveId, EffectiveId) -> bool,
+    ) -> Vec<(EffectiveId, DeclarationKey)> {
+        let symmetric: Vec<&PopulationRecord> = self
+            .population_domains()
+            .map(|(_, population, _)| population)
+            .filter(|population| population.symmetric)
+            .collect();
+        self.object_types()
+            .filter_map(|(_, target)| {
+                // The population covers `target` as `populations_of` does, and
+                // also a supertype of a member type: a `Reference<Super>`
+                // may hold an object of the population.
+                let covers = |member: &DeclarationKey| {
+                    self.types.iter().any(|(id, declared)| {
+                        declared == member
+                            && (*id == target || conforms(target, *id) || conforms(*id, target))
+                    })
+                };
+                symmetric
+                    .iter()
+                    .find(|population| population.member_types.iter().any(covers))
+                    .map(|population| (target, population.key.clone()))
             })
             .collect()
     }

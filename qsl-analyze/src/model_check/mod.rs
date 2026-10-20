@@ -3,22 +3,39 @@
 //!
 //! [`check_model`] decides a reachable invariant (TP-1) or the
 //! deadlock-freedom item over every behaviour of a model subject (FR-126's
-//! first phase); `qsl-replay` settles its outcome (FR-127). The retained
-//! graph, the generic product and the SCC decomposition are the reusable
-//! machinery the liveness phase builds on; a graph outcome alone is FR-101's
-//! exploration outcome, never a proof of a temporal property.
+//! first phase) and a liveness clause (TP-4) under weak fairness (its second
+//! phase, in `liveness`); `qsl-replay` settles its outcome (FR-127). The
+//! retained graph, the generic product and the SCC decomposition are the
+//! reusable machinery; a graph outcome alone is FR-101's exploration
+//! outcome, never a proof of a temporal property.
 
 mod check;
+mod concretise;
 mod graph;
+mod liveness;
 mod product;
+mod quotient;
+mod reduce;
+mod refine;
 mod scc;
+mod state_graph;
 
 pub use check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 pub use graph::{
-    retain, GraphExploration, IdentityPermutation, ProductStateId, RetainedEdge, RetainedGraph,
+    retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
     RetainedState,
 };
+pub use liveness::LivenessRefusal;
 pub use product::{
     Product, ProductFinding, ProductKey, ProductState, ProductTransition, PropertyComponent,
 };
+pub use reduce::{
+    admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
+    ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, SymmetryRefusal, TableForm,
+};
+pub use refine::{check_refinement, RefinementCheckRequest};
 pub use scc::Component;
+pub use state_graph::{
+    check_state_graph, ExploredStateGraph, GraphEdge, GraphNode, GraphStats, NodeIndex,
+    PredicateLabel, StateGraphItem, StateGraphRequest, StateGraphRun,
+};

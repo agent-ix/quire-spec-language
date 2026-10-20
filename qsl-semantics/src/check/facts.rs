@@ -22,13 +22,14 @@ mod persistent;
 use self::persistent::PersistentMap;
 use super::check::DispatchOperation;
 use super::ir::{
-    Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, Observation,
-    OrderedKind, RecordField, Slot, Visit,
+    Arithmetic, CheckedLiteral, CheckedNode, Connective, DispatchTable, NodeKind, OrderedKind,
+    RecordField, Slot, Visit,
 };
 use super::observation::Observations;
 use super::refusal::{
     CheckCause, CheckRefusal, InvalidDispatchDeclaration, Obligation, ProvedInterval,
 };
+use crate::model::clause_observation::Observation;
 use quire_exact::{ArithmeticOperator, OrderingOperator};
 use quire_exact::{CollectionType, Value, ValueType};
 use quire_exact::{Integer, IntegerInterval};
@@ -40,7 +41,8 @@ use quire_semantic_value::location::Location;
 pub(crate) enum Step {
     Field(RecordField),
     Value,
-    /// A model attribute read in a state clause (FR-104), with the
+    /// A model attribute read in a state clause (FR-104), or in a function
+    /// body an integer range fact only (`range_path`), with the
     /// observation it reads at: a fact about one observation of a path
     /// never discharges an obligation at another.
     Attribute(FieldRef, Observation),
@@ -505,6 +507,29 @@ impl<'a> Definedness<'a> {
         Some(path)
     }
 
+    /// The path an integer range fact is keyed on: the stable path `node`
+    /// reads or, in a function body, a model attribute `deref(r).f` of a
+    /// stable reference `r` (QSL-907). A function is pure and reads one
+    /// fixed model state, so the single `Current` observation keys it. This
+    /// feeds interval facts only: presence, nonzero, `let` aliasing and
+    /// termination shapes keep reading [`Self::stable_path`], which takes a
+    /// model read only in a state clause (FR-104).
+    fn range_path(&self, node: CheckedNode<'_>, facts: &Facts) -> Option<StablePath> {
+        if let (
+            None,
+            NodeKind::Attribute {
+                reference, field, ..
+            },
+        ) = (self.observations, node.kind())
+        {
+            let mut path = self.stable_path(node.at(*reference), facts)?;
+            path.steps
+                .push(Step::Attribute(field.clone(), Observation::Current));
+            return Some(path);
+        }
+        self.stable_path(node, facts)
+    }
+
     fn subject(&self, node: CheckedNode<'_>, facts: &Facts) -> Option<Subject> {
         let mut node = node;
         while let NodeKind::Coerce(operand, _) = node.kind() {
@@ -515,7 +540,7 @@ impl<'a> Definedness<'a> {
                 .stable_path(node.at(*operand), facts)
                 .map(Subject::Size),
             _ if matches!(node.value_type(), ValueType::Integer | ValueType::Int(_)) => {
-                self.stable_path(node, facts).map(Subject::Value)
+                self.range_path(node, facts).map(Subject::Value)
             }
             _ => None,
         }
@@ -1174,7 +1199,7 @@ impl<'n> quire_walk::Walk for IntervalWalk<'_, '_, '_, 'n> {
                     None => bound,
                 }
             }
-            _ => match definedness.stable_path(node, facts) {
+            _ => match definedness.range_path(node, facts) {
                 Some(path) => fact(Subject::Value(path), declared(node.value_type())),
                 None => declared(node.value_type()),
             },

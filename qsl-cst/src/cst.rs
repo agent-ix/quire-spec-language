@@ -122,17 +122,77 @@ productions! {
     Hex64,
     HexDigit,
     EnumValue, CollectionValue, RecordValue, FieldValue, TupleValue,
-    CollectionCall, SignedInteger, TemporalClause,
+    CollectionCall,
+    #[doc = "`(count | exists | all) ( <population-binder> )`, `(sum | only) ( <population-binder> : <expression> )` or `seq ( <identifier> in <expression> .. <expression> : <expression> )`: a population-valued form of a refinement row (FR-139)."]
+    PopulationCall,
+    #[doc = "`<identifier> in <model-name> [where <expression>]`: the binder of a population-valued form (FR-139)."]
+    PopulationBinder,
+    SignedInteger, TemporalClause,
     #[doc = "`on origin` or `on each ( <parameter> ) [when ( <expression> )]`: which events start a `temporal` clause."]
     Activation,
     #[doc = "`capture <parameter> = <expression> ;`: binds a named value inside a `temporal` clause body."]
     Capture,
     #[doc = "`fair [weak | strong] [whole | each] <qualified-name> ;`: a fairness constraint over one model operation, before a `temporal` clause's captures."]
     Fairness,
-    Interval, TemporalExpression, TemporalImplication, TemporalDisjunction,
+    Interval,
+    #[doc = "`( [ | ( ) <quantity-literal> , <quantity-literal> ( ] | ) )`: a temporal operator's timed interval, each end closed or open (FR-393)."]
+    TimedInterval,
+    #[doc = "`time <identifier> (dense | tick <qualified-name> period <quantity-literal>) unit <qualified-name> ;`: a model's time source (FR-393)."]
+    TimeDeclaration,
+    #[doc = "`time invariant <identifier> when <block> { <clock-bound> (and <clock-bound>)* }`: a time invariant (FR-393)."]
+    TimeInvariant,
+    #[doc = "`<postfix> (< | <=) <quantity-literal>`: one upper bound on a clock (FR-393)."]
+    ClockBound,
+    #[doc = "`urgent <identifier> (when <block> | <qualified-name>) ;`: an urgency declaration (FR-393)."]
+    UrgentDeclaration,
+    TemporalExpression, TemporalImplication, TemporalDisjunction,
     TemporalConjunction, TemporalRelation, TemporalUnary, TemporalPrimary,
     #[doc = "`terminal <identifier> using <identifier> on <identifier> (when <block> | any) ;`: a model's intended terminal states."]
     TerminalDeclaration,
+    #[doc = "`random <qualified-name> ( <identifier> ) ~ { <weighted-value>, ... } ;`: a distribution on an operation parameter."]
+    RandomDeclaration,
+    #[doc = "`<expression> : <exact-value>`: one value of a random parameter's distribution and its weight."]
+    WeightedValue,
+    #[doc = "`reward <identifier> on <qualified-name> = <expression> ;`: a named reward on an operation."]
+    RewardDeclaration,
+    #[doc = "`workload <identifier> on <identifier> { <workload-weight>+ }`: a weight for each operation of a model."]
+    WorkloadDeclaration,
+    #[doc = "`weight <qualified-name> = <exact-value> ;`: one operation's weight in a workload."]
+    WorkloadWeight,
+    #[doc = "`probabilistic <identifier> using <identifier> on <identifier> [over (<parameter>)] <scheduler-clause> <activation> [<confidence>] { <probabilistic-form> }`: a statistical claim over a model."]
+    ProbabilisticClause,
+    #[doc = "`under <identifier>` or `under every scheduler <fairness-item>*`: the scheduler a probabilistic claim holds under."]
+    SchedulerClause,
+    #[doc = "`fair (weak | strong) [each] <qualified-name>`: one fairness item of `under every scheduler`."]
+    FairnessItem,
+    #[doc = "`with <confidence-item>, ...`: a probabilistic claim's confidence parameters."]
+    Confidence,
+    #[doc = "`(alpha | beta | indifference) <exact-value>`: one confidence parameter."]
+    ConfidenceItem,
+    #[doc = "`probability`, `quantile`, `mean of`, `long_run_fraction` or `expected`: the body of a probabilistic claim."]
+    ProbabilisticForm,
+    #[doc = "A temporal formula, or a measure compared with a threshold: a `probability` claim's event."]
+    Event,
+    #[doc = "`accumulate`, `steps` or `elapsed` from a predicate until a predicate within a horizon, or a fraction."]
+    Measure,
+    #[doc = "`fraction holds ( <expression> ) over [0, <horizon>] [<weighting>]`."]
+    Fraction,
+    #[doc = "`weighted by <identifier>`: weights a fraction or a long-run fraction."]
+    Weighting,
+    #[doc = "An unsigned integer or a quantity literal: a measure's window."]
+    Horizon,
+    #[doc = "An unsigned integer, a decimal literal or an exact number."]
+    ExactValue,
+    #[doc = "`<exact-value> <qualified-name>`: a magnitude and its unit."]
+    QuantityLiteral,
+    #[doc = "`possible`, `always possible` or `unique path` followed by a name, `using`, `over ( <parameter> )` and the form's predicates: a claim about a model's state graph."]
+    StateGraphClaim,
+    #[doc = "`{ <fairness>* <predicate> }`: the braced predicate of a `possible` or `always possible` claim, whose fairness constraints the checker refuses."]
+    StateGraphBody,
+    #[doc = "A state-graph claim predicate: an expression, which may carry leading or joining temporal operators for the checker to refuse at their spans."]
+    StateGraphPredicate,
+    StateGraphImplication, StateGraphDisjunction, StateGraphConjunction,
+    StateGraphRelation, StateGraphUnary,
     ProtocolClause, Role, RoleLifetime, Relationship, Channel, Ordering, DeliveryPolicy,
     Capacity, OverflowPolicy, ProtocolRequirement, NodeReference, Compensation,
     #[doc = "`terminal when <block>;` or `terminal any;`: a protocol clause's intended terminal states."]
@@ -161,7 +221,7 @@ productions! {
     HistoryUpdate,
     #[doc = "An integer, `true`, `false`, `none`, a string, an exact number or a qualified name: a history row's initial value."]
     HistoryLiteral,
-    #[doc = "`(assume | ensure) fair weak [each | whole] <operation-name> ;`: one member of a refinement's concrete or abstract fairness set."]
+    #[doc = "`(assume | ensure) fair (weak | strong) [each | whole] <operation-name> ;`: one member of a refinement's concrete or abstract fairness set."]
     FairnessRow,
     #[doc = "`step <step-source> -> <step-target> ;`: one explicit refinement row for a concrete step class."]
     StepRow,
@@ -182,7 +242,21 @@ productions! {
     #[doc = "`related by <identifier> ( <expression>, <expression> )`: attached to an event node to correlate it with another by a named relation."]
     Related,
     EventNode, Check, Commit, Finish,
-    RelationClause, ExecutionBinding, HyperClause, TraceDomain, Quantifier,
+    RelationClause, ExecutionBinding, HyperClause, TraceDomain,
+    #[doc = "`behaviours [( <parameter> {, <parameter>} )]`: a `hyper` clause whose trace variables range over behaviours of model subjects."]
+    BehavioursDomain,
+    #[doc = "`(forall | exists) trace <identifier> [of <identifier> <fairness>*]`: one trace quantifier of a `hyper` clause."]
+    Quantifier,
+    #[doc = "`align skip { <qualified-name> {, <qualified-name>} }`: the operations whose steps a `hyper` clause skips when it aligns its traces."]
+    AlignSkip,
+    #[doc = "`match <block>`: the step labels a `hyper` clause's traces must agree on."]
+    MatchBlock,
+    #[doc = "`<identifier> . step . (op | receiver | <qualified-name> . <member>)`: one trace's step label, read in a `hyper` clause's `match` block."]
+    StepLabel,
+    #[doc = "`<postfix> @ <identifier>`: a model member read from the named trace of a `hyper` clause."]
+    IndexedRead,
+    HyperExpression, HyperImplication, HyperDisjunction, HyperConjunction,
+    HyperComparison, HyperSum, HyperProduct, HyperUnary, HyperPostfix, HyperPrimary,
     HybridDeclaration, HybridMode, Equation, SynthesisDeclaration,
     VerificationPlan, VerificationStep,
 }

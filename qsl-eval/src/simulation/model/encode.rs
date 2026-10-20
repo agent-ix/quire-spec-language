@@ -12,7 +12,7 @@
 use quire_canonical::{Encode, Error, Limits, Sink, Writer};
 use quire_exact::{CollectionKind, IeeeWidth, ObjectReference, Value};
 
-use qsl_semantics::model::key::DeclarationKey;
+use qsl_semantics::model::key::{effective_id_from_digest, DeclarationKey};
 use qsl_semantics::model::state::{ModelState, StateModel};
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
@@ -63,7 +63,7 @@ impl Enc {
     }
 
     /// `{"type": tag, ...members}`.
-    fn tagged(tag: &str, mut members: Vec<(&'static str, Enc)>) -> Self {
+    pub(super) fn tagged(tag: &str, mut members: Vec<(&'static str, Enc)>) -> Self {
         members.push(("type", Self::text(tag)));
         Self::Object(members)
     }
@@ -132,8 +132,68 @@ pub(super) fn reference_enc(reference: &ObjectReference) -> Enc {
     )
 }
 
+/// The reference [`reference_enc`] wrote as `text`: its canonical text names
+/// the members in sorted order, so the text is matched member by member.
+/// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
+#[qsl_attrs::string_edge]
+pub(super) fn parse_reference(text: &str) -> Option<ObjectReference> {
+    let rest = text.strip_prefix(r#"{"identity":""#)?;
+    let (identity, rest) = rest.split_once(r#"","object_type":""#)?;
+    let (object_type, rest) = rest.split_once(r#"","type":"reference","universe":""#)?;
+    let universe = rest.strip_suffix(r#""}"#)?;
+    let identity = String::from_utf8(unhex(identity)?).ok()?;
+    Some(ObjectReference::new(
+        quire_exact::UniverseId::from_digest(unhex32(universe)?),
+        effective_id_from_digest(unhex32(object_type)?),
+        quire_exact::ObjectId::new(identity).ok()?,
+    ))
+}
+
+/// The reference a parameter's canonical text names: the text of a reference,
+/// or of an option holding one. `Some(None)` is an absent option.
+/// `#[string_edge]`: reads the canonical text this module's own encoder wrote.
+#[qsl_attrs::string_edge]
+pub(super) fn parse_optional_reference(text: &str) -> Option<Option<ObjectReference>> {
+    if let Some(inner) = text
+        .strip_prefix(r#"{"type":"option","value":"#)
+        .and_then(|rest| rest.strip_suffix('}'))
+    {
+        return if inner == "null" {
+            Some(None)
+        } else {
+            parse_reference(inner).map(Some)
+        };
+    }
+    parse_reference(text).map(Some)
+}
+
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    let lower_hex = |byte: u8| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte);
+    if !text.len().is_multiple_of(2) || !text.bytes().all(lower_hex) {
+        return None;
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).ok())
+        .collect()
+}
+
+fn unhex32(text: &str) -> Option<[u8; 32]> {
+    unhex(text)?.try_into().ok()
+}
+
 /// FR-181's typed canonical form of `value`.
 pub(crate) fn value_enc(value: &Value) -> Enc {
+    value_enc_with(value, &|_| None)
+}
+
+/// A reference's replacement in a key-free encoding (FR-152): `Some` for a
+/// reference the encoding names by a placeholder, `None` to encode it.
+pub(super) type Placeholder<'p> = dyn Fn(&ObjectReference) -> Option<Enc> + 'p;
+
+/// FR-181's typed canonical form of `value`, with each reference
+/// `placeholder` replaces written as its replacement.
+pub(super) fn value_enc_with(value: &Value, placeholder: &Placeholder<'_>) -> Enc {
     match value {
         Value::Boolean(flag) => Enc::tagged("boolean", vec![("value", Enc::Bool(*flag))]),
         Value::Integer(integer) => {
@@ -160,7 +220,12 @@ pub(crate) fn value_enc(value: &Value) -> Enc {
         Value::String(text) => Enc::tagged("text", vec![("value", Enc::text(text.as_str()))]),
         Value::Option(option) => Enc::tagged(
             "option",
-            vec![("value", option.payload().map_or(Enc::Null, value_enc))],
+            vec![(
+                "value",
+                option
+                    .payload()
+                    .map_or(Enc::Null, |payload| value_enc_with(payload, placeholder)),
+            )],
         ),
         Value::Collection(collection) => {
             let tag = match collection.collection_type().kind() {
@@ -169,7 +234,11 @@ pub(crate) fn value_enc(value: &Value) -> Enc {
                 CollectionKind::Bag => "bag",
                 CollectionKind::OrderedSet => "ordered-set",
             };
-            let mut elements: Vec<Enc> = collection.elements().iter().map(value_enc).collect();
+            let mut elements: Vec<Enc> = collection
+                .elements()
+                .iter()
+                .map(|element| value_enc_with(element, placeholder))
+                .collect();
             if matches!(
                 collection.collection_type().kind(),
                 CollectionKind::Set | CollectionKind::Bag
@@ -182,7 +251,9 @@ pub(crate) fn value_enc(value: &Value) -> Enc {
             }
             Enc::tagged(tag, vec![("elements", Enc::Array(elements))])
         }
-        Value::Reference(reference) => reference_enc(reference),
+        Value::Reference(reference) => {
+            placeholder(reference).unwrap_or_else(|| reference_enc(reference))
+        }
         Value::Decimal(_) => Enc::Unencodable("a decimal value"),
         Value::Quantity(_) => Enc::Unencodable("a quantity value"),
         Value::Uuid(_) => Enc::Unencodable("a uuid value"),
@@ -242,29 +313,7 @@ pub(super) fn semantic_enc(model: &StateModel, state: &ModelState) -> Enc {
             let Ok(reference) = model.object_reference(&object.type_identity, key) else {
                 return Enc::Unencodable("an object whose reference does not resolve");
             };
-            let Ok(Some(fields)) = model.fields(&object.type_identity) else {
-                return Enc::Unencodable("an object of an undeclared type");
-            };
-            let fields = fields
-                .iter()
-                .map(|field| {
-                    // QSpec FR-181: a field declared `Option<T>` holds an option
-                    // value (encoded by `value_enc`); an absent presence-optional
-                    // field is a plain `null` entry.
-                    let value = object.fields.get(&field.key).map_or(Enc::Null, value_enc);
-                    Enc::Object(vec![
-                        ("name", Enc::text(field.name.clone())),
-                        ("value", value),
-                    ])
-                })
-                .collect();
-            let record = Enc::tagged(
-                "record",
-                vec![
-                    ("name", declaration_enc_text(&object.type_identity)),
-                    ("fields", Enc::Array(fields)),
-                ],
-            );
+            let record = object_enc(model, object, &|_| None);
             entries.push((reference_enc(&reference), record));
         }
         populations.push((
@@ -273,6 +322,42 @@ pub(super) fn semantic_enc(model: &StateModel, state: &ModelState) -> Enc {
         ));
     }
     map_enc(populations)
+}
+
+/// One object's `record` in a state key (FR-120): its type name and its
+/// declared fields in declaration order, each reference `placeholder`
+/// replaces written as its replacement.
+pub(super) fn object_enc(
+    model: &StateModel,
+    object: &qsl_semantics::model::state::StateObject,
+    placeholder: &Placeholder<'_>,
+) -> Enc {
+    let Ok(Some(fields)) = model.fields(&object.type_identity) else {
+        return Enc::Unencodable("an object of an undeclared type");
+    };
+    let fields = fields
+        .iter()
+        .map(|field| {
+            // QSpec FR-181: a field declared `Option<T>` holds an option
+            // value (encoded by `value_enc`); an absent presence-optional
+            // field is a plain `null` entry.
+            let value = object
+                .fields
+                .get(&field.key)
+                .map_or(Enc::Null, |value| value_enc_with(value, placeholder));
+            Enc::Object(vec![
+                ("name", Enc::text(field.name.clone())),
+                ("value", value),
+            ])
+        })
+        .collect();
+    Enc::tagged(
+        "record",
+        vec![
+            ("name", declaration_enc_text(&object.type_identity)),
+            ("fields", Enc::Array(fields)),
+        ],
+    )
 }
 
 /// A declaration's identity text as a string value.

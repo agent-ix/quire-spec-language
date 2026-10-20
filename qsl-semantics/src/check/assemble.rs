@@ -55,10 +55,11 @@ use super::model_gate::{self, ModelGateRefusal};
 use super::node_key::{declared_type_handle, nominal_key, NodeKeyRefusal, SourceOwner};
 use super::operation_body::OperationBodyDeclaration;
 use super::operation_clause::OperationClauseDeclaration;
-use super::refusal::AliasKind;
+use super::refusal::{AliasKind, TimedConstruct};
 use super::state_clause::{
     population_of, AttemptDeclaration, ClauseOperation, StateClauseDeclaration,
 };
+use super::state_graph_claim::StateGraphDeclaration;
 use super::terminal::{TerminalClauseDeclaration, TerminalClauseKind};
 use super::type_form::{
     native_scalar_named, parse_rounding_mode, resolve_form, TypeFormError, TypeFormFault, TypeNames,
@@ -372,6 +373,21 @@ pub enum AssemblyCause {
         /// The span of each body's declaration, in source order.
         bodies: Vec<Span>,
     },
+    /// Two state-graph claims of the unit share a name (FR-165). Located at
+    /// the second.
+    DuplicateStateGraphClaim {
+        /// The claim name.
+        name: String,
+        /// The span of the first claim's name.
+        first: Span,
+    },
+    /// A state-graph claim's `over` type is not an object type of an admitted
+    /// domain package (a builtin, collection or population type). Located at
+    /// the type.
+    OverNotObjectType {
+        /// The claim name.
+        claim: String,
+    },
     /// A `bound` declaration names a model alias that is no `model`
     /// declaration of the unit, or a population its domain package does not
     /// declare (FR-380 "The declaration").
@@ -437,6 +453,10 @@ pub enum AssemblyCause {
     /// `quire.model.complete/v1` (FR-361): `unsupported_construct`/
     /// `declaration-form` or `expression-form`.
     UnselectedModelConstruct(ModelGateRefusal),
+    /// A timed declaration or the `Clock` type, which S2 builds (FR-393)
+    /// and no S3 check reads yet (FR-230): `unsupported_construct`/
+    /// `not-yet-implemented`, never compiled unchecked.
+    TimedNotChecked(super::refusal::TimedConstruct),
 }
 
 impl AssemblyCause {
@@ -461,13 +481,17 @@ impl AssemblyCause {
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => Code::AmbiguousDeclaration,
             Self::UnresolvedQuantityName { .. } => Code::MissingDeclaration,
-            Self::DuplicateOperationBody { .. } => Code::ConflictingDeclaration,
+            Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
+                Code::ConflictingDeclaration
+            }
             Self::QuantityCycle { .. } => Code::InvalidPackage,
             Self::ZeroDenominator => Code::UndefinedExpression,
             Self::DecimalScaleLimit(_) => Code::StageLimitExceeded,
             // FR-091-OQ-12: STD-112 has not published the topology causes.
             Self::UnitGraphTopology { .. } => Code::InvalidPackage,
-            Self::IllFormedBounds(_) | Self::ImportedTypeName { .. } => Code::IllTyped,
+            Self::IllFormedBounds(_)
+            | Self::ImportedTypeName { .. }
+            | Self::OverNotObjectType { .. } => Code::IllTyped,
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 Code::UnknownRequiredFeature
             }
@@ -493,9 +517,9 @@ impl AssemblyCause {
             | Self::StorageAllocation { .. }
             | Self::StorageCapacity { .. } => Code::ResourceExhausted,
             Self::Handle(_) | Self::NominalAdmission(_) => Code::RuntimeInvariant,
-            Self::UnsupportedLayerForm { .. } | Self::UnselectedModelConstruct(_) => {
-                Code::UnsupportedConstruct
-            }
+            Self::UnsupportedLayerForm { .. }
+            | Self::UnselectedModelConstruct(_)
+            | Self::TimedNotChecked(_) => Code::UnsupportedConstruct,
         }
     }
 
@@ -543,14 +567,16 @@ impl AssemblyCause {
             | Self::AmbiguousTerminalState { .. }
             | Self::AmbiguousPopulation { .. } => "ambiguous-name",
             Self::UnresolvedQuantityName { .. } => "missing-name",
-            Self::DuplicateOperationBody { .. } => "duplicate-declaration",
+            Self::DuplicateOperationBody { .. } | Self::DuplicateStateGraphClaim { .. } => {
+                "duplicate-declaration"
+            }
             Self::QuantityCycle { .. } => "definition-cycle",
             Self::ZeroDenominator => "unproved-nonzero",
             Self::DecimalScaleLimit(limit) => limit.kind().catalog_cause(),
             // Informational (FR-091-OQ-12): STD-112 replaces this cause
             // once QSpec publishes the topology causes; nothing reads it.
             Self::UnitGraphTopology { .. } => "unit-graph-topology",
-            Self::IllFormedBounds(_) => "type-mismatch",
+            Self::IllFormedBounds(_) | Self::OverNotObjectType { .. } => "type-mismatch",
             Self::ImportedTypeName { .. } => "operator-ineligible",
             Self::FloatingType { .. } | Self::UnsupportedModelMember { .. } => {
                 "unsupported-feature"
@@ -579,6 +605,7 @@ impl AssemblyCause {
             Self::Handle(_) | Self::NominalAdmission(_) => "established-invariant-broken",
             Self::UnsupportedLayerForm { form, .. } => form.refusal_cause(),
             Self::UnselectedModelConstruct(refusal) => refusal.family.refusal_cause(),
+            Self::TimedNotChecked(_) => "not-yet-implemented",
         };
         CatalogCode::new(self.code().as_str(), cause)
     }
@@ -682,9 +709,21 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// Each `hyper` clause and `relation`, in source order, for
+    /// `check::hyper_clause` to resolve at S3.
+    hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
+    probabilistic: Vec<super::ProbabilisticDeclaration>,
     /// Each `terminal` declaration's form, in source order, resolved by the
     /// caller into the model's `TerminalClauseDeclaration`s (FR-124).
     terminals: Vec<TerminalDeclarationForm>,
+    /// Each `refinement` declaration's form, in source order, resolved by the
+    /// caller into the unit's `RefinementDeclaration`s (FR-135).
+    refinements: Vec<qsl_forms::RefinementForm>,
+    /// The timed declarations (FR-393), refused until FR-230 checks them.
+    timed: Vec<(TimedConstruct, Span)>,
+    /// Each state-graph claim's form, in source order, resolved by the
+    /// caller into `StateGraphDeclaration`s (FR-165).
+    state_graph_claims: Vec<qsl_forms::StateGraphClaimForm>,
 }
 
 impl Unit {
@@ -702,7 +741,12 @@ impl Unit {
             population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
+            hyper_clauses: Vec::new(),
+            probabilistic: Vec::new(),
             terminals: Vec::new(),
+            refinements: Vec::new(),
+            timed: Vec::new(),
+            state_graph_claims: Vec::new(),
         };
         for form in forms {
             let span = form.span();
@@ -744,6 +788,39 @@ impl Unit {
                     });
                 }
                 DeclarationForm::Terminal(terminal) => unit.terminals.push(*terminal),
+                DeclarationForm::Refinement(refinement) => unit.refinements.push(*refinement),
+                DeclarationForm::TimeSource(time) => {
+                    unit.timed.push((TimedConstruct::TimeSource, time.span));
+                }
+                DeclarationForm::TimeInvariant(invariant) => {
+                    unit.timed
+                        .push((TimedConstruct::TimeInvariant, invariant.span));
+                }
+                DeclarationForm::Urgent(urgent) => {
+                    unit.timed.push((TimedConstruct::Urgent, urgent.span));
+                }
+                DeclarationForm::HyperBehaviours(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Behaviours(*clause)),
+                DeclarationForm::HyperFinite(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Finite(*clause)),
+                DeclarationForm::ModelRelation(clause) => unit
+                    .hyper_clauses
+                    .push(super::hyper_clause::HyperDeclaration::Relation(*clause)),
+                DeclarationForm::Random(random) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Random(random)),
+                DeclarationForm::Reward(reward) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Reward(reward)),
+                DeclarationForm::Workload(workload) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Workload(workload)),
+                DeclarationForm::Probabilistic(claim) => unit
+                    .probabilistic
+                    .push(super::ProbabilisticDeclaration::Claim(claim)),
+                DeclarationForm::StateGraphClaim(claim) => unit.state_graph_claims.push(*claim),
                 DeclarationForm::Temporal(clause) => {
                     unit.temporal_clauses
                         .push(super::temporal_clause::TemporalDeclaration {
@@ -1724,6 +1801,7 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 ExprNode::Boolean(_)
                 | ExprNode::Integer(_)
                 | ExprNode::Rational(..)
+                | ExprNode::Quantity(_)
                 | ExprNode::String(_)
                 | ExprNode::Name(_)
                 | ExprNode::Let { .. }
@@ -1740,6 +1818,8 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::Record { .. }
                 | ExprNode::Collection { .. }
                 | ExprNode::Query { .. }
+                | ExprNode::Population { .. }
+                | ExprNode::Seq { .. }
                 | ExprNode::Flatten(_)
                 | ExprNode::Size(_)
                 | ExprNode::Contains { .. }
@@ -1749,6 +1829,9 @@ fn expression_type_forms<'e>(roots: impl IntoIterator<Item = &'e Expression>) ->
                 | ExprNode::SelfRef
                 | ExprNode::Result
                 | ExprNode::Reaches { .. }
+                | ExprNode::Indexed { .. }
+                | ExprNode::StepLabel { .. }
+                | ExprNode::Stutter
                 | ExprNode::ProtocolReference { .. } => {}
                 // Not the S2 seam (`Typer::infer_form`'s own doc,
                 // `qsl-semantics/src/check/check/typing.rs`): an
@@ -1793,6 +1876,10 @@ fn check_names(
                     }
                 }
             }
+            TypeFormHead::Builtin(BuiltinType::Clock) => errors.push(AssemblyError {
+                cause: AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
+                span: form.span,
+            }),
             TypeFormHead::Builtin(BuiltinType::Reference) => {
                 for target in &form.arguments {
                     let name = match &target.head {
@@ -1886,6 +1973,7 @@ fn resolution_error(unit: &Unit, error: TypeFormError) -> AssemblyError {
         | TypeFormFault::MalformedDecimal
         | TypeFormFault::EmptyTextBounds
         | TypeFormFault::EmptyCardinality) => AssemblyCause::IllFormedBounds(fault),
+        TypeFormFault::ClockNotChecked => AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
     };
     AssemblyError {
         cause,
@@ -2333,7 +2421,16 @@ impl PackageDeclarations {
     ) -> Result<Self, AssemblyRefusal> {
         let (selections, forms) = unit.into_parts();
         let unit = Unit::new(forms);
-        let mut errors = Vec::new();
+        // FR-393: the timed declarations build at S2; until FR-230's check
+        // reads them, each refuses here rather than compile unchecked.
+        let mut errors: Vec<AssemblyError> = unit
+            .timed
+            .iter()
+            .map(|(construct, span)| AssemblyError {
+                cause: AssemblyCause::TimedNotChecked(*construct),
+                span: *span,
+            })
+            .collect();
         let owner = SourceOwner::from(&source);
         // The models and the one meter their admission counted on; checking
         // continues that meter into the conformance stage.
@@ -2479,6 +2576,23 @@ impl PackageDeclarations {
         // alias's (ADR-014 A-2), and `check::temporal_clause` decides it.
         for clause in &unit.temporal_clauses {
             let using = &clause.form.profile;
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == using.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: using.alias.clone(),
+                    },
+                    span: using.span,
+                });
+            }
+        }
+        // FR-172: a `hyper` clause's and a `relation`'s `using` alias names one
+        // of the unit's profile selections, as a `temporal` clause's does.
+        for clause in &unit.hyper_clauses {
+            let using = clause.profile();
             if !selections
                 .profiles
                 .iter()
@@ -2662,6 +2776,22 @@ impl PackageDeclarations {
         }
         for body in &unit.operation_bodies {
             for form in expression_type_forms([&body.body]) {
+                check_names(
+                    &unit,
+                    &object_names,
+                    &model_composite_names,
+                    &qualified,
+                    &form,
+                    &mut errors,
+                );
+            }
+        }
+        for claim in &unit.state_graph_claims {
+            let operands = super::state_graph_claim::predicates(&claim.kind)
+                .into_iter()
+                .flat_map(|(_, predicate)| &predicate.operands)
+                .map(|operand| &operand.expression);
+            for form in expression_type_forms(operands) {
                 check_names(
                     &unit,
                     &object_names,
@@ -2981,6 +3111,12 @@ impl PackageDeclarations {
             &admitted,
             (&lock, &predicates),
         );
+        let state_graph_claims = state_graph_claims(
+            unit.state_graph_claims,
+            &resolve,
+            &admitted,
+            (&lock, &predicates),
+        );
         let operation_bodies =
             operation_bodies(unit.operation_bodies, &resolve, (&lock, &predicates));
         let protocol_attempts = protocol_attempts(
@@ -2991,20 +3127,39 @@ impl PackageDeclarations {
             &admitted,
         );
         let terminals = terminal_declarations(unit.terminals, &resolve, &admitted);
-        let (state_clauses, protocol_attempts, operation_bodies, terminals) = match (
+        let refinements = refinement_declarations(unit.refinements, &resolve);
+        let (
             state_clauses,
+            state_graph_claims,
             protocol_attempts,
             operation_bodies,
             terminals,
+            refinements,
+        ) = match (
+            state_clauses,
+            state_graph_claims,
+            protocol_attempts,
+            operation_bodies,
+            terminals,
+            refinements,
         ) {
-            (Ok(clauses), Ok(attempts), Ok(bodies), Ok(terminals)) if bound_errors.is_empty() => {
-                (clauses, attempts, bodies, terminals)
+            (Ok(clauses), Ok(claims), Ok(attempts), Ok(bodies), Ok(terminals), Ok(refinements))
+                if bound_errors.is_empty() =>
+            {
+                (clauses, claims, attempts, bodies, terminals, refinements)
             }
-            (clauses, attempts, bodies, terminals) => {
+            (clauses, claims, attempts, bodies, terminals, refinements) => {
                 let mut errors = bound_errors;
-                for refusal in [clauses.err(), attempts.err(), bodies.err(), terminals.err()]
-                    .into_iter()
-                    .flatten()
+                for refusal in [
+                    clauses.err(),
+                    claims.err(),
+                    attempts.err(),
+                    bodies.err(),
+                    terminals.err(),
+                    refinements.err(),
+                ]
+                .into_iter()
+                .flatten()
                 {
                     errors.extend(refusal.errors);
                 }
@@ -3087,7 +3242,9 @@ impl PackageDeclarations {
         package.functions = unit.functions;
         package.function_selections = function_selections;
         package.state_clauses = state_clauses;
+        package.state_graph_claims = state_graph_claims;
         package.terminals = terminals;
+        package.refinements = refinements;
         package.operation_bodies = operation_bodies;
         package.selected_views = selected_views;
         // FR-092: a protocol's node is declared at the protocol's name.
@@ -3096,6 +3253,55 @@ impl PackageDeclarations {
                 super::lowering::declaration_origin(&protocol.name.name),
                 protocol.name.span,
             )
+        }));
+        // FR-337: a temporal clause's nodes are located at its own sites:
+        // its name, its `over` parameter's name, each formula node's span,
+        // each written fairness constraint's span, and each `holds`
+        // condition's expression tree.
+        let mut declared_site_spans = BTreeMap::new();
+        for (index, clause) in unit.temporal_clauses.iter().enumerate() {
+            use super::lowering::{temporal_site, TemporalSite};
+            let form = &clause.form;
+            declared_type_spans.insert(temporal_site(index, TemporalSite::Claim), form.name.span);
+            declared_type_spans.insert(
+                temporal_site(index, TemporalSite::Over),
+                form.over.name.span,
+            );
+            for (id, node) in form.formula.iter() {
+                let span = match node {
+                    qsl_forms::TemporalNodeForm::Constant { span, .. } => *span,
+                    qsl_forms::TemporalNodeForm::Holds { condition, span } => {
+                        declared_site_spans.insert(
+                            temporal_site(index, TemporalSite::Condition(id.index())),
+                            condition.spans.clone(),
+                        );
+                        *span
+                    }
+                    qsl_forms::TemporalNodeForm::Operator(operator) => operator.span,
+                };
+                declared_type_spans
+                    .insert(temporal_site(index, TemporalSite::Node(id.index())), span);
+            }
+            for (constraint, written) in form.fairness.iter().enumerate() {
+                declared_type_spans.insert(
+                    temporal_site(index, TemporalSite::Fairness(constraint)),
+                    written.span,
+                );
+            }
+        }
+        // FR-185: each random parameter's support values and each reward's
+        // expression are located at their own sites.
+        declared_site_spans.extend(super::probabilistic::site_spans(&unit.probabilistic));
+        package.declared_site_spans = declared_site_spans;
+        // FR-381: a template's operation anchor occurrence is recorded at
+        // the template's name.
+        declared_type_spans.extend(unit.protocols.iter().flat_map(|protocol| {
+            protocol.compensations.iter().map(|template| {
+                (
+                    super::lowering::compensation_origin(&protocol.name.name, &template.name.name),
+                    template.name.span,
+                )
+            })
         }));
         // FR-110: the header profile that selects the protocol clause family's
         // profile is the package's `protocol_profile` (ADR-011 §2.4).
@@ -3115,6 +3321,8 @@ impl PackageDeclarations {
             .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        package.hyper_clauses = unit.hyper_clauses;
+        package.probabilistic = unit.probabilistic;
         package.temporal_selections = selections
             .profiles
             .iter()
@@ -3302,6 +3510,145 @@ fn state_clauses(
     }
     if errors.is_empty() {
         Ok(clauses)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-135: each `refinement` declaration's `using` alias resolved to one of
+/// the unit's profile selections. The model aliases and every row resolve at
+/// S3, where the models' declarations are checked.
+fn refinement_declarations(
+    forms: Vec<qsl_forms::RefinementForm>,
+    resolve: &Resolve<'_>,
+) -> Result<Vec<super::RefinementDeclaration>, AssemblyRefusal> {
+    let mut errors = Vec::new();
+    let mut declarations = Vec::with_capacity(forms.len());
+    for form in forms {
+        let selection = resolve
+            .profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        match selection {
+            Some(selection) => declarations.push(super::RefinementDeclaration { form, selection }),
+            None => errors.push(AssemblyError {
+                cause: AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                span: form.profile.span,
+            }),
+        }
+    }
+    if errors.is_empty() {
+        Ok(declarations)
+    } else {
+        refuse(errors)
+    }
+}
+
+/// FR-165 "Forms": each state-graph claim's `using` alias resolved to one of
+/// the unit's profile selections and its `over` type to an object type of an
+/// admitted domain package, whose population must be exactly one or none. A
+/// predicate form outside the selected layer's admitted set refuses as a
+/// state clause body's does (FR-110).
+fn state_graph_claims(
+    forms: Vec<qsl_forms::StateGraphClaimForm>,
+    resolve: &Resolve<'_>,
+    models: &[AdmittedModel],
+    (lock, predicates): (&DefinitionLock, &BTreeSet<&str>),
+) -> Result<Vec<StateGraphDeclaration>, AssemblyRefusal> {
+    let Resolve {
+        profiles,
+        object_names,
+        types,
+        ..
+    } = *resolve;
+    let mut errors = Vec::new();
+    let selects_model = model_gate::selects_model(profiles);
+    let mut claims = Vec::with_capacity(forms.len());
+    let mut names: BTreeMap<String, Span> = BTreeMap::new();
+    for form in forms {
+        let error = |cause, span| AssemblyError { cause, span };
+        if let Some(first) = names.get(&form.name.name) {
+            errors.push(error(
+                AssemblyCause::DuplicateStateGraphClaim {
+                    name: form.name.name.clone(),
+                    first: *first,
+                },
+                form.name.span,
+            ));
+            continue;
+        }
+        names.insert(form.name.name.clone(), form.name.span);
+        let selection = profiles
+            .iter()
+            .find(|profile| profile.alias == form.profile.alias)
+            .cloned();
+        match &selection {
+            None => errors.push(error(
+                AssemblyCause::UndeclaredAlias {
+                    alias: form.profile.alias.clone(),
+                },
+                form.profile.span,
+            )),
+            Some(selection) => {
+                if let Some(layer) = HeaderLayer::from_identity(&selection.identity) {
+                    errors.extend(
+                        LayerAdmission::new(lock, layer, predicates, selects_model)
+                            .state_graph_claim(&form),
+                    );
+                }
+            }
+        }
+        let (context, context_population) = match &form.over {
+            None => (None, None),
+            Some(over_parameter) => {
+                let over = &over_parameter.value_type;
+                let TypeFormHead::Name(name) = &over.head else {
+                    errors.push(error(
+                        AssemblyCause::OverNotObjectType {
+                            claim: form.name.name.clone(),
+                        },
+                        over.span,
+                    ));
+                    continue;
+                };
+                let Some(context) = object_names.get(name).copied() else {
+                    errors.push(error(
+                        AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                        over.span,
+                    ));
+                    continue;
+                };
+                let context_population = match population_of(models, context, types) {
+                    Ok(domain) => domain,
+                    Err(populations) => {
+                        errors.push(error(
+                            AssemblyCause::AmbiguousPopulation {
+                                context: name.clone(),
+                                populations,
+                            },
+                            over.span,
+                        ));
+                        continue;
+                    }
+                };
+                (Some(context), context_population)
+            }
+        };
+        let Some(selection) = selection else {
+            continue;
+        };
+        claims.push(StateGraphDeclaration {
+            form,
+            selection,
+            context,
+            context_population,
+        });
+    }
+    if errors.is_empty() {
+        Ok(claims)
     } else {
         refuse(errors)
     }
@@ -3823,6 +4170,7 @@ fn protocol_attempts(
             attempts.push(AttemptDeclaration {
                 declaration: attempt.declaration,
                 operation,
+                receiver: context,
                 frame_population,
             });
         }

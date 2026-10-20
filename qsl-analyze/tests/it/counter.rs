@@ -8,28 +8,21 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::model_subject::{ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, PopulationUniverse,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
-use qsl_foundation::digest::WireNodeId;
-use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
-use qsl_replay::ClauseIdentity;
-use qsl_semantics::check::{
-    check_clauses, CheckedTemporalClause, FormulaNodeId, PackageDeclarations,
-};
+use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId, PackageDeclarations};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{
     declared_type_universe_for, DocumentRef, ObservationLimits,
 };
-use quire_exact::{
-    Incomplete, Meter, ObjectId, ObjectReference, Origin, Role, ScalarLimits, Value,
-};
+use quire_exact::{Incomplete, Meter, ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
@@ -44,7 +37,7 @@ fn ident(suffix: &str) -> String {
     format!("ix://{PACKAGE}/{suffix}")
 }
 
-fn key(suffix: &str) -> DeclarationKey {
+pub(crate) fn key(suffix: &str) -> DeclarationKey {
     DeclarationKey {
         package: PACKAGE.to_owned(),
         node: ident(suffix),
@@ -187,18 +180,29 @@ pub(crate) fn document_digest(document: &[u8]) -> [u8; 32] {
 /// The native unit selecting `document` as `M`, with `body` after the
 /// header.
 pub(crate) fn unit_text(document: &[u8], body: &str) -> String {
+    unit_text_in(PACKAGE, document, body)
+}
+
+/// The native unit selecting `document`, the domain package `identity`, as
+/// `M`, with `body` after the header.
+pub(crate) fn unit_text_in(identity: &str, document: &[u8], body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
-         model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model M = \"{identity}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          function Noop using v(): Boolean pure {{ true }}\n{body}",
         hex(&document_digest(document))
     )
 }
 
 fn declarations(document: &[u8], body: &str) -> PackageDeclarations {
-    let text = unit_text(document, body);
+    declarations_in(PACKAGE, document, body)
+}
+
+/// The S3 declarations of [`unit_text_in`]'s unit.
+pub(crate) fn declarations_in(identity: &str, document: &[u8], body: &str) -> PackageDeclarations {
+    let text = unit_text_in(identity, document, body);
     let packages = package_input([document]);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
@@ -239,17 +243,38 @@ pub(crate) fn package(document: &[u8], body: &str) -> CheckedPackage {
     CheckedPackage::link(graph)
 }
 
-/// The one temporal clause `C` over `c: M::Counter`, `on origin`, whose
-/// formula is `formula` under infinite-trace.
-pub(crate) fn clause(document: &[u8], fairness: &str, formula: &str) -> CheckedTemporalClause {
-    let body = format!(
-        "temporal C using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ {fairness} {formula} }}\n"
-    );
-    let mut checked = check_clauses(&declarations(document, &body));
-    match checked.pop() {
-        Some(Ok(clause)) if checked.is_empty() => clause,
-        other => panic!("{formula}: one checked clause, not {other:?}"),
-    }
+/// The text of the temporal clause `name` over `c: M::Counter`, `on origin`,
+/// whose formula is `formula` under infinite-trace.
+pub(crate) fn clause_text(name: &str, fairness: &str, formula: &str) -> String {
+    format!(
+        "temporal {name} using t0 over (c: M::Counter) clock \"model-steps\" on origin {{ {fairness} {formula} }}\n"
+    )
+}
+
+/// The checked package of `body` over `document` with the clauses `declared`
+/// (name, fairness, formula) written after it, and each clause the package
+/// declares, in declaration order.
+pub(crate) fn package_with_clauses(
+    document: &[u8],
+    body: &str,
+    declared: &[(&str, &str, &str)],
+) -> (CheckedPackage, Vec<CheckedTemporalClause>) {
+    let body = declared
+        .iter()
+        .fold(body.to_owned(), |text, (name, fairness, formula)| {
+            text + &clause_text(name, fairness, formula)
+        });
+    let graph = declarations(document, &body)
+        .with_unwritten_terminals()
+        .check(CheckingLimits::default())
+        .unwrap_or_else(|refusals| panic!("{body}: the unit checks: {refusals:?}"));
+    let clauses = graph
+        .temporal_clauses()
+        .iter()
+        .map(|node| node.clause().clone())
+        .collect::<Vec<_>>();
+    assert_eq!(clauses.len(), declared.len(), "{body}");
+    (CheckedPackage::link(graph), clauses)
 }
 
 /// A subject's documents: the domain package and the snapshots.
@@ -307,6 +332,14 @@ impl Documents {
     /// The bytes of each provisioned snapshot, by digest.
     pub(crate) fn snapshot_bytes(&self) -> impl Iterator<Item = (&[u8; 32], &Vec<u8>)> {
         self.snapshots.iter()
+    }
+}
+
+/// The instance of the counter `key` of `counters`.
+pub(crate) fn instance(key: &str) -> ModelInstance {
+    ModelInstance {
+        population: self::key("counters"),
+        key: key.to_owned(),
     }
 }
 
@@ -398,39 +431,22 @@ pub(crate) fn value(state: &ModelSimState, object: &str) -> i64 {
     }
 }
 
-/// The identity of the clause [`clause`] builds: S4 emits no temporal clause
-/// node yet (FR-337), so its occurrence and `over` node are fixture ids.
-pub(crate) fn identity() -> ClauseIdentity {
-    ClauseIdentity {
-        occurrence: OccurrenceKey::new(
-            WireNodeId::from_digest([0x51; 32]),
-            Origin::new(Role::new("temporal"), 0),
-        ),
-        over: Some(WireNodeId::from_digest([0x52; 32])),
-    }
-}
-
 /// The one atom of a TP-1 clause over `c`, as the predicate `atom` of the
 /// bound counter's `value`: `Some(truth)`, or `None` for an undefined
 /// division by zero.
 pub(crate) struct Letters {
-    pub(crate) bindings: Vec<ObjectReference>,
     pub(crate) atom: fn(i64) -> Option<bool>,
 }
 
 impl ModelLetters for Letters {
-    fn bindings(&self) -> Vec<ObjectReference> {
-        self.bindings.clone()
-    }
-
     fn atom(
         &self,
         _atom: FormulaNodeId,
-        binding: &ObjectReference,
+        instance: &ModelInstance,
         state: &ModelSimState,
         _meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete> {
-        Ok(match (self.atom)(value(state, binding.object().as_str())) {
+        Ok(match (self.atom)(value(state, &instance.key)) {
             Some(true) => AtomReading::True,
             Some(false) => AtomReading::False,
             None => AtomReading::Undefined(UndefinedCause::Kernel(
@@ -438,4 +454,39 @@ impl ModelLetters for Letters {
             )),
         })
     }
+}
+/// The checked package of a full unit `text` over `document`, for a unit
+/// whose header differs from [`unit_text`]'s.
+pub(crate) fn package_from_text(document: &[u8], text: &str) -> CheckedPackage {
+    let packages = package_input([document]);
+    let parsed = qsl_cst::parse(
+        SourceIdentity::new("agent-ix", "counter", "git", "1"),
+        "counter.native",
+        text.as_bytes(),
+        qsl_cst::Limits::default(),
+    )
+    .expect("S1 parses the unit");
+    assert!(parsed.is_admissible(), "S1: {:?}", parsed.diagnostics());
+    let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
+    let models = admit_unit(
+        &built.selections().models,
+        &packages,
+        ModelNormalizationLimits::default(),
+    )
+    .expect("the model selection admits")
+    .with_parsed_operation_clauses(|text| {
+        qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
+    })
+    .expect("the operation clauses parse");
+    let graph = PackageDeclarations::assemble(
+        parsed.source().reference().clone(),
+        built,
+        models,
+        Vec::new(),
+    )
+    .expect("the unit assembles")
+    .with_unwritten_terminals()
+    .check(CheckingLimits::default())
+    .unwrap_or_else(|refusals| panic!("the unit checks: {refusals:?}"));
+    CheckedPackage::link(graph)
 }

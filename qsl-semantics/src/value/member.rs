@@ -23,9 +23,11 @@ use quire_canonical::FixedShape;
 use serde::Serialize;
 
 use qsl_forms::StateClauseKind;
+use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use quire_exact::Identifier;
 use quire_exact::NodeKey;
+use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
 
 // `NODE_KEY_DOMAIN` is a test-only import now that `declaration_json` mints
 // through `DigestRecord`/`DigestDomain` (O-18 fold, #260 review item 5): the
@@ -107,11 +109,32 @@ pub enum Member {
         /// unrepresentable, since [`StateClauseKind`] is itself a closed enum.
         clause: StateClauseKind,
     },
+    /// An interval-capable temporal operator's interval (QSpec FR-370):
+    /// `{kind: "temporal_interval", interval}`, with `interval` `null` for
+    /// an unbounded operator. Carries no `declaration`.
+    TemporalInterval {
+        /// The checked interval; `None` for an unbounded operator.
+        interval: Option<TemporalInterval>,
+    },
+    /// One member of a clause's resolved fairness set (QSpec FR-370):
+    /// `{kind: "fairness", fairness_kind, granularity, declaration, name}`,
+    /// always in its resolved form, so an unmarked constraint and its
+    /// written `weak whole` form are one member (ADR-018 FA-6).
+    Fairness {
+        /// `weak` or `strong`.
+        kind: FairnessKind,
+        /// `whole` or `each`.
+        granularity: FairnessGranularity,
+        /// The operation's declaring `model`/`object_type` node.
+        declaration: NodeKey,
+        /// The operation's own identifier.
+        name: Identifier,
+    },
 }
 
 impl Member {
-    /// The declaring node this member names, or `None` for a
-    /// [`Self::ProfileOperator`], which names none.
+    /// The declaring node this member names, or `None` for a member kind
+    /// that names none.
     pub fn declaration(&self) -> Option<NodeKey> {
         match self {
             Self::Field { declaration, .. }
@@ -119,8 +142,11 @@ impl Member {
             | Self::Element { declaration }
             | Self::RelationshipEnd { declaration, .. }
             | Self::Operation { declaration, .. }
-            | Self::TypeArgument { declaration } => Some(*declaration),
-            Self::ProfileOperator { .. } | Self::StateClause { .. } => None,
+            | Self::TypeArgument { declaration }
+            | Self::Fairness { declaration, .. } => Some(*declaration),
+            Self::ProfileOperator { .. }
+            | Self::StateClause { .. }
+            | Self::TemporalInterval { .. } => None,
         }
     }
 
@@ -134,7 +160,9 @@ impl Member {
             | Self::Operation { .. }
             | Self::TypeArgument { .. }
             | Self::ProfileOperator { .. }
-            | Self::StateClause { .. } => None,
+            | Self::StateClause { .. }
+            | Self::TemporalInterval { .. }
+            | Self::Fairness { .. } => None,
         }
     }
 
@@ -195,8 +223,42 @@ impl Member {
             Self::StateClause { clause } => MemberWire::StateClause {
                 clause: state_clause_spelling(*clause),
             },
+            Self::TemporalInterval { interval } => MemberWire::TemporalInterval {
+                interval: interval.map(|interval| IntervalWire {
+                    lower: interval.lower().to_string(),
+                    upper: match interval.upper() {
+                        TemporalUpper::Finite(upper) => Some(upper.to_string()),
+                        TemporalUpper::Open => None,
+                    },
+                }),
+            },
+            Self::Fairness {
+                kind,
+                granularity,
+                declaration,
+                name,
+            } => MemberWire::Fairness {
+                fairness_kind: match kind {
+                    FairnessKind::Weak => "weak",
+                    FairnessKind::Strong => "strong",
+                },
+                granularity: match granularity {
+                    FairnessGranularity::Whole => "whole",
+                    FairnessGranularity::Each => "each",
+                },
+                declaration: declaration_wire(declaration),
+                name: name.as_str(),
+            },
         }
     }
+}
+
+/// A `temporal_interval` member's integer-form `interval` (QSpec FR-370):
+/// both bounds decimal strings, `upper` `null` for an `[a,*]` operator.
+#[derive(Serialize, FixedShape)]
+struct IntervalWire {
+    lower: String,
+    upper: Option<String>,
 }
 
 /// The `OperationMember` wire union, tagged by `kind`.
@@ -232,6 +294,15 @@ enum MemberWire<'a> {
     },
     StateClause {
         clause: &'static str,
+    },
+    TemporalInterval {
+        interval: Option<IntervalWire>,
+    },
+    Fairness {
+        fairness_kind: &'static str,
+        granularity: &'static str,
+        declaration: DeclarationWire,
+        name: &'a str,
     },
 }
 

@@ -32,8 +32,8 @@ use qsl_foundation::{Code, SourceIdentity, Span};
 use qsl_package::{EmitRefusal, ImportViewRefusal, LinkRefusal, OmittedNode};
 use qsl_semantics::check::AssemblyLimits;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProfileRefusal, ProtocolAnchorCause,
-    ShadowedDeclaration, TemporalCause,
+    AccessClass, AssemblyCause, AssemblyRefusal, CheckCause, CheckRefusal, ProbabilisticCause,
+    ProfileRefusal, ProtocolAnchorCause, ShadowedDeclaration, TemporalCause,
 };
 use qsl_semantics::library::LibraryName;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
@@ -55,8 +55,8 @@ pub(crate) use lifecycle::{compose, ComposedUnit};
 
 mod bind;
 pub use bind::{
-    bind_scalar_operands, BindIdentityCause, BindOutcome, BindPackage, BindRefusal, BoundOperand,
-    BoundScalarOperands, OperandSource, ScalarOccurrence,
+    admission_evidence, bind_scalar_operands, BindIdentityCause, BindOutcome, BindRefusal,
+    BoundOperand, BoundScalarOperands, OperandSource, ScalarOccurrence,
 };
 
 mod call;
@@ -69,7 +69,8 @@ mod clause;
 pub use clause::{
     run_clause, ClauseArgument, ClauseArgumentValue, ClauseDisposition, ClauseRunRefusal,
     ClauseRunReport, ClauseRunRequest, ClauseRunSelection, ClauseRunSource, ClauseRunStage,
-    OperationName,
+    OperationName, OverObject, TemporalPositionRefusal, TemporalTraceRefusal,
+    TemporalUndefinedCause, TemporalVerdict, TemporalWindowRefusal, TraceInput,
 };
 mod refinement;
 pub use refinement::{
@@ -617,6 +618,12 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             bodies.len(),
             operation.node
         ),
+        AssemblyCause::OverNotObjectType { claim } => {
+            format!("the `over` type of state-graph claim `{claim}` is not an object type")
+        }
+        AssemblyCause::DuplicateStateGraphClaim { name, .. } => {
+            format!("a second state-graph claim is named `{name}`")
+        }
         AssemblyCause::UnresolvedPopulationBound { name } => {
             format!("`bound` names `{name}`, which no declaration resolves")
         }
@@ -644,6 +651,9 @@ fn assembly_message(refusal: &AssemblyRefusal) -> String {
             gate.family.as_str(),
             gate.required_layer().identity()
         ),
+        AssemblyCause::TimedNotChecked(construct) => {
+            format!("{} builds but is not checked yet", construct.description())
+        }
     };
     with_more(message, refusal.errors.len())
 }
@@ -777,10 +787,268 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProtocolAnchorCause::JoinList {
                     parallel, fault, ..
                 } => format!("{message}: the join of `{parallel}` is unsound ({fault:?})"),
+                ProtocolAnchorCause::MemoryConflict {
+                    outermost, nested, ..
+                } => format!(
+                    "{message}: `{nested}` declares a memory default other than its outermost \
+                     `{outermost}`'s"
+                ),
+                ProtocolAnchorCause::WeakJoin {
+                    parallel,
+                    model,
+                    policy,
+                    ..
+                } => format!(
+                    "{message}: `{parallel}` declares `memory {}` and joins `{policy}`",
+                    model.label()
+                ),
+                ProtocolAnchorCause::AccessOrdering {
+                    attempt,
+                    class,
+                    ordering,
+                    ..
+                } => {
+                    let kind = match class {
+                        AccessClass::Load => "load",
+                        AccessClass::Store => "store",
+                        AccessClass::Rmw => "read-modify-write",
+                        AccessClass::Local => "local",
+                    };
+                    match ordering {
+                        Some(ordering) => format!(
+                            "{message}: `{attempt}` is a {kind} access and takes no `{}` ordering",
+                            ordering.label()
+                        ),
+                        None => format!(
+                            "{message}: `{attempt}` is a {kind} access and needs an `ordering`"
+                        ),
+                    }
+                }
+                ProtocolAnchorCause::AccessShape {
+                    attempt, locations, ..
+                } => format!(
+                    "{message}: `{attempt}` is not one memory access ({})",
+                    locations.join(", ")
+                ),
+                ProtocolAnchorCause::NodeRole { node, name, .. } => {
+                    format!("{message}: `{node}` names `{name}`, which is no role of the protocol")
+                }
+                ProtocolAnchorCause::MissingChannel { node, name, .. } => format!(
+                    "{message}: `{node}` is written via `{name}`, which is no channel of the \
+                     protocol"
+                ),
+                ProtocolAnchorCause::CarriesMismatch { channel, .. } => format!(
+                    "{message}: the binder's type is not the type channel `{channel}` carries"
+                ),
+                ProtocolAnchorCause::CausalCycle { nodes, .. } => format!(
+                    "{message}: the causal edges form a cycle through {}",
+                    nodes.join(", ")
+                ),
+                ProtocolAnchorCause::NoProgress { repeat, .. } => format!(
+                    "{message}: the body of `repeat {repeat}` does not necessarily take a step"
+                ),
+                ProtocolAnchorCause::KeyClause { channel, cause, .. } => format!(
+                    "{message}: the FIFO key of channel `{channel}` does not check ({})",
+                    cause.cause().unwrap_or_default()
+                ),
+                ProtocolAnchorCause::KeyModelState { channel, .. } => {
+                    format!("{message}: the FIFO key of channel `{channel}` reads model state")
+                }
+                ProtocolAnchorCause::KeyEquality { channel, .. } => format!(
+                    "{message}: the FIFO key of channel `{channel}` is of a type with no `=`"
+                ),
+                ProtocolAnchorCause::SlotClause { node, slot, cause, .. } => format!(
+                    "{message}: the {slot:?} of `{node}` does not check ({})",
+                    cause.cause().unwrap_or_default()
+                ),
+                ProtocolAnchorCause::SlotModelState { node, slot, .. } => {
+                    format!("{message}: the {slot:?} of `{node}` reads model state")
+                }
+                ProtocolAnchorCause::WrongObservation {
+                    node,
+                    owner,
+                    binder,
+                    reason,
+                    ..
+                } => format!(
+                    "{message}: `{node}` reads `{binder}`, which is no listed fact of `{owner}` \
+                     ({})",
+                    reason.identifier()
+                ),
+                ProtocolAnchorCause::Exhaustiveness { choice, failed, .. } => format!(
+                    "{message}: the guards of `choice {choice}` are not exhaustive and exclusive \
+                     ({})",
+                    failed
+                        .iter()
+                        .map(|fault| fault.identifier())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                ProtocolAnchorCause::AwaitedForm {
+                    node, event, form, ..
+                } => format!(
+                    "{message}: `await {node}` matches `{form} {event}`; an await matches a \
+                     receive, an effect or an event"
+                ),
+                ProtocolAnchorCause::AwaitWindow { node, .. } => format!(
+                    "{message}: the `within` of `await {node}` is not a closed interval with \
+                     lower <= upper"
+                ),
+                ProtocolAnchorCause::MissingTemporalProfile {
+                    construct, node, ..
+                } => format!(
+                    "{message}: `{construct} {node}` reads a clock, but the unit selects no \
+                     temporal profile"
+                ),
+                ProtocolAnchorCause::RoleMax { role, actual, .. } => format!(
+                    "{message}: replicated role `{role}` allows at most {actual} live instances; \
+                     at least 1 is required"
+                ),
+                ProtocolAnchorCause::MissingRelationship { name, .. } => {
+                    format!("{message}: `{name}` names no export of a selected model")
+                }
+                ProtocolAnchorCause::RelationshipExport { name, actual, .. } => {
+                    format!("{message}: `{name}` names a {actual}, not a relationship")
+                }
+                ProtocolAnchorCause::MissingRelated { node, name, .. } => format!(
+                    "{message}: `{node}` is related by `{name}`, which is no relationship of the \
+                     protocol"
+                ),
+                ProtocolAnchorCause::RelatedEnd {
+                    relationship, end, ..
+                } => format!(
+                    "{message}: the {} end of `related by {relationship}` is not of the \
+                     relationship end's type",
+                    end.identifier()
+                ),
+                ProtocolAnchorCause::MissingRequirement { name, .. } => {
+                    format!("{message}: `requires temporal {name}` names no declaration of the unit")
+                }
+                ProtocolAnchorCause::RequirementKind { name, kind, .. } => format!(
+                    "{message}: `requires temporal {name}` names a {kind}, not a temporal clause"
+                ),
+                ProtocolAnchorCause::RequirementCycle {
+                    protocol, temporal, ..
+                } => format!(
+                    "{message}: `requires temporal {temporal}` reaches `protocol {protocol}` again"
+                ),
             };
         }
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
+        }
+        CheckCause::RefinementNotEmitted { name, .. } => {
+            message = format!("{message}: `refinement {name}` checks but is not emitted yet");
+        }
+        CheckCause::Refinement(refusal) => {
+            message = format!("{message}: in `refinement {}`", refusal.refinement);
+        }
+        CheckCause::TimedNotChecked { construct, .. } => {
+            message = format!("{message}: {} is not checked yet", construct.description());
+        }
+        // FR-185, FR-186: name what the `Probabilistic` check refused.
+        CheckCause::Probabilistic(cause) => {
+            message = match cause.as_ref() {
+                ProbabilisticCause::InvalidWeight { owner, .. } => {
+                    format!(
+                        "{message}: {owner:?} has a weight that is not a positive exact rational"
+                    )
+                }
+                ProbabilisticCause::ZeroDenominator { .. } => {
+                    format!("{message}: a rational has the denominator 0")
+                }
+                ProbabilisticCause::RepeatedSupportValue {
+                    operation,
+                    parameter,
+                    ..
+                } => format!(
+                    "{message}: `{operation}({parameter})` lists a value twice in its distribution"
+                ),
+                ProbabilisticCause::DuplicateDistribution {
+                    operation,
+                    parameter,
+                    ..
+                } => format!("{message}: `{operation}({parameter})` already has a distribution"),
+                ProbabilisticCause::DuplicateWeight {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` weights `{operation}` twice"),
+                ProbabilisticCause::DuplicateReward {
+                    reward, operation, ..
+                } => format!("{message}: reward `{reward}` is already declared on `{operation}`"),
+                ProbabilisticCause::QuantileOverFraction { claim, .. } => format!(
+                    "{message}: claim `{claim}` takes a quantile of a fraction, which has none"
+                ),
+                ProbabilisticCause::StateReadInReward {
+                    reward, operation, ..
+                } => format!(
+                    "{message}: reward `{reward}` on `{operation}` reads state or an ambient value"
+                ),
+                ProbabilisticCause::QualitativeThreshold { claim, .. } => format!(
+                    "{message}: a threshold of claim `{claim}` is not strictly between 0 and 1"
+                ),
+                ProbabilisticCause::PartialConfidence { claim, fault, .. } => format!(
+                    "{message}: the confidence of claim `{claim}` must state alpha, beta and \
+                     indifference once each ({fault:?})"
+                ),
+                ProbabilisticCause::InvalidConfidence {
+                    claim, parameter, ..
+                } => format!("{message}: `{parameter}` of claim `{claim}` is out of range"),
+                ProbabilisticCause::UnresolvedOperation { name, .. } => {
+                    format!("{message}: `{name}` names no operation of a selected model")
+                }
+                ProbabilisticCause::AmbiguousOperation { name, .. } => {
+                    format!("{message}: `{name}` names more than one operation")
+                }
+                ProbabilisticCause::UnresolvedParameter {
+                    operation,
+                    parameter,
+                    ..
+                } => format!("{message}: `{operation}` has no parameter `{parameter}`"),
+                ProbabilisticCause::UnresolvedModel {
+                    workload, model, ..
+                } => format!("{message}: workload `{workload}` names no model `{model}`"),
+                ProbabilisticCause::ValueOutsideType {
+                    operation,
+                    parameter,
+                    ..
+                } => format!(
+                    "{message}: a value of `{operation}({parameter})` is not a literal of its type"
+                ),
+                ProbabilisticCause::RandomReadInPrecondition {
+                    operation,
+                    parameter,
+                    precondition,
+                } => format!(
+                    "{message}: precondition {precondition:?} of `{operation}` reads its random \
+                     parameter `{parameter}`"
+                ),
+                ProbabilisticCause::IncompleteWorkload {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` gives `{operation}` no weight"),
+                ProbabilisticCause::UnknownOperation {
+                    workload,
+                    operation,
+                    ..
+                } => format!("{message}: workload `{workload}` weights `{operation}`, which is not in its model"),
+                ProbabilisticCause::RewardType {
+                    reward, operation, ..
+                } => format!(
+                    "{message}: reward `{reward}` on `{operation}` is neither an integer nor a quantity"
+                ),
+                ProbabilisticCause::DuplicateWorkload { workload, .. } => {
+                    format!("{message}: a workload `{workload}` is already declared")
+                }
+                ProbabilisticCause::QuantityLiteral => {
+                    format!("{message}: a quantity literal is not emitted in this position yet")
+                }
+                ProbabilisticCause::NotYetImplemented { claim, .. } => {
+                    format!("{message}: `probabilistic {claim}` is not checked or emitted yet")
+                }
+            };
         }
         // FR-326: name what the `TemporalTrace` check refused.
         CheckCause::Temporal(cause) => {
@@ -811,11 +1079,22 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::AmbiguousFairnessOperation { name, .. } => format!(
                     "{message}: the fairness operation `{name}` names operations of several types"
                 ),
+                TemporalCause::AmbiguousPopulation { populations, .. } => format!(
+                    "{message}: the `over` type is covered by several populations: {}",
+                    populations
+                        .iter()
+                        .map(|key| key.node.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
                 TemporalCause::FairnessUnderBoundedProfile { .. } => {
                     format!("{message}: this profile admits no fairness constraint")
                 }
                 TemporalCause::NotEmitted { name, .. } => {
                     format!("{message}: `temporal {name}` checks but is not emitted yet")
+                }
+                TemporalCause::TimedIntervalNotChecked { .. } => {
+                    format!("{message}: a timed interval is not checked yet")
                 }
             };
         }
@@ -1298,13 +1577,15 @@ mod tests {
         .expect_err("a protocol with unchecked content must not compile to a package");
         match refusal.as_ref() {
             CompileRefusal::Check { refusals, .. } => {
+                // Every part is checked now: the undeclared input, role and
+                // binder types and the undeclared channel each refuse.
                 assert!(
                     refusals.iter().any(|refusal| matches!(
                         &refusal.cause,
                         qsl_semantics::check::CheckCause::ProtocolAnchor(cause)
                             if matches!(
                                 cause.as_ref(),
-                                qsl_semantics::check::ProtocolAnchorCause::Unimplemented { name, .. } if name == "Flow"
+                                qsl_semantics::check::ProtocolAnchorCause::MissingChannel { node, .. } if node == "S"
                             )
                     )),
                     "{refusals:?}"

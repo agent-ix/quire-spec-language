@@ -1982,6 +1982,7 @@ fn actual_empty_admitted_identity_fault_propagates_from_package_into_replay_fail
                 key: population.clone(),
                 member_types: vec![object.clone()],
                 extent: Extent::Closed,
+                symmetric: false,
             }),
         ],
     );

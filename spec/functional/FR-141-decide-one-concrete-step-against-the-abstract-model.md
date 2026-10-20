@@ -13,6 +13,14 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-377
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-378
+    type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-383
+    type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-126
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-125
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-136
@@ -62,16 +70,23 @@ pub struct RefinementPosition {
 
 pub fn check_initial(
     refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,   // FR-140's row evaluator; a model subject
     abstract_system: AbstractSystem<'_>,
+    index: u64,                       // the initial state's index among the concrete initial states
     concrete_initial: &SideState,
 ) -> StepVerdict;
 
 pub fn check_step(
     refinement: &CheckedRefinement,
+    concrete_system: &ModelSystem<'_>,   // FR-140's row evaluator; a model subject
     abstract_system: AbstractSystem<'_>,
     pre: &RefinementPosition,
-    step: &ConcreteStep,              // transition identity, post-state, result
-) -> StepVerdict;
+    step: &ConcreteStep,              // transition identity, post-state, result, position
+) -> StepResult;
+
+pub struct ConcreteStep { /* transition identity, post-state, result, */ pub position: u64 }
+// `position` is the position of the step's post-state in the path: the first
+// step after an initial state is position 1.
 ```
 
 ## Outputs
@@ -82,10 +97,22 @@ pub enum StepVerdict {
     Fails(RefinementFailure),
     Undefined(UndefinedEvaluation),   // ADR-020 RE-5: a mapping row, argument or history update
     Undetermined(InconclusiveCause),  // MappingUndetermined, UndecidedSuccessor
+    Stopped(ReachedLimit),            // the abstract side's evaluation budget or candidate limit; not a verdict
+    Fault(InternalFault),             // FR-140's Fault or WrongSystem; not a verdict
+}
+
+pub struct StepResult {
+    pub verdict: StepVerdict,
+    pub abstract_successors: u64,     // the abstract successors this call computed
 }
 
 pub enum Taken { Stutter, Abstract(Vec<ModelTransition>) }  // abstract identities matched
 ```
+
+`Stopped` carries FR-126's `ReachedLimit` with `limit` `EvaluationMeter` or
+`MaxCandidates` (members of the subject's FR-120 limits) and its value, as
+FR-120 and FR-126 state them for an expansion or evaluation of the abstract
+system.
 
 `ModelTransition` and `ProtocolTransition` are `quire-semantic-value` types
 (ADR-018 LA-5).
@@ -112,7 +139,7 @@ decides.
   with `abstract_states` the one matching state, or with hidden fields the
   candidate set in state-key order.
 - When the rule rejects the state it SHALL return
-  `Fails(InitialNotAbstract{initial})`.
+  `Fails(InitialNotAbstract{initial})`, with `initial` the `index` passed.
 
 ### Selecting the row
 
@@ -129,9 +156,22 @@ decides.
   from either SHALL return `Undetermined(MappingUndetermined)`.
 - `check_initial` SHALL return `Undefined` with position 0 when FR-140
   returns `MappingFailure::Undefined` at an initial state.
-- An argument expression of the row that evaluates `Undefined` at the
-  pre-state SHALL return `Undefined`; one that is refused or incomplete
-  SHALL return `Undetermined(MappingUndetermined)`.
+- `check_step` SHALL read the row's receiver, each argument of the row, the
+  post history and the post-state mapping together, in that order (the
+  arguments in the order the row writes them, the post-state rows in FR-140's
+  order), and SHALL return:
+  - `StepVerdict::Fault` when any read returns `MappingFailure::Fault` or
+    `WrongSystem`, whatever the other reads return (a fault takes no part in
+    the order, QSpec FR-377-AC-12 and QSpec FR-383);
+  - otherwise `Undefined` for the first read that is undefined, even when an
+    earlier read is undetermined, naming the step's `position`, the row and
+    the object;
+  - otherwise `Undetermined(MappingUndetermined)` for the first read that is
+    undetermined: refused, incomplete, out of type (`OutOfType`) or of an
+    unmapped type (`UnmappedType`).
+
+  This is QSpec FR-377's failure precedence across a step (FR-377-AC-12),
+  which `check_step` implements.
 
 ### Deciding the step rules
 
@@ -165,12 +205,42 @@ how it evaluates them and what it reports:
   rules to each member of `pre.abstract_states` and return the post set
   sorted by state key. Each abstract successor computed SHALL count toward
   FR-101's `max_transitions` of the run that called `check_step`.
+- If the abstract system's evaluation or expansion exhausts its per-evaluation
+  meter or `max_candidates` while `check_step` decides, then it SHALL return
+  `StepVerdict::Stopped` with that limit and its value; such a stop is a
+  budget stop, never `Fault`, `Fails` or `Undetermined`. Every clause
+  evaluation of either subject gets a fresh meter (QSpec FR-377, "Abstract
+  budget stop"), and the abstract subject exhausting its meter stops the run
+  (QSpec FR-377-AC-13). The step rules are decided only when every read
+  returned a value, so an undefined, undetermined or faulted read in the same
+  step settles by the read-order rule above, not by the stop: an engine that
+  exhausts the abstract meter before it finds the post-state row `P`
+  undefined reports `P`, since the abstract precondition needs only the
+  receiver and the arguments. The `max_candidates` stop follows QSpec FR-378.
+  `check_initial`
+  takes the abstract initial states from snapshots and compares their keys,
+  evaluates nothing on the abstract side, and never returns `Stopped`. A mapping
+  row or step-row argument that is incomplete stays `Undetermined`
+  (`MappingUndetermined`).
+- `StepResult.abstract_successors` SHALL be the number of abstract successors
+  `check_step` computed: one for each candidate post-state `a'` judged
+  against an abstract transition identity from a pre abstract state, and, for
+  an `any` row, one for each successor FR-120's relation gives in its
+  enabling check. It includes those of a `Stopped`, `Fails` or `Undetermined`
+  verdict.
+- A `MappingFailure::Fault` or `MappingFailure::WrongSystem` from FR-140
+  SHALL return `StepVerdict::Fault`. A `WrongSystem` arising inside
+  `check_step` or `check_initial` means the engine code that called them
+  (FR-142, FR-145) passed a system that is not the refinement's own, which
+  is an internal fault of that code, not a verdict. The engine (FR-142), replay (FR-145)
+  and FR-144 carry it unchanged and the item settles `failed` (QSpec
+  FR-383); it is never `Fails`, `Undefined` or `Undetermined`.
 - An undecided contract conjunction of either model SHALL return
   `Undetermined(UndecidedSuccessor)`.
 
 ### Purity
 
-- `check_initial` and `check_step` SHALL be functions of their inputs.
+- `check_initial` and `check_step` SHALL be functions of their inputs, the two systems included.
 
 ## Acceptance Criteria
 
@@ -182,7 +252,11 @@ how it evaluates them and what it reports:
 | FR-141-AC-4 | Fixture `Coin`: abstract `Spec::Coin` with `tossed: Boolean`, `side: Int[0, 1]`, `shown: Boolean`, `face: Int[0, 1]`, operation `toss()` (precondition `not self.tossed`, frame `modifies [tossed, side]`, postcondition `self.tossed`) and `show()` (precondition `self.tossed and not self.shown`, frame `modifies [shown, face]`, postcondition `self.shown and self.face = self.side`), initial all false and 0; concrete `Impl::Coin` with `tossed`, `shown`, `face`, operations `toss()` (precondition `not self.tossed`, frame `modifies [tossed]`, postcondition `self.tossed`) and `reveal()` (precondition `self.tossed and not self.shown`, frame `modifies [shown, face]`, postcondition `self.shown`); rows `tossed`, `shown` and `face` mapped by name, `side` hidden, `toss -> Spec::Coin::toss(self)`, `reveal -> Spec::Coin::show(self)`. After concrete `toss` the candidate set holds two states, `side` 0 and `side` 1; after `reveal` to `face = 1` it holds the one with `side` 1. With the row `side = self.face` added, `reveal` to `face = 1` fails `AbstractStepRejected{transition: show(c), cause: Frame{…}}`. | Test (TC-546) |
 | FR-141-AC-5 | Over FR-136-AC-4's protocol subject with branch `A`'s attempt node mapped `-> any` and `incA` mapped `-> Spec::Counter::inc(self)`, a step of that attempt node that leaves `value` unchanged passes RS-5 with `Taken::Stutter`, so the node row was selected; the `fork` step, mapped `-> stutter`, passes RS-3. | Test (TC-546) |
 | FR-141-AC-6 | Over `RegisterHistory` with FR-138's `inv` update, `check_step` on `write(r, 0)` from the initial state returns `Undefined` with `where` position 1, the `inv` update and object `r`, cause `division-by-zero`; with the `writes` update of FR-138-AC-4 instead, the second `write(r, 0)` returns `Undetermined(MappingUndetermined)`. | Test (TC-554) |
-| FR-141-AC-7 | Over `RingIsQueue` with the row `put -> enq(self.ring, 2 / self.size)`, `check_step` on `put(1)` from the empty queue returns `Undefined` naming the step-row argument, cause `division-by-zero`, with `RefinementFailure::Undefined{position: 1, row: put}` written by the engine; with the original row and a per-evaluation meter budget of zero for the argument `self.ring`, it returns `Undetermined(MappingUndetermined)`. | Test (TC-555) |
+| FR-141-AC-7 | Over `RingIsQueue` with the pure function `g using v(i: Int[0, 1]): Int[0, 1] pure { if 1 mod i = 0 then 0 else 1 }` and the row `put -> enq(self.ring, g(self.index))` (`mod` is always Euclidean, so no division law is selected), `check_step` on `put(1)` with receiver `s0` (index 0) from the empty queue (`head = 0`, `size = 0`) returns `Undefined` naming the step-row argument, cause `division-by-zero`, with `RefinementFailure::Undefined{position: 1, row: put}` written by the engine; with receiver `s1` (index 1) the argument is `g(1)` = 0, since `1 mod 1 = 0`. With the original row and a per-evaluation meter budget of zero for the argument `self.ring`, `check_step` returns `Undetermined(MappingUndetermined)`. | Test (TC-555) |
+| FR-141-AC-8 | A `MappingFailure::Fault` from FR-140 during `check_step`, and a `WrongSystem` from a swapped system passed to it, each return `StepVerdict::Fault`; FR-144 settles the item `failed`, not `refuted` or `inconclusive`, even when an earlier step of the run was undefined or an earlier read of the same step is undefined (FR-141-AC-10). | Test (TC-555) |
+| FR-141-AC-9 | Fixture `HeavyEnq`: `RingIsQueue` whose abstract `enq` postcondition is a conjunction over every ring slot costing more than the per-evaluation meter budget B, while every concrete contract evaluation, mapping row and step-row argument fits in B. With the meter at B, `check_step` on `put(1)` from the empty queue returns `StepVerdict::Stopped` with limit `EvaluationMeter` and value B, not `Fault`. FR-142 over `HeavyEnq` with that meter ends the run `Stopped{ResourceExhausted, {EvaluationMeter, B}}` after the initial state's concrete expansion, and FR-144 settles the item as FR-127's V-7 row spells it: execution `resource-incomplete`, `TerminalValue::Incomplete(LimitReached{EvaluationMeter, B, setting})`, category incomplete, never `TerminalValue::Failed`. With `HeavyEnq`'s meter at B and FR-141-AC-7's row `put -> enq(self.ring, g(self.index))`, `check_step` on `put(1)` returns instead `Undefined` naming the argument for receiver `s0` (`g(0)` undefined), `Undetermined(MappingUndetermined)` naming the argument when `g`'s body costs more than B; and, with a heavy abstract `enq` precondition (costing more than B) and a post-state row `P`, a `Queue` field mapped by `1 div (1 - self.size)` (defined at the empty queue, `size` 0, and undefined after `put(1)`, `size` 1), `Undefined` at `P`, not `Stopped`, because the abstract precondition's meter is exhausted only after every read has returned (an engine that stops before it finds `P` undefined is wrong); with a mapping fault injected into `P` (TC-555 step 4) and the heavy precondition kept, `StepVerdict::Fault`, not `Stopped` (QSpec TC-315 step 9 (h), (i), (j)). | Test (TC-555) |
+| FR-141-AC-10 | Fixture `Reads`: a refinement whose row is `put -> enq(R, A1, A2)` over a model where each of the receiver `R`, the arguments `A1` and `A2`, the post-history update `H` and a post-state row `P` can be chosen as cheap, over-budget (costing more than the meter B, so incomplete), undefined (division by zero), out of type (`H` only) or of an unmapped type (`P` only). `check_step` returns: `Undefined` at `A1` for `R` over-budget and `A1` undefined; `Undefined` at `P` for `A1` over-budget and `P` undefined; `Undefined` at `A1` for `A1` and `A2` both undefined; `Undetermined(MappingUndetermined)` naming `H` for `H` out of type and `P` over-budget; `Undetermined` naming `P` for `P` of an unmapped type and nothing undefined; `Undefined` at `R` for `R` and `A1` both undefined; `Undefined` at `A1` for `A1` and `P` both undefined; `Undetermined(MappingUndetermined)` naming `A1` for `A1` over-budget and `H` out of type; `Undefined` at `H` for `H` and `P` both undefined; and `StepVerdict::Fault` for a swapped system with `A1` undefined (QSpec FR-377-AC-12, TC-315 step 9). | Test (TC-555) |
+| FR-141-AC-11 | Fixture `Coin3`: `Coin` (FR-141-AC-4) with three concrete initial states: index 0 with all fields false and 0, index 1 with `face` 1 and index 2 with `tossed` true. `check_initial` on index 0 passes and on index 1 and 2 fails `InitialNotAbstract{initial: 1}` and `InitialNotAbstract{initial: 2}`. `check_step` of the lost-update `commitB` step of AC-1 with `ConcreteStep.position` 3 fails `AbstractStepRejected{position: 3, …}` with `abstract_successors` 1; `Coin`'s `toss` with `side` hidden from the initial state at index 0 passes with `abstract_successors` 2. | Test (TC-546) |
 
 ## Dependencies
 

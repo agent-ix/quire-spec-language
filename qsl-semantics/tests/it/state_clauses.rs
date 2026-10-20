@@ -18,10 +18,11 @@ use qsl_foundation::bound::DomainKey;
 use qsl_foundation::bound::DomainKind;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::{
-    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind, Observation,
+    AssemblyCause, AssemblyError, CheckCause, CheckRefusal, CheckedGraph, NodeKind,
     WrongSnapshotCause,
 };
 use qsl_semantics::family::ClaimExtent;
+use qsl_semantics::model::clause_observation::Observation;
 use quire_exact::ValueType;
 use quire_semantic_value::checking::CheckingLimits;
 use quire_semantic_value::location::{Location, Origin};
@@ -5555,4 +5556,133 @@ fn a_denied_frame_charge_ends_check_eleven_with_the_budget_record() {
     let admitted =
         run(qsl_semantics::model::accounting::ModelNormalizationLimits::default().work_units);
     assert!(admitted.is_ok(), "expected admission, got {admitted:?}");
+}
+
+/// The function-body `deref(r).f` range fact (QSL-907). No requirement owns
+/// this behaviour yet (FR-104 limits stable paths through model reads to state
+/// clauses), so this test claims no criterion: a guard on
+/// `deref(earlier).versionNumber` is a range fact for the unproved-range
+/// check of `deref(earlier).versionNumber + 1` as `self.versionNumber` is in
+/// a clause; the unguarded sum is refused `unproved-range`, and a guard on a
+/// different reference gives no fact for this one. The fact is a range fact
+/// only: presence and `let`-aliased reads keep the state-clause-only
+/// rule (next tests).
+///
+/// Mutation used (derived by reading, not executed): dropping
+/// `Definedness::range_path` makes the guarded function refuse.
+#[test]
+fn a_guard_on_deref_of_a_reference_is_a_range_fact_in_a_function_body() {
+    let document = deref_document();
+    let guarded = "deref(earlier).versionNumber < 1000 and \
+        deref(later).versionNumber = deref(earlier).versionNumber + 1";
+    assert!(check(&document, &deref_function(guarded)).is_ok());
+
+    let unguarded = "deref(later).versionNumber = deref(earlier).versionNumber + 1";
+    assert_eq!(
+        check(&document, &deref_function(unguarded)).expect_err("unguarded refuses"),
+        vec![(Code::UndefinedExpression, Some("unproved-range"))]
+    );
+
+    let other = "deref(later).versionNumber < 1000 and \
+        deref(later).versionNumber = deref(earlier).versionNumber + 1";
+    assert_eq!(
+        check(&document, &deref_function(other)).expect_err("another reference's guard"),
+        vec![(Code::UndefinedExpression, Some("unproved-range"))]
+    );
+}
+
+fn deref_document() -> Vec<u8> {
+    config_version_document(
+        attempt_update_modifies_version_number(),
+        Vec::new(),
+        Vec::new(),
+        json!([]),
+    )
+}
+
+fn deref_function(body: &str) -> String {
+    format!(
+        "function f using v(earlier: Config::ConfigVersion, later: Config::ConfigVersion, \
+         n: Integer): Boolean pure {{ {body} }}\n"
+    )
+}
+
+/// The function-body `deref(r).f` fact is a range fact only: it does not
+/// discharge a presence obligation, a `let` that aliases the read does not
+/// carry the fact, and a guard through a `let`-bound reference is not seen.
+/// Each stays as it is without the extension.
+#[test]
+fn the_function_body_deref_fact_is_a_range_fact_only() {
+    let document = deref_document();
+    let presence =
+        "present(deref(earlier).parent) and deref(value(deref(earlier).parent)).versionNumber < 1000";
+    assert_eq!(
+        check(&document, &deref_function(presence)).expect_err("presence is not a deref fact"),
+        vec![(Code::UndefinedExpression, Some("unproved-presence"))]
+    );
+
+    let alias = "let e = deref(earlier).versionNumber in e < 1000 and \
+        deref(later).versionNumber = deref(earlier).versionNumber + 1";
+    assert_eq!(
+        check(&document, &deref_function(alias)).expect_err("a let alias carries no deref fact"),
+        vec![(Code::UndefinedExpression, Some("unproved-range"))]
+    );
+}
+
+/// A recursion whose argument is a model read of the parameter is not a
+/// structural decrease: `walk(deref(h.owner).holder)` is refused
+/// `unproved-decrease` (QSL-907 review SR-13338 FND-001).
+#[test]
+fn recursion_through_a_deref_read_is_not_a_structural_decrease() {
+    use crate::model_operations::{
+        config_version_identity, version_number_identity, wire_construct, wire_field, wire_type,
+        PACKAGE_IDENTITY,
+    };
+    use qsl_semantics::model::intake::meaning;
+    let holder = format!("ix://{PACKAGE_IDENTITY}/Holder");
+    let config_version = format!("ix://{PACKAGE_IDENTITY}/ConfigVersion");
+    let construct = wire_construct("record_value_type", meaning::RECORD_VALUE_TYPE, json!({}));
+    let holder_type = wire_type(
+        &holder,
+        "record_value_type",
+        json!({
+            "supertypes": [],
+            "operations": [],
+            "fields": [
+                wire_field(&format!("{holder}/owner"), "owner", &config_version, "required", 1),
+                wire_field(&format!("{holder}/n"), "n", &version_number_identity(), "required", 1),
+            ],
+        }),
+    );
+    let bytes = config_version_document(
+        attempt_update_modifies_version_number(),
+        vec![construct],
+        vec![holder_type],
+        json!([]),
+    );
+    let mut document: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let owner = document["types"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|node| node["identity"] == config_version.as_str())
+        .unwrap();
+    owner["fields"].as_array_mut().unwrap().push(wire_field(
+        &config_version_identity("holder"),
+        "holder",
+        &holder,
+        "required",
+        1,
+    ));
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let refusals = check(
+        &bytes,
+        "function walk using v(h: Config::Holder): Boolean pure decreases(h) \
+         { walk(deref(h.owner).holder) }\n",
+    )
+    .expect_err("a model read is not a sub-term");
+    assert_eq!(
+        refusals,
+        vec![(Code::UndefinedExpression, Some("unproved-decrease"))]
+    );
 }

@@ -111,7 +111,7 @@ or a **measure** over one behaviour.
 | PF-1 | **Events.** An event is a Boolean function of a behaviour that a finite prefix decides. It is one of: a formula under a bounded profile with activation `on origin` (ADR-018 TP-2), whose truth depends on the first `h + 1` positions, `h` its horizon (ADR-014 TR-4); or a comparison `M <= c` or `M >= c` of a bounded measure (PF-2) with a threshold `c` of the measure's type. Interval operators nest in any order inside the bounded formula (QSpec FR-091, FR-092). |
 | PF-2 | **Bounded measures.** A measure is a value computed from one behaviour over a finite window `[0, h]` of positions. **Accumulate**: `accumulate R from holds(A) until holds(B) within h` is the sum of reward `R` over the steps from the first position `a <= h` where `A` holds to the first position `b`, `a <= b <= h`, where `B` holds (the steps into positions `a + 1` to `b`). A behaviour with no such `a` is not activated; one with `a` and no such `b` is censored, and its value is `+∞`. **Steps**: `steps from holds(A) until holds(B) within h` is accumulate with reward 1 per step. **Fraction**: `fraction holds(P) over [0, h]` is the number of positions in `[0, h]` where `P` holds over `h + 1`; with `weighted by R` each position `i` counts with the reward of the step that leaves it, and the value is the weighted sum over the total weight. A window reaching a terminal state continues on its stutter steps (ADR-018 SM-4). |
 | PF-3 | **Probability bound.** `probability >= θ [E]` or `probability <= θ [E]` for an event `E` and an exact rational `θ` with `0 < θ < 1`. It holds when `Pr[s0, W]({behaviours where E is true}) >= θ` (or `<= θ`) for every `s0` and binding (PM-4). The event's truth on a behaviour is SM-1's value (ADR-018 SM-1). |
-| PF-4 | **Quantile.** `quantile q of M <= c` or `quantile q of M >= c` for a bounded accumulate or steps measure `M`, an exact rational `q` with `0 < q < 1` and a threshold `c` of `M`'s type. The distribution is that of `M` under `Pr[s0, W]` conditioned on activation. The `q`-quantile is `inf {x : Pr(M <= x) >= q}`. Since a distribution function is right-continuous, `quantile q of M <= c` holds exactly when `Pr(M <= c) >= q`, and `quantile q of M >= c` exactly when `Pr(M < c) < q`, a strict bound: `M` has finite support, so `Pr(M < c)` is attained at the largest support point below `c`, and with `M` equal to 1 or 3 with probability 1/2 each, `quantile 1/2 of M >= 3` is false (the 1/2-quantile is 1) while `Pr(M < 3) = 1/2`. Statistical tests decide the strict bound as `<= q`, since the boundary lies inside the indifference region. Each quantile claim is therefore checked as a probability bound on an event conditioned on activation. A censored behaviour counts as exceeding every finite threshold. |
+| PF-4 | **Quantile.** `quantile q of M <= c` or `quantile q of M >= c` for a bounded accumulate or steps measure `M`, an exact rational `q` with `0 < q < 1` and a threshold `c` of `M`'s type. The distribution is that of `M` under `Pr[s0, W]` conditioned on activation. The `q`-quantile is `inf {x : Pr(M <= x) >= q}`. Since a distribution function is right-continuous, `quantile q of M <= c` holds exactly when `Pr(M <= c) >= q`, and `quantile q of M >= c` exactly when `Pr(M < c) < q`, a strict bound: `M` has finite support, so `Pr(M < c)` is attained at the largest support point below `c`, and with `M` equal to 1 or 3 with probability 1/2 each, `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) is false (the 1/2-quantile is 1) while `Pr(M < 3) = 1/2`. Statistical tests decide the strict bound as `<= q`, since the boundary lies inside the indifference region. Each quantile claim is therefore checked as a probability bound on an event conditioned on activation. A censored behaviour counts as exceeding every finite threshold. |
 | PF-5 | **Mean of a fraction.** `mean of F >= θ` or `<= θ` for a fraction measure `F` and an exact rational `θ` with `0 < θ < 1`. It holds when the expectation of `F` under `Pr[s0, W]` meets the bound for every `s0` and binding. Windowed availability is this form or a probability bound on `F >= θ'`. A mean is stated over a fraction only; a latency is stated as a quantile (PF-4). |
 | PF-6 | **Long-run fraction.** `long-run fraction holds(P) >= θ` or `<= θ`, optionally `weighted by R`, for `0 < θ < 1`. On a behaviour, the long-run fraction is the limit as `n → ∞` of the fraction over `[0, n]` (PF-2). In a finite Markov chain the limit exists with probability 1 and is constant on each bottom strongly connected component. The claim holds when the expectation of the limit under `Pr[s0, W]` meets the bound. This is the steady-state reading of long-run availability. Statistical checking regenerates at returns to `s0` (ST-7). |
 | PF-7 | **Units.** A probability, a quantile level, a fraction and a mean of a fraction are dimensionless exact rationals. A threshold of an accumulate measure has the reward's dimension; comparing it with a value in another unit of that dimension follows QSpec FR-142, so the claim converts explicitly. Every estimate in a result is an exact rational, in the threshold's unit where it has one. |
@@ -215,11 +215,12 @@ approximate expected values, which ignore overshoot.
 
 ```text
 profile ev = "quire.temporal.event-position.false-extension/v1" …;
-model Health = "example/health" …;     // object n: Node { healthy: Bool }, initially healthy
+model Health = "example/health" …;     // object n: Node { healthy: Boolean }, initially healthy
 
-operation Node::tick(random fault: Bool ~ { true: 1, false: 9999999 })
+operation Node::tick(fault: Boolean)
   post self.healthy = (pre(self.healthy) and not fault);
 
+random Node::tick(fault) ~ { true: 1, false: 9999999 };
 workload Steady on Health { weight Node::tick = 1; }
 
 probabilistic NoFault using ev on Health under Steady on origin
@@ -253,15 +254,17 @@ model Service = "example/service" …;   // object s: Server { phase: Phase, att
 operation Server::request
   pre  self.phase = Idle
   post self.phase = Busy and self.attempts = 0;
-operation Server::attempt(random d: Quantity<Time> ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 },
-                          random outcome: Outcome ~ { Ok: 98, Fail: 2 })
+operation Server::attempt(d: Quantity<Time>, outcome: Outcome)
   pre  self.phase = Busy
   post self.attempts = pre(self.attempts) + 1 and
-       self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy)
-  reward duration = d;
+       self.phase = (if outcome = Ok or pre(self.attempts) = 1 then Done else Busy);
 operation Server::reset
   pre  self.phase = Done
   post self.phase = Idle;
+
+random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, 12 ms: 3 };
+random Server::attempt(outcome) ~ { Ok: 98, Fail: 2 };
+reward duration on Server::attempt = d;
 
 workload Steady on Service { weight Server::request = 1; weight Server::attempt = 1; weight Server::reset = 1; }
 
@@ -295,24 +298,26 @@ latency is the sum of two durations.
 #### 7.3 Availability: long-run and per window
 
 ```text
-model Avail = "example/avail" …;       // object v: Server { up: Bool }, initially up
+model Avail = "example/avail" …;       // object v: Server { up: Boolean }, initially up
 
-operation Server::tick(random fail: Bool ~ { true: 1, false: 1999 })
+operation Server::tick(fail: Boolean)
   pre  self.up
   post self.up = not fail;
-operation Server::repair(random ok: Bool ~ { true: 9, false: 1 })
+operation Server::repair(ok: Boolean)
   pre  not self.up
   post self.up = ok;
 
+random Server::tick(fail) ~ { true: 1, false: 1999 };
+random Server::repair(ok) ~ { true: 9, false: 1 };
 workload Steady on Avail { weight Server::tick = 1; weight Server::repair = 1; }
 
 probabilistic LongRun using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.0002 {
-  long-run fraction holds(v.up) >= 0.999
+  long_run_fraction holds(v.up) >= 0.999
 }
 probabilistic Monthly using ev on Avail under Steady on origin
     with alpha 0.01, beta 0.01, indifference 0.005 {
-  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= 0.999 ]
+  probability >= 0.99 [ fraction holds(v.up) over [0, 10000] >= rational(999, 1000) ]
 }
 ```
 

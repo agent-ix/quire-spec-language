@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-144
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-314
+    type: depends_on
 ---
 # FR-146: Write per-step simulation records for a refinement
 
@@ -51,9 +53,13 @@ replayable counterexample when one exists.
 
 - A `CheckedRefinement` (FR-135) with its step rows (FR-136), in the S4
   package.
-- The concrete package's invariant clauses and each concrete operation's
-  effective precondition, frame and postcondition; the abstract package's
-  invariants, effective preconditions, frames and postconditions.
+- The invariant clauses whose context is an object type of the concrete
+  model and each concrete operation's effective precondition, frame and
+  postcondition; the abstract model's invariants, effective preconditions,
+  frames and postconditions. The declaring package can hold the abstract
+  model as well as the concrete one (ADR-020 RM-1), so an invariant of the
+  package is a concrete invariant only when its context is a concrete-model
+  object type.
 
 ## Outputs
 
@@ -61,17 +67,19 @@ replayable counterexample when one exists.
 pub struct StepSimulationRecord {
     pub refinement: NodeKey,
     pub obligation: StepObligation,
-    pub hypotheses: Vec<NodeKey>,      // the concrete package's invariant clauses
+    pub hypotheses: Vec<NodeKey>,      // invariants whose context is a concrete-model object type
 }
 
 pub enum StepObligation {
     Initial,                           // ADR-020 RS-2
-    Step { row: StepRowRef },          // RS-3 for `stutter`, RS-4 for an abstract operation
+    Step { row: StepRowRef },          // RS-3 for `stutter`, RS-4 for an abstract operation;
+                                       // the row's zero-based position in the refinement node's `steps` order
 }
 ```
 
-Each is written as a requirement record of kind `operation-contract`, keyed
-by an occurrence key derived from the refinement node and the obligation.
+Each is written as a requirement record of kind `operation-contract`. The
+record's occurrence key and obligation identity are not yet specified: see
+"Record identity, pending" below.
 `StepSimulationRecord` and `StepObligation` live in `quire-semantic-value`,
 since the compiler writes them and CG reads them (ADR-018 LA-5).
 
@@ -87,8 +95,6 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   per-step obligation, so the other rows' records would not discharge the
   safety half, and with history fields `map` is not a function of
   `(s, s')`.
-- Each record's obligation identity SHALL bind the refinement node, the
-  obligation and the hypotheses (ADR-013 O-09).
 
 ### What each record states
 
@@ -102,8 +108,37 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   domains.
 - The `Initial` record SHALL state that `map(c0)` is an abstract initial
   state for every concrete initial state `c0`.
-- `hypotheses` SHALL list every invariant clause of the concrete package,
-  each of which is its own `operation-contract` record.
+- `hypotheses` SHALL list every invariant clause whose context is an object
+  type of the concrete model, each of which is its own `operation-contract`
+  record, ascending by node-key digest with no duplicate.
+- An invariant clause of the declaring package whose context is an object
+  type of the abstract model only SHALL NOT be listed in `hypotheses`,
+  whether the abstract model comes from the declaring package or from a
+  dependency.
+
+### Row order
+
+- The `StepRowRef` of a `Step` record SHALL be the zero-based position of
+  its row in the refinement node's `steps` array, which QSpec FR-375 sorts
+  ascending by the node-key digest of the row's first named declaration (a
+  model subject's row names its concrete operation), then by member name as
+  UTF-8 bytes.
+- Reordering the `step` rows in source SHALL change no record's `StepRowRef`.
+- QSpec FR-375's order is specified for model subjects only. A protocol
+  subject's rows (`MemoryStep` rows name no declaration, and rows such as
+  `duplicate` and `lose` of one channel share one) have no specified order,
+  so their `StepRowRef` is pending a QSpec FR-375/FR-432 ruling.
+
+### Record identity, pending
+
+The requirement record's occurrence key (ADR-013 O-07) and obligation
+identity (ADR-013 O-09) for these records are pending an ADR-013 O-07/O-09
+amendment, a CG ask for the digest, and a QSpec FR-322 occurrence-role
+ruling. This requirement states no role, ordinal or identity preimage. The
+types `StepRowRef`, `StepObligation` and the `hypotheses` rule are owned by
+quire-semantic-value FR-123, which still says "declaration order" and "the
+concrete package's invariant clauses"; it is to change to this requirement's
+wording.
 
 ### Routing and settlement
 
@@ -116,30 +151,41 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
 - QSL SHALL settle an RE-2 record's backend outcome as V-3 `Proved{basis:
   Inductive{depth: 1}, certification}` with basis `decisive-witness` when the
   obligation holds, `Certified` when FR-314 verifies the backend's proof
-  certificate and `Uncertified` when it is absent or unverifiable (ADR-018
-  PC-6), and as V-6 `Inconclusive(InductionNotClosed{depth: 1})` when it
+  certificate and `Uncertified` when it is absent or FR-314 cannot verify it
+  without showing it wrong (ADR-018 PC-6), and as V-6 `Inconclusive(InductionNotClosed{depth: 1})` when it
   fails from a pre-state that satisfies the hypotheses. A backend
   counterexample for an RE-2 record SHALL settle
   `Inconclusive(InductionNotClosed{depth: 1})` and never `refuted`.
+- A backend outcome "holds" whose proof certificate FR-314 shows wrong
+  SHALL settle V-6 `Inconclusive(CertificateRejected{rule, at})` with
+  FR-314's rule and locus (ADR-018 PC-2), never `proved`.
+- A certificate FR-314 cannot verify without showing it wrong SHALL settle
+  `Uncertified`, not `CertificateRejected`. A `Certified` RE-2 settlement is
+  pending FR-315 encoding the RE-2 per-step query, which it does not yet do.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-146-AC-1 | ADR-020 §8's `CasRefinesCounter` writes eight `operation-contract` records beside its refinement record: one `Initial` and one `Step` for each of its seven rows, each listing the concrete package's invariant clauses (none) as hypotheses. With the `commitB` row changed to `-> any` it writes none. | Test (TC-551) |
+| FR-146-AC-1 | ADR-020 §8's `CasRefinesCounter` writes eight `operation-contract` records beside its refinement record: one `Initial` and one `Step` for each of its seven rows, each listing the invariant clauses whose context is a concrete-model object type (none) as hypotheses. With the `commitB` row changed to `-> any` it writes none. | Test (TC-551) |
 | FR-146-AC-2 | `RegisterHistory` (FR-138) and `Coin` with `side` hidden (FR-141-AC-4) write no `StepSimulationRecord`; each still writes its refinement record. | Test (TC-551) |
-| FR-146-AC-3 | With an invariant `CasInv` (`self.busyA or self.tmpA <= self.value`) added to `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` in `hypotheses`, the request also holds `CasInv`'s own `operation-contract` record, and the `Initial` record's obligation identity differs from the one without `CasInv`. | Test (TC-551) |
-| FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate and `Proved{Inductive{depth: 1}, Certified}` with a certificate FR-314 verifies; for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
+| FR-146-AC-3 | With an invariant `CasInv` (`self.busyA or self.tmpA <= self.value`) added to `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` in `hypotheses`, the request also holds `CasInv`'s own `operation-contract` record. | Test (TC-551) |
+| FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate and `Proved{Inductive{depth: 1}, Certified}` when the settlement map is given the checker's `Verified` result directly (a certificate FR-314 verifies on an RE-2 query is pending FR-315 encoding that query, FR-146-AC-7); for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
+| FR-146-AC-5 | Over a model subject, `StepRowRef` is the zero-based position in the digest-sorted `steps` order. For `CasRefinesCounter`, the seven `Step` records name the positions 0 to 6, each once, and the row at position i has a first named declaration whose node-key digest is not greater than the row at position i + 1's; writing the seven `step` rows in reverse source order gives each `Step` record the same `StepRowRef`. | Test (TC-551) |
+| FR-146-AC-6 | With a package that holds `Spec::Counter` and `Impl::Counter` and an invariant `AbsInv` on `Spec::Counter` beside `CasInv` on `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` and not `AbsInv` in `hypotheses`, and writing the clauses in the opposite source order leaves each record's `hypotheses` unchanged. | Test (TC-551) |
+| FR-146-AC-7 | The settlement map treats a certificate by what FR-314 finds: a backend outcome "holds" for a `Step` record whose certificate FR-314 shows wrong settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{rule, at})` with FR-314's rule and locus, never `proved`; the same outcome with a certificate that FR-314 cannot verify and does not show wrong settles `Proved{Inductive{depth: 1}, Uncertified}`; a `Certified` settlement is not exercised until FR-315 encodes the RE-2 query. The vector feeds the settlement map the checker's `Rejected` and `Unverifiable` results directly. | Test (TC-551) |
 
 ## Dependencies
 
 - ADR-020 §5 RE-2, RE-3, "Claim kinds" and "Strength", §9 DS-2 and DS-3;
   ADR-018 EN-2 and V-3, V-6, V-8; ADR-012 (requirement records at S3);
-  ADR-013 O-09.
+  ADR-013 O-07 and O-09 (identity pending); ADR-018 PC-2 and PC-6; ADR-020
+  RM-1; QSpec FR-375 (row order).
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md),
   [FR-135](FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md),
   [FR-136](FR-136-check-a-refinement-s-step-rows.md),
+  [FR-314](FR-314-check-an-smt-proof-certificate.md),
   [FR-144](FR-144-request-and-settle-a-refinement-item.md).
 
 ## References

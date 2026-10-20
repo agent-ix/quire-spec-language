@@ -14,13 +14,14 @@ Verify witnesses, traps, path pairs and proofs on ADR-022 §7's worked
 examples and their variants, decisive evidence on a partial run, and that
 phase 0 changes only a witness's source.
 
-Scope: FR-168-AC-1 to FR-168-AC-4 and FR-168-AC-6.
+Scope: FR-168-AC-1 to FR-168-AC-4, FR-168-AC-6 and FR-168-AC-10.
 
 ## Test Procedure
 
 Fixtures: ADR-022 §7.1's subject; §7.2's game, its `restart` variant and
 its `celebrate` variant (FR-168-AC-4); §7.3's job, its sequenced variant,
-and the sequenced variant with `reset` (FR-168-AC-3).
+and the sequenced variant with `reset` (FR-168-AC-3); `Ladder` and
+`Detour` (FR-168-AC-10).
 
 1. §7.1 with `witness_samples` 0: `ReachesTwo` and `ReachesThree`.
 2. §7.2: `CanStillWin`, its `from` variant, and the `restart` variant.
@@ -29,6 +30,7 @@ and the sequenced variant with `reset` (FR-168-AC-3).
 4. The `celebrate` variant under `max_depth` 3: `CanStillWin` and `possible
    x.phase = Won and x.n = 50`.
 5. `ReachesTwo` with `witness_samples` 64 and 0; step 2's requests twice.
+6. `unique path Once` over `Ladder` and over `Detour`.
 
 Tag the tests `#[trace("TC-593", "FR-168-AC-n")]`.
 
@@ -46,3 +48,5 @@ Tag the tests `#[trace("TC-593", "FR-168-AC-n")]`.
   `NoDecision`, end `Completed`, open cause `MaxDepth`.
 - Step 5: `Witnessed` with sources `Sampled` and `Explored`; byte-equal
   outcomes.
+- Step 6: `PathPair`, empty stem; `Ladder` first `a, c`, second `a, d`;
+  `Detour` first `t, w`, second `s, u, x`.

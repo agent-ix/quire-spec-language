@@ -130,9 +130,10 @@ Each carries its instance's `over` binding.
   other edge out of that position's node into `H`, the prefix, that edge,
   then the shortest path on. The stem is the canonical breadth-first path to
   the node.
-- Otherwise `UniquePath` SHALL return `Trapped` for the first closed node in
+- Otherwise `UniquePath` SHALL return `Trapped` for the first known node in
   discovery order where `from` holds and that counts 0, with its canonical
-  breadth-first stem.
+  breadth-first stem. A closed node that counts 0 only because the nodes it
+  reaches are open is not known and is no trap.
 - `UniquePath` SHALL return `Holds` when no node is open and every reachable
   node where `from` holds counts exactly 1.
 
@@ -182,6 +183,7 @@ Each carries its instance's `over` binding.
 | FR-168-AC-7 | FR-168-AC-5's item with default `witness_samples` holds a sampled witness from `(0, 0)` ending at `(1, 0)` and still returns `Undefined` at `(2, 0)`, not `Witnessed`; `ReachesTwo` with default limits returns `Witnessed` with `Sampled` sources from a run that completed with no open node. | Test (TC-613) |
 | FR-168-AC-8 | `ReachesTwo` with default `witness_samples` and `max_states` 2 returns `WitnessedUnchecked` with `Sampled` sources and `end` `Stopped(ResourceExhausted, MaxStates)`; with `witness_samples` 0 and `max_states` 2 it returns `NoDecision` with the same `end`. | Test (TC-614) |
 | FR-168-AC-9 | Fixture `Fork`: one object with `pos: Int[0, 4]`, initially 0; operations `toA()` (pre `pos = 0`, post `pos = 1`), `toB()` (pre `pos = 0`, post `pos = 2`), `fromA()` (pre `pos = 1`, post `pos = 3`), `fromB()` (pre `pos = 2`, post `pos = 4`) and `back()` (pre `pos = 3`, post `pos = 0`), each framed `modifies self.pos`, with `toA` before `toB` in canonical transition order. `possible x.pos = 4` with `witness_samples` 0 under horizon 2: the node with `pos = 3` is open, `pos = 1` and `pos = 2` both have `d` 1, and the explored witness is `toB, fromB`, ending at the target `pos = 4`, not `toA, fromA`; the outcome is `WitnessedUnchecked`. | Test (TC-619) |
+| FR-168-AC-10 | `unique path Once from (x.pos = 0) to (x.pos = <end>)` with `witness_samples` 0 over two fixtures, each one object with an integer `pos`, initially 0, and operations that each take `pos` from one value to another (pre `pos = from`, post `pos = to`, framed `modifies self.pos`), named in canonical transition order. `Ladder` (`pos: Int[0, 3]`, end 3; `a` 0 to 1, `b` 0 to 2, `c` and `d` 1 to 3, `e` 2 to 3) returns `PathPair` with first `a, c` and second `a, d`, not `b, e`: of two equally short deviations whose edges both rank above the first path's, the later is the lesser. `Detour` (`pos: Int[0, 5]`, end 5; `s` 0 to 1, `t` 0 to 2, `u` 1 to 4, `w` 2 to 5, `y` 2 to 4, `x` 4 to 5) returns `PathPair` with first `t, w` and second `s, u, x`, not `t, y, x`: an equally short earlier deviation whose edge ranks below the first path's is the lesser. | Test (TC-593) |
 
 ## Dependencies
 

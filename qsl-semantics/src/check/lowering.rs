@@ -90,15 +90,17 @@ use quire_semantic_value::quantity::UnitTable;
 mod model;
 mod protocol;
 mod state;
+mod temporal;
 mod wire;
 
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{bound_origin, record_node_key, variant_type_node_key, RecordKeyError};
 pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
-pub(crate) use protocol::{declaration_origin, ProtocolInput};
+pub(crate) use protocol::{compensation_origin, declaration_origin, ProtocolInput};
 pub(crate) use state::{
     AnchorInput, AttemptInput, LoweredAttempt, LoweredClause, OperationBinding, StateClauseInput,
 };
+pub(crate) use temporal::{temporal_location, temporal_site, TemporalClauseInput, TemporalSite};
 
 /// The package's lock evidence as the lowering reads it (ADR-011 §2.4): the
 /// `DefinitionRef` the `text_profile` law role selects. QSpec publishes no
@@ -144,7 +146,9 @@ impl LockEvidence {
         self.text_profile.as_ref()
     }
 
-    fn protocol_profile(&self) -> Option<&DefinitionReference> {
+    /// The `protocol_profile` the unit's header selected, when it selected
+    /// one.
+    pub(crate) fn protocol_profile(&self) -> Option<&DefinitionReference> {
         self.protocol_profile.as_ref()
     }
 }
@@ -3438,6 +3442,17 @@ impl<'a> Lowering<'a> {
                     Operands::One(reference),
                 )
             }
+            // FR-139: a population-valued form lives in a refinement row,
+            // which S4 does not emit yet (FR-310's node): no FR-093 row
+            // lowers it.
+            NodeKind::PopulationObjects { .. } | NodeKind::Seq { .. } => {
+                return Err(refuse(
+                    node.location(),
+                    CheckCause::UnsupportedFeature {
+                        loci: vec![node.location().clone()],
+                    },
+                ))
+            }
             NodeKind::Present(operand) => (
                 Keyed::Application(Operator::Present, plain("quire.op.option.present")),
                 Operands::One(operand),
@@ -3644,6 +3659,14 @@ impl<'a> Lowering<'a> {
                             ..plain("quire.op.collection.count")
                         },
                     ),
+                    Visit::Only => {
+                        return Err(refuse(
+                            node.location(),
+                            CheckCause::UnsupportedFeature {
+                                loci: vec![node.location().clone()],
+                            },
+                        ))
+                    }
                     Visit::Sum => (
                         Operator::Collection,
                         Operation {
@@ -4398,9 +4421,15 @@ impl<'a> Lowering<'a> {
                 self.record(key, OccurrenceRole::Expression, node.location().clone());
                 return Ok(LeafTerm::reference(key));
             }
+            // FR-185: a quantity literal types, and the checked package has
+            // no literal form to emit it as.
+            Value::Quantity(_) => {
+                return Err(super::probabilistic::quantity_literal(
+                    node.location().clone(),
+                ))
+            }
             Value::Decimal(_)
             | Value::Float(_)
-            | Value::Quantity(_)
             | Value::Text(_)
             | Value::Option(_)
             | Value::Composite(_)

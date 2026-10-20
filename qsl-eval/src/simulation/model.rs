@@ -10,10 +10,15 @@
 //! describes is data: a [`StepEffect`] holds the creations, deletions and field
 //! changes of one step, and nothing outside the returned values changes.
 
+mod constraint;
 mod contracts;
 mod domain;
 pub(crate) mod encode;
+mod footprints;
 mod frames;
+mod refine;
+mod state_predicate;
+mod symmetry;
 mod terminal;
 mod walk;
 
@@ -22,10 +27,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
-use qsl_foundation::{CatalogCode, IdentityLimits};
+use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::Observation;
+use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
+use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::domain_package::OperationEffect;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::{
@@ -40,16 +46,26 @@ use quire_exact::{
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use crate::model_subject::ModelInstance;
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
-use crate::simulation::sample::sample_request;
+use crate::simulation::reduction::{
+    ConstraintValue, OfferedReductions, Permutation, SymmetryGroup,
+};
+use crate::simulation::sample::{sample_request, sample_request_until, SampleRequest};
 use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
+pub use footprints::{FootprintError, FootprintViolation, WithinStop};
+pub use frames::judge::{
+    operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,
+};
+pub use refine::{RowReading, StateObservation};
+pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
@@ -331,6 +347,9 @@ struct Clauses {
 
 /// FR-120: the transition system of a checked package's state family.
 pub struct ModelSystem<'a> {
+    /// The identity of the one domain package this system is over, when it
+    /// is over one (FR-140's `WrongSystem` check reads it).
+    over: Option<String>,
     types: &'a TypeEnvironment,
     operations: &'a qsl_semantics::model::operation::OperationTable,
     package: &'a CheckedPackage,
@@ -343,6 +362,7 @@ pub struct ModelSystem<'a> {
     populations: Vec<qsl_semantics::model::state::StatePopulation>,
     limits: ExpansionLimits,
     meter: ScalarLimits,
+    footprints: footprints::FootprintCache,
 }
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
@@ -374,14 +394,48 @@ impl<'a> ModelSystem<'a> {
     ///
     /// FR-106's [`AdmissionFailure`]: `Refused` or `Incomplete`, one record.
     pub fn new(request: ModelSimulationRequest<'a>) -> Result<Self, AdmissionFailure> {
+        let selections = request.package.graph().model_selections();
+        Self::over(request, selections)
+    }
+
+    /// [`Self::new`] over the one domain package `model` names, for a unit
+    /// that selects several models (ADR-020 RM-1: a refinement's abstract
+    /// and concrete subjects are two models of one checked package). The
+    /// system holds that model's populations only.
+    ///
+    /// # Errors
+    ///
+    /// `invalid_runtime_input`/`wrong-role-mapping` when the package selects
+    /// no model named `model`; otherwise as [`Self::new`].
+    pub fn over_model(
+        request: ModelSimulationRequest<'a>,
+        model: &str,
+    ) -> Result<Self, AdmissionFailure> {
+        let selected: Vec<_> = request
+            .package
+            .graph()
+            .model_selections()
+            .iter()
+            .filter(|selection| selection.identity == model)
+            .cloned()
+            .collect();
+        if selected.is_empty() {
+            return Err(refused(
+                Code::InvalidRuntimeInput,
+                "wrong-role-mapping",
+                &[("model", model.to_owned())],
+            ));
+        }
+        Self::over(request, &selected)
+    }
+
+    fn over(
+        request: ModelSimulationRequest<'a>,
+        selections: &[qsl_semantics::model::domain_package::DomainPackageRef],
+    ) -> Result<Self, AdmissionFailure> {
         let graph = request.package.graph();
         let types = graph.scope().types();
-        let model = StateModel::new(
-            graph.model_selections(),
-            types,
-            request.packages,
-            request.normalization,
-        )?;
+        let model = StateModel::new(selections, types, request.packages, request.normalization)?;
         let populations = model.populations();
 
         let mut universes = BTreeMap::new();
@@ -398,6 +452,19 @@ impl<'a> ModelSystem<'a> {
             }
             let mut seen = BTreeSet::new();
             for key in &universe.keys {
+                // A key is an object identity (FR-035): the empty key names
+                // no object, so it is refused here, not where a key context
+                // binds it.
+                if quire_exact::ObjectId::new(key.as_str()).is_err() {
+                    return Err(refused(
+                        Code::InvalidRuntimeInput,
+                        "invalid-value",
+                        &[
+                            ("population", universe.population.node.clone()),
+                            ("key", key.clone()),
+                        ],
+                    ));
+                }
                 if !seen.insert(key) {
                     return Err(refused(
                         Code::InvalidRuntimeInput,
@@ -467,13 +534,14 @@ impl<'a> ModelSystem<'a> {
                 .fields(&type_key)?
                 .ok_or_else(|| fault("type-fields"))?;
             fields.insert(type_key, declared);
-            applications.insert(
-                identity,
-                Self::applications_of(&model, graph.scope().operations(), types, identity)?,
-            );
+            applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
         Ok(Self {
+            over: match selections {
+                [only] => Some(only.identity.clone()),
+                _ => None,
+            },
             types,
             operations: graph.scope().operations(),
             package: request.package,
@@ -486,6 +554,7 @@ impl<'a> ModelSystem<'a> {
             populations,
             limits: request.expansion,
             meter: request.meter,
+            footprints: footprints::FootprintCache::default(),
         })
     }
 
@@ -520,13 +589,53 @@ impl<'a> ModelSystem<'a> {
         crate::simulation::key::canonical_bytes(transition, identity_limits())
     }
 
+    /// The operation text a transition of `operation` carries (FR-181): the
+    /// declaration identity text of the operation `name` that `declaring`
+    /// declares, which [`ModelTransition::operation`] returns for each of its
+    /// applications. `None` when the subject's package declares no such
+    /// operation on a type the subject admits. A fairness constraint covers
+    /// the transitions that carry its operation's text (ADR-018 FA-1).
+    pub fn operation_text(&self, declaring: EffectiveId, name: &str) -> Option<&str> {
+        self.applications
+            .values()
+            .flatten()
+            .find(|application| application.declaring == declaring && application.name == name)
+            .map(|application| application.text.as_str())
+    }
+
+    /// The operations of the subject's types, each once: its declaring type,
+    /// name, and the text its transitions carry (see
+    /// [`Self::operation_text`]). They come in canonical order: by the
+    /// declaring type's effective identity (not the admitted type that
+    /// inherits the operation), then by name bytes, so the order depends on
+    /// neither declaration order nor which type admits an operation.
+    pub fn operations(&self) -> Vec<(EffectiveId, &str, &str)> {
+        let mut operations: Vec<(EffectiveId, &str, &str)> = self
+            .applications
+            .values()
+            .flatten()
+            .map(|application| {
+                (
+                    application.declaring,
+                    application.name.as_str(),
+                    application.text.as_str(),
+                )
+            })
+            .collect();
+        operations
+            .sort_by(|left, right| (left.0, left.1.as_bytes()).cmp(&(right.0, right.1.as_bytes())));
+        operations.dedup_by(|next, kept| (next.0, next.1) == (kept.0, kept.1));
+        operations
+    }
+
     /// The operations in `identity`'s effective view (FR-103, FR-081), by name.
     fn applications_of(
+        graph: &qsl_semantics::check::CheckedGraph,
         model: &StateModel,
-        operations: &qsl_semantics::model::operation::OperationTable,
-        types: &TypeEnvironment,
         identity: EffectiveId,
     ) -> Result<Vec<Application>, AdmissionFailure> {
+        let operations = graph.scope().operations();
+        let types = graph.scope().types();
         let mut names = BTreeSet::new();
         for declaring in types.object_types() {
             if types.conforms(identity, declaring.key()) {
@@ -686,6 +795,107 @@ impl<'a> ModelSystem<'a> {
         roots
     }
 
+    /// FR-125 Instancing: the instances of an `over (x: T)` parameter of
+    /// type `over` under this subject's universes, in the canonical order.
+    ///
+    /// A population admits `T` when one of its member types is `T`, a
+    /// subtype or a supertype of `T`; each key of each admitting
+    /// population's universe is one instance, however many of its member
+    /// types are comparable with `T`. Admitting populations are ordered by
+    /// declaration identity text, and the keys of each by its universe list.
+    /// A type no population admits, and a type that is not an object
+    /// reference, has no instance.
+    ///
+    /// # Errors
+    ///
+    /// [`NotSimulated::RequiresBound`] naming every admitting population
+    /// with no universe, before any instance is listed (FR-120 "Bounds");
+    /// [`NotSimulated::Extent`] when that classification stops or a
+    /// population's identity text does not encode.
+    pub fn instances(&self, over: &ValueType) -> Result<Vec<ModelInstance>, NotSimulated> {
+        let ValueType::Reference(parameter) = over else {
+            return Ok(Vec::new());
+        };
+        let mut admitting = Vec::new();
+        for population in &self.populations {
+            let admits = population.member_types.iter().any(|member| {
+                self.model.type_identity(member).is_some_and(|member| {
+                    self.types.conforms(member, *parameter)
+                        || self.types.conforms(*parameter, member)
+                })
+            });
+            if admits {
+                let text = declaration_text(&population.key, CanonicalLimits::new(u64::MAX))
+                    .map_err(|_| {
+                        NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
+                            "model-simulation",
+                            "population-identity-text",
+                        )))
+                    })?;
+                admitting.push((text, &population.key));
+            }
+        }
+        let mut unbounded = Vec::new();
+        for (_, population) in &admitting {
+            if !self.universes.contains_key(*population) {
+                let digest = quire_canonical::sha256(
+                    &declaration_enc(population),
+                    CanonicalLimits::new(u64::MAX),
+                )
+                .map_err(|_| {
+                    NotSimulated::Extent(ClassifyFailure::Fault(InternalFault::new(
+                        "model-simulation",
+                        "population-root-digest",
+                    )))
+                })?;
+                unbounded.push((
+                    WireNodeId::from_digest(*digest.as_bytes()),
+                    ValueType::Population(None),
+                ));
+            }
+        }
+        let roots: Vec<(WireNodeId, &ValueType)> =
+            unbounded.iter().map(|(id, root)| (*id, root)).collect();
+        crate::simulation::not_simulated::check_requires_bound(&roots, self.types, u64::MAX)?;
+        admitting.sort_by(|left, right| left.0.cmp(&right.0));
+        Ok(admitting
+            .into_iter()
+            .flat_map(|(_, population)| {
+                self.universes
+                    .get(population)
+                    .into_iter()
+                    .flatten()
+                    .map(|key| ModelInstance {
+                        population: population.clone(),
+                        key: key.clone(),
+                    })
+            })
+            .collect())
+    }
+
+    /// The typed value an FR-338 key context binds for `instance` of a
+    /// parameter of object type `over`: the reference to its key in the
+    /// universe of `over`'s declared type. It is a function of the instance
+    /// and the parameter alone, never of a state's object.
+    ///
+    /// # Errors
+    ///
+    /// An [`InternalFault`] when no selected model declares `over`, or the
+    /// key, which [`ModelSystem::new`] admitted, has no reference.
+    pub fn bound_reference(
+        &self,
+        over: EffectiveId,
+        instance: &ModelInstance,
+    ) -> Result<ObjectReference, InternalFault> {
+        let type_key = self
+            .model
+            .type_key(over)
+            .ok_or_else(|| InternalFault::new("model-simulation", "over-type-declared"))?;
+        self.model
+            .object_reference(type_key, &instance.key)
+            .map_err(|_| InternalFault::new("model-simulation", "universe-key-references"))
+    }
+
     /// The non-abstract object types `effect` creates (FR-013): each conforms
     /// to a `creates` entry.
     fn creatable_types(&self, effect: &OperationEffect) -> Vec<DeclarationKey> {
@@ -729,7 +939,33 @@ impl TransitionSystem for ModelSystem<'_> {
         &self,
         state: &Self::State,
     ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
-        walk::expand_state(self, state)
+        walk::expand_state(self, state, None)
+    }
+
+    /// FR-162: symmetry and state constraints. Partial-order reduction has
+    /// no hook on this trait yet, so it is not offered.
+    fn offered_reductions(&self) -> OfferedReductions {
+        OfferedReductions {
+            symmetry: true,
+            partial_order: false,
+            constraint: true,
+        }
+    }
+
+    fn canonical(
+        &self,
+        state: &Self::State,
+        group: &SymmetryGroup,
+    ) -> Option<Result<(Self::State, Permutation), ExpansionStop>> {
+        Some(self.canonicalise(state, group))
+    }
+
+    fn holds_constraint(
+        &self,
+        state: &Self::State,
+        constraint: &str,
+    ) -> Option<Result<ConstraintValue, ExpansionStop>> {
+        Some(self.constraint_value(state, constraint))
     }
 }
 
@@ -826,6 +1062,86 @@ pub fn sample_model(
     replay(system, &trace, identity_limits()).map_err(ModelSampleError::Replay)?;
     let effects = effects_of(system, &trace)?;
     Ok(ModelTrace { trace, effects })
+}
+
+/// `system` with one initial state.
+struct OneInitial<'s, 'a> {
+    system: &'s ModelSystem<'a>,
+    start: ModelSimState,
+}
+
+impl TransitionSystem for OneInitial<'_, '_> {
+    type State = ModelSimState;
+    type TransitionId = ModelTransition;
+    type Key = ModelKey;
+    type Finding = ModelFinding;
+
+    fn initial(&self) -> Vec<Self::State> {
+        vec![self.start.clone()]
+    }
+
+    fn key(&self, state: &Self::State) -> Self::Key {
+        self.system.key(state)
+    }
+
+    fn successors(
+        &self,
+        state: &Self::State,
+    ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
+        self.system.successors(state)
+    }
+}
+
+/// FR-166: FR-101's sampled trace over the view of `system` whose only
+/// initial state is the subject's initial state `initial` (its index in the
+/// subject's initial list), ending at the first state where `end` holds
+/// ([`sample_request_until`]). `end` reads each state the walk visits, in
+/// order, position 0 included.
+///
+/// # Errors
+///
+/// [`NotSimulated`] as `sample_request` returns it;
+/// [`NotSimulated::EmptyInitial`] when `initial` is not an index of the
+/// subject's initial states.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "FR-101's sample request members plus the walk's initial state and end condition"
+)]
+pub fn sample_model_walk(
+    system: &ModelSystem<'_>,
+    initial: usize,
+    position_limit: u64,
+    sampler: &DefinitionRef,
+    seed: u64,
+    trace: u64,
+    max_steps: usize,
+    end: impl FnMut(&ModelSimState) -> bool,
+) -> Result<Trace<ModelTransition, ModelFinding>, NotSimulated> {
+    let start = system
+        .initial
+        .get(initial)
+        .cloned()
+        .ok_or(NotSimulated::EmptyInitial)?;
+    let view = OneInitial { system, start };
+    let domains = system.domains();
+    let roots: Vec<(WireNodeId, &ValueType)> = domains
+        .iter()
+        .map(|(id, value_type)| (*id, value_type))
+        .collect();
+    sample_request_until(
+        &view,
+        SampleRequest {
+            domains: &roots,
+            types: system.types,
+            position_limit,
+            sampler,
+            seed,
+            trace,
+            max_steps,
+            identity: identity_limits(),
+        },
+        end,
+    )
 }
 
 /// The effect of each step of a trace that replayed: the state each step's

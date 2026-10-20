@@ -14,6 +14,8 @@ mod business_meanings;
 mod child_composite;
 mod complete_value_lock;
 mod dispatch_linking;
+#[cfg(feature = "test-support")]
+mod hyper_clauses;
 mod identity_golden_vectors;
 mod ieee_profiles;
 mod import_view_names;
@@ -46,6 +48,8 @@ mod model_relationship;
 #[cfg(feature = "test-support")]
 mod model_state;
 #[cfg(feature = "test-support")]
+mod model_subject_bound;
+#[cfg(feature = "test-support")]
 mod model_systems;
 #[cfg(feature = "test-support")]
 mod model_systems_resolve;
@@ -57,7 +61,12 @@ mod operation_bodies;
 mod operation_clauses;
 #[cfg(feature = "test-support")]
 mod population_bound;
+mod probabilistic_declarations;
 mod quantities;
+#[cfg(feature = "test-support")]
+mod refinement_declarations;
+#[cfg(feature = "test-support")]
+mod refinement_populations;
 #[cfg(feature = "test-support")]
 mod relationship_extents;
 #[cfg(feature = "test-support")]
@@ -68,11 +77,19 @@ mod relationship_reachability;
 mod relationship_snapshots;
 mod state_clauses;
 #[cfg(feature = "test-support")]
+mod state_graph_claims;
+#[cfg(feature = "test-support")]
+mod strong_fairness;
+#[cfg(feature = "test-support")]
+mod symmetric_population;
+#[cfg(feature = "test-support")]
 mod tc235_business_meanings;
 #[cfg(feature = "test-support")]
 mod temporal_fairness;
 #[cfg(feature = "test-support")]
 mod terminal_declarations;
+#[cfg(feature = "test-support")]
+mod timed_declarations;
 #[cfg(feature = "test-support")]
 mod type_environment_model;
 mod variant_fields;

@@ -14,22 +14,32 @@
 //! `explore_request` and `sample_request` are the only public entries that
 //! explore or sample: `explore`, `sample` and `Sampler` are `pub(crate)`, so
 //! no caller skips the requires-bound check or the sampler's
-//! `GeneratorMismatch` check.
+//! `GeneratorMismatch` check. `weighted_choice` is the generator's one
+//! selection function (FR-188): it reads draws at a choice point and runs no
+//! transition system.
 
+mod choice;
 mod expansion;
 mod explore;
+mod footprint;
 mod frontier;
 mod key;
 pub mod model;
 mod not_simulated;
 mod order;
+mod reduction;
 mod sample;
 mod trace;
 
+pub use choice::{weighted_choice, ChoicePoint, Weights, WeightsRefusal};
 pub use expansion::{Expansion, ExpansionLimit, ExpansionStop, StateFindings};
 pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, TransitionSystem};
+pub use footprint::{independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};
 pub use key::EncodingRefusal;
 pub use not_simulated::{NotSimulated, RequiresBound};
-pub use sample::sample_request;
+pub use reduction::{
+    ConstraintValue, OfferedReductions, Permutation, SymmetryClass, SymmetryGroup,
+};
+pub use sample::{sample_request, sample_request_until, SampleRequest};
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

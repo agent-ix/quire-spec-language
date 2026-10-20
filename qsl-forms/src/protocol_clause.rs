@@ -18,18 +18,19 @@ use std::ops::ControlFlow;
 
 use super::dispatch::{Construct, FormsRefusal};
 use super::protocol_control::{
-    await_form, channel_form, member_forms, parallel_form, repeat_form, AwaitForm, ChannelOrdering,
-    JoinPolicy, ParallelForm, ProtocolMemberForm, RepeatForm, TerminalForm,
+    access_ordering, await_form, channel_form, choice_form, member_forms, parallel_form,
+    repeat_form, role_form, AwaitForm, ChannelOrdering, FenceForm, JoinPolicy, ParallelForm,
+    ProtocolMemberForm, RepeatForm, TerminalForm,
 };
 use super::spans::DeclarationSpans;
 use super::syntax::{
     ActivationForm, AnchorForm, AnchorSegment, AnchorSite, AttemptForm, BinderForm, BinderKind,
-    ClockForm, CompensationAttempts, CompensationCommit, CompensationForm, CompensationRecover,
-    CompensationRetry, DeclarationForm, DeclaredName, ExpressionForm, OperationBodyForm,
-    ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind, ProtocolDeclarationForm,
-    ProtocolNodeDeclaration, ProtocolNodeKind, RelatedForm, RelationshipForm, RequirementForm,
-    RoleForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm, StateClauseForm, StateClauseKind,
-    TypeForm, UsingAlias,
+    CheckForm, ChoiceForm, ClockForm, CompensationAttempts, CompensationCommit, CompensationForm,
+    CompensationRecover, CompensationRetry, DeclarationForm, DeclaredName, ExpressionForm,
+    OperationBodyForm, ProtocolBodyForm, ProtocolConstructForm, ProtocolConstructKind,
+    ProtocolDeclarationForm, ProtocolNodeDeclaration, ProtocolNodeKind, RelatedForm,
+    RelationshipForm, RequirementForm, ScopeEntry, ScopeId, ScopeName, ScopedAnchorForm,
+    StateClauseForm, StateClauseKind, TypeForm, UsingAlias,
 };
 use super::temporal_clause::{capture_form, expression_form, interval_form, parameter_form};
 use super::value::{
@@ -61,10 +62,16 @@ struct Collector<'a> {
     constructs: &'a mut Vec<ProtocolConstructForm>,
     /// Every `parallel` control, in source order.
     parallels: &'a mut Vec<ParallelForm>,
+    /// Every `fence` control, in source order.
+    fences: &'a mut Vec<FenceForm>,
     /// Every `repeat` control, in source order.
     repeats: &'a mut Vec<RepeatForm>,
     /// Every `await` control, in source order.
     awaits: &'a mut Vec<AwaitForm>,
+    /// Every `choice` control, in source order.
+    choices: &'a mut Vec<ChoiceForm>,
+    /// Every `check` control, in source order.
+    checks: &'a mut Vec<CheckForm>,
 }
 
 /// `invariant N using p on M::T at current { e }`, `pre N using p on
@@ -226,8 +233,11 @@ pub(crate) fn protocol_declaration(
     let mut bodies = Vec::new();
     let mut constructs = Vec::new();
     let mut parallels = Vec::new();
+    let mut fences = Vec::new();
     let mut repeats = Vec::new();
     let mut awaits = Vec::new();
+    let mut choices = Vec::new();
+    let mut checks = Vec::new();
     // The complete-form members FR-308 builds beside the checker's inputs,
     // each in source order and resolved to nothing.
     let captures = nodes_of(&clause_items, Production::Capture)
@@ -296,11 +306,7 @@ pub(crate) fn protocol_declaration(
     }
     for role in nodes_of(&clause_items, Production::Role) {
         let role_items = items(cst, role);
-        let context = only(&role_items, Production::QualifiedName, role)?;
-        roles.push(RoleForm {
-            name: declared_name(&role_items, role)?,
-            context: name_form(cst, context)?,
-        });
+        roles.push(role_form(cst, role)?);
         if has_token(&role_items, b"each") {
             constructs.push(ProtocolConstructForm {
                 kind: ProtocolConstructKind::ReplicatedRole,
@@ -357,8 +363,11 @@ pub(crate) fn protocol_declaration(
             bodies: &mut bodies,
             constructs: &mut constructs,
             parallels: &mut parallels,
+            fences: &mut fences,
             repeats: &mut repeats,
             awaits: &mut awaits,
+            choices: &mut choices,
+            checks: &mut checks,
         };
         for compensation in nodes_of(&clause_items, Production::Compensation) {
             compensation_anchors(cst, compensation, &mut collector)?;
@@ -374,6 +383,7 @@ pub(crate) fn protocol_declaration(
             scope: None,
             channel: None,
             related: Vec::new(),
+            role: None,
         });
         collector
             .binders
@@ -405,8 +415,11 @@ pub(crate) fn protocol_declaration(
             compensations,
             channels,
             parallels,
+            fences,
             repeats,
             awaits,
+            choices,
+            checks,
             members,
         },
     )))
@@ -427,8 +440,7 @@ impl Collector<'_> {
     }
 
     /// Records the one `{ e }` body block directly among `items`, owned by
-    /// declaration `owner`: whether it is a bare Boolean literal,
-    /// and its span. No expression tree is built.
+    /// declaration `owner`: its expression and span.
     fn body(
         &mut self,
         cst: &LosslessCst,
@@ -439,16 +451,9 @@ impl Collector<'_> {
         let block = only(items, Production::Block, node)?;
         let block_items = super::value::items(cst, block);
         let expression = only(&block_items, Production::Expression, block)?;
-        // A bare Boolean literal is exactly one significant token, `true`
-        // or `false`; `(true)` or `true and true` is not.
-        let constant = match super::value::significant_tokens(cst, expression)[..] {
-            [token] if token.spelling() == b"true" => Some(true),
-            [token] if token.spelling() == b"false" => Some(false),
-            _ => None,
-        };
         self.bodies.push(ProtocolBodyForm {
             owner,
-            constant,
+            expression: expression_form(cst, expression)?,
             span: expression.span(),
         });
         Ok(())
@@ -677,12 +682,14 @@ fn compensation_anchors(
 ) -> Result<(), FormsRefusal> {
     let compensation_items = items(cst, node);
     let name = declared_name(&compensation_items, node)?;
+    let owner = collector.declarations.len();
     collector.declarations.push(ProtocolNodeDeclaration {
         kind: ProtocolNodeKind::CompensateTemplate,
         name: name.clone(),
         scope: None,
         channel: None,
         related: Vec::new(),
+        role: None,
     });
     let references = nodes_of(&compensation_items, Production::NodeReference);
     let for_reference = references.first().ok_or_else(|| unexpected(node))?;
@@ -692,6 +699,7 @@ fn compensation_anchors(
         AnchorSite::CompensateFor,
         None,
         None,
+        owner,
     )?);
     // `commit never;` names no reference: `references` then holds only the
     // `for` target, and this site builds no anchor (FR-112 "Behavior").
@@ -702,6 +710,7 @@ fn compensation_anchors(
             AnchorSite::CompensateCommit,
             None,
             None,
+            owner,
         )?);
     }
     // The declaration's own binders (FR-113 "Refusals"): its record binder
@@ -904,6 +913,10 @@ impl<'c> ControlWalk<'c, '_, '_> {
                 Ok(())
             }
             Production::Choice => {
+                let declaration = self.collector.declarations.len();
+                self.collector
+                    .choices
+                    .push(choice_form(cst, matched, declaration)?);
                 let (kind, name) = named(ProtocolNodeKind::Choice)?;
                 declare(self.collector.declarations, kind, name.clone(), self.scope);
                 self.open(name);
@@ -923,12 +936,6 @@ impl<'c> ControlWalk<'c, '_, '_> {
                         span: form.join.span,
                     });
                 }
-                if let Some(memory) = nodes_of(&matched_items, Production::MemoryClause).first() {
-                    self.collector.constructs.push(ProtocolConstructForm {
-                        kind: ProtocolConstructKind::MemoryClause,
-                        span: memory.span(),
-                    });
-                }
                 self.collector.parallels.push(form);
                 declare(self.collector.declarations, kind, name.clone(), self.scope);
                 self.open(name);
@@ -945,6 +952,18 @@ impl<'c> ControlWalk<'c, '_, '_> {
                 let (kind, name) = named(ProtocolNodeKind::Check)?;
                 let owner = self.collector.declarations.len();
                 declare(self.collector.declarations, kind, name, self.scope);
+                // `check N using p { e };`: the name and the alias are its
+                // only two identifier tokens.
+                let [_, alias] = tokens_of(&matched_items, TokenKind::Identifier)[..] else {
+                    return Err(unexpected(matched));
+                };
+                self.collector.checks.push(CheckForm {
+                    declaration: owner,
+                    using: UsingAlias {
+                        alias: text(alias, matched)?,
+                        span: alias.span(),
+                    },
+                });
                 // `check` holds no `NodeReference` and encloses no further
                 // control (FR-112 "Behavior": "No other position yields one").
                 self.collector.body(cst, &matched_items, matched, owner)
@@ -958,6 +977,12 @@ impl<'c> ControlWalk<'c, '_, '_> {
                     name: text(token, matched)?,
                     span: token.span(),
                 };
+                let order = only(&matched_items, Production::FenceOrder, matched)?;
+                self.collector.fences.push(FenceForm {
+                    declaration: self.collector.declarations.len(),
+                    name: name.clone(),
+                    ordering: access_ordering(cst, order)?,
+                });
                 declare(
                     self.collector.declarations,
                     ProtocolNodeKind::Fence,
@@ -970,6 +995,17 @@ impl<'c> ControlWalk<'c, '_, '_> {
                 let (kind, name) = named(ProtocolNodeKind::Commit)?;
                 let owner = self.collector.declarations.len();
                 declare(self.collector.declarations, kind, name, self.scope);
+                // `commit N by R as (..) { e };`: the role is the
+                // identifier right after `by`.
+                let role = token_after(&matched_items, b"by")
+                    .filter(|token| token.kind() == TokenKind::Identifier)
+                    .ok_or_else(|| unexpected(matched))?;
+                if let Some(declaration) = self.collector.declarations.get_mut(owner) {
+                    declaration.role = Some(DeclaredName {
+                        name: text(role, matched)?,
+                        span: role.span(),
+                    });
+                }
                 self.collector.binders.push(record_binder(
                     cst,
                     &matched_items,
@@ -1006,15 +1042,16 @@ impl<'c> ControlWalk<'c, '_, '_> {
     ) -> Result<(), FormsRefusal> {
         let cst = self.cst;
         let after_reference = only(await_items, Production::NodeReference, node)?;
+        let declaration = self.collector.declarations.len();
         self.collector.anchors.push(scoped_anchor(
             cst,
             after_reference,
             AnchorSite::AwaitAfter,
             self.scope,
             None,
+            declaration,
         )?);
         let name = declared_name(await_items, node)?;
-        let declaration = self.collector.declarations.len();
         self.collector
             .awaits
             .push(await_form(cst, node, declaration)?);
@@ -1071,6 +1108,7 @@ fn declare(
         scope,
         channel: None,
         related: Vec::new(),
+        role: None,
     });
 }
 
@@ -1114,7 +1152,10 @@ fn event_node_anchors(
     let channel = match kind {
         ProtocolNodeKind::Send | ProtocolNodeKind::Receive => {
             let channel_token = identifiers.get(1).ok_or_else(|| unexpected(node))?;
-            Some(text(channel_token, node)?)
+            Some(DeclaredName {
+                name: text(channel_token, node)?,
+                span: channel_token.span(),
+            })
         }
         _ => None,
     };
@@ -1123,12 +1164,27 @@ fn event_node_anchors(
         .into_iter()
         .map(|clause| related_form(cst, clause))
         .collect::<Result<Vec<_>, _>>()?;
+    // `attempt N by R ...` and `event N by R ...` name their role right
+    // after `by`; no other event node kind is written `by` a role.
+    let role = match kind {
+        ProtocolNodeKind::Attempt | ProtocolNodeKind::Event => {
+            let role = token_after(&event_items, b"by")
+                .filter(|token| token.kind() == TokenKind::Identifier)
+                .ok_or_else(|| unexpected(node))?;
+            Some(DeclaredName {
+                name: text(role, node)?,
+                span: role.span(),
+            })
+        }
+        _ => None,
+    };
     collector.declarations.push(ProtocolNodeDeclaration {
         kind,
         name,
         scope,
         channel: channel.clone(),
         related,
+        role,
     });
     // Every event node kind (`send` and `attempt` included) carries its own
     // `as (x: T)` record binder (FR-113 "Refusals"), its own body block and
@@ -1141,12 +1197,6 @@ fn event_node_anchors(
         collector.constructs.push(ProtocolConstructForm {
             kind: ProtocolConstructKind::Related,
             span: related.span(),
-        });
-    }
-    for ordering in nodes_of(&event_items, Production::MemoryOrder) {
-        collector.constructs.push(ProtocolConstructForm {
-            kind: ProtocolConstructKind::AccessOrdering,
-            span: ordering.span(),
         });
     }
     // `attempt`'s own `on M::T::op` operation name and `contracts [...]`
@@ -1171,13 +1221,18 @@ fn event_node_anchors(
         // (FR-113's channel-mismatch check): `receive`'s `of` reference is
         // the only site whose site check compares a channel.
         let owner_channel = if site == AnchorSite::ReceiveOf {
-            channel.clone()
+            channel.as_ref().map(|channel| channel.name.clone())
         } else {
             None
         };
-        collector
-            .anchors
-            .push(scoped_anchor(cst, reference, site, scope, owner_channel)?);
+        collector.anchors.push(scoped_anchor(
+            cst,
+            reference,
+            site,
+            scope,
+            owner_channel,
+            declaration_index,
+        )?);
     }
     Ok(())
 }
@@ -1246,6 +1301,10 @@ fn attempt_form(
         context,
         operation,
         contracts,
+        ordering: nodes_of(event_items, Production::MemoryOrder)
+            .first()
+            .map(|order| access_ordering(cst, order))
+            .transpose()?,
     })
 }
 
@@ -1271,6 +1330,7 @@ fn scoped_anchor(
     site: AnchorSite,
     scope: Option<ScopeId>,
     channel: Option<String>,
+    owner: usize,
 ) -> Result<ScopedAnchorForm, FormsRefusal> {
     let reference_items = items(cst, reference);
     let mut segments = Vec::new();
@@ -1291,5 +1351,6 @@ fn scoped_anchor(
         },
         scope,
         channel,
+        owner,
     })
 }

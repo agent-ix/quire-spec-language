@@ -29,7 +29,7 @@ use quire_exact::{EffectiveId, Identifier, NodeKey, Origin, ValueType};
 use super::check::{bind_parameters, Signatures, StateContext, Typer};
 use super::claims::{wire, RequirementRecord};
 use super::facts::{CheckedFacts, Definedness};
-use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind, Observation};
+use super::ir::{CheckedBody, CheckedNode, DispatchTable, NodeKind};
 use super::lowering::{AdmittedModel, AuthoredBound, LoweredClause};
 use super::observation::Observations;
 use super::references::{body_objects, ModelReferences};
@@ -39,6 +39,7 @@ use crate::family::{
     classify_domains, classify_extent, CheckContext, CheckOutcome, ClaimExtent, ClassifyFailure,
     FamilyContract, Requirements,
 };
+use crate::model::clause_observation::Observation;
 use crate::model::key::DeclarationKey;
 use crate::model::operation::OperationDeclaration;
 use qsl_foundation::bound::DomainKind;
@@ -157,6 +158,9 @@ pub struct AttemptDeclaration {
     pub declaration: usize,
     /// The resolved operation `on M::T::op` names.
     pub operation: ClauseOperation,
+    /// The object type the attempt's `on M::T::op` names: the type of its
+    /// receiver.
+    pub receiver: quire_exact::EffectiveId,
     /// The population domain of the type declaring the operation, resolved
     /// the same way a state clause's own `frame_population` is
     /// (FR-104 "Requirements"): `None` when the declaring type shares no
@@ -204,8 +208,8 @@ impl StateClauseDeclaration {
         ClauseView {
             kind: self.kind,
             complete_value: is_complete_value(&self.selection),
-            context: self.context,
-            receiver: ValueType::Reference(self.context),
+            context: Some(self.context),
+            receiver: Some(("self", ValueType::Reference(self.context))),
             operation: self.operation.as_ref(),
             context_population: self.context_population,
             frame_population: self.frame_population,
@@ -230,10 +234,14 @@ pub(crate) struct ClauseView<'a> {
     pub(crate) kind: StateClauseKind,
     /// Whether the selected profile is the complete-value one.
     pub(crate) complete_value: bool,
-    pub(crate) context: EffectiveId,
-    /// The type of `self`: a reference to the context for a state clause or
-    /// a kept operation clause, a value of the owner for a type invariant.
-    pub(crate) receiver: ValueType,
+    /// The object type the clause is about; `None` for a state-graph claim
+    /// with no `over` binding.
+    pub(crate) context: Option<EffectiveId>,
+    /// Slot 0, bound as its name and type: `self` for a state clause, a kept
+    /// operation clause and a type invariant, the `over` parameter for a
+    /// state-graph claim's predicate. `None` binds nothing (a claim with no
+    /// `over`).
+    pub(crate) receiver: Option<(&'a str, ValueType)>,
     pub(crate) operation: Option<&'a ClauseOperation>,
     pub(crate) context_population: Option<PopulationDomain>,
     pub(crate) frame_population: Option<PopulationDomain>,
@@ -261,7 +269,11 @@ impl ClauseView<'_> {
     /// clause, each typed as FR-103 declares it: the slots the body is
     /// typed over, in order. An invariant binds `self` alone.
     fn parameters(&self) -> (Vec<(String, ValueType)>, bool) {
-        let mut parameters = vec![("self".to_owned(), self.receiver.clone())];
+        let mut parameters: Vec<(String, ValueType)> = self
+            .receiver
+            .iter()
+            .map(|(name, value_type)| ((*name).to_owned(), value_type.clone()))
+            .collect();
         let Some(operation) = self.operation else {
             return (parameters, false);
         };
@@ -599,19 +611,19 @@ fn parent_slot_refusal(
 }
 
 /// FR-103: checks a kept operation clause as `check_clause` checks a unit
-/// state clause, and returns the package's running node total after it. The
-/// checked body is dropped: a kept clause yields a refusal or nothing.
+/// state clause. The caller keeps the running node total and reads the
+/// body's parameter reads (FR-185); a kept clause adds no checked state
+/// clause, so it yields a refusal or nothing else.
 pub(crate) fn check_operation_clause<'a>(
     clause: &super::operation_clause::OperationClauseDeclaration,
     declarations: &ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
-) -> Result<u64, CheckRefusal> {
+) -> Result<TypedStateClause, CheckRefusal> {
     check_clause(
         &clause.view(),
         declarations,
         &mut cx.reborrow(declarations.scope),
     )
-    .map(|checked| checked.nodes_used)
 }
 
 /// Type `form`'s body as a Boolean under its clause kind, give each model
@@ -637,13 +649,16 @@ pub(crate) fn check_clause(
     .with_context(cx.reborrow(input.scope));
     bind_parameters(&mut typer, &parameters, location)?;
     let mut parent_projections = BTreeMap::new();
-    if let (StateClauseKind::Postcondition, Some(operation), Some(staged)) =
-        (form.kind, form.operation.as_ref(), input.staged)
-    {
+    if let (StateClauseKind::Postcondition, Some(operation), Some(staged), Some(context)) = (
+        form.kind,
+        form.operation.as_ref(),
+        input.staged,
+        form.context,
+    ) {
         let mut staged = staged.borrow_mut();
         for model in input.models {
             let projected = model
-                .parent_projections(form.context, operation, &mut staged, u64::MAX)
+                .parent_projections(context, operation, &mut staged, u64::MAX)
                 .map_err(|failure| parent_slot_refusal(failure, location))?;
             parent_projections.extend(projected);
         }

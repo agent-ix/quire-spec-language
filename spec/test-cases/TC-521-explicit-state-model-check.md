@@ -15,12 +15,14 @@ granularities, bounded clauses `on origin` and `on each`, an invariant,
 deadlock detection, a mixed formula, every limit with its value, the second
 phase at `max_depth`, `max_automaton_states`, and determinism.
 
-Scope: FR-126-AC-1 to FR-126-AC-7.
+Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10 and FR-126-AC-11.
 
 ## Test Procedure
 
 Fixtures: ADR-018 §6's ConfigVersion example unit and its shipped unit,
-universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
+both with `attemptUpdate` framed `modifies self.versionNumber` (FR-154),
+universe `{a, b}`, both versions 0, and the subject's `max_candidates` set
+to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the `Counter` unit (FR-124-AC-1); the
 `Health` unit and its `Restless` variant (FR-126-AC-4).
 
 1. The TP-4 claim under a weak `each` constraint and under a weak
@@ -41,15 +43,21 @@ universe `{a, b}`, both versions 0; the `Counter` unit (FR-124-AC-1); the
    undefined; `always holds(true)` over FR-120-AC-9's `test/tallies` subject
    from `t1`; a subject with an unbounded population root.
 7. Step 1's first two requests, twice each.
+8. The TP-4 claim with no granularity over the example unit with initial
+   versions `a` 2 and `b` 0 (FR-126-AC-10); `always holds(6 mod (2 -
+   c.versionNumber) >= 0)` over the example unit with both versions 0 and
+   with `a` 0 and `b` 1 (FR-126-AC-11).
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: `Holds{Exhaustive}` with 15 product states; `Violated` with an
-  empty stem and the three-step `upd(a)` loop for `c = b`; `Violated` with
+- Step 1: `Holds{Exhaustive}` with 30 product states, the 15-state product of
+  each bound instance; `Violated` with an
+  empty stem and the three-step loop `(0,0) -upd(b)-> (0,1) -upd(b)-> (0,2)
+  -upd(b)-> (0,0)` bound to `a`; `Violated` with
   the loop `(0,0) -upd(a)-> (0,0) -upd(b)-> (0,0)`.
-- Step 2: `Violated` with a five-step prefix on which `vb` is never 2;
+- Step 2: `Violated` with a five-step prefix bound to `a`, on which `va` is never 2;
   `Holds{Exhaustive}`; `Holds{Exhaustive}`; `Violated` with the prefix
   `0 -inc-> 1`.
 - Step 3: `Violated`, `kind: Deadlock`, prefix `0 -inc-> 1 -inc-> 2 -inc->
@@ -69,3 +77,7 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   `t1`, `kind: UndefinedEvaluation`, cause `SumOutOfDomain`, at position 0;
   `RequiresBound` with no state explored.
 - Step 7: equal outcomes and byte-equal counterexamples.
+- Step 8: `Violated` bound to `b` with an empty stem and the loop through
+  `(2,0)`, length 3; `Violated` bound to `a` with the prefix to position 2,
+  `kind: UndefinedEvaluation`, cause division-by-zero; `Violated` bound to
+  `b` with the prefix `(0,1) -upd(b)-> (0,2)` at position 1.

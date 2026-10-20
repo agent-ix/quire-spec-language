@@ -16,6 +16,9 @@
 //! at atom evaluation as an exact function of the trace, so the temporal
 //! evaluator receives a Boolean per position.
 //!
+//! [`evaluate_tuple`] evaluates a hyper body over a tuple of behaviours in
+//! lockstep (FR-175) by reading the tuple as one lasso.
+//!
 //! The trace's observations and the `holds` conditions are the caller's:
 //! the evaluator reaches them only through [`TemporalLetters`], the seam to
 //! the one clause evaluator (FR-107).
@@ -23,16 +26,20 @@
 mod engine;
 mod input;
 mod letters;
+mod observed;
 mod outcome;
 mod plan;
 mod position;
+mod tuple;
 mod window;
 
 pub use engine::{unrolling, Unrolling};
 pub use input::TemporalTrace;
 pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
+pub use observed::{evaluate_observed, HoldsStop, ObservedRun};
 pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 pub use position::{PositionRefusal, TemporalPosition};
+pub use tuple::{evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters};
 pub use window::{
     AggregateAtom, AggregateKind, AggregateTerm, InsufficientData, PastWindow, TermRefusal,
     WindowLimitReached, WindowRefusal, WindowSource, WindowTrace, DEFAULT_MAX_WINDOW_VALUES,
@@ -54,7 +61,61 @@ pub fn evaluate<L: TemporalLetters>(
     letters: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
-    engine::run(clause, trace, engine::Goal::Clause, letters, meter)
+    engine::run(
+        engine::Subject::of_clause(clause),
+        trace,
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
+/// Evaluate `clause` on `trace` like [`evaluate`], for a caller whose trace
+/// carries the enabledness a fairness set needs and who has checked the set
+/// itself (replay re-executes a model, FR-128): the clause's fairness set
+/// does not make the evaluation `MissingFairnessPremise`, and it does not
+/// otherwise enter the formula's value.
+pub fn evaluate_with_enabledness<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    trace: TemporalTrace,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject {
+            fairness: &[],
+            ..engine::Subject::of_clause(clause)
+        },
+        trace,
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
+}
+
+/// Evaluate `clause` on a finite prefix of `len` positions whose continuation
+/// is unknown, under any profile: the three-valued reading of an
+/// infinite-trace prefix (FR-328), where a position past the prefix is
+/// neither true nor false. `Violated` is a falsity every continuation shares;
+/// `Pending` is a prefix that decides nothing. The clause's fairness set is
+/// not read (see [`evaluate_with_enabledness`]).
+pub fn evaluate_open_prefix<L: TemporalLetters>(
+    clause: &CheckedTemporalClause,
+    len: u64,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    engine::run(
+        engine::Subject {
+            fairness: &[],
+            profile: qsl_semantics::check::TemporalProfile::InfiniteTrace,
+            ..engine::Subject::of_clause(clause)
+        },
+        TemporalTrace::Finite { len },
+        engine::Goal::Clause,
+        letters,
+        meter,
+    )
 }
 
 /// Evaluate `clause`'s formula at `position` of `trace`, ignoring its
@@ -69,5 +130,11 @@ pub fn evaluate_at<L: TemporalLetters>(
     letters: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
-    engine::run(clause, trace, engine::Goal::At(position), letters, meter)
+    engine::run(
+        engine::Subject::of_clause(clause),
+        trace,
+        engine::Goal::At(position),
+        letters,
+        meter,
+    )
 }

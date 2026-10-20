@@ -169,6 +169,21 @@ pub enum EmitRefusal {
         /// Why the handle was cancelled.
         cause: quire_exact::CancelCause,
     },
+    /// The package declares checked random parameters, rewards or
+    /// workloads (FR-185), which FR-322's v2 vocabulary has no node for:
+    /// the emitter refuses rather than write a package without them.
+    #[error(
+        "the package declares {random_parameters} random parameters, {rewards} rewards and \
+         {workloads} workloads, which a checked-package/v2 graph cannot hold yet"
+    )]
+    ProbabilisticModelNotEmitted {
+        /// How many random parameters it declares.
+        random_parameters: usize,
+        /// How many rewards it declares.
+        rewards: usize,
+        /// How many workloads it declares.
+        workloads: usize,
+    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -187,6 +202,7 @@ impl EmitRefusal {
             Self::Encoding { .. } => Code::OutputFailure,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
+            Self::ProbabilisticModelNotEmitted { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -194,6 +210,7 @@ impl EmitRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
+            Self::ProbabilisticModelNotEmitted { .. } => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
@@ -993,25 +1010,37 @@ fn encoding(error: impl std::fmt::Display) -> EmitRefusal {
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322), placing each
 /// occurrence at the region of the checked unit its location names
 /// (`CheckedGraph::region`, FR-096).
+///
+/// A package emitted before (by this function or
+/// [`emit_checked_with_cancel`]) returns its remembered emission: a checked
+/// package does not change, so a dependency reached again, or a caller that
+/// emits what the lifecycle already emitted, does not emit it twice.
 pub fn emit_checked(package: &CheckedPackage) -> Result<Emission, EmitRefusal> {
+    if let Some(emission) = package.remembered_emission() {
+        return Ok(emission.clone());
+    }
     emit_checked_with_cancel(package, &Cancel::new())
 }
 
 /// [`emit_checked`] under the caller's [`Cancel`] handle, polled once at
 /// entry and at every node it writes (FR-276). A cancelled handle stops the
-/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes.
+/// emitter with [`EmitRefusal::Cancelled`] and writes no bytes. It always
+/// emits, so every node is polled; the emission it returns is remembered for
+/// [`emit_checked`].
 pub fn emit_checked_with_cancel(
     package: &CheckedPackage,
     cancel: &Cancel,
 ) -> Result<Emission, EmitRefusal> {
     let graph = package.graph();
-    emit_package_inner(
+    let emission = emit_package_inner(
         package,
         graph.memoized_regions(),
         |_| None,
         cancel,
         &ir_decodes,
-    )
+    )?;
+    package.remember_emission(&emission);
+    Ok(emission)
 }
 
 /// Emit `package` as `quire.checked-package/v2` bytes (FR-322). `regions`
@@ -1130,6 +1159,14 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
+    let probabilistic = graph.probabilistic_model();
+    if !probabilistic.is_empty() {
+        return Err(EmitRefusal::ProbabilisticModelNotEmitted {
+            random_parameters: probabilistic.random_parameters().len(),
+            rewards: probabilistic.rewards().len(),
+            workloads: probabilistic.workloads().len(),
+        });
+    }
     let candidates = candidates_of(graph)?;
     let omitted = omissions(&candidates, graph.source(), decodes);
     stale_protocol_reference(&candidates, &omitted)?;

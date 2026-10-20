@@ -129,17 +129,79 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
   undeclared field SHALL refuse `missing_declaration`/`missing-name`.
 - The checker SHALL check `e` with `self` bound to the concrete object type
   and the concrete model's fields, functions, history fields (FR-138) and
-  population-valued forms (FR-139) in scope, admitting the forms a state
-  clause body admits (ADR-016 FE-4).
+  population names and forms as FR-139 states, admitting the model reads a
+  state clause body admits (ADR-016 FE-4).
 - The checker SHALL lift references: a field of declared type
   `Reference<T_A>` SHALL accept an expression of type `Reference<T_C>`
   exactly when an object row maps `T_A` from `T_C`.
+- The checker SHALL lift a reference only at the top level of a row's type,
+  and SHALL admit a whole-population reference row (`Set<Reference<T_C>>[0,
+  n]`, FR-139) as FR-139 types it. A field row whose type holds a
+  `Reference<T_C>` nested inside an option, record, union or collection type
+  that is not such a population reference SHALL use the feature
+  `nested-reference-row` (below), because lifting inside a nested value is not
+  built (ADR-020 RM-3 states the top-level rule only).
+- The checker SHALL refuse a refinement whose abstract model declares a
+  relationship with `unsupported_construct`/`declaration-form` at the
+  abstract alias of the declaration header, once per refinement, naming the
+  form, the refinement and the exact selected profile identity, whatever the
+  support set holds, and SHALL produce no `CheckedRefinement` (QSpec
+  FR-375). No row maps a relationship (ADR-020 RM-2 to RM-4), so its links
+  could never hold in a mapped state; this is a gap in the language, not a
+  feature this build has left unbuilt.
+- The checker SHALL admit each field row, step-row argument and history update
+  under the layers the governing infinite-trace profile requires for a
+  refinement's rows (`quire.value.complete/v1` and `quire.model.complete/v1`
+  with their `requires` closure), whatever the unit's other declarations
+  select, and under no other layer (QSpec FR-375 "Row layers"). A form outside
+  those layers SHALL refuse `unsupported_construct`/`expression-form` at its
+  first token, naming the layer that admits it.
+- The checker SHALL type `Some(e)` as `Option<E>` for `e` of type `E`, and
+  `none` by the abstract field's type or the other arm of an enclosing `if`;
+  a field declared `?` takes a row of type `Option<T>` and a field declared
+  `Option<T>` takes its option value unchanged (QSpec FR-375 "Option rows").
 - The checker SHALL check `e`'s type against the abstract field's declared
   type, after reference lifting, with `TypeEnvironment::conforms` (ADR-016
   SC-2), and SHALL refuse `ill_typed`/`type-mismatch` at `e`'s span when it
   does not conform.
 - An abstract field with no row SHALL be recorded in `hidden` (ADR-020
   AX-2).
+
+### Refinement features the build does not check
+
+QSpec FR-375 and the FR-136 to FR-149 family specify more refinement forms
+than a build may yet check. QSpec FR-375 owns the closed set of feature names
+and the not-yet-built refusal; this section states how S3 applies them. The
+build holds a closed **support set** of refinement feature names,
+a build capability constant and not a request or test parameter. It names
+four features: `history-row` (FR-138), spelled by a `history` row;
+`protocol-abstract-side` (FR-147), spelled by `abstract <A>::<protocol>`;
+`refinement-internal-list` (FR-147), spelled by a non-empty resolved internal
+list for the refinement, which is located at the first token of the name after
+`abstract`, once per refinement; and `nested-reference-row`, spelled by a
+field row whose type nests a reference (below), at the row's expression. The list is resolved first and only a
+non-empty resolved list reaches this refusal (FR-147).
+
+- A declaration that uses a feature outside the support set SHALL refuse
+  `unsupported_construct`/`not-yet-implemented`, once for each row or refinement that uses
+  the feature, and SHALL produce no `CheckedRefinement`. This is the refusal
+  FR-341-AC-5 classifies `unsupported` (a QSL implementation gap).
+- The refusal's span is the first token of the row for a `history` row (the
+  `history` keyword), and the span of the `<protocol>` name for a protocol
+  abstract side. It names the feature, the refinement's name and the exact
+  selected profile identity (QSpec FR-272's payload for the code).
+- The refusal is decided before the feature's own checks, so no other
+  diagnostic about that row is reported; the rest of the declaration is
+  checked as usual and its own refusals are reported beside it.
+- A feature in the support set is checked by its own requirement.
+
+`unknown_required_feature` is not used: a source refusal, which FR-341
+classifies `refused`, would tell the author the unit is wrong when the build
+is incomplete. `unimplemented_capability` is not used: FR-271 defines it as
+valid complete-V1 meaning the selected producer does not implement, which
+fits, but FR-272 lists no cause for it. `not-yet-implemented` under
+`unsupported_construct` is the pair QSpec FR-375 and FR-272 name for this
+standing.
 
 ### Package and identity
 
@@ -158,6 +220,10 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
 | FR-135-AC-2 | Refusals, each at its span with no `CheckedRefinement`: the abstract alias `Nope`, resolving to no model (`missing_declaration`/`missing-name`); the `population` row removed (`missing_declaration`/`missing-name` naming `Spec::counters`); the row written twice (`invalid_model_binding`/`conflicting-binding`); the row reversed as `population Impl::counters from Spec::counters` (`invalid_model_binding`/`malformed-declaration`); the `object` row removed (`missing_declaration`/`missing-name` naming `Spec::Counter`); `value` mapped twice (`invalid_model_binding`/`conflicting-binding` naming both rows); the declaration in a unit that selects a bounded profile (`unknown_profile`/`wrong-selection-role` at the alias). | Test (TC-540) |
 | FR-135-AC-3 | `value = self.busyA` refuses `ill_typed`/`type-mismatch` at the expression's span. In ADR-020 §8's `RingIsQueue`, a field of type `Reference<Q::Queue>` mapped by `self.ring` (of type `Reference<R::Ring>`) checks, and the same field mapped by an expression of type `Reference<R::Slot>` refuses `ill_typed`/`type-mismatch`. | Test (TC-540) |
 | FR-135-AC-4 | With the `value` row removed, `CasRefinesCounter` checks with `value` in `hidden`. Changing the `value` row to `value = self.tmpA` changes the refinement's node identity and the `package_id`. | Test (TC-540) |
+| FR-135-AC-5 | A declaration with one `history` row (`RegisterHistory`, FR-138), in a build whose support set omits `history-row`, refuses `unsupported_construct`/`not-yet-implemented` at the `history` keyword of that row naming `history-row`, `RegisterHistory` and the profile identity, with no other diagnostic for the row and no `CheckedRefinement`; two such rows give two refusals. A declaration whose abstract side is a protocol (`CasTwice`, FR-147), in a build whose support set omits `protocol-abstract-side`, refuses the same pair at the span of `Twice`, naming `protocol-abstract-side`. Both classify `unsupported` (FR-341-AC-5). A refinement given a non-empty resolved internal list refuses the same pair naming `refinement-internal-list` at the first token of the name after `abstract`, and a list with a resolution defect reports the defect and not this pair (FR-147-AC-7, AC-11). `CasRefinesCounter`, which uses none of the three features, checks as FR-135-AC-1 states. The vector refuses a row that uses a feature the build has not built; it does not select a support set. | Test (TC-540) |
+| FR-135-AC-6 | `RingIsQueue` with a `Sequence<Reference<Queue>>[0, 2]` field mapped by a row of type `Sequence<Reference<Ring>>[0, 2]` refuses `unsupported_construct`/`not-yet-implemented` naming `nested-reference-row` at the row's expression; a population-reference row `cells = R::slots` checks, as does the same field as a plain `Reference<Queue>` mapped by `self`. | Test (TC-540) |
+| FR-135-AC-7 | `RingIsQueue` with the abstract `Queue` declaring a relationship refuses `unsupported_construct`/`declaration-form` at the abstract alias `Q` of the declaration header, once, whatever the support set holds, and no `CheckedRefinement`. | Test (TC-540) |
+| FR-135-AC-8 | In a unit whose own declarations select no layer, `RingIsQueue`'s rows `s.ring = self` and `(self.head + i) mod 2` check, because they are admitted under the layers the governing infinite-trace profile requires; a Boolean field row naming a protocol declared in the unit refuses `unsupported_construct`/`expression-form` at the `protocol` token, naming the layer that admits it (`quire.protocol.complete/v1`). | Test (TC-540) |
 
 ## Dependencies
 

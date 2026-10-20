@@ -179,6 +179,7 @@ pub(super) fn parse(
     };
     let selections = extract_selections(&source, &significant, selection_nodes, &mut diagnostics);
     let cst = LosslessCst::new(source.clone(), tokens, nodes, root, recoveries);
+    diagnostics.extend(interval_bounds(&source, &cst));
     Ok(ParsedSource::from_parts(
         source,
         cst,
@@ -831,6 +832,86 @@ fn coalesce_complete_compounds(
         }
     }
     output
+}
+
+/// The parse diagnostics of every bracketed interval's bounds, each located
+/// at the bound's own span: a step interval (`Interval`) bound that does not
+/// fit `u64` (FR-325) or an upper end that is a quantity literal, and a timed
+/// interval whose upper end is a bare `uint` or `*` (FR-393). The grammar
+/// admits these bounds only so that this check, not the ordered choice,
+/// decides where the refusal is located.
+fn interval_bounds(source: &Source, cst: &LosslessCst) -> Vec<CompleteDiagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut refuse = |span: Span, message: &'static str| {
+        diagnostics.push(*super::diagnostic::error(
+            source,
+            CompleteCode::InvalidSyntax,
+            CompleteCause::UnexpectedToken,
+            Phase::Parse,
+            span.start,
+            span.end,
+            message,
+        ));
+    };
+    for node in cst.nodes() {
+        let timed = match node.production() {
+            Production::Interval => false,
+            Production::TimedInterval => true,
+            _ => continue,
+        };
+        // `open lower , upper close`, trivia excluded.
+        let significant: Vec<(Span, Option<Production>, &[u8])> = node
+            .children()
+            .iter()
+            .filter_map(|child| match child {
+                CstElement::Token(index) => cst
+                    .tokens()
+                    .get(*index)
+                    .filter(|token| token.class() == TokenClass::Token)
+                    .map(|token| (token.span(), None, token.spelling())),
+                CstElement::Node(index) => cst
+                    .nodes()
+                    .get(*index)
+                    .map(|child| (child.span(), Some(child.production()), &[][..])),
+            })
+            .collect();
+        let [_, lower, _, upper, _] = significant[..] else {
+            continue;
+        };
+        let quantity = |(_, production, _): (Span, Option<Production>, &[u8])| {
+            production == Some(Production::QuantityLiteral)
+        };
+        let fits = |(_, _, spelling): (Span, Option<Production>, &[u8])| {
+            std::str::from_utf8(spelling).is_ok_and(|digits| digits.parse::<u64>().is_ok())
+        };
+        if timed {
+            if !quantity(upper) {
+                refuse(
+                    upper.0,
+                    "a timed interval's upper bound is a quantity literal",
+                );
+            }
+            continue;
+        }
+        if !fits(lower) {
+            refuse(
+                lower.0,
+                "a step interval bound is an unsigned 64-bit integer",
+            );
+        }
+        if quantity(upper) {
+            refuse(
+                upper.0,
+                "a step interval's upper bound is an unsigned integer or `*`",
+            );
+        } else if upper.2 != b"*" && !fits(upper) {
+            refuse(
+                upper.0,
+                "a step interval bound is an unsigned 64-bit integer",
+            );
+        }
+    }
+    diagnostics
 }
 
 #[qsl_attrs::string_edge]
@@ -1504,8 +1585,31 @@ impl<'a> Engine<'a> {
                         matches!(&token.kind, Some(Kind::Text(value)) if value == expected)
                     }
                     Terminal::UnsignedInteger => matches!(token.kind, Some(Kind::Integer(_))),
+                    Terminal::DecimalLiteral => {
+                        matches!(token.kind, Some(Kind::Fractional))
+                            && !token.spelling.contains(['e', 'E'])
+                    }
+                    Terminal::Peek(spellings) => {
+                        return if spellings.contains(&token.spelling.as_ref()) {
+                            Outcome::Match(position)
+                        } else {
+                            self.fail(Failure::expected(position, terminal.description()))
+                        };
+                    }
                     Terminal::Bound => {
                         matches!(&token.kind, Some(Kind::Integer(digits)) if digits.parse::<u64>().is_ok())
+                    }
+                    Terminal::ClockType { word, qualifier } => {
+                        token.spelling.as_ref() == *word
+                            && self
+                                .tokens
+                                .get(position + 1)
+                                .is_none_or(|next| next.spelling.as_ref() != *qualifier)
+                    }
+                    Terminal::TypeIdentifier { except } => {
+                        crate::token::identifier_spelling(&token.spelling)
+                            && !self.reserved_words.contains(token.spelling.as_ref())
+                            && token.spelling.as_ref() != *except
                     }
                     Terminal::End => false,
                 }
@@ -1529,7 +1633,11 @@ impl Terminal {
             Self::Text => "quoted string".into(),
             Self::TextValue(value) => format!("`\"{value}\"`"),
             Self::UnsignedInteger => "unsigned integer".into(),
+            Self::DecimalLiteral => "decimal literal".into(),
+            Self::Peek(spellings) => format!("one of `{}`", spellings.join("`, `")),
             Self::Bound => "unsigned 64-bit integer".into(),
+            Self::ClockType { word, .. } => format!("`{word}`"),
+            Self::TypeIdentifier { except } => format!("type name other than `{except}`"),
             Self::End => "end of source".into(),
         }
     }

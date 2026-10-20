@@ -22,7 +22,7 @@ Fixtures: `Coin`; `Link` with `Deliver`'s unbounded variant and the `cost` claim
 2. Decide the `cost` claims to `delivered or attempts = 2` and to `delivered`.
 3. Run interval iteration on `Loop` and read each sweep; run with `max_iterations` 3 at threshold `1/2`; decide under a workload.
 4. Run step 3's equality case with `max_policy_iterations` 0; run one request twice.
-5. Compute the maximum over `Mec`, its witness policy, and decide `probability <= 1/4`; replay the evidence.
+5. Compute the maximum over `Mec`, its witness policy, and decide `probability <= 0.25`; replay the evidence.
 
 Tag the tests `#[trace("TC-633", "FR-198-AC-n")]`.
 

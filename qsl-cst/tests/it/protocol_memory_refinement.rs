@@ -5,6 +5,7 @@
 //! attempt's `ordering` and the `fence` control (FR-220), and a refinement
 //! declaration's `step` rows (FR-136, FR-214). Each test reads the CST nodes
 //! the parser produced; the checks those forms feed belong to later slices.
+use ix_trace_rs::trace;
 use qsl_cst::{CompleteCode, Limits, ParsedSource, Production};
 use qsl_foundation::{SourceIdentity, Span};
 
@@ -205,9 +206,9 @@ fn a_fence_parses_each_fence_order() {
     );
 }
 
-/// Verifies the parse only and claims no criterion.
 /// A `fence` with `ordering relaxed` is refused at S1, at `relaxed`: QSpec's
 /// `fence-order` excludes it (STD-167).
+#[trace("TC-665", "FR-220-AC-6")]
 #[test]
 fn a_relaxed_fence_is_a_parse_refusal_at_the_relaxed_word() {
     let run = "sequence Main { fence F ordering relaxed; }";
@@ -356,6 +357,8 @@ fn a_refinement_parses_population_object_history_and_fairness_rows() {
         "assume fair weak Impl::Counter::write;",
         "assume fair weak each Impl::Counter::write;",
         "ensure fair weak whole Spec::Counter::inc;",
+        "assume fair strong Impl::Counter::write;",
+        "ensure fair strong each Spec::Counter::inc;",
     ];
     let rows = [
         population,
@@ -367,6 +370,8 @@ fn a_refinement_parses_population_object_history_and_fairness_rows() {
         fairness[0],
         fairness[1],
         fairness[2],
+        fairness[3],
+        fairness[4],
     ];
     let declaration = refinement(&rows.join("\n"));
     let (text, parsed) = parse_admitted(&declaration);
@@ -445,12 +450,12 @@ fn a_history_row_refuses_a_non_literal_initial_value_at_its_first_token() {
 }
 
 /// Verifies the parse only and claims no criterion.
-/// A fairness row takes only `weak`, a granularity only before the operation,
+/// A fairness row must write its kind (`weak` or `strong`; the weak default of
+/// a temporal clause does not apply), a granularity only before the operation,
 /// and a row that is neither `assume` nor `ensure` is refused at its word.
 #[test]
 fn a_malformed_fairness_row_is_refused_at_its_token() {
     for (row, offending) in [
-        ("assume fair strong Impl::T::op;", "strong"),
         ("assume fair Impl::T::op;", "Impl"),
         ("ensure fair weak Spec::T::op each;", "each"),
         ("require fair weak Impl::T::op;", "require"),

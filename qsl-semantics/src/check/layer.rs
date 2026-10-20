@@ -12,13 +12,15 @@
 //!
 //! The classification of the unit language's forms is [`expression_form`]:
 //! one exhaustive `match` over [`ExprNode`] with no wildcard arm, so a new
-//! expression form does not compile until it is classified.
+//! expression form does not compile until it is classified. The reads and
+//! labels of a `hyper` clause belong to the temporal family, which no layer
+//! gates.
 
 use std::collections::BTreeSet;
 
 use qsl_forms::{
     BinaryOperator, BinderQuery, DeclarationKind, ExprNode, Expression, ExpressionSpans,
-    FunctionDeclaration, OperationBodyForm, StateClauseForm,
+    FunctionDeclaration, OperationBodyForm, StateClauseForm, StateGraphClaimForm,
 };
 use qsl_foundation::Span;
 
@@ -102,6 +104,21 @@ impl<'a> LayerAdmission<'a> {
         let whole = clause.spans.declaration;
         self.declaration(LayerForm::StateClause, whole)
             .or_else(|| self.expression(&clause.body, &clause.spans.body, whole))
+    }
+
+    /// The refusal of the first form of a state-graph claim outside the set,
+    /// if any: as a state clause is admitted, then each predicate's
+    /// expression forms in source order.
+    pub(crate) fn state_graph_claim(&self, claim: &StateGraphClaimForm) -> Option<AssemblyError> {
+        self.declaration(LayerForm::StateClause, claim.span)
+            .or_else(|| {
+                super::state_graph_claim::predicates(&claim.kind)
+                    .into_iter()
+                    .flat_map(|(_, predicate)| &predicate.operands)
+                    .find_map(|operand| {
+                        self.expression(&operand.expression, &operand.spans, claim.span)
+                    })
+            })
     }
 
     fn declaration(&self, form: LayerForm, span: Span) -> Option<AssemblyError> {
@@ -202,6 +219,7 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         ExprNode::Boolean(_)
         | ExprNode::Integer(_)
         | ExprNode::Rational(..)
+        | ExprNode::Quantity(_)
         | ExprNode::String(_)
         | ExprNode::Name(_)
         | ExprNode::Let { .. }
@@ -217,6 +235,11 @@ pub(super) fn expression_form(node: &ExprNode, predicates: &BTreeSet<&str>) -> O
         | ExprNode::SelfRef
         | ExprNode::Result
         | ExprNode::AllInstances { .. }
+        | ExprNode::Population { .. }
+        | ExprNode::Seq { .. }
+        | ExprNode::Indexed { .. }
+        | ExprNode::StepLabel { .. }
+        | ExprNode::Stutter
         | ExprNode::ProtocolReference { .. } => None,
         ExprNode::Lookup { .. } => Some(LayerForm::Lookup),
         ExprNode::Dispatch { .. } => Some(LayerForm::DispatchCall),

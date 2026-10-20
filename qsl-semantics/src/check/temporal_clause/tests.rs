@@ -76,6 +76,7 @@ fn check(package: &PackageDeclarations) -> Outcome {
         source: &package.source,
         embedding: None,
         position_limit: 10_000,
+        models: &package.models,
     };
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut diagnostics = DiagnosticSink::default();
@@ -150,7 +151,7 @@ fn a_bare_operator_is_unbounded_under_infinite_trace_and_refused_under_a_bounded
         .try_into()
         .expect("one claim");
     let record = claim
-        .requirements(node(1), &[node(2)])
+        .requirements(node(1), &[node(2)], None)
         .expect("the record is keyed");
     assert_eq!(record.kind(), Capability::TemporalSatisfaction);
     let ClaimExtent::Unbounded(domains) = record.extent() else {
@@ -301,7 +302,9 @@ fn a_bounded_clause_over_a_bounded_type_is_bounded_and_keys_carry_the_profile() 
             .try_into()
             .expect("one claim");
         if profile != INFINITE {
-            let record = claim.requirements(node(1), &[node(2)]).expect("keyed");
+            let record = claim
+                .requirements(node(1), &[node(2)], None)
+                .expect("keyed");
             assert_eq!(record.kind(), Capability::TemporalSatisfaction);
             assert_eq!(record.extent(), &ClaimExtent::Bounded);
         }
@@ -327,7 +330,9 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
     let [claim] = TemporalTraceFamily::requirements(&clause)
         .try_into()
         .expect("one claim");
-    let record = claim.requirements(node(1), &[node(2)]).expect("keyed");
+    let record = claim
+        .requirements(node(1), &[node(2)], None)
+        .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("unbounded: {:?}", record.extent());
     };
@@ -335,7 +340,7 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
     kinds.sort();
     assert_eq!(kinds, [DomainKind::Integer, DomainKind::InfiniteTrace]);
     assert_eq!(
-        claim.requirements(node(1), &[]),
+        claim.requirements(node(1), &[], None),
         Err(InternalFault::new(STAGE, "parameter-node-keyed"))
     );
 
@@ -344,7 +349,9 @@ fn the_over_parameters_unbounded_positions_join_the_record() {
     let [claim] = TemporalTraceFamily::requirements(&clause)
         .try_into()
         .expect("one claim");
-    let record = claim.requirements(node(1), &[node(2)]).expect("keyed");
+    let record = claim
+        .requirements(node(1), &[node(2)], None)
+        .expect("keyed");
     let ClaimExtent::Unbounded(domains) = record.extent() else {
         panic!("a bounded profile over an unbounded type is unbounded");
     };
@@ -367,47 +374,116 @@ fn an_unresolved_over_type_refuses_at_the_type() {
     assert_eq!(cause.span(), first(&text, "Missing"));
 }
 
-/// FR-326: a clause that checks is still refused by `check` itself until
-/// FR-337 emits it, as `unsupported_construct`/`not-yet-implemented`, and
-/// a clause that does not check reports its own refusal instead.
+/// The one temporal refusal `text`'s package check gives.
+fn package_refusal(text: &str) -> TemporalCause {
+    let refusals = assemble(text)
+        .check(CheckingLimits::default())
+        .expect_err("the clause is refused");
+    let [CheckRefusal {
+        cause: CheckCause::Temporal(cause),
+        ..
+    }] = refusals.as_slice()
+    else {
+        panic!("one temporal refusal: {refusals:?}");
+    };
+    (**cause).clone()
+}
+
+/// FR-326, FR-337: a clause that activates `on origin` and declares no
+/// capture checks and compiles into the package; one that activates `on
+/// each`, or declares a capture, checks but no S4 emission writes it, so
+/// `check` refuses it as `unsupported_construct`/`not-yet-implemented` at
+/// the clause; a clause that does not check reports its own refusal.
 #[trace("FR-326")]
 #[test]
-fn the_package_check_refuses_a_clause_no_emission_writes_yet() {
-    let package = assemble(&source(
+fn the_package_check_refuses_a_clause_no_emission_writes() {
+    let graph = assemble(&source(
         &[INFINITE],
         "Counter",
         "eventually holds(c.level = 3)",
+    ))
+    .check(CheckingLimits::default())
+    .expect("an `on origin` clause compiles");
+    let [clause] = graph.temporal_clauses() else {
+        panic!("one emitted clause");
+    };
+    assert_eq!(clause.clause().name(), "C");
+
+    let origin = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
+    let each = origin.replace("on origin", "on each (d: Counter) when (d.level = 1)");
+    let captured = origin.replace(
+        "{ eventually",
+        "{ capture before: Int[0, 9] = c.level; eventually",
+    );
+    for text in [each, captured] {
+        let cause = package_refusal(&text);
+        assert!(
+            matches!(cause, TemporalCause::NotEmitted { .. }),
+            "{cause:?}"
+        );
+        assert_eq!(cause.code(), Code::UnsupportedConstruct);
+        assert_eq!(cause.tag(), "not-yet-implemented");
+        assert_eq!(cause.span().start, text.find("temporal C").expect("clause"));
+    }
+
+    let bounded = source(&[EVENT], "Counter", "eventually holds(c.level = 3)");
+    assert!(matches!(
+        package_refusal(&bounded),
+        TemporalCause::MissingInterval { .. }
     ));
-    let text = source(&[INFINITE], "Counter", "eventually holds(c.level = 3)");
+}
+
+/// FR-337: a `holds` condition is typed over the clause's `over` parameter
+/// as a Boolean: a condition naming no binding refuses at its own source,
+/// and a non-Boolean condition refuses as a non-Boolean root.
+#[trace("FR-337")]
+#[test]
+fn a_holds_condition_is_typed_over_the_over_parameter() {
+    let text = source(&[INFINITE], "Counter", "eventually holds(d.level = 3)");
+    let package = assemble(&text);
+    let regions = package.regions();
     let refusals = package
         .check(CheckingLimits::default())
-        .expect_err("a temporal clause is not emitted yet");
-    let [CheckRefusal {
-        cause: CheckCause::Temporal(cause),
-        ..
-    }] = refusals.as_slice()
-    else {
-        panic!("one temporal refusal: {refusals:?}");
+        .expect_err("an unbound name is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
     };
-    assert!(matches!(**cause, TemporalCause::NotEmitted { .. }));
-    assert_eq!(cause.code(), Code::UnsupportedConstruct);
-    assert_eq!(cause.tag(), "not-yet-implemented");
-    assert_eq!(cause.span().start, text.find("temporal C").expect("clause"));
+    assert!(
+        matches!(&refusal.cause, CheckCause::MissingName(name) if name == "d"),
+        "{refusal:?}"
+    );
+    let region = regions.refusal_region(refusal).expect("a located refusal");
+    let at = text.find("d.level").expect("the read");
+    assert_eq!(region.start(), u64::try_from(at).unwrap());
 
-    let bounded = assemble(&source(
-        &[EVENT],
-        "Counter",
-        "eventually holds(c.level = 3)",
-    ));
-    let refusals = bounded
+    let text = source(&[INFINITE], "Counter", "eventually holds(c.level)");
+    let refusals = assemble(&text)
         .check(CheckingLimits::default())
-        .expect_err("a bare operator is refused");
-    let [CheckRefusal {
-        cause: CheckCause::Temporal(cause),
-        ..
-    }] = refusals.as_slice()
-    else {
-        panic!("one temporal refusal: {refusals:?}");
+        .expect_err("a non-Boolean condition is refused");
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal: {refusals:?}");
     };
-    assert!(matches!(**cause, TemporalCause::MissingInterval { .. }));
+    assert_eq!(refusal.cause, CheckCause::NonBooleanRoot, "{refusal:?}");
+}
+
+/// FR-393 leaves a timed interval's meaning to S3 (FR-233, FR-234). Until
+/// that check lands, a clause with one refuses `unsupported_construct`/
+/// `not-yet-implemented` at the interval under every profile, rather than
+/// checking it as a step interval or dropping it.
+#[trace("TC-1078")]
+#[test]
+fn a_timed_interval_refuses_not_yet_implemented_at_the_interval() {
+    let formula = "eventually[0 ms, 3 ms) holds(c.level = 3)";
+    for profile in [INFINITE, EVENT] {
+        let (text, cause) = refused(&[profile], formula);
+        assert_eq!(
+            cause,
+            TemporalCause::TimedIntervalNotChecked {
+                span: first(&text, "[0 ms, 3 ms)"),
+            },
+            "{profile}"
+        );
+        assert_eq!(cause.code(), Code::UnsupportedConstruct);
+        assert_eq!(cause.tag(), "not-yet-implemented");
+    }
 }

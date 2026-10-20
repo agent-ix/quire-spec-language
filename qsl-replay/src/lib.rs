@@ -36,17 +36,19 @@ mod compile;
 // and Kani harnesses exercise it directly.
 #[allow(
     dead_code,
-    reason = "the zone certificate checker is its first caller and has not landed yet"
+    reason = "the zone certificate checker and the FR-339 component certificate check are its first callers and have not landed yet"
 )]
 mod certificate;
 mod composite;
 mod execute;
+mod hybrid;
 mod identity;
 mod limits;
 mod model_check;
 mod object_environment;
 mod outcome;
 mod proof_result;
+mod refinement;
 mod request;
 mod result;
 mod scalar;
@@ -73,6 +75,10 @@ pub use certificate::closure::{
     check_closure, CertificateRejection, CertificateRequest, ClosureCertificate, ClosureRefusal,
     ProductStateRef, TemporalCertificateCheck,
 };
+pub use certificate::scc::{Component, ComponentWitness};
+pub use certificate::state_graph::{
+    check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
+};
 pub use certificate::{CertificateLocus, CertificateRule, QueryPart};
 pub use compile::{compile_package, CompiledPackage};
 pub use composite::{
@@ -88,26 +94,51 @@ pub use execute::{
     IdentityEncodeError, LimitAboveReader, ParityArgument, ParityBoundRefusal, ParityPreimage,
     ReplayRefusal, ScalarIdentityMismatch, ValueParityReport, ValueParityResult,
 };
+pub use hybrid::{
+    NegativeHorizon, SolverHorizon, SolverMethod, SolverOutcome, SolverResult, SolverStop,
+};
 pub use identity::{
     DeclaredDomain, EmptyQualifiedName, ObligationIdentity, ProfileSelection, QualifiedName,
     RawSourceRef, TracePosition,
 };
 pub use limits::{AccountingLimits, CallerLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, CounterexampleKind, ModelStep, TemporalCounterexample,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    deadlock_freedom_clause, CounterexampleKind, Lasso, MappingSite, ModelStep,
+    TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
-pub use model_check::item::{ClauseIdentity, Instance, ItemRefusal, ModelCheckItem};
+pub use model_check::graph_settle::{
+    settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
+    StateGraphRecord,
+};
+pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
+pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
+    DEFAULT_MAX_WALK_STEPS, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
-pub use model_check::outcome::{ModelCheckOutcome, RunStats, UndecidedCause};
+pub use model_check::outcome::{ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause};
+pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};
+pub use model_check::refinement_settle::settle_refinement_safety;
 pub use model_check::replay::{
     replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ModelTraceValue,
+    ModelTraceSubject, ModelTraceValue, StrongFairnessHint,
 };
 pub use model_check::settle::{
     settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
+};
+pub use model_check::state_graph::{
+    GraphUndefined, GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome,
+    StateGraphOutcome, WitnessSource,
+};
+pub use model_check::step_settle::{
+    settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,
+    STEP_INDUCTION_DEPTH,
+};
+pub use refinement::{
+    check_initial, check_step, map_state, open_systems, ConcreteStep, EvalFailure, HiddenSlot,
+    MappedState, MappingFailure, MappingRowRef, MappingUndetermined, ObjectKey, RefinementFailure,
+    RefinementOutcome, RefinementPosition, RefinementSystems, SafetyOutcome, SafetyUndecided,
+    StepArgument, StepRejection, StepResult, StepVerdict, SubjectRefusal, Taken, Undetermined,
 };
 // The equality operator a composite parity claim names (FR-358).
 pub use quire_semantic_value::declaration::EqualityOperator;
@@ -120,10 +151,11 @@ pub use outcome::{
     ParityReason, ResultLimit, ResultValue, OUTCOME_FORMAT,
 };
 pub use proof_result::{
-    read_backend_provider_envelope, BackendProviderSource, Certification, DeclineCode,
-    EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, ProofBasis, ProofRefusalCause,
-    ProofResultEnvelope, ProofResultRefusal, ReportedInconclusiveCause, SettlementBasis,
-    TerminalRecord, TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
+    read_backend_provider_envelope, AppliedReduction, BackendProviderSource, Certification,
+    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, ProofBasis,
+    ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, ReductionKind,
+    ReportedInconclusiveCause, SettlementBasis, SymmetryBrokenCause, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

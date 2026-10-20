@@ -12,8 +12,9 @@
 //! `Inconclusive(CertificateRejected{rule, at})`, and a stopped check is
 //! `Incomplete` with its exact limit or cancellation source.
 
-use qsl_foundation::diagnostic::Code;
+use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::digest::DigestRecord;
+use qsl_package::CheckedPackage;
 
 use quire_exact::Cancel;
 
@@ -24,10 +25,13 @@ use crate::certificate::closure::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::outcome::{ModelCheckOutcome, UndecidedCause};
-use crate::model_check::replay::{ModelTraceReplayResult, ModelTraceSettlement};
+use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCause};
+use crate::model_check::replay::{
+    no_value_cause, ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
+};
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
+    UnavailabilityCause,
 };
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -42,8 +46,28 @@ pub enum ResultLabel {
     Refuted,
     /// `inconclusive`.
     Inconclusive,
+    /// `unsupported`.
+    Unsupported,
     /// `failed`.
     Failed,
+}
+
+impl ResultLabel {
+    /// The ADR-013 O-16 category a backend's result settles in (FR-332,
+    /// ADR-014 A-5): `proved` is success, `refuted` violation, `inconclusive`
+    /// inconclusive, `unsupported` unsupported, `failed` with execution
+    /// `resource-incomplete` incomplete, and every other `failed` an
+    /// internal failure.
+    pub fn category(self, execution: Execution) -> Category {
+        match (self, execution) {
+            (Self::Proved, _) => Category::Success,
+            (Self::Refuted, _) => Category::Violation,
+            (Self::Inconclusive, _) => Category::Inconclusive,
+            (Self::Unsupported, _) => Category::Unsupported,
+            (Self::Failed, Execution::ResourceIncomplete) => Category::Incomplete,
+            (Self::Failed, Execution::Completed | Execution::Failed) => Category::InternalFailure,
+        }
+    }
 }
 
 /// The record's execution status.
@@ -93,6 +117,11 @@ pub struct ModelCheckRecord {
     pub limit_reached: Option<ReachedLimit>,
     /// The counterexample a `refuted` record carries.
     pub counterexample: Option<TemporalCounterexample>,
+    /// The strong constraints that would exclude a `refuted` liveness
+    /// lasso (FR-133), each a warning diagnostic beside the counterexample.
+    /// They are outside it, its replay identity and the obligation
+    /// identity, and change no verdict.
+    pub hints: Vec<StrongFairnessHint>,
 }
 
 /// FR-127: settle `outcome`, a run under `limits` over the package
@@ -103,7 +132,7 @@ pub struct ModelCheckRecord {
 /// settles `failed`, or `Incomplete(Cancelled)` when `cancel` stopped it) and [`check_closure`] checks its certificate for
 /// `certificate` under `limits` and `cancel`; a refused check settles
 /// `inconclusive` by `NoInstance` or `NoInitialState` and `failed`
-/// otherwise. A `Violated` outcome's
+/// otherwise, `clause-root-unresolved` among the causes. A `Violated` outcome's
 /// counterexample is handed to `replay` (FR-128) and settles by its result:
 /// reproduced against `package_id` is `Refuted`; a result settled against
 /// any other package is `Inconclusive(ReplayRefused(stale_dependency))`; a
@@ -120,151 +149,294 @@ pub fn settle_model_check(
     cancel: &Cancel,
     replay: impl FnOnce(&TemporalCounterexample) -> Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> ModelCheckRecord {
-    let record = |value, label, basis, execution, truth| ModelCheckRecord {
-        value,
-        label,
-        basis,
-        execution,
-        truth,
-        method: EXPLICIT_STATE,
-        depth: None,
-        limits: limits.used(),
-        limit_reached: None,
-        counterexample: None,
-    };
-    let inconclusive = |cause| {
-        record(
-            TerminalValue::Inconclusive(cause),
-            ResultLabel::Inconclusive,
-            SettlementBasis::Unsettled,
-            Execution::Completed,
-            Truth::Pending,
-        )
-    };
-    let incomplete = |cause| {
-        record(
-            TerminalValue::Incomplete(cause),
-            ResultLabel::Failed,
-            SettlementBasis::Unavailable,
-            Execution::ResourceIncomplete,
-            Truth::Unavailable,
-        )
-    };
-    let failed = || {
-        record(
-            TerminalValue::Failed,
-            ResultLabel::Failed,
-            SettlementBasis::Unavailable,
-            Execution::Failed,
-            Truth::Unavailable,
-        )
-    };
-    match outcome {
+    let mut counterexample = None;
+    let mut hints = Vec::new();
+    let mut depth = None;
+    let row = match outcome {
         ModelCheckOutcome::Holds {
             certificate: closure,
             ..
-        } => match certificate_package(certificate, cancel) {
-            Some(checked) if checked != *package_id => {
-                inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+        } => Row::bound(
+            package_id,
+            certificate.subject.simulation.package,
+            cancel,
+            || {
+                Row::of_check(check_closure(certificate, closure, limits, cancel), || {
+                    Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+                })
+            },
+        ),
+        // ADR-021 RV-1: a reduced proof is its own technique, and a
+        // constraint-only proof explored the subject without a certificate.
+        ModelCheckOutcome::HoldsReduced { reductions, .. } => Row::proof(
+            if reductions.is_empty() {
+                ProofBasis::Exhaustive
+            } else {
+                ProofBasis::Reduced {
+                    reductions: reductions.clone(),
+                }
+            },
+            Certification::Uncertified,
+            SettlementBasis::ClosedScope,
+        ),
+        ModelCheckOutcome::Reduction { cause, .. } => match cause {
+            ReductionCause::Unsupported { reduction } => Row {
+                value: TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+                    reduction: *reduction,
+                }),
+                label: ResultLabel::Unsupported,
+                basis: SettlementBasis::Unavailable,
+                execution: Execution::Completed,
+                truth: Truth::Unavailable,
+                limit_reached: None,
+            },
+            ReductionCause::NotPreserving { reduction, form } => {
+                Row::inconclusive(InconclusiveCause::ReductionNotPreserving {
+                    reduction: *reduction,
+                    form: *form,
+                })
             }
-            None => match cancel.cause() {
-                Some(source) => incomplete(IncompleteCause::Cancelled { source }),
-                None => failed(),
-            },
-            Some(_) => match check_closure(certificate, closure, limits, cancel) {
-                Ok(TemporalCertificateCheck::Accepted) => record(
-                    TerminalValue::Proved {
-                        basis: ProofBasis::Exhaustive,
-                        certification: Certification::Certified,
-                    },
-                    ResultLabel::Proved,
-                    SettlementBasis::ClosedScope,
-                    Execution::Completed,
-                    Truth::Satisfied,
-                ),
-                Ok(TemporalCertificateCheck::Rejected(CertificateRejection { rule, at })) => {
-                    inconclusive(InconclusiveCause::CertificateRejected { rule, at })
-                }
-                Ok(TemporalCertificateCheck::Stopped(cause)) => {
-                    let limit_reached = match cause {
-                        IncompleteCause::LimitReached { limit, value } => {
-                            Some(ReachedLimit { limit, value })
-                        }
-                        IncompleteCause::TimedOut
-                        | IncompleteCause::Cancelled { .. }
-                        | IncompleteCause::ResourceExhausted => None,
-                    };
-                    ModelCheckRecord {
-                        limit_reached,
-                        ..incomplete(cause)
-                    }
-                }
-                Err(ClosureRefusal::NoInstance) => inconclusive(InconclusiveCause::NoInstance),
-                Err(ClosureRefusal::NoInitialState) => {
-                    inconclusive(InconclusiveCause::NoInitialState)
-                }
-                Err(_) => failed(),
-            },
+            ReductionCause::SymmetryBroken { population, cause } => {
+                Row::inconclusive(InconclusiveCause::SymmetryBroken {
+                    population: population.clone(),
+                    cause: cause.clone(),
+                })
+            }
+            ReductionCause::ConstraintReached { boundary_states } => {
+                Row::inconclusive(InconclusiveCause::ConstraintReached {
+                    boundary_states: *boundary_states,
+                })
+            }
         },
-        ModelCheckOutcome::BoundReached { depth, .. } => ModelCheckRecord {
-            depth: Some(*depth),
-            ..inconclusive(InconclusiveCause::BoundReached { depth: *depth })
-        },
-        ModelCheckOutcome::Undecided { cause, .. } => inconclusive(match cause {
+        ModelCheckOutcome::BoundReached { depth: reached, .. } => {
+            depth = Some(*reached);
+            Row::inconclusive(InconclusiveCause::BoundReached { depth: *reached })
+        }
+        ModelCheckOutcome::Undecided { cause, .. } => Row::inconclusive(match cause {
             UndecidedCause::UndecidedSuccessor => InconclusiveCause::UndecidedSuccessor,
             UndecidedCause::NoInitialState => InconclusiveCause::NoInitialState,
             UndecidedCause::NoInstance => InconclusiveCause::NoInstance,
         }),
-        ModelCheckOutcome::Stopped { cause, limit, .. } => {
-            let cause = match (cause, limit) {
-                (IncompleteCause::ResourceExhausted, Some(reached)) => {
-                    IncompleteCause::LimitReached {
-                        limit: reached.limit,
-                        value: reached.value,
-                    }
-                }
-                (cause, _) => *cause,
-            };
-            ModelCheckRecord {
-                limit_reached: *limit,
-                ..incomplete(cause)
-            }
-        }
-        ModelCheckOutcome::Violated { counterexample, .. } => match replay(counterexample) {
+        ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
+        ModelCheckOutcome::Violated {
+            counterexample: payload,
+            ..
+        } => match replay(payload) {
             Ok(ModelTraceReplayResult {
                 package_id: replayed,
                 ..
-            }) if !replayed.matches(package_id) => {
-                inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
-            }
+            }) if !replayed.matches(package_id) => Row::stale(),
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Reproduced { .. },
+                hints: replayed_hints,
                 ..
-            }) => ModelCheckRecord {
-                counterexample: Some(counterexample.as_ref().clone()),
-                ..record(
-                    TerminalValue::Refuted,
-                    ResultLabel::Refuted,
-                    SettlementBasis::DecisiveCounterexample,
-                    Execution::Completed,
-                    Truth::Violated,
-                )
-            },
+            }) => {
+                hints = replayed_hints;
+                counterexample = Some(payload.as_ref().clone());
+                Row::refuted(SettlementBasis::DecisiveCounterexample)
+            }
             Ok(ModelTraceReplayResult {
                 settlement: ModelTraceSettlement::Inconclusive(cause),
                 ..
-            }) => inconclusive(InconclusiveCause::ReplayParity(cause)),
-            Err(ReplayRefusal::Fault(_)) => failed(),
-            Err(refusal) => inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
+            }) => Row::inconclusive(InconclusiveCause::ReplayParity(cause)),
+            // EN-1 builds only fair lassos (ADR-019 FS-7), so replay's refusal
+            // of one as unfair is a disagreement between the two (SV-4).
+            Err(ReplayRefusal::UnfairLasso { .. }) => {
+                Row::inconclusive(InconclusiveCause::ReplayParity(no_value_cause()))
+            }
+            Err(refusal) => Row::refused(&refusal),
         },
+    };
+    ModelCheckRecord {
+        value: row.value,
+        label: row.label,
+        basis: row.basis,
+        execution: row.execution,
+        truth: row.truth,
+        method: EXPLICIT_STATE,
+        depth,
+        limits: limits.used(),
+        limit_reached: row.limit_reached,
+        counterexample,
+        hints,
     }
 }
 
-/// The `package_id` of the certificate request's own package, by emitting
-/// it (FR-322) under `cancel`; `None` when it does not emit or the handle
-/// stopped it.
-fn certificate_package(request: &CertificateRequest<'_>, cancel: &Cancel) -> Option<DigestRecord> {
-    qsl_package::emit_checked_with_cancel(request.subject.simulation.package, cancel)
+/// One row of an EN-1 settlement map: the terminal value with its label,
+/// basis, execution and truth, and the limit a stopped row names. FR-127's
+/// map and FR-169's build their records from it, so the two settle each
+/// shared row alike.
+pub(super) struct Row {
+    pub(super) value: TerminalValue,
+    pub(super) label: ResultLabel,
+    pub(super) basis: SettlementBasis,
+    pub(super) execution: Execution,
+    pub(super) truth: Truth,
+    pub(super) limit_reached: Option<ReachedLimit>,
+}
+
+impl Row {
+    /// `proved` on `basis`, `Certified`: a core check stands behind it.
+    pub(super) fn proved(basis: ProofBasis, settlement: SettlementBasis) -> Self {
+        Self::proof(basis, Certification::Certified, settlement)
+    }
+
+    /// `proved` on `basis` with `certification`.
+    pub(super) fn proof(
+        basis: ProofBasis,
+        certification: Certification,
+        settlement: SettlementBasis,
+    ) -> Self {
+        Self {
+            value: TerminalValue::Proved {
+                basis,
+                certification,
+            },
+            label: ResultLabel::Proved,
+            basis: settlement,
+            execution: Execution::Completed,
+            truth: Truth::Satisfied,
+            limit_reached: None,
+        }
+    }
+
+    /// `refuted` on `basis`.
+    pub(super) fn refuted(basis: SettlementBasis) -> Self {
+        Self {
+            value: TerminalValue::Refuted,
+            label: ResultLabel::Refuted,
+            basis,
+            execution: Execution::Completed,
+            truth: Truth::Violated,
+            limit_reached: None,
+        }
+    }
+
+    /// `inconclusive`, `unsettled`, for `cause`.
+    pub(super) fn inconclusive(cause: InconclusiveCause) -> Self {
+        Self {
+            value: TerminalValue::Inconclusive(cause),
+            label: ResultLabel::Inconclusive,
+            basis: SettlementBasis::Unsettled,
+            execution: Execution::Completed,
+            truth: Truth::Pending,
+            limit_reached: None,
+        }
+    }
+
+    /// `failed`, `resource-incomplete`, for `cause`, naming the limit
+    /// reached.
+    pub(super) fn incomplete(cause: IncompleteCause, limit_reached: Option<ReachedLimit>) -> Self {
+        Self {
+            value: TerminalValue::Incomplete(cause),
+            label: ResultLabel::Failed,
+            basis: SettlementBasis::Unavailable,
+            execution: Execution::ResourceIncomplete,
+            truth: Truth::Unavailable,
+            limit_reached,
+        }
+    }
+
+    /// `failed`: the tool itself failed.
+    pub(super) fn failed() -> Self {
+        Self {
+            value: TerminalValue::Failed,
+            label: ResultLabel::Failed,
+            basis: SettlementBasis::Unavailable,
+            execution: Execution::Failed,
+            truth: Truth::Unavailable,
+            limit_reached: None,
+        }
+    }
+
+    /// Evidence settled against another package than the run's:
+    /// `ReplayRefused(stale_dependency)`.
+    pub(super) fn stale() -> Self {
+        Self::inconclusive(InconclusiveCause::ReplayRefused(Code::StaleDependency))
+    }
+
+    /// A refused replay: `ReplayRefused` with its code, or `failed` for a
+    /// fault.
+    pub(super) fn refused(refusal: &ReplayRefusal) -> Self {
+        match refusal {
+            ReplayRefusal::Fault(_) => Self::failed(),
+            refusal => Self::inconclusive(InconclusiveCause::ReplayRefused(refusal.code())),
+        }
+    }
+
+    /// A run that `cause` stopped at `limit`: a limit stop names it as
+    /// `LimitReached`, any other stop keeps its cause.
+    pub(super) fn stopped_run(cause: IncompleteCause, limit: Option<ReachedLimit>) -> Self {
+        let cause = match (cause, limit) {
+            (IncompleteCause::ResourceExhausted, Some(reached)) => IncompleteCause::LimitReached {
+                limit: reached.limit,
+                value: reached.value,
+            },
+            (cause, _) => cause,
+        };
+        Self::incomplete(cause, limit)
+    }
+
+    /// The row of a certificate check: `accepted`'s when the core accepts
+    /// the certificate, `CertificateRejected{rule, at}` when it rejects it,
+    /// an `Incomplete` row naming the limit when a limit or cancellation
+    /// stops it; a refused check settles `NoInstance` or `NoInitialState`,
+    /// and `failed` otherwise.
+    pub(super) fn of_check(
+        check: Result<TemporalCertificateCheck, ClosureRefusal>,
+        accepted: impl FnOnce() -> Self,
+    ) -> Self {
+        match check {
+            Ok(TemporalCertificateCheck::Accepted) => accepted(),
+            Ok(TemporalCertificateCheck::Rejected(CertificateRejection { rule, at })) => {
+                Self::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
+            }
+            Ok(TemporalCertificateCheck::Stopped(cause)) => {
+                let limit_reached = match cause {
+                    IncompleteCause::LimitReached { limit, value } => {
+                        Some(ReachedLimit { limit, value })
+                    }
+                    IncompleteCause::TimedOut
+                    | IncompleteCause::Cancelled { .. }
+                    | IncompleteCause::ResourceExhausted => None,
+                };
+                Self::incomplete(cause, limit_reached)
+            }
+            Err(ClosureRefusal::NoInstance) => Self::inconclusive(InconclusiveCause::NoInstance),
+            Err(ClosureRefusal::NoInitialState) => {
+                Self::inconclusive(InconclusiveCause::NoInitialState)
+            }
+            Err(_) => Self::failed(),
+        }
+    }
+
+    /// FR-282's package binding of a certificate: `check`'s row only when
+    /// `package`, the checker's own package, emits and its `package_id`
+    /// equals `package_id`, the package the run checked. Another package
+    /// settles `ReplayRefused(stale_dependency)`; a package that does not
+    /// emit settles `failed`, or `Incomplete(Cancelled)` when `cancel`
+    /// stopped it.
+    pub(super) fn bound(
+        package_id: &DigestRecord,
+        package: &CheckedPackage,
+        cancel: &Cancel,
+        check: impl FnOnce() -> Self,
+    ) -> Self {
+        match emitted_package_id(package, cancel) {
+            Some(checked) if checked != *package_id => Self::stale(),
+            Some(_) => check(),
+            None => match cancel.cause() {
+                Some(source) => Self::incomplete(IncompleteCause::Cancelled { source }, None),
+                None => Self::failed(),
+            },
+        }
+    }
+}
+
+/// The `package_id` of `package`, by emitting it (FR-322) under `cancel`;
+/// `None` when it does not emit or the handle stopped it.
+fn emitted_package_id(package: &CheckedPackage, cancel: &Cancel) -> Option<DigestRecord> {
+    qsl_package::emit_checked_with_cancel(package, cancel)
         .ok()
         .map(|emission| emission.package().package_id().record())
 }
