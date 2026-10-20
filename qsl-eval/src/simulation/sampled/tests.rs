@@ -260,6 +260,46 @@ fn a_cancelled_handle_stops_the_sample() {
     assert_eq!(digests, 0);
 }
 
+/// An enabled identity with no post-state for any draw stops the sample
+/// with `NotMarkov` and 0 post-states at the drawn vector, not a stutter
+/// step.
+#[trace("TC-623")]
+#[test]
+fn an_identity_with_no_post_state_stops_the_sample() {
+    let world = World::new(&world::gate("", "self.up = x and self.up = (not x)", ""));
+    let (result, _) = sample(&world, "Unit", &sampler(), (7, 0, 3), &Cancel::new());
+    let Err(SampleStop::NotMarkov(not_markov)) = result else {
+        panic!("NotMarkov: {result:?}");
+    };
+    assert_eq!(not_markov.post_states, 0);
+    assert_eq!(not_markov.random.len(), 1);
+}
+
+/// A terminal state's stutter step carries every reward of the model at 0.
+#[trace("TC-623")]
+#[test]
+fn a_stutter_step_carries_every_reward_at_zero() {
+    let world = World::new(&world::gate(
+        "self.up",
+        "self.up = x",
+        "reward cost on Gate::step = 1;\n",
+    ));
+    let (result, _) = sample(&world, "Unit", &sampler(), (7, 0, 3), &Cancel::new());
+    let behaviour = result.expect("Gate samples");
+    assert_eq!(behaviour.steps.len(), 2);
+    for step in &behaviour.steps {
+        assert_eq!(step.transition, TransitionId::Stutter);
+        let [(name, value)] = &step.rewards[..] else {
+            panic!("one reward: {:?}", step.rewards);
+        };
+        assert_eq!(name.as_str(), "cost");
+        assert!(same_values(
+            std::slice::from_ref(value),
+            &[Value::Integer(Integer::zero())]
+        ));
+    }
+}
+
 /// FR-188-AC-6 (TC-623 step 3): `SampledStep`, `SampledBehaviour` and
 /// `SampleStop` resolve at `qsl_eval::simulation` and are defined in
 /// `qsl-eval`, so no `quire-semantic-value` item is one of them (that leaf

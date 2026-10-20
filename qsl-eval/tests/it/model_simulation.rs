@@ -7,10 +7,12 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{
     explore_model, sample_model, ClauseOutcome, ExpansionLimits, ModelFinding, ModelSampleError,
-    ModelSimulationRequest, ModelSystem, PopulationUniverse, StepEffect,
+    ModelSimulationRequest, ModelSystem, PopulationUniverse, StepEffect, UndecidedSuccessor,
+    Unsteppable,
 };
 use qsl_eval::simulation::{
-    Exploration, Limits, NotSimulated, Outcome, ReplayError, StopReason, TransitionSystem,
+    sample_probabilistic, Exploration, Limits, NotSimulated, Outcome, ReplayError, SampleStop,
+    StopReason, TransitionSystem,
 };
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::selection::DefinitionRef;
@@ -25,6 +27,7 @@ use qsl_semantics::model::observation::{
     SelectedAnchor,
 };
 use qsl_semantics::model::state::{ModelState, StateModel};
+use quire_exact::Cancel;
 use quire_exact::{ObjectId, ObjectReference, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
@@ -1452,18 +1455,25 @@ fn ambient_reads_refuse_before_a_package_exists() {
     }
 }
 
-/// FR-120-AC-9 (TC-472): a precondition whose dispatched query is undefined
-/// at the state is a contract finding and the operation is not enabled; a
-/// clause that is `false` hides it.
-#[trace("TC-472", "FR-120-AC-9")]
-#[test]
-fn an_undecided_precondition_is_a_contract_finding() {
-    let orders = |name: &str| DeclarationKey {
-        package: "test/orders".to_owned(),
-        node: format!("ix://test/orders/{name}"),
-    };
-    let run = |body: &str| {
-        let (package, packages) = crate::state_model_family::simulation_package(body, false);
+/// FR-120-AC-9's `test/orders` dispatch fixture with `body`, its initial
+/// snapshot `t1` and its universe.
+struct OrdersWorld {
+    package: CheckedPackage,
+    packages: BTreeMap<[u8; 32], Vec<u8>>,
+    snapshots: BTreeMap<[u8; 32], Vec<u8>>,
+    reference: DocumentRef,
+}
+
+impl OrdersWorld {
+    fn new(body: &str) -> Self {
+        Self::over(body, false)
+    }
+
+    /// With `spin`, `A` also declares `spin()`, which writes `flag` under
+    /// no contract: two post-states.
+    fn over(body: &str, spin: bool) -> Self {
+        let (package, packages) =
+            crate::state_model_family::simulation_package_over(body, false, spin);
         let digest = *packages.keys().next().expect("one model");
         let document = json!({
             "format": "quire.state.snapshot/v1",
@@ -1493,14 +1503,26 @@ fn an_undecided_precondition_is_a_contract_finding() {
             revision: "fixture:1".to_owned(),
             digest: snapshot_digest,
         };
-        let system = ModelSystem::new(ModelSimulationRequest {
-            package: &package,
-            packages: &packages,
+        Self {
+            package,
+            packages,
+            snapshots,
+            reference,
+        }
+    }
+
+    fn system(&self) -> ModelSystem<'_> {
+        ModelSystem::new(ModelSimulationRequest {
+            package: &self.package,
+            packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),
-            snapshots: &snapshots,
-            initial: vec![reference],
+            snapshots: &self.snapshots,
+            initial: vec![self.reference.clone()],
             universes: vec![PopulationUniverse {
-                population: orders("pop"),
+                population: DeclarationKey {
+                    package: "test/orders".to_owned(),
+                    node: "ix://test/orders/pop".to_owned(),
+                },
                 keys: vec!["t1".to_owned()],
             }],
             observation: ObservationLimits::default(),
@@ -1509,7 +1531,103 @@ fn an_undecided_precondition_is_a_contract_finding() {
             },
             meter: UNLIMITED,
         })
-        .expect("the dispatch model admits");
+        .expect("the dispatch model admits")
+    }
+}
+
+/// FR-188-AC-8 (TC-623 step 6): over `OrdersUndecided` (FR-120-AC-9's
+/// fixture with `pre Low { self.ready() }` on `ready`, undefined at `t1`)
+/// `actions` returns `UndecidedSuccessor{state}`, `weighted_steps`
+/// `Unsteppable::UndecidedSuccessor` and `sample_probabilistic` stops
+/// `SampleStop::UndecidedSuccessor`. With a further operation `spin` whose
+/// (empty) drawn vector has two post-states, the result is the same
+/// undecided one, not `NotMarkov`. An undecided postcondition is the same.
+#[trace("TC-623", "FR-188-AC-8")]
+#[test]
+fn an_undecided_contract_is_an_undecided_successor() {
+    let pre = "pre Low using v on M::A::ready { self.ready() }\n";
+    // The postcondition half: every candidate of `ready` is undecided.
+    let post = "post LowPost using v on M::A::ready { self.ready() }\n";
+    for (undecided, spin, workload) in [
+        (pre, false, "workload Unit on M { weight A::ready = 1; }\n"),
+        (post, false, "workload Unit on M { weight A::ready = 1; }\n"),
+        (
+            pre,
+            true,
+            "workload Unit on M { weight A::ready = 1; weight A::spin = 1; }\n",
+        ),
+    ] {
+        let world = OrdersWorld::over(&format!("{undecided}{workload}"), spin);
+        let system = world.system();
+        let state = system.initial().remove(0);
+        let (_, digest) = system.state_key(&state).expect("a key");
+        let expected = UndecidedSuccessor { state: digest };
+        assert_eq!(
+            system
+                .actions(&state)
+                .expect("expands")
+                .expect_err("undecided"),
+            expected,
+            "spin = {spin}"
+        );
+        let workload = world
+            .package
+            .graph()
+            .probabilistic_model()
+            .workload("Unit")
+            .expect("declared");
+        let Ok(Err(Unsteppable::UndecidedSuccessor(undecided))) =
+            system.weighted_steps(&state, workload)
+        else {
+            panic!("UndecidedSuccessor (spin = {spin})");
+        };
+        assert_eq!(undecided, expected);
+        assert_eq!(
+            sample_probabilistic(
+                &system,
+                workload,
+                &state,
+                &sampler(),
+                7,
+                0,
+                3,
+                &Cancel::new()
+            )
+            .expect_err("undecided"),
+            SampleStop::UndecidedSuccessor,
+            "spin = {spin}"
+        );
+    }
+    // Without the undecided precondition, `spin`'s two post-states are
+    // `NotMarkov`: the undecided result above is not that.
+    let world = OrdersWorld::over(
+        "workload Unit on M { weight A::ready = 1; weight A::spin = 1; }\n",
+        true,
+    );
+    let system = world.system();
+    let state = system.initial().remove(0);
+    let workload = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .workload("Unit")
+        .expect("declared");
+    let Ok(Err(Unsteppable::NotMarkov(not_markov))) = system.weighted_steps(&state, workload)
+    else {
+        panic!("NotMarkov without the undecided precondition");
+    };
+    assert_eq!(not_markov.post_states, 2);
+}
+
+/// FR-120-AC-9 (TC-472): a precondition whose dispatched query is undefined
+/// at the state is a contract finding and the operation is not enabled; a
+/// clause that is `false` hides it.
+#[trace("TC-472", "FR-120-AC-9")]
+#[test]
+fn an_undecided_precondition_is_a_contract_finding() {
+    let run = |body: &str| {
+        let world = OrdersWorld::new(body);
+        let system = world.system();
         let state = system.initial().remove(0);
         let expansion = system.successors(&state).expect("expands");
         let key_bytes =

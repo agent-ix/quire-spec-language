@@ -280,6 +280,14 @@ pub(crate) fn weighted_choice_counted(
     at: ChoicePoint,
     weights: &[Rational],
 ) -> (Result<usize, WeightsRefusal>, u64) {
+    // One weight selects index 0 with no digest and no total to bound
+    // (FR-188), whatever its size.
+    if let [weight] = weights {
+        if weight.is_zero() || weight.numerator().is_negative() {
+            return (Err(WeightsRefusal::NotPositive { index: 0 }), 0);
+        }
+        return (Ok(0), 0);
+    }
     match Weights::new(weights) {
         Ok(weights) => {
             let (index, digests) = choose(at, &weights);
@@ -298,8 +306,9 @@ pub(crate) fn weighted_choice_counted(
 ///
 /// # Errors
 ///
-/// [`WeightsRefusal::TotalAboveDrawRange`] when the scaled total exceeds
-/// `2^256`, before any digest is computed; [`WeightsRefusal::Empty`] or
+/// [`WeightsRefusal::TotalAboveDrawRange`] when the scaled total of two or
+/// more weights exceeds `2^256`, before any digest is computed;
+/// [`WeightsRefusal::Empty`] or
 /// [`WeightsRefusal::NotPositive`] for a list that is not one of positive
 /// weights.
 pub fn weighted_choice(at: ChoicePoint, weights: &[Rational]) -> Result<usize, WeightsRefusal> {
@@ -439,6 +448,9 @@ mod tests {
     fn one_weight_selects_index_zero_without_a_digest() {
         let weights = [Rational::from_integer(Integer::from(7u64))];
         assert_eq!(weighted_choice_counted(at(0), &weights), (Ok(0), 0));
+        // One weight above 2^256 has no total to bound: still index 0.
+        let huge = [Rational::from_integer(Integer::one().shifted_left(300))];
+        assert_eq!(weighted_choice_counted(at(0), &huge), (Ok(0), 0));
     }
 
     /// The unit-weight fast path selects exactly what the running-sum

@@ -588,3 +588,34 @@ pub(crate) fn refund() -> Model {
         initial: json!({"up": {"boolean": false}}),
     }
 }
+
+/// One object `g: Gate { up: Boolean }`, initially `up = false`, with one operation `step(x: Boolean)` writing `up`
+/// under the precondition `pre` (none when empty) and the postcondition
+/// `post`, `x ~ { true: 1, false: 1 }`, the workload `Unit`, and `extra`
+/// appended to its declarations.
+pub(crate) fn gate(pre: &str, post: &str, extra: &str) -> Model {
+    let pre = if pre.is_empty() {
+        String::new()
+    } else {
+        format!("pre Ready using v on M::Gate::step {{ {pre} }}\n")
+    };
+    Model {
+        package: "test/gate",
+        object: "Gate",
+        population: "gates",
+        key: "g",
+        integers: vec![],
+        fields: vec![("up", BOOLEAN.to_owned())],
+        operations: vec![Operation {
+            name: "step",
+            parameters: vec![("x", BOOLEAN.to_owned())],
+            modifies: vec!["up"],
+        }],
+        body: format!(
+            "{pre}post Moved using v on M::Gate::step {{ {post} }}\n\
+             random Gate::step(x) ~ {{ true: 1, false: 1 }};\n\
+             workload Unit on M {{ weight Gate::step = 1; }}\n{extra}"
+        ),
+        initial: json!({"up": {"boolean": false}}),
+    }
+}

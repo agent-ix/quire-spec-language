@@ -10,7 +10,7 @@ use qsl_foundation::diagnostic::Code;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Integer, Rational, Value};
 
-use super::{TransitionId, WeightedStep};
+use super::{NotMarkov, TransitionId, Unsteppable, WeightedStep};
 use crate::simulation::model::ModelSimState;
 use crate::simulation::sampled::world::{self, field, initial, World};
 use crate::simulation::TransitionSystem;
@@ -161,7 +161,10 @@ fn link_steps_weigh_operations_then_draws() {
     assert_eq!(probability("send_b", false), ratio(2, 5));
     assert_eq!(probability("send_b", true), ratio(1, 10));
 
-    let actions = system.actions(&start).expect("the state expands");
+    let actions = system
+        .actions(&start)
+        .expect("the state expands")
+        .expect("decided");
     assert_eq!(actions.len(), 2);
     let operations: Vec<String> = actions
         .iter()
@@ -218,10 +221,12 @@ fn health_variants_are_not_markov() {
     let system = world.system();
     let start = initial(&system);
     let (_, digest) = system.state_key(&start).expect("a key");
-    let not_markov = system
-        .weighted_steps(&start, world.workload("Steady"))
-        .expect("the state expands")
-        .expect_err("two post-states per draw");
+    let not_markov = not_markov_of(
+        system
+            .weighted_steps(&start, world.workload("Steady"))
+            .expect("the state expands"),
+        "two post-states per draw",
+    );
     assert_eq!(not_markov.state, digest);
     assert_eq!(
         not_markov.transition.operation,
@@ -233,23 +238,27 @@ fn health_variants_are_not_markov() {
         &[Value::Boolean(false)]
     ));
     assert_eq!(not_markov.post_states, 2);
-    let [action] = <[_; 1]>::try_from(system.actions(&start).expect("expands")).expect("one");
+    let [action] = <[_; 1]>::try_from(system.actions(&start).expect("expands").expect("decided"))
+        .expect("one");
     assert_eq!(action.draws.len(), 2);
     assert!(action.draws.iter().all(|draw| draw.successors.len() == 2));
 
     let world = World::new(&world::blocked_health());
     let system = world.system();
     let start = initial(&system);
-    let not_markov = system
-        .weighted_steps(&start, world.workload("Steady"))
-        .expect("the state expands")
-        .expect_err("no post-state for fault = true");
+    let not_markov = not_markov_of(
+        system
+            .weighted_steps(&start, world.workload("Steady"))
+            .expect("the state expands"),
+        "no post-state for fault = true",
+    );
     assert!(super::same_values(
         &not_markov.random,
         &[Value::Boolean(true)]
     ));
     assert_eq!(not_markov.post_states, 0);
-    let [action] = <[_; 1]>::try_from(system.actions(&start).expect("expands")).expect("one");
+    let [action] = <[_; 1]>::try_from(system.actions(&start).expect("expands").expect("decided"))
+        .expect("one");
     let counts: Vec<(bool, usize)> = action
         .draws
         .iter()
@@ -289,7 +298,10 @@ fn a_negative_reward_refuses_admission() {
 
 /// FR-187-AC-4 (TC-622 step 4): over every state of `Service`, the
 /// transitions `weighted_steps` gives positive probability under `Steady`
-/// are exactly FR-120's successors (ADR-024 PM-6).
+/// are exactly FR-120's successors (ADR-024 PM-6). Unlike FR-187-AC-1, this
+/// clause does not depend on `Service`'s value types: PM-6 compares
+/// transition sets, which the integer and Boolean stand-ins of the module
+/// doc of [`world`] give the same shape as the enum and quantity ones.
 #[trace("TC-622", "FR-187-AC-4")]
 #[test]
 fn the_support_graph_is_the_state_graph() {
@@ -362,4 +374,69 @@ fn service_checks_and_refuses_emission_naming_its_first_random_parameter() {
         (refusal.code(), refusal.cause()),
         (Code::UnsupportedConstruct, Some("not-yet-implemented"))
     );
+}
+
+/// The [`NotMarkov`] of a `weighted_steps` result that is not steppable.
+fn not_markov_of(result: Result<Vec<WeightedStep>, Unsteppable>, why: &str) -> NotMarkov {
+    match result {
+        Err(Unsteppable::NotMarkov(not_markov)) => not_markov,
+        other => panic!("NotMarkov ({why}): {other:?}"),
+    }
+}
+
+/// FR-187 Behavior: an enabled scheduled identity with no post-state for
+/// any draw makes `weighted_steps` return `NotMarkov` with 0 post-states
+/// for the first draw (`x = false`), not the stutter step of a terminal
+/// state; `actions` leaves the identity out.
+#[trace("TC-622")]
+#[test]
+fn an_identity_with_no_post_state_for_any_draw_is_not_markov() {
+    let world = World::new(&world::gate("", "self.up = x and self.up = (not x)", ""));
+    let system = world.system();
+    let start = initial(&system);
+    let (_, digest) = system.state_key(&start).expect("a key");
+    let not_markov = not_markov_of(
+        system
+            .weighted_steps(&start, world.workload("Unit"))
+            .expect("the state expands"),
+        "no post-state for any draw",
+    );
+    assert_eq!(not_markov.state, digest);
+    assert_eq!(
+        not_markov.transition.operation,
+        operation_text(&system, "step")
+    );
+    assert!(super::same_values(
+        &not_markov.random,
+        &[Value::Boolean(false)]
+    ));
+    assert_eq!(not_markov.post_states, 0);
+    assert!(system
+        .actions(&start)
+        .expect("expands")
+        .expect("decided")
+        .is_empty());
+}
+
+/// FR-187 Behavior: the stutter step of a terminal state carries every
+/// reward of the model at 0, here `cost` on a state where `step` is not
+/// enabled.
+#[trace("TC-622")]
+#[test]
+fn the_stutter_step_carries_every_reward_at_zero() {
+    let world = World::new(&world::gate(
+        "self.up",
+        "self.up = x",
+        "reward cost on Gate::step = 1;\n",
+    ));
+    let system = world.system();
+    let start = initial(&system);
+    let [stutter] = <[_; 1]>::try_from(steps(&system, &start, &world, "Unit")).expect("one");
+    assert_eq!(stutter.transition, TransitionId::Stutter);
+    assert_eq!(stutter.probability, ratio(1, 1));
+    let [(name, value)] = &stutter.rewards[..] else {
+        panic!("one reward: {:?}", stutter.rewards);
+    };
+    assert_eq!(name.as_str(), "cost");
+    assert_eq!(integer_of(value), 0);
 }

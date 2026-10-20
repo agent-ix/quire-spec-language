@@ -22,7 +22,9 @@ use crate::simulation::choice::{
     weighted_choice_counted, ChoicePoint, TotalAboveDrawRange, WeightsRefusal,
 };
 use crate::simulation::expansion::ExpansionStop;
-use crate::simulation::model::probabilistic::{same_rewards, same_values, value_order};
+use crate::simulation::model::probabilistic::{
+    same_rewards, same_values, try_sort_by, value_order,
+};
 use crate::simulation::model::{
     Action, ModelSimState, ModelSystem, NotMarkov, TransitionId, BROKEN,
 };
@@ -86,6 +88,10 @@ pub enum SampleStop {
     /// The drawn identity and vector give no post-state or several.
     #[error("the drawn step is not Markov: {0:?}")]
     NotMarkov(NotMarkov),
+    /// A contract conjunction was undecided during a sampled step (FR-187);
+    /// FR-189 settles it as an undecided successor.
+    #[error("a contract conjunction was undecided during a sampled step")]
+    UndecidedSuccessor,
     /// A choice's scaled total exceeds `2^256`.
     #[error(transparent)]
     TotalAboveDrawRange(TotalAboveDrawRange),
@@ -195,7 +201,9 @@ fn sample(
         if let Some(cause) = request.cancel.cause() {
             return Err(SampleStop::Cancelled(cause));
         }
-        let actions = system.actions(&current)?;
+        let actions = system
+            .enabled_actions(&current)?
+            .map_err(|_| SampleStop::UndecidedSuccessor)?;
         if actions.is_empty() {
             steps.push(SampledStep {
                 transition: TransitionId::Stutter,
@@ -236,7 +244,7 @@ fn sample(
     })
 }
 
-/// The step `draws` selects among `actions`, the non-empty actions of the
+/// The step `draws` selects among `actions`, the enabled actions of the
 /// state whose digest is `state`: its post-state and its record, with no
 /// choices yet.
 #[allow(
@@ -250,10 +258,18 @@ fn take_step(
     state: &DigestRecord,
     draws: &mut StepDraws,
 ) -> Result<(ModelSimState, SampledStep), SampleStop> {
-    // The enabled operations in canonical operation order, each with its
-    // weight and its actions in canonical transition order.
+    // The enabled operations in canonical operation order (ascending
+    // declaration identity text), each with its weight and its actions in
+    // canonical transition order.
+    let mut texts: Vec<&str> = system
+        .operations()
+        .into_iter()
+        .map(|(_, _, text)| text)
+        .collect();
+    texts.sort_unstable();
+    texts.dedup();
     let mut operations: Vec<(&str, Rational, Vec<&Action>)> = Vec::new();
-    for (_, _, text) in system.operations() {
+    for text in texts {
         let enabled: Vec<&Action> = actions
             .iter()
             .filter(|action| action.identity.operation == text)
@@ -280,7 +296,9 @@ fn take_step(
     let mut random = Vec::new();
     for support in system.random_of_text(operation) {
         let mut items: Vec<_> = support.items.iter().collect();
-        items.sort_by(|left, right| value_order(&left.value, &right.value));
+        try_sort_by(&mut items, |left, right| {
+            value_order(&left.value, &right.value)
+        })?;
         let weights: Vec<Rational> = items.iter().map(|item| item.weight.clone()).collect();
         let item = items.get(draws.choose(&weights)?).ok_or_else(broken)?;
         random.push(item.value.clone());
@@ -334,8 +352,9 @@ fn take_step(
 /// [`SampleStop::GeneratorMismatch`] for a sampler other than
 /// `quire.simulation.sampler/v1`, before any draw;
 /// [`SampleStop::Expansion`] when a state's expansion stops;
-/// [`SampleStop::NotMarkov`] when the drawn identity and vector give no
-/// post-state or several; [`SampleStop::TotalAboveDrawRange`] when a
+/// [`SampleStop::UndecidedSuccessor`] when a contract conjunction of a
+/// state's expansion is undecided; [`SampleStop::NotMarkov`] when the
+/// drawn identity and vector give no post-state or several; [`SampleStop::TotalAboveDrawRange`] when a
 /// choice's scaled total exceeds `2^256`; [`SampleStop::Cancelled`] when
 /// `cancel` is cancelled, checked before each step.
 #[allow(

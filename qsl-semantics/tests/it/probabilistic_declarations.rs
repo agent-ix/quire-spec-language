@@ -18,8 +18,8 @@ use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::CheckedLiteral;
 use qsl_semantics::check::{
-    CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, PreconditionSite,
-    ProbabilisticCause, WeightOwner,
+    CheckCause, CheckRefusal, CheckedGraph, CheckingLimitKind, PackageDeclarations,
+    PreconditionSite, ProbabilisticCause, WeightOwner,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -1174,7 +1174,10 @@ fn other_model() -> String {
 /// `workload Steady on Other` on a second model of the package, are each
 /// refused `conflicting_declaration`/`duplicate-declaration` with `subject`
 /// `Steady` and `related` both declarations' names in source order; the
-/// first remains the package's `Steady`.
+/// first remains the package's `Steady`: `related[0]` is the first, earlier
+/// in the source. A refused
+/// unit has no graph to read `Steady` from, so the related regions are where
+/// the clause is observable.
 #[trace("TC-620", "FR-185-AC-5")]
 #[test]
 fn a_workload_name_is_package_wide() {
@@ -1224,18 +1227,6 @@ fn a_workload_name_is_package_wide() {
             ["Steady", "Steady"]
         );
     }
-    let graph = checked(&format!(
-        "{}\n{}",
-        other_model(),
-        service(None, "")
-            .replace("random Server::", "random Service::Server::")
-            .replace("on Server::attempt =", "on Service::Server::attempt =")
-    ));
-    let steady = graph
-        .probabilistic_model()
-        .workload("Steady")
-        .expect("Steady");
-    assert_eq!(steady.model(), "Service");
 }
 
 /// FR-185-AC-6 (TC-620 step 6): the running total of a distribution's
@@ -1264,22 +1255,58 @@ fn a_distribution_total_is_bounded_after_each_addition() {
     assert_eq!((limit.limit, limit.actual), (65_536, 65_537));
 }
 
-/// FR-185-AC-6 (TC-620 step 6): a check whose cancellation handle is
-/// tripped before it starts ends cancelled: the handle reports requested,
-/// and no refusal reports the 65,536-bit ceiling.
+/// FR-185-AC-6 (TC-620 step 6): a check of the 65,537-bit distribution,
+/// which unhindered refuses with the 65,536-bit ceiling, ends cancelled when
+/// its handle is tripped: before it starts, or at its first meter charge
+/// once it runs. The check itself observes the cancellation (the handle's
+/// `tripped` cause is `Requested`), and its refusals are the cancelled
+/// work-budget refusal, never the ceiling.
 #[trace("TC-620", "FR-185-AC-6")]
 #[test]
-fn a_check_cancelled_before_it_starts_ends_cancelled() {
-    let cancel = quire_exact::Cancel::new();
-    cancel.cancel(quire_exact::CancelCause::Requested);
-    let refusals = assemble(&service(None, ""))
-        .check_with_cancel(CheckingLimits::default(), &cancel)
-        .expect_err("a cancelled check refuses");
-    assert!(!refusals.is_empty());
-    assert_eq!(cancel.cause(), Some(quire_exact::CancelCause::Requested));
-    for refusal in &refusals {
-        if let CheckCause::ResourceExhausted(limit) = &refusal.cause {
-            assert_ne!(limit.limit, 65_536, "{refusal:?}");
+fn a_cancelled_check_ends_cancelled() {
+    let denominator = Integer::one()
+        .shifted_left(65_535)
+        .add(&Integer::from(5u64));
+    let refused = service(
+        Some((
+            D,
+            &format!(
+                "random Server::attempt(d) ~ {{ 1: rational(1, 3), 3: rational(1, {denominator}) }};"
+            ),
+        )),
+        "",
+    );
+    let before = quire_exact::Cancel::new();
+    before.cancel(quire_exact::CancelCause::Requested);
+    let handle = std::sync::Arc::new(std::sync::OnceLock::<quire_exact::Cancel>::new());
+    let tripping = {
+        let handle = std::sync::Arc::clone(&handle);
+        quire_exact::Cancel::observing(move || {
+            if let Some(cancel) = handle.get() {
+                cancel.cancel(quire_exact::CancelCause::Requested);
+            }
+        })
+    };
+    assert!(handle.set(tripping.clone()).is_ok());
+    for (when, cancel) in [("before", before), ("at the first charge", tripping)] {
+        let refusals = assemble(&refused)
+            .check_with_cancel(CheckingLimits::default(), &cancel)
+            .expect_err("a cancelled check refuses");
+        assert_eq!(
+            cancel.tripped(),
+            Some(quire_exact::CancelCause::Requested),
+            "{when}: the check observed the cancellation"
+        );
+        assert!(!refusals.is_empty(), "{when}");
+        for refusal in &refusals {
+            let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+                panic!("{when}: a cancelled refusal: {refusal:?}");
+            };
+            assert_eq!(
+                (limit.kind, limit.limit, limit.actual),
+                (CheckingLimitKind::WorkBudget, 0, 0),
+                "{when}: {refusal:?}"
+            );
         }
     }
 }

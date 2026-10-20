@@ -35,7 +35,7 @@ use super::domain::{Domain, Odometer};
 use super::encode::{value_enc, values_equal};
 use super::frames::{identity_bytes, text_of};
 use super::walk::{exhausted, expand_enabled, stop};
-use super::{refused, ModelSimState, ModelSystem, BROKEN};
+use super::{refused, ModelFinding, ModelSimState, ModelSystem, BROKEN};
 use crate::simulation::expansion::{ExpansionLimit, ExpansionStop};
 use crate::value::evaluate_reward;
 
@@ -137,6 +137,26 @@ impl PartialEq for NotMarkov {
     }
 }
 
+/// A contract conjunction of an application or a postcondition candidate
+/// was undecided at the state (FR-120's `ContractUndetermined` finding), so
+/// its successors, and its step probabilities, are not exactly known
+/// (FR-187).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UndecidedSuccessor {
+    /// The state's `quire.simulation.state-key/v1` digest.
+    pub state: DigestRecord,
+}
+
+/// Why [`ModelSystem::weighted_steps`] gives a state no step probabilities
+/// (FR-187).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Unsteppable {
+    /// A scheduled identity and drawn vector has no post-state or several.
+    NotMarkov(NotMarkov),
+    /// A contract conjunction was undecided at the state.
+    UndecidedSuccessor(UndecidedSuccessor),
+}
+
 /// Whether two values are the same: equal typed canonical forms, or equal
 /// quantities, which have no such form.
 pub(crate) fn same_value(left: &Value, right: &Value) -> bool {
@@ -168,29 +188,59 @@ pub(crate) fn same_rewards(left: &[(Identifier, Value)], right: &[(Identifier, V
             })
 }
 
-/// Canonical value order: Booleans `false` before `true`, integers
-/// ascending, every other value by its typed canonical form's bytes.
-pub(crate) fn value_order(left: &Value, right: &Value) -> Ordering {
-    match (left, right) {
+/// Canonical value order: Booleans `false` before `true`; integers,
+/// rationals, decimals and quantities of one unit numerically; enum members
+/// by their canonical rank; every other value by its typed canonical form's
+/// bytes.
+///
+/// # Errors
+///
+/// `runtime_invariant`/`established-invariant-broken` when a value compared
+/// by its bytes has no typed canonical form.
+pub(crate) fn value_order(left: &Value, right: &Value) -> Result<Ordering, ExpansionStop> {
+    Ok(match (left, right) {
         (Value::Boolean(left), Value::Boolean(right)) => left.cmp(right),
         (Value::Integer(left), Value::Integer(right)) => left.cmp(right),
+        (Value::Rational(left), Value::Rational(right)) => left.cmp(right),
+        (Value::Decimal(left), Value::Decimal(right)) => left.compare(right),
+        (Value::Quantity(left), Value::Quantity(right)) if left.unit() == right.unit() => {
+            left.magnitude().cmp(right.magnitude())
+        }
+        (Value::Enum(left), Value::Enum(right)) => left.rank().cmp(&right.rank()),
         _ => {
             let limits = quire_canonical::Limits::new(u64::MAX);
             let bytes = |value: &Value| {
-                quire_canonical::to_vec(&value_enc(value), limits).unwrap_or_default()
+                quire_canonical::to_vec(&value_enc(value), limits).map_err(|_| stop(BROKEN))
             };
-            bytes(left).cmp(&bytes(right))
+            bytes(left)?.cmp(&bytes(right)?)
         }
-    }
+    })
 }
 
 /// [`value_order`] lifted to vectors, the first value most significant.
-fn vector_order(left: &[Value], right: &[Value]) -> Ordering {
-    left.iter()
-        .zip(right)
-        .map(|(left, right)| value_order(left, right))
-        .find(|order| order.is_ne())
-        .unwrap_or_else(|| left.len().cmp(&right.len()))
+fn vector_order(left: &[Value], right: &[Value]) -> Result<Ordering, ExpansionStop> {
+    for (left, right) in left.iter().zip(right) {
+        let order = value_order(left, right)?;
+        if order.is_ne() {
+            return Ok(order);
+        }
+    }
+    Ok(left.len().cmp(&right.len()))
+}
+
+/// Sort `items` by `order`, stopping with the first comparison's error.
+pub(crate) fn try_sort_by<T>(
+    items: &mut [T],
+    mut order: impl FnMut(&T, &T) -> Result<Ordering, ExpansionStop>,
+) -> Result<(), ExpansionStop> {
+    let mut failed = None;
+    items.sort_by(|left, right| {
+        order(left, right).unwrap_or_else(|error| {
+            failed.get_or_insert(error);
+            Ordering::Equal
+        })
+    });
+    failed.map_or(Ok(()), Err)
 }
 
 /// One value of a random parameter's support, in declared order.
@@ -458,12 +508,20 @@ impl ModelSystem<'_> {
                     .map(|(domain, digit)| domain.nth(*digit))
                     .collect::<Option<Vec<Value>>>()
                     .ok_or_else(|| super::fault("reward-domain"))?;
-                let value = match self.reward_value(reward, arguments.clone()) {
-                    Ok(value) => value,
-                    // A reward that does not complete here stops the step
-                    // that reaches it; admission refuses negative values only.
-                    Err(_) => continue,
-                };
+                // A reward that does not complete on a vector refuses
+                // admission: its sign there is unknown.
+                let value =
+                    self.reward_value(reward, arguments.clone())
+                        .map_err(|stop| match stop.limit {
+                            Some(ExpansionLimit::EvaluationMeter) => {
+                                AdmissionFailure::Incomplete(super::record(
+                                    Code::ResourceExhausted,
+                                    "insufficient-next-charge",
+                                    &[("limit", "evaluation_meter".to_owned())],
+                                ))
+                            }
+                            _ => super::fault("reward-evaluation"),
+                        })?;
                 if is_negative(&value) {
                     let rendered = reward
                         .parameters()
@@ -500,18 +558,42 @@ impl ModelSystem<'_> {
     ///
     /// A random parameter is read by no precondition (FR-185), so a
     /// scheduled identity's precondition holds for every draw or for none.
-    /// A contract conjunction that does not decide leaves its application
-    /// or candidate out, as FR-120's expansion does, recording
-    /// `ContractUndetermined` in its findings, which this structure does not
-    /// carry.
+    ///
+    /// `Ok(Err(UndecidedSuccessor))` when a precondition or a postcondition
+    /// candidate of the state's expansion does not decide: the expansion
+    /// runs before any draw is judged, so this comes before [`NotMarkov`].
     ///
     /// # Errors
     ///
-    /// The [`ExpansionStop`] FR-120's expansion stops with; a reward
-    /// evaluation that exhausts the meter stops with
-    /// `resource_exhausted`/`insufficient-next-charge`.
-    pub fn actions(&self, state: &ModelSimState) -> Result<Vec<Action>, ExpansionStop> {
+    /// The [`ExpansionStop`] FR-120's expansion stops with;
+    /// `resource_exhausted`/`insufficient-next-charge` when a reward
+    /// evaluation exhausts the meter.
+    pub fn actions(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
+        Ok(self.enabled_actions(state)?.map(|mut actions| {
+            actions.retain(|action| action.draws.iter().any(|draw| !draw.successors.is_empty()));
+            actions
+        }))
+    }
+
+    /// [`Self::actions`] with every enabled scheduled identity, those with no
+    /// post-state for any draw included: a state with none is terminal
+    /// (FR-124), and a drawn vector with no post-state is [`NotMarkov`].
+    pub(crate) fn enabled_actions(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop> {
         let (expansion, enabled) = expand_enabled(self, state)?;
+        if expansion
+            .findings
+            .iter()
+            .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+        {
+            let (_, digest) = self.state_key(state).map_err(|_| stop(BROKEN))?;
+            return Ok(Err(UndecidedSuccessor { state: digest }));
+        }
         let mut successors: Vec<Option<(ModelTransition, ModelSimState)>> =
             expansion.successors.into_iter().map(Some).collect();
         let mut groups: Vec<(Vec<u8>, Action)> = Vec::new();
@@ -572,17 +654,17 @@ impl ModelSystem<'_> {
                 )),
             }
         }
-        groups.retain(|(_, action)| action.draws.iter().any(|draw| !draw.successors.is_empty()));
         groups.sort_by(|left, right| left.0.cmp(&right.0));
-        Ok(groups
+        groups
             .into_iter()
             .map(|(_, mut action)| {
-                action
-                    .draws
-                    .sort_by(|left, right| vector_order(&left.random, &right.random));
-                action
+                try_sort_by(&mut action.draws, |left, right| {
+                    vector_order(&left.random, &right.random)
+                })?;
+                Ok(action)
             })
-            .collect())
+            .collect::<Result<_, _>>()
+            .map(Ok)
     }
 
     /// FR-187: every transition of `state` with its exact step probability
@@ -599,8 +681,10 @@ impl ModelSystem<'_> {
     ///
     /// # Errors
     ///
-    /// `Ok(Err(NotMarkov))` for the first scheduled identity and drawn
-    /// vector, in canonical order, with no post-state or several. As
+    /// `Ok(Err(Unsteppable::UndecidedSuccessor))` as [`Self::actions`];
+    /// otherwise `Ok(Err(Unsteppable::NotMarkov))` for the first enabled
+    /// scheduled identity and drawn vector, in canonical order, with no
+    /// post-state or several. As
     /// [`Self::actions`]; `runtime_invariant`/`established-invariant-broken`
     /// when `workload` gives no weight to an enabled operation, which a
     /// workload of another model's subject does.
@@ -608,8 +692,11 @@ impl ModelSystem<'_> {
         &self,
         state: &ModelSimState,
         workload: &Workload,
-    ) -> Result<Result<Vec<WeightedStep>, NotMarkov>, ExpansionStop> {
-        let actions = self.actions(state)?;
+    ) -> Result<Result<Vec<WeightedStep>, Unsteppable>, ExpansionStop> {
+        let actions = match self.enabled_actions(state)? {
+            Ok(actions) => actions,
+            Err(undecided) => return Ok(Err(Unsteppable::UndecidedSuccessor(undecided))),
+        };
         if actions.is_empty() {
             return Ok(Ok(vec![WeightedStep {
                 transition: TransitionId::Stutter,
@@ -622,12 +709,12 @@ impl ModelSystem<'_> {
         for action in &actions {
             for draw in &action.draws {
                 if draw.successors.len() != 1 {
-                    return Ok(Err(NotMarkov {
+                    return Ok(Err(Unsteppable::NotMarkov(NotMarkov {
                         state: digest,
                         transition: action.identity.clone(),
                         random: draw.random.clone(),
                         post_states: u32::try_from(draw.successors.len()).unwrap_or(u32::MAX),
-                    }));
+                    })));
                 }
             }
         }
