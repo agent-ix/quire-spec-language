@@ -10,13 +10,13 @@
 //! model's successor relation.
 //!
 //! The leaky product has 10 reachable states here, not the 14 that
-//! FR-176-AC-1 and ADR-023 section 8.1 count. Those 14 assume an automaton
+//! the first criterion of FR-176 and ADR-023 section 8.1 count. Those 14 assume an automaton
 //! for the negated body whose `q0` moves to `q1` on a differing letter and
 //! also stays; the automaton `qsl-eval` translates (ADR-018 SM-6, shared with
 //! the liveness phase and the certificate checkers) guards that stay on the
 //! letter, so it is deterministic here and an unequal-secret pair has three
 //! product states, not five. The accepting components and the secure product's
-//! 8 states agree with the ADR; AC-1 is therefore not claimed below.
+//! 8 states agree with the ADR; that criterion is therefore not claimed below.
 
 use ix_trace_rs::trace;
 use qsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
@@ -170,14 +170,14 @@ fn the_secure_vault_holds_over_eight_product_states() {
     assert_eq!(world.explore().accepting_components(), 0);
 }
 
-/// FR-176-AC-2: `NonInterference` with its `match` block removed is refuted
-/// over the secure vault, which pairs `step(0)` with `step(1)`; and a `match`
+/// Criterion 2 of FR-176, not claimed: `NonInterference` with its `match`
+/// block removed is refuted over the secure vault, which pairs `step(0)` with `step(1)`; and a `match`
 /// that no pair of runs satisfies, `b` stuttering where the vault has no
 /// terminal state, is `Undecided(VacuousMatch)`, never `Holds`. The AC writes
 /// the first conjunct `a.step.op = V::Vault::step`, which S3 refuses as
 /// `MatchReadsState` (FR-172 has no operation-constant operand yet), so the
 /// vacuous clause uses `a.step.op != stutter`, which is equivalent over this
-/// vault; the AC is not claimed.
+/// vault; the criterion is not claimed.
 #[trace("TC-601")]
 #[test]
 fn without_match_the_secure_vault_is_refuted_and_an_unsatisfiable_match_is_vacuous() {
@@ -399,7 +399,9 @@ fn an_undefined_match_ends_the_item_at_the_first_such_joint_step() {
 }
 
 /// FR-176-AC-4, last sentence: running the leaky request twice gives
-/// byte-equal counterexamples.
+/// byte-equal counterexamples. A `HyperCounterexample` has no wire encoding
+/// yet (QSpec FR-400's writer is not built), so equality is `PartialEq` over
+/// the payload and over its `Debug` rendering, which prints every member.
 #[trace("TC-601", "FR-176-AC-4")]
 #[test]
 fn the_leaky_request_run_twice_gives_equal_counterexamples() {
@@ -622,4 +624,189 @@ fn the_products_limits_and_cancellation_stop_the_run() {
         }
     );
     assert_eq!(limit, None);
+}
+
+/// The clause over one object parameter `v` and one variable `a`, whose body
+/// is `body`, with `fairness` after the quantifier.
+fn single(fairness: &str, body: &str) -> String {
+    format!(
+        "hyper H using inf over behaviours (v: V::Vault) \
+         forall trace a of V {fairness} {{ {body} }}"
+    )
+}
+
+/// SR-13450 FND-001: a body whose negation has no acceptance set (`eventually
+/// p`, a bare state atom) is decided. From `(0, 0)` over the secure vault,
+/// `eventually holds(v.l @ a = 0)` and `holds(v.l @ a = 0)` hold at position 0;
+/// `eventually holds(v.l @ a = 1)` fails on the behaviour that always takes
+/// `step(0)`, and `holds(v.l @ a = 1)` fails at position 0. Every
+/// counterexample replays.
+#[trace("TC-601")]
+#[test]
+fn a_co_safety_body_is_decided_and_its_counterexample_replays() {
+    for body in ["eventually holds(v.l @ a = 0)", "holds(v.l @ a = 0)"] {
+        let world = World::new(Vault::Secure, false, &STARTS[..1], &single("", body));
+        assert!(
+            matches!(run(&world), HyperOutcome::Holds { .. }),
+            "{body} holds"
+        );
+    }
+    for (body, position) in [
+        ("eventually holds(v.l @ a = 1)", None),
+        ("holds(v.l @ a = 1)", Some(0)),
+    ] {
+        let world = World::new(Vault::Secure, false, &STARTS[..1], &single("", body));
+        let counterexample = refuted(run(&world));
+        assert!(
+            matches!(
+                counterexample.kind,
+                HyperCounterexampleKind::Lockstep { .. }
+            ),
+            "{body}"
+        );
+        if let Some(position) = position {
+            assert_eq!(counterexample.trace_position, position, "{body}");
+        }
+        assert!(
+            matches!(
+                world.replay(&counterexample),
+                Ok(qsl_replay::ModelTraceSettlement::Reproduced { .. })
+            ),
+            "{body} replays"
+        );
+    }
+}
+
+/// FR-126 "Bindings and ranking" (FR-176 reuses it): the clause has one
+/// instance for each key of the universe. A finding in the second instance
+/// is the answer when the first holds; at equal depth the earlier instance
+/// wins; and a finding at depth 0 ends the run before a later instance is
+/// explored, so a later instance that would exhaust the budget cannot turn
+/// the finding into a stop.
+#[trace("TC-601")]
+#[test]
+fn instances_are_ranked_by_depth_and_a_finding_ends_the_later_ones() {
+    let at_start = single("", "holds(v.l @ a = 0)");
+    let key_of = |world: &World| {
+        let counterexample = refuted(run(world));
+        counterexample.instance
+    };
+    // `v0` holds, `v1` has `l = 1` at position 0.
+    let second = World::with_vaults(Vault::Secure, &[("v0", (0, 0)), ("v1", (0, 1))], &at_start);
+    assert_eq!(key_of(&second), [("v".to_owned(), "v1".to_owned())]);
+    // Both have it: the earlier instance wins the tie.
+    let tie = World::with_vaults(Vault::Secure, &[("v0", (0, 1)), ("v1", (0, 1))], &at_start);
+    assert_eq!(key_of(&tie), [("v".to_owned(), "v0".to_owned())]);
+    // The first instance's finding is at depth 0: with the budget the first
+    // instance alone used, the second would stop the run were it explored.
+    let first = World::with_vaults(Vault::Secure, &[("v0", (0, 1)), ("v1", (0, 0))], &at_start);
+    let HyperOutcome::Violated { stats, .. } = run(&first) else {
+        panic!("expected a violation");
+    };
+    let mut tight = ModelCheckLimits::default();
+    tight.limits.max_states = usize::try_from(stats.product_states).expect("a small count");
+    tight.limits.max_transitions = usize::try_from(stats.product_edges).expect("a small count");
+    let outcome = first.run(tight, &Cancel::new()).expect("not refused");
+    assert!(
+        matches!(outcome, HyperOutcome::Violated { .. }),
+        "the finding stands: {outcome:?}"
+    );
+}
+
+/// The clause over `a` and `b` whose `match` no pair of runs can satisfy, so
+/// every instance is vacuous: no joint step has `b` stuttering.
+#[trace("TC-601")]
+#[test]
+fn a_clause_every_instance_of_which_is_vacuous_is_vacuous() {
+    let clause = "hyper H using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V \
+         match { a.step.op != stutter and b.step.op = stutter } \
+         { always holds(v.l @ a = v.l @ b) }";
+    let world = World::with_vaults(Vault::Secure, &[("v0", (0, 0)), ("v1", (1, 0))], clause);
+    let HyperOutcome::Undecided { cause, .. } = run(&world) else {
+        panic!("expected no decision");
+    };
+    assert_eq!(cause, UndecidedCause::VacuousMatch);
+}
+
+/// FR-176 "Limits": `max_transitions` counts the product's edges. The leaky
+/// vault has 8 edges and the product 20, so a budget of 10 passes the subject
+/// and stops the product.
+#[trace("TC-601")]
+#[test]
+fn the_products_edges_are_counted_against_max_transitions() {
+    let world = World::new(
+        Vault::Leaky,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let mut limits = ModelCheckLimits::default();
+    limits.limits.max_transitions = 10;
+    let HyperOutcome::Stopped { cause, limit, .. } =
+        world.run(limits, &Cancel::new()).expect("not refused")
+    else {
+        panic!("expected the product to stop");
+    };
+    assert_eq!(cause, IncompleteCause::ResourceExhausted);
+    assert_eq!(
+        limit,
+        Some(ReachedLimit {
+            limit: ModelCheckLimit::MaxTransitions,
+            value: 10
+        })
+    );
+}
+
+/// ADR-019 in the component-scoped filter: over the secure vault with `reset`
+/// and `always eventually holds(v.l @ a = 0)`, `step(0)` and `step(1)` are
+/// two identities of one operation, both always enabled. A loop of `step(1)`
+/// takes the operation and satisfies a constraint on the operation as a
+/// whole, weak or strong, so those refute the clause; a constraint on each
+/// identity forces `step(0)` too, which reaches `l = 0`, so those hold.
+#[trace("TC-601")]
+#[test]
+fn each_and_strong_constraints_are_read_per_identity_in_the_scoped_filter() {
+    let body = "always eventually holds(v.l @ a = 0)";
+    for (fairness, holds) in [
+        ("fair weak V::Vault::step;", false),
+        ("fair weak each V::Vault::step;", true),
+        ("fair strong V::Vault::step;", false),
+        ("fair strong each V::Vault::step;", true),
+    ] {
+        let world = World::new(Vault::Secure, true, &STARTS[..1], &single(fairness, body));
+        match (run(&world), holds) {
+            (HyperOutcome::Holds { .. }, true) => {}
+            (HyperOutcome::Violated { counterexample, .. }, false) => assert!(
+                matches!(
+                    world.replay(&counterexample),
+                    Ok(qsl_replay::ModelTraceSettlement::Reproduced { .. })
+                ),
+                "{fairness}"
+            ),
+            (other, _) => panic!("{fairness}: unexpected {other:?}"),
+        }
+    }
+}
+
+/// ADR-023 HM-5 and HM-7: a vacuity verdict is decided by the stutter loop
+/// where a terminal state is the only place the cycle can be. `match {
+/// a.step.op = stutter and b.step.op = stutter }` over the `Terminal` vault
+/// is vacuous from `(0, 0)`, where `step` is enabled and no joint step is
+/// stutter, and holds from `(0, 1)`, a terminal state, whose stutter loop is
+/// the fair matched cycle.
+#[trace("TC-601")]
+#[test]
+fn a_stutter_loop_at_a_terminal_state_is_a_matched_fair_cycle() {
+    let clause = "hyper H using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V \
+         match { a.step.op = stutter and b.step.op = stutter } \
+         { always holds(v.l @ a = v.l @ b) }";
+    let enabled = World::new(Vault::Terminal, false, &[(0, 0)], clause);
+    let HyperOutcome::Undecided { cause, .. } = run(&enabled) else {
+        panic!("expected no decision");
+    };
+    assert_eq!(cause, UndecidedCause::VacuousMatch);
+    let terminal = World::new(Vault::Terminal, false, &[(0, 1)], clause);
+    assert!(matches!(run(&terminal), HyperOutcome::Holds { .. }));
 }

@@ -341,6 +341,14 @@ enum Found {
     },
 }
 
+/// A first-phase finding before its counterexample is built.
+enum Candidate {
+    /// An undefined evaluation at a state.
+    Found(ProductStateId, Found),
+    /// A refused contract or `match`.
+    Refused(UndecidedCause),
+}
+
 /// The first phase's finding.
 enum FirstHit {
     Violated(Box<HyperCounterexample>),
@@ -401,7 +409,16 @@ impl<'a> Run<'_, 'a> {
         let mut explored = Vec::with_capacity(instances.len());
         let mut best: Option<(usize, FirstHit)> = None;
         for instance in instances {
-            let run = match self.explore(instance, &mut totals)? {
+            // FR-126 "Bindings and ranking": a later instance wins only with
+            // a strictly shallower finding, so it is explored only through
+            // the depth that finding would need (every state shallower than
+            // the best is expanded) and not at all past a finding at depth 0.
+            let cap = match best {
+                Some((0, _)) => break,
+                Some((depth, _)) => Some(depth),
+                None => None,
+            };
+            let run = match self.explore(instance, cap, &mut totals)? {
                 Ok(run) => run,
                 Err(outcome) => return Ok(outcome),
             };
@@ -589,6 +606,7 @@ impl<'a> Run<'_, 'a> {
     fn explore<'x>(
         &'x self,
         instance: &'x [ParameterBinding],
+        cap: Option<usize>,
         totals: &mut Totals,
     ) -> Result<Result<Explored<'x, 'a>, HyperOutcome>, ModelCheckRefusal> {
         let clause = self.request.clause;
@@ -623,7 +641,7 @@ impl<'a> Run<'_, 'a> {
             &product,
             totals.remaining(spent),
             IdentityLimits::default(),
-            None,
+            cap,
             || self.cancel.poll() && self.cancel.cause().is_some(),
         )
         .map_err(|error| {
@@ -667,8 +685,11 @@ impl<'a> Run<'_, 'a> {
                 Some(halt) => self.halt_ending(halt)?,
                 None => return Err(fault("a-stopped-expansion-recorded-its-halt")),
             },
+            // The horizon is the ranking cap's: the instance is explored as
+            // far as it can still win.
+            Outcome::BoundReached { .. } if cap.is_some() => Ending::Complete,
             Outcome::BoundReached { .. } => {
-                return Err(fault("the-product-sets-no-horizon"));
+                return Err(fault("the-product-sets-no-horizon-without-a-cap"));
             }
         };
         if let Ending::Stopped(cause, limit) = ending {
@@ -704,68 +725,97 @@ impl<'a> Run<'_, 'a> {
         &self,
         run: &Explored<'_, '_>,
     ) -> Result<Option<(usize, FirstHit)>, ModelCheckRefusal> {
-        let mut refused: Option<UndecidedCause> = None;
+        // The candidates rank by depth, an undefined evaluation before a
+        // refused one at one depth, then by discovery order: the first state
+        // in discovery order, and within it the first finding, wins a tie.
+        let mut best: Option<(usize, u8, Candidate)> = None;
+        let mut offer = |depth: usize, rank: u8, candidate: Candidate| {
+            if best
+                .as_ref()
+                .is_none_or(|(known, known_rank, _)| (depth, rank) < (*known, *known_rank))
+            {
+                best = Some((depth, rank, candidate));
+            }
+        };
         for (index, state) in run.graph.states().iter().enumerate() {
             let id = ProductStateId(index);
-            let found = match &state.state.property {
-                Property::Undefined { atom, cause } => Some((
+            if let Property::Undefined { atom, cause } = &state.state.property {
+                offer(
                     state.depth,
-                    Found::Atom {
-                        atom: *atom,
-                        cause: cause.clone(),
-                    },
-                )),
-                _ => state.findings.iter().find_map(|finding| match finding {
+                    0,
+                    Candidate::Found(
+                        id,
+                        Found::Atom {
+                            atom: *atom,
+                            cause: cause.clone(),
+                        },
+                    ),
+                );
+            }
+            let mut refused = None;
+            for finding in &state.findings {
+                match finding {
                     HyperFinding::Contract { component, finding } => {
-                        finding.undefined_contract().map(|undefined| {
-                            (
+                        if let Some(undefined) = finding.undefined_contract() {
+                            offer(
                                 state.depth,
-                                Found::Contract {
-                                    component: *component,
-                                    clause: undefined.clause,
-                                    guard_of: undefined.guard_of,
-                                    cause: undefined.cause,
-                                },
-                            )
-                        })
+                                0,
+                                Candidate::Found(
+                                    id,
+                                    Found::Contract {
+                                        component: *component,
+                                        clause: undefined.clause,
+                                        guard_of: undefined.guard_of,
+                                        cause: undefined.cause,
+                                    },
+                                ),
+                            );
+                        } else if finding.is_refused_contract() {
+                            refused
+                                .get_or_insert((state.depth, UndecidedCause::UndecidedSuccessor));
+                        }
                     }
                     HyperFinding::MatchUndefined {
                         step,
                         posts,
                         conjunct,
                         cause,
-                    } => Some((
+                    } => offer(
                         state.depth.saturating_add(1),
-                        Found::Match {
-                            step: step.clone(),
-                            posts: posts.clone(),
-                            conjunct: *conjunct,
-                            cause: cause.clone(),
-                        },
-                    )),
-                    HyperFinding::Enabled { .. } | HyperFinding::MatchRefused => None,
-                }),
-            };
-            if let Some((depth, found)) = found {
-                let counterexample = self.undefined_counterexample(run, id, found)?;
-                return Ok(Some((depth, FirstHit::Violated(Box::new(counterexample)))));
-            }
-            for finding in &state.findings {
-                match finding {
-                    HyperFinding::Contract { finding, .. } if finding.is_refused_contract() => {
-                        refused.get_or_insert(UndecidedCause::UndecidedSuccessor);
-                    }
+                        0,
+                        Candidate::Found(
+                            id,
+                            Found::Match {
+                                step: step.clone(),
+                                posts: posts.clone(),
+                                conjunct: *conjunct,
+                                cause: cause.clone(),
+                            },
+                        ),
+                    ),
                     HyperFinding::MatchRefused => {
-                        refused.get_or_insert(UndecidedCause::MatchUndetermined);
+                        refused.get_or_insert((
+                            state.depth.saturating_add(1),
+                            UndecidedCause::MatchUndetermined,
+                        ));
                     }
-                    _ => {}
+                    HyperFinding::Enabled { .. } => {}
                 }
             }
-            if let Some(cause) = refused {
-                return Ok(Some((state.depth, FirstHit::Undecided(cause))));
+            if let Some((depth, cause)) = refused {
+                offer(depth, 1, Candidate::Refused(cause));
             }
         }
-        Ok(None)
+        Ok(match best {
+            None => None,
+            Some((depth, _, Candidate::Refused(cause))) => {
+                Some((depth, FirstHit::Undecided(cause)))
+            }
+            Some((depth, _, Candidate::Found(id, found))) => {
+                let counterexample = self.undefined_counterexample(run, id, found)?;
+                Some((depth, FirstHit::Violated(Box::new(counterexample))))
+            }
+        })
     }
 
     /// The digest of each component of `state`, in quantifier order.
@@ -1074,11 +1124,28 @@ impl<'a> Run<'_, 'a> {
         Ok((fair, constraints))
     }
 
-    /// `base` with the automaton's acceptance sets added.
+    /// `base` with the automaton's acceptance sets added. A negated body with
+    /// none (a co-safety body, `eventually p`) accepts every run that has no
+    /// bad prefix: the states the automaton still has a run in, so the
+    /// `Dead` states the product keeps for UE-1 accept nothing.
     fn accepting(&self, run: &Explored<'_, '_>, base: &Graph) -> Result<Graph, ModelCheckRefusal> {
         let mut graph = base.clone();
         let automaton = run.product.automaton();
         let vertices: Vec<Vertex> = graph.vertices().collect();
+        if automaton.acceptance_set_count() == 0 {
+            let live = run
+                .graph
+                .states()
+                .iter()
+                .enumerate()
+                .filter(|(_, state)| matches!(state.state.property, Property::After(_)))
+                .map(|(index, _)| vertices.get(index).copied())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| fault("a-member-is-a-vertex"))?;
+            graph
+                .add_acceptance_set(live)
+                .map_err(|_| fault("an-acceptance-member-is-a-vertex"))?;
+        }
         for set in 0..automaton.acceptance_set_count() {
             let members: Vec<Vertex> = run
                 .graph

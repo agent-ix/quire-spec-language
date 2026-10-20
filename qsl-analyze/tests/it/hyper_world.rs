@@ -146,7 +146,8 @@ fn field(name: &str) -> Json {
     })
 }
 
-/// An operation of `Vault` with frame `modifies [l]`, taking `i: Bit` when
+/// An operation of `Vault` with frame `modifies_receiver [l]` (the vault it
+/// is applied to; the same as `modifies [l]` over one vault), taking `i: Bit` when
 /// `input`.
 fn operation(name: &str, input: bool) -> Json {
     let identity = ident(&format!("Vault/{name}"));
@@ -166,7 +167,8 @@ fn operation(name: &str, input: bool) -> Json {
         "identity": identity, "name": name, "params": params, "pre": [], "post": [],
         "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
             "startLine": 1, "startColumn": 1}},
-        "frame": {"modifies": [ident("Vault/l")], "creates": [], "deletes": []},
+        "frame": {"modifies": [], "modifies_receiver": [ident("Vault/l")],
+            "creates": [], "deletes": []},
     })
 }
 
@@ -264,12 +266,12 @@ fn declarations(document: &[u8], text: &str) -> PackageDeclarations {
     .expect("the unit assembles")
 }
 
-/// One snapshot of the vault `(h, l)`, provisioned in `snapshots`.
+/// One snapshot of the vaults `(key, (h, l))`, provisioned in `snapshots`.
 fn snapshot(
     document: &[u8],
     snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
     name: &str,
-    vault: Option<(i64, i64)>,
+    vaults: &[(&str, (i64, i64))],
 ) -> DocumentRef {
     let digest = *package_input([document]).keys().next().expect("one model");
     let header = json!({"identity": PACKAGE, "version": "1.0.0",
@@ -281,9 +283,10 @@ fn snapshot(
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident("vaults"), "complete": true,
-            "objects": vault.map(|(h, l)| json!({"key": KEY, "type": ident("Vault"),
+            "objects": vaults.iter().map(|(key, (h, l))| json!({"key": key,
+                "type": ident("Vault"),
                 "fields": {"h": {"integer": h.to_string()}, "l": {"integer": l.to_string()}}}))
-                .into_iter().collect::<Vec<_>>()}],
+                .collect::<Vec<_>>()}],
     });
     let bytes = body.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -302,16 +305,21 @@ fn snapshot(
 
 /// The `l` of the vault at `state`.
 pub(crate) fn low(state: &ModelSimState) -> i64 {
-    field_of(state, "l")
+    field_of(state, KEY, "l")
+}
+
+/// The `l` of the vault `key` at `state`.
+pub(crate) fn low_of(state: &ModelSimState, key: &str) -> i64 {
+    field_of(state, key, "l")
 }
 
 /// The `h` of the vault at `state`.
 pub(crate) fn high(state: &ModelSimState) -> i64 {
-    field_of(state, "h")
+    field_of(state, KEY, "h")
 }
 
-fn field_of(state: &ModelSimState, field: &str) -> i64 {
-    match state.state().populations[&key("vaults")][KEY]
+fn field_of(state: &ModelSimState, vault: &str, field: &str) -> i64 {
+    match state.state().populations[&key("vaults")][vault]
         .fields
         .get(&key(&format!("Vault/{field}")))
     {
@@ -349,6 +357,31 @@ impl World {
         starts: &[Option<(i64, i64)>],
         declaration: &str,
     ) -> Self {
+        let snapshots = starts
+            .iter()
+            .map(|start| start.map(|start| (KEY, start)).into_iter().collect())
+            .collect();
+        Self::build(vault, reset, snapshots, vec![KEY.to_owned()], declaration)
+    }
+
+    /// One initial state holding the vaults `objects`, `(key, (h, l))`, which
+    /// are also the universe: the clause has one instance for each.
+    pub(crate) fn with_vaults(
+        vault: Vault,
+        objects: &[(&str, (i64, i64))],
+        declaration: &str,
+    ) -> Self {
+        let universe = objects.iter().map(|(key, _)| (*key).to_owned()).collect();
+        Self::build(vault, false, vec![objects.to_vec()], universe, declaration)
+    }
+
+    fn build(
+        vault: Vault,
+        reset: bool,
+        starts: Vec<Vec<(&str, (i64, i64))>>,
+        universe: Vec<String>,
+        declaration: &str,
+    ) -> Self {
         let document = document(reset);
         let base = unit_text(&document, vault, reset, "");
         let graph = declarations(&document, &base)
@@ -366,7 +399,7 @@ impl World {
         let initial = starts
             .iter()
             .enumerate()
-            .map(|(index, start)| snapshot(&document, &mut snapshots, &format!("s{index}"), *start))
+            .map(|(index, start)| snapshot(&document, &mut snapshots, &format!("s{index}"), start))
             .collect();
         Self {
             text,
@@ -376,7 +409,7 @@ impl World {
             snapshots,
             initial,
             max_candidates: 1_000_000,
-            universe: vec![KEY.to_owned()],
+            universe,
         }
     }
 
@@ -472,17 +505,18 @@ impl HyperLetters for Seams<'_> {
     fn atom(
         &self,
         atom: FormulaNodeId,
-        _instance: &[ParameterBinding],
+        instance: &[ParameterBinding],
         states: &[&ModelSimState],
         _meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete> {
+        let vault = instance[0].instance.key.as_str();
         let text = self.world.atom_text(atom);
         let inner = text
             .strip_prefix("holds(")
             .and_then(|rest| rest.strip_suffix(')'))
             .unwrap_or_else(|| panic!("{text} is not a holds atom"));
         let words: Vec<&str> = inner.split_whitespace().collect();
-        let read = |name: &str| low(states[component(name)]);
+        let read = |name: &str| low_of(states[component(name)], vault);
         let holds = match words.as_slice() {
             ["v.l", "@", x, "=", "v.l", "@", y] => read(x) == read(y),
             ["v.l", "@", x, "=", constant] => {

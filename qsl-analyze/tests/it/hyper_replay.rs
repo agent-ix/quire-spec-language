@@ -73,7 +73,7 @@ fn leaky() -> World {
     )
 }
 
-/// FR-183-AC-1, first sentence: ADR-023 section 8.1's leaky `Lockstep`
+/// FR-183 criterion 1, first sentence (not claimed whole): ADR-023 section 8.1's leaky `Lockstep`
 /// counterexample replays to `reproduced-with-evaluated-witness` with
 /// `trace_position` 1, and replaying one counterexample twice gives equal
 /// results.
@@ -93,7 +93,7 @@ fn the_leaky_lockstep_counterexample_replays_to_its_evaluated_witness() {
     assert_eq!(world.replay(&counterexample).expect("settles"), replayed);
 }
 
-/// FR-183-AC-3, the refusals that settle no result: a counterexample with one
+/// FR-183 criterion 3, the refusals that settle no result (not claimed whole): a counterexample with one
 /// trace one step shorter; with `b`'s inputs changed to 1, which makes `μ_U`
 /// false; with one post-state digest altered; with a loop that does not
 /// close; and with a stutter marker on a state that is not terminal.
@@ -149,7 +149,7 @@ fn a_counterexample_that_breaks_a_replay_rule_is_refused() {
     );
 }
 
-/// FR-183-AC-3, last sentence: a counterexample under `fair weak
+/// FR-183 criterion 3, last sentence (not claimed whole): a counterexample under `fair weak
 /// V::Vault::reset` on `a` whose loop never takes or disables `reset` is
 /// refused as unfair. The loop is the engine's counterexample of the same
 /// clause without the fairness set.
@@ -183,7 +183,7 @@ fn a_loop_that_is_unfair_under_its_own_fairness_set_is_refused() {
     ));
 }
 
-/// FR-183-AC-4, first sentence: a hand-built `Lockstep` counterexample over
+/// FR-183 criterion 4, first sentence (not claimed whole): a hand-built `Lockstep` counterexample over
 /// the leaky vault with `a` and `b` both from `(0, 0)` taking `step(0)`, loop
 /// entry 1, on which `l` stays equal, settles `inconclusive`.
 #[trace("TC-608")]
