@@ -312,7 +312,11 @@ fn phi_series(z: &Rational, bits: u64) -> Result<Bounds, InternalFault> {
                 Integer::from_big(next_base * next_odd),
             )
             .map_err(|_| DIVISOR)?;
-            let signed = if index.is_multiple_of(2) { next.neg() } else { next };
+            let signed = if index.is_multiple_of(2) {
+                next.neg()
+            } else {
+                next
+            };
             return Ok(alternating(partial, &signed));
         }
         let gcd = odd.gcd(&next_odd);
