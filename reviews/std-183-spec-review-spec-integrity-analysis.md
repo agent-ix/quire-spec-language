@@ -44,3 +44,19 @@ Ticket: STD-183. PR: quire-spec-language#1088, head 9cdbed126. Method: spec-revi
 ## Verdict
 
 Findings. Consistent: FR-393's "S2 never refuses for facet; S3 decides" now names the gate; FR-361 item 8 points at it; the gate's suppression of other FR-230 refusals (including the missing-`time`-member refusal for an invariant or urgency) matches FR-361 item 12's one-refusal rule; TC-685 steps 1 to 6 are unchanged and step 7 does not conflict with them. TC-1078 step 6 (S2 builds equal forms under any facet) is unaffected. FND-001 to FND-003 should be fixed before merge.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-230's new Dependencies bullet links `FR-110-header-profile-selection.md`, which does not exist; the file is `FR-110-resolve-header-profile-selections-at-e3.md`. `make check-spec-validation` does not catch it. | spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md:291 |
+| FND-006 | low | FR-230-AC-7 forbids only another FR-230 refusal, while TC-685 step 7's expected result says "with no other refusal", which also excludes a refusal from any other requirement. The two disagree on what a test asserts for `g(): Clock`'s body. | spec/test-cases/TC-685-s3-checks-time-declarations-and-clock-constraints.md:40 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

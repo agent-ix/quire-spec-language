@@ -61,3 +61,22 @@ Engine measured on origin/main 469f8b49c in a scratch clone (probe test in qsl-s
 ## Verdict
 
 Findings. The intent fits the rest of the spec: FR-393's "S2 never refuses for facet; S3 decides" now points at the gate, the gate keeps FR-361 item 11's shape (source order, every construct, family, selected layers, required facet), and the suppression of other FR-230 refusals matches FR-361 item 12. FND-001 blocks merge: with no E3 resolution for `quire.temporal.complete/v1`, the gate refuses every timed construct in every unit and the admitting half can never run. Fix it by stating how a header selects the facet (an FR-110 or FR-361 row, or another resolution path), or by recording that the facet is unselectable until a named ticket and that FR-230's other rules wait on it. FND-002 to FND-004 are gaps a coder would trip on.
+
+## New findings (disposition pass 1)
+
+Head c6ad506f8. Engine re-measured on origin/main 469f8b49c (main has not moved), probe reverted after. With a header that does not select the facet, each of these refuses once `unsupported_construct`/`not-yet-implemented` at the `Clock` token: `type T = Clock;`, `tuple P(Clock, Integer);`, `union U { A(Clock), B }`, `record S { xs: Option<Clock>; }` and `record Q { xs: Sequence<Clock>; }`. FR-230-AC-7's source-only fixture gives six refusals, all `not-yet-implemented`, ordered by span 221, 248, 298, 432, 345, 398: the record's `Clock` comes before the two function `Clock`s, so today's order is not source order. Through the spine (`compose`), a header with `quire.temporal.complete/v1` gives one E3 refusal, `unknown_profile`/`unsupported-selection`, and no assembly result (FR-230-AC-8 holds today). The same unit without that header line gives S3's `TimedNotChecked(Clock)`.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The gate refuses a `Clock` only as a parameter, a result or a record field. A source-written `Clock` in a type alias, a tuple element, a union member payload or a type argument (`Option<Clock>`, `Sequence<Clock>`) is outside it. Since FR-230's other rules apply only once the facet is selectable, nothing says what S3 does with such a form, and an implementer could compile `type T = Clock;` unchecked. Today each of these refuses (measured). QSpec #298 (head 2104b290f) reads an unqualified `Clock` in every type position as the clock type and gives a non-selecting unit `unsupported_construct` for the form. State the gate for every source-written `Clock` type reference, with its owning declaration and family. | spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md:239-242 |
+| FND-007 | low | The wait on making `quire.temporal.complete/v1` selectable has no owning ticket or Remaining-work entry, unlike STD-192. The "run now" sentence of "Clock fields and the domain package" and FR-230-AC-2's "run now" clause still read as runnable today, and only the new preamble and TC-685's scope line say they wait. | spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md:151,166-168,271 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | deferred | The gate now records that the clock rules for a `Clock` outside a model object type are "not yet stated", and they cannot run until the facet is selectable (FR-230-AC-8), so stating them is out of scope here. |
+| FND-005 | fixed | - |

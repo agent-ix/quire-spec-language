@@ -37,3 +37,17 @@ Ticket: STD-183. PR: quire-spec-language#1088, head 9cdbed126. Method: spec-revi
 ## Verdict
 
 Findings, all low. Bullet 2 is a well-formed ubiquitous constraint. FR-361 item 8 and FR-393 read correctly with the new cross-references.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | "Once the facet is selected, S3 SHALL check a `Clock` parameter ... by FR-230's clock rules as they apply to a clock outside a model object type, which this requirement does not yet state" is a SHALL with nothing to verify. Rewrite it as a non-normative note naming the open rule, or as the gate's own deferral. | spec/functional/FR-230-check-time-declarations-clocks-and-clock-constraints.md:255-258 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
