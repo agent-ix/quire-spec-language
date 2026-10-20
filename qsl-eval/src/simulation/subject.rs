@@ -9,11 +9,15 @@ use std::borrow::Cow;
 
 use qsl_foundation::digest::DigestRecord;
 
-use crate::simulation::expansion::ExpansionStop;
+use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::EncodingRefusal;
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use crate::simulation::protocol::BlockedThread;
+
+/// An expansion, and whether a memory bound left a store of its state
+/// unexpanded (ADR-025 MB-3).
+pub type Bounded<T, S> = (Expansion<T, S, ModelFinding>, bool);
 
 /// A subject's transition system as EN-1 and replay read it.
 pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> {
@@ -56,6 +60,20 @@ pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> 
     ///
     /// An [`ExpansionStop`] when an evaluation stops.
     fn blocked(&self, state: &Self::State) -> Result<Vec<BlockedThread>, ExpansionStop>;
+
+    /// The expansion of `state`, and whether a memory bound left a store of
+    /// it unexpanded, which makes it bound-limited (ADR-025 MB-3); never
+    /// for a subject with no memory bound.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] as [`TransitionSystem::successors`] returns it.
+    fn successors_bounded(
+        &self,
+        state: &Self::State,
+    ) -> Result<Bounded<Self::TransitionId, Self::State>, ExpansionStop> {
+        Ok((self.successors(state)?, false))
+    }
 }
 
 impl SubjectSystem for ModelSystem<'_> {

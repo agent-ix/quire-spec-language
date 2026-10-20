@@ -41,18 +41,28 @@
 //!
 //! Compensation registrations, replicated roles and live protocol instances
 //! (`reg(c, ·)`, `role(r)`, `pinst`) belong to constructs this system
-//! refuses, and the one memory model it steps, `sc`, names no memory
-//! location and has no memory step.
+//! refuses.
+//!
+//! The memory model adds its own locations (ADR-025 MR-1) through
+//! [`MemoryModel::footprint`]: `sc` names none and has no memory step;
+//! `tso` names each thread's store buffer, `buf(b)`
+//! ([`ProtocolLocation::Buffer`]), beside the model locations that stand for
+//! `mem(ℓ)`. An attempt's class is EN-1's static one (FR-220): a
+//! read-modify-write that applies as a load keeps the read-modify-write's
+//! larger footprint.
 
 use std::collections::BTreeSet;
 
-use qsl_semantics::check::{ChannelOverflow, CheckedOutstanding, ControlStep, ProtocolNodeId};
+use qsl_semantics::check::{
+    AccessClass, ChannelOverflow, CheckedOutstanding, ControlStep, ProtocolNodeId,
+};
 
 use qsl_semantics::check::footprint::FootprintRefusal;
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 
+use super::access::InstanceAccess;
 use super::identity::{ProtocolTransition, StepKind, ThreadPath};
-use super::memory::MemoryModel;
+use super::memory::{FootprintStep, GatedStep, MemoryModel};
 use super::program::{Cursor, Rest};
 use super::{Instance, ProtocolRefusal, ProtocolState, ProtocolSystem, Thread};
 use crate::model_subject::ModelInstance;
@@ -97,6 +107,9 @@ pub enum ProtocolLocation {
         /// The binding thread.
         thread: ThreadPath,
     },
+    /// `buf(b)`: thread `b`'s store buffer in the memory component
+    /// (ADR-025 MR-1).
+    Buffer(ThreadPath),
     /// `queue(h)`: every queue of channel `h` of one protocol instance.
     Queue {
         /// The protocol instance's ordinal.
@@ -130,6 +143,7 @@ impl ProtocolLocation {
             | (Self::Instance(_), Self::Instance(_))
             | (Self::Branch { .. }, Self::Branch { .. })
             | (Self::Binder { .. }, Self::Binder { .. })
+            | (Self::Buffer(_), Self::Buffer(_))
             | (Self::Queue { .. }, Self::Queue { .. }) => self == other,
             (
                 Self::Control(_)
@@ -137,6 +151,7 @@ impl ProtocolLocation {
                 | Self::Instance(_)
                 | Self::Branch { .. }
                 | Self::Binder { .. }
+                | Self::Buffer(_)
                 | Self::Queue { .. },
                 _,
             ) => false,
@@ -154,8 +169,8 @@ pub enum ProtocolFootprintError {
     #[error(transparent)]
     Refused(#[from] ProtocolRefusal),
     /// The step names no thread resting at its node, no parallel instance
-    /// or no channel of the state, or is a memory step, which `sc` has none
-    /// of.
+    /// or no channel of the state, or is a memory step the memory model
+    /// does not take at the state.
     #[error("the step is not a step of the state")]
     UnknownStep,
 }
@@ -312,6 +327,21 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             built.write(queue);
             return Ok(built.footprint);
         }
+        if let Some(identity) = step.memory_step() {
+            let memory = FootprintStep::Memory {
+                identity,
+                stored: self.weak.shared(),
+            };
+            if !self.memory.footprint(
+                &state.memory,
+                &identity.thread,
+                memory,
+                &mut built.footprint,
+            ) {
+                return Err(unknown());
+            }
+            return Ok(built.footprint);
+        }
         let path = step.thread().ok_or_else(unknown)?;
         let instance = state.instances.get(&path.instance).ok_or_else(unknown)?;
         let thread = instance.threads.get(path).ok_or_else(unknown)?;
@@ -329,6 +359,32 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 built.footprint.reads.extend(model.reads);
                 built.footprint.writes.extend(model.writes);
                 built.footprint.enabling.extend(model.enabling);
+                let access = match self
+                    .weak
+                    .of(node)
+                    .map(|weak| (weak, weak.instance(application)))
+                {
+                    None => FootprintStep::Attempt {
+                        class: AccessClass::Local,
+                        ordering: None,
+                        shared: None,
+                    },
+                    Some((weak, Some(InstanceAccess::Access { class, location }))) => {
+                        FootprintStep::Attempt {
+                            class: *class,
+                            ordering: weak.ordering,
+                            shared: location.as_ref(),
+                        }
+                    }
+                    Some((_, Some(InstanceAccess::Shape { .. }) | None)) => {
+                        return Err(ProtocolRefusal::fault(
+                            "a-weak-attempt-application-is-one-classified-access",
+                        )
+                        .into())
+                    }
+                };
+                self.memory
+                    .footprint(&state.memory, path, access, &mut built.footprint);
                 self.binders_read(&mut built, instance, path, node, Read::Enabling)?;
                 if attempt.binds.is_some() {
                     built.write(self.binder(node, path)?);
@@ -365,6 +421,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }
                 built.write(self.binder(node, path)?);
+                if step.kind() == StepKind::Send {
+                    self.memory.footprint(
+                        &state.memory,
+                        path,
+                        FootprintStep::Gated(GatedStep::Send),
+                        &mut built.footprint,
+                    );
+                }
                 if step.kind() != StepKind::Event {
                     let channel = self.channel_of(node)?;
                     let queue = protocol(ProtocolLocation::Queue {
@@ -382,6 +446,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 }
             }
             StepKind::Fork => {
+                self.memory.footprint(
+                    &state.memory,
+                    path,
+                    FootprintStep::Gated(GatedStep::Fork),
+                    &mut built.footprint,
+                );
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
                 let text = self.program.text(node)?;
                 let ordinal = Self::free_ordinal(instance, path, node, text, join)?;
@@ -414,6 +484,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 }
             }
             StepKind::Join => {
+                self.memory.footprint(
+                    &state.memory,
+                    path,
+                    FootprintStep::Gated(GatedStep::Join),
+                    &mut built.footprint,
+                );
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
                 let text = self.program.text(node)?;
                 let (key, _) = Self::joined_instance(instance, path, node).ok_or_else(unknown)?;

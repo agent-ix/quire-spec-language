@@ -10,6 +10,7 @@
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_semantic_value::model_transition::ModelTransition;
 
+use super::memory::MemoryStepId;
 use crate::simulation::model::encode::Enc;
 
 /// One step of a branch thread's path (QSpec FR-425): the `parallel` that
@@ -216,8 +217,8 @@ enum Members {
         instance: u64,
         entry: Enc,
     },
-    /// `memory_step`, the canonical text its memory model gives.
-    Memory { identity: String },
+    /// `memory_step`, the typed identity its memory model gives.
+    Memory { identity: MemoryStepId },
 }
 
 /// A protocol step's typed canonical transition identity (ADR-027 TS-2,
@@ -300,7 +301,7 @@ impl ProtocolTransition {
         }
     }
 
-    pub(crate) fn memory(identity: String) -> Self {
+    pub(crate) fn memory(identity: MemoryStepId) -> Self {
         Self {
             kind: StepKind::Memory,
             thread: None,
@@ -334,6 +335,17 @@ impl ProtocolTransition {
             | Members::Record { .. }
             | Members::Channel { .. }
             | Members::Memory { .. } => None,
+        }
+    }
+
+    /// For a memory step, its identity (ADR-027 SE-1 d).
+    pub fn memory_step(&self) -> Option<&MemoryStepId> {
+        match &self.members {
+            Members::Memory { identity } => Some(identity),
+            Members::Attempt { .. }
+            | Members::Control
+            | Members::Record { .. }
+            | Members::Channel { .. } => None,
         }
     }
 
@@ -388,7 +400,7 @@ impl ProtocolTransition {
                 members.push(("entry", entry.clone()));
             }
             Members::Memory { identity } => {
-                members.push(("memory_step", Enc::text(identity.clone())));
+                members.push(("memory_step", identity.enc()));
             }
         }
         Enc::tagged("protocol-transition", members)
