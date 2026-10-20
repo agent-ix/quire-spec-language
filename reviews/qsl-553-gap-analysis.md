@@ -91,3 +91,14 @@ Round 1, at 952d953d5.
 | FND-007 | fixed | Connect-path test added; mutant M10 killed by the_lasso_reaches_its_fair_cycle_by_a_connecting_path. |
 | FND-008 | fixed | New tests: two instances (M20 killed), two universals, max_automaton_states, member contract (M13 and M21 killed), and fair_in (M17 killed). Mutation status this round: 30 mutants, 25 killed; 5 survived: M14, M18 and N1 are equivalent, N2 and N3 are untested ranking edges (gap FND-010). |
 | FND-009 | fixed | The test doc now states it covers the engine half, because no S3 lowering exists; accepted. |
+| FND-001 | fixed | The doc no longer opens with the AC id. `quire matrix` now lists FR-184-AC-1 as untagged, as the PR declares. |
+| FND-003 | fixed | The doc was reworded. `quire matrix` binds FR-177-AC-1 to hyper_witness.rs:94 alone; each of FR-177-AC-1..6 and FR-184-AC-2 has exactly one primary binder. |
+| FND-010 | fixed | New tests kill N2 (a_later_instance_with_an_undefined_evaluation_at_position_zero_beats_an_empty_witness_set) and N3 (an_unstated_undefined_evaluation_ranks_before_an_empty_witness_set_at_its_position), and cover two universal variables with an undefined `μ_U` (an_undefined_universal_match_names_every_variable_with_two_universals). |
+
+Round 2, at c35d951f2. Gates all pass: fmt, clippy -D warnings, the four crates, root `it`, string-edge and the three arch-lints; 4,819 tests passed, 0 failed. The three oracles agree on 1,200 cases each (seeds 7, 11, 23), 0 mismatches:
+
+- the witness-set oracle;
+- the undefined-`μ` oracle;
+- a new generic oracle over 0 to 3 universal variables with undefined `μ_U`/`μ_E`. For every stated Undefined counterexample it checks that `variables` and `state_keys` cover every trace in order, that each state key is its trace's end digest, the trace lengths, and that the partner is a member of X along the path. It also checks every multi-universal lasso.
+
+Mutation: 32 mutants, 29 killed. The 3 survivors (M14, M18, N1) are equivalent.

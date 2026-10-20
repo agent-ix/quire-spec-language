@@ -138,3 +138,13 @@ Round 1, at 952d953d5.
 | FND-007 | fixed | Seams bundle; the allow is removed. |
 | FND-008 | fixed | Both deleted; no caller remains. |
 | FND-009 | fixed | The index conversion now records Halt::Fault. |
+| FND-010 | fixed | Every variable is named. `state_keys` holds the universal posts plus the first member's partner digests (each trace's end). Probe: [a:1, c:1, b:0], variables [a, c, b], 3 state_keys. Killed: N5 (universals only) and N8 (keys without the partner) by an_undefined_universal_match_names_every_variable_with_two_universals. |
+| FND-011 | fixed | Horizon `Some(1)` expands the later instance's initial states, so every position-0 finding is made. Sound: findings at positions above 0 cannot beat a position-0 best, and a rank-2 position-0 finding cannot beat an earlier rank ≤ 2, so skipping exhaustion is correct. A later instance that stops within horizon 1 returns Stopped, as FR-126 does for a binding that stops before its needed depth (the probe now gives Stopped at max_states 5-6 and Violated from 7). N7 (back to `Some(0)`) is killed by a_violation_at_position_zero_bounds_the_later_instances. The original distinct-subject case has no test; accepted. |
+
+Round 2, at c35d951f2. Gates all pass: fmt, clippy -D warnings, the four crates, root `it`, string-edge and the three arch-lints; 4,819 tests passed, 0 failed. The three oracles agree on 1,200 cases each (seeds 7, 11, 23), 0 mismatches:
+
+- the witness-set oracle;
+- the undefined-`μ` oracle;
+- a new generic oracle over 0 to 3 universal variables with undefined `μ_U`/`μ_E`. For every stated Undefined counterexample it checks that `variables` and `state_keys` cover every trace in order, that each state key is its trace's end digest, the trace lengths, and that the partner is a member of X along the path. It also checks every multi-universal lasso.
+
+Mutation: 32 mutants, 29 killed. The 3 survivors (M14, M18, N1) are equivalent.
