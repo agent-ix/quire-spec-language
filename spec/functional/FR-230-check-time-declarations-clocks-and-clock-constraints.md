@@ -165,7 +165,8 @@ work: STD-192). Until it lands:
   declared in the unit's own source. FR-230-AC-1, FR-230-AC-4 and the
   clock refusals of FR-230-AC-2 wait. FR-230-AC-3, FR-230-AC-5, FR-230-AC-6
   and the `time` member, `time dense unit m` and `urgent when P` vectors of
-  FR-230-AC-2 run now, with time units declared in the unit's own source.
+  FR-230-AC-2 are the ones that need no domain-package clock or time unit: they
+  use time units declared in the unit's own source.
   When STD-192 lands, FR-230-AC-6 is replaced by the clock vectors.
 
 ### Clocks and resets
@@ -233,17 +234,18 @@ effect when the identity is a selectable profile.
 
 The family of a refused construct is `time-declaration` for a `time` member,
 `time-invariant` for a `time invariant`, `urgent-declaration` for an `urgent`
-declaration and `clock-type` for a `Clock`-typed parameter, result or record
-field.
+declaration and `clock-type` for a `Clock` in a type position. An unqualified
+`Clock` in any type position is the clock type (QSpec shared grammar).
 
 - If a unit's header does not select `quire.temporal.complete/v1`, then S3
   SHALL refuse each `time` member, each `time invariant`, each `urgent`
-  declaration and each parameter, result or record field of type `Clock` that
-  the unit's own source writes, in source order and every one, with
+  declaration and each `Clock` that the unit's own source writes in a type
+  position (a parameter, result, record field, type alias target, tuple element,
+  union payload, or the element of `Option` or a collection type), in source order and every one, with
   `unsupported_construct`/`declaration-form` at the construct's span.
 - The refusal SHALL retain the construct's family, the owning declaration (the
   model for a `time` member, `time invariant` or `urgent` declaration; the
-  function, operation or record for a `Clock` parameter, result or field), the
+  function, operation, record, alias, tuple or union for a `Clock` type position), the
   header layers the unit selected in source order and the required facet
   `quire.temporal.complete/v1`, as FR-361 items 10 and 11 do for the model
   forms.
@@ -252,10 +254,10 @@ field.
 - The gate SHALL NOT reach a `Clock` field of a package-admitted object type,
   which the unit does not write; once the facet is selected FR-230-AC-6 and
   STD-192 govern it.
-- Once the facet is selected, S3 SHALL check a `Clock` parameter, a `Clock`
-  result and a `Clock` field of a source-declared record by FR-230's clock rules
-  as they apply to a clock outside a model object type, which this requirement
-  does not yet state.
+
+Not yet specified: the clock rules for a `Clock` parameter, result or
+source-declared record field in a unit that selects the facet. This requirement
+states the rules for a clock field of a model object type only.
 
 ### Limits
 
@@ -273,7 +275,7 @@ field.
 | FR-230-AC-4 | A guard `(x < 1 or x > 2) and self.ready` checks to two convex parts, `x < 1` and `x > 2`, each with the data predicate `self.ready`. A model with 64 clock fields over a universe of 100 objects and a constant of `10^40 ms` checks with no refusal. Waits on STD-192 (Remaining work: STD-192): it declares clock fields. | Test (TC-685) |
 | FR-230-AC-5 | In a graph whose own source declares base dimension `Time`, root `s` and `ms` (`1/1000` of `s`), `time dense unit ms` and `time dense unit s` check, and a quantity `3 ms` read under `unit s` converts to `3/1000`. A unit of a derived dimension `Duration = Time` refuses `ill_typed`/`type-mismatch`, because `Duration` is not the `Time` node. `time dense unit hour` refuses `missing_declaration`/`missing-name` naming `hour`; a graph with no base `Time` refuses `time dense unit ms` `missing_declaration`/`missing-name` naming `Time` (and not `ms`); two dimensions named `Time` in the unit's source refuse `ambiguous_declaration`/`ambiguous-name` at assembly; a unit `degc` of a time dimension with offset `273` refuses `ill_typed`/`type-mismatch`. Two graphs that declare `ms` as `1/1000` and as `1/100` give different package identities. The same vectors with the units supplied by the admitted domain package, and a `Time` declared in both the source and the domain package (`conflicting_declaration`), wait on STD-192 (Remaining work: STD-192). | Test (TC-685) |
 | FR-230-AC-6 | In a unit that selects `quire.temporal.complete/v1`, until STD-192 lands, a `Clock` field of a package-admitted object type refuses `unsupported_construct`/`not-yet-implemented` at the field's span. This criterion is replaced by FR-230-AC-1, FR-230-AC-4 and the clock refusals of FR-230-AC-2 when STD-192 lands. | Test (TC-685) |
-| FR-230-AC-7 | A unit whose header selects no `quire.temporal.complete/v1` and whose own source writes `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration, a function `f(c: Clock)`, a function `g(): Clock` and a record with a `Clock` field refuses each, `unsupported_construct`/`declaration-form` at its span, in source order and every one, retaining its family, its owning declaration, the unit's selected layers and the required facet, with no other FR-230 refusal. | Test (TC-685) |
+| FR-230-AC-7 | A unit whose header selects no `quire.temporal.complete/v1` and whose own source writes `time dense unit ms;`, a `time invariant`, an `urgent when P;` declaration, a function `f(c: Clock)`, a function `g(): Clock`, a record with a `Clock` field, `type Alias = Clock;` and `Option<Clock>` refuses each, `unsupported_construct`/`declaration-form` at its span, in source order and every one, retaining its family, its owning declaration, the unit's selected layers and the required facet, with no other refusal. | Test (TC-685) |
 | FR-230-AC-8 | A header that selects `quire.temporal.complete/v1` is refused `unknown_profile`/`unsupported-selection` at E3 with no S3 result, because no catalog holds the identity. | Test (TC-685) |
 
 ## Dependencies
@@ -288,7 +290,7 @@ field.
 - [FR-361](FR-361-gate-model-constructs-on-the-model-profile-selection.md)
   (items 8, 10 and 11: the gate's stage and retained payload),
   [FR-393](FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md)
-  (the S2 forms) and [FR-110](FR-110-header-profile-selection.md) (the header
+  (the S2 forms) and [FR-110](FR-110-resolve-header-profile-selections-at-e3.md) (the header
   resolution that decides selection).
 - [FR-088](FR-088-clause-name-and-type-identity.md) (unit identity),
   [FR-091](FR-091-produce-value-forms-and-assemble-package-declarations.md)
@@ -299,5 +301,7 @@ field.
 - QSpec half: QSpec FR-415 (Linear STD-139) owns the shared grammar of the
   `time` member, `Clock` fields, resets, clock constraints, time invariants
   and `urgent` (ADR-026 OV-7).
+- Remaining work: the rules of this requirement wait on E3 admitting
+  `quire.temporal.complete/v1` as a selectable profile (FR-110, FR-361 item 8).
 - Remaining work: STD-192 (filament-core-data: a `Clock` field type and the time
   dimension declarations in the admitted domain package).
