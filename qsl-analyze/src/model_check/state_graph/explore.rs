@@ -395,6 +395,7 @@ impl Exploration<'_, '_, '_> {
                     kind: kind.clone(),
                     lasso: None,
                     blocked: Vec::new(),
+                    refinement: None,
                 }),
                 stats,
             },

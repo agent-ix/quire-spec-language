@@ -22,6 +22,8 @@ use quire_canonical::Limits as CanonicalLimits;
 use quire_exact::{ObjectReference, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 
+pub(super) mod judge;
+
 use super::contracts::{conjunction, Conjunction};
 use super::domain::{Domain, Odometer};
 use super::encode::{self, value_enc, values_equal};
@@ -35,6 +37,7 @@ use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::footprint::Footprint;
 use crate::simulation::key;
 use qsl_foundation::digest::DigestRecord;
+use qsl_foundation::CatalogCode;
 
 /// The most values a result domain may hold and still be put in canonical
 /// order; a larger one stops the expansion.
@@ -167,7 +170,7 @@ pub(super) fn apply(
         }
         match verdict {
             Conjunction::True => {}
-            Conjunction::False => continue,
+            Conjunction::False(_) => continue,
             Conjunction::Undecided(undecided) => {
                 for (clause, evaluation) in undecided {
                     contract.push(ContractFinding {
@@ -325,8 +328,11 @@ impl Dimension<'_> {
     }
 }
 
-/// A refusal by the frame decision.
-struct FrameRefused;
+/// A refusal by the frame decision, with its catalog code.
+struct FrameRefused(CatalogCode);
+
+/// A candidate's state-key bytes and digest, and its observation.
+type Evidence = (Vec<u8>, DigestRecord, Observation);
 
 /// The (population, object key, field) triples a frame lets an application
 /// write.
@@ -705,7 +711,9 @@ impl Run<'_, '_, '_> {
                 &mut |_| Ok::<(), Infallible>(()),
             );
             match outcome {
-                Err(FrameStop::Refused(_)) => return Ok(Err(FrameRefused)),
+                Err(FrameStop::Refused(refusal)) => {
+                    return Ok(Err(FrameRefused(refusal.catalog_code())))
+                }
                 Err(FrameStop::Denied(never)) => match never {},
                 Ok(found) => {
                     delta.created.extend(
@@ -900,6 +908,66 @@ impl Run<'_, '_, '_> {
         )))
     }
 
+    /// The conjunction of this application's postconditions over `candidate`
+    /// with `result`, reading the candidate's key and observation from
+    /// `evidence`, which it fills on first use.
+    fn post_conjunction(
+        &self,
+        evidence: &mut Option<Evidence>,
+        candidate: &ModelState,
+        effect: &StepEffect,
+        result: Option<&Value>,
+    ) -> Result<Conjunction, ExpansionStop> {
+        if self.postconditions.is_empty() {
+            return Ok(Conjunction::True);
+        }
+        let system = self.walk.system;
+        if evidence.is_none() {
+            let state_key = encode::model_key(&system.model, candidate);
+            let (bytes, digest) =
+                key::state_key(&state_key, identity_limits()).map_err(|_| stop(BROKEN))?;
+            let observation = system
+                .model
+                .observation(candidate, state_document(&digest))
+                .map_err(|_| stop(BROKEN))?;
+            *evidence = Some((bytes.as_bytes().to_vec(), digest, observation));
+        }
+        let (_, _, post) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
+        let check = self
+            .walk
+            .enforcement
+            .zip(self.footprint)
+            .map(|(enforcement, footprint)| {
+                ReadCheck::new(&system.model, enforcement, footprint, self.transition)
+            });
+        let verdict = conjunction(self.walk, self.postconditions, |info| {
+            let observations = AdmittedObservations {
+                usage: AdmissionUsage::default(),
+                clause: info.identity,
+                current: None,
+                pre: Some(self.walk.observation.clone()),
+                post: Some(post.clone()),
+                self_object: self.row.reference.clone(),
+                invocation: None,
+                self_kind: SelfKind::Object,
+                receiver_pre: None,
+                receiver_post: None,
+                parameters: self.args.to_vec(),
+                result: result.cloned(),
+                created: effect.created.clone(),
+                deleted: effect.deleted.clone(),
+            };
+            match &check {
+                Some(check) => check.attach(observations),
+                None => observations,
+            }
+        })?;
+        if let Some(check) = &check {
+            check.verify()?;
+        }
+        Ok(verdict)
+    }
+
     /// Pair `candidate` with each result and keep it as a successor when some
     /// pair's effective postcondition is true.
     fn complete(
@@ -911,14 +979,13 @@ impl Run<'_, '_, '_> {
         contract: &mut Vec<ContractFinding>,
         successors: &mut Vec<Applied>,
     ) -> Result<(), ExpansionStop> {
-        let system = self.walk.system;
         let mut effect = self.effect_of(&candidate, delta)?;
         let ordered = self.result_order(post_references)?;
         let picks: Vec<Option<u128>> = match &ordered {
             None => vec![None],
             Some((_, order)) => order.iter().copied().map(Some).collect(),
         };
-        let mut evidence: Option<(Vec<u8>, DigestRecord, Observation)> = None;
+        let mut evidence: Option<Evidence> = None;
         for pick in picks {
             let result = match (&ordered, pick) {
                 (Some((domain, _)), Some(index)) => {
@@ -930,52 +997,7 @@ impl Run<'_, '_, '_> {
                 budget.charge()?;
             }
             let verdict =
-                if self.postconditions.is_empty() {
-                    Conjunction::True
-                } else {
-                    if evidence.is_none() {
-                        let state_key = encode::model_key(&system.model, &candidate);
-                        let (bytes, digest) = key::state_key(&state_key, identity_limits())
-                            .map_err(|_| stop(BROKEN))?;
-                        let observation = system
-                            .model
-                            .observation(&candidate, state_document(&digest))
-                            .map_err(|_| stop(BROKEN))?;
-                        evidence = Some((bytes.as_bytes().to_vec(), digest, observation));
-                    }
-                    let (_, _, post) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
-                    let check = self.walk.enforcement.zip(self.footprint).map(
-                        |(enforcement, footprint)| {
-                            ReadCheck::new(&system.model, enforcement, footprint, self.transition)
-                        },
-                    );
-                    let verdict = conjunction(self.walk, self.postconditions, |info| {
-                        let observations = AdmittedObservations {
-                            usage: AdmissionUsage::default(),
-                            clause: info.identity,
-                            current: None,
-                            pre: Some(self.walk.observation.clone()),
-                            post: Some(post.clone()),
-                            self_object: self.row.reference.clone(),
-                            invocation: None,
-                            self_kind: SelfKind::Object,
-                            receiver_pre: None,
-                            receiver_post: None,
-                            parameters: self.args.to_vec(),
-                            result: result.clone(),
-                            created: effect.created.clone(),
-                            deleted: effect.deleted.clone(),
-                        };
-                        match &check {
-                            Some(check) => check.attach(observations),
-                            None => observations,
-                        }
-                    })?;
-                    if let Some(check) = &check {
-                        check.verify()?;
-                    }
-                    verdict
-                };
+                self.post_conjunction(&mut evidence, &candidate, &effect, result.as_ref())?;
             match verdict {
                 Conjunction::True => {
                     effect.result = result.as_ref().map(text_of).transpose()?;
@@ -992,7 +1014,7 @@ impl Run<'_, '_, '_> {
                     });
                     return Ok(());
                 }
-                Conjunction::False => {}
+                Conjunction::False(_) => {}
                 Conjunction::Undecided(undecided) => {
                     let (bytes, digest, _) = evidence.as_ref().ok_or_else(|| stop(BROKEN))?;
                     for (clause, evaluation) in undecided {

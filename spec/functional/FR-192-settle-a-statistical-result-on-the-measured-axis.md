@@ -53,7 +53,7 @@ counts none of the three as proved.
 //   Measured(StatisticalVerdict)
 pub struct StatisticalVerdict {
     pub decision: Decision,                 // FR-189
-    pub estimate: Rational,
+    pub estimate: Option<Rational>,         // the least favourable test's (FR-189); None when it has none
     pub interval: Option<(Rational, Rational)>,
     pub basis: StatisticalBasis,
     pub provenance: StatisticalProvenance,  // FR-191
@@ -98,15 +98,20 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | `Completed`, Undecided | `measured` | `completed` | `undecided` | `Measured{decision: Undecided(cause), …}` | inconclusive |
 | `Stopped` by a limit | `incomplete` | `limit-reached{limit, value, setting}` | none | `Incomplete(LimitReached{limit, value, setting})` (ADR-018 V-7) | incomplete |
 | `Stopped` by a cancelled `Cancel` handle | `incomplete` | `cancelled{source}` | none | `Incomplete(Cancelled{source})` (ADR-018 V-7) | incomplete |
-| `Unsupported`; an EN-4 refusal | `unsupported` | `unsupported` | none | `Unsupported(cause)` | unsupported |
+| `Unsupported` outcome | `unsupported` | cause `not-markov{…}` or `total-above-draw-range{total}` | none | `Unsupported(cause)` | unsupported |
+| `GeneratorMismatch`, `TooManyTests`, `TraceIndexRange`, `ConfidenceBeyondPrecision` or `FractionForEvent` refusal | `unsupported` | diagnostic `unsupported_projection`/`unsupported-requested-capability` naming the refusal | none | `Unsupported(diagnostic)` | unsupported |
+| `EveryScheduler`, `MissingConfidence` or `ExactOnlyForm` refusal | `unsupported` | the cause `every-scheduler`, `missing-confidence` or `exact-only-form` | none | `Unsupported(cause)` | unsupported |
+| `NotStatistical` refusal | none: a negotiation outcome, `invalid-request` | diagnostic `invalid_capability`/`not-statistical` (QSpec FR-408 Admission, FR-331) | none | no terminal result | none |
+| `NoTest` refusal | `inconclusive` | `no-initial-state` | none | `Inconclusive(NoInitialState)` (ADR-018 V-6) | inconclusive |
+| `Internal` refusal | `failed` | diagnostic `runtime_invariant`/`established-invariant-broken` | none | `Failed` | failed (ADR-013 O-16 internal failure) |
 
 - The record SHALL carry no FR-242 truth value and no FR-243 settlement
   basis for any of these rows.
-- `estimate` SHALL be `p̂` for a probability bound, `Pr(M <= c | activated)`
+- `estimate` SHALL be absent when the least favourable test has none, and otherwise `p̂` for a probability bound, `Pr(M <= c | activated)`
   for a quantile claim with the empirical nearest-rank quantile of the
   counted samples beside it, the sample mean for a mean of a fraction, and
   the ratio estimate for a long-run fraction; for several tests it is the
-  least favourable test's. `interval` SHALL be present for Okamoto and the
+  least favourable test's (FR-189). `interval` SHALL be present for Okamoto and the
   regenerative method and absent for SPRT. `coverage` SHALL be
   `Asymptotic` for the regenerative method and `FiniteSample` otherwise.
 - `TerminalValue::category` SHALL map `Measured{Accepted}` to success,
@@ -121,7 +126,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-192-AC-1 | Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`) `Completed` outcome; a `Stopped` naming `max_samples`, settling `Incomplete(LimitReached{limit, value, setting})` with setting `statistical.max_samples`; `Unsupported(NotMarkov)`. None of the five records carries an FR-242 truth or an FR-243 basis. | Test (TC-627) |
+| FR-192-AC-1 | Each outcome row maps exactly as the table states: an Accepted, a Rejected and an Undecided (`IndifferenceRegion`) `Completed` outcome; a `Stopped` naming `max_samples`, settling `Incomplete(LimitReached{limit, value, setting})` with setting `statistical.max_samples`; an `Unsupported` outcome with cause `NotMarkov`; a `NoTest` refusal settling `inconclusive`, `no-initial-state`; an `Internal` refusal settling `failed`. None of the measured, stopped and unsupported records carries an FR-242 truth or an FR-243 basis. | Test (TC-627) |
 | FR-192-AC-2 | FR-189-AC-1's Okamoto result at `5 ms` settles `measured`, `accepted`, with `interval` present, `coverage: FiniteSample`, `samples = 23,026`, `tests = 1`, `alpha_per_test = 1/100`; the SPRT result at `2 ms` settles `measured`, `rejected` with no `interval`; FR-190-AC-1's result settles `accepted` with `coverage: Asymptotic`. | Test (TC-627) |
 | FR-192-AC-3 | A request with `P95` accepted and the `2 ms` claim rejected fails the pipeline gate with the same status as a request holding one O-16 violation; the same request without the rejected item passes. Its proof summary counts 0 proved items. | Test (TC-627) |
 | FR-192-AC-4 | EN-4's manifest lists exactly (`probabilistic-satisfaction`, `statistical`). `check_statistical` given a claim `under every scheduler` refuses `EveryScheduler`; given `NoFault` with no confidence parameters refuses `MissingConfidence`; given `expected accumulate duration until holds(c.phase = Replied)` refuses `ExactOnlyForm`; each draws no sample and settles `unsupported` with its cause. | Test (TC-627) |

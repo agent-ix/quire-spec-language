@@ -35,7 +35,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::fairness::{check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep};
+use qsl_eval::fairness::{
+    check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep, Strength,
+};
 use qsl_eval::model_subject::{
     ModelInstance, ModelLetters, ModelSubject, ProtocolSubject, RoleBinding,
 };
@@ -185,10 +187,13 @@ pub enum ModelTraceRefusal {
         "unsupported_construct/not-yet-implemented: the clause has a guarded `on each` activation"
     )]
     GuardedActivation,
-    /// The recompiled clause's fairness set holds a strong constraint,
-    /// whose lasso check (ADR-019 FS-8) is not built.
-    #[error("unsupported_construct/not-yet-implemented: the clause's fairness set holds a strong constraint")]
-    StrongFairness,
+    /// A refinement counterexample that names no refinement failure.
+    #[error("invalid_runtime_input/invalid-value: the payload names no refinement failure")]
+    NoRefinementFailure,
+    /// A refinement counterexample that is a lasso, which FR-143's liveness
+    /// failures write and replay does not build yet.
+    #[error("unsupported_construct/not-yet-implemented: replay of a refinement lasso")]
+    RefinementLasso,
     /// A step's transition identity is not enabled at its pre-state.
     #[error("invalid_runtime_input/invalid-value: step {step} is not enabled")]
     NotEnabled {
@@ -232,15 +237,16 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::PostState { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
-            Self::StrongFairness
-            | Self::AuthoredUndefined
+            Self::AuthoredUndefined
             | Self::GuardedActivation
+            | Self::RefinementLasso
             | Self::ProtocolLasso => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
             | Self::OverBinding
+            | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => Code::InvalidRuntimeInput,
@@ -254,15 +260,16 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
             | Self::PostState { .. } => "content-mismatch",
-            Self::StrongFairness
-            | Self::AuthoredUndefined
+            Self::AuthoredUndefined
             | Self::GuardedActivation
+            | Self::RefinementLasso
             | Self::ProtocolLasso => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
             | Self::OverBinding
+            | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => "invalid-value",
@@ -334,20 +341,29 @@ pub struct ModelTraceReplayResult {
     pub package_id: PackageId,
 }
 
-/// A model counterexample refutes its item: the proved verdict is
-/// `violation`.
-fn disagrees(replayed: Category) -> ModelTraceSettlement {
-    ModelTraceSettlement::Inconclusive(DisagreementCause::Verdicts {
+/// The disagreement of a replay that reads `replayed` where a model
+/// counterexample refutes its item: the proved verdict is `violation`.
+pub(super) fn disagreement(replayed: Category) -> DisagreementCause {
+    DisagreementCause::Verdicts {
         proved: Verdict::from_category(Category::Violation),
         replayed: Verdict::from_category(replayed),
-    })
+    }
+}
+
+/// The disagreement of a replay that completed no value.
+pub(super) fn no_value_cause() -> DisagreementCause {
+    DisagreementCause::NoValue {
+        proved: Verdict::from_category(Category::Violation),
+        replayed: Verdict::from_category(Category::Incomplete),
+    }
+}
+
+fn disagrees(replayed: Category) -> ModelTraceSettlement {
+    ModelTraceSettlement::Inconclusive(disagreement(replayed))
 }
 
 fn no_value() -> ModelTraceSettlement {
-    ModelTraceSettlement::Inconclusive(DisagreementCause::NoValue {
-        proved: Verdict::from_category(Category::Violation),
-        replayed: Verdict::from_category(Category::Incomplete),
-    })
+    ModelTraceSettlement::Inconclusive(no_value_cause())
 }
 
 /// FR-128: replay `envelope`'s model counterexample over `subject`, with
@@ -541,7 +557,7 @@ fn replay_on<P: crate::witness::FamilyPayload>(
     })
 }
 
-fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
+pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
     ReplayRefusal::ModelTrace(Box::new(refusal))
 }
 
@@ -625,14 +641,14 @@ fn names_deadlock_item<T>(payload: &TemporalCounterexample<T>) -> bool {
     }
 }
 
-fn fault(invariant: &'static str) -> ReplayRefusal {
+pub(super) fn fault(invariant: &'static str) -> ReplayRefusal {
     ReplayRefusal::Fault(InternalFault::new("replay-model-trace", invariant))
 }
 
 /// One replayed position: its state and digest.
-struct Position<State = ModelSimState> {
-    state: State,
-    digest: DigestRecord,
+pub(super) struct Position<State = ModelSimState> {
+    pub(super) state: State,
+    pub(super) digest: DigestRecord,
 }
 
 /// One expansion of a subject's state.
@@ -717,7 +733,7 @@ fn settle(
                     Ok(Ok(states))
                 })?;
             let hints = if matches!(settlement, ModelTraceSettlement::Reproduced { .. }) {
-                strong_hints(system, formula.clause, &loop_states)
+                strong_hints(system, &loop_states)
             } else {
                 Vec::new()
             };
@@ -725,6 +741,22 @@ fn settle(
         }
         (CounterexampleKind::Formula, None) => Err(fault("formula-counterexample-names-a-clause")),
     }
+}
+
+/// Re-execute a model counterexample's prefix from its initial state, one
+/// position per state: a step's post-state digest selects its successor
+/// among the post-states of its transition identity. `None` when an
+/// expansion stops (the replay then completes no value).
+///
+/// # Errors
+///
+/// [`ModelTraceRefusal::InitialState`], [`ModelTraceRefusal::NotEnabled`] or
+/// [`ModelTraceRefusal::PostState`].
+pub(super) fn reexecute(
+    system: &ModelSystem<'_>,
+    payload: &TemporalCounterexample,
+) -> Result<Option<Vec<Position>>, ReplayRefusal> {
+    replay_prefix(system, payload, model_not_enabled)
 }
 
 /// Re-execute the payload's prefix from its initial state: each step's
@@ -900,15 +932,6 @@ fn check_formula<S: SubjectSystem>(
     let mut loop_states = Vec::new();
     let trace = match payload.lasso {
         Some(lasso) => {
-            // Refuse a strong constraint before any expansion is read.
-            if formula
-                .clause
-                .fairness()
-                .iter()
-                .any(|constraint| constraint.kind() == FairnessKind::Strong)
-            {
-                return Err(refused(ModelTraceRefusal::StrongFairness));
-            }
             match fair_loop(lasso)? {
                 Ok(states) => loop_states = states,
                 Err(settlement) => return Ok((settlement, Vec::new())),
@@ -1072,6 +1095,7 @@ fn unfair_constraint(
     let mut constraints = Vec::new();
     let mut authored = Vec::new();
     for constraint in clause.fairness() {
+        let strength = Strength::from(constraint.kind());
         let operation = constraint.operation();
         let text = system
             .operation_text(operation.declaring_type(), operation.name())
@@ -1083,12 +1107,12 @@ fn unfair_constraint(
             .collect();
         match constraint.granularity() {
             FairnessGranularity::Whole => {
-                constraints.push(Constraint::weak(covered));
+                constraints.push(Constraint::new(strength, covered));
                 authored.push(constraint);
             }
             FairnessGranularity::Each => {
                 for identity in covered {
-                    constraints.push(Constraint::weak([identity]));
+                    constraints.push(Constraint::new(strength, [identity]));
                     authored.push(constraint);
                 }
             }
@@ -1109,13 +1133,8 @@ fn unfair_constraint(
 /// enabled at some loop state and taken by no loop step is named `Whole`;
 /// otherwise the first transition identity of it, in canonical transition
 /// order, that is enabled at a loop state and taken by no loop step is named
-/// `Each`. An operation the clause already constrains that way gets none, and
-/// a terminal stutter loop, where nothing is enabled, gets none.
-fn strong_hints(
-    system: &ModelSystem<'_>,
-    clause: &CheckedTemporalClause,
-    states: &[LoopState],
-) -> Vec<StrongFairnessHint> {
+/// `Each`. A terminal stutter loop, where nothing is enabled, gets none.
+fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFairnessHint> {
     let mut hints = Vec::new();
     for (declaring, name, text) in system.operations() {
         let of_operation = |transition: &ModelTransition| transition.operation() == text;
@@ -1154,13 +1173,11 @@ fn strong_hints(
                 position,
             )
         };
-        if !clause.fairness().contains(&suggested) {
-            hints.push(StrongFairnessHint {
-                suggested,
-                identity,
-                first_enabled_position: position,
-            });
-        }
+        hints.push(StrongFairnessHint {
+            suggested,
+            identity,
+            first_enabled_position: position,
+        });
     }
     hints
 }
@@ -1251,7 +1268,8 @@ fn undefined<S: SubjectSystem>(
         UndefinedLocus::Atom(_)
         | UndefinedLocus::Contract(_)
         | UndefinedLocus::Terminal(_)
-        | UndefinedLocus::Protocol(_) => None,
+        | UndefinedLocus::Protocol(_)
+        | UndefinedLocus::Mapping { .. } => None,
     };
     if constraint.is_some_and(|name| !constraints.has_constraint(name)) {
         return Ok(disagrees(Category::Success));

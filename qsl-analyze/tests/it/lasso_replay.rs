@@ -44,7 +44,7 @@ fn below_two(value: i64) -> Option<bool> {
 }
 
 /// A fixture's compiled `package_id`, as the replay request recompiles it.
-fn package_id(fixture: &Fixture) -> DigestRecord {
+pub(crate) fn package_id(fixture: &Fixture) -> DigestRecord {
     compile_package(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
         "counter.native",
@@ -59,13 +59,13 @@ fn package_id(fixture: &Fixture) -> DigestRecord {
 }
 
 /// The identities of the fixture's one clause, as an envelope carries them.
-fn clause_identity(fixture: &Fixture) -> (WireNodeId, OccurrenceKey) {
+pub(crate) fn clause_identity(fixture: &Fixture) -> (WireNodeId, OccurrenceKey) {
     let node = &fixture.package.graph().temporal_clauses()[0];
     let id = WireNodeId::from_digest(*node.identity().as_bytes());
     (id, OccurrenceKey::new(id, node.claim().clone()))
 }
 
-fn subject_of(fixture: &Fixture) -> ModelTraceSubject {
+pub(crate) fn subject_of(fixture: &Fixture) -> ModelTraceSubject {
     ModelTraceSubject {
         initial: fixture.initial.clone(),
         universes: universe(&fixture.keys),
@@ -77,7 +77,7 @@ fn subject_of(fixture: &Fixture) -> ModelTraceSubject {
 
 /// Replay `payload` as the fixture's clause's counterexample, the clause's
 /// atoms read by `atom`.
-fn replay_with(
+pub(crate) fn replay_with(
     fixture: &Fixture,
     payload: TemporalCounterexample,
     atom: fn(i64) -> Option<bool>,
@@ -99,7 +99,7 @@ fn replay_with(
 }
 
 /// The counterexample EN-1 finds for the fixture's clause.
-fn found(fixture: &Fixture, atom: fn(i64) -> Option<bool>) -> TemporalCounterexample {
+pub(crate) fn found(fixture: &Fixture, atom: fn(i64) -> Option<bool>) -> TemporalCounterexample {
     match fixture.decide(atom).expect("checked") {
         ModelCheckOutcome::Violated { counterexample, .. } => counterexample.as_ref().clone(),
         other => panic!("expected a violation, got {other:?}"),
@@ -127,7 +127,7 @@ pub(crate) fn hints_of(
         .hints
 }
 
-fn refusal(
+pub(crate) fn refusal(
     result: Result<ModelTraceReplayResult, ReplayRefusal>,
 ) -> (ModelTraceRefusal, Code, &'static str) {
     match result {
@@ -540,6 +540,7 @@ fn a_bounded_prefix_that_is_cut_short_refuses_and_a_covering_one_reproduces() {
         kind: qsl_replay::CounterexampleKind::Formula,
         lasso: None,
         blocked: Vec::new(),
+        refinement: None,
     };
     let (cause, code, tag) = refusal(replay_with(&holds, empty, |value| Some(value >= 0)));
     assert!(

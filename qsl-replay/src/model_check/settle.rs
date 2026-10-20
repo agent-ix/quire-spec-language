@@ -27,7 +27,7 @@ use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCause};
 use crate::model_check::replay::{
-    ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
+    no_value_cause, ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
 };
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
@@ -283,6 +283,11 @@ fn settle<T: Clone>(
                 settlement: ModelTraceSettlement::Inconclusive(cause),
                 ..
             }) => Row::inconclusive(InconclusiveCause::ReplayParity(cause)),
+            // EN-1 builds only fair lassos (ADR-019 FS-7), so replay's refusal
+            // of one as unfair is a disagreement between the two (SV-4).
+            Err(ReplayRefusal::UnfairLasso { .. }) => {
+                Row::inconclusive(InconclusiveCause::ReplayParity(no_value_cause()))
+            }
             Err(refusal) => Row::refused(&refusal),
         },
     };

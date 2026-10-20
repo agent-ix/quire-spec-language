@@ -20,6 +20,7 @@ use quire_exact::{Origin, Role};
 use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
 use crate::witness::FamilyPayload;
 
 /// The occurrence role of the derived deadlock-freedom item.
@@ -67,6 +68,18 @@ pub enum UndefinedLocus {
     /// A protocol step's constraint (ADR-027 TS-4), by its node's static
     /// declaration path.
     Protocol(String),
+    /// A refinement's mapping row or step-row argument (ADR-020 RE-5).
+    Mapping(Box<MappingSite>),
+}
+
+/// The row and object a refinement's undefined mapping names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MappingSite {
+    /// The row.
+    pub row: MappingRowRef,
+    /// The concrete object the row was evaluated for, when it is evaluated
+    /// for one.
+    pub object: Option<ObjectKey>,
 }
 
 /// QSpec FR-364's `where` of an undefined evaluation.
@@ -142,6 +155,9 @@ pub struct TemporalCounterexample<T = ModelTransition> {
     /// For a deadlock over a protocol subject, the waiting threads of the
     /// last state (ADR-027 PD-4); empty otherwise.
     pub blocked: Vec<BlockedThread>,
+    /// The failure of a refinement item (ADR-020 RC-1); `None` for every
+    /// other item.
+    pub refinement: Option<RefinementFailure>,
 }
 
 /// ADR-018 UE-6 and ADR-027 TS-4: the first finding of an expansion that

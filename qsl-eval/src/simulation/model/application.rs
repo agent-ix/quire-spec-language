@@ -60,11 +60,6 @@ impl<'a> ModelSystem<'a> {
         self.model.type_key(type_id).map(|key| key.package.as_str())
     }
 
-    /// The evaluation meter budget each clause evaluation gets afresh.
-    pub(crate) fn meter(&self) -> quire_exact::ScalarLimits {
-        self.meter
-    }
-
     /// The `semantic` member of `state`'s key (FR-120 "State, state key and
     /// anchor"), the member a protocol state's key shares (ADR-027 PS-8).
     pub(crate) fn semantic_enc(&self, state: &ModelSimState) -> super::encode::Enc {

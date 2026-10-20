@@ -20,10 +20,19 @@ mod protocol_system;
 mod quotient;
 mod reduction;
 mod reduction_world;
+mod refinement_budget;
+#[path = "../../../tests/support/refinement_cas.rs"]
+mod refinement_fixture;
+mod refinement_reads;
+mod refinement_replay;
+mod refinement_safety;
+#[path = "../../../tests/support/ring_world.rs"]
+mod ring_world;
 mod schedulability;
 mod state_graph;
 mod state_graph_certificate;
 mod state_graph_settle;
+mod strong_fairness;
 mod strong_hint;
 mod units;
 mod universe_obligation;

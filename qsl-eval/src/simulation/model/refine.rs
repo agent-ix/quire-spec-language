@@ -16,7 +16,9 @@ use qsl_semantics::model::state::{ModelState, StateField};
 use quire_exact::{Meter, ObjectReference, Outcome, Value};
 
 use super::walk::stop;
-use super::{encode, identity_limits, state_document, ClauseOutcome, ModelSystem, BROKEN};
+use super::{
+    encode, identity_limits, state_document, ClauseOutcome, ModelSimState, ModelSystem, BROKEN,
+};
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::key;
 use crate::temporal::UndefinedCause;
@@ -39,6 +41,27 @@ pub enum RowReading {
 pub struct StateObservation(qsl_semantics::model::observation::Observation);
 
 impl ModelSystem<'_> {
+    /// The identity of the one domain package this system is over; `None`
+    /// for a system over several selected models.
+    pub fn model(&self) -> Option<&str> {
+        self.over.as_deref()
+    }
+
+    /// The evaluation meter budget each clause evaluation gets.
+    pub fn meter(&self) -> quire_exact::ScalarLimits {
+        self.meter
+    }
+
+    /// The most candidates one expansion may generate.
+    pub fn max_candidates(&self) -> u64 {
+        self.limits.max_candidates
+    }
+
+    /// The initial states, in the order the system was given them.
+    pub fn initial_states(&self) -> &[ModelSimState] {
+        &self.initial
+    }
+
     /// Evaluate `row` over `observed`, with `bindings` for
     /// its parameters (`self` first) and a fresh meter of this system's
     /// budget.
