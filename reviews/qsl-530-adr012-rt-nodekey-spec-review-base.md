@@ -32,3 +32,11 @@ Ticket: QSL-530. Wording, behaviour-not-changelog and EARS for the two edited AD
 ## Verdict
 
 Findings: 1 low. Wording is behaviour, not changelog; the blocking findings are in SR-13366.
+
+## Dispositions
+
+Round 1, head c6ac33eb9 (fix commit c6ac33eb9 over merge b4c476a28 of main 891825c45).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |

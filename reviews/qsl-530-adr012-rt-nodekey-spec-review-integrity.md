@@ -47,3 +47,20 @@ Ticket: QSL-530. Consistency of the two amended ADR-012 rows with ADR-013 O-04, 
 ## Verdict
 
 Findings: 1 high, 3 medium. Not mergeable: ADR-013 O-04 must be amended in this PR. The ADR-011 T-12 leftovers, the missing source for held keys, and the enforcement claim also need fixing.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The fix records an open question, a production source for keys held in a `Value`, but only inside an answer row of §13.5 'Answers to sibling questions', with no owner or ticket. §13.4 'Owner questions' names an owner for each open item, and ADR-013 O-04 does not mention the question. A reader listing open items will not find it, and nothing tracks it to a decision. List it in §13.4 (or an open-question row) with its owner, for example IR-882 or the RT cutover ticket, and point to it from O-04. | spec/decisions/ADR-012-semantic-family-extension-contracts.md:1099 |
+
+## Dispositions
+
+Round 1, head c6ac33eb9 (fix commit c6ac33eb9 over merge b4c476a28 of main 891825c45).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

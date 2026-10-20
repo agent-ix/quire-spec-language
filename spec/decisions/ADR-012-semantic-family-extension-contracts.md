@@ -1082,6 +1082,11 @@ scope item 5.
    temporal claims and adds the FR-331 candidate set. #212 needs #134 settled,
    because §7 cannot select a backend for the #217 function exemplar without a
    kind. Owner: agent-ix/quire-specification#134.
+2. What produces the `NodeKey`s a `quire_exact::Value` holds in RT in
+   production (§13.5, "how RT obtains `NodeKey`s")? No backend module may call
+   `NodeKey::decode_admitted` (ADR-011 T-12), and none is specified yet. A
+   source, for example keys passed through from the QSL `replay` facade, needs
+   its own spec decision. Owner: IR-882, the RT cutover to `quire_exact::Value`.
 
 Answered: when more than one backend matches and the request names none, the
 item settles `invalid-request` with no preference order
