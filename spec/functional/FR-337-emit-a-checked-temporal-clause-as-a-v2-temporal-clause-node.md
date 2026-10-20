@@ -67,7 +67,7 @@ reader returns.
   automaton-state context.
 - The clause's `over` node: the NodeId of the parameter node the first
   argument of the `quire.op.temporal.clause` application references. A
-  clause with no `over` parameter (FR-153-AC-3's `eventually holds(forall x in toggles: x.fired)` shape) has no `over` node; that
+  clause with no `over` parameter (a clause such as `eventually holds(p = q)` over no bound variable; today S1 requires `over`, STD-186) has no `over` node; that
   absence is a valid result, not a refusal.
 - From the I2 reader: the checked clause's v2 view, or FR-370's refusal
   with its locus.

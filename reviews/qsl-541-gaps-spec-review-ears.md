@@ -42,3 +42,11 @@ Measured on main 9567ed601 (which holds merged #1066) with a throwaway probe tes
 ## Verdict
 
 One medium finding. FR-161-AC-2's new one-initial-state clause is owned by ADR-021 SYM-5 and FR-151, not by a statement of FR-161 (see SR-13379 FND-002). AC-7's first two clauses are backed by FR-391's Typing SHALLs. Both ACs are direct assertions of outcome, not given-when-then.
+
+## Dispositions
+
+Round 1 verified at head 261c99f4d against main 9567ed601 with the same throwaway probe (patch /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1075/probe-patch-r1.diff, output /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1075/probe-r1.log; clone reverted). The Token unit with `temporal C using t0 over (w: M::Watch) ... { eventually holds(w = w) }` checks; the Toggle unit with `fair weak each M::Toggle::flip; fair strong each M::Toggle::fire; eventually holds(w = w)` checks; one initial state still settles `SymmetryBroken{holders, InitialStatesNotClosed{0, (a b)}}` with 0 product states. #1066's tests use the same form: quotient.rs's EVENTUALLY_FIRED is `eventually holds(w = w)`, and flag_world.rs passes its AllTrue letters to both `check_model` and `replay_unit`. FR-161-AC-2's postcondition as written, `not self.tok and (forall o in holders: o != self implies o.tok)`, fails S1 (`expected (`); `forall(o in holders : ...)` refuses MissingName("holders") and `forall(o in M::holders : ...)` refuses PopulationFormOutsideRefinement at S3. FR-391 and TC-1076 are byte-equal to main.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: FR-391-AC-7 removed; FR-391 is byte-equal to main 9567ed601, so no AC verifies the unowned temporal-atom refusal. |

@@ -47,3 +47,13 @@ Measured on main 9567ed601 (which holds merged #1066) with a throwaway probe tes
 ## Verdict
 
 Two medium findings and one low. TC-585 verifies FR-161 and its scope 'FR-161-AC-1 to FR-161-AC-2' still covers the edited AC; TC-1076's scope was widened to AC-7 and its row 9 matches AC-7 clause for clause. The TC-568 pointer is to the right test of the rule, but the owning requirement (FR-151) is neither cited nor related.
+
+## Dispositions
+
+Round 1 verified at head 261c99f4d against main 9567ed601 with the same throwaway probe (patch /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1075/probe-patch-r1.diff, output /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1075/probe-r1.log; clone reverted). The Token unit with `temporal C using t0 over (w: M::Watch) ... { eventually holds(w = w) }` checks; the Toggle unit with `fair weak each M::Toggle::flip; fair strong each M::Toggle::fire; eventually holds(w = w)` checks; one initial state still settles `SymmetryBroken{holders, InitialStatesNotClosed{0, (a b)}}` with 0 product states. #1066's tests use the same form: quotient.rs's EVENTUALLY_FIRED is `eventually holds(w = w)`, and flag_world.rs passes its AllTrue letters to both `check_model` and `replay_unit`. FR-161-AC-2's postcondition as written, `not self.tok and (forall o in holders: o != self implies o.tok)`, fails S1 (`expected (`); `forall(o in holders : ...)` refuses MissingName("holders") and `forall(o in M::holders : ...)` refuses PopulationFormOutsideRefinement at S3. FR-391 and TC-1076 are byte-equal to main.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: relationships: ... - target: ix://agent-ix/quire-spec-language/FR-151 type: depends_on ... FR-161-AC-2 no longer uses FR-391's `allInstances` form; the remaining population dependency of its postcondition belongs to the planner's separate population PR (SR-13377 FND-004, FND-006). |
+| FND-002 | fixed | after: With only the first initial state, which is not closed under `(a b)`, FR-151's pre-check settles the item `inconclusive`, `SymmetryBroken{holders, InitialStatesNotClosed{0, (a b)}}` with no state expanded (FR-151-AC-3, TC-568). TC-585: 3. Run the same claim with only the first initial state (FR-151's pre-check, FR-151-AC-3; TC-568 owns this test). |
+| FND-003 | fixed | after: TC-1076 row 9 removed with FR-391-AC-7; TC-1076 is byte-equal to main 9567ed601, whose 'Catches' list covers its AC-1 to AC-6 scope. |

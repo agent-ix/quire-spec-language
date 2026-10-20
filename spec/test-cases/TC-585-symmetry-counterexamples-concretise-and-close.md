@@ -28,4 +28,4 @@ Tag the tests `#[trace("TC-585", "FR-161-AC-n")]`.
 
 - Step 1: `upd(b)` three times through `(0,1,0)`, `(0,2,0)`, `(0,0,0)`, one pass; `reproduced-with-evaluated-witness`.
 - Step 2: empty stem, loop `pass(b)`, `pass(a)`; it replays.
-- Step 3: `inconclusive`, `SymmetryBroken{InitialStatesNotClosed{0, (a b)}}`, no state expanded.
+- Step 3: `inconclusive`, `SymmetryBroken{holders, InitialStatesNotClosed{0, (a b)}}`, no state expanded.
