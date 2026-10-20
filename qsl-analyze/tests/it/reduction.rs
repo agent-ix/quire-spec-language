@@ -40,7 +40,7 @@ use crate::reduction_world::{
 };
 
 /// ADR-021 §7.1's update, modulo 3.
-const CYCLE: &str = "post Cycle using v on M::Counter::bump { \
+pub(crate) const CYCLE: &str = "post Cycle using v on M::Counter::bump { \
      (pre(self.v) < 2 and self.v - pre(self.v) = 1) or (pre(self.v) = 2 and self.v = 0) }\n";
 
 /// ADR-021 §7.3's increment below 3, with its constraints: `Low` (`v <= 1`),
