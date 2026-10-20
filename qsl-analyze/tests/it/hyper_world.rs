@@ -21,7 +21,7 @@ use qsl_analyze::model_check::{
 use qsl_eval::fairness::{analyze, EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex};
 use qsl_eval::hyper::{
     HyperFinding, HyperInputs, HyperLetters, HyperProduct, HyperState, HyperTransition,
-    MatchReading, ParameterBinding, Property, StepLabel, StepMatch,
+    MatchReading, ParameterBinding, Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{
@@ -44,6 +44,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_exact::{Cancel, Incomplete, Meter, Undefined, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
@@ -68,10 +69,15 @@ pub(crate) enum Vault {
     /// `self.l = i`, enabled only while `self.l = 0`: after one `step` the
     /// vault is terminal, so a trace takes its stutter step from there.
     Terminal,
+    /// The contracts as written: the `step` and `reset` contract text.
+    Custom(&'static str),
 }
 
 impl Vault {
     fn contracts(self, reset: bool) -> String {
+        if let Self::Custom(text) = self {
+            return text.to_owned();
+        }
         let step = match self {
             Self::Leaky => "post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n",
             Self::Secure => "post Step using v on V::Vault::step { self.l = i }\n",
@@ -79,6 +85,7 @@ impl Vault {
                 "pre Fresh using v on V::Vault::step { self.l = 0 }\n\
                  post Step using v on V::Vault::step { self.l = i }\n"
             }
+            Self::Custom(_) => unreachable!("returned above"),
         };
         let reset = if reset {
             "post Reset using v on V::Vault::reset { self.l = 0 }\n"
@@ -257,13 +264,25 @@ fn declarations(document: &[u8], text: &str) -> PackageDeclarations {
         qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
     .expect("the operation clauses parse");
-    PackageDeclarations::assemble(
+    let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         built,
         models,
         Vec::new(),
     )
-    .expect("the unit assembles")
+    .expect("the unit assembles");
+    // `div` reads truncating integer division.
+    let lock = DefinitionLock::pinned();
+    declarations.integer_division = Some(
+        lock.admit_integer_division(
+            &[lock
+                .entry(CatalogRole::IntegerDivisionTruncating)
+                .reference()],
+            None,
+        )
+        .expect("the division profile admits"),
+    );
+    declarations
 }
 
 /// One snapshot of the vaults `(key, (h, l))`, provisioned in `snapshots`.
@@ -373,6 +392,19 @@ impl World {
     ) -> Self {
         let universe = objects.iter().map(|(key, _)| (*key).to_owned()).collect();
         Self::build(vault, false, vec![objects.to_vec()], universe, declaration)
+    }
+
+    /// One initial state for each of `snapshots`, each holding its vaults
+    /// `(key, (h, l))`; `universe` are the keys the clause has an instance
+    /// for.
+    pub(crate) fn with_snapshots(
+        vault: Vault,
+        snapshots: Vec<Vec<(&str, (i64, i64))>>,
+        universe: &[&str],
+        declaration: &str,
+    ) -> Self {
+        let universe = universe.iter().map(|key| (*key).to_owned()).collect();
+        Self::build(vault, false, snapshots, universe, declaration)
     }
 
     fn build(
@@ -486,19 +518,27 @@ impl World {
         let span = self.clause.mu_universal()[index].span();
         &self.text[span.start..span.end]
     }
+
+    /// The source text of the existential `match` conjunct `index`.
+    fn existential_text(&self, index: usize) -> &str {
+        let span = self.clause.mu_existential()[index].span();
+        &self.text[span.start..span.end]
+    }
+
+    /// The position of trace variable `variable` among the clause's
+    /// quantifiers: its component in a joint position.
+    fn component(&self, variable: &str) -> usize {
+        self.clause
+            .quantifiers()
+            .iter()
+            .position(|quantifier| quantifier.variable == variable)
+            .unwrap_or_else(|| panic!("unmodelled trace variable {variable}"))
+    }
 }
 
 /// The seams to the vault world's atoms and `match` conjuncts.
 pub(crate) struct Seams<'w> {
     world: &'w World,
-}
-
-fn component(variable: &str) -> usize {
-    match variable {
-        "a" => 0,
-        "b" => 1,
-        other => panic!("unmodelled trace variable {other}"),
-    }
 }
 
 impl HyperLetters for Seams<'_> {
@@ -516,12 +556,14 @@ impl HyperLetters for Seams<'_> {
             .and_then(|rest| rest.strip_suffix(')'))
             .unwrap_or_else(|| panic!("{text} is not a holds atom"));
         let words: Vec<&str> = inner.split_whitespace().collect();
-        let read = |name: &str| low_of(states[component(name)], vault);
+        let read = |name: &str| low_of(states[self.world.component(name)], vault);
+        let secret = |name: &str| field_of(states[self.world.component(name)], vault, "h");
         let holds = match words.as_slice() {
             ["v.l", "@", x, "=", "v.l", "@", y] => read(x) == read(y),
             ["v.l", "@", x, "=", constant] => {
                 read(x) == constant.parse::<i64>().expect("an integer")
             }
+            ["v.h", "@", x, "!=", "v.h", "@", y] => secret(x) != secret(y),
             other => panic!("unmodelled atom {other:?}"),
         };
         Ok(if holds {
@@ -566,17 +608,17 @@ fn input_of(label: &StepLabel<'_>) -> Option<i64> {
     }
 }
 
-impl StepMatch for Seams<'_> {
-    fn universal(
-        &self,
-        _instance: &[ParameterBinding],
-        steps: &[StepLabel<'_>],
-        _meter: &mut Meter,
-    ) -> Result<MatchReading, Incomplete> {
-        for index in 0..self.world.clause.mu_universal().len() {
-            let text = self.world.conjunct_text(index);
+impl Seams<'_> {
+    /// The reading of the `match` conjuncts `texts` over `steps`, in order:
+    /// the first that fails or has no value decides it.
+    fn read(&self, texts: &[&str], steps: &[StepLabel<'_>]) -> MatchReading {
+        for (index, text) in texts.iter().enumerate() {
             let words: Vec<&str> = text.split_whitespace().collect();
-            let label = |name: &str| &steps[component(name.split('.').next().expect("a variable"))];
+            let label = |name: &str| {
+                &steps[self
+                    .world
+                    .component(name.split('.').next().expect("a variable"))]
+            };
             let holds = match words.as_slice() {
                 [x, "=", y] if x.ends_with(".step.op") && y.ends_with(".step.op") => {
                     operation_of(label(x)) == operation_of(label(y))
@@ -591,13 +633,31 @@ impl StepMatch for Seams<'_> {
                 }
                 [x, "=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_none(),
                 [x, "!=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_some(),
-                ["(if", "present(a.step.Vault::step.i)", "then", "1", "/", "value(a.step.Vault::step.i)", "else", "1)", "=", "1"] => {
-                    match input_of(&steps[0]) {
+                // The input is 0 where there is one.
+                ["(if", present, "then", value, "else", "0)", "=", "0"]
+                    if present.starts_with("present(") && value.starts_with("value(") =>
+                {
+                    let variable = present
+                        .trim_start_matches("present(")
+                        .split('.')
+                        .next()
+                        .expect("a variable");
+                    input_of(label(variable)).is_none_or(|input| input == 0)
+                }
+                ["(if", present, "then", "1", "/", value, "else", "1)", "=", "1"]
+                    if present.starts_with("present(") && value.starts_with("value(") =>
+                {
+                    let variable = present
+                        .trim_start_matches("present(")
+                        .split('.')
+                        .next()
+                        .expect("a variable");
+                    match input_of(label(variable)) {
                         Some(0) => {
-                            return Ok(MatchReading::Undefined {
+                            return MatchReading::Undefined {
                                 conjunct: index,
                                 cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
-                            })
+                            }
                         }
                         Some(input) => 1 / input == 1,
                         None => true,
@@ -606,10 +666,36 @@ impl StepMatch for Seams<'_> {
                 other => panic!("unmodelled match conjunct {other:?}"),
             };
             if !holds {
-                return Ok(MatchReading::Fails);
+                return MatchReading::Fails;
             }
         }
-        Ok(MatchReading::Holds)
+        MatchReading::Holds
+    }
+}
+
+impl StepMatch for Seams<'_> {
+    fn universal(
+        &self,
+        _instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        _meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        let texts: Vec<&str> = (0..self.world.clause.mu_universal().len())
+            .map(|index| self.world.conjunct_text(index))
+            .collect();
+        Ok(self.read(&texts, steps))
+    }
+
+    fn existential(
+        &self,
+        _instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        _meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        let texts: Vec<&str> = (0..self.world.clause.mu_existential().len())
+            .map(|index| self.world.existential_text(index))
+            .collect();
+        Ok(self.read(&texts, steps))
     }
 }
 
@@ -722,6 +808,58 @@ impl World {
         Explored {
             graph: exploration.graph,
             accepting,
+        }
+    }
+}
+
+/// The witness-set product of `world`'s HP-3 clause explored in full: the
+/// graph, and the number of states the safety automaton reached.
+pub(crate) struct WitnessExplored {
+    pub(crate) graph: RetainedGraph<HyperState, HyperTransition, HyperFinding>,
+    pub(crate) automaton_states: usize,
+}
+
+impl World {
+    /// Explore the witness-set product of the clause (FR-177) with the
+    /// engine's own exploration, with no limit.
+    pub(crate) fn explore_witness(&self) -> WitnessExplored {
+        let system = ModelSystem::new(self.subject().simulation).expect("the subject admits");
+        let seams = self.seams();
+        let cancel = Cancel::new();
+        let instance = instance();
+        let mut product = WitnessProduct::new(WitnessInputs {
+            systems: vec![&system; self.clause.quantifiers().len()],
+            universal: self.clause.universals(),
+            instance: &instance,
+            body: self.clause.body(),
+            profile: self.clause.profile(),
+            letters: &seams,
+            universal_match: (!self.clause.mu_universal().is_empty())
+                .then_some(&seams as &dyn StepMatch),
+            existential_match: (!self.clause.mu_existential().is_empty())
+                .then_some(&seams as &dyn StepMatch),
+            max_automaton_states: u64::MAX,
+            max_witness_set: u64::MAX,
+            meter: UNLIMITED,
+            cancel: &cancel,
+        })
+        .expect("the body translates to a safety automaton");
+        product.start().expect("the initial states read");
+        let exploration = retain(
+            &product,
+            Limits {
+                max_states: usize::MAX,
+                max_transitions: usize::MAX,
+            },
+            IdentityLimits::default(),
+            None,
+            || false,
+        )
+        .expect("the keys encode");
+        let automaton_states = product.automaton().reached_states();
+        WitnessExplored {
+            graph: exploration.graph,
+            automaton_states,
         }
     }
 }

@@ -93,6 +93,12 @@ pub fn replay_hyper_trace_tuple(
     replay: &HyperReplay<'_, '_>,
     counterexample: &HyperCounterexample,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
+    if matches!(
+        counterexample.kind,
+        HyperCounterexampleKind::WitnessExhausted { .. }
+    ) {
+        return Err(refused(ModelTraceRefusal::HyperWitnessExhausted));
+    }
     shape(replay, counterexample)?;
     let Some(executed) = execute(replay, counterexample)? else {
         return Ok(no_value());
@@ -103,6 +109,9 @@ pub fn replay_hyper_trace_tuple(
         }
         HyperCounterexampleKind::Undefined(claimed) => {
             undefined(replay, counterexample, &executed, claimed)
+        }
+        HyperCounterexampleKind::WitnessExhausted { .. } => {
+            Err(fault("a-witness-exhausted-counterexample-is-refused-first"))
         }
     }
 }
@@ -156,6 +165,9 @@ fn shape(
             if usize::try_from(*loop_entry).map_or(true, |entry| entry >= steps) {
                 return Err(shape_error("re-enters its loop outside its steps"));
             }
+        }
+        HyperCounterexampleKind::WitnessExhausted { .. } => {
+            return Err(fault("a-witness-exhausted-counterexample-is-refused-first"));
         }
         HyperCounterexampleKind::Undefined(claimed) => {
             let position = u64::try_from(steps).unwrap_or(u64::MAX);

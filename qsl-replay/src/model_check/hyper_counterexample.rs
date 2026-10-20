@@ -3,9 +3,10 @@
 //! `WitnessEnvelope<HyperCounterexample>`, mirroring QSpec FR-400 member for
 //! member.
 //!
-//! This is the `lockstep` (HP-2) and `undefined` arms that FR-176's EN-1
-//! engine returns. The `witness-exhausted`, `projected` and `step-tuple` arms
-//! join with the engines that return them (FR-177 to FR-179).
+//! This is the `lockstep` (HP-2), `witness-exhausted` (HP-3) and `undefined`
+//! arms that FR-176's and FR-177's EN-1 engines return. The `projected` and
+//! `step-tuple` arms join with the engines that return them (FR-178,
+//! FR-179).
 
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
@@ -51,6 +52,12 @@ pub enum HyperLocus {
         /// The conjunct's index among the clause's universal conjuncts.
         conjunct: usize,
     },
+    /// A conjunct of the clause's `match` block that reads an existential
+    /// variable, by its index among those conjuncts.
+    ExistentialMatch {
+        /// The conjunct's index among the clause's existential conjuncts.
+        conjunct: usize,
+    },
     /// A `pre` or `post` clause of an application's contract conjunction,
     /// by its name; it reads one component's state.
     Contract(String),
@@ -86,6 +93,14 @@ pub enum HyperCounterexampleKind {
     Lockstep {
         /// The joint position at which every component's loop re-enters.
         loop_entry: u64,
+    },
+    /// HP-3: a fair universal lasso on which no existential tuple stays
+    /// matched; its traces are the universal variables' alone.
+    WitnessExhausted {
+        /// The joint position at which every component's loop re-enters.
+        loop_entry: u64,
+        /// The first joint position at which the witness set is empty.
+        position: u64,
     },
     /// Any form: the traces are finite paths to the state an undefined
     /// evaluation reads, one per trace variable (ADR-023 HV-8).

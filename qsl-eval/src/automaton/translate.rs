@@ -313,6 +313,30 @@ pub fn translate_negation(
     )
 }
 
+/// Translate a hyper clause's safety `body` to the automaton of the body
+/// itself (ADR-023 HC-2): for a body in the safety fragment an infinite word
+/// has a run in it exactly when it satisfies the body, so a witness set can
+/// follow its states. A body outside the fragment translates to the automaton
+/// of its negation, which carries acceptance sets, and
+/// [`Monitor::bad_prefix`](crate::automaton::Monitor::bad_prefix) refuses it.
+///
+/// # Errors
+///
+/// As [`translate`].
+pub fn translate_body(
+    body: &CheckedFormula,
+    profile: TemporalProfile,
+    max_states: u64,
+) -> Result<PropertyAutomaton, AutomatonError> {
+    translate_formula(
+        body,
+        profile,
+        Activation::Origin,
+        Selection::Clause,
+        max_states,
+    )
+}
+
 /// Which automaton [`translate_formula`] builds.
 #[derive(Clone, Copy)]
 enum Selection {

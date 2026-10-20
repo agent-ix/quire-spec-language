@@ -65,7 +65,9 @@ pub enum MatchReading {
     Fails,
     /// A conjunct has no value at the joint step (ADR-023 HV-8).
     Undefined {
-        /// The index of the conjunct in the clause's universal conjuncts.
+        /// The index of the conjunct among the clause's universal conjuncts
+        /// for a `universal` reading, its existential conjuncts for an
+        /// `existential` one.
         conjunct: usize,
         /// Why it has no value.
         cause: UndefinedCause,
@@ -74,15 +76,28 @@ pub enum MatchReading {
     Refused,
 }
 
-/// Reads the universal part `μ_U` of a hyper clause's `match` block over a
-/// joint step (ADR-023 HC-1).
+/// Reads a hyper clause's `match` block over a joint step: its universal part
+/// `μ_U` (ADR-023 HC-1) and, for an HP-3 clause, its existential part `μ_E`
+/// (ADR-023 HC-2).
 pub trait StepMatch {
-    /// `μ_U` for `instance` over `steps`, the labels of the components' steps
-    /// into the joint position, one per trace variable in quantifier order.
-    /// `μ` reads no state (ADR-023 HS-5). An exhausted meter is
-    /// `Err(Incomplete)`, which the product reads as a conjunct that is
-    /// incomplete there.
+    /// `μ_U` for `instance` over `steps`, the labels of the universal
+    /// components' steps into the joint position, one per universal trace
+    /// variable in quantifier order. `μ` reads no state (ADR-023 HS-5). An
+    /// exhausted meter is `Err(Incomplete)`, which the product reads as a
+    /// conjunct that is incomplete there.
     fn universal(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete>;
+
+    /// `μ_E` for `instance` over `steps`, the labels of every component's
+    /// step into the joint position, one per trace variable in quantifier
+    /// order: the universal components' first, then the existential ones'.
+    /// An `Undefined` reading names its conjunct among the clause's
+    /// existential conjuncts. An exhausted meter is `Err(Incomplete)`.
+    fn existential(
         &self,
         instance: &[ParameterBinding],
         steps: &[StepLabel<'_>],

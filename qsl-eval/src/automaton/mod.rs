@@ -63,4 +63,6 @@ pub use letter::{Atom, Guard, Letter, MAX_ATOMS};
 pub use monitor::{Monitor, SafetyAutomaton};
 pub use numbering::{Interned, Numbering};
 pub use state::StateId;
-pub use translate::{translate, translate_negation, AutomatonKind, PropertyAutomaton};
+pub use translate::{
+    translate, translate_body, translate_negation, AutomatonKind, PropertyAutomaton,
+};
