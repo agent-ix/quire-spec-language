@@ -311,13 +311,12 @@ fn invalid(cause: &'static str, at: &str) -> (Code, Option<&'static str>, String
     (Code::InvalidProbabilisticModel, Some(cause), at.to_owned())
 }
 
-/// The limit refusal of an exact value past the 65,536-bit ceiling, at
-/// `at`: FR-255 has no rational-bits setting yet, so it reports the S3 work
-/// budget's (see the PR's spec gaps).
+/// The limit refusal of an exact value past the 65,536-bit default
+/// `s3.rational_bits` ceiling, at `at`.
 fn limit(at: &str) -> (Code, Option<&'static str>, String) {
     (
         Code::StageLimitExceeded,
-        Some("work-budget-exceeded"),
+        Some("rational-bits-exceeded"),
         at.to_owned(),
     )
 }
@@ -615,6 +614,29 @@ fn steady_with_request(weight: &str) -> String {
         "workload Steady on Service {{ weight Server::request = {weight}; \
          weight Server::attempt = 1; weight Server::reset = 1; }}"
     )
+}
+
+/// FR-185 "Exact values": a configured `s3.rational_bits` replaces the
+/// default ceiling, inclusive, and the limit refusal names that setting and
+/// the configured limit.
+#[trace("TC-620")]
+#[test]
+fn a_configured_rational_bits_ceiling_is_named_by_the_refusal() {
+    let within = service(Some((STEADY, &steady_with_request("255"))), "");
+    assemble(&within)
+        .check(CheckingLimits::default().with_rational_bits(8))
+        .expect("255 is eight bits");
+    let past = service(Some((STEADY, &steady_with_request("256"))), "");
+    let refusals = assemble(&past)
+        .check(CheckingLimits::default().with_rational_bits(8))
+        .expect_err("256 is nine bits");
+    let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
+        panic!("a limit refusal: {:?}", refusals[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 8, 9)
+    );
 }
 
 /// TC-620 step 2 (FR-185 "Exact values"), each as the weight of

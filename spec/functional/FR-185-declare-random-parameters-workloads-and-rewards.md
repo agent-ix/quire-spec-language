@@ -93,15 +93,15 @@ not an `exact-value`, so S1 refuses it `invalid_syntax`.
   `10^s` and without floating point. The counter is the largest of those
   bit lengths.
 - If that counter exceeds the rational-bits ceiling of the S3 checking limits
-  (a `CheckingLimits` field, default 65,536 bits; its setting name and limit
-  kind are specified with QSL-883, pending), S3 SHALL refuse the declaration
-  with a limit refusal (`LimitExceeded`) pending QSL-883, before reducing or
+  (the `CheckingLimits` rational bits, setting `s3.rational_bits`, default
+  65,536 bits), S3 SHALL refuse the declaration with a limit refusal
+  (`LimitExceeded`, `stage_limit_exceeded`/`rational-bits-exceeded`, naming
+  `s3.rational_bits` and the configured limit), before reducing or
   expanding the value. The ceiling is inclusive and is not the exact engine's
   own `max_rational_bits` budget (FR-203), which bounds values that engine
   computes. The bound is on the value as written, so
   `rational(n, n)` with an over-limit `n` is refused although it reduces to
   1, and `decimal(25, 3)` is within the bound and reduces to `1/40`.
-  Remaining work: QSL-883 (the setting is not yet implemented).
 - The same measure, bound and refusal apply to every `exact-value` that
   FR-186 reads. This refusal is a limit refusal, not an
   `invalid_probabilistic_model` cause.
@@ -111,14 +111,14 @@ not an `exact-value`, so S1 refuses it `invalid_syntax`.
   numerator and denominator.
 - If the running sum exceeds the ceiling, then S3 SHALL refuse the
   distribution with the same limit refusal (`LimitExceeded`, carried as
-  `stage_limit_exceeded`/`work-budget-exceeded`), naming the parameter.
+  `stage_limit_exceeded`/`rational-bits-exceeded`), naming the parameter.
 - S3 SHALL poll the checker's cancellation before each addition (FR-276); a
   check whose handle is tripped before it starts ends cancelled, with the
-  handle reporting requested, and the limit it reports is not the 65,536-bit
+  handle reporting requested, and the limit it reports is not the rational-bits
   ceiling.
 
-Notes. The ceiling is the fixed rational-bits ceiling (65,536 bits,
-inclusive) of the rule above; its `CheckingLimits` field waits on QSL-883.
+Notes. The ceiling is the `s3.rational_bits` ceiling (default 65,536 bits,
+inclusive) of the rule above.
 S3 derives no workload total (it records the raw weights; FR-187 divides by
 the sum over the operations enabled at each state), and no reward sum. A
 probability is the quotient of two values within the ceiling, so it is

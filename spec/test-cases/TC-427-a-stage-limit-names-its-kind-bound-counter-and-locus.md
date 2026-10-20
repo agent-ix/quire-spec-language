@@ -35,7 +35,7 @@ Tag the tests `#[trace("TC-427", "FR-096-AC-n")]` with the AC each backs.
 - Step 1: `stage_limit_exceeded` with `input-bytes-exceeded`,
   `token-count-exceeded`, `node-count-exceeded`, `edge-count-exceeded`,
   `occurrence-count-exceeded`, `diagnostic-count-exceeded` and
-  `work-budget-exceeded` for the seven kinds, and each `LimitExceeded`
+  `work-budget-exceeded` and `rational-bits-exceeded` for the eight kinds, and each `LimitExceeded`
   gives its kind's code and carries its setting name.
 - Step 2: `stage_limit_exceeded`/`node-count-exceeded` with the configured
   bound, the count reached and setting `s1.nodes`, at the region S1's

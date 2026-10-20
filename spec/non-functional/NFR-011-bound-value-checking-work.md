@@ -35,7 +35,7 @@ work. The ceilings are inclusive unsigned counts supplied by the
 caller. The values below are the default ceilings a caller gets when it
 configures none. A caller may set each ceiling independently, above or below
 its default, through its setting (`s3.nodes`, `s3.input_bytes`,
-`s3.work_units`;
+`s3.work_units`, `s3.rational_bits`;
 [FR-255](../functional/FR-255-name-the-setting-that-raises-a-reached-limit.md)),
 and the ceiling is used as given. Every checking walk runs over an explicit
 heap stack whose growth these ceilings charge, so an expression's or a
@@ -53,6 +53,7 @@ domain bound (NFR-001).
 | Checking node ceiling | At most the selected ceiling (default 100000 units) per checked package | 100000 units by default | negative-abuse-testing |
 | Declaration preimage bytes | At most the selected ceiling (default 16777216 bytes) per declaration | 16777216 bytes by default | negative-abuse-testing |
 | Checking work | At most the selected ceiling (default 16777216 work units) per checked package | 16777216 units by default | negative-abuse-testing |
+| Rational bits | At most the selected ceiling (default 65536 bits) in any exact value's numerator or denominator, as written | 65536 bits by default | negative-abuse-testing |
 
 ## Counter definitions
 
@@ -72,9 +73,15 @@ domain bound (NFR-001).
   `position:<n>`, `inner`) along its path, plus `recursion:<d>` for a
   recursion leaf. Union entry is a composite charge under the same rule;
   each member segment contributes its literal UTF-8 byte length.
+- **Rational bit.** FR-185's measure of an exact value as written: the
+  largest bit length among its written integers, and for a `decimal` or
+  decimal literal the bit length of `10^s`. The bound is inclusive.
 
 ## Default derivation
 
+- **Rational bits, 65536.** FR-185's rational-bits ceiling: a value of
+  2^65536 has a 19729-digit decimal expansion, ample for any written
+  exact value, and bounds the reduction and the weight sum's growth.
 - **Nodes, 100000.** Twice NFR-001's default syntax-node ceiling of 50000.
   A package checked from one source unit types at most as many expression
   nodes as that unit has syntax nodes, so the factor of two leaves room for
