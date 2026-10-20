@@ -60,3 +60,19 @@ What is sound:
 4. Counter 1..max, max in `exhausted`, leave at max with no `exhausted`: consistent with PS-6 ("from 0 to the maximum", where 0 holds only during settling) and FO-1.
 5. `duplicate` appends at the `fifo` tail: a reading, since FR-170 says "add a copy". It is acceptable.
 6. `<protocol>::<channel>`: see FND-007.
+
+## Dispositions
+
+Disposition pass 1 at head b81593a65. The fix commits are ca6608aef and 0e421f2b5, and the branch merges #1105 and main. A probe re-ran the review's FND-001 protocol along both paths, reverted afterwards. The first path is `f = false`, then the second `Outer` fork, then `f = true`: the first `c` takes no `A`. The second path is `f = true`, then the second fork, then `f = false`: the first `c` still takes `A`. The system explores 178 states. The tagged tests and `an_ordinal_stays_held_while_a_descendant_of_its_branch_runs` pass. No new findings.
+
+The ordinal-hold rule is sound and complete. The ordinal is a function of the state (its live `ParallelKey`s and thread paths), so equal keys still choose equal ordinals. Choosing an ordinal enables or disables no step, so no interleaving is lost. A held ordinal stays held only while a descendant runs, so ordinals stay bounded by the live threads and the state space does not grow. With the hold in place, the stale clear only removes paths with no live thread below them. The new wire values `displaced` and `head-blocked`, beside `full-queue`, are spec gaps against QSpec FR-170 and FR-429 and should go to QSpec. They do not block.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | ca6608aef: in `fork`, an ordinal is free only when no `ParallelKey` holds it and no thread's path extends one of its branch paths. |
+| FND-002 | fixed | 0e421f2b5: the allow is dropped and #1105's `frames::Outputs` is merged. frames.rs no longer differs from main. |
+| FND-003 | fixed | ca6608aef: `settle` returns `SettleError`. An initial state reports a refusal as itself and an evaluation stop as `ProtocolRefusal::InitialStop(stop)`, with the stop's own code and cause. |
+| FND-004 | fixed | ca6608aef: `loss head/tail` records `displaced`, and `loss new` records `lost`. |
+| FND-005 | fixed | ca6608aef: `receive_cause` gives `constraint` when an entry is deliverable but the constraint fails, `head-blocked` when its send's entries wait behind another send's `fifo` head, and `empty-queue` otherwise. The test is `a_waiting_receive_names_why_it_waits`. |
+| FND-006 | fixed | ca6608aef: a `Reader { instance, path, node }` struct replaces the three parameters of `admits`, and the allow is gone. |
+| FND-007 | accepted-no-change | The bare `<protocol>::<channel>` name is unambiguous within one subject, and the PR body states it as spec-gap reading 6. |

@@ -50,3 +50,13 @@ Not tagged, deliberately: `a_branch_reads_its_parents_binding_as_of_its_fork` ca
 - Reverse gap: none new. `channel_steps`, `settle`, `bind` and `reads_from` each have a production caller through `expand`/`normalize`.
 - Untested soundness defect: SR-12225 FND-001, ordinal reuse under a running grandchild.
 - Plan completion: not assessed
+
+## Dispositions
+
+Disposition pass 1 at head b81593a65, after fix commit ca6608aef. The FR-215-AC-4 and FR-206-AC-5 tests pass. No new findings.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | No PR owns `fence`, symbolic capacity, unordered `loss head/tail`, `join predicate` or protocol lasso replay. They stay refused `not-yet-implemented` with untagged ACs. The coordinator must give each an owner on QSL-559 before the ticket closes. |
+| FND-002 | fixed | ca6608aef: the event's record type is `record Count { n: Integer; }`, and the test asserts `RequiresBound` naming `binder_root("P", "tally")` at field path `[0]`. A bounded record that cannot be enumerated is refused `UnenumerableRecord` when the system is built. |
+| FND-003 | fixed | ca6608aef: the test now shows the grammar refuses `exhausted` on a `repeat` with no maximum (`InvalidSyntax`), so the AC clause holds by construction. Its wording is a spec gap for the coordinator. The fixture also asserts that the looping step is `X`. |
