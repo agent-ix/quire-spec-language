@@ -177,6 +177,16 @@ impl<A: SafetyAutomaton> Monitor<A> {
     /// [`AutomatonError::StateLimit`] when the limit admits no state, the
     /// monitor's or the automaton's.
     pub fn initial(&mut self) -> Result<StateId, AutomatonError> {
+        let subset = self.viable_initial()?.into_iter().collect();
+        Ok(self.subsets.intern(subset)?.state)
+    }
+
+    /// The automaton's initial state when some infinite run starts there.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::initial`].
+    pub fn viable_initial(&mut self) -> Result<Option<StateId>, AutomatonError> {
         let start = match self.initial {
             Some(start) => start,
             None => {
@@ -185,11 +195,7 @@ impl<A: SafetyAutomaton> Monitor<A> {
                 start
             }
         };
-        let mut subset = BTreeSet::new();
-        if self.viable(start)? {
-            subset.insert(start);
-        }
-        Ok(self.subsets.intern(subset)?.state)
+        Ok(self.viable(start)?.then_some(start))
     }
 
     /// The monitor state reached from `from` by reading `letter`.
@@ -203,13 +209,33 @@ impl<A: SafetyAutomaton> Monitor<A> {
         let members = self.members_of(from)?;
         let mut next = BTreeSet::new();
         for member in members {
-            for transition in self.row(member)?.iter() {
-                if transition.guard.admits(letter) && self.viable(transition.target)? {
-                    next.insert(transition.target);
-                }
-            }
+            next.extend(self.viable_successors(member, letter)?);
         }
         Ok(self.subsets.intern(next)?.state)
+    }
+
+    /// The automaton states reached from the automaton state `from` by
+    /// reading `letter` that still have an infinite run, ascending: the
+    /// states of ADR-023 HC-2's safety automaton with every state of empty
+    /// language removed.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::UnknownState`] when `from` is not an automaton
+    /// state; [`AutomatonError::StateLimit`] when a state the step reads
+    /// would exceed the automaton's limit.
+    pub fn viable_successors(
+        &mut self,
+        from: StateId,
+        letter: Letter,
+    ) -> Result<Vec<StateId>, AutomatonError> {
+        let mut targets = BTreeSet::new();
+        for transition in self.row(from)?.iter() {
+            if transition.guard.admits(letter) && self.viable(transition.target)? {
+                targets.insert(transition.target);
+            }
+        }
+        Ok(targets.into_iter().collect())
     }
 
     /// Whether `state` is the rejecting state: the prefix read is a bad

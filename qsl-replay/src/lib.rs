@@ -126,7 +126,8 @@ pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
-    DEFAULT_MAX_WALK_STEPS, DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
+    DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,
+    DEFAULT_WITNESS_SAMPLES, DEFAULT_WITNESS_SEED,
 };
 pub use model_check::outcome::{ModelCheckOutcome, ReductionCause, RunStats, UndecidedCause};
 pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};

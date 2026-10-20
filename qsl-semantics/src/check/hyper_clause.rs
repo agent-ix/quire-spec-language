@@ -310,6 +310,16 @@ impl CheckedHyperClause {
         &self.quantifiers
     }
 
+    /// How many of the quantifier prefix's leading variables are universal.
+    /// Every existential variable follows them: an `exists` before a
+    /// `forall` is HP-4 (FR-173).
+    pub fn universals(&self) -> usize {
+        self.quantifiers
+            .iter()
+            .take_while(|quantifier| quantifier.kind == QuantifierKind::Forall)
+            .count()
+    }
+
     /// The `match` block's expression; `None` when there is no block.
     pub fn match_expression(&self) -> Option<&Expression> {
         self.match_expression.as_ref()

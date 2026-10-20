@@ -357,6 +357,28 @@ fn refinement_removes_the_start_state_and_the_rest_passes() {
     assert_eq!(Analysis::first_fair_in(&analyses), Some(&sub[0]));
 }
 
+#[test]
+fn every_fair_component_is_found_through_the_refinement() {
+    let product = product(0, handoff, owner_is_not_one);
+    let strong = [
+        Constraint::strong([id(1)]),
+        Constraint::strong([id(2)]),
+        Constraint::strong([id(3)]),
+    ];
+    let analyses = run(&product, &strong).expect("not cancelled");
+    let accepting = analyses
+        .iter()
+        .find(|a| matches!(a.outcome(), Outcome::UnfairStrong { .. }))
+        .expect("the accepting component fails acquire(1)");
+    let Outcome::UnfairStrong { sub, .. } = accepting.outcome() else {
+        panic!("matched above");
+    };
+    let fair: Vec<&Analysis> = Analysis::fair_in(&analyses).collect();
+    assert_eq!(fair, vec![&sub[0]]);
+    assert_eq!(accepting.fair_components().collect::<Vec<_>>(), fair);
+    assert_eq!(accepting.first_fair(), Some(&sub[0]));
+}
+
 // FR-130-AC-5's three-process mutex: owner `0..=3`, `acquire(p)` for `p` in
 // `1..=3` when the owner is 0, `release` otherwise. The claim is `always
 // eventually owner = 1 or owner = 2`; atom 0 is `owner = 0 or owner = 3`.
