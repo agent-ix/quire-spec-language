@@ -10,18 +10,20 @@
 //! capacity waits under `block`; under `reject` it leaves the queue
 //! unchanged; under `loss` it drops the oldest (`head`) or newest (`tail`)
 //! entry and appends, or drops its own (`new`). Its binder is bound to the
-//! send record `{channel, payload, outcome, displaced}` (ST-3): `outcome` is
-//! `accepted` when its entry was appended, `rejected` or `lost` when it was
-//! not, and `displaced` the queued entry a `head` or `tail` selector removed
-//! for it. A slot that reads the binder reads its payload, the channel's
-//! `carries` type S3 gives the binder.
+//! sent payload, and the step carries its send record `{channel, payload,
+//! outcome, displaced}` (ST-3, PX-1): `outcome` is `accepted` when its entry
+//! was appended, `rejected` or `lost` when it was not, and `displaced` the
+//! queued entry a `head` or `tail` selector removed for it.
 
 use qsl_semantics::check::ProtocolNodeId;
 use qsl_semantics::check::{ChannelOverflow, LossSelector};
 use qsl_semantics::family::FamilyOutcome;
 use quire_exact::{Meter, Outcome, Value};
 
-use super::identity::{ProtocolTransition, QueueEvent, Removal, StepKind, ThreadPath, WaitCause};
+use super::identity::{
+    ProtocolTransition, QueueEvent, Removal, SendOutcome, SendRecord, StepKind, ThreadPath,
+    WaitCause,
+};
 use super::memory::MemoryModel;
 use super::program::{Channel, Cursor, Message};
 use super::steps::{jcs, Gathered, Reader};
@@ -33,49 +35,6 @@ use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::model::encode::{value_enc, Enc};
 use crate::simulation::model::{verdict, ModelFinding, ModelSimState, Verdict};
 use crate::value::evaluate_protocol_slot;
-
-/// What a `send` did with its entry (ADR-027 ST-3, QSpec FR-170).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SendOutcome {
-    /// Appended, displacing a queued entry or not.
-    Accepted,
-    /// Refused at capacity under `overflow reject`.
-    Rejected,
-    /// Dropped at capacity under `overflow loss new`.
-    Lost,
-}
-
-impl SendOutcome {
-    fn text(self) -> &'static str {
-        match self {
-            Self::Accepted => "accepted",
-            Self::Rejected => "rejected",
-            Self::Lost => "lost",
-        }
-    }
-}
-
-/// The send record a `send` binds (ADR-027 ST-3): its channel's qualified
-/// name, its payload, its outcome and the entry it displaced, if any.
-fn send_record(
-    channel: &str,
-    payload: &Value,
-    outcome: SendOutcome,
-    displaced: Option<&Entry>,
-) -> Enc {
-    Enc::tagged(
-        "send-record",
-        vec![
-            ("channel", Enc::text(channel)),
-            ("payload", value_enc(payload)),
-            ("outcome", Enc::text(outcome.text())),
-            (
-                "displaced",
-                displaced.map_or(Enc::Null, |entry| entry.enc.clone()),
-            ),
-        ],
-    )
-}
 
 /// Insert `entry` into an `unordered` queue, kept in ascending JCS bytes.
 fn insert_sorted(queue: &mut Vec<Entry>, entry: Entry) {
@@ -239,7 +198,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }
             };
-            let record = send_record(&channel.name, &payload, outcome, displaced.as_ref());
+            let record = SendRecord::new(
+                channel.name.clone(),
+                value_enc(&payload),
+                outcome,
+                displaced.as_ref().map(|entry| entry.enc.clone()),
+            );
+            let enc = value_enc(&payload);
             let mut next = state.clone();
             let target = Self::instance_mut(&mut next, ordinal)?;
             store(target, key, queue);
@@ -249,11 +214,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 path,
                 Bound {
                     value: payload,
-                    enc: record.clone(),
+                    enc: enc.clone(),
                 },
             );
             let mut transition =
-                ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), record);
+                ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), enc)
+                    .carrying(Some(record));
             let dropped = match (outcome, &displaced) {
                 (SendOutcome::Lost, _) => Some(text.clone()),
                 (_, Some(entry)) => Some(self.program.text(entry.send)?.to_owned()),

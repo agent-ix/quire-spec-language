@@ -241,7 +241,7 @@ impl<T: Clone + std::fmt::Debug + Eq> FamilyPayload for TemporalCounterexample<T
 /// point's node and the paths its wait cause names.
 fn blocked_bytes(thread: &BlockedThread) -> usize {
     let cause = match &thread.cause {
-        WaitCause::JoinWaiting { threads } => threads
+        WaitCause::JoinWaiting { threads } | WaitCause::FinishWaiting { threads } => threads
             .iter()
             .map(path_bytes)
             .fold(0, usize::saturating_add),

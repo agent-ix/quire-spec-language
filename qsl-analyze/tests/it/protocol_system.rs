@@ -16,7 +16,7 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::protocol::{
     binder_root, explore_protocol, BlockedThread, Disposition, GatedStep, MemoryModel, MemoryStep,
     ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, RestKind, RestPoint, Sc,
-    ScComponent, StepKind, ThreadPath, WaitCause,
+    ScComponent, SendOutcome, StepKind, ThreadPath, WaitCause,
 };
 use qsl_eval::simulation::{Limits, NotSimulated, Outcome, SubjectSystem, TransitionSystem};
 use qsl_foundation::bound::DomainKey;
@@ -1028,7 +1028,7 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
     assert!(protocol_deadlock_freedom_items(&items).is_empty());
 }
 
-/// FR-211-AC-5 (TC-656, ADR-027 PD-4): each channel wait cause is reported
+/// Part of FR-211-AC-5 (TC-656, ADR-027 PD-4): each channel wait cause is reported
 /// for a thread blocked by exactly that condition, with the channel in its
 /// qualified name, in the model checker's deadlock counterexample, and
 /// replay recomputes it from the prefix. Every channel has `delivery
@@ -1040,8 +1040,10 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
 /// `loss head` displaces `P` and `loss new` loses `Q`, each reported
 /// `Displaced`, and so is a `lose(ch, P)` under `at-most-once`; when the
 /// last removal of `P`'s entries was a `receive`, the cause is
-/// `EmptyQueue`.
-#[trace("TC-656", "FR-211-AC-5")]
+/// `EmptyQueue`. The root at `finish` while a branch still runs is
+/// `FinishWaiting`, naming it. Not covered: the `Pay` compensation fixture
+/// (`CommitClosed`), replicated roles (`NoRoleInstance`) and the `tso` fence,
+/// which this system refuses.
 #[test]
 fn each_channel_wait_cause_names_its_condition() {
     let fifo = "ordering fifo by (m: Boolean) { true }";
@@ -1161,6 +1163,29 @@ fn each_channel_wait_cause_names_its_condition() {
         let record = case.settle("P", &outcome);
         assert_eq!(record.label, ResultLabel::Refuted, "{run}: {record:?}");
     }
+
+    // The root at `finish` while branch `b` waits at a false `check`.
+    let run = format!(
+        "parallel Both {{ branch a {} branch b check Never using v {{ false }}; }} \
+         join any [a, b] outstanding continue;",
+        touch("TA"),
+    );
+    let case = p_case(&run, 0);
+    let outcome = case.deadlock("P");
+    let counterexample = violated(&outcome);
+    let finishing = counterexample
+        .blocked
+        .iter()
+        .find(|thread| thread.path == root())
+        .expect("the root waits");
+    assert_eq!(
+        finishing.cause,
+        WaitCause::FinishWaiting {
+            threads: vec![root().child("Both", "b", 0)]
+        }
+    );
+    let record = case.settle("P", &outcome);
+    assert_eq!(record.label, ResultLabel::Refuted, "{record:?}");
 }
 
 /// FR-211-AC-3 (TC-656): over `Fill` with `TwoPre: self.v <= 1` the
@@ -1430,6 +1455,118 @@ fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
         repaired.replay_against(&case, "Fill", counterexample),
         Err(ReplayRefusal::PackageIdMismatch { .. })
     ));
+}
+
+/// FR-217-AC-5 and FR-217-AC-6 (TC-662, ADR-027 PX-1, PX-2): a deadlock
+/// counterexample whose prefix holds sends over FR-206-AC-7's `overflow loss
+/// head` channel carries each send's `send_record` on that step alone, and
+/// neither its transition identities nor its state keys hold one; it
+/// replays. Changing a recorded `outcome` refuses `stale_dependency`/
+/// `content-mismatch`, naming the step and both records. Removing a send's
+/// record, or adding one to the attempt, refuses `invalid_runtime_input`/
+/// `invalid-value` before any step is replayed.
+#[trace("TC-662", "FR-217-AC-5", "FR-217-AC-6")]
+#[test]
+fn a_protocol_replay_checks_each_send_record() {
+    let members = "channel ch from w to w carries Boolean ordering fifo by (m: Boolean) { true } \
+                   delivery exactly-once-premise capacity 2 overflow loss head;";
+    let run = format!(
+        "sequence Main {{ {} send P1 via ch as (p1: Boolean) {{ p1 }}; \
+         send P2 via ch as (p2: Boolean) {{ not p2 }}; send N via ch as (n: Boolean) {{ n }}; \
+         receive R1 via ch of P1 as (r1: Boolean) {{ true }}; }}",
+        touch("T")
+    );
+    let case = Case::new(
+        &(contracts("self.v = 0") + &protocol("P", members, &run, "d")),
+        &[0],
+    );
+    let counterexample = violated(&case.deadlock("P"));
+    let kinds: Vec<StepKind> = counterexample
+        .prefix
+        .iter()
+        .map(|step| step.transition.kind())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            StepKind::Attempt,
+            StepKind::Send,
+            StepKind::Send,
+            StepKind::Send
+        ]
+    );
+    for step in &counterexample.prefix {
+        assert_eq!(
+            step.transition.send_record().is_some(),
+            step.transition.kind() == StepKind::Send
+        );
+    }
+    let displacing = counterexample.prefix[3]
+        .transition
+        .send_record()
+        .expect("the third send's record")
+        .clone();
+    assert_eq!(
+        (displacing.channel(), displacing.outcome()),
+        ("P::ch", SendOutcome::Accepted)
+    );
+    let subject = case.subject("P");
+    let system = sc_system(&subject);
+    for state in reachable(&system) {
+        let (key, _) = system.state_key(&state.state).expect("a key");
+        assert!(!String::from_utf8_lossy(&key).contains("send-record"));
+        for (transition, _) in &state.steps {
+            let identity = system.transition_key(transition).expect("an identity");
+            assert!(!String::from_utf8_lossy(&identity).contains("send-record"));
+        }
+    }
+    let replayed = case
+        .replay("P", counterexample.clone())
+        .expect("the counterexample replays");
+    assert!(
+        matches!(replayed.settlement, ModelTraceSettlement::Reproduced { .. }),
+        "{replayed:?}"
+    );
+
+    let mut changed = counterexample.clone();
+    let altered = displacing.clone().with_outcome(SendOutcome::Rejected);
+    changed.prefix[3].transition = changed.prefix[3]
+        .transition
+        .clone()
+        .carrying(Some(altered.clone()));
+    let Err(ReplayRefusal::ModelTrace(refusal)) = case.replay("P", changed) else {
+        panic!("a changed send record refuses");
+    };
+    assert_eq!(
+        *refusal,
+        ModelTraceRefusal::SendRecord {
+            step: 3,
+            recorded: Box::new(altered),
+            replayed: Box::new(displacing.clone()),
+        }
+    );
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::StaleDependency, "content-mismatch")
+    );
+
+    let mut missing = counterexample.clone();
+    missing.prefix[1].transition = missing.prefix[1].transition.clone().carrying(None);
+    let mut extra = counterexample;
+    extra.prefix[0].transition = extra.prefix[0]
+        .transition
+        .clone()
+        .carrying(Some(displacing.clone()));
+    for (step, shaped) in [(1, missing), (0, extra)] {
+        let Err(ReplayRefusal::ModelTrace(refusal)) = case.replay("P", shaped) else {
+            panic!("a misplaced send record refuses");
+        };
+        assert_eq!(*refusal, ModelTraceRefusal::SendRecordShape { step });
+        assert_eq!(
+            (refusal.code(), refusal.cause()),
+            (Code::InvalidRuntimeInput, "invalid-value")
+        );
+    }
 }
 
 /// FR-217-AC-3 (TC-662): a deadlock envelope whose blocked list drops

@@ -63,6 +63,15 @@ fn identity(system: &ProtocolSystem<'_, Sc>, transition: &ProtocolTransition) ->
     json_of(&system.transition_key(transition).expect("an identity"))
 }
 
+/// The JSON of the send record a `send` step carries (ADR-027 ST-3, PX-1).
+fn send_record(transition: &ProtocolTransition) -> Json {
+    let record = transition.send_record().expect("a send carries its record");
+    json_of(
+        &quire_canonical::to_vec(record, quire_canonical::Limits::new(u64::MAX))
+            .expect("a record encodes"),
+    )
+}
+
 /// The payloads of every queue of `state`, by queue, in its stored order.
 fn queues(system: &ProtocolSystem<'_, Sc>, state: &ProtocolState<Sc>) -> Vec<(Json, Vec<bool>)> {
     key(system, state)["queues"]["entries"]
@@ -144,13 +153,13 @@ fn channel_premises_admit_exactly_their_queue_steps() {
     let (transition, after) = &reached[full].steps[0];
     assert_eq!(transition.kind(), StepKind::Send);
     assert_eq!(
-        identity(&system, transition)["record"],
+        send_record(transition),
         json!({"type": "send-record", "channel": "P::ch", "outcome": "rejected",
             "payload": {"type": "boolean", "value": true}, "displaced": null})
     );
     assert_eq!(queues(&system, &reached[*after].state)[0].1, [true]);
     let (first, _) = &reached[0].steps[0];
-    assert_eq!(identity(&system, first)["record"]["outcome"], "accepted");
+    assert_eq!(send_record(first)["outcome"], "accepted");
 
     // `duplicate` and `lose` over one queued entry of a capacity-2 queue.
     let delivered = |delivery: &str| {
@@ -236,9 +245,11 @@ fn channel_premises_admit_exactly_their_queue_steps() {
     assert_eq!(records, [json!(queued[0])]);
 }
 
-/// FR-206-AC-7 (TC-651, ADR-027 ST-3): over a `fifo` channel `ch` of
-/// capacity 2, each `send` binds the send record `{channel, payload,
-/// outcome, displaced}` with `channel` in its qualified name. On an empty
+/// FR-206-AC-7 (TC-651, ADR-027 ST-3, PX-1): over a `fifo` channel `ch` of
+/// capacity 2, each `send` binds its binder to the payload and its step
+/// carries the send record `{channel, payload, outcome, displaced}`, with
+/// `channel` in its qualified name, in neither its identity nor the state
+/// key. On an empty
 /// queue the outcome is `accepted` with nothing displaced. With the queue
 /// holding `P1` (`true`) then `P2` (`false`), a third send `N` (`true`) is
 /// `rejected` under `overflow reject` and `lost` under `overflow loss new`,
@@ -250,7 +261,7 @@ fn channel_premises_admit_exactly_their_queue_steps() {
 fn a_send_binds_its_send_record() {
     let run = "sequence Main { send P1 via ch as (p1: Boolean) { p1 }; \
                send P2 via ch as (p2: Boolean) { not p2 }; \
-               send N via ch as (n: Boolean) { n }; }";
+               send N via ch as (n: Boolean) { n and p1 }; }";
     let entry = |send: &str, value: bool| {
         json!({"type": "queue-entry", "send": send,
             "thread": {"type": "thread-path", "instance": "0", "steps": []},
@@ -286,23 +297,32 @@ fn a_send_binds_its_send_record() {
         let subject = unit.subject("P");
         let system = sc_system(&subject);
         let reached = reachable(&system);
-        let (first, _) = &reached[0].steps[0];
+        let (first, sent) = &reached[0].steps[0];
         assert_eq!(
-            identity(&system, first)["record"],
+            send_record(first),
             json!({"type": "send-record", "channel": "P::ch", "outcome": "accepted",
                 "payload": {"type": "boolean", "value": true}, "displaced": null}),
             "{overflow}"
         );
+        // The identity's record and the binder are the payload alone.
+        let payload = json!({"type": "boolean", "value": true});
+        assert_eq!(identity(&system, first)["record"], payload);
+        let observed = key(&system, &reached[*sent].state)["observations"]["entries"].clone();
+        let [held] = observed.as_array().expect("observations").as_slice() else {
+            panic!("`N` reads `p1`, so it is held: {observed}");
+        };
+        assert_eq!(held["value"], payload);
         let full = follow(&reached, &[(StepKind::Send, "P1"), (StepKind::Send, "P2")]);
         assert_eq!(queues(&system, &reached[full].state)[0].1, [true, false]);
         let (third, after) = &reached[full].steps[0];
         assert_eq!(last(third), "N");
         assert_eq!(
-            identity(&system, third)["record"],
+            send_record(third),
             json!({"type": "send-record", "channel": "P::ch", "outcome": outcome,
                 "payload": {"type": "boolean", "value": true}, "displaced": displaced}),
             "{overflow}"
         );
+        assert_eq!(identity(&system, third)["record"], payload);
         assert_eq!(
             queues(&system, &reached[*after].state)[0].1,
             queued,

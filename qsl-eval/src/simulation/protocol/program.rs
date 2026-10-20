@@ -865,6 +865,54 @@ impl<'a> Program<'a> {
         }
     }
 
+    /// Whether the binder of `node` is in S3's `Out` of the branch whose body
+    /// is `body` (ADR-027 PS-5): `node` lies in `body`, and not below an
+    /// inner `parallel` joined by a policy other than `all`, in a `choice`
+    /// case, in a `repeat` body or in an `await`, whose binders do not
+    /// escape them.
+    pub(super) fn escapes(
+        &self,
+        body: ProtocolNodeId,
+        node: ProtocolNodeId,
+    ) -> Result<bool, ProtocolRefusal> {
+        if !self.encloses(body, node)? {
+            return Ok(false);
+        }
+        let mut at = node;
+        while at != body {
+            let Some(parent) = self.parent(at)? else {
+                return Err(ProtocolRefusal::fault("a-branch-body-encloses-its-nodes"));
+            };
+            let escapes = match self.control(parent)?.step {
+                ControlStep::Case | ControlStep::Await => false,
+                ControlStep::Repeat => self.repeat(parent)?.body != at,
+                ControlStep::Branch => {
+                    let parallel = self
+                        .parent(parent)?
+                        .ok_or_else(|| ProtocolRefusal::fault("a-branch-has-its-parallel"))?;
+                    self.joins
+                        .get(&parallel)
+                        .is_some_and(|join| join.policy == CheckedJoinPolicy::All)
+                }
+                ControlStep::Sequence
+                | ControlStep::Parallel
+                | ControlStep::Choice
+                | ControlStep::Attempt
+                | ControlStep::Check
+                | ControlStep::Send
+                | ControlStep::Receive
+                | ControlStep::Event
+                | ControlStep::Fence
+                | ControlStep::Unstepped(_) => true,
+            };
+            if !escapes {
+                return Ok(false);
+            }
+            at = parent;
+        }
+        Ok(true)
+    }
+
     /// Whether the subtree of the control `node` holds a `parallel`, so a
     /// thread running it can fork threads of its own.
     pub(super) fn forks_within(&self, node: ProtocolNodeId) -> Result<bool, ProtocolRefusal> {

@@ -567,9 +567,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// branch thread still `running` is `cancelled`, together with every
     /// thread at or below it, and every parallel instance those threads
     /// forked is settled with it; under policy `all` the owner's binder
-    /// environment gains the entries each joined branch thread, or a thread
-    /// below it, bound after the fork (PS-5); the owner settles past the
-    /// join.
+    /// environment gains the entries in each joined branch's `Out` (PS-5);
+    /// the owner settles past the join.
     fn join(
         &self,
         state: &ProtocolState<M>,
@@ -628,9 +627,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 }
                 let branch = path.child(&text, label, key.ordinal);
                 for (bound_node, bound) in instance.environment(&branch) {
-                    // An entry for a node of the branch body was bound by
-                    // the branch or a thread below it, after the fork.
-                    if self.program.encloses(*body, bound_node)? {
+                    // The entries of the branch's `Out`: bound by the branch
+                    // or below it after the fork, and escaping it.
+                    if self.program.escapes(*body, bound_node)? {
                         joined.push((bound_node, bound.clone()));
                     }
                 }
@@ -875,8 +874,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// Whether the live thread `holder` reaches a reader of the binder of
     /// `node` (ADR-027 PS-5): from its rest point to the end of its scope
     /// ([`Program::reads_from`](super::program::Program::reads_from)), or,
-    /// for an entry bound by a branch thread of an `all` join or a thread
-    /// below it, through everything its joiner reaches, up to the outermost
+    /// for a branch thread of an `all` join and an entry in its branch's
+    /// `Out`, through everything its joiner reaches, up to the outermost
     /// joiner. A cancelled thread takes no further step and reaches none.
     fn reaches(
         &self,
@@ -913,7 +912,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 .map(|(_, body)| *body)
                 .ok_or_else(|| ProtocolRefusal::fault("a-branch-thread-runs-a-branch"))?;
             let joined = join.policy == CheckedJoinPolicy::All && join.joined.contains(label);
-            if !joined || !self.program.encloses(body, node)? {
+            if !joined || !self.program.escapes(body, node)? {
                 return Ok(false);
             }
             at = &key.parent;
@@ -1063,7 +1062,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         .keys()
                         .filter(|other| *other != path)
                         .cloned();
-                    WaitCause::JoinWaiting {
+                    WaitCause::FinishWaiting {
                         threads: Self::running_of(instance, others)?,
                     }
                 }

@@ -46,7 +46,8 @@ use qsl_eval::simulation::model::{
     TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
+    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc, SendRecord,
+    StepKind,
 };
 use qsl_eval::simulation::{
     ConstraintValue, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
@@ -235,6 +236,24 @@ pub enum ModelTraceRefusal {
         /// Its transition identity.
         transition: Box<ProtocolTransition>,
     },
+    /// A `send` step whose replayed send record differs from the one it
+    /// records (ADR-027 PX-2).
+    #[error("stale_dependency/content-mismatch: send step {step} records {recorded:?}; it replays {replayed:?}")]
+    SendRecord {
+        /// The step's zero-based index in the prefix.
+        step: usize,
+        /// The recorded send record.
+        recorded: Box<SendRecord>,
+        /// The replayed send record.
+        replayed: Box<SendRecord>,
+    },
+    /// A `send` step without a send record, or another step with one: a
+    /// wire-shape defect of the counterexample (ADR-027 PX-1, PX-2).
+    #[error("invalid_runtime_input/invalid-value: step {step} carries a send record only if it is a send")]
+    SendRecordShape {
+        /// The step's zero-based index in the prefix.
+        step: usize,
+    },
     /// A protocol counterexample with a loop, whose replay against FR-212's
     /// fairness classes is not built.
     #[error("unsupported_construct/not-yet-implemented: replay of a protocol lasso")]
@@ -272,7 +291,8 @@ impl ModelTraceRefusal {
         match self {
             Self::UnknownTemporalClause { .. }
             | Self::ItemIdentity { .. }
-            | Self::PostState { .. } => Code::StaleDependency,
+            | Self::PostState { .. }
+            | Self::SendRecord { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
             Self::AuthoredUndefined
             | Self::GuardedActivation
@@ -283,6 +303,7 @@ impl ModelTraceRefusal {
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
+            | Self::SendRecordShape { .. }
             | Self::OverBinding
             | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
@@ -300,7 +321,8 @@ impl ModelTraceRefusal {
             Self::UnknownTemporalClause { .. }
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
-            | Self::PostState { .. } => "content-mismatch",
+            | Self::PostState { .. }
+            | Self::SendRecord { .. } => "content-mismatch",
             Self::AuthoredUndefined
             | Self::GuardedActivation
             | Self::RefinementLasso
@@ -313,6 +335,7 @@ impl ModelTraceRefusal {
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::ProtocolNotEnabled { .. }
+            | Self::SendRecordShape { .. }
             | Self::OverBinding
             | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
@@ -526,12 +549,15 @@ pub fn replay_protocol_trace(
             };
             let system = ProtocolSystem::new(model, &protocol_subject, Sc)
                 .map_err(|refusal| refused(ModelTraceRefusal::Protocol(refusal)))?;
-            let positions = match replay_prefix(&system, payload, protocol_not_enabled)? {
-                Some(positions) => positions,
+            send_records_in_place(payload)?;
+            let (positions, steps) = match replay_prefix(&system, payload, &PROTOCOL_STEPS)? {
+                Some(replayed) => replayed,
                 None => return Ok((no_value(), Vec::new())),
             };
             let settlement = match (&payload.kind, clause) {
-                (CounterexampleKind::Deadlock, _) => deadlock(&system, payload, &positions)?,
+                (CounterexampleKind::Deadlock, _) => {
+                    deadlock(&system, payload, &positions, &steps)?
+                }
                 (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
                     undefined(&system, &NoConstraints, payload, &positions, claimed)?
                 }
@@ -757,13 +783,46 @@ fn protocol_not_enabled(step: usize, transition: &ProtocolTransition) -> ModelTr
     }
 }
 
+/// ADR-027 PX-2: the refusal of a `send` step whose replayed send record
+/// differs from the one it records.
+fn protocol_result(
+    step: usize,
+    recorded: &ProtocolTransition,
+    replayed: &ProtocolTransition,
+) -> Option<ModelTraceRefusal> {
+    match (recorded.send_record(), replayed.send_record()) {
+        (Some(recorded), Some(replayed)) if recorded != replayed => {
+            Some(ModelTraceRefusal::SendRecord {
+                step,
+                recorded: Box::new(recorded.clone()),
+                replayed: Box::new(replayed.clone()),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// ADR-027 PX-1 and PX-2, before any step is replayed: every `send` step
+/// carries a send record and no other step does.
+fn send_records_in_place(
+    payload: &TemporalCounterexample<ProtocolTransition>,
+) -> Result<(), ReplayRefusal> {
+    for (step, recorded) in payload.prefix.iter().enumerate() {
+        let send = recorded.transition.kind() == StepKind::Send;
+        if send != recorded.transition.send_record().is_some() {
+            return Err(refused(ModelTraceRefusal::SendRecordShape { step }));
+        }
+    }
+    Ok(())
+}
+
 /// Re-execute the payload's prefix and check what it claims.
 fn settle(
     system: &ModelSystem<'_>,
     payload: &TemporalCounterexample,
     formula: Option<FormulaReplay<'_>>,
 ) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
-    let Some(positions) = replay_prefix(system, payload, model_not_enabled)? else {
+    let Some((positions, steps)) = replay_prefix(system, payload, &MODEL_STEPS)? else {
         return Ok((no_value(), Vec::new()));
     };
     if let Some(lasso) = payload.lasso {
@@ -771,7 +830,7 @@ fn settle(
     }
     match (&payload.kind, formula) {
         (CounterexampleKind::Deadlock, _) => {
-            deadlock(system, payload, &positions).map(|settlement| (settlement, Vec::new()))
+            deadlock(system, payload, &positions, &steps).map(|settlement| (settlement, Vec::new()))
         }
         (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
             undefined(system, system, payload, &positions, claimed)
@@ -814,17 +873,45 @@ pub(super) fn reexecute(
     system: &ModelSystem<'_>,
     payload: &TemporalCounterexample,
 ) -> Result<Option<Vec<Position>>, ReplayRefusal> {
-    replay_prefix(system, payload, model_not_enabled)
+    Ok(replay_prefix(system, payload, &MODEL_STEPS)?.map(|(positions, _)| positions))
 }
 
+/// What a subject's replay refuses of a step: one whose identity is not
+/// enabled, and one whose replayed result differs from the recorded one
+/// (ADR-027 PX-2's send record; a model step records no result).
+struct StepRules<T> {
+    not_enabled: fn(usize, &T) -> ModelTraceRefusal,
+    result: fn(usize, &T, &T) -> Option<ModelTraceRefusal>,
+}
+
+/// The rules of a model step.
+const MODEL_STEPS: StepRules<ModelTransition> = StepRules {
+    not_enabled: model_not_enabled,
+    result: |_, _, _| None,
+};
+
+/// The rules of a protocol step.
+const PROTOCOL_STEPS: StepRules<ProtocolTransition> = StepRules {
+    not_enabled: protocol_not_enabled,
+    result: protocol_result,
+};
+
+/// A replayed prefix: each position, and each step as the subject's
+/// system replayed it.
+type Replayed<S> = (
+    Vec<Position<<S as TransitionSystem>::State>>,
+    Vec<<S as TransitionSystem>::TransitionId>,
+);
+
 /// Re-execute the payload's prefix from its initial state: each step's
-/// identity must be enabled (else `not_enabled` refuses) and reach its
-/// recorded post-state digest. `None` when an expansion stops.
+/// identity must be enabled (else `rules.not_enabled` refuses), reach its
+/// recorded post-state digest, and give the result it records (else
+/// `rules.result` refuses). `None` when an expansion stops.
 fn replay_prefix<S: SubjectSystem>(
     system: &S,
     payload: &TemporalCounterexample<S::TransitionId>,
-    not_enabled: fn(usize, &S::TransitionId) -> ModelTraceRefusal,
-) -> Result<Option<Vec<Position<S::State>>>, ReplayRefusal> {
+    rules: &StepRules<S::TransitionId>,
+) -> Result<Option<Replayed<S>>, ReplayRefusal> {
     let initial = system.initial();
     let count = initial.len();
     let state = initial
@@ -838,6 +925,7 @@ fn replay_prefix<S: SubjectSystem>(
         })?;
     let digest = digest_of(system, &state)?;
     let mut positions = vec![Position { state, digest }];
+    let mut steps = Vec::with_capacity(payload.prefix.len());
     for (index, step) in payload.prefix.iter().enumerate() {
         let current = positions.last().ok_or_else(|| fault("a-position-exists"))?;
         let expansion = match expand(system, &current.state)? {
@@ -854,27 +942,34 @@ fn replay_prefix<S: SubjectSystem>(
             enabled = true;
             let digest = digest_of(system, &next)?;
             if digest == step.post_state {
-                reached = Some(Position {
-                    state: next,
-                    digest,
-                });
+                reached = Some((
+                    Position {
+                        state: next,
+                        digest,
+                    },
+                    transition,
+                ));
                 break;
             }
             digests.push(digest);
         }
         if !enabled {
-            return Err(refused(not_enabled(index, &step.transition)));
+            return Err(refused((rules.not_enabled)(index, &step.transition)));
         }
-        let next = reached.ok_or_else(|| {
+        let (next, replayed) = reached.ok_or_else(|| {
             refused(ModelTraceRefusal::PostState {
                 step: index,
                 recorded: step.post_state,
                 reached: digests,
             })
         })?;
+        if let Some(refusal) = (rules.result)(index, &step.transition, &replayed) {
+            return Err(refused(refusal));
+        }
         positions.push(next);
+        steps.push(replayed);
     }
-    Ok(Some(positions))
+    Ok(Some((positions, steps)))
 }
 
 /// FR-128: the lasso's loop must end at its entry state; a
@@ -1259,6 +1354,7 @@ fn deadlock<S: SubjectSystem>(
     system: &S,
     payload: &TemporalCounterexample<S::TransitionId>,
     positions: &[Position<S::State>],
+    replayed: &[S::TransitionId],
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     let last = positions.last().ok_or_else(|| fault("a-position-exists"))?;
     let expansion = match expand(system, &last.state)? {
@@ -1275,8 +1371,7 @@ fn deadlock<S: SubjectSystem>(
         Err(_) => return Ok(no_value()),
     };
     if class == TerminalClass::Deadlocked {
-        let steps: Vec<&S::TransitionId> =
-            payload.prefix.iter().map(|step| &step.transition).collect();
+        let steps: Vec<&S::TransitionId> = replayed.iter().collect();
         let blocked = match system.blocked(&last.state, &steps) {
             Ok(blocked) => blocked,
             Err(stop) if stop.is_internal_failure() => return Err(fault("blocked-threads")),
