@@ -192,10 +192,14 @@ pub enum ModelTraceRefusal {
     /// A refinement counterexample that names no refinement failure.
     #[error("invalid_runtime_input/invalid-value: the payload names no refinement failure")]
     NoRefinementFailure,
-    /// A refinement counterexample that is a lasso, which FR-143's liveness
-    /// failures write and replay does not build yet.
-    #[error("unsupported_construct/not-yet-implemented: replay of a refinement lasso")]
-    RefinementLasso,
+    /// A refinement lasso whose history values or abstract candidates at the
+    /// last position of its loop differ from those at its entry, so the loop
+    /// is no cycle of the product (FR-145 "Lasso").
+    #[error("invalid_runtime_input/invalid-value: the history values or candidates at the end of the loop entered at position {entry} differ from those at its entry")]
+    LoopDrifts {
+        /// The loop's entry position.
+        entry: usize,
+    },
     /// A witness-exhausted hyper counterexample, which FR-183's HP-3 replay
     /// recomputes and replay does not build yet.
     #[error(
@@ -287,7 +291,6 @@ impl ModelTraceRefusal {
             Self::FairnessSet { .. } => Code::StaleDependency,
             Self::AuthoredUndefined
             | Self::GuardedActivation
-            | Self::RefinementLasso
             | Self::HyperWitnessExhausted
             | Self::HyperProjected
             | Self::ProtocolLasso => Code::UnsupportedConstruct,
@@ -300,6 +303,7 @@ impl ModelTraceRefusal {
             | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
+            | Self::LoopDrifts { .. }
             | Self::StutterNotTerminal { .. }
             | Self::HyperShape { .. }
             | Self::HyperUnmatched { .. }
@@ -316,7 +320,6 @@ impl ModelTraceRefusal {
             | Self::PostState { .. } => "content-mismatch",
             Self::AuthoredUndefined
             | Self::GuardedActivation
-            | Self::RefinementLasso
             | Self::HyperWitnessExhausted
             | Self::HyperProjected
             | Self::ProtocolLasso => "not-yet-implemented",
@@ -332,6 +335,7 @@ impl ModelTraceRefusal {
             | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
+            | Self::LoopDrifts { .. }
             | Self::StutterNotTerminal { .. }
             | Self::HyperShape { .. }
             | Self::HyperUnmatched { .. }
@@ -895,7 +899,7 @@ fn replay_prefix<S: SubjectSystem>(
 /// FR-128: the lasso's loop must end at its entry state; a
 /// `terminal-stutter` loop must stand at a state that enables no transition
 /// identity (FR-124, ADR-018 SM-4), and a loop of model steps must hold one.
-fn close_loop(
+pub(super) fn close_loop(
     system: &ModelSystem<'_>,
     positions: &[Position],
     lasso: Lasso,
@@ -1107,7 +1111,7 @@ pub(super) struct LoopState {
 /// state they leave, read from the model's own successor relation. The
 /// terminal stutter step is outside every constraint and enables none
 /// (SM-4), so a stutter loop has none. `None` when an expansion stops.
-fn loop_states_of(
+pub(super) fn loop_states_of(
     system: &ModelSystem<'_>,
     payload: &TemporalCounterexample,
     positions: &[Position],
