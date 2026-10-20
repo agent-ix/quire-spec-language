@@ -26,7 +26,7 @@ Scope: FR-138-AC-5, FR-141-AC-6, FR-142-AC-8, FR-145-AC-5.
 
 ## Test Procedure
 
-Fixture: FR-138's `RegisterHistory` with the `inv` update `1 / x`, and its
+Fixture: FR-138's `RegisterHistory` with the `inv` update `(1 mod x) + 1`, and its
 variant with the `writes` update.
 
 1. Run `step_history` along `write(r, 1)` and along `write(r, 0)`.
