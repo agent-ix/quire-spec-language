@@ -23,10 +23,12 @@ Scope: FR-149-AC-1 to FR-149-AC-10, FR-144-AC-7.
 
 Fixtures: ADR-020 §8's `CasRefinesCounter` with and without its `ensure`
 row, and its lost-update model; the light ring fixture `RingIsQueue`
-(FR-141-AC-9) built unmetered, for a meter sweep of its mapping rows; a model
-whose concrete contract costs more than B; and `CasRefinesCounter` without its
-`ensure` row and with preconditions that disable `peek` and the second thread's
-`begin` once the counter is at its bound, for a terminal state.
+(FR-139's) built unmetered, for a meter sweep of its mapping rows; `HeavyEnq`
+(FR-141-AC-9); a model whose concrete contract costs more than B (a new fixture);
+`CasRefinesCounter` without its `ensure` row with `peek` and `begin` of the
+second thread never enabled, for a terminal chain; a concrete model with the
+precondition `6 mod (2 - self.value) >= 0`, for `BadState`; and a concrete model
+whose state constraint has a refused family, for an unnamed expansion stop.
 
 1. Run the refinement without the `ensure` row and check its certificate.
 2. Check the tampered certificates of FR-149-AC-2.

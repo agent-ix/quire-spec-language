@@ -94,7 +94,7 @@ internal failure is `IncompleteCause::ResourceExhausted`. An internal failure
 is a fault of the checker, not a `Stopped` and not a rejection.
 
 The checker uses FR-338's `CertificateRejection{rule, at}`. It uses FR-338's
-existing rules `Malformed` and `BadState`, and FR-338's `CertificateRule` gains
+`BadState` and FR-163's `Malformed`, and FR-338's `CertificateRule` gains
 `InitialMismatch`, `SuccessorsDiffer`, `StepFails` and `PostDiffers`. FR-338's
 `CertificateLocus` gains
 `SimulationStep { position: u64, edge: Option<u64>, verdict: Option<FailedStep> }`:
@@ -116,15 +116,15 @@ limit is the evaluation meter.
 "edge": "<n>" or null, "verdict": <verdict> or null}`, with unsigned integers
 as decimal strings; `verdict` is `null` for every rule but `StepFails`. A
 verdict is an object whose `kind` is one of QSpec FR-379's `refinement_failure`
-names, plus `Undetermined`, and whose other members are the verdict's own:
+names, plus `UndefinedEvaluation` and `Undetermined`, and whose other members are the verdict's own:
 
 | `kind` | Members |
 | --- | --- |
 | `InitialNotAbstract` | `initial` (decimal string, the concrete initial state's index) |
 | `StutterChanged` | `position` |
-| `AbstractStepRejected` | `position`, `transition` (the `ModelTransition` encoding of the terminal record's counterexample steps, FR-127), `cause` |
+| `AbstractStepRejected` | `position`, `transition` (the transition identity encoding of QSpec FR-364, from FR-181), `cause` |
 | `NoAbstractMatch` | `position` |
-| `Undefined` | `position` and `row` for a failure of that name, or `where` and `cause` (FR-127's `UndefinedEvaluation` encoding) for a step verdict `Undefined` |
+| `UndefinedEvaluation` | `where` and `cause` (FR-127's `UndefinedEvaluation` encoding), the step verdict `Undefined`; QSpec FR-379's `Undefined{position, row}` is the same failure as the engine writes it, and `check_step` never returns that form |
 | `Undetermined` | `cause` (`MappingUndetermined` or `UndecidedSuccessor`) and `evaluation` (`{"outcome": "refused"}` or `{"outcome": "incomplete", "limit": <FR-126 limit spelling>}`) |
 
 `position` inside a verdict is the refinement position FR-141 names and need
@@ -137,10 +137,9 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
 - **Identity.** The checker SHALL refuse with `stale_dependency`/
   `content-mismatch`, naming both values, a certificate whose refinement
   node differs from the item's.
-- **Package identity.** Before it calls the checker, FR-144 SHALL refuse with
-  `stale_dependency`/`content-mismatch` a certificate whose `concrete_package`,
-  `abstract_package` or `obligation` differs from the item's recompile
-  (FR-098).
+- **Package identity.** FR-144 "Certificate identity" owns the refusal of a
+  certificate whose `concrete_package`, `abstract_package` or `obligation`
+  differs from the item's recompile; the checker reads the refinement node only.
 - **Shape.** Before any recomputation, the checker SHALL reject with rule
   `Malformed`, at position `min(len(successors), len(positions))`, a
   certificate whose `successors` and `positions` differ in length.
@@ -191,10 +190,12 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
   with checked arithmetic.
 - **Limit stop.** The checker SHALL stop at a reached limit with
   `Stopped(LimitReached{limit, value})`.
-- **Step stop.** A `StepVerdict::Stopped` from a `check_step` it calls SHALL end
-  the check with `Stopped(LimitReached{limit, value})` naming that limit.
-- **Expansion stop.** An FR-120 expansion stop that names no limit and is not an
-  internal failure SHALL end the check with `Stopped(ResourceExhausted)`.
+- **Step stop.** When a `check_step` it calls returns `StepVerdict::Stopped`, the
+  checker SHALL end the check with `Stopped(LimitReached{limit, value})` naming
+  that limit.
+- **Expansion stop.** When an FR-120 expansion stops naming no limit and is not an
+  internal failure, the checker SHALL end the check with
+  `Stopped(ResourceExhausted)`.
 - **Cancellation.** The checker SHALL end a cancelled check with
   `Stopped(Cancelled{source})`.
 - **Purity.** The checker SHALL read no path, environment variable, clock
@@ -216,12 +217,12 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
 | FR-149-AC-2 | The same certificate with the `Taken` of the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter` returns `Rejected` with rule `PostDiffers` at that position and edge; with that edge's post index pointing at the initial position, rule `PostDiffers`; with one listed edge removed, rule `SuccessorsDiffer` at that position. Each settles `inconclusive`, `CertificateRejected{rule, at}`. | Test (TC-556) |
 | FR-149-AC-3 | A certificate built for the lost-update model by listing its states with the `commitB` edge from `(1, 0, f, 0, t)` returns `Rejected` with rule `StepFails` and verdict `AbstractStepRejected{transition: inc(c), cause: Postcondition}` in its locus, so a false relation is never accepted. | Test (TC-556) |
 | FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(LimitReached{MaxTransitions, 1})`; a certificate naming another refinement node is refused `stale_dependency`/`content-mismatch`. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
-| FR-149-AC-5 | A valid certificate is never rejected for a meter it ran out of, in each of four places, each returning `Stopped(LimitReached{EvaluationMeter, B})`, not `Rejected`: (a) the unmetered certificate of the light ring fixture (`RingIsQueue`) checked under a meter B that runs out in the initial states' mapping rows; (b) the same certificate under a larger B that runs out in a step's mapping row; (c) a certificate of a model whose concrete contract costs more than B; (d) a `HeavyEnq` certificate (FR-141-AC-9), built under a larger meter, checked under B, where the abstract side runs out. | Test (TC-556) |
-| FR-149-AC-6 | In a certificate for a model whose chain of enabled operations ends in a terminal state (`CasRefinesCounter` without its `ensure` row, with preconditions that disable `peek` and the second thread's `begin` once the counter is at its bound), the terminal state's position lists one edge whose `transition` is `None` and which returns to the position; the checker accepts it, and the same certificate with that edge removed returns `Rejected` with rule `SuccessorsDiffer` at the position. | Test (TC-556) |
-| FR-149-AC-7 | A certificate whose `successors` list is one shorter than `positions` is rejected `Malformed` at the shorter length; one whose `initial` omits a concrete initial state, at `len(initial)`; one with a position that only an edge listed at a higher-indexed position reaches, at that position; each before any recomputation. A position at which a concrete contract is refused (not out of meter) returns `Rejected` with rule `BadState`. | Test (TC-556) |
+| FR-149-AC-5 | A valid certificate is never rejected for a meter it ran out of, in each of four places, each returning `Stopped(LimitReached{EvaluationMeter, B})`, not `Rejected`: (a) the unmetered certificate of the light ring fixture (`RingIsQueue`) checked under a meter B that runs out in the initial states' mapping rows; (b) the same certificate under a larger B that runs out in a step's mapping row; (c) a certificate of a model whose concrete contract costs more than B (a fixture this requirement asks for, not yet built); (d) a `HeavyEnq` certificate (FR-141-AC-9), built under a larger meter, checked under B, where the abstract side runs out. | Test (TC-556) |
+| FR-149-AC-6 | In a certificate for a model whose chain of enabled operations ends in a terminal state (`CasRefinesCounter` without its `ensure` row, with `peek` and the second thread's `begin` given preconditions that are never enabled, so the states form a chain that ends in a terminal state), the terminal state's position lists one edge whose `transition` is `None` and which returns to the position; the checker accepts it, and the same certificate with that edge removed returns `Rejected` with rule `SuccessorsDiffer` at the position. | Test (TC-556) |
+| FR-149-AC-7 | A certificate whose `successors` list is one shorter than `positions` is rejected `Malformed` at the shorter length; one whose `initial` omits a concrete initial state, at `len(initial)`; one with a position that only an edge listed at a higher-indexed position reaches, at that position; each before any recomputation. A position at which a concrete contract is undefined or refused (not out of meter) returns `Rejected` with rule `BadState`; the fixture is a concrete model with a precondition `6 mod (2 - self.value) >= 0`, which is undefined at value 2. | Test (TC-556) |
 | FR-149-AC-8 | The terminal record of AC-3's rejection writes the locus `{"position": "<n>", "edge": "<n>", "verdict": {"kind": "AbstractStepRejected", "position": "<n>", "transition": <ModelTransition encoding of inc(c)>, "cause": {"kind": "Postcondition"}}}`, writes `"verdict": null` for AC-2's `PostDiffers`, and writes each other kind's members as the wire-form table lists them. | Test (TC-556) |
 | FR-149-AC-9 | FR-144 refuses `stale_dependency`/`content-mismatch`, before the checker runs, a certificate whose `concrete_package` differs from the recompile, and one whose `obligation` differs; the checker is not called in either case. | Test (TC-556) |
-| FR-149-AC-10 | A check cancelled between positions returns `Stopped(Cancelled{source})`, and an FR-120 expansion stop that names no limit returns `Stopped(ResourceExhausted)`; FR-144 settles each V-7. | Test (TC-556) |
+| FR-149-AC-10 | A check cancelled between positions returns `Stopped(Cancelled{source})`, and an FR-120 expansion stop that names no limit, produced by a concrete model whose state constraint has a family that evaluation refuses, returns `Stopped(ResourceExhausted)`; FR-144 settles each V-7. | Test (TC-556) |
 
 ## Dependencies
 
