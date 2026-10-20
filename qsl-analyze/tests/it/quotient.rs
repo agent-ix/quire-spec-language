@@ -11,12 +11,13 @@
 //! Every counterexample is read back by re-executing its steps through
 //! `ModelSystem`.
 //!
-//! The unreduced comparison FR-153-AC-4 asks for is made where the
-//! unreduced engine decides the item: a refutation is `Violated` both
-//! ways, and the unreduced proof is refused only for want of FR-339's
-//! component certificate after exploring the whole product. AC-4's
-//! comparison of a strong constraint, reduced against unreduced, is not made
-//! here, so AC-4 stays untagged. Every concretised lasso also replays through FR-128.
+//! FR-153-AC-4's unreduced comparison reads the unreduced engine's verdict:
+//! a refutation is `Violated` both ways, and a proof is the unreduced
+//! run's finding of no fair accepting cycle over the whole product, which
+//! it refuses to return as `Holds` only for want of FR-339's component
+//! certificate (`ComponentCertificateNotBuilt`). Strong constraints are
+//! decided unreduced by EN-1's SCC refinement. Every concretised lasso also
+//! replays through FR-128.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
@@ -33,7 +34,7 @@ use crate::counter::UNLIMITED;
 use crate::flag_world::{Subject, World as Flags, KEYS as FLAGS};
 use crate::reduction::CYCLE;
 use crate::reduction_world::{
-    atom, counters, start, value, values, Clause, Shape, World, INFINITE,
+    atom, counter, counters, start, value, values, Clause, Shape, World, INFINITE,
 };
 
 const KEYS: [&str; 3] = ["a", "b", "c"];
@@ -281,12 +282,79 @@ fn strong_each_holds_where_weak_each_admits_a_loop_that_never_fires() {
     );
 }
 
+/// The unreduced run finds no fair accepting cycle in the whole product:
+/// the verdict a reduced `HoldsReduced` agrees with (FR-153-AC-4).
+fn no_fair_cycle(outcome: &Outcome) -> bool {
+    matches!(
+        outcome,
+        Err(ModelCheckRefusal::Liveness(
+            LivenessRefusal::ComponentCertificateNotBuilt { .. }
+        ))
+    )
+}
+
+/// FR-153-AC-4: each of AC-1 to AC-3's runs under symmetry gives the
+/// verdict of the unreduced run of the same claim, and repeating it gives
+/// the equal outcome. AC-1's proof and AC-3's strong proof find no fair
+/// accepting cycle unreduced (EN-1 now refines strong `each` itself), AC-2's
+/// and AC-3's weak refutations are `Violated` both ways.
+#[trace("TC-571", "FR-153-AC-4")]
+#[test]
+fn every_reduced_verdict_agrees_with_the_unreduced_run() {
+    let proof = configs(PROOF);
+    let reduced = run(&proof, |v| Some(v == 2), symmetric());
+    assert!(
+        matches!(reduced, Ok(ModelCheckOutcome::HoldsReduced { .. })),
+        "{reduced:?}"
+    );
+    assert_eq!(
+        reduced.as_ref().ok(),
+        run(&proof, |v| Some(v == 2), symmetric()).as_ref().ok()
+    );
+    let unreduced = run(&proof, |v| Some(v == 2), Reductions::default());
+    assert!(no_fair_cycle(&unreduced), "{unreduced:?}");
+
+    let refutation = configs(REFUTATION);
+    let reduced = run(&refutation, |v| Some(v != 2), symmetric());
+    violation(&reduced);
+    assert_eq!(
+        reduced.as_ref().ok(),
+        run(&refutation, |v| Some(v != 2), symmetric())
+            .as_ref()
+            .ok()
+    );
+    violation(&run(&refutation, |v| Some(v != 2), Reductions::default()));
+
+    let toggle = Subject::Toggle;
+    let weak = Flags::new(toggle, WEAK, EVENTUALLY_FIRED);
+    let reduced = weak.run(flagged(toggle));
+    violation(&reduced);
+    assert_eq!(
+        reduced.as_ref().ok(),
+        weak.run(flagged(toggle)).as_ref().ok()
+    );
+    violation(&weak.run(Reductions::default()));
+
+    let strong = Flags::new(toggle, STRONG, EVENTUALLY_FIRED);
+    let reduced = strong.run(flagged(toggle));
+    assert!(
+        matches!(reduced, Ok(ModelCheckOutcome::HoldsReduced { .. })),
+        "{reduced:?}"
+    );
+    assert_eq!(
+        reduced.as_ref().ok(),
+        strong.run(flagged(toggle)).as_ref().ok()
+    );
+    let unreduced = strong.run(Reductions::default());
+    assert!(no_fair_cycle(&unreduced), "{unreduced:?}");
+}
+
 /// FR-153 "Limits": with the run's meter large enough for every expansion
 /// but below the cost of AC-2's cycle groups and orbit closures, the run
 /// explores the whole quotient product (18 states) and then stops
 /// `Stopped(ResourceExhausted, …)` naming the evaluation meter (the meter
 /// clause of FR-153-AC-4).
-#[trace("TC-571")]
+#[trace("TC-571", "FR-153-AC-4")]
 #[test]
 fn the_annotated_quotient_charges_the_run_meter() {
     let mut world = configs(REFUTATION);
@@ -336,6 +404,83 @@ fn concretising_the_loop_counts_against_max_transitions() {
             ..
         }) => {}
         other => panic!("expected max_transitions to stop the run: {other:?}"),
+    }
+}
+
+/// FR-161 "Length and limits" (SR-12211 FND-007): every binding's
+/// concretisation draws on the one `max_transitions` budget the products'
+/// exploration also spends. Over four counters in the classes `[a, b]` and
+/// `[c, d]`, AC-2's refutation runs two bindings, `a` (stabiliser `[c, d]`)
+/// and `c` (stabiliser `[a, b]`), each concretising a lasso in its second
+/// phase, each at least as long as the shortest, which the run returns. A
+/// budget that leaves less than twice that length after exploration
+/// stops the run naming `max_transitions`: a per-binding copy of the
+/// budget would let both lassos through. A budget of exactly twice that
+/// length refutes, so no step is charged twice. FR-161 "Length and limits"
+/// has no criterion and no test case step, so the test claims none.
+#[test]
+fn every_binding_concretises_within_the_one_max_transitions_budget() {
+    const FOUR: [&str; 4] = ["a", "b", "c", "d"];
+    let world = World::new(
+        Shape {
+            symmetric: true,
+            max: 2,
+            link: false,
+        },
+        CYCLE,
+        &[Clause {
+            profile: INFINITE,
+            formula: REFUTATION,
+        }],
+        &[FOUR.into_iter().map(|key| (key, counter(0))).collect()],
+        &FOUR,
+    );
+    let pairs = Reductions {
+        symmetry: vec![SymmetryDeclaration {
+            population: counters(),
+            classes: vec![keys(&["a", "b"]), keys(&["c", "d"])],
+        }],
+        ..Reductions::default()
+    };
+    let run_with = |max_transitions: usize| {
+        let mut limits = ModelCheckLimits::default();
+        limits.limits.max_transitions = max_transitions;
+        world.run(
+            Some(0),
+            vec![atom(|v| Some(v != 2))],
+            pairs.clone(),
+            None,
+            limits,
+        )
+    };
+    let (explored, steps) = match run_with(usize::MAX) {
+        Ok(ModelCheckOutcome::Violated {
+            counterexample,
+            stats,
+        }) => (
+            usize::try_from(stats.product_edges).expect("small"),
+            counterexample.len(),
+        ),
+        other => panic!("the reduced run refutes: {other:?}"),
+    };
+    let max_transitions = explored + 2 * steps - 1;
+    match run_with(max_transitions) {
+        Ok(ModelCheckOutcome::Stopped {
+            cause: IncompleteCause::ResourceExhausted,
+            limit:
+                Some(ReachedLimit {
+                    limit: ModelCheckLimit::MaxTransitions,
+                    value,
+                }),
+            ..
+        }) => assert_eq!(value, u64::try_from(max_transitions).expect("small")),
+        other => panic!("expected max_transitions to stop the run: {other:?}"),
+    }
+    match run_with(explored + 2 * steps) {
+        Ok(ModelCheckOutcome::Violated { counterexample, .. }) => {
+            assert_eq!(counterexample.len(), steps);
+        }
+        other => panic!("exactly the two lassos' steps refute: {other:?}"),
     }
 }
 
