@@ -12,11 +12,11 @@ relationships:
 
 Verify S3's checks of random parameters, workloads and rewards on ADR-024 §7.2's `Service` model and its malformed variants.
 
-Scope: FR-185-AC-1 to FR-185-AC-7.
+Scope: FR-185-AC-1 to FR-185-AC-8.
 
 ## Test Procedure
 
-Fixtures: ADR-024 §7.2's `Service` model (with `d` typed `Millis = Int[1, 12]`), the variants FR-185-AC-2 to FR-185-AC-4 list, a second model `Other`, and the coprime-weight distributions of FR-185-AC-6.
+Fixtures: the dimension `Time`, the unit `s` (root) and the unit `ms` (target `s`, scale `1/1000`), ADR-024 §7.2's `Service` model (with `d` typed `Millis = Int[1, 12]`), the variants FR-185-AC-2 to FR-185-AC-4 list, a second model `Other`, and the coprime-weight distributions of FR-185-AC-6.
 
 1. Check `Service` and read back `attempt`'s random parameters, the `duration` reward and the workload `Steady`.
 2. Check each random-parameter variant of FR-185-AC-2, including the weights `rational(-1, 1)`, the bare weight `-1`, and the exact-value bounds of FR-185-AC-2: `decimal(1, 4294967295)`, `rational(n, n)` with `n` of 70,000 bits, `rational(m, 1)` with `m` of 65,536 and of 65,537 bits, `decimal(1, 19728)`, `decimal(1, 19729)`, `decimal(25, 3)` and `decimal(5, 0)`.
@@ -25,6 +25,7 @@ Fixtures: ADR-024 §7.2's `Service` model (with `d` typed `Millis = Int[1, 12]`)
 5. Declare a second workload `Steady` on `Service`, and one on `Other` (FR-185-AC-5).
 6. Check the two coprime-weight distributions of FR-185-AC-6, and one with a check cancelled before it starts.
 7. Emit `Service` (FR-185-AC-7).
+8. Check `Server::attempt` with `d: Quantity<ms>` and its supports, then with `1 s` and `true` (FR-185-AC-8, with `Time`, `s` and `ms` declared; it reads QSpec's unit `typeRef` and quantity literal form, FR-322-AC-79 and FR-322-AC-80).
 
 Tag the tests `#[trace("TC-620", "FR-185-AC-n")]`.
 
@@ -37,3 +38,4 @@ Tag the tests `#[trace("TC-620", "FR-185-AC-n")]`.
 - Step 5: each second `Steady` refused `conflicting_declaration`/`duplicate-declaration` with both declarations related.
 - Step 6: the 65,536-bit sum admitted; the 65,537-bit sum refused with the limit refusal naming the parameter; the check with a tripped handle ends cancelled with the handle requested and a reported limit that is not the 65,536-bit ceiling.
 - Step 7: S3 checks, S4 refuses `unsupported_construct`/`not-yet-implemented` naming the first random parameter, `random-parameter` and the profile.
+- Step 8: with `Time`, `s` and `ms` declared, the quantity supports check; `1 s` and `true` refused `value-outside-type`.
