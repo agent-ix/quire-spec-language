@@ -498,7 +498,7 @@ pub fn replay_protocol_trace(
 const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// The recompiled package and its `package_id` record.
-type Recompiled<'p> = (&'p CheckedPackage, DigestRecord);
+type ReplayPackage<'p> = (&'p CheckedPackage, DigestRecord);
 
 /// FR-128's recompile, `package_id` check and subject re-admission, then
 /// `replay` over the recompiled package, the subject's simulation request
@@ -508,7 +508,7 @@ fn replay_on<P: crate::witness::FamilyPayload>(
     envelope: &WitnessEnvelope<P>,
     replay_limits: ReplayLimits,
     replay: impl for<'p> FnOnce(
-        Recompiled<'p>,
+        ReplayPackage<'p>,
         &dyn Fn(&ModelTraceSubject) -> ModelSimulationRequest<'p>,
         ScalarLimits,
     ) -> Result<
