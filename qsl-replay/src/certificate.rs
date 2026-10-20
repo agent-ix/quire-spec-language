@@ -146,7 +146,7 @@ impl Serialize for CertificateLocus {
                 object.serialize_field("position", &position)?;
                 let edge = edge.map(|edge| edge.to_string());
                 object.serialize_field("edge", &edge)?;
-                object.serialize_field("verdict", &verdict.as_deref().map(FailedStep::kind))?;
+                object.serialize_field("verdict", &verdict.as_deref())?;
                 object.end()
             }
             Self::Query { part } => part.serialize(serializer),

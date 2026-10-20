@@ -38,23 +38,27 @@ use qsl_eval::simulation::model::{
     ModelSystem,
 };
 use qsl_eval::simulation::TransitionSystem;
+use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
-use quire_exact::Cancel;
+use quire_exact::{Cancel, LimitKind};
 use quire_semantic_value::model_transition::ModelTransition;
+use serde::{Serialize, Serializer};
 
 use crate::certificate::check::{
     expansion_halt, finish, poll, stopped, widen, Budgets, Checker, Halt, Step, BOUND_POSITIONS,
 };
+use crate::certificate::closure::DigestWire;
 use crate::certificate::closure::{CertificateRejection, ClosureRefusal, TemporalCertificateCheck};
 use crate::certificate::{CertificateLocus, CertificateRule};
-use crate::model_check::counterexample::UndefinedEvaluation;
+use crate::model_check::counterexample::{UndefinedEvaluation, UndefinedLocus};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::refinement::{
     check_initial, check_step, open_systems, ConcreteStep, EvalFailure, RefinementFailure,
-    RefinementPosition, RefinementSystems, StepVerdict, SubjectRefusal, Taken, Undetermined,
+    RefinementPosition, RefinementSystems, StepRejection, StepVerdict, SubjectRefusal, Taken,
+    Undetermined,
 };
 
 /// One position of a simulation certificate: a product state EN-1 stored.
@@ -93,6 +97,75 @@ pub struct SimulationCertificate {
     pub successors: Vec<Vec<CertifiedEdge>>,
 }
 
+/// The limit an incomplete evaluation ran out of.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IncompleteLimit {
+    /// The evaluation meter's work units.
+    EvaluationMeter,
+    /// Another counter of the evaluation's scalar limits.
+    Counter(LimitKind),
+}
+
+impl IncompleteLimit {
+    fn of(limit: LimitKind) -> Self {
+        match limit {
+            LimitKind::WorkUnits => Self::EvaluationMeter,
+            other => Self::Counter(other),
+        }
+    }
+
+    /// The limit's FR-126 spelling; another counter keeps its member name.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::EvaluationMeter => ModelCheckLimit::EvaluationMeter.as_str(),
+            Self::Counter(kind) => kind.as_str(),
+        }
+    }
+}
+
+/// The evaluation outcome that left a read undetermined (FR-149 Outputs).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EvaluationOutcome {
+    /// A row or contract was refused, or could not be decided.
+    Refused,
+    /// An evaluation ran out of a limit.
+    Incomplete(IncompleteLimit),
+}
+
+impl EvaluationOutcome {
+    /// The outcome of `cause`: a mapping read's evaluation, or a successor
+    /// set that could not be decided.
+    fn of_undetermined(cause: &Undetermined) -> Self {
+        match cause {
+            Undetermined::Mapping(mapping) => Self::of_mapping(&mapping.cause),
+            Undetermined::UndecidedSuccessor => Self::Refused,
+        }
+    }
+
+    /// The outcome of a mapping read's `cause`.
+    fn of_mapping(cause: &EvalFailure) -> Self {
+        match cause {
+            EvalFailure::Evaluation(outcome) => Self::of_clause(outcome),
+            EvalFailure::UnmappedType(_) => Self::Refused,
+        }
+    }
+
+    /// The outcome of a contract clause's evaluation.
+    fn of_clause(outcome: &ClauseOutcome) -> Self {
+        match outcome {
+            ClauseOutcome::Incomplete(incomplete) => {
+                Self::Incomplete(IncompleteLimit::of(incomplete.limit_kind))
+            }
+            _ => Self::Refused,
+        }
+    }
+
+    /// Whether the evaluation only ran out of the evaluation meter.
+    pub fn is_meter_only(self) -> bool {
+        self == Self::Incomplete(IncompleteLimit::EvaluationMeter)
+    }
+}
+
 /// What [`check_step`] gave an edge it did not pass: FR-149's locus
 /// `verdict` for `StepFails`.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -102,22 +175,117 @@ pub enum FailedStep {
     /// A mapping row or step-row argument evaluated undefined.
     Undefined(Box<UndefinedEvaluation>),
     /// The check could not decide.
-    Undetermined(Undetermined),
+    Undetermined {
+        /// FR-141's cause.
+        cause: Undetermined,
+        /// The evaluation outcome that caused it.
+        evaluation: EvaluationOutcome,
+    },
 }
 
 impl FailedStep {
-    /// The verdict's kind as the locus writes it.
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::Fails(RefinementFailure::InitialNotAbstract { .. }) => "initial-not-abstract",
-            Self::Fails(RefinementFailure::StutterChanged { .. }) => "stutter-changed",
-            Self::Fails(RefinementFailure::AbstractStepRejected { .. }) => "abstract-step-rejected",
-            Self::Fails(RefinementFailure::NoAbstractMatch { .. }) => "no-abstract-match",
-            Self::Fails(RefinementFailure::Undefined { .. }) | Self::Undefined(_) => {
-                "undefined-evaluation"
+    /// The failed step of an `Undetermined` verdict.
+    fn undetermined(cause: Undetermined) -> Self {
+        let evaluation = EvaluationOutcome::of_undetermined(&cause);
+        Self::Undetermined { cause, evaluation }
+    }
+
+    /// The verdict as the locus writes it (FR-149 "Wire form").
+    fn wire(&self) -> Result<serde_json::Value, String> {
+        use serde_json::json;
+        let decimal = |value: u64| value.to_string();
+        Ok(match self {
+            Self::Fails(RefinementFailure::InitialNotAbstract { initial }) => {
+                json!({"kind": "InitialNotAbstract", "initial": initial.to_string()})
             }
-            Self::Undetermined(_) => "undetermined",
-        }
+            Self::Fails(RefinementFailure::StutterChanged { position }) => {
+                json!({"kind": "StutterChanged", "position": decimal(*position)})
+            }
+            Self::Fails(RefinementFailure::AbstractStepRejected {
+                position,
+                transition,
+                cause,
+            }) => json!({
+                "kind": "AbstractStepRejected",
+                "position": decimal(*position),
+                "transition": transition_wire(transition)?,
+                "cause": match cause {
+                    StepRejection::Precondition { clause } => {
+                        json!({"kind": "Precondition", "clause": clause})
+                    }
+                    StepRejection::Frame { code } => {
+                        json!({"kind": "Frame", "code": code.to_string()})
+                    }
+                    StepRejection::Postcondition => json!({"kind": "Postcondition"}),
+                },
+            }),
+            Self::Fails(RefinementFailure::NoAbstractMatch { position }) => {
+                json!({"kind": "NoAbstractMatch", "position": decimal(*position)})
+            }
+            // `check_step` never returns this form; the engine writes it.
+            Self::Fails(RefinementFailure::Undefined { position, .. }) => {
+                json!({"kind": "Undefined", "position": decimal(*position)})
+            }
+            Self::Undefined(evaluation) => json!({
+                "kind": "UndefinedEvaluation",
+                "where": {
+                    "position": decimal(evaluation.site.position),
+                    "state_key": DigestWire::of(&evaluation.site.state_key),
+                    "locus": locus_kind(&evaluation.site.locus),
+                },
+                "cause": undefined_cause_kind(&evaluation.cause),
+            }),
+            Self::Undetermined { cause, evaluation } => json!({
+                "kind": "Undetermined",
+                "cause": match cause {
+                    Undetermined::Mapping(_) => "MappingUndetermined",
+                    Undetermined::UndecidedSuccessor => "UndecidedSuccessor",
+                },
+                "evaluation": match evaluation {
+                    EvaluationOutcome::Refused => json!({"outcome": "refused"}),
+                    EvaluationOutcome::Incomplete(limit) => {
+                        json!({"outcome": "incomplete", "limit": limit.as_str()})
+                    }
+                },
+            }),
+        })
+    }
+}
+
+impl Serialize for FailedStep {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.wire()
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+}
+
+/// QSpec FR-364's encoding of a transition identity: the RFC 8785 identity
+/// document QSpec FR-181 defines.
+fn transition_wire(transition: &ModelTransition) -> Result<serde_json::Value, String> {
+    let bytes = transition
+        .canonical_bytes(quire_canonical::Limits::new(u64::MAX))
+        .map_err(|refusal| format!("a transition identity encodes: {refusal:?}"))?;
+    serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+}
+
+/// The kind of expression an undefined evaluation names.
+fn locus_kind(locus: &UndefinedLocus) -> &'static str {
+    match locus {
+        UndefinedLocus::Atom(_) => "atom",
+        UndefinedLocus::Contract(_) => "contract",
+        UndefinedLocus::Terminal(_) => "terminal",
+        UndefinedLocus::Constraint(_) => "constraint",
+        UndefinedLocus::Mapping(_) => "mapping",
+    }
+}
+
+/// The kind of the undefined value's cause.
+fn undefined_cause_kind(cause: &UndefinedCause) -> &'static str {
+    match cause {
+        UndefinedCause::Kernel(_) => "kernel",
+        UndefinedCause::Family(_) => "family",
+        UndefinedCause::InsufficientData(_) => "insufficient-data",
     }
 }
 
@@ -268,17 +436,9 @@ impl Run<'_, '_> {
         )
     }
 
-    /// Whether `undetermined` is a mapping row that only ran out of meter.
+    /// Whether `undetermined` only ran out of the evaluation meter.
     fn meter_only(undetermined: &Undetermined) -> bool {
-        matches!(
-            undetermined,
-            Undetermined::Mapping(mapping)
-                if matches!(
-                    &mapping.cause,
-                    EvalFailure::Evaluation(outcome)
-                        if matches!(outcome.as_ref(), ClauseOutcome::Incomplete(_))
-                )
-        )
+        EvaluationOutcome::of_undetermined(undetermined).is_meter_only()
     }
 
     fn encoding<T>(result: Result<T, qsl_eval::simulation::EncodingRefusal>) -> Step<T> {
@@ -323,6 +483,7 @@ impl Run<'_, '_> {
                 None,
             ));
         }
+        self.reached()?;
         if certificate.positions.len() > self.limits.limits.max_states {
             return Err(stopped(
                 ModelCheckLimit::MaxStates,
@@ -333,6 +494,40 @@ impl Run<'_, '_> {
         for at in 0..positions {
             self.poll()?;
             self.position(at)?;
+        }
+        Ok(())
+    }
+
+    /// `Malformed`, at the first position that no initial state reaches and
+    /// no edge listed at a lower-indexed position reaches.
+    fn reached(&self) -> Step<()> {
+        let mut reached = vec![false; self.certificate.positions.len()];
+        for &position in &self.certificate.initial {
+            if let Some(slot) = usize::try_from(position)
+                .ok()
+                .and_then(|at| reached.get_mut(at))
+            {
+                *slot = true;
+            }
+        }
+        for (at, edges) in self.certificate.successors.iter().enumerate() {
+            if !reached[at] {
+                return Err(Self::reject(
+                    CertificateRule::Malformed,
+                    widen(at),
+                    None,
+                    None,
+                ));
+            }
+            for edge in edges {
+                let later = usize::try_from(edge.post)
+                    .ok()
+                    .filter(|post| *post > at)
+                    .and_then(|post| reached.get_mut(post));
+                if let Some(slot) = later {
+                    *slot = true;
+                }
+            }
         }
         Ok(())
     }
@@ -391,26 +586,28 @@ impl Run<'_, '_> {
     fn position(&mut self, at: u64) -> Step<()> {
         let index = usize::try_from(at).map_err(|_| Self::fault("a-position-indexes"))?;
         let Some(known) = self.known.get(index).cloned().flatten() else {
-            return Err(Self::reject(CertificateRule::Malformed, at, None, None));
+            return Err(Self::fault("a-reached-position-has-a-state"));
         };
         let expansion = self
             .concrete
             .successors(&known.state)
             .map_err(|stop| expansion_halt(&stop, self.budgets, Checker::Simulation))?;
-        let mut undetermined = expansion
+        let outcomes: Vec<EvaluationOutcome> = expansion
             .findings
             .iter()
             .filter_map(|finding| match finding {
-                ModelFinding::ContractUndetermined { evaluation, .. } => Some(evaluation),
+                ModelFinding::ContractUndetermined { evaluation, .. } => {
+                    Some(EvaluationOutcome::of_clause(evaluation))
+                }
                 _ => None,
-            });
-        if let Some(evaluation) = undetermined.next() {
-            // A contract that only ran out of meter is a stop, not a verdict
-            // on the certificate (PC-2).
-            if matches!(evaluation, ClauseOutcome::Incomplete(_)) {
-                return Err(self.meter_stop());
+            })
+            .collect();
+        match undecided_state(&outcomes) {
+            UndecidedState::Decided => {}
+            UndecidedState::MeterStop => return Err(self.meter_stop()),
+            UndecidedState::Bad => {
+                return Err(Self::reject(CertificateRule::BadState, at, None, None));
             }
-            return Err(Self::reject(CertificateRule::BadState, at, None, None));
         }
         let mut computed = Vec::with_capacity(expansion.successors.len());
         for (transition, state) in expansion.successors {
@@ -483,7 +680,7 @@ impl Run<'_, '_> {
                     if Self::meter_only(&undetermined) {
                         return Err(self.meter_stop());
                     }
-                    return Err(failed(FailedStep::Undetermined(undetermined)));
+                    return Err(failed(FailedStep::undetermined(undetermined)));
                 }
                 StepVerdict::Stopped(reached) => return Err(stopped(reached.limit, reached.value)),
                 StepVerdict::Fault(_) => return Err(Self::fault("refinement-step")),
@@ -507,5 +704,57 @@ impl Run<'_, '_> {
             });
         }
         Ok(())
+    }
+}
+
+/// What the undetermined contracts of one position's expansion make of it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UndecidedState {
+    /// No contract is undetermined.
+    Decided,
+    /// Every undetermined contract only ran out of the evaluation meter, a
+    /// stop and not a verdict on the certificate (ADR-018 PC-2).
+    MeterStop,
+    /// A contract is undetermined for another reason, so the successors are
+    /// not known (`BadState`).
+    Bad,
+}
+
+/// FR-149 "Undecided state" and "Meter stops": a position is a meter stop
+/// only when every undetermined contract is meter-only; one refusal for
+/// another reason among them makes it `BadState`.
+fn undecided_state(outcomes: &[EvaluationOutcome]) -> UndecidedState {
+    if outcomes.is_empty() {
+        UndecidedState::Decided
+    } else if outcomes.iter().all(|outcome| outcome.is_meter_only()) {
+        UndecidedState::MeterStop
+    } else {
+        UndecidedState::Bad
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const METER: EvaluationOutcome =
+        EvaluationOutcome::Incomplete(IncompleteLimit::EvaluationMeter);
+
+    /// FR-149 "Undecided state" (TC-556): the expansion of a position stops the
+    /// check only when every undetermined contract ran out of meter. (No
+    /// `ModelSystem` fixture yields an incomplete contract finding, because
+    /// FR-120 stops an expansion whose clause set is incomplete; the stop
+    /// then comes from the expansion, which the budget tests cover.)
+    #[ix_trace_rs::trace("TC-556", "FR-149-AC-7")]
+    #[test]
+    fn a_refusal_among_meter_stops_is_a_bad_state() {
+        let other = EvaluationOutcome::Incomplete(IncompleteLimit::Counter(LimitKind::IntegerBits));
+        assert_eq!(undecided_state(&[]), UndecidedState::Decided);
+        assert_eq!(undecided_state(&[METER, METER]), UndecidedState::MeterStop);
+        assert_eq!(
+            undecided_state(&[METER, EvaluationOutcome::Refused]),
+            UndecidedState::Bad
+        );
+        assert_eq!(undecided_state(&[other]), UndecidedState::Bad);
     }
 }

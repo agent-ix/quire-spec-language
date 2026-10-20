@@ -19,8 +19,9 @@ use qsl_replay::{
     SettlementBasis, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
     StepRejection, StepVerdict, Taken, TemporalCertificateCheck, TerminalValue,
 };
+use qsl_replay::{EvaluationOutcome, IncompleteLimit, Undetermined};
 use qsl_semantics::model::state::ModelState;
-use quire_exact::{Cancel, CancelCause};
+use quire_exact::{Cancel, CancelCause, ScalarLimits};
 
 use crate::refinement_fixture::{
     cas_refines_counter, cas_state, key, lost_update_refinement, mutated, Variant, World, CAS,
@@ -254,13 +255,13 @@ fn each_corrupted_field_is_rejected() {
     initial.initial[0] = 1;
     assert_eq!(
         rejected(check(&world, &initial)),
-        (CertificateRule::InitialMismatch, step(1, None))
+        (CertificateRule::Malformed, step(0, None))
     );
     let mut beyond = certificate.clone();
     beyond.initial[0] = u64::MAX;
     assert_eq!(
         rejected(check(&world, &beyond)),
-        (CertificateRule::InitialMismatch, step(u64::MAX, None))
+        (CertificateRule::Malformed, step(0, None))
     );
 
     // The initial position's concrete digest, its abstract digests.
@@ -291,20 +292,22 @@ fn each_corrupted_field_is_rejected() {
         CertificateRule::PostDiffers
     );
 
-    // A post index out of range, and one at another position.
+    // A post index out of range, and one at another position, on the last
+    // position's first edge so that no position loses its only way in.
+    let last = certificate.positions.len() - 1;
+    let at_last = step(u64::try_from(last).unwrap(), Some(0));
     let mut out_of_range = certificate.clone();
-    out_of_range.successors[0][0].post = u64::MAX;
+    out_of_range.successors[last][0].post = u64::MAX;
     assert_eq!(
         rejected(check(&world, &out_of_range)),
-        (CertificateRule::PostDiffers, step(0, Some(0)))
+        (CertificateRule::PostDiffers, at_last.clone())
     );
     let mut elsewhere = certificate.clone();
-    let post = elsewhere.successors[0][0].post;
-    elsewhere.successors[0][0].post =
-        (post + 1) % u64::try_from(certificate.positions.len()).unwrap();
+    let post = elsewhere.successors[last][0].post;
+    elsewhere.successors[last][0].post = u64::from(post == 0);
     assert_eq!(
         rejected(check(&world, &elsewhere)),
-        (CertificateRule::PostDiffers, step(0, Some(0)))
+        (CertificateRule::PostDiffers, at_last)
     );
 
     // Every edge's `Taken`, changed in turn, is rejected at that edge.
@@ -782,4 +785,225 @@ fn a_cancelled_check_stops() {
             source: CancelCause::Requested
         })
     );
+}
+
+fn request_under(world: &World, work: u64) -> SimulationCertificateRequest<'_> {
+    SimulationCertificateRequest {
+        concrete: world.concrete_request(ScalarLimits {
+            work_units: work,
+            ..UNLIMITED
+        }),
+        ..request(world)
+    }
+}
+
+fn check_under(
+    world: &World,
+    certificate: &SimulationCertificate,
+    work: u64,
+) -> TemporalCertificateCheck {
+    check_simulation_certificate(
+        &request_under(world, work),
+        certificate,
+        &ModelCheckLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the certificate is checked")
+}
+
+/// `CasRefinesCounter` without its `ensure` row, with `extra` contract
+/// clauses before its refinement.
+fn with_contracts(extra: &str) -> World {
+    let text = mutated(
+        &cas_refines_counter(),
+        "ensure fair weak each Spec::Counter::inc;",
+        "",
+    );
+    World::new(&format!("{extra}\n{text}"))
+}
+
+/// A `beginA` precondition that is true and costs about 150 conjuncts.
+fn heavy_contract() -> String {
+    let conjuncts = vec!["self.value >= 0"; 150].join(" and ");
+    format!("pre HeavyBegin using v on Impl::Counter::beginA {{ {conjuncts} }}")
+}
+
+/// The least work-unit meter under which the plain certificate is accepted:
+/// `B`, big enough for every mapping row and ordinary contract.
+fn least_meter(world: &World, certificate: &SimulationCertificate) -> u64 {
+    let (mut low, mut high) = (1, 1 << 20);
+    while low < high {
+        let middle = low + (high - low) / 2;
+        if check_under(world, certificate, middle) == TemporalCertificateCheck::Accepted {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    low
+}
+
+/// FR-149-AC-5 (c) (TC-556): a certificate of a model whose concrete
+/// contract costs more than `B`, checked under `B` where every mapping row
+/// fits, stops naming `EvaluationMeter`, never `Rejected`.
+#[trace("TC-556", "FR-149-AC-5")]
+#[test]
+fn a_concrete_contract_over_the_budget_stops_the_check() {
+    let plain = safety_only();
+    let (certificate, _) = certificate(&plain);
+    let b = least_meter(&plain, &certificate);
+    let heavy = with_contracts(&heavy_contract());
+    assert_eq!(
+        check_under(&heavy, &certificate, UNLIMITED.work_units),
+        TemporalCertificateCheck::Accepted
+    );
+    assert_eq!(
+        check_under(&heavy, &certificate, b),
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::EvaluationMeter,
+            value: b
+        })
+    );
+}
+
+/// FR-144 Settlement (TC-556): a subject with no initial state settles
+/// `Inconclusive(NoInitialState)`, not `failed`.
+#[trace("TC-556")]
+#[test]
+fn a_subject_with_no_initial_state_settles_no_initial_state() {
+    let world = safety_only();
+    let SafetyOutcome::Holds { certificate, stats } = run(&world) else {
+        panic!("the safety half holds");
+    };
+    let empty = SimulationCertificateRequest {
+        concrete: world.request(CAS, Vec::new(), UNLIMITED),
+        ..request(&world)
+    };
+    let record = settle_refinement_safety(
+        &SafetyOutcome::Holds { certificate, stats },
+        &ModelCheckLimits::default(),
+        &empty,
+        &Cancel::new(),
+        |_| panic!("a holding half has no counterexample"),
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::NoInitialState)
+    );
+}
+
+/// FR-149-AC-7 (TC-556): a position that only an edge listed at a
+/// higher-indexed position reaches is `Malformed` at that position, before
+/// any recomputation.
+#[trace("TC-556", "FR-149-AC-7")]
+#[test]
+fn a_position_reached_only_from_a_later_position_is_malformed() {
+    let world = safety_only();
+    let (mut certificate, _) = certificate(&world);
+    let last = certificate.positions.len() - 1;
+    let last_index = u64::try_from(last).expect("an index");
+    for edges in &mut certificate.successors[..last] {
+        for edge in edges.iter_mut().filter(|edge| edge.post == last_index) {
+            edge.post = 0;
+        }
+    }
+    assert_eq!(
+        rejected(check(&world, &certificate)),
+        (CertificateRule::Malformed, step(last_index, None))
+    );
+}
+
+/// FR-149-AC-8 (TC-556): the locus of AC-3's rejection and AC-2's, and one
+/// verdict of each other kind, serialize as the wire-form table lists.
+#[trace("TC-556", "FR-149-AC-8")]
+#[test]
+fn a_rejection_serializes_its_locus_and_verdict() {
+    let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());
+    let (_, at) = rejected(check(&world, &listed(&world)));
+    let wire = serde_json::to_value(&at).expect("a locus serializes");
+    let CertificateLocus::SimulationStep {
+        verdict: Some(verdict),
+        ..
+    } = &at
+    else {
+        panic!("a verdict");
+    };
+    let FailedStep::Fails(RefinementFailure::AbstractStepRejected {
+        position,
+        transition,
+        ..
+    }) = verdict.as_ref()
+    else {
+        panic!("a rejected abstract step");
+    };
+    let identity: serde_json::Value = serde_json::from_slice(
+        &transition
+            .canonical_bytes(quire_canonical::Limits::new(u64::MAX))
+            .expect("an identity"),
+    )
+    .expect("a document");
+    assert_eq!(
+        wire["verdict"],
+        serde_json::json!({
+            "kind": "AbstractStepRejected",
+            "position": position.to_string(),
+            "transition": identity,
+            "cause": {"kind": "Postcondition"},
+        })
+    );
+    assert!(wire["position"].is_string() && wire["edge"].is_string());
+
+    let plain = safety_only();
+    let (mut certificate, _) = certificate(&plain);
+    let from = position_of(&plain, &certificate, [0, 0, 1, 0, 0]);
+    let edge = edge_of(&certificate, from, "commitA");
+    edge_mut(&mut certificate, from, edge).taken = Taken::Stutter;
+    let (_, at) = rejected(check(&plain, &certificate));
+    let wire = serde_json::to_value(&at).expect("a locus serializes");
+    assert!(wire["verdict"].is_null());
+    assert_eq!(wire["position"], from.to_string());
+    assert_eq!(wire["edge"], edge.to_string());
+
+    let kinds = [
+        (
+            FailedStep::Fails(RefinementFailure::InitialNotAbstract { initial: 1 }),
+            serde_json::json!({"kind": "InitialNotAbstract", "initial": "1"}),
+        ),
+        (
+            FailedStep::Fails(RefinementFailure::StutterChanged { position: 2 }),
+            serde_json::json!({"kind": "StutterChanged", "position": "2"}),
+        ),
+        (
+            FailedStep::Fails(RefinementFailure::NoAbstractMatch { position: 3 }),
+            serde_json::json!({"kind": "NoAbstractMatch", "position": "3"}),
+        ),
+        (
+            FailedStep::Undetermined {
+                cause: Undetermined::UndecidedSuccessor,
+                evaluation: EvaluationOutcome::Incomplete(IncompleteLimit::EvaluationMeter),
+            },
+            serde_json::json!({
+                "kind": "Undetermined",
+                "cause": "UndecidedSuccessor",
+                "evaluation": {"outcome": "incomplete", "limit": "evaluation-meter"},
+            }),
+        ),
+        (
+            FailedStep::Undetermined {
+                cause: Undetermined::UndecidedSuccessor,
+                evaluation: EvaluationOutcome::Refused,
+            },
+            serde_json::json!({
+                "kind": "Undetermined",
+                "cause": "UndecidedSuccessor",
+                "evaluation": {"outcome": "refused"},
+            }),
+        ),
+    ];
+    for (verdict, expected) in kinds {
+        assert_eq!(
+            serde_json::to_value(&verdict).expect("serializes"),
+            expected
+        );
+    }
 }
