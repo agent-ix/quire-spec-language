@@ -20,7 +20,7 @@ This catches: unnormalized or unsorted terms; an unreduced scale or offset
 unit name read as a type; `UnitGraph::admit` reached only from tests; and a
 topology error reported as a reader's `invalid_semantic_graph`.
 
-Scope: FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35.
+Scope: FR-091-AC-32, FR-091-AC-33, FR-091-AC-34, FR-091-AC-35, FR-091-AC-44.
 
 ## Test Procedure
 
@@ -38,6 +38,7 @@ alias is `v`. The owner is authority `a`, identity `u`.
    `function f using v(x: m): Boolean pure { true }`.
 3. Assemble FR-091-AC-34's unit.
 4. Assemble each of FR-091-AC-35's five units.
+5. Assemble FR-091-AC-44's unit with `function f using v(d: Quantity<ms>): Boolean pure { true }`, then with `d: Quantity<Time>`, then with `d: Quantity<nothing>`, then with a call `f(3 s)`.
 
 Tag the tests with the AC ids they back and `TC-483`.
 
@@ -58,3 +59,4 @@ Tag the tests with the AC ids they back and `TC-483`.
 - Step 4: each unit refuses with exactly one unit-graph topology error naming the
   declarations it concerns, and no `PackageDeclarations`. Its catalog code
   is the STD-112 cause.
+- Step 5: the first assembles with the type of `d` the node of `ms` and no new declaration; the second and third each refuse the unresolved name (`missing_declaration`/`missing-name`); the call refuses `ill_typed`/`type-mismatch` at the argument.
