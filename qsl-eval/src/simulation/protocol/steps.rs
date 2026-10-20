@@ -505,11 +505,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if let Some(thread) = instance.threads.get_mut(path) {
             thread.rest = Rest::Join(node);
         }
+        // `new` resolved a model for every `parallel`, so a missing one is
+        // a broken invariant, never a silent `sc`.
         let model = self
             .governing
             .get(&node)
             .copied()
-            .unwrap_or(qsl_foundation::MemoryModelName::Sc);
+            .ok_or_else(|| ProtocolRefusal::fault("a-forked-parallel-has-a-model"))?;
         next.memory = self.memory.split(&next.memory, path, &children, model);
         self.normalize(&mut next, ordinal)?;
         gathered

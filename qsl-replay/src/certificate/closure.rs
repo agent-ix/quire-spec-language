@@ -28,6 +28,14 @@
 //! by the certificate. A budget or a cancellation stops it with the typed
 //! `Stopped` cause, which is never an acceptance.
 //!
+//! Over a protocol subject whose memory model runs under a bound (ADR-025
+//! MB-2), the checker expands under the request's bound. When a reached
+//! state's expansion cut a step at it (MB-3), the reached set is closed
+//! only under the bound: a check that otherwise passes returns
+//! `MemoryBoundReached` with the distinct bound-limited model states, never
+//! an acceptance (MB-4), and a state whose only steps were cut is a
+//! boundary state, never a deadlock.
+//!
 //! Both items EN-1 decides here, TP-1 and deadlock freedom, have no future
 //! interval, so FR-338's non-progress acceptance check does not apply: they
 //! keep pure bad-prefix closure.
@@ -58,7 +66,7 @@ use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::identity::ClauseRootRefusal;
 use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
-use crate::proof_result::IncompleteCause;
+use crate::proof_result::{IncompleteCause, MemoryBound, MemoryBoundMember};
 
 /// One product state of a certificate: its model state's
 /// `quire.simulation.state-key/v1` digest and its automaton state's
@@ -128,6 +136,15 @@ pub enum TemporalCertificateCheck {
     /// A budget or a cancellation stopped the check before it completed:
     /// `LimitReached{limit, value}` or `Cancelled{source}`.
     Stopped(IncompleteCause),
+    /// The check closed, but at `states` distinct reached model states the
+    /// memory model cut a step at `bound` (ADR-025 MB-3, MB-4): the reached
+    /// set is closed only under the bound, so it is never an acceptance.
+    MemoryBoundReached {
+        /// The bound the subject's memory model ran under.
+        bound: MemoryBound,
+        /// The distinct bound-limited model states the check reached.
+        states: u64,
+    },
 }
 
 /// FR-338's certificate request: the model subject, re-admitted by the
@@ -196,6 +213,7 @@ pub fn check_closure(
     check_system(
         &system,
         &system,
+        None,
         &request.subject,
         &request.item,
         certificate,
@@ -255,6 +273,7 @@ pub fn check_protocol_closure(
             check_system(
                 &system,
                 system.model(),
+                None,
                 &subject.model,
                 item,
                 certificate,
@@ -263,11 +282,16 @@ pub fn check_protocol_closure(
             )
         }
         SubjectMemory::Tso(tso) => {
+            let bound = MemoryBound {
+                member: MemoryBoundMember::MaxStoreBuffer,
+                value: tso.max_store_buffer(),
+            };
             let system =
                 ProtocolSystem::new(model, subject, tso).map_err(ClosureRefusal::Protocol)?;
             check_system(
                 &system,
                 system.model(),
+                Some(bound),
                 &subject.model,
                 item,
                 certificate,
@@ -278,10 +302,13 @@ pub fn check_protocol_closure(
     }
 }
 
-/// [`check_closure`] over `system`, whose model is `model`.
+/// [`check_closure`] over `system`, whose model is `model` and whose memory
+/// model runs under `bound` (`None` for one with no bound).
+#[allow(clippy::too_many_arguments)]
 fn check_system<S: SubjectSystem>(
     system: &S,
     model: &ModelSystem<'_>,
+    bound: Option<MemoryBound>,
     subject: &ModelSubject<'_>,
     item: &ModelCheckItem<'_>,
     certificate: &ClosureCertificate,
@@ -369,8 +396,21 @@ fn check_system<S: SubjectSystem>(
         reached: 0,
         edges: 0,
         keys: BTreeSet::new(),
+        limited: BTreeSet::new(),
     };
-    finish(check.run(&instances))
+    let run = check.run(&instances);
+    // ADR-025 MB-4: a reached set closed only because the memory bound cut
+    // steps is never accepted, so the item never settles `proved` over it.
+    if run.is_ok() && !check.limited.is_empty() {
+        return match bound {
+            Some(bound) => Ok(TemporalCertificateCheck::MemoryBoundReached {
+                bound,
+                states: widen(check.limited.len()),
+            }),
+            None => Err(fault("memory-bound-cut-without-bound")),
+        };
+    }
+    finish(run)
 }
 
 fn rejected(rule: CertificateRule, at: ProductStateRef) -> TemporalCertificateCheck {
@@ -403,6 +443,9 @@ struct Check<'c, S: SubjectSystem> {
     reached: usize,
     edges: usize,
     keys: BTreeSet<AutomatonStateKey>,
+    /// The reached model states whose expansion cut a step at the memory
+    /// bound (ADR-025 MB-3).
+    limited: BTreeSet<DigestRecord>,
 }
 
 impl<S: SubjectSystem> Check<'_, S> {
@@ -518,10 +561,17 @@ impl<S: SubjectSystem> Check<'_, S> {
                 }
                 let carried = self.product(instance, digest, SafetyState::Carried)?;
                 let expansion = self.expand(&state, &carried)?;
-                let class = self
-                    .system
-                    .terminal_class(&state, !expansion.successors.is_empty())
-                    .map_err(|stop| self.expansion_stop(stop))?;
+                // ADR-025 MB-3: a state whose only enabled steps were cut at
+                // the memory bound is a boundary state, never a deadlock; the
+                // check then settles `MemoryBoundReached`.
+                let boundary = expansion.successors.is_empty() && self.limited.contains(&digest);
+                let class = if boundary {
+                    TerminalClass::NotTerminal
+                } else {
+                    self.system
+                        .terminal_class(&state, !expansion.successors.is_empty())
+                        .map_err(|stop| self.expansion_stop(stop))?
+                };
                 let holds = match class {
                     TerminalClass::NotTerminal | TerminalClass::Intended => true,
                     TerminalClass::Deadlocked => false,
@@ -556,13 +606,18 @@ impl<S: SubjectSystem> Check<'_, S> {
     }
 
     /// Expand the reached product state `at`: a contract conjunction the
-    /// expansion could not determine makes it bad (ADR-018 UE-6, V-6).
-    fn expand(&self, state: &S::State, at: &ProductStateRef) -> Step<SubjectExpansion<S>> {
+    /// expansion could not determine makes it bad (ADR-018 UE-6, V-6). A
+    /// step the memory model cut at its bound records `at`'s model state as
+    /// bound-limited (ADR-025 MB-3).
+    fn expand(&mut self, state: &S::State, at: &ProductStateRef) -> Step<SubjectExpansion<S>> {
         self.poll()?;
-        let expansion = self
+        let (expansion, cut) = self
             .system
-            .successors(state)
+            .successors_bounded(state)
             .map_err(|stop| self.expansion_stop(stop))?;
+        if cut {
+            self.limited.insert(at.model_state);
+        }
         if expansion.findings.iter().any(|finding| {
             matches!(
                 finding,

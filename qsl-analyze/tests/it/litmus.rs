@@ -2,9 +2,9 @@
 //! ADR-025 §10's store-buffering model as a fixture: the `test/litmus`
 //! domain package, a population `cells` of `Cell` (fields `id`, `v` and `w`,
 //! each `Int[0, 3]`) with operations `set` (`v`), `add` (`v`) and `both`
-//! (`v` and `w`), and a population `cores` of `Core` (registers `r1`, `r2`
-//! and `r3`) with operations `read1`, `read2` and `read3(c: Cell)`, each
-//! modifying its own register, and `copy`, which reads `r1` into `r3`.
+//! (`v` and `w`), and a population `cores` of `Core` (registers `r1` to
+//! `r4`) with operations `read1` to `read4(c: Cell)`, each modifying its own
+//! register, and `copy`, which reads `r1` into `r3`.
 //!
 //! An attempt names no receiver, so a cell's `id` selects it: `IsX` holds
 //! for `x` (`id = 0`) and `IsY` for `y` (`id = 1`); `id` is never written,
@@ -174,11 +174,12 @@ pub(crate) fn document() -> Vec<u8> {
             })),
             wire_type(&ident("Core"), "object_type", json!({
                 "supertypes": [],
-                "fields": fields("Core", &["r1", "r2", "r3"]),
+                "fields": fields("Core", &["r1", "r2", "r3", "r4"]),
                 "operations": [
                     operation("Core", "read1", &["c"], &["r1"]),
                     operation("Core", "read2", &["c"], &["r2"]),
                     operation("Core", "read3", &["c"], &["r3"]),
+                    operation("Core", "read4", &["c"], &["r4"]),
                     operation("Core", "copy", &[], &["r3"]),
                 ],
                 "relationships": [],
@@ -194,7 +195,8 @@ fn document_digest(document: &[u8]) -> [u8; 32] {
     *package_input([document]).keys().next().expect("one model")
 }
 
-/// The contracts: `IsX`/`IsY` select a cell, `StoreOne` stores 1, `AddOne` adds 1,
+/// The contracts: `IsX`/`IsY` select a cell, `StoreOne` stores 1,
+/// `StoreTwo` stores 2, `AddOne` adds 1,
 /// `BothOne` stores 1 to `v` and `w`; `ReadsX<n>`/`ReadsY<n>` select the cell
 /// register `n` loads, `Read<n>` loads its `v` and `ReadW` loads `w`.
 pub(crate) fn contracts() -> String {
@@ -202,12 +204,13 @@ pub(crate) fn contracts() -> String {
         "pre IsX using v on M::Cell::set { self.id = 0 }\n\
          pre IsY using v on M::Cell::set { self.id = 1 }\n\
          post StoreOne using v on M::Cell::set { self.v = 1 }\n\
+         post StoreTwo using v on M::Cell::set { self.v = 2 }\n\
          pre AddX using v on M::Cell::add { self.id = 0 and self.v < 3 }\n\
          post AddOne using v on M::Cell::add { self.v - pre(self.v) = 1 }\n\
          pre BothX using v on M::Cell::both { self.id = 0 }\n\
          post BothOne using v on M::Cell::both { self.v = 1 and self.w = 1 }\n",
     );
-    for register in 1..=3 {
+    for register in 1..=4 {
         text.push_str(&format!(
             "pre ReadsX{register} using v on M::Core::read{register} {{ c.id = 0 }}\n\
              pre ReadsY{register} using v on M::Core::read{register} {{ c.id = 1 }}\n\
@@ -296,10 +299,16 @@ pub(crate) fn attempt(
 /// A protocol `name` over the core with roles `w` (cells) and `c` (cores)
 /// and the run control `run`.
 pub(crate) fn protocol(name: &str, run: &str) -> String {
+    protocol_with(name, "", run)
+}
+
+/// [`protocol`] with the further members `members`, such as a channel.
+pub(crate) fn protocol_with(name: &str, members: &str, run: &str) -> String {
     format!(
         "protocol {name} using v over (k: M::Core) on origin {{\n\
          role w on M::Cell;\n\
          role c on M::Core;\n\
+         {members}\n\
          run {run}\n\
          finish Done as (d: Boolean) {{ d }};\n\
          }}\n"
@@ -358,7 +367,8 @@ impl Documents {
                     "objects": [cell("x", 0), cell("y", 1)]},
                 {"population": ident("cores"), "complete": true,
                     "objects": [{"key": "core", "type": ident("Core"),
-                        "fields": {"r1": int(3), "r2": int(3), "r3": int(3)}}]},
+                        "fields": {"r1": int(3), "r2": int(3), "r3": int(3),
+                            "r4": int(3)}}]},
             ],
         });
         let bytes = snapshot.to_string().into_bytes();

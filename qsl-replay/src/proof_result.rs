@@ -515,6 +515,16 @@ pub struct MemoryBound {
     pub value: u64,
 }
 
+/// The memory bound a terminal record states (ADR-025 MB-2, FR-225): the
+/// bound its run used and whether a state of the run reached it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatedMemoryBound {
+    /// The bound.
+    pub bound: MemoryBound,
+    /// Whether a state of the run was bound-limited (MB-3).
+    pub reached: bool,
+}
+
 impl InconclusiveCause {
     /// The cause's FR-331 wire spelling.
     pub const fn as_str(&self) -> &'static str {

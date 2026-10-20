@@ -251,9 +251,21 @@ pub struct ItemCause {
     /// text.
     #[serde(skip_serializing_if = "Option::is_none")]
     transition: Option<String>,
-    /// A `weak-access-shape` cause's shape.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    shape: Option<serde_json::Value>,
+    /// A `weak-access-shape` cause's shape, in its canonical text, written
+    /// to the wire as the JSON it is.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "raw_json")]
+    shape: Option<String>,
+}
+
+/// `text`, canonical JSON, written as the JSON value it spells; text that is
+/// not JSON fails the serialization.
+fn raw_json<S: Serializer>(text: &Option<String>, serializer: S) -> Result<S::Ok, S::Error> {
+    match text {
+        Some(text) => serde_json::value::RawValue::from_string(text.clone())
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer),
+        None => serializer.serialize_none(),
+    }
 }
 
 /// A property form's spelling on the outcome wire.
@@ -463,7 +475,7 @@ impl OutcomeItem {
                 {
                     item.site = Some(site.clone());
                     item.transition.clone_from(transition);
-                    item.shape = serde_json::from_str(shape).ok();
+                    item.shape = Some(shape.clone());
                 }
                 (ItemLabel::Unsupported, Some(item))
             }

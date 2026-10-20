@@ -9,18 +9,18 @@
 //! `finish`). The protocol system also has the state before the fork and
 //! the states after `finish`, which §10's table does not count.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
-    classify_accesses, AccessShape, InstanceAccess, MemoryModel, MemorySelection,
-    MemorySelectionRefusal, ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition,
-    RestKind, Sc, StepKind, ThreadPath, Tso, WeakAccesses,
+    classify_accesses, visible, AccessShape, ClaimReads, InstanceAccess, MemoryModel,
+    MemorySelection, MemorySelectionRefusal, ProtocolLocation, ProtocolRefusal, ProtocolState,
+    ProtocolSystem, ProtocolTransition, RestKind, Sc, StepKind, ThreadPath, Tso, WeakAccesses,
 };
-use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::{independent, Location, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -31,16 +31,17 @@ use qsl_replay::{
     InconclusiveCause, MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem,
     ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult,
     ModelTraceSettlement, ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject,
-    ReplayLimits, ReplayRefusal, ResultLabel, TemporalCounterexample, TerminalValue,
-    UnavailabilityCause,
+    ReplayLimits, ReplayRefusal, ResultLabel, StatedMemoryBound, TemporalCounterexample,
+    TerminalValue, UnavailabilityCause,
 };
 use qsl_semantics::check::{AccessClass, FormulaNodeId};
 use quire_exact::{Cancel, Incomplete, Meter};
 use serde_json::{json, Value as Json};
 
+use crate::fill::{reachable, Reached};
 use crate::litmus::{
-    attempt, contracts, core, document, field, package, protocol, sb_run, sb_unit, unit_text,
-    Documents, NO_BOTH_ZERO,
+    attempt, contracts, core, document, field, package, protocol, protocol_with, sb_run, sb_unit,
+    unit_text, Documents, NO_BOTH_ZERO,
 };
 use crate::model_settle::{envelope_at, request};
 
@@ -57,14 +58,22 @@ struct Case {
     body: String,
     documents: Documents,
     checked: CheckedPackage,
+    /// The letters of the unit's one claim.
+    letters: &'static dyn ModelLetters,
 }
 
 impl Case {
     fn new(body: &str) -> Self {
+        Self::with_letters(body, &NoBothZero)
+    }
+
+    /// The unit with `body`, its claim's atom read by `letters`.
+    fn with_letters(body: &str, letters: &'static dyn ModelLetters) -> Self {
         Self {
             body: body.to_owned(),
             documents: Documents::new(),
             checked: package(body),
+            letters,
         }
     }
 
@@ -122,7 +131,7 @@ impl Case {
             selection,
             ModelCheckItem::Clause {
                 clause,
-                letters: &NoBothZero,
+                letters: self.letters,
             },
             max_store_buffer,
         )
@@ -142,7 +151,7 @@ impl Case {
         } else {
             ModelCheckItem::Clause {
                 clause: self.checked.graph().temporal_clauses()[0].clause(),
-                letters: &NoBothZero,
+                letters: self.letters,
             }
         };
         settle_protocol_check(
@@ -202,7 +211,7 @@ impl Case {
                 max_store_buffer: None,
             },
             &envelope_at(&unit, id, payload, clause_node, occurrence),
-            &NoBothZero,
+            self.letters,
             ReplayLimits::default(),
         )
     }
@@ -237,51 +246,6 @@ impl ModelLetters for NoBothZero {
 /// The branch thread `label` of `Both`'s first instance.
 fn branch(label: &str) -> ThreadPath {
     ThreadPath::root(0).child("Both", label, 0)
-}
-
-/// One reachable state and its successors, by index.
-struct Reached<M: MemoryModel> {
-    state: ProtocolState<M>,
-    steps: Vec<(ProtocolTransition, usize)>,
-}
-
-/// Every reachable state of `system`, breadth-first, each once by its key.
-fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
-    let mut known: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
-    let mut reached: Vec<Reached<M>> = Vec::new();
-    let mut queue = VecDeque::new();
-    for state in system.initial() {
-        let (key, _) = system.state_key(&state).expect("a key");
-        if let std::collections::btree_map::Entry::Vacant(slot) = known.entry(key) {
-            slot.insert(reached.len());
-            queue.push_back(reached.len());
-            reached.push(Reached {
-                state,
-                steps: Vec::new(),
-            });
-        }
-    }
-    while let Some(at) = queue.pop_front() {
-        let successors = system
-            .successors(&reached[at].state)
-            .expect("expands")
-            .successors;
-        let mut steps = Vec::new();
-        for (transition, next) in successors {
-            let (key, _) = system.state_key(&next).expect("a key");
-            let index = *known.entry(key).or_insert_with(|| {
-                queue.push_back(reached.len());
-                reached.push(Reached {
-                    state: next,
-                    steps: Vec::new(),
-                });
-                reached.len() - 1
-            });
-            steps.push((transition, index));
-        }
-        reached[at].steps = steps;
-    }
-    reached
 }
 
 /// ADR-025 §10's counts: states with a live branch thread, and states
@@ -715,7 +679,7 @@ fn orderings_change_nothing_under_sc() {
             ModelCheckOutcome::Holds { .. }
         ));
     }
-    assert_eq!(keys[0].len(), keys[1].len());
+    assert_eq!(keys[0], keys[1]);
 }
 
 /// The memory member of `state`'s key.
@@ -1175,4 +1139,540 @@ fn a_memory_model_refuses_a_resolved_model_it_does_not_implement() {
             ("unsupported_construct", "not-yet-implemented")
         );
     }
+}
+
+/// A claim's one atom over the bound core's registers: the weak outcome
+/// `0` of a litmus test does not hold.
+struct Forbid(fn(&ModelSimState, &str) -> bool);
+
+impl ModelLetters for Forbid {
+    fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
+        crate::units::unread()
+    }
+
+    fn atom(
+        &self,
+        _atom: FormulaNodeId,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        Ok(if (self.0)(state, &instance.key) {
+            AtomReading::False
+        } else {
+            AtomReading::True
+        })
+    }
+}
+
+/// Register `name` of the core `key`.
+fn register(state: &ModelSimState, key: &str, name: &str) -> i64 {
+    field(state, "cores", key, name)
+}
+
+/// MP: `r1 = 1` (saw `y := 1`) and `r2 = 0` (missed the earlier `x := 1`).
+fn message_passing(state: &ModelSimState, key: &str) -> bool {
+    register(state, key, "r1") == 1 && register(state, key, "r2") == 0
+}
+
+/// LB: each load saw the other thread's later store.
+fn load_buffering(state: &ModelSimState, key: &str) -> bool {
+    register(state, key, "r1") == 1 && register(state, key, "r2") == 1
+}
+
+/// IRIW: the two readers saw the two independent stores in opposite orders.
+fn independent_reads(state: &ModelSimState, key: &str) -> bool {
+    register(state, key, "r1") == 1
+        && register(state, key, "r2") == 0
+        && register(state, key, "r3") == 1
+        && register(state, key, "r4") == 0
+}
+
+/// 2+2W: after the join, memory holds each location's first store.
+fn two_plus_two_writes(state: &ModelSimState, key: &str) -> bool {
+    register(state, key, "r1") == 1 && register(state, key, "r2") == 1
+}
+
+/// CoRR: a later load of `x` read an older value than an earlier one.
+fn coherent_reads(state: &ModelSimState, key: &str) -> bool {
+    register(state, key, "r1") == 1 && register(state, key, "r2") == 0
+}
+
+static MP: Forbid = Forbid(message_passing);
+static LB: Forbid = Forbid(load_buffering);
+static IRIW: Forbid = Forbid(independent_reads);
+static TWO_PLUS_TWO_W: Forbid = Forbid(two_plus_two_writes);
+static CORR: Forbid = Forbid(coherent_reads);
+
+/// A litmus `parallel Both` with `branches` (label, control), inside
+/// `sequence Main` and followed by `after`.
+fn litmus_run(branches: &[(&str, String)], after: &str) -> String {
+    let labels: Vec<&str> = branches.iter().map(|(label, _)| *label).collect();
+    let bodies: String = branches
+        .iter()
+        .map(|(label, body)| format!("branch {label} {body} "))
+        .collect();
+    format!(
+        "sequence Main {{ parallel Both {{ {bodies}}} join all [{}]; {after} }}",
+        labels.join(", ")
+    )
+}
+
+/// A branch body of the attempts `attempts`, in a sequence `name`.
+fn steps(name: &str, attempts: &[String]) -> String {
+    format!("sequence {name} {{ {} }}", attempts.concat())
+}
+
+/// The store `node` of `value` (`StoreOne` or `StoreTwo`) to `cell`.
+fn store(node: &str, cell: &str, value: &str) -> String {
+    let select = if cell == "x" { "IsX" } else { "IsY" };
+    attempt(
+        node,
+        "w",
+        "Cell::set",
+        "relaxed",
+        &format!("{select}, {value}"),
+    )
+}
+
+/// The `relaxed` load `node` of `cell` into register `n`.
+fn load(node: &str, cell: &str, n: u8) -> String {
+    load_ordered(node, cell, n, "relaxed")
+}
+
+/// The load `node` of `cell` into register `n` with `ordering` (empty for
+/// none, as a local access must be).
+fn load_ordered(node: &str, cell: &str, n: u8, ordering: &str) -> String {
+    let select = if cell == "x" { "ReadsX" } else { "ReadsY" };
+    attempt(
+        node,
+        "c",
+        &format!("Core::read{n}"),
+        ordering,
+        &format!("{select}{n}, Read{n}"),
+    )
+}
+
+/// ADR-025 §3.3's litmus tests whose weak outcome `tso` forbids, each with
+/// its claim's letters.
+fn forbidden_litmus() -> Vec<(&'static str, String, &'static Forbid)> {
+    vec![
+        (
+            "MP",
+            litmus_run(
+                &[
+                    (
+                        "a",
+                        steps(
+                            "A",
+                            &[store("Sx", "x", "StoreOne"), store("Sy", "y", "StoreOne")],
+                        ),
+                    ),
+                    ("b", steps("B", &[load("Ly", "y", 1), load("Lx", "x", 2)])),
+                ],
+                "",
+            ),
+            &MP,
+        ),
+        (
+            "LB",
+            litmus_run(
+                &[
+                    (
+                        "a",
+                        steps("A", &[load("Lx", "x", 1), store("Sy", "y", "StoreOne")]),
+                    ),
+                    (
+                        "b",
+                        steps("B", &[load("Ly", "y", 2), store("Sx", "x", "StoreOne")]),
+                    ),
+                ],
+                "",
+            ),
+            &LB,
+        ),
+        (
+            "IRIW",
+            litmus_run(
+                &[
+                    ("a", store("Sx", "x", "StoreOne")),
+                    ("b", store("Sy", "y", "StoreOne")),
+                    ("c", steps("C", &[load("L1", "x", 1), load("L2", "y", 2)])),
+                    ("d", steps("D", &[load("L3", "y", 3), load("L4", "x", 4)])),
+                ],
+                "",
+            ),
+            &IRIW,
+        ),
+        (
+            "2+2W",
+            litmus_run(
+                &[
+                    (
+                        "a",
+                        steps(
+                            "A",
+                            &[store("Sx1", "x", "StoreOne"), store("Sy2", "y", "StoreTwo")],
+                        ),
+                    ),
+                    (
+                        "b",
+                        steps(
+                            "B",
+                            &[store("Sy1", "y", "StoreOne"), store("Sx2", "x", "StoreTwo")],
+                        ),
+                    ),
+                ],
+                &(load_ordered("Fx", "x", 1, "") + &load_ordered("Fy", "y", 2, "")),
+            ),
+            &TWO_PLUS_TWO_W,
+        ),
+        (
+            "CoRR",
+            litmus_run(
+                &[
+                    ("a", store("Sx", "x", "StoreOne")),
+                    ("b", steps("B", &[load("L1", "x", 1), load("L2", "x", 2)])),
+                ],
+                "",
+            ),
+            &CORR,
+        ),
+    ]
+}
+
+/// The core's registers at every terminal state of `system`.
+fn outcomes<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> BTreeSet<Vec<i64>> {
+    reachable(system)
+        .iter()
+        .filter(|state| state.steps.is_empty())
+        .map(|state| {
+            ["r1", "r2", "r3", "r4"]
+                .iter()
+                .map(|name| register(state.state.model(), "core", name))
+                .collect()
+        })
+        .collect()
+}
+
+/// FR-221-AC-4's litmus half (TC-666): under `tso`, the message-passing,
+/// load-buffering, IRIW, 2+2W and CoRR tests each settle `proved`: the
+/// weak outcome is unreachable, and the terminal outcomes are exactly the
+/// `sc` ones. Each `tso` record states `max_store_buffer` 4, not reached;
+/// the `sc` record states no memory bound.
+#[trace("TC-666", "FR-221-AC-4")]
+#[test]
+fn tso_forbids_the_weak_outcomes_of_mp_lb_iriw_2_2w_and_corr() {
+    let tso = [select("SB::Main::Both", MemoryModelName::Tso)];
+    for (name, run, letters) in forbidden_litmus() {
+        let case = Case::with_letters(
+            &(contracts() + &protocol("SB", &run) + NO_BOTH_ZERO),
+            letters,
+        );
+        let under_tso = outcomes(&case.system(&tso, Tso::default()).expect("builds"));
+        let under_sc = outcomes(&case.system(&[], Sc).expect("builds"));
+        assert!(under_sc.len() > 1, "{name}: {under_sc:?}");
+        assert_eq!(under_tso, under_sc, "{name}");
+        let outcome = case.claim(&tso, None);
+        assert!(
+            matches!(outcome, ModelCheckOutcome::Holds { .. }),
+            "{name}: {outcome:?}"
+        );
+        let record = case.settle(&tso, &outcome, false, None);
+        assert_eq!(record.label, ResultLabel::Proved, "{name}: {record:?}");
+        assert_eq!(
+            record.memory_bound,
+            Some(StatedMemoryBound {
+                bound: MemoryBound {
+                    member: MemoryBoundMember::MaxStoreBuffer,
+                    value: 4,
+                },
+                reached: false,
+            }),
+            "{name}"
+        );
+        let sc = case.settle(&[], &case.claim(&[], None), false, None);
+        assert_eq!(sc.label, ResultLabel::Proved, "{name}: {sc:?}");
+        assert_eq!(sc.memory_bound, None, "{name}");
+    }
+}
+
+/// A `send` after a store, beside a branch that receives it and then
+/// loads the stored location.
+fn send_unit() -> String {
+    let run = format!(
+        "parallel Both {{ branch s sequence Sender {{ {} send Tx via ch as (tx: Boolean) {{ tx }}; }} \
+         branch r sequence Recv {{ receive Rx via ch of s::Sender::Tx as (rx: Boolean) {{ true }}; {} }} }} \
+         join all [s, r];",
+        store("Sx", "x", "StoreOne"),
+        load("Lx", "x", 2),
+    );
+    let channel = "channel ch from w to w carries Boolean \
+                   ordering unordered delivery unknown capacity 2 overflow block;";
+    contracts() + &protocol_with("SB", channel, &run) + NO_BOTH_ZERO
+}
+
+/// FR-221-AC-4's `send` half (TC-666): a `send` by a thread whose buffer
+/// is not empty is not enabled; once its store is flushed, it is.
+#[trace("TC-666", "FR-221-AC-4")]
+#[test]
+fn a_send_waits_for_its_threads_buffer() {
+    let case = Case::new(&send_unit());
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let system = case.system(&tso, Tso::default()).expect("builds");
+    let mut waited = 0;
+    for state in reachable(&system) {
+        let sender = ThreadPath::root(0).child("Both", "s", 0);
+        let buffered = !state
+            .state
+            .memory()
+            .buffer(&sender)
+            .unwrap_or_default()
+            .is_empty();
+        let sends = state
+            .steps
+            .iter()
+            .any(|(transition, _)| transition.kind() == StepKind::Send);
+        assert!(!(buffered && sends));
+        let rests_at_send = system
+            .threads(&state.state)
+            .expect("threads")
+            .iter()
+            .any(|thread| {
+                thread.path == sender
+                    && thread.rest_point.node.as_deref() == Some("Both/s/Sender/Tx")
+            });
+        if buffered && rests_at_send {
+            waited += 1;
+            let flushed = state
+                .steps
+                .iter()
+                .find(|(transition, _)| transition.memory_step().is_some())
+                .map(|(_, next)| *next)
+                .expect("a flush");
+            let after = &reachable(&system)[flushed];
+            assert!(after
+                .steps
+                .iter()
+                .any(|(transition, _)| transition.kind() == StepKind::Send));
+        }
+    }
+    assert!(waited > 0);
+}
+
+/// ADR-025 MR-1 and MR-2 under `tso`: from `SB` after `Sx`, the plain store
+/// `Sx` writes `left`'s buffer and not `x`'s memory value, so it is
+/// invisible to an atom that reads `x`; `flush(left)` reads and writes the
+/// buffer and writes `x`, so it is visible; `Ly` reads `left`'s buffer and
+/// `y`, and is independent of `Sy`; `flush(left)` and `Lx` are dependent
+/// through `mem(x)` (FR-229-AC-4's `tso` half); `join` is enabled by both
+/// buffers.
+#[trace("TC-666")]
+#[test]
+fn tso_steps_carry_store_buffer_footprints() {
+    let case = Case::new(&sb_unit(&sb_run("", "release", "acquire")));
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let system = case.system(&tso, Tso::default()).expect("builds");
+    let shared = |key: &str| {
+        system
+            .weak_accesses()
+            .shared()
+            .iter()
+            .find(|location| {
+                system
+                    .weak_accesses()
+                    .cell(location)
+                    .is_some_and(|cell| cell.key == key)
+            })
+            .cloned()
+            .expect("a shared location")
+    };
+    let (x, y) = (shared("x"), shared("y"));
+    let buffer = |label: &str| Location::Protocol(ProtocolLocation::Buffer(branch(label)));
+    let step_from = |state: &ProtocolState<Tso>, pick: &dyn Fn(&ProtocolTransition) -> bool| {
+        system
+            .successors(state)
+            .expect("expands")
+            .successors
+            .into_iter()
+            .find(|(transition, _)| pick(transition))
+            .expect("enabled")
+    };
+    let (_, forked) = step_from(&system.initial()[0], &|transition| {
+        transition.kind() == StepKind::Fork
+    });
+    let (sx, stored) = step_from(&forked, &|transition| {
+        transition.node() == Some("Both/left/L/Sx")
+    });
+    let store = system.footprint(&forked, &sx).expect("a footprint");
+    assert!(store.writes.contains(&buffer("left")), "{store:?}");
+    assert!(!store.writes.contains(&x), "{store:?}");
+    assert!(store.enabling.contains(&buffer("left")), "{store:?}");
+    let (flush, _) = step_from(&stored, &|transition| transition.memory_step().is_some());
+    let flushed = system.footprint(&stored, &flush).expect("a footprint");
+    assert!(flushed.reads.contains(&buffer("left")), "{flushed:?}");
+    assert!(flushed.writes.contains(&buffer("left")), "{flushed:?}");
+    assert!(flushed.writes.contains(&x), "{flushed:?}");
+    let (ly, _) = step_from(&stored, &|transition| {
+        transition.node() == Some("Both/left/L/Ly")
+    });
+    let loaded = system.footprint(&stored, &ly).expect("a footprint");
+    assert!(loaded.reads.contains(&buffer("left")) && loaded.reads.contains(&y));
+    // FR-229-AC-4's `tso` half: `Ly` and `Sy` are independent; `flush(left)`
+    // and `Lx` are dependent through `mem(x)`.
+    let footprint_of = |state: &ProtocolState<Tso>, node: &str| {
+        let (step, _) = step_from(state, &|transition| transition.node() == Some(node));
+        system.footprint(state, &step).expect("a footprint")
+    };
+    assert!(independent(
+        &loaded,
+        &footprint_of(&stored, "Both/right/R/Sy")
+    ));
+    let (_, both) = step_from(&stored, &|transition| {
+        transition.node() == Some("Both/right/R/Sy")
+    });
+    let (flush_left, _) = step_from(&both, &|transition| {
+        transition
+            .memory_step()
+            .is_some_and(|step| step.thread == branch("left"))
+    });
+    let flush_left = system.footprint(&both, &flush_left).expect("a footprint");
+    assert!(!independent(
+        &flush_left,
+        &footprint_of(&both, "Both/right/R/Lx")
+    ));
+    let claim = ClaimReads {
+        locations: BTreeSet::from([x]),
+        anchors: BTreeSet::new(),
+    };
+    assert!(!visible(&sx, &store, &claim));
+    assert!(visible(&flush, &flushed, &claim));
+    // The join's footprint names every branch buffer it waits for.
+    let joinable = reachable(&system)
+        .into_iter()
+        .find_map(|state| {
+            state
+                .steps
+                .iter()
+                .find(|(transition, _)| transition.kind() == StepKind::Join)
+                .map(|(transition, _)| (state.state.clone(), transition.clone()))
+        })
+        .expect("a join");
+    let join = system
+        .footprint(&joinable.0, &joinable.1)
+        .expect("a footprint");
+    assert!(join.enabling.contains(&buffer("left")) && join.enabling.contains(&buffer("right")));
+}
+
+/// ADR-027 FT-4 over `ProtocolSystem<Tso>` (ADR-025 MR-1): over `SB`, the
+/// FIFO fixture, message passing and the `send` fixture under `tso`, every
+/// pair of steps the footprints report independent commutes, and some
+/// independent pairs hold a `flush`.
+#[trace("TC-661", "TC-666")]
+#[test]
+fn every_independent_pair_of_tso_steps_commutes() {
+    let fifo = format!(
+        "parallel Both {{ branch left sequence L {{ {} {} {} }} \
+         branch right sequence R {{ {} {} }} }} join all [left, right];",
+        store("S1", "x", "StoreOne"),
+        store("S2", "y", "StoreOne"),
+        load("L3", "x", 3),
+        load("Lx", "x", 2),
+        load("Ly", "y", 1),
+    );
+    let (_, mp, _) = forbidden_litmus().remove(0);
+    let units = [
+        (sb_unit(&sb_run("", "release", "acquire")), "SB::Both"),
+        (contracts() + &protocol("SB", &fifo), "SB::Both"),
+        (contracts() + &protocol("SB", &mp), "SB::Main::Both"),
+        (send_unit(), "SB::Both"),
+    ];
+    let mut flushes = 0;
+    for (body, parallel) in &units {
+        let case = Case::new(body);
+        let system = case
+            .system(&[select(parallel, MemoryModelName::Tso)], Tso::default())
+            .expect("builds");
+        let reached = reachable(&system);
+        assert!(
+            crate::protocol_footprints::assert_independent_steps_commute(&system, &reached) > 0,
+            "{body}"
+        );
+        for state in &reached {
+            for (first, _) in &state.steps {
+                for (second, _) in &state.steps {
+                    if first.memory_step().is_some() && second.memory_step().is_none() {
+                        let left = system.footprint(&state.state, first).expect("a footprint");
+                        let right = system.footprint(&state.state, second).expect("a footprint");
+                        if independent(&left, &right) {
+                            flushes += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(flushes > 0);
+}
+
+/// SR-12239 FND-001 (FR-225, ADR-025 MB-4; TC-670): the closure checker
+/// re-expands under the request's bound. A `Holds` certificate from a run
+/// under the default bound, checked under `max_store_buffer` 1, which cuts
+/// stores, settles V-6 `MemoryBoundReached` with as many bound-limited
+/// states as the engine's own run under 1 reports, never `proved`; checked
+/// under the default it settles `proved`, the bound not reached.
+#[trace("TC-670")]
+#[test]
+fn a_closure_certificate_closed_only_under_a_cutting_bound_is_not_proved() {
+    let run = format!(
+        "parallel Both {{ branch left sequence L {{ {} {} }} \
+         branch right sequence R {{ {} {} }} }} join all [left, right];",
+        store("S1", "x", "StoreOne"),
+        store("S2", "y", "StoreOne"),
+        load("Lx", "x", 2),
+        load("Ly", "y", 1),
+    );
+    let two = Case::new(&(contracts() + &protocol("SB", &run) + NO_BOTH_ZERO));
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let holds = two.check(&tso, ModelCheckItem::DeadlockFreedom, None);
+    assert!(
+        matches!(holds, ModelCheckOutcome::Holds { .. }),
+        "{holds:?}"
+    );
+    let ModelCheckOutcome::Memory {
+        cause: MemoryCause::BoundReached { states, .. },
+        ..
+    } = two.check(&tso, ModelCheckItem::DeadlockFreedom, Some(1))
+    else {
+        panic!("the engine cuts under 1");
+    };
+    let bound = |value| MemoryBound {
+        member: MemoryBoundMember::MaxStoreBuffer,
+        value,
+    };
+    let cut = two.settle(&tso, &holds, true, Some(1));
+    assert_eq!(
+        cut.value,
+        TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached {
+            bound: bound(1),
+            states,
+        }),
+        "{cut:?}"
+    );
+    assert_eq!(
+        cut.memory_bound,
+        Some(StatedMemoryBound {
+            bound: bound(1),
+            reached: true,
+        })
+    );
+    let proved = two.settle(&tso, &holds, true, None);
+    assert_eq!(proved.label, ResultLabel::Proved, "{proved:?}");
+    assert_eq!(
+        proved.memory_bound,
+        Some(StatedMemoryBound {
+            bound: bound(4),
+            reached: false,
+        })
+    );
 }

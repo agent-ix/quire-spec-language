@@ -65,7 +65,8 @@ pub use identity::{
     WaitCause,
 };
 pub use memory::{
-    Access, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Sc, ScComponent, SharedCell, Written,
+    Access, FootprintStep, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Sc, ScComponent,
+    SharedCell, Written,
 };
 use program::{Program, Rest};
 pub use selection::{

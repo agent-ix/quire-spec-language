@@ -34,8 +34,11 @@ use quire_semantic_value::fairness::FairnessConstraint;
 
 use super::access::location_enc;
 use super::identity::ThreadPath;
-use super::memory::{Access, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Written};
-use crate::simulation::footprint::Location;
+use super::memory::{
+    buffer_location, Access, FootprintStep, GatedStep, MemoryModel, MemoryStep, MemoryStepId,
+    Written,
+};
+use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::encode::{map_enc, value_enc, Enc};
 use crate::simulation::model::{Cell, ModelSimState};
 
@@ -147,6 +150,13 @@ impl Encode for TsoComponent {
     }
 }
 
+/// Whether an access is a locked one (TSO-5): a read-modify-write, or a
+/// `seq_cst` store.
+fn locked(class: AccessClass, ordering: Option<AccessOrdering>) -> bool {
+    class == AccessClass::Rmw
+        || (class == AccessClass::Store && ordering == Some(AccessOrdering::SeqCst))
+}
+
 /// `model` with each of `buffer`'s entries, oldest first, written to its
 /// cell, so the newest entry of each location wins.
 fn overlay(model: &ModelSimState, buffer: &[Buffered]) -> ModelSimState {
@@ -202,10 +212,7 @@ impl MemoryModel for Tso {
         let Some(buffer) = component.buffers.get(thread) else {
             return Written::Applied(post, component.clone());
         };
-        let locked = access.class == AccessClass::Rmw
-            || (access.class == AccessClass::Store
-                && access.ordering == Some(AccessOrdering::SeqCst));
-        if locked {
+        if locked(access.class, access.ordering) {
             if !buffer.is_empty() {
                 return Written::Disabled;
             }
@@ -326,5 +333,85 @@ impl MemoryModel for Tso {
     /// protocol subject is decided yet (FR-215), so none is added here.
     fn fairness(&self) -> Vec<FairnessConstraint> {
         Vec::new()
+    }
+
+    /// MR-1 under `tso`, for a thread with a buffer:
+    ///
+    /// - every attempt reads `buf(b)`, which its observation overlays and
+    ///   which enables a locked access and a store under the bound; a plain
+    ///   store writes `buf(b)` in place of its shared location's `mem(ℓ)`;
+    ///   a load and a locked access keep their model reads and writes of
+    ///   `mem(ℓ)`;
+    /// - `fork` and `send` are enabled by `buf(b)`;
+    /// - `join` is enabled by, and removes, the buffer of every thread
+    ///   below it;
+    /// - `flush(b)` reads and writes `buf(b)` and writes `mem(ℓ)` of every
+    ///   shared location.
+    ///
+    /// A thread with no buffer applies in place, so its steps keep their
+    /// `sc` footprints.
+    fn footprint(
+        &self,
+        component: &TsoComponent,
+        thread: &ThreadPath,
+        step: FootprintStep<'_>,
+        footprint: &mut Footprint,
+    ) -> bool {
+        let buffered = component.buffers.contains_key(thread);
+        let own = buffer_location(thread);
+        match step {
+            FootprintStep::Attempt {
+                class,
+                ordering,
+                shared,
+            } => {
+                if buffered {
+                    footprint.reads.insert(own.clone());
+                    footprint.enabling.insert(own.clone());
+                    if let (AccessClass::Store, false, Some(shared)) =
+                        (class, locked(class, ordering), shared)
+                    {
+                        footprint.writes.remove(shared);
+                        footprint.writes.insert(own);
+                    }
+                }
+                true
+            }
+            FootprintStep::Gated(GatedStep::Fork | GatedStep::Send) => {
+                if buffered {
+                    footprint.reads.insert(own.clone());
+                    footprint.enabling.insert(own);
+                }
+                true
+            }
+            FootprintStep::Gated(GatedStep::Join) => {
+                for below in component
+                    .buffers
+                    .keys()
+                    .filter(|path| *path != thread && thread.is_prefix_of(path))
+                {
+                    let location = buffer_location(below);
+                    footprint.reads.insert(location.clone());
+                    footprint.enabling.insert(location.clone());
+                    footprint.writes.insert(location);
+                }
+                true
+            }
+            FootprintStep::Gated(GatedStep::Receive | GatedStep::Attempt) => true,
+            FootprintStep::Memory { identity, stored } => {
+                if identity.model != MemoryModelName::Tso
+                    || identity.step != "flush"
+                    || identity.thread != *thread
+                    || !buffered
+                {
+                    return false;
+                }
+                footprint.reads.insert(own.clone());
+                footprint.enabling.insert(own.clone());
+                footprint.writes.insert(own);
+                footprint.writes.extend(stored.iter().cloned());
+                true
+            }
+        }
     }
 }

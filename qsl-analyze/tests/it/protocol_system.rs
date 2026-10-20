@@ -14,11 +14,13 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    binder_root, explore_protocol, Access, BlockedThread, Disposition, GatedStep, MemoryModel,
-    MemoryStep, ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, RestKind,
-    RestPoint, Sc, ScComponent, StepKind, ThreadPath, WaitCause, Written,
+    binder_root, explore_protocol, Access, BlockedThread, Disposition, FootprintStep, GatedStep,
+    MemoryModel, MemoryStep, ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition,
+    RestKind, RestPoint, Sc, ScComponent, StepKind, ThreadPath, WaitCause, Written,
 };
-use qsl_eval::simulation::{Limits, NotSimulated, Outcome, SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::{
+    Footprint, Limits, NotSimulated, Outcome, SubjectSystem, TransitionSystem,
+};
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::MemoryModelName;
@@ -1113,6 +1115,16 @@ impl MemoryModel for Interleaving {
 
     fn fairness(&self) -> Vec<FairnessConstraint> {
         Vec::new()
+    }
+
+    fn footprint(
+        &self,
+        _: &Nothing,
+        _: &ThreadPath,
+        step: FootprintStep<'_>,
+        _: &mut Footprint,
+    ) -> bool {
+        !matches!(step, FootprintStep::Memory { .. })
     }
 }
 

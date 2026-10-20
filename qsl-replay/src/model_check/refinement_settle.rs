@@ -96,5 +96,6 @@ pub fn settle_refinement_safety(
         limit_reached: row.limit_reached,
         counterexample,
         hints: Vec::new(),
+        memory_bound: None,
     }
 }

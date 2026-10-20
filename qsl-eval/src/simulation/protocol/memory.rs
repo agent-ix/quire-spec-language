@@ -11,8 +11,11 @@ use qsl_semantics::check::AccessOrdering;
 use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_semantic_value::fairness::FairnessConstraint;
 
+use std::collections::BTreeSet;
+
+use super::footprint::ProtocolLocation;
 use super::identity::ThreadPath;
-use crate::simulation::footprint::Location;
+use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::encode::Enc;
 use crate::simulation::model::{Cell, ModelSimState};
 
@@ -103,6 +106,36 @@ impl Access<'_> {
     }
 }
 
+/// A step as a memory model's footprint reads it (ADR-025 MR-1).
+#[derive(Clone, Copy, Debug)]
+pub enum FootprintStep<'a> {
+    /// An attempt, as EN-1 classified its application: its class, its
+    /// ordering and its one shared location.
+    Attempt {
+        /// The access class.
+        class: AccessClass,
+        /// The attempt's `ordering`.
+        ordering: Option<AccessOrdering>,
+        /// The shared location of a load, store or read-modify-write.
+        shared: Option<&'a Location>,
+    },
+    /// A step the model gates (SE-1 e).
+    Gated(GatedStep),
+    /// One of the model's own internal steps, and every shared location of
+    /// the subject, which its thread may store.
+    Memory {
+        /// The step's identity.
+        identity: &'a MemoryStepId,
+        /// The shared locations.
+        stored: &'a BTreeSet<Location>,
+    },
+}
+
+/// `buf(thread)`: `thread`'s part of the memory component (ADR-025 MR-1).
+pub(crate) fn buffer_location(thread: &ThreadPath) -> Location {
+    Location::Protocol(ProtocolLocation::Buffer(thread.clone()))
+}
+
 /// Where an attempt's delta went (SE-1 c).
 #[derive(Clone, Debug)]
 pub enum Written<C> {
@@ -190,6 +223,19 @@ pub trait MemoryModel {
     /// (h) The constraints the model adds to every infinite-trace clause,
     /// with a `memory` origin.
     fn fairness(&self) -> Vec<FairnessConstraint>;
+
+    /// ADR-025 MR-1: add to `footprint`, `thread`'s `step`'s protocol and
+    /// model footprint, the memory-component locations it reads, writes or
+    /// is enabled by, and take out a model write the model does not apply in
+    /// place; `false` when `step` is not a step of this model at
+    /// `component`.
+    fn footprint(
+        &self,
+        component: &Self::Component,
+        thread: &ThreadPath,
+        step: FootprintStep<'_>,
+        footprint: &mut Footprint,
+    ) -> bool;
 }
 
 /// SE-2: the sequentially consistent memory model.
@@ -289,5 +335,16 @@ impl MemoryModel for Sc {
     /// None.
     fn fairness(&self) -> Vec<FairnessConstraint> {
         Vec::new()
+    }
+
+    /// Nothing: `sc` names no memory location and has no memory step.
+    fn footprint(
+        &self,
+        _component: &ScComponent,
+        _thread: &ThreadPath,
+        step: FootprintStep<'_>,
+        _footprint: &mut Footprint,
+    ) -> bool {
+        !matches!(step, FootprintStep::Memory { .. })
     }
 }

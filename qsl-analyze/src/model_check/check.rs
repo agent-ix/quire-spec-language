@@ -411,7 +411,7 @@ pub fn check_model(
         boundary: 0,
         chooser: None,
         memory_bound: None,
-        bound_limited: 0,
+        bound_limited: BTreeSet::new(),
     };
     if let Some(source) = root_cancelled {
         return Ok(ModelCheckOutcome::Stopped {
@@ -602,7 +602,7 @@ impl ProtocolRun<'_> {
             boundary: 0,
             chooser: None,
             memory_bound: bound,
-            bound_limited: 0,
+            bound_limited: BTreeSet::new(),
         };
         if let Some(source) = self.root_cancelled {
             return Ok(ModelCheckOutcome::Stopped {
@@ -752,7 +752,7 @@ fn check_reduced(
             boundary: 0,
             chooser: ample.as_ref().map(|ample| ample as &dyn Chooser<_, _>),
             memory_bound: None,
-            bound_limited: 0,
+            bound_limited: BTreeSet::new(),
         };
         let explored = run.explore();
         total = sum(total, run.stats());
@@ -1110,8 +1110,10 @@ struct Run<'r, S: SubjectSystem> {
     /// The memory bound the subject's memory model runs under (ADR-025
     /// MB-2); `None` for one with no bound.
     memory_bound: Option<MemoryBound>,
-    /// The bound-limited states expanded (ADR-025 MB-3).
-    bound_limited: usize,
+    /// The distinct model states, by digest, whose expansion cut a step at
+    /// the memory bound (ADR-025 MB-3); a model state read under several
+    /// monitor states counts once.
+    bound_limited: BTreeSet<DigestRecord>,
 }
 
 impl<S: SubjectSystem> Run<'_, S> {
@@ -1187,11 +1189,11 @@ impl<S: SubjectSystem> Run<'_, S> {
         match self.explore() {
             // ADR-025 MB-4: a bound-limited state settles before the horizon.
             Ok(()) => Ok(
-                if let (Some(bound), true) = (self.memory_bound, self.bound_limited > 0) {
+                if let (Some(bound), true) = (self.memory_bound, !self.bound_limited.is_empty()) {
                     ModelCheckOutcome::Memory {
                         cause: MemoryCause::BoundReached {
                             bound,
-                            states: widen(self.bound_limited),
+                            states: widen(self.bound_limited.len()),
                         },
                         stats: self.stats(),
                     }
@@ -1293,7 +1295,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             };
             self.contracts(at, &expansion.findings)?;
             if cut {
-                self.bound_limited = self.bound_limited.saturating_add(1);
+                self.bound_limited.insert(self.nodes[at].digest);
                 // ADR-025 MB-3: a state whose only enabled steps are cut
                 // stores is a boundary state: never stutter-extended and
                 // never a deadlock.
