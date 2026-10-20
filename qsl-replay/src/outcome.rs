@@ -500,6 +500,8 @@ impl OutcomeItem {
                     | UnavailabilityCause::BackendAbsent
                     | UnavailabilityCause::MissingFairnessPremise { .. }
                     | UnavailabilityCause::UnsupportedReduction { .. }
+                    | UnavailabilityCause::HiddenFieldLiveness
+                    | UnavailabilityCause::StrongAbstractFairness
                     | UnavailabilityCause::NotMarkov
                     | UnavailabilityCause::ConfidenceBeyondPrecision => {}
                 }

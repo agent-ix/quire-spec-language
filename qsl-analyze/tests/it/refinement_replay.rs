@@ -6,22 +6,32 @@
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_refinement, RefinementCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
-use qsl_eval::simulation::model::ModelSimulationRequest;
+use qsl_eval::simulation::model::{operation_identity_text, ModelSimulationRequest, ModelSystem};
+use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    open_systems, replay_refinement_trace, settle_refinement_safety, CounterexampleKind,
-    InconclusiveCause, ModelCheckLimits, ModelCheckRecord, ModelTraceRefusal, RefinementFailure,
-    RefinementOutcome, RefinementTraceSettlement, ReplayRefusal, ResultLabel, RunStats,
-    SafetyOutcome, SettlementBasis, SimulationCertificateRequest, TemporalCounterexample,
-    TerminalValue,
+    abstract_classes, open_systems, replay_refinement_trace, settle_refinement,
+    settle_refinement_refusal, settle_refinement_safety, Certification, CounterexampleKind,
+    Execution, IncompleteCause, InconclusiveCause, Lasso, LivenessHalf, ModelCheckLimit,
+    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelStep, ModelTraceRefusal,
+    ProofBasis, ReachedLimit, RefinementFailure, RefinementOutcome, RefinementRecord,
+    RefinementTraceSettlement, ReplayRefusal, ResultLabel, RunStats, SafetyOutcome,
+    SafetyUndecided, SettlementBasis, SimulationCertificateRequest, TemporalCounterexample,
+    TerminalValue, UnavailabilityCause, UndecidedCause,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
 
+use crate::refinement_aux::{
+    halting_refinement, hidden_register_history, int, pair_refinement, probe_contracts,
+    probe_refinement, register_history_ensured, Unit, World as AuxWorld, NEVER,
+    UNLIMITED as AUX_UNLIMITED,
+};
 use crate::refinement_fixture::{
-    cas_refines_counter, lost_update_refinement, mutated, spec_state, Variant, World, UNLIMITED,
+    cas_refines_counter, divergence_refinement, key, lost_update_refinement, mutated, spec_state,
+    Variant, World, CAS, UNLIMITED,
 };
 use crate::ring_world::{
     ring_is_queue, RingWorld, Variant as RingVariant, UNLIMITED as RING_UNLIMITED, ZERO,
@@ -57,8 +67,21 @@ fn ring_with(world: &RingWorld, meter: quire_exact::ScalarLimits) -> Subject<'_>
     }
 }
 
+fn aux<'w>(world: &'w AuxWorld<'_>) -> Subject<'w> {
+    Subject {
+        refinement: world.refinement(),
+        package: world.package(),
+        concrete: world.concrete_request(AUX_UNLIMITED),
+        abstract_initial: world.abstract_initial(),
+    }
+}
+
 fn check(subject: &Subject<'_>) -> SafetyOutcome {
-    let RefinementOutcome { safety } = check_refinement(
+    outcome(subject).safety
+}
+
+fn outcome(subject: &Subject<'_>) -> RefinementOutcome {
+    check_refinement(
         RefinementCheckRequest {
             refinement: subject.refinement,
             concrete: ModelSubject {
@@ -72,8 +95,7 @@ fn check(subject: &Subject<'_>) -> SafetyOutcome {
         },
         &Cancel::new(),
     )
-    .expect("the refinement is checked");
-    safety
+    .expect("the refinement is checked")
 }
 
 fn counterexample(outcome: SafetyOutcome) -> TemporalCounterexample {
@@ -399,4 +421,618 @@ fn an_incomplete_row_settles_inconclusive_and_a_fault_settles_failed() {
     let record = settle(&starved, &faulted);
     assert_eq!(record.value, TerminalValue::Failed);
     assert_eq!(record.label, ResultLabel::Failed);
+}
+
+fn settle_item(subject: &Subject<'_>, outcome: &RefinementOutcome) -> RefinementRecord {
+    settle_refinement(
+        outcome,
+        &ModelCheckLimits::default(),
+        &certified(subject),
+        &Cancel::new(),
+        |payload| replay(subject, payload),
+    )
+}
+
+/// The lasso the liveness half of `outcome` refutes with.
+fn lasso(outcome: RefinementOutcome) -> TemporalCounterexample {
+    let Some(LivenessHalf::Checked(ModelCheckOutcome::Violated { counterexample, .. })) =
+        outcome.liveness
+    else {
+        panic!("the liveness half is violated: {:?}", outcome.liveness);
+    };
+    *counterexample
+}
+
+/// FR-145-AC-2 (TC-550 step 2): the divergence lasso reproduces
+/// `Divergence{inc}`, the terminal-stutter lasso of `Halting` reproduces
+/// `Divergence`, and the lasso of `Pair` reproduces `AbstractUnfair{flipB}`.
+#[trace("TC-550", "FR-145-AC-2")]
+#[test]
+fn the_divergence_terminal_stutter_and_pair_lassos_replay() {
+    let world = World::new(&divergence_refinement());
+    let subject = cas(&world);
+    let payload = lasso(outcome(&subject));
+    let (failure, positions) = reproduced(replay(&subject, &payload));
+    assert!(
+        matches!(&failure, RefinementFailure::Divergence { constraint }
+        if constraint.operation().name() == "inc")
+    );
+    assert_eq!(Some(failure), payload.refinement);
+    assert_eq!(positions, payload.prefix.len() + 1);
+
+    let unit = Unit::halting(1, "");
+    let world = unit.world(&halting_refinement(true));
+    let subject = aux(&world);
+    let payload = lasso(outcome(&subject));
+    assert_eq!(
+        payload.lasso,
+        Some(Lasso {
+            entry: 1,
+            terminal_stutter: true
+        })
+    );
+    let (failure, positions) = reproduced(replay(&subject, &payload));
+    assert!(matches!(failure, RefinementFailure::Divergence { .. }));
+    assert_eq!(positions, 2);
+
+    let unit = Unit::pair();
+    let world = unit.world(&pair_refinement(&["flipA"]));
+    let subject = aux(&world);
+    let payload = lasso(outcome(&subject));
+    let (failure, positions) = reproduced(replay(&subject, &payload));
+    assert!(
+        matches!(&failure, RefinementFailure::AbstractUnfair { constraint }
+        if constraint.operation().name() == "flipB")
+    );
+    assert_eq!(Some(failure), payload.refinement);
+    assert_eq!(positions, 3);
+}
+
+/// FR-145-AC-3 (TC-550 step 3): a lasso whose recorded failure is the other
+/// liveness kind settles `inconclusive` (`ReplayParity` once settled), and
+/// the divergence lasso replayed against `CasRefinesCounter`'s `F_C` is
+/// refused as unfair, since `beginA` is enabled at its state and never taken.
+#[trace("TC-550", "FR-145-AC-3")]
+#[test]
+fn a_lasso_of_another_kind_disagrees_and_an_unfair_lasso_is_refused() {
+    let world = World::new(&divergence_refinement());
+    let subject = cas(&world);
+    let payload = lasso(outcome(&subject));
+    let Some(RefinementFailure::Divergence { constraint }) = payload.refinement.clone() else {
+        panic!("a divergence");
+    };
+    let mut unfair = payload.clone();
+    unfair.refinement = Some(RefinementFailure::AbstractUnfair {
+        constraint: constraint.clone(),
+    });
+    assert!(matches!(
+        replay(&subject, &unfair),
+        Ok(RefinementTraceSettlement::Inconclusive(_))
+    ));
+    let settled = settle_item(
+        &subject,
+        &RefinementOutcome {
+            safety: check(&subject),
+            liveness: Some(LivenessHalf::Checked(ModelCheckOutcome::Violated {
+                counterexample: Box::new(unfair),
+                stats: RunStats::default(),
+            })),
+        },
+    );
+    assert!(matches!(
+        settled.record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::ReplayParity(_))
+    ));
+    assert_eq!(settled.liveness, Some(settled.record.value.clone()));
+
+    let fair = World::new(&cas_refines_counter());
+    let Err(ReplayRefusal::UnfairLasso { constraint }) = replay(&cas(&fair), &payload) else {
+        panic!("the lasso is unfair under CasRefinesCounter's F_C");
+    };
+    assert_eq!(constraint.operation().name(), "beginA");
+
+    let unit = Unit::pair();
+    let world = unit.world(&pair_refinement(&["flipA"]));
+    let subject = aux(&world);
+    let mut divergent = lasso(outcome(&subject));
+    let Some(RefinementFailure::AbstractUnfair { constraint }) = divergent.refinement.clone()
+    else {
+        panic!("an abstract unfairness");
+    };
+    divergent.refinement = Some(RefinementFailure::Divergence { constraint });
+    assert!(matches!(
+        replay(&subject, &divergent),
+        Ok(RefinementTraceSettlement::Inconclusive(_))
+    ));
+}
+
+/// The lasso over `RegisterHistory` with `ensure fair weak
+/// Spec::Register::write` of FR-145-AC-4: the stem and the loop are both
+/// `write(r, 1)`, so the loop returns to its entry concrete state with `last`
+/// 0 at the entry and 1 at its end.
+fn drifting_lasso(world: &AuxWorld<'_>) -> TemporalCounterexample {
+    use qsl_eval::simulation::TransitionSystem;
+
+    let system = world.concrete_system(AUX_UNLIMITED);
+    let one = system
+        .state_key_of(&world.concrete_state(&[("value", int(1))]))
+        .expect("a key")
+        .0;
+    let mut state = system.initial_states()[0].clone();
+    let mut prefix = Vec::new();
+    for _ in 0..2 {
+        let expansion = system.successors(&state).expect("the state expands");
+        let (transition, next) = expansion
+            .successors
+            .into_iter()
+            .find(|(_, next)| system.state_key(next).is_ok_and(|(key, _)| key == one))
+            .expect("write(r, 1)");
+        prefix.push(ModelStep {
+            transition,
+            post_state: system.state_key(&next).expect("a key").1,
+        });
+        state = next;
+    }
+    TemporalCounterexample {
+        initial_state: 0,
+        prefix,
+        over_binding: None,
+        fairness: Vec::new(),
+        kind: CounterexampleKind::Formula,
+        lasso: Some(Lasso {
+            entry: 1,
+            terminal_stutter: false,
+        }),
+        refinement: Some(RefinementFailure::AbstractUnfair {
+            constraint: world.refinement().abstract_fairness()[0].clone(),
+        }),
+        blocked: Vec::new(),
+    }
+}
+
+/// FR-145-AC-4 (TC-550 step 4): a lasso whose loop returns to its entry
+/// concrete state with other history values refuses
+/// `invalid_runtime_input`/`invalid-value` and settles no result, and
+/// replaying one lasso twice gives equal results.
+#[trace("TC-550", "FR-145-AC-4")]
+#[test]
+fn a_loop_that_does_not_close_in_the_product_is_refused() {
+    let unit = Unit::register();
+    let world = unit.world(&register_history_ensured());
+    let subject = aux(&world);
+    let payload = drifting_lasso(&world);
+    let Err(ReplayRefusal::ModelTrace(refusal)) = replay(&subject, &payload) else {
+        panic!("the loop does not close");
+    };
+    assert_eq!(*refusal, ModelTraceRefusal::LoopDrifts { entry: 1 });
+    assert_eq!(refusal.code(), qsl_replay::Code::InvalidRuntimeInput);
+    assert_eq!(refusal.cause(), "invalid-value");
+
+    let world = World::new(&divergence_refinement());
+    let subject = cas(&world);
+    let payload = lasso(outcome(&subject));
+    assert_eq!(
+        format!("{:?}", replay(&subject, &payload)),
+        format!("{:?}", replay(&subject, &payload))
+    );
+}
+
+fn proved(certification: Certification) -> TerminalValue {
+    TerminalValue::Proved {
+        basis: ProofBasis::Exhaustive,
+        certification,
+    }
+}
+
+/// FR-144-AC-2 (TC-549 step 2) and FR-144-AC-7 (TC-556 step 5):
+/// `CasRefinesCounter` settles `proved`, `closed-scope`, `Uncertified`, its
+/// safety half `Certified` and its liveness half `Uncertified`; without its
+/// `ensure` row it settles `Certified`; its divergence variant settles
+/// `refuted`, `decisive-counterexample`, after its lasso replays, with its
+/// liveness half `Refuted`.
+#[trace("TC-549", "FR-144-AC-2")]
+#[trace("TC-556", "FR-144-AC-7")]
+#[test]
+fn a_proved_liveness_half_is_uncertified_and_a_replayed_lasso_refutes() {
+    let world = World::new(&cas_refines_counter());
+    let subject = cas(&world);
+    let settled = settle_item(&subject, &outcome(&subject));
+    assert_eq!(settled.record.value, proved(Certification::Uncertified));
+    assert_eq!(settled.record.label, ResultLabel::Proved);
+    assert_eq!(settled.record.basis, SettlementBasis::ClosedScope);
+    assert_eq!(settled.record.method, "explicit-state");
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
+    assert_eq!(settled.liveness, Some(proved(Certification::Uncertified)));
+
+    let safety_only = World::new(&mutated(
+        &cas_refines_counter(),
+        "ensure fair weak each Spec::Counter::inc;",
+        "",
+    ));
+    let subject = cas(&safety_only);
+    let settled = settle_item(&subject, &outcome(&subject));
+    assert_eq!(settled.record.value, proved(Certification::Certified));
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
+    assert_eq!(settled.liveness, None);
+
+    let world = World::new(&divergence_refinement());
+    let subject = cas(&world);
+    let settled = settle_item(&subject, &outcome(&subject));
+    assert_eq!(settled.record.value, TerminalValue::Refuted);
+    assert_eq!(settled.record.label, ResultLabel::Refuted);
+    assert_eq!(
+        settled.record.basis,
+        SettlementBasis::DecisiveCounterexample
+    );
+    assert!(settled.record.counterexample.is_some());
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
+    assert_eq!(settled.liveness, Some(TerminalValue::Refuted));
+}
+
+/// FR-144-AC-3 (TC-549 step 3): the hidden-field refinement with its
+/// `ensure` row settles `unsupported`, `unavailable`,
+/// `Unsupported(unsupported-requested-capability)`, with the safety half
+/// `Proved{Exhaustive, Certified}` on the record.
+#[trace("TC-549", "FR-144-AC-3")]
+#[test]
+fn liveness_through_a_hidden_field_settles_unsupported_beside_a_proved_safety_half() {
+    let unit = Unit::register();
+    let world = unit.world(&hidden_register_history());
+    let subject = aux(&world);
+    let settled = settle_item(&subject, &outcome(&subject));
+    let cause = TerminalValue::Unsupported(UnavailabilityCause::HiddenFieldLiveness);
+    assert_eq!(settled.record.value, cause);
+    assert_eq!(settled.record.label, ResultLabel::Unsupported);
+    assert_eq!(settled.record.basis, SettlementBasis::Unavailable);
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
+    assert_eq!(settled.liveness, Some(cause));
+    let TerminalValue::Unsupported(cause) = &settled.record.value else {
+        panic!("unsupported");
+    };
+    assert_eq!(cause.as_str(), "unsupported-requested-capability");
+}
+
+/// The steps of `operations`, each the first successor of the state before
+/// it whose transition is of that operation's text.
+fn walk(system: &ModelSystem<'_>, operations: &[String]) -> Vec<ModelStep> {
+    let mut state = system.initial_states()[0].clone();
+    let mut steps = Vec::new();
+    for operation in operations {
+        let (transition, next) = system
+            .successors(&state)
+            .expect("the state expands")
+            .successors
+            .into_iter()
+            .find(|(transition, _)| transition.operation() == operation)
+            .unwrap_or_else(|| panic!("{operation} is enabled"));
+        steps.push(ModelStep {
+            transition,
+            post_state: system.state_key(&next).expect("a key").1,
+        });
+        state = next;
+    }
+    steps
+}
+
+/// A lasso over `steps` that re-enters at `entry`, recording `failure`.
+fn handmade(
+    steps: Vec<ModelStep>,
+    entry: usize,
+    terminal_stutter: bool,
+    failure: RefinementFailure,
+) -> TemporalCounterexample {
+    TemporalCounterexample {
+        initial_state: 0,
+        prefix: steps,
+        over_binding: None,
+        fairness: Vec::new(),
+        kind: CounterexampleKind::Formula,
+        lasso: Some(Lasso {
+            entry,
+            terminal_stutter,
+        }),
+        refinement: Some(failure),
+        blocked: Vec::new(),
+    }
+}
+
+fn pair_operations(unit: &Unit, names: &[&str]) -> Vec<String> {
+    names
+        .iter()
+        .map(|name| {
+            operation_identity_text(&unit.concrete_key(&format!("Pair/{name}"))).expect("a text")
+        })
+        .collect()
+}
+
+/// Replay of the lasso `loop_of` over `unit`'s refinement `rows`, recorded
+/// as `failure` for the `F_A` constraint at `constraint`.
+fn replay_probe(
+    unit: &Unit,
+    rows: &[&str],
+    loop_of: &[&str],
+    constraint: usize,
+    failure: fn(quire_semantic_value::fairness::FairnessConstraint) -> RefinementFailure,
+) -> Result<RefinementTraceSettlement, ReplayRefusal> {
+    let world = unit.world(&probe_refinement(rows));
+    let subject = aux(&world);
+    let system = world.concrete_system(AUX_UNLIMITED);
+    let steps = walk(&system, &pair_operations(unit, loop_of));
+    let constraint = world.refinement().abstract_fairness()[constraint].clone();
+    replay(&subject, &handmade(steps, 0, false, failure(constraint)))
+}
+
+fn unfair(constraint: quire_semantic_value::fairness::FairnessConstraint) -> RefinementFailure {
+    RefinementFailure::AbstractUnfair { constraint }
+}
+
+fn divergence(constraint: quire_semantic_value::fairness::FairnessConstraint) -> RefinementFailure {
+    RefinementFailure::Divergence { constraint }
+}
+
+fn agrees(settlement: Result<RefinementTraceSettlement, ReplayRefusal>) -> bool {
+    match settlement.expect("the lasso replays") {
+        RefinementTraceSettlement::Reproduced { .. } => true,
+        RefinementTraceSettlement::Inconclusive(_) => false,
+        other @ RefinementTraceSettlement::Stopped(_) => panic!("{other:?}"),
+    }
+}
+
+const FLIP_B: &str = "ensure fair weak whole Spec::Pair::flipB;";
+const FLIP_A: &str = "ensure fair weak whole Spec::Pair::flipA;";
+
+/// FR-145-AC-3 (TC-550 step 3): replay reproduces a lasso only when the
+/// recorded constraint is enabled at the mapped state of every loop state
+/// and taken by no loop step. A loop that leaves it disabled at one state,
+/// a loop that takes it, and a lasso that records another constraint than the
+/// one the loop violates are each `inconclusive`.
+#[trace("TC-550", "FR-145-AC-3")]
+#[test]
+fn a_loop_reproduces_only_when_the_recorded_constraint_is_owed_and_never_taken() {
+    // flipB is enabled abstractly at `a = 0` only, and the loop flips `a`.
+    let disabled = Unit::probe_pair(
+        probe_contracts(["", NEVER, NEVER, NEVER], ["", "self.a = 0", ""]),
+        &[(0, 0)],
+    );
+    assert!(!agrees(replay_probe(
+        &disabled,
+        &[FLIP_B],
+        &["flipA", "flipA"],
+        0,
+        unfair
+    )));
+
+    // The loop `flipB, flipB` takes flipB at every step.
+    let taken = Unit::probe_pair(
+        probe_contracts(["", "", NEVER, NEVER], ["", "", ""]),
+        &[(0, 0)],
+    );
+    assert!(!agrees(replay_probe(
+        &taken,
+        &[FLIP_B],
+        &["flipB", "flipB"],
+        0,
+        unfair
+    )));
+
+    // The loop `flipA, flipA` takes flipA and not flipB.
+    let flipping = Unit::probe_pair(
+        probe_contracts(["", "", NEVER, NEVER], ["", "", ""]),
+        &[(0, 0)],
+    );
+    let rows = [FLIP_A, FLIP_B];
+    assert!(!agrees(replay_probe(
+        &flipping,
+        &rows,
+        &["flipA", "flipA"],
+        0,
+        unfair
+    )));
+    assert!(agrees(replay_probe(
+        &flipping,
+        &rows,
+        &["flipA", "flipA"],
+        1,
+        unfair
+    )));
+}
+
+/// FR-145-AC-3 (TC-550 step 3): a loop is `Divergence` when every step is a
+/// `stutter` and `AbstractUnfair` as soon as one takes an abstract step.
+#[trace("TC-550", "FR-145-AC-3")]
+#[test]
+fn a_loop_is_a_divergence_only_when_every_step_stutters() {
+    let unit = Unit::probe_pair(
+        probe_contracts(["", NEVER, NEVER, ""], ["", "", ""]),
+        &[(0, 0)],
+    );
+    let rows = [FLIP_B];
+    let mixed = ["peek", "flipA", "flipA"];
+    assert!(agrees(replay_probe(&unit, &rows, &mixed, 0, unfair)));
+    assert!(!agrees(replay_probe(&unit, &rows, &mixed, 0, divergence)));
+    let stuttering = ["peek"];
+    assert!(agrees(replay_probe(
+        &unit,
+        &rows,
+        &stuttering,
+        0,
+        divergence
+    )));
+    assert!(!agrees(replay_probe(&unit, &rows, &stuttering, 0, unfair)));
+}
+
+/// FR-145-AC-3 (TC-550 step 3): the terminal stutter is a step of the loop
+/// that takes no class. At `value` 2 of `Halting` the abstract `inc` is
+/// disabled, so a terminal-stutter lasso recorded there is `inconclusive`
+/// as `Divergence` and as `AbstractUnfair`; at `value` 1 it is enabled.
+#[trace("TC-550", "FR-145-AC-3")]
+#[test]
+fn a_terminal_stutter_loop_is_read_at_its_mapped_state() {
+    let replay_halt = |limit: u32, incs: usize, failure: fn(_) -> RefinementFailure| {
+        let unit = Unit::halting(limit, "");
+        let world = unit.world(&halting_refinement(true));
+        let subject = aux(&world);
+        let system = world.concrete_system(AUX_UNLIMITED);
+        let inc = operation_identity_text(&unit.concrete_key("Counter/inc")).expect("a text");
+        let steps = walk(&system, &vec![inc; incs]);
+        let constraint = world.refinement().abstract_fairness()[0].clone();
+        replay(&subject, &handmade(steps, incs, true, failure(constraint)))
+    };
+    assert!(!agrees(replay_halt(2, 2, divergence)));
+    assert!(!agrees(replay_halt(2, 2, unfair)));
+    assert!(agrees(replay_halt(1, 1, divergence)));
+    assert!(!agrees(replay_halt(1, 1, unfair)));
+}
+
+/// FR-145 "Lasso" (TC-550): the loop must close in the concrete model. The
+/// loop `beginA` leaves the compare-and-set counter in a state with the same
+/// mapped value and history but another concrete state, which refuses
+/// `LoopOpen` whatever the product says.
+#[trace("TC-550", "FR-145-AC-4")]
+#[test]
+fn a_loop_open_in_the_concrete_model_is_refused() {
+    let world = World::new(&cas_refines_counter());
+    let subject = cas(&world);
+    let system = world.concrete_system(UNLIMITED);
+    let begin = operation_identity_text(&key(CAS, "Counter/beginA")).expect("a text");
+    let steps = walk(&system, &[begin]);
+    let constraint = world.refinement().abstract_fairness()[0].clone();
+    let payload = handmade(steps, 0, false, divergence(constraint));
+    let Err(ReplayRefusal::ModelTrace(refusal)) = replay(&subject, &payload) else {
+        panic!("the loop does not close");
+    };
+    assert_eq!(*refusal, ModelTraceRefusal::LoopOpen { entry: 0, steps: 1 });
+}
+
+/// FR-145 "Lasso" (TC-550): replay reads an `F_A` constraint as weak, so a
+/// lasso that records a strong one is never reproduced.
+#[trace("TC-550")]
+#[test]
+fn a_lasso_of_a_strong_constraint_is_not_reproduced() {
+    let unit = Unit::probe_pair(
+        probe_contracts(["", NEVER, NEVER, ""], ["", "", ""]),
+        &[(0, 0)],
+    );
+    let strong = "ensure fair strong whole Spec::Pair::flipB;";
+    assert!(!agrees(replay_probe(
+        &unit,
+        &[strong],
+        &["peek"],
+        0,
+        divergence
+    )));
+}
+
+/// FR-144 Settlement (TC-549): a liveness half that a limit stops settles
+/// `Incomplete` naming the limit, never `failed`, and one that cannot decide
+/// settles `inconclusive` with `UndecidedSuccessor`.
+#[trace("TC-549")]
+#[test]
+fn a_stopped_or_undecided_liveness_half_settles_by_its_cause() {
+    let world = World::new(&cas_refines_counter());
+    let subject = cas(&world);
+    let checked = outcome(&subject);
+    let with = |half| RefinementOutcome {
+        safety: checked.safety.clone(),
+        liveness: Some(LivenessHalf::Checked(half)),
+    };
+    let reached = ReachedLimit {
+        limit: ModelCheckLimit::MaxTransitions,
+        value: 7,
+    };
+    let settled = settle_item(
+        &subject,
+        &with(ModelCheckOutcome::Stopped {
+            cause: IncompleteCause::ResourceExhausted,
+            limit: Some(reached),
+            stats: RunStats::default(),
+        }),
+    );
+    assert_eq!(
+        settled.record.value,
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxTransitions,
+            value: 7
+        })
+    );
+    assert_eq!(settled.record.label, ResultLabel::Failed);
+    assert_eq!(settled.record.execution, Execution::ResourceIncomplete);
+    assert_eq!(settled.record.limit_reached, Some(reached));
+    assert_eq!(settled.liveness, Some(settled.record.value.clone()));
+
+    let settled = settle_item(
+        &subject,
+        &with(ModelCheckOutcome::Undecided {
+            cause: UndecidedCause::UndecidedSuccessor,
+            stats: RunStats::default(),
+        }),
+    );
+    assert_eq!(
+        settled.record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::UndecidedSuccessor)
+    );
+    assert_eq!(settled.safety, Some(proved(Certification::Certified)));
+}
+
+/// FR-144 Settlement (TC-549): the item's value is the safety half's unless
+/// that is proved, even when the refinement's liveness half is
+/// `Unsupported`; the half is still recorded beside it.
+#[trace("TC-549")]
+#[test]
+fn an_unsupported_liveness_half_does_not_replace_a_safety_half_that_is_not_proved() {
+    let world = World::new(&cas_refines_counter());
+    let subject = cas(&world);
+    let settled = settle_item(
+        &subject,
+        &RefinementOutcome {
+            safety: SafetyOutcome::Undecided {
+                cause: SafetyUndecided::NoInitialState,
+                stats: RunStats::default(),
+            },
+            liveness: Some(LivenessHalf::Unsupported(
+                UnavailabilityCause::HiddenFieldLiveness,
+            )),
+        },
+    );
+    assert_eq!(
+        settled.record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::NoInitialState)
+    );
+    assert_eq!(settled.safety, Some(settled.record.value.clone()));
+    assert_eq!(
+        settled.liveness,
+        Some(TerminalValue::Unsupported(
+            UnavailabilityCause::HiddenFieldLiveness
+        ))
+    );
+}
+
+/// FR-144 Settlement (TC-549): a refusal `check_refinement` returned for a
+/// second-phase fault settles the item `failed` with that fault and no half
+/// value. The fault is the one `abstract_classes` returns for a system that
+/// does not declare `F_A`'s operation; that `check_refinement` returns such a
+/// fault as a refusal is covered by the unit test in `refine.rs`.
+#[trace("TC-549")]
+#[test]
+fn a_second_phase_fault_settles_the_item_failed_with_no_half_value() {
+    let world = World::new(&cas_refines_counter());
+    let swapped = world.concrete_system(UNLIMITED);
+    let Err(fault) = abstract_classes(&swapped, world.refinement().abstract_fairness(), &[]) else {
+        panic!("the swapped system declares no operation of F_A");
+    };
+    assert_eq!(
+        fault,
+        InternalFault::new(
+            "refinement-liveness",
+            "an-abstract-fairness-names-a-declared-operation"
+        )
+    );
+
+    let settled = settle_refinement_refusal(&fault, &ModelCheckLimits::default());
+    assert_eq!(settled.record.value, TerminalValue::Failed);
+    assert_eq!(settled.record.label, ResultLabel::Failed);
+    assert_eq!(settled.record.execution, Execution::Failed);
+    assert_eq!(settled.safety, None);
+    assert_eq!(settled.liveness, None);
+    assert_eq!(settled.fault, Some(fault));
 }

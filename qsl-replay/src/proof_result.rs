@@ -316,6 +316,14 @@ pub enum UnavailabilityCause {
         /// partial-order, constraint, that is not offered.
         reduction: ReductionKind,
     },
+    /// ADR-020 AX-5: a refinement with a hidden abstract field and a
+    /// non-empty `F_A` has no liveness half to decide. Wire cause
+    /// `unsupported_projection`/`unsupported-requested-capability`.
+    HiddenFieldLiveness,
+    /// A refinement with a strong constraint in `F_A`, whose liveness half
+    /// the second phase does not decide: it reads a class as weak. Wire cause
+    /// `unsupported_projection`/`unsupported-requested-capability`.
+    StrongAbstractFairness,
     /// FR-192: a drawn step of an EN-4 run broke the Markov condition
     /// (ADR-024 PM-3). Wire cause `not-markov`.
     NotMarkov,
@@ -369,9 +377,10 @@ impl UnavailabilityCause {
             Self::SolverAbsent => "solver-absent",
             Self::BackendAbsent => "backend-absent",
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
-            Self::UnsupportedReduction { .. } | Self::StatisticalRequest(_) => {
-                "unsupported-requested-capability"
-            }
+            Self::UnsupportedReduction { .. }
+            | Self::HiddenFieldLiveness
+            | Self::StrongAbstractFairness
+            | Self::StatisticalRequest(_) => "unsupported-requested-capability",
             Self::NotMarkov => "not-markov",
             Self::TotalAboveDrawRange { .. } => "total-above-draw-range",
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
@@ -389,6 +398,8 @@ impl UnavailabilityCause {
             | Self::ConfidenceBeyondPrecision => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
+            | Self::HiddenFieldLiveness
+            | Self::StrongAbstractFairness
             | Self::StatisticalRequest(_) => Some("unsupported_projection"),
         }
     }
