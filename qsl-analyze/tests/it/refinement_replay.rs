@@ -1007,12 +1007,12 @@ fn an_unsupported_liveness_half_does_not_replace_a_safety_half_that_is_not_prove
     );
 }
 
-/// FR-143-AC-7 (TC-548 step 7): a fault of the second phase makes
-/// `check_refinement` refuse with the fault and return no outcome, and the
-/// item settles `failed` with that fault and no half value. The fault is
-/// injected at its source: the classes of `F_A` are read from a system that
-/// is not the abstract subject's, which does not declare `F_A`'s operation.
-#[trace("TC-548", "FR-143-AC-7")]
+/// FR-144 Settlement (TC-549): a refusal `check_refinement` returned for a
+/// second-phase fault settles the item `failed` with that fault and no half
+/// value. The fault is the one `abstract_classes` returns for a system that
+/// does not declare `F_A`'s operation; that `check_refinement` returns such a
+/// fault as a refusal is covered by the unit test in `refine.rs`.
+#[trace("TC-549")]
 #[test]
 fn a_second_phase_fault_settles_the_item_failed_with_no_half_value() {
     let world = World::new(&cas_refines_counter());

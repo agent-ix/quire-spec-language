@@ -73,3 +73,11 @@ Not mergeable while SR-13595 FND-001 stands, and the two medium coverage gaps sh
 | FND-003 | fixed | Spec ruling merged on main (#1117): ADR-020 AX-6 and FR-143's strong bullet settle strong `F_A` as `unsupported`, and the code matches. The branch still has to merge main: FND-006. |
 | FND-004 | fixed | M06, M07, M17, M18, M23 and M25 are each killed by a new PR-suite test. |
 | FND-005 | fixed | FR-143 on main (#1117) names `Checked(HoldsReduced{reductions: []})` and the typed `UnavailabilityCause`. |
+| FND-006 | fixed | The branch contains #1117 (d2e3c128b). `a_strong_abstract_fairness_constraint_is_unsupported` and `a_hidden_field_is_reported_before_a_strong_constraint` are tagged ("TC-548", "FR-143-AC-6"), and the engine decides the violated-safety strong variant. FR-143-AC-7 is tagged, but only partly covered: FND-008. |
+| FND-007 | fixed | `the_decomposition_of_each_class_charges_the_runs_cancellation_handle` kills M10' (a fresh `Cancel` passed to `analyze`). |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | FR-143-AC-7 is only partly tested, but its tag certifies all of it. `a_second_phase_fault_settles_the_item_failed_with_no_half_value` makes `abstract_classes` fault (it is called directly with the concrete system swapped in for the abstract one) and settles that fault with `settle_refinement_refusal`. It never runs `check_refinement`, although its doc comment says it does. So AC-7's first clause ("makes `check_refinement` return a refusal carrying the fault and no `RefinementOutcome`") has no test. Mutation M32 survives the PR suite and the oracle: it turns the second phase's `End::Fault` into `Ok(Undecided)`, so the run returns an outcome instead of a refusal. The code arm is correct as written. This needs an owner decision: authorise a test-only fault seam, or amend FR-143-AC-7 / TC-548 step 7 to the unit-level form the test has. | qsl-analyze/tests/it/refinement_replay.rs:1010-1038; qsl-analyze/src/model_check/refine.rs:632 |

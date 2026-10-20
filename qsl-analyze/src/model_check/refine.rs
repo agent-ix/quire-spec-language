@@ -56,7 +56,7 @@ use qsl_replay::{
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
-use quire_semantic_value::fairness::FairnessKind;
+use quire_semantic_value::fairness::{FairnessConstraint, FairnessKind};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
@@ -136,6 +136,22 @@ pub fn check_refinement(
     request: RefinementCheckRequest<'_>,
     cancel: &Cancel,
 ) -> Result<RefinementOutcome, ModelCheckRefusal> {
+    check_with(request, cancel, abstract_classes)
+}
+
+/// How the second phase reads the classes of `F_A`: [`abstract_classes`] in
+/// production, so a unit test can have the phase meet an internal fault.
+type ClassesOf = fn(
+    &ModelSystem<'_>,
+    &[FairnessConstraint],
+    &[ModelTransition],
+) -> Result<Vec<AbstractClass>, InternalFault>;
+
+fn check_with(
+    request: RefinementCheckRequest<'_>,
+    cancel: &Cancel,
+    classes_of: ClassesOf,
+) -> Result<RefinementOutcome, ModelCheckRefusal> {
     let refinement = request.refinement;
     let RefinementSystems {
         concrete,
@@ -171,6 +187,7 @@ pub fn check_refinement(
         transitions: 0,
         edges: 0,
         horizon_cut: false,
+        classes_of,
     };
     let safety = if concrete.initial_states().is_empty() {
         SafetyOutcome::Undecided {
@@ -266,6 +283,7 @@ struct Run<'r, 'a> {
     /// The concrete edges explored.
     edges: usize,
     horizon_cut: bool,
+    classes_of: ClassesOf,
 }
 
 impl Run<'_, '_> {
@@ -690,7 +708,7 @@ impl Run<'_, '_> {
                 .or_insert_with(|| transition.clone());
         }
         let identities: Vec<ModelTransition> = identities.into_values().collect();
-        let classes = abstract_classes(
+        let classes = (self.classes_of)(
             self.abstract_system,
             self.refinement.abstract_fairness(),
             &identities,
@@ -890,5 +908,60 @@ impl Run<'_, '_> {
             }),
             stats: self.stats(),
         })
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../tests/support/refinement_cas.rs"]
+mod cas_fixture;
+
+#[cfg(test)]
+mod tests {
+    use ix_trace_rs::trace;
+
+    use super::cas_fixture::{cas_refines_counter, World, UNLIMITED};
+    use super::*;
+
+    fn request(world: &World) -> RefinementCheckRequest<'_> {
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        }
+    }
+
+    fn failing(
+        _: &ModelSystem<'_>,
+        _: &[FairnessConstraint],
+        _: &[ModelTransition],
+    ) -> Result<Vec<AbstractClass>, InternalFault> {
+        Err(InternalFault::new("refinement-liveness", "injected"))
+    }
+
+    /// FR-143-AC-7 (TC-548 step 7): an internal fault of the second phase,
+    /// injected into a refinement whose safety half holds, makes the check
+    /// return a refusal carrying the fault and no outcome; with the real
+    /// classes the same request returns its outcome.
+    #[trace("TC-548", "FR-143-AC-7")]
+    #[test]
+    fn a_second_phase_fault_is_a_refusal_carrying_the_fault_and_no_outcome() {
+        let world = World::new(&cas_refines_counter());
+        let cancel = Cancel::new();
+        let outcome = check_with(request(&world), &cancel, abstract_classes)
+            .expect("the refinement is checked");
+        assert!(matches!(outcome.safety, SafetyOutcome::Holds { .. }));
+        assert!(outcome.liveness.is_some());
+
+        let Err(ModelCheckRefusal::Fault(fault)) = check_with(request(&world), &cancel, failing)
+        else {
+            panic!("the second phase's fault is a refusal");
+        };
+        assert_eq!(fault, InternalFault::new("refinement-liveness", "injected"));
     }
 }

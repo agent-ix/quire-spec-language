@@ -85,3 +85,5 @@ Judgement calls accepted:
 | FND-001 | fixed | A strong `F_A` constraint now gives `Unsupported(StrongAbstractFairness)` whatever the safety half is, and a hidden field is still reported first. Replay never reproduces a lasso that records a strong constraint. Oracle at 5884e0302: 266/266 strong cases are Unsupported, safety-failing ones included, with 0 mismatches. Weak `F_A`: 2100 cases, 0 mismatches. M29 and M31 are killed. |
 | FND-002 | fixed | The `RefinementOutcome.liveness` doc now names the hidden-field and strong cases, which hold whatever the safety half is. |
 | FND-003 | accepted-no-change | FR-143 on main (#1117) adopts the refusal: a second-phase fault returns a refusal and the safety half is not returned. The doc on `check_refinement` says so. The missing settlement path is the new FND-004. |
+| FND-004 | fixed | `settle_refinement_refusal(&InternalFault, &ModelCheckLimits)` settles the refusal `failed`, with `safety: None`, `liveness: None` and `fault: Some(..)`. `RefinementRecord.safety` is now an `Option`. This matches FR-144 on main: "settles the item `failed` with that fault and no half value". M33 (refusal settles refuted) is killed. |
+
