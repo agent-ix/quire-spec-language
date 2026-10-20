@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-142
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-056
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-322
     type: depends_on
 ---
@@ -200,8 +202,8 @@ A parameter whose declared type is an integer range, such as
 `Millis = Int[1, 12]`, takes integer supports.
 
 Dependencies: the unit `typeRef` and the quantity literal form are QSpec's
-(FR-142, FR-322); reading them needs S1's `Quantity<qualified-name>`
-production and FR-091's unit-namespace type lookup.
+(FR-142, FR-322); reading the unit `typeRef` is an intake rule (FR-056-AC-42), and
+resolving it is the assembler's (FR-091).
 
 ### Package emission
 
@@ -235,4 +237,4 @@ it from the checked package, not from the emitted wire.
 
 - QSpec half of the work, which owns the grammar and semantics of random
   parameters, workloads and rewards: QSpec FR-405 (Linear STD-137).
-- Owning ticket: Linear QSL-371.
+- Owning ticket: Linear QSL-371, which also owns the code for FR-185-AC-8.

@@ -45,3 +45,22 @@ Ticket: STD-113. PR: quire-spec-language#1086, head 626b08692, scoped to `git di
 ## Verdict
 
 Mergeable from the integrity side once the two low findings are fixed; TC-620's traceability to FR-185-AC-8 is complete. The PR as a whole waits on SR-13421.
+
+## New findings (disposition pass 1)
+
+Round 1, head 02ef49faf (fix commit 02ef49faf over 626b08692; it also commits this review's round-0 SR files under reviews/ unchanged, so this file supersedes them). Read against QSpec #296 head 4112320 (unit `typeRef` `ix://quire/unit/<name>`, three namespaces, the support carve-out, FR-142-AC-11 to AC-14, FR-322-AC-79/80). Gates: make check-spec-validation exits 0 with 17 warnings, none in the changed files; tools/check-index-completeness.sh passes. Engine probes on main d879da52 (scratch clone, TC-620 fixture with `unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;`; log sr-1086-r1-probe.log): over the `Millis` parameter `1 s` and `true` each refuse invalid_probabilistic_model/value-outside-type at the value, and `1 ms`, `3 ms`, `12 ms` still refuse value-outside-type, so steps 1 to 7 hold; with the parameter's `typeRef` set to `ix://quire/unit/ms` (and to `ix://quire/unit/Time/ms`) intake I1 refuses the package, invalid_model_binding/IntakeMalformedDeclaration at `Operation.params[0].typeRef`, from the agent-ix-semantic-ir reader (UNRESOLVED_TYPE_REF, 'the field type reference resolves to no declared type'), before S1 or the assembler run; `function f using v(d: Quantity<ms>)` is refused by S1 (invalid_syntax, 'expected `)`'); `d: ms` and `d: Time` refuse UnresolvedTypeName at assembly (FR-091-AC-33 already).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | FR-091-AC-44 and FR-185-AC-8 describe behaviour the engine refuses today (S1 for `Quantity<u>`, intake for the unit `typeRef`), and neither FR names a code ticket that owns building it. FR-185's References still name QSL-371 as its owning ticket, and QSL-920 (which listed `Quantity<Time>` parameters) is Done. The TC steps will stay untagged with no owner in Linear. Fix: name the owning code ticket in each FR's References (an existing ticket, since new Linear issues cannot be created now), or ask the lead for one. | spec/functional/FR-091-produce-value-forms-and-assemble-package-declarations.md:962 |
+
+## Dispositions
+
+Round 1, head 02ef49faf (fix commit 02ef49faf over 626b08692; it also commits this review's round-0 SR files under reviews/ unchanged, so this file supersedes them). Read against QSpec #296 head 4112320 (unit `typeRef` `ix://quire/unit/<name>`, three namespaces, the support carve-out, FR-142-AC-11 to AC-14, FR-322-AC-79/80). Gates: make check-spec-validation exits 0 with 17 warnings, none in the changed files; tools/check-index-completeness.sh passes. Engine probes on main d879da52 (scratch clone, TC-620 fixture with `unit s : Time = rational(1, 1); unit ms : Time = rational(1, 1000) * s;`; log sr-1086-r1-probe.log): over the `Millis` parameter `1 s` and `true` each refuse invalid_probabilistic_model/value-outside-type at the value, and `1 ms`, `3 ms`, `12 ms` still refuse value-outside-type, so steps 1 to 7 hold; with the parameter's `typeRef` set to `ix://quire/unit/ms` (and to `ix://quire/unit/Time/ms`) intake I1 refuses the package, invalid_model_binding/IntakeMalformedDeclaration at `Operation.params[0].typeRef`, from the agent-ix-semantic-ir reader (UNRESOLVED_TYPE_REF, 'the field type reference resolves to no declared type'), before S1 or the assembler run; `function f using v(d: Quantity<ms>)` is refused by S1 (invalid_syntax, 'expected `)`'); `d: ms` and `d: Time` refuse UnresolvedTypeName at assembly (FR-091-AC-33 already).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+
+Round 1 verdict: not mergeable yet. Every round-0 finding is fixed (SR-13421 FND-001 to FND-006, SR-13423 FND-001 and FND-002): QSpec #296 now defines the domain-package unit `typeRef`, FR-185 cites it, AC-8 and TC-620 declare `Time`, `s` and `ms`, FR-091-AC-44 binds source `Quantity<u>`, the support carve-out matches QSpec, and the dependency notes and relationships are right. One new medium finding remains: SR-13421 FND-007 (FR-185 names S1 and FR-091 as the path for the domain-package unit `typeRef`, which intake refuses today, and FR-056 has no rule for it). Two new low findings: SR-13421 FND-008 (TC-483 step 5 assembles a check-stage refusal) and SR-13423 FND-003 (no owning code ticket). Merge order: after QSpec #296.
