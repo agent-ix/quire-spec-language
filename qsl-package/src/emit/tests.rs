@@ -32,6 +32,7 @@ use sha2::{Digest as _, Sha256};
 use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
+mod abstraction;
 mod admission_corpus;
 mod child_composite;
 mod deep_bodies;
@@ -1372,6 +1373,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
                 panic!("the fixture set holds no protocol reference")
+            }
+            Err(EmitRefusal::Abstraction(_)) => {
+                panic!("the fixture set binds no abstraction relation")
             }
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
@@ -2747,8 +2751,8 @@ fn linked(imports: Vec<crate::Import>) -> CheckedPackage {
 }
 
 /// QSL's I2 read of `package`, a package with a dependency closure, admits
-/// it: `read_import_view` supplies IR's reader the admitted package of every
-/// closure entry (QSpec FR-322-AC-36).
+/// it: `read_import_view` supplies IR's reader each directly selected package
+/// after recursively admitting its own dependencies (QSpec FR-322-AC-36).
 fn read_linked(package: &CheckedPackage) {
     let emission = emit(package);
     let mut evidence = read_evidence(&emission);
@@ -2782,16 +2786,12 @@ fn path(identities: &[&str]) -> Vec<LibraryName> {
     identities.iter().map(|identity| lib(identity)).collect()
 }
 
-/// FR-322 `dependency_selections`, FR-307, ADR-011 §2.4: the E4
-/// closure is written as one `{identity, package_id}` entry per
-/// library identity, in ascending UTF-8 byte order, identically in the lock
-/// and the identity preimage. The package reads back Verified through IR's
-/// reader, and the entries enter its `package_id`. A dependency's own
-/// selections join the closure, through a chain of any depth, each with the
-/// path that reached it.
+/// Direct imports enter the lock and identity preimage; the recursive
+/// closure remains available for linking and replay.
+#[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
 #[trace("FR-093-AC-16", "TC-416")]
 #[test]
-fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
+fn the_lock_records_direct_imports_and_derives_the_closure() {
     let d = emitted_id(&dependency());
     let unlinked = emit(&CheckedPackage::link(root_graph()));
     let linked_root = CheckedPackage::link_with(
@@ -2822,8 +2822,23 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
 
     // A chain four packages deep: root -> b -> c -> units.
     let c = linked(vec![import("test/units", dependency())]);
+    assert_eq!(
+        wire(&emit(&c))["lock"]["dependency_selections"][0]["identity"],
+        "test/units"
+    );
     let c_id = emitted_id(&c);
     let b = linked(vec![import("test/c", c)]);
+    assert_eq!(
+        wire(&emit(&b))["lock"]["dependency_selections"][0]["identity"],
+        "test/c"
+    );
+    assert_eq!(
+        wire(&emit(&b))["lock"]["dependency_selections"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     let b_id = emitted_id(&b);
     let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
         .expect("the root links through b and c");
@@ -2840,14 +2855,41 @@ fn the_dependency_closure_is_written_in_the_lock_and_the_preimage() {
         ]
     );
     let emission = emit(&root);
-    read_linked(&root);
+    // Check the producer's canonical direct-only form separately from the
+    // reader, which cannot distinguish direct from over-listed entries.
+    let written = wire(&emission);
     assert_eq!(
-        wire(&emission)["lock"]["dependency_selections"]
+        written["lock"]["dependency_selections"]
             .as_array()
             .unwrap()
             .len(),
-        3
+        1
     );
+    assert_eq!(
+        written["lock"]["dependency_selections"][0]["identity"],
+        "test/b"
+    );
+    assert!(written["lock"]["dependency_selections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(
+            |selection| selection["identity"] != "test/c" && selection["identity"] != "test/units"
+        ));
+    assert_eq!(
+        written["identity_preimage"]["dependency_selections"],
+        written["lock"]["dependency_selections"]
+    );
+}
+
+#[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
+#[test]
+fn direct_only_chain_reads_with_recursively_admitted_dependencies() {
+    let c = linked(vec![import("test/units", dependency())]);
+    let b = linked(vec![import("test/c", c)]);
+    let root = CheckedPackage::link_with(root_graph(), vec![import("test/b", b)])
+        .expect("A links through B and C");
+    read_linked(&root);
 }
 
 /// FR-307's diamond rule, admitted side: `test/units` reached by two paths
@@ -2867,6 +2909,29 @@ fn a_diamond_selecting_one_package_unifies() {
     assert_eq!(units.package_id, d);
     assert_eq!(units.path(&lib("test/units")), path(&["test/units"]));
     read_linked(&root);
+}
+
+#[trace("QSpec-FR-307-AC-7", "QSpec-TC-227")]
+#[test]
+fn a_direct_import_reached_transitively_first_stays_in_the_lock() {
+    let mid = linked(vec![import("test/units", dependency())]);
+    let root = CheckedPackage::link_with(
+        root_graph(),
+        vec![import("test/mid", mid), import("test/units", dependency())],
+    )
+    .expect("equal direct and transitive paths unify");
+    assert_eq!(
+        root.dependency_selections()[&lib("test/units")].path(&lib("test/units")),
+        path(&["test/mid", "test/units"])
+    );
+    let written = wire(&emit(&root));
+    let identities = written["lock"]["dependency_selections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["identity"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(identities, ["test/mid", "test/units"]);
 }
 
 /// FR-322 orders `dependency_selections` by UTF-8 bytes. `test/\u{FF61}`
@@ -2901,6 +2966,7 @@ fn dependency_selections_are_written_in_utf8_byte_order() {
 /// paths. A dependency that does not emit refuses too. None yields a
 /// package.
 #[trace("FR-087-AC-14", "TC-253")]
+#[trace("QSpec-FR-307-AC-2", "QSpec-TC-227")]
 #[test]
 fn e4_refuses_a_conflicting_diamond() {
     let d = emitted_id(&dependency());
@@ -2912,6 +2978,14 @@ fn e4_refuses_a_conflicting_diamond() {
     assert_ne!(another_id, d);
     let mid = linked(vec![import("test/units", dependency())]);
     let mid2 = linked(vec![import("test/units", another)]);
+    assert_eq!(
+        wire(&emit(&mid))["lock"]["dependency_selections"][0]["identity"],
+        "test/units"
+    );
+    assert_eq!(
+        wire(&emit(&mid2))["lock"]["dependency_selections"][0]["identity"],
+        "test/units"
+    );
     let split = CheckedPackage::link_with(
         root_graph(),
         vec![import("test/mid", mid), import("test/mid2", mid2)],

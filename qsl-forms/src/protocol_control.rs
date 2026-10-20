@@ -11,7 +11,7 @@
 //! (FR-218).
 
 use qsl_cst::{CstNode, CstToken, LosslessCst, Production, TokenKind};
-use qsl_foundation::{Span, Spanned};
+use qsl_foundation::{MemoryModelName, Span, Spanned};
 
 use super::dispatch::FormsRefusal;
 use super::syntax::{
@@ -128,33 +128,6 @@ pub enum Outstanding {
     Continue,
     /// `outstanding cancel`.
     Cancel,
-}
-
-/// A `parallel`'s memory model name (FR-219): `sc`, `tso` or `ra`.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum MemoryModelName {
-    /// `memory sc`, the interleaving meaning and the default.
-    Sc,
-    /// `memory tso`.
-    Tso,
-    /// `memory ra`.
-    Ra,
-}
-
-impl MemoryModelName {
-    /// The model's spelling in source.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Sc => "sc",
-            Self::Tso => "tso",
-            Self::Ra => "ra",
-        }
-    }
-
-    /// Whether the model is `tso` or `ra`.
-    pub fn is_weak(self) -> bool {
-        self != Self::Sc
-    }
 }
 
 /// An attempt's `ordering o` or a `fence`'s ordering (FR-220).

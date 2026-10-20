@@ -74,6 +74,7 @@ pub(crate) fn read_object(node: CheckedNode<'_>) -> Option<EffectiveId> {
         | NodeKind::Connective(..)
         | NodeKind::Not(_)
         | NodeKind::Field { .. }
+        | NodeKind::History { .. }
         | NodeKind::Present(_)
         | NodeKind::Value(_)
         | NodeKind::Call { .. }

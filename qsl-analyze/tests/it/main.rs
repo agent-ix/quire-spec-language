@@ -5,6 +5,7 @@ mod closure_certificate;
 mod counter;
 mod deadlock_item;
 mod example_units;
+mod fill;
 mod flag_world;
 mod graph_core;
 mod graph_world;
@@ -15,10 +16,19 @@ mod model_check_safety;
 mod model_instances;
 mod model_settle;
 mod model_world;
+mod partial_order;
+mod por_world;
+mod protocol_constructs;
+mod protocol_system;
 mod quotient;
 mod reduction;
+mod reduction_differential;
 mod reduction_world;
+#[path = "../../../tests/support/refinement_aux.rs"]
+mod refinement_aux;
+mod refinement_auxiliary;
 mod refinement_budget;
+mod refinement_certificate;
 #[path = "../../../tests/support/refinement_cas.rs"]
 mod refinement_fixture;
 mod refinement_reads;

@@ -1290,7 +1290,13 @@ impl<'c> Mapping<'c> {
             | Production::Equation
             | Production::SynthesisDeclaration
             | Production::VerificationPlan
-            | Production::VerificationStep => Err(unexpected(node)),
+            | Production::VerificationStep
+            | Production::AbstractionDeclaration
+            | Production::ObjectBinding
+            | Production::FieldBinding
+            | Production::PopulationBinding
+            | Production::FrameBinding
+            | Production::ParameterBinding => Err(unexpected(node)),
         }
     }
 
@@ -1956,7 +1962,13 @@ impl<'c> Mapping<'c> {
             | Production::Equation
             | Production::SynthesisDeclaration
             | Production::VerificationPlan
-            | Production::VerificationStep => Err(unexpected(child)),
+            | Production::VerificationStep
+            | Production::AbstractionDeclaration
+            | Production::ObjectBinding
+            | Production::FieldBinding
+            | Production::PopulationBinding
+            | Production::FrameBinding
+            | Production::ParameterBinding => Err(unexpected(child)),
         }
     }
 

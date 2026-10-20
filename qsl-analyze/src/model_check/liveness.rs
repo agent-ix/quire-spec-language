@@ -61,6 +61,12 @@
 //! a lasso, its loop, repeated until the concrete state returns to the
 //! concrete entry. A state constraint on a liveness clause is refused
 //! ([`ModelCheckRefusal::ReducedLiveness`]).
+//!
+//! Under partial-order reduction (ADR-021 POR-6 to POR-11) each product
+//! state is expanded through the ample set `ample` chooses at its model
+//! component: the fairness filter still reads each state's full enabled set
+//! from its `Enabled` finding, and a run that completes to its horizon
+//! settles `ReductionHorizon`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -69,22 +75,23 @@ use qsl_eval::automaton::{
     translate, Atom, AutomatonError, AutomatonKind, Letter, PropertyAutomaton, StateId,
 };
 use qsl_eval::fairness::{
-    analyze, Analysis, Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Strength,
-    Vertex,
+    analyze, Analysis, Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Obligation,
+    Strength, Vertex,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
-    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, OfferedReductions,
-    Outcome, Permutation, SymmetryGroup, TransitionSystem,
+    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Footprint, Limit, Limits,
+    OfferedReductions, Outcome, Permutation, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
 use qsl_replay::{
     AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind, IncompleteCause,
-    ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, ReachedLimit, RunStats,
-    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, ModelStep, Proviso,
+    ReachedLimit, ReductionCause, RunStats, TemporalCounterexample, UndecidedCause,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
@@ -92,11 +99,12 @@ use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits}
 use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use super::ample::{Atoms, Por};
 use super::check::{
     not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
 };
 use super::concretise::{Lift, LiftStop};
-use super::graph::{retain_reduced, ProductStateId, RetainedEdge, RetainedGraph};
+use super::graph::{retain_reduced, Ample, Choice, ProductStateId, RetainedEdge, RetainedGraph};
 use super::product::{ProductKey, ProductTransition};
 use super::quotient::{
     Analysis as QuotientAnalysis, Analyzer, LoopEdge, Quotient, QuotientConstraint, QuotientEdge,
@@ -173,7 +181,7 @@ pub(super) fn check(
             Admitted::Settled(outcome) => return Ok(outcome),
         }
     };
-    if request.reductions.constraint.is_some() || request.reductions.partial_order {
+    if request.reductions.constraint.is_some() {
         return Err(ModelCheckRefusal::ReducedLiveness);
     }
     // The instances are the keys of the universes of the populations that
@@ -242,12 +250,15 @@ pub(super) fn check(
         bindings: &bindings,
         request: RunRequest {
             max_depth: request.max_depth,
+            partial_order: request.reductions.partial_order,
             limits: request.limits,
             meter,
             max_candidates,
         },
         cancel,
         meter: RefCell::new(Meter::new(meter)),
+        transitions_left: Cell::new(request.limits.limits.max_transitions),
+        lifted: Cell::new(0),
     };
     run.decide(totals)
 }
@@ -345,6 +356,8 @@ impl Totals {
 /// What a run needs of the request beyond the subject and the item.
 struct RunRequest {
     max_depth: Option<usize>,
+    /// Whether partial-order reduction is selected (FR-156).
+    partial_order: bool,
     limits: qsl_replay::ModelCheckLimits,
     meter: ScalarLimits,
     max_candidates: u64,
@@ -464,6 +477,9 @@ struct LassoSystem<'r, 'a> {
     meter: ScalarLimits,
     cancel: &'r Cancel,
     max_depth: Option<usize>,
+    /// Whether each expansion holds its steps to their footprints
+    /// (FR-155 "Read enforcement"), as a partial-order run does.
+    enforce: bool,
     /// The depth of the first-phase finding the exploration has met: a
     /// state that would sit there or deeper ranks after it, so none is
     /// created (FR-126 ends the first phase at its finding).
@@ -506,7 +522,12 @@ impl LassoSystem<'_, '_> {
         &self,
         state: &ModelSimState,
     ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
-        self.system.successors(state).inspect_err(|&stop| {
+        let expansion = if self.enforce {
+            self.system.successors_enforced(state)
+        } else {
+            self.system.successors(state)
+        };
+        expansion.inspect_err(|&stop| {
             self.record(Halt::Expansion(stop));
         })
     }
@@ -721,6 +742,18 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
         self.system.offered_reductions()
     }
 
+    /// ADR-021 EI-4: a model transition has its model component's footprint,
+    /// and the terminal stutter edge has none, so no ample-set candidate
+    /// holds it (FR-162).
+    fn footprint(&self, transition: &PT) -> Option<Result<Footprint, ExpansionStop>> {
+        match transition {
+            ProductTransition::Model(transition) => {
+                TransitionSystem::footprint(self.system, transition)
+            }
+            ProductTransition::TerminalStutter => Some(Ok(Footprint::default())),
+        }
+    }
+
     /// ADR-021 EI-4: the model component is canonicalised and the property
     /// component kept, so the automaton is never reduced.
     fn canonical(
@@ -748,6 +781,52 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
     }
 }
 
+/// FR-156: the ample sets of one binding's product, chosen at the model
+/// component of each product state.
+struct LassoAmple<'p, 'r, 'a> {
+    product: &'p LassoSystem<'r, 'a>,
+    por: &'p Por<'r, 'a>,
+}
+
+impl<'r, 'a> Ample<LassoSystem<'r, 'a>> for LassoAmple<'_, 'r, 'a> {
+    fn choose(
+        &self,
+        state: &LState,
+        findings: &[Finding],
+        successors: &[(&PT, bool)],
+    ) -> Result<Choice<PT>, ExpansionStop> {
+        let enabled: &[ModelTransition] = findings
+            .iter()
+            .find_map(|finding| match finding {
+                Finding::Enabled(enabled) => Some(enabled.as_slice()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        if enabled.len() <= 1 || successors.is_empty() {
+            return Ok(Choice::All);
+        }
+        // C3 on product states: every product successor through the
+        // transition is undiscovered.
+        let fresh = |transition: &ModelTransition| {
+            successors
+                .iter()
+                .filter(|(reached, _)| {
+                    matches!(reached, ProductTransition::Model(model) if model == transition)
+                })
+                .all(|(_, fresh)| *fresh)
+        };
+        let chosen = self
+            .por
+            .ample(&state.model, enabled, &fresh)
+            .map_err(|stop| self.product.record(Halt::Expansion(stop)))?;
+        Ok(if chosen.len() == enabled.len() {
+            Choice::All
+        } else {
+            Choice::Only(chosen.into_iter().map(ProductTransition::Model).collect())
+        })
+    }
+}
+
 /// What one product's exploration ended with, beyond its graph.
 enum Ending {
     /// The frontier emptied.
@@ -761,9 +840,6 @@ struct Explored<'r, 'a> {
     product: LassoSystem<'r, 'a>,
     graph: RetainedGraph<LState, PT, Finding>,
     binding: &'r Binding,
-    /// What is left of the run's `max_transitions` for concrete
-    /// counterexample steps (FR-161 "Length and limits").
-    budget: usize,
     ending: Ending,
     /// Whether a model state reached where the automaton has no move was
     /// left unexpanded at the search horizon.
@@ -908,6 +984,13 @@ struct Run<'r, 'a> {
     /// The run's meter, which the annotated quotient's work of every
     /// product charges (FR-153 "Limits").
     meter: RefCell<Meter>,
+    /// What was left of the run's `max_transitions` when the products'
+    /// exploration and the lifted steps were last charged to the totals.
+    /// Every binding's concretisation draws on this one budget (FR-161
+    /// "Length and limits").
+    transitions_left: Cell<usize>,
+    /// The concrete steps lifted since that charge.
+    lifted: Cell<usize>,
 }
 
 impl<'r, 'a> Run<'r, 'a> {
@@ -1032,25 +1115,38 @@ impl<'r, 'a> Run<'r, 'a> {
                 stats: totals.stats(),
             });
         }
-        let applied: Option<Vec<AppliedReduction>> = self
+        // ADR-021 RV-1: the reductions in the order symmetry, partial-order.
+        let mut reductions: Vec<AppliedReduction> = self
             .bindings
             .iter()
-            .map(|binding| binding.applied.clone())
+            .filter_map(|binding| binding.applied.clone())
             .collect();
-        match (cut, self.request.max_depth, applied) {
-            (true, Some(depth), _) => Ok(ModelCheckOutcome::BoundReached {
+        if self.request.partial_order {
+            reductions.push(AppliedReduction::PartialOrder {
+                proviso: Proviso::BreadthFirstRevisit,
+            });
+        }
+        match (cut, self.request.max_depth) {
+            // ADR-021 RV-5: a reduced graph does not keep short
+            // counterexamples short, so a partial-order run that completes
+            // to the horizon proves no bound.
+            (true, Some(depth)) if self.request.partial_order => Ok(ModelCheckOutcome::Reduction {
+                cause: ReductionCause::Horizon {
+                    max_depth: widen(depth),
+                },
+                stats: totals.stats(),
+            }),
+            (true, Some(depth)) => Ok(ModelCheckOutcome::BoundReached {
                 depth: widen(depth),
                 stats: totals.stats(),
             }),
             // ADR-021 RV-1: a reduced run that completes with no fair
             // accepting component is a reduced proof, which no certificate
             // covers.
-            (_, _, Some(reductions)) if !reductions.is_empty() => {
-                Ok(ModelCheckOutcome::HoldsReduced {
-                    reductions,
-                    stats: totals.stats(),
-                })
-            }
+            _ if !reductions.is_empty() => Ok(ModelCheckOutcome::HoldsReduced {
+                reductions,
+                stats: totals.stats(),
+            }),
             _ => Err(LivenessRefusal::ComponentCertificateNotBuilt {
                 stats: totals.stats(),
             }
@@ -1099,6 +1195,7 @@ impl<'r, 'a> Run<'r, 'a> {
             meter: self.request.meter,
             cancel: self.cancel,
             max_depth: [self.request.max_depth, cap].into_iter().flatten().min(),
+            enforce: self.request.partial_order,
             found: Cell::new(None),
             halt: RefCell::new(None),
         };
@@ -1112,9 +1209,31 @@ impl<'r, 'a> Run<'r, 'a> {
             max_states,
             max_transitions,
         };
+        let por = if self.request.partial_order {
+            let atoms = Atoms {
+                letters: self.letters,
+                nodes: &product.atoms,
+            };
+            Some(Por::new(
+                self.system,
+                Some(atoms),
+                std::slice::from_ref(&binding.instance),
+                self.clause.fairness(),
+                None,
+            )?)
+        } else {
+            None
+        };
+        let ample = por.as_ref().map(|por| LassoAmple {
+            product: &product,
+            por,
+        });
         let exploration = retain_reduced(
             &product,
             &binding.group,
+            ample
+                .as_ref()
+                .map(|ample| ample as &dyn Ample<LassoSystem<'_, '_>>),
             remaining,
             IdentityLimits::default(),
             None,
@@ -1132,7 +1251,7 @@ impl<'r, 'a> Run<'r, 'a> {
         };
         let automaton_states = widen(product.automaton.borrow().reached_states());
         totals.add(&exploration.graph, transitions, automaton_states);
-        let budget = totals.remaining(spent).1;
+        self.charge_lifted(totals);
         let ending = match &exploration.outcome {
             Outcome::Exhaustive(_) => Ending::Complete,
             Outcome::Bounded { limit, .. } => {
@@ -1164,7 +1283,6 @@ impl<'r, 'a> Run<'r, 'a> {
             product,
             graph: exploration.graph,
             binding,
-            budget,
             ending,
             dead_cut: false,
         }))
@@ -1291,6 +1409,7 @@ impl<'r, 'a> Run<'r, 'a> {
         bound: Option<usize>,
         spent: &mut Totals,
     ) -> Result<DeadPhase, ModelCheckRefusal> {
+        self.charge_lifted(spent);
         let (mut states_left, mut edges_left) = spent.remaining(self.request.limits.limits);
         let (states_before, edges_before) = (states_left, edges_left);
         let phase = self.dead_walk(run, bound, &mut states_left, &mut edges_left);
@@ -1300,7 +1419,35 @@ impl<'r, 'a> Run<'r, 'a> {
         spent.charged_edges = spent
             .charged_edges
             .saturating_add(widen(edges_before - edges_left));
+        self.charge_lifted(spent);
         phase
+    }
+
+    /// Charge the concrete steps lifted since the last charge to `totals`,
+    /// as transitions the run spent, and note what is left of
+    /// `max_transitions` (FR-161 "Length and limits").
+    fn charge_lifted(&self, totals: &mut Totals) {
+        totals.charged_edges = totals
+            .charged_edges
+            .saturating_add(widen(self.lifted.take()));
+        self.transitions_left
+            .set(totals.remaining(self.request.limits.limits).1);
+    }
+
+    /// `lift`'s concrete steps, noting the ones it charged to the run's
+    /// budget.
+    fn steps_of(&self, lift: Lift<'_, '_>) -> Vec<ModelStep> {
+        self.lifted
+            .set(self.lifted.get().saturating_add(lift.charged()));
+        lift.into_steps()
+    }
+
+    /// What is left of `max_transitions` for the next concretisation: the
+    /// run's budget less the steps lifted since it was charged.
+    fn concrete_budget(&self) -> usize {
+        self.transitions_left
+            .get()
+            .saturating_sub(self.lifted.get())
     }
 
     /// [`Self::dead_phase`]'s walk, decrementing the budget it is given.
@@ -1408,6 +1555,12 @@ impl<'r, 'a> Run<'r, 'a> {
                     locus,
                     transition,
                 };
+                // The walk's own transitions are charged once it returns;
+                // until then they bound the concretisation here. `dead_phase`
+                // charged every earlier lift, so none is pending to be
+                // subtracted from this budget twice.
+                debug_assert_eq!(self.lifted.get(), 0, "no lift pending at a dead walk");
+                self.transitions_left.set(*edges_left);
                 let counterexample = self.dead_counterexample(
                     run,
                     &roots,
@@ -1534,7 +1687,7 @@ impl<'r, 'a> Run<'r, 'a> {
                     self.system,
                     &SymmetryGroup::default(),
                     &root.model,
-                    run.budget,
+                    self.concrete_budget(),
                 )?,
             };
             for index in chain.iter().skip(1) {
@@ -1550,11 +1703,12 @@ impl<'r, 'a> Run<'r, 'a> {
         })();
         self.built(lifted.map(|(initial_state, lift)| TemporalCounterexample {
             initial_state,
-            prefix: lift.into_steps(),
+            prefix: self.steps_of(lift),
             over_binding: Some(run.binding.instance.clone()),
             fairness: self.clause.fairness().to_vec(),
             kind,
             lasso: None,
+            blocked: Vec::new(),
             refinement: None,
         }))
     }
@@ -1594,11 +1748,12 @@ impl<'r, 'a> Run<'r, 'a> {
         })();
         self.built(lifted.map(|(initial_state, lift)| TemporalCounterexample {
             initial_state,
-            prefix: lift.into_steps(),
+            prefix: self.steps_of(lift),
             over_binding: Some(run.binding.instance.clone()),
             fairness: self.clause.fairness().to_vec(),
             kind,
             lasso: None,
+            blocked: Vec::new(),
             refinement: None,
         }))
     }
@@ -1617,7 +1772,7 @@ impl<'r, 'a> Run<'r, 'a> {
             self.system,
             &run.binding.group,
             &state.state.model,
-            run.budget,
+            self.concrete_budget(),
         )
     }
 
@@ -1692,7 +1847,7 @@ impl<'r, 'a> Run<'r, 'a> {
         let Some(entry) = passing.vertices().first().copied() else {
             return Err(fault("a-component-has-a-vertex"));
         };
-        let walk = model.greedy_loop(&component, entry)?;
+        let walk = model.greedy_loop(&component, passing.removed(), entry)?;
         let loop_edges = model.loop_edges(&walk)?;
         let entry = ProductStateId(entry.index());
         self.lasso(run, entry, |_| Ok(loop_edges))
@@ -1755,7 +1910,8 @@ impl<'r, 'a> Run<'r, 'a> {
                     .iter()
                     .map(vertex)
                     .collect::<Result<BTreeSet<Vertex>, _>>()?;
-                let walk = model.greedy_loop(&component, vertex(&entry)?)?;
+                // The quotient's own filter removes no edge.
+                let walk = model.greedy_loop(&component, &BTreeSet::new(), vertex(&entry)?)?;
                 return Ok(model.loop_edges(&walk)?);
             }
             analyzer.fair_loop(fair, sigma).map_err(LoopStop::Quotient)
@@ -1942,7 +2098,7 @@ impl<'r, 'a> Run<'r, 'a> {
             }
             Ok(TemporalCounterexample {
                 initial_state,
-                prefix: lift.into_steps(),
+                prefix: self.steps_of(lift),
                 over_binding: Some(run.binding.instance.clone()),
                 fairness: self.clause.fairness().to_vec(),
                 kind: CounterexampleKind::Formula,
@@ -1950,6 +2106,7 @@ impl<'r, 'a> Run<'r, 'a> {
                     entry: entry_index,
                     terminal_stutter,
                 }),
+                blocked: Vec::new(),
                 refinement: None,
             })
         })();
@@ -2123,19 +2280,24 @@ impl FairModel {
     }
 
     /// ADR-018 CX-5's greedy walk inside `component` from its entry `entry`:
-    /// the loop's edges, each with the vertex it leaves.
+    /// the loop's edges, each with the vertex it leaves. The walk takes no
+    /// edge whose identity is in `removed`, the edges the filter's
+    /// visibility refinements left out of the passing component (ADR-025
+    /// MF-2).
     fn greedy_loop(
         &self,
         component: &BTreeSet<Vertex>,
+        removed: &BTreeSet<Identity>,
         entry: Vertex,
     ) -> Result<Vec<(Vertex, Edge)>, ModelCheckRefusal> {
-        let mut open = Open::of(self, component);
+        let inside = Inside { component, removed };
+        let mut open = Open::of(self, &inside);
         open.discharge_vertex(self, entry);
         let mut walk = Vec::new();
         let mut current = entry;
         while !open.is_empty() {
             let path = self
-                .nearest(component, current, &open)
+                .nearest(&inside, current, &open)
                 .ok_or_else(|| fault("a-passing-component-discharges-every-obligation"))?;
             for (from, edge) in &path {
                 open.discharge_edge(self, edge.label);
@@ -2146,7 +2308,7 @@ impl FairModel {
         }
         if current != entry || walk.is_empty() {
             let back = self
-                .shortest_return(component, current, entry)
+                .shortest_return(&inside, current, entry)
                 .ok_or_else(|| fault("a-component-vertex-lies-on-a-cycle-through-the-entry"))?;
             walk.extend(back);
         }
@@ -2159,7 +2321,7 @@ impl FairModel {
     /// edges in canonical successor order).
     fn nearest(
         &self,
-        component: &BTreeSet<Vertex>,
+        inside: &Inside<'_>,
         from: Vertex,
         open: &Open,
     ) -> Option<Vec<(Vertex, Edge)>> {
@@ -2188,7 +2350,7 @@ impl FairModel {
                 consider(reached, (vertex, None));
             }
             for (position, edge) in self.graph.edges_from(vertex).iter().enumerate() {
-                if !component.contains(&edge.target) {
+                if !inside.keeps(edge) {
                     continue;
                 }
                 if open.discharged_by_edge(self, edge.label) {
@@ -2256,7 +2418,7 @@ impl FairModel {
     /// shortest cycle through `entry` when `from` is `entry`.
     fn shortest_return(
         &self,
-        component: &BTreeSet<Vertex>,
+        inside: &Inside<'_>,
         from: Vertex,
         entry: Vertex,
     ) -> Option<Vec<(Vertex, Edge)>> {
@@ -2265,7 +2427,7 @@ impl FairModel {
         let mut queue = VecDeque::from([from]);
         while let Some(vertex) = queue.pop_front() {
             for (position, edge) in self.graph.edges_from(vertex).iter().enumerate() {
-                if !component.contains(&edge.target) {
+                if !inside.keeps(edge) {
                     continue;
                 }
                 if edge.target == entry {
@@ -2283,34 +2445,64 @@ impl FairModel {
     }
 }
 
+/// A passing component's subgraph: its vertices, and the edge identities
+/// the filter removed from it.
+struct Inside<'a> {
+    component: &'a BTreeSet<Vertex>,
+    removed: &'a BTreeSet<Identity>,
+}
+
+impl Inside<'_> {
+    /// Whether the walk may take `edge` out of a vertex of the component.
+    fn keeps(&self, edge: &Edge) -> bool {
+        self.component.contains(&edge.target)
+            && match edge.label {
+                EdgeLabel::Transition(identity) => !self.removed.contains(&identity),
+                EdgeLabel::Stutter => true,
+            }
+    }
+}
+
 /// The obligations of a component not yet discharged (CX-5, ADR-019 FS-7):
 /// one state of each acceptance set, for each weak constraint an edge that
-/// takes it or a state that disables it, and for each strong constraint
-/// enabled at some state of the component an edge that takes it.
+/// takes it or a state that disables it, for each strong constraint enabled
+/// at some state of the component an edge that takes it, and for each
+/// visibility constraint a kept edge of the component loads (ADR-025 MF-2)
+/// an edge that takes it.
 struct Open {
     sets: BTreeSet<usize>,
     constraints: BTreeSet<usize>,
 }
 
 impl Open {
-    /// The obligations of `component`: a strong constraint enabled at no
-    /// state of it has none.
-    fn of(model: &FairModel, component: &BTreeSet<Vertex>) -> Self {
+    /// The obligations of the component `inside`: a strong constraint
+    /// enabled at no state of it, and a visibility constraint whose loads no
+    /// kept edge of it takes, have none.
+    fn of(model: &FairModel, inside: &Inside<'_>) -> Self {
+        let owed = |constraint: &Constraint| match constraint.obligation() {
+            Obligation::Enablement(Strength::Weak) => true,
+            Obligation::Enablement(Strength::Strong) => inside.component.iter().any(|vertex| {
+                model
+                    .graph
+                    .enabled(*vertex)
+                    .and_then(|enabled| constraint.is_enabled_in(enabled))
+                    == Some(true)
+            }),
+            Obligation::Visibility { .. } => inside.component.iter().any(|vertex| {
+                model
+                    .graph
+                    .edges_from(*vertex)
+                    .iter()
+                    .any(|edge| inside.keeps(edge) && constraint.is_owed_by(edge.label))
+            }),
+        };
         Self {
             sets: (0..model.graph.acceptance_sets().len()).collect(),
             constraints: model
                 .constraints
                 .iter()
                 .enumerate()
-                .filter(|(_, constraint)| {
-                    constraint.strength() == Strength::Weak
-                        || component.iter().any(|vertex| {
-                            model
-                                .graph
-                                .enabled(*vertex)
-                                .is_some_and(|enabled| constraint.is_enabled_in(enabled))
-                        })
-                })
+                .filter(|(_, constraint)| owed(constraint))
                 .map(|(index, _)| index)
                 .collect(),
         }
@@ -2328,8 +2520,10 @@ impl Open {
             model.constraints.get(constraint),
             model.graph.enabled(vertex),
         ) {
+            // Only an enablement weak constraint is discharged by a state.
             (Some(constraint), Some(enabled)) => {
-                constraint.strength() == Strength::Weak && !constraint.is_enabled_in(enabled)
+                constraint.obligation() == &Obligation::Enablement(Strength::Weak)
+                    && constraint.is_enabled_in(enabled) == Some(false)
             }
             _ => false,
         }
@@ -2424,8 +2618,125 @@ mod tests {
             constraints: vec![Constraint::weak([id1])],
         };
         let component: BTreeSet<Vertex> = [v0, v1, v2].into_iter().collect();
-        let walk = model.greedy_loop(&component, v0).expect("a walk exists");
+        let walk = model
+            .greedy_loop(&component, &BTreeSet::new(), v0)
+            .expect("a walk exists");
         let targets: Vec<usize> = walk.iter().map(|(_, edge)| edge.target.index()).collect();
         assert_eq!(targets, [1, 0, 2, 0]);
+    }
+
+    /// ADR-025 MF-2 in CX-5: thread `b`'s loads of `l` are identities 10
+    /// (stale) and 11 (mo-last); 20 is another step. The accepting `v0` has a
+    /// stale self-loop, canonically its first edge, and the cycle
+    /// `v0 -> v1 -> v0` loads nothing. The filter removes the stale load and
+    /// passes the rest, and the walk takes only the kept edges: never the
+    /// stale self-loop, whose loop would be unfair.
+    #[trace("TC-673", "FR-228-AC-6")]
+    #[test]
+    fn the_walk_takes_no_edge_a_visibility_refinement_removed() {
+        let (stale, fresh, other) = (Identity::new(10), Identity::new(11), Identity::new(20));
+        let mut graph = Graph::new();
+        let v0 = graph.add_vertex([stale, fresh, other]);
+        let v1 = graph.add_vertex([other]);
+        for (from, to, label) in [(v0, v0, stale), (v0, v1, other), (v1, v0, other)] {
+            graph
+                .add_edge(from, to, EdgeLabel::Transition(label))
+                .expect("both vertices exist");
+        }
+        graph.add_acceptance_set([v0]).expect("v0 exists");
+        let model = FairModel {
+            graph,
+            constraints: vec![Constraint::visibility([stale, fresh], [fresh])],
+        };
+        let all: BTreeSet<Vertex> = model.graph.vertices().collect();
+        let analyses =
+            analyze(&model.graph, &all, &model.constraints, &Cancel::new()).expect("the filter");
+        let passing = Analysis::first_fair_in(&analyses).expect("a fair component");
+        assert!(passing.removed().contains(&stale));
+        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
+        let walk = model
+            .greedy_loop(&component, passing.removed(), v0)
+            .expect("a walk exists");
+        let labels: Vec<EdgeLabel> = walk.iter().map(|(_, edge)| edge.label).collect();
+        assert_eq!(
+            labels,
+            [EdgeLabel::Transition(other), EdgeLabel::Transition(other)]
+        );
+    }
+
+    /// ADR-025 MF-2: a stale self-loop on an accepting state, with nothing
+    /// else, holds no fair cycle, so the filter yields no counterexample.
+    #[trace("TC-673", "FR-228-AC-3")]
+    #[test]
+    fn a_stale_self_loop_on_an_accepting_state_is_no_counterexample() {
+        let (stale, fresh) = (Identity::new(10), Identity::new(11));
+        let mut graph = Graph::new();
+        let v0 = graph.add_vertex([stale, fresh]);
+        graph
+            .add_edge(v0, v0, EdgeLabel::Transition(stale))
+            .expect("v0 exists");
+        graph.add_acceptance_set([v0]).expect("v0 exists");
+        let constraints = [Constraint::visibility([stale, fresh], [fresh])];
+        let analyses = analyze(&graph, &BTreeSet::from([v0]), &constraints, &Cancel::new())
+            .expect("the filter");
+        assert!(Analysis::first_fair_in(&analyses).is_none());
+    }
+
+    /// FR-228-AC-8: a strong constraint (identity 9, enabled only at state
+    /// 0) and a failing pair (stale `1 -> 2`) refine in one step; the second
+    /// pair (stale `3 -> 3`, fresh `3 -> 4`) still loads `{3, 4}`, so the
+    /// walk from the accepting state 3 discharges it by the fresh load and
+    /// the loop is `3 -> 4 -> 3`.
+    #[trace("TC-673", "FR-228-AC-8")]
+    #[test]
+    fn the_walk_discharges_a_pair_the_passing_component_still_loads() {
+        let id = Identity::new;
+        let mut graph = Graph::new();
+        let vertices: Vec<Vertex> = (0..5)
+            .map(|index| graph.add_vertex(if index == 0 { vec![id(9)] } else { vec![] }))
+            .collect();
+        for (from, to, label) in [
+            (0, 1, 20),
+            (1, 0, 21),
+            (1, 2, 10),
+            (2, 3, 22),
+            (3, 1, 23),
+            (3, 3, 12),
+            (3, 4, 13),
+            (4, 3, 24),
+        ] {
+            graph
+                .add_edge(
+                    vertices[from],
+                    vertices[to],
+                    EdgeLabel::Transition(id(label)),
+                )
+                .expect("both vertices exist");
+        }
+        graph
+            .add_acceptance_set([vertices[3]])
+            .expect("vertex 3 exists");
+        let model = FairModel {
+            graph,
+            constraints: vec![
+                Constraint::strong([id(9)]),
+                Constraint::visibility([id(10)], [id(11)]),
+                Constraint::visibility([id(12), id(13)], [id(13)]),
+            ],
+        };
+        let all: BTreeSet<Vertex> = model.graph.vertices().collect();
+        let analyses =
+            analyze(&model.graph, &all, &model.constraints, &Cancel::new()).expect("the filter");
+        let passing = Analysis::first_fair_in(&analyses).expect("a fair component");
+        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
+        assert_eq!(component, BTreeSet::from([vertices[3], vertices[4]]));
+        let walk = model
+            .greedy_loop(&component, passing.removed(), vertices[3])
+            .expect("a walk exists");
+        let path: Vec<(usize, usize)> = walk
+            .iter()
+            .map(|(from, edge)| (from.index(), edge.target.index()))
+            .collect();
+        assert_eq!(path, [(3, 4), (4, 3)]);
     }
 }

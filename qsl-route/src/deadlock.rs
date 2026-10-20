@@ -10,9 +10,15 @@
 //! Its obligation identity is the subject and the fixed kind
 //! `deadlock-freedom`, so it is never an authored claim's identity over the
 //! same subject.
+//!
+//! A protocol subject (FR-211, ADR-027 PD-3) gets its item the same way,
+//! from [`protocol_deadlock_freedom_items`]: one per distinct protocol
+//! subject, unless its protocol clause declares `terminal any`.
 
 use qsl_foundation::source::provenance::OccurrenceKey;
-use qsl_semantics::check::{Capability, CheckedGraph, TerminalDeclaration};
+use qsl_semantics::check::{
+    Capability, CheckedGraph, CheckedProtocol, CheckedTerminalMember, TerminalDeclaration,
+};
 use quire_semantic_value::fairness::PropertyForm;
 
 use crate::request::ExtentClassification;
@@ -117,6 +123,39 @@ pub fn deadlock_freedom_items<S: Clone + Eq>(
     let mut derived: Vec<DeadlockFreedomItem<S>> = Vec::new();
     for item in items {
         if opts_out(item.package) || derived.iter().any(|seen| seen.subject == *item.subject) {
+            continue;
+        }
+        derived.push(DeadlockFreedomItem {
+            subject: item.subject.clone(),
+        });
+    }
+    derived
+}
+
+/// One temporal item over a protocol subject, as the writer reads it: the
+/// claim's occurrence, the protocol subject, and its checked protocol
+/// clause.
+#[derive(Clone, Copy, Debug)]
+pub struct ProtocolTemporalItem<'g, S> {
+    /// The authored claim's occurrence.
+    pub occurrence: &'g OccurrenceKey,
+    /// The protocol subject (ADR-027 PS-1).
+    pub subject: &'g S,
+    /// The subject's checked protocol clause.
+    pub protocol: &'g CheckedProtocol,
+}
+
+/// FR-211 (ADR-027 PD-3): the deadlock-freedom items of a request whose
+/// temporal items over protocol subjects are `items`: one per distinct
+/// subject, in the order the subjects first appear, and none for a subject
+/// whose protocol clause declares `terminal any`.
+pub fn protocol_deadlock_freedom_items<S: Clone + Eq>(
+    items: &[ProtocolTemporalItem<'_, S>],
+) -> Vec<DeadlockFreedomItem<S>> {
+    let mut derived: Vec<DeadlockFreedomItem<S>> = Vec::new();
+    for item in items {
+        let opts_out = matches!(item.protocol.slots.terminal, CheckedTerminalMember::Any);
+        if opts_out || derived.iter().any(|seen| seen.subject == *item.subject) {
             continue;
         }
         derived.push(DeadlockFreedomItem {

@@ -9,13 +9,19 @@
 //! counted against [`ExpansionLimits::max_candidates`]. Every effect a model
 //! describes is data: a [`StepEffect`] holds the creations, deletions and field
 //! changes of one step, and nothing outside the returned values changes.
+//!
+//! A random parameter (FR-185) ranges over its support, and FR-187's
+//! [`ModelSystem::actions`] and [`ModelSystem::weighted_steps`] give the
+//! probabilistic structure of a state's successors.
 
+mod application;
 mod constraint;
 mod contracts;
 mod domain;
 pub(crate) mod encode;
 mod footprints;
 mod frames;
+pub(crate) mod probabilistic;
 mod refine;
 mod state_predicate;
 mod symmetry;
@@ -49,6 +55,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::model_subject::ModelInstance;
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
+use crate::simulation::footprint::Footprint;
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::reduction::{
@@ -58,22 +65,31 @@ use crate::simulation::sample::{sample_request, sample_request_until, SampleRequ
 use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
+pub(crate) use application::{FirstApplication, OperationRef};
+pub(crate) use contracts::{verdict, Verdict};
+pub(crate) use domain::enumerable;
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 pub use frames::judge::{
     operation_identity_text, AbstractApplication, Judged, Judgement, Rejection, ResolvedStep,
 };
+pub use probabilistic::{
+    Action, Draw, NotMarkov, ScheduledIdentity, TransitionId, UndecidedSuccessor, Unsteppable,
+    WeightedStep,
+};
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
+pub(crate) use walk::Budget;
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
 /// evaluation meter, ran out (FR-120 "Post-states", "Contract clauses").
 const EXHAUSTED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
 /// `runtime_invariant`/`established-invariant-broken`: the simulator built an
 /// input itself, so a refusal of it is a broken internal invariant.
-const BROKEN: CatalogCode = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+pub(crate) const BROKEN: CatalogCode =
+    CatalogCode::new("runtime_invariant", "established-invariant-broken");
 
 /// One simulated population and its finite key set (FR-120 "Inputs").
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -250,12 +266,26 @@ impl ModelFinding {
         })
     }
 
-    /// Whether this finding is a contract conjunction that was refused, so
-    /// the successor relation is not exactly known (ADR-018 V-6).
+    /// This finding as a protocol expression evaluated undefined (ADR-027
+    /// TS-4, QSpec FR-426 "Undefined protocol expressions"), when it is one:
+    /// the node's static declaration path and the cause.
+    pub fn undefined_protocol_expression(
+        &self,
+    ) -> Option<(String, crate::temporal::UndefinedCause)> {
+        let Self::ProtocolExpressionUndetermined { node, evaluation } = self else {
+            return None;
+        };
+        Some((node.clone(), evaluation.undefined_cause()?))
+    }
+
+    /// Whether this finding is a contract conjunction or a protocol
+    /// expression that was refused, so the successor relation is not
+    /// exactly known (ADR-018 V-6).
     pub fn is_refused_contract(&self) -> bool {
         matches!(
             self,
             Self::ContractUndetermined { evaluation, .. }
+                | Self::ProtocolExpressionUndetermined { evaluation, .. }
                 if evaluation.undefined_cause().is_none()
         )
     }
@@ -282,6 +312,13 @@ pub enum ModelFinding {
         self_object: ObjectReference,
         /// The state's anchor.
         anchor: SelectedAnchor,
+        /// Why it was not decided.
+        evaluation: ClauseOutcome,
+    },
+    /// A protocol step's constraint could not be decided (ADR-027 TS-4).
+    ProtocolExpressionUndetermined {
+        /// The node's static declaration path.
+        node: String,
         /// Why it was not decided.
         evaluation: ClauseOutcome,
     },
@@ -363,6 +400,8 @@ pub struct ModelSystem<'a> {
     limits: ExpansionLimits,
     meter: ScalarLimits,
     footprints: footprints::FootprintCache,
+    /// FR-185's random parameters and rewards, as FR-187 reads them.
+    probabilistic: probabilistic::Tables,
 }
 
 fn refused(code: Code, cause: &'static str, fields: &[(&'static str, String)]) -> AdmissionFailure {
@@ -537,7 +576,7 @@ impl<'a> ModelSystem<'a> {
             applications.insert(identity, Self::applications_of(graph, &model, identity)?);
         }
 
-        Ok(Self {
+        let system = Self {
             over: match selections {
                 [only] => Some(only.identity.clone()),
                 _ => None,
@@ -555,7 +594,10 @@ impl<'a> ModelSystem<'a> {
             limits: request.expansion,
             meter: request.meter,
             footprints: footprints::FootprintCache::default(),
-        })
+            probabilistic: probabilistic::Tables::of(graph.probabilistic_model())?,
+        };
+        system.check_rewards()?;
+        Ok(system)
     }
 
     /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its
@@ -601,6 +643,20 @@ impl<'a> ModelSystem<'a> {
             .flatten()
             .find(|application| application.declaring == declaring && application.name == name)
             .map(|application| application.text.as_str())
+    }
+
+    /// Every transition identity of `state`, enabled or not, in canonical
+    /// transition order (FR-156 "Candidates").
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when the state cannot be walked or the identities
+    /// exceed the candidate bound.
+    pub fn transition_identities(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
+        walk::identities_of(self, state)
     }
 
     /// The operations of the subject's types, each once: its declaring type,
@@ -732,7 +788,17 @@ impl<'a> ModelSystem<'a> {
                     package: owner.package.clone(),
                     node: format!("{}/{}", owner.node, operation.name()),
                 };
-                for (name, value_type) in operation.parameters() {
+                for (position, (name, value_type)) in operation.parameters().iter().enumerate() {
+                    // A random parameter's finite domain is its support
+                    // (ADR-024 PM-1), whatever its declared type.
+                    if !domain::enumerable(value_type)
+                        && self
+                            .probabilistic
+                            .support(declaration.key(), operation.name(), position)
+                            .is_some()
+                    {
+                        continue;
+                    }
                     root(
                         Enc::Object(vec![
                             ("operation", declaration_enc(&key)),
@@ -942,12 +1008,11 @@ impl TransitionSystem for ModelSystem<'_> {
         walk::expand_state(self, state, None)
     }
 
-    /// FR-162: symmetry and state constraints. Partial-order reduction has
-    /// no hook on this trait yet, so it is not offered.
+    /// FR-162: symmetry, partial-order reduction and state constraints.
     fn offered_reductions(&self) -> OfferedReductions {
         OfferedReductions {
             symmetry: true,
-            partial_order: false,
+            partial_order: true,
             constraint: true,
         }
     }
@@ -966,6 +1031,19 @@ impl TransitionSystem for ModelSystem<'_> {
         constraint: &str,
     ) -> Option<Result<ConstraintValue, ExpansionStop>> {
         Some(self.constraint_value(state, constraint))
+    }
+
+    /// FR-162: [`ModelSystem::footprint`], which reads the transition alone.
+    fn footprint(
+        &self,
+        transition: &Self::TransitionId,
+    ) -> Option<Result<Footprint, ExpansionStop>> {
+        Some(
+            ModelSystem::footprint(self, transition).map_err(|_| ExpansionStop {
+                cause: BROKEN,
+                limit: None,
+            }),
+        )
     }
 }
 

@@ -277,6 +277,20 @@ impl DeclarationRegions {
         region(&self.source, self.embedding.as_deref(), span)
     }
 
+    /// The regions of the declarations a check refusal relates, in source
+    /// order (QSpec FR-272's `related`): both workloads of a repeated
+    /// workload name (FR-185); none for every other refusal.
+    pub fn related_regions(&self, refusal: &CheckRefusal) -> Vec<SourceRegion> {
+        let CheckCause::Probabilistic(cause) = &refusal.cause else {
+            return Vec::new();
+        };
+        cause
+            .related()
+            .iter()
+            .filter_map(|span| region(&self.source, self.embedding.as_deref(), *span))
+            .collect()
+    }
+
     /// FR-096: the region a check refusal names. A stage limit a family
     /// `check` located carries its own region (a declaration's span, or the
     /// node `Typer`'s depth stop failed at); a `ProtocolAnchor`, `Temporal` or `ProtocolObligation` cause
@@ -312,6 +326,12 @@ impl DeclarationRegions {
             CheckCause::RefinementNotEmitted { span, .. } => {
                 region(&self.source, self.embedding.as_deref(), *span)
             }
+            CheckCause::Abstraction(cause) => match &**cause {
+                super::abstraction::AbstractionRefusal::UnresolvedName { span, .. } => {
+                    region(&self.source, self.embedding.as_deref(), *span)
+                }
+                _ => self.region(&refusal.location),
+            },
             CheckCause::Refinement(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span)
             }

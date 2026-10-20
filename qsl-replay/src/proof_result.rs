@@ -104,6 +104,20 @@ pub enum AppliedReduction {
         /// The group the instance ran under.
         stabiliser: Vec<SymmetryClass>,
     },
+    /// Partial-order reduction with the proviso it was run under.
+    PartialOrder {
+        /// The cycle proviso.
+        proviso: Proviso,
+    },
+}
+
+/// The cycle proviso of a partial-order reduction (ADR-021 POR-8).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Proviso {
+    /// A state with an ample-set successor already discovered is fully
+    /// expanded.
+    BreadthFirstRevisit,
 }
 
 /// A reduction a request selects (FR-160 `ReductionKind`).
@@ -376,11 +390,6 @@ pub enum InconclusiveCause {
     /// `mapping-undetermined` (ADR-020 RE-4): a refinement's mapping row or
     /// step-row argument was refused or incomplete at a reachable state.
     MappingUndetermined,
-    /// A refinement's safety half holds by exhaustive exploration, and the
-    /// simulation certificate (FR-149) that FR-144 requires before `proved`
-    /// is not built, so no proof is settled. Interim: no spec names this
-    /// cause; QSL-549 removes it when the certificate exists.
-    SimulationCertificateNotBuilt,
     /// The core rejected a certificate, retaining its failing rule and locus.
     CertificateRejected {
         /// The check rule that failed.
@@ -440,6 +449,13 @@ pub enum InconclusiveCause {
         /// The boundary states the run stored.
         boundary_states: u64,
     },
+    /// ADR-021 RV-5: a partial-order run completed to its search horizon
+    /// with no counterexample. A reduced graph does not keep short
+    /// counterexamples short, so the horizon proves no bound.
+    ReductionHorizon {
+        /// The search horizon.
+        max_depth: u64,
+    },
 }
 
 impl InconclusiveCause {
@@ -452,7 +468,6 @@ impl InconclusiveCause {
             Self::NoInitialState => "no-initial-state",
             Self::NoInstance => "no-instance",
             Self::MappingUndetermined => "mapping-undetermined",
-            Self::SimulationCertificateNotBuilt => "simulation-certificate-not-built",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
             Self::ReplayRefused(_) => "replay-refused",
@@ -463,6 +478,7 @@ impl InconclusiveCause {
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
             Self::SymmetryBroken { .. } => "symmetry-broken",
             Self::ConstraintReached { .. } => "constraint-reached",
+            Self::ReductionHorizon { .. } => "reduction-horizon",
         }
     }
 
@@ -476,12 +492,12 @@ impl InconclusiveCause {
             | Self::NoInitialState
             | Self::NoInstance
             | Self::MappingUndetermined
-            | Self::SimulationCertificateNotBuilt
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive
             | Self::ReductionNotPreserving { .. }
-            | Self::ConstraintReached { .. } => 0,
+            | Self::ConstraintReached { .. }
+            | Self::ReductionHorizon { .. } => 0,
             Self::SymmetryBroken { population, cause } => {
                 let SymmetryBrokenCause::InitialStatesNotClosed { generator, .. } = cause;
                 let moved: usize = generator

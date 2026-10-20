@@ -284,6 +284,10 @@ impl FamilyContract for StateModelFamily {
                             .collect()
                     };
                     match (declared, ends.as_slice()) {
+                        (None, []) if scope.history_names.contains(field) => {
+                            // FR-138: a history field is the refinement's own.
+                            return Err(refuse(location, CheckCause::MissingName(field.clone())));
+                        }
                         (None, []) => return Err(mismatch(location)),
                         (Some(_), []) if !*field_reads => return Err(mismatch(location)),
                         (Some(attribute), []) => {

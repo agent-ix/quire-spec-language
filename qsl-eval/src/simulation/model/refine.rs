@@ -15,14 +15,19 @@ use qsl_semantics::model::observation::AdmissionFailure;
 use qsl_semantics::model::state::{ModelState, StateField};
 use quire_exact::{Meter, ObjectReference, Outcome, Value};
 
-use super::walk::stop;
+use std::collections::BTreeMap;
+
+use quire_exact::ValueType;
+
+use super::domain::Domain;
+use super::walk::{exhausted, stop};
 use super::{
     encode, identity_limits, state_document, ClauseOutcome, ModelSimState, ModelSystem, BROKEN,
 };
-use crate::simulation::expansion::ExpansionStop;
+use crate::simulation::expansion::{ExpansionLimit, ExpansionStop};
 use crate::simulation::key;
 use crate::temporal::UndefinedCause;
-use crate::value::evaluate_refinement_row;
+use crate::value::{evaluate_history_update, evaluate_refinement_row};
 
 /// What one row evaluation gave (ADR-020 RE-4, RE-5).
 #[derive(Clone, Debug)]
@@ -95,11 +100,100 @@ impl ModelSystem<'_> {
     /// `runtime_invariant`/`established-invariant-broken` when `state` is not
     /// a state of this system.
     pub fn observe(&self, state: &ModelState) -> Result<StateObservation, ExpansionStop> {
+        self.observe_with_history(state, BTreeMap::new())
+    }
+
+    /// [`Self::observe`], with the history values `history` a refinement
+    /// keeps beside `state` (FR-138), by object and field name, which a row
+    /// reads as it reads a field.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::observe`].
+    pub fn observe_with_history(
+        &self,
+        state: &ModelState,
+        history: BTreeMap<(ObjectReference, String), Value>,
+    ) -> Result<StateObservation, ExpansionStop> {
         let (_, digest) = self.state_key_of(state).map_err(|_| stop(BROKEN))?;
-        self.model
+        let mut observation = self
+            .model
             .observation(state, state_document(&digest))
-            .map(StateObservation)
-            .map_err(|_| stop(BROKEN))
+            .map_err(|_| stop(BROKEN))?;
+        observation.environment = observation.environment.with_history(history);
+        Ok(StateObservation(observation))
+    }
+
+    /// Evaluate the history update `row` of one step (FR-138): its reads of
+    /// `self` and of the step's arguments observe `post`, and `pre(..)`
+    /// operands observe `pre`. `bindings` fill the row's parameters, the
+    /// receiver first, and the evaluation gets a fresh meter of this
+    /// system's budget.
+    ///
+    /// # Errors
+    ///
+    /// `runtime_invariant`/`established-invariant-broken` when the evaluator
+    /// faults.
+    pub fn read_history_update(
+        &self,
+        row: &CheckedRow,
+        (pre, post): (&StateObservation, &StateObservation),
+        bindings: Vec<Value>,
+    ) -> Result<RowReading, ExpansionStop> {
+        let evaluation = evaluate_history_update(
+            self.package,
+            row,
+            (&pre.0.environment, &post.0.environment),
+            bindings,
+            &mut Meter::new(self.meter),
+        )
+        .map_err(|_| stop(BROKEN))?;
+        reading(&evaluation.outcome)
+    }
+
+    /// FR-181's typed canonical bytes of `value`, which key a history value
+    /// in a refinement's product (FR-142).
+    ///
+    /// # Errors
+    ///
+    /// [`crate::simulation::EncodingRefusal`] when `value` has no encoding.
+    pub fn value_key(&self, value: &Value) -> Result<Vec<u8>, crate::simulation::EncodingRefusal> {
+        key::canonical_bytes(&encode::value_enc(value), identity_limits())
+    }
+
+    /// Whether the object type `concrete` is `ancestor` or a subtype of it;
+    /// `false` when either is not a type of this system's model.
+    pub fn type_conforms(&self, concrete: &DeclarationKey, ancestor: &DeclarationKey) -> bool {
+        match (
+            self.model.type_identity(concrete),
+            self.model.type_identity(ancestor),
+        ) {
+            (Some(concrete), Some(ancestor)) => self.types.conforms(concrete, ancestor),
+            _ => false,
+        }
+    }
+
+    /// Every value of the finite domain of `value_type`, in FR-120's order,
+    /// where a `Reference<T>` ranges over the members of `objects` whose type
+    /// conforms to `T`.
+    ///
+    /// # Errors
+    ///
+    /// `MaxCandidates` when the domain is larger than this system's
+    /// candidate bound, or `value_type` has no enumerable domain.
+    pub fn domain_values(
+        &self,
+        value_type: &ValueType,
+        objects: &[ObjectReference],
+    ) -> Result<Vec<Value>, ExpansionStop> {
+        let domain = Domain::of(value_type, objects, self.types)
+            .ok_or_else(|| exhausted(ExpansionLimit::MaxCandidates))?;
+        if domain.len() > u128::from(self.limits.max_candidates) {
+            return Err(exhausted(ExpansionLimit::MaxCandidates));
+        }
+        Ok((0..domain.len())
+            .map_while(|index| domain.nth(index))
+            .collect())
     }
 
     /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its

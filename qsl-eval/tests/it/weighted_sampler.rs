@@ -15,9 +15,17 @@ fn rational(numerator: i64, denominator: i64) -> Rational {
     Rational::new(Integer::from(numerator), Integer::from(denominator)).expect("nonzero")
 }
 
+fn rationals(values: &[(i64, i64)]) -> Vec<Rational> {
+    values.iter().map(|&(n, d)| rational(n, d)).collect()
+}
+
 fn weights(values: &[(i64, i64)]) -> Weights {
-    let values: Vec<Rational> = values.iter().map(|&(n, d)| rational(n, d)).collect();
-    Weights::new(&values).expect("positive weights")
+    Weights::new(&rationals(values)).expect("positive weights")
+}
+
+/// The index `weights` selects at `point`.
+fn select(point: ChoicePoint, weights: &[Rational]) -> usize {
+    weighted_choice(point, weights).expect("positive weights in the draw range")
 }
 
 fn integers(values: &[u64]) -> Vec<Integer> {
@@ -76,14 +84,13 @@ fn reference(point: ChoicePoint, scaled: &[u64]) -> usize {
 /// FR-188-AC-1 (TC-623 step 1): QSpec TC-354 SM-01, which is QSpec TC-210's
 /// uniform vector, run as five unit weights at choice index 0: steps 0 to 4
 /// select `1, 3, 3, 4, 4`.
-#[trace("TC-623")]
+#[trace("TC-623", "FR-188-AC-1")]
 #[test]
 fn tc_210_uniform_vector_reproduces_as_unit_weights_at_choice_zero() {
     let unit = weights(&[(1, 1); 5]);
     assert_eq!(unit.scaled(), integers(&[1, 1, 1, 1, 1]));
-    let selected: Vec<usize> = (0..5)
-        .map(|step| weighted_choice(at(0, step, 0), &unit))
-        .collect();
+    let ones = rationals(&[(1, 1); 5]);
+    let selected: Vec<usize> = (0..5).map(|step| select(at(0, step, 0), &ones)).collect();
     assert_eq!(selected, [1, 3, 3, 4, 4]);
     assert_eq!(Weights::uniform(5), Ok(unit));
 }
@@ -91,13 +98,13 @@ fn tc_210_uniform_vector_reproduces_as_unit_weights_at_choice_zero() {
 /// FR-188-AC-1 (TC-623 step 1): QSpec TC-354 SM-02 -- choice index 1,
 /// weights `(1, 3)`, steps 0 to 4 select items `1, 0, 0, 1, 1` -- and SM-03,
 /// weights `(1/2, 3/4)` scaled by 4 to `(2, 3)` with `n = 5`.
-#[trace("TC-623")]
+#[trace("TC-623", "FR-188-AC-1")]
 #[test]
 fn tc_354_weighted_vectors_reproduce() {
-    let one_three = weights(&[(1, 1), (3, 1)]);
-    assert_eq!(one_three.total(), &Integer::from(4u64));
+    assert_eq!(weights(&[(1, 1), (3, 1)]).total(), &Integer::from(4u64));
+    let one_three = rationals(&[(1, 1), (3, 1)]);
     let selected: Vec<usize> = (0..5)
-        .map(|step| weighted_choice(at(0, step, 1), &one_three))
+        .map(|step| select(at(0, step, 1), &one_three))
         .collect();
     assert_eq!(selected, [1, 0, 0, 1, 1]);
 
@@ -113,13 +120,14 @@ fn tc_354_weighted_vectors_reproduce() {
 #[trace("TC-623", "FR-188-AC-2")]
 #[test]
 fn rational_weights_scale_and_select_as_the_reference_computes() {
-    let thirds = weights(&[(1, 3), (1, 6), (1, 2)]);
-    assert_eq!(thirds.scaled(), integers(&[2, 1, 3]));
-    assert_eq!(thirds.total(), &Integer::from(6u64));
+    let scaled = weights(&[(1, 3), (1, 6), (1, 2)]);
+    assert_eq!(scaled.scaled(), integers(&[2, 1, 3]));
+    assert_eq!(scaled.total(), &Integer::from(6u64));
+    let thirds = rationals(&[(1, 3), (1, 6), (1, 2)]);
 
     let mut counts = [0u32; 3];
     for trace in 0..60_000 {
-        let selected = weighted_choice(at(trace, 0, 0), &thirds);
+        let selected = select(at(trace, 0, 0), &thirds);
         assert_eq!(
             selected,
             reference(at(trace, 0, 0), &[2, 1, 3]),
@@ -135,16 +143,14 @@ fn rational_weights_scale_and_select_as_the_reference_computes() {
 #[trace("TC-623", "FR-188-AC-2")]
 #[test]
 fn two_choices_of_one_step_draw_independently() {
-    let thirds = weights(&[(1, 3), (1, 6), (1, 2)]);
+    let thirds = rationals(&[(1, 3), (1, 6), (1, 2)]);
     let differing = (0..100)
-        .filter(|trace| {
-            weighted_choice(at(*trace, 0, 0), &thirds) != weighted_choice(at(*trace, 0, 1), &thirds)
-        })
+        .filter(|trace| select(at(*trace, 0, 0), &thirds) != select(at(*trace, 0, 1), &thirds))
         .count();
     assert!(differing > 0);
     for trace in 0..100 {
         assert_eq!(
-            weighted_choice(at(trace, 0, 1), &thirds),
+            select(at(trace, 0, 1), &thirds),
             reference(at(trace, 0, 1), &[2, 1, 3])
         );
     }
@@ -155,6 +161,10 @@ fn two_choices_of_one_step_draw_independently() {
 #[test]
 fn weights_that_are_not_positive_admit_no_choice() {
     assert_eq!(Weights::new(&[]), Err(WeightsRefusal::Empty));
+    assert_eq!(
+        weighted_choice(at(0, 0, 0), &[rational(1, 1), rational(0, 1)]),
+        Err(WeightsRefusal::NotPositive { index: 1 })
+    );
     assert_eq!(
         Weights::new(&[rational(1, 1), rational(0, 1)]),
         Err(WeightsRefusal::NotPositive { index: 1 })

@@ -87,12 +87,14 @@ use quire_semantic_value::enumeration::EnumValue;
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
+mod abstraction;
 mod model;
 mod protocol;
 mod state;
 mod temporal;
 mod wire;
 
+pub(crate) use abstraction::{object_type_node, population_node, relation_node, text_scalar_node};
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{bound_origin, record_node_key, variant_type_node_key, RecordKeyError};
 pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
@@ -3442,10 +3444,12 @@ impl<'a> Lowering<'a> {
                     Operands::One(reference),
                 )
             }
-            // FR-139: a population-valued form lives in a refinement row,
-            // which S4 does not emit yet (FR-310's node): no FR-093 row
-            // lowers it.
-            NodeKind::PopulationObjects { .. } | NodeKind::Seq { .. } => {
+            // FR-139, FR-138: a population-valued form and a history read
+            // live in a refinement row, which S4 does not emit yet
+            // (FR-310's node): no FR-093 row lowers either.
+            NodeKind::PopulationObjects { .. }
+            | NodeKind::History { .. }
+            | NodeKind::Seq { .. } => {
                 return Err(refuse(
                     node.location(),
                     CheckCause::UnsupportedFeature {
@@ -4652,6 +4656,7 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
                     .map(|node| node.0),
             );
         }
+        BodyTerm::Abstraction(term) => named.extend(term.targets()),
         BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }
     // A dependency's node is not a node of this graph.

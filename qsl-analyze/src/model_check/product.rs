@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! ADR-018 SM-3, SM-4 and EN-1: a product over the existing transition seam.
 
-use qsl_eval::simulation::{Expansion, ExpansionStop, TransitionSystem};
+use qsl_eval::simulation::{
+    Expansion, ExpansionStop, Footprint, OfferedReductions, TransitionSystem,
+};
 use quire_canonical::{Encode, Sink, Writer};
 
 /// Both components of a product state, preserved independently.
@@ -231,5 +233,28 @@ where
             successors,
             findings,
         })
+    }
+
+    /// ADR-021 EI-4: the product offers the partial-order reduction its
+    /// model component offers, and nothing else: the property component is
+    /// never reduced.
+    fn offered_reductions(&self) -> OfferedReductions {
+        OfferedReductions {
+            partial_order: self.model.offered_reductions().partial_order,
+            ..OfferedReductions::NONE
+        }
+    }
+
+    /// FR-162: a model transition has its model component's footprint, and
+    /// the terminal stutter edge has an empty one, so no ample-set
+    /// candidate holds it.
+    fn footprint(
+        &self,
+        transition: &Self::TransitionId,
+    ) -> Option<Result<Footprint, ExpansionStop>> {
+        match transition {
+            ProductTransition::Model(transition) => self.model.footprint(transition),
+            ProductTransition::TerminalStutter => Some(Ok(Footprint::default())),
+        }
     }
 }

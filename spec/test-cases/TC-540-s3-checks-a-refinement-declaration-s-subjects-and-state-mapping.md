@@ -31,9 +31,10 @@ Fixtures: ADR-020 §8's `CasRefinesCounter` unit, with `Spec` local and with
 4. Check `CasRefinesCounter` with the `value` row removed; check it with
    `value = self.tmpA` and compare node identities and `package_id`s with
    step 1.
-5. Check `RegisterHistory` with one `history` row and with two, `CasTwice`, and
+5. Check `CasTwice`, a refinement given a non-empty resolved internal list, and
    `CasRefinesCounter`, each in the build as it stands, that is, for each
-   feature the build has not built. The step does not choose a support set; it
+   feature the build has not built; check `RegisterHistory`, whose `history`
+   feature the build holds. The step does not choose a support set; it
    runs only while a feature is unbuilt, and is rewritten when the feature
    lands.
 6. Check `RingIsQueue` with a nested `Sequence<Reference<Ring>>` row, and
@@ -55,11 +56,7 @@ Tag the tests `#[trace("TC-540", "FR-135-AC-n")]`.
   checks; the `Reference<R::Slot>` row refuses `ill_typed`/`type-mismatch`.
 - Step 4: `hidden = [value]`; different node identity and different
   `package_id`.
-- Step 5: each `history` row refuses `unsupported_construct`/`not-yet-implemented`
-  at its `history` keyword naming `history-row`, the refinement and the profile
-  (two rows, two refusals); `CasTwice` refuses the same pair at `Twice` naming
-  `protocol-abstract-side`; each classifies `unsupported`; no
-  `CheckedRefinement`; `CasRefinesCounter` checks.
+- Step 5: `CasTwice` refuses `unsupported_construct`/`not-yet-implemented` at `Twice` naming `protocol-abstract-side`, `CasTwice` and the profile; the internal-list refinement refuses the same pair naming `refinement-internal-list`; each classifies `unsupported`; no `CheckedRefinement` for either; `CasRefinesCounter` and `RegisterHistory` check.
 - Step 6: `unsupported_construct`/`not-yet-implemented` at the row's
   expression; then it checks.
 - Step 7: `unsupported_construct`/`declaration-form` at the alias `Q`; no

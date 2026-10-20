@@ -63,7 +63,7 @@ impl Enc {
     }
 
     /// `{"type": tag, ...members}`.
-    pub(super) fn tagged(tag: &str, mut members: Vec<(&'static str, Enc)>) -> Self {
+    pub(crate) fn tagged(tag: &str, mut members: Vec<(&'static str, Enc)>) -> Self {
         members.push(("type", Self::text(tag)));
         Self::Object(members)
     }
@@ -73,7 +73,7 @@ impl Enc {
     /// # Errors
     ///
     /// [`Error`] when the tree holds an unencodable value or exceeds `limits`.
-    pub(super) fn canonical_text(&self, limits: Limits) -> Result<String, Error> {
+    pub(crate) fn canonical_text(&self, limits: Limits) -> Result<String, Error> {
         let bytes = quire_canonical::to_vec(self, limits)?;
         String::from_utf8(bytes).map_err(|_| Error::Serialize("canonical text is UTF-8".into()))
     }
@@ -101,7 +101,7 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 
 /// A declaration's identity text: the RFC 8785 text of its
 /// `$defs.DeclarationKey` preimage (FR-120 "Identities").
-pub(super) fn declaration_enc(key: &DeclarationKey) -> Enc {
+pub(crate) fn declaration_enc(key: &DeclarationKey) -> Enc {
     Enc::Object(vec![
         ("digest_domain", Enc::text("sha256-jcs")),
         ("node", Enc::text(key.node.clone())),
@@ -115,7 +115,7 @@ pub(super) fn declaration_text(key: &DeclarationKey, limits: Limits) -> Result<S
 }
 
 /// FR-181's reference triple.
-pub(super) fn reference_enc(reference: &ObjectReference) -> Enc {
+pub(crate) fn reference_enc(reference: &ObjectReference) -> Enc {
     Enc::tagged(
         "reference",
         vec![
@@ -277,7 +277,7 @@ pub(super) fn values_equal(left: &Value, right: &Value) -> bool {
 
 /// FR-181's `map`: `{"type":"map","entries":[{"key":..,"value":..}, ...]}`
 /// with the entries ascending by the key's RFC 8785 bytes.
-pub(super) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
+pub(crate) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
     let limits = Limits::new(u64::MAX);
     let mut keyed: Vec<(Vec<u8>, Enc, Enc)> = entries
         .into_iter()
@@ -305,7 +305,7 @@ pub(super) fn map_enc(entries: Vec<(Enc, Enc)>) -> Enc {
 /// and anchor"): each population's declaration identity text, mapped to its
 /// objects' reference triples, each mapped to a `record` of its declared
 /// fields in declaration order.
-pub(super) fn semantic_enc(model: &StateModel, state: &ModelState) -> Enc {
+pub(crate) fn semantic_enc(model: &StateModel, state: &ModelState) -> Enc {
     let mut populations = Vec::new();
     for (population, objects) in &state.populations {
         let mut entries = Vec::new();

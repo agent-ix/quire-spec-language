@@ -36,7 +36,7 @@
 //! reachable from outside `qsl-package` (ADR-013 O-02: `package_id` is
 //! computed from the package, never accepted from a caller).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
 
 use qsl_foundation::Code;
@@ -145,12 +145,15 @@ pub struct CheckedPackage {
     /// its recomputed `package_id` ([`Self::link_with`]). Shared: one
     /// library compile serves every import that reaches it (ADR-015 D-1).
     dependencies: BTreeMap<PackageId, Arc<CheckedPackage>>,
-    /// The resolved library closure (FR-307, FR-322 `dependency_selections`):
+    /// The resolved library closure (FR-307):
     /// one selection per library identity, over the direct imports and every
     /// dependency's own closure, keyed by the library identity an import
     /// names. [`LibraryName`]'s order is UTF-8 byte order, the order FR-322
     /// writes (ADR-015 D-3).
     selections: BTreeMap<LibraryName, ResolvedDependency>,
+    /// Identities named by this unit's imports. Kept separately because a
+    /// direct identity may first be reached through another import's lock.
+    direct_imports: BTreeSet<LibraryName>,
     /// FR-304, FR-306: this package's checked abstraction relation, when it
     /// declares one. The checked package is its only authority.
     abstraction: Option<CheckedAbstractionRelation>,
@@ -377,10 +380,11 @@ impl CheckedPackage {
     /// ```
     pub fn link(graph: CheckedGraph) -> Self {
         Self {
+            abstraction: graph.abstraction().cloned(),
             graph: Arc::new(graph),
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
-            abstraction: None,
+            direct_imports: BTreeSet::new(),
             emission: OnceLock::new(),
         }
     }
@@ -397,6 +401,10 @@ impl CheckedPackage {
     pub fn link_with(graph: CheckedGraph, imports: Vec<Import>) -> Result<Self, LinkRefusal> {
         let mut dependencies = BTreeMap::new();
         let mut selections: BTreeMap<LibraryName, ResolvedDependency> = BTreeMap::new();
+        let direct_imports = imports
+            .iter()
+            .map(|import| import.identity.clone())
+            .collect();
         for import in imports {
             let recompiled = recomputed_package_id(&import)?;
             let direct = ResolvedDependency {
@@ -429,10 +437,11 @@ impl CheckedPackage {
             dependencies.insert(recompiled, import.package);
         }
         Ok(Self {
+            abstraction: graph.abstraction().cloned(),
             graph: Arc::new(graph),
             dependencies,
             selections,
-            abstraction: None,
+            direct_imports,
             emission: OnceLock::new(),
         })
     }
@@ -450,6 +459,24 @@ impl CheckedPackage {
     ) -> Result<(), Vec<AbstractionRefusal>> {
         self.abstraction = Some(self.graph.check_abstraction(bindings)?);
         self.emission = OnceLock::new();
+        Ok(())
+    }
+
+    /// As [`Self::bind_abstraction`], for a relation read from the
+    /// `abstraction` declarations located at `sites`, one per declaration:
+    /// the emitter writes one `declaration` occurrence of the relation node at
+    /// each (QSpec FR-451).
+    ///
+    /// # Errors
+    ///
+    /// Every refusal of the bindings; a refusal leaves the package unchanged.
+    pub fn bind_abstraction_at(
+        &mut self,
+        bindings: &[AuthoredBinding],
+        sites: Vec<quire_semantic_value::location::Location>,
+    ) -> Result<(), Vec<AbstractionRefusal>> {
+        let relation = self.graph.check_abstraction(bindings)?;
+        self.abstraction = Some(relation.with_sites(sites));
         Ok(())
     }
 
@@ -501,11 +528,22 @@ impl CheckedPackage {
         &self.dependencies
     }
 
-    /// The resolved library closure: one selection per library identity, in
-    /// ascending UTF-8 byte order of the identity (FR-322
-    /// `dependency_selections`), each with the first path that reached it.
+    /// The resolved library closure: one selection per reachable library
+    /// identity, in ascending UTF-8 byte order, with the first path that
+    /// reached it. The FR-322 lock writes only this unit's direct imports.
     pub fn dependency_selections(&self) -> &BTreeMap<LibraryName, ResolvedDependency> {
         &self.selections
+    }
+
+    /// Direct imports only, for the FR-322 lock and its reader evidence.
+    /// Directness comes from the authored imports, independent of which
+    /// equal-package path first populated the resolved closure.
+    pub(crate) fn direct_dependency_selections(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (&LibraryName, &ResolvedDependency)> {
+        self.selections
+            .iter()
+            .filter(|(identity, _)| self.direct_imports.contains(*identity))
     }
 }
 
@@ -656,6 +694,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
             graph: Arc::clone(&graph),
             dependencies: BTreeMap::new(),
             selections: BTreeMap::new(),
+            direct_imports: BTreeSet::new(),
             abstraction: None,
             emission: OnceLock::new(),
         },
@@ -666,6 +705,7 @@ pub(crate) fn dependency_chain(length: usize) -> CheckedPackage {
                 Arc::new(dependency),
             )]),
             selections: BTreeMap::new(),
+            direct_imports: BTreeSet::new(),
             abstraction: None,
             emission: OnceLock::new(),
         },

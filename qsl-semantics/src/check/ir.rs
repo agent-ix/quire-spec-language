@@ -227,6 +227,27 @@ impl CheckedBody {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    /// The evaluation frame this body needs when its first `bound` slots
+    /// are its parameters: `bound`, or one past the highest slot a node of
+    /// the body reads or binds, whichever is larger.
+    pub fn frame_slots(&self, bound: usize) -> usize {
+        self.nodes
+            .iter()
+            .flat_map(|node| match &node.kind {
+                NodeKind::Local(slot) | NodeKind::Let { slot, .. } => vec![*slot],
+                NodeKind::Query { slot, .. } | NodeKind::Seq { slot, .. } => vec![*slot],
+                NodeKind::Fold {
+                    accumulator,
+                    binder,
+                    ..
+                } => vec![*accumulator, *binder],
+                // Every other kind reads and binds no local slot.
+                _ => Vec::new(),
+            })
+            .map(|slot| slot.saturating_add(1))
+            .fold(bound, usize::max)
+    }
 }
 
 /// The nodes one typing pass builds, each pushed once a node naming it as
@@ -1058,6 +1079,18 @@ pub enum NodeKind {
         /// The concrete population.
         population: DeclarationKey,
     },
+    /// `r.f` of a refinement's history field `f` (FR-138): the value the
+    /// refinement keeps for the object `reference` names, which the
+    /// object's concrete type does not declare. Only a refinement row's
+    /// expression contains one.
+    History {
+        /// The object reference.
+        reference: NodeId,
+        /// The concrete object type the refinement adds the field to.
+        object_type: EffectiveId,
+        /// The history field's name.
+        field: String,
+    },
     /// `seq(i in low .. high: body)` (FR-139): the sequence of `body` for
     /// each integer `slot` takes from `low` to `high`, empty when `high <
     /// low`.
@@ -1205,6 +1238,9 @@ impl NodeKind {
             | NodeKind::Not(operand)
             | NodeKind::Field { operand, .. }
             | NodeKind::Attribute {
+                reference: operand, ..
+            }
+            | NodeKind::History {
                 reference: operand, ..
             }
             | NodeKind::Navigate {

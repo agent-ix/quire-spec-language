@@ -2,9 +2,10 @@
 //! Located checking refusals and their closed codes and causes.
 
 use super::protocol_memory::AccessClass;
-use qsl_forms::{AccessOrdering, MemoryModelName};
+use qsl_forms::AccessOrdering;
 use qsl_foundation::diagnostic::Code;
 use qsl_foundation::source::provenance::SourceRegion;
+use qsl_foundation::MemoryModelName;
 use qsl_foundation::Setting;
 use qsl_foundation::Span;
 use quire_exact::Integer;
@@ -1528,6 +1529,8 @@ pub enum CheckCause {
         /// The span of the whole declaration.
         span: Span,
     },
+    /// An `abstraction` declaration's name or binding refused (FR-304).
+    Abstraction(Box<super::abstraction::AbstractionRefusal>),
     /// A refinement declaration's checking refused (FR-135 to FR-137).
     Refinement(Box<super::refinement::RefinementRefusal>),
     /// A `refinement` declaration that checks but that no S4 emission writes
@@ -2061,6 +2064,7 @@ impl CheckCause {
             | Self::RefinementNotEmitted { .. }
             | Self::TimedNotChecked { .. } => Code::UnsupportedConstruct,
             Self::Refinement(cause) => cause.cause.code(),
+            Self::Abstraction(cause) => cause.code(),
             Self::Probabilistic(cause) => cause.code(),
             Self::ModelConformance(failure) => failure.code,
             Self::ModelIncomplete(_) => Code::ResourceExhausted,
@@ -2125,6 +2129,7 @@ impl CheckCause {
             | Self::RefinementNotEmitted { .. }
             | Self::TimedNotChecked { .. } => Some("not-yet-implemented"),
             Self::Refinement(cause) => cause.cause.cause(),
+            Self::Abstraction(cause) => Some(cause.cause()),
             Self::Probabilistic(cause) => Some(cause.tag()),
             Self::ModelConformance(failure) => Some(failure.cause.as_str()),
             // The model ceilings are the caller's budget (FR-255), so a denied

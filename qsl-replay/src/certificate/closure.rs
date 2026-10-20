@@ -35,17 +35,18 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{AutomatonStateKey, SafetyItem, SafetyState};
-use qsl_eval::model_subject::{ModelLetters, ModelSubject};
+use qsl_eval::model_subject::{ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
+use qsl_eval::simulation::protocol::{check_protocol_bounds, ProtocolRefusal, ProtocolSystem, Sc};
 use qsl_eval::simulation::{
-    EncodingRefusal, Expansion, ExpansionStop, NotSimulated, TransitionSystem,
+    EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
+    BOUND_POSITIONS,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::InternalFault;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{Cancel, Meter, ScalarLimits};
-use quire_semantic_value::model_transition::ModelTransition;
 use serde::{ser::SerializeStruct, Serialize, Serializer};
 
 use crate::certificate::check::{
@@ -159,6 +160,9 @@ pub enum ClosureRefusal {
     /// A state identity or an automaton key has no canonical encoding.
     #[error("a state or automaton key has no canonical encoding")]
     Encoding,
+    /// The subject's protocol system does not build (FR-205).
+    #[error(transparent)]
+    Protocol(ProtocolRefusal),
     /// An invariant of the subject broke.
     #[error("the closure check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -186,10 +190,83 @@ pub fn check_closure(
     cancel: &Cancel,
 ) -> Result<TemporalCertificateCheck, ClosureRefusal> {
     let simulation = request.subject.simulation.clone();
-    let meter = simulation.meter;
-    let budgets = Budgets::of(&simulation);
     let system = admit(simulation)?;
-    let instances = match request.item.instances(&request.subject, &system, cancel) {
+    check_system(
+        &system,
+        &system,
+        &request.subject,
+        &request.item,
+        certificate,
+        limits,
+        cancel,
+    )
+}
+
+/// FR-338's certificate request over a protocol subject (FR-215, ADR-027
+/// TS-6): the protocol subject, re-admitted by the checker itself, and the
+/// item.
+pub struct ProtocolCertificateRequest<'a> {
+    /// The protocol subject (FR-205).
+    pub subject: ProtocolSubject<'a>,
+    /// The item.
+    pub item: ModelCheckItem<'a>,
+}
+
+/// FR-338 over a protocol subject: [`check_closure`]'s check, with the
+/// successors and terminal classes recomputed by the subject's own
+/// `ProtocolSystem<Sc>`.
+///
+/// # Errors
+///
+/// [`ClosureRefusal`] as [`check_closure`] returns it, and
+/// [`ClosureRefusal::Protocol`] when the protocol system does not build.
+pub fn check_protocol_closure(
+    request: &ProtocolCertificateRequest<'_>,
+    certificate: &ClosureCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    let model = admit(request.subject.model.simulation.clone())?;
+    let protocol = request
+        .subject
+        .model
+        .simulation
+        .package
+        .graph()
+        .protocol(&request.subject.protocol)
+        .ok_or_else(|| {
+            ClosureRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
+                protocol: request.subject.protocol.clone(),
+            })
+        })?;
+    check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
+        .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
+    let system =
+        ProtocolSystem::new(model, &request.subject, Sc).map_err(ClosureRefusal::Protocol)?;
+    check_system(
+        &system,
+        system.model(),
+        &request.subject.model,
+        &request.item,
+        certificate,
+        limits,
+        cancel,
+    )
+}
+
+/// [`check_closure`] over `system`, whose model is `model`.
+fn check_system<S: SubjectSystem>(
+    system: &S,
+    model: &ModelSystem<'_>,
+    subject: &ModelSubject<'_>,
+    item: &ModelCheckItem<'_>,
+    certificate: &ClosureCertificate,
+    limits: &ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<TemporalCertificateCheck, ClosureRefusal> {
+    let meter = subject.simulation.meter;
+    let budgets = Budgets::of(&subject.simulation);
+    let instances = match item.instances(subject, model, cancel) {
         Ok(instances) => instances,
         Err(ItemRefusal::ClauseRoot(ClauseRootRefusal::Cancelled(cause))) => {
             return Ok(TemporalCertificateCheck::Stopped(
@@ -257,8 +334,8 @@ pub fn check_closure(
     }
 
     let mut check = Check {
-        system: &system,
-        item: &request.item,
+        system,
+        item,
         limits,
         meter,
         budgets,
@@ -280,14 +357,18 @@ fn rejected(rule: CertificateRule, at: ProductStateRef) -> TemporalCertificateCh
 }
 
 /// A reached product state waiting to be expanded.
-struct Pending {
-    state: ModelSimState,
+struct Pending<S: SubjectSystem> {
+    state: S::State,
     at: ProductStateRef,
-    expansion: Option<Expansion<ModelTransition, ModelSimState, ModelFinding>>,
+    expansion: Option<SubjectExpansion<S>>,
 }
 
-struct Check<'c, 'a> {
-    system: &'c ModelSystem<'a>,
+/// One expansion of a subject's state.
+type SubjectExpansion<S> =
+    Expansion<<S as TransitionSystem>::TransitionId, <S as TransitionSystem>::State, ModelFinding>;
+
+struct Check<'c, S: SubjectSystem> {
+    system: &'c S,
     item: &'c ModelCheckItem<'c>,
     limits: &'c ModelCheckLimits,
     meter: ScalarLimits,
@@ -300,7 +381,7 @@ struct Check<'c, 'a> {
     keys: BTreeSet<AutomatonStateKey>,
 }
 
-impl Check<'_, '_> {
+impl<S: SubjectSystem> Check<'_, S> {
     fn reject(rule: CertificateRule, at: ProductStateRef) -> Halt {
         Halt::Check(rejected(rule, at))
     }
@@ -379,12 +460,12 @@ impl Check<'_, '_> {
     fn reach(
         &mut self,
         instance: &Instance,
-        state: ModelSimState,
+        state: S::State,
         digest: DigestRecord,
         before: Option<SafetyState>,
         missing: CertificateRule,
         visited: &mut BTreeSet<DigestRecord>,
-    ) -> Step<Option<Pending>> {
+    ) -> Step<Option<Pending<S>>> {
         if visited.contains(&digest) {
             return Ok(None);
         }
@@ -398,7 +479,7 @@ impl Check<'_, '_> {
                     .binding
                     .as_ref()
                     .ok_or_else(|| fault("clause-instance-binding"))?;
-                match self.atom(*letters, atom, bound, &state)? {
+                match self.atom(*letters, atom, bound, &self.system.atom_state(&state))? {
                     Some(holds) => (translation.read(before, holds), None),
                     None => {
                         let at = self.product(instance, digest, SafetyState::Rejected)?;
@@ -452,21 +533,19 @@ impl Check<'_, '_> {
 
     /// Expand the reached product state `at`: a contract conjunction the
     /// expansion could not determine makes it bad (ADR-018 UE-6, V-6).
-    fn expand(
-        &self,
-        state: &ModelSimState,
-        at: &ProductStateRef,
-    ) -> Step<Expansion<ModelTransition, ModelSimState, ModelFinding>> {
+    fn expand(&self, state: &S::State, at: &ProductStateRef) -> Step<SubjectExpansion<S>> {
         self.poll()?;
         let expansion = self
             .system
             .successors(state)
             .map_err(|stop| self.expansion_stop(stop))?;
-        if expansion
-            .findings
-            .iter()
-            .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
-        {
+        if expansion.findings.iter().any(|finding| {
+            matches!(
+                finding,
+                ModelFinding::ContractUndetermined { .. }
+                    | ModelFinding::ProtocolExpressionUndetermined { .. }
+            )
+        }) {
             return Err(Self::reject(CertificateRule::BadState, at.clone()));
         }
         Ok(expansion)

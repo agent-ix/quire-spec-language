@@ -28,7 +28,7 @@ use super::contracts::{conjunction, Conjunction};
 use super::domain::{Domain, Odometer};
 use super::encode::{self, value_enc, values_equal};
 use super::footprints::ReadCheck;
-use super::walk::{stop, Budget, ContractFinding, Row, Successor, Walk};
+use super::walk::{stop, Applied, Budget, ContractFinding, Row, Selected, Walk};
 use super::{
     handler_anchor, identity_limits, state_document, Application, ClauseInfo, FieldChange,
     ModelFinding, ModelSimState, StepEffect, BROKEN, EXHAUSTED,
@@ -49,7 +49,7 @@ fn text_limits() -> CanonicalLimits {
 }
 
 /// `value`'s canonical text.
-fn text_of(value: &Value) -> Result<String, ExpansionStop> {
+pub(super) fn text_of(value: &Value) -> Result<String, ExpansionStop> {
     value_enc(value)
         .canonical_text(text_limits())
         .map_err(|_| stop(BROKEN))
@@ -79,9 +79,84 @@ fn transition_of(
     .map_err(|_| stop(BROKEN))
 }
 
+/// The parameter domains of `application` over the objects of `walk`'s
+/// state, one per declared parameter: a random parameter's support, else
+/// its type's domain.
+fn argument_domains(
+    walk: &Walk<'_, '_>,
+    application: &Application,
+) -> Result<Vec<Domain>, ExpansionStop> {
+    let system = walk.system;
+    let references = walk.references();
+    application
+        .declaration
+        .parameters()
+        .iter()
+        .enumerate()
+        .map(|(position, (_, value_type))| {
+            match system
+                .probabilistic
+                .support(application.declaring, &application.name, position)
+            {
+                Some(support) => Some(Domain::Listed(support.values())),
+                None => Domain::of(value_type, &references, system.types),
+            }
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| stop(BROKEN))
+}
+
+/// The argument vector `digits` selects from `domains`, by parameter name.
+fn arguments_of(
+    application: &Application,
+    domains: &[Domain],
+    digits: &[u128],
+) -> Result<Vec<(String, Value)>, ExpansionStop> {
+    application
+        .declaration
+        .parameters()
+        .iter()
+        .zip(domains)
+        .zip(digits)
+        .map(|(((name, _), domain), index)| domain.nth(*index).map(|value| (name.clone(), value)))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| stop(BROKEN))
+}
+
+/// Every transition identity of `application` at `row`, enabled or not
+/// (FR-156 "Candidates"): one per argument vector of its parameter domains,
+/// each counted against `budget`.
+///
+/// # Errors
+///
+/// An [`ExpansionStop`] when the identities cannot be listed within the
+/// candidate bound.
+pub(super) fn identities(
+    walk: &Walk<'_, '_>,
+    row: &Row,
+    application: &Application,
+    budget: &mut Budget,
+    out: &mut Vec<ModelTransition>,
+) -> Result<(), ExpansionStop> {
+    let domains = argument_domains(walk, application)?;
+    let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
+    while let Some(digits) = arguments.next_digits() {
+        budget.charge()?;
+        let args = arguments_of(application, &domains, &digits)?;
+        out.push(transition_of(row, application, &args)?);
+    }
+    Ok(())
+}
+
 /// Apply `application` to `row` for every argument vector of its parameter
-/// domains: check its effective precondition, and for an enabled application
-/// generate its successors.
+/// domains under the `pre` and `post` clauses `clauses` selects: check its
+/// effective precondition, and for an enabled application generate its
+/// successors. A random parameter ranges over its support in declared order
+/// (FR-187, ADR-024 PM-1). This is FR-120's one application rule:
+/// `ModelSystem` calls it with every applicable clause, a protocol attempt
+/// with the clauses its `contracts` select (ADR-027 TS-3). When `enabled` is
+/// given, each argument vector whose precondition holds is recorded there
+/// with the successors it generated, none included.
 ///
 /// # Errors
 ///
@@ -90,44 +165,23 @@ pub(super) fn apply(
     walk: &Walk<'_, '_>,
     row: &Row,
     application: &Application,
+    clauses: &Selected<'_>,
     budget: &mut Budget,
-    contract: &mut Vec<ContractFinding>,
-    successors: &mut Vec<Successor>,
+    outputs: Outputs<'_>,
 ) -> Result<(), ExpansionStop> {
+    let Outputs {
+        contract,
+        successors,
+        mut enabled,
+    } = outputs;
     let system = walk.system;
-    let declaration = &application.declaration;
-    let references = walk.references();
-    let domains = declaration
-        .parameters()
-        .iter()
-        .map(|(_, value_type)| Domain::of(value_type, &references, system.types))
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| stop(BROKEN))?;
-    let preconditions = walk.applicable(
-        &system.clauses.preconditions,
-        row,
-        application.declaring,
-        &application.name,
-    );
-    let postconditions = walk.applicable(
-        &system.clauses.postconditions,
-        row,
-        application.declaring,
-        &application.name,
-    );
+    let domains = argument_domains(walk, application)?;
+    let preconditions = &clauses.preconditions;
+    let postconditions = &clauses.postconditions;
 
     let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
     while let Some(digits) = arguments.next_digits() {
-        let args = declaration
-            .parameters()
-            .iter()
-            .zip(&domains)
-            .zip(&digits)
-            .map(|(((name, _), domain), index)| {
-                domain.nth(*index).map(|value| (name.clone(), value))
-            })
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| stop(BROKEN))?;
+        let args = arguments_of(application, &domains, &digits)?;
         // Every argument vector counts, enabled or not: a false or undecided
         // precondition would otherwise let one expansion run unbounded.
         budget.charge()?;
@@ -147,7 +201,7 @@ pub(super) fn apply(
             .map(|(enforcement, footprint)| {
                 ReadCheck::new(&system.model, enforcement, footprint, &transition)
             });
-        let verdict = conjunction(walk, &preconditions, |info| {
+        let verdict = conjunction(walk, preconditions, |info| {
             let observations = pre_observations(walk, info, row, &args);
             match &check {
                 Some(check) => check.attach(observations),
@@ -185,12 +239,108 @@ pub(super) fn apply(
             args: &args,
             transition: &transition,
             transition_bytes: &transition_bytes,
-            postconditions: &postconditions,
+            postconditions,
             footprint: footprint.as_ref(),
         };
+        let first = successors.len();
         application_run.candidates(budget, contract, successors)?;
+        if let Some(enabled) = enabled.as_deref_mut() {
+            enabled.push(EnabledVector {
+                receiver: row.reference.clone(),
+                declaring: application.declaring,
+                name: application.name.clone(),
+                operation: application.text.clone(),
+                args,
+                successors: first..successors.len(),
+            });
+        }
     }
     Ok(())
+}
+
+/// ADR-027 PD-4: the transition identity of the first argument vector of
+/// `application` at `row`, in canonical order, with the first of `clauses`'
+/// preconditions, in clause order, that is not true there (`None` when
+/// every one is true). `None` for an application with no argument vector.
+///
+/// # Errors
+///
+/// An [`ExpansionStop`] when a precondition's evaluation stops.
+pub(super) fn first_precondition(
+    walk: &Walk<'_, '_>,
+    row: &Row,
+    application: &Application,
+    clauses: &Selected<'_>,
+) -> Result<Option<(ModelTransition, Option<String>)>, ExpansionStop> {
+    let domains = argument_domains(walk, application)?;
+    let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
+    let Some(digits) = arguments.next_digits() else {
+        return Ok(None);
+    };
+    let args = arguments_of(application, &domains, &digits)?;
+    let transition = transition_of(row, application, &args)?;
+    for clause in &clauses.preconditions {
+        let verdict = conjunction(walk, &[*clause], |info| {
+            pre_observations(walk, info, row, &args)
+        })?;
+        if !matches!(verdict, Conjunction::True) {
+            return Ok(Some((transition, Some(clause.name.clone()))));
+        }
+    }
+    Ok(Some((transition, None)))
+}
+
+/// Where [`apply`] records what one application found: its contract
+/// findings, its successors and, when given, its enabled argument vectors.
+pub(super) struct Outputs<'o> {
+    /// The contract findings.
+    pub(super) contract: &'o mut Vec<ContractFinding>,
+    /// The successors.
+    pub(super) successors: &'o mut Vec<Applied>,
+    /// Each enabled argument vector, when the caller records them.
+    pub(super) enabled: Option<&'o mut Vec<EnabledVector>>,
+}
+
+/// One argument vector of an application whose effective precondition holds
+/// at the expanded state, and the successors it generated (FR-187).
+pub(super) struct EnabledVector {
+    /// The receiver.
+    pub(super) receiver: ObjectReference,
+    /// The operation's declaring type.
+    pub(super) declaring: quire_exact::EffectiveId,
+    /// The operation's name.
+    pub(super) name: String,
+    /// The operation's declaration identity text.
+    pub(super) operation: String,
+    /// One value per declared parameter, random ones included.
+    pub(super) args: Vec<(String, Value)>,
+    /// The positions of its successors in the expansion's successor list.
+    pub(super) successors: std::ops::Range<usize>,
+}
+
+/// The transition identity of an application of the operation `operation`
+/// to `receiver` with `arguments`, which may omit some parameters: a
+/// scheduled identity's canonical order key (FR-187).
+pub(super) fn identity_bytes(
+    operation: &str,
+    receiver: &ObjectReference,
+    arguments: &[Value],
+) -> Result<Vec<u8>, ExpansionStop> {
+    let receiver = encode::reference_enc(receiver)
+        .canonical_text(text_limits())
+        .map_err(|_| stop(BROKEN))?;
+    let arguments = arguments
+        .iter()
+        .map(text_of)
+        .collect::<Result<Vec<_>, _>>()?;
+    let transition = ModelTransition::new(
+        operation.to_owned(),
+        Some(receiver),
+        arguments,
+        text_limits(),
+    )
+    .map_err(|_| stop(BROKEN))?;
+    quire_canonical::to_vec(&transition, text_limits()).map_err(|_| stop(BROKEN))
 }
 
 /// The observations of a precondition: the state as `pre`, the receiver as
@@ -387,7 +537,7 @@ impl Run<'_, '_, '_> {
         &self,
         budget: &mut Budget,
         contract: &mut Vec<ContractFinding>,
-        successors: &mut Vec<Successor>,
+        successors: &mut Vec<Applied>,
     ) -> Result<(), ExpansionStop> {
         let deletable = self.deletable();
         let slots = self.slots();
@@ -427,7 +577,7 @@ impl Run<'_, '_, '_> {
         created: &[u128],
         budget: &mut Budget,
         contract: &mut Vec<ContractFinding>,
-        successors: &mut Vec<Successor>,
+        successors: &mut Vec<Applied>,
     ) -> Result<(), ExpansionStop> {
         let system = self.walk.system;
         let mut members: Vec<Member> = Vec::new();
@@ -934,7 +1084,7 @@ impl Run<'_, '_, '_> {
         post_references: &[ObjectReference],
         budget: &mut Budget,
         contract: &mut Vec<ContractFinding>,
-        successors: &mut Vec<Successor>,
+        successors: &mut Vec<Applied>,
     ) -> Result<(), ExpansionStop> {
         let mut effect = self.effect_of(&candidate, delta)?;
         let ordered = self.result_order(post_references)?;
@@ -958,14 +1108,17 @@ impl Run<'_, '_, '_> {
             match verdict {
                 Conjunction::True => {
                     effect.result = result.as_ref().map(text_of).transpose()?;
-                    successors.push((
-                        self.transition.clone(),
-                        ModelSimState {
+                    successors.push(Applied {
+                        transition: self.transition.clone(),
+                        state: ModelSimState {
                             state: candidate,
                             anchor: handler_anchor(&self.application.text),
                             reached_by: Some(effect),
                         },
-                    ));
+                        receiver: self.row.reference.clone(),
+                        arguments: self.args.iter().map(|(_, value)| value.clone()).collect(),
+                        result,
+                    });
                     return Ok(());
                 }
                 Conjunction::False(_) => {}

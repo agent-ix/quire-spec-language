@@ -2,17 +2,19 @@
 //! FR-361: S3 refuses each model construct a unit writes unless the unit's
 //! header selects `quire.model.complete/v1`.
 //!
-//! A model construct is an `operation-body` declaration, a dispatched
-//! `receiver.member(args)` call or a `lookup<T>(p, r) absent m` expression
-//! (FR-361 item 5). The selection is the header and nothing else (item 1): the
-//! gate reads the unit's header profile identities, never a construct, a
+//! A model construct is an `operation-body` declaration, an `abstraction`
+//! declaration, a dispatched `receiver.member(args)` call or a
+//! `lookup<T>(p, r) absent m` expression (FR-361 item 5). The selection is
+//! the header and nothing else (item 1): the gate reads the unit's header profile identities, never a construct, a
 //! `model` declaration or an alias. Every construct is reported, in source
 //! order, and a construct in a declaration nothing uses is refused too
 //! (items 11, 13).
 
 use std::collections::BTreeSet;
 
-use qsl_forms::{FunctionDeclaration, OperationBodyForm, StateClauseForm};
+use qsl_forms::{
+    AbstractionDeclarationForm, FunctionDeclaration, OperationBodyForm, StateClauseForm,
+};
 use qsl_foundation::selection::ProfileSelection;
 
 use super::assemble::{AssemblyCause, AssemblyError};
@@ -22,6 +24,8 @@ use crate::value::layer::{HeaderLayer, LayerForm};
 /// The family of a refused model construct (FR-361 item 5).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelFamily {
+    /// An `abstraction` declaration (`abstraction-decl`).
+    Abstraction,
     /// A `body` operation-body declaration.
     OperationBody,
     /// A postfix `receiver.member(args)` operation call.
@@ -50,6 +54,7 @@ impl ModelFamily {
     /// The spelling of the family in FR-361 item 5.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Abstraction => "abstraction",
             Self::OperationBody => "operation-body",
             Self::DispatchCall => "dispatch-call",
             Self::Lookup => "lookup",
@@ -59,7 +64,7 @@ impl ModelFamily {
     /// The `quire.native.diagnostics/v1` cause tag of the family's refusal.
     pub fn refusal_cause(self) -> &'static str {
         match self {
-            Self::OperationBody => "declaration-form",
+            Self::Abstraction | Self::OperationBody => "declaration-form",
             Self::DispatchCall | Self::Lookup => "expression-form",
         }
     }
@@ -68,6 +73,8 @@ impl ModelFamily {
 /// The kind of declaration that owns a refused construct.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OwnerKind {
+    /// An `abstraction` declaration.
+    Abstraction,
     /// A `function` or `predicate` declaration.
     Function,
     /// An `invariant`, `pre` or `post` state clause.
@@ -121,6 +128,7 @@ pub(super) fn selects_model(profiles: &[ProfileSelection]) -> bool {
 
 /// The declarations of a unit the gate reads.
 pub(super) struct Declarations<'a> {
+    pub(super) abstractions: &'a [AbstractionDeclarationForm],
     pub(super) functions: &'a [FunctionDeclaration],
     pub(super) state_clauses: &'a [StateClauseForm],
     pub(super) operation_bodies: &'a [OperationBodyForm],
@@ -149,6 +157,14 @@ pub(super) fn refusals(
             span,
         });
     };
+    for abstraction in declarations.abstractions {
+        refuse(
+            ModelFamily::Abstraction,
+            OwnerKind::Abstraction,
+            &abstraction.name.name,
+            abstraction.span,
+        );
+    }
     for function in declarations.functions {
         let Some(spans) = function.spans() else {
             continue;

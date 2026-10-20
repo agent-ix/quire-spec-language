@@ -1224,6 +1224,114 @@ fn tc_444_a_package_with_a_dependency_replays_and_names_a_stale_one() {
     );
 }
 
+/// The request must carry C's source even though A's lock selects only B.
+#[trace("QSpec-FR-323-AC-7", "QSpec-TC-277")]
+#[test]
+fn transitive_only_library_source_reaches_replay() {
+    let c = units_source(BIG);
+    let c_id = compose(
+        SourceIdentity::new(AUTHORITY, "test:c", NAMESPACE, REVISION),
+        "test:c",
+        c.as_bytes(),
+        &BTreeMap::new(),
+        &DependencyInput::default(),
+        SpineLimits::default(),
+    )
+    .expect("C compiles")
+    .emitted
+    .package_id();
+    let b = units_source(
+        "import \"test/c\" as c;\nfunction big using v(x: Int[0, 9]): Boolean pure { c::big(x) }\n",
+    );
+    let library = |identity: &str, source_identity: &str, bytes: &String| SuppliedLibrary {
+        identity: identity.to_owned(),
+        source: SourceIdentity::new(AUTHORITY, source_identity, NAMESPACE, REVISION),
+        path: source_identity.to_owned(),
+        bytes: bytes.as_bytes().to_vec(),
+    };
+    let supplied =
+        DependencyInput::new(vec![library("test/c", "test:c", &c)]).expect("C is supplied");
+    let b_id = compose(
+        SourceIdentity::new(AUTHORITY, "test:b", NAMESPACE, REVISION),
+        "test:b",
+        b.as_bytes(),
+        &BTreeMap::new(),
+        &supplied,
+        SpineLimits::default(),
+    )
+    .expect("B compiles against C")
+    .emitted
+    .package_id();
+    let a = units_source(
+        "import \"test/b\" as b;\nfunction q using v(x: Int[0, 9]): Boolean pure { b::big(x) }\n",
+    );
+    let supplied = DependencyInput::new(vec![
+        library("test/b", "test:b", &b),
+        library("test/c", "test:c", &c),
+    ])
+    .expect("B and C are supplied");
+    let compiled = compose(
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        IDENTITY,
+        a.as_bytes(),
+        &BTreeMap::new(),
+        &supplied,
+        SpineLimits::default(),
+    )
+    .expect("A compiles through B and C");
+    let emitted: serde_json::Value =
+        serde_json::from_slice(compiled.emitted.bytes()).expect("A emits JSON");
+    assert_eq!(
+        emitted["lock"]["dependency_selections"]
+            .as_array()
+            .expect("A's selections")
+            .iter()
+            .map(|selection| selection["identity"].as_str().expect("identity"))
+            .collect::<Vec<_>>(),
+        ["test/b"]
+    );
+    let mut wire = request(
+        a.as_bytes(),
+        compiled.emitted.package_id(),
+        name(&["q"]),
+        input(parameter(&compiled, "q", 0), 3),
+    );
+    wire.dependencies = vec![
+        entry(
+            "test/b",
+            b_id,
+            vec![source_ref("test:b", REVISION, b.as_bytes())],
+        ),
+        entry(
+            "test/c",
+            c_id,
+            vec![source_ref("test:c", REVISION, c.as_bytes())],
+        ),
+    ];
+    for bytes in [b.as_bytes(), c.as_bytes()] {
+        wire.byte_provision.push((
+            Some(DigestDomain::SourceBytesV1.as_str().to_owned()),
+            source_digest(bytes).hex(),
+            bytes.to_vec(),
+        ));
+    }
+    assert_eq!(wire.dependencies.len(), 2);
+    assert!(wire
+        .byte_provision
+        .iter()
+        .any(|(_, digest, _)| *digest == source_digest(c.as_bytes()).hex()));
+    let ReplayResult::Input(result) =
+        replay(wire, ReplayLimits::default()).expect("transitive C reaches the executor")
+    else {
+        panic!("Input arm");
+    };
+    assert_eq!(
+        result.settlement(),
+        InputSettlement::ReproducedWithoutWitness
+    );
+    assert_eq!(result.value(), Some(EvaluatedValue::Boolean(false)));
+}
+
 /// FR-121-AC-4 (TC-516): `call_site` compiles TC-444 step 7's importing
 /// unit against a dependency input supplying `test/units`, and a request
 /// carrying that dependency, keyed only by `call_site`'s own `package_id`

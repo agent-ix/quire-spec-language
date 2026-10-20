@@ -259,6 +259,18 @@ productions! {
     HyperComparison, HyperSum, HyperProduct, HyperUnary, HyperPostfix, HyperPrimary,
     HybridDeclaration, HybridMode, Equation, SynthesisDeclaration,
     VerificationPlan, VerificationStep,
+    #[doc = "`abstraction <identifier> using <identifier> { <binding>+ }`: a model-to-implementation abstraction relation."]
+    AbstractionDeclaration,
+    #[doc = "`type <type-name> to <string> [{ <field-binding>+ }] ;`: one object type's Rust type and fields."]
+    ObjectBinding,
+    #[doc = "`<member> to <string> ;`: one object field's Rust field."]
+    FieldBinding,
+    #[doc = "`population <model-name> to <string> ;`: one population's Rust collection."]
+    PopulationBinding,
+    #[doc = "`operation <operation-name> to <string> receiver <string> ( <parameter-binding>,* ) ;`: one operation frame's Rust function."]
+    FrameBinding,
+    #[doc = "`<member> to <string>`: one operation parameter's Rust parameter."]
+    ParameterBinding,
 }
 
 /// Revision-bound CST identity required when exchanging a node (FR-302 "CST
