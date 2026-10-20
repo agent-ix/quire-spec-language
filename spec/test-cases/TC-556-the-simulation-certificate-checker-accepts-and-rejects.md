@@ -24,7 +24,7 @@ Scope: FR-149-AC-1 to FR-149-AC-10, FR-144-AC-7.
 Fixtures: ADR-020 §8's `CasRefinesCounter` with and without its `ensure`
 row, and its lost-update model; the light ring fixture `RingIsQueue`
 (FR-139's) built unmetered, for a meter sweep of its mapping rows; `HeavyEnq`
-(FR-141-AC-9); a model whose concrete contract costs more than B (a new fixture);
+(FR-141-AC-9); a model whose concrete contract costs more than B;
 `CasRefinesCounter` without its `ensure` row with `peek` and `begin` of the
 second thread never enabled, for a terminal chain; a concrete model with the
 precondition `6 mod (2 - self.value) >= 0`, for `BadState`; and a concrete model
