@@ -662,7 +662,7 @@ fn every_component_reads_the_same_projected_position_without_stuttering() {
     }
 }
 
-/// FR-178-AC-3, undefined: an atom with no value at a projected position makes
+/// FR-178 three-valued prefix evaluation, undefined: an atom with no value at a projected position makes
 /// the body undefined there, with its cause; the prefix is neither true nor
 /// false.
 #[trace("TC-603")]
