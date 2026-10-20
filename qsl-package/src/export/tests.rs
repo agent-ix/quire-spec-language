@@ -541,7 +541,7 @@ fn a_key_naming_a_declaration_of_another_kind_refuses_malformed_declaration() {
 /// FR-304-AC-9: a systems interface is no object type, so a binding of it, or
 /// of an operation it declares, refuses `MalformedDeclaration`.
 #[test]
-#[trace("FR-304-AC-9")]
+#[trace("FR-304-AC-9", "TC-1087")]
 fn a_systems_interface_bound_as_an_object_type_refuses_malformed_declaration() {
     let package = package(CLAUSES);
     let panel = object("Panel", "Panel", &[("level", "level")]);

@@ -447,7 +447,7 @@ pub struct PackageDeclarations {
     /// each as S2 built it, for the `TemporalTrace` family's `check`.
     pub temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
     /// FR-304: the unit's `abstraction` declarations in declaration order,
-    /// each as S2 built it, for `CheckedGraph::declared_abstraction`.
+    /// each as S2 built it, for `CheckedGraph::abstraction`.
     pub abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
     /// FR-311, FR-392: the unit's `random`, `reward`, `workload` and
     /// `probabilistic` declarations in declaration order, each as S2 built

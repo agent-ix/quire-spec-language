@@ -30,7 +30,7 @@ use quire_semantic_value::location::{Location, Origin};
 
 use super::lowering::{
     generated_location, object_type_node, population_node, relation_node, text_scalar_node,
-    SemanticNode,
+    AdmittedModel, SemanticNode,
 };
 use super::node_key::{AbstractionTerm, FrameEntry, NodeKeyRefusal, ObjectEntry, PopulationEntry};
 use super::CheckedGraph;
@@ -290,8 +290,7 @@ pub enum MalformedEntry {
     UnknownParameter(Identifier),
     /// A frame binding omits a parameter the operation declares.
     OmittedParameter(Identifier),
-    /// An object binding binds one field twice, or a frame binding one
-    /// parameter twice.
+    /// A frame binding binds one parameter twice.
     DuplicateEntry(Identifier),
     /// A frame binding maps two parameters to one Rust parameter.
     SharedRustParameter {
@@ -331,10 +330,29 @@ pub enum AbstractionRefusal {
         /// The defective entry.
         entry: MalformedEntry,
     },
+    /// An object binding binds one field twice, equal or not (QSpec FR-450
+    /// rule 4).
+    ConflictingField {
+        /// The object type's key.
+        key: AbstractionKey,
+        /// The field.
+        field: Identifier,
+        /// The first binding's Rust field.
+        first: RustField,
+        /// The span of the first field binding.
+        first_span: Span,
+        /// The second binding's Rust field.
+        second: RustField,
+        /// The span of the second field binding.
+        second_span: Span,
+    },
     /// A name written in an `abstraction` declaration that names no
-    /// declaration of the unit's admitted domain packages: no key can be
-    /// formed for it (FR-304).
+    /// declaration of its model's domain package: no key can be formed for it
+    /// (QSpec FR-450 rule 1).
     UnresolvedName {
+        /// The identity of the domain package the name's alias selects, when
+        /// the alias names a model.
+        package: Option<String>,
         /// The name as written, such as `M::T`.
         name: String,
         /// The span of the name.
@@ -352,9 +370,9 @@ impl AbstractionRefusal {
             Self::MissingDeclaration { .. } | Self::UnresolvedName { .. } => {
                 Code::MissingDeclaration
             }
-            Self::ConflictingBinding { .. } | Self::MalformedDeclaration { .. } => {
-                Code::InvalidModelBinding
-            }
+            Self::ConflictingBinding { .. }
+            | Self::ConflictingField { .. }
+            | Self::MalformedDeclaration { .. } => Code::InvalidModelBinding,
             Self::Internal(_) => Code::RuntimeInvariant,
         }
     }
@@ -363,7 +381,9 @@ impl AbstractionRefusal {
     pub fn cause(&self) -> &'static str {
         match self {
             Self::MissingDeclaration { .. } | Self::UnresolvedName { .. } => "missing-name",
-            Self::ConflictingBinding { .. } => "conflicting-binding",
+            Self::ConflictingBinding { .. } | Self::ConflictingField { .. } => {
+                "conflicting-binding"
+            }
             Self::MalformedDeclaration { .. } => "malformed-declaration",
             Self::Internal(_) => "established-invariant-broken",
         }
@@ -371,9 +391,43 @@ impl AbstractionRefusal {
 }
 
 /// The `Origin::TypeDeclaration` name an `abstraction` declaration is
-/// located under (QSpec FR-451). Spaced, so it names no declared type.
+/// located under (QSpec FR-451). `Origin` is the kernel's closed enum, which
+/// has no abstraction variant, so the declaration kind rides in the name; the
+/// space keeps it from naming a declared type, as a protocol's does.
 pub(crate) fn declaration_origin(name: &str) -> String {
     format!("abstraction {name}")
+}
+
+/// The names one `model` alias exports: its package identity and every
+/// declaration of any kind, by artifact id (`M::<artifact>`).
+#[derive(Clone, Debug)]
+pub(super) struct ModelNames {
+    package: String,
+    exports: BTreeMap<Identifier, DeclarationKey>,
+}
+
+/// The names of each admitted model, by alias.
+pub(super) fn model_names(models: &[AdmittedModel]) -> BTreeMap<String, ModelNames> {
+    models
+        .iter()
+        .filter_map(|model| {
+            let exports = model
+                .record_keys()
+                .filter_map(|key| {
+                    let artifact =
+                        crate::model::intake::type_identity_segment(&key.package, &key.node)?;
+                    Some((Identifier::new(artifact).ok()?, key.clone()))
+                })
+                .collect();
+            Some((
+                model.alias()?.to_owned(),
+                ModelNames {
+                    package: model.selection().identity.clone(),
+                    exports,
+                },
+            ))
+        })
+        .collect()
 }
 
 /// A written receiver as its typed form: QSpec FR-450's `self` is the
@@ -406,13 +460,13 @@ impl CheckedGraph {
         self.abstraction.as_ref()
     }
 
-    /// Where a refusal of the declarations is located: the first
-    /// declaration.
-    pub(super) fn abstraction_location(&self) -> Location {
+    /// Where a refusal in the `index`th `abstraction` declaration is located:
+    /// that declaration.
+    pub(super) fn abstraction_location(&self, index: usize) -> Location {
         Location::root(Origin::TypeDeclaration {
             name: self
                 .abstractions
-                .first()
+                .get(index)
                 .map(|declaration| declaration_origin(&declaration.name.name))
                 .unwrap_or_default(),
         })
@@ -421,88 +475,91 @@ impl CheckedGraph {
     /// FR-304: the one relation the unit's `abstraction` declarations check
     /// to, with each declaration as a site, or `None` when the unit declares
     /// none. Every name is resolved against the admitted domain packages,
-    /// then every resolved binding is checked together, so key uniqueness
-    /// spans the declarations (QSpec FR-450 rule 5).
+    /// then every binding is checked together, so key uniqueness spans the
+    /// declarations (QSpec FR-450 rule 5). Refusals come in source order of
+    /// the bindings, each with the index of its declaration.
     ///
     /// # Errors
     ///
     /// Every refused name and binding.
     pub(super) fn check_declared_abstraction(
         &self,
-    ) -> Result<Option<CheckedAbstractionRelation>, Vec<AbstractionRefusal>> {
+    ) -> Result<Option<CheckedAbstractionRelation>, Vec<(usize, AbstractionRefusal)>> {
         if self.abstractions.is_empty() {
             return Ok(None);
         }
-        let mut bindings = Vec::new();
-        let mut refusals = Vec::new();
-        for declaration in &self.abstractions {
-            for binding in &declaration.bindings {
-                match self.authored_binding(binding) {
-                    Ok(authored) => bindings.push(authored),
-                    Err(refusal) => refusals.push(*refusal),
-                }
-            }
-        }
-        match self.check_abstraction(&bindings) {
-            Ok(relation) if refusals.is_empty() => {
-                let sites = self
-                    .abstractions
+        let items = self
+            .abstractions
+            .iter()
+            .enumerate()
+            .flat_map(|(index, declaration)| {
+                declaration
+                    .bindings
                     .iter()
-                    .map(|declaration| {
-                        Location::root(Origin::TypeDeclaration {
-                            name: declaration_origin(&declaration.name.name),
-                        })
-                    })
-                    .collect();
-                Ok(Some(relation.with_sites(sites)))
-            }
-            Ok(_) => Err(refusals),
-            Err(found) => {
-                refusals.extend(found);
-                Err(refusals)
-            }
-        }
+                    .map(move |binding| (index, self.authored_binding(binding)))
+            })
+            .collect();
+        let relation = self.check_resolved(items)?;
+        let sites = (0..self.abstractions.len())
+            .map(|index| self.abstraction_location(index))
+            .collect();
+        Ok(Some(relation.with_sites(sites)))
     }
 
     /// One written binding as an [`AuthoredBinding`], its names resolved.
+    /// A name resolves to a declaration of any kind; whether that kind is the
+    /// binding's is the check's (QSpec FR-450 rule 2).
     fn authored_binding(
         &self,
         binding: &AbstractionBindingForm,
-    ) -> Result<AuthoredBinding, Box<AbstractionRefusal>> {
-        let unresolved = |name: &NameForm| {
-            Box::new(AbstractionRefusal::UnresolvedName {
+    ) -> Result<AuthoredBinding, AbstractionRefusal> {
+        let unresolved = |name: &NameForm| AbstractionRefusal::UnresolvedName {
+            package: name
+                .name
+                .split("::")
+                .next()
+                .and_then(|alias| self.model_names.get(alias))
+                .map(|model| model.package.clone()),
+            name: name.name.clone(),
+            span: name.span,
+        };
+        let export = |alias: &Identifier, name: &Identifier| {
+            self.model_names
+                .get(alias.as_str())
+                .and_then(|model| model.exports.get(name))
+                .cloned()
+        };
+        let identifier = |name: &qsl_forms::DeclaredName| {
+            Identifier::new(&name.name).map_err(|_| AbstractionRefusal::UnresolvedName {
+                package: None,
                 name: name.name.clone(),
                 span: name.span,
             })
         };
-        let object = |model: &Identifier, object: &Identifier| {
-            self.model_objects
-                .get(model.as_str())
-                .and_then(|objects| objects.get(object))
-                .cloned()
-        };
         match binding {
             AbstractionBindingForm::Object(form) => {
                 let key = name_parts(&form.model_type, 2)
-                    .and_then(|parts| object(&parts[0], &parts[1]))
+                    .and_then(|parts| export(&parts[0], &parts[1]))
                     .ok_or_else(|| unresolved(&form.model_type))?;
                 let mut fields = BTreeMap::new();
+                let mut written: BTreeMap<Identifier, (RustField, Span)> = BTreeMap::new();
                 for field in &form.fields {
-                    let name = Identifier::new(&field.field.name).map_err(|_| {
-                        Box::new(AbstractionRefusal::UnresolvedName {
-                            name: field.field.name.clone(),
-                            span: field.field.span,
-                        })
-                    })?;
-                    if fields
-                        .insert(name.clone(), RustField::new(&field.rust_field.text))
-                        .is_some()
-                    {
-                        return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
+                    let name = identifier(&field.field)?;
+                    let rust = RustField::new(&field.rust_field.text);
+                    if let Some((first, first_span)) = written.get(&name) {
+                        // QSpec FR-450 rule 4: a field bound twice, equal or
+                        // not.
+                        return Err(AbstractionRefusal::ConflictingField {
                             key: AbstractionKey::Object(key),
-                            entry: MalformedEntry::DuplicateEntry(name),
-                        }));
+                            field: name,
+                            first: first.clone(),
+                            first_span: *first_span,
+                            second: rust,
+                            second_span: field.span,
+                        });
                     }
+                    written.insert(name.clone(), (rust.clone(), field.span));
+                    fields.insert(name, rust);
                 }
                 Ok(AuthoredBinding::Object {
                     key,
@@ -514,15 +571,7 @@ impl CheckedGraph {
             }
             AbstractionBindingForm::Population(form) => {
                 let key = name_parts(&form.population, 2)
-                    .and_then(|parts| {
-                        let domain = self
-                            .model_populations
-                            .get(parts[0].as_str())
-                            .and_then(|populations| populations.get(&parts[1]))?;
-                        self.population_keys
-                            .iter()
-                            .find_map(|(key, held)| (held == domain).then(|| key.clone()))
-                    })
+                    .and_then(|parts| export(&parts[0], &parts[1]))
                     .ok_or_else(|| unresolved(&form.population))?;
                 Ok(AuthoredBinding::Population {
                     key,
@@ -535,38 +584,27 @@ impl CheckedGraph {
                 let parts =
                     name_parts(&form.operation, 3).ok_or_else(|| unresolved(&form.operation))?;
                 let declaring =
-                    object(&parts[0], &parts[1]).ok_or_else(|| unresolved(&form.operation))?;
+                    export(&parts[0], &parts[1]).ok_or_else(|| unresolved(&form.operation))?;
                 let key = OperationKey {
                     declaring,
                     operation: parts[2].clone(),
                 };
                 let mut parameters = BTreeMap::new();
                 for parameter in &form.parameters {
-                    let name = Identifier::new(&parameter.parameter.name).map_err(|_| {
-                        Box::new(AbstractionRefusal::UnresolvedName {
-                            name: parameter.parameter.name.clone(),
-                            span: parameter.parameter.span,
-                        })
-                    })?;
-                    if parameters
-                        .insert(
-                            name.clone(),
-                            RustParameter::new(&parameter.rust_parameter.text),
-                        )
-                        .is_some()
-                    {
-                        return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
+                    let name = identifier(&parameter.parameter)?;
+                    let rust = RustParameter::new(&parameter.rust_parameter.text);
+                    if parameters.insert(name.clone(), rust).is_some() {
+                        return Err(AbstractionRefusal::MalformedDeclaration {
                             key: AbstractionKey::Frame(key),
                             entry: MalformedEntry::DuplicateEntry(name),
-                        }));
+                        });
                     }
                 }
-                let receiver = receiver_of(&form.receiver.text);
                 Ok(AuthoredBinding::Frame {
                     key,
                     value: FrameBinding {
                         function: RustPath::new(&form.function.text),
-                        receiver,
+                        receiver: receiver_of(&form.receiver.text),
                         parameters,
                     },
                 })
@@ -585,11 +623,33 @@ impl CheckedGraph {
         &self,
         bindings: &[AuthoredBinding],
     ) -> Result<CheckedAbstractionRelation, Vec<AbstractionRefusal>> {
-        let mut accepted: BTreeMap<AbstractionKey, &AuthoredBinding> = BTreeMap::new();
+        let items = bindings
+            .iter()
+            .map(|binding| ((), Ok(binding.clone())))
+            .collect();
+        self.check_resolved(items)
+            .map_err(|found| found.into_iter().map(|(_, refusal)| refusal).collect())
+    }
+
+    /// As [`Self::check_abstraction`] over bindings whose names may have
+    /// failed to resolve, each tagged with where it was written: refusals
+    /// come in the order of `items`, each with its binding's tag.
+    fn check_resolved<T: Copy>(
+        &self,
+        items: Vec<(T, Result<AuthoredBinding, AbstractionRefusal>)>,
+    ) -> Result<CheckedAbstractionRelation, Vec<(T, AbstractionRefusal)>> {
+        let mut accepted: BTreeMap<AbstractionKey, AuthoredBinding> = BTreeMap::new();
         let mut refusals = Vec::new();
-        for binding in bindings {
-            if let Err(refusal) = self.admit_binding(binding) {
-                refusals.push(*refusal);
+        for (tag, item) in items {
+            let binding = match item {
+                Ok(binding) => binding,
+                Err(refusal) => {
+                    refusals.push((tag, refusal));
+                    continue;
+                }
+            };
+            if let Err(refusal) = self.admit_binding(&binding) {
+                refusals.push((tag, *refusal));
                 continue;
             }
             match accepted.entry(binding.key()) {
@@ -597,11 +657,14 @@ impl CheckedGraph {
                     slot.insert(binding);
                 }
                 std::collections::btree_map::Entry::Occupied(first) => {
-                    refusals.push(AbstractionRefusal::ConflictingBinding {
-                        key: first.key().clone(),
-                        first: Box::new((*first.get()).clone()),
-                        second: Box::new(binding.clone()),
-                    });
+                    refusals.push((
+                        tag,
+                        AbstractionRefusal::ConflictingBinding {
+                            key: first.key().clone(),
+                            first: Box::new(first.get().clone()),
+                            second: Box::new(binding),
+                        },
+                    ));
                 }
             }
         }
@@ -612,14 +675,12 @@ impl CheckedGraph {
             .into_iter()
             .map(|(key, binding)| {
                 let checked = match binding {
-                    AuthoredBinding::Object { value, .. } => CheckedBinding::Object(value.clone()),
-                    AuthoredBinding::Population { value, .. } => {
-                        CheckedBinding::Population(value.clone())
-                    }
+                    AuthoredBinding::Object { value, .. } => CheckedBinding::Object(value),
+                    AuthoredBinding::Population { value, .. } => CheckedBinding::Population(value),
                     AuthoredBinding::Frame { key, value } => {
                         CheckedBinding::Frame(CheckedFrameBinding {
-                            binding: value.clone(),
-                            frame_nodes: self.frame_nodes(key),
+                            frame_nodes: self.frame_nodes(&key),
+                            binding: value,
                         })
                     }
                 };

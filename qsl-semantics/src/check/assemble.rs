@@ -710,7 +710,7 @@ struct Unit {
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
     /// Each `abstraction` declaration (FR-304), in source order, for
-    /// `CheckedGraph::declared_abstraction` to check at S3.
+    /// `CheckedGraph::abstraction` to check at S3.
     abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
     /// Each `hyper` clause and `relation`, in source order, for
     /// `check::hyper_clause` to resolve at S3.

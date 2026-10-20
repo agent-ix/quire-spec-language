@@ -2,8 +2,8 @@
 //! TC-804 (FR-306-AC-1, FR-306-AC-2): the abstraction relation of a checked
 //! package is written as one `correspondence`/`abstraction_relation` v2 node
 //! (QSpec FR-451) that enters the `package_id`. The relation is bound with
-//! `CheckedPackage::bind_abstraction`, as no source compile reads an
-//! `abstraction` declaration yet, and the bytes are read back through IR's
+//! `CheckedPackage::bind_abstraction` (the source path is tested in
+//! `qsl-replay`'s model-gate tests), and the bytes are read back through IR's
 //! reader. The expected body is written here from FR-451.
 
 use qsl_semantics::check::{

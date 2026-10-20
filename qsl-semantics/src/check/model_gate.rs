@@ -4,8 +4,8 @@
 //!
 //! A model construct is an `operation-body` declaration, an `abstraction`
 //! declaration, a dispatched `receiver.member(args)` call or a
-//! `lookup<T>(p, r) absent m` expression (FR-361 item 5). The selection is the header and nothing else (item 1): the
-//! gate reads the unit's header profile identities, never a construct, a
+//! `lookup<T>(p, r) absent m` expression (FR-361 item 5). The selection is
+//! the header and nothing else (item 1): the gate reads the unit's header profile identities, never a construct, a
 //! `model` declaration or an alias. Every construct is reported, in source
 //! order, and a construct in a declaration nothing uses is refused too
 //! (items 11, 13).

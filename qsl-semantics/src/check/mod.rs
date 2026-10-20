@@ -497,8 +497,11 @@ pub struct CheckedGraph {
     /// FR-135 to FR-137: every checked refinement, in declaration order.
     refinements: Vec<CheckedRefinement>,
     /// FR-304: the unit's `abstraction` declarations, in declaration order,
-    /// for [`Self::declared_abstraction`] to check.
+    /// checked into [`Self::abstraction`].
     abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
+    /// FR-304: what each `model` alias exports, for the names an
+    /// `abstraction` declaration writes.
+    model_names: BTreeMap<String, abstraction::ModelNames>,
     /// FR-304: the relation the `abstraction` declarations check to, when
     /// the unit holds any.
     abstraction: Option<CheckedAbstractionRelation>,
@@ -1113,6 +1116,7 @@ impl PackageDeclarations {
             .pending_types
             .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
+        let model_names = abstraction::model_names(&models);
         let model_populations = model_population_tables(&models);
         let population_bounds = checked_population_bounds(&models);
         let population_keys = population_key_table(&models);
@@ -3056,6 +3060,7 @@ impl PackageDeclarations {
             terminals,
             refinements,
             abstractions: self.abstractions,
+            model_names,
             protocols: checked_protocols,
             temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
@@ -3077,11 +3082,10 @@ impl PackageDeclarations {
         match graph.check_declared_abstraction() {
             Ok(relation) => graph.abstraction = relation,
             Err(found) => {
-                let location = graph.abstraction_location();
                 return Err(found
                     .into_iter()
-                    .map(|refusal| CheckRefusal {
-                        location: location.clone(),
+                    .map(|(index, refusal)| CheckRefusal {
+                        location: graph.abstraction_location(index),
                         cause: CheckCause::Abstraction(Box::new(refusal)),
                     })
                     .collect());
