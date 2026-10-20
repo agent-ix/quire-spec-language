@@ -72,3 +72,25 @@ cuts), which this suite also misses (FND-002 here).
 | FND-007 | medium | FR-229-AC-2's `memory` anchor on a `flush` position, FR-229-AC-4 (MR-1 and MR-2 visibility and independence), and FR-227-AC-1's carried memory component per step are not delivered. See SR-12239 FND-002 for the footprint side. | spec/functional/FR-229-carry-the-memory-component-through-the-protocol-system.md:119-121; spec/functional/FR-227-carry-and-replay-a-weak-memory-counterexample.md:93 |
 | FND-008 | low | Spec question: FR-221-AC-1 names the counterexample `Sx, Ly, Sy, Lx`, but FR-181's canonical transition order yields `Sx, Sy, Lx, Ly`. The state counts (34 + 4) and the last-position memory and buffers match. Either the AC should be reworded to "a counterexample whose last position ...", or FR-181's order should be reconciled. | spec/functional/FR-221-explore-the-x86-tso-memory-model.md:63; qsl-analyze/tests/it/weak_memory.rs:758-835 |
 | FND-009 | low | Spec question: MA-1 counts sharing over attempt footprints only. A model read by a non-attempt step in another branch (an `event`/`send` record enumeration, or a guard) does not make a location shared, so a store to it applies in place under `tso`. This matches the spec as written. ADR-025 should say whether such readers count. | qsl-eval/src/simulation/protocol/access.rs:347-391 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | `memory_bound.reached` is read only from a `MemoryBoundReached` value. A `refuted` run whose exploration cut stores before it found the counterexample states `reached: false`. FR-225 asks whether the bound was reached. The verdict is still sound (MB-4), but the stated flag can be false when stores were cut. | qsl-replay/src/model_check/settle.rs |
+
+## Dispositions
+
+Round 1. Reviewed at 7ff5a7d1acf4cd74e3e769029086101d62dc6fc3; the fix commit is acb5ad013.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed acb5ad013 | The FR-220-AC-4 test now compares the sorted state-key sets for equality. |
+| FND-002 | fixed acb5ad013 | `a_closure_certificate_closed_only_under_a_cutting_bound_is_not_proved`: a bound-4 `Holds` certificate checked under bound 1 settles `MemoryBoundReached`, with the same state count as the engine's own run, and `proved` under the default bound. |
+| FND-003 | deferred: protocol subjects have no request wire and no obligation-identity digest yet. The ACs are left untagged as remainder, and the PR body records it. |
+| FND-004 | fixed acb5ad013 | `ModelCheckRecord.memory_bound: Option<StatedMemoryBound{bound, reached}>`. A `tso` record states `max_store_buffer` 4, not reached, and an `sc` record states none. The litmus test asserts both. See FND-010 for the `reached` flag on a refuted run. |
+| FND-005 | fixed acb5ad013 | MP, LB, IRIW, 2+2W and CoRR under `tso` settle `proved`, and their terminal register outcomes equal the `sc` ones (more than one outcome each). The `send` gate is tested, with a non-vacuous `waited > 0`. FR-221-AC-4 is tagged, and the join half is covered by `the_join_waits_for_empty_buffers`. |
+| FND-006 | deferred: FR-220-AC-14 waits on an open QSpec FR-439 decision. The PR records it as remainder. |
+| FND-007 | deferred: the MR-1 and MR-2 footprints have landed and are tested (TC-666 only). The FR-229-AC-2 `memory` anchor on a flush position and the FR-227-AC-1 carried memory component per step are still remainder and untagged. |
+| FND-008 | deferred: spec question for the spec owner (the FR-221-AC-1 step order against FR-181). |
+| FND-009 | deferred: spec question for the ADR-025 owner (whether readers other than attempts count for MA-1 sharing). |
