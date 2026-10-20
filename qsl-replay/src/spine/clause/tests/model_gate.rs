@@ -9,7 +9,9 @@ use std::collections::BTreeSet;
 
 use super::*;
 use crate::spine::{CompileRefusal, SuppliedLibrary};
-use qsl_semantics::check::{CheckedBinding, AssemblyCause, AssemblyError, ModelFamily, OwnerKind, ProfileCause};
+use qsl_semantics::check::{
+    AssemblyCause, AssemblyError, CheckedBinding, ModelFamily, OwnerKind, ProfileCause,
+};
 use qsl_semantics::value::{CatalogRole, DefinitionLock, HeaderLayer, LayerForm};
 
 const CORE: &str = "quire.state.core/v1";
@@ -575,7 +577,11 @@ fn two_abstraction_declarations_make_one_relation() {
         panic!("one refusal: {refusals:?}");
     };
     assert_eq!(
-        refusal.cause.catalog_code().expect("a catalog pair").to_string(),
+        refusal
+            .cause
+            .catalog_code()
+            .expect("a catalog pair")
+            .to_string(),
         "invalid_model_binding/conflicting-binding"
     );
 }
@@ -585,8 +591,7 @@ fn two_abstraction_declarations_make_one_relation() {
 #[trace("FR-304-AC-3")]
 #[test]
 fn an_abstraction_binding_naming_nothing_refuses_at_the_name() {
-    let declaration =
-        "abstraction A using v { type Config::Absent to \"store::Version\"; }";
+    let declaration = "abstraction A using v { type Config::Absent to \"store::Version\"; }";
     let (unit, compiled) = compile(&[("v", MODEL)], declaration);
     let CompileRefusal::Check { refusals, region } = *compiled.expect_err("the name is absent")
     else {

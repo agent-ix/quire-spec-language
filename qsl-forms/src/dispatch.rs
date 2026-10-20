@@ -412,9 +412,7 @@ fn dispatch(
 ) -> Result<DeclarationForm, FormsRefusal> {
     match kind {
         LeadingTokenKind::Union => sum_case::union_declaration(construct),
-        LeadingTokenKind::Abstraction => {
-            abstraction_declaration::abstraction_declaration(construct)
-        }
+        LeadingTokenKind::Abstraction => abstraction_declaration::declaration(construct),
         LeadingTokenKind::Function => value::function(construct),
         LeadingTokenKind::Type => value::alias(construct),
         LeadingTokenKind::Record => value::record(construct),

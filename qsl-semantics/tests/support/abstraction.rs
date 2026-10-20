@@ -98,7 +98,6 @@ pub(crate) fn document() -> Value {
                 "supertypes": [],
                 "fields": [base::field("Panel", "level", INTEGER)],
                 "operations": [],
-                "featureOrder": [id("Panel/level")],
             }),
         ),
     ];

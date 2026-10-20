@@ -117,9 +117,7 @@ pub struct ParameterBindingForm {
 }
 
 /// `abstraction Name using p { binding+ }` (FR-304 "Placement").
-pub(crate) fn abstraction_declaration(
-    construct: Construct<'_>,
-) -> Result<DeclarationForm, FormsRefusal> {
+pub(crate) fn declaration(construct: Construct<'_>) -> Result<DeclarationForm, FormsRefusal> {
     let cst = construct.cst;
     let node = production_node(construct)?;
     let declaration_items = items(cst, node);
