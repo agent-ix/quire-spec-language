@@ -3289,6 +3289,9 @@ impl PackageDeclarations {
                 );
             }
         }
+        // FR-185: each random parameter's support values and each reward's
+        // expression are located at their own sites.
+        declared_site_spans.extend(super::probabilistic::site_spans(&unit.probabilistic));
         package.declared_site_spans = declared_site_spans;
         // FR-381: a template's operation anchor occurrence is recorded at
         // the template's name.
