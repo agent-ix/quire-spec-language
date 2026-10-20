@@ -166,6 +166,13 @@ pub enum ModelTraceRefusal {
         "unsupported_construct/not-yet-implemented: the clause has a guarded `on each` activation"
     )]
     GuardedActivation,
+    /// A refinement counterexample that names no refinement failure.
+    #[error("invalid_runtime_input/invalid-value: the payload names no refinement failure")]
+    NoRefinementFailure,
+    /// A refinement counterexample that is a lasso, which FR-143's liveness
+    /// failures write and replay does not build yet.
+    #[error("unsupported_construct/not-yet-implemented: replay of a refinement lasso")]
+    RefinementLasso,
     /// A step's transition identity is not enabled at its pre-state.
     #[error("invalid_runtime_input/invalid-value: step {step} is not enabled")]
     NotEnabled {
@@ -193,10 +200,13 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::PostState { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
-            Self::AuthoredUndefined | Self::GuardedActivation => Code::UnsupportedConstruct,
+            Self::AuthoredUndefined | Self::GuardedActivation | Self::RefinementLasso => {
+                Code::UnsupportedConstruct
+            }
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
+            | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => Code::InvalidRuntimeInput,
@@ -210,10 +220,13 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
             | Self::PostState { .. } => "content-mismatch",
-            Self::AuthoredUndefined | Self::GuardedActivation => "not-yet-implemented",
+            Self::AuthoredUndefined | Self::GuardedActivation | Self::RefinementLasso => {
+                "not-yet-implemented"
+            }
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
+            | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
             | Self::StutterNotTerminal { .. } => "invalid-value",
@@ -285,21 +298,25 @@ pub struct ModelTraceReplayResult {
     pub package_id: PackageId,
 }
 
-/// A model counterexample refutes its item: the proved verdict is
-/// `violation`.
-fn disagrees(replayed: Category) -> ModelTraceSettlement {
-    ModelTraceSettlement::Inconclusive(DisagreementCause::Verdicts {
+/// The disagreement of a replay that reads `replayed` where a model
+/// counterexample refutes its item: the proved verdict is `violation`.
+pub(super) fn disagreement(replayed: Category) -> DisagreementCause {
+    DisagreementCause::Verdicts {
         proved: Verdict::from_category(Category::Violation),
         replayed: Verdict::from_category(replayed),
-    })
+    }
 }
 
-/// A refuted claim whose replay completed no value.
+/// The disagreement of a replay that completed no value.
 pub(super) fn no_value_cause() -> DisagreementCause {
     DisagreementCause::NoValue {
         proved: Verdict::from_category(Category::Violation),
         replayed: Verdict::from_category(Category::Incomplete),
     }
+}
+
+fn disagrees(replayed: Category) -> ModelTraceSettlement {
+    ModelTraceSettlement::Inconclusive(disagreement(replayed))
 }
 
 fn no_value() -> ModelTraceSettlement {
@@ -380,7 +397,7 @@ pub fn replay_model_trace(
     })
 }
 
-fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
+pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
     ReplayRefusal::ModelTrace(Box::new(refusal))
 }
 
@@ -464,14 +481,14 @@ fn names_deadlock_item(payload: &TemporalCounterexample) -> bool {
     }
 }
 
-fn fault(invariant: &'static str) -> ReplayRefusal {
+pub(super) fn fault(invariant: &'static str) -> ReplayRefusal {
     ReplayRefusal::Fault(InternalFault::new("replay-model-trace", invariant))
 }
 
 /// One replayed position: its state and digest.
-struct Position {
-    state: ModelSimState,
-    digest: DigestRecord,
+pub(super) struct Position {
+    pub(super) state: ModelSimState,
+    pub(super) digest: DigestRecord,
 }
 
 /// The successors of `state`, or the stop an expansion returned.
@@ -501,12 +518,19 @@ struct FormulaReplay<'a> {
     meter: ScalarLimits,
 }
 
-/// Re-execute the payload's prefix and check what it claims.
-fn settle(
+/// Re-execute the payload's prefix from its initial state, one position per
+/// state: a step's post-state digest selects its successor among the
+/// post-states of its transition identity. `None` when an expansion stops
+/// (the replay then completes no value).
+///
+/// # Errors
+///
+/// [`ModelTraceRefusal::InitialState`], [`ModelTraceRefusal::NotEnabled`] or
+/// [`ModelTraceRefusal::PostState`].
+pub(super) fn reexecute(
     system: &ModelSystem<'_>,
     payload: &TemporalCounterexample,
-    formula: Option<FormulaReplay<'_>>,
-) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
+) -> Result<Option<Vec<Position>>, ReplayRefusal> {
     let initial = system.initial();
     let count = initial.len();
     let state = initial
@@ -524,7 +548,7 @@ fn settle(
         let current = positions.last().ok_or_else(|| fault("a-position-exists"))?;
         let expansion = match expand(system, &current.state)? {
             Ok(expansion) => expansion,
-            Err(_) => return Ok((no_value(), Vec::new())),
+            Err(_) => return Ok(None),
         };
         let mut enabled = false;
         let mut reached = None;
@@ -556,6 +580,18 @@ fn settle(
         })?;
         positions.push(next);
     }
+    Ok(Some(positions))
+}
+
+/// Re-execute the payload's prefix and check what it claims.
+fn settle(
+    system: &ModelSystem<'_>,
+    payload: &TemporalCounterexample,
+    formula: Option<FormulaReplay<'_>>,
+) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal> {
+    let Some(positions) = reexecute(system, payload)? else {
+        return Ok((no_value(), Vec::new()));
+    };
     if let Some(lasso) = payload.lasso {
         close_loop(system, &positions, lasso)?;
     }
@@ -1000,7 +1036,10 @@ fn undefined(
     // engine reads it: when the state is reached, before it is expanded.
     let constraint = match &claimed.site.locus {
         UndefinedLocus::Constraint(name) => Some(name.as_str()),
-        UndefinedLocus::Atom(_) | UndefinedLocus::Contract(_) | UndefinedLocus::Terminal(_) => None,
+        UndefinedLocus::Atom(_)
+        | UndefinedLocus::Contract(_)
+        | UndefinedLocus::Terminal(_)
+        | UndefinedLocus::Mapping { .. } => None,
     };
     if constraint.is_some_and(|name| !system.has_constraint(name)) {
         return Ok(disagrees(Category::Success));
