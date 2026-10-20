@@ -26,4 +26,4 @@ Tag the tests `#[trace("TC-577", "FR-156-AC-n")]`.
 ## Expected Results
 
 - Step 1: `{step(r)}` at `(0, 0)` and `(1, 0)`; full expansion at `(2, 0)`; `Violated` with the six-step prefix, which replays; unreduced `Violated`.
-- Step 2: the candidate holds `arm`, `arm2` and `go`, with enabled part `{arm}`; equal ample sets and outcomes.
+- Step 2: the candidate seeded by `touch` holds `arm2` and `arm`, with enabled part `{touch, arm}`, read from the candidate itself; equal ample sets and outcomes.

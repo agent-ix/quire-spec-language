@@ -504,7 +504,7 @@ A caller-supplied lock file never enters `package_id`.
 | `model_selections` | The source header's `model` declarations, matched to the domain packages admitted at I1, each by identity and `sha256-jcs` digest. Spine `compile` (§5) runs I1 over the unit's `model` declarations (amended 2026-09-25). |
 | `sources` | `RawSourceRef` (`quire.source.bytes/v1`) over the bytes E1 read |
 | `required_features` | §2.2 E4: `["quire.value.complete/v1"]` for a function-only `Value` package |
-| `dependency_selections` | One `{identity, package_id}` entry per library identity of the resolved closure: the identity each import names and the dependency's own `package_id`; a selection binds by identity and carries no version (QSpec FR-322-AC-35) |
+| `dependency_selections` | One `{identity, package_id}` entry per directly imported library identity: the identity each import names and the dependency's own `package_id`; a selection binds by identity and carries no version (QSpec FR-322-AC-35) |
 
 **Amended (2026-09-24).** The emitter takes the edition and
 definition selections from the `DefinitionLock` catalog
@@ -519,7 +519,7 @@ A `dependency_selections` entry is a QSpec `DependencySelection`
 `{identity, package_id}`: the library identity an
 `import "L"` names, and the dependency's own
 `quire.package.semantic/v2` `package_id` (FR-322, QSpec STD-105). The lock
-and the identity preimage hold the same entries, one per library identity,
+and the identity preimage hold the same entries, one per directly imported library identity,
 in strictly ascending UTF-8 byte order of `identity`, so each dependency's
 `package_id` enters the importing package's. E4
 (`CheckedPackage::link_with`) builds the closure from the direct imports and
@@ -527,8 +527,9 @@ each dependency's own closure, refusing two selections of one identity whose
 `package_id`s differ (FR-307's diamond rule,
 `invalid_package`/`conflicting-definition`). An import names its library by
 identity alone, so E4 compares no recorded digest; it records each
-dependency's recomputed `package_id`. The emitter writes the closure in both
-members, and the I2 reader admits a non-empty `dependency_selections`.
+dependency's recomputed `package_id`. The emitter writes only direct selections
+in both members. The I2 reader derives the closure recursively from those
+entries and each admitted dependency's own direct lock entries.
 
 **Amended (2026-09-25).** The QSpec schema defect this section
 recorded is fixed (QSpec STD-105; IR-287 types the entry as
@@ -1436,10 +1437,11 @@ sections it names.
   native `run` does not need formatted input. The exception covers `format`
   only; native `run` stays until M-6c (OQ-1).
 - **OQ-5: `dependency_selections`.** Each entry is
-  `{identity, package_id}`, one per library identity of the
-  resolved closure, identical in the lock and the identity preimage (QSpec
+  `{identity, package_id}`, one per directly imported library identity,
+  identical in the lock and the identity preimage (QSpec
   STD-105, IR-287). E4 fills it and the emitter writes it (§2.4). Spine
-  `compile` and `replay` resolve imports against a dependency input
+  `compile` and `replay` derive the closure recursively from admitted
+  dependencies' direct locks and resolve imports against a dependency input
   (ADR-015). It is not a prerequisite of the lock-evidence work.
 - **OQ-6: edition and definition selections.** The edition is `ix:native`;
   the fixtures' `quire-edition` edition is a placeholder. Edition and
