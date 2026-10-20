@@ -364,6 +364,16 @@ impl World {
         }
     }
 
+    /// The letters of clause `index`, its atoms read by `atoms`, and the
+    /// atoms in the order the clause's automaton numbers them.
+    pub(crate) fn letters(&self, index: usize, atoms: Vec<Atom>) -> (Letters, Vec<FormulaNodeId>) {
+        let nodes = translate(&self.clauses[index], 1 << 20)
+            .expect("the clause translates")
+            .atoms()
+            .to_vec();
+        (Letters::new(self, index, atoms), nodes)
+    }
+
     /// The subject's model system.
     pub(crate) fn system(&self) -> ModelSystem<'_> {
         ModelSystem::new(self.subject().simulation).expect("the subject admits")
@@ -379,7 +389,7 @@ impl World {
         max_depth: Option<usize>,
         limits: ModelCheckLimits,
     ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
-        let letters = clause.map(|index| Letters::new(&self.clauses[index], atoms));
+        let letters = clause.map(|index| Letters::new(self, index, atoms));
         let item = match (clause, &letters) {
             (Some(index), Some(letters)) => ModelCheckItem::Clause {
                 clause: &self.clauses[index],
@@ -619,7 +629,7 @@ impl World {
         atoms: Vec<Atom>,
         payload: TemporalCounterexample,
     ) -> ModelTraceSettlement {
-        let letters = Letters::new(&self.clauses[clause], atoms);
+        let letters = Letters::new(self, clause, atoms);
         replay_unit(
             &self.replay_unit(),
             &self.trace_subject(),
@@ -684,20 +694,47 @@ pub(crate) fn atom(test: fn(i64) -> Option<bool>) -> Atom {
 pub(crate) struct Letters {
     holds: Vec<FormulaNodeId>,
     atoms: Vec<Atom>,
+    /// What each atom reads, derived from its checked condition (FR-156).
+    reads: Vec<crate::units::Reads>,
 }
 
 impl Letters {
-    fn new(clause: &CheckedTemporalClause, atoms: Vec<Atom>) -> Self {
+    /// The letters of clause `index` of `world`, its atoms read by `atoms`
+    /// and their footprints derived from the checked conditions.
+    fn new(world: &World, index: usize, atoms: Vec<Atom>) -> Self {
+        let clause = &world.clauses[index];
         let holds = translate(clause, 1 << 20)
             .expect("the clause translates")
             .atoms()
             .to_vec();
         assert_eq!(holds.len(), atoms.len(), "one predicate per `holds` atom");
-        Self { holds, atoms }
+        let system = world.system();
+        let node = &world.package.graph().temporal_clauses()[index];
+        let reads = holds
+            .iter()
+            .map(|atom| {
+                let (condition, _) = node.condition(*atom).expect("a `holds` atom");
+                system.atom_reads(clause.over(), condition)
+            })
+            .collect();
+        Self {
+            holds,
+            atoms,
+            reads,
+        }
     }
 }
 
 impl ModelLetters for Letters {
+    fn reads(&self, atom: FormulaNodeId) -> crate::units::Reads {
+        let index = self
+            .holds
+            .iter()
+            .position(|node| *node == atom)
+            .expect("the engine reads only the clause's atoms");
+        self.reads[index].clone()
+    }
+
     fn atom(
         &self,
         atom: FormulaNodeId,
@@ -724,6 +761,10 @@ impl ModelLetters for Letters {
 struct NoAtoms;
 
 impl ModelLetters for NoAtoms {
+    fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
+        crate::units::unread()
+    }
+
     fn atom(
         &self,
         _atom: FormulaNodeId,

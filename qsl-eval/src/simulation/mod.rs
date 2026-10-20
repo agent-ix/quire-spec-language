@@ -38,7 +38,7 @@ mod trace;
 pub use choice::{weighted_choice, ChoicePoint, TotalAboveDrawRange, Weights, WeightsRefusal};
 pub use expansion::{Expansion, ExpansionLimit, ExpansionStop, StateFindings};
 pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, TransitionSystem};
-pub use footprint::{independent, Footprint, Location};
+pub use footprint::{any_affects, independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};
 pub use key::EncodingRefusal;
 pub use not_simulated::{NotSimulated, RequiresBound, BOUND_POSITIONS};

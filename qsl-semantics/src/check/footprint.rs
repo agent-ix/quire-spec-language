@@ -11,7 +11,9 @@ use std::collections::BTreeSet;
 
 use quire_exact::{EffectiveId, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
+use quire_semantic_value::location::Location;
 
+use crate::check::observation::Observations;
 use crate::check::{CheckedGraph, CheckedNode, CheckedStateClause, NodeKind};
 use crate::model::clause_observation::Observation;
 use crate::model::key::DeclarationKey;
@@ -151,14 +153,12 @@ pub(crate) fn derive_from(
     arguments: &[(String, EffectiveId)],
 ) -> Result<SymbolicFootprint, FootprintRefusal> {
     let derivation = Derivation {
-        types,
+        reader: Reader::new(types, model)?,
         clauses,
-        model,
         receiver_type,
         declaring,
         operation,
         arguments,
-        populations: populations(model)?,
     };
     derivation.run()
 }
@@ -227,49 +227,123 @@ pub(crate) fn parameter_target(value_type: &ValueType) -> Option<EffectiveId> {
     }
 }
 
-struct Derivation<'a> {
+/// FR-156 "Atom footprints": the locations the `holds` atom whose checked
+/// condition is `condition` reads, with the `over` parameter (slot 0)
+/// symbolic as [`FootprintObject::Receiver`]; the engine replaces it with
+/// each instance's object.
+///
+/// # Errors
+///
+/// [`FootprintRefusal::UnsupportedForm`] when the condition reads through a
+/// form QSpec FR-383 gives no rule for, and [`FootprintRefusal::Unresolved`]
+/// when the model does not declare a type the derivation needs.
+pub fn derive_atom_reads(
+    graph: &CheckedGraph,
+    model: &StateModel,
+    over: &(String, ValueType),
+    condition: CheckedNode<'_>,
+) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+    let reader = Reader::new(graph.scope().types(), model)?;
+    let scope = BodyScope {
+        name: "holds",
+        binds_result: false,
+        parameters: std::slice::from_ref(over),
+        observations: None,
+        observation: Observation::Current,
+    };
+    Ok(reader
+        .body_reads(&scope, condition)?
+        .into_iter()
+        .map(|(location, _)| location)
+        .collect())
+}
+
+/// FR-156 "Visibility": the locations the state constraint `clause` reads.
+/// The constraint holds for every object of its context type, so the
+/// context's `self` reads are reads on any object, and the membership of
+/// every population that can hold such an object is read.
+///
+/// # Errors
+///
+/// As [`derive_atom_reads`].
+pub fn derive_constraint_reads(
+    graph: &CheckedGraph,
+    model: &StateModel,
+    clause: &CheckedStateClause,
+) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+    let reader = Reader::new(graph.scope().types(), model)?;
+    let mut reads = BTreeSet::new();
+    for (location, _) in reader.body_reads(&BodyScope::of_clause(clause), clause.body())? {
+        reads.insert(match location {
+            SymbolicLocation::Field {
+                object: FootprintObject::Receiver,
+                field,
+            } => SymbolicLocation::AnyField { field },
+            other => other,
+        });
+    }
+    for population in &reader.populations {
+        if population
+            .members
+            .iter()
+            .any(|member| reader.conforms(*member, clause.context()))
+        {
+            reads.insert(SymbolicLocation::AnyMembership {
+                population: population.key.clone(),
+            });
+        }
+    }
+    Ok(reads)
+}
+
+/// What a body read derivation consults of the clause around the body: its
+/// name for a refusal, the slots its parameters occupy, and the instant each
+/// model read observes.
+struct BodyScope<'c> {
+    name: &'c str,
+    binds_result: bool,
+    parameters: &'c [(String, ValueType)],
+    observations: Option<&'c Observations>,
+    observation: Observation,
+}
+
+impl<'c> BodyScope<'c> {
+    fn of_clause(clause: &'c CheckedStateClause) -> Self {
+        Self {
+            name: clause.name(),
+            binds_result: clause.binds_result(),
+            parameters: clause.parameters(),
+            observations: Some(&clause.observations),
+            observation: clause.observation(),
+        }
+    }
+
+    fn observation_of(&self, location: &Location) -> Observation {
+        self.observations
+            .and_then(|observations| observations.of_read(location))
+            .unwrap_or(self.observation)
+    }
+}
+
+/// The type environment, the model and the populations a read derivation
+/// resolves types against.
+struct Reader<'a> {
     types: &'a TypeEnvironment,
-    clauses: &'a [CheckedStateClause],
     model: &'a StateModel,
-    receiver_type: EffectiveId,
-    declaring: EffectiveId,
-    operation: &'a OperationDeclaration,
-    arguments: &'a [(String, EffectiveId)],
     populations: Vec<PopulationTypes>,
 }
 
-impl Derivation<'_> {
+impl<'a> Reader<'a> {
+    fn new(types: &'a TypeEnvironment, model: &'a StateModel) -> Result<Self, FootprintRefusal> {
+        Ok(Self {
+            types,
+            model,
+            populations: populations(model)?,
+        })
+    }
+
     fn conforms(&self, sub: EffectiveId, sup: EffectiveId) -> bool {
         self.types.conforms(sub, sup)
-    }
-
-    /// The populations whose member type `object` conforms to.
-    fn populations_holding(&self, object: EffectiveId) -> impl Iterator<Item = &DeclarationKey> {
-        self.populations
-            .iter()
-            .filter(move |population| {
-                population
-                    .members
-                    .iter()
-                    .any(|member| self.conforms(object, *member))
-            })
-            .map(|population| &population.key)
-    }
-
-    /// The populations with a member type that conforms to `supertype`.
-    fn populations_of_subtypes(
-        &self,
-        supertype: EffectiveId,
-    ) -> impl Iterator<Item = &DeclarationKey> {
-        self.populations
-            .iter()
-            .filter(move |population| {
-                population
-                    .members
-                    .iter()
-                    .any(|member| self.conforms(*member, supertype))
-            })
-            .map(|population| &population.key)
     }
 
     /// The populations that can hold an object of `target` or of a subtype
@@ -301,6 +375,181 @@ impl Derivation<'_> {
             package: owner.package.clone(),
             node: format!("{}/{name}", owner.node),
         })
+    }
+
+    /// Every location the body at `root` reads, with the instant it reads
+    /// it at.
+    fn body_reads(
+        &self,
+        scope: &BodyScope<'_>,
+        root: CheckedNode<'_>,
+    ) -> Result<Vec<(SymbolicLocation, Observation)>, FootprintRefusal> {
+        let mut reads = Vec::new();
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            self.node_reads(scope, node, &mut reads)?;
+            pending.extend(node.kind().children().into_iter().map(|id| node.at(id)));
+        }
+        Ok(reads)
+    }
+
+    fn node_reads(
+        &self,
+        scope: &BodyScope<'_>,
+        node: CheckedNode<'_>,
+        reads: &mut Vec<(SymbolicLocation, Observation)>,
+    ) -> Result<(), FootprintRefusal> {
+        let observation = scope.observation_of(node.location());
+        let unsupported = |form| FootprintRefusal::UnsupportedForm {
+            clause: scope.name.to_owned(),
+            form,
+        };
+        match node.kind() {
+            NodeKind::Attribute {
+                reference, field, ..
+            } => {
+                let field = self.field_key(field.owner, &field.name)?;
+                let location = match self.holder(scope, node.at(*reference)) {
+                    Holder::Receiver => SymbolicLocation::Field {
+                        object: FootprintObject::Receiver,
+                        field,
+                    },
+                    Holder::Parameter(name) => SymbolicLocation::Field {
+                        object: FootprintObject::Param(name),
+                        field,
+                    },
+                    Holder::Other => SymbolicLocation::AnyField { field },
+                };
+                reads.push((location, observation));
+            }
+            NodeKind::Reaches { edge, .. } => {
+                reads.push((
+                    SymbolicLocation::AnyField {
+                        field: self.field_key(edge.owner, &edge.name)?,
+                    },
+                    observation,
+                ));
+            }
+            // A clause that names one population (`M::P`, FR-391) reads that
+            // population's membership alone.
+            NodeKind::AllInstances { population } | NodeKind::Lookup { population, .. }
+                if let NodeKind::NamedPopulation { population, .. } =
+                    node.at(*population).kind() =>
+            {
+                reads.push((
+                    SymbolicLocation::AnyMembership {
+                        population: population.clone(),
+                    },
+                    observation,
+                ));
+            }
+            // The population operand is a population-typed parameter, which
+            // names no population, so every population related to the result
+            // type is read.
+            NodeKind::AllInstances { .. } | NodeKind::Lookup { .. } => {
+                let mut targets = Vec::new();
+                referenced_types(node.value_type(), &mut targets);
+                for target in targets {
+                    for population in self.populations_relating(target) {
+                        reads.push((
+                            SymbolicLocation::AnyMembership {
+                                population: population.clone(),
+                            },
+                            observation,
+                        ));
+                    }
+                }
+            }
+            NodeKind::Local(slot) if scope.binds_result && *slot == 1 => {
+                let mut targets = Vec::new();
+                referenced_types(node.value_type(), &mut targets);
+                for target in targets {
+                    for population in self.populations_relating(target) {
+                        reads.push((
+                            SymbolicLocation::AnyMembership {
+                                population: population.clone(),
+                            },
+                            Observation::Post,
+                        ));
+                    }
+                }
+            }
+            NodeKind::Navigate { .. } => return Err(unsupported("relationship navigation")),
+            NodeKind::ReachesEnd { .. } => return Err(unsupported("relationship reachability")),
+            NodeKind::Call { .. } | NodeKind::ImportedCall { .. } => {
+                return Err(unsupported("function call"))
+            }
+            NodeKind::Dispatch { .. } => return Err(unsupported("dispatched call")),
+            NodeKind::ProtocolReference { .. } => return Err(unsupported("protocol reference")),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Which object a field read is taken from.
+    fn holder(&self, scope: &BodyScope<'_>, mut node: CheckedNode<'_>) -> Holder {
+        loop {
+            match node.kind() {
+                NodeKind::Value(operand) | NodeKind::Coerce(operand, _) => {
+                    node = node.at(*operand);
+                }
+                NodeKind::Local(0) => return Holder::Receiver,
+                NodeKind::Local(slot) => {
+                    let first = 1 + usize::from(scope.binds_result);
+                    return match scope.parameters.get(*slot) {
+                        Some((name, value_type))
+                            if *slot >= first && parameter_target(value_type).is_some() =>
+                        {
+                            Holder::Parameter(name.clone())
+                        }
+                        _ => Holder::Other,
+                    };
+                }
+                _ => return Holder::Other,
+            }
+        }
+    }
+}
+
+struct Derivation<'a> {
+    reader: Reader<'a>,
+    clauses: &'a [CheckedStateClause],
+    receiver_type: EffectiveId,
+    declaring: EffectiveId,
+    operation: &'a OperationDeclaration,
+    arguments: &'a [(String, EffectiveId)],
+}
+
+impl Derivation<'_> {
+    /// The populations whose member type `object` conforms to.
+    fn populations_holding(&self, object: EffectiveId) -> impl Iterator<Item = &DeclarationKey> {
+        self.reader
+            .populations
+            .iter()
+            .filter(move |population| {
+                population
+                    .members
+                    .iter()
+                    .any(|member| self.reader.conforms(object, *member))
+            })
+            .map(|population| &population.key)
+    }
+
+    /// The populations with a member type that conforms to `supertype`.
+    fn populations_of_subtypes(
+        &self,
+        supertype: EffectiveId,
+    ) -> impl Iterator<Item = &DeclarationKey> {
+        self.reader
+            .populations
+            .iter()
+            .filter(move |population| {
+                population
+                    .members
+                    .iter()
+                    .any(|member| self.reader.conforms(*member, supertype))
+            })
+            .map(|population| &population.key)
     }
 
     /// The object type of the argument bound to the parameter `name`.
@@ -392,7 +641,7 @@ impl Derivation<'_> {
             if targets.iter().any(|target| {
                 deleted_types
                     .iter()
-                    .any(|deleted| self.conforms(*deleted, *target))
+                    .any(|deleted| self.reader.conforms(*deleted, *target))
             }) {
                 reads.insert(SymbolicLocation::AnyField { field });
             }
@@ -432,7 +681,10 @@ impl Derivation<'_> {
             {
                 continue;
             }
-            for (location, observation) in self.clause_reads(clause)? {
+            for (location, observation) in self
+                .reader
+                .body_reads(&BodyScope::of_clause(clause), clause.body())?
+            {
                 // A post-state read inside the write footprint reads a value
                 // the step itself chooses.
                 let chosen = observation == Observation::Post
@@ -456,7 +708,7 @@ impl Derivation<'_> {
         reads: &mut BTreeSet<SymbolicLocation>,
     ) {
         for target in targets {
-            for population in self.populations_relating(*target) {
+            for population in self.reader.populations_relating(*target) {
                 reads.insert(SymbolicLocation::AnyMembership {
                     population: population.clone(),
                 });
@@ -465,7 +717,8 @@ impl Derivation<'_> {
     }
 
     fn type_of(&self, key: &DeclarationKey) -> Result<EffectiveId, FootprintRefusal> {
-        self.model
+        self.reader
+            .model
             .type_identity(key)
             .ok_or(FootprintRefusal::Unresolved { what: "frame type" })
     }
@@ -478,15 +731,16 @@ impl Derivation<'_> {
         holder: Option<EffectiveId>,
     ) -> Result<Vec<(DeclarationKey, Vec<EffectiveId>)>, FootprintRefusal> {
         let mut found = Vec::new();
-        for declaration in self.types.object_types() {
+        for declaration in self.reader.types.object_types() {
             let identity = declaration.key();
-            if holder.is_some_and(|holder| !self.conforms(identity, holder)) {
+            if holder.is_some_and(|holder| !self.reader.conforms(identity, holder)) {
                 continue;
             }
-            let Some(type_key) = self.model.type_key(identity) else {
+            let Some(type_key) = self.reader.model.type_key(identity) else {
                 continue;
             };
             let fields = self
+                .reader
                 .model
                 .fields(type_key)
                 .map_err(|_| FootprintRefusal::Unresolved {
@@ -504,140 +758,6 @@ impl Derivation<'_> {
         found.sort();
         found.dedup();
         Ok(found)
-    }
-
-    /// Every location `clause` reads, with the instant it reads it at.
-    fn clause_reads(
-        &self,
-        clause: &CheckedStateClause,
-    ) -> Result<Vec<(SymbolicLocation, Observation)>, FootprintRefusal> {
-        let mut reads = Vec::new();
-        let mut pending = vec![clause.body()];
-        while let Some(node) = pending.pop() {
-            self.node_reads(clause, node, &mut reads)?;
-            pending.extend(node.kind().children().into_iter().map(|id| node.at(id)));
-        }
-        Ok(reads)
-    }
-
-    fn node_reads(
-        &self,
-        clause: &CheckedStateClause,
-        node: CheckedNode<'_>,
-        reads: &mut Vec<(SymbolicLocation, Observation)>,
-    ) -> Result<(), FootprintRefusal> {
-        let observation = clause
-            .observations
-            .of_read(node.location())
-            .unwrap_or_else(|| clause.observation());
-        let unsupported = |form| FootprintRefusal::UnsupportedForm {
-            clause: clause.name().to_owned(),
-            form,
-        };
-        match node.kind() {
-            NodeKind::Attribute {
-                reference, field, ..
-            } => {
-                let field = self.field_key(field.owner, &field.name)?;
-                let location = match self.holder(clause, node.at(*reference)) {
-                    Holder::Receiver => SymbolicLocation::Field {
-                        object: FootprintObject::Receiver,
-                        field,
-                    },
-                    Holder::Parameter(name) => SymbolicLocation::Field {
-                        object: FootprintObject::Param(name),
-                        field,
-                    },
-                    Holder::Other => SymbolicLocation::AnyField { field },
-                };
-                reads.push((location, observation));
-            }
-            NodeKind::Reaches { edge, .. } => {
-                reads.push((
-                    SymbolicLocation::AnyField {
-                        field: self.field_key(edge.owner, &edge.name)?,
-                    },
-                    observation,
-                ));
-            }
-            // A clause that names one population (`M::P`, FR-391) reads that
-            // population's membership alone.
-            NodeKind::AllInstances { population } | NodeKind::Lookup { population, .. }
-                if let NodeKind::NamedPopulation { population, .. } =
-                    node.at(*population).kind() =>
-            {
-                reads.push((
-                    SymbolicLocation::AnyMembership {
-                        population: population.clone(),
-                    },
-                    observation,
-                ));
-            }
-            // The population operand is a population-typed parameter, which
-            // names no population, so every population related to the result
-            // type is read.
-            NodeKind::AllInstances { .. } | NodeKind::Lookup { .. } => {
-                let mut targets = Vec::new();
-                referenced_types(node.value_type(), &mut targets);
-                for target in targets {
-                    for population in self.populations_relating(target) {
-                        reads.push((
-                            SymbolicLocation::AnyMembership {
-                                population: population.clone(),
-                            },
-                            observation,
-                        ));
-                    }
-                }
-            }
-            NodeKind::Local(slot) if clause.binds_result() && *slot == 1 => {
-                let mut targets = Vec::new();
-                referenced_types(node.value_type(), &mut targets);
-                for target in targets {
-                    for population in self.populations_relating(target) {
-                        reads.push((
-                            SymbolicLocation::AnyMembership {
-                                population: population.clone(),
-                            },
-                            Observation::Post,
-                        ));
-                    }
-                }
-            }
-            NodeKind::Navigate { .. } => return Err(unsupported("relationship navigation")),
-            NodeKind::ReachesEnd { .. } => return Err(unsupported("relationship reachability")),
-            NodeKind::Call { .. } | NodeKind::ImportedCall { .. } => {
-                return Err(unsupported("function call"))
-            }
-            NodeKind::Dispatch { .. } => return Err(unsupported("dispatched call")),
-            NodeKind::ProtocolReference { .. } => return Err(unsupported("protocol reference")),
-            _ => {}
-        }
-        Ok(())
-    }
-
-    /// Which object a field read is taken from.
-    fn holder(&self, clause: &CheckedStateClause, mut node: CheckedNode<'_>) -> Holder {
-        loop {
-            match node.kind() {
-                NodeKind::Value(operand) | NodeKind::Coerce(operand, _) => {
-                    node = node.at(*operand);
-                }
-                NodeKind::Local(0) => return Holder::Receiver,
-                NodeKind::Local(slot) => {
-                    let first = 1 + usize::from(clause.binds_result());
-                    return match clause.parameters().get(*slot) {
-                        Some((name, value_type))
-                            if *slot >= first && parameter_target(value_type).is_some() =>
-                        {
-                            Holder::Parameter(name.clone())
-                        }
-                        _ => Holder::Other,
-                    };
-                }
-                _ => return Holder::Other,
-            }
-        }
     }
 }
 

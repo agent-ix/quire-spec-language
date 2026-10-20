@@ -162,7 +162,7 @@ pub use outcome::{
 pub use proof_result::{
     read_backend_provider_envelope, AppliedReduction, BackendProviderSource, Certification,
     DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, ProofBasis,
-    ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, ReductionKind,
+    ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal, Proviso, ReductionKind,
     ReportedInconclusiveCause, SettlementBasis, SymmetryBrokenCause, TerminalRecord,
     TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };

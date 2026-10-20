@@ -104,6 +104,20 @@ pub enum AppliedReduction {
         /// The group the instance ran under.
         stabiliser: Vec<SymmetryClass>,
     },
+    /// Partial-order reduction with the proviso it was run under.
+    PartialOrder {
+        /// The cycle proviso.
+        proviso: Proviso,
+    },
+}
+
+/// The cycle proviso of a partial-order reduction (ADR-021 POR-8).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Proviso {
+    /// A state with an ample-set successor already discovered is fully
+    /// expanded.
+    BreadthFirstRevisit,
 }
 
 /// A reduction a request selects (FR-160 `ReductionKind`).
@@ -435,6 +449,13 @@ pub enum InconclusiveCause {
         /// The boundary states the run stored.
         boundary_states: u64,
     },
+    /// ADR-021 RV-5: a partial-order run completed to its search horizon
+    /// with no counterexample. A reduced graph does not keep short
+    /// counterexamples short, so the horizon proves no bound.
+    ReductionHorizon {
+        /// The search horizon.
+        max_depth: u64,
+    },
 }
 
 impl InconclusiveCause {
@@ -457,6 +478,7 @@ impl InconclusiveCause {
             Self::ReductionNotPreserving { .. } => "reduction-not-preserving",
             Self::SymmetryBroken { .. } => "symmetry-broken",
             Self::ConstraintReached { .. } => "constraint-reached",
+            Self::ReductionHorizon { .. } => "reduction-horizon",
         }
     }
 
@@ -474,7 +496,8 @@ impl InconclusiveCause {
             | Self::CertificateRejected { .. }
             | Self::SolverInconclusive
             | Self::ReductionNotPreserving { .. }
-            | Self::ConstraintReached { .. } => 0,
+            | Self::ConstraintReached { .. }
+            | Self::ReductionHorizon { .. } => 0,
             Self::SymmetryBroken { population, cause } => {
                 let SymmetryBrokenCause::InitialStatesNotClosed { generator, .. } = cause;
                 let moved: usize = generator

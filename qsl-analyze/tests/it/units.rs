@@ -297,7 +297,23 @@ impl<'w> Atoms<'w> {
     }
 }
 
+/// What a letters seam reports for an atom's footprint.
+pub(crate) type Reads = Result<
+    std::collections::BTreeSet<qsl_semantics::check::footprint::SymbolicLocation>,
+    qsl_semantics::check::footprint::FootprintRefusal,
+>;
+
+/// The footprint a letters seam reports when its run selects no
+/// partial-order reduction, which is the only run that reads it.
+pub(crate) fn unread() -> Reads {
+    Ok(std::collections::BTreeSet::new())
+}
+
 impl ModelLetters for Atoms<'_> {
+    fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
+        crate::units::unread()
+    }
+
     fn atom(
         &self,
         atom: FormulaNodeId,
