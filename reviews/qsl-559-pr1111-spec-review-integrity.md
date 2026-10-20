@@ -57,3 +57,20 @@ Agreement that holds. ST-3, FR-206, FR-206-AC-4/AC-7, FR-218-AC-11 and TC-651 st
 Not mergeable. The PR's three stated changes are right against QSpec #302 at 0825a54, and the two unlisted edits are consistent with the code and with QSpec. But #302 has moved on: its head widens `no-role-instance` to send and receive nodes, which QSL contradicts (FND-001), and gives the send record a carrier that QSL lacks (FND-002). PS-5's narrowing also misses `await` (FND-003).
 
 The code on this head lags the spec. That is expected for a spec PR, but the implementation ticket needs to know. `WaitCause` has no `Displaced`, `FinishWaiting`, `CommitClosed` or `NoRoleInstance` (identity.rs:371-417). `finish` reports `JoinWaiting` (steps.rs:990-1003). The send step binds a `{payload, outcome}` record with outcomes `sent`/`displaced` as the binder's key encoding (channel.rs:62-70, 235-245), not the payload and the `{channel, payload, outcome, displaced}` record of ST-3.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The new wire-shape refusal names no code. FR-217's bullet says the executor 'SHALL refuse a `send` step without a `send_record`, and any other step with one, before replay, as a wire-shape defect'. PX-2 and FR-217-AC-6 say the same. Every other refusal in FR-217 names its code and subcode, so two implementations could refuse these with different codes and both pass AC-6. Merged QSpec FR-433 names no code here ('refuses before replay, like any missing or extra member'), so QSL can choose one without contradicting it. QSL already has a precedent: a hyper counterexample missing a member is refused by the reader 'as `invalid_runtime_input`/`invalid-value` before replay' (FR-183-AC-6). Name `invalid_runtime_input`/`invalid-value` in PX-2, FR-217 and FR-217-AC-6, and the code TC-662 step 5 expects. The current `replay_model_trace` takes a typed envelope and has no counterexample wire decoder (qsl-replay/src/model_check/replay.rs:405-420), so the spec has to name the code. | spec/functional/FR-217-replay-a-protocol-counterexample.md:86-88,122; spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:279; spec/test-cases/TC-662-replay-a-protocol-counterexample.md |
+
+## Dispositions
+
+Round 1, head d4cd7a4f6 (one commit over 91a8b0938; base main 693c16869). Checked against merged QSpec main 4ea88c8, whose spec text is the same as f60002b's. Gates: `make check-spec-validation` exits 0, with 17 warnings, none in a changed file; `tools/check-index-completeness.sh` exits 0. The new refusal for a differing `send_record` is `stale_dependency`/`content-mismatch`, where QSpec FR-433 uses `revision-mismatch`. This follows QSL's own digest refusal in PX-2 and FR-217-AC-2, which already differed from QSpec FR-433-AC-2 before this PR, so it is consistent within QSL and outside this delta. reviews/ already holds the round-0 SR files byte for byte, and must be re-copied for this round's sections.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | PD-4 and FR-211 now give `NoRoleInstance` for event, attempt, send, receive or compensation-attempt nodes owned by a replicated role, first in the order, as merged FR-429 does. |
+| FND-002 | fixed | PX-1 now carries `send_record` on `send` steps only, outside the key and the transition identity. PX-2, FR-217 and FR-217-AC-5/AC-6 recompute and compare it, and TC-662 step 5 tests that. The missing refusal code is recorded as FND-005. |
+| FND-003 | fixed | PS-5 now excludes entries bound in an `await`, and says that its matched event and `then` binders do not escape. That matches FR-466's Out(await) = In(await) and protocol_slots.rs:1528-1536. |
+| FND-004 | fixed | PS-5 now says that the environment is keyed in `observations` by binder node and thread path, and not in the thread's `control` entry, matching PS-8 and merged FR-425. |

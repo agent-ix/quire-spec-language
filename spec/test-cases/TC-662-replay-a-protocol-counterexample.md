@@ -41,5 +41,5 @@ Tag the tests `#[trace("TC-662", "FR-217-AC-n")]`.
   `invalid_runtime_input`/`invalid-value` as unfair.
 - Step 5: `send_record` on the `send` step only, absent from the key and
   the identity, and replayed; `stale_dependency`/`content-mismatch` naming
-  the step and both records; a pre-replay wire-shape refusal for the missing
+  the step and both records; a pre-replay `invalid_runtime_input`/`invalid-value` refusal for the missing
   and for the extra member, with no step run.

@@ -84,8 +84,8 @@ causes, and the report counts as a refutation only then.
   refuse `stale_dependency`/`content-mismatch`, naming the step and both
   records.
 - The executor SHALL refuse a `send` step without a `send_record`, and any
-  other step with one, before replay, as a wire-shape defect of the
-  counterexample.
+  other step with one, before replay, with `invalid_runtime_input`/
+  `invalid-value` as a wire-shape defect of the counterexample (FR-183-AC-6).
 - When a step is not enabled at its pre-state, or a loop's last state is not
   its entry, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
@@ -119,7 +119,7 @@ causes, and the report counts as a refutation only then.
 | FR-217-AC-3 | A deadlock envelope whose blocked list drops `right` settles `inconclusive`, `ReplayParity`. An envelope whose prefix runs on to s6, which holds no live instance, with `kind: Deadlock` settles `inconclusive`, `ReplayParity`. | Test (TC-662) |
 | FR-217-AC-4 | The adversarial lasso of FR-212-AC-2 replays against the adversarial `Chatter` package and settles `reproduced-with-evaluated-witness`. The same lasso with the scheduler constraints added to its fairness set, replayed against the default `Chatter` package, refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled at every loop state and takes no step. | Test (TC-662) |
 | FR-217-AC-5 | A counterexample whose prefix holds a `send` step of FR-206-AC-7's `overflow loss head` channel carries that step's `send_record` `{channel, payload, outcome, displaced}`, and no other step carries one; it replays, and the state key and the transition identity hold no send record. Changing the recorded `outcome` refuses `stale_dependency`/`content-mismatch`, naming the step and both records. | Test (TC-662) |
-| FR-217-AC-6 | The same counterexample with the `send` step's `send_record` removed, and with a `send_record` added to an `attempt` step, each refuses before replay as a wire-shape defect and runs no step. | Test (TC-662) |
+| FR-217-AC-6 | The same counterexample with the `send` step's `send_record` removed, and with a `send_record` added to an `attempt` step, each refuses `invalid_runtime_input`/`invalid-value` before replay as a wire-shape defect and runs no step. | Test (TC-662) |
 
 ## Dependencies
 

@@ -43,3 +43,11 @@ PS-5 and the earlier derivations. FR-205-AC-2's nested variant still holds under
 ## Verdict
 
 Not mergeable on this file's finding alone: one rest point the new causes reach has no defined unique cause (FND-001), and QSpec #302 has already closed that gap. The other new waits are sound, and the PS-5 narrowing keeps FR-205-AC-2 and FR-205-AC-7 as #1109 derived them.
+
+## Dispositions
+
+Round 1, head d4cd7a4f6, checked against merged QSpec main 4ea88c8.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | PD-4 and FR-211 now order a compensation attempt `CommitClosed`, `Precondition`, `NoPostState`, `Constraint`, with `NoRoleInstance` first when its role is replicated, as merged FR-429 does. Each compensation-attempt wait now has one cause. |

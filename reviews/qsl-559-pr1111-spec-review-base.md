@@ -58,3 +58,20 @@ The `delivery exactly-once-premise` sentence. It is enough: none of the three ne
 ## Verdict
 
 The base checklist passes, and both gates are green. The four findings are all low: two clauses no deadlock report can show (FND-001), a fixture that does not name its template (FND-002), a repeated sentence (FND-003) and a scope phrase a reader could misread (FND-004). The PR's merge blockers are in SR-13590 and SR-13591.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The new concrete `Pay` fixture in FR-211-AC-5 has two defects. (a) It says '`Refund` being the template's `<qualified-name>`', but no spec defines a qualified-name rendering for a template. QSpec FR-429 types `template` as `<qualified-name>` and defines that rendering only for channels, as the protocol's qualified name, `::`, then the handle. By that pattern the name would be `Pay::Refund`, not the bare `Refund`. Either define the rendering in PD-4 (and raise it with QSpec) or drop the clause and expect the name as rendered. (b) Its main sentence does not parse: '... deadlocks after `Fail` with `failed` true activates the registration and `Committed` then occurs'. Read 'deadlocks once `Fail`, with `failed` true, has activated the registration and `Committed` has then occurred'. The trace itself is sound. `Committed` before `Paid` makes no registration (CP-1), and between `Paid` and `Fail` it closes the registration (CP-4). Only `Committed` after activation and before `cattempt` deadlocks, with the root `FinishWaiting`. | spec/functional/FR-211-declare-protocol-terminal-states-and-report-protocol-deadlocks.md:154 |
+
+## Dispositions
+
+Round 1, head d4cd7a4f6, checked against merged QSpec main 4ea88c8. Gates are green, as SR-13590 records.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-211-AC-5 now says 'When the cause function is evaluated at a state ...' for the `spawn` and `fence` clauses, as merged FR-429-AC-15 does, and TC-656 step 5 calls the cause function directly. |
+| FND-002 | fixed | The fixture is now ADR-027 §7.1's `Pay`, with template `Refund`, commit node `Committed`, branches `pay` and `settle`, and the expected threads `(0, Refund, 0)` and `(0)`. The template-name rendering and the sentence are recorded as FND-005. |
+| FND-003 | fixed | The repeated `exactly-once-premise` sentence is gone. |
+| FND-004 | fixed | PS-5 now says 'Within the joined branch ...' and 'a `repeat` that encloses the `parallel` itself does not exclude the branch's entries', so FR-205-AC-7 reads correctly. |
