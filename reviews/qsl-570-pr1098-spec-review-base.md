@@ -62,3 +62,9 @@ Round 1, head 7ff6d6491: fix commit 7ff6d6491 over merge d41f853e, which brings 
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
+
+Round 3, head cdbf4a0ab: fix commit cdbf4a0ab over 0ed9ee0a4, which also commits this review's round-2 SR files and comment bodies under reviews/ unchanged; this file supersedes them. Terra's #1079 branch is still at dd3a654d7, and statistical/claim.rs is byte-equal to the round-2 read. AC-13 was checked against the code. Confidence::new admits α = β = 1/3 and ι = 2/5, each in (0, 1) (qsl-replay/src/statistical.rs:132-150). StatisticalClaim::new admits θ = 1/2, since θ − ι = 1/10 > 0 and θ + ι = 9/10 < 1 (statistical/claim.rs:83-85); a non-strict bound is needed, because a Below bound on a mean of a fraction is refused StrictBound. Okamoto's N with m = 1 is ⌈ln 3 / (2 · 4/25)⌉ = ⌈3.43⌉ = 4 (method.rs:51-60, QSpec FR-408). The final PR body is current: its owner-decision notes describe the failed-with-own-cause settlement and the recommended QSpec FR-331/FR-408 resource-exhaustion cause, and the stale 'unnamed stop failed' line now reads 'failed with its own cause'. The FR text has no status wording. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in the changed files; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | fixed | - |
