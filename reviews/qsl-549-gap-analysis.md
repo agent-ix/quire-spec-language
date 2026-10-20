@@ -65,6 +65,15 @@ falsely accepted.
 | FND-001 | medium | FR-144-AC-7's second clause, "with its `ensure` row it settles `proved`, `Uncertified`", is not implemented or tested. FR-143's liveness half and the item-level combination of the two halves are not built. `settle_refinement_safety` on the full `CasRefinesCounter` (with `ensure`) now settles the safety half `Proved{Exhaustive, Certified}`, which is correct for that half alone, and no item record exists. The three `FR-144-AC-7` tags therefore claim an AC that is only partly covered (see SR-13430 FND-009). Record the `Uncertified` row as remaining work on a follow-up ticket for the liveness or item-combination slice. | qsl-replay/src/model_check/refinement_settle.rs:20-23; qsl-analyze/tests/it/refinement_certificate.rs:546-653 |
 | FND-002 | medium | FR-149 Identity says the checker SHALL refuse `stale_dependency`/`content-mismatch` when the refinement node, either `package_id` or the obligation identity differs. The certificate carries only the refinement's declared name (`String`, not `NodeKey`), so a certificate for an edited package under the same refinement name is checked rather than refused. The FR-282 package binding (`Row::bound`) that the other EN-1 certificates settle through is not applied. The module doc says why: S4 emits no refinement, so no `package_id` or obligation identity exists. Spec text is unmet, but this is not a soundness gap. Defer, with a follow-up ticket tied to the refinement emit (FR-145 facade), or amend FR-149 to name the interim identity. | qsl-replay/src/certificate/simulation.rs:28-33; qsl-replay/src/certificate/simulation.rs:181-186; qsl-replay/src/certificate/simulation.rs:82-84 |
 
+## New findings (disposition pass 2)
+
+Round 2 is against the merged FR-149 (#1095), whose AC-5 to AC-10 are new. AC-5 (a) to (d), AC-7 and AC-8 have tagged, passing tests. AC-6 and AC-10 (cancellation) are covered by tests tagged `TC-556` alone.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | medium | Two merged FR-149 ACs have no test. FR-149-AC-9: FR-144 refuses a certificate whose `concrete_package` or `obligation` differs, before the checker runs. It needs the package and obligation identity that FND-002 defers. FR-149-AC-10's second half: an FR-120 expansion stop that names no limit, produced by a state constraint whose family evaluation refuses, gives `Stopped(ResourceExhausted)` and settles V-7. The code path exists (`expansion_halt`) but is untested. Record both as remaining work on QSL-549. | spec/functional/FR-149-check-a-refinement-s-simulation-certificate.md; qsl-replay/src/certificate/check.rs:131-150 |
+| FND-004 | low | Two tests that assert an AC exactly do not carry its tag: `a_terminal_state_lists_its_stutter_step` is FR-149-AC-6, and `a_cancelled_check_stops` is FR-149-AC-10's cancellation half. Both are tagged `TC-556` only, so the computed matrix shows AC-6 uncovered. Add `FR-149-AC-6` and `FR-149-AC-10` to their tags. | qsl-analyze/tests/it/refinement_certificate.rs:690-694; qsl-analyze/tests/it/refinement_certificate.rs:766-770 |
+
 ## Dispositions
 
 | FND | outcome | reason |

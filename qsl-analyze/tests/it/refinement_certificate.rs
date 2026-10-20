@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_refinement, RefinementCheckRequest};
 use qsl_eval::model_subject::ModelSubject;
+use qsl_eval::simulation::model::ClauseOutcome;
 use qsl_eval::simulation::model::{operation_identity_text, ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_replay::{
@@ -19,9 +20,9 @@ use qsl_replay::{
     SettlementBasis, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
     StepRejection, StepVerdict, Taken, TemporalCertificateCheck, TerminalValue,
 };
-use qsl_replay::{EvaluationOutcome, IncompleteLimit, Undetermined};
+use qsl_replay::{EvalFailure, MappingRowRef, MappingUndetermined, Undetermined, UndeterminedStep};
 use qsl_semantics::model::state::ModelState;
-use quire_exact::{Cancel, CancelCause, ScalarLimits};
+use quire_exact::{Cancel, CancelCause, ChargePoint, Incomplete, Integer, LimitKind, ScalarLimits};
 
 use crate::refinement_fixture::{
     cas_refines_counter, cas_state, key, lost_update_refinement, mutated, Variant, World, CAS,
@@ -689,7 +690,7 @@ fn run_to(world: &World, max_depth: Option<usize>) -> SafetyOutcome {
 /// FR-149 Behavior "Production" and "Successors" (TC-556): the certificate
 /// of a model with a terminal state lists the stutter step of ADR-018 SM-4
 /// and is accepted; with that edge removed it is rejected `SuccessorsDiffer`.
-#[trace("TC-556")]
+#[trace("TC-556", "FR-149-AC-6")]
 #[test]
 fn a_terminal_state_lists_its_stutter_step() {
     let world = terminal_world();
@@ -765,7 +766,7 @@ fn an_undetermined_contract_is_a_bad_state() {
 
 /// FR-149 Behavior "Limits" (TC-556): a cancelled check is `Stopped` with
 /// the cancellation, never `Accepted` or `Rejected`.
-#[trace("TC-556")]
+#[trace("TC-556", "FR-149-AC-10")]
 #[test]
 fn a_cancelled_check_stops() {
     let world = safety_only();
@@ -978,21 +979,31 @@ fn a_rejection_serializes_its_locus_and_verdict() {
             serde_json::json!({"kind": "NoAbstractMatch", "position": "3"}),
         ),
         (
-            FailedStep::Undetermined {
-                cause: Undetermined::UndecidedSuccessor,
-                evaluation: EvaluationOutcome::Incomplete(IncompleteLimit::EvaluationMeter),
-            },
+            FailedStep::Undetermined(UndeterminedStep::new(Undetermined::Mapping(Box::new(
+                MappingUndetermined {
+                    row: MappingRowRef::Object {
+                        concrete_type: key(CAS, "Counter"),
+                    },
+                    object: None,
+                    cause: EvalFailure::Evaluation(Box::new(ClauseOutcome::Incomplete(
+                        Incomplete {
+                            limit_kind: LimitKind::IntegerBits,
+                            limit: 8,
+                            consumed: 8,
+                            next_charge: Integer::from(1_i64),
+                            charge_point: ChargePoint::GraphExpand,
+                        },
+                    ))),
+                },
+            )))),
             serde_json::json!({
                 "kind": "Undetermined",
-                "cause": "UndecidedSuccessor",
-                "evaluation": {"outcome": "incomplete", "limit": "evaluation-meter"},
+                "cause": "MappingUndetermined",
+                "evaluation": {"outcome": "incomplete", "limit": "integer_bits"},
             }),
         ),
         (
-            FailedStep::Undetermined {
-                cause: Undetermined::UndecidedSuccessor,
-                evaluation: EvaluationOutcome::Refused,
-            },
+            FailedStep::Undetermined(UndeterminedStep::new(Undetermined::UndecidedSuccessor)),
             serde_json::json!({
                 "kind": "Undetermined",
                 "cause": "UndecidedSuccessor",

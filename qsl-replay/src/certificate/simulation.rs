@@ -25,13 +25,13 @@
 //! `max_transitions`, and a `check_step` that a budget stops ends the check
 //! `Stopped`, never `Rejected`.
 //!
-//! What this does not do yet. FR-149's `concrete_package`, `abstract_package`
-//! and `obligation` identity fields are not carried, because S4 emits no
-//! refinement and so no `package_id` or obligation identity exists for one
-//! (FR-145 "the facade"); the refinement is identified by its declared name.
-//! `HistoryValues` are not carried, because history fields are refused
-//! (FR-138). The terminal stutter edge of ADR-018 SM-4 is a listed edge whose
-//! `transition` is `None`, which FR-149's `CertifiedEdge` does not name.
+//! Identity of the packages and the obligation is FR-144's, which refuses a
+//! certificate before this checker runs; the checker reads the refinement
+//! node only, so the certificate carries the refinement's declared name and
+//! no package or obligation identity yet. `HistoryValues` are not carried,
+//! because history fields are refused (FR-138). The `UndefinedEvaluation`
+//! verdict writes its `where` and `cause` as kinds only; FR-127's full
+//! encoding of them is remaining work on QSL-549.
 
 use qsl_eval::simulation::model::{
     check_model_bounds, ClauseOutcome, ModelFinding, ModelSimState, ModelSimulationRequest,
@@ -175,21 +175,37 @@ pub enum FailedStep {
     /// A mapping row or step-row argument evaluated undefined.
     Undefined(Box<UndefinedEvaluation>),
     /// The check could not decide.
-    Undetermined {
-        /// FR-141's cause.
-        cause: Undetermined,
-        /// The evaluation outcome that caused it.
-        evaluation: EvaluationOutcome,
-    },
+    Undetermined(UndeterminedStep),
+}
+
+/// An `Undetermined` verdict with the evaluation outcome that caused it. The
+/// outcome is derived from the cause, so the pair is always one the checker
+/// can produce.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UndeterminedStep {
+    cause: Undetermined,
+    evaluation: EvaluationOutcome,
+}
+
+impl UndeterminedStep {
+    /// The step of `cause`.
+    pub fn new(cause: Undetermined) -> Self {
+        let evaluation = EvaluationOutcome::of_undetermined(&cause);
+        Self { cause, evaluation }
+    }
+
+    /// FR-141's cause.
+    pub fn cause(&self) -> &Undetermined {
+        &self.cause
+    }
+
+    /// The evaluation outcome that caused it.
+    pub fn evaluation(&self) -> EvaluationOutcome {
+        self.evaluation
+    }
 }
 
 impl FailedStep {
-    /// The failed step of an `Undetermined` verdict.
-    fn undetermined(cause: Undetermined) -> Self {
-        let evaluation = EvaluationOutcome::of_undetermined(&cause);
-        Self::Undetermined { cause, evaluation }
-    }
-
     /// The verdict as the locus writes it (FR-149 "Wire form").
     fn wire(&self) -> Result<serde_json::Value, String> {
         use serde_json::json;
@@ -235,7 +251,7 @@ impl FailedStep {
                 },
                 "cause": undefined_cause_kind(&evaluation.cause),
             }),
-            Self::Undetermined { cause, evaluation } => json!({
+            Self::Undetermined(UndeterminedStep { cause, evaluation }) => json!({
                 "kind": "Undetermined",
                 "cause": match cause {
                     Undetermined::Mapping(_) => "MappingUndetermined",
@@ -592,22 +608,15 @@ impl Run<'_, '_> {
             .concrete
             .successors(&known.state)
             .map_err(|stop| expansion_halt(&stop, self.budgets, Checker::Simulation))?;
-        let outcomes: Vec<EvaluationOutcome> = expansion
+        // FR-120 turns an incomplete clause set into an expansion stop, so a
+        // contract finding never carries an incomplete evaluation: any one
+        // leaves the successors unknown.
+        if expansion
             .findings
             .iter()
-            .filter_map(|finding| match finding {
-                ModelFinding::ContractUndetermined { evaluation, .. } => {
-                    Some(EvaluationOutcome::of_clause(evaluation))
-                }
-                _ => None,
-            })
-            .collect();
-        match undecided_state(&outcomes) {
-            UndecidedState::Decided => {}
-            UndecidedState::MeterStop => return Err(self.meter_stop()),
-            UndecidedState::Bad => {
-                return Err(Self::reject(CertificateRule::BadState, at, None, None));
-            }
+            .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
+        {
+            return Err(Self::reject(CertificateRule::BadState, at, None, None));
         }
         let mut computed = Vec::with_capacity(expansion.successors.len());
         for (transition, state) in expansion.successors {
@@ -680,7 +689,9 @@ impl Run<'_, '_> {
                     if Self::meter_only(&undetermined) {
                         return Err(self.meter_stop());
                     }
-                    return Err(failed(FailedStep::undetermined(undetermined)));
+                    return Err(failed(FailedStep::Undetermined(UndeterminedStep::new(
+                        undetermined,
+                    ))));
                 }
                 StepVerdict::Stopped(reached) => return Err(stopped(reached.limit, reached.value)),
                 StepVerdict::Fault(_) => return Err(Self::fault("refinement-step")),
@@ -704,57 +715,5 @@ impl Run<'_, '_> {
             });
         }
         Ok(())
-    }
-}
-
-/// What the undetermined contracts of one position's expansion make of it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum UndecidedState {
-    /// No contract is undetermined.
-    Decided,
-    /// Every undetermined contract only ran out of the evaluation meter, a
-    /// stop and not a verdict on the certificate (ADR-018 PC-2).
-    MeterStop,
-    /// A contract is undetermined for another reason, so the successors are
-    /// not known (`BadState`).
-    Bad,
-}
-
-/// FR-149 "Undecided state" and "Meter stops": a position is a meter stop
-/// only when every undetermined contract is meter-only; one refusal for
-/// another reason among them makes it `BadState`.
-fn undecided_state(outcomes: &[EvaluationOutcome]) -> UndecidedState {
-    if outcomes.is_empty() {
-        UndecidedState::Decided
-    } else if outcomes.iter().all(|outcome| outcome.is_meter_only()) {
-        UndecidedState::MeterStop
-    } else {
-        UndecidedState::Bad
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const METER: EvaluationOutcome =
-        EvaluationOutcome::Incomplete(IncompleteLimit::EvaluationMeter);
-
-    /// FR-149 "Undecided state" (TC-556): the expansion of a position stops the
-    /// check only when every undetermined contract ran out of meter. (No
-    /// `ModelSystem` fixture yields an incomplete contract finding, because
-    /// FR-120 stops an expansion whose clause set is incomplete; the stop
-    /// then comes from the expansion, which the budget tests cover.)
-    #[ix_trace_rs::trace("TC-556", "FR-149-AC-7")]
-    #[test]
-    fn a_refusal_among_meter_stops_is_a_bad_state() {
-        let other = EvaluationOutcome::Incomplete(IncompleteLimit::Counter(LimitKind::IntegerBits));
-        assert_eq!(undecided_state(&[]), UndecidedState::Decided);
-        assert_eq!(undecided_state(&[METER, METER]), UndecidedState::MeterStop);
-        assert_eq!(
-            undecided_state(&[METER, EvaluationOutcome::Refused]),
-            UndecidedState::Bad
-        );
-        assert_eq!(undecided_state(&[other]), UndecidedState::Bad);
     }
 }
