@@ -974,7 +974,6 @@ Use independent fixed expected text, not the encoder's output as its own oracle.
 
 ## References
 
-- Linear QSL-371 owns the code for FR-056-AC-42, FR-091-AC-44 and FR-185-AC-8 (the quantity type reference and its unit `typeRef`).
 - Linear QSL-290 (AC-11: a `Text` scalar type is admitted with its QSpec FR-141 profile).
 - Linear QSL-219 (AC-13, AC-14: a number with no exact RFC 8785 spelling refuses `noncanonical_wire`); QSpec FR-271 and FR-272 catalog the code, its causes and `document_pointer` (quire-specification#180).
 - QSpec FR-141, "Text and enumeration profiles": the six text profiles.

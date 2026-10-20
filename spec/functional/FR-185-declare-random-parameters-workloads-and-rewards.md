@@ -237,4 +237,4 @@ it from the checked package, not from the emitted wire.
 
 - QSpec half of the work, which owns the grammar and semantics of random
   parameters, workloads and rewards: QSpec FR-405 (Linear STD-137).
-- Owning ticket: Linear QSL-371, which also owns the code for FR-185-AC-8.
+- Owning ticket: Linear QSL-371.
