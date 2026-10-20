@@ -246,6 +246,8 @@ fn blocked_bytes(thread: &BlockedThread) -> usize {
             .map(path_bytes)
             .fold(0, usize::saturating_add),
         WaitCause::Precondition { clause } => clause.len(),
+        WaitCause::EmptyQueue { channel } | WaitCause::FullQueue { channel } => channel.len(),
+        WaitCause::CheckFalse { node } => node.len(),
         WaitCause::NoPostState | WaitCause::Constraint | WaitCause::Gate => 0,
     };
     std::mem::size_of::<BlockedThread>()

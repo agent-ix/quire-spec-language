@@ -136,6 +136,10 @@ fn arguments_of(
 /// # Errors
 ///
 /// An [`ExpansionStop`] when the successor set cannot be known.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one application's walk, row, clauses and accumulators"
+)]
 pub(super) fn apply(
     walk: &Walk<'_, '_>,
     row: &Row,

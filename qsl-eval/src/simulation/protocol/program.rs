@@ -2,9 +2,12 @@
 //! The static structure a protocol system walks, read once from the checked
 //! protocol clause: each control's kind, name, path, parent and children;
 //! each attempt's operation and selected contracts; each join's policy;
-//! each binder's slot and readers; and each control's place in the tree,
+//! each `choice`'s cases, `repeat`'s parts, `await`'s parts and `check`'s
+//! condition; each event, `send` and `receive` node's record and channel;
+//! each channel's premises; each binder's slot and readers; and each
+//! control's place in the tree and its innermost enclosing `repeat` body,
 //! from which a rest point's reachable readers follow (ADR-027 PS-3, PS-5,
-//! FO-1).
+//! PS-6, PS-7, FO-1).
 //!
 //! Every walk keeps its own explicit order (tree order, or its reverse), so a
 //! control tree of any depth is read without recursion.
@@ -12,8 +15,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{
-    CheckedActivation, CheckedBody, CheckedJoinPolicy, CheckedOutstanding, CheckedProtocol,
-    CheckedTerminalMember, ControlStep, ProtocolNodeId,
+    ChannelCapacity, ChannelDelivery, ChannelOverflow, CheckedActivation, CheckedBody,
+    CheckedJoinPolicy, CheckedOrdering, CheckedOutstanding, CheckedProtocol, CheckedTerminalMember,
+    ControlStep, EdgeKind, LossSelector, Port, ProtocolNodeId,
 };
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 
@@ -50,6 +54,68 @@ pub(super) struct Join {
     pub(super) branches: Vec<(String, ProtocolNodeId)>,
 }
 
+/// One `repeat` (ADR-027 PS-6, FO-1): its body, its `exhausted` control,
+/// its iteration maximum and its guard.
+pub(super) struct Loop<'a> {
+    pub(super) body: ProtocolNodeId,
+    pub(super) exhausted: Option<ProtocolNodeId>,
+    pub(super) max: Option<u64>,
+    pub(super) guard: &'a CheckedBody,
+}
+
+/// One `await` (ADR-027 ST-8): its matched event node, its `then` control
+/// and its `timeout` control.
+pub(super) struct Await {
+    pub(super) event: ProtocolNodeId,
+    pub(super) then: ProtocolNodeId,
+    pub(super) timeout: ProtocolNodeId,
+}
+
+/// The record a node's step binds (ADR-027 ST-2 to ST-4): its constraint,
+/// the binder's slot and the record type it ranges over.
+pub(super) struct Record<'a> {
+    pub(super) constraint: Option<&'a CheckedBody>,
+    pub(super) slot: usize,
+    pub(super) record_type: ValueType,
+}
+
+/// One `send` or `receive` (ADR-027 ST-3, ST-4): its record, its channel
+/// and, for a `receive`, the `send` node its `of` names.
+pub(super) struct Message<'a> {
+    pub(super) record: Record<'a>,
+    pub(super) channel: usize,
+    pub(super) from: Option<ProtocolNodeId>,
+}
+
+/// One channel (ADR-027 PS-7, QSpec FR-170): its qualified name and its
+/// premises, the `fifo` key included.
+pub(super) struct Channel<'a> {
+    pub(super) name: String,
+    pub(super) capacity: usize,
+    pub(super) overflow: ChannelOverflow,
+    pub(super) delivery: ChannelDelivery,
+    /// The `fifo` key over the message binder; `None` for `unordered`.
+    pub(super) key: Option<&'a CheckedBody>,
+}
+
+impl Channel<'_> {
+    /// Whether the delivery premise admits `duplicate` (ST-5).
+    pub(super) fn duplicates(&self) -> bool {
+        matches!(
+            self.delivery,
+            ChannelDelivery::Unknown | ChannelDelivery::AtLeastOnce
+        )
+    }
+
+    /// Whether the delivery premise admits `lose` (ST-5).
+    pub(super) fn loses(&self) -> bool {
+        matches!(
+            self.delivery,
+            ChannelDelivery::Unknown | ChannelDelivery::AtMostOnce
+        )
+    }
+}
+
 /// The `finish` node.
 pub(super) struct Finish<'a> {
     pub(super) node: ProtocolNodeId,
@@ -62,8 +128,13 @@ pub(super) struct Finish<'a> {
 /// Where a thread rests (ADR-027 PS-3), by node identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Rest {
-    /// An event node.
+    /// An event node: an `attempt`, `send`, `receive`, domain `event` or
+    /// `commit`.
     Node(ProtocolNodeId),
+    /// An `await`, whose matched event or `timeout` steps.
+    Await(ProtocolNodeId),
+    /// A `check` whose value is false.
+    Check(ProtocolNodeId),
     /// A `parallel` waiting to fork.
     Fork(ProtocolNodeId),
     /// The join of a `parallel` the thread forked.
@@ -81,6 +152,8 @@ pub(super) enum Cursor {
     Enter(ProtocolNodeId),
     /// Leaving a control.
     Exit(ProtocolNodeId),
+    /// At a `repeat`'s guard: on entry and after each pass of its body.
+    Guard(ProtocolNodeId),
 }
 
 /// The structure of one checked protocol clause.
@@ -89,6 +162,16 @@ pub(super) struct Program<'a> {
     pub(super) controls: BTreeMap<ProtocolNodeId, Control>,
     pub(super) attempts: BTreeMap<ProtocolNodeId, Attempt<'a>>,
     pub(super) joins: BTreeMap<ProtocolNodeId, Join>,
+    pub(super) loops: BTreeMap<ProtocolNodeId, Loop<'a>>,
+    /// Each `choice`'s cases, each with its guard, in authored order.
+    pub(super) choices: BTreeMap<ProtocolNodeId, Vec<(ProtocolNodeId, &'a CheckedBody)>>,
+    pub(super) awaits: BTreeMap<ProtocolNodeId, Await>,
+    /// Each `check`'s condition.
+    pub(super) checks: BTreeMap<ProtocolNodeId, &'a CheckedBody>,
+    /// Each domain `event` and `commit` node's record.
+    pub(super) events: BTreeMap<ProtocolNodeId, Record<'a>>,
+    pub(super) messages: BTreeMap<ProtocolNodeId, Message<'a>>,
+    pub(super) channels: Vec<Channel<'a>>,
     pub(super) finish: Finish<'a>,
     /// Each binder slot's node, `None` for the `over` input.
     pub(super) slots: Vec<Option<ProtocolNodeId>>,
@@ -102,6 +185,8 @@ pub(super) struct Program<'a> {
     spans: BTreeMap<ProtocolNodeId, Span>,
     /// Each binder slot's readers by tree position.
     reader_positions: Vec<ReaderPositions>,
+    /// Each control's innermost enclosing `repeat` whose body holds it.
+    loop_of: BTreeMap<ProtocolNodeId, ProtocolNodeId>,
 }
 
 /// A control's place in the `run` tree: its preorder position, the last
@@ -110,6 +195,7 @@ pub(super) struct Program<'a> {
 struct Span {
     first: usize,
     last: usize,
+    scope_first: usize,
     scope_last: usize,
     /// Whether its scope is the root thread's, which ends at `finish`.
     root_scope: bool,
@@ -128,8 +214,10 @@ fn unsupported(construct: Unsupported) -> ProtocolRefusal {
 }
 
 /// The constructs this protocol system steps: `sequence`, `parallel` and its
-/// branches, `attempt` and `finish` under `activation on origin`, every
-/// `parallel` under `sc` (ADR-027 §9 sequencing step 3).
+/// branches, `choice`, `repeat`, `check`, `await`, `attempt`, `send`,
+/// `receive`, domain `event`, `commit` and `finish`, channels with a
+/// literal capacity, under `activation on origin`, every `parallel` under
+/// `sc` (ADR-027 §9 sequencing steps 3 and 4).
 fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal> {
     for control in &protocol.controls.controls {
         if let ControlStep::Unstepped(construct) = control.step() {
@@ -144,8 +232,17 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
     {
         return Err(unsupported(Unsupported::WeakMemory));
     }
-    if !protocol.channels.is_empty() {
-        return Err(unsupported(Unsupported::Channel));
+    for channel in &protocol.channels {
+        if matches!(channel.capacity, ChannelCapacity::Symbolic(_)) {
+            return Err(unsupported(Unsupported::SymbolicCapacity));
+        }
+        let ordered_loss = matches!(
+            channel.overflow,
+            ChannelOverflow::Loss(LossSelector::Head | LossSelector::Tail)
+        );
+        if ordered_loss && channel.ordering == CheckedOrdering::Unordered {
+            return Err(unsupported(Unsupported::UnorderedLossSelector));
+        }
     }
     if !protocol.obligations.compensations.is_empty() {
         return Err(unsupported(Unsupported::Compensation));
@@ -297,6 +394,150 @@ impl<'a> Program<'a> {
             );
         }
 
+        let edge_to = |kind: EdgeKind, from: ProtocolNodeId, port: Port| {
+            protocol
+                .edges
+                .iter()
+                .find(|edge| edge.kind == kind && edge.from.node == from && edge.from.port == port)
+                .map(|edge| edge.to.node)
+        };
+        let child_of = |node: &ProtocolNodeId| controls.get(node).map(|c| c.children.clone());
+
+        let mut loops = BTreeMap::new();
+        for repeat in &protocol.slots.repeats {
+            let children = child_of(&repeat.node)
+                .ok_or_else(|| ProtocolRefusal::fault("a-repeat-is-a-control"))?;
+            // The body is the child the back edge returns to.
+            let body = children
+                .iter()
+                .copied()
+                .find(|child| {
+                    protocol.edges.iter().any(|edge| {
+                        edge.kind == EdgeKind::RepeatBack
+                            && edge.from.node == *child
+                            && edge.to.node == *child
+                    })
+                })
+                .ok_or_else(|| ProtocolRefusal::fault("a-repeat-has-a-body"))?;
+            let exhausted = children.iter().copied().find(|child| *child != body);
+            loops.insert(
+                repeat.node,
+                Loop {
+                    body,
+                    exhausted,
+                    max: repeat.max,
+                    guard: &repeat.guard,
+                },
+            );
+        }
+
+        let mut choices = BTreeMap::new();
+        for choice in &protocol.slots.choices {
+            let children = child_of(&choice.node)
+                .ok_or_else(|| ProtocolRefusal::fault("a-choice-is-a-control"))?;
+            let mut cases = Vec::with_capacity(choice.cases.len());
+            for case in &choice.cases {
+                let node = children
+                    .iter()
+                    .copied()
+                    .find(|child| controls.get(child).is_some_and(|c| c.name == case.name))
+                    .ok_or_else(|| ProtocolRefusal::fault("a-case-is-a-child-of-its-choice"))?;
+                cases.push((node, &case.guard));
+            }
+            choices.insert(choice.node, cases);
+        }
+
+        let mut awaits = BTreeMap::new();
+        for awaited in &protocol.awaits {
+            let event = edge_to(EdgeKind::AwaitSuccess, awaited.node, Port::Enter)
+                .ok_or_else(|| ProtocolRefusal::fault("an-await-has-an-event"))?;
+            let then = edge_to(EdgeKind::AwaitSuccess, event, Port::Exit)
+                .ok_or_else(|| ProtocolRefusal::fault("an-await-has-a-then"))?;
+            let timeout = edge_to(EdgeKind::AwaitTimeout, awaited.node, Port::Enter)
+                .ok_or_else(|| ProtocolRefusal::fault("an-await-has-a-timeout"))?;
+            awaits.insert(
+                awaited.node,
+                Await {
+                    event,
+                    then,
+                    timeout,
+                },
+            );
+        }
+
+        let record = |node: ProtocolNodeId| -> Result<Record<'a>, ProtocolRefusal> {
+            let slot = binder_of
+                .get(&node)
+                .copied()
+                .ok_or_else(|| ProtocolRefusal::fault("an-event-node-has-a-binder"))?;
+            let record_type = protocol
+                .slots
+                .binders
+                .get(slot)
+                .map(|binder| binder.value_type.clone())
+                .ok_or_else(|| ProtocolRefusal::fault("an-event-binder-has-a-type"))?;
+            Ok(Record {
+                constraint: body_of(node),
+                slot,
+                record_type,
+            })
+        };
+        let mut checks = BTreeMap::new();
+        let mut events = BTreeMap::new();
+        for (node, control) in &controls {
+            match control.step {
+                ControlStep::Check => {
+                    let condition = body_of(*node)
+                        .ok_or_else(|| ProtocolRefusal::fault("a-check-has-a-condition"))?;
+                    checks.insert(*node, condition);
+                }
+                ControlStep::Event => {
+                    events.insert(*node, record(*node)?);
+                }
+                _ => {}
+            }
+        }
+
+        let mut channels = Vec::with_capacity(protocol.channels.len());
+        for channel in &protocol.channels {
+            let ChannelCapacity::Literal(capacity) = channel.capacity else {
+                return Err(unsupported(Unsupported::SymbolicCapacity));
+            };
+            channels.push(Channel {
+                name: format!("{}::{}", protocol.name, channel.name),
+                // A capacity past the address space admits every queue a run
+                // can hold.
+                capacity: usize::try_from(capacity).unwrap_or(usize::MAX),
+                overflow: channel.overflow,
+                delivery: channel.delivery,
+                key: match &channel.ordering {
+                    CheckedOrdering::Unordered => None,
+                    CheckedOrdering::Fifo { key, .. } => Some(&**key),
+                },
+            });
+        }
+        let mut messages = BTreeMap::new();
+        for via in &protocol.vias {
+            let channel = protocol
+                .channels
+                .iter()
+                .position(|channel| channel.name == via.channel)
+                .ok_or_else(|| ProtocolRefusal::fault("a-message-names-a-channel"))?;
+            let from = protocol
+                .edges
+                .iter()
+                .find(|edge| edge.kind == EdgeKind::Message && edge.to.node == via.node)
+                .map(|edge| edge.from.node);
+            messages.insert(
+                via.node,
+                Message {
+                    record: record(via.node)?,
+                    channel,
+                    from,
+                },
+            );
+        }
+
         let (finish_node, finish_name) = protocol
             .finish
             .clone()
@@ -323,6 +564,13 @@ impl<'a> Program<'a> {
             controls,
             attempts,
             joins,
+            loops,
+            choices,
+            awaits,
+            checks,
+            events,
+            messages,
+            channels,
             finish,
             slots,
             readers,
@@ -330,8 +578,10 @@ impl<'a> Program<'a> {
             terminal: &protocol.slots.terminal,
             spans: BTreeMap::new(),
             reader_positions: Vec::new(),
+            loop_of: BTreeMap::new(),
         };
         program.spans = program.spans()?;
+        program.loop_of = program.enclosing_loops()?;
         program.reader_positions = program
             .readers
             .iter()
@@ -361,93 +611,135 @@ impl<'a> Program<'a> {
         Ok(&self.control(node)?.text)
     }
 
-    /// FO-1: apply structural moves from `cursor` until a rest point.
-    pub(super) fn settle(&self, mut cursor: Cursor) -> Result<Rest, ProtocolRefusal> {
-        // Each move enters a child or leaves a node for its parent's
-        // continuation, so the walk ends within twice the tree's size.
-        for _ in 0..=self.controls.len().saturating_mul(2) {
-            cursor = match cursor {
-                Cursor::Enter(node) => {
-                    let control = self.control(node)?;
-                    match control.step {
-                        ControlStep::Sequence => match control.children.first() {
-                            Some(first) => Cursor::Enter(*first),
-                            None => Cursor::Exit(node),
-                        },
-                        ControlStep::Branch => match control.children[..] {
-                            [body] => Cursor::Enter(body),
-                            _ => return Err(ProtocolRefusal::fault("a-branch-has-one-body")),
-                        },
-                        ControlStep::Parallel => return Ok(Rest::Fork(node)),
-                        ControlStep::Attempt => return Ok(Rest::Node(node)),
-                        ControlStep::Unstepped(_) => {
-                            return Err(ProtocolRefusal::fault("a-stepped-construct-is-admitted"))
-                        }
-                    }
-                }
-                Cursor::Exit(node) => {
-                    let Some(parent) = self.control(node)?.parent else {
-                        return Ok(Rest::Finish);
-                    };
-                    let holder = self.control(parent)?;
-                    match holder.step {
-                        ControlStep::Sequence => {
-                            let position = holder
-                                .children
-                                .iter()
-                                .position(|child| *child == node)
-                                .ok_or_else(|| ProtocolRefusal::fault("a-child-of-its-parent"))?;
-                            match holder.children.get(position + 1) {
-                                Some(next) => Cursor::Enter(*next),
-                                None => Cursor::Exit(parent),
-                            }
-                        }
-                        ControlStep::Branch => return Ok(Rest::End),
-                        ControlStep::Parallel
-                        | ControlStep::Attempt
-                        | ControlStep::Unstepped(_) => {
-                            return Err(ProtocolRefusal::fault("a-parent-is-a-sequence-or-branch"))
-                        }
-                    }
-                }
-            };
-        }
-        Err(ProtocolRefusal::fault("settling-reaches-a-rest-point"))
+    /// The control `node`'s parent, `None` for the `run` root.
+    pub(super) fn parent(
+        &self,
+        node: ProtocolNodeId,
+    ) -> Result<Option<ProtocolNodeId>, ProtocolRefusal> {
+        Ok(self.control(node)?.parent)
+    }
+
+    /// The `repeat` `node`.
+    pub(super) fn repeat(&self, node: ProtocolNodeId) -> Result<&Loop<'a>, ProtocolRefusal> {
+        self.loops
+            .get(&node)
+            .ok_or_else(|| ProtocolRefusal::fault("a-repeat-node-is-a-repeat"))
+    }
+
+    /// The `await` `node`.
+    pub(super) fn awaited(&self, node: ProtocolNodeId) -> Result<&Await, ProtocolRefusal> {
+        self.awaits
+            .get(&node)
+            .ok_or_else(|| ProtocolRefusal::fault("an-await-node-is-an-await"))
+    }
+
+    /// Whether the node `reader`'s slots read binder slot `slot`.
+    pub(super) fn reads(&self, slot: usize, reader: ProtocolNodeId) -> bool {
+        self.readers
+            .get(slot)
+            .is_some_and(|readers| readers.contains(&reader))
     }
 
     /// Whether a thread resting at `rest` can still reach a node that reads
-    /// binder slot `slot` (ADR-027 PS-5).
+    /// binder slot `slot` before its step binds the slot again (ADR-027
+    /// PS-5).
     ///
     /// A thread reaches the controls of its own body from where it rests to
     /// the end of its scope: the nearest enclosing `branch`, or the whole
     /// `run` tree and then `finish` for a root thread. In tree order that is
-    /// one interval, so the test is one range query per slot.
+    /// one interval. Every reader of a binder follows its node in tree order
+    /// and inside the innermost `repeat` body that holds the node (a
+    /// `repeat` adds nothing past itself, QSpec FR-466), and every path into
+    /// a reader passes the node first. So a thread resting at or before the
+    /// node reaches no reader of the current binding; one past the node
+    /// reaches the readers from its rest point to the end of that `repeat`
+    /// body, and, through the back edge of each `repeat` that encloses it
+    /// inside that body and inside its scope, every reader of that
+    /// `repeat`'s body too.
     pub(super) fn reads_from(&self, rest: Rest, slot: usize) -> bool {
         let Some(readers) = self.reader_positions.get(slot) else {
             return false;
         };
-        let span = |node| self.spans.get(&node);
-        let (range, finish) = match rest {
-            Rest::Node(node) | Rest::Fork(node) => match span(node) {
-                Some(span) => (Some(span.first..=span.scope_last), span.root_scope),
-                None => (None, false),
-            },
-            Rest::Join(node) => match span(node) {
-                Some(span) => (
-                    span.last
-                        .checked_add(1)
-                        .map(|after| after..=span.scope_last),
-                    span.root_scope,
-                ),
-                None => (None, false),
-            },
-            Rest::Finish => (None, true),
-            Rest::End => (None, false),
+        let Some(bound) = self.slots.get(slot).copied().flatten() else {
+            return false;
         };
+        let (at, start) = match rest {
+            Rest::Finish => return readers.finish,
+            Rest::End | Rest::Check(_) => return false,
+            Rest::Node(node) | Rest::Fork(node) | Rest::Await(node) => {
+                match self.spans.get(&node) {
+                    Some(span) => (node, span.first),
+                    None => return false,
+                }
+            }
+            Rest::Join(node) => match self.spans.get(&node) {
+                Some(span) => (node, span.last.saturating_add(1)),
+                None => return false,
+            },
+        };
+        let (Some(here), Some(binding)) = (self.spans.get(&at), self.spans.get(&bound)) else {
+            return false;
+        };
+        if start <= binding.first {
+            return false;
+        }
+        let innermost = self.loop_of.get(&bound).copied();
+        let mut end = here.scope_last;
+        let mut finish = here.root_scope;
+        if let Some(repeat) = innermost {
+            let Some(body) = self
+                .loops
+                .get(&repeat)
+                .and_then(|lp| self.spans.get(&lp.body))
+            else {
+                return false;
+            };
+            if here.first < body.first || here.first > body.last {
+                return false;
+            }
+            end = end.min(body.last);
+            finish = false;
+        }
+        let mut start = start;
+        let mut enclosing = self.loop_of.get(&at).copied();
+        while let Some(repeat) = enclosing {
+            if Some(repeat) == innermost {
+                break;
+            }
+            let Some(span) = self.spans.get(&repeat) else {
+                break;
+            };
+            if span.first < here.scope_first {
+                break;
+            }
+            start = start.min(span.first);
+            enclosing = self.loop_of.get(&repeat).copied();
+        }
         (finish && readers.finish)
-            || range.is_some_and(|range| {
-                !range.is_empty() && readers.controls.range(range).next().is_some()
-            })
+            || (start <= end && readers.controls.range(start..=end).next().is_some())
+    }
+
+    /// Each control's innermost enclosing `repeat` whose body holds it, from
+    /// a preorder walk of the `run` tree.
+    fn enclosing_loops(&self) -> Result<BTreeMap<ProtocolNodeId, ProtocolNodeId>, ProtocolRefusal> {
+        let mut loop_of = BTreeMap::new();
+        let mut stack: Vec<(ProtocolNodeId, Option<ProtocolNodeId>)> = vec![(self.root, None)];
+        while let Some((node, enclosing)) = stack.pop() {
+            if let Some(repeat) = enclosing {
+                loop_of.insert(node, repeat);
+            }
+            let control = self.control(node)?;
+            let body = self.loops.get(&node).map(|lp| lp.body);
+            for child in &control.children {
+                let inner = if body == Some(*child) {
+                    Some(node)
+                } else {
+                    enclosing
+                };
+                stack.push((*child, inner));
+            }
+        }
+        Ok(loop_of)
     }
 
     /// Each control's [`Span`], from a preorder walk of the `run` tree.
@@ -478,6 +770,12 @@ impl<'a> Program<'a> {
             let below: usize = children.filter_map(|child| size.get(child)).sum();
             size.insert(*node, below + 1);
         }
+        let at = |node: ProtocolNodeId| -> Result<usize, ProtocolRefusal> {
+            first
+                .get(&node)
+                .copied()
+                .ok_or_else(|| ProtocolRefusal::fault("a-control-is-in-the-run-tree"))
+        };
         let last = |node: ProtocolNodeId| -> Result<usize, ProtocolRefusal> {
             match (first.get(&node), size.get(&node)) {
                 (Some(first), Some(size)) => Ok(first + size - 1),
@@ -491,6 +789,7 @@ impl<'a> Program<'a> {
                 Span {
                     first: position,
                     last: last(*node)?,
+                    scope_first: at(scope.unwrap_or(self.root))?,
                     scope_last: last(scope.unwrap_or(self.root))?,
                     root_scope: scope.is_none(),
                 },

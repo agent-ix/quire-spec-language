@@ -58,7 +58,7 @@ fn branch(label: &str) -> ThreadPath {
 
 /// One case: the unit `body`, its documents, its initial snapshots, and its
 /// checked package.
-struct Case {
+pub(crate) struct Case {
     body: String,
     documents: Documents,
     initial: Vec<DocumentRef>,
@@ -67,7 +67,7 @@ struct Case {
 
 impl Case {
     /// `body` from one initial snapshot per value of `c.v` in `values`.
-    fn new(body: &str, values: &[i64]) -> Self {
+    pub(crate) fn new(body: &str, values: &[i64]) -> Self {
         let mut documents = Documents::new();
         let initial = values
             .iter()
@@ -83,7 +83,7 @@ impl Case {
     }
 
     /// The protocol subject of `protocol` with `k` bound to `c`.
-    fn subject(&self, protocol: &str) -> ProtocolSubject<'_> {
+    pub(crate) fn subject(&self, protocol: &str) -> ProtocolSubject<'_> {
         subject(
             &self.checked,
             &self.documents,
@@ -94,7 +94,7 @@ impl Case {
     }
 
     /// EN-1's deadlock-freedom outcome over `protocol`.
-    fn deadlock(&self, protocol: &str) -> ModelCheckOutcome<ProtocolTransition> {
+    pub(crate) fn deadlock(&self, protocol: &str) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
             ProtocolCheckRequest {
                 subject: self.subject(protocol),
@@ -635,7 +635,7 @@ fn parallel(branches: &[(&str, String)], join: &str) -> String {
 }
 
 /// An always-enabled attempt `node`.
-fn touch(node: &str) -> String {
+pub(crate) fn touch(node: &str) -> String {
     attempt(node, "touch", "TouchPre", &node.to_lowercase(), "true")
 }
 
@@ -1246,7 +1246,7 @@ fn a_protocol_replay_recomputes_the_blocked_threads() {
 #[test]
 fn check_protocol_refuses_an_unstepped_construct() {
     let run = format!(
-        "sequence Main {{ {} check Nothing using v {{ true }}; }}",
+        "sequence Main {{ {} fence Barrier ordering seq_cst; }}",
         touch("T")
     );
     let case = p_case(&run, 0);
@@ -1259,7 +1259,7 @@ fn check_protocol_refuses_an_unstepped_construct() {
         },
         &Cancel::new(),
     )
-    .expect_err("`check` is not stepped yet");
+    .expect_err("`fence` is not stepped yet");
     let ModelCheckRefusal::Protocol(refusal) = refusal else {
         panic!("{refusal:?}");
     };

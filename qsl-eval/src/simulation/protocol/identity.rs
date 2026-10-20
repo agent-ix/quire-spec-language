@@ -154,10 +154,22 @@ impl RestPoint {
 pub enum StepKind {
     /// ST-1.
     Attempt,
+    /// ST-2: a domain `event` or `commit`.
+    Event,
+    /// ST-3.
+    Send,
+    /// ST-4.
+    Receive,
+    /// ST-5: a copy of a queued entry.
+    Duplicate,
+    /// ST-5: the loss of a queued entry.
+    Lose,
     /// ST-6.
     Fork,
     /// ST-7.
     Join,
+    /// ST-8.
+    Timeout,
     /// ST-9.
     Finish,
     /// ST-10: a step of the memory model.
@@ -168,8 +180,14 @@ impl StepKind {
     fn text(self) -> &'static str {
         match self {
             Self::Attempt => "attempt",
+            Self::Event => "event",
+            Self::Send => "send",
+            Self::Receive => "receive",
+            Self::Duplicate => "duplicate",
+            Self::Lose => "lose",
             Self::Fork => "fork",
             Self::Join => "join",
+            Self::Timeout => "timeout",
             Self::Finish => "finish",
             Self::Memory => "memory",
         }
@@ -189,8 +207,10 @@ enum Members {
     },
     /// No further member.
     Control,
-    /// `record`.
-    Finish { record: Enc },
+    /// `record`: the bound record or payload.
+    Record { record: Enc },
+    /// `channel` and `entry`.
+    Channel { channel: Enc, entry: Enc },
     /// `memory_step`, the canonical text its memory model gives.
     Memory { identity: String },
 }
@@ -217,7 +237,9 @@ impl ProtocolTransition {
         Self::control(StepKind::Join, thread, node.into())
     }
 
-    fn control(kind: StepKind, thread: ThreadPath, node: String) -> Self {
+    /// A step of `kind` by `thread` at `node` with no further member: a
+    /// `fork`, `join` or `timeout`.
+    pub(crate) fn control(kind: StepKind, thread: ThreadPath, node: String) -> Self {
         Self {
             kind,
             thread: Some(thread),
@@ -246,12 +268,25 @@ impl ProtocolTransition {
         }
     }
 
-    pub(crate) fn finish(thread: ThreadPath, node: String, record: Enc) -> Self {
+    /// A step of `kind` by `thread` at `node` that binds `record`: an
+    /// `event`, `send`, `receive` or `finish`.
+    pub(crate) fn record(kind: StepKind, thread: ThreadPath, node: String, record: Enc) -> Self {
         Self {
-            kind: StepKind::Finish,
+            kind,
             thread: Some(thread),
             node: Some(node),
-            members: Members::Finish { record },
+            members: Members::Record { record },
+        }
+    }
+
+    /// A channel step of `kind`, `duplicate` or `lose`, on `channel` and its
+    /// queued `entry`.
+    pub(crate) fn channel(kind: StepKind, channel: Enc, entry: Enc) -> Self {
+        Self {
+            kind,
+            thread: None,
+            node: None,
+            members: Members::Channel { channel, entry },
         }
     }
 
@@ -269,12 +304,13 @@ impl ProtocolTransition {
         self.kind
     }
 
-    /// The owning thread's path; `None` for a memory step.
+    /// The owning thread's path; `None` for a channel or memory step.
     pub fn thread(&self) -> Option<&ThreadPath> {
         self.thread.as_ref()
     }
 
-    /// The node's static declaration path; `None` for a memory step.
+    /// The node's static declaration path; `None` for a channel or memory
+    /// step.
     pub fn node(&self) -> Option<&str> {
         self.node.as_deref()
     }
@@ -284,7 +320,10 @@ impl ProtocolTransition {
     pub fn application(&self) -> Option<&ModelTransition> {
         match &self.members {
             Members::Attempt { application, .. } => Some(application),
-            Members::Control | Members::Finish { .. } | Members::Memory { .. } => None,
+            Members::Control
+            | Members::Record { .. }
+            | Members::Channel { .. }
+            | Members::Memory { .. } => None,
         }
     }
 
@@ -308,7 +347,11 @@ impl ProtocolTransition {
                 members.push(("arguments", Enc::Array(arguments.clone())));
             }
             Members::Control => {}
-            Members::Finish { record } => members.push(("record", record.clone())),
+            Members::Record { record } => members.push(("record", record.clone())),
+            Members::Channel { channel, entry } => {
+                members.push(("channel", channel.clone()));
+                members.push(("entry", entry.clone()));
+            }
             Members::Memory { identity } => {
                 members.push(("memory_step", Enc::text(identity.clone())));
             }
@@ -335,8 +378,25 @@ pub enum WaitCause {
     /// An attempt whose preconditions hold and no post-state satisfies its
     /// postconditions within the frame.
     NoPostState,
-    /// An attempt or `finish` whose constraint no record satisfies.
+    /// An event, attempt or `finish` whose constraint no record satisfies,
+    /// or a `send` whose constraint no payload satisfies.
     Constraint,
+    /// A `receive` with no deliverable entry.
+    EmptyQueue {
+        /// The channel's qualified name.
+        channel: String,
+    },
+    /// A `send` under `overflow block` whose queue is at capacity for every
+    /// payload its constraint admits.
+    FullQueue {
+        /// The channel's qualified name.
+        channel: String,
+    },
+    /// A false `check`.
+    CheckFalse {
+        /// The `check` node's static declaration path.
+        node: String,
+    },
     /// A join, or a `finish`, naming the threads it still waits for.
     JoinWaiting {
         /// The threads, in ascending JCS bytes of their paths.
