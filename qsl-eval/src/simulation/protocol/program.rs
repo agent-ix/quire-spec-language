@@ -15,9 +15,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{
-    ChannelCapacity, ChannelDelivery, ChannelOverflow, CheckedActivation, CheckedBody,
-    CheckedJoinPolicy, CheckedOrdering, CheckedOutstanding, CheckedProtocol, CheckedTerminalMember,
-    ControlStep, EdgeKind, LossSelector, Port, ProtocolNodeId,
+    AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelOverflow, CheckedActivation,
+    CheckedBody, CheckedJoinPolicy, CheckedOrdering, CheckedOutstanding, CheckedProtocol,
+    CheckedTerminalMember, ControlStep, EdgeKind, LossSelector, Port, ProtocolNodeId,
 };
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 
@@ -179,7 +179,7 @@ pub(super) struct Program<'a> {
     /// Each `check`'s condition.
     pub(super) checks: BTreeMap<ProtocolNodeId, &'a CheckedBody>,
     /// Each `fence`'s ordering, by its label (ADR-027 TS-2).
-    pub(super) fences: BTreeMap<ProtocolNodeId, &'static str>,
+    pub(super) fences: BTreeMap<ProtocolNodeId, AccessOrdering>,
     /// Each domain `event` and `commit` node's record.
     pub(super) events: BTreeMap<ProtocolNodeId, Record<'a>>,
     pub(super) messages: BTreeMap<ProtocolNodeId, Message<'a>>,
@@ -228,21 +228,14 @@ fn unsupported(construct: Unsupported) -> ProtocolRefusal {
 /// The constructs this protocol system steps: `sequence`, `parallel` and its
 /// branches, `choice`, `repeat`, `check`, `await`, `attempt`, `send`,
 /// `receive`, domain `event`, `commit`, `fence` and `finish`, channels with a
-/// literal capacity, under `activation on origin`, every `parallel` under
-/// `sc` (ADR-027 §9 sequencing steps 3 and 4).
+/// literal capacity, under `activation on origin` (ADR-027 §9 sequencing
+/// steps 3 and 4). Which memory model each `parallel` runs under is the
+/// subject's resolved model, read when the system is built.
 fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal> {
     for control in &protocol.controls.controls {
         if let ControlStep::Unstepped(construct) = control.step() {
             return Err(unsupported(Unsupported::Control(construct)));
         }
-    }
-    if protocol
-        .memory
-        .parallels
-        .iter()
-        .any(|parallel| !parallel.is_sequentially_consistent())
-    {
-        return Err(unsupported(Unsupported::WeakMemory));
     }
     for channel in &protocol.channels {
         if matches!(channel.capacity, ChannelCapacity::Symbolic(_)) {
@@ -593,7 +586,7 @@ impl<'a> Program<'a> {
                 .memory
                 .fences
                 .iter()
-                .map(|fence| (fence.node, fence.ordering.label()))
+                .map(|fence| (fence.node, fence.ordering))
                 .collect(),
             events,
             messages,
@@ -657,7 +650,7 @@ impl<'a> Program<'a> {
     pub(super) fn fence_ordering(
         &self,
         node: ProtocolNodeId,
-    ) -> Result<&'static str, ProtocolRefusal> {
+    ) -> Result<AccessOrdering, ProtocolRefusal> {
         self.fences
             .get(&node)
             .copied()

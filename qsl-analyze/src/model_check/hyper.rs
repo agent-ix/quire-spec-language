@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-176 (ADR-023 HC-1, HC-4, HC-8, HM-7; ADR-018 EN-1): the explicit-state
-//! check of a universal hyperproperty (HP-2) by self-composition.
+//! FR-176, FR-177 (ADR-023 HC-1, HC-2, HC-4, HC-8, HM-7; ADR-018 EN-1): the
+//! explicit-state check of a universal hyperproperty (HP-2) by
+//! self-composition and of a forall-exists safety hyperproperty (HP-3) by
+//! witness sets.
 //!
 //! [`check_hyper`] decides a `hyper` clause over `behaviours` whose
-//! quantifiers are all `forall`. Before any product is built it classifies
+//! quantifiers are all `forall` (HP-2), or `forall`s then `exists`s over a
+//! safety body (HP-3). Before any product is built it classifies
 //! every root of every subject and explores each distinct subject's reachable
 //! graph once under the request's limits, so a subject that alone reaches a
 //! limit stops the item there (HC-8). It then explores, for each instance of
@@ -35,6 +38,19 @@
 //! the acceptance sets set aside: no tuple of fair behaviours is matched at
 //! every joint step, and the item is vacuous (HM-7), never proved.
 //!
+//! An HP-3 clause is explored as a [`WitnessProduct`] instead: a state is the
+//! universal tuple with the set `X` of existential tuples still matched, and
+//! the second phase is a scan, over the states whose `X` is empty, for a
+//! cycle that is fair for every universal variable (HC-2). The first state in
+//! discovery order from which one is reachable ends the run: the universal
+//! lasso through it is the counterexample, `position` the first joint
+//! position at which `X` is empty. An undefined evaluation, a refused `match`
+//! and that violation are ranked by the joint position they are at, in that
+//! order on a tie: a refused `match` at or before the empty `X` may have
+//! dropped a member of it. An undefined evaluation ends at one path for every
+//! universal and existential variable, an existential variable's path being
+//! its member's [`Partner`].
+//!
 //! Not built here, and refused or absent rather than approximated: the
 //! product-closure certificate (FR-163), so a `Holds` carries none and settles
 //! no `proved`; a search horizon `max_depth` (HV-3); the copy-swap reduction
@@ -42,16 +58,18 @@
 //! recompiled package, which waits for S4 to emit a hyper clause. The core of
 //! that replay is `qsl_replay::replay_hyper_trace_tuple`.
 
-use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::{Cell, Ref};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::rc::Rc;
 
-use qsl_eval::automaton::AutomatonError;
+use qsl_eval::automaton::{AutomatonError, PropertyAutomaton};
 use qsl_eval::fairness::{
     analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
 };
 use qsl_eval::hyper::{
     cartesian, ComponentStep, Halt, HyperFinding, HyperInputs, HyperLetters, HyperProduct,
-    HyperState, HyperTransition, ParameterBinding, Property, StepMatch,
+    HyperState, HyperTransition, ParameterBinding, Partner, PartnerStep, Property, StepMatch,
+    WitnessInputs, WitnessProduct,
 };
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{
@@ -78,13 +96,14 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
 use super::fair_walk::{tree_path, FairModel};
-use super::graph::{retain, ProductStateId, RetainedEdge, RetainedGraph};
+use super::graph::{retain, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph};
 
 type HyperGraph = RetainedGraph<HyperState, HyperTransition, HyperFinding>;
 
-/// One EN-1 run over an HP-2 item (FR-176 Inputs).
+/// One EN-1 run over an HP-2 or HP-3 item (FR-176, FR-177 Inputs).
 pub struct HyperCheckRequest<'a> {
-    /// The checked clause: every quantifier `forall`, lockstep.
+    /// The checked clause: lockstep, every quantifier `forall` (HP-2) or
+    /// `forall`s then `exists`s over a safety body (HP-3).
     pub clause: &'a CheckedHyperClause,
     /// One model subject per distinct alias, in the order of
     /// [`CheckedHyperClause::aliases`]. Two variables of one alias range over
@@ -92,7 +111,7 @@ pub struct HyperCheckRequest<'a> {
     pub subjects: Vec<ModelSubject<'a>>,
     /// The seam to the body's `holds` atoms.
     pub letters: &'a dyn HyperLetters,
-    /// The seam to the clause's universal `match` conjuncts.
+    /// The seam to the clause's `match` conjuncts.
     pub matcher: &'a dyn StepMatch,
     /// The run's caller-raisable budgets (FR-184).
     pub limits: ModelCheckLimits,
@@ -100,11 +119,12 @@ pub struct HyperCheckRequest<'a> {
     pub meter: ScalarLimits,
 }
 
-/// Why [`check_hyper`] explored nothing (FR-176).
+/// Why [`check_hyper`] explored nothing, or built no counterexample
+/// (FR-176, FR-177).
 #[derive(Debug, thiserror::Error)]
 pub enum HyperRefusal {
-    /// The clause is not an HP-2 clause.
-    #[error("EN-1 decides a universal hyperproperty (HP-2) here, not {form:?}")]
+    /// The clause is not an HP-2 or HP-3 clause.
+    #[error("EN-1 decides a universal (HP-2) or forall-exists safety (HP-3) hyperproperty here, not {form:?}")]
     FormNotDecided {
         /// The clause's form.
         form: Option<HyperForm>,
@@ -120,6 +140,14 @@ pub enum HyperRefusal {
     /// The negated body has no property automaton.
     #[error(transparent)]
     Automaton(#[from] AutomatonError),
+    /// An undefined evaluation of an HP-3 clause's universal side at a state
+    /// whose witness set is empty: no existential tuple is left to give the
+    /// counterexample a path for the existential variables, and FR-177 states
+    /// no verdict for it.
+    #[error(
+        "an undefined evaluation on the universal side of an HP-3 clause names no existential path"
+    )]
+    NoPartnerPath,
     /// A fairness constraint names an operation its variable's subject does
     /// not declare.
     #[error("the fairness constraint on `{name}` names an operation the subject does not declare")]
@@ -141,7 +169,10 @@ pub fn check_hyper(
     cancel: &Cancel,
 ) -> Result<HyperOutcome, ModelCheckRefusal> {
     let clause = request.clause;
-    if !matches!(clause.form(), Some(HyperForm::Universal)) {
+    if !matches!(
+        clause.form(),
+        Some(HyperForm::Universal | HyperForm::ForallExistsSafety)
+    ) {
         return Err(HyperRefusal::FormNotDecided {
             form: clause.form().cloned(),
         }
@@ -182,6 +213,7 @@ pub fn check_hyper(
         request: &request,
         systems,
         slots,
+        witness: matches!(clause.form(), Some(HyperForm::ForallExistsSafety)),
         cancel,
     };
     run.decide(&instances)
@@ -255,10 +287,16 @@ impl Totals {
     }
 }
 
-fn stopped(cause: IncompleteCause, limit: Option<ReachedLimit>, totals: &Totals) -> HyperOutcome {
+fn stopped(
+    cause: IncompleteCause,
+    limit: Option<ReachedLimit>,
+    count: Option<u64>,
+    totals: &Totals,
+) -> HyperOutcome {
     HyperOutcome::Stopped {
         cause,
         limit,
+        count,
         stats: totals.stats(),
     }
 }
@@ -267,6 +305,7 @@ fn exhausted(limit: ModelCheckLimit, value: u64, totals: &Totals) -> HyperOutcom
     stopped(
         IncompleteCause::ResourceExhausted,
         Some(ReachedLimit { limit, value }),
+        None,
         totals,
     )
 }
@@ -307,23 +346,57 @@ impl TransitionSystem for Watched<'_, '_> {
 enum Ending {
     /// The frontier emptied.
     Complete,
-    /// A limit or a cancellation stopped the run.
-    Stopped(IncompleteCause, Option<ReachedLimit>),
+    /// A limit or a cancellation stopped the run; the count is the one a
+    /// counted budget reached (FR-184).
+    Stopped(IncompleteCause, Option<ReachedLimit>, Option<u64>),
+}
+
+/// The product of one instance: the self-composition of an HP-2 clause or the
+/// witness-set product of an HP-3 clause.
+enum Built<'r, 's> {
+    Universal(HyperProduct<'r, 's>),
+    Witness(WitnessProduct<'r, 's>),
+}
+
+impl Built<'_, '_> {
+    fn take_halt(&self) -> Option<Halt> {
+        match self {
+            Self::Universal(product) => product.take_halt(),
+            Self::Witness(product) => product.take_halt(),
+        }
+    }
+
+    fn automaton(&self) -> Ref<'_, PropertyAutomaton> {
+        match self {
+            Self::Universal(product) => product.automaton(),
+            Self::Witness(product) => product.automaton(),
+        }
+    }
 }
 
 /// One explored instance.
 struct Explored<'r, 's> {
     instance: &'r [ParameterBinding],
-    product: HyperProduct<'r, 's>,
+    product: Built<'r, 's>,
     graph: HyperGraph,
 }
 
 /// What the first phase found at a state.
 enum Found {
-    /// The state's own letter has an undefined atom.
+    /// The state's own letter has an undefined atom; for an HP-3 clause, at
+    /// the joint position of the existential tuple that `partner` reached.
     Atom {
         atom: FormulaNodeId,
         cause: qsl_eval::temporal::UndefinedCause,
+        partner: Option<Rc<Partner>>,
+    },
+    /// `μ_E` has no value on a joint step of an HP-3 member of the state.
+    Existential {
+        step: HyperTransition,
+        posts: Vec<DigestRecord>,
+        conjunct: usize,
+        cause: qsl_eval::temporal::UndefinedCause,
+        partner: Rc<Partner>,
     },
     /// `μ_U` has no value on a joint step out of the state.
     Match {
@@ -353,6 +426,19 @@ enum Candidate {
 enum FirstHit {
     Violated(Box<HyperCounterexample>),
     Undecided(UndecidedCause),
+    /// An undefined evaluation whose counterexample FR-177 cannot state: an
+    /// HP-3 clause's universal side where no witness remains to name an
+    /// existential path. It ranks as the undefined evaluation it is, so only
+    /// when it comes first does it end the item.
+    Unstated,
+}
+
+/// Keep, of the refused findings of one state, the one at the earliest joint
+/// position; the first in the list on a tie.
+fn sooner(refused: &mut Option<(usize, UndecidedCause)>, depth: usize, cause: UndecidedCause) {
+    if refused.is_none_or(|(known, _)| depth < known) {
+        *refused = Some((depth, cause));
+    }
 }
 
 /// The second phase's result for one instance.
@@ -363,11 +449,39 @@ enum Second {
     Stopped(HyperOutcome),
 }
 
+/// The second phase's result for one HP-3 instance.
+enum Exhausted {
+    /// The universal lasso through the first state whose witness set is
+    /// empty and from which a fair cycle is reachable, with the joint
+    /// position at which the set is first empty.
+    Lasso(Box<HyperCounterexample>, usize),
+    NoneFair,
+    Stopped(HyperOutcome),
+}
+
+/// What decided an HP-3 item.
+enum Verdict {
+    Violated(Box<HyperCounterexample>),
+    Undecided(UndecidedCause),
+    /// An undefined evaluation FR-177 gives no counterexample for.
+    Unstated,
+}
+
+/// The existential half of an undefined-evaluation counterexample's paths: the
+/// partner's path, then the existential components of the last joint step.
+struct PartnerPath<'p> {
+    partner: &'p Partner,
+    last: Option<PartnerStep<'p>>,
+}
+
 struct Run<'r, 'a> {
     request: &'r HyperCheckRequest<'a>,
     systems: Vec<ModelSystem<'a>>,
     /// The index in `systems` of each trace variable's subject.
     slots: Vec<usize>,
+    /// Whether the clause is HP-3: its leading `universals` variables are
+    /// universal and the rest existential.
+    witness: bool,
     cancel: &'r Cancel,
 }
 
@@ -381,6 +495,7 @@ impl<'a> Run<'_, 'a> {
             if let Some(source) = self.cancel.cause() {
                 return Ok(stopped(
                     IncompleteCause::Cancelled { source },
+                    None,
                     None,
                     &totals,
                 ));
@@ -405,6 +520,9 @@ impl<'a> Run<'_, 'a> {
         }
         if let Some(outcome) = self.precheck(&totals)? {
             return Ok(outcome);
+        }
+        if self.witness {
+            return self.decide_witness(instances, totals);
         }
         let mut explored = Vec::with_capacity(instances.len());
         let mut best: Option<(usize, FirstHit)> = None;
@@ -439,6 +557,7 @@ impl<'a> Run<'_, 'a> {
                     cause,
                     stats: totals.stats(),
                 },
+                FirstHit::Unstated => return Err(HyperRefusal::NoPartnerPath.into()),
             });
         }
         let mut shortest: Option<(Box<HyperCounterexample>, usize)> = None;
@@ -459,16 +578,299 @@ impl<'a> Run<'_, 'a> {
                 stats: totals.stats(),
             });
         }
+        self.clean(&explored, &totals)
+    }
+
+    /// Decide an HP-3 item (FR-177): for each instance, the first phase's
+    /// undefined evaluations and refused `match`es, and the second phase's
+    /// empty witness sets with a fair universal cycle, ranked together by the
+    /// joint position they are at (ADR-023 HV-8). As FR-126 ranks bindings, a
+    /// later instance wins only with a strictly earlier finding: a finding
+    /// nothing can precede ends the run, and one at joint position 0 bounds
+    /// the later instances to their first phase at that position.
+    fn decide_witness(
+        &self,
+        instances: &[Vec<ParameterBinding>],
+        mut totals: Totals,
+    ) -> Result<HyperOutcome, ModelCheckRefusal> {
+        let mut explored = Vec::with_capacity(instances.len());
+        // The least (position, rank) so far: an undefined evaluation ranks
+        // before a refused `match` at one position, and a refused `match`
+        // before an empty witness set, which it may have dropped a member of.
+        let mut best: Option<(usize, u8, Verdict)> = None;
+        for instance in instances {
+            // Only a finding at position 0 can bound a later instance: an
+            // empty witness set at a later position needs the fair cycle
+            // beyond it. A later instance is explored to its first phase
+            // alone; no later finding of rank 2 can precede one of rank 2.
+            let cap = match best {
+                Some((0, 0, _)) => break,
+                // Horizon 1 expands the initial states, where a position-0
+                // finding of a later instance is made.
+                Some((0, _, _)) => Some(1),
+                _ => None,
+            };
+            let run = match self.explore(instance, cap, &mut totals)? {
+                Ok(run) => run,
+                Err(outcome) => return Ok(outcome),
+            };
+            match self.first_phase(&run)? {
+                Some((depth, FirstHit::Violated(counterexample))) => {
+                    Self::offer(&mut best, depth, 0, Verdict::Violated(counterexample));
+                }
+                Some((depth, FirstHit::Undecided(cause))) => {
+                    Self::offer(&mut best, depth, 1, Verdict::Undecided(cause));
+                }
+                Some((depth, FirstHit::Unstated)) => {
+                    Self::offer(&mut best, depth, 0, Verdict::Unstated);
+                }
+                None => {}
+            }
+            if cap.is_none() {
+                match self.exhaustion(&run, &totals)? {
+                    Exhausted::Lasso(counterexample, position) => {
+                        Self::offer(&mut best, position, 2, Verdict::Violated(counterexample));
+                    }
+                    Exhausted::NoneFair => {}
+                    Exhausted::Stopped(outcome) => return Ok(outcome),
+                }
+            }
+            explored.push(run);
+        }
+        match best {
+            Some((_, _, Verdict::Violated(counterexample))) => Ok(HyperOutcome::Violated {
+                counterexample,
+                stats: totals.stats(),
+            }),
+            Some((_, _, Verdict::Undecided(cause))) => Ok(HyperOutcome::Undecided {
+                cause,
+                stats: totals.stats(),
+            }),
+            Some((_, _, Verdict::Unstated)) => Err(HyperRefusal::NoPartnerPath.into()),
+            None => self.clean(&explored, &totals),
+        }
+    }
+
+    /// Keep `verdict` when it is at a strictly earlier (position, rank) than
+    /// `best`.
+    fn offer(best: &mut Option<(usize, u8, Verdict)>, position: usize, rank: u8, verdict: Verdict) {
+        if best
+            .as_ref()
+            .is_none_or(|(known, known_rank, _)| (position, rank) < (*known, *known_rank))
+        {
+            *best = Some((position, rank, verdict));
+        }
+    }
+
+    /// The fairness analysis of `model` within `within`; `Err(outcome)` is a
+    /// cancelled run.
+    fn analysed(
+        &self,
+        model: &FairModel,
+        within: &BTreeSet<Vertex>,
+        totals: &Totals,
+    ) -> Result<Result<Vec<Analysis>, HyperOutcome>, ModelCheckRefusal> {
+        match analyze(&model.graph, within, &model.constraints, self.cancel) {
+            Ok(analyses) => Ok(Ok(analyses)),
+            Err(FairnessError::Cancelled) => self.cancelled(totals).map(Err),
+            Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
+                Err(fault("the-fairness-graph-is-built-from-retained-states"))
+            }
+        }
+    }
+
+    /// The retained edges of the canonical loop (ADR-018 CX-5) of the fair
+    /// component `passing` from its vertex `entry`.
+    fn loop_path<'g>(
+        model: &FairModel,
+        graph: &'g HyperGraph,
+        passing: &Analysis,
+        entry: Vertex,
+    ) -> Result<Vec<&'g RetainedEdge<HyperTransition>>, ModelCheckRefusal> {
+        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
+        let walk = model.greedy_loop(&component, passing.removed(), entry)?;
+        model
+            .loop_edges(&walk)?
+            .into_iter()
+            .map(|(source, position)| {
+                graph
+                    .outgoing(source)
+                    .nth(position)
+                    .ok_or_else(|| fault("a-loop-edge-is-retained"))
+            })
+            .collect()
+    }
+
+    /// The second phase over one HP-3 instance (ADR-023 HC-2): among the
+    /// states whose witness set is empty, which is absorbing, the first in
+    /// discovery order from which a cycle that is fair for every universal
+    /// variable is reachable. The universal lasso is the tree path to it, the
+    /// shortest path on to the nearest state of a fair component and that
+    /// component's canonical loop (ADR-018 CX-5), with its entry moved back
+    /// while the lasso it describes does not change.
+    fn exhaustion(
+        &self,
+        run: &Explored<'_, '_>,
+        totals: &Totals,
+    ) -> Result<Exhausted, ModelCheckRefusal> {
+        let graph = &run.graph;
+        let is_empty = |id: ProductStateId| {
+            graph.state(id).is_some_and(
+                |state| matches!(&state.state.property, Property::Witnesses(set) if set.is_empty()),
+            )
+        };
+        let empty: BTreeSet<ProductStateId> = (0..graph.states().len())
+            .map(ProductStateId)
+            .filter(|id| is_empty(*id))
+            .collect();
+        if empty.is_empty() {
+            return Ok(Exhausted::NoneFair);
+        }
+        let (base, constraints) = self.fair_graph(run)?;
+        let model = FairModel {
+            graph: base,
+            constraints,
+        };
+        let within: BTreeSet<Vertex> = model
+            .graph
+            .vertices()
+            .filter(|vertex| empty.contains(&ProductStateId(vertex.index())))
+            .collect();
+        let analyses = match self.analysed(&model, &within, totals)? {
+            Ok(analyses) => analyses,
+            Err(outcome) => return Ok(Exhausted::Stopped(outcome)),
+        };
+        let fair: Vec<&Analysis> = Analysis::fair_in(&analyses).collect();
+        let fair_states: BTreeSet<ProductStateId> = fair
+            .iter()
+            .flat_map(|analysis| analysis.vertices())
+            .map(|vertex| ProductStateId(vertex.index()))
+            .collect();
+        // The empty-`X` states from which a fair component is reachable, by
+        // walking the empty part of the graph backwards.
+        let mut before: BTreeMap<ProductStateId, Vec<ProductStateId>> = BTreeMap::new();
+        for edge in graph.edges() {
+            if empty.contains(&edge.source) {
+                before.entry(edge.target).or_default().push(edge.source);
+            }
+        }
+        let mut reaches = fair_states.clone();
+        let mut queue: VecDeque<ProductStateId> = fair_states.iter().copied().collect();
+        while let Some(state) = queue.pop_front() {
+            for source in before.get(&state).into_iter().flatten() {
+                if reaches.insert(*source) {
+                    queue.push_back(*source);
+                }
+            }
+        }
+        let Some(first) = reaches.first().copied() else {
+            return Ok(Exhausted::NoneFair);
+        };
+        // The nearest state of a fair component from `first`, by the
+        // breadth-first order of the retained edges.
+        let mut found_by: BTreeMap<ProductStateId, &RetainedEdge<HyperTransition>> =
+            BTreeMap::new();
+        let mut seen = BTreeSet::from([first]);
+        let mut queue = VecDeque::from([first]);
+        let mut entry = None;
+        while let Some(state) = queue.pop_front() {
+            if fair_states.contains(&state) {
+                entry = Some(state);
+                break;
+            }
+            for edge in graph.outgoing(state) {
+                if seen.insert(edge.target) {
+                    found_by.insert(edge.target, edge);
+                    queue.push_back(edge.target);
+                }
+            }
+        }
+        let entry = entry.ok_or_else(|| fault("a-reaching-state-reaches-a-fair-component"))?;
+        let mut connect = Vec::new();
+        let mut cursor = entry;
+        while let Some(edge) = found_by.get(&cursor) {
+            connect.push(*edge);
+            cursor = edge.source;
+        }
+        connect.reverse();
+        let passing = fair
+            .iter()
+            .find(|analysis| {
+                analysis
+                    .vertices()
+                    .iter()
+                    .any(|vertex| ProductStateId(vertex.index()) == entry)
+            })
+            .ok_or_else(|| fault("an-entry-lies-in-a-fair-component"))?;
+        let vertex = passing
+            .vertices()
+            .iter()
+            .copied()
+            .find(|vertex| ProductStateId(vertex.index()) == entry)
+            .ok_or_else(|| fault("an-entry-is-a-vertex"))?;
+        let loop_path = Self::loop_path(&model, graph, passing, vertex)?;
+        let (root, mut stem) = tree_path(graph, first);
+        stem.extend(connect);
+        let mut path = stem.clone();
+        path.extend(loop_path.iter().copied());
+        // The joint position of the first state whose `X` is empty.
+        let mut positions = vec![root];
+        positions.extend(path.iter().map(|edge| edge.target));
+        let position = positions
+            .iter()
+            .position(|id| is_empty(*id))
+            .ok_or_else(|| fault("a-lasso-through-an-empty-set-has-one"))?;
+        let mut entry_at = stem.len();
+        let mut length = path.len();
+        // The lasso is the same word when its last step repeats the stem's
+        // last step from a universal state that equals the one that step left.
+        while entry_at > 0 && entry_at < length {
+            let (Some(last), Some(left)) = (path.get(length - 1), path.get(entry_at - 1)) else {
+                return Err(fault("a-lasso-step-is-a-path-edge"));
+            };
+            let (from_last, from_left) = (graph.state(last.source), graph.state(left.source));
+            let same = last.transition == left.transition
+                && match (from_last, from_left) {
+                    (Some(a), Some(b)) => self.digests(&a.state)? == self.digests(&b.state)?,
+                    _ => return Err(fault("a-lasso-step-leaves-a-retained-state")),
+                };
+            if !same {
+                break;
+            }
+            entry_at -= 1;
+            length -= 1;
+        }
+        let traces = self.traces(run, root, &path[..length], None, None)?;
+        let counterexample = HyperCounterexample {
+            kind: HyperCounterexampleKind::WitnessExhausted {
+                loop_entry: widen(entry_at),
+                position: widen(position),
+            },
+            instance: Self::instance_of(run.instance),
+            traces,
+            trace_position: widen(position),
+        };
+        Ok(Exhausted::Lasso(Box::new(counterexample), position))
+    }
+
+    /// The outcome of an item no phase refuted or left undecided: vacuous
+    /// when its non-empty `μ_U` is matched by no fair tuple of universal
+    /// behaviours (ADR-023 HM-7), otherwise holding.
+    fn clean(
+        &self,
+        explored: &[Explored<'_, '_>],
+        totals: &Totals,
+    ) -> Result<HyperOutcome, ModelCheckRefusal> {
         if !self.request.clause.mu_universal().is_empty() {
             let mut matched = false;
-            for run in &explored {
+            for run in explored {
                 match self.fair_cycle(run)? {
                     Some(true) => {
                         matched = true;
                         break;
                     }
                     Some(false) => {}
-                    None => return self.cancelled(&totals),
+                    None => return self.cancelled(totals),
                 }
             }
             if !matched {
@@ -485,7 +887,12 @@ impl<'a> Run<'_, 'a> {
 
     fn cancelled(&self, totals: &Totals) -> Result<HyperOutcome, ModelCheckRefusal> {
         match self.cancel.cause() {
-            Some(source) => Ok(stopped(IncompleteCause::Cancelled { source }, None, totals)),
+            Some(source) => Ok(stopped(
+                IncompleteCause::Cancelled { source },
+                None,
+                None,
+                totals,
+            )),
             None => Err(fault("a-cancelled-run-has-a-cause")),
         }
     }
@@ -529,10 +936,10 @@ impl<'a> Run<'_, 'a> {
                             return Err(fault("a-stopped-expansion-recorded-its-stop"));
                         }
                     };
-                    let Ending::Stopped(cause, limit) = ending else {
+                    let Ending::Stopped(cause, limit, count) = ending else {
                         return Err(fault("a-stop-is-an-ending-that-stops"));
                     };
-                    return Ok(Some(stopped(cause, limit, totals)));
+                    return Ok(Some(stopped(cause, limit, count, totals)));
                 }
                 Outcome::BoundReached { .. } => {
                     return Err(fault("the-precheck-sets-no-horizon"));
@@ -553,6 +960,7 @@ impl<'a> Run<'_, 'a> {
             Ending::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(ReachedLimit { limit, value }),
+                None,
             )
         };
         Ok(match stop.limit {
@@ -573,7 +981,7 @@ impl<'a> Run<'_, 'a> {
                 )
             }
             None if stop.is_internal_failure() => return Err(fault("model-expansion-invariant")),
-            None => Ending::Stopped(IncompleteCause::ResourceExhausted, None),
+            None => Ending::Stopped(IncompleteCause::ResourceExhausted, None, None),
         })
     }
 
@@ -587,17 +995,121 @@ impl<'a> Run<'_, 'a> {
                     limit: ModelCheckLimit::EvaluationMeter,
                     value: self.request.meter.work_units,
                 }),
+                None,
             ),
-            Halt::Cancelled(source) => Ending::Stopped(IncompleteCause::Cancelled { source }, None),
+            Halt::WitnessSet(count) => Ending::Stopped(
+                IncompleteCause::ResourceExhausted,
+                Some(ReachedLimit {
+                    limit: ModelCheckLimit::MaxWitnessSet,
+                    value: self.request.limits.max_witness_set,
+                }),
+                Some(count),
+            ),
+            Halt::Cancelled(source) => {
+                Ending::Stopped(IncompleteCause::Cancelled { source }, None, None)
+            }
             Halt::Automaton(limit) => Ending::Stopped(
                 IncompleteCause::ResourceExhausted,
                 Some(ReachedLimit {
                     limit: ModelCheckLimit::MaxAutomatonStates,
                     value: limit,
                 }),
+                None,
             ),
             Halt::Encoding(refusal) => return Err(ModelCheckRefusal::Encoding(refusal)),
             Halt::Fault(internal) => return Err(ModelCheckRefusal::Fault(internal)),
+        })
+    }
+
+    /// The product of `instance`, with its initial states read. `Err(outcome)`
+    /// is a run that ended before it had a graph to explore.
+    fn build<'x>(
+        &'x self,
+        instance: &'x [ParameterBinding],
+        totals: &Totals,
+    ) -> Result<Result<Built<'x, 'a>, HyperOutcome>, ModelCheckRefusal> {
+        let clause = self.request.clause;
+        let limits = &self.request.limits;
+        let systems = self.slots.iter().map(|slot| &self.systems[*slot]).collect();
+        let built = if self.witness {
+            WitnessProduct::new(WitnessInputs {
+                systems,
+                universal: clause.universals(),
+                instance,
+                body: clause.body(),
+                profile: clause.profile(),
+                letters: self.request.letters,
+                universal_match: (!clause.mu_universal().is_empty())
+                    .then_some(self.request.matcher),
+                existential_match: (!clause.mu_existential().is_empty())
+                    .then_some(self.request.matcher),
+                max_automaton_states: limits.max_automaton_states,
+                max_witness_set: limits.max_witness_set,
+                meter: self.request.meter,
+                cancel: self.cancel,
+            })
+            .map(Built::Witness)
+        } else {
+            HyperProduct::new(HyperInputs {
+                systems,
+                instance,
+                body: clause.body(),
+                profile: clause.profile(),
+                letters: self.request.letters,
+                matcher: (!clause.mu_universal().is_empty()).then_some(self.request.matcher),
+                max_automaton_states: limits.max_automaton_states,
+                meter: self.request.meter,
+                cancel: self.cancel,
+            })
+            .map(Built::Universal)
+        };
+        let mut built = match built {
+            Ok(built) => built,
+            Err(AutomatonError::StateLimit { limit }) => {
+                return Ok(Err(exhausted(
+                    ModelCheckLimit::MaxAutomatonStates,
+                    limit,
+                    totals,
+                )))
+            }
+            Err(other) => return Err(HyperRefusal::Automaton(other).into()),
+        };
+        let started = match &mut built {
+            Built::Universal(product) => product.start(),
+            Built::Witness(product) => product.start(),
+        };
+        if started.is_err() {
+            return self.halted(&built, totals).map(Err);
+        }
+        Ok(Ok(built))
+    }
+
+    /// The retained graph of `product` under the limits `totals` leave.
+    fn retained<P>(
+        &self,
+        product: &P,
+        cap: Option<usize>,
+        totals: &Totals,
+    ) -> Result<GraphExploration<HyperState, HyperTransition, HyperFinding>, ModelCheckRefusal>
+    where
+        P: TransitionSystem<
+            State = HyperState,
+            TransitionId = HyperTransition,
+            Finding = HyperFinding,
+        >,
+    {
+        retain(
+            product,
+            totals.remaining(self.request.limits.limits),
+            IdentityLimits::default(),
+            cap,
+            || self.cancel.poll() && self.cancel.cause().is_some(),
+        )
+        .map_err(|error| {
+            ModelCheckRefusal::Encoding(qsl_eval::simulation::EncodingRefusal::of(
+                &error,
+                IdentityLimits::default(),
+            ))
         })
     }
 
@@ -609,47 +1121,15 @@ impl<'a> Run<'_, 'a> {
         cap: Option<usize>,
         totals: &mut Totals,
     ) -> Result<Result<Explored<'x, 'a>, HyperOutcome>, ModelCheckRefusal> {
-        let clause = self.request.clause;
-        let limits = &self.request.limits;
-        let inputs = HyperInputs {
-            systems: self.slots.iter().map(|slot| &self.systems[*slot]).collect(),
-            instance,
-            body: clause.body(),
-            profile: clause.profile(),
-            letters: self.request.letters,
-            matcher: (!clause.mu_universal().is_empty()).then_some(self.request.matcher),
-            max_automaton_states: limits.max_automaton_states,
-            meter: self.request.meter,
-            cancel: self.cancel,
-        };
-        let mut product = match HyperProduct::new(inputs) {
+        let product = match self.build(instance, totals)? {
             Ok(product) => product,
-            Err(AutomatonError::StateLimit { limit }) => {
-                return Ok(Err(exhausted(
-                    ModelCheckLimit::MaxAutomatonStates,
-                    limit,
-                    totals,
-                )))
-            }
-            Err(other) => return Err(HyperRefusal::Automaton(other).into()),
+            Err(outcome) => return Ok(Err(outcome)),
         };
-        if product.start().is_err() {
-            return self.halted(&product, totals).map(Err);
-        }
-        let spent = limits.limits;
-        let exploration = retain(
-            &product,
-            totals.remaining(spent),
-            IdentityLimits::default(),
-            cap,
-            || self.cancel.poll() && self.cancel.cause().is_some(),
-        )
-        .map_err(|error| {
-            ModelCheckRefusal::Encoding(qsl_eval::simulation::EncodingRefusal::of(
-                &error,
-                IdentityLimits::default(),
-            ))
-        })?;
+        let spent = self.request.limits.limits;
+        let exploration = match &product {
+            Built::Universal(product) => self.retained(product, cap, totals)?,
+            Built::Witness(product) => self.retained(product, cap, totals)?,
+        };
         let transitions = match &exploration.outcome {
             Outcome::Exhaustive(stats) => stats.transitions,
             Outcome::BoundReached { stats, .. }
@@ -675,10 +1155,11 @@ impl<'a> Run<'_, 'a> {
                 Ending::Stopped(
                     IncompleteCause::ResourceExhausted,
                     Some(ReachedLimit { limit, value }),
+                    None,
                 )
             }
             Outcome::Cancelled { .. } => match self.cancel.cause() {
-                Some(source) => Ending::Stopped(IncompleteCause::Cancelled { source }, None),
+                Some(source) => Ending::Stopped(IncompleteCause::Cancelled { source }, None, None),
                 None => return Err(fault("a-cancelled-run-has-a-cause")),
             },
             Outcome::Stopped { .. } => match product.take_halt() {
@@ -692,8 +1173,8 @@ impl<'a> Run<'_, 'a> {
                 return Err(fault("the-product-sets-no-horizon-without-a-cap"));
             }
         };
-        if let Ending::Stopped(cause, limit) = ending {
-            return Ok(Err(stopped(cause, limit, totals)));
+        if let Ending::Stopped(cause, limit, count) = ending {
+            return Ok(Err(stopped(cause, limit, count, totals)));
         }
         Ok(Ok(Explored {
             instance,
@@ -705,12 +1186,12 @@ impl<'a> Run<'_, 'a> {
     /// The outcome of a product that halted before it had a graph.
     fn halted(
         &self,
-        product: &HyperProduct<'_, '_>,
+        product: &Built<'_, '_>,
         totals: &Totals,
     ) -> Result<HyperOutcome, ModelCheckRefusal> {
         match product.take_halt() {
             Some(halt) => match self.halt_ending(halt)? {
-                Ending::Stopped(cause, limit) => Ok(stopped(cause, limit, totals)),
+                Ending::Stopped(cause, limit, count) => Ok(stopped(cause, limit, count, totals)),
                 Ending::Complete => Err(fault("a-halted-start-is-a-stop")),
             },
             None => Err(fault("a-halted-start-recorded-its-halt")),
@@ -739,7 +1220,12 @@ impl<'a> Run<'_, 'a> {
         };
         for (index, state) in run.graph.states().iter().enumerate() {
             let id = ProductStateId(index);
-            if let Property::Undefined { atom, cause } = &state.state.property {
+            if let Property::Undefined {
+                atom,
+                cause,
+                partner,
+            } = &state.state.property
+            {
                 offer(
                     state.depth,
                     0,
@@ -748,6 +1234,7 @@ impl<'a> Run<'_, 'a> {
                         Found::Atom {
                             atom: *atom,
                             cause: cause.clone(),
+                            partner: partner.clone(),
                         },
                     ),
                 );
@@ -771,8 +1258,11 @@ impl<'a> Run<'_, 'a> {
                                 ),
                             );
                         } else if finding.is_refused_contract() {
-                            refused
-                                .get_or_insert((state.depth, UndecidedCause::UndecidedSuccessor));
+                            sooner(
+                                &mut refused,
+                                state.depth,
+                                UndecidedCause::UndecidedSuccessor,
+                            );
                         }
                     }
                     HyperFinding::MatchUndefined {
@@ -793,11 +1283,39 @@ impl<'a> Run<'_, 'a> {
                             },
                         ),
                     ),
+                    HyperFinding::ExistentialMatchUndefined {
+                        step,
+                        posts,
+                        conjunct,
+                        cause,
+                        partner,
+                    } => offer(
+                        state.depth.saturating_add(1),
+                        0,
+                        Candidate::Found(
+                            id,
+                            Found::Existential {
+                                step: step.clone(),
+                                posts: posts.clone(),
+                                conjunct: *conjunct,
+                                cause: cause.clone(),
+                                partner: partner.clone(),
+                            },
+                        ),
+                    ),
                     HyperFinding::MatchRefused => {
-                        refused.get_or_insert((
+                        sooner(
+                            &mut refused,
                             state.depth.saturating_add(1),
                             UndecidedCause::MatchUndetermined,
-                        ));
+                        );
+                    }
+                    HyperFinding::MemberContract => {
+                        sooner(
+                            &mut refused,
+                            state.depth,
+                            UndecidedCause::UndecidedSuccessor,
+                        );
                     }
                     HyperFinding::Enabled { .. } => {}
                 }
@@ -812,8 +1330,15 @@ impl<'a> Run<'_, 'a> {
                 Some((depth, FirstHit::Undecided(cause)))
             }
             Some((depth, _, Candidate::Found(id, found))) => {
-                let counterexample = self.undefined_counterexample(run, id, found)?;
-                Some((depth, FirstHit::Violated(Box::new(counterexample))))
+                match self.undefined_counterexample(run, id, found) {
+                    Ok(counterexample) => {
+                        Some((depth, FirstHit::Violated(Box::new(counterexample))))
+                    }
+                    Err(ModelCheckRefusal::Hyper(HyperRefusal::NoPartnerPath)) => {
+                        Some((depth, FirstHit::Unstated))
+                    }
+                    Err(other) => return Err(other),
+                }
             }
         })
     }
@@ -856,48 +1381,62 @@ impl<'a> Run<'_, 'a> {
     }
 
     /// One trace per variable: the path from the root through `edges`, then
-    /// the joint step `last` when there is one.
+    /// the joint step `last` when there is one. An HP-3 clause's existential
+    /// variables take theirs from `partner`; without one the traces are the
+    /// universal variables' alone.
     fn traces(
         &self,
         run: &Explored<'_, '_>,
         root: ProductStateId,
         edges: &[&RetainedEdge<HyperTransition>],
         last: Option<(&HyperTransition, &[DigestRecord])>,
+        partner: Option<&PartnerPath<'_>>,
     ) -> Result<Vec<HyperTrace>, ModelCheckRefusal> {
         let root_state = run
             .graph
             .state(root)
             .ok_or_else(|| fault("a-path-starts-at-a-retained-state"))?;
-        let variables = self.variables();
-        let mut traces = Vec::with_capacity(variables.len());
-        for (component, (variable, alias)) in variables.into_iter().enumerate() {
-            let system = &self.systems[self.slots[component]];
-            let start = system
-                .state_key(&root_state.state.components[component])
-                .map_err(ModelCheckRefusal::Encoding)?
-                .1;
-            let initial = system
-                .initial()
-                .iter()
-                .position(|state| {
-                    system
-                        .state_key(state)
-                        .is_ok_and(|(_, digest)| digest == start)
-                })
-                .and_then(|index| u32::try_from(index).ok())
-                .ok_or_else(|| fault("a-root-component-is-an-initial-state"))?;
-            let mut steps = Vec::with_capacity(edges.len() + 1);
-            for edge in edges {
-                let target = run
-                    .graph
-                    .state(edge.target)
-                    .ok_or_else(|| fault("an-edge-names-a-retained-state"))?;
-                let post = self.digests(&target.state)?;
-                steps.push(hyper_step(&edge.transition, &post, component)?);
-            }
-            if let Some((transition, posts)) = last {
-                steps.push(hyper_step(transition, posts, component)?);
-            }
+        let universals = self.request.clause.universals();
+        let count = if partner.is_some() {
+            self.slots.len()
+        } else {
+            universals
+        };
+        let mut traces = Vec::with_capacity(count);
+        for (component, (variable, alias)) in self.variables().into_iter().take(count).enumerate() {
+            let (initial, steps) = if component < universals {
+                let system = &self.systems[self.slots[component]];
+                let start = system
+                    .state_key(&root_state.state.components[component])
+                    .map_err(ModelCheckRefusal::Encoding)?
+                    .1;
+                let initial = system
+                    .initial()
+                    .iter()
+                    .position(|state| {
+                        system
+                            .state_key(state)
+                            .is_ok_and(|(_, digest)| digest == start)
+                    })
+                    .and_then(|index| u32::try_from(index).ok())
+                    .ok_or_else(|| fault("a-root-component-is-an-initial-state"))?;
+                let mut steps = Vec::with_capacity(edges.len() + 1);
+                for edge in edges {
+                    let target = run
+                        .graph
+                        .state(edge.target)
+                        .ok_or_else(|| fault("an-edge-names-a-retained-state"))?;
+                    let post = self.digests(&target.state)?;
+                    steps.push(hyper_step(&edge.transition, &post, component)?);
+                }
+                if let Some((transition, posts)) = last {
+                    steps.push(hyper_step(transition, posts, component)?);
+                }
+                (initial, steps)
+            } else {
+                let path = partner.ok_or_else(|| fault("an-existential-trace-has-a-partner"))?;
+                self.partner_trace(path, component - universals)?
+            };
             traces.push(HyperTrace {
                 variable,
                 alias,
@@ -908,9 +1447,51 @@ impl<'a> Run<'_, 'a> {
         Ok(traces)
     }
 
+    /// The existential variable `offset`'s initial index and steps along
+    /// `path`.
+    fn partner_trace(
+        &self,
+        path: &PartnerPath<'_>,
+        offset: usize,
+    ) -> Result<(u32, Vec<HyperStep>), ModelCheckRefusal> {
+        let (indices, moves) = path.partner.path();
+        let initial = indices
+            .get(offset)
+            .copied()
+            .ok_or_else(|| fault("a-partner-has-an-initial-index-per-variable"))?;
+        let mut steps = Vec::with_capacity(moves.len() + 1);
+        for (taken, posts) in moves.into_iter().chain(path.last) {
+            let (step, post) = taken
+                .get(offset)
+                .zip(posts.get(offset))
+                .ok_or_else(|| fault("a-partner-step-has-a-component-per-variable"))?;
+            steps.push(component_step(step, *post));
+        }
+        Ok((initial, steps))
+    }
+
+    /// The partner of the first member of `state`'s witness set, which the
+    /// existential paths of an undefined evaluation on the universal side
+    /// follow.
+    ///
+    /// # Errors
+    ///
+    /// [`HyperRefusal::NoPartnerPath`] when the set is empty.
+    fn first_partner(state: &HyperState) -> Result<Rc<Partner>, ModelCheckRefusal> {
+        match &state.property {
+            Property::Witnesses(set) => set
+                .members()
+                .first()
+                .map(|member| Rc::clone(member.partner()))
+                .ok_or_else(|| HyperRefusal::NoPartnerPath.into()),
+            _ => Err(fault("a-witness-state-holds-a-witness-set")),
+        }
+    }
+
     /// The undefined-evaluation counterexample for `found` at `at` (ADR-023
     /// HV-8): the tree path to `at` for every trace variable, then the joint
-    /// step a `μ_U` finding names.
+    /// step a `μ` finding names. An HP-3 clause's existential variables follow
+    /// the partner of the member the evaluation was made on.
     fn undefined_counterexample(
         &self,
         run: &Explored<'_, '_>,
@@ -924,36 +1505,90 @@ impl<'a> Run<'_, 'a> {
             .ok_or_else(|| fault("a-finding-is-at-a-retained-state"))?;
         let stem = widen(path.len());
         let variables = self.variables();
+        let universals = self.request.clause.universals();
+        let mut partner: Option<Rc<Partner>> = None;
+        let mut partner_last = None;
         let (position, state_keys, named, locus, transition, cause, last) = match found {
-            Found::Atom { atom, cause } => (
-                stem,
-                self.digests(&state.state)?,
-                variables,
-                HyperLocus::Atom(atom),
-                None,
+            Found::Atom {
+                atom,
                 cause,
-                None,
-            ),
+                partner: read,
+            } => {
+                let mut keys = self.digests(&state.state)?;
+                if let Some(read) = &read {
+                    keys.extend_from_slice(read.digests());
+                }
+                partner = read;
+                (
+                    stem,
+                    keys,
+                    variables,
+                    HyperLocus::Atom(atom),
+                    None,
+                    cause,
+                    None,
+                )
+            }
             Found::Match {
                 step,
                 posts,
                 conjunct,
                 cause,
-            } => (
-                stem.saturating_add(1),
-                posts.clone(),
-                variables,
-                HyperLocus::Match { conjunct },
-                None,
+            } => {
+                // An HP-3 clause's existential paths end at the pre-state, the
+                // first member's, and the evaluation names every variable
+                // with its state there (QSpec FR-400's reader rule).
+                let mut keys = posts.clone();
+                if self.witness {
+                    let first = Self::first_partner(&state.state)?;
+                    keys.extend_from_slice(first.digests());
+                    partner = Some(first);
+                }
+                (
+                    stem.saturating_add(1),
+                    keys,
+                    variables,
+                    HyperLocus::Match { conjunct },
+                    None,
+                    cause,
+                    Some((step, posts)),
+                )
+            }
+            Found::Existential {
+                step,
+                posts,
+                conjunct,
                 cause,
-                Some((step, posts)),
-            ),
+                partner: read,
+            } => {
+                let (universal, existential) = step.0.split_at(universals.min(step.0.len()));
+                let (universal_posts, existential_posts) =
+                    posts.split_at(universals.min(posts.len()));
+                partner_last = Some((existential.to_vec(), existential_posts.to_vec()));
+                partner = Some(read);
+                let last = Some((
+                    HyperTransition(universal.to_vec()),
+                    universal_posts.to_vec(),
+                ));
+                (
+                    stem.saturating_add(1),
+                    posts,
+                    variables,
+                    HyperLocus::ExistentialMatch { conjunct },
+                    None,
+                    cause,
+                    last,
+                )
+            }
             Found::Contract {
                 component,
                 clause,
                 guard_of,
                 cause,
             } => {
+                if self.witness {
+                    partner = Some(Self::first_partner(&state.state)?);
+                }
                 let digests = self.digests(&state.state)?;
                 let digest = digests
                     .get(component)
@@ -974,11 +1609,20 @@ impl<'a> Run<'_, 'a> {
                 )
             }
         };
+        let path_of = partner.as_deref().map(|partner| PartnerPath {
+            partner,
+            last: partner_last.as_ref().map(
+                |(steps, posts): &(Vec<ComponentStep>, Vec<DigestRecord>)| {
+                    (steps.as_slice(), posts.as_slice())
+                },
+            ),
+        });
         let traces = self.traces(
             run,
             root,
             &path,
             last.as_ref().map(|(step, posts)| (step, posts.as_slice())),
+            path_of.as_ref(),
         )?;
         Ok(HyperCounterexample {
             kind: HyperCounterexampleKind::Undefined(HyperUndefined {
@@ -1061,11 +1705,12 @@ impl<'a> Run<'_, 'a> {
         for index in 0..graph.states().len() {
             let source = ProductStateId(index);
             for edge in graph.outgoing(source) {
-                let label = if edge
-                    .transition
-                    .0
-                    .iter()
-                    .all(|step| matches!(step, ComponentStep::Stutter))
+                let label = if !edge.transition.0.is_empty()
+                    && edge
+                        .transition
+                        .0
+                        .iter()
+                        .all(|step| matches!(step, ComponentStep::Stutter))
                 {
                     EdgeLabel::Stutter
                 } else {
@@ -1195,38 +1840,21 @@ impl<'a> Run<'_, 'a> {
             constraints,
         };
         let all: BTreeSet<Vertex> = model.graph.vertices().collect();
-        let analyses = match analyze(&model.graph, &all, &model.constraints, self.cancel) {
+        let analyses = match self.analysed(&model, &all, totals)? {
             Ok(analyses) => analyses,
-            Err(FairnessError::Cancelled) => {
-                return self.cancelled(totals).map(Second::Stopped);
-            }
-            Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
-                return Err(fault("the-fairness-graph-is-built-from-retained-states"));
-            }
+            Err(outcome) => return Ok(Second::Stopped(outcome)),
         };
         let Some(passing) = Analysis::first_fair_in(&analyses) else {
             return Ok(Second::NoneFair);
         };
-        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
         let Some(entry) = passing.vertices().first().copied() else {
             return Err(fault("a-component-has-a-vertex"));
         };
-        let walk = model.greedy_loop(&component, passing.removed(), entry)?;
-        let loop_edges = model.loop_edges(&walk)?;
-        let entry = ProductStateId(entry.index());
-        let (root, stem) = tree_path(&run.graph, entry);
-        let mut loop_path = Vec::with_capacity(loop_edges.len());
-        for (source, position) in loop_edges {
-            loop_path.push(
-                run.graph
-                    .outgoing(source)
-                    .nth(position)
-                    .ok_or_else(|| fault("a-loop-edge-is-retained"))?,
-            );
-        }
+        let loop_path = Self::loop_path(&model, &run.graph, passing, entry)?;
+        let (root, stem) = tree_path(&run.graph, ProductStateId(entry.index()));
         let mut path = stem.clone();
         path.extend(loop_path.iter().copied());
-        let traces = self.traces(run, root, &path, None)?;
+        let traces = self.traces(run, root, &path, None, None)?;
         // The positions of the lasso: the stem's states, then the loop's but
         // the last, which is the entry again.
         let mut positions = vec![root];
@@ -1312,15 +1940,24 @@ fn hyper_step(
     posts: &[DigestRecord],
     component: usize,
 ) -> Result<HyperStep, ModelCheckRefusal> {
-    match transition.0.get(component) {
-        Some(ComponentStep::Model(taken)) => Ok(HyperStep::Model(ModelStep {
+    let step = transition
+        .0
+        .get(component)
+        .ok_or_else(|| fault("a-joint-step-has-a-step-per-component"))?;
+    let post = posts
+        .get(component)
+        .ok_or_else(|| fault("a-joint-step-has-a-post-state-per-component"))?;
+    Ok(component_step(step, *post))
+}
+
+/// A component's `step` as a trace's step, with the digest of its post-state.
+fn component_step(step: &ComponentStep, post: DigestRecord) -> HyperStep {
+    match step {
+        ComponentStep::Model(taken) => HyperStep::Model(ModelStep {
             transition: taken.clone(),
-            post_state: *posts
-                .get(component)
-                .ok_or_else(|| fault("a-joint-step-has-a-post-state-per-component"))?,
-        })),
-        Some(ComponentStep::Stutter) => Ok(HyperStep::TerminalStutter),
-        None => Err(fault("a-joint-step-has-a-step-per-component")),
+            post_state: post,
+        }),
+        ComponentStep::Stutter => HyperStep::TerminalStutter,
     }
 }
 

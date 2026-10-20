@@ -14,7 +14,7 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use qsl_eval::simulation::protocol::{
-    ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind,
+    MemoryModel, ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_foundation::SourceIdentity;
@@ -399,7 +399,18 @@ pub(crate) fn subject<'a>(
             role: "w".to_owned(),
             model: PACKAGE.to_owned(),
         }],
+        memory: source_memory(package, protocol),
     }
+}
+
+/// The resolved memory models of `protocol` with no request selection:
+/// each outermost `parallel` at its source default (FR-219).
+pub(crate) fn source_memory(package: &CheckedPackage, protocol: &str) -> ResolvedMemory {
+    package
+        .graph()
+        .protocol(protocol)
+        .map(|checked| ResolvedMemory::resolve(checked, &[]).expect("no selection resolves"))
+        .unwrap_or_default()
 }
 
 /// The system of `subject` under `Sc`.
@@ -443,19 +454,19 @@ pub(crate) fn compiled(
 
 /// One reachable state of a protocol system: its key digest, the state, and
 /// each successor's identity and index.
-pub(crate) struct Reached {
-    pub(crate) state: ProtocolState<Sc>,
+pub(crate) struct Reached<M: MemoryModel = Sc> {
+    pub(crate) state: ProtocolState<M>,
     pub(crate) steps: Vec<(ProtocolTransition, usize)>,
 }
 
 /// Every reachable state of `system`, breadth-first from its initial states,
 /// each once by its state key, successors in the engine's order.
-pub(crate) fn reachable(system: &ProtocolSystem<'_, Sc>) -> Vec<Reached> {
+pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
     let mut known: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
-    let mut reached: Vec<Reached> = Vec::new();
+    let mut reached: Vec<Reached<M>> = Vec::new();
     let mut queue = std::collections::VecDeque::new();
-    let mut admit = |state: ProtocolState<Sc>,
-                     reached: &mut Vec<Reached>,
+    let mut admit = |state: ProtocolState<M>,
+                     reached: &mut Vec<Reached<M>>,
                      queue: &mut std::collections::VecDeque<usize>|
      -> usize {
         let (key, _) = SubjectSystem::state_key(system, &state).expect("a key");
@@ -475,7 +486,7 @@ pub(crate) fn reachable(system: &ProtocolSystem<'_, Sc>) -> Vec<Reached> {
         let expansion = system
             .successors(&reached[at].state)
             .expect("the state expands");
-        let mut successors: Vec<(Vec<u8>, ProtocolTransition, ProtocolState<Sc>)> = expansion
+        let mut successors: Vec<(Vec<u8>, ProtocolTransition, ProtocolState<M>)> = expansion
             .successors
             .into_iter()
             .map(|(transition, state)| {

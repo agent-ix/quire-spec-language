@@ -74,6 +74,8 @@ pub struct Unit {
     contracts: String,
     abstract_fields: Json,
     concrete_initials: Vec<Json>,
+    /// Abstract initial states beyond `abstract_fields`.
+    abstract_extra: Vec<Json>,
     /// The keys of the population's universe, and those present initially.
     keys: Vec<&'static str>,
     present: Vec<&'static str>,
@@ -114,6 +116,10 @@ fn concrete_register_operations(package: &str, shape: Shape) -> Vec<Json> {
 
 const REGISTER_SPEC: &str = "example/register-spec";
 const REGISTER_IMPL: &str = "example/register-impl";
+const COUNTER_SPEC: &str = "example/halting-spec";
+const COUNTER_IMPL: &str = "example/halting-impl";
+const PAIR_SPEC: &str = "example/pair-spec";
+const PAIR_IMPL: &str = "example/pair-impl";
 const COIN_SPEC: &str = "example/coin-spec";
 const COIN_IMPL: &str = "example/coin-impl";
 
@@ -209,6 +215,143 @@ impl Unit {
                 .to_owned(),
             abstract_fields: json!({"value": integer_field(0), "prev": integer_field(0)}),
             concrete_initials: vec![json!({"value": integer_field(0)})],
+            abstract_extra: Vec::new(),
+        }
+    }
+
+    /// FR-143-AC-2's `Halting`: the abstract `Counter` of ADR-020 §8 with
+    /// `value: Int[0, 2]` and `inc`, and a concrete `Counter` whose `inc` is
+    /// enabled while `self.value < limit`. `terminals` is the unit's
+    /// `terminal` declarations, over the aliases `Spec` and `Impl`.
+    pub fn halting(limit: u32, terminals: &str) -> Self {
+        let counter = |package: &'static str| {
+            let level = node(package, "Level");
+            document(
+                package,
+                vec![
+                    bounded(package, "Level", 2),
+                    object_type(
+                        package,
+                        "Counter",
+                        vec![single(package, "Counter", "value", &level)],
+                        vec![operation(package, "Counter", "inc", &[], None, &["value"])],
+                    ),
+                ],
+                vec![population(package, "counters", "Counter")],
+            )
+        };
+        Self {
+            keys: vec!["c"],
+            present: vec!["c"],
+            abstract_package: COUNTER_SPEC,
+            concrete_package: COUNTER_IMPL,
+            object: "Counter",
+            population: "counters",
+            documents: (counter(COUNTER_SPEC), counter(COUNTER_IMPL)),
+            contracts: format!(
+                "pre SpecCanInc using v on Spec::Counter::inc {{ self.value < 2 }}\n\
+                 post SpecInc using v on Spec::Counter::inc {{ pre(self.value) < 2 and self.value = pre(self.value) + 1 }}\n\
+                 pre ImplCanInc using v on Impl::Counter::inc {{ self.value < {limit} }}\n\
+                 post ImplInc using v on Impl::Counter::inc {{ pre(self.value) < 2 and self.value = pre(self.value) + 1 }}\n\
+                 {terminals}\n"
+            ),
+            abstract_fields: json!({"value": integer_field(0)}),
+            concrete_initials: vec![json!({"value": integer_field(0)})],
+            abstract_extra: Vec::new(),
+        }
+    }
+
+    /// FR-143-AC-3's `Pair`: abstract and concrete `Pair` with `a` and `b` in
+    /// `Int[0, 1]` and the operations `flipA` and `flipB`, each of which
+    /// negates its field.
+    pub fn pair() -> Self {
+        let pair = |package: &'static str| {
+            let bit = node(package, "Bit");
+            document(
+                package,
+                vec![
+                    bounded(package, "Bit", 1),
+                    object_type(
+                        package,
+                        "Pair",
+                        vec![
+                            single(package, "Pair", "a", &bit),
+                            single(package, "Pair", "b", &bit),
+                        ],
+                        vec![
+                            operation(package, "Pair", "flipA", &[], None, &["a"]),
+                            operation(package, "Pair", "flipB", &[], None, &["b"]),
+                        ],
+                    ),
+                ],
+                vec![population(package, "pairs", "Pair")],
+            )
+        };
+        let negate = |model: &str| {
+            format!(
+                "post {model}FlipA using v on {model}::Pair::flipA {{ self.a = 1 - pre(self.a) }}\n\
+                 post {model}FlipB using v on {model}::Pair::flipB {{ self.b = 1 - pre(self.b) }}\n"
+            )
+        };
+        Self {
+            keys: vec!["p"],
+            present: vec!["p"],
+            abstract_package: PAIR_SPEC,
+            concrete_package: PAIR_IMPL,
+            object: "Pair",
+            population: "pairs",
+            documents: (pair(PAIR_SPEC), pair(PAIR_IMPL)),
+            contracts: negate("Spec") + &negate("Impl"),
+            abstract_fields: json!({"a": integer_field(0), "b": integer_field(0)}),
+            concrete_initials: vec![json!({"a": integer_field(0), "b": integer_field(0)})],
+            abstract_extra: Vec::new(),
+        }
+    }
+
+    /// A `Pair` whose models both declare `flipA`, `flipB` and `setA(x)`, the
+    /// concrete model also `peek`, under `contracts` (see [`probe_contracts`])
+    /// and starting at each of `initials`, the abstract one at each too.
+    pub fn probe_pair(contracts: String, initials: &[(i64, i64)]) -> Self {
+        let pair = |package: &'static str, concrete: bool| {
+            let bit = node(package, "Bit");
+            let mut operations = vec![
+                operation(package, "Pair", "flipA", &[], None, &["a"]),
+                operation(package, "Pair", "flipB", &[], None, &["b"]),
+                operation(package, "Pair", "setA", &[("x", &bit)], None, &["a"]),
+            ];
+            if concrete {
+                operations.push(operation(package, "Pair", "peek", &[], None, &[]));
+            }
+            document(
+                package,
+                vec![
+                    bounded(package, "Bit", 1),
+                    object_type(
+                        package,
+                        "Pair",
+                        vec![
+                            single(package, "Pair", "a", &bit),
+                            single(package, "Pair", "b", &bit),
+                        ],
+                        operations,
+                    ),
+                ],
+                vec![population(package, "pairs", "Pair")],
+            )
+        };
+        let fields = |(a, b): &(i64, i64)| json!({"a": integer_field(*a), "b": integer_field(*b)});
+        Self {
+            keys: vec!["r"],
+            present: vec!["r"],
+            abstract_package: PAIR_SPEC,
+            concrete_package: PAIR_IMPL,
+            object: "Pair",
+            population: "pairs",
+            documents: (pair(PAIR_SPEC, false), pair(PAIR_IMPL, true)),
+            contracts,
+            abstract_fields: fields(&initials[0]),
+            concrete_initials: initials.iter().map(fields).collect(),
+            abstract_extra: initials[1..].iter().map(fields).collect(),
         }
     }
 
@@ -336,6 +479,7 @@ impl Unit {
             abstract_fields: json!({"tossed": {"boolean": false}, "side": integer_field(0),
                 "shown": {"boolean": false}, "face": integer_field(0)}),
             concrete_initials,
+            abstract_extra: Vec::new(),
         }
     }
 
@@ -414,6 +558,7 @@ impl Unit {
             Vec::new(),
         )
         .expect("the unit assembles")
+        .with_unwritten_terminals()
         .with_unwritten_refinements();
         let regions = declarations.regions();
         declarations
@@ -504,6 +649,7 @@ pub struct World<'u> {
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     abstract_initial: DocumentRef,
+    abstract_extra: Vec<DocumentRef>,
     concrete_initials: Vec<DocumentRef>,
 }
 
@@ -517,6 +663,20 @@ impl<'u> World<'u> {
             &unit.abstract_fields,
             &mut snapshots,
         );
+        let abstract_extra = unit
+            .abstract_extra
+            .iter()
+            .enumerate()
+            .map(|(index, fields)| {
+                snapshot(
+                    unit,
+                    (unit.abstract_package, &unit.documents.0),
+                    &format!("start-{}", index + 1),
+                    fields,
+                    &mut snapshots,
+                )
+            })
+            .collect();
         let concrete_initials = unit
             .concrete_initials
             .iter()
@@ -537,6 +697,7 @@ impl<'u> World<'u> {
             packages: unit.packages(),
             snapshots,
             abstract_initial,
+            abstract_extra,
             concrete_initials,
         }
     }
@@ -562,6 +723,13 @@ impl<'u> World<'u> {
     /// The abstract subject's initial snapshot.
     pub fn abstract_initial(&self) -> DocumentRef {
         self.abstract_initial.clone()
+    }
+
+    /// Every abstract initial snapshot: the first, then the extra ones.
+    pub fn abstract_initials(&self) -> Vec<DocumentRef> {
+        std::iter::once(self.abstract_initial.clone())
+            .chain(self.abstract_extra.iter().cloned())
+            .collect()
     }
 
     /// The request over `package` with `initial` states, the universe
@@ -727,5 +895,103 @@ pub fn coin_refines(rows: &str) -> String {
          step Impl::Coin::toss -> Spec::Coin::toss(self);\n\
          step Impl::Coin::reveal -> Spec::Coin::show(self);\n\
          }}"
+    )
+}
+
+/// FR-143-AC-2's refinement `Halting` between `Unit::halting`'s models, with
+/// or without its `ensure` row.
+pub fn halting_refinement(ensure: bool) -> String {
+    format!(
+        "refinement Halting using inf abstract Spec concrete Impl {{\n\
+         population Spec::counters from Impl::counters;\n\
+         object Spec::Counter from Impl::Counter {{ value = self.value; }}\n\
+         step Impl::Counter::inc -> Spec::Counter::inc(self);\n\
+         assume fair weak Impl::Counter::inc;\n\
+         {}}}",
+        if ensure {
+            "ensure fair weak Spec::Counter::inc;\n"
+        } else {
+            ""
+        }
+    )
+}
+
+/// FR-143-AC-3's refinement `PairRefines` between `Unit::pair`'s models,
+/// with the `assume` rows `assumed`, each over an operation of `Impl::Pair`.
+pub fn pair_refinement(assumed: &[&str]) -> String {
+    let assume: String = assumed
+        .iter()
+        .map(|operation| format!("assume fair weak each Impl::Pair::{operation};\n"))
+        .collect();
+    format!(
+        "refinement PairRefines using inf abstract Spec concrete Impl {{\n\
+         population Spec::pairs from Impl::pairs;\n\
+         object Spec::Pair from Impl::Pair {{ a = self.a; b = self.b; }}\n\
+         step Impl::Pair::flipA -> Spec::Pair::flipA(self);\n\
+         step Impl::Pair::flipB -> Spec::Pair::flipB(self);\n\
+         {assume}ensure fair weak each Spec::Pair::flipB;\n\
+         }}"
+    )
+}
+
+/// FR-143-AC-4's `RegisterHistory` without its `prev` row, so the abstract
+/// `prev` is hidden, with an `ensure` row on `Spec::Register::write`.
+pub fn hidden_register_history() -> String {
+    register_history(LAST)
+        .replace(" prev = self.last;", "")
+        .replace(
+            "step Impl::Register::write",
+            "ensure fair weak Spec::Register::write;\nstep Impl::Register::write",
+        )
+}
+
+/// `RegisterHistory` with an `ensure` row on `Spec::Register::write`.
+pub fn register_history_ensured() -> String {
+    register_history(LAST).replace(
+        "step Impl::Register::write",
+        "ensure fair weak Spec::Register::write;\nstep Impl::Register::write",
+    )
+}
+
+/// A precondition no state satisfies.
+pub const NEVER: &str = "self.a = 0 and self.a = 1";
+
+/// The contracts of [`Unit::probe_pair`]: a precondition for each concrete
+/// operation (`flipA`, `flipB`, `setA`, `peek`) and each abstract one
+/// (`flipA`, `flipB`, `setA`), empty for none, and the postconditions that
+/// negate `a` and `b` and set `a`.
+pub fn probe_contracts(concrete: [&str; 4], abstract_: [&str; 3]) -> String {
+    const OPERATIONS: [&str; 4] = ["flipA", "flipB", "setA", "peek"];
+    let mut contracts = String::new();
+    for (model, guards) in [("Impl", &concrete[..]), ("Spec", &abstract_[..])] {
+        for (operation, guard) in OPERATIONS.iter().zip(guards) {
+            if !guard.is_empty() {
+                contracts += &format!(
+                    "pre {model}Pre{operation} using v on {model}::Pair::{operation} {{ {guard} }}\n"
+                );
+            }
+        }
+        contracts += &format!(
+            "post {model}FlipA using v on {model}::Pair::flipA {{ self.a = 1 - pre(self.a) }}\n\
+             post {model}FlipB using v on {model}::Pair::flipB {{ self.b = 1 - pre(self.b) }}\n\
+             post {model}SetA using v on {model}::Pair::setA {{ self.a = x }}\n"
+        );
+    }
+    contracts
+}
+
+/// The refinement of [`Unit::probe_pair`]'s models, with the fairness `rows`
+/// (each a whole `assume fair ...;` or `ensure fair ...;` line).
+pub fn probe_refinement(rows: &[&str]) -> String {
+    let rows: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    format!(
+        "refinement Probe using inf abstract Spec concrete Impl {{\n\
+         population Spec::pairs from Impl::pairs;\n\
+         object Spec::Pair from Impl::Pair {{ a = self.a; b = self.b; }}\n\
+         step Impl::Pair::flipA -> Spec::Pair::flipA(self);\n\
+         step Impl::Pair::flipB -> Spec::Pair::flipB(self);\n\
+         step Impl::Pair::setA -> Spec::Pair::setA(self, x);\n\
+         step Impl::Pair::peek -> stutter;\n\
+         {rows}}}"
     )
 }

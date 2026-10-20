@@ -13,8 +13,8 @@ use ix_trace_rs::trace;
 use qsl_eval::automaton::translate;
 use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::protocol::{
-    visible, AnchorName, ClaimReads, ParallelInstance, ProtocolLocation, ProtocolState,
-    ProtocolSystem, ProtocolTransition, Sc, StepKind, ThreadPath,
+    visible, AnchorName, ClaimReads, MemoryModel, ParallelInstance, ProtocolLocation,
+    ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind, ThreadPath,
 };
 use qsl_eval::simulation::{independent, Footprint, Location};
 use qsl_package::CheckedPackage;
@@ -23,7 +23,7 @@ use quire_exact::{ObjectReference, ValueType};
 
 use crate::fill::{
     attempt, contracts, fill_unit, instance, key, model_subject, package, protocol, reachable,
-    sc_system, Documents, Reached, PACKAGE,
+    sc_system, source_memory, Documents, Reached, PACKAGE,
 };
 use crate::protocol_system::touch;
 
@@ -63,6 +63,7 @@ impl Cells {
                 role: "w".to_owned(),
                 model: PACKAGE.to_owned(),
             }],
+            memory: source_memory(&self.checked, name),
         }
     }
 }
@@ -579,8 +580,8 @@ fn an_attempt_reads_only_the_clauses_it_selects() {
 /// The states both orders of the steps `first` then `second` reach from
 /// `reached[at]`: every successor of `first`, then every successor of
 /// `second` from there.
-fn after_both(
-    reached: &[Reached],
+fn after_both<M: MemoryModel>(
+    reached: &[Reached<M>],
     at: usize,
     first: &ProtocolTransition,
     second: &ProtocolTransition,
@@ -603,7 +604,10 @@ fn after_both(
 /// every pair of enabled steps reported independent commutes: each stays
 /// enabled after the other, and both orders reach the same states. The
 /// number of independent pairs checked.
-fn assert_independent_steps_commute(system: &ProtocolSystem<'_, Sc>, reached: &[Reached]) -> usize {
+pub(crate) fn assert_independent_steps_commute<M: MemoryModel>(
+    system: &ProtocolSystem<'_, M>,
+    reached: &[Reached<M>],
+) -> usize {
     let mut checked = 0;
     for (at, state) in reached.iter().enumerate() {
         let mut identities: Vec<&ProtocolTransition> = Vec::new();

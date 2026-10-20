@@ -27,7 +27,7 @@ fn run_with(
     max_depth: Option<usize>,
     cancel: &Cancel,
 ) -> SafetyOutcome {
-    let RefinementOutcome { safety } = check_refinement(
+    let RefinementOutcome { safety, .. } = check_refinement(
         RefinementCheckRequest {
             refinement: world.refinement(),
             concrete: ModelSubject {
@@ -221,7 +221,7 @@ fn the_same_request_gives_the_same_outcome() {
 
 /// The safety half of the ring world `world`, under the default limits.
 fn run_ring(world: &RingWorld) -> SafetyOutcome {
-    let RefinementOutcome { safety } = check_refinement(
+    let RefinementOutcome { safety, .. } = check_refinement(
         RefinementCheckRequest {
             refinement: world.refinement(),
             concrete: ModelSubject {

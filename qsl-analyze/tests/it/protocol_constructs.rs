@@ -331,14 +331,16 @@ fn a_send_binds_its_send_record() {
     }
 }
 
-/// Part of FR-206-AC-8 (TC-651, ADR-027 SE-5): a thread resting at `fence
-/// F ordering seq_cst;` has one `fence` step, whose identity names its
-/// ordering (ADR-027 TS-2) and which changes no model state
-/// and moves the thread to its next sibling; under `sc` it is enabled in
+/// FR-206-AC-8 (TC-651, ADR-027 SE-5), with `weak_memory`'s `tso` half: a
+/// thread resting at `fence F ordering seq_cst;` has one `fence` step,
+/// whose identity names its ordering (ADR-027 TS-2) and which changes no
+/// model state and moves the thread to its next sibling; under `sc` it is enabled in
 /// every state the thread rests there. Two branches that each hold a fence
 /// reach no deadlock under `sc` that the same protocol without the fences
-/// does not reach, and give the same orders of their counted steps. Not
-/// covered: the `tso` fence rule, which this system refuses as weak memory.
+/// does not reach, and give the same orders of their counted steps. The
+/// `tso` fence rule is `weak_memory`'s
+/// `a_seq_cst_fence_waits_for_its_store_buffer_under_tso`.
+#[trace("TC-651", "FR-206-AC-8")]
 #[test]
 fn a_fence_moves_its_thread_and_changes_nothing_under_sc() {
     let run = format!(

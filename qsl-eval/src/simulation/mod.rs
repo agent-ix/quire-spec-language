@@ -47,5 +47,5 @@ pub use reduction::{
 };
 pub use sample::{sample_request, sample_request_until, SampleRequest};
 pub use sampled::{sample_probabilistic, SampleStop, SampledBehaviour, SampledStep};
-pub use subject::SubjectSystem;
+pub use subject::{Bounded, SubjectSystem};
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};
