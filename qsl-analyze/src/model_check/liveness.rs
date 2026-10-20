@@ -2315,7 +2315,9 @@ impl Open {
             model.constraints.get(constraint),
             model.graph.enabled(vertex),
         ) {
-            (Some(constraint), Some(enabled)) => !constraint.is_enabled_in(enabled),
+            // A visibility constraint has no enabledness: no state
+            // discharges it.
+            (Some(constraint), Some(enabled)) => constraint.is_enabled_in(enabled) == Some(false),
             _ => false,
         }
     }

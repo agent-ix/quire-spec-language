@@ -59,21 +59,15 @@ pub fn check_loop(
     }
     for (index, constraint) in constraints.iter().enumerate() {
         let taken = steps.iter().any(|step| constraint.is_taken_by(step.label));
-        let enabled_somewhere = steps
-            .iter()
-            .any(|step| constraint.is_enabled_in(&step.enabled));
-        let disabled_somewhere = steps
-            .iter()
-            .any(|step| !constraint.is_enabled_in(&step.enabled));
-        let fair = match (constraint.strength(), constraint.obligation()) {
-            (Strength::Weak, Obligation::Enablement) => taken || disabled_somewhere,
-            (Strength::Weak, Obligation::Visibility { .. }) => {
-                taken || !steps.iter().any(|step| constraint.is_owed_by(step.label))
-            }
-            (Strength::Strong, Obligation::Enablement | Obligation::Visibility { .. }) => {
-                taken || !enabled_somewhere
-            }
-        };
+        let enabled = |step: &LoopStep| constraint.is_enabled_in(&step.enabled) == Some(true);
+        let fair = taken
+            || match constraint.obligation() {
+                Obligation::Enablement(Strength::Weak) => !steps.iter().all(enabled),
+                Obligation::Enablement(Strength::Strong) => !steps.iter().any(enabled),
+                Obligation::Visibility { .. } => {
+                    !steps.iter().any(|step| constraint.is_owed_by(step.label))
+                }
+            };
         if !fair {
             return Ok(LassoFairness::Unfair { constraint: index });
         }

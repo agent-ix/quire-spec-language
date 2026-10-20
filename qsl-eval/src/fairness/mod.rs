@@ -16,7 +16,9 @@
 //!   visibility loads), and when an edge takes it.
 //! - [`analyze`] is ADR-019 FS-2's `fair` function: it decomposes a vertex set
 //!   into SCCs and classifies each, refining a component that fails a strong
-//!   constraint, and keeps every witness the certificate checker reads.
+//!   constraint (removing its enabled vertices) or a visibility constraint
+//!   (removing its load edges), and keeps every witness the certificate
+//!   checker reads.
 //! - [`check_loop`] is lasso fairness: whether the loop of a given lasso is
 //!   fair, as replay reads it (ADR-018 CX-3).
 

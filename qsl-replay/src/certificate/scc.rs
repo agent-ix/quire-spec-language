@@ -14,18 +14,23 @@
 //!   (`BackwardEdge`), so every cycle lies inside one component;
 //! - every component's witness holds (`WitnessFails`): `Trivial` is one
 //!   state with no edge to itself; `MissingAcceptance{set}` has no state in
-//!   that acceptance set; `UnfairWeak{constraint}` names a weak constraint
-//!   enabled at every state and taken by no edge inside the component;
-//!   `UnfairStrong{constraints, sub}` names strong constraints none of
-//!   which an edge inside the component takes, and `sub` partitions exactly
-//!   the component's states at which none of them is enabled, under the same
-//!   three rules.
+//!   that acceptance set; `UnfairWeak{constraint}` names an enablement weak
+//!   constraint enabled at every state and taken by no edge inside the
+//!   component; `UnfairVisibility{constraints, sub}` names visibility
+//!   constraints (ADR-025 MF-2) each loaded by an edge inside the component
+//!   and taken by none, and `sub` partitions the component's states over the
+//!   subgraph without the edges that load any of them; `UnfairStrong
+//!   {constraints, sub}` names strong constraints none of which an edge
+//!   inside the component takes, and `sub` partitions exactly the
+//!   component's states at which none of them is enabled. A `sub` level is
+//!   checked under the same rules over its parent's subgraph: an edge a
+//!   visibility refinement removed is in no rule below it.
 //!
 //! So an accepted partition proves that no fair accepting cycle exists.
 //!
 //! The rules run in that order over one level of components: the whole
 //! partition, then every edge, then each witness in listed order. The `sub`
-//! levels of `UnfairStrong` witnesses are checked after their level, depth
+//! levels of refining witnesses are checked after their level, depth
 //! first in listed order, with an explicit stack, so a deep certificate
 //! cannot overflow the call stack. The first failed rule is the rejection:
 //! a duplicated, foreign or uncovered state is the `NotPartition` locus (an
@@ -51,7 +56,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::fairness::{
-    Constraint, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
+    Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
 };
 use quire_exact::Cancel;
 
@@ -81,11 +86,21 @@ pub enum ComponentWitness {
         /// The index of the acceptance set.
         set: u32,
     },
-    /// The weak constraint at `constraint` is enabled at every state of the
-    /// component and taken by no edge with both ends in it.
+    /// The enablement weak constraint at `constraint` is enabled at every
+    /// state of the component and taken by no edge with both ends in it.
     UnfairWeak {
         /// The index into the clause's resolved constraints.
         constraint: u32,
+    },
+    /// Every visibility constraint in `constraints` (ADR-025 MF-2) is
+    /// loaded by an edge with both ends in the component and taken by none,
+    /// and `sub` partitions the component's states over the subgraph with
+    /// every edge that loads one of them removed.
+    UnfairVisibility {
+        /// The indices of every failing visibility constraint.
+        constraints: Vec<u32>,
+        /// The refinement's components, in topological order.
+        sub: Vec<Component>,
     },
     /// Every strong constraint in `constraints` is taken by no edge with
     /// both ends in the component, and `sub` partitions the component's
@@ -176,11 +191,22 @@ type Step<T> = Result<T, TemporalCertificateCheck>;
 type Partition = (BTreeMap<Vertex, usize>, Vec<Vec<Vertex>>);
 
 /// One level of components to check: the states they must partition, the
+/// edge identities enclosing visibility refinements removed, the
 /// components, and the locus of an empty component.
 struct Level<'c> {
     scope: BTreeSet<Vertex>,
+    removed: BTreeSet<Identity>,
     components: &'c [Component],
     fallback: ProductStateRef,
+}
+
+/// Whether `edge` is in a level's subgraph: it takes no identity in
+/// `removed`.
+fn is_live(edge: &Edge, removed: &BTreeSet<Identity>) -> bool {
+    match edge.label {
+        EdgeLabel::Transition(identity) => !removed.contains(&identity),
+        EdgeLabel::Stutter => true,
+    }
 }
 
 /// The product graph holds no state. A closure the checker reached always
@@ -207,6 +233,7 @@ pub(crate) fn check_partition(
     };
     let mut stack = vec![Level {
         scope: product.graph.vertices().collect(),
+        removed: BTreeSet::new(),
         components,
         fallback: least,
     }];
@@ -240,15 +267,15 @@ impl<'p> Checker<'p> {
         Ok(())
     }
 
-    /// Check one level; the `sub` levels of its `UnfairStrong` witnesses, in
+    /// Check one level; the `sub` levels of its refining witnesses, in
     /// listed order.
     fn level<'c>(&self, level: &Level<'c>) -> Step<Vec<Level<'c>>> {
         let (owner, members) = self.partition(level)?;
-        self.edges(level.components, &members, &owner)?;
+        self.edges(level, &members, &owner)?;
         let mut sub = Vec::new();
         for (component, members) in level.components.iter().zip(&members) {
             self.poll()?;
-            if let Some(refinement) = self.witness(component, members, &level.fallback)? {
+            if let Some(refinement) = self.witness(component, members, level)? {
                 sub.push(refinement);
             }
         }
@@ -302,17 +329,18 @@ impl<'p> Checker<'p> {
     /// states of the scope, that goes to an earlier component.
     fn edges(
         &self,
-        components: &[Component],
+        level: &Level<'_>,
         members: &[Vec<Vertex>],
         owner: &BTreeMap<Vertex, usize>,
     ) -> Step<()> {
-        for (index, (component, vertices)) in components.iter().zip(members).enumerate() {
+        for (index, (component, vertices)) in level.components.iter().zip(members).enumerate() {
             for (state, vertex) in component.states.iter().zip(vertices) {
                 for edge in self.product.graph.edges_from(*vertex) {
                     self.poll()?;
-                    if owner
-                        .get(&edge.target)
-                        .is_some_and(|target| *target < index)
+                    if is_live(edge, &level.removed)
+                        && owner
+                            .get(&edge.target)
+                            .is_some_and(|target| *target < index)
                     {
                         return Err(reject(CertificateRule::BackwardEdge, state.clone()));
                     }
@@ -323,49 +351,77 @@ impl<'p> Checker<'p> {
     }
 
     /// Check `component`'s witness over its vertices `members`, which the
-    /// partition check found nonempty: the level its `UnfairStrong`
-    /// refinement must pass, if it has one.
+    /// partition check found nonempty, in `level`'s subgraph: the level its
+    /// `UnfairVisibility` or `UnfairStrong` refinement must pass, if it has
+    /// one.
     fn witness<'c>(
         &self,
         component: &'c Component,
         members: &[Vertex],
-        fallback: &ProductStateRef,
+        level: &Level<'_>,
     ) -> Step<Option<Level<'c>>> {
         // The partition check rejected an empty component before this.
-        let first = component.states.first().unwrap_or(fallback).clone();
+        let first = component.states.first().unwrap_or(&level.fallback).clone();
         let fails = || reject(CertificateRule::WitnessFails, first.clone());
         let inside: BTreeSet<Vertex> = members.iter().copied().collect();
+        let removed = &level.removed;
         let holds = match &component.witness {
             ComponentWitness::Trivial => {
-                inside.len() == 1 && !self.taken_inside(&inside, |_| true)?
+                inside.len() == 1 && !self.taken_inside(&inside, removed, |_| true)?
             }
             ComponentWitness::MissingAcceptance { set } => index(*set)
                 .and_then(|set| self.product.graph.acceptance_sets().get(set))
                 .is_some_and(|accepting| accepting.is_disjoint(&inside)),
             ComponentWitness::UnfairWeak { constraint } => match self.constraint(*constraint) {
-                Some(constraint) if constraint.strength() == Strength::Weak => {
-                    let owed = match constraint.obligation() {
-                        Obligation::Enablement => self.enabled_everywhere(&inside, constraint)?,
-                        Obligation::Visibility { .. } => {
-                            self.taken_inside(&inside, |label| constraint.is_owed_by(label))?
-                        }
-                    };
-                    owed && !self.taken_inside(&inside, |label| constraint.is_taken_by(label))?
+                Some(constraint)
+                    if constraint.obligation() == &Obligation::Enablement(Strength::Weak) =>
+                {
+                    self.enabled_everywhere(&inside, constraint)?
+                        && !self
+                            .taken_inside(&inside, removed, |label| constraint.is_taken_by(label))?
                 }
                 Some(_) | None => false,
             },
+            ComponentWitness::UnfairVisibility { constraints, sub } => {
+                let mut cut = removed.clone();
+                for constraint in constraints {
+                    let Some(constraint) = self.constraint(*constraint) else {
+                        return Err(fails());
+                    };
+                    let Obligation::Visibility { loads } = constraint.obligation() else {
+                        return Err(fails());
+                    };
+                    let owed =
+                        self.taken_inside(&inside, removed, |label| constraint.is_owed_by(label))?;
+                    let taken =
+                        self.taken_inside(&inside, removed, |label| constraint.is_taken_by(label))?;
+                    if !owed || taken {
+                        return Err(fails());
+                    }
+                    cut.extend(loads.iter().copied());
+                }
+                return Ok(Some(Level {
+                    scope: inside,
+                    removed: cut,
+                    components: sub,
+                    fallback: first,
+                }));
+            }
             ComponentWitness::UnfairStrong { constraints, sub } => {
                 let mut failing = Vec::with_capacity(constraints.len());
                 for constraint in constraints {
                     match self.constraint(*constraint) {
-                        Some(constraint) if constraint.strength() == Strength::Strong => {
+                        Some(constraint)
+                            if constraint.obligation()
+                                == &Obligation::Enablement(Strength::Strong) =>
+                        {
                             failing.push(constraint);
                         }
                         Some(_) | None => return Err(fails()),
                     }
                 }
                 for constraint in &failing {
-                    if self.taken_inside(&inside, |label| constraint.is_taken_by(label))? {
+                    if self.taken_inside(&inside, removed, |label| constraint.is_taken_by(label))? {
                         return Err(fails());
                     }
                 }
@@ -374,7 +430,7 @@ impl<'p> Checker<'p> {
                     self.poll()?;
                     let enabled = self.product.graph.enabled(*vertex);
                     let quiet = !failing.iter().any(|constraint| {
-                        enabled.is_some_and(|enabled| constraint.is_enabled_in(enabled))
+                        enabled.and_then(|enabled| constraint.is_enabled_in(enabled)) == Some(true)
                     });
                     if quiet {
                         scope.insert(*vertex);
@@ -382,6 +438,7 @@ impl<'p> Checker<'p> {
                 }
                 return Ok(Some(Level {
                     scope,
+                    removed: removed.clone(),
                     components: sub,
                     fallback: first,
                 }));
@@ -402,24 +459,25 @@ impl<'p> Checker<'p> {
         for vertex in inside {
             self.poll()?;
             let enabled = self.product.graph.enabled(*vertex);
-            if !enabled.is_some_and(|enabled| constraint.is_enabled_in(enabled)) {
+            if enabled.and_then(|enabled| constraint.is_enabled_in(enabled)) != Some(true) {
                 return Ok(false);
             }
         }
         Ok(true)
     }
 
-    /// Whether an edge with both ends in `inside` has a label `takes`
-    /// admits.
+    /// Whether an edge of the level's subgraph (taking no identity in
+    /// `removed`) with both ends in `inside` has a label `takes` admits.
     fn taken_inside(
         &self,
         inside: &BTreeSet<Vertex>,
+        removed: &BTreeSet<Identity>,
         takes: impl Fn(EdgeLabel) -> bool,
     ) -> Step<bool> {
         for vertex in inside {
             for edge in self.product.graph.edges_from(*vertex) {
                 self.poll()?;
-                if inside.contains(&edge.target) && takes(edge.label) {
+                if inside.contains(&edge.target) && is_live(edge, removed) && takes(edge.label) {
                     return Ok(true);
                 }
             }
@@ -981,49 +1039,80 @@ mod tests {
         );
     }
 
-    /// ADR-025 MF-2 in the certificate check: an accepting cycle on which
-    /// thread `b` loads `l` only from a stale message (identity 10) is an
-    /// `UnfairWeak` witness for the pair's visibility constraint; once the
-    /// cycle also loads the mo-last message (identity 11) the same witness
-    /// is rejected.
+    /// ADR-025 MF-2 in the certificate check (SR-12217 FND-001): thread
+    /// `b`'s loads of `l` are identities 10 (stale) and 11 (mo-last). On the
+    /// accepting cycle `a -> b` (stale load), `b -> a`, a visibility
+    /// refinement that removes the loads leaves `{b}` then `{a}`, both
+    /// trivial, and is accepted; `UnfairWeak` is no witness for a visibility
+    /// constraint; a fresh load inside rejects the refinement; and a
+    /// load-free self-loop at `a` is a fair cycle the refinement must not
+    /// call trivial.
     #[trace("TC-673", "FR-228-AC-3")]
     #[test]
-    fn a_visibility_witness_holds_only_while_the_cycle_loads_stale_messages() {
+    fn a_visibility_refinement_removes_load_edges_and_keeps_load_free_cycles() {
         const STALE: Identity = Identity::new(10);
         const FRESH: Identity = Identity::new(11);
         const OTHER: Identity = Identity::new(20);
-        let cycle = |back: &[Identity]| {
+        let a = || product_state([0, 0], "q1");
+        let b = || product_state([0, 1], "q1");
+        let graph = |edges: &[(usize, usize, Identity)]| {
             let mut product = ProductGraph::new();
             let enabled = [STALE, FRESH, OTHER];
-            let a = product
-                .add_state(product_state([0, 0], "q1"), enabled)
-                .expect("a new state");
-            let b = product
-                .add_state(product_state([0, 1], "q1"), enabled)
-                .expect("a new state");
-            product
-                .add_edge(a, b, EdgeLabel::Transition(STALE))
-                .expect("known vertices");
-            for label in back {
+            let ends = [
+                product.add_state(a(), enabled).expect("a new state"),
+                product.add_state(b(), enabled).expect("a new state"),
+            ];
+            for (from, to, label) in edges {
                 product
-                    .add_edge(b, a, EdgeLabel::Transition(*label))
+                    .add_edge(ends[*from], ends[*to], EdgeLabel::Transition(*label))
                     .expect("known vertices");
             }
-            product.add_acceptance_set([a, b]).expect("known vertices");
+            product.add_acceptance_set(ends).expect("known vertices");
             product
         };
-        let components = [Component {
-            states: vec![product_state([0, 0], "q1"), product_state([0, 1], "q1")],
-            witness: ComponentWitness::UnfairWeak { constraint: 0 },
-        }];
+        let refined = |witness| {
+            [Component {
+                states: vec![a(), b()],
+                witness,
+            }]
+        };
+        let visibility = || ComponentWitness::UnfairVisibility {
+            constraints: vec![0],
+            sub: vec![
+                Component {
+                    states: vec![b()],
+                    witness: ComponentWitness::Trivial,
+                },
+                Component {
+                    states: vec![a()],
+                    witness: ComponentWitness::Trivial,
+                },
+            ],
+        };
         let constraints = [Constraint::visibility([STALE, FRESH], [FRESH])];
+
+        let stale = graph(&[(0, 1, STALE), (1, 0, OTHER)]);
         assert_eq!(
-            check(&cycle(&[OTHER]), &components, &constraints),
+            check(&stale, &refined(visibility()), &constraints),
             TemporalCertificateCheck::Accepted
         );
         assert_eq!(
-            check(&cycle(&[OTHER, FRESH]), &components, &constraints),
-            rejected(CertificateRule::WitnessFails, product_state([0, 0], "q1"))
+            check(
+                &stale,
+                &refined(ComponentWitness::UnfairWeak { constraint: 0 }),
+                &constraints
+            ),
+            rejected(CertificateRule::WitnessFails, a())
+        );
+        let fresh = graph(&[(0, 1, STALE), (1, 0, OTHER), (1, 0, FRESH)]);
+        assert_eq!(
+            check(&fresh, &refined(visibility()), &constraints),
+            rejected(CertificateRule::WitnessFails, a())
+        );
+        let self_loop = graph(&[(0, 1, STALE), (1, 0, OTHER), (0, 0, OTHER)]);
+        assert_eq!(
+            check(&self_loop, &refined(visibility()), &constraints),
+            rejected(CertificateRule::WitnessFails, a())
         );
     }
 }

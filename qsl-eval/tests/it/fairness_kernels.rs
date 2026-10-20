@@ -531,9 +531,12 @@ fn membership_covers_identities_and_the_stutter_belongs_to_none() {
     assert!(whole.is_taken_by(EdgeLabel::Transition(id(1))));
     assert!(!whole.is_taken_by(EdgeLabel::Transition(id(3))));
     assert!(!whole.is_taken_by(EdgeLabel::Stutter));
-    assert!(whole.is_enabled_in(&BTreeSet::from([id(2), id(9)])));
-    assert!(!whole.is_enabled_in(&BTreeSet::from([id(9)])));
-    assert!(!whole.is_enabled_in(&BTreeSet::new()));
+    assert_eq!(
+        whole.is_enabled_in(&BTreeSet::from([id(2), id(9)])),
+        Some(true)
+    );
+    assert_eq!(whole.is_enabled_in(&BTreeSet::from([id(9)])), Some(false));
+    assert_eq!(whole.is_enabled_in(&BTreeSet::new()), Some(false));
 }
 
 fn loop_step(enabled: &[u64], label: EdgeLabel) -> LoopStep {
@@ -612,21 +615,36 @@ fn visibility() -> Constraint {
     Constraint::visibility([id(STALE), id(FRESH)], [id(FRESH)])
 }
 
-/// A two-vertex cycle whose edges take `labels`: the first from `a` to `b`,
-/// every other from `b` back to `a`. Every listed identity is enabled at
-/// both vertices, so enabledness alone discharges nothing.
-fn cycle(labels: &[u64]) -> Graph {
+/// Two vertices `a` and `b` with the edges `(from, to, label)`, by index.
+/// Every listed identity is enabled at both, so enabledness alone
+/// discharges nothing.
+fn pair_graph(edges: &[(usize, usize, u64)]) -> Graph {
     let mut graph = Graph::new();
     let enabled = [id(STALE), id(FRESH), id(OTHER)];
-    let a = graph.add_vertex(enabled);
-    let b = graph.add_vertex(enabled);
-    for (position, label) in labels.iter().enumerate() {
-        let (from, to) = if position == 0 { (a, b) } else { (b, a) };
+    let ends = [graph.add_vertex(enabled), graph.add_vertex(enabled)];
+    for (from, to, label) in edges {
         graph
-            .add_edge(from, to, EdgeLabel::Transition(id(*label)))
+            .add_edge(ends[*from], ends[*to], EdgeLabel::Transition(id(*label)))
             .expect("both vertices exist");
     }
     graph
+}
+
+/// The cycle `a -> b -> a` whose edges take `labels`: the first from `a` to
+/// `b`, every other from `b` back to `a`.
+fn cycle(labels: &[u64]) -> Graph {
+    let edges: Vec<(usize, usize, u64)> = labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| {
+            if position == 0 {
+                (0, 1, *label)
+            } else {
+                (1, 0, *label)
+            }
+        })
+        .collect();
+    pair_graph(&edges)
 }
 
 fn filter(graph: &Graph) -> Vec<Outcome> {
@@ -642,18 +660,100 @@ fn filter(graph: &Graph) -> Vec<Outcome> {
     .collect()
 }
 
+fn outcome(vertices: &[usize], outcome: Outcome) -> (Vec<usize>, Outcome) {
+    (vertices.to_vec(), outcome)
+}
+
+/// Each analysis with its vertex indices, depth first.
+fn tree(analyses: &[Analysis]) -> Vec<(Vec<usize>, Outcome)> {
+    analyses
+        .iter()
+        .map(|analysis| {
+            (
+                analysis
+                    .vertices()
+                    .iter()
+                    .map(|vertex| vertex.index())
+                    .collect(),
+                analysis.outcome().clone(),
+            )
+        })
+        .collect()
+}
+
 /// FR-228-AC-3: an SCC on which `b` loads `l` only from a message that is
-/// not mo-last fails visibility fairness; one that also holds a load of the
-/// mo-last message passes; one that never loads `l` owes nothing.
+/// not mo-last holds no fair cycle through those loads: the filter removes
+/// the load edges and decomposes again, and with nothing else left the
+/// refinement is trivial. One that also holds a load of the mo-last message
+/// passes; one that never loads `l` owes nothing.
 #[ix_trace_rs::trace("TC-673", "FR-228-AC-3")]
 #[test]
 fn visibility_fairness_rejects_an_scc_that_loads_only_stale_messages() {
+    let stale = cycle(&[STALE, OTHER]);
+    let analyses = analyze(
+        &stale,
+        &stale.vertices().collect(),
+        &[visibility()],
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    let Outcome::UnfairVisibility { constraints, sub } = analyses[0].outcome() else {
+        panic!("a visibility refinement, got {:?}", analyses[0].outcome());
+    };
+    assert_eq!(constraints, &[0]);
     assert_eq!(
-        filter(&cycle(&[STALE, OTHER])),
-        [Outcome::UnfairWeak { constraint: 0 }]
+        tree(sub),
+        [
+            outcome(&[0], Outcome::Trivial),
+            outcome(&[1], Outcome::Trivial)
+        ]
     );
+    assert!(Analysis::first_fair_in(&analyses).is_none());
     assert_eq!(filter(&cycle(&[STALE, OTHER, FRESH])), [Outcome::Fair]);
     assert_eq!(filter(&cycle(&[OTHER, OTHER])), [Outcome::Fair]);
+}
+
+/// FR-228-AC-3, per cycle: an SCC whose only loads are stale also holds the
+/// load-free self-loop `a -> a`, which owes visibility nothing and is fair,
+/// as the lasso check reads that loop. The filter finds it in the
+/// refinement (the reviewer's repro of SR-12217 FND-001).
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-3")]
+#[test]
+fn a_load_free_cycle_inside_a_stale_scc_is_fair() {
+    let graph = pair_graph(&[(0, 1, STALE), (1, 0, OTHER), (0, 0, OTHER)]);
+    let analyses = analyze(
+        &graph,
+        &graph.vertices().collect(),
+        &[visibility()],
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    let Outcome::UnfairVisibility { sub, .. } = analyses[0].outcome() else {
+        panic!("a visibility refinement, got {:?}", analyses[0].outcome());
+    };
+    assert_eq!(
+        tree(sub),
+        [
+            outcome(&[0], Outcome::Fair),
+            outcome(&[1], Outcome::Trivial)
+        ]
+    );
+    let fair = Analysis::first_fair_in(&analyses).expect("a fair cycle");
+    assert_eq!(
+        fair.vertices()
+            .iter()
+            .map(|vertex| vertex.index())
+            .collect::<Vec<_>>(),
+        [0]
+    );
+    let self_loop = [loop_step(
+        &[STALE, FRESH, OTHER],
+        EdgeLabel::Transition(id(OTHER)),
+    )];
+    assert_eq!(
+        check_loop(&self_loop, &[visibility()]),
+        Ok(LassoFairness::Fair)
+    );
 }
 
 /// ADR-025 MF-2 on a lasso: the loop must load the mo-last message of every
