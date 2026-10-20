@@ -431,6 +431,10 @@ impl Letters {
 }
 
 impl ModelLetters for Letters {
+    fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
+        crate::units::unread()
+    }
+
     fn atom(
         &self,
         atom: FormulaNodeId,
