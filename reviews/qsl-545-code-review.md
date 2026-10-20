@@ -48,3 +48,22 @@ Ticket: QSL-545. PR: quire-spec-language#1093, head 498b438cf. Method: code-revi
 ## Verdict
 
 Not mergeable: FND-001 and FND-002 each give a wrong `refuted` verdict, and both were reproduced. Correct: the history row checks (type, bounds, static literal, conflicts, duplicate updates, typing with `pre()`), update evaluation through one evaluator with a fresh meter and pre/post observations, receiver-only writes, the read order of receiver, arguments, history and post rows, the product key (concrete, history, sorted candidates; deterministic BTreeMap order), completion enumeration (odometer over FR-120 domain order, optional unset first, candidate bound), the union of accepted completions, the FR-146 hook, and the complete deletion of the HiddenFields refusal with no shim. Rust lane: idioms match the repo (a `reason`-carrying `#[allow(clippy::result_large_err)]`, `#[must_use]` builders, no unwrap on production paths, saturating counters). Mutation probes in SR-13461.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | high | An out-of-type update value is now written to the history, and the post-state rows are evaluated over it. A row that reads the failed field and is undefined at the computed value refutes the step. Merged FR-138 and FR-141 "Undetermined history update" say such a row is an undetermined read, never evaluated. Probe: `writes` = pre(self.writes) + 2 with `prev` reading `1 mod (2 - self.writes)`: `write(r, 1)` returns Undefined at `prev`, where the spec requires Undetermined naming `writes`. | qsl-replay/src/refinement/history.rs:288-296; qsl-replay/src/refinement/step.rs:344-369 |
+| FND-007 | medium | An update with no value (undefined, refused or incomplete) now skips the whole post-state mapping, so an undefined row that does not read the failed field no longer wins. Merged FR-141 skips only rows that read that field, and "an undefined read anywhere in the order ... wins". Probe: Reads with an over-budget `H` and an undefined `items` (which does not read `h`) returns Undetermined naming `H` instead of Undefined at `items`. Mutation M21 (map despite no value) survives. The coder's "the row cannot be read" holds only for rows that read the field; the spec is right. | qsl-replay/src/refinement/step.rs:344-369 |
+| FND-008 | high | The certificate checker merged from QSL-549 carries no history values: `CertifiedPosition` has only `concrete` and `abstract_states`, `matches` compares only those, and its module doc still says "HistoryValues are not carried, because history fields are refused (FR-138)", which is false once this PR lands. Two product states that differ only in history collapse to one listed position, so the checker can accept a certificate that never checks the second history variant. FR-149 lists `history: HistoryValues` in a position. Either carry and compare the history, or refuse history refinements in the checker. Not reproduced. | qsl-replay/src/certificate/simulation.rs:31-32, 66-72, 466-476 |
+| FND-009 | low | The `any` arm returns Undetermined for any ContractUndetermined finding in a member's expansion. Merged FR-141 restricts this to an undecided successor "whose visible part equals the mapped one". The code over-reports inconclusive (sound but off spec), the finding's `candidate` digest is not compared, and mutation M19 survives, so no test covers the rule. | qsl-replay/src/refinement/step.rs:436-443 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | judge_operation and the any arm return Undetermined(UndecidedSuccessor) for an undecided member with hidden fields; the round-0 probe now gives Undetermined; M18 is killed (any-arm restriction: FND-009) |
+| FND-002 | fixed | the stand-in is gone; the round-0 probe (FR-138-AC-8's case) gives Undetermined naming `writes`; the replacement behaviour has its own defects, FND-006 and FND-007 |
+| FND-003 | fixed | a hidden-field row whose set comes out empty returns NoAbstractMatch; M20 is killed |
+| FND-004 | still-open | the Fault is now an S3 refusal, but it names a fifth feature `history-value-key`; merged FR-135 and QSpec FR-375 define a closed set of four names, and this build must hold `history-row` and omit the other three. Enum literals are FR-375-AC-9-legal. Needs a spec ruling (add the name to FR-375/FR-135, refuse by another code, or encode enum/decimal in FR-181) |
+| FND-005 | fixed | the conflict check now covers subtypes' declared fields; M23 is killed |

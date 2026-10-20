@@ -1270,7 +1270,7 @@ fn protocol_step_rows_refuse_over_a_model_subject() {
 /// (STD-182), so S2 never builds it from source; built by hand, S3 refuses it
 /// `unsupported_construct`/`not-yet-implemented` at the clause name and still
 /// checks, and reports, the rest of the declaration.
-#[trace("TC-540")]
+#[trace("TC-540", "FR-135-AC-5")]
 #[test]
 fn a_protocol_abstract_side_refuses_and_the_rest_is_still_checked() {
     let (spec, cas) = counters();

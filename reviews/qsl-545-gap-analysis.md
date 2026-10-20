@@ -59,3 +59,22 @@ Ticket: QSL-545. PR: quire-spec-language#1093, head 498b438cf. Method: gap-analy
 ## Verdict
 
 Not mergeable as is, because of SR-13460's two high findings. Coverage of the ticket's ACs is honest: each tagged test asserts its AC's stated outcome, and the tags name the right TCs. FR-138-AC-1..5, FR-140-AC-4, FR-141-AC-4/6/10/11, FR-142-AC-4/5/8, FR-145-AC-1/5 and the FR-146 hook (TC-551 step 2) each have a test that fails under a mutation of the rule it covers. Spec follow-ups FND-001..004 and FND-007 need a spec ticket ruling. FND-005 and FND-006 are test gaps the fix round can close.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | The branch does not contain #1103 (3974a05ee), so its spec copy is stale. The merged ACs FR-138-AC-6 (an update without `pre` reads the start value), FR-138-AC-7 (key order over `{r, s}`), FR-138-AC-2's new clauses (another type's undeclared `last` refuses missing-name; `zzz` refuses type-mismatch), FR-138-AC-8 and FR-141-AC-12 have no tagged test; AC-6, AC-7's order and AC-2's new clauses are untested. Merge main and tag or add the tests. | qsl-replay/tests/it/refinement_history.rs; qsl-replay/tests/it/refinement_hidden.rs |
+| FND-009 | low | The SR files were committed as `reviews/26-10-20-qsl-545-*.md`; the reviewer's custody path is `reviews/qsl-545-code-review.md` and `reviews/qsl-545-gap-analysis.md`, with no date prefix, and the next fix round copies this round's versions over them. | reviews/26-10-20-qsl-545-code-review.md |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | #1103 respells FR-138-AC-5 as `(1 mod x) + 1`, and TC-554 to match |
+| FND-002 | fixed | #1103: S3 admits an update reading a history field outside `pre`, which reads the start value; the code matches (AC-6 untested: FND-008) |
+| FND-003 | fixed | #1103 states the unit-wide missing-name rule, which the code implements (new AC-2 clauses untested: FND-008) |
+| FND-004 | still-open | #1103 fixed FR-135's support set and AC-5, but FR-135-AC-5 still has no tagged test: a_protocol_abstract_side_refuses_and_the_rest_is_still_checked carries only TC-540 |
+| FND-005 | fixed | an_update_writes_the_receiver_only and a_created_object_starts_at_the_initial_literal_and_a_deleted_one_loses_its_values; M03 is killed |
+| FND-006 | fixed | M04, M05, M12, M15 and M17 are each killed by new tests (product key, candidate key, stutter/any set, update on a non-abstract row) |
+| FND-007 | fixed | #1103 FR-138 now states the key's object-then-field order; QSpec FR-378's wording is left to QSpec (noted in FR-138 References) |

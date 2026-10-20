@@ -290,8 +290,7 @@ pub(super) fn map_state_without(
                 concrete_system,
                 abstract_system,
                 observation,
-                object_row,
-                &at,
+                (object_row, &at),
                 failed,
                 &mut outcomes,
             )? {
@@ -404,8 +403,7 @@ fn map_object(
     concrete_system: &ModelSystem<'_>,
     abstract_system: &ModelSystem<'_>,
     observed: &StateObservation,
-    object_row: &ObjectRow,
-    at: &ObjectKey,
+    (object_row, at): (&ObjectRow, &ObjectKey),
     failed: &BTreeSet<String>,
     outcomes: &mut Outcomes,
 ) -> Result<Option<StateObject>, MappingFailure> {
