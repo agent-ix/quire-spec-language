@@ -463,9 +463,10 @@ fn structural_moves_add_no_step() {
         touch("X"),
         touch("E"),
     );
-    let refused = compiled(&(contracts("self.v = 0") + &protocol("P", "", &exhausted, "d")))
-        .err()
-        .expect("`exhausted` needs a maximum");
+    let Err(refused) = compiled(&(contracts("self.v = 0") + &protocol("P", "", &exhausted, "d")))
+    else {
+        panic!("`exhausted` needs a maximum");
+    };
     assert_eq!(refused.code(), Code::InvalidSyntax, "{refused}");
     let run = format!(
         "repeat Loop by w visible () while {{ true }} {}",
