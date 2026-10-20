@@ -38,7 +38,7 @@ first run drew.
 ```rust
 pub struct StatisticalLimits {
     pub max_samples: u64,      // counted samples or cycles per test; default 16_777_216 (2^24)
-    pub max_draws: u64,        // samples drawn, counted or not, per test; default 67_108_864 (2^26)
+    pub max_draws: u64,        // samples drawn, counted or not, per test (steps taken, for the regenerative method); default 67_108_864 (2^26)
     pub max_cycle_steps: u64,  // steps in one regeneration cycle; default 16_777_216 (2^24)
 }
 pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps }  // setting() = `statistical.<member>`
@@ -73,7 +73,7 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps }  // setting() 
   needs another, EN-4 SHALL stop and return `Stopped` with
   `Limit{MaxSamples, value}`, before it draws the next sample; a method that decides
   at exactly `max_samples` completes. When a test has drawn `max_draws`
-  samples, or taken `max_cycle_steps` steps in one cycle, it SHALL stop the same
+  samples (for the regenerative method, taken `max_draws` walk steps in total, as FR-190 counts steps as draws), or taken `max_cycle_steps` steps in one cycle, it SHALL stop the same
   way before the next draw or step. The stop carries the limit, its value, the
   setting name (`statistical.max_samples`, `statistical.max_draws`,
   `statistical.max_cycle_steps`) and the counts reached, and settles
@@ -103,7 +103,7 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps }  // setting() 
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-191-AC-1 | `NoFault` (ADR-024 §7.1) with Okamoto and `max_samples` set to 1,000,000 stops before deciding: `Stopped` with `Limit{MaxSamples, 1,000,000}`, value 1,000,000, member `statistical.max_samples`, 1,000,000 samples counted and no decision. With `max_samples` 9,210,341, Okamoto's `N`, it completes and decides. A request that omits `max_samples` runs with 16,777,216. | Test (TC-626) |
-| FR-191-AC-2 | FR-189-AC-4's activation variant with `max_draws` 1,000 stops naming `statistical.max_draws`; a cancelled `Cancel` handle stops with `Cancelled`; neither carries a decision. FR-190-AC-2's transient variant stops with `Limit{MaxCycleSteps, value}` and no decision, settling `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`. | Test (TC-626) |
+| FR-191-AC-2 | FR-189-AC-4's activation variant with `max_draws` 1,000 stops naming `statistical.max_draws`; a cancelled `Cancel` handle stops with `Cancelled`; neither carries a decision. FR-190-AC-2's transient variant stops with `Limit{MaxCycleSteps, value}` and no decision, settling `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`. A regenerative run with `max_draws` below the steps one cycle needs stops `Limit{MaxDraws, value}` with no decision, `max_draws` counting its walk steps. | Test (TC-626) |
 | FR-191-AC-3 | `P95` with SPRT and seed 7 run twice gives byte-equal results: provenance, per-test counts, estimates and decision. The run stopped by `max_samples` 100 and the rerun with the default limit draw equal samples at trace indices 0 to 99. A run with seed 8 records seed 8, the same obligation identity, and a different sample at some trace index. | Test (TC-626) |
 | FR-191-AC-4 | A two-test run records per test its initial state index, binding and trace-index range, with test 1's first trace index equal to 1 and its step 2. Changing the method from Okamoto to SPRT changes the result's method and leaves its obligation identity unchanged. | Test (TC-626) |
 | FR-191-AC-5 | `NoFault` with `max_samples` 9,210,341 completes at exactly 9,210,341 samples while 9,210,340 stops `Limit{MaxSamples, 9,210,340}` after counting 9,210,340 samples without drawing another; a `Stopped` and an `Unsupported` outcome (FR-189-AC-7's `Wide`) each carry the run's `StatisticalProvenance`, and a cancelled handle stops `Cancelled`. | Test (TC-626) |

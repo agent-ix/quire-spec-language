@@ -73,6 +73,27 @@ pub fn evaluate_closed(
     .run(node, slots, Vec::new())
 }
 
+/// FR-187 (ADR-024 PM-5): evaluate the reward `reward` of `package` on
+/// `arguments`, one value per parameter of its operation in declared order.
+/// A reward reads its operation's parameters alone, so the object
+/// environment is empty.
+pub fn evaluate_reward(
+    package: &CheckedPackage,
+    reward: &qsl_semantics::check::Reward,
+    arguments: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let objects = ObjectEnvironment::default();
+    Machine::new(
+        package.graph().scope(),
+        package.graph(),
+        &objects,
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(reward.expression(), reward.slots(), arguments)
+}
+
 /// FR-124 (ADR-018 DL-1): evaluate the `terminal when` predicate
 /// `predicate` of `package` for the object `self_object` of the state whose
 /// objects are `current`, through the one clause evaluator (FR-107): the
@@ -129,6 +150,34 @@ pub fn evaluate_refinement_row(
     .run(row.body(), row.slots(), bindings)
 }
 
+/// FR-138 (ADR-020 AX-1): evaluate one history update `row` of `package`
+/// through the one clause evaluator (FR-107), as a postcondition-kind body
+/// over the step: its model reads observe `post`, except inside `pre(..)`,
+/// where they observe `pre`, as the row's own `reads` say. `bindings` fill
+/// the row's parameters in order, `self` (the receiver) first.
+pub fn evaluate_history_update(
+    package: &CheckedPackage,
+    row: &qsl_semantics::check::CheckedRow,
+    (pre, post): (&ObjectEnvironment, &ObjectEnvironment),
+    bindings: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads: std::collections::BTreeMap<_, _> = row
+        .reads()
+        .map(|(location, observation)| (location.clone(), observation))
+        .collect();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        post,
+        Some(pre),
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(row.body(), row.slots(), bindings)
+}
+
 /// FR-167 (ADR-022 GM-3): evaluate the state-graph predicate `predicate` of
 /// `package` with its `over` parameter bound to `over` (`None` for a claim
 /// with no `over`) at the state whose objects are `current`, through the one
@@ -156,6 +205,35 @@ pub fn evaluate_state_predicate(
         predicate.slots(),
         over.map(Value::Reference).into_iter().collect(),
     )
+}
+
+/// ADR-027 ST-1 to ST-9, PD-1: evaluate one checked protocol slot `body` (a
+/// node's constraint or the protocol's `terminal when` predicate) of
+/// `package` through the one clause evaluator (FR-107), at the state whose
+/// objects are `current`. `frame[i]` is the value of the protocol's binder
+/// `i` (`CheckedSlots::binders`), `None` for one that is not bound; the
+/// frame is extended to the slots the body's own lets and queries bind.
+/// Like an invariant's, a slot body reads no `pre(..)`, so every model read
+/// observes `current`.
+pub fn evaluate_protocol_slot(
+    package: &CheckedPackage,
+    body: &qsl_semantics::check::CheckedBody,
+    mut frame: Vec<Option<Value>>,
+    current: &ObjectEnvironment,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    frame.resize(body.frame_slots(frame.len()), None);
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run_frame(body.root(), frame)
 }
 
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.

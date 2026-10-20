@@ -26,8 +26,8 @@ mod model;
 
 pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput};
 pub use model::{
-    CheckedProbabilisticModel, PreconditionSite, ProbabilisticOperation, RandomParameter, Reward,
-    SupportValue, Workload,
+    CheckedProbabilisticModel, PreconditionSite, ProbabilisticFeature, ProbabilisticOperation,
+    RandomParameter, Reward, SupportValue, Workload,
 };
 
 use qsl_forms::{
@@ -285,14 +285,17 @@ pub enum ProbabilisticCause {
         /// The expression's span.
         span: Span,
     },
-    /// A second `workload` of one name: a claim names a workload by its
-    /// name alone. QSL-proposed; FR-185 names no cause for it.
-    /// `conflicting_declaration`/`duplicate-declaration`.
+    /// A second `workload` of a name already declared on any model of the
+    /// package: a workload name is package-wide (FR-185, FR-186).
+    /// `conflicting_declaration`/`duplicate-declaration` (QSpec FR-272).
     DuplicateWorkload {
-        /// The workload.
+        /// The workload name: the refusal's `subject`.
         workload: String,
         /// The second declaration's name span.
         span: Span,
+        /// Both declarations' name spans, in source order: the refusal's
+        /// `related`.
+        related: [Span; 2],
     },
     /// A quantity literal in a function body or clause: it types, but the
     /// checked package has no literal form for a quantity to emit it as.
@@ -336,6 +339,16 @@ impl ProbabilisticCause {
             | Self::DuplicateWorkload { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
             Self::QuantityLiteral | Self::RandomReadInPrecondition { .. } => None,
+        }
+    }
+
+    /// The declarations this refusal relates, in source order: both
+    /// workloads of a repeated name; none for every other cause.
+    pub fn related(&self) -> &[Span] {
+        if let Self::DuplicateWorkload { related, .. } = self {
+            related
+        } else {
+            &[]
         }
     }
 

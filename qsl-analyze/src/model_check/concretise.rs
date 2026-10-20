@@ -182,6 +182,16 @@ impl<'s, 'a> Lift<'s, 'a> {
         self.steps.len()
     }
 
+    /// The steps charged to the budget: every step of a reduced path, none
+    /// of a concrete one.
+    pub(super) fn charged(&self) -> usize {
+        if self.reduced {
+            self.steps.len()
+        } else {
+            0
+        }
+    }
+
     /// The concrete steps.
     pub(super) fn into_steps(self) -> Vec<ModelStep> {
         self.steps

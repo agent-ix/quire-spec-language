@@ -15,11 +15,15 @@
 //! population's universe is the concrete universe of its source population
 //! (ADR-020 RM-2).
 //!
-//! A concrete state's abstract state is a function of the concrete state
-//! alone until history fields and hidden fields exist, so a product state is
-//! keyed by the concrete state's key and its mapped state's key. Hidden
-//! fields need the AX-2 candidate set and are refused before any state is
-//! explored. The liveness half (FR-143) is not built.
+//! A product state is the concrete state, its history values (FR-138) and,
+//! when the refinement has a hidden field, the AX-2 set of abstract states
+//! consistent with the behaviour so far (FR-142). Its key is the concrete
+//! state's key, the history values' key and the candidates' sorted state
+//! keys, so two paths that reach one concrete state with different history or
+//! candidates are two states. A run that holds hands over the simulation relation it found
+//! (FR-149): every stored product state, the position of each initial state
+//! and every edge with the `Taken` that `check_step` returned, for the
+//! core's checker to recompute. The liveness half (FR-143) is not built.
 
 use std::collections::{BTreeMap, VecDeque};
 
@@ -29,11 +33,11 @@ use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, TransitionSystem};
 use qsl_foundation::InternalFault;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
-    check_initial, check_step, open_systems, ConcreteStep, CounterexampleKind, IncompleteCause,
-    ModelCheckLimit, ModelCheckLimits, ModelStep, ReachedLimit, RefinementFailure,
-    RefinementOutcome, RefinementPosition, RefinementSystems, RunStats, SafetyOutcome,
-    SafetyUndecided, StepResult, StepVerdict, SubjectRefusal, TemporalCounterexample,
-    UndefinedEvaluation, Undetermined,
+    check_initial, check_step, open_systems, CertifiedEdge, CertifiedPosition, ConcreteStep,
+    CounterexampleKind, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelStep,
+    ReachedLimit, RefinementFailure, RefinementOutcome, RefinementPosition, RefinementSystems,
+    RunStats, SafetyOutcome, SafetyUndecided, SimulationCertificate, StepResult, StepVerdict,
+    SubjectRefusal, Taken, TemporalCounterexample, UndefinedEvaluation, Undetermined,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
@@ -58,6 +62,10 @@ pub struct RefinementCheckRequest<'a> {
     pub limits: ModelCheckLimits,
 }
 
+/// A product state's key: the concrete state's key bytes, its history
+/// values' key and its candidates' sorted state keys.
+type ProductKey = (Vec<u8>, Vec<u8>, Vec<Vec<u8>>);
+
 /// One product state: the concrete state, the position `check_step` gave it,
 /// the step that first reached it (`None` for an initial state) and its
 /// breadth-first depth.
@@ -67,6 +75,8 @@ struct Node {
     depth: usize,
     parent: Option<(usize, ModelStep)>,
     initial_index: usize,
+    /// The edges out of the state, in canonical order, once it is expanded.
+    edges: Vec<CertifiedEdge>,
 }
 
 /// The first failing initial state or edge: the node it leaves, the step it
@@ -106,13 +116,6 @@ pub fn check_refinement(
     cancel: &Cancel,
 ) -> Result<RefinementOutcome, ModelCheckRefusal> {
     let refinement = request.refinement;
-    if refinement
-        .objects()
-        .iter()
-        .any(|object| !object.hidden.is_empty())
-    {
-        return Err(ModelCheckRefusal::HiddenFields);
-    }
     let RefinementSystems {
         concrete,
         abstract_system,
@@ -143,6 +146,7 @@ pub fn check_refinement(
         nodes: Vec::new(),
         known: BTreeMap::new(),
         queue: VecDeque::new(),
+        initial_positions: Vec::new(),
         transitions: 0,
         edges: 0,
         horizon_cut: false,
@@ -158,7 +162,16 @@ pub fn check_refinement(
                 depth: widen(run.max_depth.unwrap_or(0)),
                 stats: run.stats(),
             },
-            Ok(()) => SafetyOutcome::Holds { stats: run.stats() },
+            Ok(()) => match run.certificate() {
+                Ok(certificate) => SafetyOutcome::Holds {
+                    certificate: Box::new(certificate),
+                    stats: run.stats(),
+                },
+                Err(fault) => SafetyOutcome::Fault {
+                    fault,
+                    stats: run.stats(),
+                },
+            },
             Err(End::Refusal(refusal)) => return Err(refusal),
             Err(End::Undecided(cause)) => SafetyOutcome::Undecided {
                 cause,
@@ -193,9 +206,12 @@ struct Run<'r, 'a> {
     cancel: &'r Cancel,
     nodes: Vec<Node>,
     /// Each product state's index by its key: the concrete state's key
-    /// bytes and the mapped state's.
-    known: BTreeMap<(Vec<u8>, Vec<u8>), usize>,
+    /// bytes, its history values' key and its candidates' sorted state
+    /// keys.
+    known: BTreeMap<ProductKey, usize>,
     queue: VecDeque<usize>,
+    /// The position of each concrete initial state, in the subject's order.
+    initial_positions: Vec<usize>,
     /// FR-101's `max_transitions` count: every concrete edge explored and
     /// every abstract transition `check_step` judged or expanded.
     transitions: usize,
@@ -259,6 +275,8 @@ impl Run<'_, '_> {
             let (key, _) = Self::encoding(self.concrete.state_key(state))?;
             initial.push((key, index, state));
         }
+        let keys: Vec<Vec<u8>> = initial.iter().map(|(key, _, _)| key.clone()).collect();
+        let mut at_key = BTreeMap::new();
         // Equal keys coalesce into the first initial state that has the key.
         initial.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
         initial.dedup_by(|later, earlier| later.0 == earlier.0);
@@ -276,17 +294,28 @@ impl Run<'_, '_> {
                 index,
                 state.state(),
             );
-            let position = self.judge(verdict, None, None, index)?;
-            self.create(
-                key,
+            let (position, _) = self.judge(verdict, None, None, index)?;
+            let at = self.create(
+                key.clone(),
                 Node {
                     state: state.clone(),
                     position,
                     depth: 0,
                     parent: None,
                     initial_index: index,
+                    edges: Vec::new(),
                 },
             )?;
+            at_key.insert(key, at);
+        }
+        for key in keys {
+            let Some(&at) = at_key.get(&key) else {
+                return Err(End::Fault(InternalFault::new(
+                    "refinement-check",
+                    "every-initial-state-has-a-position",
+                )));
+            };
+            self.initial_positions.push(at);
         }
         while let Some(at) = self.queue.pop_front() {
             self.poll()?;
@@ -311,10 +340,13 @@ impl Run<'_, '_> {
             )));
         }
         let depth = self.nodes[at].depth;
-        if self.max_depth.is_some_and(|horizon| depth >= horizon) {
-            // A terminal state's stutter coalesces with the state itself, so
-            // only a real successor leaves anything unexplored.
-            self.horizon_cut |= !expansion.successors.is_empty();
+        if self.max_depth.is_some_and(|horizon| depth >= horizon)
+            && !expansion.successors.is_empty()
+        {
+            // A real successor beyond the horizon is left unexplored. A
+            // terminal state's stutter coalesces with the state itself, so
+            // it leaves nothing, and its edge is listed below like any other.
+            self.horizon_cut = true;
             return Ok(());
         }
         let mut edges = Vec::with_capacity(expansion.successors.len());
@@ -331,6 +363,7 @@ impl Run<'_, '_> {
             let (key, digest) = Self::encoding(self.concrete.state_key(&state))?;
             edges.push((Vec::new(), key, digest, None, state));
         }
+        let mut listed = Vec::with_capacity(edges.len());
         for (_, key, digest, transition, state) in edges {
             if self.transitions >= self.limits.limits.max_transitions {
                 return Err(Self::stopped(
@@ -357,34 +390,42 @@ impl Run<'_, '_> {
             self.transitions = self
                 .transitions
                 .saturating_add(usize::try_from(abstract_successors).unwrap_or(usize::MAX));
-            let edge = transition.map(|transition| ModelStep {
+            let step = transition.clone().map(|transition| ModelStep {
                 transition,
                 post_state: digest,
             });
             let initial_index = self.nodes[at].initial_index;
-            let position = self.judge(verdict, Some(at), edge.clone(), initial_index)?;
-            self.create(
+            let (position, taken) = self.judge(verdict, Some(at), step.clone(), initial_index)?;
+            let post = self.create(
                 key,
                 Node {
                     state,
                     position,
                     depth: depth.saturating_add(1),
-                    parent: edge.map(|edge| (at, edge)),
+                    parent: step.map(|step| (at, step)),
                     initial_index,
+                    edges: Vec::new(),
                 },
             )?;
+            listed.push(CertifiedEdge {
+                transition,
+                post: widen(post),
+                taken,
+            });
         }
+        self.nodes[at].edges = listed;
         Ok(())
     }
 
-    /// The position a passing verdict gives, or the end the verdict is.
+    /// The position and `Taken` a passing verdict gives, or the end the
+    /// verdict is.
     fn judge(
         &self,
         verdict: StepVerdict,
         from: Option<usize>,
         edge: Option<ModelStep>,
         initial_index: usize,
-    ) -> Result<RefinementPosition, End> {
+    ) -> Result<(RefinementPosition, Taken), End> {
         let failed = |failure, kind| {
             End::Violated(Box::new(Failure {
                 from,
@@ -395,7 +436,7 @@ impl Run<'_, '_> {
             }))
         };
         match verdict {
-            StepVerdict::Passes { post, .. } => Ok(post),
+            StepVerdict::Passes { post, taken } => Ok((post, taken)),
             StepVerdict::Fails(failure) => Err(failed(failure, CounterexampleKind::Formula)),
             StepVerdict::Undefined(evaluation) => {
                 let row = match &evaluation.site.locus {
@@ -430,18 +471,17 @@ impl Run<'_, '_> {
         }
     }
 
-    /// Add the product state of `node` unless one with its key exists.
-    fn create(&mut self, key: Vec<u8>, node: Node) -> Result<(), End> {
-        let [mapped] = node.position.abstract_states.as_slice() else {
-            return Err(End::Fault(InternalFault::new(
-                "refinement-check",
-                "one-abstract-state-without-hidden-fields",
-            )));
-        };
-        let (mapped_key, _) = Self::encoding(self.abstract_system.state_key_of(mapped))?;
-        let product = (key, mapped_key);
-        if self.known.contains_key(&product) {
-            return Ok(());
+    /// The index of the product state of `node`: the one with its key if it
+    /// exists, else the new one.
+    fn create(&mut self, key: Vec<u8>, node: Node) -> Result<usize, End> {
+        let history = Self::encoding(node.position.history.key(self.concrete))?;
+        let mut candidates = Vec::with_capacity(node.position.abstract_states.len());
+        for candidate in &node.position.abstract_states {
+            candidates.push(Self::encoding(self.abstract_system.state_key_of(candidate))?.0);
+        }
+        let product = (key, history, candidates);
+        if let Some(&existing) = self.known.get(&product) {
+            return Ok(existing);
         }
         if self.nodes.len() >= self.limits.limits.max_states {
             return Err(Self::stopped(
@@ -453,7 +493,45 @@ impl Run<'_, '_> {
         self.nodes.push(node);
         self.queue.push_back(at);
         self.known.insert(product, at);
-        Ok(())
+        Ok(at)
+    }
+
+    /// FR-149's certificate of the finished run: every stored product state
+    /// as the digests of its states, each initial state's position and each
+    /// state's edges.
+    fn certificate(&self) -> Result<SimulationCertificate, InternalFault> {
+        let encodes = |_| InternalFault::new("refinement-check", "state-encodes");
+        let mut positions = Vec::with_capacity(self.nodes.len());
+        for node in &self.nodes {
+            let concrete = self
+                .concrete
+                .state_key_of(&node.position.concrete)
+                .map_err(encodes)?
+                .1;
+            let abstract_states = node
+                .position
+                .abstract_states
+                .iter()
+                .map(|state| {
+                    self.abstract_system
+                        .state_key_of(state)
+                        .map(|(_, digest)| digest)
+                        .map_err(encodes)
+                })
+                .collect::<Result<_, _>>()?;
+            let history = node.position.history.key(self.concrete).map_err(encodes)?;
+            positions.push(CertifiedPosition {
+                concrete,
+                history,
+                abstract_states,
+            });
+        }
+        Ok(SimulationCertificate {
+            refinement: self.refinement.name().to_owned(),
+            positions,
+            initial: self.initial_positions.iter().map(|at| widen(*at)).collect(),
+            successors: self.nodes.iter().map(|node| node.edges.clone()).collect(),
+        })
     }
 
     /// The canonical counterexample: the breadth-first tree path to the
@@ -480,6 +558,7 @@ impl Run<'_, '_> {
             kind: failure.kind,
             lasso: None,
             refinement: Some(failure.failure),
+            blocked: Vec::new(),
         }
     }
 }

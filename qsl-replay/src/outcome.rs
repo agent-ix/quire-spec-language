@@ -221,6 +221,8 @@ pub struct ItemCause {
     #[serde(skip_serializing_if = "Option::is_none")]
     boundary_states: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    max_depth: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     reduction: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     form: Option<&'static str>,
@@ -274,6 +276,7 @@ impl ItemCause {
             value: None,
             setting: None,
             boundary_states: None,
+            max_depth: None,
             reduction: None,
             form: None,
             population: None,
@@ -314,7 +317,6 @@ impl ItemCause {
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
                 | InconclusiveCause::MappingUndetermined
-                | InconclusiveCause::SimulationCertificateNotBuilt
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::SolverInconclusive,
             ) => {}
@@ -344,6 +346,9 @@ impl ItemCause {
                 boundary_states,
             }) => {
                 item.boundary_states = Some(*boundary_states);
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionHorizon { max_depth }) => {
+                item.max_depth = Some(*max_depth);
             }
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
@@ -1458,6 +1463,10 @@ mod tests {
                     boundary_states: 12,
                 },
                 json!({"kind": "constraint-reached", "boundary_states": 12}),
+            ),
+            (
+                InconclusiveCause::ReductionHorizon { max_depth: 2 },
+                json!({"kind": "reduction-horizon", "max_depth": 2}),
             ),
         ] {
             let written =

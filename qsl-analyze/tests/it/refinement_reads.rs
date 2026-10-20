@@ -5,16 +5,16 @@
 //! reading order, and a fault wins.
 //!
 //! The `Reads` fixture is the ring buffer with an abstract `enq(x, y)`, the
-//! row `put -> enq(R, A1, A2)`, and for each of `R`, `A1`, `A2` and the
-//! post-state row `P` an expression that is cheap, over the meter budget `B`,
-//! or undefined. The post-history update `H` and a history out-of-type case
-//! need history fields (QSL-545) and are not built here.
+//! row `put -> enq(R, A1, A2)`, and for each of `R`, `A1`, `A2`, the
+//! post-history update `H` (a history field of `Slot`) and the post-state row
+//! `P` an expression that is cheap, over the meter budget `B`, undefined, or,
+//! for `H`, out of its declared type.
 
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{operation_identity_text, ModelSimState};
 use qsl_replay::{
-    check_step, open_systems, ConcreteStep, MappingRowRef, RefinementPosition, RefinementSystems,
-    StepArgument, StepVerdict, Undetermined,
+    check_step, initial_history, open_systems, ConcreteStep, HistoryValues, MappingRowRef,
+    RefinementPosition, RefinementSystems, StepArgument, StepVerdict, Undetermined,
 };
 use qsl_semantics::model::state::ModelState;
 use quire_exact::ScalarLimits;
@@ -30,6 +30,7 @@ const ITEMS_UNDEFINED: &str =
     "items = seq(i in 0 .. self.size - 1: only(s in R::slots where s.ring = self: s.value));";
 const CHEAP_RECEIVER: &str = "self.ring";
 const CHEAP_ARGUMENT: &str = "x";
+const UNDEFINED_RECEIVER: &str = "only(s in R::slots where s.ring = self.ring: s.ring)";
 const UNDEFINED_ARGUMENT: &str = "only(s in R::slots where s.ring = self.ring: s.value)";
 
 /// A condition that costs far more than any other expression of the fixture.
@@ -70,6 +71,7 @@ fn budget() -> u64 {
                 &systems.concrete,
                 &systems.abstract_system,
                 &state,
+                &HistoryValues::default(),
             )
             .is_ok()
         {
@@ -144,6 +146,7 @@ fn verdict(
     let (pre, post) = (pre(&systems.concrete), post(&systems.concrete));
     let (transition, reached) = step_between(&systems, &pre, &post);
     let position = RefinementPosition {
+        history: initial_history(world.refinement(), &systems.concrete, &pre),
         concrete: pre,
         abstract_states: vec![systems.abstract_system.initial_states()[0].state().clone()],
     };
@@ -203,7 +206,7 @@ fn items_row() -> MappingRowRef {
 /// `Undefined` at `A1`; an over-budget `A1` and an undefined post-state row
 /// `P` give `Undefined` at `P`; two undefined arguments give `Undefined` at
 /// `A1`; a swapped system with `A1` undefined gives a fault.
-#[trace("TC-555")]
+#[trace("TC-555", "FR-141-AC-10")]
 #[test]
 fn an_undefined_row_outranks_an_over_budget_one_read_before_it() {
     let b = budget();
@@ -247,7 +250,7 @@ fn an_undefined_row_outranks_an_over_budget_one_read_before_it() {
 /// TC-555 step 6: an over-budget argument with nothing undefined is
 /// `Undetermined` at that argument, and a post-state row of an unmapped type
 /// with nothing undefined is `Undetermined` at that row.
-#[trace("TC-555")]
+#[trace("TC-555", "FR-141-AC-10")]
 #[test]
 fn an_over_budget_or_unmapped_row_with_nothing_undefined_is_undetermined() {
     let b = budget();
@@ -312,4 +315,158 @@ fn sub_of<'a>(sub: &RingSpec<'a>) -> RingSpec<'a> {
         size: sub.size,
         next: sub.next,
     }
+}
+
+/// The update of the history field `h` of `Slot` by `put` that is `update`,
+/// added to `reads`' refinement.
+fn with_history(world_text: &str, update: &str) -> String {
+    world_text.replace(
+        "step R::Slot::put",
+        &format!("history R::Slot.h : Int[0, 1] = 0 {{ on R::Slot::put : {update}; }}\nstep R::Slot::put"),
+    )
+}
+
+/// The `Reads` world whose history field `h` is updated by `update`, with
+/// `enq(R, A1, A2)` and the `items` row `items`.
+fn reads_history(update: &str, first: &str, items: &str) -> RingWorld {
+    let refinement = with_history(
+        &ring_is_queue(items).replace(
+            "enq(self.ring, x)",
+            &format!("enq({CHEAP_RECEIVER}, {first}, {CHEAP_ARGUMENT})"),
+        ),
+        update,
+    );
+    RingWorld::with(
+        Variant {
+            two_args: true,
+            ..Variant::default()
+        },
+        &refinement,
+    )
+}
+
+/// An update whose value is 2, outside `Int[0, 1]`, for `put(1)` on `s0`.
+const OUT_OF_TYPE: &str = "self.index + x + 1";
+/// An update that is undefined: two slots satisfy the condition.
+const UNDEFINED_UPDATE: &str = "only(s in R::slots where s.ring = self.ring: s.value)";
+
+fn history_row() -> MappingRowRef {
+    MappingRowRef::History {
+        object_type: key(RING, "Slot"),
+        field: "h".to_owned(),
+        operation: key(RING, "Slot/put"),
+    }
+}
+
+/// `items` for a post-state row `P` over the meter budget, which costs far
+/// more than the rest of the fixture wherever the ring holds an item.
+fn items_over_budget() -> String {
+    format!(
+        "items = seq(i in 0 .. self.size - 1: only(s in R::slots where s.ring = self and s.index{} = (self.head + i) mod 2: s.value));",
+        " + 0".repeat(400)
+    )
+}
+
+/// FR-141-AC-10 (TC-555 step 6): an out-of-type post-history update `H` and
+/// an over-budget post-state row `P` with nothing undefined is
+/// `Undetermined` naming `H`; an out-of-type `H` and an over-budget `A1` is
+/// `Undetermined` naming `A1`, which is read first.
+#[trace("TC-555", "FR-141-AC-10")]
+#[test]
+fn an_out_of_type_update_is_undetermined_at_the_first_undetermined_read() {
+    let b = budget();
+    let world = reads_history(OUT_OF_TYPE, CHEAP_ARGUMENT, &items_over_budget());
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undetermined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), history_row());
+
+    let world = reads_history(OUT_OF_TYPE, &over_budget_argument(), ITEMS);
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undetermined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), parameter(0));
+}
+
+/// FR-141-AC-10 (TC-555 step 6): an undefined `H` with an undefined `P` is
+/// `Undefined` at `H`, which is read first; an out-of-type `H` with an
+/// undefined `P` is `Undefined` at `P`, since an undefined read outranks an
+/// undetermined one read before it.
+#[trace("TC-555", "FR-141-AC-10")]
+#[test]
+fn an_undefined_update_is_read_before_the_post_state_rows() {
+    let b = budget();
+    let world = reads_history(UNDEFINED_UPDATE, CHEAP_ARGUMENT, ITEMS_UNDEFINED);
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undefined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), history_row());
+
+    let world = reads_history(OUT_OF_TYPE, CHEAP_ARGUMENT, ITEMS_UNDEFINED);
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undefined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), items_row());
+}
+
+/// TC-555 step 6: an undefined receiver and an undefined `A1` give
+/// `Undefined` at the receiver, which is read first; an undefined `A1` and
+/// an undefined post-state row give `Undefined` at `A1`.
+#[trace("TC-555", "FR-141-AC-10")]
+#[test]
+fn the_first_undefined_read_is_reported() {
+    let b = budget();
+    let world = reads(
+        Variant::default(),
+        UNDEFINED_RECEIVER,
+        UNDEFINED_ARGUMENT,
+        CHEAP_ARGUMENT,
+        ITEMS,
+    );
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undefined(_)), "{found:?}");
+    assert_eq!(
+        locus_row(&found),
+        MappingRowRef::Argument {
+            operation: key(RING, "Slot/put"),
+            argument: StepArgument::Receiver,
+        }
+    );
+
+    let world = reads(
+        Variant::default(),
+        CHEAP_RECEIVER,
+        UNDEFINED_ARGUMENT,
+        CHEAP_ARGUMENT,
+        ITEMS_UNDEFINED,
+    );
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undefined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), parameter(0));
+}
+
+/// FR-141-AC-10 (TC-555 step 6): an over-budget `H` is not evaluated into the
+/// rows, but a post-state row that does not read it and is undefined is
+/// `Undefined` at that row: an undefined read anywhere wins over the update's
+/// `Undetermined`.
+#[trace("TC-555", "FR-141-AC-10")]
+#[test]
+fn an_undefined_row_wins_over_an_over_budget_update() {
+    let b = budget();
+    let world = reads_history(&over_budget_argument(), CHEAP_ARGUMENT, ITEMS_UNDEFINED);
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undefined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), items_row());
+}
+
+/// FR-138 / FR-141 (TC-555 step 6): a row of the ring that reaches `h` of
+/// another object through a population read is not evaluated at a stand-in
+/// either. `h` of `s0` leaves its type, and the `items` row reads `s.h` as
+/// `1 mod (0 - s.h)`, which is undefined at the value the step started from
+/// and defined at the computed 2: the step is `Undetermined` naming `h`.
+#[trace("TC-555", "FR-141-AC-10")]
+#[test]
+fn a_row_reaching_a_failed_field_through_a_population_is_undetermined() {
+    let b = budget();
+    let items = "items = seq(i in 0 .. self.size - 1: only(s in R::slots where s.ring = self and s.index + 0 = (self.head + i) mod 2: if 1 mod (0 - s.h) = 0 then s.value else s.value));";
+    let world = reads_history(OUT_OF_TYPE, CHEAP_ARGUMENT, items);
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undetermined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), history_row());
 }

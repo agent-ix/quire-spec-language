@@ -12,7 +12,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
-    identity_string, ModelQueryRefusal, NavigationRefusal, PreconditionFailure,
+    identity_string, HistoryUnresolved, ModelQueryRefusal, NavigationRefusal, PreconditionFailure,
     ProtocolClauseSnapshot, ProtocolClauseUnsupported, ProtocolReferenceUnsupported,
     ReferenceUnresolved, StateModelUndefined,
 };
@@ -789,6 +789,18 @@ impl<'a, 'm> Machine<'a, 'm> {
         arguments: Vec<Value>,
     ) -> Result<Evaluation, InternalFault> {
         self.enter_frame(slots, arguments);
+        self.drive(root)
+    }
+
+    /// [`Self::run`] over a frame given slot by slot: `frame[i]` is local
+    /// slot `i`, `None` for a slot the body may bind but is not given
+    /// (ADR-027 ST-1: a protocol slot reads only the binders bound at it).
+    pub(crate) fn run_frame(
+        mut self,
+        root: CheckedNode<'a>,
+        frame: Vec<Option<Value>>,
+    ) -> Result<Evaluation, InternalFault> {
+        self.frames.push(frame);
         self.drive(root)
     }
 
@@ -1809,6 +1821,22 @@ impl<'a, 'm> Machine<'a, 'm> {
                     Some(&read_reference),
                 );
                 value
+            }
+            NodeKind::History { field, .. } => {
+                let Value::Reference(reference) = self.pop()? else {
+                    return Err(invariant("history-reference-value-expected"));
+                };
+                // FR-138: a history field is the refinement's, kept beside
+                // the observation; `pre(..)` reads the pre-state's.
+                // A failed update leaves no value to read: undetermined.
+                self.objects_for(node)?
+                    .history(&reference, field)
+                    .cloned()
+                    .ok_or_else(|| {
+                        Halt::Family(FamilyResult::Refused(Box::new(HistoryUnresolved {
+                            field: field.clone(),
+                        })))
+                    })?
             }
             NodeKind::Present(_) => {
                 let Value::Option(option) = self.pop()? else {

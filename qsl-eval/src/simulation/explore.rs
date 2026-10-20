@@ -12,6 +12,7 @@ use quire_exact::ValueType;
 use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::simulation::expansion::{Expansion, ExpansionStop, StateFindings};
+use crate::simulation::footprint::Footprint;
 use crate::simulation::frontier::{Frontier, Limit};
 use crate::simulation::key::{EncodingRefusal, StateKey};
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
@@ -91,6 +92,16 @@ pub trait TransitionSystem {
         _state: &Self::State,
         _constraint: &str,
     ) -> Option<Result<ConstraintValue, ExpansionStop>> {
+        None
+    }
+
+    /// FR-162: the footprint of `transition`, a function of the transition
+    /// identity alone (FR-155 "State-free"); `None` when the system does not
+    /// offer partial-order reduction.
+    fn footprint(
+        &self,
+        _transition: &Self::TransitionId,
+    ) -> Option<Result<Footprint, ExpansionStop>> {
         None
     }
 }

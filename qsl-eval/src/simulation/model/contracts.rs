@@ -13,7 +13,7 @@ use crate::simulation::expansion::{ExpansionLimit, ExpansionStop};
 use crate::value::{CheckedPackageEvaluation, ClauseSetOutcome};
 
 /// How one clause evaluation decided.
-pub(super) enum Verdict {
+pub(crate) enum Verdict {
     True,
     False,
     Undecided(ClauseOutcome),
@@ -23,7 +23,7 @@ pub(super) enum Verdict {
 ///
 /// A `match` over [`FamilyOutcome`] would have to name its probe-only variant
 /// (FR-063), so the two real arms are tested in turn.
-pub(super) fn verdict(outcome: &FamilyOutcome<Value>) -> Verdict {
+pub(crate) fn verdict(outcome: &FamilyOutcome<Value>) -> Verdict {
     if let FamilyOutcome::Evaluated(kernel) = outcome {
         return match kernel {
             Outcome::Completed(Value::Boolean(true)) => Verdict::True,

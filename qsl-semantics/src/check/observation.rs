@@ -143,7 +143,9 @@ impl<'n> Walk<'n> {
                 self.results.push(self.binders.get(slot).copied().flatten());
                 Exit::Pass
             }
-            NodeKind::Attribute { reference, .. } | NodeKind::Navigate { reference, .. } => {
+            NodeKind::Attribute { reference, .. }
+            | NodeKind::History { reference, .. }
+            | NodeKind::Navigate { reference, .. } => {
                 children.push(visit(*reference));
                 Exit::Attribute(node.location(), ambient)
             }

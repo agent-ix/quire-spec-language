@@ -28,6 +28,7 @@
 //! [`TypeForm`], resolved to the kernel `ValueType` only at check (E3,
 //! ADR-013 O-14/C-26). See `syntax::TypeForm`'s own doc.
 
+mod abstraction_declaration;
 mod clause_text;
 mod dispatch;
 mod hyper_clause;
@@ -45,6 +46,10 @@ mod terminal_declaration;
 mod time_model;
 mod value;
 
+pub use abstraction_declaration::{
+    AbstractionBindingForm, AbstractionDeclarationForm, FieldBindingForm, FrameBindingForm,
+    ObjectBindingForm, ParameterBindingForm, PopulationBindingForm, RustSpelling,
+};
 pub use clause_text::{parse_clause_text, ClauseTextRefusal};
 pub use dispatch::{
     build_unit, FormsCause, FormsRefusal, LeadingTokenKind, ParsedForm, ParsedUnit,
@@ -55,8 +60,8 @@ pub use hyper_clause::{
 };
 pub use protocol_control::{
     AccessOrdering, AwaitForm, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
-    ChannelOverflow, FenceForm, JoinPolicy, LoopProofForm, LossSelector, MemoryModelName,
-    Outstanding, ParallelForm, ProtocolMemberForm, RepeatForm, SchedulingForm, TerminalForm,
+    ChannelOverflow, FenceForm, JoinPolicy, LoopProofForm, LossSelector, Outstanding, ParallelForm,
+    ProtocolMemberForm, RepeatForm, SchedulingForm, TerminalForm,
 };
 pub use refinement::{
     AbstractSideForm, ArgumentForm, FairnessRowForm, FairnessSide, FieldRowForm,

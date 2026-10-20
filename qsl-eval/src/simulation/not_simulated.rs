@@ -11,6 +11,12 @@ use quire_semantic_value::declaration::TypeEnvironment;
 
 use crate::simulation::key::EncodingRefusal;
 
+/// The type positions the requires-bound pre-check visits at most, for every
+/// caller that classifies a subject's roots: the model check, the closure
+/// certificate check and replay classify the same roots under this one
+/// limit, so they agree on what is bounded.
+pub const BOUND_POSITIONS: u64 = 1 << 20;
+
 /// Every unbounded domain a `requires-bound` request named, by key, with its
 /// kind (ADR-014 §4).
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -7,12 +7,14 @@
 //! replay never disagree about what the abstract model saw.
 
 mod failure;
+mod history;
 mod map;
 mod outcome;
 mod step;
 mod subject;
 
 pub use failure::{RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, Undetermined};
+pub use history::{initial_history, step_history, HistoryValues};
 pub use map::{
     map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingRowRef,
     MappingUndetermined, ObjectKey, StepArgument,

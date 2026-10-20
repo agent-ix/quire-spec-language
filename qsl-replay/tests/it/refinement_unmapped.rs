@@ -6,7 +6,7 @@
 use ix_trace_rs::trace;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::UndefinedReason;
-use qsl_replay::{map_state, EvalFailure, MappingFailure, MappingRowRef};
+use qsl_replay::{map_state, EvalFailure, HistoryValues, MappingFailure, MappingRowRef};
 use quire_exact::Value;
 
 use crate::ring_world::{
@@ -58,9 +58,13 @@ fn a_reference_to_an_unmapped_type_is_undetermined_at_the_referencing_row() {
         ],
         &[],
     );
-    let Err(MappingFailure::Undetermined(undetermined)) =
-        map_state(world.refinement(), &concrete, &abstracted, &state)
-    else {
+    let Err(MappingFailure::Undetermined(undetermined)) = map_state(
+        world.refinement(),
+        &concrete,
+        &abstracted,
+        &state,
+        &HistoryValues::default(),
+    ) else {
         panic!("the mapping is undetermined");
     };
     assert_eq!(undetermined.cause, EvalFailure::UnmappedType(sub));
@@ -81,8 +85,14 @@ fn a_reference_to_an_unmapped_type_is_undetermined_at_the_referencing_row() {
         ],
         &[],
     );
-    let mapped =
-        map_state(world.refinement(), &concrete, &abstracted, &state).expect("the state maps");
+    let mapped = map_state(
+        world.refinement(),
+        &concrete,
+        &abstracted,
+        &state,
+        &HistoryValues::default(),
+    )
+    .expect("the state maps");
     let queue = &mapped.visible.populations[&key(QUEUE, "queues")]["a"];
     let Some(Value::Reference(next)) = queue.fields.get(&key(QUEUE, "Queue/next")) else {
         panic!("a.next is a reference");
@@ -124,6 +134,7 @@ fn an_undefined_row_outranks_an_unmapped_type_that_sorts_first() {
         &concrete,
         &abstracted,
         &state(&concrete),
+        &HistoryValues::default(),
     ) else {
         panic!("the undefined row outranks the unmapped type");
     };
@@ -148,6 +159,7 @@ fn an_undefined_row_outranks_an_unmapped_type_that_sorts_first() {
         &concrete,
         &abstracted,
         &state(&concrete),
+        &HistoryValues::default(),
     ) else {
         panic!("the unmapped type is the failure");
     };
@@ -168,8 +180,14 @@ fn a_population_reference_row_maps_element_by_element() {
     let concrete = world.concrete_system();
     let abstracted = world.abstract_system();
     let state = crate::ring_world::ring_state(&concrete, 1, 2, [0, 1]);
-    let mapped =
-        map_state(world.refinement(), &concrete, &abstracted, &state).expect("the state maps");
+    let mapped = map_state(
+        world.refinement(),
+        &concrete,
+        &abstracted,
+        &state,
+        &HistoryValues::default(),
+    )
+    .expect("the state maps");
     let queue = &mapped.visible.populations[&key(QUEUE, "queues")]["r"];
     let Some(Value::Collection(cells)) = queue.fields.get(&key(QUEUE, "Queue/cells")) else {
         panic!("cells is a collection");
@@ -223,9 +241,13 @@ fn the_reported_failure_does_not_depend_on_the_source_order_of_the_rows() {
                     ("b1", "b", 1, 1),
                 ],
             );
-            let Err(MappingFailure::Undefined { row, object, .. }) =
-                map_state(world.refinement(), &concrete, &abstracted, &state)
-            else {
+            let Err(MappingFailure::Undefined { row, object, .. }) = map_state(
+                world.refinement(),
+                &concrete,
+                &abstracted,
+                &state,
+                &HistoryValues::default(),
+            ) else {
                 panic!("the mapping is undefined");
             };
             assert_eq!(object.expect("an object").key, "a");
