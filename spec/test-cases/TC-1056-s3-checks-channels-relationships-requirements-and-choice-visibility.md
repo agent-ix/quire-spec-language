@@ -14,7 +14,7 @@ Verify that S3 checks each channel's roles, payload, ordering and premises,
 each relationship declaration and `related by` clause, each `requires temporal`
 requirement and the owner and visible facts of each `choice` and `repeat`, and
 refuses each mutation with its code, cause, span and retained members. Scope:
-FR-218-AC-2, FR-218-AC-10 to FR-218-AC-20 and FR-218-AC-26.
+FR-218-AC-2, FR-218-AC-10 to FR-218-AC-20, FR-218-AC-26 and FR-218-AC-27.
 
 Catches a channel with an undeclared role that checks, a send typed differently
 from its channel that checks, a relationship bound to its written name instead of
@@ -97,6 +97,7 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 48 | the base's activation replaced by `activation on each (x: M::Plain)` and the choice `by Buyer visible (x.ready)` reading `x.ready` | the same refusal with `reason` `ineligible-kind` (the protocol's activation binder) |
 | 49 | the base's `finish Closed` kept and a choice in the run reading `closed.ready`, listed in `visible` | `missing_declaration`/`missing-name` at each read of `closed`, as an out-of-scope read, and no `wrong-observation` refusal: no decision reaches a `finish` record (FR-218-AC-17) |
 | 50 | row 35's first case (the receive in `branch left`, the choice in `branch right`) with `visible (true)` | `missing_declaration`/`missing-name` at each read of `got` and no `wrong-observation` refusal: the read is out of scope and also unlisted, and the scope refusal precedes the decision-fact refusal (FR-218-AC-17) |
+| 51 | a second protocol `Billing` in the unit that declares `channel Pay` with `Pipeline`'s premises | checks; two checked channels, `Pipeline`'s `Pay` and `Billing`'s `Pay`, recorded under their protocols' qualified identities with the handle `Pay`; the qualified names differ (FR-218-AC-27) |
 
 ## Expected Results
 
