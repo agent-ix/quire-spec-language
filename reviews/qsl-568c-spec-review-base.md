@@ -67,3 +67,12 @@ range, horizon-overflow and S4 cases, and TC-621's scope and steps 1 to 5.
 FR-143-AC-1 to AC-4 move to the `HoldsReduced{reductions: []}` and typed-cause
 forms, and TC-548 steps 1 to 4 do the same. FR-185 "Package emission" gains
 `probabilistic-claim`, which FR-186-AC-5 verifies.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c524fa192: AC-4 and TC-621 step 4 add reordered fairness constraints, reordered reward operations, a subject-only and an over-type-only difference. |
+| FND-002 | fixed | c524fa192: AC-6 names Checked(HoldsReduced{reductions: []}) for the weak variant, and TC-548 step 6 covers it. |
+| FND-003 | fixed | c524fa192: AC-3 states the trace-subject refusal once. |
+| FND-004 | fixed | c524fa192: AC-5 and TC-621 step 5 name ill_typed/type-mismatch for both steps thresholds. |

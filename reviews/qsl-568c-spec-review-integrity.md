@@ -78,3 +78,18 @@ wire cause and code against ADR-018 V-8 and the code's
 `unsupported_projection` mapping, are correct. The new causes
 `trace-subject`, `unbounded-event` and `not-temporal-profile` are listed with
 the other STD-188 causes.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c524fa192: bullet 3 now applies 'whatever the safety half is' and bullet 4 adds 'no strong constraint'; FR-143-AC-6 adds the violated-safety case. |
+| FND-002 | fixed | c524fa192: bullet 3 is conditioned on 'no hidden field', Outputs and ADR-020 AX-6 name the hidden-field cause when both apply, and FR-143-AC-6 adds RegisterHistory with a strong ensure row. |
+| FND-003 | fixed | c524fa192: FR-143 Outputs defines the holding half as an empty reduction list and pins its settlement to Proved{Exhaustive, Uncertified}, never Reduced. The FR-160 row it cites is the constraint-only row, which describes a different source of an empty list, but the explicit settlement removes the ambiguity. |
+| FND-004 | fixed | c524fa192: the FR-126 comparison is gone; FR-143 states the refusal carries the fault and is not a RefinementOutcome. |
+| FND-005 | fixed | c524fa192: ADR-020 gains AX-6 (next in the AX-1..AX-5 sequence, no other AX-6 in the repo), and FR-143's Outputs comment and Dependencies cite AX-5 and AX-6 separately. |
+| FND-006 | fixed | c524fa192: a fraction bound outside (0, 1) is now the QSL-proposed cause fraction-bound-out-of-range (STD-188), and qualitative-threshold is restricted to the QSpec FR-407 thresholds. |
+| FND-007 | fixed | c524fa192: one-value-type rule for a reward name with the ambiguous-name refusal; FR-186-AC-6 covers it. |
+| FND-008 | fixed | c524fa192: one statement owns the five missing-name refusals, located at the name; FR-186-AC-6 covers them. |
+| FND-009 | fixed | c524fa192: the Description lists the fairness set. |
+| FND-010 | fixed | c524fa192: the subject's content is stated as the model alias as written and the domain package it selects. |

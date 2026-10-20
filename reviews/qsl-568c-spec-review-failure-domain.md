@@ -37,3 +37,16 @@ two obligations, so there is no collision. Two findings remain.
 Not mergeable, together with SR-13599. FND-001 needs one FR-144 statement
 that this PR can add beside FR-143's fault bullet. FND-002 is a one-line
 addition.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | FR-144's new sentence settles an item from a `check_refinement` refusal `failed` "with that fault and no half value". This agrees with FR-144's other fault rules (replay `InternalFault` and `StepVerdict::Fault` settle `failed`) and with FR-127's internal-fault row. But FR-144's Inputs still list only "A `RefinementOutcome` (FR-142, FR-143)", and its Outputs say every terminal record carries "each half's `TerminalValue`". So an item settled from a refusal breaks the Outputs statement, and its input is not declared. Fix: add "or the refusal `check_refinement` returned" to Inputs, and "(none for an item settled from a refusal)" to the Outputs record bullet. | spec/functional/FR-144-request-and-settle-a-refinement-item.md:55-57; spec/functional/FR-144-request-and-settle-a-refinement-item.md:67-70; spec/functional/FR-144-request-and-settle-a-refinement-item.md:112-115 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c524fa192: FR-144 settles a check_refinement refusal failed with the fault and no half value, consistent with its replay-fault and StepVerdict::Fault rules and FR-127's internal-fault row; FR-143-AC-7 and TC-548 step 7 trace it. FR-144's Inputs and Outputs were not updated to match (new FND-003). |
+| FND-002 | fixed | c524fa192: the overflow refusal is located at the operator whose bound makes the sum overflow; AC-5 checks it. |

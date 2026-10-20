@@ -52,7 +52,8 @@ beside it as a separate item.
 - A `CheckedRefinement` in the S4 package (FR-135).
 - The request's concrete subject and the abstract subject's initial
   snapshots.
-- A `RefinementOutcome` (FR-142, FR-143), and for a `Violated` half the
+- A `RefinementOutcome` (FR-142, FR-143) or the refusal `check_refinement`
+  returned, and for a `Violated` half the
   FR-072 result of replaying its counterexample (FR-145) or the
   `ReplayRefusal` that stopped it.
 
@@ -65,7 +66,8 @@ beside it as a separate item.
 - `InconclusiveCause::MappingUndetermined` beside FR-127's causes, written
   on the wire as cause `mapping-undetermined` (QSpec FR-379).
 - One FR-331 terminal record per refinement item, carrying the item's
-  `TerminalValue`, each half's `TerminalValue`, the method
+  `TerminalValue`, each half's `TerminalValue` (none for an item settled from a
+  refusal), the method
   `explicit-state`, its QSpec FR-360 label, QSpec FR-243
   basis and O-16 category by FR-127's table.
 

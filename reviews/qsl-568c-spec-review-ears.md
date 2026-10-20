@@ -42,3 +42,11 @@ can go into the fix round for SR-13599. The other edited statements conform:
 the fault bullet and each refusal bullet are well-formed unwanted-behaviour
 statements, and the FR-185 "Package emission" statement and the S4 bullet of
 FR-186 are well-formed event statements.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c524fa192: the normal-form rules are now one SHALL with content and non-content lists. |
+| FND-002 | fixed | c524fa192: bullet 3 keeps its condition and SHALLs; the rationale moved to the Description. |
+| FND-003 | fixed | c524fa192: one comparison-threshold bullet; the (0, 1) range lives only in the refusal bullet. |
