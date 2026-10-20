@@ -1658,6 +1658,34 @@ pub fn admit_current_snapshot(
     )
 }
 
+/// FR-330: one snapshot of a temporal clause's trace, admitted as
+/// [`admit_current_snapshot`] admits it, except that `required`, the
+/// populations the clause's `holds` atoms name (FR-391), are required to be
+/// complete (FR-106 check 7), repeatedly through their reference fields and
+/// relationship ends: a trace over one not listed `complete` is `Incomplete`
+/// `incomplete_population`/`incomplete-scope`, as a state clause's
+/// observation is.
+#[allow(clippy::too_many_arguments)]
+pub fn admit_trace_snapshot(
+    model_selections: &[DomainPackageRef],
+    types: &TypeEnvironment,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    selected: &DocumentRef,
+    limits: ObservationLimits,
+    required: &[String],
+) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
+    admit_current_environment(
+        model_selections,
+        types,
+        (packages, model_limits),
+        (provision, selected, limits),
+        &[],
+        required,
+    )
+}
+
 /// FR-098 step 3: a replayed function's object environment, admitted as
 /// [`admit_current_snapshot`] admits it, except that the populations holding
 /// an object that equals one of the converted `arguments` are required to be
@@ -1673,6 +1701,30 @@ pub fn admit_object_environment(
     selected: &DocumentRef,
     limits: ObservationLimits,
     arguments: &[ObjectReference],
+) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
+    admit_current_environment(
+        model_selections,
+        types,
+        (packages, model_limits),
+        (provision, selected, limits),
+        arguments,
+        &[],
+    )
+}
+
+/// One current snapshot's object environment, with the populations holding
+/// `arguments` and the populations `required` required to be complete.
+fn admit_current_environment(
+    model_selections: &[DomainPackageRef],
+    types: &TypeEnvironment,
+    (packages, model_limits): (&BTreeMap<[u8; 32], Vec<u8>>, ModelNormalizationLimits),
+    (provision, selected, limits): (
+        &BTreeMap<[u8; 32], Vec<u8>>,
+        &DocumentRef,
+        ObservationLimits,
+    ),
+    arguments: &[ObjectReference],
+    required: &[String],
 ) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
     let views = model_views(model_selections, packages, model_limits)?;
     let read = read_document(DocumentKind::Snapshot, provision, selected, limits)?;
@@ -1692,6 +1744,7 @@ pub fn admit_object_environment(
         snapshot,
         &read.identity,
         arguments,
+        required,
         model_limits.ancestor_steps,
     )?;
     Ok((admitted.environment, read.usage))

@@ -1576,12 +1576,16 @@ pub enum CheckCause {
     MissingName(String),
     /// `missing_declaration` / `missing-name` for the population segment of
     /// a two-segment `M::P` name (FR-391 "Resolution"), located at that
-    /// segment: `segment` starts `offset` bytes into the written name.
+    /// segment: it starts `offset` bytes into the written name.
     MissingSegment {
         /// The name as written.
         name: String,
         /// The byte offset of the segment that names nothing.
         offset: usize,
+        /// The name's own span, when the form that writes it records one
+        /// (a population form's domain); otherwise the name is the node at
+        /// the refusal's location.
+        span: Option<Span>,
     },
     /// `missing_declaration` / `missing-name` for `self` written where no
     /// state clause binds it (FR-104): a typed cause, not a `MissingName`

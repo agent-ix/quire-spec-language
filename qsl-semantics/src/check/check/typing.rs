@@ -41,6 +41,7 @@ use qsl_forms::{
     FieldInitializer, PopulationForm,
 };
 use qsl_foundation::absence::AbsenceMode;
+use qsl_foundation::Span;
 use quire_exact::{
     ArithmeticOperator, CollectionKind, CollectionType, IllTypedCause, Integer, IntegerInterval,
     NodeKey, OrderingOperator, Value, ValueType,
@@ -129,12 +130,19 @@ fn ambiguous_alias(name: &str, location: &Location) -> CheckRefusal {
 /// names no population here, located at its second segment (FR-391
 /// "Resolution").
 fn missing_segment(name: &str, location: &Location) -> CheckRefusal {
+    missing_segment_at(name, location, None)
+}
+
+/// [`missing_segment`] for a name written at `span`, when its form records
+/// one (an empty span is a form not read from a source unit).
+fn missing_segment_at(name: &str, location: &Location, span: Option<Span>) -> CheckRefusal {
     let offset = name.rfind("::").map_or(0, |at| at + 2);
     refuse(
         location,
         CheckCause::MissingSegment {
             name: name.to_owned(),
             offset,
+            span: span.filter(|span| span.start < span.end),
         },
     )
 }
@@ -1321,12 +1329,12 @@ impl<'a> Typer<'a> {
                 form,
                 binder,
                 population,
-                population_span: _,
+                population_span,
                 condition,
                 body,
             } => {
                 return self.population_form(
-                    (*form, binder, population),
+                    (*form, binder, population, *population_span),
                     (
                         condition.map(|id| expression.at(id)),
                         body.map(|id| expression.at(id)),
@@ -2742,7 +2750,7 @@ impl<'a> Typer<'a> {
     /// Start `form(binder in population where c [: e])` (FR-139).
     fn population_form<'e, 'r>(
         &mut self,
-        (form, binder, population): (PopulationForm, &'e str, &str),
+        (form, binder, population, population_span): (PopulationForm, &'e str, &str, Span),
         (condition, body): (Option<ExprRef<'e>>, Option<ExprRef<'e>>),
         location: Location,
         frames: &mut Vec<Frame<'e, 'r>>,
@@ -2758,9 +2766,10 @@ impl<'a> Typer<'a> {
                 match named.named(population).cloned() {
                     Some(named) => self.population_domain(&named, &location.child(0))?,
                     None if named.is_under_alias(population) => {
-                        return Err(refuse(
+                        return Err(missing_segment_at(
+                            population,
                             &location,
-                            CheckCause::MissingName(population.to_owned()),
+                            Some(population_span),
                         ))
                     }
                     None => {
@@ -2782,7 +2791,11 @@ impl<'a> Typer<'a> {
                         .iter()
                         .any(|known| known == population)
                     {
-                        CheckCause::MissingName(population.to_owned())
+                        return Err(missing_segment_at(
+                            population,
+                            &location,
+                            Some(population_span),
+                        ));
                     } else {
                         CheckCause::PopulationFormOutsideRefinement
                     },

@@ -177,6 +177,26 @@ fn an_unknown_population_or_an_alias_that_is_also_an_enum_refuses() {
         ("missing_declaration", "missing-name")
     );
     assert_eq!(at, "nothing");
+    // The domain of a population form, located at its second segment too
+    // (SR-12229 FND-008), in a state clause and in a function body.
+    for (declaration, segment) in [
+        (
+            "invariant N using v on M::Counter at current { count(o in M::nothing where true) = 0 }",
+            "nothing",
+        ),
+        (
+            "function F using v(): Boolean pure { count(o in M::counters where true) = 0 }",
+            "counters",
+        ),
+    ] {
+        let (code, cause, at) = refused(false, declaration);
+        assert_eq!(
+            (code.as_str(), cause.as_str()),
+            ("missing_declaration", "missing-name"),
+            "{declaration}"
+        );
+        assert_eq!(at, segment, "{declaration}");
+    }
     let (code, cause, at) = refused(false, &format!("enum M {{ a, b }}\n{ROOM}"));
     assert_eq!(
         (code.as_str(), cause.as_str()),

@@ -3012,6 +3012,7 @@ pub(super) fn admit_argument_populations(
     snapshot: &SnapshotDocument,
     document: &DocumentRef,
     arguments: &[ObjectReference],
+    named: &[String],
     ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     let values = admit_population_values(
@@ -3023,7 +3024,8 @@ pub(super) fn admit_argument_populations(
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
-    let required = values.populations_holding(arguments);
+    let mut required = values.populations_holding(arguments);
+    required.extend(named.iter().cloned());
     check_population_completeness(
         &snapshot.populations,
         &values.completeness,

@@ -16,9 +16,9 @@ use qsl_semantics::check::{CheckedGraph, FormulaNode};
 use qsl_semantics::family::{FamilyOutcome, FamilyResult};
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::observation::{
-    admit_observations, AdmissionFailure, AdmittedObservations, ClauseFacts, ClauseSelection,
-    ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts, Provisions,
-    SelectedAnchor, SelectedObject,
+    admit_observations, admit_trace_snapshot, AdmissionFailure, AdmittedObservations, ClauseFacts,
+    ClauseSelection, ClauseSelectionInput, DocumentRef, ObservationLimits, OperationFacts,
+    Provisions, SelectedAnchor, SelectedObject,
 };
 use qsl_semantics::model::operation::OperationLookup;
 use qsl_semantics::model::state::StateModel;
@@ -464,9 +464,10 @@ fn a_named_population_is_the_one_membership_read_and_is_not_emitted() {
 /// the precondition `Q` and the invariant `Cap`, each over `M::counters`,
 /// evaluate to the result of their `allInstances` spellings, and the `holds`
 /// atom of `C` reads the observed snapshot. Over a `counters` not listed
-/// `complete`, `P`, `Q` and `Cap` are `Incomplete` at admission, and the
-/// atom's read stops `incomplete_population`/`incomplete-scope` over an
-/// environment no clause naming `counters` admitted.
+/// `complete`, `P`, `Q` and `Cap` are `Incomplete` at admission, and so is
+/// `C`'s trace, whose snapshots require the populations its `holds` atoms
+/// name; over an environment admitted without that requirement the atom's
+/// read itself stops `incomplete_population`/`incomplete-scope`.
 #[trace("TC-1076", "FR-391-AC-7")]
 #[test]
 fn a_population_domain_evaluates_as_its_all_instances_spelling() {
@@ -541,8 +542,36 @@ fn a_population_domain_evaluates_as_its_all_instances_spelling() {
     assert_incomplete(unit.pre_call("Q", &pre, ("counters", "a")));
     assert_incomplete(unit.pre_call("GrowQ", &pre, ("widgets", "w1")));
     assert_incomplete(unit.current("Cap", &current, "a"));
-    // The `holds` atom over an environment a clause that names no
-    // population admitted: the read itself stops.
+    // `C`'s trace: each snapshot requires the populations its `holds` atoms
+    // name, so a trace over this one is `Incomplete` too.
+    let complete = unit.snapshot("trace-now", "current", counters, true);
+    let [clause] = unit.graph().temporal_clauses() else {
+        panic!("one temporal clause");
+    };
+    assert_eq!(clause.named_populations(), [ident("counters")]);
+    let trace = |snapshot: &DocumentRef| {
+        admit_trace_snapshot(
+            unit.graph().model_selections(),
+            unit.graph().scope().types(),
+            &unit.packages,
+            ModelNormalizationLimits::default(),
+            &unit.snapshots,
+            snapshot,
+            ObservationLimits::default(),
+            &clause.named_populations(),
+        )
+        .map(|_| ())
+    };
+    trace(&complete).expect("a complete counters admits");
+    let Err(AdmissionFailure::Incomplete(record)) = trace(&current) else {
+        panic!("the trace over an incomplete counters is Incomplete");
+    };
+    assert_eq!(
+        (record.code.as_str(), record.cause),
+        ("incomplete_population", "incomplete-scope")
+    );
+    // An environment admitted without that requirement (a clause that
+    // names no population): the atom's read itself still stops.
     let seen = unit
         .admit(
             "Seen",

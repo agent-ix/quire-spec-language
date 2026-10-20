@@ -601,6 +601,25 @@ impl TemporalClauseNode {
             .get(&atom.index())
             .map(|(body, slots)| (body.root(), *slots))
     }
+
+    /// The declaration identities of the populations the clause's `holds`
+    /// atoms name (FR-391), ascending and each once: each is required
+    /// (FR-106 check 7) in every snapshot of the trace the clause is read
+    /// over.
+    pub fn named_populations(&self) -> Vec<String> {
+        let mut named: Vec<String> = self
+            .conditions
+            .values()
+            .flat_map(|(body, _)| body.root().descendants())
+            .filter_map(|node| match node.kind() {
+                NodeKind::NamedPopulation { population, .. } => Some(population.node.clone()),
+                _ => None,
+            })
+            .collect();
+        named.sort();
+        named.dedup();
+        named
+    }
 }
 
 /// A checked standalone expression over named parameters. Its constructor

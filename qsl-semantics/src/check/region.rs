@@ -340,7 +340,21 @@ impl DeclarationRegions {
                 let span = SpanMemo::default().at(spans, &refusal.location)?;
                 region(&self.source, self.embedding.as_deref(), span)
             }
-            CheckCause::MissingSegment { offset, .. } => {
+            CheckCause::MissingSegment {
+                offset,
+                span: Some(span),
+                ..
+            } => region(
+                &self.source,
+                self.embedding.as_deref(),
+                Span {
+                    start: span.start.checked_add(*offset)?,
+                    end: span.end,
+                },
+            ),
+            CheckCause::MissingSegment {
+                offset, span: None, ..
+            } => {
                 let whole = self.region(&refusal.location)?;
                 let start = whole.start().checked_add(u64::try_from(*offset).ok()?)?;
                 SourceRegion::new(whole.source().clone(), start, whole.end()).ok()
