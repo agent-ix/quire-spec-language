@@ -60,13 +60,27 @@ order gives the same answer.
   reads, and `ctl(t)`; `W` SHALL be the frame's model locations, `bind(n,
   t)`, `ctl(t)`, and `inst(i)` when the step ends `t`'s branch body.
 - `event(n)` and `finish`: `R` the binders read and `ctl(t)`; `W`
-  `bind(n, t)`, `ctl(t)`, and `inst(i)` when the step ends a branch.
+  `bind(n, t)`, `ctl(t)`, and `inst(i)` when the step ends a branch. A step
+  that ends a branch SHALL write only that branch's disposition in
+  `inst(i)`. `finish` SHALL also read the `ctl` of every thread of its
+  protocol instance and write every `queue(h)` of it. An `event`, `send` or
+  `finish` whose record type holds a reference SHALL read the membership of
+  each population the reference ranges over.
 - `send(n)` and `receive(n)`: as `event(n)`, with `queue(h)` in both `R` and
   `W`. `duplicate(h, e)` and `lose(h, e)`: `queue(h)` in both.
-- `fork(p)` by `t`: `ctl(t)` in both; `W` also the new instance and its
-  threads' `ctl`. `join(p)` by `t`: `R` `inst(i)` and `ctl(t)`; `W`
+- `fork(p)` by `t`: `R` SHALL be `ctl(t)` and, for every ordinal `o` from 0
+  up to the ordinal the fork takes (the smallest ordinal no live sibling
+  holds), `inst(i_o)` of the parallel instance of `p` forked by `t` with
+  ordinal `o` and the `ctl` of every thread at or below each of its branch
+  threads; `W` SHALL be `ctl(t)`, the new instance and its threads' `ctl`.
+  The fork reads the earlier ordinals because the ordinal it takes depends
+  on which of them are live; without them, a non-commuting pair (a `repeat`
+  around a `parallel` whose `outstanding continue` join leaves a branch
+  running, with the step that ends that branch) would be reported
+  independent. `join(p)` by `t`: `R` `inst(i)` and `ctl(t)`; `W`
   `ctl(t)`, `inst(i)` and, under `outstanding cancel`, the `ctl` of every
-  branch thread of `i`. `timeout(a)`: `ctl(t)` in both.
+  branch thread of `i`, and for a branch that forked, the `ctl` of every
+  thread at or below it and the inner parallel instances. `timeout(a)`: `ctl(t)` in both.
 - A forward-effect step SHALL also write `reg(c, ·)`; a step that binds a
   trigger-type record SHALL read and write `reg(c, ·)` and write the new
   compensation thread's `ctl`; a commit-node step SHALL write `reg(c, ·)`.
@@ -99,17 +113,17 @@ order gives the same answer.
   their footprints. Two steps of one thread SHALL be dependent.
 - A step SHALL be visible to a claim when its write footprint meets a model
   location an atom of the claim reads, or an atom reads its position's
-  anchor and names its node or operation.
+  anchor and names its node, operation, channel, template or role.
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-216-AC-1 | In ADR-027 §7, `attempt(A)` and `attempt(B)` at s1 both write (`c`, `v`) and are dependent. In a variant where `B` applies `setTwo` to another object `d` under a receiver-scoped frame, the two attempts are independent, and for a claim over `d.v` only, `attempt(A)` is invisible and `attempt(B)` visible. | Test (TC-661) |
-| FR-216-AC-2 | In §7, `fork(Both)` writes `ctl` of `(0)`, `(0, Both, left, 0)` and `(0, Both, right, 0)` and `inst` of `Both`; `join(Both)` reads `inst` of `Both`. `fork`, `join` and `finish` are invisible to `always holds(k.v <= 3)`. Two steps of `left` are dependent. | Test (TC-661) |
-| FR-216-AC-3 | Under `join any … outstanding cancel` (FR-206-AC-3), `join`'s write footprint holds the `ctl` of every branch thread; under `outstanding continue` it holds none of theirs. A `receive`'s enabling footprint holds its channel's `queue`, and in `Chatter` (FR-212) the `send` and `receive` on `ch` are dependent while `attempt(Done)` and `duplicate(ch, Tx)` are independent. | Test (TC-661) |
+| FR-216-AC-2 | In §7, `fork(Both)` writes `ctl` of `(0)`, `(0, Both, left, 0)` and `(0, Both, right, 0)` and `inst` of `Both`; `join(Both)` reads `inst` of `Both`. `fork`, `join` and `finish` are invisible to `always holds(k.v <= 3)`. Two steps of `left` are dependent. `attempt(A)`, which ends branch `left`, writes `left`'s disposition in `inst(Both)` and not `right`'s; `finish` reads the `ctl` of every thread of its instance and, in `Chatter`, writes `queue(ch)`. In FR-205-AC-3's `repeat` protocol, the second `fork(P)` reads `inst` of ordinal 0 of `P` and the `ctl` of its branch threads, and is dependent with the attempt that ends instance 0's last running branch; the two orders of that pair reach states with different ordinals. | Test (TC-661) |
+| FR-216-AC-3 | Under `join any … outstanding cancel` (FR-206-AC-3), `join`'s write footprint holds the `ctl` of every branch thread; under `outstanding continue` it holds none of theirs. A `receive`'s enabling footprint holds its channel's `queue`, and in `Chatter` (FR-212) the `send` and `receive` on `ch` are dependent while `attempt(Done)` and `duplicate(ch, Tx)` are independent. When a branch of an `outstanding cancel` join holds a `parallel` that has forked, `join`'s write footprint also holds the `ctl` of every thread at or below that branch and the inner parallel instances. | Test (TC-661) |
 | FR-216-AC-4 | In ADR-027 §7.1, `event(Paid)` writes `reg(Refund, ·)`; `event(Fail)` reads and writes it and writes the compensation thread's `ctl`. For each step of §7.1, recomputing its post-state while changing a location outside its `R` leaves the post-state's change confined to its `W`. | Test (TC-661) |
-| FR-216-AC-5 | An attempt of `bump(by)` on receiver `c` with reference argument `d`, whose precondition reads `c.v`, whose postcondition reads `pre(d.w)` and whose binder constraint reads binder `a`, has an enabling footprint holding (`c`, `v`), (`d`, `w`), the membership of `c` and of `d`, `bind` of `a`, its own `ctl(t)`, and nothing else; a `duplicate(ch, Tx)` step's enabling footprint holds `queue(ch)` of its instance. Each footprint is a `Footprint{reads, writes, enabling}` with protocol locations as `Location::Protocol`. | Test (TC-661) |
+| FR-216-AC-5 | An attempt of `bump(by)` on receiver `c` with reference argument `d`, whose precondition reads `c.v`, whose postcondition reads `pre(d.w)` and whose binder constraint reads binder `a`, has an enabling footprint holding (`c`, `v`), (`d`, `w`), the membership of `c` and of `d`, `bind` of `a`, its own `ctl(t)`, and nothing else; a `duplicate(ch, Tx)` step's enabling footprint holds `queue(ch)` of its instance. An `event` whose record type holds a `Reference<Peer>` reads the membership of the `Peer` population. In `Chatter`, `send` on `ch` is visible to an atom that reads its position's anchor and names `ch` and invisible to one naming another channel; the same holds for a template (`cattempt` of a compensation template) and for a role (a step `by` it). Each footprint is a `Footprint{reads, writes, enabling}` with protocol locations as `Location::Protocol`. | Test (TC-661) |
 
 ## Dependencies
 

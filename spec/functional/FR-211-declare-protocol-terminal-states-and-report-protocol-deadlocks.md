@@ -68,8 +68,9 @@ opts out.
 - For a deadlock counterexample: `blocked: Vec<BlockedThread{path,
   rest_point, cause: WaitCause}>` for its last state, with `WaitCause` one
   of `Precondition{clause}`, `NoPostState`, `Constraint`,
-  `EmptyQueue{channel}`, `JoinWaiting{threads}`, `CheckFalse{node}` and
-  `Gate`.
+  `EmptyQueue{channel}`, `HeadBlocked{channel}`, `FullQueue{channel}`,
+  `Displaced{channel}`, `JoinWaiting{threads}`, `CheckFalse{node}` and
+  `Gate`, each channel in its qualified name.
 
 ## Behavior
 
@@ -106,7 +107,16 @@ opts out.
   `deadlocked` read by this FR.
 - A deadlock counterexample SHALL carry, for its last state, each waiting
   thread's path, rest point and wait cause, computed from the step rules
-  that disable it (FR-206).
+  that disable it (FR-206). A thread has one cause, the first that applies.
+- A `receive` with no deliverable entry SHALL have `HeadBlocked` when the
+  queue holds an entry from the send node it names but none is deliverable
+  (the head of its FIFO key is from another send node, or its payload fails
+  the receive's constraint); else `Displaced` when no entry from that send
+  node is queued and the last removal of one along the counterexample
+  prefix was a loss (`lose`, or an overflow loss selector), not a
+  `receive`; else `EmptyQueue`. A `send` disabled only because `block`
+  finds the queue at capacity SHALL have `FullQueue`. Replay SHALL
+  recompute the list from the prefix.
 
 ## Acceptance Criteria
 
@@ -116,6 +126,7 @@ opts out.
 | FR-211-AC-2 | Over `Fill` with no `terminal` member, s6 is terminal and intended, and s2 is terminal and deadlocked. The deadlock-freedom item settles `refuted` with the prefix `fork(Both)`, `attempt(A)` and blocked threads `(0, Both, right, 0)` at `B` with `Precondition{TwoPre}` and `(0)` at `join Both` with `JoinWaiting{[(0, Both, right, 0)]}`. With `terminal when k.v = 1`, s2 is intended and the item settles `proved`; with `terminal any`, the request carries no deadlock-freedom item. | Test (TC-656) |
 | FR-211-AC-3 | Over `Fill` with `TwoPre: self.v <= 1` and no `terminal` member, the deadlock-freedom item settles `proved`, basis `Exhaustive`, over ten states. Two temporal items over the same protocol subject give one deadlock-freedom item. | Test (TC-656) |
 | FR-211-AC-4 | An `on each` protocol whose body's one attempt has a precondition that is false in every reachable model state, with no `terminal` member and `max_live_instances` 2: the state with one live instance, waiting at its attempt, where only `activate` is enabled, is a deadlock with blocked thread `(0)` at the attempt, cause `Precondition`. The state with two live instances is instance-limited and is not a deadlock, and the initial state, with no live instance, is not a deadlock. | Test (TC-656) |
+| FR-211-AC-5 | Each channel cause is reported for a thread blocked by exactly that condition, with the channel in its qualified name. Over a `fifo` channel `ch` of capacity 1 under `block`: `sequence { send P via ch; send Q via ch }` deadlocks with the sender at `Q` and cause `FullQueue{ch}`. Over a `fifo` channel of capacity 2: `sequence { send P via ch; send Q via ch; receive RQ via ch of Q }` deadlocks with the receiver at `RQ`, whose queue holds `P` at the head, and cause `HeadBlocked{ch}`. Over a capacity-1 channel under `overflow loss head`: `sequence { send P via ch; send Q via ch; receive RP via ch of P }` deadlocks with the queue holding only `Q`'s entry, `P`'s having been displaced, and cause `Displaced{ch}`. A `receive` on a channel nothing has sent to deadlocks with `EmptyQueue{ch}`. | Test (TC-656) |
 
 ## Dependencies
 

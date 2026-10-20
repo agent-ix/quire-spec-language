@@ -185,6 +185,10 @@ premise is a separate fact; S3 SHALL NOT derive one from another.
   `ambiguous_declaration`/`ambiguous-name` at each declaration, naming both in
   source order, as FR-113 refuses two nodes of one name. Channels and
   relationships have separate namespaces.
+- A channel is named by its qualified name, the name of the package that
+  declares it followed by the channel's own name, wherever a checked clause,
+  a queue, a transition identity or a wait cause names it (ADR-027 PS-7). Two
+  packages that each declare a channel `Pay` declare two channels.
 - A `send` or `receive` names a channel with `via`. S3 SHALL refuse a name
   that is no declared channel with `missing_declaration`/`missing-name` at the
   name, retaining `node` and `name`. It SHALL refuse a record binder whose
@@ -411,6 +415,7 @@ one protocol declared in the same unit. It carries no package selector.
 | FR-218-AC-24 | A role `on M::Pt` where `Pt` is a record type refuses `invalid_model_binding`/`malformed-declaration` at `M::Pt`; a role on an object type, a process and a state machine checks; a channel `carries M::Node` where `Node` is an object type refuses the same at `M::Node`, and a channel carrying a record, an event type, a variant type and a scalar type checks. | Test (TC-1065) |
 | FR-218-AC-25 | `requires temporal Due;` where `Due`'s formula holds `protocol Fill` and the requiring protocol is `Fill`, and the same through a second temporal clause that names `Fill`, each refuse `invalid_package`/`definition-cycle` at the requirement, naming `Fill` and the clause; the same requirement from a protocol `Drain` that no clause names checks. Each refusal produces no package. | Test (TC-1065) |
 | FR-218-AC-26 | A choice guard and a `visible` entry that read a field of an object-typed attempt binder, and a FIFO key that reads a field through a reference-typed field of its record binder, each refuse `ill_typed`/`operator-ineligible` at the read, naming the guard, the `visible` entry or the key; the same reads over a record binder's own fields check. A channel that carries an object type refuses once, at the type, and gives no refusal at its `send`, `receive` or FIFO binders. | Test (TC-1056, TC-1065) |
+| FR-218-AC-27 | The base protocol of TC-1056 checked in package `M` records its channel `Pay` under the qualified name `M::Pay`; the same text checked in a package `N` records `N::Pay`. The two checked channels are different, and a queue key, a `duplicate` identity and a wait cause built from each carry its own qualified name. | Test (TC-1056) |
 
 ## Dependencies
 

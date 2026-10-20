@@ -25,7 +25,8 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
    twice; read `observations` in every reachable state; repeat with the
    variant whose post-join node reads `a`.
 3. Run FR-205-AC-3's `repeat`/`join any … outstanding continue` protocol and
-   read the paths created by each fork under both completion orders.
+   read the paths created by each fork under both completion orders, and
+   its `maximum 3` variant in which instance 0 ends while instance 1 runs.
 4. Build `Fill` with two initial snapshots, and an `on each` protocol.
 
 Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
@@ -38,6 +39,7 @@ Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
   re-serialization; `observations` empty throughout `Fill`; in the variant
   the binder is present exactly from `attempt(A)` to the reading step.
 - Step 3: ordinal 1 while instance 0's `b` runs, ordinal 0 otherwise; the
-  two histories meet in one state.
+  two histories meet in one state; with `maximum 3`, the third fork takes
+  ordinal 0 once instance 0 is removed while instance 1 runs.
 - Step 4: two initial states at `fork Both`; no instance in the `on each`
   initial state.
