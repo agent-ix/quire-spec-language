@@ -61,3 +61,49 @@ do not block.
 | FND-007 | low | `authored_binding`'s `object` closure repeats the `model_objects` lookup `CheckedGraph::resolve_operation` already does, and the population key is found by a linear inverse scan of `population_keys` for an equal `PopulationDomain`. | qsl-semantics/src/check/abstraction.rs:478-483; qsl-semantics/src/check/abstraction.rs:515-525 |
 | FND-008 | low | Stale or broken doc text: `emit/tests/abstraction.rs` says "no source compile reads an `abstraction` declaration yet"; `mod.rs:500`, `assemble.rs:713` and `check.rs:450` cite `declared_abstraction`, which does not exist (the method is `check_declared_abstraction`); the FR-361 module doc in `model_gate.rs` has an unwrapped overlong line. | qsl-package/src/emit/tests/abstraction.rs:5; qsl-semantics/src/check/mod.rs:500; qsl-semantics/src/check/assemble.rs:713; qsl-semantics/src/check/check.rs:450; qsl-semantics/src/check/model_gate.rs:5-7 |
 | FND-009 | low | The new `UndeclaredAlias` check for an `abstraction` declaration's `using` alias has no test. | qsl-semantics/src/check/assemble.rs:2614-2629 |
+
+## Dispositions
+
+Round 1, reviewed at `a84ed52d2535460338f22b07fd11f1f753e9523d` (fix commits
+`033c819f6`, `a84ed52d2`); the branch head `4a59d1954` is a merge of main that
+touches none of the PR's files.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 033c819f6 |
+| FND-002 | fixed | 033c819f6 |
+| FND-003 | fixed | 033c819f6 |
+| FND-004 | fixed | 033c819f6 |
+| FND-005 | fixed | 033c819f6 |
+| FND-006 | accepted-no-change | `Origin` is the kernel's closed enum with no abstraction variant; the encoding is one documented function, and `lowering/protocol.rs` uses the same `"protocol {name}"` precedent. |
+| FND-007 | fixed | 033c819f6 |
+| FND-008 | fixed | 033c819f6 |
+| FND-009 | fixed | 033c819f6 |
+
+FND-001: `AbstractionRefusal::ConflictingField { key, field, first, first_span,
+second, second_span }` maps to `invalid_model_binding`/`conflicting-binding`; a
+parameter bound twice stays `MalformedDeclaration { DuplicateEntry }`. Tested
+by `a_field_or_parameter_bound_twice_refuses`.
+
+FND-002: names resolve against `model_names`, a per-alias table built from
+`AdmittedModel::record_keys` (every top-level declaration, by artifact id), so
+an other-kind name reaches `admit_binding` and refuses `NotAPopulation` /
+`NotAnObjectType`. Tested by `a_name_of_another_kind_refuses_malformed_declaration`.
+
+FND-003, FND-004: `check_resolved` takes every binding, resolved or not, in
+source order, each tagged with its declaration index; each refusal is located
+at its own declaration. Tested by `abstraction_refusals_come_in_source_order`
+and the `located == "B"` assertion in `two_abstraction_declarations_make_one_relation`.
+Location is per declaration, not per binding, except `UnresolvedName`.
+
+FND-005: `UnresolvedName.package` carries the alias's selection identity;
+asserted against `CONFIG_VERSION_PACKAGE_IDENTITY`.
+
+FND-007: the inverse population scan is gone; one `export` lookup serves all
+three binding forms.
+
+FND-008: the stale header and the three `declared_abstraction` references are
+fixed. The FR-361 module doc in `model_gate.rs` still has one line over 100
+columns; cosmetic, not tracked.
+
+FND-009: `an_abstraction_declaration_using_no_profile_refuses_at_the_alias`.

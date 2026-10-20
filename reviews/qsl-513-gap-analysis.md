@@ -57,3 +57,40 @@ and FND-002 also have no test; FND-005 records that.
 | FND-004 | low | The FR-304-AC-3 tag on the source test asserts the code and the location. AC-3 is about "naming the key and its owning `DomainPackageRef` identity", which `UnresolvedName` does not carry (SR-12219 FND-005), and the operation-not-declared clause is not exercised from source. AC-3 is still fully covered by the in-process TC-798 test, so the matrix is not inflated, but this binding claims more than it asserts. | qsl-replay/src/spine/clause/tests/model_gate.rs:591-614 |
 | FND-005 | medium | No test drives FR-450 rule 2 (a name of another kind) or rule 4 (a field or parameter named twice) from source. Both paths are wrong (SR-12219 FND-001, FND-002) and no test failed. | qsl-semantics/src/check/abstraction.rs:468-570 |
 | FND-006 | low | The new FR-304-AC-9 row's verification column is `Test (FR-304-AC-9)`, which names the AC itself, not a TC as every other row does. | spec/functional/FR-304-check-an-authored-abstraction-relation.md:115 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | Four new tests carry AC tags whose clauses they do not assert: `a_name_of_another_kind_refuses_malformed_declaration` and `a_field_or_parameter_bound_twice_refuses` are tagged FR-304-AC-5 (omitted/undeclared/shared parameters, undeclared field) but test FR-450 rules 2 and 4; `abstraction_refusals_come_in_source_order` is tagged FR-304-AC-7 (cross-declaration relation and conflict) but tests refusal order; `an_abstraction_declaration_using_no_profile_refuses_at_the_alias` is tagged FR-304-AC-8, which says nothing of the `using` alias. Each AC stays covered by its own tests, so nothing is inflated, but the bindings are wrong. FR-304 has no AC for rule 2, rule 4 or source order. | qsl-replay/src/spine/clause/tests/model_gate.rs |
+
+## Dispositions
+
+Round 1, reviewed at `a84ed52d2535460338f22b07fd11f1f753e9523d` (fix commits
+`033c819f6`, `a84ed52d2`); the branch head `4a59d1954` is a merge of main that
+touches none of the PR's files.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 033c819f6 |
+| FND-002 | still-open | The new equality assertion is circular. `authored` is rebuilt from the compiled relation's own keys and values, and those are fed back into `check_abstraction`. A source path that resolved a name to the wrong `DeclarationKey` would still pass. No independently built expected relation (fixture `DeclarationKey`s, literal values) exists. The `invalid_syntax` clauses are still only in the untagged S1 test. Medium; does not block under the majors-only rule. |
+| FND-003 | fixed | 033c819f6 |
+| FND-004 | fixed | 033c819f6 |
+| FND-005 | fixed | 033c819f6 |
+| FND-006 | fixed | 033c819f6 |
+
+FND-001: `every_construct_is_refused_once_in_source_order` carries `TC-1017`
+only.
+
+FND-003: equal and different values, both bindings' `rust_type` and keys,
+the code and cause, and the location at `B` are all asserted.
+
+FND-004: `UnresolvedName.package` and the undeclared-operation
+`MissingDeclaration` from source are asserted.
+
+FND-005: rule 2 and rule 4 source tests exist (see FND-007 for their tags).
+
+FND-006: FR-304-AC-9 cites TC-1087. `spec/test-cases/TC-1087-a-systems-interface-is-no-abstraction-target.md`
+follows TC-810's layout (frontmatter `verifies` FR-304, Description with
+Scope, Test Procedure, Expected Results). TC-1087 is free on main, which ends
+at TC-1086. The export test carries `TC-1087`.
