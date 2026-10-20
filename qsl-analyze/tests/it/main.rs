@@ -5,6 +5,7 @@ mod closure_certificate;
 mod counter;
 mod deadlock_item;
 mod example_units;
+mod flag_world;
 mod graph_core;
 mod graph_world;
 mod lasso_replay;
@@ -14,6 +15,7 @@ mod model_check_safety;
 mod model_instances;
 mod model_settle;
 mod model_world;
+mod quotient;
 mod reduction;
 mod reduction_world;
 #[path = "../../../tests/support/refinement_cas.rs"]
