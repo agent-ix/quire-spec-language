@@ -45,9 +45,9 @@ fn model_document() -> Vec<u8> {
     model_document_over(false)
 }
 
-/// The dispatch model's document; with `spin`, `A` also declares an
-/// operation `spin()` that writes `flag` and has no contract.
-fn model_document_over(spin: bool) -> Vec<u8> {
+/// The dispatch model's document; with `wobble`, `A` also declares an
+/// operation `wobble()` that writes `flag` and has no contract.
+fn model_document_over(wobble: bool) -> Vec<u8> {
     let source = include_str!("../../../examples/config-version/model.semantic-ir.json")
         .replace("example/config-version", "test/orders")
         .replace("ConfigVersion", "A")
@@ -73,17 +73,17 @@ fn model_document_over(spin: bool) -> Vec<u8> {
     c["operations"] = serde_json::json!([]);
     let c: serde_json::Value = serde_json::from_str(&c.to_string().replace(A, C)).unwrap();
     document["types"].as_array_mut().unwrap().push(c);
-    if spin {
+    if wobble {
         let ready = document["types"][0]["operations"][0].clone();
-        let mut spin = ready;
-        spin["identity"] = serde_json::json!(format!("{A}/spin"));
-        spin["name"] = serde_json::json!("spin");
-        spin.as_object_mut().unwrap().remove("returns");
-        spin["frame"]["modifies"] = serde_json::json!([format!("{A}/flag")]);
+        let mut wobble = ready;
+        wobble["identity"] = serde_json::json!(format!("{A}/wobble"));
+        wobble["name"] = serde_json::json!("wobble");
+        wobble.as_object_mut().unwrap().remove("returns");
+        wobble["frame"]["modifies"] = serde_json::json!([format!("{A}/flag")]);
         document["types"][0]["operations"]
             .as_array_mut()
             .unwrap()
-            .push(spin);
+            .push(wobble);
     }
     document["populations"][0]["members"] = serde_json::json!([A]);
     serde_json::to_vec(&document).unwrap()
@@ -93,8 +93,8 @@ fn view() -> EffectiveView {
     view_over(false)
 }
 
-fn view_over(spin: bool) -> EffectiveView {
-    let bytes = model_document_over(spin);
+fn view_over(wobble: bool) -> EffectiveView {
+    let bytes = model_document_over(wobble);
     let document = qsl_semantics::model::intake::PackageDocument::parse(
         &bytes,
         qsl_foundation::IntakeLimits {
@@ -140,9 +140,9 @@ fn declarations(body: &str, guard: bool) -> (PackageDeclarations, EffectiveView,
 fn declarations_over(
     body: &str,
     guard: bool,
-    spin: bool,
+    wobble: bool,
 ) -> (PackageDeclarations, EffectiveView, String) {
-    let view = view_over(spin);
+    let view = view_over(wobble);
     let selection = view.model_selection();
     let source = format!("language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\nmodel M = {:?} version {:?} digest \"sha256-jcs:{}\";\nfunction Guard using v(): Boolean pure {{ {guard} }}\nfunction Body using v(): Boolean pure {{ true }}\n{body}\n", selection.identity, selection.version, qsl_semantics::model::key::hex(&selection.digest));
     let parsed = qsl_cst::parse(
@@ -247,17 +247,17 @@ fn declarations_over(
 
 /// FR-120-AC-9's fixture: the checked package of `body` over this dispatch
 /// model, and the domain package bytes it was checked against.
-/// With `spin`, as [`model_document_over`] takes it.
+/// With `wobble`, as [`model_document_over`] takes it.
 pub(crate) fn simulation_package_over(
     body: &str,
     guard: bool,
-    spin: bool,
+    wobble: bool,
 ) -> (qsl_package::CheckedPackage, BTreeMap<[u8; 32], Vec<u8>>) {
-    let (declarations, _, _) = declarations_over(body, guard, spin);
+    let (declarations, _, _) = declarations_over(body, guard, wobble);
     let graph = declarations
         .check(CheckingLimits::default())
         .expect("S3 checks source");
-    let document = model_document_over(spin);
+    let document = model_document_over(wobble);
     (
         qsl_package::CheckedPackage::link(graph),
         qsl_semantics::model::intake::package_input([document.as_slice()]),

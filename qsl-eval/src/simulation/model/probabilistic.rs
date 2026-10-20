@@ -17,7 +17,6 @@
 //! probability is one of FR-120's successors and every such successor gets
 //! one (PM-6).
 
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::Code;
@@ -188,59 +187,52 @@ pub(crate) fn same_rewards(left: &[(Identifier, Value)], right: &[(Identifier, V
             })
 }
 
-/// Canonical value order: Booleans `false` before `true`; integers,
-/// rationals, decimals and quantities of one unit numerically; enum members
-/// by their canonical rank; every other value by its typed canonical form's
-/// bytes.
+/// A value's place in canonical value order: Booleans `false` before
+/// `true`; integers, rationals, decimals and quantities (one parameter's
+/// quantities share a unit) numerically; enum members by their canonical
+/// rank; every other value by its typed canonical form's bytes. Values of
+/// one type always have keys of one variant.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum OrderKey {
+    Boolean(bool),
+    Number(Rational),
+    Rank(u32),
+    Bytes(Vec<u8>),
+}
+
+/// `value`'s [`OrderKey`].
 ///
 /// # Errors
 ///
-/// `runtime_invariant`/`established-invariant-broken` when a value compared
+/// `runtime_invariant`/`established-invariant-broken` when a value ordered
 /// by its bytes has no typed canonical form.
-pub(crate) fn value_order(left: &Value, right: &Value) -> Result<Ordering, ExpansionStop> {
-    Ok(match (left, right) {
-        (Value::Boolean(left), Value::Boolean(right)) => left.cmp(right),
-        (Value::Integer(left), Value::Integer(right)) => left.cmp(right),
-        (Value::Rational(left), Value::Rational(right)) => left.cmp(right),
-        (Value::Decimal(left), Value::Decimal(right)) => left.compare(right),
-        (Value::Quantity(left), Value::Quantity(right)) if left.unit() == right.unit() => {
-            left.magnitude().cmp(right.magnitude())
-        }
-        (Value::Enum(left), Value::Enum(right)) => left.rank().cmp(&right.rank()),
-        _ => {
-            let limits = quire_canonical::Limits::new(u64::MAX);
-            let bytes = |value: &Value| {
-                quire_canonical::to_vec(&value_enc(value), limits).map_err(|_| stop(BROKEN))
-            };
-            bytes(left)?.cmp(&bytes(right)?)
-        }
+pub(crate) fn order_key(value: &Value) -> Result<OrderKey, ExpansionStop> {
+    Ok(match value {
+        Value::Boolean(flag) => OrderKey::Boolean(*flag),
+        Value::Integer(integer) => OrderKey::Number(Rational::from_integer(integer.clone())),
+        Value::Rational(rational) => OrderKey::Number(rational.clone()),
+        Value::Decimal(decimal) => OrderKey::Number(decimal.normalized().to_rational()),
+        Value::Quantity(quantity) => OrderKey::Number(quantity.magnitude().clone()),
+        Value::Enum(member) => OrderKey::Rank(member.rank()),
+        _ => OrderKey::Bytes(
+            quire_canonical::to_vec(&value_enc(value), quire_canonical::Limits::new(u64::MAX))
+                .map_err(|_| stop(BROKEN))?,
+        ),
     })
 }
 
-/// [`value_order`] lifted to vectors, the first value most significant.
-fn vector_order(left: &[Value], right: &[Value]) -> Result<Ordering, ExpansionStop> {
-    for (left, right) in left.iter().zip(right) {
-        let order = value_order(left, right)?;
-        if order.is_ne() {
-            return Ok(order);
-        }
-    }
-    Ok(left.len().cmp(&right.len()))
-}
-
-/// Sort `items` by `order`, stopping with the first comparison's error.
-pub(crate) fn try_sort_by<T>(
-    items: &mut [T],
-    mut order: impl FnMut(&T, &T) -> Result<Ordering, ExpansionStop>,
-) -> Result<(), ExpansionStop> {
-    let mut failed = None;
-    items.sort_by(|left, right| {
-        order(left, right).unwrap_or_else(|error| {
-            failed.get_or_insert(error);
-            Ordering::Equal
-        })
-    });
-    failed.map_or(Ok(()), Err)
+/// `items` sorted by `key`, every key computed first so the sort compares
+/// total, infallible keys.
+pub(crate) fn sorted_by_key<T, K: Ord>(
+    items: Vec<T>,
+    key: impl Fn(&T) -> Result<K, ExpansionStop>,
+) -> Result<Vec<T>, ExpansionStop> {
+    let mut keyed = items
+        .into_iter()
+        .map(|item| key(&item).map(|key| (key, item)))
+        .collect::<Result<Vec<_>, _>>()?;
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, item)| item).collect())
 }
 
 /// One value of a random parameter's support, in declared order.
@@ -658,8 +650,13 @@ impl ModelSystem<'_> {
         groups
             .into_iter()
             .map(|(_, mut action)| {
-                try_sort_by(&mut action.draws, |left, right| {
-                    vector_order(&left.random, &right.random)
+                // A vector's key is its values' keys, the first most
+                // significant.
+                action.draws = sorted_by_key(action.draws, |draw| {
+                    draw.random
+                        .iter()
+                        .map(order_key)
+                        .collect::<Result<Vec<_>, _>>()
                 })?;
                 Ok(action)
             })

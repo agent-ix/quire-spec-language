@@ -4,12 +4,10 @@
 //! population over the universe `{<key>}`, a unit selecting it as `M` that
 //! writes its contracts and FR-185 declarations, and one initial snapshot.
 //!
-//! FR-120 encodes no enum value in a state key or transition identity, and
-//! domain-package intake admits no `Quantity<…>` parameter (STD-113), so
-//! ADR-024 §7.2's `Service` stands in integers and Booleans for them:
-//! `phase` is `Phase = Int[0, 2]` (`0` Idle, `1` Busy, `2` Done), `d` is
-//! `Millis = Int[1, 12]` (`1 ms` is `1`), and `outcome` is `ok: Boolean`
-//! (`Ok` is `true`).
+//! `Service` is ADR-024 §7.2's model as FR-187-AC-1 declares it, since
+//! FR-120 has no encoding for an enumeration or quantity value: `phase` is
+//! `Phase = Int[0, 2]` (`0` Idle, `1` Busy, `2` Done), `d` is
+//! `Millis = Int[1, 12]`, and `outcome` is `ok: Boolean` (`Ok` is `true`).
 
 use std::collections::BTreeMap;
 

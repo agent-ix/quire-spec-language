@@ -1469,11 +1469,11 @@ impl OrdersWorld {
         Self::over(body, false)
     }
 
-    /// With `spin`, `A` also declares `spin()`, which writes `flag` under
+    /// With `wobble`, `A` also declares `wobble()`, which writes `flag` under
     /// no contract: two post-states.
-    fn over(body: &str, spin: bool) -> Self {
+    fn over(body: &str, wobble: bool) -> Self {
         let (package, packages) =
-            crate::state_model_family::simulation_package_over(body, false, spin);
+            crate::state_model_family::simulation_package_over(body, false, wobble);
         let digest = *packages.keys().next().expect("one model");
         let document = json!({
             "format": "quire.state.snapshot/v1",
@@ -1539,7 +1539,7 @@ impl OrdersWorld {
 /// fixture with `pre Low { self.ready() }` on `ready`, undefined at `t1`)
 /// `actions` returns `UndecidedSuccessor{state}`, `weighted_steps`
 /// `Unsteppable::UndecidedSuccessor` and `sample_probabilistic` stops
-/// `SampleStop::UndecidedSuccessor`. With a further operation `spin` whose
+/// `SampleStop::UndecidedSuccessor`. With a further operation `wobble` whose
 /// (empty) drawn vector has two post-states, the result is the same
 /// undecided one, not `NotMarkov`. An undecided postcondition is the same.
 #[trace("TC-623", "FR-188-AC-8")]
@@ -1548,16 +1548,24 @@ fn an_undecided_contract_is_an_undecided_successor() {
     let pre = "pre Low using v on M::A::ready { self.ready() }\n";
     // The postcondition half: every candidate of `ready` is undecided.
     let post = "post LowPost using v on M::A::ready { self.ready() }\n";
-    for (undecided, spin, workload) in [
-        (pre, false, "workload Unit on M { weight A::ready = 1; }\n"),
-        (post, false, "workload Unit on M { weight A::ready = 1; }\n"),
+    for (undecided, wobble, workload) in [
+        (
+            pre,
+            false,
+            "workload Steady on M { weight A::ready = 1; }\n",
+        ),
+        (
+            post,
+            false,
+            "workload Steady on M { weight A::ready = 1; }\n",
+        ),
         (
             pre,
             true,
-            "workload Unit on M { weight A::ready = 1; weight A::spin = 1; }\n",
+            "workload Steady on M { weight A::ready = 1; weight A::wobble = 1; }\n",
         ),
     ] {
-        let world = OrdersWorld::over(&format!("{undecided}{workload}"), spin);
+        let world = OrdersWorld::over(&format!("{undecided}{workload}"), wobble);
         let system = world.system();
         let state = system.initial().remove(0);
         let (_, digest) = system.state_key(&state).expect("a key");
@@ -1568,18 +1576,18 @@ fn an_undecided_contract_is_an_undecided_successor() {
                 .expect("expands")
                 .expect_err("undecided"),
             expected,
-            "spin = {spin}"
+            "wobble = {wobble}"
         );
         let workload = world
             .package
             .graph()
             .probabilistic_model()
-            .workload("Unit")
+            .workload("Steady")
             .expect("declared");
         let Ok(Err(Unsteppable::UndecidedSuccessor(undecided))) =
             system.weighted_steps(&state, workload)
         else {
-            panic!("UndecidedSuccessor (spin = {spin})");
+            panic!("UndecidedSuccessor (wobble = {wobble})");
         };
         assert_eq!(undecided, expected);
         assert_eq!(
@@ -1595,13 +1603,13 @@ fn an_undecided_contract_is_an_undecided_successor() {
             )
             .expect_err("undecided"),
             SampleStop::UndecidedSuccessor,
-            "spin = {spin}"
+            "wobble = {wobble}"
         );
     }
-    // Without the undecided precondition, `spin`'s two post-states are
+    // Without the undecided precondition, `wobble`'s two post-states are
     // `NotMarkov`: the undecided result above is not that.
     let world = OrdersWorld::over(
-        "workload Unit on M { weight A::ready = 1; weight A::spin = 1; }\n",
+        "workload Steady on M { weight A::ready = 1; weight A::wobble = 1; }\n",
         true,
     );
     let system = world.system();
@@ -1610,7 +1618,7 @@ fn an_undecided_contract_is_an_undecided_successor() {
         .package
         .graph()
         .probabilistic_model()
-        .workload("Unit")
+        .workload("Steady")
         .expect("declared");
     let Ok(Err(Unsteppable::NotMarkov(not_markov))) = system.weighted_steps(&state, workload)
     else {

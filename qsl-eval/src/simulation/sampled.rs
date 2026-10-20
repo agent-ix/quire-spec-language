@@ -23,7 +23,7 @@ use crate::simulation::choice::{
 };
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::model::probabilistic::{
-    same_rewards, same_values, try_sort_by, value_order,
+    order_key, same_rewards, same_values, sorted_by_key,
 };
 use crate::simulation::model::{
     Action, ModelSimState, ModelSystem, NotMarkov, TransitionId, BROKEN,
@@ -295,9 +295,8 @@ fn take_step(
 
     let mut random = Vec::new();
     for support in system.random_of_text(operation) {
-        let mut items: Vec<_> = support.items.iter().collect();
-        try_sort_by(&mut items, |left, right| {
-            value_order(&left.value, &right.value)
+        let items = sorted_by_key(support.items.iter().collect(), |item| {
+            order_key(&item.value)
         })?;
         let weights: Vec<Rational> = items.iter().map(|item| item.weight.clone()).collect();
         let item = items.get(draws.choose(&weights)?).ok_or_else(broken)?;

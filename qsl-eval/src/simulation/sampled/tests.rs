@@ -160,15 +160,14 @@ fn integer_of(value: &Value) -> i64 {
     }
 }
 
-/// FR-188-AC-3 (TC-623 step 4): `Service` under `Steady` from its initial
+/// FR-188-AC-3 (TC-623 step 4): `Service` (`Phase` as `Int[0, 2]`,
+/// `outcome` a `Boolean`, `d` typed `Millis`) under `Steady` from its initial
 /// state, seed 7, trace 12, 11 positions, sampled twice, gives equal
 /// behaviours; each step is one of FR-187's, with its probability and its
 /// `duration` (`d` for `attempt`, else 0), its drawn values inside their
 /// supports and one selection per choice that drew; the sample passes
-/// `Done` and then `Idle` and continues. Untagged `FR-188-AC-3`: `Service`
-/// stands in integers and Booleans for its enum and quantity types (see the
-/// world's module doc).
-#[trace("TC-623")]
+/// `Done` and then `Idle` and continues.
+#[trace("TC-623", "FR-188-AC-3")]
 #[test]
 fn service_samples_reproduce_and_follow_the_step_structure() {
     let world = World::new(&world::service(""));

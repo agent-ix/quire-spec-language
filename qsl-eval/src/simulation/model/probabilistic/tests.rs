@@ -84,14 +84,12 @@ fn arguments(step: &WeightedStep) -> Vec<String> {
     }
 }
 
-/// FR-187-AC-1 (TC-622 step 1): `Service` at `Busy, attempts = 0` under
-/// `Steady` has six `attempt` steps whose probabilities are the products of
-/// `d`'s and `outcome`'s, summing to 1, with `duration = d`; at `Idle` the
-/// only step is `request`, probability 1, `duration` 0. Untagged
-/// `FR-187-AC-1`: the fixture's `phase`, `d` and `outcome` stand in
-/// integers and Booleans for ADR-024's enum and quantity types, which the
-/// simulator cannot yet encode (see the world's module doc).
-#[trace("TC-622")]
+/// FR-187-AC-1 (TC-622 step 1): `Service` (`Phase` as `Int[0, 2]`,
+/// `outcome` a `Boolean`, `d` typed `Millis`) at `phase = 1, attempts = 0`
+/// under `Steady` has six `attempt` steps whose probabilities are the
+/// products of `d`'s and `outcome`'s, summing to 1, with `duration = d`; at
+/// `phase = 0` the only step is `request`, probability 1, `duration` 0.
+#[trace("TC-622", "FR-187-AC-1")]
 #[test]
 fn service_steps_carry_the_products_of_their_draws() {
     let world = World::new(&world::service(""));
@@ -300,8 +298,7 @@ fn a_negative_reward_refuses_admission() {
 /// transitions `weighted_steps` gives positive probability under `Steady`
 /// are exactly FR-120's successors (ADR-024 PM-6). Unlike FR-187-AC-1, this
 /// clause does not depend on `Service`'s value types: PM-6 compares
-/// transition sets, which the integer and Boolean stand-ins of the module
-/// doc of [`world`] give the same shape as the enum and quantity ones.
+/// transition sets.
 #[trace("TC-622", "FR-187-AC-4")]
 #[test]
 fn the_support_graph_is_the_state_graph() {
