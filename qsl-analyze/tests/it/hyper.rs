@@ -17,6 +17,10 @@
 //! letter, so it is deterministic here and an unequal-secret pair has three
 //! product states, not five. The accepting components and the secure product's
 //! 8 states agree with the ADR; that criterion is therefore not claimed below.
+//!
+//! The clauses here that are symmetric in their copies are stored as the
+//! quotient by the swap (FR-174, `crate::hyper_swap`), so the counts the engine
+//! reports are the quotient's; `World::explore` reads the unreduced product.
 
 use ix_trace_rs::trace;
 use qsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
@@ -105,12 +109,14 @@ pub(crate) fn positions(
     seen
 }
 
-/// ADR-023 section 8.1, no reduction: `NonInterference` over the leaky vault
-/// is refuted by a `Lockstep` counterexample of the section's shape, `a` from
-/// `(0, 0)` and `b` from `(1, 0)`, joint steps `(step(0), step(0))`, loop
-/// entry 1, whose outputs differ at joint position 1; the product holds two
+/// ADR-023 section 8.1: `NonInterference` over the leaky vault is refuted by a
+/// `Lockstep` counterexample of the section's shape, `a` from `(0, 0)` and
+/// `b` from `(1, 0)`, joint steps `(step(0), step(0))`, loop entry 1, whose
+/// outputs differ at joint position 1; the unreduced product holds two
 /// accepting components, one for each unequal pair of secrets, each reached
-/// through the differing outputs.
+/// through the differing outputs. The clause is symmetric in `a` and `b`, so
+/// the engine stores the quotient by the swap (FR-174): the same verdict over
+/// fewer states.
 #[trace("TC-601")]
 #[test]
 fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
@@ -124,9 +130,12 @@ fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
     let HyperOutcome::Violated { stats, .. } = &outcome else {
         panic!("expected a violation, got {outcome:?}");
     };
-    // 4 equal-secret states and 3 for each of the 2 unequal pairs.
-    assert_eq!(stats.product_states, 10);
+    // Unreduced: 4 equal-secret states and 3 for each of the 2 unequal pairs.
+    assert_eq!(world.explore().graph.states().len(), 10);
     assert_eq!(world.explore().accepting_components(), 2);
+    // The swap fixes the 4 states whose components are equal and pairs the 6
+    // others.
+    assert_eq!(stats.product_states, 7);
     let counterexample = refuted(outcome);
     assert_eq!(
         counterexample.kind,
@@ -159,7 +168,8 @@ fn the_leaky_vault_is_refuted_by_the_lockstep_counterexample_of_section_8_1() {
 /// ADR-023 section 8.1: over the secure vault every joint step gives
 /// `l_a = l_b = i`, the product has 8 states (the 4 pairs of secrets times
 /// the equal `l` pairs `(0, 0)` and `(1, 1)`, all in the one automaton
-/// state), and the item holds exhaustively.
+/// state), and the item holds; the engine stores the 6 states of the quotient
+/// by the swap of `a` and `b` (FR-174).
 #[trace("TC-601")]
 #[test]
 fn the_secure_vault_holds_over_eight_product_states() {
@@ -169,10 +179,11 @@ fn the_secure_vault_holds_over_eight_product_states() {
         &STARTS,
         &non_interference(EQUAL_INPUTS),
     );
-    let HyperOutcome::Holds { stats } = run(&world) else {
+    let HyperOutcome::HoldsReduced { stats, .. } = run(&world) else {
         panic!("expected the secure vault to hold");
     };
-    assert_eq!(stats.product_states, 8);
+    assert_eq!(world.explore().graph.states().len(), 8);
+    assert_eq!(stats.product_states, 6);
     assert_eq!(world.explore().accepting_components(), 0);
 }
 
@@ -323,7 +334,7 @@ fn a_stutter_step_is_paired_only_with_a_stutter_step() {
     assert!(stutters > 0, "a terminal pair stutters");
     // The matched product has no joint step that mixes the two: it is the
     // diagonal of the vault's graph, so both always read the same `l`.
-    assert!(matches!(run(&world), HyperOutcome::Holds { .. }));
+    assert!(matches!(run(&world), HyperOutcome::HoldsReduced { .. }));
 }
 
 /// FR-176-AC-4, first sentence: a subject that alone exceeds `max_states`
@@ -852,11 +863,11 @@ fn a_finding_at_depth_one_caps_the_later_instances() {
     assert_eq!(counterexample.trace_position, 1);
     // The counts measured from the capped run: `v0` explored in full, `v1` only
     // through the expansion of its initial states. They are the budget the
-    // run is held to; an uncapped `v1` has far more states than the 22.
-    assert_eq!((stats.product_states, stats.product_edges), (22, 96));
+    // run is held to; any state the capped `v1` explored past its initial states would exceed the 18.
+    assert_eq!((stats.product_states, stats.product_edges), (18, 80));
     let mut exact = ModelCheckLimits::default();
-    exact.limits.max_states = 22;
-    exact.limits.max_transitions = 96;
+    exact.limits.max_states = 18;
+    exact.limits.max_transitions = 80;
     let outcome = world
         .run_through(&letters, &world.seams(), exact, &Cancel::new())
         .expect("not refused");
@@ -1026,5 +1037,5 @@ fn a_stutter_loop_at_a_terminal_state_is_a_matched_fair_cycle() {
     };
     assert_eq!(cause, UndecidedCause::VacuousMatch);
     let terminal = World::new(Vault::Terminal, false, &[(0, 1)], clause);
-    assert!(matches!(run(&terminal), HyperOutcome::Holds { .. }));
+    assert!(matches!(run(&terminal), HyperOutcome::HoldsReduced { .. }));
 }

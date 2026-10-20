@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-176, FR-177 (ADR-023 HC-1, HC-2, HC-4; ADR-011 §6.1 layer 5): the
+//! FR-174, FR-176, FR-177 (ADR-023 HC-1, HC-2, HC-4; ADR-011 §6.1 layer 5): the
 //! self-composition product of a hyper clause's subjects and the witness-set
 //! product of a forall-exists safety clause, which `qsl-analyze`'s EN-1
 //! explores and the layer-6 checkers (FR-163, FR-183) expand with the same
@@ -12,12 +12,18 @@
 //! [`StepMatch`], the callers' seam to the one clause evaluator (FR-107).
 //! [`WitnessProduct`] is the same for HP-3: its state is a tuple of universal
 //! component states with the set of existential tuples still matched.
+//!
+//! A [`HyperProduct`] over a clause whose copies of one model can be swapped
+//! also offers the symmetry reduction of that swap (FR-174, ADR-023 CS-2): the
+//! canonical form of a state is the least member of its orbit.
 
+mod copy_swap;
 mod joint;
 mod product;
 mod seam;
 mod witness;
 
+pub use copy_swap::{copy_population, copy_symmetry, CopySwapInputs};
 pub use joint::cartesian;
 pub use product::{
     ComponentStep, Halt, HyperFinding, HyperInputs, HyperKey, HyperProduct, HyperState,

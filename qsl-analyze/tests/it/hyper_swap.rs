@@ -1,0 +1,716 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-174 (TC-599): EN-1 stores one product state for each orbit of the copy
+//! group of a hyper clause, and settles a request's reductions against
+//! ADR-023 section 5's rows before it expands a state, on ADR-023 section
+//! 8.1's vault (`crate::hyper_world`).
+//!
+//! The unreduced product of a clause is read through `World::explore`, which
+//! builds `HyperProduct` with no copy group; the engine's own run (`World::run`)
+//! applies the copy group whenever the clause has one.
+//!
+//! Not claimed here: the `Proved{basis: Reduced}` settlement of a proof under
+//! copy-swap (FR-174-AC-2, second half), which waits for FR-163's certificate
+//! checker and FR-182's settlement, neither built; the engine's outcome names
+//! the reduction as `HoldsReduced{[CopySwap{..}]}`. The leaky product of
+//! ADR-023 section 8.1 stores 7 states here, not the 9 of the criterion: the
+//! unreduced product has the 10 states `crate::hyper` explains rather than the
+//! 14 the criterion halves.
+
+use ix_trace_rs::trace;
+use qsl_analyze::model_check::{Reductions, SymmetryDeclaration};
+use qsl_eval::hyper::{HyperLetters, ParameterBinding};
+use qsl_eval::simulation::model::ModelSimState;
+use qsl_eval::temporal::{AtomReading, UndefinedCause};
+use qsl_replay::{
+    AppliedReduction, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome,
+    HyperReductionCause, ModelCheckLimits, ModelTraceSettlement, ReductionKind,
+};
+use qsl_semantics::check::{FormulaNodeId, HyperForm};
+use quire_exact::{Cancel, Incomplete, Meter, Undefined};
+
+use crate::hyper::{inputs, positions, refuted};
+use crate::hyper_world::{
+    key, low_of, non_interference, Seams, Vault, World, EQUAL_INPUTS, KEY, STARTS,
+};
+
+/// The classes `NonInterference` is swappable in.
+fn swapped() -> AppliedReduction {
+    AppliedReduction::CopySwap {
+        classes: vec![vec!["a".to_owned(), "b".to_owned()]],
+    }
+}
+
+fn run(world: &World) -> HyperOutcome {
+    world
+        .run_selecting(Reductions::default())
+        .expect("not refused")
+}
+
+/// FR-174-AC-2: over ADR-023 section 8.1's secure vault, `NonInterference`
+/// stores 6 states against the unreduced 8 and holds, naming `CopySwap{[[a,
+/// b]]}`: the 4 states whose two components are equal are fixed by the swap
+/// and the 4 others pair up. Over the leaky vault it stores 7 against the
+/// unreduced 10 and is refuted, as the unreduced product has its two
+/// accepting components: the 4 fixed states and the 6 others in 3 pairs.
+#[trace("TC-599", "FR-174-AC-2")]
+#[test]
+fn the_swap_halves_the_pair_product_and_keeps_both_verdicts() {
+    let secure = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let explored = secure.explore();
+    assert_eq!(explored.graph.states().len(), 8);
+    assert_eq!(explored.accepting_components(), 0);
+    let HyperOutcome::HoldsReduced { reductions, stats } = run(&secure) else {
+        panic!("expected the secure vault to hold under the swap");
+    };
+    assert_eq!(reductions, [swapped()]);
+    assert_eq!(stats.product_states, 6);
+
+    let leaky = World::new(
+        Vault::Leaky,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let explored = leaky.explore();
+    assert_eq!(explored.graph.states().len(), 10);
+    assert_eq!(explored.accepting_components(), 2);
+    let outcome = run(&leaky);
+    assert_eq!(outcome.stats().product_states, 7);
+    assert!(
+        matches!(outcome, HyperOutcome::Violated { .. }),
+        "{outcome:?}"
+    );
+}
+
+/// FR-174-AC-2, the other side: a clause the swap changes gets no swap. The
+/// second disjunct reads `a` alone, so exchanging `a` and `b` does not leave
+/// the body equal in normal form, the copy group is empty, and the engine
+/// stores the unreduced product and names no reduction.
+#[trace("TC-599", "FR-174-AC-2")]
+#[test]
+fn an_asymmetric_clause_is_stored_unreduced() {
+    let clause = format!(
+        "hyper Skewed using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V {EQUAL_INPUTS} \
+         {{ always (holds(v.l @ a = v.l @ b) or holds(v.l @ a = 0)) }}"
+    );
+    let world = World::new(Vault::Secure, false, &STARTS, &clause);
+    assert!(world.clause.copy_group().classes.is_empty());
+    let HyperOutcome::Holds { stats } = run(&world) else {
+        panic!("expected the clause to hold with no reduction");
+    };
+    assert_eq!(stats.product_states, 8);
+    assert_eq!(
+        stats.product_states,
+        u64::try_from(world.explore().graph.states().len()).expect("fits")
+    );
+}
+
+/// FR-174-AC-2: a body whose automaton the swap permutes is stored reduced.
+/// Both copies must eventually output 1; the negation is `always not` of
+/// either, two operators the swap exchanges, so it permutes the automaton's
+/// states by renaming the operator each records. Writing `A` for a copy at
+/// `l = 0` and `B` at `l = 1`, the flipping vault from `A` and `B` gives the
+/// unreduced states `(AA, ¬a)`, `(AA, ¬b)`, `(BB, dead)`, `(AA, dead)`,
+/// `(AB, ¬a)`, `(BA, ¬b)`, `(AB, dead)` and `(BA, dead)`: 8. The swap fixes
+/// `(AA, dead)` and `(BB, dead)` and pairs the others, `(AA, ¬a)` with
+/// `(AA, ¬b)`, `(AB, ¬a)` with `(BA, ¬b)` and `(AB, dead)` with `(BA, dead)`:
+/// 5. The item holds.
+#[trace("TC-599", "FR-174-AC-2")]
+#[test]
+fn a_swap_that_permutes_the_automaton_s_states_halves_the_product() {
+    let world = World::new(
+        TOGGLING,
+        false,
+        &[(0, 0), (0, 1)],
+        &format!(
+            "hyper Both using inf over behaviours (v: V::Vault) \
+             forall trace a of V forall trace b of V {EQUAL_INPUTS} \
+             {{ eventually holds(v.l @ a = 1) and eventually holds(v.l @ b = 1) }}"
+        ),
+    );
+    assert_eq!(world.clause.copy_group().generators.len(), 1);
+    assert_eq!(world.explore().graph.states().len(), 8);
+    let HyperOutcome::HoldsReduced { reductions, stats } = run(&world) else {
+        panic!("expected the item to hold under the swap");
+    };
+    assert_eq!(reductions, [swapped()]);
+    assert_eq!(stats.product_states, 5);
+}
+
+/// FR-174-AC-2, the soundness side: a swap that moves one acceptance set of
+/// the body's automaton to another does not keep acceptance on the quotient,
+/// so the engine stores the product whole and names no reduction. Each copy
+/// must always output 0; the negation is `eventually not` of either, two
+/// acceptance sets the swap exchanges.
+#[trace("TC-599", "FR-174-AC-2")]
+#[test]
+fn a_swap_that_exchanges_acceptance_sets_is_not_applied() {
+    let world = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &format!(
+            "hyper Zeroes using inf over behaviours (v: V::Vault) \
+             forall trace a of V forall trace b of V {EQUAL_INPUTS} \
+             {{ always holds(v.l @ a = 0) and always holds(v.l @ b = 0) }}"
+        ),
+    );
+    assert!(!world.clause.copy_group().classes.is_empty());
+    let outcome = run(&world);
+    assert_eq!(
+        outcome.stats().product_states,
+        u64::try_from(world.explore().graph.states().len()).expect("fits")
+    );
+    let counterexample = refuted(outcome);
+    assert_lockstep_behaviours(&world, &counterexample);
+}
+
+/// The body of three copies that is equal under every exchange of two, and
+/// the `match` of the same inputs for every pair.
+fn three_copies() -> String {
+    let same = |x: &str, y: &str| {
+        format!("{x}.step.op = {y}.step.op and {x}.step.Vault::step.i = {y}.step.Vault::step.i")
+    };
+    format!(
+        "hyper Three using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V forall trace c of V \
+         match {{ {} and {} and {} }} \
+         {{ always (holds(v.l @ a = v.l @ b) and holds(v.l @ b = v.l @ c) \
+         and holds(v.l @ a = v.l @ c)) }}",
+        same("a", "b"),
+        same("b", "c"),
+        same("a", "c"),
+    )
+}
+
+/// FR-174-AC-2: three copies swappable in one class have the symmetric group
+/// of three as their copy group. The secure product stores one state for each
+/// multiset of secrets and each shared output, 4 times 2, against the
+/// unreduced 8 triples of secrets times 2; the leaky one is refuted by a
+/// counterexample that is a real behaviour of each of the three copies.
+#[trace("TC-599", "FR-174-AC-2")]
+#[test]
+fn three_copies_store_one_state_for_each_multiset_of_secrets() {
+    let secure = World::new(Vault::Secure, false, &STARTS, &three_copies());
+    assert_eq!(
+        secure.clause.copy_group().classes,
+        [["a", "b", "c"].map(str::to_owned).to_vec()]
+    );
+    assert_eq!(secure.explore().graph.states().len(), 16);
+    let HyperOutcome::HoldsReduced { reductions, stats } = run(&secure) else {
+        panic!("expected the secure vault to hold under the swaps");
+    };
+    assert_eq!(stats.product_states, 8);
+    assert_eq!(
+        reductions,
+        [AppliedReduction::CopySwap {
+            classes: vec![["a", "b", "c"].map(str::to_owned).to_vec()]
+        }]
+    );
+
+    let leaky = World::new(Vault::Leaky, false, &STARTS, &three_copies());
+    let unreduced = leaky.explore().graph.states().len();
+    let outcome = run(&leaky);
+    let reduced = usize::try_from(outcome.stats().product_states).expect("fits");
+    assert!(reduced * 3 <= unreduced * 2, "{reduced} of {unreduced}");
+    let counterexample = refuted(outcome);
+    let names: Vec<_> = counterexample
+        .traces
+        .iter()
+        .map(|trace| trace.variable.as_str())
+        .collect();
+    assert_eq!(names, ["a", "b", "c"]);
+    assert_lockstep_behaviours(&leaky, &counterexample);
+}
+
+/// Every trace of `counterexample` is a behaviour of the vault, step for step
+/// and post-state for post-state, from the initial state it names, the traces
+/// have one length, and the model reproduces it (FR-183).
+fn assert_lockstep_behaviours(world: &World, counterexample: &HyperCounterexample) {
+    let HyperCounterexampleKind::Lockstep { loop_entry } = counterexample.kind else {
+        panic!(
+            "expected a lockstep counterexample: {:?}",
+            counterexample.kind
+        );
+    };
+    let length = counterexample.traces[0].steps.len();
+    assert!(loop_entry <= u64::try_from(length).expect("fits"));
+    for (index, trace) in counterexample.traces.iter().enumerate() {
+        assert_eq!(trace.steps.len(), length);
+        assert_eq!(positions(world, counterexample, index).len(), length + 1);
+        assert_eq!(inputs(counterexample, index).len(), length);
+    }
+    assert!(matches!(
+        world.replay(counterexample),
+        Ok(ModelTraceSettlement::Reproduced { .. })
+    ));
+}
+
+/// FR-174-AC-3: the leaky refutation under copy-swap is an ordinary
+/// `HyperCounterexample`: the traces are `a`'s and `b`'s in quantifier order,
+/// each a behaviour of the vault from its own initial state, `a` from
+/// `(0, 0)` and `b` from `(1, 0)`, with the outputs differing at joint
+/// position 1, and it replays (FR-183). Nothing in it names a canonical
+/// state.
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn the_leaky_refutation_under_the_swap_is_a_concrete_counterexample_that_replays() {
+    let world = World::new(
+        Vault::Leaky,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let counterexample = refuted(run(&world));
+    let names: Vec<_> = counterexample
+        .traces
+        .iter()
+        .map(|trace| (trace.variable.as_str(), trace.alias.as_str(), trace.initial))
+        .collect();
+    assert_eq!(names, [("a", "V", 0), ("b", "V", 1)]);
+    assert_eq!(
+        counterexample.kind,
+        HyperCounterexampleKind::Lockstep { loop_entry: 1 }
+    );
+    assert_eq!(counterexample.trace_position, 1);
+    let a = positions(&world, &counterexample, 0);
+    let b = positions(&world, &counterexample, 1);
+    assert_eq!(a, [(0, 0), (0, 0), (0, 0)]);
+    assert_eq!(b, [(1, 0), (1, 1), (1, 1)]);
+    assert_lockstep_behaviours(&world, &counterexample);
+}
+
+/// FR-174-AC-3: a path of the quotient that lands on a swapped state is
+/// followed through the swap. With no `match` the secure vault pairs unequal
+/// inputs, `(step(0), step(1))` and `(step(1), step(0))` reach swapped states
+/// that the quotient stores once; the refutation it finds is still each
+/// copy's own behaviour.
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn a_path_through_swapped_states_is_lifted_to_each_copy_s_own_behaviour() {
+    let world = World::new(Vault::Secure, false, &STARTS, &non_interference(""));
+    assert!(!world.clause.copy_group().classes.is_empty());
+    let counterexample = refuted(run(&world));
+    assert_lockstep_behaviours(&world, &counterexample);
+    let a = positions(&world, &counterexample, 0);
+    let b = positions(&world, &counterexample, 1);
+    assert!(a.iter().zip(&b).any(|(a, b)| a.1 != b.1));
+    // The first position at which the outputs differ is the one reported.
+    let first = a.iter().zip(&b).position(|(a, b)| a.1 != b.1);
+    assert_eq!(
+        first,
+        Some(usize::try_from(counterexample.trace_position).expect("fits"))
+    );
+}
+
+/// A vault whose `step` flips `l`, whatever the input.
+const TOGGLING: Vault = Vault::Custom(
+    "post Step using v on V::Vault::step \
+     { (pre(self.l) = 0 and self.l = 1) or (pre(self.l) = 1 and self.l = 0) }\n",
+);
+
+/// FR-174-AC-3: a loop of the quotient that closes on a swapped state is
+/// repeated until the concrete tuple closes. From `a = (0, 0)` and `b = (0, 1)`
+/// both copies flip `l` at each step, so the pair swaps its outputs: the
+/// quotient stores the pair once, with one edge from it to itself that carries
+/// the swap, and the concrete lasso goes round twice, a loop of two steps with
+/// `a` at `l = 0, 1` and `b` at `l = 1, 0` (the order of the swap is two).
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn a_loop_closing_on_the_swapped_state_is_repeated_until_the_tuple_closes() {
+    let world = World::new(
+        TOGGLING,
+        false,
+        &[(0, 0), (0, 1)],
+        &non_interference(EQUAL_INPUTS),
+    );
+    let counterexample = refuted(run(&world));
+    assert_eq!(
+        counterexample.kind,
+        HyperCounterexampleKind::Lockstep { loop_entry: 0 }
+    );
+    assert_eq!(counterexample.trace_position, 0);
+    let names: Vec<_> = counterexample
+        .traces
+        .iter()
+        .map(|trace| (trace.variable.as_str(), trace.initial))
+        .collect();
+    assert_eq!(names, [("a", 0), ("b", 1)]);
+    assert_eq!(
+        positions(&world, &counterexample, 0),
+        [(0, 0), (0, 1), (0, 0)]
+    );
+    assert_eq!(
+        positions(&world, &counterexample, 1),
+        [(0, 1), (0, 0), (0, 1)]
+    );
+    assert_lockstep_behaviours(&world, &counterexample);
+}
+
+/// A vault whose `step` sets `l` to the complement of its input.
+const INVERTING: Vault = Vault::Custom(
+    "post Step using v on V::Vault::step \
+     { (i = 0 and self.l = 1) or (i = 1 and self.l = 0) }\n",
+);
+
+/// The world's letters, except that they have no value where the two outputs
+/// differ: a reading that is the same for a state and its swap.
+struct UndefinedWhereTheyDiffer<'w>(Seams<'w>);
+
+impl HyperLetters for UndefinedWhereTheyDiffer<'_> {
+    fn atom(
+        &self,
+        atom: FormulaNodeId,
+        instance: &[ParameterBinding],
+        states: &[&ModelSimState],
+        meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        if low_of(states[0], KEY) != low_of(states[1], KEY) {
+            return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
+                Undefined::DivisionByZero,
+            )));
+        }
+        self.0.atom(atom, instance, states, meter)
+    }
+}
+
+/// The letters of a body that reads each copy's own output, with no value for
+/// the atom of a copy at `l = 1` while the other is at `l = 0`: a reading that
+/// moves with the copies when they are swapped.
+struct UndefinedForTheCopyAhead<'w> {
+    world: &'w World,
+}
+
+impl HyperLetters for UndefinedForTheCopyAhead<'_> {
+    fn atom(
+        &self,
+        atom: FormulaNodeId,
+        instance: &[ParameterBinding],
+        states: &[&ModelSimState],
+        meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        let own = if self.world.atom_text(atom).contains("@ a") {
+            0
+        } else {
+            1
+        };
+        if low_of(states[own], KEY) == 1 && low_of(states[1 - own], KEY) == 0 {
+            return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
+                Undefined::DivisionByZero,
+            )));
+        }
+        self.world.seams().atom(atom, instance, states, meter)
+    }
+}
+
+/// FR-174-AC-3: the atom an undefined evaluation names is the concrete
+/// tuple's. After `(step(0), step(1))`, `a` is at `l = 1` while `b` is at
+/// `l = 0`, so the atom of `a` has no value; the quotient stores the swapped
+/// pair, where it is the atom of the other variable that has none.
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn an_undefined_atom_names_the_atom_of_the_concrete_tuple() {
+    let world = World::new(
+        INVERTING,
+        false,
+        &[(0, 0)],
+        "hyper Zeroes using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V \
+         { always (holds(v.l @ a = 0) and holds(v.l @ b = 0)) }",
+    );
+    assert_eq!(world.clause.copy_group().generators.len(), 1);
+    let letters = UndefinedForTheCopyAhead { world: &world };
+    let outcome = world
+        .run_through(
+            &letters,
+            &world.seams(),
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("not refused");
+    let counterexample = refuted(outcome);
+    let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
+        panic!("expected an undefined-evaluation counterexample");
+    };
+    let HyperLocus::Atom(atom) = undefined.locus else {
+        panic!("expected an atom: {:?}", undefined.locus);
+    };
+    assert_eq!(world.atom_text(atom), "holds(v.l @ a = 0)");
+    assert_eq!(undefined.position, 1);
+    assert_eq!(inputs(&counterexample, 0), [0]);
+    assert_eq!(inputs(&counterexample, 1), [1]);
+    assert_eq!(positions(&world, &counterexample, 0), [(0, 0), (0, 1)]);
+    assert_eq!(positions(&world, &counterexample, 1), [(0, 0), (0, 0)]);
+}
+
+/// FR-174-AC-3: with three copies the stored tuple can be the concrete one
+/// rotated, and the atom named is still the concrete tuple's. After
+/// `(step(0), step(1), step(1))`, `a` is at `l = 1` while `b` and `c` are at
+/// `l = 0`; the quotient stores the tuple sorted by output, with the copy at
+/// `l = 1` last.
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn an_undefined_atom_of_three_copies_names_the_atom_of_the_concrete_tuple() {
+    struct Alone<'w>(&'w World);
+    impl HyperLetters for Alone<'_> {
+        fn atom(
+            &self,
+            atom: FormulaNodeId,
+            instance: &[ParameterBinding],
+            states: &[&ModelSimState],
+            meter: &mut Meter,
+        ) -> Result<AtomReading, Incomplete> {
+            let own = ["@ a", "@ b", "@ c"]
+                .iter()
+                .position(|variable| self.0.atom_text(atom).contains(variable))
+                .expect("an atom reads a copy");
+            let ones = states
+                .iter()
+                .filter(|state| low_of(state, KEY) == 1)
+                .count();
+            if low_of(states[own], KEY) == 1 && ones == 1 {
+                return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
+                    Undefined::DivisionByZero,
+                )));
+            }
+            self.0.seams().atom(atom, instance, states, meter)
+        }
+    }
+    let world = World::new(
+        INVERTING,
+        false,
+        &[(0, 0)],
+        "hyper Zeroes using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V forall trace c of V \
+         { always (holds(v.l @ a = 0) and holds(v.l @ b = 0) and holds(v.l @ c = 0)) }",
+    );
+    assert_eq!(world.clause.copy_group().generators.len(), 2);
+    let outcome = world
+        .run_through(
+            &Alone(&world),
+            &world.seams(),
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("not refused");
+    let counterexample = refuted(outcome);
+    let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
+        panic!("expected an undefined-evaluation counterexample");
+    };
+    let HyperLocus::Atom(atom) = undefined.locus else {
+        panic!("expected an atom: {:?}", undefined.locus);
+    };
+    assert_eq!(world.atom_text(atom), "holds(v.l @ a = 0)");
+    assert_eq!(inputs(&counterexample, 0), [0]);
+    assert_eq!(inputs(&counterexample, 1), [1]);
+    assert_eq!(inputs(&counterexample, 2), [1]);
+    assert_eq!(positions(&world, &counterexample, 0), [(0, 0), (0, 1)]);
+    assert_eq!(positions(&world, &counterexample, 2), [(0, 0), (0, 0)]);
+}
+
+/// FR-174-AC-3: an undefined evaluation found at a stored state is reported
+/// for the concrete tuple. With no `match`, `(step(0), step(1))` leaves `a` at
+/// `l = 1` and `b` at `l = 0`, which the quotient stores as the swapped pair
+/// `(l = 0, l = 1)`; the counterexample names the copies as they stepped.
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn an_undefined_letter_is_reported_for_the_copies_as_they_stepped() {
+    let world = World::new(INVERTING, false, &[(0, 0)], &non_interference(""));
+    assert!(!world.clause.copy_group().classes.is_empty());
+    let letters = UndefinedWhereTheyDiffer(world.seams());
+    let outcome = world
+        .run_through(
+            &letters,
+            &world.seams(),
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("not refused");
+    let counterexample = refuted(outcome);
+    let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
+        panic!("expected an undefined-evaluation counterexample");
+    };
+    assert!(matches!(undefined.locus, HyperLocus::Atom(_)));
+    assert_eq!(undefined.position, 1);
+    assert_eq!(inputs(&counterexample, 0), [0]);
+    assert_eq!(inputs(&counterexample, 1), [1]);
+    assert_eq!(positions(&world, &counterexample, 0), [(0, 0), (0, 1)]);
+    assert_eq!(positions(&world, &counterexample, 1), [(0, 0), (0, 0)]);
+    // The states the evaluation names are the concrete ones, `a`'s first.
+    let reached: Vec<_> = counterexample
+        .traces
+        .iter()
+        .map(|trace| match trace.steps.last() {
+            Some(qsl_replay::HyperStep::Model(step)) => step.post_state,
+            other => panic!("a model step, not {other:?}"),
+        })
+        .collect();
+    assert_eq!(undefined.state_keys, reached);
+}
+
+/// A vault whose `step` sets `l` to the complement of its input and is
+/// enabled, with a value, only where `l` is 1: at `l = 0` its precondition
+/// divides by zero.
+const DIVIDING: Vault = Vault::Custom(
+    "pre Positive using v on V::Vault::step { (1 div self.l) = 1 }\n\
+     post Step using v on V::Vault::step { (i = 0 and self.l = 1) or (i = 1 and self.l = 0) }\n",
+);
+
+/// FR-174-AC-3: an undefined contract found at one component of a stored state
+/// names the variable of that component in the concrete tuple. `(step(0),
+/// step(1))` leaves `a` at `l = 1` and `b` at `l = 0`, whose precondition has no
+/// value; the quotient stores the pair swapped, with the component at `l = 0`
+/// first, and the counterexample names `b`.
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn an_undefined_contract_names_the_variable_of_the_concrete_tuple() {
+    let world = World::new(DIVIDING, false, &[(0, 1)], &non_interference(""));
+    assert!(!world.clause.copy_group().classes.is_empty());
+    let counterexample = refuted(run(&world));
+    let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
+        panic!("expected an undefined-evaluation counterexample");
+    };
+    assert!(
+        matches!(undefined.locus, HyperLocus::Contract(_)),
+        "{:?}",
+        undefined.locus
+    );
+    assert_eq!(undefined.position, 1);
+    assert_eq!(undefined.variables, [("b".to_owned(), "V".to_owned())]);
+    assert_eq!(inputs(&counterexample, 0), [0]);
+    assert_eq!(inputs(&counterexample, 1), [1]);
+    assert_eq!(positions(&world, &counterexample, 0), [(0, 1), (0, 1)]);
+    assert_eq!(positions(&world, &counterexample, 1), [(0, 1), (0, 0)]);
+    let Some(qsl_replay::HyperStep::Model(step)) = counterexample.traces[1].steps.last() else {
+        panic!("a model step");
+    };
+    assert_eq!(undefined.state_keys, [step.post_state]);
+}
+
+/// FR-174-AC-4: partial-order reduction settles `NonInterference`
+/// `ReductionNotPreserving` before any state is expanded, for every hyper form
+/// (ADR-023 PH-2); so does a state constraint for `Opaque` (PH-6) and key
+/// symmetry for `SavesPower`'s two subjects (PH-3).
+#[trace("TC-599", "FR-174-AC-4")]
+#[test]
+fn a_reduction_whose_row_reads_no_settles_before_any_expansion() {
+    let not_preserving = |outcome: Result<HyperOutcome, _>| match outcome.expect("not refused") {
+        HyperOutcome::Reduction {
+            cause: HyperReductionCause::NotPreserving { reduction, form },
+            stats,
+        } => {
+            assert_eq!(stats, qsl_replay::RunStats::default());
+            (reduction, form)
+        }
+        other => panic!("expected ReductionNotPreserving, got {other:?}"),
+    };
+
+    let interference = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let partial_order = Reductions {
+        partial_order: true,
+        ..Reductions::default()
+    };
+    assert_eq!(
+        not_preserving(interference.run_selecting(partial_order)),
+        (ReductionKind::PartialOrder, HyperForm::Universal)
+    );
+
+    let opaque = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        "hyper Opaque using inf over behaviours (v: V::Vault) \
+         forall trace a of V exists trace b of V \
+         match { a.step.Vault::step.i = b.step.Vault::step.i } \
+         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }",
+    );
+    let constraint = Reductions {
+        constraint: Some("Bounded".to_owned()),
+        ..Reductions::default()
+    };
+    assert_eq!(
+        not_preserving(opaque.run_selecting(constraint)),
+        (
+            ReductionKind::StateConstraint,
+            HyperForm::ForallExistsSafety
+        )
+    );
+
+    let power = World::with_second_model(
+        Vault::Secure,
+        &STARTS,
+        "hyper SavesPower using inf over behaviours (d: V::Vault, e: N::Vault) \
+         forall trace s of V forall trace n of N \
+         match { s.step.Vault::step.i = n.step.Vault::step.i } \
+         { always holds(d.l @ s = e.l @ n) }",
+    );
+    assert_eq!(power.clause.aliases().len(), 2);
+    assert_eq!(
+        not_preserving(power.run_selecting(symmetry())),
+        (ReductionKind::Symmetry, HyperForm::Universal)
+    );
+}
+
+/// A key symmetry declaration over the vaults.
+fn symmetry() -> Reductions {
+    Reductions {
+        symmetry: vec![SymmetryDeclaration {
+            population: key("vaults"),
+            classes: vec![vec!["v".to_owned(), "w".to_owned()]],
+        }],
+        ..Reductions::default()
+    }
+}
+
+/// FR-174-AC-4, the rows that read "yes": a reduction the table admits is not
+/// refused as non-preserving. This engine does not offer key symmetry or a
+/// state constraint for a hyper item, so the item settles `unsupported`
+/// naming the first selected reduction, still before any state is expanded.
+#[trace("TC-599", "FR-174-AC-4")]
+#[test]
+fn a_reduction_whose_row_reads_yes_is_not_refused_as_non_preserving() {
+    let interference = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    for (reductions, expected) in [
+        (symmetry(), ReductionKind::Symmetry),
+        (
+            Reductions {
+                constraint: Some("Bounded".to_owned()),
+                ..Reductions::default()
+            },
+            ReductionKind::StateConstraint,
+        ),
+    ] {
+        let outcome = interference.run_selecting(reductions).expect("not refused");
+        let HyperOutcome::Reduction { cause, stats } = outcome else {
+            panic!("expected a reduction cause, got {outcome:?}");
+        };
+        assert_eq!(
+            cause,
+            HyperReductionCause::Unsupported {
+                reduction: expected
+            }
+        );
+        assert_eq!(stats, qsl_replay::RunStats::default());
+    }
+    // No selection leaves the item to the engine.
+    assert!(matches!(
+        interference.run(Default::default(), &Cancel::new()),
+        Ok(HyperOutcome::HoldsReduced { .. })
+    ));
+}

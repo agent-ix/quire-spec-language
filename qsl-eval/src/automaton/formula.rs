@@ -136,6 +136,12 @@ pub(super) struct Ir {
     /// node itself otherwise.
     cores: Vec<NodeId>,
     interned: BTreeMap<Node, NodeId>,
+    /// For an arena in normal form (ADR-023 CS-2), the flattened operands of
+    /// each node that is an `and` or `or`, and none for any other. The
+    /// operands of one are a set: sorted by node, without repeats, folded to
+    /// the right, so an `and` or `or` is the same node however it was
+    /// written, and an exchange of atoms maps the arena onto itself.
+    operands: Option<Vec<Vec<NodeId>>>,
 }
 
 pub(super) fn invariant(invariant: &'static str) -> AutomatonError {
@@ -143,6 +149,14 @@ pub(super) fn invariant(invariant: &'static str) -> AutomatonError {
 }
 
 impl Ir {
+    /// An arena in normal form.
+    pub(super) fn normal() -> Self {
+        Self {
+            operands: Some(Vec::new()),
+            ..Self::default()
+        }
+    }
+
     pub(super) fn len(&self) -> usize {
         self.nodes.len()
     }
@@ -178,10 +192,25 @@ impl Ir {
     }
 
     fn intern(&mut self, node: Node, future: bool, core: Option<NodeId>) -> NodeId {
+        self.intern_operands(node, future, core, Vec::new())
+    }
+
+    /// `intern`, for a node in normal form whose flattened operands are
+    /// `operands`.
+    fn intern_operands(
+        &mut self,
+        node: Node,
+        future: bool,
+        core: Option<NodeId>,
+        operands: Vec<NodeId>,
+    ) -> NodeId {
         if let Some(&id) = self.interned.get(&node) {
             return id;
         }
         let id = NodeId(self.nodes.len());
+        if let Some(held) = &mut self.operands {
+            held.push(operands);
+        }
         self.nodes.push(node);
         self.has_future.push(future);
         self.cores.push(core.unwrap_or(id));
@@ -237,6 +266,11 @@ impl Ir {
         if left == right {
             return Ok(left);
         }
+        if self.operands.is_some() {
+            let mut operands = self.operands_of(left, conjunction);
+            operands.extend(self.operands_of(right, conjunction));
+            return self.fold(operands, conjunction);
+        }
         let (first, second) = (left.min(right), left.max(right));
         let node = if conjunction {
             Node::And(first, second)
@@ -245,6 +279,126 @@ impl Ir {
         };
         let future = self.has_future(left) || self.has_future(right);
         Ok(self.intern(node, future, None))
+    }
+
+    /// The flattened operands of `id` read as an `and` (`conjunction`) or an
+    /// `or`; `id` itself when it is neither.
+    fn operands_of(&self, id: NodeId, conjunction: bool) -> Vec<NodeId> {
+        let flat = match self.nodes.get(id.0) {
+            Some(Node::And(..)) => conjunction,
+            Some(Node::Or(..)) => !conjunction,
+            _ => false,
+        };
+        match self.operands.as_ref().and_then(|held| held.get(id.0)) {
+            Some(operands) if flat => operands.clone(),
+            _ => vec![id],
+        }
+    }
+
+    /// The `and` or `or` of `operands` in normal form: sorted by node, without
+    /// repeats, folded to the right.
+    fn fold(
+        &mut self,
+        mut operands: Vec<NodeId>,
+        conjunction: bool,
+    ) -> Result<NodeId, AutomatonError> {
+        operands.sort();
+        operands.dedup();
+        let (mut folded, rest) = operands
+            .split_last()
+            .map(|(last, rest)| (*last, rest.to_vec()))
+            .ok_or_else(|| invariant("connective-has-operands"))?;
+        for index in (0..rest.len()).rev() {
+            let flattened = operands.get(index..).unwrap_or_default().to_vec();
+            let future = flattened.iter().any(|id| self.has_future(*id));
+            let node = if conjunction {
+                Node::And(rest[index], folded)
+            } else {
+                Node::Or(rest[index], folded)
+            };
+            folded = self.intern_operands(node, future, None, flattened);
+        }
+        Ok(folded)
+    }
+
+    /// Where each node of `order`, in ascending order, goes when atom `a`
+    /// becomes atom `exchange[a]`; `None` when the exchange takes a temporal
+    /// operator of `order` to a node outside it, so the arena is not closed
+    /// under the exchange.
+    ///
+    /// # Errors
+    ///
+    /// An invariant error when `order` is not an arena order.
+    pub(super) fn exchanged(
+        &mut self,
+        order: &[NodeId],
+        exchange: &[usize],
+    ) -> Result<Option<BTreeMap<NodeId, NodeId>>, AutomatonError> {
+        let mut images: BTreeMap<NodeId, NodeId> = BTreeMap::new();
+        let image = |images: &BTreeMap<NodeId, NodeId>, id: NodeId| {
+            images
+                .get(&id)
+                .copied()
+                .ok_or_else(|| invariant("operands-precede-operators"))
+        };
+        for id in order {
+            let node = self.node(*id)?;
+            let exchanged = match node {
+                Node::Constant(_) => *id,
+                Node::Atom(atom) => {
+                    let to = exchange.get(atom.index()).copied().unwrap_or(atom.index());
+                    self.atom(Atom::new(to)?)
+                }
+                Node::Not(operand) => {
+                    let operand = image(&images, operand)?;
+                    self.not(operand)?
+                }
+                Node::And(..) | Node::Or(..) => {
+                    let leaves = self
+                        .operands
+                        .as_ref()
+                        .and_then(|held| held.get(id.0))
+                        .cloned()
+                        .ok_or_else(|| invariant("normal-arena"))?;
+                    let leaves = leaves
+                        .into_iter()
+                        .map(|leaf| image(&images, leaf))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    self.fold(leaves, matches!(node, Node::And(..)))?
+                }
+                Node::Past {
+                    kind,
+                    window,
+                    left,
+                    right,
+                } => {
+                    let left = left.map(|left| image(&images, left)).transpose()?;
+                    let right = image(&images, right)?;
+                    self.past(kind, window, left, right)?
+                }
+                Node::Future {
+                    kind,
+                    window,
+                    left,
+                    right,
+                } => {
+                    let left = left.map(|left| image(&images, left)).transpose()?;
+                    let right = image(&images, right)?;
+                    self.future(kind, window, left, right)
+                }
+            };
+            images.insert(*id, exchanged);
+        }
+        // A state names only temporal operators, which the translation keeps
+        // in the arena. The suffixes of a folded `and` or `or` are not named
+        // by any state, and the image of one need not be a node of the arena.
+        let operators_stay = images.iter().all(|(from, to)| {
+            !matches!(
+                self.nodes.get(from.0),
+                Some(Node::Past { .. } | Node::Future { .. })
+            ) || order.binary_search(to).is_ok()
+        });
+        Ok(operators_stay.then_some(images))
     }
 
     /// A past operator; its operands must be state formulas.
@@ -337,8 +491,8 @@ pub(super) struct Lowered {
 
 /// Lower `formula`: every `holds` atom becomes a letter atom, `implies`
 /// becomes `or`, and each node is built with its negation.
-pub(super) fn lower(formula: &CheckedFormula) -> Result<Lowered, AutomatonError> {
-    let mut ir = Ir::default();
+pub(super) fn lower(formula: &CheckedFormula, normal: bool) -> Result<Lowered, AutomatonError> {
+    let mut ir = if normal { Ir::normal() } else { Ir::default() };
     let mut atoms = Vec::new();
     let mut letters = vec![None; formula.nodes().len()];
     for (index, node) in formula.nodes().iter().enumerate() {
