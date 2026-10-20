@@ -13,8 +13,8 @@ use qsl_replay::{
     open_systems, replay_refinement_trace, settle_refinement_safety, CounterexampleKind,
     InconclusiveCause, MappingRowRef, MappingSite, ModelCheckLimits, ModelCheckRecord, ObjectKey,
     RefinementFailure, RefinementOutcome, RefinementTraceSettlement, ResultLabel, SafetyOutcome,
-    SafetyUndecided, SettlementBasis, StepRejection, TemporalCounterexample, TerminalValue,
-    UndefinedLocus, Undetermined,
+    SafetyUndecided, SettlementBasis, SimulationCertificateRequest, StepRejection,
+    TemporalCounterexample, TerminalValue, UndefinedLocus, Undetermined,
 };
 use quire_exact::{Cancel, Undefined};
 
@@ -63,9 +63,19 @@ fn replay(
 }
 
 fn settle(world: &World<'_>, outcome: &SafetyOutcome) -> ModelCheckRecord {
-    settle_refinement_safety(outcome, &ModelCheckLimits::default(), |payload| {
-        replay(world, payload)
-    })
+    let certified = SimulationCertificateRequest {
+        refinement: world.refinement(),
+        concrete: world.concrete_request(UNLIMITED),
+        abstract_package: world.package(),
+        abstract_initial: vec![world.abstract_initial()],
+    };
+    settle_refinement_safety(
+        outcome,
+        &ModelCheckLimits::default(),
+        &certified,
+        &Cancel::new(),
+        |payload| replay(world, payload),
+    )
 }
 
 fn reproduced(world: &World<'_>, payload: &TemporalCounterexample) -> RefinementFailure {
@@ -110,7 +120,7 @@ fn broken_last() -> String {
 #[test]
 fn a_register_with_a_history_field_holds_over_four_product_states() {
     let unit = Unit::register();
-    let SafetyOutcome::Holds { stats } = run(&unit.world(&register_history(LAST))) else {
+    let SafetyOutcome::Holds { stats, .. } = run(&unit.world(&register_history(LAST))) else {
         panic!("the refinement holds");
     };
     assert_eq!(stats.product_states, 4);

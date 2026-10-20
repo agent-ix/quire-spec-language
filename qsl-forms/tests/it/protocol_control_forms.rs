@@ -8,10 +8,10 @@ use ix_trace_rs::trace;
 use qsl_forms::{
     build_unit, AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelForm, ChannelOrdering,
     ChannelOverflow, DeclarationForm, ExpressionForm, FormsCause, JoinPolicy, LossSelector,
-    MemoryModelName, Outstanding, ParsedUnit, ProtocolConstructKind, ProtocolDeclarationForm,
-    ProtocolMemberForm, ProtocolNodeKind, SchedulingForm, TerminalForm,
+    Outstanding, ParsedUnit, ProtocolConstructKind, ProtocolDeclarationForm, ProtocolMemberForm,
+    ProtocolNodeKind, SchedulingForm, TerminalForm,
 };
-use qsl_foundation::{Code, SourceIdentity, Span};
+use qsl_foundation::{Code, MemoryModelName, SourceIdentity, Span};
 
 const HEADER: &str = "language \"ix:native\" edition \"1-draft\";\n\
     profile v = \"quire.value.complete/v1\";\n\

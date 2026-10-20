@@ -20,7 +20,9 @@ mod refine;
 mod scc;
 mod state_graph;
 
-pub use check::{check_model, ModelCheckRefusal, ModelCheckRequest};
+pub use check::{
+    check_model, check_protocol, ModelCheckRefusal, ModelCheckRequest, ProtocolCheckRequest,
+};
 pub use graph::{
     retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
     RetainedState,

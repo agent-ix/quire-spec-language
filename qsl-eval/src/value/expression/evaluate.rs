@@ -792,6 +792,18 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.drive(root)
     }
 
+    /// [`Self::run`] over a frame given slot by slot: `frame[i]` is local
+    /// slot `i`, `None` for a slot the body may bind but is not given
+    /// (ADR-027 ST-1: a protocol slot reads only the binders bound at it).
+    pub(crate) fn run_frame(
+        mut self,
+        root: CheckedNode<'a>,
+        frame: Vec<Option<Value>>,
+    ) -> Result<Evaluation, InternalFault> {
+        self.frames.push(frame);
+        self.drive(root)
+    }
+
     /// FR-265: [`Self::run`] over a state clause's body, returning the
     /// evaluation and the trail recorded beside it. The machine must carry
     /// a trail ([`Self::with_trail`]).

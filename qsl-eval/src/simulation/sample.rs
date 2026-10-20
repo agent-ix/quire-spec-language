@@ -190,7 +190,7 @@ pub(crate) fn sample<S: TransitionSystem>(
 /// (FR-101), by identity. The only site that compares a sampler's identity
 /// string.
 #[qsl_attrs::string_edge]
-fn is_pinned_sampler(sampler: &DefinitionRef) -> bool {
+pub(crate) fn is_pinned_sampler(sampler: &DefinitionRef) -> bool {
     sampler.identity() == SAMPLER_IDENTITY
 }
 

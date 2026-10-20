@@ -33,6 +33,6 @@ Tag the tests `#[trace("TC-617", "<AC id>")]`.
 - Step 1: the enabling footprint holds `Field{g, c}` and `Field{g, d}`;
   `arm` and `arm2` are visible; the ample set at `(F,F,F,F)` is `{toggle}`;
   both runs return `Violated` with the loop `toggle, toggle`, the reduced
-  run over 6 states.
-- Step 2: `spawn` writes `AnyMembership{gates}`, which meets
+  run (8 model states in the model-level reduced search).
+- Step 2: `spawn` writes `AnyMembership{gates}`, which affects
   `Membership{gates, g}`, and is visible.
