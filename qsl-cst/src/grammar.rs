@@ -2593,6 +2593,66 @@ fn probabilistic(g: &mut Grammar) {
     g.insert(P::Horizon, c(vec![r(P::QuantityLiteral), bound()]));
 }
 
+/// QSpec FR-450's `abstraction-decl`. The four Rust positions are quoted
+/// strings, so a Rust spelling never meets this edition's lexical contract;
+/// `population`, `operation` and `receiver` are contextual words.
+fn abstraction(g: &mut Grammar) {
+    g.insert(
+        P::AbstractionDeclaration,
+        s(vec![
+            x("abstraction"),
+            ident(),
+            x("using"),
+            ident(),
+            x("{"),
+            plus(c(vec![
+                r(P::ObjectBinding),
+                r(P::PopulationBinding),
+                r(P::FrameBinding),
+            ])),
+            x("}"),
+        ]),
+    );
+    g.insert(
+        P::ObjectBinding,
+        s(vec![
+            x("type"),
+            r(P::TypeName),
+            x("to"),
+            text(),
+            opt(s(vec![x("{"), plus(r(P::FieldBinding)), x("}")])),
+            x(";"),
+        ]),
+    );
+    g.insert(P::FieldBinding, s(vec![member(), x("to"), text(), x(";")]));
+    g.insert(
+        P::PopulationBinding,
+        s(vec![
+            literal("population"),
+            r(P::ModelName),
+            x("to"),
+            text(),
+            x(";"),
+        ]),
+    );
+    g.insert(
+        P::FrameBinding,
+        s(vec![
+            literal("operation"),
+            r(P::OperationName),
+            x("to"),
+            text(),
+            literal("receiver"),
+            text(),
+            x("("),
+            opt(list(|| r(P::ParameterBinding))),
+            x(")"),
+            x(";"),
+        ]),
+    );
+    g.insert(P::ParameterBinding, s(vec![member(), x("to"), text()]));
+}
+
 #[cfg(test)]
 mod tests {
     use ix_trace_rs::trace;
@@ -2679,64 +2739,4 @@ mod tests {
             );
         }
     }
-}
-
-/// QSpec FR-450's `abstraction-decl`. The four Rust positions are quoted
-/// strings, so a Rust spelling never meets this edition's lexical contract;
-/// `population`, `operation` and `receiver` are contextual words.
-fn abstraction(g: &mut Grammar) {
-    g.insert(
-        P::AbstractionDeclaration,
-        s(vec![
-            x("abstraction"),
-            ident(),
-            x("using"),
-            ident(),
-            x("{"),
-            plus(c(vec![
-                r(P::ObjectBinding),
-                r(P::PopulationBinding),
-                r(P::FrameBinding),
-            ])),
-            x("}"),
-        ]),
-    );
-    g.insert(
-        P::ObjectBinding,
-        s(vec![
-            x("type"),
-            r(P::TypeName),
-            x("to"),
-            text(),
-            opt(s(vec![x("{"), plus(r(P::FieldBinding)), x("}")])),
-            x(";"),
-        ]),
-    );
-    g.insert(P::FieldBinding, s(vec![member(), x("to"), text(), x(";")]));
-    g.insert(
-        P::PopulationBinding,
-        s(vec![
-            literal("population"),
-            r(P::ModelName),
-            x("to"),
-            text(),
-            x(";"),
-        ]),
-    );
-    g.insert(
-        P::FrameBinding,
-        s(vec![
-            literal("operation"),
-            r(P::OperationName),
-            x("to"),
-            text(),
-            literal("receiver"),
-            text(),
-            x("("),
-            opt(list(|| r(P::ParameterBinding))),
-            x(")"),
-            x(";"),
-        ]),
-    );
-    g.insert(P::ParameterBinding, s(vec![member(), x("to"), text()]));
 }
