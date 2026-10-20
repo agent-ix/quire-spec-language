@@ -305,7 +305,11 @@ fn invalid(cause: &'static str, at: &str) -> (Code, Option<&'static str>, String
 /// `at`: FR-255 has no rational-bits setting yet, so it reports the S3 work
 /// budget's (see the PR's spec gaps).
 fn limit(at: &str) -> (Code, Option<&'static str>, String) {
-    (Code::StageLimitExceeded, Some("work-budget-exceeded"), at.to_owned())
+    (
+        Code::StageLimitExceeded,
+        Some("work-budget-exceeded"),
+        at.to_owned(),
+    )
 }
 
 fn not_yet(at: &str) -> (Code, Option<&'static str>, String) {
