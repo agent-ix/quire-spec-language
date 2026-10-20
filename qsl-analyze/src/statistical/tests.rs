@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use ix_trace_rs::trace;
-use qsl_eval::simulation::{weighted_choice, ChoicePoint, Weights, WeightsRefusal};
+use qsl_eval::simulation::{weighted_choice, ChoicePoint, TotalAboveDrawRange, WeightsRefusal};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
@@ -31,11 +31,11 @@ fn ratio(numerator: i64, denominator: i64) -> Rational {
     quotient(&int(numerator), &int(denominator)).expect("nonzero denominator")
 }
 
-fn weights(values: &[i64]) -> Weights {
-    Weights::new(&values.iter().map(|value| int(*value)).collect::<Vec<_>>()).expect("weights")
+fn weights(values: &[i64]) -> Vec<Rational> {
+    values.iter().map(|value| int(*value)).collect()
 }
 
-fn draw(seed: u64, trace: u64, step: u64, choice: u32, weights: &Weights) -> usize {
+fn draw(seed: u64, trace: u64, step: u64, choice: u32, weights: &[Rational]) -> usize {
     weighted_choice(
         ChoicePoint {
             seed,
@@ -45,6 +45,7 @@ fn draw(seed: u64, trace: u64, step: u64, choice: u32, weights: &Weights) -> usi
         },
         weights,
     )
+    .expect("positive weights within the draw range")
 }
 
 fn sampler_ref() -> DefinitionRef {
@@ -133,9 +134,9 @@ impl RegenerationWalk for NoWalk {
 struct Service {
     threshold: i64,
     activation: bool,
-    durations: Weights,
-    outcomes: Weights,
-    coin: Weights,
+    durations: Vec<Rational>,
+    outcomes: Vec<Rational>,
+    coin: Vec<Rational>,
     /// Each drawn sample's (initial state, trace index) in draw order.
     drawn: Vec<(u32, u64)>,
     /// Each activated sample's `M`, by trace index.
@@ -460,11 +461,11 @@ fn okamoto_decides_a_mean_of_a_fraction_over_the_sample_mean() {
 /// 1: 1}` at choice 0; `1 / (1 − c.v)` is undefined at the first position
 /// with `v = 1`.
 struct Coin {
-    bit: Weights,
+    bit: Vec<Rational>,
     calls: u64,
 }
 
-fn coin_position(seed: u64, trace: u64, bit: &Weights) -> Option<u64> {
+fn coin_position(seed: u64, trace: u64, bit: &[Rational]) -> Option<u64> {
     (0_u64..3)
         .find(|step| draw(seed, trace, *step, 0, bit) == 1)
         .map(|step| step + 1)
@@ -554,14 +555,16 @@ impl BehaviourSampler for Wide {
         self.calls += 1;
         let two_256 = Rational::from_integer(Integer::one().shifted_left(256));
         let spin = [int(1), two_256];
-        match Weights::new(&spin) {
-            Err(WeightsRefusal::TotalAboveDrawRange) => Err(SampleHalt::TotalAboveDrawRange {
-                total: spin
-                    .iter()
-                    .fold(int(0), |sum, weight| sum.add(weight))
-                    .numerator()
-                    .clone(),
-            }),
+        let at = ChoicePoint {
+            seed: 7,
+            trace: 0,
+            step: 0,
+            choice: 0,
+        };
+        match weighted_choice(at, &spin) {
+            Err(WeightsRefusal::TotalAboveDrawRange(TotalAboveDrawRange { total })) => {
+                Err(SampleHalt::TotalAboveDrawRange { total })
+            }
             other => panic!("expected the draw range refusal, got {other:?}"),
         }
     }
@@ -633,8 +636,8 @@ struct AvailWalk {
     node: Node,
     initial: Node,
     duration: bool,
-    fail: Weights,
-    repair: Weights,
+    fail: Vec<Rational>,
+    repair: Vec<Rational>,
     open: (Rational, Rational),
     cycles: CycleLog,
 }

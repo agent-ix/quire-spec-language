@@ -49,7 +49,7 @@ fn text_limits() -> CanonicalLimits {
 }
 
 /// `value`'s canonical text.
-fn text_of(value: &Value) -> Result<String, ExpansionStop> {
+pub(super) fn text_of(value: &Value) -> Result<String, ExpansionStop> {
     value_enc(value)
         .canonical_text(text_limits())
         .map_err(|_| stop(BROKEN))
@@ -80,17 +80,28 @@ fn transition_of(
 }
 
 /// The parameter domains of `application` over the objects of `walk`'s
-/// state, one per declared parameter.
+/// state, one per declared parameter: a random parameter's support, else
+/// its type's domain.
 fn argument_domains(
     walk: &Walk<'_, '_>,
     application: &Application,
 ) -> Result<Vec<Domain>, ExpansionStop> {
+    let system = walk.system;
     let references = walk.references();
     application
         .declaration
         .parameters()
         .iter()
-        .map(|(_, value_type)| Domain::of(value_type, &references, walk.system.types))
+        .enumerate()
+        .map(|(position, (_, value_type))| {
+            match system
+                .probabilistic
+                .support(application.declaring, &application.name, position)
+            {
+                Some(support) => Some(Domain::Listed(support.values())),
+                None => Domain::of(value_type, &references, system.types),
+            }
+        })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| stop(BROKEN))
 }
@@ -115,9 +126,12 @@ fn arguments_of(
 /// Apply `application` to `row` for every argument vector of its parameter
 /// domains under the `pre` and `post` clauses `clauses` selects: check its
 /// effective precondition, and for an enabled application generate its
-/// successors. This is FR-120's one application rule: `ModelSystem` calls it
-/// with every applicable clause, a protocol attempt with the clauses its
-/// `contracts` select (ADR-027 TS-3).
+/// successors. A random parameter ranges over its support in declared order
+/// (FR-187, ADR-024 PM-1). This is FR-120's one application rule:
+/// `ModelSystem` calls it with every applicable clause, a protocol attempt
+/// with the clauses its `contracts` select (ADR-027 TS-3). When `enabled` is
+/// given, each argument vector whose precondition holds is recorded there
+/// with the successors it generated, none included.
 ///
 /// # Errors
 ///
@@ -130,6 +144,7 @@ pub(super) fn apply(
     budget: &mut Budget,
     contract: &mut Vec<ContractFinding>,
     successors: &mut Vec<Applied>,
+    mut enabled: Option<&mut Vec<EnabledVector>>,
 ) -> Result<(), ExpansionStop> {
     let system = walk.system;
     let domains = argument_domains(walk, application)?;
@@ -199,7 +214,18 @@ pub(super) fn apply(
             postconditions,
             footprint: footprint.as_ref(),
         };
+        let first = successors.len();
         application_run.candidates(budget, contract, successors)?;
+        if let Some(enabled) = enabled.as_deref_mut() {
+            enabled.push(EnabledVector {
+                receiver: row.reference.clone(),
+                declaring: application.declaring,
+                name: application.name.clone(),
+                operation: application.text.clone(),
+                args,
+                successors: first..successors.len(),
+            });
+        }
     }
     Ok(())
 }
@@ -234,6 +260,48 @@ pub(super) fn first_precondition(
         }
     }
     Ok(Some((transition, None)))
+}
+
+/// One argument vector of an application whose effective precondition holds
+/// at the expanded state, and the successors it generated (FR-187).
+pub(super) struct EnabledVector {
+    /// The receiver.
+    pub(super) receiver: ObjectReference,
+    /// The operation's declaring type.
+    pub(super) declaring: quire_exact::EffectiveId,
+    /// The operation's name.
+    pub(super) name: String,
+    /// The operation's declaration identity text.
+    pub(super) operation: String,
+    /// One value per declared parameter, random ones included.
+    pub(super) args: Vec<(String, Value)>,
+    /// The positions of its successors in the expansion's successor list.
+    pub(super) successors: std::ops::Range<usize>,
+}
+
+/// The transition identity of an application of the operation `operation`
+/// to `receiver` with `arguments`, which may omit some parameters: a
+/// scheduled identity's canonical order key (FR-187).
+pub(super) fn identity_bytes(
+    operation: &str,
+    receiver: &ObjectReference,
+    arguments: &[Value],
+) -> Result<Vec<u8>, ExpansionStop> {
+    let receiver = encode::reference_enc(receiver)
+        .canonical_text(text_limits())
+        .map_err(|_| stop(BROKEN))?;
+    let arguments = arguments
+        .iter()
+        .map(text_of)
+        .collect::<Result<Vec<_>, _>>()?;
+    let transition = ModelTransition::new(
+        operation.to_owned(),
+        Some(receiver),
+        arguments,
+        text_limits(),
+    )
+    .map_err(|_| stop(BROKEN))?;
+    quire_canonical::to_vec(&transition, text_limits()).map_err(|_| stop(BROKEN))
 }
 
 /// The observations of a precondition: the state as `pre`, the receiver as

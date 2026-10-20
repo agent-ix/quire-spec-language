@@ -217,11 +217,35 @@ pub(super) fn walk_of<'s, 'a>(
     })
 }
 
+/// One model state's expansion.
+type ModelExpansion = Expansion<ModelTransition, ModelSimState, ModelFinding>;
+
 /// Expand `state`: its findings and every successor (FR-120).
 pub(super) fn expand_state(
     system: &ModelSystem<'_>,
     state: &ModelSimState,
     enforcement: Option<&Enforcement<'_>>,
+) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+    expand(system, state, enforcement, None)
+}
+
+/// [`expand_state`] with no footprint enforcement, also returning every
+/// argument vector whose effective precondition holds, each with the
+/// positions of its successors in the expansion's list (FR-187).
+pub(super) fn expand_enabled(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+) -> Result<(ModelExpansion, Vec<frames::EnabledVector>), ExpansionStop> {
+    let mut enabled = Vec::new();
+    let expansion = expand(system, state, None, Some(&mut enabled))?;
+    Ok((expansion, enabled))
+}
+
+fn expand(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+    enforcement: Option<&Enforcement<'_>>,
+    mut enabled: Option<&mut Vec<frames::EnabledVector>>,
 ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
     let walk = walk_of(system, state, enforcement)?;
     let mut budget = system.budget();
@@ -243,6 +267,7 @@ pub(super) fn expand_state(
                 &mut budget,
                 &mut contract,
                 &mut successors,
+                enabled.as_deref_mut(),
             )?;
         }
     }

@@ -57,6 +57,9 @@ pub(super) enum Domain {
         min: u64,
         max: u64,
     },
+    /// A random parameter's support, in declared order (FR-187, ADR-024
+    /// PM-1): its finite domain whatever its declared type.
+    Listed(Vec<Value>),
 }
 
 impl Domain {
@@ -111,6 +114,7 @@ impl Domain {
             Self::Int { len, .. } => *len,
             Self::Option { inner, .. } => inner.len().saturating_add(1),
             Self::Reference(objects) => objects.len() as u128,
+            Self::Listed(values) => values.len() as u128,
             Self::Sequence {
                 element, min, max, ..
             } => {
@@ -151,6 +155,7 @@ impl Domain {
                 .get(usize::try_from(index).ok()?)
                 .cloned()
                 .map(Value::Reference),
+            Self::Listed(values) => values.get(usize::try_from(index).ok()?).cloned(),
             Self::Sequence {
                 collection,
                 element,
