@@ -462,6 +462,9 @@ pub struct PackageDeclarations {
     /// checked under the one of them, or refuses when there is none or
     /// several.
     pub temporal_selections: Vec<super::temporal_clause::TemporalSelection>,
+    /// FR-110, FR-186: every header profile selection of the unit, in source
+    /// order, for a `probabilistic` claim's `using` alias to resolve against.
+    pub profile_selections: Vec<qsl_foundation::selection::ProfileSelection>,
     /// FR-171, FR-172: the unit's `hyper` clauses and `relation`s in
     /// declaration order, each as S2 built it, for the `TemporalTrace`
     /// family's `check`.
@@ -610,6 +613,7 @@ impl PackageDeclarations {
             probabilistic: Vec::new(),
             state_graph_claims: Vec::new(),
             temporal_selections: Vec::new(),
+            profile_selections: Vec::new(),
             hyper_clauses: Vec::new(),
             operation_clauses: Vec::new(),
             type_invariants: Vec::new(),

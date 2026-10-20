@@ -989,7 +989,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                     "{message}: reward `{reward}` on `{operation}` reads state or an ambient value"
                 ),
                 ProbabilisticCause::QualitativeThreshold { claim, .. } => format!(
-                    "{message}: a threshold of claim `{claim}` is not strictly between 0 and 1"
+                    "{message}: a threshold of claim `{claim}` is not strictly between 0 and 1; a \
+                     threshold of 0 or 1 is a qualitative claim, stated as an ADR-018 TP-2 claim \
+                     or as a possible property"
                 ),
                 ProbabilisticCause::PartialConfidence { claim, fault, .. } => format!(
                     "{message}: the confidence of claim `{claim}` must state alpha, beta and \
@@ -1048,9 +1050,57 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ProbabilisticCause::QuantityLiteral => {
                     format!("{message}: a quantity literal is not emitted in this position yet")
                 }
-                ProbabilisticCause::NotYetImplemented { claim, .. } => {
-                    format!("{message}: `probabilistic {claim}` is not checked or emitted yet")
+                ProbabilisticCause::UnresolvedSubject { claim, subject, .. } => format!(
+                    "{message}: claim `{claim}` is over `{subject}`, which names no model"
+                ),
+                ProbabilisticCause::TraceSubject { claim, subject, .. } => format!(
+                    "{message}: claim `{claim}` is over the trace subject `{subject}`; a \
+                     probabilistic claim has a model subject, and observed statistics of a trace \
+                     are window aggregates (FR-194)"
+                ),
+                ProbabilisticCause::UnresolvedProfile { claim, alias, .. } => {
+                    format!("{message}: claim `{claim}` uses `{alias}`, which names no profile")
                 }
+                ProbabilisticCause::NotTemporalProfile { claim, profile, .. } => format!(
+                    "{message}: claim `{claim}` is checked under `{profile}`, which is not a \
+                     temporal profile"
+                ),
+                ProbabilisticCause::UnboundedEvent { claim, .. } => format!(
+                    "{message}: the event of claim `{claim}` needs a finite window: every \
+                     operator takes a closed interval under a bounded profile"
+                ),
+                ProbabilisticCause::UnresolvedWorkload {
+                    claim, workload, ..
+                } => format!("{message}: claim `{claim}` is under `{workload}`, which names no workload"),
+                ProbabilisticCause::ForeignWorkload {
+                    claim,
+                    workload,
+                    model,
+                    ..
+                } => format!(
+                    "{message}: claim `{claim}` is under workload `{workload}`, which is declared \
+                     on model `{model}`, not on the claim's subject"
+                ),
+                ProbabilisticCause::UnresolvedReward { claim, reward, .. } => format!(
+                    "{message}: claim `{claim}` names reward `{reward}`, which no operation of its \
+                     model declares"
+                ),
+                ProbabilisticCause::AmbiguousReward { claim, reward, .. } => format!(
+                    "{message}: claim `{claim}` names reward `{reward}`, which its model declares \
+                     with different value types"
+                ),
+                ProbabilisticCause::UnitMismatch {
+                    claim,
+                    threshold,
+                    reward,
+                    ..
+                } => format!(
+                    "{message}: a threshold of claim `{claim}` has dimension `{threshold}`, not \
+                     the reward's `{reward}`"
+                ),
+                ProbabilisticCause::NotYetImplemented {
+                    claim, construct, ..
+                } => format!("{message}: `probabilistic {claim}` uses {construct}, which is not checked yet"),
             };
         }
         // FR-326: name what the `TemporalTrace` check refused.
@@ -1547,6 +1597,89 @@ mod tests {
             }
             other => panic!("an Assembly refusal, got {other:?}"),
         }
+    }
+
+    /// FR-186-AC-3 (TC-621 step 3), at the CLI's compile: a `probabilistic`
+    /// claim over a trace subject is refused, and the diagnostic names window
+    /// aggregates as the form for observed statistics.
+    #[trace("TC-621", "FR-186-AC-3")]
+    #[test]
+    fn a_claim_over_a_trace_subject_names_window_aggregates() {
+        let unit = "language \"ix:native\" edition \"1-draft\";\n\
+            profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
+            record Reading { level: Integer; }\n\
+            probabilistic C using ev on Reading under Steady on origin \
+            { probability >= 0.9 [ holds(true) ] }\n";
+        let refusal = compose(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .expect_err("a trace subject is refused");
+        assert_eq!(refusal.stage(), SpineStage::Check);
+        assert_eq!(refusal.code(), Code::InvalidProbabilisticModel);
+        let message = refusal.to_string();
+        assert!(message.contains("trace-subject"), "{message}");
+        assert!(message.contains("window aggregates (FR-194)"), "{message}");
+        let region = refusal.region().expect("the subject is located");
+        let (start, end) = (region.start() as usize, region.end() as usize);
+        assert_eq!(&unit[start..end], "Reading");
+    }
+
+    /// FR-186-AC-2 (TC-621 step 2), at the CLI's compile: a threshold of 1
+    /// is refused `qualitative-threshold`, and the diagnostic names the
+    /// qualitative form: an ADR-018 TP-2 claim or a possible property.
+    #[trace("TC-621", "FR-186-AC-2")]
+    #[test]
+    fn a_qualitative_threshold_names_the_qualitative_form() {
+        let unit = "language \"ix:native\" edition \"1-draft\";\n\
+            profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
+            probabilistic C using ev on Service under Steady on origin \
+            { probability >= 1 [ holds(true) ] }\n";
+        let refusal = compose(
+            SourceIdentity::new("a", "u", "git", "1"),
+            "unit.native",
+            unit.as_bytes(),
+            &BTreeMap::new(),
+            &DependencyInput::default(),
+            SpineLimits::default(),
+        )
+        .expect_err("a threshold of 1 is refused");
+        assert_eq!(refusal.code(), Code::InvalidProbabilisticModel);
+        let message = refusal.to_string();
+        assert!(message.contains("qualitative-threshold"), "{message}");
+        assert!(message.contains("ADR-018 TP-2 claim"), "{message}");
+        assert!(message.contains("possible property"), "{message}");
+    }
+
+    /// FR-186-AC-2 (TC-621 step 2): the diagnostic of a threshold whose
+    /// dimension is not the reward's names both dimensions.
+    #[trace("TC-621", "FR-186-AC-2")]
+    #[test]
+    fn a_unit_mismatch_names_the_dimensions() {
+        use qsl_semantics::check::{CheckCause, CheckRefusal, ProbabilisticCause};
+        use quire_semantic_value::location::{Location, Origin};
+        let refusal = CompileRefusal::Check {
+            refusals: vec![CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause: CheckCause::Probabilistic(Box::new(ProbabilisticCause::UnitMismatch {
+                    claim: "P95".to_owned(),
+                    threshold: "Length".to_owned(),
+                    reward: "Time".to_owned(),
+                    span: qsl_foundation::Span { start: 0, end: 1 },
+                })),
+            }],
+            region: None,
+        };
+        let message = refusal.to_string();
+        assert!(message.contains("ill_typed (unit-mismatch)"), "{message}");
+        assert!(
+            message.contains("`Length`") && message.contains("`Time`"),
+            "{message}"
+        );
     }
 
     /// SR-771 FND-005 (SR-770 FND-001): the check-stage guard the rename

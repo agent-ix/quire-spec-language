@@ -144,9 +144,11 @@ mod sum_case;
 mod temporal_clause;
 mod terminal;
 pub use probabilistic::{
-    CheckedProbabilisticModel, ConfidenceFault, PreconditionSite, ProbabilisticCause,
-    ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticOperation, RandomParameter,
-    Reward, SupportValue, WeightOwner, Workload,
+    Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedProbabilisticModel,
+    CheckedTemporalFormula, Confidence, ConfidenceFault, Event, FractionMeasure, ModelSubjectRef,
+    OverBinding, PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause,
+    ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticObligationIdentity,
+    ProbabilisticOperation, RandomParameter, Reward, SupportValue, WeightOwner, Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
@@ -2077,8 +2079,7 @@ impl PackageDeclarations {
         }
         // FR-185: the `random`, `reward` and `workload` declarations,
         // resolved, typed and recorded; FR-186: a `probabilistic` claim,
-        // checked as far as its form allows and otherwise refused
-        // `not-yet-implemented`, so nothing probabilistic compiles unchecked.
+        // resolved, typed and recorded with its obligation identity.
         let probabilistic_input = probabilistic::ProbabilisticInput {
             scope: &scope,
             signatures: &signatures,
@@ -2087,6 +2088,7 @@ impl PackageDeclarations {
             model_objects: &model_objects,
             object_types: &object_types,
             preconditions: &precondition_reads,
+            profiles: &self.profile_selections,
             limits,
             cancel,
         };

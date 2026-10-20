@@ -1679,7 +1679,7 @@ impl Encoded {
 }
 
 /// `tag`, then each of `parts` length-prefixed.
-fn node_bytes(tag: &[u8], parts: &[Vec<u8>]) -> Vec<u8> {
+pub(super) fn node_bytes(tag: &[u8], parts: &[Vec<u8>]) -> Vec<u8> {
     let mut out = Vec::new();
     push_segment(&mut out, tag);
     out.extend_from_slice(&u64::try_from(parts.len()).unwrap_or(u64::MAX).to_be_bytes());
@@ -2048,6 +2048,18 @@ fn temporal_tag(operator: TemporalOperator) -> u8 {
         TemporalOperator::Since => 28,
         TemporalOperator::Triggered => 29,
     }
+}
+
+/// The normal form of a probabilistic claim's state predicate (FR-174's
+/// encoding of one expression), for its obligation identity (FR-186).
+pub(super) fn encode_predicate(expression: &Expression) -> Vec<u8> {
+    encode_expression(expression, Swap(None), &[]).root
+}
+
+/// The normal form of a probabilistic claim's temporal event, for its
+/// obligation identity (FR-186).
+pub(super) fn encode_event(formula: &TemporalFormulaForm) -> Vec<u8> {
+    encode_formula(formula, Swap(None)).0
 }
 
 /// The encoding of the `match` conjuncts `predicates` of `expression`, as one

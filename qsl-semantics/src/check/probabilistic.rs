@@ -17,13 +17,24 @@
 //! Past the 65,536-bit ceiling either refuses with a limit refusal; FR-255
 //! has no rational-bits setting yet, so it reports the S3 work budget's.
 //!
-//! A `probabilistic` claim is checked only as far as its form lets S3 refuse
-//! it (thresholds, confidence parameters, a quantile over a fraction); one
-//! that passes refuses `not-yet-implemented`, so no claim compiles unchecked.
+//! A `probabilistic` claim is checked in two steps ([`claim`]): its form
+//! (thresholds, confidence parameters, a quantile over a fraction), then, once
+//! well formed, its resolution and typing -- subject, profile, scheduler,
+//! rewards, predicates, units and event -- recorded as a
+//! [`CheckedProbabilisticClaim`] with its obligation identity (FR-186). The
+//! forms FR-195 and the timed checks own refuse
+//! `unsupported_construct`/`not-yet-implemented`, so no claim compiles
+//! unchecked.
 
+mod claim;
 mod exact;
 mod model;
 
+pub use claim::{
+    Bound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, CheckedTemporalFormula,
+    Confidence, Event, FractionMeasure, ModelSubjectRef, OverBinding, ProbForm, ProbScheduler,
+    ProbabilisticObligationIdentity,
+};
 pub(crate) use model::{check, precondition_reads, site_spans, ProbabilisticInput};
 pub use model::{
     CheckedProbabilisticModel, PreconditionSite, ProbabilisticFeature, ProbabilisticOperation,
@@ -43,8 +54,7 @@ use super::layer::visit_located;
 use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, StageLimitCause};
 
 /// The largest scale a decimal is expanded at when a confidence range is
-/// compared. A larger scale leaves the range unchecked here; the claim still
-/// refuses `not-yet-implemented`.
+/// compared. A larger scale leaves the range unchecked here.
 const MAX_EXPANDED_SCALE: u64 = 4096;
 
 /// One probabilistic declaration of the unit, as S2 built it (FR-311,
@@ -301,13 +311,123 @@ pub enum ProbabilisticCause {
     /// checked package has no literal form for a quantity to emit it as.
     /// `unsupported_construct`/`not-yet-implemented`.
     QuantityLiteral,
-    /// A `probabilistic` claim that passed its form checks: it is not
-    /// resolved, typed or emitted yet (FR-186).
-    /// `unsupported_construct`/`not-yet-implemented`.
+    /// A claim's `on` subject that names no `model` alias and declares no
+    /// type. `missing_declaration`/`missing-name`.
+    UnresolvedSubject {
+        /// The claim.
+        claim: String,
+        /// The subject, as written.
+        subject: String,
+        /// The subject's span.
+        span: Span,
+    },
+    /// A claim over a trace subject, which is outside the kind
+    /// `probabilistic-satisfaction` (ADR-024 PF-9): observed statistics are
+    /// window aggregates (FR-194). `invalid_probabilistic_model`/
+    /// `trace-subject` (QSL-proposed, STD-188).
+    TraceSubject {
+        /// The claim.
+        claim: String,
+        /// The subject, as written.
+        subject: String,
+        /// The subject's span.
+        span: Span,
+    },
+    /// A claim's `using` alias that names no profile of the unit.
+    /// `missing_declaration`/`missing-name`.
+    UnresolvedProfile {
+        /// The claim.
+        claim: String,
+        /// The alias, as written.
+        alias: String,
+        /// The alias's span.
+        span: Span,
+    },
+    /// A claim's profile that is not a temporal profile (FR-326's catalog).
+    /// `invalid_probabilistic_model`/`not-temporal-profile` (QSL-proposed,
+    /// STD-188).
+    NotTemporalProfile {
+        /// The claim.
+        claim: String,
+        /// The selected profile's identity.
+        profile: String,
+        /// The alias's span.
+        span: Span,
+    },
+    /// An event with an operator that has no closed interval, or whose
+    /// profile is not bounded: a probabilistic event needs a finite window
+    /// (ADR-024 PF-8). `invalid_probabilistic_model`/`unbounded-event`
+    /// (QSL-proposed, STD-188).
+    UnboundedEvent {
+        /// The claim.
+        claim: String,
+        /// The operator's, or the event's, span.
+        span: Span,
+    },
+    /// An `under W` that names no workload of the unit.
+    /// `missing_declaration`/`missing-name`.
+    UnresolvedWorkload {
+        /// The claim.
+        claim: String,
+        /// The workload, as written.
+        workload: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// An `under W` naming a workload declared on another model than the
+    /// claim's subject (ADR-024 PM-8). `invalid_probabilistic_model`/
+    /// `foreign-workload` (QSpec FR-407).
+    ForeignWorkload {
+        /// The claim.
+        claim: String,
+        /// The workload.
+        workload: String,
+        /// The `model` alias the workload is declared on.
+        model: String,
+        /// The workload name's span.
+        span: Span,
+    },
+    /// A reward a claim names that no operation of its subject's model
+    /// declares. `missing_declaration`/`missing-name`.
+    UnresolvedReward {
+        /// The claim.
+        claim: String,
+        /// The reward, as written.
+        reward: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// A reward a claim names that operations of its subject's model declare
+    /// with different value types. `ambiguous_declaration`/`ambiguous-name`.
+    AmbiguousReward {
+        /// The claim.
+        claim: String,
+        /// The reward, as written.
+        reward: String,
+        /// The name's span.
+        span: Span,
+    },
+    /// A threshold whose dimension is not the reward's. `ill_typed`/
+    /// `unit-mismatch` (QSpec FR-407).
+    UnitMismatch {
+        /// The claim.
+        claim: String,
+        /// The threshold's dimension, or `dimensionless`.
+        threshold: String,
+        /// The reward's dimension, or `dimensionless`.
+        reward: String,
+        /// The threshold's span.
+        span: Span,
+    },
+    /// A construct of a claim that S3 does not check yet: a form FR-195 owns
+    /// (`expected ... until`, `elapsed`), a timed window or an `on each`
+    /// activation. `unsupported_construct`/`not-yet-implemented`.
     NotYetImplemented {
         /// The claim's name.
         claim: String,
-        /// The whole claim's span.
+        /// The construct, as the diagnostic names it.
+        construct: &'static str,
+        /// The construct's span.
         span: Span,
     },
 }
@@ -337,6 +457,16 @@ impl ProbabilisticCause {
             | Self::UnknownOperation { span, .. }
             | Self::RewardType { span, .. }
             | Self::DuplicateWorkload { span, .. }
+            | Self::UnresolvedSubject { span, .. }
+            | Self::TraceSubject { span, .. }
+            | Self::UnresolvedProfile { span, .. }
+            | Self::NotTemporalProfile { span, .. }
+            | Self::UnboundedEvent { span, .. }
+            | Self::UnresolvedWorkload { span, .. }
+            | Self::ForeignWorkload { span, .. }
+            | Self::UnresolvedReward { span, .. }
+            | Self::AmbiguousReward { span, .. }
+            | Self::UnitMismatch { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
             Self::QuantityLiteral | Self::RandomReadInPrecondition { .. } => None,
         }
@@ -369,12 +499,23 @@ impl ProbabilisticCause {
             | Self::RandomReadInPrecondition { .. }
             | Self::IncompleteWorkload { .. }
             | Self::UnknownOperation { .. }
-            | Self::RewardType { .. } => Code::InvalidProbabilisticModel,
+            | Self::RewardType { .. }
+            | Self::TraceSubject { .. }
+            | Self::NotTemporalProfile { .. }
+            | Self::UnboundedEvent { .. }
+            | Self::ForeignWorkload { .. } => Code::InvalidProbabilisticModel,
+            Self::UnitMismatch { .. } => Code::IllTyped,
             Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::UnresolvedOperation { .. }
             | Self::UnresolvedParameter { .. }
-            | Self::UnresolvedModel { .. } => Code::MissingDeclaration,
-            Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
+            | Self::UnresolvedModel { .. }
+            | Self::UnresolvedSubject { .. }
+            | Self::UnresolvedProfile { .. }
+            | Self::UnresolvedWorkload { .. }
+            | Self::UnresolvedReward { .. } => Code::MissingDeclaration,
+            Self::AmbiguousOperation { .. } | Self::AmbiguousReward { .. } => {
+                Code::AmbiguousDeclaration
+            }
             Self::DuplicateWorkload { .. } => Code::ConflictingDeclaration,
             Self::QuantityLiteral | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
         }
@@ -401,8 +542,17 @@ impl ProbabilisticCause {
             Self::RewardType { .. } => "reward-type",
             Self::UnresolvedOperation { .. }
             | Self::UnresolvedParameter { .. }
-            | Self::UnresolvedModel { .. } => "missing-name",
-            Self::AmbiguousOperation { .. } => "ambiguous-name",
+            | Self::UnresolvedModel { .. }
+            | Self::UnresolvedSubject { .. }
+            | Self::UnresolvedProfile { .. }
+            | Self::UnresolvedWorkload { .. }
+            | Self::UnresolvedReward { .. } => "missing-name",
+            Self::AmbiguousOperation { .. } | Self::AmbiguousReward { .. } => "ambiguous-name",
+            Self::TraceSubject { .. } => "trace-subject",
+            Self::NotTemporalProfile { .. } => "not-temporal-profile",
+            Self::UnboundedEvent { .. } => "unbounded-event",
+            Self::ForeignWorkload { .. } => "foreign-workload",
+            Self::UnitMismatch { .. } => "unit-mismatch",
             Self::DuplicateWorkload { .. } => "duplicate-declaration",
             Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",
         }
@@ -422,6 +572,21 @@ fn limit_refusal(bits: u64, location: Location) -> CheckRefusal {
             kind: CheckingLimitKind::WorkBudget,
             limit: exact::RATIONAL_BITS_CEILING,
             actual: u128::from(bits),
+            region: None,
+        })),
+    }
+}
+
+/// The limit refusal of an event's horizon, a sum of interval bounds `actual`
+/// past the largest `u64` (FR-186 "Events and measures"; ADR-014 TR-4).
+fn horizon_refusal(actual: u128) -> CheckRefusal {
+    CheckRefusal {
+        location: Location::root(Origin::Expression),
+        cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::WorkBudget,
+            limit: u64::MAX,
+            actual,
             region: None,
         })),
     }

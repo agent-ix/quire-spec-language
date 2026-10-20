@@ -27,6 +27,7 @@ use super::super::ir::{CheckedBody, CheckedLiteral, CheckedNode, DispatchTable, 
 use super::super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::super::state_clause::ClauseOperation;
 use super::super::AdmittedModel;
+use super::claim::CheckedProbabilisticClaim;
 use super::{exact, refusal, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner};
 use crate::family::CheckContext;
 use crate::model::key::DeclarationKey;
@@ -199,8 +200,9 @@ impl Reward {
 #[derive(Debug, Default)]
 pub struct CheckedProbabilisticModel {
     random_parameters: Vec<RandomParameter>,
-    rewards: Vec<Reward>,
+    pub(super) rewards: Vec<Reward>,
     workloads: Vec<Workload>,
+    pub(super) claims: Vec<CheckedProbabilisticClaim>,
 }
 
 impl CheckedProbabilisticModel {
@@ -237,15 +239,28 @@ impl CheckedProbabilisticModel {
             .find(|workload| workload.name.as_str() == name)
     }
 
-    /// Whether the package declares none of the three.
+    /// Every checked claim.
+    pub fn claims(&self) -> &[CheckedProbabilisticClaim] {
+        &self.claims
+    }
+
+    /// The claim named `name`.
+    pub fn claim(&self, name: &str) -> Option<&CheckedProbabilisticClaim> {
+        self.claims.iter().find(|claim| claim.name == name)
+    }
+
+    /// Whether the package declares none of the four.
     pub fn is_empty(&self) -> bool {
-        self.random_parameters.is_empty() && self.rewards.is_empty() && self.workloads.is_empty()
+        self.random_parameters.is_empty()
+            && self.rewards.is_empty()
+            && self.workloads.is_empty()
+            && self.claims.is_empty()
     }
 
     /// The first checked declaration in source order, with its feature:
     /// what S4 names when it refuses the package (FR-185 "Package
     /// emission"). A random parameter is named `operation(parameter)`, a
-    /// reward and a workload by their declared names.
+    /// reward, a workload and a claim by their declared names.
     pub fn first_declaration(&self) -> Option<(ProbabilisticFeature, String)> {
         let random = self.random_parameters.iter().map(|random| {
             (
@@ -268,9 +283,17 @@ impl CheckedProbabilisticModel {
                 workload.name.clone(),
             )
         });
+        let claims = self.claims.iter().map(|claim| {
+            (
+                claim.declared,
+                ProbabilisticFeature::Claim,
+                claim.name.clone(),
+            )
+        });
         random
             .chain(rewards)
             .chain(workloads)
+            .chain(claims)
             .min_by_key(|(declared, _, _)| *declared)
             .map(|(_, feature, name)| (feature, name))
     }
@@ -286,6 +309,8 @@ pub enum ProbabilisticFeature {
     Workload,
     /// A `reward` declaration: `reward`.
     Reward,
+    /// A `probabilistic` claim: `probabilistic-claim`.
+    Claim,
 }
 
 impl ProbabilisticFeature {
@@ -295,6 +320,7 @@ impl ProbabilisticFeature {
             Self::RandomParameter => "random-parameter",
             Self::Workload => "workload",
             Self::Reward => "reward",
+            Self::Claim => "probabilistic-claim",
         }
     }
 }
@@ -352,7 +378,7 @@ pub(crate) fn precondition_reads(
 /// A located site of a probabilistic declaration, by the declaration's
 /// index among the unit's probabilistic declarations.
 #[derive(Clone, Copy, Debug)]
-enum Site {
+pub(super) enum Site {
     /// The whole declaration.
     Declaration,
     /// The `value` of a random parameter's distribution pair.
@@ -361,6 +387,12 @@ enum Site {
     Weight(usize),
     /// A reward's expression.
     Reward,
+    /// The expression at this position of a claim's
+    /// [`claim_expressions`](super::claim::claim_expressions).
+    Expression(usize),
+    /// The exact value at this position of a claim's
+    /// [`claim_exact_values`](super::claim::claim_exact_values).
+    Exact(usize),
     /// A random declaration's parameter name.
     Parameter,
 }
@@ -373,11 +405,15 @@ fn site_name(declaration: usize, site: Site) -> String {
         Site::Value(pair) => format!("probabilistic {declaration} value {pair}"),
         Site::Weight(pair) => format!("probabilistic {declaration} weight {pair}"),
         Site::Reward => format!("probabilistic {declaration} reward"),
+        Site::Expression(position) => {
+            format!("probabilistic {declaration} expression {position}")
+        }
+        Site::Exact(position) => format!("probabilistic {declaration} exact {position}"),
         Site::Parameter => format!("probabilistic {declaration} parameter"),
     }
 }
 
-fn site_location(declaration: usize, site: Site) -> Location {
+pub(super) fn site_location(declaration: usize, site: Site) -> Location {
     Location::root(Origin::TypeDeclaration {
         name: site_name(declaration, site),
     })
@@ -415,7 +451,20 @@ pub(crate) fn site_spans(
                         sites.push((Site::Weight(weight), spanned(written.weight.span)));
                     }
                 }
-                ProbabilisticDeclaration::Claim(_) => {}
+                ProbabilisticDeclaration::Claim(form) => {
+                    for (position, expression) in super::claim::claim_expressions(form)
+                        .into_iter()
+                        .enumerate()
+                    {
+                        sites.push((Site::Expression(position), Some(expression.spans.clone())));
+                    }
+                    for (position, value) in super::claim::claim_exact_values(form)
+                        .into_iter()
+                        .enumerate()
+                    {
+                        sites.push((Site::Exact(position), spanned(value.span)));
+                    }
+                }
             }
             sites
                 .into_iter()
@@ -435,12 +484,14 @@ pub(crate) struct ProbabilisticInput<'a> {
     pub(crate) object_types: &'a BTreeMap<DeclarationKey, EffectiveId>,
     /// Every read of an operation parameter by a checked precondition.
     pub(crate) preconditions: &'a [PreconditionRead],
+    /// Every header profile selection of the unit.
+    pub(crate) profiles: &'a [qsl_foundation::selection::ProfileSelection],
     pub(crate) limits: CheckingLimits,
     pub(crate) cancel: &'a quire_exact::Cancel,
 }
 
 /// Why an operation name resolves to no single operation.
-enum Unresolved {
+pub(super) enum Unresolved {
     Missing,
     Ambiguous,
 }
@@ -448,7 +499,7 @@ enum Unresolved {
 impl<'a> ProbabilisticInput<'a> {
     /// The operation `written` names: in the model `model` only when given,
     /// else in every selected model.
-    fn operation(
+    pub(super) fn operation(
         &self,
         written: &NameForm,
         model: Option<&str>,
@@ -532,7 +583,11 @@ impl<'a> ProbabilisticInput<'a> {
     }
 
     /// A typer over this input's scope, charging `nodes`.
-    fn typer<'t>(&'t self, nodes: &'t mut u64, cx: &'t mut CheckContext<'_, Scope>) -> Typer<'t>
+    pub(super) fn typer<'t>(
+        &'t self,
+        nodes: &'t mut u64,
+        cx: &'t mut CheckContext<'_, Scope>,
+    ) -> Typer<'t>
     where
         'a: 't,
     {
@@ -549,7 +604,7 @@ impl<'a> ProbabilisticInput<'a> {
 }
 
 /// The refusal of an operation name that resolves to no single operation.
-fn unresolved(unresolved: Unresolved, written: &NameForm) -> ProbabilisticCause {
+pub(super) fn unresolved(unresolved: Unresolved, written: &NameForm) -> ProbabilisticCause {
     match unresolved {
         Unresolved::Missing => ProbabilisticCause::UnresolvedOperation {
             name: written.name.clone(),
@@ -582,7 +637,7 @@ fn weight(
 
 /// The literal value a checked support value is, admitted into its type's
 /// integer interval when it is coerced into one.
-fn literal(node: CheckedNode<'_>) -> Option<CheckedLiteral> {
+pub(super) fn literal(node: CheckedNode<'_>) -> Option<CheckedLiteral> {
     match node.kind() {
         NodeKind::Literal(literal) => Some(literal.clone()),
         NodeKind::Coerce(operand, interval) => match node.at(*operand).kind() {
@@ -635,7 +690,14 @@ pub(crate) fn check(
             ProbabilisticDeclaration::Random(form) => pass.random(index, form, cx, nodes),
             ProbabilisticDeclaration::Reward(form) => pass.reward(index, form, cx, nodes),
             ProbabilisticDeclaration::Workload(form) => pass.workload(index, form),
-            ProbabilisticDeclaration::Claim(form) => pass.claim(form),
+            ProbabilisticDeclaration::Claim(_) => {}
+        }
+    }
+    // A claim names workloads and rewards declared anywhere in the unit, so
+    // it is checked once every declaration is.
+    for (index, declaration) in declarations.iter().enumerate() {
+        if let ProbabilisticDeclaration::Claim(form) = declaration {
+            pass.claim(index, form, cx, nodes);
         }
     }
     pass.preconditions();
@@ -645,9 +707,9 @@ pub(crate) fn check(
     }
 }
 
-struct Pass<'i, 'a> {
-    input: &'i ProbabilisticInput<'a>,
-    model: CheckedProbabilisticModel,
+pub(super) struct Pass<'i, 'a> {
+    pub(super) input: &'i ProbabilisticInput<'a>,
+    pub(super) model: CheckedProbabilisticModel,
     /// Each (operation, parameter) a `random` declaration resolved to, so a
     /// second is a duplicate, and a precondition read of it refuses,
     /// whether or not its distribution was admitted.
@@ -656,7 +718,7 @@ struct Pass<'i, 'a> {
     rewards: Vec<(DeclarationKey, String)>,
     /// Each workload name declared so far, with its name span.
     workloads: Vec<(String, Span)>,
-    refusals: Vec<CheckRefusal>,
+    pub(super) refusals: Vec<CheckRefusal>,
 }
 
 impl Pass<'_, '_> {
@@ -995,19 +1057,6 @@ impl Pass<'_, '_> {
             model: model.to_owned(),
             weights,
         });
-    }
-
-    /// A claim's form checks; any claim that passes them refuses
-    /// `not-yet-implemented` (FR-186 is not checked further yet).
-    fn claim(&mut self, form: &qsl_forms::ProbabilisticForm) {
-        let mut causes = super::claim(form);
-        if causes.is_empty() {
-            causes.push(ProbabilisticCause::NotYetImplemented {
-                claim: form.name.name.clone(),
-                span: form.span,
-            });
-        }
-        self.refusals.extend(causes.into_iter().map(refusal));
     }
 
     /// Every precondition read of a random parameter refuses at the read,
