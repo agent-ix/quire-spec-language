@@ -17,6 +17,7 @@ mod model_instances;
 mod model_settle;
 mod model_world;
 mod protocol_constructs;
+mod protocol_footprints;
 mod protocol_system;
 mod quotient;
 mod reduction;

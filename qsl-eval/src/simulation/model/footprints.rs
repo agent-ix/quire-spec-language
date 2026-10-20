@@ -14,14 +14,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, PoisonError};
 
 use qsl_semantics::check::footprint::{
-    derive_footprint, FootprintObject, FootprintRefusal, SymbolicFootprint, SymbolicLocation,
+    derive_selected_footprint, FootprintObject, FootprintRefusal, SymbolicFootprint,
+    SymbolicLocation,
 };
 use qsl_semantics::model::clause_observation::Observation;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::object_environment::{ObservedRead, ReadLog};
 use qsl_semantics::model::observation::AdmittedObservations;
 use qsl_semantics::model::state::StateModel;
-use quire_exact::{EffectiveId, ObjectReference, Value, ValueType};
+use quire_exact::{EffectiveId, NodeKey, ObjectReference, Value, ValueType};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::encode::{parse_optional_reference, parse_reference};
@@ -80,10 +81,16 @@ pub(super) enum Fault {
     Violation(Box<FootprintViolation>),
 }
 
-type CacheKey = (EffectiveId, String, Vec<(String, EffectiveId)>);
+type CacheKey = (
+    EffectiveId,
+    String,
+    Vec<(String, EffectiveId)>,
+    Option<BTreeSet<NodeKey>>,
+);
 
-/// Symbolic footprints already derived, by the receiver's type, the operation
-/// and the types of the bound reference arguments.
+/// Symbolic footprints already derived, by the receiver's type, the operation,
+/// the types of the bound reference arguments and the clauses selected, all
+/// when `None`.
 #[derive(Default)]
 pub(super) struct FootprintCache(
     Mutex<BTreeMap<CacheKey, Result<SymbolicFootprint, FootprintRefusal>>>,
@@ -111,7 +118,7 @@ impl Enforcement<'_> {
             .iter()
             .map(|(name, value)| (name.clone(), referenced(value).cloned()))
             .collect();
-        match system.footprint_for(application, receiver, &bound) {
+        match system.footprint_for(application, receiver, &bound, None) {
             Ok(mut footprint) => {
                 let withheld = (self.withhold)(transition);
                 for locations in [
@@ -330,11 +337,14 @@ impl<'a> ModelSystem<'a> {
     /// The footprint of `application` on `receiver` with the reference
     /// arguments `arguments`, derived from the object types the identities
     /// carry (QSpec FR-383) and instantiated.
+    /// With `selected`, only the clauses it names are read (ADR-027 FT-1);
+    /// with `None`, every clause of the operation.
     pub(super) fn footprint_for(
         &self,
         application: &Application,
         receiver: &ObjectReference,
         arguments: &[(String, Option<ObjectReference>)],
+        selected: Option<&BTreeSet<NodeKey>>,
     ) -> Result<Footprint, FootprintRefusal> {
         let types: Vec<(String, EffectiveId)> = arguments
             .iter()
@@ -344,22 +354,30 @@ impl<'a> ModelSystem<'a> {
                     .map(|bound| (name.clone(), bound.object_type()))
             })
             .collect();
-        let key = (receiver.object_type(), application.text.clone(), types);
+        let key = (
+            receiver.object_type(),
+            application.text.clone(),
+            types,
+            selected.cloned(),
+        );
         let mut cache = self
             .footprints
             .0
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let symbolic = cache.entry(key).or_insert_with_key(|(_, _, types)| {
-            derive_footprint(
-                self.package.graph(),
-                &self.model,
-                receiver.object_type(),
-                application.declaring,
-                &application.declaration,
-                types,
-            )
-        });
+        let symbolic = cache
+            .entry(key)
+            .or_insert_with_key(|(_, _, types, selected)| {
+                derive_selected_footprint(
+                    self.package.graph(),
+                    &self.model,
+                    receiver.object_type(),
+                    application.declaring,
+                    &application.declaration,
+                    types,
+                    &|clause| selected.as_ref().is_none_or(|set| set.contains(&clause)),
+                )
+            });
         symbolic
             .as_ref()
             .map(|symbolic| instantiate(symbolic, receiver, arguments))
@@ -380,6 +398,17 @@ impl<'a> ModelSystem<'a> {
     /// when the transition names no operation of its receiver's type, or a
     /// receiver or reference argument that is no reference text.
     pub fn footprint(&self, transition: &ModelTransition) -> Result<Footprint, FootprintError> {
+        self.footprint_selecting(transition, None)
+    }
+
+    /// [`Self::footprint`] over only the clauses `selected` names: a protocol
+    /// attempt's application with the contracts its node selects (ADR-027
+    /// FT-1).
+    pub(crate) fn footprint_selecting(
+        &self,
+        transition: &ModelTransition,
+        selected: Option<&BTreeSet<NodeKey>>,
+    ) -> Result<Footprint, FootprintError> {
         let unknown = || FootprintError::UnknownTransition;
         let receiver = transition
             .receiver()
@@ -412,7 +441,7 @@ impl<'a> ModelSystem<'a> {
                 ));
             }
         }
-        Ok(self.footprint_for(application, &receiver, &arguments)?)
+        Ok(self.footprint_for(application, &receiver, &arguments, selected)?)
     }
 
     /// Expand `state` as `successors` does, holding every step's `pre` and

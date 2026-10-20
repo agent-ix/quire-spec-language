@@ -12,7 +12,10 @@ use std::collections::BTreeSet;
 use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::ObjectReference;
 
-/// One model location (QSpec FR-383 "Locations").
+use crate::simulation::protocol::ProtocolLocation;
+
+/// One location: a model location (QSpec FR-383 "Locations"), or a
+/// protocol location (ADR-027 §5).
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Location {
     /// A field of one object.
@@ -39,6 +42,8 @@ pub enum Location {
         /// The population's declaration key.
         population: DeclarationKey,
     },
+    /// A location of a protocol state (ADR-027 §5, FR-216).
+    Protocol(ProtocolLocation),
 }
 
 impl Location {
@@ -55,8 +60,13 @@ impl Location {
     /// independence they would deny. The cost is precision: a creation or a
     /// deletion of any object depends on every transition that reads or
     /// writes a field, even of an unrelated type.
+    ///
+    /// A protocol location meets only a protocol location, as
+    /// [`ProtocolLocation::meets`] states.
     pub fn meets(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Protocol(location), Self::Protocol(other)) => location.meets(other),
+            (Self::Protocol(_), _) | (_, Self::Protocol(_)) => false,
             (
                 Self::Field { object, field },
                 Self::Field {

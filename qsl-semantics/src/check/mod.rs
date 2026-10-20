@@ -2762,10 +2762,13 @@ impl PackageDeclarations {
                         scope.types(),
                         &state_clauses,
                         &model,
-                        binding.receiver,
-                        declaring,
-                        &binding.operation.declaration,
-                        &arguments,
+                        footprint::Operation {
+                            receiver_type: binding.receiver,
+                            declaring,
+                            operation: &binding.operation.declaration,
+                            arguments: &arguments,
+                        },
+                        &|_| true,
                     )
                 });
                 match classified {
