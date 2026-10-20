@@ -1,7 +1,8 @@
 //! FR-219 and FR-220 at S3: memory defaults, weak joins, fences.
 
 use ix_trace_rs::trace;
-use qsl_forms::{build_unit, AccessOrdering, MemoryModelName};
+use qsl_forms::{build_unit, AccessOrdering};
+use qsl_foundation::MemoryModelName;
 use qsl_foundation::SourceIdentity;
 use quire_semantic_value::checking::CheckingLimits;
 
