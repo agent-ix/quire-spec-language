@@ -296,26 +296,13 @@ impl ModelTraceRefusal {
     }
 }
 
-/// The code of a subject that is not simulated: a requires-bound subject
-/// has no counterexample a check wrote (`invalid_runtime_input`), and a
-/// classification that stopped keeps its own code.
+/// The code of a subject that is not simulated: `NotSimulated`'s own
+/// catalog code, and `invalid_runtime_input` for a requires-bound subject,
+/// which has no catalog code and no counterexample a check wrote.
 fn not_simulated_code(refusal: &NotSimulated) -> Code {
-    use qsl_semantics::family::ClassifyFailure;
-    match refusal {
-        NotSimulated::RequiresBound(_)
-        | NotSimulated::EmptyInitial
-        | NotSimulated::GeneratorMismatch { .. }
-        | NotSimulated::KeyEncoding(qsl_eval::simulation::EncodingRefusal::NoEncoding(_)) => {
-            Code::InvalidRuntimeInput
-        }
-        NotSimulated::Extent(ClassifyFailure::Limit(_))
-        | NotSimulated::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Limit(_)) => {
-            Code::StageLimitExceeded
-        }
-        NotSimulated::KeyEncoding(qsl_eval::simulation::EncodingRefusal::Allocation { .. }) => {
-            Code::ResourceExhausted
-        }
-        NotSimulated::Extent(ClassifyFailure::Fault(_)) => Code::RuntimeInvariant,
+    match refusal.catalog_code() {
+        None => Code::InvalidRuntimeInput,
+        Some(code) => Code::from_code(code.code()).unwrap_or(Code::RuntimeInvariant),
     }
 }
 
