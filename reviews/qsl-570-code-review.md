@@ -91,3 +91,29 @@ No major finding. FND-001 and FND-002 are medium. In both, a precision claim is 
 - The spec vectors (23,026, 26,492, 9,210,341, `±ln 100`, 219 samples, 11,632 cycles) are asserted exactly and pass.
 
 FND-001 and FND-002 are precision gaps against QSpec's `2^-64` claim. The PR can fix them in code, or QSpec FR-408 can record the limit of its stated method. FND-003 and FND-004 are low.
+
+## Dispositions
+
+Round 1, reviewed at a9a693ac0e88a414cd5c067f016507356549657c (fix commit fda45c590, then a main merge and rustfmt). No gates were run. Narrow tests: `cargo test -p qsl-analyze --lib statistical` passed 38 tests.
+
+A throwaway probe test (reverted, never committed) checked precision against 60-digit mpmath values:
+
+- The quantile's upper end is at or above `z_{1−δ}` and within `2^-64` of it at `δ` = 1/100, 3/10, `10^-10` and `10^-30`.
+- `ln(2^-1000)` and `ln(10^-30)` are bracketed, each within `2^-64`.
+
+How each fix was checked:
+
+- **`phi_series`.** The integer common-denominator series is right:
+  - the term recurrence, the `lcm(1, 3, …, 2n+1)` rescaling and the alternating signs;
+  - the stop test `next·2^bits < next_base·(2n+3)`;
+  - `n + 1 ≥ ⌈z²⌉`, which is stronger than before.
+- **`quantile_bits`.** `3z²/4 + 2` bits exceed `log2(1/φ(z)) = z²/(2 ln 2) + 1.33`. Bisection precision is taken at the bracket's upper end, where `φ` is least, so it covers the whole bracket. Soundness is unchanged, because the upper end still needs `Φ.lower ≥ 1 − δ`.
+- **`ln`.** `ln 2`'s tail is below `2^-(71 + bits(|k|))`, so `k·ln 2` adds at most `2^-70` to the width.
+- **The new SPRT boundary test can fail.** Four holding samples make the true sum exactly `ln(1/16)`. The outward upper sum `−4·ln2.lower` does not reach the threshold `−4·ln2.upper`. An inward rounding would accept at four.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | fda45c590 |
+| FND-002 | fixed | fda45c590 |
+| FND-003 | fixed | fda45c590 |
+| FND-004 | fixed | fda45c590 |

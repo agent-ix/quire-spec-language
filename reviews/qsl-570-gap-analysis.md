@@ -66,3 +66,34 @@ No major finding. FND-001 to FND-003 are medium.
 **PASS: mergeable. No major finding.** Every part-1 clause of FR-189 to FR-191 is backed by a test that can fail. The QSpec FR-408 vectors (`N` = 23,026, 26,492 and 9,210,341; the SPRT thresholds; 11,632 cycles) are asserted exactly. The engine is sound, rounding outward everywhere.
 
 The medium findings are about bookkeeping and test strength. FND-001 is ticket closure. FND-002 is tags on compound ACs whose part-2 clauses are untested. FND-003 is a missing boundary-rounding test and a weak precision assertion. They can be fixed in this PR or tracked on QSL-570.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | FR-189-AC-10 asks for the least-favourable rule to be shown "through the `BehaviourSampler` seam, with the SPRT method". The test calls `least_favourable` directly on built `TestResult`s. It covers every case in the AC, and `check_statistical` takes the verdict's `estimate` and `interval` from the same function, so the gap is only the AC's stated route. Fix: drive one or two of the cases through `check_statistical` with a `ByInitial` sampler, or reword the AC. | qsl-analyze/src/statistical/tests.rs:1411-1467 |
+| FND-007 | low | After SR-12215 FND-003, the code refuses `TraceIndexRange` only for Okamoto and SPRT. FR-189's refusal list, merged in #1082, still says `TraceIndexRange` applies "when `max_draws · m` overflows the trace index", with no method restriction. Fix: add "for the Okamoto and SPRT methods" to FR-189. | spec/functional/FR-189-decide-a-probabilistic-claim-by-statistical-model-checking.md:93-95; qsl-analyze/src/statistical.rs:643-652 |
+
+## Dispositions
+
+Round 1, reviewed at a9a693ac0e88a414cd5c067f016507356549657c (fix commit fda45c590, plus #1082 merged from main). No gates were run.
+
+Code was checked against the merged FR-189 to FR-191 text:
+
+- The least-favourable margin rule.
+- `estimate` and `interval` presence.
+- `NoTest`.
+- After an undefined sample, finished tests are kept and unstarted ones are absent.
+- A quantile test is not decided before its first counted sample.
+- `max_samples` stops before the next draw, and a method that decides exactly at `max_samples` completes.
+- `Stopped` and `Unsupported` carry provenance; a refusal carries none.
+
+All of these match. FND-006 and FND-007 are new low findings from this round. They are open, do not block, and go to the lead for PR 2.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | Ticket closure is the lead's action at merge, not a code change. #1082 merged with `linkKind: closes` and QSL-570 stayed In Progress. #1079 (part 1) and #1098 still carry `closes`, so the lead must re-check QSL-570's state after this merge while PR 2 is open. |
+| FND-002 | fixed | fda45c590 |
+| FND-003 | fixed | fda45c590 |
+| FND-004 | deferred | Half fixed by #1082 (e9a24af94): FR-189 now lists `NoTest`, `TooManyTests`, `TraceIndexRange`, `ConfidenceBeyondPrecision`, `FractionForEvent` and `Internal`. Still unstated: the regenerative method counting walk steps against `max_draws`, which FR-191 defines as samples drawn. That is spec text only, low, and goes to PR 2's spec fit on QSL-570. |
+| FND-005 | fixed | fda45c590 |
