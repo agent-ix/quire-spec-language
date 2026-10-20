@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-205, FR-206, FR-210, FR-211 and FR-215 (ADR-027): [`ProtocolSystem`],
-//! the FR-101 [`TransitionSystem`] of a protocol subject, beside
-//! [`ModelSystem`].
+//! FR-205, FR-206, FR-210, FR-211, FR-215 and FR-216 (ADR-027):
+//! [`ProtocolSystem`], the FR-101 [`TransitionSystem`] of a protocol subject,
+//! beside [`ModelSystem`], and its steps' footprints.
 //!
 //! A protocol state is the model state, the live protocol instances (each
 //! with its threads, parallel instances and binders) and the memory
@@ -22,6 +22,7 @@
 //! `unsupported_construct`/`not-yet-implemented` naming it.
 
 mod channel;
+mod footprint;
 mod identity;
 mod memory;
 mod program;
@@ -50,6 +51,9 @@ use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::subject::SubjectSystem;
 use crate::value::evaluate_protocol_slot;
 
+pub use footprint::{
+    visible, AnchorName, ClaimReads, ParallelInstance, ProtocolFootprintError, ProtocolLocation,
+};
 pub use identity::{
     BlockedThread, PathStep, ProtocolTransition, RestKind, RestPoint, StepKind, ThreadPath,
     WaitCause,

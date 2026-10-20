@@ -209,8 +209,13 @@ enum Members {
     Control,
     /// `record`: the bound record or payload.
     Record { record: Enc },
-    /// `channel` and `entry`.
-    Channel { channel: Enc, entry: Enc },
+    /// `channel` and `entry`, with the channel's qualified name and its
+    /// protocol instance's ordinal that `channel` encodes.
+    Channel {
+        name: String,
+        instance: u64,
+        entry: Enc,
+    },
     /// `memory_step`, the canonical text its memory model gives.
     Memory { identity: String },
 }
@@ -279,14 +284,19 @@ impl ProtocolTransition {
         }
     }
 
-    /// A channel step of `kind`, `duplicate` or `lose`, on `channel` and its
-    /// queued `entry`.
-    pub(crate) fn channel(kind: StepKind, channel: Enc, entry: Enc) -> Self {
+    /// A channel step of `kind`, `duplicate` or `lose`, on the queue of the
+    /// channel `name` of protocol instance `instance`, and its queued
+    /// `entry`.
+    pub(crate) fn channel(kind: StepKind, name: String, instance: u64, entry: Enc) -> Self {
         Self {
             kind,
             thread: None,
             node: None,
-            members: Members::Channel { channel, entry },
+            members: Members::Channel {
+                name,
+                instance,
+                entry,
+            },
         }
     }
 
@@ -327,6 +337,18 @@ impl ProtocolTransition {
         }
     }
 
+    /// For a `duplicate` or `lose`, the channel's qualified name and its
+    /// protocol instance's ordinal.
+    pub fn channel_queue(&self) -> Option<(&str, u64)> {
+        match &self.members {
+            Members::Channel { name, instance, .. } => Some((name, *instance)),
+            Members::Attempt { .. }
+            | Members::Control
+            | Members::Record { .. }
+            | Members::Memory { .. } => None,
+        }
+    }
+
     fn enc(&self) -> Enc {
         let mut members = vec![("step", Enc::text(self.kind.text()))];
         if let Some(thread) = &self.thread {
@@ -348,8 +370,21 @@ impl ProtocolTransition {
             }
             Members::Control => {}
             Members::Record { record } => members.push(("record", record.clone())),
-            Members::Channel { channel, entry } => {
-                members.push(("channel", channel.clone()));
+            Members::Channel {
+                name,
+                instance,
+                entry,
+            } => {
+                members.push((
+                    "channel",
+                    Enc::tagged(
+                        "channel",
+                        vec![
+                            ("name", Enc::text(name.clone())),
+                            ("instance", Enc::text(instance.to_string())),
+                        ],
+                    ),
+                ));
                 members.push(("entry", entry.clone()));
             }
             Members::Memory { identity } => {

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! ADR-027 §7's worked example as a fixture: the `test/fill` domain package
-//! (population `cells` of `Cell`, field `v: Int[0, 3]`, operations `inc`,
-//! `setTwo`, `bump` and `flag` modifying `v`, `flag` with a Boolean result,
-//! and `touch`, which modifies nothing and is always enabled), a native unit
+//! (population `cells` of `Cell`, fields `v` and `w: Int[0, 3]`, operations
+//! `inc`, `setTwo`, `bump`, `flag` and `nudge(peer: Cell)` modifying their
+//! receiver's `v`, `flag` with a Boolean result, and `touch`, which modifies
+//! nothing and is always enabled), a native unit
 //! that selects it as `M` with their contracts, protocols over it, and the
 //! snapshots and protocol subjects the protocol tests build from it.
 
@@ -78,15 +79,29 @@ fn level() -> Json {
     )
 }
 
-/// The operation `name` of `Cell`, modifying `v` when `modifies`, with a
-/// Boolean result when `returns`.
-fn operation(name: &str, modifies: bool, returns: bool) -> Json {
+/// The operation `name` of `Cell` over the `Cell` parameters `params`,
+/// modifying its receiver's `v` when `modifies` (ADR-027 §7's `modifies
+/// self.v`), with a Boolean result when `returns`.
+fn operation(name: &str, params: &[&str], modifies: bool, returns: bool) -> Json {
     let identity = ident(&format!("Cell/{name}"));
+    let params: Vec<Json> = params
+        .iter()
+        .map(|parameter| {
+            let parameter_identity = format!("{identity}/{parameter}");
+            json!({
+                "identity": parameter_identity, "name": parameter, "typeRef": ident("Cell"),
+                "presence": "required", "nullable": false, "defaultKind": "none",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                "origin": origin(&parameter_identity),
+            })
+        })
+        .collect();
     let mut operation = json!({
-        "identity": identity, "name": name, "params": [], "pre": [], "post": [],
+        "identity": identity, "name": name, "params": params, "pre": [], "post": [],
         "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
             "startLine": 1, "startColumn": 1}},
-        "frame": {"modifies": if modifies { vec![ident("Cell/v")] } else { Vec::new() },
+        "frame": {"modifies": [],
+            "modifies_receiver": if modifies { vec![ident("Cell/v")] } else { Vec::new() },
             "creates": [], "deletes": []},
     });
     if returns {
@@ -113,7 +128,19 @@ pub(crate) fn document() -> Vec<u8> {
     })
     .collect();
     let value = ident("Cell/v");
+    let weight = ident("Cell/w");
     let population = ident("cells");
+    let fields: Vec<Json> = [("v", &value), ("w", &weight)]
+        .into_iter()
+        .map(|(name, field)| {
+            json!({
+                "identity": field, "name": name, "typeRef": ident("Level"),
+                "presence": "required", "nullable": false, "defaultKind": "none",
+                "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+                "origin": origin(field),
+            })
+        })
+        .collect();
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
@@ -127,18 +154,14 @@ pub(crate) fn document() -> Vec<u8> {
             level(),
             wire_type(&cell, "object_type", json!({
                 "supertypes": [],
-                "fields": [{
-                    "identity": value, "name": "v", "typeRef": ident("Level"),
-                    "presence": "required", "nullable": false, "defaultKind": "none",
-                    "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
-                    "origin": origin(&value),
-                }],
+                "fields": fields,
                 "operations": [
-                    operation("inc", true, false),
-                    operation("setTwo", true, false),
-                    operation("bump", true, false),
-                    operation("flag", true, true),
-                    operation("touch", false, false),
+                    operation("inc", &[], true, false),
+                    operation("setTwo", &[], true, false),
+                    operation("bump", &[], true, false),
+                    operation("flag", &[], true, true),
+                    operation("touch", &[], false, false),
+                    operation("nudge", &["peer"], true, false),
                 ],
                 "relationships": [],
             })),
@@ -282,13 +305,13 @@ impl Documents {
     }
 
     /// An initialization snapshot named `name` of the cells `objects`, each
-    /// `(key, v)`, provisioned here.
+    /// `(key, v)` with `w = 0`, provisioned here.
     pub(crate) fn start(&mut self, name: &str, objects: &[(&str, i64)]) -> DocumentRef {
         let objects: Vec<Json> = objects
             .iter()
             .map(|(key, value)| {
                 json!({"key": key, "type": ident("Cell"),
-                    "fields": {"v": {"integer": value.to_string()}}})
+                    "fields": {"v": {"integer": value.to_string()}, "w": {"integer": "0"}}})
             })
             .collect();
         let header = json!({"identity": PACKAGE, "version": "1.0.0",
