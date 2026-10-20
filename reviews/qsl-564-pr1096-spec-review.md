@@ -137,3 +137,12 @@ Gates at 886ff3b40:
 - `make check-spec-validation`: pass. The only warning on these files is
   FR-155 line 113, which was already there.
 - The committed copy of this file passes `quire validate`.
+
+Round 2, reviewed at `fe846e0e830261066044780e7aa8ec8a3472bc19`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-009 | fixed | fe846e0e8: TC-589 step 1 reads "`AnyField{v}`, which `set(a)` affects", and TC-617 step 2 reads "`AnyMembership{gates}`, which affects `Membership{gates, g}`". A grep of ADR-021, ADR-027, FR-155 to FR-157 and TC-576 to TC-617 finds no remaining "meets" for a write/read pair. What remains is write/write meeting, the AQ-6 and refinement uses, and references to "FR-383's locations, meets". |
+
+Gates at fe846e0e8: `make check-index-completeness` passes, and
+`make check-spec-validation` passes with no warning on TC-589 or TC-617.
