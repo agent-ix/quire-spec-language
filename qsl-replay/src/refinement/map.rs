@@ -501,7 +501,7 @@ fn lift_field(
 /// What `field` takes from the row value `value` before lifting: a field
 /// declared `T?` takes `v` from `Some(v)` and stays unset (`None`) for
 /// `none`; any other field takes the value unchanged, so a field declared
-/// `Option<T>` keeps an explicit `none` (FR-140-AC-11).
+/// `Option<T>` keeps an explicit `none`.
 fn unwrap_optional(field: &StateField, value: Value) -> Option<Value> {
     match value {
         Value::Option(option) if field.optional => option.payload().cloned(),
@@ -564,7 +564,7 @@ mod tests {
         }
     }
 
-    /// FR-140-AC-11 (TC-1086 step 8): a field declared `T?` is unset for
+    /// TC-1086 step 8: a field declared `T?` is unset for
     /// `none` and takes `v` from `Some(v)`; a field declared `Option<T>`
     /// keeps the option value unchanged, so `none` stays an explicit `none`.
     /// The constructors `none` and `Some(e)` are not yet a spelling of a

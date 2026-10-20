@@ -84,6 +84,13 @@ pub struct Variant {
     /// The abstract `Queue` also has `x: Int[0, 1]` and `y: Int[0, 1]`
     /// (FR-140-AC-13).
     pub xy: bool,
+    /// The abstract `enq` postcondition is its conjunction repeated this
+    /// many times more, so it costs more than the concrete clauses
+    /// (`HeavyEnq`, FR-141-AC-9).
+    pub heavy: u32,
+    /// The abstract `enq` takes a second argument `y: Digit`, which its
+    /// postcondition does not read (`Reads`, FR-141-AC-10).
+    pub two_args: bool,
 }
 
 /// `operation` with the frame that grants `modifies` on every object and
@@ -109,8 +116,13 @@ fn framed(
 /// The abstract package: `Queue { items }` with `enq(x)` and `deq()`.
 fn queue_document(variant: Variant) -> Vec<u8> {
     let digit = node(QUEUE, "Digit");
+    let parameters: Vec<(&str, &str)> = if variant.two_args {
+        vec![("x", &digit), ("y", &digit)]
+    } else {
+        vec![("x", &digit)]
+    };
     let enq = framed(
-        ring_queue::operation(QUEUE, "Queue", "enq", &[("x", &digit)], None, &[]),
+        ring_queue::operation(QUEUE, "Queue", "enq", &parameters, None, &[]),
         QUEUE,
         &["Queue/items"],
         &[],
@@ -239,9 +251,12 @@ fn contracts(variant: Variant) -> String {
     } else {
         "self.ring.head"
     };
+    let enq = "(size(pre(self.items)) = 0 and self.items = sequence[x]) or (pre(self.items) = sequence[0] and self.items = sequence[0, x]) or (pre(self.items) = sequence[1] and self.items = sequence[1, x])";
+    let enq =
+        vec![format!("({enq})"); 1 + usize::try_from(variant.heavy).unwrap_or(0)].join(" and ");
     format!(
         "pre CanEnq using v on Q::Queue::enq {{ size(self.items) < 2 }}\n\
-         post Enq using v on Q::Queue::enq {{ (size(pre(self.items)) = 0 and self.items = sequence[x]) or (pre(self.items) = sequence[0] and self.items = sequence[0, x]) or (pre(self.items) = sequence[1] and self.items = sequence[1, x]) }}\n\
+         post Enq using v on Q::Queue::enq {{ {enq} }}\n\
          pre CanDeq using v on Q::Queue::deq {{ size(self.items) > 0 }}\n\
          post Deq using v on Q::Queue::deq {{ (pre(self.items) = sequence[0] and result = 0 and size(self.items) = 0) or (pre(self.items) = sequence[1] and result = 1 and size(self.items) = 0) or (pre(self.items) = sequence[0, 0] and result = 0 and self.items = sequence[0]) or (pre(self.items) = sequence[0, 1] and result = 0 and self.items = sequence[1]) or (pre(self.items) = sequence[1, 0] and result = 1 and self.items = sequence[0]) or (pre(self.items) = sequence[1, 1] and result = 1 and self.items = sequence[1]) }}\n\
          pre CanPut using v on R::Slot::put {{ self.ring.size < 2 and self.index + 0 = (self.ring.head + self.ring.size) mod 2 }}\n\

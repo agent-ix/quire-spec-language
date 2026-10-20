@@ -26,6 +26,7 @@ use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::{
     CounterexampleKind, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
 };
+use crate::model_check::limits::ReachedLimit;
 use crate::model_check::replay::{
     disagreement, fault, no_value_cause, reexecute, refused, ModelTraceRefusal,
 };
@@ -50,6 +51,9 @@ pub enum RefinementTraceSettlement {
     },
     /// `inconclusive`, `ReplayParity`: replay disagrees with the engine.
     Inconclusive(DisagreementCause),
+    /// A run budget stopped the replay: V-7 with the limit and its value
+    /// (FR-145-AC-6), never `ReplayParity`.
+    Stopped(ReachedLimit),
 }
 
 /// What running the checks along the prefix found.
@@ -62,6 +66,8 @@ enum Found {
     Undefined(Box<UndefinedEvaluation>),
     /// A check could not decide.
     Undetermined,
+    /// A budget stopped a check.
+    Stopped(ReachedLimit),
 }
 
 /// FR-145: replay `payload`, a refinement counterexample of `refinement`
@@ -140,8 +146,12 @@ pub fn replay_refinement_trace(
                 found = Found::Undefined(Box::new(evaluation));
                 break;
             }
-            StepVerdict::Undetermined(_) | StepVerdict::Stopped(_) => {
+            StepVerdict::Undetermined(_) => {
                 found = Found::Undetermined;
+                break;
+            }
+            StepVerdict::Stopped(reached) => {
+                found = Found::Stopped(reached);
                 break;
             }
             StepVerdict::Fault(_) => return Err(fault("refinement-step")),
@@ -173,6 +183,7 @@ pub fn replay_refinement_trace(
             _ => RefinementTraceSettlement::Inconclusive(disagreement(Category::Violation)),
         },
         Found::Undetermined => RefinementTraceSettlement::Inconclusive(no_value_cause()),
+        Found::Stopped(reached) => RefinementTraceSettlement::Stopped(reached),
         Found::Nothing => RefinementTraceSettlement::Inconclusive(disagreement(Category::Success)),
     })
 }

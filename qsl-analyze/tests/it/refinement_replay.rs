@@ -111,7 +111,7 @@ fn reproduced(
     }
 }
 
-/// FR-145-AC-1 (TC-550 step 1): the lost-update counterexample replays,
+/// TC-550 step 1: the lost-update counterexample replays,
 /// recomputing the mapped values 0, 0, 0, 1, 1, to the recorded
 /// `AbstractStepRejected{position: 4, ..}`.
 #[trace("TC-550")]
@@ -156,7 +156,7 @@ fn the_lost_update_counterexample_replays_with_its_mapped_values() {
     assert_eq!(keys, expected);
 }
 
-/// FR-145-AC-1 (TC-550 step 1): the `InitialNotAbstract` and
+/// TC-550 step 1): the `InitialNotAbstract` and
 /// `StutterChanged` counterexamples each reproduce.
 #[trace("TC-550")]
 #[test]
@@ -188,7 +188,7 @@ fn the_initial_and_stutter_counterexamples_replay() {
     );
 }
 
-/// FR-145-AC-3 (TC-550 step 3): the lost-update counterexample with its
+/// TC-550 step 3): the lost-update counterexample with its
 /// recorded failure changed to position 3 settles `inconclusive`,
 /// `ReplayParity`.
 #[trace("TC-550")]
@@ -214,7 +214,7 @@ fn a_failure_recorded_at_another_position_disagrees() {
     ));
 }
 
-/// FR-145-AC-4 (TC-550 step 4): a counterexample whose initial index is out
+/// TC-550 step 4): a counterexample whose initial index is out
 /// of range, whose step is not enabled or whose post-state digest differs
 /// refuses with no result, and replaying one counterexample twice gives
 /// equal results.
@@ -285,7 +285,7 @@ fn a_payload_with_no_refinement_failure_is_refused() {
     ));
 }
 
-/// FR-144-AC-3 (TC-549 step 3) and FR-144-AC-6 (TC-555 step 3): a violated
+/// TC-549 step 3 and FR-144-AC-6 (TC-555 step 3): a violated
 /// half settles `refuted` through its replay, for a failed step and for an
 /// undefined mapping row, carrying the counterexample.
 #[trace("TC-549")]

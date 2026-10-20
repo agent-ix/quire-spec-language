@@ -26,7 +26,7 @@ use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ModelCheckLimits;
 use crate::model_check::refinement_replay::RefinementTraceSettlement;
 use crate::model_check::settle::{ModelCheckRecord, Row, EXPLICIT_STATE};
-use crate::proof_result::{InconclusiveCause, SettlementBasis};
+use crate::proof_result::{IncompleteCause, InconclusiveCause, SettlementBasis};
 use crate::refinement::SafetyOutcome;
 
 /// FR-144: settle `outcome`, a safety run under `limits`, as one terminal
@@ -53,6 +53,9 @@ pub fn settle_refinement_safety(
             }
             Ok(RefinementTraceSettlement::Inconclusive(cause)) => {
                 Row::inconclusive(InconclusiveCause::ReplayParity(cause))
+            }
+            Ok(RefinementTraceSettlement::Stopped(reached)) => {
+                Row::stopped_run(IncompleteCause::ResourceExhausted, Some(reached))
             }
             Err(refusal) => Row::refused(&refusal),
         },

@@ -302,3 +302,32 @@ fn a_swapped_system_is_a_fault_not_a_verdict() {
     let verdict = check_initial(world.refinement(), &abstracted, &concrete, 0, &pre);
     assert!(matches!(verdict, StepVerdict::Fault(_)), "{verdict:?}");
 }
+
+/// TC-546, the `commitB` half of Coin3: the lost-update `commitB` step
+/// at `ConcreteStep.position` 3 fails `AbstractStepRejected{position: 3, ..}`
+/// and the check judged one abstract transition. The `Coin3` initial-state
+/// indices and `Coin`'s `toss` need hidden fields (QSL-545) and are not built.
+#[trace("TC-546")]
+#[test]
+fn a_failed_step_names_its_position_and_counts_the_transitions_it_judged() {
+    let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());
+    let pre = cas_state(1, 0, false, 0, true);
+    let post = cas_state(1, 0, false, 0, false);
+    let (transition, reached) = step(&world, &pre, "commitB", &post);
+    let result = check_step(
+        world.refinement(),
+        &world.concrete_system(UNLIMITED),
+        &world.abstract_system(UNLIMITED),
+        &position(&world, &pre),
+        &ConcreteStep {
+            position: 3,
+            transition: Some(&transition),
+            post: &reached,
+        },
+    );
+    assert_eq!(result.abstract_successors, 1);
+    assert!(matches!(
+        result.verdict,
+        StepVerdict::Fails(RefinementFailure::AbstractStepRejected { position: 3, .. })
+    ));
+}
