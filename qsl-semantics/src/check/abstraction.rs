@@ -21,6 +21,7 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
+use qsl_attrs::string_edge;
 use qsl_forms::{AbstractionBindingForm, NameForm};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::{Code, InternalFault, Span};
@@ -375,6 +376,18 @@ pub(crate) fn declaration_origin(name: &str) -> String {
     format!("abstraction {name}")
 }
 
+/// A written receiver as its typed form: QSpec FR-450's `self` is the
+/// method receiver, any other spelling a parameter. This is the one place the
+/// written text is read (FR-064's string-edge).
+#[string_edge]
+fn receiver_of(spelling: &str) -> RustReceiver {
+    if spelling == "self" {
+        RustReceiver::SelfValue
+    } else {
+        RustReceiver::Parameter(RustParameter::new(spelling))
+    }
+}
+
 /// The parts of `name`, a `::`-separated model name, when it has `count`.
 fn name_parts(name: &NameForm, count: usize) -> Option<Vec<Identifier>> {
     let parts: Vec<Identifier> = name
@@ -548,11 +561,7 @@ impl CheckedGraph {
                         }));
                     }
                 }
-                let receiver = if form.receiver.text == "self" {
-                    RustReceiver::SelfValue
-                } else {
-                    RustReceiver::Parameter(RustParameter::new(&form.receiver.text))
-                };
+                let receiver = receiver_of(&form.receiver.text);
                 Ok(AuthoredBinding::Frame {
                     key,
                     value: FrameBinding {
