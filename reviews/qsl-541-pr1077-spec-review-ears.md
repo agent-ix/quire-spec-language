@@ -52,3 +52,13 @@ Measured on main 40f8707 (holds merged #1066; #1077 changes no code) with a thro
 ## Verdict
 
 One medium and two low findings. The edited Typing SHALL is a compound of an admission and an unwanted-behaviour refusal, a pattern FR-391 already used before this PR, so it is not raised. AC-3 and AC-7 are direct assertions of outcome.
+
+## Dispositions
+
+Disposition pass 1 against fix-round head 95822c0db (merge of main 505186892 plus the fix commit). Each outcome was checked in the spec text at that head, and the fixtures were re-measured with S1/S3 on main 505186892 (probe patch /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1077-r1-probe-patch.diff, output /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1077-r1-probe.log; clone reverted): every new AC-7/AC-8/row 9-10 fixture parses; `bound B on M::counters [3]` checks; the domain uses, the temporal `holds` atom, the function-body name and the `seq` in an invariant all refuse today with `PopulationFormOutsideRefinement` (expected until FR-391 is built; AC-8's `missing-name` and `seq` `expression-form` are the implied S3 change); `M::Counter = M::Counter` refuses `MissingName("M::Counter")` as AC-3 now says. make check-spec-validation exits 0 with the same 17 pre-existing warnings, check-index-completeness passes, and the head merges cleanly onto main.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

@@ -59,3 +59,20 @@ Measured on main 40f8707 (holds merged #1066; #1077 changes no code) with a thro
 ## Verdict
 
 Two medium and two low findings. Leftovers the planner ruled out of this PR, recorded for the follow-up: FR-150-AC-4/TC-566 write `forall p in config_history: ...` (shorthand that fails S1, unqualified name); FR-161-AC-2 on main (merged #1075) says its domain 'waits on population forms in clause bodies, PR #1077', which goes stale when this merges; FR-337/TC-1079 now carry 'today S1 requires over, STD-186' (merged #1075), out of scope here. Code text the implementation must change: typing.rs refusal sites, qsl-replay/src/result/wire/value.rs:1202 and spine/clause/tests/witness.rs:6 comments, flag_world.rs:11 and :21 doc comments, refinement_populations.rs's FR-139-AC-2 test. ADR-024 and QSL FR-087/FR-088 make no population claim. FR-391-AC-1's `count<M::Counter>(...)` is ill-typed (pre-existing, unchanged).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-391 defines a population position as 'the body of a state clause (an invariant, a precondition, a postcondition or a step's clause, FR-102) or a `holds` atom'. FR-366 also checks invariants, declared on a model type's definition, and refuses a population read in a record or event type's invariant with `unsupported_construct`/`expression-form` (FR-366:103-107), while for an object type it binds `self` 'as FR-104 binds `self` for a unit invariant'. A reader cannot tell whether `M::P` resolves in an object type's own invariant, or whether FR-366's refusal or FR-391's `operator-ineligible` wins for a record type. Say that FR-366's object-type invariants are (or are not) population positions and that FR-366's refusal holds for record and event types. | spec/functional/FR-391-name-a-population-in-a-state-clause.md:37-42 |
+
+## Dispositions
+
+Disposition pass 1 against fix-round head 95822c0db (merge of main 505186892 plus the fix commit). Each outcome was checked in the spec text at that head, and the fixtures were re-measured with S1/S3 on main 505186892 (probe patch /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1077-r1-probe-patch.diff, output /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1077-r1-probe.log; clone reverted): every new AC-7/AC-8/row 9-10 fixture parses; `bound B on M::counters [3]` checks; the domain uses, the temporal `holds` atom, the function-body name and the `seq` in an invariant all refuse today with `PopulationFormOutsideRefinement` (expected until FR-391 is built; AC-8's `missing-name` and `seq` `expression-form` are the implied S3 change); `M::Counter = M::Counter` refuses `MissingName("M::Counter")` as AC-3 now says. make check-spec-validation exits 0 with the same 17 pre-existing warnings, check-index-completeness passes, and the head merges cleanly onto main.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

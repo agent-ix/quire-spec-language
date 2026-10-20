@@ -70,3 +70,22 @@ Measured on main 40f8707 (holds merged #1066; #1077 changes no code) with a thro
 ## Verdict
 
 Not mergeable as written: three high findings (FND-001 to FND-003) and two medium. The direction is coherent: a population is typed `Population<U>[N]` as an `allInstances`/`lookup` operand and read as `Set<Reference<U>>[0,N]` as a domain, every value use refuses `operator-ineligible`, which agrees with FR-084's operand rules and FR-139's six forms inside a refinement. AC-1, AC-2, AC-4 to AC-6 are unchanged and still consistent with the widened text; FR-139-AC-2's flip and TC-544 step 2 agree with each other. FR-337/TC-1079's 'clause with no over' is out of scope: #1077 does not touch them and merged #1075 already marks it 'today S1 requires over, STD-186'.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | high | The rewritten AC-7 and TC-1076 row 9 check `invariant Cap ... { count<M::Counter>(o in M::counters : o.v = 0) < 4 }` 'with the `count` result typed `Int[0,3]`'. `count<N>(x in c: p)` is the core collection form (FR-091, FR-093 `Query{visit: Count}`), whose type argument is the result integer type, so `count<M::Counter>` is ill-typed. Measured on main 505186892: that invariant refuses `IllTyped(TypeMismatch)` at the `count` node (depth 1) before the domain is reached, while `count<Tally>(o in M::counters : ...)` with `type Tally = Integer` reaches the population (depth 2, today's `PopulationFormOutsideRefinement`). Its result is then the declared `Tally`, not `Int[0,3]`. FR-391's new bound rule ('the bound of a `count` over a named population is `[0, N]`') fits FR-139's `count(x in P where c)` form. Write the case as `count(o in M::counters where o.v = 0) < 4` (or say which bound a `count<N>` over a population has) in AC-7 and row 9. AC-1's unchanged invariant has the same `count<M::Counter>` defect and should be fixed in the same edit. | spec/functional/FR-391-name-a-population-in-a-state-clause.md:208 |
+
+## Dispositions
+
+Disposition pass 1 against fix-round head 95822c0db (merge of main 505186892 plus the fix commit). Each outcome was checked in the spec text at that head, and the fixtures were re-measured with S1/S3 on main 505186892 (probe patch /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1077-r1-probe-patch.diff, output /private/tmp/claude-501/-Users-peter-dev/be6a486a-dbff-4734-b40c-5d7654187d9c/scratchpad/sr-1077-r1-probe.log; clone reverted): every new AC-7/AC-8/row 9-10 fixture parses; `bound B on M::counters [3]` checks; the domain uses, the temporal `holds` atom, the function-body name and the `seq` in an invariant all refuse today with `PopulationFormOutsideRefinement` (expected until FR-391 is built; AC-8's `missing-name` and `seq` `expression-form` are the implied S3 change); `M::Counter = M::Counter` refuses `MissingName("M::Counter")` as AC-3 now says. make check-spec-validation exits 0 with the same 17 pre-existing warnings, check-index-completeness passes, and the head merges cleanly onto main.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
