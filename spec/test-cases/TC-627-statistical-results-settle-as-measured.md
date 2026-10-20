@@ -18,7 +18,7 @@ Scope: FR-192-AC-1 to FR-192-AC-4.
 
 Fixtures: synthetic `StatisticalOutcome` values for each row; FR-189-AC-1's and FR-190-AC-1's results; a request with `P95` and the `2 ms` claim.
 
-1. Map each outcome row, including a `ConfidenceBeyondPrecision` refusal, including a `Stopped` by an expansion naming `EvaluationMeter` and one naming no limit that is an internal failure, and one naming no limit that is not.
+1. Map each outcome row, including a `ConfidenceBeyondPrecision` refusal, a `Stopped` by an expansion naming `EvaluationMeter`, and two expansion stops naming no limit, one an internal failure and one not.
 2. Settle FR-189-AC-1's Okamoto and SPRT results and FR-190-AC-1's result.
 3. Gate the two-item request, then the request without the rejected item; read the proof summary.
 4. Read EN-4's manifest; call `check_statistical` with an every-scheduler claim, `NoFault` without confidence and an `expected accumulate` claim.
