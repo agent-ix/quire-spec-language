@@ -2,7 +2,8 @@
 //! `qsl-route`: the ADR-011 §6.1 layer **R** crate (ADR-011 §7.3
 //! X-9) -- the `#185` capability-backend registry and router (ADR-012 §6,
 //! §7). Among the workspace crates it depends only on `qsl-semantics`
-//! (layer 3) and `qsl-foundation` (layer F), and on the layer-SV leaf
+//! (layer 3), `qsl-forms` (layer 2, for the `memory` clause's model names)
+//! and `qsl-foundation` (layer F), and on the layer-SV leaf
 //! `quire-semantic-value` for the [`deadlock`] item's property form; its one
 //! other dependency is `thiserror`.
 //!
@@ -15,7 +16,10 @@
 //! capability-kind type is defined here or anywhere else in this ticket's
 //! scope (FR-075-AC-5). Fairness kinds do filter (FR-134): a backend is a
 //! candidate for an item only when it advertises every fairness kind the
-//! item's fairness set uses ([`Registry::candidates_for_fairness`]).
+//! item's fairness set uses ([`Registry::candidates_for_fairness`]). So do
+//! memory models (FR-226): an item over a subject with a weak `parallel` is
+//! given only backends advertising its resolved models
+//! ([`Registry::candidates_for_models`]).
 //!
 //! `route` negotiates nothing and settles no disposition. An item whose
 //! kind no registered backend advertises reports an ordinary, well-formed
@@ -52,6 +56,7 @@ pub mod model_request;
 pub mod request;
 pub mod routing;
 
+use qsl_forms::MemoryModelName;
 use qsl_foundation::bound::DomainKind;
 pub use qsl_foundation::digest::ManifestDigest;
 use qsl_foundation::{BackendId, CatalogCode};
@@ -163,6 +168,7 @@ pub struct BackendDescriptor {
     advertises: HashSet<(Capability, Mode)>,
     domains: Option<BTreeSet<DomainKind>>,
     fairness_kinds: BTreeSet<FairnessKind>,
+    memory_models: BTreeSet<MemoryModelName>,
 }
 
 /// Convert one already-read FR-331 provider manifest into its routed
@@ -225,6 +231,11 @@ pub fn descriptor_from_manifest<'a>(
         advertises,
         domains,
         fairness_kinds,
+        // QSpec FR-331's manifest names no memory-model member yet (QSpec
+        // FR-439 places the models in the capability advertisement without
+        // a spelling), so a manifest advertises none: it is no candidate for
+        // an item over a weak subject (FR-226).
+        memory_models: BTreeSet::new(),
     })
 }
 
@@ -319,6 +330,7 @@ impl BackendDescriptor {
             advertises,
             domains,
             fairness_kinds: BTreeSet::new(),
+            memory_models: BTreeSet::new(),
         })
     }
 
@@ -335,6 +347,29 @@ impl BackendDescriptor {
     /// The fairness kinds this backend advertises (FR-134).
     pub fn fairness_kinds(&self) -> &BTreeSet<FairnessKind> {
         &self.fairness_kinds
+    }
+
+    /// Advertise the memory models this backend decides (FR-226, ADR-025
+    /// MX-7, QSpec FR-439), by the names of the `memory` clause. A
+    /// descriptor built without this call advertises none, so it is no
+    /// candidate for an item over a subject with a weak `parallel`.
+    #[must_use]
+    pub fn with_memory_models(mut self, models: impl IntoIterator<Item = MemoryModelName>) -> Self {
+        self.memory_models = models.into_iter().collect();
+        self
+    }
+
+    /// The memory models this backend advertises (FR-226).
+    pub fn memory_models(&self) -> &BTreeSet<MemoryModelName> {
+        &self.memory_models
+    }
+
+    /// Whether this backend decides an item whose subject resolves its
+    /// outermost `parallel` controls to `resolved` (FR-226): every item
+    /// whose subject has no weak `parallel` is decided whatever the backend
+    /// advertises; otherwise the backend advertises every resolved model.
+    fn decides_models(&self, resolved: &BTreeSet<MemoryModelName>) -> bool {
+        !resolved.iter().any(|model| model.is_weak()) || resolved.is_subset(&self.memory_models)
     }
 
     /// The boundable domain kinds the manifest accepts a finite bound for
@@ -804,6 +839,23 @@ impl Registry {
         named: Option<&BackendId>,
         required: &BTreeSet<FairnessKind>,
     ) -> CandidateOutcome {
+        self.candidates_for_models(kind, named, required, &BTreeSet::new())
+    }
+
+    /// Compute `kind`'s candidate set for an item whose fairness set uses
+    /// the kinds `required` and whose subject resolves its outermost
+    /// `parallel` controls to the models `resolved` (FR-226, ADR-025 MX-7):
+    /// as [`Self::candidates_for_fairness`], and, when a resolved model is
+    /// weak, leaving out every backend that does not advertise each resolved
+    /// model. The models are never weakened to fit a backend; when none
+    /// advertises them the set is empty, an ordinary set (FR-075).
+    pub fn candidates_for_models(
+        &self,
+        kind: Capability,
+        named: Option<&BackendId>,
+        required: &BTreeSet<FairnessKind>,
+        resolved: &BTreeSet<MemoryModelName>,
+    ) -> CandidateOutcome {
         let in_scope: Vec<&BackendDescriptor> = match named {
             Some(id) => match self.held.get(id) {
                 None => return CandidateOutcome::UnknownBackend(id.clone()),
@@ -813,7 +865,9 @@ impl Registry {
         };
         let capable: Vec<&BackendDescriptor> = in_scope
             .into_iter()
-            .filter(|descriptor| descriptor.advertises_kind(kind))
+            .filter(|descriptor| {
+                descriptor.advertises_kind(kind) && descriptor.decides_models(resolved)
+            })
             .collect();
         let (kept, left_out): (Vec<&BackendDescriptor>, Vec<&BackendDescriptor>) = capable
             .into_iter()

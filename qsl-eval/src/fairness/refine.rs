@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 
 use quire_exact::Cancel;
 
-use crate::fairness::constraint::{Constraint, Strength};
+use crate::fairness::constraint::{Constraint, Obligation, Strength};
 use crate::fairness::error::FairnessError;
 use crate::fairness::graph::{Graph, Vertex};
 use crate::fairness::scc::components;
@@ -24,8 +24,10 @@ pub enum Outcome {
         /// The index of the acceptance set.
         set: usize,
     },
-    /// The weak constraint at `constraint`, the first such, is enabled at
-    /// every vertex of the component and taken by no edge inside it.
+    /// The weak constraint at `constraint`, the first such, is owed on the
+    /// component and taken by no edge inside it: enabled at every vertex, or,
+    /// for a visibility constraint (ADR-025 MF-2), loaded on an edge inside
+    /// it.
     UnfairWeak {
         /// The constraint's index in the fairness set.
         constraint: usize,
@@ -134,7 +136,7 @@ fn classify(
     }
     for (index, constraint) in constraints.iter().enumerate() {
         let unfair = constraint.strength() == Strength::Weak
-            && enabled_everywhere(graph, members, constraint)
+            && weak_owed(graph, members, constraint)
             && !taken_inside(graph, members, constraint);
         if unfair {
             return Ok(Outcome::UnfairWeak { constraint: index });
@@ -175,6 +177,21 @@ fn enabled_at(graph: &Graph, vertex: Vertex, constraint: &Constraint) -> bool {
     graph
         .enabled(vertex)
         .is_some_and(|enabled| constraint.is_enabled_in(enabled))
+}
+
+/// Whether a weak constraint is owed on the component: enabled at every
+/// vertex (ADR-018 FA-4), or for a visibility constraint loaded on some edge
+/// inside it (ADR-025 MF-2).
+fn weak_owed(graph: &Graph, members: &BTreeSet<Vertex>, constraint: &Constraint) -> bool {
+    match constraint.obligation() {
+        Obligation::Enablement => enabled_everywhere(graph, members, constraint),
+        Obligation::Visibility { .. } => members.iter().any(|vertex| {
+            graph
+                .edges_from(*vertex)
+                .iter()
+                .any(|edge| members.contains(&edge.target) && constraint.is_owed_by(edge.label))
+        }),
+    }
 }
 
 fn enabled_everywhere(graph: &Graph, members: &BTreeSet<Vertex>, constraint: &Constraint) -> bool {

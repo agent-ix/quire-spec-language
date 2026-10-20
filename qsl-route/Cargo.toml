@@ -15,6 +15,8 @@ description = "ADR-011 §6.1 layer R: the #185 capability-backend registry and r
 # names no other workspace crate.
 [dependencies]
 qsl-foundation = { path = "../qsl-foundation" }
+# Layer 2: the `memory` clause's model names a backend advertises (FR-226).
+qsl-forms = { path = "../qsl-forms" }
 qsl-semantics = { path = "../qsl-semantics" }
 quire-semantic-value = { workspace = true }
 thiserror = "2.0.20"

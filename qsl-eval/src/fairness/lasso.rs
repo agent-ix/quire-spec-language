@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::fairness::constraint::{Constraint, Strength};
+use crate::fairness::constraint::{Constraint, Obligation, Strength};
 use crate::fairness::error::FairnessError;
 use crate::fairness::graph::{EdgeLabel, Identity};
 
@@ -43,7 +43,9 @@ pub enum LassoFairness {
 /// Whether `steps`, the loop of a lasso, is fair under `constraints`. A weak
 /// constraint is fair on the loop when it is taken in it or disabled
 /// somewhere in it; a strong constraint when it is taken in it or enabled
-/// nowhere in it.
+/// nowhere in it. A visibility constraint (ADR-025 MF-2) is fair on the
+/// loop when the loop loads its pair from no message, or loads it from the
+/// mo-last message somewhere.
 ///
 /// # Errors
 ///
@@ -63,9 +65,14 @@ pub fn check_loop(
         let disabled_somewhere = steps
             .iter()
             .any(|step| !constraint.is_enabled_in(&step.enabled));
-        let fair = match constraint.strength() {
-            Strength::Weak => taken || disabled_somewhere,
-            Strength::Strong => taken || !enabled_somewhere,
+        let fair = match (constraint.strength(), constraint.obligation()) {
+            (Strength::Weak, Obligation::Enablement) => taken || disabled_somewhere,
+            (Strength::Weak, Obligation::Visibility { .. }) => {
+                taken || !steps.iter().any(|step| constraint.is_owed_by(step.label))
+            }
+            (Strength::Strong, Obligation::Enablement | Obligation::Visibility { .. }) => {
+                taken || !enabled_somewhere
+            }
         };
         if !fair {
             return Ok(LassoFairness::Unfair { constraint: index });

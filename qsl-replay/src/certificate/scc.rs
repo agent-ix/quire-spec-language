@@ -50,7 +50,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_eval::fairness::{Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex};
+use qsl_eval::fairness::{
+    Constraint, EdgeLabel, FairnessError, Graph, Identity, Obligation, Strength, Vertex,
+};
 use quire_exact::Cancel;
 
 use crate::certificate::closure::{
@@ -342,8 +344,13 @@ impl<'p> Checker<'p> {
                 .is_some_and(|accepting| accepting.is_disjoint(&inside)),
             ComponentWitness::UnfairWeak { constraint } => match self.constraint(*constraint) {
                 Some(constraint) if constraint.strength() == Strength::Weak => {
-                    self.enabled_everywhere(&inside, constraint)?
-                        && !self.taken_inside(&inside, |label| constraint.is_taken_by(label))?
+                    let owed = match constraint.obligation() {
+                        Obligation::Enablement => self.enabled_everywhere(&inside, constraint)?,
+                        Obligation::Visibility { .. } => {
+                            self.taken_inside(&inside, |label| constraint.is_owed_by(label))?
+                        }
+                    };
+                    owed && !self.taken_inside(&inside, |label| constraint.is_taken_by(label))?
                 }
                 Some(_) | None => false,
             },
@@ -971,6 +978,52 @@ mod tests {
         assert_eq!(
             check(&product, &second_then_first, &constraints),
             rejected(CertificateRule::NotPartition, s2)
+        );
+    }
+
+    /// ADR-025 MF-2 in the certificate check: an accepting cycle on which
+    /// thread `b` loads `l` only from a stale message (identity 10) is an
+    /// `UnfairWeak` witness for the pair's visibility constraint; once the
+    /// cycle also loads the mo-last message (identity 11) the same witness
+    /// is rejected.
+    #[trace("TC-673", "FR-228-AC-3")]
+    #[test]
+    fn a_visibility_witness_holds_only_while_the_cycle_loads_stale_messages() {
+        const STALE: Identity = Identity::new(10);
+        const FRESH: Identity = Identity::new(11);
+        const OTHER: Identity = Identity::new(20);
+        let cycle = |back: &[Identity]| {
+            let mut product = ProductGraph::new();
+            let enabled = [STALE, FRESH, OTHER];
+            let a = product
+                .add_state(product_state([0, 0], "q1"), enabled)
+                .expect("a new state");
+            let b = product
+                .add_state(product_state([0, 1], "q1"), enabled)
+                .expect("a new state");
+            product
+                .add_edge(a, b, EdgeLabel::Transition(STALE))
+                .expect("known vertices");
+            for label in back {
+                product
+                    .add_edge(b, a, EdgeLabel::Transition(*label))
+                    .expect("known vertices");
+            }
+            product.add_acceptance_set([a, b]).expect("known vertices");
+            product
+        };
+        let components = [Component {
+            states: vec![product_state([0, 0], "q1"), product_state([0, 1], "q1")],
+            witness: ComponentWitness::UnfairWeak { constraint: 0 },
+        }];
+        let constraints = [Constraint::visibility([STALE, FRESH], [FRESH])];
+        assert_eq!(
+            check(&cycle(&[OTHER]), &components, &constraints),
+            TemporalCertificateCheck::Accepted
+        );
+        assert_eq!(
+            check(&cycle(&[OTHER, FRESH]), &components, &constraints),
+            rejected(CertificateRule::WitnessFails, product_state([0, 0], "q1"))
         );
     }
 }

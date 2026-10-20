@@ -600,3 +600,84 @@ fn a_lasso_with_no_loop_step_is_refused() {
         Err(FairnessError::EmptyLoop)
     );
 }
+
+// ADR-025 MF-2: visibility fairness for one (thread, location) pair. Thread
+// `b`'s loads of `l` are identity 10 (depth 1, a stale message) and 11
+// (depth 0, the mo-last message); identity 20 is another thread's step.
+const STALE: u64 = 10;
+const FRESH: u64 = 11;
+const OTHER: u64 = 20;
+
+fn visibility() -> Constraint {
+    Constraint::visibility([id(STALE), id(FRESH)], [id(FRESH)])
+}
+
+/// A two-vertex cycle whose edges take `labels`: the first from `a` to `b`,
+/// every other from `b` back to `a`. Every listed identity is enabled at
+/// both vertices, so enabledness alone discharges nothing.
+fn cycle(labels: &[u64]) -> Graph {
+    let mut graph = Graph::new();
+    let enabled = [id(STALE), id(FRESH), id(OTHER)];
+    let a = graph.add_vertex(enabled);
+    let b = graph.add_vertex(enabled);
+    for (position, label) in labels.iter().enumerate() {
+        let (from, to) = if position == 0 { (a, b) } else { (b, a) };
+        graph
+            .add_edge(from, to, EdgeLabel::Transition(id(*label)))
+            .expect("both vertices exist");
+    }
+    graph
+}
+
+fn filter(graph: &Graph) -> Vec<Outcome> {
+    analyze(
+        graph,
+        &graph.vertices().collect(),
+        &[visibility()],
+        &Cancel::new(),
+    )
+    .expect("the filter runs")
+    .iter()
+    .map(|analysis| analysis.outcome().clone())
+    .collect()
+}
+
+/// FR-228-AC-3: an SCC on which `b` loads `l` only from a message that is
+/// not mo-last fails visibility fairness; one that also holds a load of the
+/// mo-last message passes; one that never loads `l` owes nothing.
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-3")]
+#[test]
+fn visibility_fairness_rejects_an_scc_that_loads_only_stale_messages() {
+    assert_eq!(
+        filter(&cycle(&[STALE, OTHER])),
+        [Outcome::UnfairWeak { constraint: 0 }]
+    );
+    assert_eq!(filter(&cycle(&[STALE, OTHER, FRESH])), [Outcome::Fair]);
+    assert_eq!(filter(&cycle(&[OTHER, OTHER])), [Outcome::Fair]);
+}
+
+/// ADR-025 MF-2 on a lasso: the loop must load the mo-last message of every
+/// pair it loads.
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-3")]
+#[test]
+fn a_loop_that_keeps_loading_a_stale_message_is_unfair_under_visibility() {
+    let enabled = [STALE, FRESH, OTHER];
+    let stale = [
+        loop_step(&enabled, EdgeLabel::Transition(id(STALE))),
+        loop_step(&enabled, EdgeLabel::Transition(id(OTHER))),
+    ];
+    assert_eq!(
+        check_loop(&stale, &[visibility()]),
+        Ok(LassoFairness::Unfair { constraint: 0 })
+    );
+    let fresh = [
+        loop_step(&enabled, EdgeLabel::Transition(id(STALE))),
+        loop_step(&enabled, EdgeLabel::Transition(id(FRESH))),
+    ];
+    assert_eq!(check_loop(&fresh, &[visibility()]), Ok(LassoFairness::Fair));
+    let unloaded = [loop_step(&enabled, EdgeLabel::Transition(id(OTHER)))];
+    assert_eq!(
+        check_loop(&unloaded, &[visibility()]),
+        Ok(LassoFairness::Fair)
+    );
+}
