@@ -39,3 +39,11 @@ Ticket: QSL-570. PR: quire-spec-language#1098, head a53c86bc4, scoped to `git di
 ## Verdict
 
 One low finding. The FR-191 budget sentence keeps its EARS event form ('When a test has drawn ... it SHALL stop'). The FR-189 TraceIndexRange text is a definition list, not a SHALL statement. The FR-192 rows sit under the existing exhaustive-map SHALL. The quire grammar lint reports nothing in the three files.
+
+## Dispositions
+
+Round 1, head 7ff6d6491: fix commit 7ff6d6491 over merge d41f853e, which brings in main 7935368f (QSL-549 #1097, QSL-564 #1096). The fix commit also commits this review's round-0 SR files under reviews/ unchanged, with the posted comment bodies beside them; this file supersedes them. Terra's #1079 branch is now at dd3a654d7. Its qsl-analyze/src/statistical.rs is byte-equal to a9a693ac0, so the round-0 code reading still holds. Each new AC's expected result was checked against that code and its tests. FR-189-AC-13: an Event sample adds 1 or 0 and counts one, so 3 of 4 gives 3/4 (statistical.rs:403-427); a Completed run at exactly 4 samples needs claim parameters whose Okamoto N is 4, for example alpha = beta = 1/5 and iota = 1/2. FR-189-AC-14: the regenerative test a_regenerative_request_is_not_refused_for_the_interleaved_trace_range runs at u64::MAX, and Okamoto with two tests at u64::MAX is refused TraceIndexRange{u64::MAX, 2} (statistical/tests.rs:1160-1176, 1575-1589). FR-191-AC-2: regenerative_test checks max_draws before every step, so a max_draws below one cycle's steps stops Limit{MaxDraws, value} with no decision (statistical.rs:462-472). Gates: make check-spec-validation exits 0 with the same 17 warnings, none in the changed files; tools/check-index-completeness.sh passes. The FR text has no status wording. The PR body says correctly that neither FR-255 nor QSpec FR-461 registers `model_check.meter` or `model_check.max_candidates`. FR-255's table holds no engine setting, `statistical.*` included, so that is not a defect of this PR.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
