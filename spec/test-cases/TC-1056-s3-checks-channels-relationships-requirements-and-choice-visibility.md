@@ -97,7 +97,7 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 48 | the base's activation replaced by `activation on each (x: M::Plain)` and the choice `by Buyer visible (x.ready)` reading `x.ready` | the same refusal with `reason` `ineligible-kind` (the protocol's activation binder) |
 | 49 | the base's `finish Closed` kept and a choice in the run reading `closed.ready`, listed in `visible` | `missing_declaration`/`missing-name` at each read of `closed`, as an out-of-scope read, and no `wrong-observation` refusal: no decision reaches a `finish` record (FR-218-AC-17) |
 | 50 | row 35's first case (the receive in `branch left`, the choice in `branch right`) with `visible (true)` | `missing_declaration`/`missing-name` at each read of `got` and no `wrong-observation` refusal: the read is out of scope and also unlisted, and the scope refusal precedes the decision-fact refusal (FR-218-AC-17) |
-| 51 | the base protocol checked in package `M`, then the same text in package `N` | the checked channel is `M::Pay` in the first and `N::Pay` in the second; the two are different channels, and a `duplicate` identity and a queue key built from each name its own qualified name (FR-218-AC-27) |
+| 51 | a second protocol `Billing` in the unit that declares `channel Pay` with `Pipeline`'s premises | checks; two checked channels, `Pipeline`'s `Pay` and `Billing`'s `Pay`, recorded under their protocols' qualified identities with the handle `Pay`; the qualified names differ (FR-218-AC-27) |
 
 ## Expected Results
 

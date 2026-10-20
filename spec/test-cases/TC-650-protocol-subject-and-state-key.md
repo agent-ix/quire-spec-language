@@ -12,7 +12,7 @@ relationships:
 
 Verify the protocol subject's construction and refusals, the thread paths and ordinals, binder removal and the canonical state key.
 
-Scope: FR-205-AC-1 to FR-205-AC-4.
+Scope: FR-205-AC-1 to FR-205-AC-6.
 
 ## Test Procedure
 
@@ -26,8 +26,14 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
    variant whose post-join node reads `a`.
 3. Run FR-205-AC-3's `repeat`/`join any … outstanding continue` protocol and
    read the paths created by each fork under both completion orders, and
-   its `maximum 3` variant in which instance 0 ends while instance 1 runs.
+   its `maximum 3` variant in which instance 0 ends while instance 1 runs,
+   and its variant whose branch `b` holds an inner `parallel` with a
+   running `y`.
 4. Build `Fill` with two initial snapshots, and an `on each` protocol.
+5. Activate FR-205-AC-5's two `Refund` registrations with and without
+   `cend` between them.
+6. Build subjects over two protocols that each declare `channel Pay`, and
+   read a key with a queued entry and a `duplicate` identity from each.
 
 Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 
@@ -40,6 +46,10 @@ Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
   the binder is present exactly from `attempt(A)` to the reading step.
 - Step 3: ordinal 1 while instance 0's `b` runs, ordinal 0 otherwise; the
   two histories meet in one state; with `maximum 3`, the third fork takes
-  ordinal 0 once instance 0 is removed while instance 1 runs.
+  ordinal 0 once instance 0 is removed while instance 1 runs; ordinal 1
+  while `y` runs and 0 after it completes.
 - Step 4: two initial states at `fork Both`; no instance in the `on each`
   initial state.
+- Step 5: ordinal 1 with `(0, Refund, 0)` live, ordinal 0 after `cend`.
+- Step 6: each queue key and identity names its own protocol's qualified
+  channel name.

@@ -26,7 +26,8 @@ Scope: FR-216-AC-1 to FR-216-AC-5.
 3. Read `join`'s write footprint under `cancel` and `continue`, and with
    a forked inner `parallel` under `cancel`; read the
    `receive` enabling footprint and the `Chatter` independence pairs.
-4. Read §7.1's registration footprints; for each step, perturb a location
+4. Read §7.1's registration footprints, and the `cend` and second-activation
+   footprints of FR-216-AC-4's two-registration `Refund` variant; for each step, perturb a location
    outside its `R` and diff the post-states.
 5. Read the enabling footprints of FR-216-AC-5's `bump` attempt and of
    `duplicate(ch, Tx)`, the reference-type `event`'s membership read and
@@ -42,7 +43,8 @@ Tag the tests `#[trace("TC-661", "FR-216-AC-n")]`.
   reads of the second fork; control steps invisible.
 - Step 3: the footprints and pairs of FR-216-AC-3, the inner threads and
   instances in the cancel case.
-- Step 4: the `reg` footprints of FR-216-AC-4; every change confined to
+- Step 4: the `reg` footprints and the dependent `cend`/activation pair of
+  FR-216-AC-4; every change confined to
   the step's `W`.
 - Step 5: exactly the enabling locations FR-216-AC-5 lists, as
   `Footprint` values with `Location::Protocol` for protocol locations.
