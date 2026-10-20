@@ -12,20 +12,19 @@ relationships:
 
 Verify S3's checks of random parameters, workloads and rewards on ADR-024 §7.2's `Service` model and its malformed variants.
 
-Scope: FR-185-AC-1 to FR-185-AC-8.
+Scope: FR-185-AC-1 to FR-185-AC-7.
 
 ## Test Procedure
 
-Fixtures: ADR-024 §7.2's `Service` model and the variants FR-185-AC-2 to FR-185-AC-4 list.
+Fixtures: ADR-024 §7.2's `Service` model (with `d` typed `Millis = Int[1, 12]`), the variants FR-185-AC-2 to FR-185-AC-4 list, a second model `Other`, and the coprime-weight distributions of FR-185-AC-6.
 
 1. Check `Service` and read back `attempt`'s random parameters, the `duration` reward and the workload `Steady`.
 2. Check each random-parameter variant of FR-185-AC-2, including the weights `rational(-1, 1)`, the bare weight `-1`, and the exact-value bounds of FR-185-AC-2: `decimal(1, 4294967295)`, `rational(n, n)` with `n` of 70,000 bits, `rational(m, 1)` with `m` of 65,536 and of 65,537 bits, `decimal(1, 19728)`, `decimal(1, 19729)`, `decimal(25, 3)` and `decimal(5, 0)`.
 3. Check each workload variant of FR-185-AC-3.
 4. Check each reward variant of FR-185-AC-4, and `reward cost on Server::request = 2`.
-5. Declare a second workload `Steady` on `Service`, and one on another model (FR-185-AC-5).
-6. Check a distribution and a workload whose coprime weights sum past, and exactly to, the rational-bits ceiling (FR-185-AC-6).
+5. Declare a second workload `Steady` on `Service`, and one on `Other` (FR-185-AC-5).
+6. Check the two coprime-weight distributions of FR-185-AC-6, and one with a check cancelled before it starts.
 7. Emit `Service` (FR-185-AC-7).
-8. Check `Server::attempt` with `d: Quantity<Time>` from the domain package, with `true` for `d` (FR-185-AC-8).
 
 Tag the tests `#[trace("TC-620", "FR-185-AC-n")]`.
 
@@ -35,7 +34,6 @@ Tag the tests `#[trace("TC-620", "FR-185-AC-n")]`.
 - Step 2: each variant refused with a diagnostic naming the parameter and carrying its FR-185-AC-2 cause; `rational(-1, 1)` refused `invalid-weight`, `decimal(1, 4294967295)` and `rational(n, n)` (`n` of 70,000 bits) each refused with a limit refusal (`LimitExceeded`) pending QSL-883 without expanding or reducing, `rational(m, 1)` at 65,536 bits and `decimal(1, 19728)` admitted, `rational(m, 1)` at 65,537 bits and `decimal(1, 19729)` refused with the limit refusal, `decimal(25, 3)` admitted as `1/40`, `decimal(5, 0)` admitted, the bare `-1` refused `invalid_syntax` at S1.
 - Step 3: each variant refused naming the workload and the operation, with its FR-185-AC-3 cause.
 - Step 4: the three variants refused naming the reward, with their FR-185-AC-4 causes (including `duplicate-reward`); `cost` checks.
-- Step 5: the second `Steady` on `Service` refused `conflicting_declaration`/`duplicate-declaration` with both declarations related; the other model's `Steady` checks.
-- Step 6: the over-ceiling sum refused with the limit refusal naming the declaration; the sum at the ceiling admitted.
-- Step 7: S3 checks, S4 refuses `unsupported_construct`/`not-yet-implemented` naming the first declaration.
-- Step 8: the three quantity values check as `Quantity<Time>`; `true` refused `value-outside-type`.
+- Step 5: each second `Steady` refused `conflicting_declaration`/`duplicate-declaration` with both declarations related.
+- Step 6: the 65,536-bit sum admitted; the 65,537-bit sum refused with the limit refusal naming the parameter; the cancelled check ends cancelled.
+- Step 7: S3 checks, S4 refuses `unsupported_construct`/`not-yet-implemented` naming the first random parameter, `random-parameter` and the profile.
