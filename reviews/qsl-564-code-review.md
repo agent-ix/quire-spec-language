@@ -227,3 +227,57 @@ Mutations at 21fa47c9b:
 The branch merged main at 7e28a47ae, one commit before #1096 (d9e3560a2).
 `git merge-tree` against the current main is clean, and the only files it adds
 are `spec/` and `reviews/`.
+
+Merge re-review (round 3), reviewed at
+`6c7f731cc1ed93c9eff683736279f09e56cc4690`. This round covers only the
+merge-resolution delta (`git show --remerge-diff`). There are no new findings
+and no open findings.
+
+- **`check.rs`: the safety `Run` is generic over `SubjectSystem`.** A private
+  `Chooser<State, Transition>` trait supplies the enforced expansion and the
+  ample choice. `ModelAmple` implements it over `Por`. `check_model` and
+  `check_protocol` pass `chooser: None`, and `check_reduced` passes `Some`
+  only under partial-order reduction. `ProtocolCheckRequest` has no
+  reductions field, so a protocol run never takes partial-order reduction;
+  that is ADR-027's half, still not built.
+- **Determinism.** `Run::ample` now dedups the enabled transitions by
+  equality, in first-appearance order, instead of sort and dedup. The steps
+  are already sorted by identity bytes (`check.rs:1218`), so that order is
+  canonical. `ModelAmple::choose` sorts and dedups again before `Por::ample`,
+  which binary-searches `enabled` and breaks ties by seed in canonical
+  identity order. The choice stays a function of the state. Removing that
+  sort leaves every test green, as expected: the input already arrives
+  sorted, so the sort is a defensive guarantee, not a behaviour change.
+- **`frames.rs`.** `identities()` now uses main's `argument_domains` and
+  `arguments_of`, the same helpers `apply` uses. A random parameter ranges
+  over its listed support; any other parameter ranges over `Domain::of`
+  across the walk's references, which still include `absent_rows`. So the
+  candidate lists exactly the argument vectors the expansion can apply, at
+  every admitted argument, objects not yet created included. A listed
+  support is fixed, not state-dependent. The new `Collected` struct only
+  bundles `apply`'s outputs (contract findings, successors, enabled vectors),
+  and its callers in `walk.rs` and `application.rs` pass the same three
+  values as before.
+- **`mod.rs` and `tests/it/main.rs`:** both sides kept.
+
+Mutations at 6c7f731cc:
+
+- Disabled-member closure removed: 5 tests fail, the FR-156-AC-4 test and the
+  differential among them.
+- `affects` replaced by `meets`: 9 tests fail.
+- Absent-object identities removed: the FR-155-AC-7 candidate test fails.
+- The up-front footprint check removed: the refusal test fails.
+
+The abstract oracle, re-run on 800 random models plus 1,500 deadlock models,
+again finds 0 mismatches for `affects` and catches the fairness mutation.
+
+Gates at 6c7f731cc, all green, 4,676 tests passed:
+
+- `cargo test -p qsl-eval -p qsl-replay -p qsl-analyze -p qsl-semantics`,
+  including `reduction_differential` and the 22 `protocol_system` tests
+- root `cargo test --test it`
+- `cargo clippy --locked --workspace --all-targets -- -D warnings`
+- `make string-edge`
+- `make arch-lint-api-surface-qsl`
+- `make arch-lint-canonical-encoder`
+- `make arch-lint-qualified-core`
