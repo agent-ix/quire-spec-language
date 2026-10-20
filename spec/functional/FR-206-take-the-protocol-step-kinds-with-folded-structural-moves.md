@@ -77,7 +77,7 @@ add states that no behaviour distinguishes.
 - The protocol system SHALL bind each `send`'s binder to the sent payload and record a send record
   `{channel, payload, outcome, displaced}`, with `channel` in the channel's
   qualified name, as the step's result; the send record is not a binder value
-  and not part of the state key (ADR-027 ST-3, PS-7).
+  and not part of the state key, and its step carries it as `send_record` (ADR-027 ST-3, PS-7, PX-1).
 - Under `outstanding cancel`, the protocol system SHALL make `cancelled`, in
   the join step, every branch thread still `running` together with every
   thread at or below it, and SHALL settle and remove every parallel

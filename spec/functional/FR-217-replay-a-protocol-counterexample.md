@@ -34,7 +34,8 @@ relationships:
 
 A counterexample over a protocol subject SHALL be ADR-018's
 `TemporalCounterexample` naming the protocol subject, with each step as its
-protocol transition identity and its post-state's state-key digest, and, for
+protocol transition identity and its post-state's state-key digest, each
+`send` step also carrying its `send_record`, and, for
 a deadlock, FR-211's blocked threads (ADR-027 PX-1). `qsl_replay::
 replay_model_trace` SHALL replay it by FR-128's rules through
 `ProtocolSystem`, check a lasso against the fairness set over FR-212's
@@ -78,6 +79,13 @@ causes, and the report counts as a refutation only then.
 - When a step's identity has no successor with the recorded digest, the
   executor SHALL refuse `stale_dependency`/`content-mismatch`, naming the
   step and both digests.
+- The executor SHALL recompute a `send` step's send record from its
+  pre-state and, when it differs from the recorded `send_record`, SHALL
+  refuse `stale_dependency`/`content-mismatch`, naming the step and both
+  records.
+- The executor SHALL refuse a `send` step without a `send_record`, and any
+  other step with one, before replay, as a wire-shape defect of the
+  counterexample.
 - When a step is not enabled at its pre-state, or a loop's last state is not
   its entry, the executor SHALL refuse `invalid_runtime_input`/
   `invalid-value`, naming the step.
@@ -110,6 +118,8 @@ causes, and the report counts as a refutation only then.
 | FR-217-AC-2 | Changing the second step's post-state digest refuses `stale_dependency`/`content-mismatch`, naming the step and both digests. Replacing the second step with `join(Both)` refuses `invalid_runtime_input`/`invalid-value`. Replaying the same steps against the repaired `Fill` (`TwoPre: self.v <= 1`) with recorded digests from the unrepaired one refuses on the package identity by FR-098's rule. | Test (TC-662) |
 | FR-217-AC-3 | A deadlock envelope whose blocked list drops `right` settles `inconclusive`, `ReplayParity`. An envelope whose prefix runs on to s6, which holds no live instance, with `kind: Deadlock` settles `inconclusive`, `ReplayParity`. | Test (TC-662) |
 | FR-217-AC-4 | The adversarial lasso of FR-212-AC-2 replays against the adversarial `Chatter` package and settles `reproduced-with-evaluated-witness`. The same lasso with the scheduler constraints added to its fairness set, replayed against the default `Chatter` package, refuses `invalid_runtime_input`/`invalid-value` as unfair: `s` is enabled at every loop state and takes no step. | Test (TC-662) |
+| FR-217-AC-5 | A counterexample whose prefix holds a `send` step of FR-206-AC-7's `overflow loss head` channel carries that step's `send_record` `{channel, payload, outcome, displaced}`, and no other step carries one; it replays, and the state key and the transition identity hold no send record. Changing the recorded `outcome` refuses `stale_dependency`/`content-mismatch`, naming the step and both records. | Test (TC-662) |
+| FR-217-AC-6 | The same counterexample with the `send` step's `send_record` removed, and with a `send_record` added to an `attempt` step, each refuses before replay as a wire-shape defect and runs no step. | Test (TC-662) |
 
 ## Dependencies
 
