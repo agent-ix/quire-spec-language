@@ -117,6 +117,11 @@ pub use model_check::graph_settle::{
     settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
     StateGraphRecord,
 };
+pub use model_check::hyper_counterexample::{
+    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace, HyperUndefined,
+};
+pub use model_check::hyper_outcome::HyperOutcome;
+pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 pub use model_check::limits::{
