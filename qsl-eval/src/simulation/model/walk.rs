@@ -9,7 +9,6 @@ use quire_exact::{EffectiveId, ObjectReference, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::footprints::Enforcement;
-use super::frames::Collected;
 use super::{
     contracts, encode, frames, identity_limits, state_document, Application, ClauseInfo,
     ModelFinding, ModelSimState, ModelSystem, BROKEN, EXHAUSTED,
@@ -266,7 +265,7 @@ fn expand(
                 application,
                 &clauses,
                 &mut budget,
-                &mut Collected {
+                frames::Outputs {
                     contract: &mut contract,
                     successors: &mut successors,
                     enabled: enabled.as_deref_mut(),

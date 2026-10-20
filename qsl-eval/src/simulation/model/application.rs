@@ -10,7 +10,6 @@ use qsl_semantics::model::observation::Observation;
 use quire_exact::{EffectiveId, NodeKey};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::frames::Collected;
 use super::walk::{rows_of, sorted_contract_findings, walk_of, Applied, Budget, Row, Walk};
 use super::{contracts, frames, Application, ModelFinding, ModelSimState, ModelSystem};
 use crate::simulation::expansion::ExpansionStop;
@@ -171,7 +170,7 @@ impl<'a> ModelSystem<'a> {
                 application,
                 &clauses,
                 budget,
-                &mut Collected {
+                frames::Outputs {
                     contract: &mut contract,
                     successors: &mut successors,
                     enabled: None,

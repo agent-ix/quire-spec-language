@@ -148,14 +148,6 @@ pub(super) fn identities(
     Ok(())
 }
 
-/// What [`apply`] adds to: the contract findings and the successors it
-/// generates, and, when given, the enabled argument vectors.
-pub(super) struct Collected<'c> {
-    pub(super) contract: &'c mut Vec<ContractFinding>,
-    pub(super) successors: &'c mut Vec<Applied>,
-    pub(super) enabled: Option<&'c mut Vec<EnabledVector>>,
-}
-
 /// Apply `application` to `row` for every argument vector of its parameter
 /// domains under the `pre` and `post` clauses `clauses` selects: check its
 /// effective precondition, and for an enabled application generate its
@@ -175,8 +167,13 @@ pub(super) fn apply(
     application: &Application,
     clauses: &Selected<'_>,
     budget: &mut Budget,
-    out: &mut Collected<'_>,
+    outputs: Outputs<'_>,
 ) -> Result<(), ExpansionStop> {
+    let Outputs {
+        contract,
+        successors,
+        mut enabled,
+    } = outputs;
     let system = walk.system;
     let domains = argument_domains(walk, application)?;
     let preconditions = &clauses.preconditions;
@@ -219,7 +216,7 @@ pub(super) fn apply(
             Conjunction::False(_) => continue,
             Conjunction::Undecided(undecided) => {
                 for (clause, evaluation) in undecided {
-                    out.contract.push(ContractFinding {
+                    contract.push(ContractFinding {
                         transition: transition_bytes.clone(),
                         candidate: None,
                         clause: clause.clone(),
@@ -245,16 +242,16 @@ pub(super) fn apply(
             postconditions,
             footprint: footprint.as_ref(),
         };
-        let first = out.successors.len();
-        application_run.candidates(budget, out.contract, out.successors)?;
-        if let Some(enabled) = out.enabled.as_deref_mut() {
+        let first = successors.len();
+        application_run.candidates(budget, contract, successors)?;
+        if let Some(enabled) = enabled.as_deref_mut() {
             enabled.push(EnabledVector {
                 receiver: row.reference.clone(),
                 declaring: application.declaring,
                 name: application.name.clone(),
                 operation: application.text.clone(),
                 args,
-                successors: first..out.successors.len(),
+                successors: first..successors.len(),
             });
         }
     }
@@ -291,6 +288,17 @@ pub(super) fn first_precondition(
         }
     }
     Ok(Some((transition, None)))
+}
+
+/// Where [`apply`] records what one application found: its contract
+/// findings, its successors and, when given, its enabled argument vectors.
+pub(super) struct Outputs<'o> {
+    /// The contract findings.
+    pub(super) contract: &'o mut Vec<ContractFinding>,
+    /// The successors.
+    pub(super) successors: &'o mut Vec<Applied>,
+    /// Each enabled argument vector, when the caller records them.
+    pub(super) enabled: Option<&'o mut Vec<EnabledVector>>,
 }
 
 /// One argument vector of an application whose effective precondition holds
