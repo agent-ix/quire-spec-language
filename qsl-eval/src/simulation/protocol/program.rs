@@ -178,6 +178,8 @@ pub(super) struct Program<'a> {
     pub(super) awaits: BTreeMap<ProtocolNodeId, Await>,
     /// Each `check`'s condition.
     pub(super) checks: BTreeMap<ProtocolNodeId, &'a CheckedBody>,
+    /// Each `fence`'s ordering, by its label (ADR-027 TS-2).
+    pub(super) fences: BTreeMap<ProtocolNodeId, &'static str>,
     /// Each domain `event` and `commit` node's record.
     pub(super) events: BTreeMap<ProtocolNodeId, Record<'a>>,
     pub(super) messages: BTreeMap<ProtocolNodeId, Message<'a>>,
@@ -587,6 +589,12 @@ impl<'a> Program<'a> {
             choices,
             awaits,
             checks,
+            fences: protocol
+                .memory
+                .fences
+                .iter()
+                .map(|fence| (fence.node, fence.ordering.label()))
+                .collect(),
             events,
             messages,
             channels,
@@ -643,6 +651,17 @@ impl<'a> Program<'a> {
         self.loops
             .get(&node)
             .ok_or_else(|| ProtocolRefusal::fault("a-repeat-node-is-a-repeat"))
+    }
+
+    /// The ordering of the `fence` `node`.
+    pub(super) fn fence_ordering(
+        &self,
+        node: ProtocolNodeId,
+    ) -> Result<&'static str, ProtocolRefusal> {
+        self.fences
+            .get(&node)
+            .copied()
+            .ok_or_else(|| ProtocolRefusal::fault("a-fence-has-an-ordering"))
     }
 
     /// The `await` `node`.

@@ -32,6 +32,13 @@ serde = { version = "1.0.228", features = ["derive"] }
 # `InvalidQualifiedName`.
 thiserror = "2.0.20"
 
+[features]
+# `ProtocolTransition::carrying` and `SendRecord::with_outcome`, with which
+# a test changes or misplaces the send record a counterexample step carries
+# (FR-217-AC-5, FR-217-AC-6). Only a dev-dependency enables it; no shipped
+# build has the methods.
+test-support = []
+
 [dev-dependencies]
 ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
 # Test-only since the deletion of qsl-eval's second v2 producer: the

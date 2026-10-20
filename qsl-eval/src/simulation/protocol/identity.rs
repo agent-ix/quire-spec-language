@@ -221,6 +221,8 @@ enum Members {
     },
     /// `memory_step`, the canonical text its memory model gives.
     Memory { identity: String },
+    /// `ordering`: a `fence`'s ordering (QSpec FR-426).
+    Fence { ordering: &'static str },
 }
 
 /// What a `send` did with its entry (ADR-027 ST-3, QSpec FR-170).
@@ -284,7 +286,9 @@ impl SendRecord {
         self.outcome
     }
 
-    /// This record with `outcome` in place of its own.
+    /// This record with `outcome` in place of its own, as a changed
+    /// counterexample may record it (FR-217-AC-5).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn with_outcome(mut self, outcome: SendOutcome) -> Self {
         self.outcome = outcome;
         self
@@ -362,13 +366,26 @@ impl ProtocolTransition {
     }
 
     /// A step of `kind` by `thread` at `node` with no further member: a
-    /// `fork`, `join`, `timeout` or `fence`.
+    /// `fork`, `join` or `timeout`.
     pub(crate) fn control(kind: StepKind, thread: ThreadPath, node: String) -> Self {
         Self {
             kind,
             thread: Some(thread),
             node: Some(node),
             members: Members::Control,
+            removed: None,
+            send_record: None,
+        }
+    }
+
+    /// The `fence` at `node` by `thread`, with its `ordering` (ADR-027
+    /// TS-2, SE-5).
+    pub(crate) fn fence(thread: ThreadPath, node: String, ordering: &'static str) -> Self {
+        Self {
+            kind: StepKind::Fence,
+            thread: Some(thread),
+            node: Some(node),
+            members: Members::Fence { ordering },
             removed: None,
             send_record: None,
         }
@@ -444,9 +461,16 @@ impl ProtocolTransition {
         self
     }
 
-    /// This step carrying `record` as its send record, or none (PX-1): a
-    /// `send` step carries its own, and replay refuses any other step that
-    /// carries one (PX-2).
+    /// This `send` step, carrying its send record (PX-1).
+    pub(crate) fn recording(mut self, record: SendRecord) -> Self {
+        self.send_record = Some(record);
+        self
+    }
+
+    /// This step carrying `record` as its send record, or none, as a
+    /// counterexample from outside may: replay refuses a `send` without one
+    /// and any other step with one (PX-2).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn carrying(mut self, record: Option<SendRecord>) -> Self {
         self.send_record = record;
         self
@@ -487,7 +511,8 @@ impl ProtocolTransition {
             Members::Control
             | Members::Record { .. }
             | Members::Channel { .. }
-            | Members::Memory { .. } => None,
+            | Members::Memory { .. }
+            | Members::Fence { .. } => None,
         }
     }
 
@@ -499,7 +524,8 @@ impl ProtocolTransition {
             Members::Attempt { .. }
             | Members::Control
             | Members::Record { .. }
-            | Members::Memory { .. } => None,
+            | Members::Memory { .. }
+            | Members::Fence { .. } => None,
         }
     }
 
@@ -544,6 +570,7 @@ impl ProtocolTransition {
             Members::Memory { identity } => {
                 members.push(("memory_step", Enc::text(identity.clone())));
             }
+            Members::Fence { ordering } => members.push(("ordering", Enc::text(*ordering))),
         }
         Enc::tagged("protocol-transition", members)
     }

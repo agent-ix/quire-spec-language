@@ -219,7 +219,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             );
             let mut transition =
                 ProtocolTransition::record(StepKind::Send, path.clone(), text.clone(), enc)
-                    .carrying(Some(record));
+                    .recording(record);
             let dropped = match (outcome, &displaced) {
                 (SendOutcome::Lost, _) => Some(text.clone()),
                 (_, Some(entry)) => Some(self.program.text(entry.send)?.to_owned()),

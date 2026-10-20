@@ -267,7 +267,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         path: &ThreadPath,
         bound: Bound,
     ) {
-        instance.environments.insert((node, path.clone()), bound);
+        instance
+            .environments
+            .entry(path.clone())
+            .or_default()
+            .insert(node, bound);
     }
 
     /// Whether `constraint` holds for the binder of the reader's node bound
@@ -365,8 +369,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(())
     }
 
-    /// SE-5: the `fence` at `node` moves its thread past the node and
-    /// changes no model state; its memory model's fence rule, the gate, is
+    /// SE-5: the `fence` at `node`, whose identity names its ordering (TS-2),
+    /// moves its thread past the node and changes no model state; its memory model's fence rule, the gate, is
     /// its only enabling condition.
     fn fence(
         &self,
@@ -378,11 +382,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         gathered: &mut Gathered<M>,
     ) -> Result<(), ExpansionStop> {
         let text = self.program.text(node)?.to_owned();
+        let ordering = self.program.fence_ordering(node)?;
         let mut next = state.clone();
         if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
             self.normalize(&mut next, ordinal)?;
             gathered.successors.push((
-                ProtocolTransition::control(StepKind::Fence, path.clone(), text),
+                ProtocolTransition::fence(path.clone(), text, ordering),
                 next,
             ));
         }
@@ -852,12 +857,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         // Each live thread keeps an entry of its environment while it
         // reaches a reader of the entry's node.
         let mut kept = BTreeSet::new();
-        for (node, holder) in instance.environments.keys() {
-            if self.reaches(instance, *node, holder)? {
-                kept.insert((*node, holder.clone()));
+        for (holder, environment) in &instance.environments {
+            for node in environment.keys() {
+                if self.reaches(instance, *node, holder)? {
+                    kept.insert((holder.clone(), *node));
+                }
             }
         }
-        instance.environments.retain(|key, _| kept.contains(key));
+        instance.environments.retain(|holder, environment| {
+            environment.retain(|node, _| kept.contains(&(holder.clone(), *node)));
+            !environment.is_empty()
+        });
         let running: Vec<&ThreadPath> = instance
             .threads
             .iter()

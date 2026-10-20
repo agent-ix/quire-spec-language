@@ -1464,7 +1464,8 @@ fn a_protocol_replay_refuses_a_stale_or_disabled_step() {
 /// replays. Changing a recorded `outcome` refuses `stale_dependency`/
 /// `content-mismatch`, naming the step and both records. Removing a send's
 /// record, or adding one to the attempt, refuses `invalid_runtime_input`/
-/// `invalid-value` before any step is replayed.
+/// `invalid-value` before any step is replayed: so it does when an earlier
+/// step's digest is also stale, which replaying that step would refuse.
 #[trace("TC-662", "FR-217-AC-5", "FR-217-AC-6")]
 #[test]
 fn a_protocol_replay_checks_each_send_record() {
@@ -1552,12 +1553,18 @@ fn a_protocol_replay_checks_each_send_record() {
 
     let mut missing = counterexample.clone();
     missing.prefix[1].transition = missing.prefix[1].transition.clone().carrying(None);
+    // The shape check runs before any step: with step 0's post-state digest
+    // also stale, a misplaced record on step 3 still refuses as a shape
+    // defect, not as step 0's stale digest.
+    let mut first = counterexample.clone();
+    first.prefix[0].post_state = first.prefix[1].post_state;
+    first.prefix[3].transition = first.prefix[3].transition.clone().carrying(None);
     let mut extra = counterexample;
     extra.prefix[0].transition = extra.prefix[0]
         .transition
         .clone()
         .carrying(Some(displacing.clone()));
-    for (step, shaped) in [(1, missing), (0, extra)] {
+    for (step, shaped) in [(1, missing), (3, first), (0, extra)] {
         let Err(ReplayRefusal::ModelTrace(refusal)) = case.replay("P", shaped) else {
             panic!("a misplaced send record refuses");
         };

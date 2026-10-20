@@ -307,7 +307,8 @@ fn one_completed(system: &ProtocolSystem<'_, Sc>, reached: &[Reached]) -> usize 
 /// continue` none of theirs. A `receive`'s enabling footprint holds its
 /// channel's `queue`; in FR-212's `Chatter` the `send` and `receive` on
 /// `ch` are dependent, and `attempt(Done)` and `duplicate(ch, Tx)` are
-/// independent. `Chatter` is built over this fixture's `Cell`, with `Done`
+/// independent. The `receive` is visible by its channel's anchor (FT-5),
+/// and `join(Both)`, under `all`, reads both branches' `ctl` (FT-1). `Chatter` is built over this fixture's `Cell`, with `Done`
 /// applying `inc` where FR-212's applies `set` to `flag`; its branches,
 /// channel premises and nodes are FR-212's.
 #[trace("TC-661", "FR-216-AC-3")]
@@ -359,9 +360,27 @@ fn a_cancelling_join_writes_its_branches_and_a_queue_orders_its_steps() {
         channel: "Chatter::ch".to_owned(),
     });
     let (_, send, sent) = step(&system, &reached, s1, StepKind::Send, "Tx");
-    let (_, receive, _) = step(&system, &reached, sent, StepKind::Receive, "Rx");
+    let (received, receive, after_receive) = step(&system, &reached, sent, StepKind::Receive, "Rx");
     assert!(receive.enabling.contains(&queue), "{receive:?}");
     assert!(!independent(&send, &receive));
+    // FT-5: a `receive` is visible to an atom that reads its position's
+    // anchor naming its channel, and invisible to one naming another.
+    let naming = |channel: &str| ClaimReads {
+        locations: BTreeSet::new(),
+        anchors: BTreeSet::from([AnchorName::Channel(channel.to_owned())]),
+    };
+    assert!(visible(received, &receive, &naming("Chatter::ch")));
+    assert!(!visible(received, &receive, &naming("Chatter::other")));
+    // FT-1: a join under `all` reads the control of each branch it joins,
+    // whose environments it copies.
+    let finished = step(&system, &reached, after_receive, StepKind::Attempt, "Done").2;
+    let (_, joined, _) = step(&system, &reached, finished, StepKind::Join, "Both");
+    for label in ["s", "r"] {
+        assert!(
+            joined.reads.contains(&ctl(&root().child("Both", label, 0))),
+            "{joined:?}"
+        );
+    }
     let (_, done, _) = step(&system, &reached, sent, StepKind::Attempt, "Done");
     let duplicates: Vec<Footprint> = reached[sent]
         .steps
@@ -622,7 +641,8 @@ fn assert_independent_steps_commute(system: &ProtocolSystem<'_, Sc>, reached: &[
 /// Two more read binders through their environments (PS-5): a re-forked
 /// branch reads its own copy of a binder its parent gained at an `all`
 /// join, and a binder is copied up through two nested `all` joins to the
-/// root while a sibling branch reads its own copy of the root's binder.
+/// root while a sibling branch reads its own copy of the root's binder. One
+/// more holds a `fence` in each branch.
 #[trace("TC-661")]
 #[test]
 fn every_independent_pair_of_steps_commutes() {
@@ -682,6 +702,13 @@ fn every_independent_pair_of_steps_commutes() {
         attempt("B", "touch", "TouchPre", "b", "f"),
         attempt("C", "touch", "TouchPre", "cc", "x or not x"),
     );
+    // A fence in each branch (SE-5).
+    let fenced = format!(
+        "parallel Both {{ branch l sequence L {{ fence Fl ordering seq_cst; {} }} \
+         branch r sequence R {{ fence Fr ordering acquire; {} }} }} join all [l, r];",
+        touch("TA"),
+        touch("TB"),
+    );
     let units: Vec<(String, &str, Vec<&'static str>)> = vec![
         (fill_unit("self.v = 0", ""), "Fill", vec!["c"]),
         (fill_unit("self.v = 0", ""), "Fill", vec!["c", "d"]),
@@ -739,6 +766,11 @@ fn every_independent_pair_of_steps_commutes() {
             "P",
             vec!["c"],
         ),
+        (
+            contracts("self.v = 0") + &protocol("P", "", &fenced, "d"),
+            "P",
+            vec!["c"],
+        ),
     ];
     let mut total = 0;
     for (index, (body, name, keys)) in units.iter().enumerate() {
@@ -749,7 +781,7 @@ fn every_independent_pair_of_steps_commutes() {
         let checked = assert_independent_steps_commute(&system, &reached);
         // The re-forking `repeat` and the environment fixtures have
         // independent pairs of their own.
-        assert!(![6, 9, 10].contains(&index) || checked > 0, "{body}");
+        assert!(![6, 9, 10, 11].contains(&index) || checked > 0, "{body}");
         total += checked;
     }
     assert!(total > 0);

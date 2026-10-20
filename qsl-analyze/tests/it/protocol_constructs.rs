@@ -332,7 +332,8 @@ fn a_send_binds_its_send_record() {
 }
 
 /// Part of FR-206-AC-8 (TC-651, ADR-027 SE-5): a thread resting at `fence
-/// F ordering seq_cst;` has one `fence` step, which changes no model state
+/// F ordering seq_cst;` has one `fence` step, whose identity names its
+/// ordering (ADR-027 TS-2) and which changes no model state
 /// and moves the thread to its next sibling; under `sc` it is enabled in
 /// every state the thread rests there. Two branches that each hold a fence
 /// reach no deadlock under `sc` that the same protocol without the fences
@@ -353,6 +354,7 @@ fn a_fence_moves_its_thread_and_changes_nothing_under_sc() {
     assert_eq!(
         identity(&system, fence),
         json!({"type": "protocol-transition", "step": "fence", "node": "Main/F",
+            "ordering": "seq_cst",
             "thread": {"type": "thread-path", "instance": "0", "steps": []}})
     );
     assert_eq!(
@@ -397,6 +399,19 @@ fn a_fence_moves_its_thread_and_changes_nothing_under_sc() {
                 })
         });
         assert!(fences_enabled, "{run}");
+        // Each fence's identity names its own ordering.
+        for state in &reached {
+            for (transition, _) in &state.steps {
+                if transition.kind() == StepKind::Fence {
+                    let expected = if last(transition) == "Fl" {
+                        "seq_cst"
+                    } else {
+                        "acquire"
+                    };
+                    assert_eq!(identity(&system, transition)["ordering"], expected);
+                }
+            }
+        }
         let deadlocked = reached
             .iter()
             .filter(|state| {

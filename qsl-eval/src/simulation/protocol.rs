@@ -296,10 +296,10 @@ struct Entry {
 struct Instance {
     threads: BTreeMap<ThreadPath, Thread>,
     parallels: BTreeMap<ParallelKey, Parallel>,
-    /// Every live thread's binder environment (ADR-027 PS-5), by (binder
-    /// node, the thread whose environment holds the entry): each thread
-    /// reads its own entry, and holds its own copy of every value it reads.
-    environments: BTreeMap<(qsl_semantics::check::ProtocolNodeId, ThreadPath), Bound>,
+    /// Every live thread's binder environment (ADR-027 PS-5), by the thread
+    /// that holds it, then binder node: each thread reads its own entry, and
+    /// holds its own copy of every value it reads.
+    environments: BTreeMap<ThreadPath, BTreeMap<qsl_semantics::check::ProtocolNodeId, Bound>>,
     /// Each `repeat` counter, by (repeat node, thread) (ADR-027 PS-6).
     counters: BTreeMap<(qsl_semantics::check::ProtocolNodeId, ThreadPath), u64>,
     /// Each non-empty queue, a `fifo` one in delivery order and an
@@ -315,18 +315,18 @@ impl Instance {
         node: qsl_semantics::check::ProtocolNodeId,
         reader: &ThreadPath,
     ) -> Option<&Bound> {
-        self.environments.get(&(node, reader.clone()))
+        self.environments.get(reader)?.get(&node)
     }
 
     /// The entries of the thread `holder`'s environment.
     fn environment<'i>(
         &'i self,
-        holder: &'i ThreadPath,
+        holder: &ThreadPath,
     ) -> impl Iterator<Item = (qsl_semantics::check::ProtocolNodeId, &'i Bound)> + 'i {
         self.environments
-            .iter()
-            .filter(move |((_, thread), _)| thread == holder)
-            .map(|((node, _), bound)| (*node, bound))
+            .get(holder)
+            .into_iter()
+            .flat_map(|environment| environment.iter().map(|(node, bound)| (*node, bound)))
     }
 }
 
@@ -683,12 +683,14 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         state: &ProtocolState<M>,
     ) -> Result<Vec<(String, ThreadPath)>, ProtocolRefusal> {
         let mut binders = Vec::new();
-        for (node, thread) in state
+        for (thread, environment) in state
             .instances
             .values()
-            .flat_map(|instance| instance.environments.keys())
+            .flat_map(|instance| &instance.environments)
         {
-            binders.push((self.program.text(*node)?.to_owned(), thread.clone()));
+            for node in environment.keys() {
+                binders.push((self.program.text(*node)?.to_owned(), thread.clone()));
+            }
         }
         Ok(binders)
     }
@@ -779,7 +781,16 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     ),
                 ));
             }
-            for ((node, thread), bound) in &instance.environments {
+            for (thread, node, bound) in
+                instance
+                    .environments
+                    .iter()
+                    .flat_map(|(thread, environment)| {
+                        environment
+                            .iter()
+                            .map(move |(node, bound)| (thread, node, bound))
+                    })
+            {
                 let node = self
                     .program
                     .text(*node)
