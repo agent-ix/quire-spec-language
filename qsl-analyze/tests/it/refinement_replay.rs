@@ -13,7 +13,8 @@ use qsl_replay::{
     open_systems, replay_refinement_trace, settle_refinement_safety, CounterexampleKind,
     InconclusiveCause, ModelCheckLimits, ModelCheckRecord, ModelTraceRefusal, RefinementFailure,
     RefinementOutcome, RefinementTraceSettlement, ReplayRefusal, ResultLabel, RunStats,
-    SafetyOutcome, SettlementBasis, TemporalCounterexample, TerminalValue,
+    SafetyOutcome, SettlementBasis, SimulationCertificateRequest, TemporalCounterexample,
+    TerminalValue,
 };
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
@@ -97,9 +98,22 @@ fn replay(
 }
 
 fn settle(subject: &Subject<'_>, outcome: &SafetyOutcome) -> ModelCheckRecord {
-    settle_refinement_safety(outcome, &ModelCheckLimits::default(), |payload| {
-        replay(subject, payload)
-    })
+    settle_refinement_safety(
+        outcome,
+        &ModelCheckLimits::default(),
+        &certified(subject),
+        &Cancel::new(),
+        |payload| replay(subject, payload),
+    )
+}
+
+fn certified<'w>(subject: &Subject<'w>) -> SimulationCertificateRequest<'w> {
+    SimulationCertificateRequest {
+        refinement: subject.refinement,
+        concrete: subject.concrete.clone(),
+        abstract_package: subject.package,
+        abstract_initial: vec![subject.abstract_initial.clone()],
+    }
 }
 
 fn reproduced(
@@ -247,27 +261,6 @@ fn a_counterexample_that_does_not_re_execute_refuses() {
         replay(&subject, &altered),
         Err(ReplayRefusal::ModelTrace(refusal)) if matches!(*refusal, ModelTraceRefusal::PostState { .. })
     ));
-}
-
-/// FR-144 (TC-549 step 2), safety half: `CasRefinesCounter`'s safety half
-/// holds, but FR-144 settles `proved` only after FR-149's checker accepts a
-/// certificate, which does not exist yet, so the record is `inconclusive`
-/// with `SimulationCertificateNotBuilt`.
-#[trace("TC-549")]
-#[test]
-fn a_safety_half_that_holds_settles_inconclusive_until_the_certificate_exists() {
-    let world = World::new(&cas_refines_counter());
-    let subject = cas(&world);
-    let outcome = check(&subject);
-    assert!(matches!(outcome, SafetyOutcome::Holds { .. }));
-    let record = settle(&subject, &outcome);
-    assert_eq!(
-        record.value,
-        TerminalValue::Inconclusive(InconclusiveCause::SimulationCertificateNotBuilt)
-    );
-    assert_eq!(record.label, ResultLabel::Inconclusive);
-    assert_eq!(record.basis, SettlementBasis::Unsettled);
-    assert_eq!(record.method, "explicit-state");
 }
 
 /// FR-145 (TC-550): a payload that names no refinement failure is bad input,

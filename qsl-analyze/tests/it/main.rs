@@ -19,6 +19,7 @@ mod quotient;
 mod reduction;
 mod reduction_world;
 mod refinement_budget;
+mod refinement_certificate;
 #[path = "../../../tests/support/refinement_cas.rs"]
 mod refinement_fixture;
 mod refinement_reads;
