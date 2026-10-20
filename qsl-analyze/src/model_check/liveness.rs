@@ -63,8 +63,8 @@ use qsl_eval::automaton::{
     translate, Atom, AutomatonError, AutomatonKind, Letter, PropertyAutomaton, StateId,
 };
 use qsl_eval::fairness::{
-    analyze, Analysis, Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Strength,
-    Vertex,
+    analyze, Analysis, Constraint, Edge, EdgeLabel, FairnessError, Graph, Identity, Obligation,
+    Strength, Vertex,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
@@ -1698,7 +1698,7 @@ impl<'r, 'a> Run<'r, 'a> {
         let Some(entry) = passing.vertices().first().copied() else {
             return Err(fault("a-component-has-a-vertex"));
         };
-        let walk = model.greedy_loop(&component, entry)?;
+        let walk = model.greedy_loop(&component, passing.removed(), entry)?;
         let loop_edges = model.loop_edges(&walk)?;
         let entry = ProductStateId(entry.index());
         self.lasso(run, entry, |_| Ok(loop_edges))
@@ -1761,7 +1761,8 @@ impl<'r, 'a> Run<'r, 'a> {
                     .iter()
                     .map(vertex)
                     .collect::<Result<BTreeSet<Vertex>, _>>()?;
-                let walk = model.greedy_loop(&component, vertex(&entry)?)?;
+                // The quotient's own filter removes no edge.
+                let walk = model.greedy_loop(&component, &BTreeSet::new(), vertex(&entry)?)?;
                 return Ok(model.loop_edges(&walk)?);
             }
             analyzer.fair_loop(fair, sigma).map_err(LoopStop::Quotient)
@@ -2130,19 +2131,24 @@ impl FairModel {
     }
 
     /// ADR-018 CX-5's greedy walk inside `component` from its entry `entry`:
-    /// the loop's edges, each with the vertex it leaves.
+    /// the loop's edges, each with the vertex it leaves. The walk takes no
+    /// edge whose identity is in `removed`, the edges the filter's
+    /// visibility refinements left out of the passing component (ADR-025
+    /// MF-2).
     fn greedy_loop(
         &self,
         component: &BTreeSet<Vertex>,
+        removed: &BTreeSet<Identity>,
         entry: Vertex,
     ) -> Result<Vec<(Vertex, Edge)>, ModelCheckRefusal> {
-        let mut open = Open::of(self);
+        let inside = Inside { component, removed };
+        let mut open = Open::of(self, &inside);
         open.discharge_vertex(self, entry);
         let mut walk = Vec::new();
         let mut current = entry;
         while !open.is_empty() {
             let path = self
-                .nearest(component, current, &open)
+                .nearest(&inside, current, &open)
                 .ok_or_else(|| fault("a-passing-component-discharges-every-obligation"))?;
             for (from, edge) in &path {
                 open.discharge_edge(self, edge.label);
@@ -2153,7 +2159,7 @@ impl FairModel {
         }
         if current != entry || walk.is_empty() {
             let back = self
-                .shortest_return(component, current, entry)
+                .shortest_return(&inside, current, entry)
                 .ok_or_else(|| fault("a-component-vertex-lies-on-a-cycle-through-the-entry"))?;
             walk.extend(back);
         }
@@ -2166,7 +2172,7 @@ impl FairModel {
     /// edges in canonical successor order).
     fn nearest(
         &self,
-        component: &BTreeSet<Vertex>,
+        inside: &Inside<'_>,
         from: Vertex,
         open: &Open,
     ) -> Option<Vec<(Vertex, Edge)>> {
@@ -2195,7 +2201,7 @@ impl FairModel {
                 consider(reached, (vertex, None));
             }
             for (position, edge) in self.graph.edges_from(vertex).iter().enumerate() {
-                if !component.contains(&edge.target) {
+                if !inside.keeps(edge) {
                     continue;
                 }
                 if open.discharged_by_edge(self, edge.label) {
@@ -2263,7 +2269,7 @@ impl FairModel {
     /// shortest cycle through `entry` when `from` is `entry`.
     fn shortest_return(
         &self,
-        component: &BTreeSet<Vertex>,
+        inside: &Inside<'_>,
         from: Vertex,
         entry: Vertex,
     ) -> Option<Vec<(Vertex, Edge)>> {
@@ -2272,7 +2278,7 @@ impl FairModel {
         let mut queue = VecDeque::from([from]);
         while let Some(vertex) = queue.pop_front() {
             for (position, edge) in self.graph.edges_from(vertex).iter().enumerate() {
-                if !component.contains(&edge.target) {
+                if !inside.keeps(edge) {
                     continue;
                 }
                 if edge.target == entry {
@@ -2290,19 +2296,56 @@ impl FairModel {
     }
 }
 
+/// A passing component's subgraph: its vertices, and the edge identities
+/// the filter removed from it.
+struct Inside<'a> {
+    component: &'a BTreeSet<Vertex>,
+    removed: &'a BTreeSet<Identity>,
+}
+
+impl Inside<'_> {
+    /// Whether the walk may take `edge` out of a vertex of the component.
+    fn keeps(&self, edge: &Edge) -> bool {
+        self.component.contains(&edge.target)
+            && match edge.label {
+                EdgeLabel::Transition(identity) => !self.removed.contains(&identity),
+                EdgeLabel::Stutter => true,
+            }
+    }
+}
+
 /// The obligations of a component not yet discharged (CX-5): one state of
-/// each acceptance set, and for each weak constraint an edge that takes it
-/// or a state that disables it.
+/// each acceptance set, for each enablement weak constraint an edge that
+/// takes it or a state that disables it, and for each visibility constraint
+/// the component's subgraph loads an edge that takes it.
 struct Open {
     sets: BTreeSet<usize>,
     constraints: BTreeSet<usize>,
 }
 
 impl Open {
-    fn of(model: &FairModel) -> Self {
+    /// The obligations of the component `inside`: a visibility constraint
+    /// whose loads no kept edge of the component takes is owed nothing.
+    fn of(model: &FairModel, inside: &Inside<'_>) -> Self {
+        let owed = |constraint: &Constraint| match constraint.obligation() {
+            Obligation::Enablement(_) => true,
+            Obligation::Visibility { .. } => inside.component.iter().any(|vertex| {
+                model
+                    .graph
+                    .edges_from(*vertex)
+                    .iter()
+                    .any(|edge| inside.keeps(edge) && constraint.is_owed_by(edge.label))
+            }),
+        };
         Self {
             sets: (0..model.graph.acceptance_sets().len()).collect(),
-            constraints: (0..model.constraints.len()).collect(),
+            constraints: model
+                .constraints
+                .iter()
+                .enumerate()
+                .filter(|(_, constraint)| owed(constraint))
+                .map(|(index, _)| index)
+                .collect(),
         }
     }
 
@@ -2411,8 +2454,67 @@ mod tests {
             constraints: vec![Constraint::weak([id1])],
         };
         let component: BTreeSet<Vertex> = [v0, v1, v2].into_iter().collect();
-        let walk = model.greedy_loop(&component, v0).expect("a walk exists");
+        let walk = model
+            .greedy_loop(&component, &BTreeSet::new(), v0)
+            .expect("a walk exists");
         let targets: Vec<usize> = walk.iter().map(|(_, edge)| edge.target.index()).collect();
         assert_eq!(targets, [1, 0, 2, 0]);
+    }
+
+    /// ADR-025 MF-2 in CX-5: thread `b`'s loads of `l` are identities 10
+    /// (stale) and 11 (mo-last); 20 is another step. The accepting `v0` has a
+    /// stale self-loop, canonically its first edge, and the cycle
+    /// `v0 -> v1 -> v0` loads nothing. The filter removes the stale load and
+    /// passes the rest, and the walk takes only the kept edges: never the
+    /// stale self-loop, whose loop would be unfair.
+    #[trace("TC-673", "FR-228-AC-3")]
+    #[test]
+    fn the_walk_takes_no_edge_a_visibility_refinement_removed() {
+        let (stale, fresh, other) = (Identity::new(10), Identity::new(11), Identity::new(20));
+        let mut graph = Graph::new();
+        let v0 = graph.add_vertex([stale, fresh, other]);
+        let v1 = graph.add_vertex([other]);
+        for (from, to, label) in [(v0, v0, stale), (v0, v1, other), (v1, v0, other)] {
+            graph
+                .add_edge(from, to, EdgeLabel::Transition(label))
+                .expect("both vertices exist");
+        }
+        graph.add_acceptance_set([v0]).expect("v0 exists");
+        let model = FairModel {
+            graph,
+            constraints: vec![Constraint::visibility([stale, fresh], [fresh])],
+        };
+        let all: BTreeSet<Vertex> = model.graph.vertices().collect();
+        let analyses =
+            analyze(&model.graph, &all, &model.constraints, &Cancel::new()).expect("the filter");
+        let passing = Analysis::first_fair_in(&analyses).expect("a fair component");
+        assert!(passing.removed().contains(&stale));
+        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
+        let walk = model
+            .greedy_loop(&component, passing.removed(), v0)
+            .expect("a walk exists");
+        let labels: Vec<EdgeLabel> = walk.iter().map(|(_, edge)| edge.label).collect();
+        assert_eq!(
+            labels,
+            [EdgeLabel::Transition(other), EdgeLabel::Transition(other)]
+        );
+    }
+
+    /// ADR-025 MF-2: a stale self-loop on an accepting state, with nothing
+    /// else, holds no fair cycle, so the filter yields no counterexample.
+    #[trace("TC-673", "FR-228-AC-3")]
+    #[test]
+    fn a_stale_self_loop_on_an_accepting_state_is_no_counterexample() {
+        let (stale, fresh) = (Identity::new(10), Identity::new(11));
+        let mut graph = Graph::new();
+        let v0 = graph.add_vertex([stale, fresh]);
+        graph
+            .add_edge(v0, v0, EdgeLabel::Transition(stale))
+            .expect("v0 exists");
+        graph.add_acceptance_set([v0]).expect("v0 exists");
+        let constraints = [Constraint::visibility([stale, fresh], [fresh])];
+        let analyses = analyze(&graph, &BTreeSet::from([v0]), &constraints, &Cancel::new())
+            .expect("the filter");
+        assert!(Analysis::first_fair_in(&analyses).is_none());
     }
 }

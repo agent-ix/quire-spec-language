@@ -64,6 +64,7 @@ pub enum Outcome {
 pub struct Analysis {
     vertices: Vec<Vertex>,
     outcome: Outcome,
+    removed: BTreeSet<Identity>,
 }
 
 impl Analysis {
@@ -75,6 +76,13 @@ impl Analysis {
     /// What the filter found.
     pub fn outcome(&self) -> &Outcome {
         &self.outcome
+    }
+
+    /// The edge identities the enclosing visibility refinements removed
+    /// (ADR-025 MF-2): the component is an SCC of the subgraph without
+    /// them, so a cycle or loop built inside it takes none of them.
+    pub fn removed(&self) -> &BTreeSet<Identity> {
+        &self.removed
     }
 
     /// The first fair component under this one, depth first: this component
@@ -151,6 +159,7 @@ impl Filter<'_> {
                 Ok(Analysis {
                     vertices: component.vertices().to_vec(),
                     outcome,
+                    removed: removed.clone(),
                 })
             })
             .collect()
