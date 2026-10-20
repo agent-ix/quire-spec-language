@@ -35,7 +35,7 @@ the row `put -> enq(self.ring, g(self.index))` of FR-141-AC-7.
 3. Settle the refinement item for step 1's run and for the variant, the
    variant after FR-145 replay.
 4. Inject a fault into `check_step`'s mapping, and pass it a swapped system.
-5. Over `HeavyEnq` (FR-141-AC-9) with the per-evaluation meter at B, run `check_step` on `put(1)`, run FR-142's check, and settle the item.
+5. Over `HeavyEnq` (FR-141-AC-9) with the per-evaluation meter at B, run `check_step` on `put(1)`, run FR-142's check, and settle the item; then repeat `check_step` with `A1` undefined, with `A1` over-budget, and with a swapped system.
 6. Over `Reads` (FR-141-AC-10), run `check_step` for each choice of the receiver, arguments, post-history update and post-state row it lists, and once with a swapped system.
 
 Tag the tests `#[trace("TC-555", "<AC id>")]`.
@@ -50,5 +50,5 @@ Tag the tests `#[trace("TC-555", "<AC id>")]`.
 - Step 3: `inconclusive`, `unsettled`, `Inconclusive(MappingUndetermined)`;
   `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`.
 - Step 4: `StepVerdict::Fault` for each; the item settles `failed`.
-- Step 5: `StepVerdict::Stopped{EvaluationMeter, B}`; FR-142 ends `Stopped{ResourceExhausted, {EvaluationMeter, B}}` after the concrete states expanded; the item settles with execution `resource-incomplete`, `Incomplete(LimitReached{EvaluationMeter, B, setting})`, category incomplete, never `TerminalValue::Failed`.
+- Step 5: `StepVerdict::Stopped{EvaluationMeter, B}`; FR-142 ends `Stopped{ResourceExhausted, {EvaluationMeter, B}}` after the concrete states expanded; the item settles with execution `resource-incomplete`, `Incomplete(LimitReached{EvaluationMeter, B, setting})`, category incomplete, never `TerminalValue::Failed`; with `A1` undefined, `Undefined` at `A1`; with `A1` over-budget, `Undetermined(MappingUndetermined)` naming `A1`; with the swapped system, `Fault`.
 - Step 6: the verdicts of FR-141-AC-10, including the order between read groups (`R` before `A1`, `A1` before `P`, `A1` before `H`, `H` before `P`), the swapped system returning `Fault`.
