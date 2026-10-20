@@ -73,7 +73,7 @@ What QSL has that bears on each:
   `>=` on `Reference` operands (`qsl-semantics/src/check/check.rs`, the
   ordering arm). A state clause reads model state through field reads,
   `deref` and `reaches` over its observation, and no state-clause source
-  produces a population value to bind or compare; a population name is read only as a domain or `allInstances` operand (FR-391, ADR-016 FE-4). A reference is observed only by
+  produces a population value to bind or compare; a population name is read only as a domain or an `allInstances` or `lookup` operand (FR-391, ADR-016 FE-4). A reference is observed only by
   equality and dereference.
 - **Universes are keys.** FR-120's `PopulationUniverse` gives each simulated
   population a finite key set; the state key encodes a reference as FR-181's
