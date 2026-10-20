@@ -51,3 +51,11 @@ fail on a wrong reduced verdict. The budget test fails on the old code.
 FND-001 is a medium coverage gap in one sub-clause of FR-153-AC-4 (generator
 determinism for AC-2 and AC-3). It does not block, but the AC-4 tag
 overclaims until it is fixed. FND-002 and FND-003 are low.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 44b0e3035: the AC-2 and AC-3 refinement unit tests rerun `analyze` and compare every component's states and cycle group, including refined sub-components, which sit in the flat `analyses` list. The AC-1, AC-2 and AC-3 unit tests are tagged FR-153-AC-4. |
+| FND-002 | accepted-no-change | Low and a judgement call. The reading is documented in the test module, and the unreduced engine cannot return `Holds` until FR-339's certificate exists. A clarifying note belongs to a spec change, not to this code PR. |
+| FND-003 | fixed | 44b0e3035: the `TC-586` tag is removed from the budget test, and its doc says FR-161 "Length and limits" has no criterion. |

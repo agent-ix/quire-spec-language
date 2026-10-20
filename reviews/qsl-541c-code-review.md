@@ -67,3 +67,10 @@ FND-002 are low and do not block.
 
 SR-12211 FND-007 is fixed by this PR (3245323dd). Its disposition row
 belongs in `reviews/qsl-541-code-review.md`.
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 44b0e3035: `debug_assert_eq!(self.lifted.get(), 0, "no lift pending at a dead walk")` just before `transitions_left` is set in `dead_walk`. |
+| FND-002 | fixed | 44b0e3035: the budget test also asserts `run_with(explored + 2 * steps)` is `Violated` with the shortest lasso, which pins exact charging. |
