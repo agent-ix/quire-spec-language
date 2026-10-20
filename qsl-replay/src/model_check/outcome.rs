@@ -68,6 +68,12 @@ pub enum ReductionCause {
         /// The boundary states stored.
         boundary_states: u64,
     },
+    /// A partial-order run completed to its search horizon with no
+    /// counterexample (ADR-021 RV-5).
+    Horizon {
+        /// The search horizon.
+        max_depth: u64,
+    },
 }
 
 /// One EN-1 run's outcome (FR-126 Outputs).

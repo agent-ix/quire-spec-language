@@ -61,6 +61,12 @@
 //! a lasso, its loop, repeated until the concrete state returns to the
 //! concrete entry. A state constraint on a liveness clause is refused
 //! ([`ModelCheckRefusal::ReducedLiveness`]).
+//!
+//! Under partial-order reduction (ADR-021 POR-6 to POR-11) each product
+//! state is expanded through the ample set `ample` chooses at its model
+//! component: the fairness filter still reads each state's full enabled set
+//! from its `Enabled` finding, and a run that completes to its horizon
+//! settles `ReductionHorizon`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -75,17 +81,17 @@ use qsl_eval::fairness::{
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
-    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, OfferedReductions,
-    Outcome, Permutation, SymmetryGroup, TransitionSystem,
+    EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Footprint, Limit, Limits,
+    OfferedReductions, Outcome, Permutation, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
 use qsl_replay::{
     AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind, IncompleteCause,
-    ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, ModelStep,
-    ReachedLimit, RunStats, TemporalCounterexample, UndecidedCause, UndefinedEvaluation,
-    UndefinedLocus, UndefinedSite,
+    ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, ModelStep, Proviso,
+    ReachedLimit, ReductionCause, RunStats, TemporalCounterexample, UndecidedCause,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
@@ -93,11 +99,12 @@ use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits}
 use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
 
+use super::ample::{Atoms, Por};
 use super::check::{
     not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
 };
 use super::concretise::{Lift, LiftStop};
-use super::graph::{retain_reduced, ProductStateId, RetainedEdge, RetainedGraph};
+use super::graph::{retain_reduced, Ample, Choice, ProductStateId, RetainedEdge, RetainedGraph};
 use super::product::{ProductKey, ProductTransition};
 use super::quotient::{
     Analysis as QuotientAnalysis, Analyzer, LoopEdge, Quotient, QuotientConstraint, QuotientEdge,
@@ -174,7 +181,7 @@ pub(super) fn check(
             Admitted::Settled(outcome) => return Ok(outcome),
         }
     };
-    if request.reductions.constraint.is_some() || request.reductions.partial_order {
+    if request.reductions.constraint.is_some() {
         return Err(ModelCheckRefusal::ReducedLiveness);
     }
     // The instances are the keys of the universes of the populations that
@@ -243,6 +250,7 @@ pub(super) fn check(
         bindings: &bindings,
         request: RunRequest {
             max_depth: request.max_depth,
+            partial_order: request.reductions.partial_order,
             limits: request.limits,
             meter,
             max_candidates,
@@ -348,6 +356,8 @@ impl Totals {
 /// What a run needs of the request beyond the subject and the item.
 struct RunRequest {
     max_depth: Option<usize>,
+    /// Whether partial-order reduction is selected (FR-156).
+    partial_order: bool,
     limits: qsl_replay::ModelCheckLimits,
     meter: ScalarLimits,
     max_candidates: u64,
@@ -467,6 +477,9 @@ struct LassoSystem<'r, 'a> {
     meter: ScalarLimits,
     cancel: &'r Cancel,
     max_depth: Option<usize>,
+    /// Whether each expansion holds its steps to their footprints
+    /// (FR-155 "Read enforcement"), as a partial-order run does.
+    enforce: bool,
     /// The depth of the first-phase finding the exploration has met: a
     /// state that would sit there or deeper ranks after it, so none is
     /// created (FR-126 ends the first phase at its finding).
@@ -509,7 +522,12 @@ impl LassoSystem<'_, '_> {
         &self,
         state: &ModelSimState,
     ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
-        self.system.successors(state).inspect_err(|&stop| {
+        let expansion = if self.enforce {
+            self.system.successors_enforced(state)
+        } else {
+            self.system.successors(state)
+        };
+        expansion.inspect_err(|&stop| {
             self.record(Halt::Expansion(stop));
         })
     }
@@ -724,6 +742,18 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
         self.system.offered_reductions()
     }
 
+    /// ADR-021 EI-4: a model transition has its model component's footprint,
+    /// and the terminal stutter edge has none, so no ample-set candidate
+    /// holds it (FR-162).
+    fn footprint(&self, transition: &PT) -> Option<Result<Footprint, ExpansionStop>> {
+        match transition {
+            ProductTransition::Model(transition) => {
+                TransitionSystem::footprint(self.system, transition)
+            }
+            ProductTransition::TerminalStutter => Some(Ok(Footprint::default())),
+        }
+    }
+
     /// ADR-021 EI-4: the model component is canonicalised and the property
     /// component kept, so the automaton is never reduced.
     fn canonical(
@@ -748,6 +778,52 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
                     self.record(Halt::Expansion(stop));
                 }),
         )
+    }
+}
+
+/// FR-156: the ample sets of one binding's product, chosen at the model
+/// component of each product state.
+struct LassoAmple<'p, 'r, 'a> {
+    product: &'p LassoSystem<'r, 'a>,
+    por: &'p Por<'r, 'a>,
+}
+
+impl<'r, 'a> Ample<LassoSystem<'r, 'a>> for LassoAmple<'_, 'r, 'a> {
+    fn choose(
+        &self,
+        state: &LState,
+        findings: &[Finding],
+        successors: &[(&PT, bool)],
+    ) -> Result<Choice<PT>, ExpansionStop> {
+        let enabled: &[ModelTransition] = findings
+            .iter()
+            .find_map(|finding| match finding {
+                Finding::Enabled(enabled) => Some(enabled.as_slice()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        if enabled.len() <= 1 || successors.is_empty() {
+            return Ok(Choice::All);
+        }
+        // C3 on product states: every product successor through the
+        // transition is undiscovered.
+        let fresh = |transition: &ModelTransition| {
+            successors
+                .iter()
+                .filter(|(reached, _)| {
+                    matches!(reached, ProductTransition::Model(model) if model == transition)
+                })
+                .all(|(_, fresh)| *fresh)
+        };
+        let chosen = self
+            .por
+            .ample(&state.model, enabled, &fresh)
+            .map_err(|stop| self.product.record(Halt::Expansion(stop)))?;
+        Ok(if chosen.len() == enabled.len() {
+            Choice::All
+        } else {
+            Choice::Only(chosen.into_iter().map(ProductTransition::Model).collect())
+        })
     }
 }
 
@@ -1039,25 +1115,38 @@ impl<'r, 'a> Run<'r, 'a> {
                 stats: totals.stats(),
             });
         }
-        let applied: Option<Vec<AppliedReduction>> = self
+        // ADR-021 RV-1: the reductions in the order symmetry, partial-order.
+        let mut reductions: Vec<AppliedReduction> = self
             .bindings
             .iter()
-            .map(|binding| binding.applied.clone())
+            .filter_map(|binding| binding.applied.clone())
             .collect();
-        match (cut, self.request.max_depth, applied) {
-            (true, Some(depth), _) => Ok(ModelCheckOutcome::BoundReached {
+        if self.request.partial_order {
+            reductions.push(AppliedReduction::PartialOrder {
+                proviso: Proviso::BreadthFirstRevisit,
+            });
+        }
+        match (cut, self.request.max_depth) {
+            // ADR-021 RV-5: a reduced graph does not keep short
+            // counterexamples short, so a partial-order run that completes
+            // to the horizon proves no bound.
+            (true, Some(depth)) if self.request.partial_order => Ok(ModelCheckOutcome::Reduction {
+                cause: ReductionCause::Horizon {
+                    max_depth: widen(depth),
+                },
+                stats: totals.stats(),
+            }),
+            (true, Some(depth)) => Ok(ModelCheckOutcome::BoundReached {
                 depth: widen(depth),
                 stats: totals.stats(),
             }),
             // ADR-021 RV-1: a reduced run that completes with no fair
             // accepting component is a reduced proof, which no certificate
             // covers.
-            (_, _, Some(reductions)) if !reductions.is_empty() => {
-                Ok(ModelCheckOutcome::HoldsReduced {
-                    reductions,
-                    stats: totals.stats(),
-                })
-            }
+            _ if !reductions.is_empty() => Ok(ModelCheckOutcome::HoldsReduced {
+                reductions,
+                stats: totals.stats(),
+            }),
             _ => Err(LivenessRefusal::ComponentCertificateNotBuilt {
                 stats: totals.stats(),
             }
@@ -1106,6 +1195,7 @@ impl<'r, 'a> Run<'r, 'a> {
             meter: self.request.meter,
             cancel: self.cancel,
             max_depth: [self.request.max_depth, cap].into_iter().flatten().min(),
+            enforce: self.request.partial_order,
             found: Cell::new(None),
             halt: RefCell::new(None),
         };
@@ -1119,9 +1209,31 @@ impl<'r, 'a> Run<'r, 'a> {
             max_states,
             max_transitions,
         };
+        let por = if self.request.partial_order {
+            let atoms = Atoms {
+                letters: self.letters,
+                nodes: &product.atoms,
+            };
+            Some(Por::new(
+                self.system,
+                Some(atoms),
+                std::slice::from_ref(&binding.instance),
+                self.clause.fairness(),
+                None,
+            )?)
+        } else {
+            None
+        };
+        let ample = por.as_ref().map(|por| LassoAmple {
+            product: &product,
+            por,
+        });
         let exploration = retain_reduced(
             &product,
             &binding.group,
+            ample
+                .as_ref()
+                .map(|ample| ample as &dyn Ample<LassoSystem<'_, '_>>),
             remaining,
             IdentityLimits::default(),
             None,

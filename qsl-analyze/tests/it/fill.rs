@@ -472,8 +472,9 @@ pub(crate) fn reachable(system: &ProtocolSystem<'_, Sc>) -> Vec<Reached> {
     reached
 }
 
-/// Every maximal behaviour's projection onto its attempt nodes, from each
-/// initial state of `reached`, by the attempts' node names' last segment.
+/// Every maximal behaviour's projection onto its event steps (ADR-027
+/// CI-3: `attempt`, `event`, `send`, `receive` and `finish`), from each
+/// initial state of an acyclic `reached`, by the nodes' names' last segment.
 pub(crate) fn projections(reached: &[Reached]) -> std::collections::BTreeSet<Vec<String>> {
     fn walk(
         reached: &[Reached],
@@ -487,11 +488,20 @@ pub(crate) fn projections(reached: &[Reached]) -> std::collections::BTreeSet<Vec
         }
         for (transition, next) in &reached[at].steps {
             let named = match transition.kind() {
-                StepKind::Attempt | StepKind::Finish => transition
+                StepKind::Attempt
+                | StepKind::Event
+                | StepKind::Send
+                | StepKind::Receive
+                | StepKind::Finish => transition
                     .node()
                     .and_then(|node| node.rsplit('/').next())
                     .map(str::to_owned),
-                StepKind::Fork | StepKind::Join | StepKind::Memory => None,
+                StepKind::Fork
+                | StepKind::Join
+                | StepKind::Timeout
+                | StepKind::Duplicate
+                | StepKind::Lose
+                | StepKind::Memory => None,
             };
             if let Some(name) = &named {
                 prefix.push(name.clone());

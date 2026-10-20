@@ -14,7 +14,10 @@
 //! clause evaluator (FR-107), as the trace evaluator reads them through
 //! [`crate::temporal::TemporalLetters`].
 
+use std::collections::BTreeSet;
+
 use qsl_foundation::bound::ProofBound;
+use qsl_semantics::check::footprint::{FootprintRefusal, SymbolicLocation};
 use qsl_semantics::check::FormulaNodeId;
 use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{Incomplete, Meter};
@@ -88,4 +91,15 @@ pub trait ModelLetters {
         state: &ModelSimState,
         meter: &mut Meter,
     ) -> Result<AtomReading, Incomplete>;
+
+    /// FR-156 "Atom footprints": the locations `atom` reads, with the
+    /// clause's `over` parameter as the receiver. A model
+    /// check under partial-order reduction instantiates them per instance;
+    /// no other check reads them.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintRefusal`] when the atom reads through a form QSpec FR-383
+    /// gives no footprint rule.
+    fn reads(&self, atom: FormulaNodeId) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal>;
 }

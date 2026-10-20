@@ -1116,8 +1116,8 @@ fn a_guard_in_a_postcondition_and_a_navigated_reference_are_in_the_enabling_foot
 
 /// A postcondition reading through `result` reads the field on any object and
 /// the membership of the result's population. This is the footprint half of
-/// FR-155-AC-6; its reduced run needs a partial-order engine the repository
-/// does not have, so the test claims no criterion.
+/// FR-155-AC-6; its reduced run is `qsl-analyze`'s `partial_order` test, so
+/// this test claims no criterion.
 #[trace("TC-589")]
 #[test]
 fn a_postcondition_reading_through_result_reads_the_result_populations() {
@@ -1377,6 +1377,37 @@ fn a_transition_over_an_object_not_yet_created_has_a_footprint() {
         &bump_d,
         &footprint_of(&system, "bump", &a, &[])
     ));
+}
+
+/// FR-162-AC-5: `TransitionSystem::footprint` is called with no state. For
+/// `bump(d)`, whose `d` no state holds, and `bump(a)`, whose precondition is
+/// false at some state, it returns `Some` with the footprints FR-155 derives.
+#[trace("TC-1075", "FR-162-AC-5")]
+#[test]
+fn the_footprint_hook_takes_no_state_and_covers_absent_objects() {
+    let mut subject = counters_subject();
+    let start = counters_start(&mut subject);
+    let system = subject.system(start, &COUNTER_KEYS);
+    let (a, d) = (
+        subject.reference("Counter", "a"),
+        subject.reference("Counter", "d"),
+    );
+    let bump = |receiver: &ObjectReference| transition("Counter", "bump", receiver, Vec::new());
+    for receiver in [&a, &d] {
+        let transition = bump(receiver);
+        assert_eq!(
+            TransitionSystem::footprint(&system, &transition),
+            Some(Ok(system.footprint(&transition).expect("a footprint"))),
+        );
+    }
+    let Some(Ok(bump_d)) = TransitionSystem::footprint(&system, &bump(&d)) else {
+        panic!("bump(d) has a footprint");
+    };
+    assert_eq!(
+        bump_d.reads,
+        locations([field_at(&d, "Counter/v"), member_of("counters", &d)])
+    );
+    assert_eq!(bump_d.writes, locations([field_at(&d, "Counter/v")]));
 }
 
 /// A transition text that is not the canonical text of a reference, or whose
