@@ -45,3 +45,19 @@ Ticket: QSL-549. PR: quire-spec-language#1095, head 5fc5e5eb5, scoped to `git di
 ## Verdict
 
 One medium finding (Steps and Meter stops contradict as written) and two low compound statements. The Shape, Undecided state, Successors and Identity bullets are well-formed single-subject statements (Shape's three conditions are one rule). Meter stops' 'SHALL stop ... and SHALL NOT reject' states one behaviour and its negation, which is fine. AC-6 to AC-8 are direct, falsifiable assertions; AC-5's meter clause is base FND-002. The changed text describes behaviour and its reason, not a log of edits.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | In the new Step stop and Expansion stop bullets the subject of SHALL is a verdict or a stop ('A `StepVerdict::Stopped` ... SHALL end the check', 'An FR-120 expansion stop ... SHALL end the check'), not the system that must act. Every sibling bullet's subject is the checker. Write them the same way, for example 'When a `check_step` it calls returns `StepVerdict::Stopped`, the checker SHALL end the check with ...'. | spec/functional/FR-149-check-a-refinement-s-simulation-certificate.md:194-197 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: - **Steps.** For each edge, the checker SHALL run `check_step` (FR-141) from the position and SHALL reject with rule `StepFails`, carrying the verdict, when it returns `Fails`, `Undefined`, or an `Undetermined` that Meter stops does not cover. |
+| FND-002 | fixed | after: - **Count of positions.** The checker SHALL count positions against `max_states`, with checked arithmetic. - **Count of edges.** The checker SHALL count edges against `max_transitions`, with checked arithmetic. - **Limit stop.** The checker SHALL stop at a reached limit with `Stopped(LimitReached{limit, value})`. - **Step stop.** A `StepVerdict::Stopped` from a `check_step` it calls SHALL end the check with `Stopped(LimitReached{limit, value})` naming that limit. - **Expansion stop.** An FR-120 expansion stop that names no limit and is not an internal failure SHALL end the check with `Stopp... |
+| FND-003 | fixed | after: - **Package identity.** Before it calls the checker, FR-144 SHALL refuse with `stale_dependency`/`content-mismatch` a certificate whose `concrete_package`, `abstract_package` or `obligation` differs from the item's recompile (FR-098). |
+
+Round 1 verdict: Round 1: FND-001 to FND-003 are fixed. The Limits split gives one SHALL per bullet. Steps carves out Meter stops, and Post is its own bullet. One new low finding: in Step stop and Expansion stop the subject is a verdict, not the checker (FND-004). Stops' 'SHALL end ... and SHALL NOT turn into a rejection' states one behaviour, which is fine.
