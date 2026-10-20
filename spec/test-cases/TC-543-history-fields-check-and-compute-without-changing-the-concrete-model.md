@@ -15,7 +15,7 @@ concrete model, and that `initial_history` and `step_history` compute
 receiver-only updates and report an update that leaves its type as
 `MappingUndetermined` without removing the step.
 
-Scope: FR-138-AC-1 to FR-138-AC-4, FR-138-AC-6 and FR-138-AC-7.
+Scope: FR-138-AC-1 to FR-138-AC-4, FR-138-AC-6, FR-138-AC-7 and FR-138-AC-9.
 
 ## Test Procedure
 
@@ -30,6 +30,8 @@ Fixture: `Register` and `RegisterHistory` (FR-138).
    0)`.
 5. Add the update `self.last` (no `pre`) and compute along `write(r, 1)`, `write(r, 0)` (FR-138-AC-6).
 6. Key the history values over `{r, s}` with two fields (FR-138-AC-7).
+7. Check history rows typed as a decimal, an enum and an option of an enum, and
+   rows typed `Int[0, 1]`, Boolean and `Option<Int[0, 1]>` (FR-138-AC-9).
 
 Tag the tests `#[trace("TC-543", "FR-138-AC-n")]`.
 
@@ -43,3 +45,4 @@ Tag the tests `#[trace("TC-543", "FR-138-AC-n")]`.
   the second step, whose post-state is the concrete successor.
 - Step 5: `last` = 0, 0.
 - Step 6: the order `r.last`, `r.writes`, `s.last`, `s.writes`; a one-value difference changes the key.
+- Step 7: the decimal, enum and option-of-enum rows each refuse `unsupported_construct`/`not-yet-implemented` naming `history-row` with `subject` `decimal`, `enum`, `enum`; the other three rows check.

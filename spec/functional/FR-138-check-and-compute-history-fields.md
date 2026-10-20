@@ -62,7 +62,15 @@ exactly as they were.
 - The object type SHALL resolve to a concrete object type, and each `on`
   operation to an operation of that type; a name that does not resolve
   SHALL refuse `missing_declaration`/`missing-name`.
-- The declared type SHALL be a bounded value type (finite domain); an
+- S3 SHALL refuse a declared type that is an enum type or a decimal type, or
+  an option of one, with `unsupported_construct`/`not-yet-implemented` at the
+  type, naming `history-row` with `subject` `enum` or `decimal` (FR-135
+  "Refinement features the build does not check"): the type is finite and its
+  literals are legal, but the build's history key cannot yet encode its values.
+  The refusal follows the refusals for an unresolved object type, a name
+  conflict and an unresolved type form, and precedes the bounded-type and
+  initial-literal checks.
+- Any other declared type SHALL be a bounded value type (finite domain); an
   unbounded type SHALL refuse `ill_typed`/`type-mismatch` at the type.
 - A history field whose name equals a declared field of the concrete type,
   or another history field of the same type, SHALL refuse
@@ -148,6 +156,7 @@ and not its range, so the range is left only at run time.
 | FR-138-AC-6 | With `on Impl::Register::write: self.last;` (no `pre`), S3 admits the row and `step_history` along `write(r, 1)`, `write(r, 0)` gives `last` = 0, 0 (the value the step started from). | Test (TC-543) |
 | FR-138-AC-7 | Over a `Register` universe `{r, s}` with the history fields `last` and `writes`, the product key of the history values lists `r.last`, `r.writes`, `s.last`, `s.writes` in that order, and two states that differ only in one history value have different keys. | Test (TC-543) |
 | FR-138-AC-8 | With `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 2; }` (out of type) and `prev = if 1 mod (1 - self.value + self.writes) = 0 then self.last else self.last`, `check_step` on `write(r, 1)` returns `Undetermined(MappingUndetermined)` naming the `writes` update, never `Undefined`: the `prev` row reads the failed field and is not evaluated at any stand-in. | Test (TC-546) |
+| FR-138-AC-9 | A history row typed `Decimal[0, 100; 0, 2; nearest-even]` with initial `decimal(0, 0)` refuses `unsupported_construct`/`not-yet-implemented` at the type, once, with `feature` `history-row`, `subject` `decimal`, and no other diagnostic about the row; the same row typed as an enum, and typed `Option` of that enum, refuses with `subject` `enum`. `Int[0, 1]`, a Boolean and `Option<Int[0, 1]>` rows check. | Test (TC-543) |
 
 ## Dependencies
 
@@ -163,7 +172,11 @@ and not its range, so the range is left only at run time.
   QSpec FR-378 words the product key's order as "history-row order"; the key
   here orders by object, then field name. QSpec's wording should be aligned
   to it.
+- The enum and decimal refusal departs from QSpec in the three ways FR-135's
+  References state.
 - The history-row production, the `history-literal` spellings and the
   history-literal conformance rule: QSpec FR-375. The covering test for the
   `none`, `true`/`false` and enum-member cases, which FR-138 does not
-  restate, is QSpec TC-310 mutation 10 (FR-375-AC-9).
+  restate, is QSpec TC-310 mutation 10 (FR-375-AC-9). This build refuses an
+  enum-typed history row before its literal is checked (FR-138-AC-9), so it
+  admits no enum-member history literal for now.
