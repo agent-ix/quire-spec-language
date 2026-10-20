@@ -29,7 +29,7 @@ Tag the tests `#[trace("TC-626", "FR-191-AC-n")]`.
 ## Expected Results
 
 - Step 1: `Stopped` naming `statistical.max_samples` and 1,000,000 with no decision; decided; default 16,777,216.
-- Step 2: `Stopped` naming `statistical.max_draws` and `Cancelled`, neither with a decision; the transient variant `Stopped`, `ResourceExhausted`, no decision, `limit-reached` naming `statistical.max_cycle_steps`.
+- Step 2: `Stopped` naming `statistical.max_draws` and `Cancelled`, neither with a decision; the transient variant `Stopped` with `Limit{MaxCycleSteps, value}`, no decision, `limit-reached` naming `statistical.max_cycle_steps`.
 - Step 3: byte-equal results; equal samples at trace indices 0 to 99; seed 8 recorded, equal obligation identity, a differing sample.
 - Step 4: per-test provenance with test 1 starting at trace 1 in steps of 2; the method changes and the obligation identity does not.
 - Step 5: complete at exactly 9,210,341, `Limit{MaxSamples, 9,210,340}` after 9,210,340 counted; provenance on both outcomes; `Cancelled` for the cancelled run.

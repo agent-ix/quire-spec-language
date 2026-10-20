@@ -47,3 +47,16 @@ Ticket: QSL-570. PR: quire-spec-language#1082, head 73b9df742, scoped to `git di
 ## Verdict
 
 Four low findings, all wording. None blocks merge on its own. The no-initial-state and undefined-stop bullets are well-formed If/then SHALL statements. quire's grammar lint reports no warning in FR-189, FR-191, FR-192, TC-624 or TC-626, so these were found by reading the text.
+
+## Dispositions
+
+Round 1, head 8ab2038d3: fix commit 8ab2038d3 over merge ba8ad2332, which brings in main 70c7092b9. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Terra's #1079 branch is now at 45bd79491. Its qsl-analyze and qsl-replay sources are byte-equal to 149fdd4b7 (the new commit adds only review files), so the round-0 code reading still holds. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in the changed files; tools/check-index-completeness.sh passes. Hand checks: FR-189-AC-10's seven cases were run through terra's `least_favourable` rule (severity, then the estimate on the failing side, None worst, keep the earlier on a tie), and each case names the test the code picks. FR-189-AC-8's `Undef` is undefined at trace 0, position 0, so `estimate` is None. FR-191-AC-5 still holds: the decision check comes before the `max_samples` check.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+
+Round 1 verdict: All four findings are fixed. The non-activated rule is state-driven with one SHALL, the budget rule is stated once, the margin is defined per test, and the estimate is given per method. Nothing new.
