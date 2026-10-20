@@ -213,13 +213,13 @@ fn envelope(
 
 /// The envelope carrying `payload` at `package_id`, from `unit`, naming the
 /// item by `node` and `occurrence`.
-pub(crate) fn envelope_at(
+pub(crate) fn envelope_at<T: Clone + std::fmt::Debug + Eq>(
     unit: &[u8],
     package_id: DigestRecord,
-    payload: TemporalCounterexample,
+    payload: TemporalCounterexample<T>,
     node: WireNodeId,
     occurrence: OccurrenceKey,
-) -> WitnessEnvelope<TemporalCounterexample> {
+) -> WitnessEnvelope<TemporalCounterexample<T>> {
     WitnessEnvelope::reconstruct(
         WitnessPacket {
             obligation_identity: Some([3; 32]),
@@ -346,7 +346,14 @@ fn a_counterexample_the_model_does_not_take_refuses_with_no_result() {
     let recorded = DigestRecord::mint(DigestDomain::SimulationStateKeyV1, [9; 32]);
     altered.prefix[1].post_state = recorded;
     let (cause, code, tag) = refusal(replay(&case, altered));
-    assert_eq!(cause, ModelTraceRefusal::PostState { step: 1, recorded });
+    assert_eq!(
+        cause,
+        ModelTraceRefusal::PostState {
+            step: 1,
+            recorded,
+            reached: vec![payload.prefix[1].post_state]
+        }
+    );
     assert_eq!((code, tag), (Code::StaleDependency, "content-mismatch"));
 
     let mut extended = payload.clone();

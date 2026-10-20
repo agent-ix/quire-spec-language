@@ -227,6 +227,27 @@ impl CheckedBody {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    /// The evaluation frame this body needs when its first `bound` slots
+    /// are its parameters: `bound`, or one past the highest slot a node of
+    /// the body reads or binds, whichever is larger.
+    pub fn frame_slots(&self, bound: usize) -> usize {
+        self.nodes
+            .iter()
+            .flat_map(|node| match &node.kind {
+                NodeKind::Local(slot) | NodeKind::Let { slot, .. } => vec![*slot],
+                NodeKind::Query { slot, .. } | NodeKind::Seq { slot, .. } => vec![*slot],
+                NodeKind::Fold {
+                    accumulator,
+                    binder,
+                    ..
+                } => vec![*accumulator, *binder],
+                // Every other kind reads and binds no local slot.
+                _ => Vec::new(),
+            })
+            .map(|slot| slot.saturating_add(1))
+            .fold(bound, usize::max)
+    }
 }
 
 /// The nodes one typing pass builds, each pushed once a node naming it as

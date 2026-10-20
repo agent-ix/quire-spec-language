@@ -53,7 +53,8 @@ pub use coverage::content;
 pub(crate) use graph::dominates;
 pub use types::{
     BoundAttempt, CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
-    CheckedOperationNodes, CheckedProtocol, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedParallel, CheckedProtocol,
+    CheckedRole, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -207,9 +208,55 @@ pub fn check(
         return Err(refusals.into_iter().map(|(_, refusal)| refusal).collect());
     };
 
+    let roles = protocol
+        .roles
+        .iter()
+        .map(|role| CheckedRole {
+            name: role.name.name.clone(),
+            context: scope.object_type_named(&role.context.name),
+            replicated: role.replicated.is_some(),
+        })
+        .collect();
+    let parallels = protocol
+        .parallels
+        .iter()
+        .map(|parallel| {
+            let mut joined: Vec<String> = Vec::new();
+            for label in &parallel.labels {
+                if !joined.contains(&label.name) {
+                    joined.push(label.name.clone());
+                }
+            }
+            CheckedParallel {
+                node: ProtocolNodeId(parallel.declaration),
+                policy: match &parallel.join.value {
+                    qsl_forms::JoinPolicy::All => CheckedJoinPolicy::All,
+                    qsl_forms::JoinPolicy::Any => CheckedJoinPolicy::Any,
+                    qsl_forms::JoinPolicy::Quorum(count) => CheckedJoinPolicy::Quorum(*count),
+                    qsl_forms::JoinPolicy::Predicate(_) => CheckedJoinPolicy::Predicate,
+                },
+                joined,
+                outstanding: parallel.outstanding.as_ref().map(|rule| match rule.value {
+                    qsl_forms::Outstanding::Continue => CheckedOutstanding::Continue,
+                    qsl_forms::Outstanding::Cancel => CheckedOutstanding::Cancel,
+                }),
+            }
+        })
+        .collect();
+
+    let finish = protocol
+        .declarations
+        .iter()
+        .enumerate()
+        .find(|(_, declaration)| declaration.kind == qsl_forms::ProtocolNodeKind::Finish)
+        .map(|(index, declaration)| (ProtocolNodeId(index), declaration.name.name.clone()));
+
     Ok((
         CheckedProtocol {
             name: protocol.name.name.clone(),
+            roles,
+            parallels,
+            finish,
             resolved_anchors: resolved,
             attempts: Vec::new(),
             obligations: CheckedObligations::default(),

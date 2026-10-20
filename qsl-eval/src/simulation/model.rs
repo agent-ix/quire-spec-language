@@ -14,6 +14,7 @@
 //! [`ModelSystem::actions`] and [`ModelSystem::weighted_steps`] give the
 //! probabilistic structure of a state's successors.
 
+mod application;
 mod constraint;
 mod contracts;
 mod domain;
@@ -63,6 +64,9 @@ use crate::simulation::sample::{sample_request, sample_request_until, SampleRequ
 use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
+pub(crate) use application::{FirstApplication, OperationRef};
+pub(crate) use contracts::{verdict, Verdict};
+pub(crate) use domain::enumerable;
 pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
@@ -76,6 +80,7 @@ pub use probabilistic::{
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
+pub(crate) use walk::Budget;
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
 /// evaluation meter, ran out (FR-120 "Post-states", "Contract clauses").
@@ -260,12 +265,26 @@ impl ModelFinding {
         })
     }
 
-    /// Whether this finding is a contract conjunction that was refused, so
-    /// the successor relation is not exactly known (ADR-018 V-6).
+    /// This finding as a protocol expression evaluated undefined (ADR-027
+    /// TS-4, QSpec FR-426 "Undefined protocol expressions"), when it is one:
+    /// the node's static declaration path and the cause.
+    pub fn undefined_protocol_expression(
+        &self,
+    ) -> Option<(String, crate::temporal::UndefinedCause)> {
+        let Self::ProtocolExpressionUndetermined { node, evaluation } = self else {
+            return None;
+        };
+        Some((node.clone(), evaluation.undefined_cause()?))
+    }
+
+    /// Whether this finding is a contract conjunction or a protocol
+    /// expression that was refused, so the successor relation is not
+    /// exactly known (ADR-018 V-6).
     pub fn is_refused_contract(&self) -> bool {
         matches!(
             self,
             Self::ContractUndetermined { evaluation, .. }
+                | Self::ProtocolExpressionUndetermined { evaluation, .. }
                 if evaluation.undefined_cause().is_none()
         )
     }
@@ -292,6 +311,13 @@ pub enum ModelFinding {
         self_object: ObjectReference,
         /// The state's anchor.
         anchor: SelectedAnchor,
+        /// Why it was not decided.
+        evaluation: ClauseOutcome,
+    },
+    /// A protocol step's constraint could not be decided (ADR-027 TS-4).
+    ProtocolExpressionUndetermined {
+        /// The node's static declaration path.
+        node: String,
         /// Why it was not decided.
         evaluation: ClauseOutcome,
     },

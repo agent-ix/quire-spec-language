@@ -559,6 +559,7 @@ impl Run<'_, '_> {
             kind: failure.kind,
             lasso: None,
             refinement: Some(failure.failure),
+            blocked: Vec::new(),
         }
     }
 }

@@ -28,9 +28,11 @@ mod key;
 pub mod model;
 mod not_simulated;
 mod order;
+pub mod protocol;
 mod reduction;
 mod sample;
 mod sampled;
+mod subject;
 mod trace;
 
 pub use choice::{weighted_choice, ChoicePoint, TotalAboveDrawRange, Weights, WeightsRefusal};
@@ -39,10 +41,11 @@ pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, Transiti
 pub use footprint::{independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};
 pub use key::EncodingRefusal;
-pub use not_simulated::{NotSimulated, RequiresBound};
+pub use not_simulated::{NotSimulated, RequiresBound, BOUND_POSITIONS};
 pub use reduction::{
     ConstraintValue, OfferedReductions, Permutation, SymmetryClass, SymmetryGroup,
 };
 pub use sample::{sample_request, sample_request_until, SampleRequest};
 pub use sampled::{sample_probabilistic, SampleStop, SampledBehaviour, SampledStep};
+pub use subject::SubjectSystem;
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

@@ -30,6 +30,14 @@ pub struct CheckedParallelMemory {
     pub memory: MemoryModelName,
 }
 
+impl CheckedParallelMemory {
+    /// Whether the source default is the sequentially consistent model
+    /// (ADR-027 SE-2).
+    pub fn is_sequentially_consistent(&self) -> bool {
+        self.memory == MemoryModelName::Sc
+    }
+}
+
 /// One checked `fence` control (FR-220 "Outputs").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CheckedFence {

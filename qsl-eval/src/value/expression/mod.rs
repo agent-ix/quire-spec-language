@@ -179,6 +179,35 @@ pub fn evaluate_state_predicate(
     )
 }
 
+/// ADR-027 ST-1 to ST-9, PD-1: evaluate one checked protocol slot `body` (a
+/// node's constraint or the protocol's `terminal when` predicate) of
+/// `package` through the one clause evaluator (FR-107), at the state whose
+/// objects are `current`. `frame[i]` is the value of the protocol's binder
+/// `i` (`CheckedSlots::binders`), `None` for one that is not bound; the
+/// frame is extended to the slots the body's own lets and queries bind.
+/// Like an invariant's, a slot body reads no `pre(..)`, so every model read
+/// observes `current`.
+pub fn evaluate_protocol_slot(
+    package: &CheckedPackage,
+    body: &qsl_semantics::check::CheckedBody,
+    mut frame: Vec<Option<Value>>,
+    current: &ObjectEnvironment,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    frame.resize(body.frame_slots(frame.len()), None);
+    let reads = std::collections::BTreeMap::new();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        current,
+        None,
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run_frame(body.root(), frame)
+}
+
 /// The F-layer diagnostic code of an [`InputRefusal`], as the catalog enum.
 /// The refusal lives in the `no_std` leaf `quire-semantic-value`, which
 /// names the same code as a string ([`InputRefusal::code`]) but cannot name

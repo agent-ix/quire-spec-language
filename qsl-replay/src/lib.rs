@@ -73,8 +73,9 @@ pub use certificate::closed_form::task_set::{
     TaskSetRefusal, TimeMember, Wcet,
 };
 pub use certificate::closure::{
-    check_closure, CertificateRejection, CertificateRequest, ClosureCertificate, ClosureRefusal,
-    ProductStateRef, TemporalCertificateCheck,
+    check_closure, check_protocol_closure, CertificateRejection, CertificateRequest,
+    ClosureCertificate, ClosureRefusal, ProductStateRef, ProtocolCertificateRequest,
+    TemporalCertificateCheck,
 };
 pub use certificate::scc::{Component, ComponentWitness};
 pub use certificate::simulation::{
@@ -109,7 +110,7 @@ pub use identity::{
 };
 pub use limits::{AccountingLimits, CallerLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, CounterexampleKind, Lasso, MappingSite, ModelStep,
+    deadlock_freedom_clause, undefined_finding, CounterexampleKind, Lasso, MappingSite, ModelStep,
     TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 pub use model_check::graph_settle::{
@@ -126,11 +127,13 @@ pub use model_check::outcome::{ModelCheckOutcome, ReductionCause, RunStats, Unde
 pub use model_check::refinement_replay::{replay_refinement_trace, RefinementTraceSettlement};
 pub use model_check::refinement_settle::settle_refinement_safety;
 pub use model_check::replay::{
-    replay_model_trace, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
-    ModelTraceSubject, ModelTraceValue, StrongFairnessHint,
+    replay_model_trace, replay_protocol_trace, ModelTraceRefusal, ModelTraceReplayResult,
+    ModelTraceSettlement, ModelTraceSubject, ModelTraceValue, ProtocolTraceSubject,
+    StrongFairnessHint,
 };
 pub use model_check::settle::{
-    settle_model_check, Execution, ModelCheckRecord, ResultLabel, Truth, EXPLICIT_STATE,
+    settle_model_check, settle_protocol_check, Execution, ModelCheckRecord, ResultLabel, Truth,
+    EXPLICIT_STATE,
 };
 pub use model_check::state_graph::{
     GraphUndefined, GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome,
