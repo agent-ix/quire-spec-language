@@ -339,7 +339,10 @@ impl StepMatch for ExhaustedExistential<'_> {
 /// FR-177-AC-6: a `match` conjunct whose evaluation exhausts its meter at the
 /// first joint step (incomplete) returns `Undecided(MatchUndetermined)` and
 /// never `Holds`. The members it leaves out would empty the set at the same
-/// joint position, and the refused `match` ranks before that.
+/// joint position, and the refused `match` ranks before that. The seam is a
+/// stub whose `existential` charges a meter that admits no work: no S3
+/// lowering of a hyper `match` conjunct exists to call a function yet, so this
+/// is the engine half of the criterion.
 #[trace("TC-602", "FR-177-AC-6")]
 #[test]
 fn an_incomplete_existential_match_leaves_the_item_undecided() {
@@ -359,17 +362,86 @@ fn an_incomplete_existential_match_leaves_the_item_undecided() {
     assert_eq!(cause, UndecidedCause::MatchUndetermined);
 }
 
-/// A refused `match`, or one without a value, on the universal side: an HP-3
-/// clause gives its counterexample no path for the existential variables
-/// there, so the engine refuses to state one.
-#[trace("TC-602", "FR-177-AC-5")]
+/// FR-177 "Undefined and undetermined evaluation", the universal side: a
+/// `μ_U` conjunct with no value on a joint step ends the item with an
+/// `Undefined` counterexample while the witness set is not empty. The
+/// existential variable follows the first member's partner to the pre-state,
+/// one step short of the universal path, and the evaluation names the
+/// universal variable alone.
+#[trace("TC-602")]
 #[test]
-fn an_undefined_universal_match_of_an_hp3_clause_is_refused_not_guessed() {
+fn an_undefined_universal_match_with_a_witness_ends_the_item_with_the_partners_path() {
     let divided = " and (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) \
                    else 1) = 1";
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
+    let counterexample = refuted(run(&world, ModelCheckLimits::default()));
+    let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
+        panic!("expected an undefined-evaluation counterexample");
+    };
+    assert_eq!(
+        undefined.cause,
+        UndefinedCause::Kernel(Undefined::DivisionByZero)
+    );
+    assert_eq!(undefined.locus, HyperLocus::Match { conjunct: 0 });
+    assert_eq!(undefined.position, 1);
+    assert_eq!(counterexample.trace_position, 1);
+    assert_eq!(undefined.variables, [("a".to_owned(), "V".to_owned())]);
+    assert_eq!(undefined.state_keys.len(), 1);
+    assert_eq!(counterexample.traces.len(), 2);
+    assert_eq!(counterexample.traces[0].initial, 0);
+    assert_eq!(inputs(&counterexample, 0), [0]);
+    // The partner from (1, 0) has taken no step yet.
+    assert_eq!(counterexample.traces[1].initial, 1);
+    assert!(counterexample.traces[1].steps.is_empty());
+}
+
+/// A `match` whose universal conjunct has no value on any joint step.
+struct UndefinedUniversal<'w>(crate::hyper_world::Seams<'w>);
+
+impl StepMatch for UndefinedUniversal<'_> {
+    fn universal(
+        &self,
+        _instance: &[ParameterBinding],
+        _steps: &[StepLabel<'_>],
+        _meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        Ok(MatchReading::Undefined {
+            conjunct: 0,
+            cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
+        })
+    }
+
+    fn existential(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        self.0.existential(instance, steps, meter)
+    }
+}
+
+/// The same evaluation where the witness set is already empty: FR-177 and
+/// QSpec FR-400 give the counterexample no existential path, so the engine
+/// refuses to state one rather than invent it. From the one initial state the
+/// two variables share the secret, `X_0` is empty and every universal step is
+/// undefined, so no cycle and no earlier finding exists.
+#[trace("TC-602")]
+#[test]
+fn an_undefined_universal_match_with_no_witness_is_refused_not_guessed() {
+    let world = World::new(
+        Vault::Secure,
+        false,
+        &STARTS[..1],
+        &opaque(" and a.step.op != stutter"),
+    );
     let refusal = world
-        .run(ModelCheckLimits::default(), &Cancel::new())
+        .run_through(
+            &world.seams(),
+            &UndefinedUniversal(world.seams()),
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
         .expect_err("no existential path to state");
     assert!(
         matches!(
@@ -377,6 +449,79 @@ fn an_undefined_universal_match_of_an_hp3_clause_is_refused_not_guessed() {
             ModelCheckRefusal::Hyper(HyperRefusal::NoPartnerPath)
         ),
         "{refusal:?}"
+    );
+}
+
+/// μ_U undefined on `step(1)` from the second breadth-first layer on (the
+/// fifth `μ_U` evaluation): the empty witness set at joint position 1 comes
+/// strictly first, with `step(0)` at (0, 0) as its fair loop.
+struct LateUndefined<'w> {
+    seams: crate::hyper_world::Seams<'w>,
+    calls: std::cell::Cell<usize>,
+}
+
+impl StepMatch for LateUndefined<'_> {
+    fn universal(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        let calls = self.calls.get() + 1;
+        self.calls.set(calls);
+        let one = matches!(steps[0], StepLabel::Operation(step)
+            if step.arguments().first().is_some_and(|argument| argument.contains("\"value\":\"1\"")));
+        if calls >= 5 && one {
+            return Ok(MatchReading::Undefined {
+                conjunct: 0,
+                cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
+            });
+        }
+        self.seams.universal(instance, steps, meter)
+    }
+
+    fn existential(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        self.seams.existential(instance, steps, meter)
+    }
+}
+
+/// FR-177 "Undefined and undetermined evaluation": the first finding in
+/// canonical order wins. A universal `μ_U` with no value at joint position 2
+/// (whose counterexample FR-177 could not state, or would state later) does
+/// not replace the empty witness set at position 1.
+#[trace("TC-602")]
+#[test]
+fn a_later_undefined_evaluation_does_not_replace_an_earlier_empty_witness_set() {
+    let world = World::new(
+        Vault::Leaky,
+        false,
+        &STARTS,
+        &opaque(" and a.step.op != stutter"),
+    );
+    let matcher = LateUndefined {
+        seams: world.seams(),
+        calls: std::cell::Cell::new(0),
+    };
+    let outcome = world
+        .run_through(
+            &world.seams(),
+            &matcher,
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the run is not refused");
+    let counterexample = refuted(outcome);
+    assert_eq!(
+        counterexample.kind,
+        HyperCounterexampleKind::WitnessExhausted {
+            loop_entry: 0,
+            position: 1
+        }
     );
 }
 
@@ -415,7 +560,7 @@ impl HyperLetters for UndefinedWhereB<'_> {
 /// per variable. Over the secure vault with every atom undefined where `b` has
 /// `l = 1`, the first such position in canonical order is the one after
 /// `step(1)` from `a = (0, 0)`, whose partner also took `step(1)`.
-#[trace("TC-602", "FR-177-AC-5")]
+#[trace("TC-602")]
 #[test]
 fn a_letter_with_no_value_ends_the_item_with_a_path_for_the_partner() {
     let world = secure();
@@ -457,7 +602,7 @@ fn a_letter_with_no_value_ends_the_item_with_a_path_for_the_partner() {
 
 /// An atom with no value at joint position 0 ends the item there: no step on
 /// either path, the partner being the initial state the atom was read at.
-#[trace("TC-602", "FR-177-AC-5")]
+#[trace("TC-602")]
 #[test]
 fn a_letter_with_no_value_at_position_zero_ends_the_item_with_empty_paths() {
     let world = secure();
@@ -496,7 +641,7 @@ fn a_letter_with_no_value_at_position_zero_ends_the_item_with_empty_paths() {
 /// components. With `reset` always enabled, a weak fairness constraint on it
 /// for `a` makes `a`'s loop take `reset`, so the lasso of AC-1 is no longer
 /// fair and the counterexample is one whose loop does.
-#[trace("TC-602", "FR-177-AC-1")]
+#[trace("TC-602")]
 #[test]
 fn a_universal_variables_fairness_set_shapes_the_lasso() {
     let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
@@ -531,7 +676,7 @@ fn a_universal_variables_fairness_set_shapes_the_lasso() {
 
 /// ADR-023 HM-7 as FR-176 states it, for an HP-3 clause: a non-empty `μ_U`
 /// that no universal behaviour satisfies is vacuous, never `Holds`.
-#[trace("TC-602", "FR-177-AC-2")]
+#[trace("TC-602")]
 #[test]
 fn an_unsatisfiable_universal_match_is_vacuous() {
     let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
@@ -546,7 +691,7 @@ fn an_unsatisfiable_universal_match_is_vacuous() {
 }
 
 /// A cancelled run stops with its source and no limit.
-#[trace("TC-602", "FR-177-AC-4")]
+#[trace("TC-602")]
 #[test]
 fn a_cancelled_run_stops_with_its_source() {
     let cancel = Cancel::new();
@@ -574,7 +719,7 @@ fn a_cancelled_run_stops_with_its_source() {
 
 /// FR-177-AC-1, last sentence of FR-176-AC-4 applied: the same request twice
 /// gives equal outcomes.
-#[trace("TC-602", "FR-177-AC-1")]
+#[trace("TC-602")]
 #[test]
 fn the_leaky_request_run_twice_gives_equal_outcomes() {
     let world = leaky();
@@ -584,10 +729,11 @@ fn the_leaky_request_run_twice_gives_equal_outcomes() {
     );
 }
 
-/// FR-184-AC-1: a request that sets neither member runs under 65,536 and
-/// 16,777,216, whatever the verdict: a proof, a refutation and a stop. The
-/// terminal record's marking of them as published defaults is FR-182's.
-#[trace("TC-609", "FR-184-AC-1")]
+/// FR-184-AC-1, its first half: a request that sets neither member runs
+/// under 65,536 and 16,777,216, whatever the verdict: a proof, a refutation
+/// and a stop. The terminal record that reports them marked as published
+/// defaults is FR-182's and is not built, so the criterion is not tagged.
+#[trace("TC-609")]
 #[test]
 fn a_request_that_sets_neither_budget_runs_under_the_published_defaults() {
     let defaults = ModelCheckLimits::default();
@@ -595,13 +741,6 @@ fn a_request_that_sets_neither_budget_runs_under_the_published_defaults() {
     assert_eq!(defaults.max_relation_tuples, 16_777_216);
     assert_eq!(DEFAULT_MAX_WITNESS_SET, 65_536);
     assert_eq!(DEFAULT_MAX_RELATION_TUPLES, 16_777_216);
-    assert_eq!(
-        defaults.hyper_used(),
-        [
-            (ModelCheckLimit::MaxWitnessSet, 65_536),
-            (ModelCheckLimit::MaxRelationTuples, 16_777_216)
-        ]
-    );
     assert_eq!(ModelCheckLimit::MaxWitnessSet.setting(), "max_witness_set");
     assert_eq!(
         ModelCheckLimit::MaxRelationTuples.setting(),
@@ -660,7 +799,7 @@ fn max_witness_set_stops_the_leaky_run_at_zero_and_completes_it_at_one() {
 /// (each ordered pair of distinct secrets) and `X_1` four: a budget of 1 stops
 /// at count 2 in `X_0`, a budget of 2 at count 3 in `X_1`, and a budget of 4
 /// completes. The run never continues past a reached budget.
-#[trace("TC-609", "FR-184-AC-2")]
+#[trace("TC-609")]
 #[test]
 fn the_budget_counts_the_members_of_one_set() {
     let world = World::new(Vault::Secure, false, &STARTS, TWO_EXISTENTIAL);
@@ -697,7 +836,7 @@ fn the_budget_counts_the_members_of_one_set() {
 /// A `WitnessExhausted` counterexample is not replayed yet: FR-183 recomputes
 /// the witness sets along its universal traces, and until that is built the
 /// replay refuses it as unsupported rather than reading it as a lockstep one.
-#[trace("TC-602", "FR-177-AC-1")]
+#[trace("TC-602")]
 #[test]
 fn a_witness_exhausted_counterexample_is_refused_by_replay_until_fr_183() {
     let world = leaky();
@@ -710,4 +849,263 @@ fn a_witness_exhausted_counterexample_is_refused_by_replay_until_fr_183() {
         refusal.to_string(),
         "unsupported_construct/not-yet-implemented: replay of a witness-exhausted counterexample"
     );
+}
+
+/// The leaky `step`, enabled only while `l = 0`, and a `reset` that sets `l`
+/// to 1 (and enabled only while `l = 0`): from `(0, 0)` a step can reach the
+/// empty witness set in a state with
+/// a `step(0)` loop on which `reset` is enabled and never taken, and both
+/// moves lead on to the state `l = 1`, where neither is enabled.
+const RESETTING: Vault = Vault::Custom(
+    "pre Fresh using v on V::Vault::step { self.l = 0 }\n\
+     post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n\
+     pre Ready using v on V::Vault::reset { self.l = 0 }\n\
+     post Reset using v on V::Vault::reset { self.l = 1 }\n",
+);
+
+/// FR-177 "Violation": the counterexample is the lasso through the first
+/// state whose witness set is empty, reaching its fair cycle by a connecting
+/// path when the state is not on one. With weak fairness on `reset`, the
+/// empty state after `step(0)` has only the unfair loop `step(0)`, so the
+/// lasso goes on to the state `l = 1`, where `reset` is disabled and the
+/// terminal stutter is fair; `position`
+/// stays the joint position at which the set first empties, not the length of
+/// the stem.
+#[trace("TC-602")]
+#[test]
+fn the_lasso_reaches_its_fair_cycle_by_a_connecting_path() {
+    let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
+         forall trace a of V fair weak V::Vault::reset; exists trace b of V \
+         match { a.step.Vault::step.i = b.step.Vault::step.i } \
+         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
+    let world = World::new(RESETTING, true, &STARTS, clause);
+    let counterexample = refuted(run(&world, ModelCheckLimits::default()));
+    assert_eq!(
+        counterexample.kind,
+        HyperCounterexampleKind::WitnessExhausted {
+            loop_entry: 2,
+            position: 1
+        }
+    );
+    assert_eq!(counterexample.trace_position, 1);
+    // The stem is `step(0)` into the empty set and one connecting step to
+    // `l = 1`, where nothing is enabled; the loop is the terminal stutter.
+    let steps = &counterexample.traces[0].steps;
+    assert_eq!(steps.len(), 3);
+    assert!(matches!(steps[0], HyperStep::Model(_)));
+    assert!(matches!(steps[1], HyperStep::Model(_)));
+    assert_eq!(steps[2], HyperStep::TerminalStutter);
+}
+
+/// Two instances of the clause, over two initial states that each hold a
+/// vault `v` and a vault `w` with the same secret.
+fn two_instances(limits: &[(i64, i64)], conjuncts: &str) -> World {
+    World::with_snapshots(
+        Vault::Secure,
+        limits
+            .iter()
+            .map(|start| vec![("v", *start), ("w", *start)])
+            .collect(),
+        &["v", "w"],
+        &opaque(conjuncts),
+    )
+}
+
+/// FR-126 "Bindings and ranking" read for an HP-3 clause: a later instance
+/// wins only with a strictly earlier finding. Both instances end at the
+/// undefined `μ_E` at joint position 1, so the first instance's counterexample
+/// is the one returned.
+#[trace("TC-602")]
+#[test]
+fn a_later_instance_wins_only_with_a_strictly_earlier_finding() {
+    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
+                   else 1) = 1";
+    let world = two_instances(&[(0, 0), (1, 0)], divided);
+    let counterexample = refuted(run(&world, ModelCheckLimits::default()));
+    assert!(matches!(
+        counterexample.kind,
+        HyperCounterexampleKind::Undefined(_)
+    ));
+    assert_eq!(counterexample.instance, [("v".to_owned(), "v".to_owned())]);
+}
+
+/// The same ranking bounds a later instance: with one initial state the two
+/// variables share the secret, so instance `v` is violated at joint position
+/// 0, and `max_states` that instance `w` would run out of does not turn that
+/// violation into a stop.
+#[trace("TC-602")]
+#[test]
+fn a_violation_at_position_zero_bounds_the_later_instances() {
+    let world = two_instances(&[(0, 0)], "");
+    let full = run(&world, ModelCheckLimits::default());
+    let counterexample = refuted(full);
+    assert_eq!(
+        counterexample.kind,
+        HyperCounterexampleKind::WitnessExhausted {
+            loop_entry: 0,
+            position: 0
+        }
+    );
+    assert_eq!(counterexample.instance, [("v".to_owned(), "v".to_owned())]);
+    for max_states in 5..=7 {
+        let mut limits = ModelCheckLimits::default();
+        limits.limits.max_states = max_states;
+        let outcome = run(&world, limits);
+        assert!(
+            matches!(outcome, HyperOutcome::Violated { .. }),
+            "max_states {max_states}: {outcome:?}"
+        );
+    }
+}
+
+/// A clause with two universal variables: the counterexample holds a trace for
+/// each of them and none for the existential one, and the universal tuple is
+/// two components of every product state.
+#[trace("TC-602")]
+#[test]
+fn two_universal_variables_each_have_a_trace_in_the_counterexample() {
+    let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace c of V exists trace b of V \
+         match { a.step.Vault::step.i = b.step.Vault::step.i } \
+         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
+    let world = World::new(Vault::Leaky, false, &STARTS, clause);
+    let counterexample = refuted(run(&world, ModelCheckLimits::default()));
+    assert_eq!(
+        counterexample.kind,
+        HyperCounterexampleKind::WitnessExhausted {
+            loop_entry: 0,
+            position: 1
+        }
+    );
+    let variables: Vec<_> = counterexample
+        .traces
+        .iter()
+        .map(|trace| trace.variable.as_str())
+        .collect();
+    assert_eq!(variables, ["a", "c"]);
+    assert_eq!(counterexample.traces[0].steps.len(), 1);
+    assert_eq!(counterexample.traces[1].steps.len(), 1);
+    let explored = world.explore_witness();
+    assert!(explored
+        .graph
+        .states()
+        .iter()
+        .all(|state| state.state.components.len() == 2));
+}
+
+/// `max_automaton_states` bounds the safety automaton of the witness product:
+/// the two states `Opaque` needs do not fit in one.
+#[trace("TC-602")]
+#[test]
+fn the_safety_automaton_stops_at_max_automaton_states() {
+    let limits = ModelCheckLimits {
+        max_automaton_states: 1,
+        ..ModelCheckLimits::default()
+    };
+    let HyperOutcome::Stopped { limit, count, .. } = run(&leaky(), limits) else {
+        panic!("expected the automaton to stop the run");
+    };
+    assert_eq!(
+        limit,
+        Some(ReachedLimit {
+            limit: ModelCheckLimit::MaxAutomatonStates,
+            value: 1
+        })
+    );
+    assert_eq!(count, None);
+}
+
+/// The leaky `step`, with a precondition that has no value in the state
+/// `(0, 1)`, which `a` never reaches under the `match` below but a partner
+/// does.
+const GUARDED: Vault = Vault::Custom(
+    "pre Guard using v on V::Vault::step { 1 div (1 - self.l + self.h) >= 0 }\n\
+     post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n",
+);
+
+/// FR-177 states no verdict for an existential member whose contract has no
+/// value (the spec follow-up), so the engine does not claim one: the
+/// successor relation of the witness set is not exactly known and the item is
+/// `Undecided(UndecidedSuccessor)`, never `Holds`. `a` takes only `step(0)`, so
+/// it never reaches `(0, 1)`; its partner from `(0, 0)` takes `step(1)` there.
+#[trace("TC-602")]
+#[test]
+fn an_existential_member_with_an_undefined_contract_leaves_the_item_undecided() {
+    let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
+         forall trace a of V exists trace b of V \
+         match { (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) else 0) = 0 \
+         and b.step.op != stutter } \
+         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
+    let world = World::new(GUARDED, false, &STARTS, clause);
+    let outcome = run(&world, ModelCheckLimits::default());
+    let HyperOutcome::Undecided { cause, .. } = outcome else {
+        panic!("expected no decision, got {outcome:?}");
+    };
+    assert_eq!(cause, UndecidedCause::UndecidedSuccessor);
+}
+
+/// μ_U refused on the fifth evaluation, the first step of the state `a = (1, 1)`
+/// whose member `(0, 1)` has the contract with no value, and held on the sixth,
+/// the second step of that state, whatever the clause says: the state's
+/// findings are then the refused `match` before the member's contract.
+struct RefuseThenHold<'w> {
+    seams: crate::hyper_world::Seams<'w>,
+    calls: std::cell::Cell<usize>,
+}
+
+impl StepMatch for RefuseThenHold<'_> {
+    fn universal(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        let calls = self.calls.get() + 1;
+        self.calls.set(calls);
+        match calls {
+            5 => Ok(MatchReading::Refused),
+            6 => Ok(MatchReading::Holds),
+            _ => self.seams.universal(instance, steps, meter),
+        }
+    }
+
+    fn existential(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        self.seams.existential(instance, steps, meter)
+    }
+}
+
+/// A state's refused findings rank by the joint position they are at, not by
+/// their order in its list: the member's contract at joint position 1 comes
+/// before a refused `μ_U` at position 2 that was found first, so the cause is
+/// `UndecidedSuccessor`, not `MatchUndetermined`.
+#[trace("TC-602")]
+#[test]
+fn a_state_keeps_its_earliest_refused_finding() {
+    let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
+         forall trace a of V exists trace b of V \
+         match { (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) else 0) = 0 \
+         and b.step.op != stutter } \
+         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
+    let world = World::new(GUARDED, false, &STARTS, clause);
+    let matcher = RefuseThenHold {
+        seams: world.seams(),
+        calls: std::cell::Cell::new(0),
+    };
+    let outcome = world
+        .run_through(
+            &world.seams(),
+            &matcher,
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the run is not refused");
+    let HyperOutcome::Undecided { cause, .. } = outcome else {
+        panic!("expected no decision, got {outcome:?}");
+    };
+    assert_eq!(cause, UndecidedCause::UndecidedSuccessor);
 }

@@ -42,7 +42,7 @@ use quire_exact::{Cancel, ScalarLimits};
 use crate::automaton::{
     translate_body, AutomatonError, Letter, Monitor, PropertyAutomaton, StateId,
 };
-use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading};
+use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading, Seams};
 use crate::hyper::product::{
     ComponentStep, Halt, HyperFinding, HyperKey, HyperState, HyperTransition, Property,
 };
@@ -204,6 +204,12 @@ pub struct WitnessInputs<'r, 's> {
 /// The members a successor's `X'` has collected, by identity.
 type Collected = BTreeMap<(Vec<DigestRecord>, usize), Member>;
 
+/// The existential joint steps of one member in canonical order, each with the
+/// existential components' post-states; `None` when a contract conjunction of
+/// the member's expansion is undefined or refused, so its steps are not
+/// exactly known.
+type Expanded = Option<Vec<(HyperTransition, Vec<ModelSimState>)>>;
+
 /// The first atom of a joint post-position's letter that has no value, why,
 /// and the partner whose position it was read at.
 type Unread = (FormulaNodeId, UndefinedCause, Rc<Partner>);
@@ -234,9 +240,11 @@ impl<'r, 's> WitnessProduct<'r, 's> {
             joint: Joint::new(
                 inputs.systems,
                 inputs.instance,
-                inputs.letters,
-                inputs.universal_match,
-                inputs.existential_match,
+                Seams {
+                    letters: inputs.letters,
+                    universal: inputs.universal_match,
+                    existential: inputs.existential_match,
+                },
                 atoms,
                 inputs.meter,
                 inputs.cancel,
@@ -259,17 +267,21 @@ impl<'r, 's> WitnessProduct<'r, 's> {
         let (universal, existential) = self.joint.systems.split_at(self.universal);
         let universal: Vec<Vec<ModelSimState>> =
             universal.iter().map(|system| system.initial()).collect();
-        let existential: Vec<Vec<(u32, ModelSimState)>> = existential
-            .iter()
-            .map(|system| {
-                system
-                    .initial()
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, state)| (u32::try_from(index).unwrap_or(u32::MAX), state))
-                    .collect()
-            })
-            .collect();
+        let mut numbered: Vec<Vec<(u32, ModelSimState)>> = Vec::with_capacity(existential.len());
+        for system in existential {
+            let mut states = Vec::new();
+            for (index, state) in system.initial().into_iter().enumerate() {
+                let index = u32::try_from(index).map_err(|_| {
+                    self.joint.record(Halt::Fault(InternalFault::new(
+                        "witness-product",
+                        "an-initial-state-index-fits-u32",
+                    )))
+                })?;
+                states.push((index, state));
+            }
+            numbered.push(states);
+        }
+        let existential = numbered;
         let mut initial = Vec::new();
         for components in cartesian(&universal) {
             let mut members = Collected::new();
@@ -333,11 +345,6 @@ impl<'r, 's> WitnessProduct<'r, 's> {
         Ref::map(self.monitor.borrow(), Monitor::automaton)
     }
 
-    /// The `ModelSystem` of each trace variable, in quantifier order.
-    pub fn systems(&self) -> &[&'r ModelSystem<'s>] {
-        &self.joint.systems
-    }
-
     fn monitor_viable_initial(&self) -> Result<Option<StateId>, ExpansionStop> {
         self.monitor
             .borrow_mut()
@@ -389,6 +396,20 @@ impl<'r, 's> WitnessProduct<'r, 's> {
         Ok(())
     }
 
+    /// The existential joint steps of `member`, expanded once for all the
+    /// universal steps of a state.
+    fn expand(&self, member: &Member) -> Result<Expanded, ExpansionStop> {
+        let mut options: Vec<Options> = Vec::with_capacity(member.states.len());
+        for (offset, model) in member.states.iter().enumerate() {
+            let stepping = self.joint.stepping(self.universal + offset, model)?;
+            if !stepping.contracts.is_empty() {
+                return Ok(None);
+            }
+            options.push(stepping.options);
+        }
+        self.joint.joint_steps(&options).map(Some)
+    }
+
     /// `X'` for the universal joint step `step` with post-states `posts`: the
     /// members of `members` carried over every existential joint step on which
     /// `μ_E` holds, with the findings the evaluation made on the way.
@@ -397,23 +418,29 @@ impl<'r, 's> WitnessProduct<'r, 's> {
         members: &WitnessSet,
         step: &HyperTransition,
         posts: &[ModelSimState],
+        expansions: &mut [Option<Expanded>],
         findings: &mut Vec<HyperFinding>,
     ) -> Result<(Collected, Option<Unread>), ExpansionStop> {
         let mut next = Collected::new();
         let mut undefined = None;
-        for member in members.members() {
-            let mut options: Vec<Options> = Vec::with_capacity(member.states.len());
-            let mut known = true;
-            for (offset, model) in member.states.iter().enumerate() {
-                let stepping = self.joint.stepping(self.universal + offset, model)?;
-                known &= stepping.contracts.is_empty();
-                options.push(stepping.options);
+        for (index, member) in members.members().iter().enumerate() {
+            let Some(slot) = expansions.get_mut(index) else {
+                return Err(self.joint.record(Halt::Fault(InternalFault::new(
+                    "witness-product",
+                    "a-member-has-an-expansion-slot",
+                ))));
+            };
+            if slot.is_none() {
+                let expanded = self.expand(member)?;
+                if expanded.is_none() {
+                    findings.push(HyperFinding::MemberContract);
+                }
+                *slot = Some(expanded);
             }
-            if !known {
-                findings.push(HyperFinding::MemberContract);
+            let Some(Some(steps)) = slot.as_ref() else {
                 continue;
-            }
-            for (existential, eposts) in self.joint.joint_steps(&options)? {
+            };
+            for (existential, eposts) in steps {
                 let mut taken = step.0.clone();
                 taken.extend(existential.0.iter().cloned());
                 let joint_step = HyperTransition(taken);
@@ -440,7 +467,7 @@ impl<'r, 's> WitnessProduct<'r, 's> {
                 let digests = self.joint.digests(&joint_posts)?;
                 let partner = Rc::new(Partner::Step {
                     before: member.partner.clone(),
-                    step: existential.0,
+                    step: existential.0.clone(),
                     posts: digests[self.universal..].to_vec(),
                 });
                 let letter = match self.joint.reading(&joint_posts)? {
@@ -518,6 +545,7 @@ impl TransitionSystem for WitnessProduct<'_, '_> {
             options.push(stepping.options);
         }
         let mut successors = Vec::new();
+        let mut expansions: Vec<Option<Expanded>> = vec![None; members.members().len()];
         for (step, posts) in self.joint.joint_steps(&options)? {
             match self.joint.matched_universal(&step)? {
                 Matched::Holds => {}
@@ -536,7 +564,8 @@ impl TransitionSystem for WitnessProduct<'_, '_> {
                     continue;
                 }
             }
-            let (next, undefined) = self.carry(members, &step, &posts, &mut findings)?;
+            let (next, undefined) =
+                self.carry(members, &step, &posts, &mut expansions, &mut findings)?;
             successors.push((
                 step.clone(),
                 HyperState {

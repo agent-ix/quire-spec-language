@@ -42,7 +42,7 @@ use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{translate_negation, AutomatonError, PropertyAutomaton, StateId};
-use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading};
+use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading, Seams};
 use crate::hyper::seam::{HyperLetters, ParameterBinding, StepLabel, StepMatch};
 use crate::hyper::witness::{Partner, WitnessSet};
 use crate::simulation::model::{ModelFinding, ModelKey, ModelSimState, ModelSystem};
@@ -360,9 +360,11 @@ impl<'r, 's> HyperProduct<'r, 's> {
             joint: Joint::new(
                 inputs.systems,
                 inputs.instance,
-                inputs.letters,
-                inputs.matcher,
-                None,
+                Seams {
+                    letters: inputs.letters,
+                    universal: inputs.matcher,
+                    existential: None,
+                },
                 automaton.atoms().to_vec(),
                 inputs.meter,
                 inputs.cancel,

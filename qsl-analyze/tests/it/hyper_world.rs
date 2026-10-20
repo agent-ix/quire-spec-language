@@ -44,6 +44,7 @@ use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
 use qsl_semantics::model::key::{hex, DeclarationKey};
 use qsl_semantics::model::observation::{DocumentRef, ObservationLimits};
+use qsl_semantics::value::{CatalogRole, DefinitionLock};
 use quire_exact::{Cancel, Incomplete, Meter, Undefined, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
@@ -68,10 +69,15 @@ pub(crate) enum Vault {
     /// `self.l = i`, enabled only while `self.l = 0`: after one `step` the
     /// vault is terminal, so a trace takes its stutter step from there.
     Terminal,
+    /// The contracts as written: the `step` and `reset` contract text.
+    Custom(&'static str),
 }
 
 impl Vault {
     fn contracts(self, reset: bool) -> String {
+        if let Self::Custom(text) = self {
+            return text.to_owned();
+        }
         let step = match self {
             Self::Leaky => "post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n",
             Self::Secure => "post Step using v on V::Vault::step { self.l = i }\n",
@@ -79,6 +85,7 @@ impl Vault {
                 "pre Fresh using v on V::Vault::step { self.l = 0 }\n\
                  post Step using v on V::Vault::step { self.l = i }\n"
             }
+            Self::Custom(_) => unreachable!("returned above"),
         };
         let reset = if reset {
             "post Reset using v on V::Vault::reset { self.l = 0 }\n"
@@ -257,13 +264,25 @@ fn declarations(document: &[u8], text: &str) -> PackageDeclarations {
         qsl_forms::parse_clause_text(text, qsl_cst::Limits::default())
     })
     .expect("the operation clauses parse");
-    PackageDeclarations::assemble(
+    let mut declarations = PackageDeclarations::assemble(
         parsed.source().reference().clone(),
         built,
         models,
         Vec::new(),
     )
-    .expect("the unit assembles")
+    .expect("the unit assembles");
+    // `div` reads truncating integer division.
+    let lock = DefinitionLock::pinned();
+    declarations.integer_division = Some(
+        lock.admit_integer_division(
+            &[lock
+                .entry(CatalogRole::IntegerDivisionTruncating)
+                .reference()],
+            None,
+        )
+        .expect("the division profile admits"),
+    );
+    declarations
 }
 
 /// One snapshot of the vaults `(key, (h, l))`, provisioned in `snapshots`.
@@ -373,6 +392,19 @@ impl World {
     ) -> Self {
         let universe = objects.iter().map(|(key, _)| (*key).to_owned()).collect();
         Self::build(vault, false, vec![objects.to_vec()], universe, declaration)
+    }
+
+    /// One initial state for each of `snapshots`, each holding its vaults
+    /// `(key, (h, l))`; `universe` are the keys the clause has an instance
+    /// for.
+    pub(crate) fn with_snapshots(
+        vault: Vault,
+        snapshots: Vec<Vec<(&str, (i64, i64))>>,
+        universe: &[&str],
+        declaration: &str,
+    ) -> Self {
+        let universe = universe.iter().map(|key| (*key).to_owned()).collect();
+        Self::build(vault, false, snapshots, universe, declaration)
     }
 
     fn build(
@@ -601,6 +633,17 @@ impl Seams<'_> {
                 }
                 [x, "=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_none(),
                 [x, "!=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_some(),
+                // The input is 0 where there is one.
+                ["(if", present, "then", value, "else", "0)", "=", "0"]
+                    if present.starts_with("present(") && value.starts_with("value(") =>
+                {
+                    let variable = present
+                        .trim_start_matches("present(")
+                        .split('.')
+                        .next()
+                        .expect("a variable");
+                    input_of(label(variable)).is_none_or(|input| input == 0)
+                }
                 ["(if", present, "then", "1", "/", value, "else", "1)", "=", "1"]
                     if present.starts_with("present(") && value.starts_with("value(") =>
                 {

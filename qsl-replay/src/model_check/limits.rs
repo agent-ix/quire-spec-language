@@ -80,16 +80,6 @@ impl ModelCheckLimits {
             ),
         ]
     }
-
-    /// The two hyper budgets of FR-184 with the value the run used, in
-    /// member order: what a hyper item's terminal record states beside
-    /// [`Self::used`] (FR-182).
-    pub fn hyper_used(&self) -> [(ModelCheckLimit, u64); 2] {
-        [
-            (ModelCheckLimit::MaxWitnessSet, self.max_witness_set),
-            (ModelCheckLimit::MaxRelationTuples, self.max_relation_tuples),
-        ]
-    }
 }
 
 /// The limit a stopped EN-1 run reached, by the request member that raises

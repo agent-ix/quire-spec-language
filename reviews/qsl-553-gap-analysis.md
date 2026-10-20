@@ -1,0 +1,69 @@
+---
+id: SR-13596
+title: "Gap analysis of QSL-553 E14c1 PR #1115 against FR-177 (AC-1..AC-6), FR-184 (AC-1..AC-3) and TC-602"
+type: SpecReview
+analysis: gap-analysis
+scope: "agent-ix/quire-spec-language@5198fd7ba; PR #1115 (git diff origin/main...5198fd7ba): qsl-eval/src/hyper/{joint,witness,product,seam,mod}.rs, qsl-eval/src/automaton/{monitor,translate}.rs, qsl-analyze/src/model_check/hyper.rs, qsl-replay/src/model_check/{limits,hyper_*,replay}.rs, qsl-semantics/src/check/hyper_clause.rs, qsl-analyze/tests/it/hyper_witness.rs"
+review_set: subset
+relationships:
+  - target: ix://agent-ix/quire-spec-language/FR-177
+    type: reviews
+  - target: ix://agent-ix/quire-spec-language/FR-184
+    type: reviews
+  - target: ix://agent-ix/quire-spec-language/TC-602
+    type: reviews
+---
+# SR-13596: Gap analysis of QSL-553 E14c1 PR #1115 against FR-177 (AC-1..AC-6), FR-184 (AC-1..AC-3) and TC-602
+
+## Summary
+
+Ticket: QSL-553 (E14c1). Tools: `quire matrix --scope . --format tsv` (quire 0.36.2, engine 0.50.2), exit 0. Plan completion: not assessed.
+
+Matrix at 5198fd7ba:
+
+| AC | Status | Bound by | Honest? |
+| --- | --- | --- | --- |
+| FR-177-AC-1 | tagged | hyper_witness.rs:94, :501, :579, :702 | :94 only (FND-003) |
+| FR-177-AC-2 | tagged | :154, :536 | :154 only (FND-004) |
+| FR-177-AC-3 | tagged | :188 | yes |
+| FR-177-AC-4 | tagged | :234, :551 | :234 only (FND-005) |
+| FR-177-AC-5 | tagged | :270, :367, :420, :462 | :270 only (FND-002, FND-006) |
+| FR-177-AC-6 | tagged | :345 | engine half (FND-009) |
+| FR-184-AC-1 | tagged | :592 | no, partial (FND-001) |
+| FR-184-AC-2 | tagged | :631, :665 | yes |
+| FR-184-AC-3 | untagged | - | yes; HP-1 not built |
+
+Every AC's primary test is truthful: each of AC-1 to AC-6 and FR-184-AC-2 has one test that asserts exactly what the AC states. AC-1 asserts the 6 states, the 2 automaton states, `X_0`/`X_1`, the position and the lasso. AC-2 asserts the 4 singleton sets and `Holds`. The trouble is the extra tags: nine tests carry an AC tag for behaviour the AC does not state, so the matrix overstates FR-177's coverage and claims FR-184-AC-1 whole.
+
+The oracle and the mutation results are in SR-13595. Spec follow-ups (spec questions, not code defects):
+
+- FR-177 should state the tie rule between an undefined evaluation, a refused `match` and an empty `X` at one joint position.
+- FR-177 should define the canonical universal lasso, including its rotation.
+- FR-177 should give a verdict for an existential member whose contract evaluates undefined or refused.
+- FR-177 should say what to return for an undefined `μ_U` or universal contract when `X` is empty.
+- FR-177 should say how FR-126's binding ranking applies to HP-3.
+- FR-184's `count` means size-reached + 1 in AC-2 but equals the value in AC-3; one meaning should be chosen.
+
+Declared out of scope, and confirmed not built: FR-184-AC-3 (no HP-1 engine; `max_relation_tuples` has no consumer), FR-182's terminal-record marking, FR-183's witness-set recomputation, replay counting `max_witness_set`, and `Holds{Reduced}` under FR-174.
+
+## Verdict
+
+**Not mergeable as is.**
+
+- **FND-001 and FND-002 (medium).** Two bindings claim an AC the test does not meet, or contradicts.
+- **FND-007 (medium).** No test covers the connect path behind `position`; mutant M10 survives the suite.
+- **FND-003 to FND-006, FND-008 and FND-009 (low).** Tag inflation and the untested HP-3 paths.
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | medium | `quire matrix` shows FR-184-AC-1 as tagged by `a_request_that_sets_neither_budget_runs_under_the_published_defaults`. The AC's second half, a terminal record that reports both values marked as published defaults, is not built (it is FR-182's). The test checks only `Default` and `hyper_used()`. The PR body says this half is not covered, but the tag makes the matrix say the whole AC is. Repo precedent (SR-13451 on #1092) leaves a partly covered AC untagged. Tag TC-609 only, or split the AC. | qsl-analyze/tests/it/hyper_witness.rs:590-627 |
+| FND-002 | medium | `an_undefined_universal_match_of_an_hp3_clause_is_refused_not_guessed` is tagged `FR-177-AC-5`, but it checks the opposite of what FR-177's undefined-evaluation rule asks for. It asserts a `NoPartnerPath` refusal for an undefined universal conjunct, and AC-5 concerns an existential conjunct that returns `Violated`. The binding makes the matrix count a contradiction of the AC's rule as coverage of it. See code-review SR-13595 FND-003. | qsl-analyze/tests/it/hyper_witness.rs:365-385 |
+| FND-003 | low | Three tests are tagged `FR-177-AC-1`, but they verify other FR-177 or FR-183 behaviour: `a_universal_variables_fairness_set_shapes_the_lasso` (fairness scoping), `the_leaky_request_run_twice_gives_equal_outcomes` (determinism) and `a_witness_exhausted_counterexample_is_refused_by_replay_until_fr_183` (a replay refusal). AC-1 states the unfair leaky lasso, the 6 states and `X_0`/`X_1`. The matrix lists 4 binders for AC-1 where 1 checks it. Tag these with TC-602 (or the FR) only. | qsl-analyze/tests/it/hyper_witness.rs:499-533, 577-588, 700-713 |
+| FND-004 | low | `an_unsatisfiable_universal_match_is_vacuous` is tagged `FR-177-AC-2` (the secure vault holds over 4 states). It checks ADR-023 HM-7 vacuity, which FR-177 does not state. This tag inflates coverage. The HM-7 reading for HP-3 is the PR's own judgement call 6, and it has no AC. | qsl-analyze/tests/it/hyper_witness.rs:534-547 |
+| FND-005 | low | `a_cancelled_run_stops_with_its_source` is tagged `FR-177-AC-4` (`max_witness_set` 0). It checks cancellation. This tag inflates coverage. | qsl-analyze/tests/it/hyper_witness.rs:549-575 |
+| FND-006 | low | `a_letter_with_no_value_ends_the_item_with_a_path_for_the_partner` and `a_letter_with_no_value_at_position_zero_ends_the_item_with_empty_paths` are tagged `FR-177-AC-5`. They check an undefined body atom read through a stub `HyperLetters`, not AC-5's existential `match` conjunct. The behaviour is FR-177's undefined-evaluation bullet, which has no AC of its own. Tag TC-602 only. | qsl-analyze/tests/it/hyper_witness.rs:387-497 |
+| FND-007 | medium | No test has an empty-`X` state whose fair cycle is reached through a connecting path, as opposed to lying on the cycle. Mutant M10, which reports `position` as the stem length (tree path plus connecting path), survives every PR test. The reviewer oracle kills M10 at once: 62 of 300 random cases disagree on `position` and the first empty `X`. In every TC-602 fixture the first empty state is already in its fair component, so `connect` is always empty. Add one fixture where it is not, for example a reset-only loop after the exhaustion with weak fairness on `reset`. | qsl-analyze/tests/it/hyper_witness.rs:1-713 |
+| FND-008 | low | Several HP-3 paths have no test: an existential member's contract that evaluates refused or undefined (mutants M13 and M21 survive), more than one instance (M20 survives), strong-fairness refinement in the universal filter (M17 survives), a universal contract that is undefined in a witness state, two universal variables, and `max_automaton_states` on the witness product. These are the paths behind code-review FND-002 and FND-006. The reviewer oracle covers weak whole constraints with one universal variable, or none. | qsl-analyze/tests/it/hyper_witness.rs:1-713 |
+| FND-009 | low | FR-177-AC-6 asks for a `match` conjunct that calls a function whose evaluation exhausts its meter. The test replaces the whole `StepMatch` with a stub whose `existential` charges a zero meter, so no conjunct, no function and no evaluator meter path runs. Production has no `StepMatch` implementor yet, because S3 does not lower hyper `match` blocks. The HP-2 suite uses the same stub pattern, so this is the seam's limit, not a defect of this PR alone. Say so in the test doc, or tag the test TC-602 only until the evaluator seam exists. | qsl-analyze/tests/it/hyper_witness.rs:301-363 |

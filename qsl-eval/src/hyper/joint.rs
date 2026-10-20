@@ -61,14 +61,22 @@ pub(super) struct Stepping {
     pub(super) contracts: Vec<ModelFinding>,
 }
 
+/// The seams a product reads a joint position through.
+pub(super) struct Seams<'r> {
+    /// The body's atoms.
+    pub(super) letters: &'r dyn HyperLetters,
+    /// `μ_U`, when the clause has a universal conjunct.
+    pub(super) universal: Option<&'r dyn StepMatch>,
+    /// `μ_E`, when the clause has an existential conjunct.
+    pub(super) existential: Option<&'r dyn StepMatch>,
+}
+
 /// The components' systems and the seams a product reads a joint position
 /// through.
 pub(super) struct Joint<'r, 's> {
     pub(super) systems: Vec<&'r ModelSystem<'s>>,
     instance: &'r [ParameterBinding],
-    letters: &'r dyn HyperLetters,
-    universal: Option<&'r dyn StepMatch>,
-    existential: Option<&'r dyn StepMatch>,
+    seams: Seams<'r>,
     atoms: Vec<FormulaNodeId>,
     readings: RefCell<BTreeMap<Vec<DigestRecord>, Reading>>,
     meter: ScalarLimits,
@@ -77,13 +85,10 @@ pub(super) struct Joint<'r, 's> {
 }
 
 impl<'r, 's> Joint<'r, 's> {
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         systems: Vec<&'r ModelSystem<'s>>,
         instance: &'r [ParameterBinding],
-        letters: &'r dyn HyperLetters,
-        universal: Option<&'r dyn StepMatch>,
-        existential: Option<&'r dyn StepMatch>,
+        seams: Seams<'r>,
         atoms: Vec<FormulaNodeId>,
         meter: ScalarLimits,
         cancel: &'r Cancel,
@@ -91,9 +96,7 @@ impl<'r, 's> Joint<'r, 's> {
         Self {
             systems,
             instance,
-            letters,
-            universal,
-            existential,
+            seams,
             atoms,
             readings: RefCell::new(BTreeMap::new()),
             meter,
@@ -160,6 +163,7 @@ impl<'r, 's> Joint<'r, 's> {
             self.poll()?;
             let mut meter = Meter::new(self.meter);
             let value = self
+                .seams
                 .letters
                 .atom(*atom, self.instance, &states, &mut meter)
                 .map_err(|_| self.record(Halt::Meter))?;
@@ -190,7 +194,7 @@ impl<'r, 's> Joint<'r, 's> {
         &self,
         step: &HyperTransition,
     ) -> Result<Matched, ExpansionStop> {
-        let Some(matcher) = self.universal else {
+        let Some(matcher) = self.seams.universal else {
             return Ok(Matched::Holds);
         };
         self.poll()?;
@@ -204,7 +208,7 @@ impl<'r, 's> Joint<'r, 's> {
         &self,
         step: &HyperTransition,
     ) -> Result<Matched, ExpansionStop> {
-        let Some(matcher) = self.existential else {
+        let Some(matcher) = self.seams.existential else {
             return Ok(Matched::Holds);
         };
         self.poll()?;

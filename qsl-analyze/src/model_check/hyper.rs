@@ -64,8 +64,7 @@ use std::rc::Rc;
 
 use qsl_eval::automaton::{AutomatonError, PropertyAutomaton};
 use qsl_eval::fairness::{
-    analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity,
-    Outcome as FairnessOutcome, Strength, Vertex,
+    analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
 };
 use qsl_eval::hyper::{
     cartesian, ComponentStep, Halt, HyperFinding, HyperInputs, HyperLetters, HyperProduct,
@@ -141,9 +140,10 @@ pub enum HyperRefusal {
     /// The negated body has no property automaton.
     #[error(transparent)]
     Automaton(#[from] AutomatonError),
-    /// An undefined evaluation of an HP-3 clause's universal side, where
-    /// FR-177 and QSpec FR-400 give the counterexample no path for the
-    /// existential variables.
+    /// An undefined evaluation of an HP-3 clause's universal side at a state
+    /// whose witness set is empty: no existential tuple is left to give the
+    /// counterexample a path for the existential variables, and FR-177 states
+    /// no verdict for it.
     #[error(
         "an undefined evaluation on the universal side of an HP-3 clause names no existential path"
     )]
@@ -426,6 +426,19 @@ enum Candidate {
 enum FirstHit {
     Violated(Box<HyperCounterexample>),
     Undecided(UndecidedCause),
+    /// An undefined evaluation whose counterexample FR-177 cannot state: an
+    /// HP-3 clause's universal side where no witness remains to name an
+    /// existential path. It ranks as the undefined evaluation it is, so only
+    /// when it comes first does it end the item.
+    Unstated,
+}
+
+/// Keep, of the refused findings of one state, the one at the earliest joint
+/// position; the first in the list on a tie.
+fn sooner(refused: &mut Option<(usize, UndecidedCause)>, depth: usize, cause: UndecidedCause) {
+    if refused.is_none_or(|(known, _)| depth < known) {
+        *refused = Some((depth, cause));
+    }
 }
 
 /// The second phase's result for one instance.
@@ -450,6 +463,8 @@ enum Exhausted {
 enum Verdict {
     Violated(Box<HyperCounterexample>),
     Undecided(UndecidedCause),
+    /// An undefined evaluation FR-177 gives no counterexample for.
+    Unstated,
 }
 
 /// The existential half of an undefined-evaluation counterexample's paths: the
@@ -542,6 +557,7 @@ impl<'a> Run<'_, 'a> {
                     cause,
                     stats: totals.stats(),
                 },
+                FirstHit::Unstated => return Err(HyperRefusal::NoPartnerPath.into()),
             });
         }
         let mut shortest: Option<(Box<HyperCounterexample>, usize)> = None;
@@ -568,8 +584,10 @@ impl<'a> Run<'_, 'a> {
     /// Decide an HP-3 item (FR-177): for each instance, the first phase's
     /// undefined evaluations and refused `match`es, and the second phase's
     /// empty witness sets with a fair universal cycle, ranked together by the
-    /// joint position they are at (ADR-023 HV-8). A later instance wins only
-    /// with a strictly earlier finding.
+    /// joint position they are at (ADR-023 HV-8). As FR-126 ranks bindings, a
+    /// later instance wins only with a strictly earlier finding: a finding
+    /// nothing can precede ends the run, and one at joint position 0 bounds
+    /// the later instances to their first phase at that position.
     fn decide_witness(
         &self,
         instances: &[Vec<ParameterBinding>],
@@ -580,34 +598,40 @@ impl<'a> Run<'_, 'a> {
         // before a refused `match` at one position, and a refused `match`
         // before an empty witness set, which it may have dropped a member of.
         let mut best: Option<(usize, u8, Verdict)> = None;
-        let mut offer = |position: usize, rank: u8, verdict: Verdict| {
-            if best
-                .as_ref()
-                .is_none_or(|(known, known_rank, _)| (position, rank) < (*known, *known_rank))
-            {
-                best = Some((position, rank, verdict));
-            }
-        };
         for instance in instances {
-            let run = match self.explore(instance, None, &mut totals)? {
+            // Only a finding at position 0 can bound a later instance: an
+            // empty witness set at a later position needs the fair cycle
+            // beyond it. At position 0 the set is empty rank 2, which no
+            // later finding of rank 2 can precede.
+            let cap = match best {
+                Some((0, 0, _)) => break,
+                Some((0, _, _)) => Some(0),
+                _ => None,
+            };
+            let run = match self.explore(instance, cap, &mut totals)? {
                 Ok(run) => run,
                 Err(outcome) => return Ok(outcome),
             };
             match self.first_phase(&run)? {
                 Some((depth, FirstHit::Violated(counterexample))) => {
-                    offer(depth, 0, Verdict::Violated(counterexample));
+                    Self::offer(&mut best, depth, 0, Verdict::Violated(counterexample));
                 }
                 Some((depth, FirstHit::Undecided(cause))) => {
-                    offer(depth, 1, Verdict::Undecided(cause));
+                    Self::offer(&mut best, depth, 1, Verdict::Undecided(cause));
+                }
+                Some((depth, FirstHit::Unstated)) => {
+                    Self::offer(&mut best, depth, 0, Verdict::Unstated);
                 }
                 None => {}
             }
-            match self.exhaustion(&run, &totals)? {
-                Exhausted::Lasso(counterexample, position) => {
-                    offer(position, 2, Verdict::Violated(counterexample));
+            if cap.is_none() {
+                match self.exhaustion(&run, &totals)? {
+                    Exhausted::Lasso(counterexample, position) => {
+                        Self::offer(&mut best, position, 2, Verdict::Violated(counterexample));
+                    }
+                    Exhausted::NoneFair => {}
+                    Exhausted::Stopped(outcome) => return Ok(outcome),
                 }
-                Exhausted::NoneFair => {}
-                Exhausted::Stopped(outcome) => return Ok(outcome),
             }
             explored.push(run);
         }
@@ -620,8 +644,59 @@ impl<'a> Run<'_, 'a> {
                 cause,
                 stats: totals.stats(),
             }),
+            Some((_, _, Verdict::Unstated)) => Err(HyperRefusal::NoPartnerPath.into()),
             None => self.clean(&explored, &totals),
         }
+    }
+
+    /// Keep `verdict` when it is at a strictly earlier (position, rank) than
+    /// `best`.
+    fn offer(best: &mut Option<(usize, u8, Verdict)>, position: usize, rank: u8, verdict: Verdict) {
+        if best
+            .as_ref()
+            .is_none_or(|(known, known_rank, _)| (position, rank) < (*known, *known_rank))
+        {
+            *best = Some((position, rank, verdict));
+        }
+    }
+
+    /// The fairness analysis of `model` within `within`; `Err(outcome)` is a
+    /// cancelled run.
+    fn analysed(
+        &self,
+        model: &FairModel,
+        within: &BTreeSet<Vertex>,
+        totals: &Totals,
+    ) -> Result<Result<Vec<Analysis>, HyperOutcome>, ModelCheckRefusal> {
+        match analyze(&model.graph, within, &model.constraints, self.cancel) {
+            Ok(analyses) => Ok(Ok(analyses)),
+            Err(FairnessError::Cancelled) => self.cancelled(totals).map(Err),
+            Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
+                Err(fault("the-fairness-graph-is-built-from-retained-states"))
+            }
+        }
+    }
+
+    /// The retained edges of the canonical loop (ADR-018 CX-5) of the fair
+    /// component `passing` from its vertex `entry`.
+    fn loop_path<'g>(
+        model: &FairModel,
+        graph: &'g HyperGraph,
+        passing: &Analysis,
+        entry: Vertex,
+    ) -> Result<Vec<&'g RetainedEdge<HyperTransition>>, ModelCheckRefusal> {
+        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
+        let walk = model.greedy_loop(&component, passing.removed(), entry)?;
+        model
+            .loop_edges(&walk)?
+            .into_iter()
+            .map(|(source, position)| {
+                graph
+                    .outgoing(source)
+                    .nth(position)
+                    .ok_or_else(|| fault("a-loop-edge-is-retained"))
+            })
+            .collect()
     }
 
     /// The second phase over one HP-3 instance (ADR-023 HC-2): among the
@@ -659,17 +734,11 @@ impl<'a> Run<'_, 'a> {
             .vertices()
             .filter(|vertex| empty.contains(&ProductStateId(vertex.index())))
             .collect();
-        let analyses = match analyze(&model.graph, &within, &model.constraints, self.cancel) {
+        let analyses = match self.analysed(&model, &within, totals)? {
             Ok(analyses) => analyses,
-            Err(FairnessError::Cancelled) => {
-                return self.cancelled(totals).map(Exhausted::Stopped);
-            }
-            Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
-                return Err(fault("the-fairness-graph-is-built-from-retained-states"));
-            }
+            Err(outcome) => return Ok(Exhausted::Stopped(outcome)),
         };
-        let mut fair = Vec::new();
-        fair_components(&analyses, &mut fair);
+        let fair: Vec<&Analysis> = Analysis::fair_in(&analyses).collect();
         let fair_states: BTreeSet<ProductStateId> = fair
             .iter()
             .flat_map(|analysis| analysis.vertices())
@@ -731,23 +800,13 @@ impl<'a> Run<'_, 'a> {
                     .any(|vertex| ProductStateId(vertex.index()) == entry)
             })
             .ok_or_else(|| fault("an-entry-lies-in-a-fair-component"))?;
-        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
         let vertex = passing
             .vertices()
             .iter()
             .copied()
             .find(|vertex| ProductStateId(vertex.index()) == entry)
             .ok_or_else(|| fault("an-entry-is-a-vertex"))?;
-        let walk = model.greedy_loop(&component, passing.removed(), vertex)?;
-        let mut loop_path = Vec::with_capacity(walk.len());
-        for (source, position) in model.loop_edges(&walk)? {
-            loop_path.push(
-                graph
-                    .outgoing(source)
-                    .nth(position)
-                    .ok_or_else(|| fault("a-loop-edge-is-retained"))?,
-            );
-        }
+        let loop_path = Self::loop_path(&model, graph, passing, vertex)?;
         let (root, mut stem) = tree_path(graph, first);
         stem.extend(connect);
         let mut path = stem.clone();
@@ -1197,8 +1256,11 @@ impl<'a> Run<'_, 'a> {
                                 ),
                             );
                         } else if finding.is_refused_contract() {
-                            refused
-                                .get_or_insert((state.depth, UndecidedCause::UndecidedSuccessor));
+                            sooner(
+                                &mut refused,
+                                state.depth,
+                                UndecidedCause::UndecidedSuccessor,
+                            );
                         }
                     }
                     HyperFinding::MatchUndefined {
@@ -1240,13 +1302,18 @@ impl<'a> Run<'_, 'a> {
                         ),
                     ),
                     HyperFinding::MatchRefused => {
-                        refused.get_or_insert((
+                        sooner(
+                            &mut refused,
                             state.depth.saturating_add(1),
                             UndecidedCause::MatchUndetermined,
-                        ));
+                        );
                     }
                     HyperFinding::MemberContract => {
-                        refused.get_or_insert((state.depth, UndecidedCause::UndecidedSuccessor));
+                        sooner(
+                            &mut refused,
+                            state.depth,
+                            UndecidedCause::UndecidedSuccessor,
+                        );
                     }
                     HyperFinding::Enabled { .. } => {}
                 }
@@ -1261,8 +1328,15 @@ impl<'a> Run<'_, 'a> {
                 Some((depth, FirstHit::Undecided(cause)))
             }
             Some((depth, _, Candidate::Found(id, found))) => {
-                let counterexample = self.undefined_counterexample(run, id, found)?;
-                Some((depth, FirstHit::Violated(Box::new(counterexample))))
+                match self.undefined_counterexample(run, id, found) {
+                    Ok(counterexample) => {
+                        Some((depth, FirstHit::Violated(Box::new(counterexample))))
+                    }
+                    Err(ModelCheckRefusal::Hyper(HyperRefusal::NoPartnerPath)) => {
+                        Some((depth, FirstHit::Unstated))
+                    }
+                    Err(other) => return Err(other),
+                }
             }
         })
     }
@@ -1394,6 +1468,24 @@ impl<'a> Run<'_, 'a> {
         Ok((initial, steps))
     }
 
+    /// The partner of the first member of `state`'s witness set, which the
+    /// existential paths of an undefined evaluation on the universal side
+    /// follow.
+    ///
+    /// # Errors
+    ///
+    /// [`HyperRefusal::NoPartnerPath`] when the set is empty.
+    fn first_partner(state: &HyperState) -> Result<Rc<Partner>, ModelCheckRefusal> {
+        match &state.property {
+            Property::Witnesses(set) => set
+                .members()
+                .first()
+                .map(|member| Rc::clone(member.partner()))
+                .ok_or_else(|| HyperRefusal::NoPartnerPath.into()),
+            _ => Err(fault("a-witness-state-holds-a-witness-set")),
+        }
+    }
+
     /// The undefined-evaluation counterexample for `found` at `at` (ADR-023
     /// HV-8): the tree path to `at` for every trace variable, then the joint
     /// step a `μ` finding names. An HP-3 clause's existential variables follow
@@ -1441,13 +1533,18 @@ impl<'a> Run<'_, 'a> {
                 conjunct,
                 cause,
             } => {
-                if self.witness {
-                    return Err(HyperRefusal::NoPartnerPath.into());
-                }
+                // An HP-3 clause names the universal variables alone, and the
+                // existential paths end at the pre-state: the first member's.
+                let named = if self.witness {
+                    partner = Some(Self::first_partner(&state.state)?);
+                    variables.into_iter().take(universals).collect()
+                } else {
+                    variables
+                };
                 (
                     stem.saturating_add(1),
                     posts.clone(),
-                    variables,
+                    named,
                     HyperLocus::Match { conjunct },
                     None,
                     cause,
@@ -1487,16 +1584,7 @@ impl<'a> Run<'_, 'a> {
                 cause,
             } => {
                 if self.witness {
-                    partner = match &state.state.property {
-                        Property::Witnesses(set) => set
-                            .members()
-                            .first()
-                            .map(|member| Rc::clone(member.partner())),
-                        _ => None,
-                    };
-                    if partner.is_none() {
-                        return Err(HyperRefusal::NoPartnerPath.into());
-                    }
+                    partner = Some(Self::first_partner(&state.state)?);
                 }
                 let digests = self.digests(&state.state)?;
                 let digest = digests
@@ -1749,35 +1837,18 @@ impl<'a> Run<'_, 'a> {
             constraints,
         };
         let all: BTreeSet<Vertex> = model.graph.vertices().collect();
-        let analyses = match analyze(&model.graph, &all, &model.constraints, self.cancel) {
+        let analyses = match self.analysed(&model, &all, totals)? {
             Ok(analyses) => analyses,
-            Err(FairnessError::Cancelled) => {
-                return self.cancelled(totals).map(Second::Stopped);
-            }
-            Err(FairnessError::UnknownVertex { .. } | FairnessError::EmptyLoop) => {
-                return Err(fault("the-fairness-graph-is-built-from-retained-states"));
-            }
+            Err(outcome) => return Ok(Second::Stopped(outcome)),
         };
         let Some(passing) = Analysis::first_fair_in(&analyses) else {
             return Ok(Second::NoneFair);
         };
-        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
         let Some(entry) = passing.vertices().first().copied() else {
             return Err(fault("a-component-has-a-vertex"));
         };
-        let walk = model.greedy_loop(&component, passing.removed(), entry)?;
-        let loop_edges = model.loop_edges(&walk)?;
-        let entry = ProductStateId(entry.index());
-        let (root, stem) = tree_path(&run.graph, entry);
-        let mut loop_path = Vec::with_capacity(loop_edges.len());
-        for (source, position) in loop_edges {
-            loop_path.push(
-                run.graph
-                    .outgoing(source)
-                    .nth(position)
-                    .ok_or_else(|| fault("a-loop-edge-is-retained"))?,
-            );
-        }
+        let loop_path = Self::loop_path(&model, &run.graph, passing, entry)?;
+        let (root, stem) = tree_path(&run.graph, ProductStateId(entry.index()));
         let mut path = stem.clone();
         path.extend(loop_path.iter().copied());
         let traces = self.traces(run, root, &path, None, None)?;
@@ -1856,21 +1927,6 @@ impl<'a> Run<'_, 'a> {
             }
             _ => return Err(fault("the-evaluator-confirms-the-automaton")),
         })
-    }
-}
-
-/// The fair components among `analyses`, depth first through each refinement
-/// (ADR-019 FS-6), in order.
-fn fair_components<'a>(analyses: &'a [Analysis], found: &mut Vec<&'a Analysis>) {
-    for analysis in analyses {
-        match analysis.outcome() {
-            FairnessOutcome::Fair => found.push(analysis),
-            FairnessOutcome::UnfairStrong { sub, .. }
-            | FairnessOutcome::UnfairVisibility { sub, .. } => fair_components(sub, found),
-            FairnessOutcome::Trivial
-            | FairnessOutcome::MissingAcceptance { .. }
-            | FairnessOutcome::UnfairWeak { .. } => {}
-        }
     }
 }
 
