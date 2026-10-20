@@ -467,10 +467,10 @@ fn an_atom_with_no_value_makes_the_body_undefined_at_the_first_such_joint_positi
 }
 
 /// FR-175 covers lockstep only: a clause with `align skip` (FR-178) is read
-/// over projected prefixes, and the lockstep evaluator refuses it.
+/// over projected prefixes, and the lockstep evaluator refuses it for good.
 #[trace("TC-600")]
 #[test]
-fn a_clause_with_align_skip_is_refused_as_not_yet_implemented() {
+fn a_clause_with_align_skip_is_refused_in_lockstep() {
     let fixture = fixture_with(
         vec![increment(), acquire()],
         "align skip { M::Counter::acquire }",
@@ -486,10 +486,14 @@ fn a_clause_with_align_skip_is_refused_as_not_yet_implemented() {
         None,
     )
     .expect_err("align skip is not lockstep");
-    assert_eq!(refusal, TemporalRefusal::AlignSkipNotImplemented);
+    assert_eq!(refusal, TemporalRefusal::AlignSkipNotLockstep);
     assert_eq!(
         refusal.catalog_code(),
-        qsl_foundation::CatalogCode::new("unsupported_construct", "not-yet-implemented")
+        qsl_foundation::CatalogCode::new("unsupported_construct", "expression-form")
+    );
+    assert_eq!(
+        refusal.to_string(),
+        "a clause with `align skip` is read over projected prefixes, not in lockstep"
     );
 }
 
@@ -661,7 +665,7 @@ fn every_component_reads_the_same_projected_position_without_stuttering() {
 /// FR-178-AC-3, undefined: an atom with no value at a projected position makes
 /// the body undefined there, with its cause; the prefix is neither true nor
 /// false.
-#[trace("TC-603", "FR-178-AC-3")]
+#[trace("TC-603")]
 #[test]
 fn an_atom_with_no_value_in_a_prefix_is_undefined_at_its_projected_position() {
     let fixture = projected("always holds(1 / c.value @ a = 1)");
@@ -678,7 +682,7 @@ fn an_atom_with_no_value_in_a_prefix_is_undefined_at_its_projected_position() {
 
 /// FR-178 "Three-valued prefix evaluation": a prefix holds the initial
 /// position at least.
-#[trace("TC-603", "FR-178-AC-3")]
+#[trace("TC-603")]
 #[test]
 fn a_prefix_of_no_position_is_refused() {
     let fixture = projected(ALWAYS_EQUAL);
@@ -687,4 +691,22 @@ fn a_prefix_of_no_position_is_refused() {
     let refusal = evaluate_projected_prefix(&fixture.clause, 0, &mut letters, &mut meter)
         .expect_err("an empty prefix");
     assert_eq!(refusal, TemporalRefusal::EmptyTrace);
+}
+
+/// A projected prefix is read for a projection-aligned clause only: a
+/// lockstep clause, which has no `align skip`, is refused rather than read
+/// with a form it was not checked under.
+#[trace("TC-603")]
+#[test]
+fn a_clause_without_align_skip_is_refused_a_projected_prefix() {
+    let fixture = fixture(ALWAYS_EQUAL);
+    let mut letters = Letters::new(&fixture, vec![vec![0], vec![0]]);
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let refusal = evaluate_projected_prefix(&fixture.clause, 1, &mut letters, &mut meter)
+        .expect_err("a lockstep clause has no projection");
+    assert_eq!(refusal, TemporalRefusal::NotProjectionAligned);
+    assert_eq!(
+        refusal.catalog_code(),
+        qsl_foundation::CatalogCode::new("unsupported_construct", "expression-form")
+    );
 }

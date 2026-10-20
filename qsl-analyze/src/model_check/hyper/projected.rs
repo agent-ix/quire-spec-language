@@ -13,8 +13,8 @@ use qsl_replay::{
 use quire_exact::Meter;
 
 use super::{
-    exhausted, fault, tree_path, widen, FirstHit, HyperRefusal, ModelCheckRefusal, Positions,
-    ProductStateId, RetainedEdge, Run, Totals,
+    exhausted, fault, tree_path, widen, ModelCheckRefusal, Positions, ProductStateId, RetainedEdge,
+    Run, Totals,
 };
 
 impl Run<'_, '_> {
@@ -29,52 +29,20 @@ impl Run<'_, '_> {
         mut totals: Totals,
     ) -> Result<HyperOutcome, ModelCheckRefusal> {
         let horizon = self.request.max_depth;
-        let mut best: Option<(usize, FirstHit)> = None;
-        let mut bounded = false;
-        for instance in instances {
-            // A later instance wins only with a strictly shallower finding, so
-            // it is explored only through the depth that finding would need
-            // and not at all past a finding at depth 0.
-            let cap = match best {
-                Some((0, _)) => break,
-                Some((depth, _)) => Some(depth),
-                None => horizon,
-            };
-            let run = match self.explore(instance, cap, &mut totals)? {
-                Ok(run) => run,
-                Err(outcome) => return Ok(outcome),
-            };
-            bounded |= best.is_none() && run.bounded;
-            if let Some((depth, hit)) = self.first_phase(&run, &totals)? {
-                if let FirstHit::Stopped(outcome) = hit {
-                    return Ok(outcome);
-                }
-                if best.as_ref().is_none_or(|(known, _)| depth < *known) {
-                    best = Some((depth, hit));
-                }
-            }
+        let ranked = match self.rank_instances(instances, horizon, &mut totals)? {
+            Ok(ranked) => ranked,
+            Err(outcome) => return Ok(outcome),
+        };
+        match (ranked.best, ranked.bounded, horizon) {
+            (Some((_, hit)), _, _) => Self::finding(hit, &totals),
+            (None, true, Some(depth)) => Ok(HyperOutcome::BoundReached {
+                depth: widen(depth),
+                stats: totals.stats(),
+            }),
+            (None, _, _) => Ok(HyperOutcome::Holds {
+                stats: totals.stats(),
+            }),
         }
-        Ok(match best {
-            Some((_, FirstHit::Violated(counterexample))) => HyperOutcome::Violated {
-                counterexample,
-                stats: totals.stats(),
-            },
-            Some((_, FirstHit::Undecided(cause))) => HyperOutcome::Undecided {
-                cause,
-                stats: totals.stats(),
-            },
-            Some((_, FirstHit::Stopped(outcome))) => outcome,
-            Some((_, FirstHit::Unstated)) => return Err(HyperRefusal::NoPartnerPath.into()),
-            None => match (bounded, horizon) {
-                (true, Some(depth)) => HyperOutcome::BoundReached {
-                    depth: widen(depth),
-                    stats: totals.stats(),
-                },
-                _ => HyperOutcome::Holds {
-                    stats: totals.stats(),
-                },
-            },
-        })
     }
 
     /// Whether `transition` is a skip move: a component takes a skipped step.

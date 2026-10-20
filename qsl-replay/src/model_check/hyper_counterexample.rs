@@ -117,9 +117,10 @@ pub enum HyperCounterexampleKind {
     },
     /// HP-6: one finite trace per variable to a rejecting state of the body's
     /// safety monitor, each step marked skipped or visible. Every trace has
-    /// the same number of visible steps and the traces are of unequal total
-    /// length (ADR-023 PA-6); there is no loop, and `trace_position` is the
-    /// projected position the visible steps reach.
+    /// the same number of visible steps; the total lengths are free, and
+    /// differ when a trace takes skipped steps (ADR-023 PA-6). There is no
+    /// loop, and `trace_position` is the projected position the visible steps
+    /// reach.
     Projected,
     /// Any form: the traces are finite paths to the state an undefined
     /// evaluation reads, one per trace variable (ADR-023 HV-8).
@@ -179,8 +180,18 @@ impl FamilyPayload for HyperCounterexample {
 impl HyperCounterexample {
     /// The number of steps every trace of a `Lockstep` counterexample has,
     /// and of an `Undefined` one's paths in lockstep. A `Projected`
-    /// counterexample's traces differ in step count.
+    /// counterexample's traces may differ in step count.
     pub fn steps(&self) -> usize {
         self.traces.first().map_or(0, |trace| trace.steps.len())
+    }
+
+    /// Whether the marks agree with the kind (QSpec FR-400): a `Projected`
+    /// counterexample marks every step of every trace, and any other kind
+    /// marks none.
+    pub fn marks_match_kind(&self) -> bool {
+        self.traces.iter().all(|trace| match self.kind {
+            HyperCounterexampleKind::Projected => trace.marks.len() == trace.steps.len(),
+            _ => trace.marks.is_empty(),
+        })
     }
 }

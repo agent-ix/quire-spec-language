@@ -374,6 +374,11 @@ pub(crate) fn low_of(state: &ModelSimState, key: &str) -> i64 {
     field_of(state, key, "l")
 }
 
+/// The `busy` of the vault at `state`, for a busy vault.
+pub(crate) fn busy_of(state: &ModelSimState) -> i64 {
+    field_of(state, KEY, "busy")
+}
+
 /// The `h` of the vault at `state`.
 pub(crate) fn high(state: &ModelSimState) -> i64 {
     field_of(state, KEY, "h")
@@ -671,7 +676,7 @@ fn is_step(operation: &str) -> bool {
 
 /// The argument `i` of a `step` label: `Some` exactly when the step is a
 /// `step`, and its integer.
-fn input_of(label: &StepLabel<'_>) -> Option<i64> {
+pub(crate) fn input_of(label: &StepLabel<'_>) -> Option<i64> {
     match label {
         StepLabel::Operation(transition) if is_step(transition.operation()) => {
             let [argument] = transition.arguments() else {

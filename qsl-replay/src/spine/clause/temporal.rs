@@ -282,7 +282,8 @@ fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
         TemporalRefusal::TupleArity { expected, found } => {
             TemporalTraceRefusal::TupleArity { expected, found }
         }
-        TemporalRefusal::AlignSkipNotImplemented => TemporalTraceRefusal::AlignSkipNotImplemented,
+        TemporalRefusal::AlignSkipNotLockstep => TemporalTraceRefusal::AlignSkipNotLockstep,
+        TemporalRefusal::NotProjectionAligned => TemporalTraceRefusal::NotProjectionAligned,
         TemporalRefusal::EmptyLoop => TemporalTraceRefusal::EmptyLoop,
         TemporalRefusal::TraceTooLong => TemporalTraceRefusal::TraceTooLong,
         TemporalRefusal::LassoUnderBoundedProfile { profile } => {

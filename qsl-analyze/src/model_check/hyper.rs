@@ -504,6 +504,14 @@ fn sooner(refused: &mut Option<(usize, UndecidedCause)>, depth: usize, cause: Un
     }
 }
 
+/// The explored instances and the first-phase finding that ranks first.
+struct Ranked<'r, 'a> {
+    explored: Vec<Explored<'r, 'a>>,
+    best: Option<(usize, FirstHit)>,
+    /// Whether the search horizon cut an instance explored before any finding.
+    bounded: bool,
+}
+
 /// The second phase's result for one instance.
 enum Second {
     /// The shortest passing lasso, with its length in joint steps.
@@ -592,46 +600,14 @@ impl<'a> Run<'_, 'a> {
         if self.projected {
             return self.decide_projected(instances, totals);
         }
-        let mut explored = Vec::with_capacity(instances.len());
-        let mut best: Option<(usize, FirstHit)> = None;
-        for instance in instances {
-            // FR-126 "Bindings and ranking": a later instance wins only with
-            // a strictly shallower finding, so it is explored only through
-            // the depth that finding would need (every state shallower than
-            // the best is expanded) and not at all past a finding at depth 0.
-            let cap = match best {
-                Some((0, _)) => break,
-                Some((depth, _)) => Some(depth),
-                None => None,
-            };
-            let run = match self.explore(instance, cap, &mut totals)? {
-                Ok(run) => run,
-                Err(outcome) => return Ok(outcome),
-            };
-            if let Some((depth, hit)) = self.first_phase(&run, &totals)? {
-                if let FirstHit::Stopped(outcome) = hit {
-                    return Ok(outcome);
-                }
-                if best.as_ref().is_none_or(|(known, _)| depth < *known) {
-                    best = Some((depth, hit));
-                }
-            }
-            explored.push(run);
+        let ranked = match self.rank_instances(instances, None, &mut totals)? {
+            Ok(ranked) => ranked,
+            Err(outcome) => return Ok(outcome),
+        };
+        if let Some((_, hit)) = ranked.best {
+            return Self::finding(hit, &totals);
         }
-        if let Some((_, hit)) = best {
-            return Ok(match hit {
-                FirstHit::Violated(counterexample) => HyperOutcome::Violated {
-                    counterexample,
-                    stats: totals.stats(),
-                },
-                FirstHit::Undecided(cause) => HyperOutcome::Undecided {
-                    cause,
-                    stats: totals.stats(),
-                },
-                FirstHit::Stopped(outcome) => outcome,
-                FirstHit::Unstated => return Err(HyperRefusal::NoPartnerPath.into()),
-            });
-        }
+        let explored = ranked.explored;
         let mut shortest: Option<(Box<HyperCounterexample>, usize)> = None;
         for run in &explored {
             match self.second_phase(run, &totals)? {
@@ -651,6 +627,66 @@ impl<'a> Run<'_, 'a> {
             });
         }
         self.clean(&explored, &totals)
+    }
+
+    /// Explore each instance and rank their first-phase findings as FR-126
+    /// "Bindings and ranking" does: a later instance wins only with a
+    /// strictly shallower finding, so it is explored only through the depth
+    /// that finding would need (every state shallower than the best is
+    /// expanded) and not at all past a finding at depth 0. `horizon` is the
+    /// search horizon of an instance explored before any finding. `Err` is an
+    /// outcome that ended the run, a stopped exploration or evaluator.
+    fn rank_instances<'x>(
+        &'x self,
+        instances: &'x [Vec<ParameterBinding>],
+        horizon: Option<usize>,
+        totals: &mut Totals,
+    ) -> Result<Result<Ranked<'x, 'a>, HyperOutcome>, ModelCheckRefusal> {
+        let mut explored = Vec::with_capacity(instances.len());
+        let mut best: Option<(usize, FirstHit)> = None;
+        let mut bounded = false;
+        for instance in instances {
+            let cap = match best {
+                Some((0, _)) => break,
+                Some((depth, _)) => Some(depth),
+                None => horizon,
+            };
+            let run = match self.explore(instance, cap, totals)? {
+                Ok(run) => run,
+                Err(outcome) => return Ok(Err(outcome)),
+            };
+            bounded |= best.is_none() && run.bounded;
+            if let Some((depth, hit)) = self.first_phase(&run, totals)? {
+                if let FirstHit::Stopped(outcome) = hit {
+                    return Ok(Err(outcome));
+                }
+                if best.as_ref().is_none_or(|(known, _)| depth < *known) {
+                    best = Some((depth, hit));
+                }
+            }
+            explored.push(run);
+        }
+        Ok(Ok(Ranked {
+            explored,
+            best,
+            bounded,
+        }))
+    }
+
+    /// The outcome of a first-phase finding.
+    fn finding(hit: FirstHit, totals: &Totals) -> Result<HyperOutcome, ModelCheckRefusal> {
+        Ok(match hit {
+            FirstHit::Violated(counterexample) => HyperOutcome::Violated {
+                counterexample,
+                stats: totals.stats(),
+            },
+            FirstHit::Undecided(cause) => HyperOutcome::Undecided {
+                cause,
+                stats: totals.stats(),
+            },
+            FirstHit::Stopped(outcome) => outcome,
+            FirstHit::Unstated => return Err(HyperRefusal::NoPartnerPath.into()),
+        })
     }
 
     /// Decide an HP-3 item (FR-177): for each instance, the first phase's

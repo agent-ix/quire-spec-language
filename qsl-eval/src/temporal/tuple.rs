@@ -26,7 +26,7 @@
 
 use std::collections::HashMap;
 
-use qsl_semantics::check::{Activation, CheckedHyperClause, FormulaNodeId};
+use qsl_semantics::check::{Activation, CheckedHyperClause, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits};
 
 use super::engine::{self, bad_prefix_bound, Goal, Subject};
@@ -325,7 +325,7 @@ pub fn evaluate_tuple<L: TupleLetters>(
         });
     }
     if !body.align_skip().is_empty() {
-        return Err(TemporalRefusal::AlignSkipNotImplemented);
+        return Err(TemporalRefusal::AlignSkipNotLockstep);
     }
     let trace = joint(components)?;
     let TemporalTrace::Lasso { prefix, loop_len } = trace else {
@@ -400,14 +400,19 @@ impl<L: TupleLetters> TemporalLetters for Projected<'_, L> {
 ///
 /// # Errors
 ///
-/// [`TemporalRefusal::EmptyTrace`] when `len` is 0, since position 0 is
-/// always projected.
+/// [`TemporalRefusal::NotProjectionAligned`] when the clause is not an
+/// `align skip` (HP-6) clause, whose profile alone makes a finite trace a
+/// prefix; [`TemporalRefusal::EmptyTrace`] when `len` is 0, since position 0
+/// is always projected.
 pub fn evaluate_projected_prefix<L: TupleLetters>(
     body: &CheckedHyperClause,
     len: u64,
     letters: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
+    if !matches!(body.form(), Some(HyperForm::ProjectionAligned)) {
+        return Err(TemporalRefusal::NotProjectionAligned);
+    }
     if len == 0 {
         return Err(TemporalRefusal::EmptyTrace);
     }
