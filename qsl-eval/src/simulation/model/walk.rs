@@ -211,3 +211,28 @@ pub(super) fn expand_state(
         findings,
     })
 }
+
+/// Every transition identity of `state`, enabled or not, in canonical
+/// transition order (FR-156 "Candidates", FR-101): each application of each
+/// object's operations to every argument vector of its parameter domains.
+pub(super) fn identities_of(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+) -> Result<Vec<ModelTransition>, ExpansionStop> {
+    let walk = walk_of(system, state, None)?;
+    let mut budget = Budget {
+        used: 0,
+        max: system.limits.max_candidates,
+    };
+    let mut found = Vec::new();
+    for row in &walk.rows {
+        let Some(applications) = system.applications.get(&row.type_id()) else {
+            continue;
+        };
+        for application in applications {
+            frames::identities(&walk, row, application, &mut budget, &mut found)?;
+        }
+    }
+    found.sort();
+    Ok(found)
+}

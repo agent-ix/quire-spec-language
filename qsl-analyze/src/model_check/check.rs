@@ -74,8 +74,8 @@ use qsl_foundation::InternalFault;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
     Instance, ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelStep, ProductStateRef, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
-    UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    ModelStep, ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats,
+    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
@@ -84,6 +84,7 @@ use quire_exact::{Cancel, Meter};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use quire_semantic_value::model_transition::ModelTransition;
 
+use super::ample::{Atoms, Por};
 use super::concretise::{Lift, LiftStop};
 use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
 
@@ -159,10 +160,15 @@ pub enum ModelCheckRefusal {
         /// The request's constraint name.
         name: String,
     },
-    /// A liveness clause with a state constraint or partial-order reduction
-    /// selected: the liveness engine runs reduced under symmetry only.
-    #[error("EN-1 does not decide a liveness clause under a state constraint or partial-order reduction yet")]
+    /// A liveness clause with a state constraint selected: the liveness
+    /// engine runs reduced under symmetry and partial-order reduction only.
+    #[error("EN-1 does not decide a liveness clause under a state constraint yet")]
     ReducedLiveness,
+    /// FR-155: partial-order reduction needs a footprint of an atom or a
+    /// state constraint that reads through a form QSpec FR-383 gives no
+    /// rule for.
+    #[error(transparent)]
+    Footprint(#[from] qsl_eval::simulation::model::FootprintError),
     /// A refinement with a hidden field, which needs the AX-2 candidate set
     /// of abstract states (QSL-545).
     #[error("EN-1 does not decide a refinement with a hidden field yet")]
@@ -251,6 +257,19 @@ type Step<T> = Result<T, Halt>;
 
 /// What reading a position found, and the instance that found it.
 type Finding = (CounterexampleKind, usize);
+
+/// One successor of an expansion: the transition identity's order bytes, the
+/// successor's state-key bytes and digest, the transition (none for the
+/// terminal stutter), the canonical state and the permutation that
+/// canonicalised it.
+type Successor = (
+    Vec<u8>,
+    Vec<u8>,
+    DigestRecord,
+    Option<ModelTransition>,
+    ModelSimState,
+    Permutation,
+);
 
 /// An ended run, or a refusal discovered after exploration started.
 enum Halt {
@@ -377,6 +396,7 @@ pub fn check_model(
         group: SymmetryGroup::default(),
         constraint: None,
         boundary: 0,
+        por: None,
     };
     if let Some(source) = root_cancelled {
         return Ok(ModelCheckOutcome::Stopped {
@@ -553,6 +573,11 @@ fn check_reduced(
             group: plan.group.clone(),
             constraint: reductions.constraint.as_deref(),
             boundary: 0,
+            por: if reductions.partial_order {
+                Some(por_of(&system, &item, reductions.constraint.as_deref())?)
+            } else {
+                None
+            },
         };
         let explored = run.explore();
         total = sum(total, run.stats());
@@ -612,6 +637,12 @@ fn check_reduced(
             }
         }
     }
+    if reductions.partial_order {
+        applied.push(AppliedReduction::PartialOrder {
+            proviso: Proviso::BreadthFirstRevisit,
+        });
+    }
+    let max_depth = widen(request.max_depth.unwrap_or(0));
     Ok(if boundary > 0 {
         ModelCheckOutcome::Reduction {
             cause: ReductionCause::ConstraintReached {
@@ -619,9 +650,16 @@ fn check_reduced(
             },
             stats: total,
         }
+    } else if horizon && reductions.partial_order {
+        // ADR-021 RV-5: a reduced graph does not keep short counterexamples
+        // short, so a partial-order run to the horizon proves no bound.
+        ModelCheckOutcome::Reduction {
+            cause: ReductionCause::Horizon { max_depth },
+            stats: total,
+        }
     } else if horizon {
         ModelCheckOutcome::BoundReached {
-            depth: widen(request.max_depth.unwrap_or(0)),
+            depth: max_depth,
             stats: total,
         }
     } else {
@@ -630,6 +668,34 @@ fn check_reduced(
             stats: total,
         }
     })
+}
+
+/// The inputs of ample-set choice for `item` over `system` under the state
+/// constraint `constraint` (FR-156 "Atom footprints", "Visibility").
+fn por_of<'r, 'a>(
+    system: &'r ModelSystem<'a>,
+    item: &'r Item<'r>,
+    constraint: Option<&str>,
+) -> Result<Por<'r, 'a>, ModelCheckRefusal> {
+    match item {
+        Item::Clause {
+            bindings,
+            letters,
+            fairness,
+            atoms,
+            ..
+        } => Por::new(
+            system,
+            Some(Atoms {
+                letters: *letters,
+                nodes: atoms,
+            }),
+            bindings,
+            fairness,
+            constraint,
+        ),
+        Item::Deadlock => Por::new(system, None, &[], &[], constraint),
+    }
 }
 
 /// What FR-159's pre-check admits: the run's group, or an outcome it
@@ -781,6 +847,9 @@ struct Run<'r, 'a> {
     constraint: Option<&'r str>,
     /// The boundary states stored.
     boundary: usize,
+    /// The inputs of ample-set choice when partial-order reduction is
+    /// selected (FR-156).
+    por: Option<Por<'r, 'a>>,
 }
 
 impl Run<'_, '_> {
@@ -895,7 +964,12 @@ impl Run<'_, '_> {
             if self.nodes[at].boundary {
                 continue;
             }
-            let expansion = match self.system.successors(&self.nodes[at].state) {
+            let expanded = if self.por.is_some() {
+                self.system.successors_enforced(&self.nodes[at].state)
+            } else {
+                self.system.successors(&self.nodes[at].state)
+            };
+            let expansion = match expanded {
                 Ok(expansion) => expansion,
                 Err(stop) => return Err(self.expansion_stop(stop)),
             };
@@ -956,6 +1030,7 @@ impl Run<'_, '_> {
                 self.horizon_cut |= unexplored;
                 continue;
             }
+            self.ample(at, &before, &mut steps)?;
             for (_, key, digest, transition, state, permutation) in steps {
                 if self.edges >= self.limits.limits.max_transitions {
                     return Err(Self::stopped(
@@ -981,6 +1056,61 @@ impl Run<'_, '_> {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// FR-156: keep of `steps`, the canonical successors of node `at`, those
+    /// through its ample set. A step through the terminal stutter edge or a
+    /// state with a single enabled transition is kept; so is every step when
+    /// no candidate satisfies C2 and C3.
+    fn ample(&mut self, at: usize, before: &[StateId], steps: &mut Vec<Successor>) -> Step<()> {
+        if self.por.is_none() {
+            return Ok(());
+        }
+        let mut enabled: Vec<ModelTransition> =
+            steps.iter().filter_map(|step| step.3.clone()).collect();
+        enabled.sort();
+        enabled.dedup();
+        if enabled.len() <= 1 {
+            return Ok(());
+        }
+        // C3 on product states (POR-8): a step is fresh when its product
+        // state is bad, which is always created, or not yet discovered.
+        let depth = self.nodes[at].depth;
+        let mut fresh: Vec<bool> = Vec::with_capacity(steps.len());
+        for (_, key, digest, _, state, permutation) in steps.iter() {
+            let node = Node {
+                state: state.clone(),
+                digest: *digest,
+                depth: depth.saturating_add(1),
+                parent: Some((at, None)),
+                initial_index: self.nodes[at].initial_index,
+                monitor: Vec::new(),
+                permutation: permutation.clone(),
+                boundary: false,
+            };
+            let (after, bad) = self.advance(&node, before)?;
+            fresh.push(bad.is_some() || !self.known.contains_key(&(key.clone(), after)));
+        }
+        let reaches_known = |transition: &ModelTransition| {
+            steps
+                .iter()
+                .zip(&fresh)
+                .any(|(step, fresh)| step.3.as_ref() == Some(transition) && !fresh)
+        };
+        let chosen = match self.por.as_ref() {
+            Some(por) => por
+                .ample(&self.nodes[at].state, &enabled, &|transition| {
+                    !reaches_known(transition)
+                })
+                .map_err(|stop| self.expansion_stop(stop))?,
+            None => return Err(fault("partial-order-run-has-its-inputs").into()),
+        };
+        steps.retain(|step| {
+            step.3
+                .as_ref()
+                .is_none_or(|transition| chosen.contains(transition))
+        });
         Ok(())
     }
 

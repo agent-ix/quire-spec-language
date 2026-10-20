@@ -9,6 +9,7 @@
 //! reusable machinery; a graph outcome alone is FR-101's exploration
 //! outcome, never a proof of a temporal property.
 
+mod ample;
 mod check;
 mod concretise;
 mod graph;
@@ -20,10 +21,11 @@ mod refine;
 mod scc;
 mod state_graph;
 
+pub use ample::{Atoms, Por};
 pub use check::{check_model, ModelCheckRefusal, ModelCheckRequest};
 pub use graph::{
-    retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
-    RetainedState,
+    retain, retain_reduced, Ample, Choice, GraphExploration, ProductStateId, RetainedEdge,
+    RetainedGraph, RetainedState,
 };
 pub use liveness::LivenessRefusal;
 pub use product::{

@@ -8,7 +8,7 @@
 //! counters over `Int[0, 3]` that `bump` increments below 3 (`COUNT`). Every
 //! counterexample is read back by re-executing its steps through
 //! `ModelSystem`. Liveness items under a reduction, partial-order reduction
-//! and the obligation identity are not covered here.
+//! (`crate::partial_order`) and the obligation identity are not covered here.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,7 +29,7 @@ use qsl_replay::{
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue,
     ProofBasis, ReachedLimit, ReductionCause, ReductionKind, ResultLabel, RunStats,
-    SettlementBasis, SymmetryBrokenCause, TerminalValue, UndefinedLocus,
+    SettlementBasis, SymmetryBrokenCause, TerminalValue, UnavailabilityCause, UndefinedLocus,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::fairness::PropertyForm;
@@ -881,12 +881,12 @@ impl TransitionSystem for Bare {
     }
 }
 
-/// FR-159-AC-3's first sentence: over a system whose `offered_reductions`
-/// is `NONE`, a request selecting partial-order reduction, symmetry or a
-/// constraint is not offered, naming the reduction; over `ModelSystem`,
-/// symmetry and constraints are offered and a selection of each is
-/// admitted, while partial-order reduction settles V-8
-/// `unsupported-requested-capability`.
+/// FR-159-AC-3's first sentence and FR-162-AC-1's second: over a system
+/// whose `offered_reductions` is `NONE`, a request selecting partial-order
+/// reduction, symmetry or a constraint is not offered, naming the reduction,
+/// and each settles V-8 `unsupported-requested-capability`; `ModelSystem`
+/// offers all three.
+#[trace("TC-587", "FR-162-AC-1")]
 #[test]
 fn a_reduction_the_system_does_not_offer_settles_unsupported() {
     assert_eq!(Bare.offered_reductions(), OfferedReductions::NONE);
@@ -905,33 +905,45 @@ fn a_reduction_the_system_does_not_offer_settles_unsupported() {
     let world = count(&[infinite("always holds(x.v <= 3)")]);
     let system = world.system();
     assert_eq!(unoffered(&constraint("Low"), &system), None);
-    let outcome = run(
-        &world,
-        Some(0),
-        vec![atom(|v| Some(v <= 3))],
-        partial_order(),
-    );
-    assert_eq!(
-        settled(&outcome),
-        ReductionCause::Unsupported {
-            reduction: ReductionKind::PartialOrder
-        }
-    );
-    let record = settle(&world, &outcome);
-    assert_eq!(record.label, ResultLabel::Unsupported);
-    assert_eq!(record.value.category(), Category::Unsupported);
+    assert_eq!(unoffered(&partial_order(), &system), None);
+    assert_eq!(unoffered(&symmetry(&[&["a", "b"]]), &system), None);
+    for reduction in [
+        ReductionKind::Symmetry,
+        ReductionKind::PartialOrder,
+        ReductionKind::StateConstraint,
+    ] {
+        let outcome = ModelCheckOutcome::Reduction {
+            cause: ReductionCause::Unsupported { reduction },
+            stats: RunStats::default(),
+        };
+        let record = settle(&world, &outcome);
+        assert_eq!(
+            record.value,
+            TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction { reduction })
+        );
+        assert_eq!(record.label, ResultLabel::Unsupported);
+        assert_eq!(record.value.category(), Category::Unsupported);
+    }
 }
 
-/// FR-162-AC-1's `ModelSystem` hooks and simulation: each hook it offers
-/// answers `Some`, and `explore_model` over the annotated §7.1 subject stores
-/// all 27 states, as it does unannotated.
+/// FR-162-AC-1's `ModelSystem` hooks and simulation: it offers all three
+/// reductions, each hook answers `Some`, and `explore_model` over the
+/// annotated §7.1 subject stores all 27 states, as it does unannotated.
+#[trace("TC-587", "FR-162-AC-1")]
 #[test]
 fn model_hooks_answer_and_simulation_stays_unreduced() {
     let world = count(&[]);
     let system = world.system();
     let offered = system.offered_reductions();
-    assert!(offered.symmetry && offered.constraint);
+    assert!(offered.symmetry && offered.partial_order && offered.constraint);
     let state = &system.initial()[0];
+    let successors = system.successors(state).expect("the state expands");
+    for (transition, _) in &successors.successors {
+        assert!(matches!(
+            TransitionSystem::footprint(&system, transition),
+            Some(Ok(_))
+        ));
+    }
     assert!(system.canonical(state, &group(&[&["a", "b"]])).is_some());
     assert_eq!(
         system.holds_constraint(state, "Low"),

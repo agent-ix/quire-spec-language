@@ -79,6 +79,65 @@ fn transition_of(
     .map_err(|_| stop(BROKEN))
 }
 
+/// The domain of each parameter of `application` over the references of the
+/// walked state.
+fn domains_of(
+    walk: &Walk<'_, '_>,
+    application: &Application,
+) -> Result<Vec<Domain>, ExpansionStop> {
+    let references = walk.references();
+    application
+        .declaration
+        .parameters()
+        .iter()
+        .map(|(_, value_type)| Domain::of(value_type, &references, walk.system.types))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| stop(BROKEN))
+}
+
+/// The argument vector `digits` selects from `domains`, named by the
+/// parameters of `application`.
+fn arguments_at(
+    application: &Application,
+    domains: &[Domain],
+    digits: &[u128],
+) -> Result<Vec<(String, Value)>, ExpansionStop> {
+    application
+        .declaration
+        .parameters()
+        .iter()
+        .zip(domains)
+        .zip(digits)
+        .map(|(((name, _), domain), index)| domain.nth(*index).map(|value| (name.clone(), value)))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| stop(BROKEN))
+}
+
+/// Every transition identity of `application` at `row`, enabled or not
+/// (FR-156 "Candidates"): one per argument vector of its parameter domains,
+/// each counted against `budget`.
+///
+/// # Errors
+///
+/// An [`ExpansionStop`] when the identities cannot be listed within the
+/// candidate bound.
+pub(super) fn identities(
+    walk: &Walk<'_, '_>,
+    row: &Row,
+    application: &Application,
+    budget: &mut Budget,
+    out: &mut Vec<ModelTransition>,
+) -> Result<(), ExpansionStop> {
+    let domains = domains_of(walk, application)?;
+    let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
+    while let Some(digits) = arguments.next_digits() {
+        budget.charge()?;
+        let args = arguments_at(application, &domains, &digits)?;
+        out.push(transition_of(row, application, &args)?);
+    }
+    Ok(())
+}
+
 /// Apply `application` to `row` for every argument vector of its parameter
 /// domains: check its effective precondition, and for an enabled application
 /// generate its successors.
@@ -95,14 +154,7 @@ pub(super) fn apply(
     successors: &mut Vec<Successor>,
 ) -> Result<(), ExpansionStop> {
     let system = walk.system;
-    let declaration = &application.declaration;
-    let references = walk.references();
-    let domains = declaration
-        .parameters()
-        .iter()
-        .map(|(_, value_type)| Domain::of(value_type, &references, system.types))
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| stop(BROKEN))?;
+    let domains = domains_of(walk, application)?;
     let preconditions = walk.applicable(
         &system.clauses.preconditions,
         row,
@@ -118,16 +170,7 @@ pub(super) fn apply(
 
     let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
     while let Some(digits) = arguments.next_digits() {
-        let args = declaration
-            .parameters()
-            .iter()
-            .zip(&domains)
-            .zip(&digits)
-            .map(|(((name, _), domain), index)| {
-                domain.nth(*index).map(|value| (name.clone(), value))
-            })
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| stop(BROKEN))?;
+        let args = arguments_at(application, &domains, &digits)?;
         // Every argument vector counts, enabled or not: a false or undecided
         // precondition would otherwise let one expansion run unbounded.
         budget.charge()?;

@@ -49,6 +49,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::model_subject::ModelInstance;
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::{explore_request, Exploration, Limits, TransitionSystem};
+use crate::simulation::footprint::Footprint;
 use crate::simulation::not_simulated::NotSimulated;
 use crate::simulation::order::{expand, sorted_initial, Expanded};
 use crate::simulation::reduction::{
@@ -603,6 +604,20 @@ impl<'a> ModelSystem<'a> {
             .map(|application| application.text.as_str())
     }
 
+    /// Every transition identity of `state`, enabled or not, in canonical
+    /// transition order (FR-156 "Candidates").
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when the state cannot be walked or the identities
+    /// exceed the candidate bound.
+    pub fn transition_identities(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
+        walk::identities_of(self, state)
+    }
+
     /// The operations of the subject's types, each once: its declaring type,
     /// name, and the text its transitions carry (see
     /// [`Self::operation_text`]). They come in canonical order: by the
@@ -942,12 +957,11 @@ impl TransitionSystem for ModelSystem<'_> {
         walk::expand_state(self, state, None)
     }
 
-    /// FR-162: symmetry and state constraints. Partial-order reduction has
-    /// no hook on this trait yet, so it is not offered.
+    /// FR-162: symmetry, partial-order reduction and state constraints.
     fn offered_reductions(&self) -> OfferedReductions {
         OfferedReductions {
             symmetry: true,
-            partial_order: false,
+            partial_order: true,
             constraint: true,
         }
     }
@@ -966,6 +980,19 @@ impl TransitionSystem for ModelSystem<'_> {
         constraint: &str,
     ) -> Option<Result<ConstraintValue, ExpansionStop>> {
         Some(self.constraint_value(state, constraint))
+    }
+
+    /// FR-162: [`ModelSystem::footprint`], which reads the transition alone.
+    fn footprint(
+        &self,
+        transition: &Self::TransitionId,
+    ) -> Option<Result<Footprint, ExpansionStop>> {
+        Some(
+            ModelSystem::footprint(self, transition).map_err(|_| ExpansionStop {
+                cause: BROKEN,
+                limit: None,
+            }),
+        )
     }
 }
 
