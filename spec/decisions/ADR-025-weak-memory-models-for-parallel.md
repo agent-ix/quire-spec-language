@@ -508,8 +508,8 @@ counterexample on `data` (§14).
 
 **Stage DAG (ADR-011 §1).** No stage or edge is added. S3 gains the
 `memory` clause, orderings and the `fence` control, the MM-3 and MA-3 to MA-6
-refusals, the access classification in every `parallel`, and the
-load-buffering warning (MX-4). The request writer adds the race-freedom item
+refusals and the access classification in every `parallel`; EN-1's
+pre-check reports the load-buffering warning (MX-4). The request writer adds the race-freedom item
 (DR-4). The protocol system in `qsl-eval`'s `simulation` carries the memory
 component. The `model_check` engine in `qsl-analyze` (ADR-029) gains the request selection (MM-2), the
 memory bounds, the memory constraints in the fairness filter and the new
@@ -517,7 +517,7 @@ causes.
 
 | ID | Repository | Change |
 | --- | --- | --- |
-| DS-1 | QSL | S3: MM-1, MM-3, MM-6, MA-2 to MA-4 (symbolic part), the load-buffering warning. The request writer: the race-freedom item (DR-4). `qsl-eval`'s `simulation`: the memory component in the protocol system's state and key (MS-1), §3's rules, the SC event graph (§15), the race summary (§14), MA-5's thread observation, the depth-named transition identities. `model_check` (`qsl-analyze`, ADR-029): MM-2's resolution, the pre-check part of MA-4, MB-2 to MB-4 with the bound stated in the method, MF-1 and MF-2 in the filter and CX-5's walk, MR-1 footprints. `qsl-replay`: MK-1, MK-2, DR-5, DR-6, `MemoryBoundReached`, `WeakAccessShape`. The EN-1 manifest's memory models. |
+| DS-1 | QSL | S3: MM-1, MM-3, MM-6, MA-2 to MA-4 (symbolic part). EN-1's pre-check: the load-buffering warning (MX-4). The request writer: the race-freedom item (DR-4). `qsl-eval`'s `simulation`: the memory component in the protocol system's state and key (MS-1), §3's rules, the SC event graph (§15), the race summary (§14), MA-5's thread observation, the depth-named transition identities. `model_check` (`qsl-analyze`, ADR-029): MM-2's resolution, the pre-check part of MA-4, MB-2 to MB-4 with the bound stated in the method, MF-1 and MF-2 in the filter and CX-5's walk, MR-1 footprints. `qsl-replay`: MK-1, MK-2, DR-5, DR-6, `MemoryBoundReached`, `WeakAccessShape`. The EN-1 manifest's memory models. |
 | DS-2 | CG | The negotiation arm routes by resolved model and never weakens it (MX-7); obligation identity binds the resolved models (MM-5). |
 | DS-3 | IR | With ADR-018's SMT path: the memory component in the transition-relation form. |
 | DS-4 | Driver | None beyond ADR-018 DS-4. |
