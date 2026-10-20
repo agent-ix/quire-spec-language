@@ -315,6 +315,19 @@ pub enum UnavailabilityCause {
         /// partial-order, constraint, that is not offered.
         reduction: ReductionKind,
     },
+    /// ADR-025 MA-4, MV-1 (QSpec FR-439): the EN-1 pre-check found an
+    /// access that is not one access under its weak memory model, or a weak
+    /// `parallel` whose join is not `all`. Wire cause `weak-access-shape`.
+    WeakAccessShape {
+        /// The node it was found at, by its static declaration path.
+        site: String,
+        /// The attempt instance's transition identity, in its canonical
+        /// text; none for a join policy.
+        transition: Option<String>,
+        /// The shape's canonical text: `{"type":"multi-location",
+        /// "locations":[...]}` or `{"type":"join-policy"}`.
+        shape: String,
+    },
     /// ADR-020 AX-5: a refinement with a hidden abstract field and a
     /// non-empty `F_A` has no liveness half to decide. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
@@ -335,6 +348,7 @@ impl UnavailabilityCause {
             Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
             | Self::StrongAbstractFairness => "unsupported-requested-capability",
+            Self::WeakAccessShape { .. } => "weak-access-shape",
         }
     }
 
@@ -342,7 +356,7 @@ impl UnavailabilityCause {
     /// one (QSpec FR-362).
     pub const fn code(&self) -> Option<&'static str> {
         match self {
-            Self::SolverAbsent | Self::BackendAbsent => None,
+            Self::SolverAbsent | Self::BackendAbsent | Self::WeakAccessShape { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
@@ -473,6 +487,53 @@ pub enum InconclusiveCause {
         /// The search horizon.
         max_depth: u64,
     },
+    /// ADR-025 MB-4 (QSpec FR-439): the run completed with no
+    /// counterexample and left a store of at least one state unexpanded
+    /// under a memory bound.
+    MemoryBoundReached {
+        /// The bound, by the request member that raises it, and its value.
+        bound: MemoryBound,
+        /// The bound-limited states.
+        states: u64,
+    },
+}
+
+/// A request's memory bound member (ADR-025 MB-2, FR-225).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoryBoundMember {
+    /// `max_store_buffer`, the entries per thread's buffer under `tso`.
+    MaxStoreBuffer,
+    /// `max_messages`, the live messages per location under `ra`.
+    MaxMessages,
+}
+
+impl MemoryBoundMember {
+    /// The request member's spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MaxStoreBuffer => "max_store_buffer",
+            Self::MaxMessages => "max_messages",
+        }
+    }
+}
+
+/// A memory bound a run used: the request member and its value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MemoryBound {
+    /// The member.
+    pub member: MemoryBoundMember,
+    /// Its value.
+    pub value: u64,
+}
+
+/// The memory bound a terminal record states (ADR-025 MB-2, FR-225): the
+/// bound its run used and whether a state of the run reached it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatedMemoryBound {
+    /// The bound.
+    pub bound: MemoryBound,
+    /// Whether a state of the run was bound-limited (MB-3).
+    pub reached: bool,
 }
 
 impl InconclusiveCause {
@@ -498,6 +559,7 @@ impl InconclusiveCause {
             Self::SymmetryBroken { .. } => "symmetry-broken",
             Self::ConstraintReached { .. } => "constraint-reached",
             Self::ReductionHorizon { .. } => "reduction-horizon",
+            Self::MemoryBoundReached { .. } => "memory-bound-reached",
         }
     }
 
@@ -518,7 +580,8 @@ impl InconclusiveCause {
             | Self::SolverInconclusive
             | Self::ReductionNotPreserving { .. }
             | Self::ConstraintReached { .. }
-            | Self::ReductionHorizon { .. } => 0,
+            | Self::ReductionHorizon { .. }
+            | Self::MemoryBoundReached { .. } => 0,
             Self::SymmetryBroken { population, cause } => {
                 let SymmetryBrokenCause::InitialStatesNotClosed { generator, .. } = cause;
                 let moved: usize = generator

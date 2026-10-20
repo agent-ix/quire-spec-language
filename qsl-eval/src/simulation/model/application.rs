@@ -130,7 +130,11 @@ impl<'a> ModelSystem<'a> {
 
     /// The application `operation` names at `row`, by its declaring type
     /// and name in the row's effective view.
-    fn application_at(&self, row: &Row, operation: &OperationRef<'_>) -> Option<&Application> {
+    pub(super) fn application_at(
+        &self,
+        row: &Row,
+        operation: &OperationRef<'_>,
+    ) -> Option<&Application> {
         if !self.types.conforms(row.type_id(), operation.receiver) {
             return None;
         }

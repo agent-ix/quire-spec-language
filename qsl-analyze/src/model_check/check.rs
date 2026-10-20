@@ -65,7 +65,8 @@ use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
+    check_protocol_bounds, MemoryModel, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
+    SubjectMemory,
 };
 use qsl_eval::simulation::{
     ConstraintValue, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, NotSimulated,
@@ -77,9 +78,10 @@ use qsl_foundation::InternalFault;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
-    Instance, ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelStep, ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats,
-    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    Instance, ItemRefusal, MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem,
+    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ProductStateRef, Proviso,
+    ReachedLimit, ReductionCause, RunStats, TemporalCounterexample, UndecidedCause,
+    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
@@ -408,6 +410,8 @@ pub fn check_model(
         constraint: None,
         boundary: 0,
         chooser: None,
+        memory_bound: None,
+        bound_limited: BTreeSet::new(),
     };
     if let Some(source) = root_cancelled {
         return Ok(ModelCheckOutcome::Stopped {
@@ -441,16 +445,24 @@ pub struct ProtocolCheckRequest<'a> {
     pub item: ModelCheckItem<'a>,
     /// The search horizon `k`; `None` sets none.
     pub max_depth: Option<usize>,
+    /// The method bound `max_store_buffer` (FR-225, ADR-025 MB-2): the
+    /// entries per thread's buffer under `tso`; `None` runs with 4.
+    pub max_store_buffer: Option<u64>,
     /// The run's caller-raisable budgets.
     pub limits: ModelCheckLimits,
 }
 
 /// FR-215 (ADR-027 TS-5, TS-6): decide `request`'s item over every
 /// behaviour of its protocol subject with [`check_model`]'s engine, over
-/// the subject's `ProtocolSystem<Sc>`. The requires-bound pre-check reads
-/// the model's roots and the protocol's before any state is explored. A
-/// deadlock counterexample names the waiting threads of its last state
-/// (ADR-027 PD-4).
+/// the subject's protocol system under its resolved memory models
+/// (FR-219): `ProtocolSystem<Sc>`, or `ProtocolSystem<Tso>` bounded by
+/// `max_store_buffer` when a `parallel` resolves to `tso` (FR-221, FR-225).
+/// The requires-bound pre-check reads the model's roots and the protocol's
+/// before any state is explored, and EN-1's access-shape pre-check settles
+/// `WeakAccessShape` before any state is explored (FR-220). A run that left
+/// a store unexpanded under the bound and found no counterexample settles
+/// `MemoryBoundReached` (ADR-025 MB-4). A deadlock counterexample names the
+/// waiting threads of its last state (ADR-027 PD-4).
 ///
 /// # Errors
 ///
@@ -507,49 +519,112 @@ pub fn check_protocol(
             model.instances(&clause.over().1).map_err(not_simulated)?
         };
     }
-    let system = ProtocolSystem::new(model, subject, Sc).map_err(ModelCheckRefusal::Protocol)?;
-    let mut run = Run {
-        system: &system,
-        reducer: None,
+    let protocol_run = ProtocolRun {
         item: &item,
+        instances: &instances,
+        root_cancelled,
+        no_initial,
         limits: request.limits,
         max_depth: request.max_depth,
         meter,
         max_candidates,
         cancel,
-        nodes: Vec::new(),
-        known: BTreeMap::new(),
-        queue: VecDeque::new(),
-        edges: 0,
-        horizon_cut: false,
-        first_bad: None,
-        monitor: Monitor::bad_prefix(automaton, max_automaton_states)
-            .map_err(|_| fault("a-safety-item-has-a-safety-automaton"))?,
-        group: SymmetryGroup::default(),
-        constraint: None,
-        boundary: 0,
-        chooser: None,
+        max_automaton_states,
     };
-    if let Some(source) = root_cancelled {
-        return Ok(ModelCheckOutcome::Stopped {
-            cause: IncompleteCause::Cancelled { source },
-            limit: None,
-            stats: run.stats(),
-        });
+    let memory = SubjectMemory::of(&subject.memory, request.max_store_buffer);
+    let built = match memory {
+        SubjectMemory::Sc => ProtocolSystem::new(model, subject, Sc)
+            .map(|system| protocol_run.decide(&system, automaton, None)),
+        SubjectMemory::Tso(tso) => {
+            let bound = MemoryBound {
+                member: MemoryBoundMember::MaxStoreBuffer,
+                value: tso.max_store_buffer(),
+            };
+            ProtocolSystem::new(model, subject, tso)
+                .map(|system| protocol_run.decide(&system, automaton, Some(bound)))
+        }
+    };
+    match built {
+        Ok(outcome) => outcome,
+        // FR-220 "Access shape": the pre-check settles V-8 before any state
+        // is explored.
+        Err(ProtocolRefusal::WeakAccessShape(shape)) => Ok(ModelCheckOutcome::Memory {
+            cause: MemoryCause::WeakAccessShape(shape),
+            stats: RunStats::default(),
+        }),
+        Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),
     }
-    if no_initial {
-        return Ok(ModelCheckOutcome::Undecided {
-            cause: UndecidedCause::NoInitialState,
-            stats: run.stats(),
-        });
+}
+
+/// What [`check_protocol`] runs over its protocol system, whichever memory
+/// model the subject's resolved models need.
+struct ProtocolRun<'r> {
+    item: &'r Item<'r>,
+    instances: &'r [Instance],
+    root_cancelled: Option<quire_exact::CancelCause>,
+    no_initial: bool,
+    limits: ModelCheckLimits,
+    max_depth: Option<usize>,
+    meter: quire_exact::ScalarLimits,
+    max_candidates: u64,
+    cancel: &'r Cancel,
+    max_automaton_states: u64,
+}
+
+impl ProtocolRun<'_> {
+    /// The unreduced run over `system`, under the memory bound `bound`
+    /// when its memory model has one (ADR-025 MB-3, MB-4).
+    fn decide<M: MemoryModel>(
+        &self,
+        system: &ProtocolSystem<'_, M>,
+        automaton: Box<dyn SafetyAutomaton>,
+        bound: Option<MemoryBound>,
+    ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+        let mut run = Run {
+            system,
+            reducer: None,
+            item: self.item,
+            limits: self.limits,
+            max_depth: self.max_depth,
+            meter: self.meter,
+            max_candidates: self.max_candidates,
+            cancel: self.cancel,
+            nodes: Vec::new(),
+            known: BTreeMap::new(),
+            queue: VecDeque::new(),
+            edges: 0,
+            horizon_cut: false,
+            first_bad: None,
+            monitor: Monitor::bad_prefix(automaton, self.max_automaton_states)
+                .map_err(|_| fault("a-safety-item-has-a-safety-automaton"))?,
+            group: SymmetryGroup::default(),
+            constraint: None,
+            boundary: 0,
+            chooser: None,
+            memory_bound: bound,
+            bound_limited: BTreeSet::new(),
+        };
+        if let Some(source) = self.root_cancelled {
+            return Ok(ModelCheckOutcome::Stopped {
+                cause: IncompleteCause::Cancelled { source },
+                limit: None,
+                stats: run.stats(),
+            });
+        }
+        if self.no_initial {
+            return Ok(ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::NoInitialState,
+                stats: run.stats(),
+            });
+        }
+        if self.item.instance_count() == 0 {
+            return Ok(ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::NoInstance,
+                stats: run.stats(),
+            });
+        }
+        run.decide(self.instances)
     }
-    if item.instance_count() == 0 {
-        return Ok(ModelCheckOutcome::Undecided {
-            cause: UndecidedCause::NoInstance,
-            stats: run.stats(),
-        });
-    }
-    run.decide(&instances)
 }
 
 /// An outcome the reduction pre-check settles, with no state explored.
@@ -676,6 +751,8 @@ fn check_reduced(
             constraint: reductions.constraint.as_deref(),
             boundary: 0,
             chooser: ample.as_ref().map(|ample| ample as &dyn Chooser<_, _>),
+            memory_bound: None,
+            bound_limited: BTreeSet::new(),
         };
         let explored = run.explore();
         total = sum(total, run.stats());
@@ -1030,6 +1107,13 @@ struct Run<'r, S: SubjectSystem> {
     /// The ample-set choice when partial-order reduction is selected
     /// (FR-156); `None` for a subject that offers none.
     chooser: Option<&'r dyn Chooser<S::State, S::TransitionId>>,
+    /// The memory bound the subject's memory model runs under (ADR-025
+    /// MB-2); `None` for one with no bound.
+    memory_bound: Option<MemoryBound>,
+    /// The distinct model states, by digest, whose expansion cut a step at
+    /// the memory bound (ADR-025 MB-3); a model state read under several
+    /// monitor states counts once.
+    bound_limited: BTreeSet<DigestRecord>,
 }
 
 impl<S: SubjectSystem> Run<'_, S> {
@@ -1103,17 +1187,28 @@ impl<S: SubjectSystem> Run<'_, S> {
         instances: &[Instance],
     ) -> Result<ModelCheckOutcome<S::TransitionId>, ModelCheckRefusal> {
         match self.explore() {
-            Ok(()) => Ok(if self.horizon_cut {
-                ModelCheckOutcome::BoundReached {
-                    depth: widen(self.max_depth.unwrap_or(0)),
-                    stats: self.stats(),
-                }
-            } else {
-                ModelCheckOutcome::Holds {
-                    certificate: self.certificate(instances)?,
-                    stats: self.stats(),
-                }
-            }),
+            // ADR-025 MB-4: a bound-limited state settles before the horizon.
+            Ok(()) => Ok(
+                if let (Some(bound), true) = (self.memory_bound, !self.bound_limited.is_empty()) {
+                    ModelCheckOutcome::Memory {
+                        cause: MemoryCause::BoundReached {
+                            bound,
+                            states: widen(self.bound_limited.len()),
+                        },
+                        stats: self.stats(),
+                    }
+                } else if self.horizon_cut {
+                    ModelCheckOutcome::BoundReached {
+                        depth: widen(self.max_depth.unwrap_or(0)),
+                        stats: self.stats(),
+                    }
+                } else {
+                    ModelCheckOutcome::Holds {
+                        certificate: self.certificate(instances)?,
+                        stats: self.stats(),
+                    }
+                },
+            ),
             Err(Halt::Refusal(refusal)) => Err(refusal),
             Err(Halt::Finish(Finish::Undecided(cause))) => Ok(ModelCheckOutcome::Undecided {
                 cause,
@@ -1189,14 +1284,25 @@ impl<S: SubjectSystem> Run<'_, S> {
                 continue;
             }
             let expanded = match self.chooser {
-                Some(chooser) => chooser.expand(&self.nodes[at].state),
-                None => self.system.successors(&self.nodes[at].state),
+                Some(chooser) => chooser
+                    .expand(&self.nodes[at].state)
+                    .map(|expansion| (expansion, false)),
+                None => self.system.successors_bounded(&self.nodes[at].state),
             };
-            let expansion = match expanded {
-                Ok(expansion) => expansion,
+            let (expansion, cut) = match expanded {
+                Ok(expanded) => expanded,
                 Err(stop) => return Err(self.expansion_stop(stop)),
             };
             self.contracts(at, &expansion.findings)?;
+            if cut {
+                self.bound_limited.insert(self.nodes[at].digest);
+                // ADR-025 MB-3: a state whose only enabled steps are cut
+                // stores is a boundary state: never stutter-extended and
+                // never a deadlock.
+                if expansion.successors.is_empty() {
+                    continue;
+                }
+            }
             if matches!(self.item, Item::Deadlock) {
                 let after = self.deadlock_letter(at, !expansion.successors.is_empty())?;
                 self.nodes[at].monitor = vec![after];
