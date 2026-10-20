@@ -11,6 +11,7 @@ mod graph_core;
 mod graph_world;
 mod hyper;
 mod hyper_replay;
+mod hyper_witness;
 mod hyper_world;
 mod lasso_replay;
 mod liveness;

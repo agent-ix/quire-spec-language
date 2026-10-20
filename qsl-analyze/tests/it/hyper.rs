@@ -43,7 +43,7 @@ fn run(world: &World) -> HyperOutcome {
 }
 
 /// The counterexample of a violated run.
-fn refuted(outcome: HyperOutcome) -> HyperCounterexample {
+pub(crate) fn refuted(outcome: HyperOutcome) -> HyperCounterexample {
     match outcome {
         HyperOutcome::Violated { counterexample, .. } => *counterexample,
         other => panic!("expected a violation, got {other:?}"),
@@ -52,7 +52,7 @@ fn refuted(outcome: HyperOutcome) -> HyperCounterexample {
 
 /// The inputs `step(i)` a trace's steps take, by `i`; the steps must all be
 /// model steps of `step`.
-fn inputs(counterexample: &HyperCounterexample, trace: usize) -> Vec<i64> {
+pub(crate) fn inputs(counterexample: &HyperCounterexample, trace: usize) -> Vec<i64> {
     counterexample.traces[trace]
         .steps
         .iter()
@@ -76,7 +76,11 @@ fn inputs(counterexample: &HyperCounterexample, trace: usize) -> Vec<i64> {
 
 /// The `(h, l)` of each position of trace `trace`, read by re-executing its
 /// steps through the vault from its initial state (the oracle).
-fn positions(world: &World, counterexample: &HyperCounterexample, trace: usize) -> Vec<(i64, i64)> {
+pub(crate) fn positions(
+    world: &World,
+    counterexample: &HyperCounterexample,
+    trace: usize,
+) -> Vec<(i64, i64)> {
     let system = ModelSystem::new(world.subject().simulation).expect("the subject admits");
     let trace = &counterexample.traces[trace];
     let mut state = system.initial()[trace.initial as usize].clone();
@@ -347,6 +351,7 @@ fn a_subject_that_alone_exceeds_max_states_stops_before_the_product_is_built() {
                 limit: ModelCheckLimit::MaxStates,
                 value: 3
             }),
+            count: None,
             stats: qsl_replay::RunStats::default(),
         }
     );
@@ -458,6 +463,15 @@ impl StepMatch for Refusing {
     ) -> Result<MatchReading, Incomplete> {
         Ok(MatchReading::Refused)
     }
+
+    fn existential(
+        &self,
+        _instance: &[ParameterBinding],
+        _steps: &[StepLabel<'_>],
+        _meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        panic!("an HP-2 clause has no existential conjunct")
+    }
 }
 
 /// A `match` whose evaluation exhausts its meter: it charges a meter that
@@ -473,6 +487,15 @@ impl StepMatch for Exhausted {
     ) -> Result<MatchReading, Incomplete> {
         Meter::new(ZERO).charge(Charge::new(ChargePoint::GraphExpand))?;
         Ok(MatchReading::Holds)
+    }
+
+    fn existential(
+        &self,
+        _instance: &[ParameterBinding],
+        _steps: &[StepLabel<'_>],
+        _meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        panic!("an HP-2 clause has no existential conjunct")
     }
 }
 
@@ -577,6 +600,7 @@ fn the_products_limits_and_cancellation_stop_the_run() {
         cause,
         limit,
         stats,
+        ..
     } = world
         .run(states, &Cancel::new())
         .expect("the run is not refused")
@@ -738,6 +762,15 @@ impl StepMatch for UndefinedMatchFor<'_> {
             });
         }
         self.seams.universal(instance, steps, meter)
+    }
+
+    fn existential(
+        &self,
+        _instance: &[ParameterBinding],
+        _steps: &[StepLabel<'_>],
+        _meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        panic!("an HP-2 clause has no existential conjunct")
     }
 }
 

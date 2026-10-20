@@ -200,6 +200,12 @@ pub enum ModelTraceRefusal {
         /// The loop's entry position.
         entry: usize,
     },
+    /// A witness-exhausted hyper counterexample, which FR-183's HP-3 replay
+    /// recomputes and replay does not build yet.
+    #[error(
+        "unsupported_construct/not-yet-implemented: replay of a witness-exhausted counterexample"
+    )]
+    HyperWitnessExhausted,
     /// A hyper counterexample whose traces do not match the clause: in
     /// number, order, variable, alias or instance; of unequal step counts;
     /// or whose loop entry is not a position of a step (FR-183 "Common").
@@ -278,9 +284,10 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::PostState { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
-            Self::AuthoredUndefined | Self::GuardedActivation | Self::ProtocolLasso => {
-                Code::UnsupportedConstruct
-            }
+            Self::AuthoredUndefined
+            | Self::GuardedActivation
+            | Self::HyperWitnessExhausted
+            | Self::ProtocolLasso => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
@@ -305,9 +312,10 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
             | Self::PostState { .. } => "content-mismatch",
-            Self::AuthoredUndefined | Self::GuardedActivation | Self::ProtocolLasso => {
-                "not-yet-implemented"
-            }
+            Self::AuthoredUndefined
+            | Self::GuardedActivation
+            | Self::HyperWitnessExhausted
+            | Self::ProtocolLasso => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {
                 Some(code) => code.cause(),

@@ -1,12 +1,12 @@
 # ConfigVersion example
 
 This example checks the rules from the top-level README's
-[first rule](../../README.md#a-first-rule) against seventeen small data sets.
-The unit is `spine-unit.native` (edition `1-draft`). Its domain model is the
-`example/config-version` package, and each case has a snapshot of
-`ConfigVersion` objects. The example and its files are AGPL-3.0-only.
+[first rule](../../README.md#a-first-rule) against seventeen data sets. The
+unit is `spine-unit.native` (edition `1-draft`), the domain model is
+`example/config-version`, and each case has a snapshot of `ConfigVersion`
+objects. The example and its files are AGPL-3.0-only.
 
-Generate the cases, then check one rule from the command line:
+Generate the cases and check one rule:
 
 ```sh
 cargo run --locked --example config_version_fixtures -- /tmp/config-version
