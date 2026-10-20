@@ -265,9 +265,11 @@ fn expand(
                 application,
                 &clauses,
                 &mut budget,
-                &mut contract,
-                &mut successors,
-                enabled.as_deref_mut(),
+                frames::Outputs {
+                    contract: &mut contract,
+                    successors: &mut successors,
+                    enabled: enabled.as_deref_mut(),
+                },
             )?;
         }
     }
