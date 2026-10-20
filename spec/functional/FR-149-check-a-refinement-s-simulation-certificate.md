@@ -125,7 +125,7 @@ names, plus `UndefinedEvaluation` and `Undetermined`, and whose other members ar
 | `AbstractStepRejected` | `position`, `transition` (the transition identity encoding of QSpec FR-364, from FR-181), `cause` |
 | `NoAbstractMatch` | `position` |
 | `UndefinedEvaluation` | `where` and `cause` (FR-127's `UndefinedEvaluation` encoding), the step verdict `Undefined`; QSpec FR-379's `Undefined{position, row}` is the same failure as the engine writes it, and `check_step` never returns that form |
-| `Undetermined` | `cause` (`MappingUndetermined` or `UndecidedSuccessor`) and `evaluation` (`{"outcome": "refused"}` or `{"outcome": "incomplete", "limit": <limit spelling>}`, where the limit spelling is `evaluation-meter` for the evaluation meter (FR-127's model-check limit spelling) and quire-exact's `LimitKind` name for another counter of the evaluation, in snake case such as `integer_bits`) |
+| `Undetermined` | `cause` (`MappingUndetermined` or `UndecidedSuccessor`) and `evaluation` (`{"outcome": "refused"}` or `{"outcome": "incomplete", "limit": <limit spelling>}`, where the limit spelling is `evaluation-meter` for the evaluation meter (the `ModelCheckLimit` wire spelling) and quire-exact's `LimitKind` name for another counter of the evaluation, in snake case such as `integer_bits`) |
 
 `position` inside a verdict is the refinement position FR-141 names and need
 not equal the locus `position`. A `cause` is `{"kind": "Precondition",

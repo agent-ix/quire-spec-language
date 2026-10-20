@@ -40,3 +40,11 @@ out. None changes what gets built.
 Mergeable as far as EARS goes. All three findings are wording fixes and
 can go into the fix round for SR-13594. The FR-120 bullet is declarative
 explanation inside an existing list of rules and needs no `SHALL`.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c67141420: FR-138 reads "S3 SHALL refuse a declared type that is an enum type or a decimal type, or an option of one, with `unsupported_construct`/`not-yet-implemented` at the type". |
+| FND-002 | fixed | c67141420: FR-135 splits the bullet. One bullet reads "This build's support set SHALL hold `history-row` for the history types its history key can encode, which FR-138 checks, and SHALL omit the other three names.", and a separate bullet reads "S3 SHALL refuse a `history` row whose declared type is an enum type or a decimal type, or an option of one, ...". |
+| FND-003 | fixed | c67141420: FR-149's History bullet reads "The checker and the producer SHALL identify a position by its concrete state key, the typed canonical key of its history values ... and its sorted abstract state keys." |

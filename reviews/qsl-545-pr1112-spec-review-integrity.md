@@ -80,3 +80,15 @@ general ordering rule, which now contradict the new rule (FND-002, FND-003),
 and the departures from QSpec, which are not recorded (FND-004). FR-120,
 FR-149's limit spelling and History bullet, and FR-363-AC-2 are clean for
 consistency.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c67141420: no FR-181 claim remains in FR-135 or FR-138. FR-135 reads "The build's history key cannot yet encode such a value", and FR-138 reads "the build's history key cannot yet encode its values". The support-set bullet no longer contradicts the refusal. |
+| FND-002 | fixed | c67141420: FR-135 reads "`history-row` (FR-138), spelled by a `history` row", which is QSpec FR-375's spelling. The partial support is stated only in the support-set bullet. |
+| FND-003 | fixed | c67141420: FR-135 reads "except that the `history-row` refusal follows the checks FR-138 orders before it (the object type, the name conflicts and the type form)". This matches history.rs:128-170. |
+| FND-004 | fixed | c67141420: FR-135's References record all three departures (span at the type, not the `history` keyword; support for keyable types only, against FR-375-AC-9; the added `subject` against FR-272's payload). FR-138's References point to them. The QSpec routing is recorded on QSL-545 in the comment of 2026-10-20. |
+| FND-005 | fixed | c67141420: FR-138 reads "The refusal follows the refusals for an unresolved object type, a name conflict and an unresolved type form, and precedes the bounded-type and initial-literal checks." |
+| FND-006 | fixed | c67141420: FR-138's References add "This build refuses an enum-typed history row before its literal is checked (FR-138-AC-9), so it admits no enum-member history literal for now." This states current build behaviour in the repo's support-set vocabulary, not a changelog. "for now" could be dropped, but it is not a defect. |
+| FND-007 | still-open | c67141420 replaced "FR-126's spelling" with "FR-127's model-check limit spelling", and FR-127 does not define that spelling either. It writes `evaluation-meter` only as an unquoted adjective, in AC-4's "evaluation-meter run" and AC-7's "evaluation-meter exhaustion". It never gives a wire string or a limit spelling table. No other spec under `spec/` writes the string. The code's own comment (`qsl-replay/src/model_check/limits.rs:93`, "FR-331 spelling") cites FR-331, and neither QSL FR-331 (replaying a temporal counterexample) nor QSpec FR-331 (the backend provider envelope) contains the string. So FR-149's table is the only place that states it. Fix: drop the citation and write "`evaluation-meter` (the `ModelCheckLimit` wire spelling)". |

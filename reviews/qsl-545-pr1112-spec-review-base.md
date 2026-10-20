@@ -84,3 +84,19 @@ Examined and clean: FR-120's incomplete-clause bullet; FR-135-AC-5's
 narrowing and the new AC-9's wording; FR-138-AC-9's wording; FR-149's
 `Undetermined` row; TC-540 step 5, TC-543 step 7 and TC-556 step 12 against
 their ACs; ID formats and the index.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | The fix round added "(a test of the payload asserts it absent)" to FR-135-AC-5. An acceptance criterion states the outcome to verify, not a claim about a test. The claim is also false at c67141420: `refinement_declarations.rs:1310-1316` still binds `feature, profile, ..` and never checks `subject`, and QSL-545's remaining-work item (d) records that. Delete the parenthetical. "with a payload that has no `subject` member" already states the outcome. | spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:238 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | deferred | Code-side remaining work recorded on QSL-545 (comment of 2026-10-20, item (a)): tests for FR-138-AC-9's enum, option-of-enum, Boolean and `Option<Int>` cases, and the AC tag. The PR body records it too. The AC text needs no change. |
+| FND-002 | deferred | Recorded on QSL-545 (item (b)): the `refinement-internal-list` (FR-135-AC-9) and `nested-reference-row` (FR-135-AC-6) refusals are unbuilt, with QSL-887 noted as Done. Keeping unmet ACs is allowed by AGENTS.md. |
+| FND-003 | deferred | Recorded on QSL-545 (items (c) and (d)): the FR-149-AC-11 tag and rule assertion, and the FR-135-AC-5 absent-`subject` assertion. The PR has no code change. |
+| FND-004 | fixed | c67141420: FR-149-AC-11 now requires `Rejected` with rule `PostDiffers` (or `InitialMismatch` when the position is an initial one), and never `Malformed`. This matches the checker: `SuccessorsDiffer` compares transitions only, `PostDiffers` comes from `matches`, and the Malformed rules never read history. The test still asserts only `Rejected(_)`, which QSL-545 item (c) records. |
+| FND-005 | fixed | c67141420: TC-1031 adds vector N15 for the exception, and its mutant line kills the swap. This agrees with `state_model.rs:287`. The vector is not implemented as a test yet, which QSL-545 item (e) records. |
