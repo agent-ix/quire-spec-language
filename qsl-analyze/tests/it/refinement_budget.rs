@@ -227,11 +227,25 @@ fn a_replay_over_the_budget_settles_incomplete_not_parity() {
     let RefinementTraceSettlement::Stopped(limit) = settlement else {
         panic!("the replay stops: {settlement:?}");
     };
+    let reached = ReachedLimit {
+        limit: ModelCheckLimit::EvaluationMeter,
+        value: b,
+    };
+    assert_eq!(limit, reached);
+    let record = settle_refinement_safety(
+        &SafetyOutcome::Violated {
+            counterexample: Box::new(payload),
+            stats: Default::default(),
+        },
+        &ModelCheckLimits::default(),
+        |payload| replay_refinement_trace(world.refinement(), &systems, payload),
+    );
     assert_eq!(
-        limit,
-        ReachedLimit {
+        record.value,
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
             limit: ModelCheckLimit::EvaluationMeter,
             value: b
-        }
+        })
     );
+    assert_eq!(record.execution, Execution::ResourceIncomplete);
 }
