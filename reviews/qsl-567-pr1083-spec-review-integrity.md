@@ -49,3 +49,21 @@ Ticket: QSL-567. PR: quire-spec-language#1083, head 38b0b3f49, scoped to `git di
 ## Verdict
 
 Three low findings: traceability and coverage. What holds: TC-671 still verifies FR-226, its title and description name EN-1, steps 2 and 3 match AC-2 and AC-3, and the expected results follow the procedure. ADR-025 MX-4, the stage-DAG paragraph and DS-1 all move the warning to EN-1's pre-check consistently. FR-224, FR-225 and FR-220 have no load-buffering text to update. Index completeness passes. Merge order: this PR must merge after QSpec #293, and not only for AC-2: AC-1 and the Outputs put the warning in FR-331's `warnings`, which lists `memory.load-buffering-shape` only after #293.
+
+## New findings (disposition pass 1)
+
+Round 1, head f518f3698. The fix commit f518f3698 sits on a merge, d7573afcf, which brings in main 70c7092b9. The diff against main still touches only FR-226, TC-671 and ADR-025, plus this review's round-0 SR files, committed unchanged under reviews/; this file supersedes them. Gates: make check-spec-validation exits 0 with 17 warnings, the same 17 as main 70c7092b9, and none in FR-226 or TC-671. The 2 round-0 warnings at FR-226 line 104 are gone. tools/check-index-completeness.sh passes. QSpec #293 is now at head 48428b7c0 (open). QSpec #293 head 48428b7c0: schema Warning gains the arm {code: memory.load-buffering-shape, load: TransitionIdentity, store: TransitionIdentity}, required, additionalProperties false; FR-331-AC-31 and TC-431 test it; FR-439 gains the emission rule and FR-439-AC-7. Its descriptor description says an absent memory_models means sc only. Merge order unchanged: this PR merges after QSpec #293.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | AC-2 now also asserts 'a descriptor without the member advertises `sc` only'. No FR-226 Behavior statement says so: the manifest bullet covers only EN-1's own descriptor, and the route bullet says only 'whose manifest advertises the subject's resolved model'. TC-671 step 2 reads only EN-1's manifest, and its expected result does not cover the absent-member case. The rule is QSpec #293's ('absent means sc only'). Fix: add it to the `route` candidate bullet ('a manifest without `memory_models` advertises `sc` only, QSpec FR-331'). Add a TC-671 step: for example, a temporal test candidate with no `memory_models` is in the candidate set of the `sc` request over `SB` and not of the `tso` item. | spec/functional/FR-226-state-the-code-link-preconditions-of-a-weak-memory-verdict.md:123-129, 139 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | round 1, f518f3698: - target: ix://agent-ix/quire-specification/FR-331 type: depends_on; - QSpec owns the provider manifest's memory-model member and the warning's wire form (QSpec FR-331) and the routing by resolved model (QSpec FR-439, FR-290) and the abstraction relation (QSpec FR-353). |
+| FND-002 | fixed | round 1, f518f3698: - The checked protocol clause with its classified accesses (FR-220) and source defaults (FR-219). - The item's resolved memory model (ADR-025 MM-2) and EN-1's instantiated footprints with the shared locations they decide (ADR-025 MA-1). - The registered backends and their QSpec FR-290 provider manifests (FR-075). |
+| FND-003 | fixed | round 1, f518f3698: 1. Check the package of branch `t` (`r1 := x (relaxed); y := 1 (relaxed)`) with branch `s` (`y := 0 (relaxed); x := 1 (relaxed)`), which makes `x` and `y` shared, and run EN-1's pre-check on a request resolved to `ra`. Repeat with the load `acquire`, with an `acquire` fence between the two, with a same-location load and store, with the load of a location only `t` accesses, and with the store to... |
+
+Round 1 verdict: Round 1: FND-001 to FND-003 fixed. One new low, FND-004: AC-2's absent-member clause has no Behavior statement and no TC step. It does not block merge on its own.

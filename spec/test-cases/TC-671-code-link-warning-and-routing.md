@@ -26,7 +26,8 @@ Scope: FR-226-AC-1 to FR-226-AC-3.
 2. Read EN-1's registered provider manifest.
 3. Compute the candidate set of a `tso` item over `SB` with EN-1 and an
    `sc`-only test candidate registered, then with the test candidate alone;
-   compute the `sc` request's set with it.
+   compute the `sc` request's set with it; then repeat with a test candidate
+   whose descriptor has no `memory_models`.
 
 Tag the tests `#[trace("TC-671", "FR-226-AC-n")]`.
 
@@ -34,8 +35,9 @@ Tag the tests `#[trace("TC-671", "FR-226-AC-n")]`.
 
 - Step 1: under `ra` one `memory.load-buffering-shape` warning naming both
   attempts in the terminal record `warnings`, the record equal to the
-  `acquire` variant's apart from the warning; no warning in the other `ra`
+  same request settled without the warning; no warning in the other `ra`
   variants; none under `sc` or `tso`.
 - Step 2: `memory_models` `sc`, `tso` and `ra`.
 - Step 3: `{EN-1}`; the empty set; `{test candidate}` for the `sc`
-  request.
+  request; for the candidate without `memory_models`, `{candidate}` for the
+  `sc` request and the empty set for the `tso` request.

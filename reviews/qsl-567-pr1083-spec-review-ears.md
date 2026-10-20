@@ -39,3 +39,18 @@ Ticket: QSL-567. PR: quire-spec-language#1083, head 38b0b3f49, scoped to `git di
 ## Verdict
 
 Two low findings, both wording. Neither blocks merge on its own, and both can be fixed with the base findings. The manifest bullet is a clean ubiquitous SHALL with a named subject. Each criterion is a direct assertion of the outcome. Merge order: this PR must merge after QSpec #293, and not only for AC-2: AC-1 and the Outputs put the warning in FR-331's `warnings`, which lists `memory.load-buffering-shape` only after #293.
+
+## New findings (disposition pass 1)
+
+Round 1, head f518f3698. The fix commit f518f3698 sits on a merge, d7573afcf, which brings in main 70c7092b9. The diff against main still touches only FR-226, TC-671 and ADR-025, plus this review's round-0 SR files, committed unchanged under reviews/; this file supersedes them. Gates: make check-spec-validation exits 0 with 17 warnings, the same 17 as main 70c7092b9, and none in FR-226 or TC-671. The 2 round-0 warnings at FR-226 line 104 are gone. tools/check-index-completeness.sh passes. QSpec #293 is now at head 48428b7c0 (open). QSpec #293 head 48428b7c0: schema Warning gains the arm {code: memory.load-buffering-shape, load: TransitionIdentity, store: TransitionIdentity}, required, additionalProperties false; FR-331-AC-31 and TC-431 test it; FR-439 gains the emission rule and FR-439-AC-7. Its descriptor description says an absent memory_models means sc only. Merge order unchanged: this PR merges after QSpec #293.
+
+No new findings in this round.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | round 1, f518f3698: - When an item's resolved model is `ra` and a branch of a `parallel` has a `relaxed` or non-atomic load followed in program order by a store to another shared location, with no `acquire` or `seq_cst` load and no `acquire` fence between them, EN-1's pre-check SHALL add one `memory.load-buffering-shape{load, store}` warning, naming the load and the store, to the `warnings` of the item's FR-331 te... |
+| FND-002 | fixed | round 1, f518f3698: Note. Which locations are shared is decided only at request time (ADR-025 MA-1), so EN-1's pre-check, not S3, reports the shape; a shared location exists only in a weak `parallel`, and the load-buffering condition of MX-4 applies only under `ra`. |
+
+Round 1 verdict: Round 1: both findings fixed. The bullet is split into three single-SHALL statements, and the negative S3 statement is gone; its reason is kept as a note. The grammar lint reports nothing in FR-226. Clean for EARS.

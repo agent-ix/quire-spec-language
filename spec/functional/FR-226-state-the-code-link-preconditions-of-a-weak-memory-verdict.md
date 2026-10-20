@@ -125,7 +125,8 @@ applies only under `ra`.
   clause.
 - The `route` candidate step SHALL include in the candidate set of an item
   over a subject with a weak `parallel` only backends whose manifest
-  advertises the subject's resolved model, and SHALL write the request with
+  advertises the subject's resolved model (a descriptor with no
+  `memory_models` advertises `sc` only), and SHALL write the request with
   the resolved model unchanged.
 - When no backend advertises the resolved model, the `route` candidate
   step SHALL give the item an empty candidate set, and the item is written
@@ -135,9 +136,9 @@ applies only under `ra`.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-226-AC-1 | For a request resolved to `ra` over a package with branch `t` (`r1 := x (relaxed); y := 1 (relaxed)`) and branch `s` (`y := 0 (relaxed); x := 1 (relaxed)`), which makes `x` and `y` shared, EN-1's pre-check puts one `memory.load-buffering-shape{load, store}` warning naming both `t` attempts in the item's terminal record `warnings`, and the record's value, label, basis, counterexample and obligation identity equal those of the same request with the load made `acquire`. With the load `acquire`, or an `acquire` fence between the two, no warning is reported. A load followed by a store to the same location reports none; neither does a variant whose load is of a location only `t` accesses, nor one whose store is to a location only `t` accesses. The same package resolved to `sc` or `tso` reports none. | Test (TC-671) |
+| FR-226-AC-1 | For a request resolved to `ra` over a package with branch `t` (`r1 := x (relaxed); y := 1 (relaxed)`) and branch `s` (`y := 0 (relaxed); x := 1 (relaxed)`), which makes `x` and `y` shared, EN-1's pre-check puts one `memory.load-buffering-shape{load, store}` warning naming both `t` attempts in the item's terminal record `warnings`, and the record's value, label, basis, counterexample and obligation identity equal those of the same request settled without the warning. With the load `acquire`, or an `acquire` fence between the two, no warning is reported. A load followed by a store to the same location reports none; neither does a variant whose load is of a location only `t` accesses, nor one whose store is to a location only `t` accesses. The same package resolved to `sc` or `tso` reports none. | Test (TC-671) |
 | FR-226-AC-2 | EN-1's registered provider manifest descriptor carries `memory_models` `sc`, `tso` and `ra` (QSpec FR-331-AC-30); a descriptor without the member advertises `sc` only. | Test (TC-671) |
-| FR-226-AC-3 | With EN-1 and a test candidate whose manifest advertises only `sc`, an item over `SB` resolved to `tso` has the candidate set `{EN-1}`. With the test candidate alone, the item's candidate set is empty, and the `sc` request over `SB` has the candidate set `{test candidate}`. | Test (TC-671) |
+| FR-226-AC-3 | With EN-1 and a test candidate whose manifest advertises only `sc`, an item over `SB` resolved to `tso` has the candidate set `{EN-1}`. With the test candidate alone, the item's candidate set is empty, and the `sc` request over `SB` has the candidate set `{test candidate}`. A test candidate whose descriptor has no `memory_models` is a candidate for the `sc` request over `SB` and for no `tso` or `ra` request. | Test (TC-671) |
 
 ## Dependencies
 
