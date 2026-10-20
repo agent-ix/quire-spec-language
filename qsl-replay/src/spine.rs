@@ -1709,7 +1709,7 @@ mod tests {
             claim: "Monthly".to_owned(),
             span,
         });
-        assert!(message.contains("fraction-bound"), "{message}");
+        assert!(message.contains("fraction-bound-out-of-range"), "{message}");
         assert!(message.contains("strictly between 0 and 1"), "{message}");
         assert!(
             !message.contains("TP-2") && !message.contains("possible property"),

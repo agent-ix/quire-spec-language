@@ -421,7 +421,7 @@ pub enum ProbabilisticCause {
     },
     /// A comparison's threshold in an event's `fraction` measure that is not
     /// an exact rational strictly between 0 and 1.
-    /// `invalid_probabilistic_model`/`fraction-bound` (QSL-proposed, STD-188).
+    /// `invalid_probabilistic_model`/`fraction-bound-out-of-range` (QSL-proposed, STD-188).
     FractionBound {
         /// The claim.
         claim: String,
@@ -587,7 +587,7 @@ impl ProbabilisticCause {
             Self::ForeignWorkload { .. } => "foreign-workload",
             Self::UnitMismatch { .. } => "unit-mismatch",
             Self::ThresholdNotLiteral { .. } => "type-mismatch",
-            Self::FractionBound { .. } => "fraction-bound",
+            Self::FractionBound { .. } => "fraction-bound-out-of-range",
             Self::OverNotObjectType { .. } => "over-not-object-type",
             Self::DuplicateWorkload { .. } => "duplicate-declaration",
             Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",

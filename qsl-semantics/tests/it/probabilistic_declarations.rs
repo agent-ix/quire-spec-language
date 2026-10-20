@@ -1241,7 +1241,7 @@ fn a_comparison_threshold_has_the_type_of_its_measure() {
         );
         assert_eq!(
             located(&body),
-            [invalid("fraction-bound", threshold)],
+            [invalid("fraction-bound-out-of-range", threshold)],
             "{threshold}"
         );
     }
