@@ -3353,6 +3353,7 @@ impl PackageDeclarations {
         package.abstractions = unit.abstractions;
         package.hyper_clauses = unit.hyper_clauses;
         package.probabilistic = unit.probabilistic;
+        package.profile_selections = selections.profiles.clone();
         package.temporal_selections = selections
             .profiles
             .iter()
