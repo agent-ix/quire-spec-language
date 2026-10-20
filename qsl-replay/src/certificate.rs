@@ -6,7 +6,8 @@
 //! `qsl-analyze`, so a fault in one cannot hide a fault in the other.
 //! [`closure`] holds FR-338's closure certificate and its checker (ADR-018
 //! PC-3); [`scc`] holds FR-339's component certificate witnesses and the
-//! partition check of them (ADR-018 PC-4). FR-338 and FR-314's rejection vocabulary retains the failing rule
+//! partition check of them (ADR-018 PC-4); [`simulation`] holds FR-149's
+//! simulation certificate of a refinement and its checker. FR-338 and FR-314's rejection vocabulary retains the failing rule
 //! and product-state, query or proof-step locus independently of any checker
 //! implementation.
 
@@ -15,6 +16,7 @@ use serde::{ser::SerializeStruct, Serialize, Serializer};
 use qsl_foundation::digest::DigestRecord;
 
 use crate::certificate::closure::{DigestWire, ProductStateRef};
+use crate::certificate::simulation::FailedStep;
 
 /// FR-314's part of an SMT proof obligation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -66,6 +68,17 @@ pub enum CertificateRule {
     OrderBroken,
     /// A node's path count is not the one its successors give (FR-169).
     CountBroken,
+    /// A concrete initial state does not pass `check_initial` with the
+    /// position the simulation certificate lists for it (FR-149).
+    InitialMismatch,
+    /// A position's recomputed concrete successors are not the listed
+    /// edges' transitions, in canonical order (FR-149).
+    SuccessorsDiffer,
+    /// `check_step` does not pass a listed edge (FR-149).
+    StepFails,
+    /// A passing edge's post position or `Taken` differs from the listed
+    /// edge's (FR-149).
+    PostDiffers,
 }
 
 /// FR-338 and FR-314: where a certificate rejection occurred.
@@ -93,6 +106,16 @@ pub enum CertificateLocus {
         /// The closure index the entry names.
         index: u64,
     },
+    /// The position, and the edge out of it, of a simulation certificate at
+    /// which a rule failed (FR-149).
+    SimulationStep {
+        /// The certificate position the rule concerns.
+        position: u64,
+        /// The index of the listed edge when the rule concerns one.
+        edge: Option<u64>,
+        /// What `check_step` returned, for `StepFails`.
+        verdict: Option<Box<FailedStep>>,
+    },
     /// The proof step whose derivation or conclusion failed.
     ProofStep {
         /// The query containing the proof step.
@@ -113,6 +136,19 @@ impl Serialize for CertificateLocus {
                 object.serialize_field("entry", &index)?;
                 object.end()
             }
+            Self::SimulationStep {
+                position,
+                edge,
+                verdict,
+            } => {
+                let mut object = serializer.serialize_struct("CertificateLocus", 3)?;
+                let position = position.to_string();
+                object.serialize_field("position", &position)?;
+                let edge = edge.map(|edge| edge.to_string());
+                object.serialize_field("edge", &edge)?;
+                object.serialize_field("verdict", &verdict.as_deref().map(FailedStep::kind))?;
+                object.end()
+            }
             Self::Query { part } => part.serialize(serializer),
             Self::ProofStep { part, index } => {
                 let mut object = serializer.serialize_struct("CertificateLocus", 2)?;
@@ -129,5 +165,6 @@ mod check;
 pub mod closed_form;
 pub mod closure;
 pub mod scc;
+pub mod simulation;
 pub mod state_graph;
 pub mod zone;

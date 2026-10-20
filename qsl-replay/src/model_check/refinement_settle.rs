@@ -9,39 +9,59 @@
 //! `UndecidedSuccessor`, and a fault of the engine or the mapping settles
 //! `failed` (QSpec FR-383).
 //!
-//! A `Holds` half settles `inconclusive` with
-//! `SimulationCertificateNotBuilt`: FR-144 settles `proved` only after
-//! FR-149's checker accepts the simulation certificate, which does not exist
-//! yet, so no proof is claimed. `SimulationCertificateNotBuilt` is an interim cause that
-//! no spec names: the one existing `unsupported-requested-capability` cause is
-//! `UnsupportedReduction`, which needs a reduction. The planner decides the
-//! cause; QSL-549 flips this row.
+//! A `Holds` half settles `proved` (`Exhaustive`, `Certified`, `closed-scope`)
+//! only after the core's own [`check_simulation_certificate`] (FR-149)
+//! accepts its certificate. A rejected certificate settles `inconclusive`
+//! with `CertificateRejected{rule, at}` (ADR-018 PC-2), a check that a limit
+//! or a cancellation stops settles V-7 naming the limit, and a certificate
+//! that names another refinement settles `ReplayRefused(stale_dependency)`.
 //!
 //! What this does not do yet: the requirement record and its `Refinement`
 //! property form, the obligation identity, the liveness half and the
-//! item-level combination of the two halves.
+//! item-level combination of the two halves, which also settles an item with
+//! a liveness half `Uncertified` (FR-144-AC-7's `ensure` row).
 
+use quire_exact::Cancel;
+
+use crate::certificate::closure::CertificateRejection;
+use crate::certificate::simulation::{
+    check_simulation_certificate, SimulationCertificateRequest, SimulationCheck, SimulationRefusal,
+};
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ModelCheckLimits;
 use crate::model_check::refinement_replay::RefinementTraceSettlement;
 use crate::model_check::settle::{ModelCheckRecord, Row, EXPLICIT_STATE};
-use crate::proof_result::{IncompleteCause, InconclusiveCause, SettlementBasis};
+use crate::proof_result::{IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis};
 use crate::refinement::SafetyOutcome;
 
 /// FR-144: settle `outcome`, a safety run under `limits`, as one terminal
-/// record. A `Violated` outcome's counterexample is handed to `replay`
+/// record. A `Holds` outcome's certificate is checked by
+/// [`check_simulation_certificate`] over `certified`, under `limits` and
+/// `cancel`. A `Violated` outcome's counterexample is handed to `replay`
 /// (FR-145) and settles by its result.
 pub fn settle_refinement_safety(
     outcome: &SafetyOutcome,
     limits: &ModelCheckLimits,
+    certified: &SimulationCertificateRequest<'_>,
+    cancel: &Cancel,
     replay: impl FnOnce(&TemporalCounterexample) -> Result<RefinementTraceSettlement, ReplayRefusal>,
 ) -> ModelCheckRecord {
     let mut counterexample = None;
     let mut depth = None;
     let row = match outcome {
-        SafetyOutcome::Holds { .. } => {
-            Row::inconclusive(InconclusiveCause::SimulationCertificateNotBuilt)
+        SafetyOutcome::Holds { certificate, .. } => {
+            match check_simulation_certificate(certified, certificate, limits, cancel) {
+                Ok(SimulationCheck::Accepted) => {
+                    Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+                }
+                Ok(SimulationCheck::Rejected(CertificateRejection { rule, at })) => {
+                    Row::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
+                }
+                Ok(SimulationCheck::Stopped(cause, reached)) => Row::stopped_run(cause, reached),
+                Err(SimulationRefusal::Stale { .. }) => Row::stale(),
+                Err(SimulationRefusal::Subject(_)) => Row::failed(),
+            }
         }
         SafetyOutcome::Violated {
             counterexample: payload,
