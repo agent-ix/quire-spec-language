@@ -46,4 +46,4 @@ Tag the tests `#[trace("TC-673", "FR-228-AC-n")]`.
 - Step 5: the SCC is decomposed to `{r}` then `{p, q}` and `{p, q}` passes; the lasso `p q` meets the lasso form.
 - Step 6: `{p, q}` passes with its two kept edges; the loop is `p q`, not `p p`.
 - Step 7: `q → r` is removed at the first level and `s → r` at the second; the passing component is `{p, q}`.
-- Step 8: one refinement step removes state 0 and the edge `1 → 2`; `{3}` passes with the loop `3 → 3`.
+- Step 8: one refinement step removes state 0 and the edge `1 → 2`; `{3, 4}` passes with the loop `3 → 4 → 3`.
