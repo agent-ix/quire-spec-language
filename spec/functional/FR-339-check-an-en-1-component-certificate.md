@@ -47,9 +47,9 @@ pub struct Component { pub states: Vec<ProductStateRef>, pub witness: ComponentW
 pub enum ComponentWitness {
     Trivial,
     MissingAcceptance { set: u32 },
-    UnfairWeak { constraint: u32 },           // index into the resolved constraints  // a visibility pair resolves to one constraint per (thread, location): thread bytes, then location bytes
+    UnfairWeak { constraint: u32 },           // index into the resolved constraints
     UnfairStrong { constraints: Vec<u32>, sub: Vec<Component> },  // every failing strong constraint
-    UnfairVisibility { constraints: Vec<u32>, sub: Vec<Component> }, // ADR-025 MF-2: every failing visibility pair
+    UnfairVisibility { constraints: Vec<u32>, sub: Vec<Component> }, // ADR-025 MF-2: every failing visibility pair; a pair resolves to one constraint per (thread, location): thread bytes, then location bytes
 }
 pub enum ProofCertificate {
     Closure(ClosureCertificate),
