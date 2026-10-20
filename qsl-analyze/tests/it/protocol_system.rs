@@ -14,13 +14,14 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    binder_root, explore_protocol, BlockedThread, Disposition, GatedStep, MemoryModel, MemoryStep,
-    ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, RestKind, RestPoint, Sc,
-    ScComponent, StepKind, ThreadPath, WaitCause,
+    binder_root, explore_protocol, Access, BlockedThread, Disposition, GatedStep, MemoryModel,
+    MemoryStep, ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, RestKind,
+    RestPoint, Sc, ScComponent, StepKind, ThreadPath, WaitCause, Written,
 };
 use qsl_eval::simulation::{Limits, NotSimulated, Outcome, SubjectSystem, TransitionSystem};
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
+use qsl_foundation::MemoryModelName;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     deadlock_freedom_clause, replay_protocol_trace, settle_protocol_check, CounterexampleKind,
@@ -101,6 +102,7 @@ impl Case {
                 subject: self.subject(protocol),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_depth: None,
+                max_store_buffer: None,
                 limits: ModelCheckLimits::default(),
             },
             &Cancel::new(),
@@ -146,6 +148,8 @@ impl Case {
                 protocol: protocol.to_owned(),
                 over: instance("c"),
                 roles: self.subject(protocol).roles,
+                memory: self.subject(protocol).memory,
+                max_store_buffer: None,
             },
             &envelope_at(&unit, recorded_id, payload, node, occurrence),
             &NO_ATOMS,
@@ -167,6 +171,7 @@ impl Case {
             &ProtocolCertificateRequest {
                 subject: self.subject(protocol),
                 item: ModelCheckItem::DeadlockFreedom,
+                max_store_buffer: None,
             },
             &Cancel::new(),
             |payload| self.replay(protocol, payload.clone()),
@@ -1007,6 +1012,7 @@ fn a_protocol_model_check_is_deterministic() {
             subject: counted.subject("P"),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
+            max_store_buffer: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),
@@ -1078,10 +1084,11 @@ impl MemoryModel for Interleaving {
         &self,
         _: &Nothing,
         _: &ThreadPath,
+        _: &Access<'_>,
         _: &ModelSimState,
         post: ModelSimState,
-    ) -> (ModelSimState, Nothing) {
-        (post, Nothing)
+    ) -> Written<Nothing> {
+        Written::Applied(post, Nothing)
     }
 
     fn internal_steps(&self, _: &Nothing, _: &ModelSimState) -> Vec<MemoryStep<Nothing>> {
@@ -1092,7 +1099,7 @@ impl MemoryModel for Interleaving {
         true
     }
 
-    fn split(&self, _: &Nothing, _: &ThreadPath, _: &[ThreadPath]) -> Nothing {
+    fn split(&self, _: &Nothing, _: &ThreadPath, _: &[ThreadPath], _: MemoryModelName) -> Nothing {
         Nothing
     }
 
@@ -1291,6 +1298,7 @@ fn check_protocol_refuses_an_unstepped_construct() {
             subject: case.subject("P"),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
+            max_store_buffer: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),
@@ -1508,6 +1516,7 @@ fn a_replay_over_an_unbounded_protocol_subject_refuses_requires_bound() {
             subject: unbounded.subject("Fill"),
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
+            max_store_buffer: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),

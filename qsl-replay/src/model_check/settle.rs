@@ -25,7 +25,7 @@ use crate::certificate::closure::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::outcome::{ModelCheckOutcome, ReductionCause, UndecidedCause};
+use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause, UndecidedCause};
 use crate::model_check::replay::{
     no_value_cause, ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
 };
@@ -254,6 +254,30 @@ fn settle<T: Clone>(
             ReductionCause::Horizon { max_depth } => {
                 Row::inconclusive(InconclusiveCause::ReductionHorizon {
                     max_depth: *max_depth,
+                })
+            }
+        },
+        ModelCheckOutcome::Memory { cause, .. } => match cause {
+            MemoryCause::WeakAccessShape(shape) => Row {
+                value: TerminalValue::Unsupported(UnavailabilityCause::WeakAccessShape {
+                    site: shape.site.clone(),
+                    transition: shape.transition.as_ref().and_then(|transition| {
+                        quire_canonical::to_vec(transition, quire_canonical::Limits::new(u64::MAX))
+                            .ok()
+                            .and_then(|bytes| String::from_utf8(bytes).ok())
+                    }),
+                    shape: shape.shape_text().unwrap_or_default(),
+                }),
+                label: ResultLabel::Unsupported,
+                basis: SettlementBasis::Unavailable,
+                execution: Execution::Completed,
+                truth: Truth::Unavailable,
+                limit_reached: None,
+            },
+            MemoryCause::BoundReached { bound, states } => {
+                Row::inconclusive(InconclusiveCause::MemoryBoundReached {
+                    bound: *bound,
+                    states: *states,
                 })
             }
         },

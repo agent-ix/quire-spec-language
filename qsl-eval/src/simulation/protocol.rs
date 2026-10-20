@@ -21,13 +21,16 @@
 //! refused, before any state is built, with
 //! `unsupported_construct`/`not-yet-implemented` naming it.
 
+mod access;
 mod channel;
 mod footprint;
 mod identity;
 mod memory;
 mod program;
+mod selection;
 mod settle;
 mod steps;
+mod tso;
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -48,9 +51,12 @@ use crate::simulation::model::{
     verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
-use crate::simulation::subject::SubjectSystem;
+use crate::simulation::subject::{Bounded, SubjectSystem};
 use crate::value::evaluate_protocol_slot;
 
+pub use access::{
+    AccessShape, AttemptInstance, InstanceAccess, WeakAccessShape, WeakAccesses, WeakAttempt,
+};
 pub use footprint::{
     visible, AnchorName, ClaimReads, ParallelInstance, ProtocolFootprintError, ProtocolLocation,
 };
@@ -58,16 +64,26 @@ pub use identity::{
     BlockedThread, PathStep, ProtocolTransition, RestKind, RestPoint, StepKind, ThreadPath,
     WaitCause,
 };
-pub use memory::{GatedStep, MemoryModel, MemoryStep, Sc, ScComponent};
+pub use memory::{
+    Access, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Sc, ScComponent, SharedCell, Written,
+};
 use program::{Program, Rest};
+pub use selection::{
+    MemorySelection, MemorySelectionRefusal, ResolvedMemory, ResolvedParallel, SubjectMemory,
+};
+pub use tso::{Buffered, Tso, TsoComponent, DEFAULT_MEMORY_BOUND};
 
 /// A construct this protocol system does not step yet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Unsupported {
     /// A `run` control of this kind, by its keyword.
     Control(&'static str),
-    /// A `parallel` whose resolved memory model is not `sc`.
+    /// A `parallel` whose resolved memory model the system's memory model
+    /// does not implement.
     WeakMemory,
+    /// An attempt of a weak `parallel` whose application has no footprint
+    /// to classify its access by (FR-220).
+    AccessFootprint,
     /// A channel whose capacity is `symbolic(..)`, with no bound to read.
     SymbolicCapacity,
     /// An `unordered` channel whose overflow loses its `head` or `tail`,
@@ -107,6 +123,7 @@ impl Unsupported {
         match self {
             Self::Control(keyword) => keyword,
             Self::WeakMemory => "memory",
+            Self::AccessFootprint => "attempt footprint under a weak memory model",
             Self::SymbolicCapacity => "symbolic channel capacity",
             Self::UnorderedLossSelector => "ordered loss selector on an unordered channel",
             Self::UndecidedInitialGuard => "undecided guard at an initial state",
@@ -150,6 +167,16 @@ pub enum ProtocolRefusal {
         /// The object, by its universe key.
         object: String,
     },
+    /// The subject's resolved memory models do not resolve the protocol's
+    /// outermost `parallel` controls (`invalid_runtime_input`/
+    /// `invalid-value`).
+    #[error(transparent)]
+    Memory(MemorySelectionRefusal),
+    /// The EN-1 pre-check found an access shape that is not one access
+    /// under its weak model, or a weak `parallel` whose join is not `all`
+    /// (FR-219, FR-220): the item settles V-8 `WeakAccessShape`.
+    #[error("unsupported: weak-access-shape at {}", .0.site)]
+    WeakAccessShape(Box<WeakAccessShape>),
     /// The protocol holds a construct this system does not step
     /// (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: {}", .0.construct())]
@@ -171,10 +198,11 @@ impl ProtocolRefusal {
     /// The refusal's catalog code.
     pub fn code(&self) -> Code {
         match self {
-            Self::UnknownProtocol { .. } | Self::RoleMapping { .. } | Self::OverBinding { .. } => {
-                Code::InvalidRuntimeInput
-            }
-            Self::Unsupported(_) => Code::UnsupportedConstruct,
+            Self::UnknownProtocol { .. }
+            | Self::RoleMapping { .. }
+            | Self::OverBinding { .. }
+            | Self::Memory(_) => Code::InvalidRuntimeInput,
+            Self::Unsupported(_) | Self::WeakAccessShape(_) => Code::UnsupportedConstruct,
             Self::InitialStop(stop) => {
                 Code::from_code(stop.cause.code()).unwrap_or(Code::RuntimeInvariant)
             }
@@ -185,9 +213,12 @@ impl ProtocolRefusal {
     /// The refusal's catalog cause.
     pub fn cause(&self) -> &'static str {
         match self {
-            Self::UnknownProtocol { .. } | Self::OverBinding { .. } => "invalid-value",
+            Self::UnknownProtocol { .. } | Self::OverBinding { .. } | Self::Memory(_) => {
+                "invalid-value"
+            }
             Self::RoleMapping { .. } => "wrong-role-mapping",
             Self::Unsupported(_) => "not-yet-implemented",
+            Self::WeakAccessShape(_) => "weak-access-shape",
             Self::InitialStop(stop) => stop.cause.cause(),
             Self::Fault(_) => "established-invariant-broken",
         }
@@ -538,6 +569,34 @@ pub fn explore_protocol<M: MemoryModel>(
     )
 }
 
+/// FR-220 "Sharing and classification" (ADR-025 MA-1, MA-2): EN-1's
+/// sharing and classification of every attempt of each `parallel` `memory`
+/// resolves weak, over the initial states of `model`. It reads no memory
+/// model's rules, so it classifies under `tso` and `ra` alike.
+///
+/// # Errors
+///
+/// [`ProtocolRefusal`] when `memory` does not resolve the protocol's
+/// outermost `parallel` controls, for a construct this system does not
+/// step, or when an application has no footprint.
+pub fn classify_accesses(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+    memory: &ResolvedMemory,
+) -> Result<WeakAccesses, ProtocolRefusal> {
+    let governing = memory
+        .governing(protocol)
+        .map_err(ProtocolRefusal::Memory)?;
+    let program = Program::new(protocol)?;
+    access::classify(
+        model,
+        protocol,
+        &program,
+        &governing,
+        model.initial().first(),
+    )
+}
+
 /// FR-215: the transition system of a protocol subject.
 pub struct ProtocolSystem<'a, M: MemoryModel> {
     model: ModelSystem<'a>,
@@ -545,6 +604,12 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
     protocol: &'a CheckedProtocol,
     program: Program<'a>,
     memory: M,
+    /// The model governing each `parallel`: its outermost `parallel`'s
+    /// resolved model (FR-219, ADR-025 MM-3).
+    governing: BTreeMap<qsl_semantics::check::ProtocolNodeId, qsl_foundation::MemoryModelName>,
+    /// EN-1's classification of the attempts of every weak `parallel`
+    /// (FR-220).
+    weak: WeakAccesses,
     /// The `over` parameter's bound value.
     over: Value,
     /// Each static role's binding: role name, then model identity.
@@ -555,12 +620,18 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
 impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// FR-205 "Subject": build the protocol subject's system over the
     /// admitted `model` of the subject's model subject, with the memory
-    /// model `memory`, and its initial protocol states (FO-3).
+    /// model `memory` for its resolved models (FR-219), and its initial
+    /// protocol states (FO-3). EN-1's pre-check runs first: a weak
+    /// `parallel` whose join is not `all` with no `outstanding` clause, and
+    /// an attempt instance that is not one access under its weak model,
+    /// refuse with [`ProtocolRefusal::WeakAccessShape`] (FR-220 "Access
+    /// shape").
     ///
     /// # Errors
     ///
-    /// [`ProtocolRefusal`] as FR-205 "Subject" states, or for a construct
-    /// this system does not step.
+    /// [`ProtocolRefusal`] as FR-205 "Subject" states, for a resolved model
+    /// `memory` does not implement, for a weak access shape, or for a
+    /// construct this system does not step.
     pub fn new(
         model: ModelSystem<'a>,
         subject: &ProtocolSubject<'a>,
@@ -593,13 +664,48 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             roles.push((role.name.clone(), binding.model.clone()));
         }
         let over = Self::over_value(&model, protocol, &subject.over)?;
+        let governing = subject
+            .memory
+            .governing(protocol)
+            .map_err(ProtocolRefusal::Memory)?;
+        let implemented = memory.models();
+        if governing
+            .values()
+            .any(|resolved| !implemented.contains(resolved))
+        {
+            return Err(ProtocolRefusal::Unsupported(Unsupported::WeakMemory));
+        }
+        if let Some(node) = selection::weak_join(protocol, &governing) {
+            let site = protocol
+                .controls
+                .controls
+                .iter()
+                .find(|control| control.node == node)
+                .map(|control| control.path.join("/"))
+                .ok_or_else(|| ProtocolRefusal::fault("a-parallel-is-a-control"))?;
+            return Err(ProtocolRefusal::WeakAccessShape(Box::new(
+                WeakAccessShape::join_policy(site),
+            )));
+        }
         let program = Program::new(protocol)?;
+        let weak = access::classify(
+            &model,
+            protocol,
+            &program,
+            &governing,
+            model.initial().first(),
+        )?;
+        if let Some(shape) = weak.first_shape() {
+            return Err(ProtocolRefusal::WeakAccessShape(Box::new(shape)));
+        }
         let mut system = Self {
             model,
             package,
             protocol,
             program,
             memory,
+            governing,
+            weak,
             over,
             roles,
             initial: Vec::new(),
@@ -688,6 +794,17 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// The checked protocol clause.
     pub fn protocol(&self) -> &'a CheckedProtocol {
         self.protocol
+    }
+
+    /// The memory model it runs under.
+    pub fn memory(&self) -> &M {
+        &self.memory
+    }
+
+    /// EN-1's sharing and classification of the attempts of every weak
+    /// `parallel` (FR-220).
+    pub fn weak_accesses(&self) -> &WeakAccesses {
+        &self.weak
     }
 
     /// The live threads of `state`, by instance and path.
@@ -1022,7 +1139,7 @@ impl<'a, M: MemoryModel> TransitionSystem for ProtocolSystem<'a, M> {
         &self,
         state: &Self::State,
     ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
-        self.expand(state)
+        Ok(self.expand_bounded(state)?.0)
     }
 }
 
@@ -1050,6 +1167,13 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
 
     fn blocked(&self, state: &Self::State) -> Result<Vec<BlockedThread>, ExpansionStop> {
         self.blocked_threads(state)
+    }
+
+    fn successors_bounded(
+        &self,
+        state: &Self::State,
+    ) -> Result<Bounded<Self::TransitionId, Self::State>, ExpansionStop> {
+        self.expand_bounded(state)
     }
 }
 

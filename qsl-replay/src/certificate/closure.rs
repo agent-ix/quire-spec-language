@@ -37,7 +37,9 @@ use std::collections::{BTreeSet, VecDeque};
 use qsl_eval::automaton::{AutomatonStateKey, SafetyItem, SafetyState};
 use qsl_eval::model_subject::{ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
-use qsl_eval::simulation::protocol::{check_protocol_bounds, ProtocolRefusal, ProtocolSystem, Sc};
+use qsl_eval::simulation::protocol::{
+    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, Sc, SubjectMemory,
+};
 use qsl_eval::simulation::{
     EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
     BOUND_POSITIONS,
@@ -210,11 +212,14 @@ pub struct ProtocolCertificateRequest<'a> {
     pub subject: ProtocolSubject<'a>,
     /// The item.
     pub item: ModelCheckItem<'a>,
+    /// The `max_store_buffer` the run used; `None` for the default 4
+    /// (FR-225).
+    pub max_store_buffer: Option<u64>,
 }
 
 /// FR-338 over a protocol subject: [`check_closure`]'s check, with the
 /// successors and terminal classes recomputed by the subject's own
-/// `ProtocolSystem<Sc>`.
+/// protocol system under its resolved memory models (FR-219).
 ///
 /// # Errors
 ///
@@ -241,17 +246,36 @@ pub fn check_protocol_closure(
         })?;
     check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
-    let system =
-        ProtocolSystem::new(model, &request.subject, Sc).map_err(ClosureRefusal::Protocol)?;
-    check_system(
-        &system,
-        system.model(),
-        &request.subject.model,
-        &request.item,
-        certificate,
-        limits,
-        cancel,
-    )
+    let subject = &request.subject;
+    let item = &request.item;
+    match SubjectMemory::of(&subject.memory, request.max_store_buffer) {
+        SubjectMemory::Sc => {
+            let system =
+                ProtocolSystem::new(model, subject, Sc).map_err(ClosureRefusal::Protocol)?;
+            check_system(
+                &system,
+                system.model(),
+                &subject.model,
+                item,
+                certificate,
+                limits,
+                cancel,
+            )
+        }
+        SubjectMemory::Tso(tso) => {
+            let system =
+                ProtocolSystem::new(model, subject, tso).map_err(ClosureRefusal::Protocol)?;
+            check_system(
+                &system,
+                system.model(),
+                &subject.model,
+                item,
+                certificate,
+                limits,
+                cancel,
+            )
+        }
+    }
 }
 
 /// [`check_closure`] over `system`, whose model is `model`.

@@ -329,7 +329,7 @@ pub(super) fn identities_of(
 /// One row for each universe key a population does not hold at `state`, at
 /// each non-abstract object type that conforms to a member type of the
 /// population.
-fn absent_rows(system: &ModelSystem<'_>, state: &ModelSimState) -> Vec<Row> {
+pub(super) fn absent_rows(system: &ModelSystem<'_>, state: &ModelSimState) -> Vec<Row> {
     let mut rows = Vec::new();
     for population in &system.populations {
         let Some(keys) = system.universes.get(&population.key) else {

@@ -14,7 +14,7 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
 use qsl_eval::simulation::protocol::{
-    ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind,
+    ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
 };
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_foundation::SourceIdentity;
@@ -399,7 +399,18 @@ pub(crate) fn subject<'a>(
             role: "w".to_owned(),
             model: PACKAGE.to_owned(),
         }],
+        memory: source_memory(package, protocol),
     }
+}
+
+/// The resolved memory models of `protocol` with no request selection:
+/// each outermost `parallel` at its source default (FR-219).
+pub(crate) fn source_memory(package: &CheckedPackage, protocol: &str) -> ResolvedMemory {
+    package
+        .graph()
+        .protocol(protocol)
+        .map(|checked| ResolvedMemory::resolve(checked, &[]).expect("no selection resolves"))
+        .unwrap_or_default()
 }
 
 /// The system of `subject` under `Sc`.

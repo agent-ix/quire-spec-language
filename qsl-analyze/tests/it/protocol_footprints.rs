@@ -23,7 +23,7 @@ use quire_exact::{ObjectReference, ValueType};
 
 use crate::fill::{
     attempt, contracts, fill_unit, instance, key, model_subject, package, protocol, reachable,
-    sc_system, Documents, Reached, PACKAGE,
+    sc_system, source_memory, Documents, Reached, PACKAGE,
 };
 use crate::protocol_system::touch;
 
@@ -63,6 +63,7 @@ impl Cells {
                 role: "w".to_owned(),
                 model: PACKAGE.to_owned(),
             }],
+            memory: source_memory(&self.checked, name),
         }
     }
 }

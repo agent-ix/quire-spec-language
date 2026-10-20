@@ -38,6 +38,7 @@ use crate::model_check::state_graph::WitnessSource;
 use crate::proof_result::{
     Certification, DeclineCode, IncompleteCause, InconclusiveCause, ProofBasis,
     ReportedInconclusiveCause, SymmetryBrokenCause, TerminalRecord, TerminalValue,
+    UnavailabilityCause,
 };
 use crate::result::ReplayResult;
 use crate::spine::{
@@ -237,6 +238,22 @@ pub struct ItemCause {
     /// state, in initial-state order (QSpec FR-391).
     #[serde(skip_serializing_if = "Option::is_none")]
     sources: Option<Vec<WitnessSource>>,
+    /// A `memory-bound-reached` cause's request member (QSpec FR-439).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bound: Option<&'static str>,
+    /// A `memory-bound-reached` cause's count of bound-limited states.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    states: Option<u64>,
+    /// A `weak-access-shape` cause's site (QSpec FR-439).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    site: Option<String>,
+    /// A `weak-access-shape` cause's transition identity, in its canonical
+    /// text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    transition: Option<String>,
+    /// A `weak-access-shape` cause's shape.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shape: Option<serde_json::Value>,
 }
 
 /// A property form's spelling on the outcome wire.
@@ -283,6 +300,11 @@ impl ItemCause {
             initial: None,
             generator: None,
             sources: None,
+            bound: None,
+            states: None,
+            site: None,
+            transition: None,
+            shape: None,
         }
     }
 
@@ -352,6 +374,14 @@ impl ItemCause {
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReductionHorizon { max_depth }) => {
                 item.max_depth = Some(*max_depth);
             }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::MemoryBoundReached {
+                bound,
+                states,
+            }) => {
+                item.bound = Some(bound.member.as_str());
+                item.value = Some(bound.value);
+                item.states = Some(*states);
+            }
             ReportedInconclusiveCause::KaniVacuousProof => {}
             ReportedInconclusiveCause::Cause(InconclusiveCause::ReplayParity(parity)) => {
                 item.parity = Some(ParityReason {
@@ -420,13 +450,23 @@ impl OutcomeItem {
                     ..ItemCause::kind(cause.as_str())
                 }),
             ),
-            TerminalValue::Unsupported(cause) => (
-                ItemLabel::Unsupported,
-                Some(ItemCause {
+            TerminalValue::Unsupported(cause) => {
+                let mut item = ItemCause {
                     code: cause.code().map(str::to_owned),
                     ..ItemCause::kind(cause.as_str())
-                }),
-            ),
+                };
+                if let UnavailabilityCause::WeakAccessShape {
+                    site,
+                    transition,
+                    shape,
+                } = cause
+                {
+                    item.site = Some(site.clone());
+                    item.transition.clone_from(transition);
+                    item.shape = serde_json::from_str(shape).ok();
+                }
+                (ItemLabel::Unsupported, Some(item))
+            }
             TerminalValue::Incomplete(cause) => {
                 let mut item = ItemCause::kind(cause.as_str());
                 match cause {
