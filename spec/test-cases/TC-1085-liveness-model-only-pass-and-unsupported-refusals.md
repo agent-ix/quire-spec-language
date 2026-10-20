@@ -25,9 +25,8 @@ versions 0, the subject's `max_candidates` 1,000,000.
 1. `eventually (holds(c.versionNumber = 0) and holds(6 mod (2 -
    c.versionNumber) >= 0))`, with the default limits.
 2. The same claim with `max_states` 1.
-3. The TP-4 claim of FR-126-AC-1 under `fair strong each attemptUpdate`; the
-   same claim as a checked clause with a guarded `on each` activation, given
-   to the engine directly.
+3. The TP-4 claim of FR-126-AC-1 as a checked clause with a guarded `on each`
+   activation, given to the engine directly.
 4. AC-1's weak `each` claim, with and without a built FR-339 certificate.
 5. Step 1's claim with initial versions `a` 0 and `b` 1.
 6. Step 5's request with `max_states` 6 and with `max_states` 1,000; step 1's
@@ -39,8 +38,8 @@ versions 0, the subject's `max_candidates` 1,000,000.
   division-by-zero at position 2, the prefix `(0,0) -upd(a)-> (1,0) -upd(a)->
   (2,0)`; no product state is reported for the dead positions.
 - Step 2: `Stopped{ResourceExhausted, {MaxStates, 1}}`.
-- Step 3: the `StrongFairness` refusal, then the `GuardedActivation` refusal,
-  each `unsupported_construct`/`not-yet-implemented`, with no state explored.
+- Step 3: the `GuardedActivation` refusal, `unsupported_construct`/
+  `not-yet-implemented`, with no state explored.
 - Step 4: `Holds{Exhaustive}` with an accepted certificate; without one,
   `ComponentCertificateNotBuilt` with the run's statistics, not `Holds`.
 - Step 5: `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` at

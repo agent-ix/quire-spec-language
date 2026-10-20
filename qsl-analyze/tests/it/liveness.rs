@@ -703,26 +703,6 @@ fn two_liveness_runs_give_equal_outcomes() {
     assert_eq!(once(), once());
 }
 
-/// A strong constraint is refused before any state is explored: its filter
-/// and obligations are ADR-019's, not built here. Like the certificate
-/// refusal above this is interim behaviour, so it carries no AC tag.
-#[test]
-fn a_strong_constraint_is_refused_not_ignored() {
-    let fixture = counter(
-        document_with_ranged_parameter(),
-        "fair strong M::Counter::inc;",
-        "always eventually holds(c.value = 3)",
-    );
-    let refusal = fixture.decide(is_three).expect_err("strong is not decided");
-    assert!(
-        matches!(
-            refusal,
-            ModelCheckRefusal::Liveness(LivenessRefusal::StrongFairness)
-        ),
-        "{refusal:?}"
-    );
-}
-
 /// Letters that read the counter an instance binds by its key.
 struct ByKey(fn(&str, i64) -> bool);
 

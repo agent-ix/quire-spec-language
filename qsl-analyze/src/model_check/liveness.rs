@@ -36,7 +36,13 @@
 //! holds a state of every acceptance set and satisfies every weak
 //! constraint (FA-4), and builds the canonical lasso (CX-5): the stem is the
 //! breadth-first tree path to the first passing component's first state and
-//! the loop is the greedy walk inside it. Enabledness is read from each
+//! the loop is the greedy walk inside it. A component that satisfies the
+//! weak constraints but starves a strong one is refined recursively (ADR-019
+//! FS-2): the kernels remove the states where a starved strong constraint is
+//! enabled and decide the remainder again, depth first, so the passing
+//! component can be a sub-component of an SCC, and the greedy walk owes a
+//! strong constraint an edge only when the component enables it somewhere
+//! (FS-7). Enabledness is read from each
 //! model state's own successor relation, never from product edges (FA-2).
 //!
 //! A product graph whose second phase finds no passing component proves the
@@ -105,12 +111,6 @@ const STOPPED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficien
 /// Why EN-1 refused a liveness clause, or could not settle one it explored.
 #[derive(Debug, thiserror::Error)]
 pub enum LivenessRefusal {
-    /// The fairness set of an unreduced run holds a strong constraint, whose
-    /// filter (ADR-019 FS-2) and counterexample obligations the unreduced
-    /// second phase does not decide yet; the annotated quotient decides it
-    /// under symmetry.
-    #[error("EN-1 decides weak fairness only; the clause holds a strong fairness constraint")]
-    StrongFairness,
     /// The clause has no property automaton.
     #[error(transparent)]
     Automaton(#[from] AutomatonError),
@@ -144,14 +144,6 @@ pub(super) fn check(
         return Err(fault("a-liveness-item-is-a-clause"));
     };
     let symmetric = !request.reductions.symmetry.is_empty();
-    if !symmetric
-        && clause
-            .fairness()
-            .iter()
-            .any(|constraint| constraint.kind() == FairnessKind::Strong)
-    {
-        return Err(LivenessRefusal::StrongFairness.into());
-    }
     if matches!(clause.activation(), Activation::Each { guarded: true }) {
         return Err(ModelCheckRefusal::GuardedActivation);
     }
@@ -270,6 +262,14 @@ struct Binding {
     instance: ModelInstance,
     group: SymmetryGroup,
     applied: Option<AppliedReduction>,
+}
+
+/// The kernels' strength of a clause's fairness kind.
+fn strength_of(kind: FairnessKind) -> Strength {
+    match kind {
+        FairnessKind::Weak => Strength::Weak,
+        FairnessKind::Strong => Strength::Strong,
+    }
 }
 
 fn widen(value: usize) -> u64 {
@@ -1854,10 +1854,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 }
             }
             constraints.push(QuotientConstraint {
-                strength: match constraint.kind() {
-                    FairnessKind::Weak => Strength::Weak,
-                    FairnessKind::Strong => Strength::Strong,
-                },
+                strength: strength_of(constraint.kind()),
                 granularity: constraint.granularity(),
                 identities,
             });
@@ -2083,6 +2080,7 @@ impl FairModel {
         }
         let mut constraints = Vec::new();
         for constraint in clause.fairness() {
+            let strength = strength_of(constraint.kind());
             let operation = constraint.operation();
             let text = system
                 .operation_text(operation.declaring_type(), operation.name())
@@ -2097,11 +2095,11 @@ impl FairModel {
                     let members = covered
                         .map(&identity)
                         .collect::<Result<Vec<_>, ModelCheckRefusal>>()?;
-                    constraints.push(Constraint::weak(members));
+                    constraints.push(Constraint::new(strength, members));
                 }
                 FairnessGranularity::Each => {
                     for transition in covered {
-                        constraints.push(Constraint::weak([identity(transition)?]));
+                        constraints.push(Constraint::new(strength, [identity(transition)?]));
                     }
                 }
             }
@@ -2136,7 +2134,7 @@ impl FairModel {
         component: &BTreeSet<Vertex>,
         entry: Vertex,
     ) -> Result<Vec<(Vertex, Edge)>, ModelCheckRefusal> {
-        let mut open = Open::of(self);
+        let mut open = Open::of(self, component);
         open.discharge_vertex(self, entry);
         let mut walk = Vec::new();
         let mut current = entry;
@@ -2290,19 +2288,36 @@ impl FairModel {
     }
 }
 
-/// The obligations of a component not yet discharged (CX-5): one state of
-/// each acceptance set, and for each weak constraint an edge that takes it
-/// or a state that disables it.
+/// The obligations of a component not yet discharged (CX-5, ADR-019 FS-7):
+/// one state of each acceptance set, for each weak constraint an edge that
+/// takes it or a state that disables it, and for each strong constraint
+/// enabled at some state of the component an edge that takes it.
 struct Open {
     sets: BTreeSet<usize>,
     constraints: BTreeSet<usize>,
 }
 
 impl Open {
-    fn of(model: &FairModel) -> Self {
+    /// The obligations of `component`: a strong constraint enabled at no
+    /// state of it has none.
+    fn of(model: &FairModel, component: &BTreeSet<Vertex>) -> Self {
         Self {
             sets: (0..model.graph.acceptance_sets().len()).collect(),
-            constraints: (0..model.constraints.len()).collect(),
+            constraints: model
+                .constraints
+                .iter()
+                .enumerate()
+                .filter(|(_, constraint)| {
+                    constraint.strength() == Strength::Weak
+                        || component.iter().any(|vertex| {
+                            model
+                                .graph
+                                .enabled(*vertex)
+                                .is_some_and(|enabled| constraint.is_enabled_in(enabled))
+                        })
+                })
+                .map(|(index, _)| index)
+                .collect(),
         }
     }
 
@@ -2310,12 +2325,17 @@ impl Open {
         self.sets.is_empty() && self.constraints.is_empty()
     }
 
+    /// Whether `vertex` discharges the obligation of `constraint`: a weak
+    /// constraint is disabled there. A strong constraint is never discharged
+    /// by a state.
     fn disabled_at(model: &FairModel, constraint: usize, vertex: Vertex) -> bool {
         match (
             model.constraints.get(constraint),
             model.graph.enabled(vertex),
         ) {
-            (Some(constraint), Some(enabled)) => !constraint.is_enabled_in(enabled),
+            (Some(constraint), Some(enabled)) => {
+                constraint.strength() == Strength::Weak && !constraint.is_enabled_in(enabled)
+            }
             _ => false,
         }
     }

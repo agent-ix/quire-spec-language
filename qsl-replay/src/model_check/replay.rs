@@ -35,7 +35,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::fairness::{check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep};
+use qsl_eval::fairness::{
+    check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep, Strength,
+};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSimulationRequest, ModelSystem,
@@ -164,10 +166,6 @@ pub enum ModelTraceRefusal {
         "unsupported_construct/not-yet-implemented: the clause has a guarded `on each` activation"
     )]
     GuardedActivation,
-    /// The recompiled clause's fairness set holds a strong constraint,
-    /// whose lasso check (ADR-019 FS-8) is not built.
-    #[error("unsupported_construct/not-yet-implemented: the clause's fairness set holds a strong constraint")]
-    StrongFairness,
     /// A step's transition identity is not enabled at its pre-state.
     #[error("invalid_runtime_input/invalid-value: step {step} is not enabled")]
     NotEnabled {
@@ -195,9 +193,7 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::PostState { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
-            Self::StrongFairness | Self::AuthoredUndefined | Self::GuardedActivation => {
-                Code::UnsupportedConstruct
-            }
+            Self::AuthoredUndefined | Self::GuardedActivation => Code::UnsupportedConstruct,
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
@@ -214,9 +210,7 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
             | Self::PostState { .. } => "content-mismatch",
-            Self::StrongFairness | Self::AuthoredUndefined | Self::GuardedActivation => {
-                "not-yet-implemented"
-            }
+            Self::AuthoredUndefined | Self::GuardedActivation => "not-yet-implemented",
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
@@ -300,11 +294,16 @@ fn disagrees(replayed: Category) -> ModelTraceSettlement {
     })
 }
 
-fn no_value() -> ModelTraceSettlement {
-    ModelTraceSettlement::Inconclusive(DisagreementCause::NoValue {
+/// A refuted claim whose replay completed no value.
+pub(super) fn no_value_cause() -> DisagreementCause {
+    DisagreementCause::NoValue {
         proved: Verdict::from_category(Category::Violation),
         replayed: Verdict::from_category(Category::Incomplete),
-    })
+    }
+}
+
+fn no_value() -> ModelTraceSettlement {
+    ModelTraceSettlement::Inconclusive(no_value_cause())
 }
 
 /// FR-128: replay `envelope`'s model counterexample over `subject`, with
@@ -681,15 +680,6 @@ fn check_formula(
     let mut loop_states = Vec::new();
     let trace = match payload.lasso {
         Some(lasso) => {
-            // Refuse a strong constraint before any expansion is read.
-            if formula
-                .clause
-                .fairness()
-                .iter()
-                .any(|constraint| constraint.kind() == FairnessKind::Strong)
-            {
-                return Err(refused(ModelTraceRefusal::StrongFairness));
-            }
             match loop_states_of(system, payload, positions, lasso)? {
                 Some(states) => loop_states = states,
                 None => return Ok((no_value(), Vec::new())),
@@ -855,6 +845,10 @@ fn unfair_constraint(
     let mut constraints = Vec::new();
     let mut authored = Vec::new();
     for constraint in clause.fairness() {
+        let strength = match constraint.kind() {
+            FairnessKind::Weak => Strength::Weak,
+            FairnessKind::Strong => Strength::Strong,
+        };
         let operation = constraint.operation();
         let text = system
             .operation_text(operation.declaring_type(), operation.name())
@@ -866,12 +860,12 @@ fn unfair_constraint(
             .collect();
         match constraint.granularity() {
             FairnessGranularity::Whole => {
-                constraints.push(Constraint::weak(covered));
+                constraints.push(Constraint::new(strength, covered));
                 authored.push(constraint);
             }
             FairnessGranularity::Each => {
                 for identity in covered {
-                    constraints.push(Constraint::weak([identity]));
+                    constraints.push(Constraint::new(strength, [identity]));
                     authored.push(constraint);
                 }
             }
