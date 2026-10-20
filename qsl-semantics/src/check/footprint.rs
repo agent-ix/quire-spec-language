@@ -9,7 +9,7 @@
 
 use std::collections::BTreeSet;
 
-use quire_exact::{EffectiveId, ValueType};
+use quire_exact::{EffectiveId, NodeKey, ValueType};
 use quire_semantic_value::declaration::TypeEnvironment;
 use quire_semantic_value::location::Location;
 
@@ -130,15 +130,56 @@ pub fn derive_footprint(
     operation: &OperationDeclaration,
     arguments: &[(String, EffectiveId)],
 ) -> Result<SymbolicFootprint, FootprintRefusal> {
-    derive_from(
-        graph.scope().types(),
-        graph.state_clauses(),
+    derive_selected_footprint(
+        graph,
         model,
         receiver_type,
         declaring,
         operation,
         arguments,
+        &|_| true,
     )
+}
+
+/// [`derive_footprint`] over the clauses of the operation that `select`
+/// admits by their checked identity: a protocol attempt applies only the
+/// clauses its `contracts` select, so only their bodies are read (ADR-027
+/// FT-1).
+///
+/// # Errors
+///
+/// As [`derive_footprint`].
+pub fn derive_selected_footprint(
+    graph: &CheckedGraph,
+    model: &StateModel,
+    receiver_type: EffectiveId,
+    declaring: EffectiveId,
+    operation: &OperationDeclaration,
+    arguments: &[(String, EffectiveId)],
+    select: &dyn Fn(NodeKey) -> bool,
+) -> Result<SymbolicFootprint, FootprintRefusal> {
+    derive_from(
+        graph.scope().types(),
+        graph.state_clauses(),
+        model,
+        Operation {
+            receiver_type,
+            declaring,
+            operation,
+            arguments,
+        },
+        select,
+    )
+}
+
+/// The operation a derivation reads: its receiver's type, its declaring
+/// type, its declaration and the object type of each bound reference
+/// argument.
+pub(crate) struct Operation<'a> {
+    pub(crate) receiver_type: EffectiveId,
+    pub(crate) declaring: EffectiveId,
+    pub(crate) operation: &'a OperationDeclaration,
+    pub(crate) arguments: &'a [(String, EffectiveId)],
 }
 
 /// [`derive_footprint`] over the type environment and checked state clauses
@@ -147,11 +188,15 @@ pub(crate) fn derive_from(
     types: &TypeEnvironment,
     clauses: &[CheckedStateClause],
     model: &StateModel,
-    receiver_type: EffectiveId,
-    declaring: EffectiveId,
-    operation: &OperationDeclaration,
-    arguments: &[(String, EffectiveId)],
+    operation: Operation<'_>,
+    select: &dyn Fn(NodeKey) -> bool,
 ) -> Result<SymbolicFootprint, FootprintRefusal> {
+    let Operation {
+        receiver_type,
+        declaring,
+        operation,
+        arguments,
+    } = operation;
     let derivation = Derivation {
         reader: Reader::new(types, model)?,
         clauses,
@@ -159,6 +204,7 @@ pub(crate) fn derive_from(
         declaring,
         operation,
         arguments,
+        select,
     };
     derivation.run()
 }
@@ -518,6 +564,7 @@ struct Derivation<'a> {
     declaring: EffectiveId,
     operation: &'a OperationDeclaration,
     arguments: &'a [(String, EffectiveId)],
+    select: &'a dyn Fn(NodeKey) -> bool,
 }
 
 impl Derivation<'_> {
@@ -678,6 +725,7 @@ impl Derivation<'_> {
             };
             if owner.declaring != self.declaring
                 || owner.declaration.name() != self.operation.name()
+                || !(self.select)(clause.identity)
             {
                 continue;
             }

@@ -39,7 +39,7 @@ pub(super) struct Attempt<'a> {
     pub(super) declaring: EffectiveId,
     pub(super) operation: String,
     pub(super) receiver: EffectiveId,
-    pub(super) contracts: BTreeSet<NodeKey>,
+    pub(super) contracts: std::sync::Arc<BTreeSet<NodeKey>>,
     pub(super) constraint: Option<&'a CheckedBody>,
     /// The binder's slot when the operation's result is a value of the
     /// binder's type: the attempt binds its result (ADR-027 ST-1).
@@ -144,6 +144,15 @@ pub(super) enum Rest {
     Finish,
     /// The end of a branch body.
     End,
+}
+
+/// What a settling can do, whatever its guards decide.
+#[derive(Default)]
+pub(super) struct SettleWalk {
+    /// Whether it can end a branch body.
+    pub(super) ends: bool,
+    /// The `choice`, `repeat` and `check` nodes whose guards it can read.
+    pub(super) guards: BTreeSet<ProtocolNodeId>,
 }
 
 /// Where settling starts (ADR-027 FO-1).
@@ -365,7 +374,7 @@ impl<'a> Program<'a> {
                     declaring: attempt.operation.declaring,
                     operation: attempt.operation.declaration.name().to_owned(),
                     receiver: attempt.receiver,
-                    contracts: attempt.contracts.iter().copied().collect(),
+                    contracts: std::sync::Arc::new(attempt.contracts.iter().copied().collect()),
                     constraint: body_of(node),
                     binds,
                 },
@@ -727,6 +736,134 @@ impl<'a> Program<'a> {
         }
         (finish && readers.finish)
             || (start <= end && readers.controls.range(start..=end).next().is_some())
+    }
+
+    /// Where settling from `from` can go, whatever the guards and `check`s
+    /// it passes decide: a walk of FO-1's structural moves that takes every
+    /// move a guard could choose and stops at each rest point. It gives
+    /// whether the settling can end a branch body (ADR-027 FT-1 "when the
+    /// step ends a branch") and every guard and `check` it can read.
+    pub(super) fn settle_walk(&self, from: Cursor) -> Result<SettleWalk, ProtocolRefusal> {
+        let mut walk = SettleWalk::default();
+        let mut seen: BTreeSet<(u8, ProtocolNodeId)> = BTreeSet::new();
+        let mut pending = vec![from];
+        while let Some(cursor) = pending.pop() {
+            let key = match cursor {
+                Cursor::Enter(node) => (0, node),
+                Cursor::Exit(node) => (1, node),
+                Cursor::Guard(node) => (2, node),
+            };
+            if !seen.insert(key) {
+                continue;
+            }
+            match cursor {
+                Cursor::Enter(node) => {
+                    let control = self.control(node)?;
+                    match control.step {
+                        ControlStep::Sequence => pending.push(
+                            control
+                                .children
+                                .first()
+                                .map_or(Cursor::Exit(node), |first| Cursor::Enter(*first)),
+                        ),
+                        ControlStep::Branch | ControlStep::Case => {
+                            pending
+                                .extend(control.children.iter().map(|child| Cursor::Enter(*child)));
+                        }
+                        ControlStep::Choice => {
+                            walk.guards.insert(node);
+                            pending
+                                .extend(control.children.iter().map(|child| Cursor::Enter(*child)));
+                        }
+                        ControlStep::Check => {
+                            walk.guards.insert(node);
+                            pending.push(Cursor::Exit(node));
+                        }
+                        ControlStep::Repeat => pending.push(Cursor::Guard(node)),
+                        ControlStep::Parallel
+                        | ControlStep::Attempt
+                        | ControlStep::Send
+                        | ControlStep::Receive
+                        | ControlStep::Event
+                        | ControlStep::Await
+                        | ControlStep::Unstepped(_) => {}
+                    }
+                }
+                Cursor::Guard(node) => {
+                    let repeat = self.repeat(node)?;
+                    walk.guards.insert(node);
+                    pending.push(Cursor::Exit(node));
+                    pending.push(Cursor::Enter(repeat.body));
+                    if let Some(exhausted) = repeat.exhausted {
+                        pending.push(Cursor::Enter(exhausted));
+                    }
+                }
+                Cursor::Exit(node) => {
+                    let Some(parent) = self.parent(node)? else {
+                        continue;
+                    };
+                    let holder = self.control(parent)?;
+                    match holder.step {
+                        ControlStep::Sequence => {
+                            let position = holder
+                                .children
+                                .iter()
+                                .position(|child| *child == node)
+                                .ok_or_else(|| ProtocolRefusal::fault("a-child-of-its-parent"))?;
+                            pending.push(
+                                holder
+                                    .children
+                                    .get(position.saturating_add(1))
+                                    .map_or(Cursor::Exit(parent), |next| Cursor::Enter(*next)),
+                            );
+                        }
+                        ControlStep::Branch => walk.ends = true,
+                        ControlStep::Case | ControlStep::Choice => {
+                            pending.push(Cursor::Exit(parent));
+                        }
+                        ControlStep::Repeat => pending.push(if self.repeat(parent)?.body == node {
+                            Cursor::Guard(parent)
+                        } else {
+                            Cursor::Exit(parent)
+                        }),
+                        ControlStep::Await => {
+                            let awaited = self.awaited(parent)?;
+                            pending.push(if awaited.event == node {
+                                Cursor::Enter(awaited.then)
+                            } else {
+                                Cursor::Exit(parent)
+                            });
+                        }
+                        ControlStep::Parallel
+                        | ControlStep::Attempt
+                        | ControlStep::Check
+                        | ControlStep::Send
+                        | ControlStep::Receive
+                        | ControlStep::Event
+                        | ControlStep::Unstepped(_) => {
+                            return Err(ProtocolRefusal::fault("a-parent-holds-controls"))
+                        }
+                    }
+                }
+            }
+        }
+        Ok(walk)
+    }
+
+    /// Whether the subtree of the control `node` holds a `parallel`, so a
+    /// thread running it can fork threads of its own.
+    pub(super) fn forks_within(&self, node: ProtocolNodeId) -> Result<bool, ProtocolRefusal> {
+        let span = self
+            .spans
+            .get(&node)
+            .ok_or_else(|| ProtocolRefusal::fault("a-control-is-in-the-run-tree"))?;
+        Ok(self.controls.iter().any(|(inner, control)| {
+            control.step == ControlStep::Parallel
+                && self
+                    .spans
+                    .get(inner)
+                    .is_some_and(|at| (span.first..=span.last).contains(&at.first))
+        }))
     }
 
     /// Each control's innermost enclosing `repeat` whose body holds it, from

@@ -31,7 +31,7 @@ Scope: FR-206-AC-1 to FR-206-AC-9.
 6. Run FR-206-AC-6's `join any … outstanding continue` protocol and read
    `finish`'s enabledness before and after branch `b` completes.
 7. Send at an empty and a full capacity-2 `fifo` channel under each
-   overflow policy and read the send record of FR-206-AC-7.
+   overflow policy and read the binder and the send record of FR-206-AC-7.
 8. Run FR-206-AC-8's fence protocols under `sc` and `tso`.
 9. Run FR-206-AC-9's nested-cancel protocol to the `join(Outer)` step and
    explore every later state.
@@ -54,7 +54,8 @@ Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
   at `Z`.
 - Step 6: `finish` not enabled while `b` is `running`; enabled once `b`
   completes, and its step marks the instance finished.
-- Step 7: the send records of FR-206-AC-7.
+- Step 7: the binder holds the sent payload; the send records of
+  FR-206-AC-7, recorded as the step's result and absent from the state key.
 - Step 8: the fence enabledness of FR-206-AC-8.
 - Step 9: `b`, `x` and `y` `cancelled`, `Inner` removed, no later step by
   any of them.

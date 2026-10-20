@@ -428,6 +428,15 @@ pub struct PopulationDomain {
     pub(crate) maximum: Option<u64>,
 }
 
+impl PopulationDomain {
+    /// The population's own declared member object type: the type of an
+    /// object parameter bound to it, whose instances a model check lists
+    /// from the subject's universe (FR-125 Instancing).
+    pub const fn object(&self) -> EffectiveId {
+        self.object
+    }
+}
+
 /// What an `operation-contract` claim is about.
 ///
 /// `pub`, not narrowed: an enum's own variants cannot carry a narrower

@@ -425,13 +425,6 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     .channels
                     .get(key.channel)
                     .ok_or_else(|| ProtocolRefusal::fault("a-queue-names-a-channel"))?;
-                let identity = Enc::tagged(
-                    "channel",
-                    vec![
-                        ("name", Enc::text(channel.name.clone())),
-                        ("instance", Enc::text(ordinal.to_string())),
-                    ],
-                );
                 let mut results: Vec<(StepKind, Vec<Vec<u8>>)> = Vec::new();
                 for (position, entry) in queue.iter().enumerate() {
                     let mut variants = Vec::new();
@@ -466,7 +459,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             changed,
                         );
                         gathered.successors.push((
-                            ProtocolTransition::channel(kind, identity.clone(), entry.enc.clone()),
+                            ProtocolTransition::channel(
+                                kind,
+                                channel.name.clone(),
+                                *ordinal,
+                                entry.enc.clone(),
+                            ),
                             next,
                         ));
                     }

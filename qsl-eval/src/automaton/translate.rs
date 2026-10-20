@@ -32,7 +32,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId, TemporalProfile};
+use qsl_semantics::check::{
+    Activation, CheckedFormula, CheckedTemporalClause, FormulaNodeId, TemporalProfile,
+};
 
 use crate::automaton::counters::{DeadlineCounter, ExtentCounter};
 use crate::automaton::dnf::Dnf;
@@ -278,7 +280,55 @@ pub fn translate(
     clause: &CheckedTemporalClause,
     max_states: u64,
 ) -> Result<PropertyAutomaton, AutomatonError> {
-    let profile = clause.profile();
+    translate_formula(
+        clause.formula(),
+        clause.profile(),
+        clause.activation(),
+        Selection::Clause,
+        max_states,
+    )
+}
+
+/// Translate the negation of a hyper clause's `body` to a generalized Büchi
+/// automaton, whatever the body's fragment (ADR-023 HC-4): a safety body's
+/// violation is a fair accepting cycle through the automaton's rejecting
+/// state, so EN-1 decides every body by the one SCC phase. The body is read
+/// from the origin of the joint behaviour, which is a lasso, so past
+/// operators remember the stationary history before it as `translate` does.
+///
+/// # Errors
+///
+/// As [`translate`].
+pub fn translate_negation(
+    body: &CheckedFormula,
+    profile: TemporalProfile,
+    max_states: u64,
+) -> Result<PropertyAutomaton, AutomatonError> {
+    translate_formula(
+        body,
+        profile,
+        Activation::Origin,
+        Selection::Negation,
+        max_states,
+    )
+}
+
+/// Which automaton [`translate_formula`] builds.
+#[derive(Clone, Copy)]
+enum Selection {
+    /// The representation ADR-018 SM-6 gives the formula's fragment.
+    Clause,
+    /// The automaton of the negation, whatever the fragment.
+    Negation,
+}
+
+fn translate_formula(
+    formula: &CheckedFormula,
+    profile: TemporalProfile,
+    activation: Activation,
+    selection: Selection,
+    max_states: u64,
+) -> Result<PropertyAutomaton, AutomatonError> {
     if matches!(profile, TemporalProfile::TimestampedEventFiniteWindow) {
         return Err(AutomatonError::ProfileNotTranslated { profile });
     }
@@ -288,14 +338,14 @@ pub fn translate(
         atoms,
         positive,
         negative,
-    } = lower(clause.formula())?;
+    } = lower(formula)?;
     let mut next_atom = atoms.len();
     let mut take_atom = || {
         let atom = Atom::new(next_atom);
         next_atom += 1;
         atom
     };
-    let (property, negation, when, live) = match clause.activation() {
+    let (property, negation, when, live) = match activation {
         Activation::Origin => (positive, negative, None, None),
         Activation::Each { guarded } => {
             let when = if guarded { Some(take_atom()?) } else { None };
@@ -321,7 +371,9 @@ pub fn translate(
             )
         }
     };
-    let (kind, target) = if bounded {
+    let (kind, target) = if matches!(selection, Selection::Negation) {
+        (AutomatonKind::Liveness, negation)
+    } else if bounded {
         (AutomatonKind::Bounded, property)
     } else if is_safety(&mut ir, property)? {
         (AutomatonKind::Safety, property)

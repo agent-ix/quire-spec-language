@@ -34,6 +34,12 @@ pub enum UndecidedCause {
     NoInitialState,
     /// The item has zero instances (FR-125).
     NoInstance,
+    /// ADR-023 HV-4: a hyper item's `match` block was refused or incomplete
+    /// at a reachable joint step (FR-176).
+    MatchUndetermined,
+    /// ADR-023 HM-7: a hyper item's non-empty `μ_U` is matched by no fair
+    /// tuple of universal behaviours (FR-176).
+    VacuousMatch,
 }
 
 /// Why a run under reductions settles `inconclusive` (ADR-021 RV-2 to
