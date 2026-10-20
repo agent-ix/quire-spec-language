@@ -53,6 +53,7 @@ fn function(form: &DeclarationForm) -> &FunctionDeclaration {
         | DeclarationForm::Union(_)
         | DeclarationForm::Dimension(_)
         | DeclarationForm::Unit(_)
+        | DeclarationForm::Abstraction(_)
         | DeclarationForm::StateClause(_)
         | DeclarationForm::OperationBody(_)
         | DeclarationForm::PopulationBound(_)
@@ -221,6 +222,7 @@ fn a_unit_builds_one_form_per_declaration_in_source_order() {
             DeclarationForm::Union(_) => "union",
             DeclarationForm::Dimension(_) => "dimension",
             DeclarationForm::Unit(_) => "unit",
+            DeclarationForm::Abstraction(_) => "abstraction",
             DeclarationForm::StateClause(_) => "state_clause",
             DeclarationForm::OperationBody(_) => "operation_body",
             DeclarationForm::PopulationBound(_) => "population_bound",

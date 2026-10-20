@@ -336,6 +336,7 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
         | CheckCause::ProtocolReference(_)
         | CheckCause::ProtocolObligation(_)
         | CheckCause::TerminalNotEmitted { .. }
+        | CheckCause::Abstraction(_)
         | CheckCause::RefinementNotEmitted { .. }
         | CheckCause::Probabilistic(_)
         | CheckCause::TimedNotChecked { .. }

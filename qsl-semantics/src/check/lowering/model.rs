@@ -761,7 +761,11 @@ fn clause_spelling(kind: DeclaredClauseKind) -> &'static str {
 /// node tag and form, no semantic type, a `null` `declaration` and an empty
 /// body. The one definition [`Lowering::model_node`] keys and adds and
 /// [`AdmittedModel::model_node_key`] only keys.
-fn model_node_content(owner: ModelOwner, node_tag: NodeTag, form: &'static str) -> NodeContent {
+pub(super) fn model_node_content(
+    owner: ModelOwner,
+    node_tag: NodeTag,
+    form: &'static str,
+) -> NodeContent {
     NodeContent {
         node_tag,
         semantic_form: form,

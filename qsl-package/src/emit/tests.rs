@@ -32,6 +32,7 @@ use sha2::{Digest as _, Sha256};
 use super::*;
 use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 
+mod abstraction;
 mod admission_corpus;
 mod child_composite;
 mod deep_bodies;
@@ -1372,6 +1373,9 @@ fn emit_checked_never_returns_incomplete_across_the_fixture_set() {
             Err(EmitRefusal::Cancelled { .. }) => panic!("no handle was cancelled"),
             Err(EmitRefusal::StaleProtocolReference { .. }) => {
                 panic!("the fixture set holds no protocol reference")
+            }
+            Err(EmitRefusal::Abstraction(_)) => {
+                panic!("the fixture set binds no abstraction relation")
             }
             Err(EmitRefusal::ProbabilisticModelNotEmitted { .. }) => {
                 panic!("the fixture set declares no random parameter, reward or workload")
