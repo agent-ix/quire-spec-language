@@ -77,6 +77,26 @@ weak model corresponds to real accesses.
   identity over the universes.
 - An access with an ordering SHALL be atomic and one without non-atomic.
 
+### What S3 decides and what EN-1 decides
+
+S3 sees an attempt's operation and its receiver and parameters symbolically; it
+has no object identity, and the grammar's `attempt N by R on M::T::op` carries
+no receiver. Whether a field the operation touches is shared or branch-local
+is therefore not decidable at S3: sharing is a property of instantiated
+footprints (ADR-025 MA-1).
+
+- S3 SHALL decide only what the attempt's operation and ordering state: the
+  access class over the operation's fields (load, store, RMW or local), the
+  orderings its kind admits, an ordering outside any `parallel`, and the
+  symbolic two-shared-fields shape of Access shape. S3 SHALL NOT refuse an
+  attempt, or label a location shared or branch-local, on grounds of sharing.
+- EN-1's instantiation and its pre-check (ADR-025 MA-4) SHALL decide which
+  locations are shared and settle an access shape that needs object identity
+  as `WeakAccessShape`.
+- When an attempt carries an `ordering` and lies outside every `parallel`,
+  S3 SHALL refuse it with `ill_typed`/`operator-ineligible`, naming the
+  attempt: an ordering applies only to an access of a `parallel` branch.
+
 ### Admitted orderings
 
 - S3 SHALL admit `relaxed`, `acquire`, `seq_cst` or none on a load;
@@ -116,6 +136,10 @@ weak model corresponds to real accesses.
 | FR-220-AC-4 | `SB` under `sc` with every ordering `relaxed`, and again with every ordering `seq_cst`, reaches the same 16 states and settles `proved` both times. | Test (TC-665) |
 | FR-220-AC-5 | The pre-check's `WeakAccessShape.shape` takes exactly QSpec FR-439's two shapes: AC-3's two-field attempt with a request selecting `tso` settles V-8 with `MultiLocation{locations}` naming both locations, written `{"type":"multi-location","locations":[…]}`; FR-219-AC-4's `parallel` that joins `any`, with a request selecting `tso`, settles V-8 with `JoinPolicy`, written `{"type":"join-policy"}`. | Test (TC-665) |
 | FR-220-AC-6 | `fence F ordering relaxed;` refuses at S1 with `invalid_syntax` at the `relaxed` token and never reaches S3. | Test (TC-665) |
+| FR-220-AC-7 | Two branches, each with a `relaxed` store attempt to the same cell field of one object, and no attempt that reads it, check at S3 with no refusal under `tso` and under `ra`; the classification is two atomic stores. | Test (TC-665) |
+| FR-220-AC-8 | A branch whose attempts write a register field of its core and then read that register again (the register-read-again shape of message passing and load buffering) checks at S3 with no refusal, and EN-1 treats the register as branch-local because attempts of one branch only touch it. | Test (TC-665) |
+| FR-220-AC-9 | ADR-025 §10's `SB` checks at S3 under a `parallel` declaring `tso` and under one declaring `ra`, with `Sx` and `Sy` classified as stores, `Ly` and `Lx` as loads and (`c1`, `r`), (`c2`, `r`) branch-local after instantiation. | Test (TC-665) |
+| FR-220-AC-10 | An attempt carrying `ordering seq_cst` that lies outside every `parallel` refuses `ill_typed`/`operator-ineligible` at S3, naming the attempt. | Test (TC-665) |
 
 ## Dependencies
 

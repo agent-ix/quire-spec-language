@@ -12,7 +12,7 @@ relationships:
 
 Verify access classification, admitted orderings with their refusal, the access-shape rule at S3 and in the pre-check, and that orderings change nothing under `sc`.
 
-Scope: FR-220-AC-1 to FR-220-AC-6.
+Scope: FR-220-AC-1 to FR-220-AC-10.
 
 ## Test Procedure
 
@@ -25,6 +25,10 @@ Scope: FR-220-AC-1 to FR-220-AC-6.
 4. Check `SB` under `sc` with all `relaxed` and with all `seq_cst`.
 5. Run the pre-check on AC-3's two-field attempt and on FR-219-AC-4's
    `any`-join `parallel`, each with a request selecting `tso`.
+6. Check two branches each storing the same cell `relaxed` with no reader, under `tso` and `ra` (FR-220-AC-7).
+7. Check a branch that writes a core register and reads it again (FR-220-AC-8).
+8. Check `SB` under `memory tso` and under `memory ra` and instantiate it (FR-220-AC-9).
+9. Check an attempt with `ordering seq_cst` outside every `parallel` (FR-220-AC-10).
 
 Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
 
@@ -38,3 +42,7 @@ Tag the tests `#[trace("TC-665", "FR-220-AC-n")]`.
   `sc`; V-8 `WeakAccessShape{MultiLocation}` under the selection.
 - Step 4: 16 states and `proved` both times.
 - Step 5: V-8 `WeakAccessShape` with `MultiLocation{locations}` naming both locations; V-8 `WeakAccessShape` with `JoinPolicy`; each serialized as QSpec FR-439 writes it.
+- Step 6: no refusal; two atomic stores.
+- Step 7: no refusal; the register is branch-local after instantiation.
+- Step 8: checks under both models with the classes of FR-220-AC-9.
+- Step 9: `ill_typed`/`operator-ineligible` naming the attempt.
