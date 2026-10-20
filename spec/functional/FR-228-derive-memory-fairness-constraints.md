@@ -70,8 +70,13 @@ visible.
 - For visibility fairness on an SCC, the filter SHALL remove the edges on
   which a thread `b` loads a location `ℓ`, for each pair (`b`, `ℓ`) whose
   edges in the SCC include a load of `ℓ` by `b` but none from `ℓ`'s mo-last
-  message, SHALL decompose what remains into SCCs again, and SHALL repeat
-  this on each (ADR-025 MF-2).
+  message (ADR-025 MF-2).
+- The filter SHALL then decompose what remains into SCCs and apply the same
+  rules to each.
+- The filter SHALL apply the removals of every failing strong constraint (the
+  states that enable it) and of every failing visibility pair in one
+  refinement step, so the first passing component is the same under every
+  order (ADR-025 MF-2, QSpec FR-365).
 - The filter SHALL accept a component only when, for every pair it still
   loads, it holds an edge on which `b` loads `ℓ` from `ℓ`'s mo-last message.
   A component is its states with the edges the decomposition kept.
@@ -98,7 +103,8 @@ visible.
 | FR-228-AC-4 | The TP-1 claim of ADR-025 §10 settles the same verdicts under `tso` and `ra` with the memory constraints present as when the fairness filter ignores them. A `fair weak` constraint naming `flush` refuses `missing_declaration`/`missing-name`. | Test (TC-673) |
 | FR-228-AC-5 | A synthesized accepting product SCC on states `p`, `q`, `r`, passed straight to the visibility filter as AC-3's SCCs are, with the edges `p → q`, `q → p` and `r → q` (thread `a`, which loads nothing) and `q → r` (thread `b` loads `ℓ` from a message that is not mo-last), `p` the only accepting state: the filter removes `q → r`, decomposes `{p, q, r}` into `{r}` then `{p, q}`, passes `{p, q}`, and the lasso `p q p q …` meets the lasso form of visibility fairness. (A protocol form of this vector needs `scheduling adversarial;`, since the default scheduler constraint for `b` would reject `{p, q}` unless `b` is disabled at `p`.) | Test (TC-673) |
 | FR-228-AC-6 | Given an accepting SCC on `p`, `q` with the edges `p → p` (thread `b` loads `ℓ` from a message that is not mo-last), `p → q` and `q → p` (thread `a`, loading nothing), `p` accepting, the filter removes `p → p` and passes `{p, q}` with the edges `p → q`, `q → p` only; the loop CX-5 builds is `p q`, never `p p`, and replay accepts it. | Test (TC-673) |
-| FR-228-AC-7 | Given an accepting SCC on `p`, `q`, `r`, `s` with the edges `p → q` (thread `c` loads `ℓ₂` from `ℓ₂`'s mo-last message), `q → p`, `r → s` (thread `a`), `s → q` (thread `a`), `q → r` (thread `b` loads `ℓ₁` from a message that is not mo-last) and `s → r` (thread `c` loads `ℓ₂` from a message that is not mo-last), `p` accepting, the filter removes `q → r` for the pair (`b`, `ℓ₁`), finds `{r, s}` holding a stale load of `ℓ₂` by `c` and no fresh one, removes `s → r` at the second level, and passes `{p, q}`; whichever pair it takes first, the passing component is `{p, q}`. | Test (TC-673) |
+| FR-228-AC-7 | Given an accepting SCC on `p`, `q`, `r`, `s` with the edges `p → q` (thread `c` loads `ℓ₂` from `ℓ₂`'s mo-last message), `q → p`, `r → s` (thread `a`), `s → q` (thread `a`), `q → r` (thread `b` loads `ℓ₁` from a message that is not mo-last) and `s → r` (thread `c` loads `ℓ₂` from a message that is not mo-last), `p` accepting, the filter removes `q → r` for the pair (`b`, `ℓ₁`) at the first level (it is the only pair that fails in the whole SCC), finds `{r, s}` holding a stale load of `ℓ₂` by `c` and no fresh one, removes `s → r` at the second level, and passes `{p, q}`. | Test (TC-673) |
+| FR-228-AC-8 | Given a synthesized accepting SCC on states 0 to 3, with a strong constraint `s` enabled only at state 0 and taken by no edge, a visibility pair with the stale load edge `1 → 2` and no fresh load, and the edges `0 → 1`, `1 → 0`, `1 → 2`, `2 → 3`, `3 → 1` and `3 → 3`, state 3 accepting, the filter refines in one step that removes state 0 and the edge `1 → 2`, and passes `{3}` with the loop `3 → 3`. | Test (TC-673) |
 
 ## Dependencies
 
