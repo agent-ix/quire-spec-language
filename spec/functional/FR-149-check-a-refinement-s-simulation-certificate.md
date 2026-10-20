@@ -172,7 +172,7 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
   `PostDiffers`, at that position and edge, unless the step's post position and
   `Taken` equal the edge's.
 - **Meter stops.** When the verdict of `check_initial` or `check_step` is an
-  `Undetermined` that is meter-only, or a `BadState` finding is, the checker SHALL stop with
+  `Undetermined` that is meter-only, the checker SHALL stop with
   `Stopped(LimitReached{EvaluationMeter, value})`, with `value` the evaluation
   meter's work units, and not reject: a certificate is rejected only when the
   checker found it wrong (ADR-018 PC-2).
@@ -193,9 +193,13 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
 - **Step stop.** When a `check_step` it calls returns `StepVerdict::Stopped`, the
   checker SHALL end the check with `Stopped(LimitReached{limit, value})` naming
   that limit.
-- **Expansion stop.** When an FR-120 expansion stops naming no limit and is not an
-  internal failure, the checker SHALL end the check with
-  `Stopped(ResourceExhausted)`.
+- **Expansion stop.** When an FR-120 expansion of a position stops at a named
+  limit, the checker SHALL end the check with `Stopped(LimitReached{limit, value})`;
+  a concrete contract that runs out of the evaluation meter stops the expansion
+  this way, with limit `EvaluationMeter`, because FR-120 turns an incomplete
+  contract into an expansion stop and never into a finding. When it stops
+  naming no limit and is not an internal failure, the checker SHALL end the
+  check with `Stopped(ResourceExhausted)`.
 - **Cancellation.** The checker SHALL end a cancelled check with
   `Stopped(Cancelled{source})`.
 - **Purity.** The checker SHALL read no path, environment variable, clock
@@ -217,7 +221,7 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
 | FR-149-AC-2 | The same certificate with the `Taken` of the `commitA` edge from `(0, 0, t, 0, f)` changed to `Stutter` returns `Rejected` with rule `PostDiffers` at that position and edge; with that edge's post index pointing at the initial position, rule `PostDiffers`; with one listed edge removed, rule `SuccessorsDiffer` at that position. Each settles `inconclusive`, `CertificateRejected{rule, at}`. | Test (TC-556) |
 | FR-149-AC-3 | A certificate built for the lost-update model by listing its states with the `commitB` edge from `(1, 0, f, 0, t)` returns `Rejected` with rule `StepFails` and verdict `AbstractStepRejected{transition: inc(c), cause: Postcondition}` in its locus, so a false relation is never accepted. | Test (TC-556) |
 | FR-149-AC-4 | The AC-1 certificate checked with `max_transitions` 1 returns `Stopped(LimitReached{MaxTransitions, 1})`; a certificate naming another refinement node is refused `stale_dependency`/`content-mismatch`. Checking the AC-1 certificate twice gives equal results. | Test (TC-556) |
-| FR-149-AC-5 | A valid certificate is never rejected for a meter it ran out of, in each of four places, each returning `Stopped(LimitReached{EvaluationMeter, B})`, not `Rejected`: (a) the unmetered certificate of the light ring fixture (`RingIsQueue`) checked under a meter B that runs out in the initial states' mapping rows; (b) the same certificate under a larger B that runs out in a step's mapping row; (c) a certificate of a model whose concrete contract costs more than B; (d) a `HeavyEnq` certificate (FR-141-AC-9), built under a larger meter, checked under B, where the abstract side runs out. | Test (TC-556) |
+| FR-149-AC-5 | A valid certificate is never rejected for a meter it ran out of, in each of four places, each returning `Stopped(LimitReached{EvaluationMeter, B})`, not `Rejected`: (a) the unmetered certificate of the light ring fixture (`RingIsQueue`) checked under a meter B that runs out in the initial states' mapping rows; (b) the same certificate under a larger B that runs out in a step's mapping row; (c) a certificate of a model whose concrete contract costs more than B, which stops the position's successor expansion; (d) a `HeavyEnq` certificate (FR-141-AC-9), built under a larger meter, checked under B, where the abstract side runs out. | Test (TC-556) |
 | FR-149-AC-6 | In a certificate for a model whose chain of enabled operations ends in a terminal state (`CasRefinesCounter` without its `ensure` row, with `peek` and the second thread's `begin` given preconditions that are never enabled, so the states form a chain that ends in a terminal state), the terminal state's position lists one edge whose `transition` is `None` and which returns to the position; the checker accepts it, and the same certificate with that edge removed returns `Rejected` with rule `SuccessorsDiffer` at the position. | Test (TC-556) |
 | FR-149-AC-7 | A certificate whose `successors` list is one shorter than `positions` is rejected `Malformed` at the shorter length; one whose `initial` omits a concrete initial state, at `len(initial)`; one with a position that only an edge listed at a higher-indexed position reaches, at that position; each before any recomputation. A position at which a concrete contract is undefined or refused (not out of meter) returns `Rejected` with rule `BadState`; the fixture is a concrete model with a precondition `6 mod (2 - self.value) >= 0`, which is undefined at value 2. | Test (TC-556) |
 | FR-149-AC-8 | The terminal record of AC-3's rejection writes the locus `{"position": "<n>", "edge": "<n>", "verdict": {"kind": "AbstractStepRejected", "position": "<n>", "transition": <ModelTransition encoding of inc(c)>, "cause": {"kind": "Postcondition"}}}`, writes `"verdict": null` for AC-2's `PostDiffers`, and writes each other kind's members as the wire-form table lists them. | Test (TC-556) |
