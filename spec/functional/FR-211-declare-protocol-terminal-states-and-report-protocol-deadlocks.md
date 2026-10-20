@@ -69,8 +69,9 @@ opts out.
   rest_point, cause: WaitCause}>` for its last state, with `WaitCause` one
   of `Precondition{clause}`, `NoPostState`, `Constraint`,
   `EmptyQueue{channel}`, `HeadBlocked{channel}`, `FullQueue{channel}`,
-  `Displaced{channel}`, `JoinWaiting{threads}`, `CheckFalse{node}` and
-  `Gate`, each channel in its qualified name.
+  `Displaced{channel}`, `JoinWaiting{threads}`, `FinishWaiting{threads}`,
+  `CommitClosed{template}`, `NoRoleInstance{role}`, `CheckFalse{node}` and
+  `Gate`, each channel in its qualified name (`<protocol>::<handle>`).
 
 ## Behavior
 
@@ -110,7 +111,20 @@ opts out.
   that disable it (FR-206).
 - The model checker SHALL report exactly one wait cause per waiting thread:
   `Gate` when the memory model's gate alone disables its step, otherwise the
-  first that applies in ADR-027 PD-4's order for its rest point.
+  first that applies in ADR-027 PD-4's order for its rest point. `Gate`
+  includes a `fence` disabled by its memory model's fence rule, which is the
+  gate of that step (ADR-027 SE-1 e, SE-5).
+- The model checker SHALL report `FinishWaiting`, naming the threads, for
+  the root thread at `finish` while another thread of its instance, a
+  compensation thread included, is `running`; `CommitClosed`, naming the
+  template, for a compensation thread at its first compensation attempt after
+  a step of the template's commit node has occurred in its instance; and
+  `NoRoleInstance`, naming the role, for a thread at an event, attempt or
+  compensation-attempt node owned by a replicated role with no live instance
+  and no enabled `spawn`.
+- The model checker SHALL order the causes of a thread at an `attempt` or an
+  `event` owned by a replicated role with `NoRoleInstance` first, and of a
+  thread at `finish` as `FinishWaiting`, else `Constraint`.
 - The model checker SHALL report, for a `receive` with no deliverable
   entry, `Constraint` when an entry from the send node it names is
   deliverable and none satisfies its constraint; else `HeadBlocked` when
@@ -133,7 +147,7 @@ opts out.
 | FR-211-AC-2 | Over `Fill` with no `terminal` member, s6 is terminal and intended, and s2 is terminal and deadlocked. The deadlock-freedom item settles `refuted` with the prefix `fork(Both)`, `attempt(A)` and blocked threads `(0, Both, right, 0)` at `B` with `Precondition{TwoPre}` and `(0)` at `join Both` with `JoinWaiting{[(0, Both, right, 0)]}`. With `terminal when k.v = 1`, s2 is intended and the item settles `proved`; with `terminal any`, the request carries no deadlock-freedom item. | Test (TC-656) |
 | FR-211-AC-3 | Over `Fill` with `TwoPre: self.v <= 1` and no `terminal` member, the deadlock-freedom item settles `proved`, basis `Exhaustive`, over ten states. Two temporal items over the same protocol subject give one deadlock-freedom item. | Test (TC-656) |
 | FR-211-AC-4 | An `on each` protocol whose body's one attempt has a precondition that is false in every reachable model state, with no `terminal` member and `max_live_instances` 2: the state with one live instance, waiting at its attempt, where only `activate` is enabled, is a deadlock with blocked thread `(0)` at the attempt, cause `Precondition`. The state with two live instances is instance-limited and is not a deadlock, and the initial state, with no live instance, is not a deadlock. | Test (TC-656) |
-| FR-211-AC-5 | Every channel below has `delivery exactly-once-premise` unless stated, so neither `lose` nor `duplicate` is enabled, and each deadlock is reached with the channel in its qualified name in the cause. Capacity 1, `block`: `sequence { send P via ch; send Q via ch }` deadlocks with the sender at `Q` and cause `FullQueue`; with `send Q via ch as (q) { false }` the sender at `Q` has cause `Constraint`, although the queue is full. Capacity 2, `fifo`: `sequence { send P via ch; send Q via ch; receive RQ via ch of Q }` deadlocks with the queue `[P, Q]` and cause `HeadBlocked` at `RQ`. The same with `receive RP via ch of P as (x) { false }` deadlocks with cause `Constraint` at `RP`, and so does an `unordered` channel with that receive. Capacity 1, `overflow loss head`: `sequence { send P via ch; send Q via ch; receive RP via ch of P }` deadlocks with the queue `[Q]` and cause `Displaced` at `RP`. Capacity 1, `overflow loss new`: the same protocol with `receive RQ via ch of Q` deadlocks with the queue `[P]` and cause `Displaced`, the send of `Q` being `lost`. With `delivery at-most-once`, `sequence { send P via ch; receive RP via ch of P }` has a deadlock reached by `send`, `lose(ch, P)`, with cause `Displaced` at `RP`. With capacity 1, `overflow loss head`: `sequence { repeat maximum 2 { send P via ch }; receive R1 via ch of P; receive R2 via ch of P }` deadlocks at `R2` with an empty queue and cause `EmptyQueue`, because the last removal was a `receive`. A `receive` on a channel nothing has sent to deadlocks with `EmptyQueue`. | Test (TC-656) |
+| FR-211-AC-5 | Every channel below has `delivery exactly-once-premise` unless stated, so neither `lose` nor `duplicate` is enabled, and each deadlock is reached with the channel in its qualified name in the cause. Capacity 1, `block`: `sequence { send P via ch; send Q via ch }` deadlocks with the sender at `Q` and cause `FullQueue`; with `send Q via ch as (q) { false }` the sender at `Q` has cause `Constraint`, although the queue is full. Capacity 2, `fifo`: `sequence { send P via ch; send Q via ch; receive RQ via ch of Q }` deadlocks with the queue `[P, Q]` and cause `HeadBlocked` at `RQ`. The same with `receive RP via ch of P as (x) { false }` deadlocks with cause `Constraint` at `RP`, and so does an `unordered` channel with that receive. Capacity 1, `overflow loss head`: `sequence { send P via ch; send Q via ch; receive RP via ch of P }` deadlocks with the queue `[Q]` and cause `Displaced` at `RP`. Capacity 1, `overflow loss new`: the same protocol with `receive RQ via ch of Q` deadlocks with the queue `[P]` and cause `Displaced`, the send of `Q` being `lost`. With `delivery at-most-once`, `sequence { send P via ch; receive RP via ch of P }` has a deadlock reached by `send`, `lose(ch, P)`, with cause `Displaced` at `RP`. With capacity 1, `overflow loss head`: `sequence { repeat maximum 2 { send P via ch }; receive R1 via ch of P; receive R2 via ch of P }` deadlocks at `R2` with an empty queue and cause `EmptyQueue`, because the last removal was a `receive`. A `receive` on a channel nothing has sent to deadlocks with `EmptyQueue`. In the next three fixtures any channel has `delivery exactly-once-premise`, so no `lose` or `duplicate` step is taken. A protocol whose compensation template names commit node `Settled`, where a step of `Settled` occurs in another branch after the compensation thread was created, with the compensation thread still at its first compensation attempt and a finish record available, deadlocks with the compensation thread `CommitClosed{Refund}` and the root at `finish` `FinishWaiting` naming that thread. A node owned by a replicated role `r` whose population universe is empty, or whose every object is retired, so that `r` has no live instance and no `spawn` is enabled, deadlocks with the thread `NoRoleInstance{r}`; with a `spawn` enabled the thread is not waiting on the role. A thread at a `seq_cst` `fence` under `tso` with a non-empty buffer has cause `Gate` where the blocked list is computed, and no other cause; a deadlock cannot contain it, because `flush` is enabled while the buffer is non-empty. | Test (TC-656) |
 
 ## Dependencies
 
