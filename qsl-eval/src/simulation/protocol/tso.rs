@@ -401,9 +401,7 @@ impl MemoryModel for Tso {
             // `flush` is the one internal step `tso` takes (TSO-4), so its
             // model and thread identify it.
             FootprintStep::Memory { identity, stored } => {
-                if identity.model != MemoryModelName::Tso
-                    || identity.thread != *thread
-                    || !buffered
+                if identity.model != MemoryModelName::Tso || identity.thread != *thread || !buffered
                 {
                     return false;
                 }

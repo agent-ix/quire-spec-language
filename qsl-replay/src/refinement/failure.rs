@@ -3,6 +3,7 @@
 //! names, and the verdict of one step check (FR-141).
 
 use qsl_foundation::{CatalogCode, InternalFault};
+use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::model_check::counterexample::UndefinedEvaluation;
@@ -29,8 +30,9 @@ pub enum StepRejection {
 
 /// A refinement counterexample's failure (ADR-020 RC-1).
 ///
-/// The safety kinds are here; the liveness kinds, `Divergence` and
-/// `AbstractUnfair`, arrive with FR-143.
+/// The first five are safety failures, a finite prefix ending at the failing
+/// step; `Divergence` and `AbstractUnfair` are liveness failures, a lasso
+/// that is fair under `F_C` (FR-143).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RefinementFailure {
     /// RS-2: the concrete initial state maps to no abstract initial state.
@@ -67,17 +69,32 @@ pub enum RefinementFailure {
         /// The row.
         row: MappingRowRef,
     },
+    /// RS-7: an `F_A` constraint is enabled at every mapped state of a lasso
+    /// whose loop has only `stutter` steps, the concrete terminal stutter
+    /// included, and no step of it takes the constraint.
+    Divergence {
+        /// The violated constraint of `F_A`.
+        constraint: FairnessConstraint,
+    },
+    /// An `F_A` constraint is enabled at every mapped state of a lasso whose
+    /// loop takes abstract steps, and no step of it takes the constraint.
+    AbstractUnfair {
+        /// The violated constraint of `F_A`.
+        constraint: FairnessConstraint,
+    },
 }
 
 impl RefinementFailure {
-    /// The position the failure is at: 0 for a failed initial state.
-    pub fn position(&self) -> u64 {
+    /// The position the failure is at: 0 for a failed initial state, and
+    /// `None` for a liveness failure, which is a lasso and no one position.
+    pub fn position(&self) -> Option<u64> {
         match self {
-            Self::InitialNotAbstract { .. } => 0,
+            Self::InitialNotAbstract { .. } => Some(0),
             Self::StutterChanged { position }
             | Self::AbstractStepRejected { position, .. }
             | Self::NoAbstractMatch { position }
-            | Self::Undefined { position, .. } => *position,
+            | Self::Undefined { position, .. } => Some(*position),
+            Self::Divergence { .. } | Self::AbstractUnfair { .. } => None,
         }
     }
 }

@@ -116,9 +116,10 @@ pub enum ModelCheckOutcome<T = ModelTransition> {
     },
     /// Every reachable product state of the reduced product was examined
     /// and none is bad (ADR-021 RV-1). With no reduction listed, only a
-    /// state constraint was applied and the run reached no boundary state.
-    /// No core checker covers the reduced graph, so it carries no
-    /// certificate.
+    /// state constraint was applied and the run reached no boundary state,
+    /// or it is a refinement's liveness half (FR-143), which has no
+    /// reduction. No core checker covers the reduced graph or the liveness
+    /// half, so it carries no certificate.
     HoldsReduced {
         /// The applied reductions, in the order symmetry, partial-order.
         reductions: Vec<AppliedReduction>,

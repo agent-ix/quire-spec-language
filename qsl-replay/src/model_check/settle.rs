@@ -263,16 +263,11 @@ fn settle<T: Clone>(
             SettlementBasis::ClosedScope,
         ),
         ModelCheckOutcome::Reduction { cause, .. } => match cause {
-            ReductionCause::Unsupported { reduction } => Row {
-                value: TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+            ReductionCause::Unsupported { reduction } => {
+                Row::unsupported(UnavailabilityCause::UnsupportedReduction {
                     reduction: *reduction,
-                }),
-                label: ResultLabel::Unsupported,
-                basis: SettlementBasis::Unavailable,
-                execution: Execution::Completed,
-                truth: Truth::Unavailable,
-                limit_reached: None,
-            },
+                })
+            }
             ReductionCause::NotPreserving { reduction, form } => {
                 Row::inconclusive(InconclusiveCause::ReductionNotPreserving {
                     reduction: *reduction,
@@ -420,6 +415,18 @@ impl Row {
             basis,
             execution: Execution::Completed,
             truth: Truth::Violated,
+            limit_reached: None,
+        }
+    }
+
+    /// `unsupported`, `unavailable`, for `cause`.
+    pub(super) fn unsupported(cause: UnavailabilityCause) -> Self {
+        Self {
+            value: TerminalValue::Unsupported(cause),
+            label: ResultLabel::Unsupported,
+            basis: SettlementBasis::Unavailable,
+            execution: Execution::Completed,
+            truth: Truth::Unavailable,
             limit_reached: None,
         }
     }
