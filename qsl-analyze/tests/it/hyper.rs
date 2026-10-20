@@ -31,7 +31,9 @@ use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Incomplete, Meter, Undefined};
 
 use crate::counter::ZERO;
-use crate::hyper_world::{high, low, non_interference, Vault, World, EQUAL_INPUTS, KEY, STARTS};
+use crate::hyper_world::{
+    high, low, low_of, non_interference, Vault, World, EQUAL_INPUTS, KEY, STARTS,
+};
 
 /// The engine's outcome of `world` under the default limits.
 fn run(world: &World) -> HyperOutcome {
@@ -677,40 +679,223 @@ fn a_co_safety_body_is_decided_and_its_counterexample_replays() {
     }
 }
 
-/// FR-126 "Bindings and ranking" (FR-176 reuses it): the clause has one
-/// instance for each key of the universe. A finding in the second instance
-/// is the answer when the first holds; at equal depth the earlier instance
-/// wins; and a finding at depth 0 ends the run before a later instance is
-/// explored, so a later instance that would exhaust the budget cannot turn
-/// the finding into a stop.
+/// The lassos of several instances (second phase): the instance that has a
+/// violation is the answer when the others hold, and at equal length the
+/// earlier instance wins. These violations are lassos, not first-phase
+/// findings, so they exercise the second phase's ranking only.
 #[trace("TC-601")]
 #[test]
-fn instances_are_ranked_by_depth_and_a_finding_ends_the_later_ones() {
+fn second_phase_lassos_across_instances_rank_by_length_then_instance_order() {
     let at_start = single("", "holds(v.l @ a = 0)");
-    let key_of = |world: &World| {
-        let counterexample = refuted(run(world));
-        counterexample.instance
-    };
-    // `v0` holds, `v1` has `l = 1` at position 0.
+    let key_of = |world: &World| refuted(run(world)).instance;
     let second = World::with_vaults(Vault::Secure, &[("v0", (0, 0)), ("v1", (0, 1))], &at_start);
     assert_eq!(key_of(&second), [("v".to_owned(), "v1".to_owned())]);
-    // Both have it: the earlier instance wins the tie.
     let tie = World::with_vaults(Vault::Secure, &[("v0", (0, 1)), ("v1", (0, 1))], &at_start);
     assert_eq!(key_of(&tie), [("v".to_owned(), "v0".to_owned())]);
-    // The first instance's finding is at depth 0: with the budget the first
-    // instance alone used, the second would stop the run were it explored.
-    let first = World::with_vaults(Vault::Secure, &[("v0", (0, 1)), ("v1", (0, 0))], &at_start);
-    let HyperOutcome::Violated { stats, .. } = run(&first) else {
-        panic!("expected a violation");
+}
+
+/// A letter that has no value for the instance `key` where that vault's `l`
+/// (read on trace `a`) is 1; every other reading is the world's.
+struct UndefinedFor<'w> {
+    seams: crate::hyper_world::Seams<'w>,
+    key: &'static str,
+}
+
+impl HyperLetters for UndefinedFor<'_> {
+    fn atom(
+        &self,
+        atom: FormulaNodeId,
+        instance: &[ParameterBinding],
+        states: &[&ModelSimState],
+        meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        if instance[0].instance.key == self.key && low_of(states[0], self.key) == 1 {
+            return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
+                Undefined::DivisionByZero,
+            )));
+        }
+        self.seams.atom(atom, instance, states, meter)
+    }
+}
+
+/// A `match` with no value on every joint step of the instance `key`.
+struct UndefinedMatchFor<'w> {
+    seams: crate::hyper_world::Seams<'w>,
+    key: &'static str,
+}
+
+impl StepMatch for UndefinedMatchFor<'_> {
+    fn universal(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        if instance[0].instance.key == self.key {
+            return Ok(MatchReading::Undefined {
+                conjunct: 0,
+                cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
+            });
+        }
+        self.seams.universal(instance, steps, meter)
+    }
+}
+
+/// FR-126 "Bindings and ranking" (FR-176 reuses it), first-phase findings: a
+/// finding at depth 0 in the first instance ends the run before a later
+/// instance is explored. The first instance's only state has an undefined
+/// letter, so it costs one product state; the second would need more than the
+/// 3 left under `max_states` 4 (the vault's 4 reachable states pass the
+/// pre-check), and without the break the run would stop there.
+#[trace("TC-601")]
+#[test]
+fn a_finding_at_depth_zero_ends_the_later_instances() {
+    let clause = single("", "always holds(v.l @ a = 0)");
+    let world = World::with_vaults(Vault::Secure, &[("v0", (0, 1)), ("v1", (0, 0))], &clause);
+    let letters = UndefinedFor {
+        seams: world.seams(),
+        key: "v0",
     };
     let mut tight = ModelCheckLimits::default();
-    tight.limits.max_states = usize::try_from(stats.product_states).expect("a small count");
-    tight.limits.max_transitions = usize::try_from(stats.product_edges).expect("a small count");
-    let outcome = first.run(tight, &Cancel::new()).expect("not refused");
-    assert!(
-        matches!(outcome, HyperOutcome::Violated { .. }),
-        "the finding stands: {outcome:?}"
+    tight.limits.max_states = 4;
+    let outcome = world
+        .run_through(&letters, &world.seams(), tight, &Cancel::new())
+        .expect("not refused");
+    let HyperOutcome::Violated {
+        counterexample,
+        stats,
+    } = outcome
+    else {
+        panic!("the depth-0 finding stands, got {outcome:?}");
+    };
+    assert_eq!(counterexample.instance, [("v".to_owned(), "v0".to_owned())]);
+    assert_eq!(counterexample.trace_position, 0);
+    assert!(matches!(
+        counterexample.kind,
+        HyperCounterexampleKind::Undefined(ref undefined)
+            if matches!(undefined.locus, HyperLocus::Atom(_))
+    ));
+    assert_eq!(
+        stats.product_states, 1,
+        "only the first instance is explored"
     );
+}
+
+/// The clause over the pair `a`, `b` with equal inputs, as `NonInterference`.
+const PAIR: &str = "hyper H using inf over behaviours (v: V::Vault) \
+     forall trace a of V forall trace b of V \
+     match { a.step.op = b.step.op and a.step.Vault::step.i = b.step.Vault::step.i } \
+     { always holds(v.l @ a = v.l @ b) }";
+
+/// The same ranking at depth 1. The first instance finds an undefined letter
+/// at depth 1 (after `step(1)` on `v0`). A later instance is explored only
+/// through depth 1, expanding its initial states and no deeper: the counts of
+/// the whole run, set as the limits, still let it finish, and an uncapped
+/// second instance, a product of dozens of states, would exceed them and stop
+/// the run.
+#[trace("TC-601")]
+#[test]
+fn a_finding_at_depth_one_caps_the_later_instances() {
+    let world = World::with_vaults(Vault::Secure, &[("v0", (0, 0)), ("v1", (0, 0))], PAIR);
+    let letters = UndefinedFor {
+        seams: world.seams(),
+        key: "v0",
+    };
+    let HyperOutcome::Violated {
+        counterexample,
+        stats,
+    } = world
+        .run_through(
+            &letters,
+            &world.seams(),
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("not refused")
+    else {
+        panic!("expected a violation");
+    };
+    assert_eq!(counterexample.instance, [("v".to_owned(), "v0".to_owned())]);
+    assert_eq!(counterexample.trace_position, 1);
+    // The counts measured from the capped run: `v0` explored in full, `v1` only
+    // through the expansion of its initial states. They are the budget the
+    // run is held to; an uncapped `v1` has far more states than the 22.
+    assert_eq!((stats.product_states, stats.product_edges), (22, 96));
+    let mut exact = ModelCheckLimits::default();
+    exact.limits.max_states = 22;
+    exact.limits.max_transitions = 96;
+    let outcome = world
+        .run_through(&letters, &world.seams(), exact, &Cancel::new())
+        .expect("not refused");
+    let HyperOutcome::Violated {
+        counterexample: again,
+        ..
+    } = outcome
+    else {
+        panic!("the capped second instance fits the budget: {outcome:?}");
+    };
+    assert_eq!(*again, *counterexample);
+}
+
+/// A `match` finding is at the depth of the joint position it ends at, one
+/// deeper than the state it is found at. The first instance has an undefined
+/// letter at depth 1; the second has an undefined `match` on its first joint
+/// step out of a depth-0 state, depth 1 too. A tie goes to the earlier
+/// instance; ranking the `match` at the state's depth (0) would let the
+/// second win.
+#[trace("TC-601")]
+#[test]
+fn a_match_finding_ranks_at_the_joint_position_it_ends_at() {
+    let world = World::with_vaults(Vault::Secure, &[("v0", (0, 0)), ("v1", (0, 0))], PAIR);
+    let letters = UndefinedFor {
+        seams: world.seams(),
+        key: "v0",
+    };
+    let matcher = UndefinedMatchFor {
+        seams: world.seams(),
+        key: "v1",
+    };
+    let outcome = world
+        .run_through(
+            &letters,
+            &matcher,
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("not refused");
+    let counterexample = refuted(outcome);
+    assert_eq!(counterexample.instance, [("v".to_owned(), "v0".to_owned())]);
+    assert!(matches!(
+        counterexample.kind,
+        HyperCounterexampleKind::Undefined(ref undefined)
+            if matches!(undefined.locus, HyperLocus::Atom(_))
+    ));
+    // Reverse the roles: the `match` finding is now the earlier instance's
+    // and the letter finding the later one's, so the earlier `match` wins.
+    let reversed = UndefinedMatchFor {
+        seams: world.seams(),
+        key: "v0",
+    };
+    let later_letters = UndefinedFor {
+        seams: world.seams(),
+        key: "v1",
+    };
+    let counterexample = refuted(
+        world
+            .run_through(
+                &later_letters,
+                &reversed,
+                ModelCheckLimits::default(),
+                &Cancel::new(),
+            )
+            .expect("not refused"),
+    );
+    assert_eq!(counterexample.instance, [("v".to_owned(), "v0".to_owned())]);
+    assert!(matches!(
+        counterexample.kind,
+        HyperCounterexampleKind::Undefined(ref undefined)
+            if matches!(undefined.locus, HyperLocus::Match { .. })
+    ));
 }
 
 /// The clause over `a` and `b` whose `match` no pair of runs can satisfy, so

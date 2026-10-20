@@ -222,12 +222,14 @@ fn reexecute(
             HyperStep::Model(step) => {
                 let mut enabled = false;
                 let mut reached = None;
+                let mut digests = Vec::new();
                 for (transition, next) in expansion.successors {
                     if transition != step.transition {
                         continue;
                     }
                     enabled = true;
                     let digest = digest_of(system, &next)?;
+                    digests.push(digest);
                     if digest == step.post_state {
                         reached = Some(Position {
                             state: next,
@@ -246,6 +248,7 @@ fn reexecute(
                     refused(ModelTraceRefusal::PostState {
                         step: index,
                         recorded: step.post_state,
+                        reached: digests,
                     })
                 })?
             }
@@ -517,7 +520,7 @@ fn undefined(
             }
         }
         for (component, system) in replay.systems.iter().enumerate() {
-            let Ok(expansion) = expand(system, &executed[component][joint].state)? else {
+            let Ok(expansion) = expand(*system, &executed[component][joint].state)? else {
                 return Ok(no_value());
             };
             if let Some(undefined) = expansion

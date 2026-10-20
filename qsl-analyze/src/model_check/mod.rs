@@ -10,6 +10,7 @@
 //! the SCC decomposition are the reusable machinery; a graph outcome alone is
 //! FR-101's exploration outcome, never a proof of a temporal property.
 
+mod ample;
 mod check;
 mod concretise;
 mod fair_walk;
@@ -23,10 +24,13 @@ mod refine;
 mod scc;
 mod state_graph;
 
-pub use check::{check_model, ModelCheckRefusal, ModelCheckRequest};
+pub use ample::{Atoms, Por};
+pub use check::{
+    check_model, check_protocol, ModelCheckRefusal, ModelCheckRequest, ProtocolCheckRequest,
+};
 pub use graph::{
-    retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
-    RetainedState,
+    retain, retain_reduced, Ample, Choice, GraphExploration, ProductStateId, RetainedEdge,
+    RetainedGraph, RetainedState,
 };
 pub use hyper::{check_hyper, HyperCheckRequest, HyperRefusal};
 pub use liveness::LivenessRefusal;

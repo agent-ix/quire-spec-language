@@ -13,8 +13,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::automaton::{Gba, StateId};
 use qsl_eval::fairness::{
-    analyze, check_loop, components, Analysis, Constraint, EdgeLabel, FairnessError, Graph,
-    Identity, LassoFairness, LoopStep, Outcome, Vertex,
+    analyze, check_loop, components, visibility_constraints, Analysis, Constraint, EdgeLabel,
+    FairnessError, Graph, Identity, LassoFairness, LoopStep, Outcome, Strength, Vertex,
+    VisibilityPair,
 };
 use quire_exact::{Cancel, CancelCause};
 
@@ -531,9 +532,12 @@ fn membership_covers_identities_and_the_stutter_belongs_to_none() {
     assert!(whole.is_taken_by(EdgeLabel::Transition(id(1))));
     assert!(!whole.is_taken_by(EdgeLabel::Transition(id(3))));
     assert!(!whole.is_taken_by(EdgeLabel::Stutter));
-    assert!(whole.is_enabled_in(&BTreeSet::from([id(2), id(9)])));
-    assert!(!whole.is_enabled_in(&BTreeSet::from([id(9)])));
-    assert!(!whole.is_enabled_in(&BTreeSet::new()));
+    assert_eq!(
+        whole.is_enabled_in(&BTreeSet::from([id(2), id(9)])),
+        Some(true)
+    );
+    assert_eq!(whole.is_enabled_in(&BTreeSet::from([id(9)])), Some(false));
+    assert_eq!(whole.is_enabled_in(&BTreeSet::new()), Some(false));
 }
 
 fn loop_step(enabled: &[u64], label: EdgeLabel) -> LoopStep {
@@ -599,4 +603,484 @@ fn a_lasso_with_no_loop_step_is_refused() {
         check_loop(&[], &[Constraint::weak([id(0)])]),
         Err(FairnessError::EmptyLoop)
     );
+}
+
+// ADR-025 MF-2: visibility fairness for one (thread, location) pair. Thread
+// `b`'s loads of `l` are identity 10 (depth 1, a stale message) and 11
+// (depth 0, the mo-last message); identity 20 is another thread's step.
+const STALE: u64 = 10;
+const FRESH: u64 = 11;
+const OTHER: u64 = 20;
+
+fn visibility() -> Constraint {
+    Constraint::visibility([id(STALE), id(FRESH)], [id(FRESH)])
+}
+
+/// Two vertices `a` and `b` with the edges `(from, to, label)`, by index.
+/// Every listed identity is enabled at both, so enabledness alone
+/// discharges nothing.
+fn pair_graph(edges: &[(usize, usize, u64)]) -> Graph {
+    let mut graph = Graph::new();
+    let enabled = [id(STALE), id(FRESH), id(OTHER)];
+    let ends = [graph.add_vertex(enabled), graph.add_vertex(enabled)];
+    for (from, to, label) in edges {
+        graph
+            .add_edge(ends[*from], ends[*to], EdgeLabel::Transition(id(*label)))
+            .expect("both vertices exist");
+    }
+    graph
+}
+
+/// The cycle `a -> b -> a` whose edges take `labels`: the first from `a` to
+/// `b`, every other from `b` back to `a`.
+fn cycle(labels: &[u64]) -> Graph {
+    let edges: Vec<(usize, usize, u64)> = labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| {
+            if position == 0 {
+                (0, 1, *label)
+            } else {
+                (1, 0, *label)
+            }
+        })
+        .collect();
+    pair_graph(&edges)
+}
+
+fn filter(graph: &Graph) -> Vec<Outcome> {
+    analyze(
+        graph,
+        &graph.vertices().collect(),
+        &[visibility()],
+        &Cancel::new(),
+    )
+    .expect("the filter runs")
+    .iter()
+    .map(|analysis| analysis.outcome().clone())
+    .collect()
+}
+
+fn outcome(vertices: &[usize], outcome: Outcome) -> (Vec<usize>, Outcome) {
+    (vertices.to_vec(), outcome)
+}
+
+/// Each analysis with its vertex indices, depth first.
+fn tree(analyses: &[Analysis]) -> Vec<(Vec<usize>, Outcome)> {
+    analyses
+        .iter()
+        .map(|analysis| {
+            (
+                analysis
+                    .vertices()
+                    .iter()
+                    .map(|vertex| vertex.index())
+                    .collect(),
+                analysis.outcome().clone(),
+            )
+        })
+        .collect()
+}
+
+/// FR-228-AC-3: an SCC on which `b` loads `l` only from a message that is
+/// not mo-last holds no fair cycle through those loads: the filter removes
+/// the load edges and decomposes again, and with nothing else left the
+/// refinement is trivial. One that also holds a load of the mo-last message
+/// passes; one that never loads `l` owes nothing.
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-3")]
+#[test]
+fn visibility_fairness_rejects_an_scc_that_loads_only_stale_messages() {
+    let stale = cycle(&[STALE, OTHER]);
+    let analyses = analyze(
+        &stale,
+        &stale.vertices().collect(),
+        &[visibility()],
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    let Outcome::UnfairVisibility { constraints, sub } = analyses[0].outcome() else {
+        panic!("a visibility refinement, got {:?}", analyses[0].outcome());
+    };
+    assert_eq!(constraints, &[0]);
+    assert_eq!(
+        tree(sub),
+        [
+            outcome(&[0], Outcome::Trivial),
+            outcome(&[1], Outcome::Trivial)
+        ]
+    );
+    assert!(Analysis::first_fair_in(&analyses).is_none());
+    assert_eq!(filter(&cycle(&[STALE, OTHER, FRESH])), [Outcome::Fair]);
+    assert_eq!(filter(&cycle(&[OTHER, OTHER])), [Outcome::Fair]);
+}
+
+/// FR-228-AC-3, per cycle: an SCC whose only loads are stale also holds the
+/// load-free self-loop `a -> a`, which owes visibility nothing and is fair,
+/// as the lasso check reads that loop. The filter finds it in the
+/// refinement (the reviewer's repro of SR-12217 FND-001).
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-3")]
+#[test]
+fn a_load_free_cycle_inside_a_stale_scc_is_fair() {
+    let graph = pair_graph(&[(0, 1, STALE), (1, 0, OTHER), (0, 0, OTHER)]);
+    let analyses = analyze(
+        &graph,
+        &graph.vertices().collect(),
+        &[visibility()],
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    let Outcome::UnfairVisibility { sub, .. } = analyses[0].outcome() else {
+        panic!("a visibility refinement, got {:?}", analyses[0].outcome());
+    };
+    assert_eq!(
+        tree(sub),
+        [
+            outcome(&[0], Outcome::Fair),
+            outcome(&[1], Outcome::Trivial)
+        ]
+    );
+    let fair = Analysis::first_fair_in(&analyses).expect("a fair cycle");
+    assert_eq!(
+        fair.vertices()
+            .iter()
+            .map(|vertex| vertex.index())
+            .collect::<Vec<_>>(),
+        [0]
+    );
+    let self_loop = [loop_step(
+        &[STALE, FRESH, OTHER],
+        EdgeLabel::Transition(id(OTHER)),
+    )];
+    assert_eq!(
+        check_loop(&self_loop, &[visibility()]),
+        Ok(LassoFairness::Fair)
+    );
+}
+
+/// ADR-025 MF-2 on a lasso: the loop must load the mo-last message of every
+/// pair it loads.
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-3")]
+#[test]
+fn a_loop_that_keeps_loading_a_stale_message_is_unfair_under_visibility() {
+    let enabled = [STALE, FRESH, OTHER];
+    let stale = [
+        loop_step(&enabled, EdgeLabel::Transition(id(STALE))),
+        loop_step(&enabled, EdgeLabel::Transition(id(OTHER))),
+    ];
+    assert_eq!(
+        check_loop(&stale, &[visibility()]),
+        Ok(LassoFairness::Unfair { constraint: 0 })
+    );
+    let fresh = [
+        loop_step(&enabled, EdgeLabel::Transition(id(STALE))),
+        loop_step(&enabled, EdgeLabel::Transition(id(FRESH))),
+    ];
+    assert_eq!(check_loop(&fresh, &[visibility()]), Ok(LassoFairness::Fair));
+    let unloaded = [loop_step(&enabled, EdgeLabel::Transition(id(OTHER)))];
+    assert_eq!(
+        check_loop(&unloaded, &[visibility()]),
+        Ok(LassoFairness::Fair)
+    );
+}
+
+/// A graph on `count` vertices with `edges` (`from`, `to`, identity) and
+/// one acceptance set, `accepting`; every vertex enables `enabled`.
+fn synthesized(
+    count: usize,
+    edges: &[(usize, usize, u64)],
+    accepting: &[usize],
+    enabled: &[(usize, u64)],
+) -> (Graph, Vec<Vertex>) {
+    let mut graph = Graph::new();
+    let all: Vec<Vertex> = (0..count)
+        .map(|index| {
+            graph.add_vertex(
+                enabled
+                    .iter()
+                    .filter(|(at, _)| *at == index)
+                    .map(|(_, identity)| id(*identity)),
+            )
+        })
+        .collect();
+    for (from, to, label) in edges {
+        graph
+            .add_edge(all[*from], all[*to], EdgeLabel::Transition(id(*label)))
+            .expect("both vertices exist");
+    }
+    graph
+        .add_acceptance_set(accepting.iter().map(|index| all[*index]))
+        .expect("every vertex exists");
+    (graph, all)
+}
+
+fn indices(analysis: &Analysis) -> Vec<usize> {
+    analysis
+        .vertices()
+        .iter()
+        .map(|vertex| vertex.index())
+        .collect()
+}
+
+fn first_passing(graph: &Graph, constraints: &[Constraint]) -> Option<Vec<usize>> {
+    let analyses = analyze(
+        graph,
+        &graph.vertices().collect(),
+        constraints,
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    Analysis::first_fair_in(&analyses).map(indices)
+}
+
+/// FR-228-AC-5: on `p`, `q`, `r` with `p -> q`, `q -> p`, `r -> q` (thread
+/// `a`, identity 20 to 22) and `q -> r` (a stale load by `b`, 10), `p`
+/// accepting, the filter removes `q -> r`, decomposes into `{p, q}` and
+/// `{r}`, and passes `{p, q}`, whose loop meets the lasso form.
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-5")]
+#[test]
+fn a_load_free_sub_loop_of_a_stale_scc_passes() {
+    let (graph, _) = synthesized(
+        3,
+        &[(0, 1, 20), (1, 0, 21), (2, 1, 22), (1, 2, STALE)],
+        &[0],
+        &[],
+    );
+    let analyses = analyze(
+        &graph,
+        &graph.vertices().collect(),
+        &[visibility()],
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    let Outcome::UnfairVisibility { constraints, sub } = analyses[0].outcome() else {
+        panic!("a visibility refinement, got {:?}", analyses[0].outcome());
+    };
+    assert_eq!(constraints, &[0]);
+    let mut parts: Vec<Vec<usize>> = sub.iter().map(indices).collect();
+    parts.sort();
+    assert_eq!(parts, [vec![0, 1], vec![2]]);
+    assert_eq!(first_passing(&graph, &[visibility()]), Some(vec![0, 1]));
+    let pq = [
+        loop_step(&[], EdgeLabel::Transition(id(20))),
+        loop_step(&[], EdgeLabel::Transition(id(21))),
+    ];
+    assert_eq!(check_loop(&pq, &[visibility()]), Ok(LassoFairness::Fair));
+}
+
+/// FR-228-AC-6: the stale self-loop `p -> p` is removed and `{p, q}` passes
+/// with only `p -> q` and `q -> p`, which the passing analysis names as
+/// kept (the self-loop's identity is in its removed set).
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-6")]
+#[test]
+fn the_passing_component_keeps_only_the_edges_the_decomposition_kept() {
+    let (graph, _) = synthesized(2, &[(0, 0, STALE), (0, 1, 20), (1, 0, 21)], &[0], &[]);
+    let analyses = analyze(
+        &graph,
+        &graph.vertices().collect(),
+        &[visibility()],
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    let passing = Analysis::first_fair_in(&analyses).expect("a fair component");
+    assert_eq!(indices(passing), [0, 1]);
+    assert!(passing.removed().contains(&id(STALE)));
+    assert!(!passing.removed().contains(&id(20)));
+}
+
+/// FR-228-AC-7: pair (`b`, `l1`) fails on the whole SCC and loses `q -> r`
+/// (identity 30); pair (`c`, `l2`), fresh on `p -> q` (41), stale on
+/// `s -> r` (40), fails only on `{r, s}` at the second level, which loses
+/// `s -> r`; `{p, q}` passes. With `p` the only accepting state, ADR-019
+/// FS-2 (a) rejects `{r, s}` for its missing acceptance before any
+/// fairness rule; with `s` accepting too the second level's removal shows.
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-7")]
+#[test]
+fn a_second_pair_fails_only_at_the_second_level() {
+    let edges = [
+        (0, 1, 41),
+        (1, 0, 20),
+        (2, 3, 21),
+        (3, 1, 22),
+        (1, 2, 30),
+        (3, 2, 40),
+    ];
+    let constraints = [
+        Constraint::visibility([id(30)], [id(31)]),
+        Constraint::visibility([id(40), id(41)], [id(41)]),
+    ];
+    for (accepting, rs_outcome) in [(vec![0], None), (vec![0, 3], Some(vec![1]))] {
+        let (graph, _) = synthesized(4, &edges, &accepting, &[]);
+        let analyses = analyze(
+            &graph,
+            &graph.vertices().collect(),
+            &constraints,
+            &Cancel::new(),
+        )
+        .expect("the filter runs");
+        let Outcome::UnfairVisibility {
+            constraints: first,
+            sub,
+        } = analyses[0].outcome()
+        else {
+            panic!("a first-level refinement, got {:?}", analyses[0].outcome());
+        };
+        assert_eq!(first, &[0]);
+        let rs = sub
+            .iter()
+            .find(|analysis| indices(analysis) == [2, 3])
+            .expect("{r, s} is a component of the first refinement");
+        match (rs.outcome(), rs_outcome) {
+            (Outcome::MissingAcceptance { set: 0 }, None) => {}
+            (
+                Outcome::UnfairVisibility {
+                    constraints: second,
+                    ..
+                },
+                Some(expected),
+            ) => {
+                assert_eq!(second, &expected);
+            }
+            (other, expected) => panic!("{{r, s}}: {other:?}, expected {expected:?}"),
+        }
+        assert_eq!(first_passing(&graph, &constraints), Some(vec![0, 1]));
+    }
+}
+
+/// FR-228-AC-8: a strong constraint (identity 9, enabled only at state 0,
+/// never taken) and a failing pair (stale `1 -> 2`, identity 10) refine in
+/// one step that removes state 0 and the edge `1 -> 2`; the second pair
+/// (stale `3 -> 3`, 12; fresh `3 -> 4`, 13) holds, and `{3, 4}` passes.
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-8")]
+#[test]
+fn a_strong_constraint_and_a_visibility_pair_refine_in_one_step() {
+    let strong = Constraint::strong([id(9)]);
+    let first = Constraint::visibility([id(10)], [id(11)]);
+    let second = Constraint::visibility([id(12), id(13)], [id(13)]);
+    let (graph, _) = synthesized(
+        5,
+        &[
+            (0, 1, 20),
+            (1, 0, 21),
+            (1, 2, 10),
+            (2, 3, 22),
+            (3, 1, 23),
+            (3, 3, 12),
+            (3, 4, 13),
+            (4, 3, 24),
+        ],
+        &[3],
+        &[(0, 9)],
+    );
+    let constraints = [strong, first, second];
+    let analyses = analyze(
+        &graph,
+        &graph.vertices().collect(),
+        &constraints,
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    let Outcome::UnfairStrong {
+        constraints: failing,
+        sub,
+    } = analyses[0].outcome()
+    else {
+        panic!("one refinement step, got {:?}", analyses[0].outcome());
+    };
+    assert_eq!(failing, &[0]);
+    let [remaining] = sub.as_slice() else {
+        panic!("the remaining states, got {sub:?}");
+    };
+    assert_eq!(indices(remaining), [1, 2, 3, 4]);
+    let Outcome::UnfairVisibility {
+        constraints: pairs,
+        sub: refined,
+    } = remaining.outcome()
+    else {
+        panic!(
+            "the same step's edge removal, got {:?}",
+            remaining.outcome()
+        );
+    };
+    assert_eq!(pairs, &[1]);
+    let parts: Vec<Vec<usize>> = refined.iter().map(indices).collect();
+    assert_eq!(parts, [vec![1], vec![2], vec![3, 4]]);
+    assert_eq!(first_passing(&graph, &constraints), Some(vec![3, 4]));
+}
+
+/// FR-228-AC-9: searched from state 0 (discovery order 0, 1, 2), states 1
+/// and 2 accepting, edges `e0` to `e7` as identities 100 to 107; pair A
+/// stale on `e5`, `e6`, `e7` and pair B on `e4`, `e5`, `e6`, neither fresh.
+/// The one step removes both pairs' edges, components rank by their
+/// earliest-discovered state, and the first passing component is `{1}`.
+#[ix_trace_rs::trace("TC-673", "FR-228-AC-9")]
+#[test]
+fn both_pairs_refine_in_one_step_and_components_rank_by_discovery() {
+    let pair_a = Constraint::visibility([id(105), id(106), id(107)], []);
+    let pair_b = Constraint::visibility([id(104), id(105), id(106)], []);
+    let (graph, _) = synthesized(
+        3,
+        &[
+            (1, 1, 100),
+            (2, 2, 101),
+            (0, 1, 102),
+            (0, 2, 103),
+            (2, 0, 104),
+            (2, 1, 105),
+            (1, 2, 106),
+            (2, 2, 107),
+        ],
+        &[1, 2],
+        &[],
+    );
+    let constraints = [pair_a, pair_b];
+    let analyses = analyze(
+        &graph,
+        &graph.vertices().collect(),
+        &constraints,
+        &Cancel::new(),
+    )
+    .expect("the filter runs");
+    let Outcome::UnfairVisibility {
+        constraints: failing,
+        sub,
+    } = analyses[0].outcome()
+    else {
+        panic!("one refinement step, got {:?}", analyses[0].outcome());
+    };
+    assert_eq!(failing, &[0, 1]);
+    let parts: Vec<Vec<usize>> = sub.iter().map(indices).collect();
+    assert_eq!(parts, [vec![0], vec![1], vec![2]]);
+    assert_eq!(first_passing(&graph, &constraints), Some(vec![1]));
+}
+
+/// ADR-018 PC-4, FR-339: the visibility member resolves to one constraint
+/// per (thread, location) pair, ascending by thread then location identity
+/// bytes, a pair listed twice once with the union of its loads; each
+/// resolved constraint is of kind strong (ADR-025 MF-5).
+#[ix_trace_rs::trace("TC-673")]
+#[test]
+fn the_visibility_member_resolves_one_constraint_per_pair_in_identity_order() {
+    let pair = |thread: &[u8], location: &[u8], stale: u64, fresh: u64| VisibilityPair {
+        thread: thread.to_vec(),
+        location: location.to_vec(),
+        loads: [id(stale)].into(),
+        fresh: [id(fresh)].into(),
+    };
+    let resolved = visibility_constraints([
+        pair(b"b", b"y", 1, 2),
+        pair(b"a", b"y", 3, 4),
+        pair(b"b", b"x", 5, 6),
+        pair(b"a", b"y", 7, 8),
+    ]);
+    assert_eq!(
+        resolved,
+        [
+            Constraint::visibility([id(3), id(7)], [id(4), id(8)]),
+            Constraint::visibility([id(5)], [id(6)]),
+            Constraint::visibility([id(1)], [id(2)]),
+        ]
+    );
+    assert!(resolved
+        .iter()
+        .all(|constraint| constraint.strength() == Strength::Strong));
 }

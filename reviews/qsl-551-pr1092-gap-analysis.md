@@ -84,3 +84,21 @@ Spec follow-ups (re-measured; spec questions, not code bugs):
 | FND-005 | medium | `quire matrix` binds FR-183-AC-4 to hyper_replay.rs:191 via its doc citation; the test covers the first sentence only (no WitnessExhausted envelope, no `max_witness_set` 0 replay). Partial-AC binding. | qsl-analyze/tests/it/hyper_replay.rs:186-191 |
 | FND-006 | low | FR-176-AC-4 asks for byte-equal counterexamples; `the_leaky_request_run_twice_gives_equal_counterexamples` compares `PartialEq` and `Debug` text, not encoded bytes. HyperCounterexample has no wire encoding yet, so the test cannot check bytes; say so in the doc or encode once the wire exists. | qsl-analyze/tests/it/hyper.rs:401-416 |
 | FND-007 | low | Behaviour in FR-176's text with no test: `max_transitions` on the product, more than one instance (ranking and the vacuity reading across instances), `each` granularity and strong constraints in the component-scoped filter, and a vacuity verdict decided by a terminal stutter loop. The random oracle in SR-13450 covered weak whole constraints only. | qsl-analyze/tests/it/hyper.rs |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | `instances_are_ranked_by_depth_and_a_finding_ends_the_later_ones` never reaches the FR-126 cap: its violations are second-phase lassos, so `best` stays `None` (instrumented `cap=None` for both instances) and the tight-budget run passes trivially. Mutating the cap to `None`, removing the depth-0 `break`, or ranking a `match` hit at `depth` all leave every `hyper` test green (SR-13450 FND-002/FND-003 fixes are untested). | qsl-analyze/tests/it/hyper.rs:681-714 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | New test runs `eventually p` and a bare atom, holding and violated, with replay; it fails when the FND-001 fix is mutated away. |
+| FND-002 | fixed | `quire matrix` at b6c72979e: FR-176-AC-2 untagged (doc no longer cites the AC id). |
+| FND-003 | fixed | `quire matrix` at b6c72979e: FR-183-AC-1 untagged. |
+| FND-004 | fixed | `quire matrix` at b6c72979e: FR-183-AC-3 untagged. |
+| FND-005 | fixed | `quire matrix` at b6c72979e: FR-183-AC-4 untagged. |
+| FND-006 | fixed | Doc states equality is `PartialEq` plus `Debug` text because the payload has no wire encoding yet. |
+| FND-007 | fixed | Tests added for `max_transitions`, several instances, vacuity across instances, `each`/strong constraints and stutter-loop vacuity. The several-instances test is weak (FND-008). |

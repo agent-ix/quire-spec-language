@@ -1211,7 +1211,7 @@ impl<'a> Run<'_, 'a> {
         let Some(entry) = passing.vertices().first().copied() else {
             return Err(fault("a-component-has-a-vertex"));
         };
-        let walk = model.greedy_loop(&component, entry)?;
+        let walk = model.greedy_loop(&component, passing.removed(), entry)?;
         let loop_edges = model.loop_edges(&walk)?;
         let entry = ProductStateId(entry.index());
         let (root, stem) = tree_path(&run.graph, entry);

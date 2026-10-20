@@ -4,6 +4,7 @@
 //! the same shape as the root crate's `it` target.
 
 mod fairness_kinds;
+mod memory_models;
 mod provider_origin;
 mod route_registry;
 mod routing;

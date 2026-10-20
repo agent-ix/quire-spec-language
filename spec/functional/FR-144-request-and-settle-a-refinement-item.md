@@ -116,7 +116,11 @@ beside it as a separate item.
 - **Certificate.** A safety half that the product proves SHALL settle
   `proved` only after FR-149's checker accepts its certificate; a rejection
   SHALL settle V-6 `CertificateRejected{rule, at}` (ADR-018 PC-2), and a checker stopped by a limit
-  V-7 naming the limit (ADR-020 CT-3).
+  V-7 naming the limit, a cancelled check V-7 naming the cancellation, and a check stopped by an expansion that names no limit V-7 `ResourceExhausted` (ADR-020 CT-3).
+- **Certificate identity.** Before it calls FR-149's checker, FR-144 SHALL refuse
+  `stale_dependency`/`content-mismatch` a certificate whose `concrete_package`,
+  `abstract_package` or `obligation` differs from the item's recompile (FR-098);
+  the checker compares the refinement node (FR-149 "Identity").
 - **Certification label.** A `proved` record SHALL carry ADR-018 PC-1's
   `Certified` label when every half was certified. A `proved` with a
   liveness half, which has no core certificate checker, SHALL settle

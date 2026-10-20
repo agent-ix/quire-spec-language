@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The plumbing the model-state certificate checkers share: FR-338's
-//! [`check_closure`](super::closure::check_closure) and FR-169's
-//! [`check_state_graph`](super::state_graph::check_state_graph). Each
+//! [`check_closure`](super::closure::check_closure), FR-169's
+//! [`check_state_graph`](super::state_graph::check_state_graph) and FR-149's
+//! [`check_simulation_certificate`](super::simulation::check_simulation_certificate)
+//! (which shares the bound pre-check and the fault vocabulary). Each
 //! re-admits the subject the same way, stops at the same budgets with the
 //! same causes and polls cancellation the same way, so the checkers cannot
 //! drift from each other.
 
 use qsl_eval::simulation::model::{check_model_bounds, ModelSimulationRequest, ModelSystem};
-use qsl_eval::simulation::{EncodingRefusal, ExpansionLimit, ExpansionStop};
+use qsl_eval::simulation::{EncodingRefusal, ExpansionLimit, ExpansionStop, BOUND_POSITIONS};
 use qsl_foundation::InternalFault;
 use quire_exact::Cancel;
 
 use crate::certificate::closure::{ClosureRefusal, TemporalCertificateCheck};
 use crate::model_check::limits::ModelCheckLimit;
 use crate::proof_result::IncompleteCause;
-
-/// The type positions the requires-bound pre-check may visit, as EN-1's.
-const BOUND_POSITIONS: u64 = 1 << 20;
 
 /// The fault component of the checker that broke an invariant.
 #[derive(Clone, Copy)]
@@ -25,6 +24,8 @@ pub(super) enum Checker {
     Closure,
     /// FR-169's state-graph checker.
     StateGraph,
+    /// FR-149's simulation checker.
+    Simulation,
 }
 
 impl Checker {
@@ -32,6 +33,7 @@ impl Checker {
         match self {
             Self::Closure => "closure-check",
             Self::StateGraph => "state-graph-check",
+            Self::Simulation => "simulation-check",
         }
     }
 
