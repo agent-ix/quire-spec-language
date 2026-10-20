@@ -35,7 +35,9 @@
 
 use std::collections::BTreeMap;
 
-use qsl_eval::fairness::{check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep};
+use qsl_eval::fairness::{
+    check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep, Strength,
+};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSimulationRequest, ModelSystem,
@@ -164,10 +166,6 @@ pub enum ModelTraceRefusal {
         "unsupported_construct/not-yet-implemented: the clause has a guarded `on each` activation"
     )]
     GuardedActivation,
-    /// The recompiled clause's fairness set holds a strong constraint,
-    /// whose lasso check (ADR-019 FS-8) is not built.
-    #[error("unsupported_construct/not-yet-implemented: the clause's fairness set holds a strong constraint")]
-    StrongFairness,
     /// A refinement counterexample that names no refinement failure.
     #[error("invalid_runtime_input/invalid-value: the payload names no refinement failure")]
     NoRefinementFailure,
@@ -202,10 +200,9 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::PostState { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } => Code::StaleDependency,
-            Self::StrongFairness
-            | Self::AuthoredUndefined
-            | Self::GuardedActivation
-            | Self::RefinementLasso => Code::UnsupportedConstruct,
+            Self::AuthoredUndefined | Self::GuardedActivation | Self::RefinementLasso => {
+                Code::UnsupportedConstruct
+            }
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
@@ -223,10 +220,9 @@ impl ModelTraceRefusal {
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
             | Self::PostState { .. } => "content-mismatch",
-            Self::StrongFairness
-            | Self::AuthoredUndefined
-            | Self::GuardedActivation
-            | Self::RefinementLasso => "not-yet-implemented",
+            Self::AuthoredUndefined | Self::GuardedActivation | Self::RefinementLasso => {
+                "not-yet-implemented"
+            }
             Self::InitialState { .. }
             | Self::NotEnabled { .. }
             | Self::OverBinding
@@ -720,15 +716,6 @@ fn check_formula(
     let mut loop_states = Vec::new();
     let trace = match payload.lasso {
         Some(lasso) => {
-            // Refuse a strong constraint before any expansion is read.
-            if formula
-                .clause
-                .fairness()
-                .iter()
-                .any(|constraint| constraint.kind() == FairnessKind::Strong)
-            {
-                return Err(refused(ModelTraceRefusal::StrongFairness));
-            }
             match loop_states_of(system, payload, positions, lasso)? {
                 Some(states) => loop_states = states,
                 None => return Ok((no_value(), Vec::new())),
@@ -794,7 +781,7 @@ fn check_formula(
                 value: ModelTraceValue::Truth(false),
                 trace_position: payload.trace_position(),
             },
-            strong_hints(system, formula.clause, &loop_states),
+            strong_hints(system, &loop_states),
         ),
         Ok(TemporalOutcome::Holds) => (disagrees(Category::Success), Vec::new()),
         Ok(_) => (no_value(), Vec::new()),
@@ -894,6 +881,7 @@ fn unfair_constraint(
     let mut constraints = Vec::new();
     let mut authored = Vec::new();
     for constraint in clause.fairness() {
+        let strength = Strength::from(constraint.kind());
         let operation = constraint.operation();
         let text = system
             .operation_text(operation.declaring_type(), operation.name())
@@ -905,12 +893,12 @@ fn unfair_constraint(
             .collect();
         match constraint.granularity() {
             FairnessGranularity::Whole => {
-                constraints.push(Constraint::weak(covered));
+                constraints.push(Constraint::new(strength, covered));
                 authored.push(constraint);
             }
             FairnessGranularity::Each => {
                 for identity in covered {
-                    constraints.push(Constraint::weak([identity]));
+                    constraints.push(Constraint::new(strength, [identity]));
                     authored.push(constraint);
                 }
             }
@@ -931,13 +919,8 @@ fn unfair_constraint(
 /// enabled at some loop state and taken by no loop step is named `Whole`;
 /// otherwise the first transition identity of it, in canonical transition
 /// order, that is enabled at a loop state and taken by no loop step is named
-/// `Each`. An operation the clause already constrains that way gets none, and
-/// a terminal stutter loop, where nothing is enabled, gets none.
-fn strong_hints(
-    system: &ModelSystem<'_>,
-    clause: &CheckedTemporalClause,
-    states: &[LoopState],
-) -> Vec<StrongFairnessHint> {
+/// `Each`. A terminal stutter loop, where nothing is enabled, gets none.
+fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFairnessHint> {
     let mut hints = Vec::new();
     for (declaring, name, text) in system.operations() {
         let of_operation = |transition: &ModelTransition| transition.operation() == text;
@@ -976,13 +959,11 @@ fn strong_hints(
                 position,
             )
         };
-        if !clause.fairness().contains(&suggested) {
-            hints.push(StrongFairnessHint {
-                suggested,
-                identity,
-                first_enabled_position: position,
-            });
-        }
+        hints.push(StrongFairnessHint {
+            suggested,
+            identity,
+            first_enabled_position: position,
+        });
     }
     hints
 }
