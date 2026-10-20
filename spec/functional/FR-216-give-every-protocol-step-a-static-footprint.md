@@ -84,7 +84,8 @@ order gives the same answer.
   on which of them are live; without them, a non-commuting pair (a `repeat`
   around a `parallel` whose `outstanding continue` join leaves a branch
   running, with the step that ends that branch) would be reported
-  independent. `join(p)` by `t`: `R` `inst(i)` and `ctl(t)`; `W`
+  independent. `join(p)` by `t`: `R` `inst(i)`, `ctl(t)` and, under `all`, the `ctl` of each
+  joined branch thread; `W`
   `ctl(t)`, `inst(i)` and, under `outstanding cancel`, the `ctl` of every
   branch thread of `i`, and for a branch that forked, the `ctl` of every
   thread at or below it and the inner parallel instances. `timeout(a)`: `ctl(t)` in both.

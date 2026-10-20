@@ -115,6 +115,13 @@ Not mergeable. PS-2's ordinal rule frees an ordinal that a running descendant st
 | FND-019 | high | Addition (2), 'a step that rebinds a binder a live descendant's environment still names leaves that descendant its earlier value', has nowhere to keep that value. An environment entry holds a thread path, not a value. `observations` (PS-8) holds one value per (binder node, thread path), so a rebinding by the same thread of the same node, for example in a `repeat`, overwrites it. The descendant's earlier value is in no member of the key, so two states with equal keys can differ in what a descendant reads, against PS-8. Fix: make environment entries hold the bound value, copied at `fork` and at `join all`. The descendant then keeps its copy by construction, and nothing else is needed for this case. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:137 |
 | FND-020 | medium | Addition (1), 'a completed branch thread keeps those entries until its join has read it', keeps binders that no node reads. In `Fill` (no node reads `a` or `b`), `attempt(A)` completes `left`, which then keeps `A`'s entry until `join(Both)`, so `observations` holds `a` in s2 and s4. FR-205-AC-2 says 'Every reachable state of `Fill` has empty `observations`, because no node reads `a` or `b`'. Fix: keep only entries some node after the join reads, which the FND-018 reach rule gives directly. | spec/functional/FR-205-define-the-protocol-subject-and-its-state-key.md:111 |
 
+## New findings (disposition pass 6)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-021 | medium | For nested all-joins, the reach extension is not transitive as written. PS-5 says a branch thread of an `all` join 'reaches on into its joiner's continuation'. In `parallel P { branch left sequence { parallel R { branch x attempt X binding b } join all; attempt L2 } } join all; check Cb { b.ready }`, `x`'s joiner is `left`, and `left`'s continuation (`L2`, up to `left`'s end) holds no reader of `b`. So `x` drops `b` before `join(R)`. `left` then never holds it, and `join(P)` gives the root nothing, although S3's `Out(P)` contains `b`. Fix: 'reaches on into everything its joiner reaches', which brings in `left`'s own extension into the root's continuation. Add this nested case to FR-205-AC-2. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:137 |
+| FND-022 | low | `join` with policy `all` now copies entries out of each joined branch thread's environment, which is part of that thread's `ctl`. FT-1 gives `join` only `R` `inst(i)` and `ctl(t)`, and FT-2 says a join reads only 'the instance its fork or join names'. The result is still dependent in practice, because a branch's last step writes `inst(i)` and a completed branch takes no further step. Even so, the read is unstated. Fix: add 'and, under `all`, the `ctl` of each joined branch thread' to `join`'s `R`. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:294 |
+
 ## Dispositions
 
 Round 1, head ccae02a7d. The checks were re-run against the code on main. PS-2's new holding rule (instance live, or any live thread's path extends a branch path) is the code's test (steps.rs:445-458), and FT-1's fork reads still cover it. A lower ordinal is freed only by a step that writes the `inst(i_o)` or a descendant `ctl` the fork reads. The taken ordinal is filled only by a fork of the same thread. The compensation analogue now reads `ctl` up to the taken ordinal, and `cend` writes `reg(c, r)`. PD-4's order matches the code: Gate first (steps.rs:951-969); attempt causes (attempt_cause); and receive Constraint, then HeadBlocked, then EmptyQueue (channel.rs:352-372). `Displaced` is spec-ahead-of-code, and an unordered channel is never HeadBlocked. The one mismatch is the send order (FND-010). FT-1's branch-end write is now the whole `inst(i)`, which is sound and coarser: sibling branch ends of one instance are dependent. SE-1 (e) and FR-215 list `fence`. QSpec main is still 44afcf4, and no companion quire-specification PR is open.
@@ -191,3 +198,35 @@ With paths, addition (2) needs a second value store in the key. FND-018 and FND-
 | FND-015 | fixed | - |
 | FND-016 | fixed | - |
 | FND-017 | fixed | - |
+
+Round 6, head 3a6b41fea (one commit over 943685e5a; base main still 5474b9125). Gates: make check-spec-validation exits 0 with the same 17 warnings, none in a changed file; tools/check-index-completeness.sh exits 0.
+
+Hand derivations under the new PS-5.
+
+FR-205-AC-2:
+- Base `Fill`: `left` completes at `attempt(A)` and reaches no reader, so it drops `a` in that step, and `observations` is empty in every state.
+- Variant with a reader after the join: `left`'s reach extends into the root's continuation, so it keeps `a` until `join(Both)`. The join adds `a` to the root, which keeps it to the reader's step.
+- Multi-step `left` (`A` then `A2`): resting at `A2`, `left` still reaches the reader through the extension, so `a` is held to the join and then by the root. All three hold.
+
+FR-205-AC-7:
+- After `join(P)`, `t` reaches `Ck`: it is inside `Q`'s branch, which nested bodies include, and also via the back edge after `fork(Q)`. `fork(Q)` copies `a`(true) to `u` and `v`.
+- `join(Q)` settles `t` back to `fork P`, before the binding node, so `t` drops its entry. `P`'s instance 0 is gone and nothing extends its paths, so `P` forks at 0.
+- `Q`'s instance 0 is live while `u` runs, so `Q` forks at 1. `u2` gets `a`(false), `u1` keeps `a`(true), and `u1` drops it on completing (`join any` gives no extension). The AC holds.
+
+Repeat: a rest at or before the binding node reaches nothing, so a stale value is dropped at the loop head, and the next iteration's binding replaces it.
+
+Compensation threads start empty and read their captures and their own attempt binders, which is consistent with CP-1 to CP-5.
+
+S3 In/Out: the copy at fork matches the `In` of the branches. The `all` join adds `Out` and the other policies add nothing. `await` (`then` only), `choice` and `repeat` follow from reach.
+
+PS-8 is now a function of state. Values are keyed by the thread that holds them and pruned, and two states that differ only in which thread bound an equal value are one state.
+
+FT-1 without the extra read: a fork's ordinal no longer depends on environments, and every environment change is made by a step of the owning thread (an event, fork, join or prune) that already writes its `ctl`. The one gap is the join's copy, FND-022.
+
+Major findings: none. FND-021 is medium and FND-022 is low. FND-008 (QSpec companion) stays deferred.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-018 | fixed | - |
+| FND-019 | fixed | - |
+| FND-020 | fixed | - |
