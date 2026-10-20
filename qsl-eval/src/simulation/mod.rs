@@ -16,7 +16,8 @@
 //! no caller skips the requires-bound check or the sampler's
 //! `GeneratorMismatch` check. `weighted_choice` is the generator's one
 //! selection function (FR-188): it reads draws at a choice point and runs no
-//! transition system.
+//! transition system. `sample_probabilistic` samples a probabilistic model
+//! under a workload (FR-188), over FR-187's step structure.
 
 mod choice;
 mod expansion;
@@ -29,9 +30,10 @@ mod not_simulated;
 mod order;
 mod reduction;
 mod sample;
+mod sampled;
 mod trace;
 
-pub use choice::{weighted_choice, ChoicePoint, Weights, WeightsRefusal};
+pub use choice::{weighted_choice, ChoicePoint, TotalAboveDrawRange, Weights, WeightsRefusal};
 pub use expansion::{Expansion, ExpansionLimit, ExpansionStop, StateFindings};
 pub use explore::{explore_request, Exploration, Limits, Outcome, Stats, TransitionSystem};
 pub use footprint::{independent, Footprint, Location};
@@ -42,4 +44,5 @@ pub use reduction::{
     ConstraintValue, OfferedReductions, Permutation, SymmetryClass, SymmetryGroup,
 };
 pub use sample::{sample_request, sample_request_until, SampleRequest};
+pub use sampled::{sample_probabilistic, SampleStop, SampledBehaviour, SampledStep};
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

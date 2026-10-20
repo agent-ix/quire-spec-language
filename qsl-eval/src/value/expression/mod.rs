@@ -73,6 +73,27 @@ pub fn evaluate_closed(
     .run(node, slots, Vec::new())
 }
 
+/// FR-187 (ADR-024 PM-5): evaluate the reward `reward` of `package` on
+/// `arguments`, one value per parameter of its operation in declared order.
+/// A reward reads its operation's parameters alone, so the object
+/// environment is empty.
+pub fn evaluate_reward(
+    package: &CheckedPackage,
+    reward: &qsl_semantics::check::Reward,
+    arguments: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let objects = ObjectEnvironment::default();
+    Machine::new(
+        package.graph().scope(),
+        package.graph(),
+        &objects,
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(reward.expression(), reward.slots(), arguments)
+}
+
 /// FR-124 (ADR-018 DL-1): evaluate the `terminal when` predicate
 /// `predicate` of `package` for the object `self_object` of the state whose
 /// objects are `current`, through the one clause evaluator (FR-107): the

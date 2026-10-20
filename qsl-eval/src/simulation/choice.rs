@@ -45,7 +45,8 @@ pub(crate) struct DrawPreimage {
 }
 
 impl DrawPreimage {
-    fn at(point: ChoicePoint, draw: u64) -> Self {
+    /// The preimage of draw `draw` at `point`.
+    pub(crate) fn at(point: ChoicePoint, draw: u64) -> Self {
         Self {
             choice: point.choice.to_string(),
             draw: draw.to_string(),
@@ -54,6 +55,16 @@ impl DrawPreimage {
             trace: point.trace.to_string(),
         }
     }
+}
+
+/// The scaled total `N` of a choice's weights exceeds `2^256`, so the
+/// generator's acceptance test accepts no draw and a draw would never end
+/// (FR-188; QSpec FR-181-AC-14, `total-above-draw-range{total}`).
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+#[error("the scaled weight total {total} exceeds 2^256")]
+pub struct TotalAboveDrawRange {
+    /// The scaled total `N`, above `2^256`.
+    pub total: Integer,
 }
 
 /// Why a list of weights admits no choice (FR-188).
@@ -71,8 +82,8 @@ pub enum WeightsRefusal {
     },
     /// The scaled total exceeds `2^256`, so no 256-bit draw is ever accepted
     /// (`n · ⌊2^256 / n⌋ = 0`).
-    #[error("the scaled weight total exceeds 2^256")]
-    TotalAboveDrawRange,
+    #[error(transparent)]
+    TotalAboveDrawRange(TotalAboveDrawRange),
 }
 
 /// The integer weights of one choice: positive exact rationals scaled by the
@@ -172,7 +183,9 @@ impl Weights {
         let range = Integer::one().shifted_left(256);
         let (quotient, _) = range.div_mod_floor(divisor);
         if quotient.is_zero() {
-            return Err(WeightsRefusal::TotalAboveDrawRange);
+            return Err(WeightsRefusal::TotalAboveDrawRange(TotalAboveDrawRange {
+                total,
+            }));
         }
         let accept_below = quotient.mul(&total);
         Ok(Self {
@@ -261,11 +274,36 @@ pub(crate) fn choose(at: ChoicePoint, weights: &Weights) -> (usize, u64) {
     }
 }
 
-/// The index of `weights` the generator selects at `at` (FR-188): exact,
-/// reproducible from the seed and independent of every other choice point.
-/// A one-item choice selects index 0 and computes no digest.
-pub fn weighted_choice(at: ChoicePoint, weights: &Weights) -> usize {
-    choose(at, weights).0
+/// [`weighted_choice`], with how many draw digests it computed: none when
+/// the weights are refused or there is one of them.
+pub(crate) fn weighted_choice_counted(
+    at: ChoicePoint,
+    weights: &[Rational],
+) -> (Result<usize, WeightsRefusal>, u64) {
+    match Weights::new(weights) {
+        Ok(weights) => {
+            let (index, digests) = choose(at, &weights);
+            (Ok(index), digests)
+        }
+        Err(refusal) => (Err(refusal), 0),
+    }
+}
+
+/// The index of `weights` the generator selects at `at` (FR-188): the
+/// weights scaled to integers by the least common multiple of their
+/// denominators, each index selected with probability exactly its scaled
+/// weight over their total. Exact, reproducible from the seed and
+/// independent of every other choice point. A one-item choice selects index
+/// 0 and computes no digest.
+///
+/// # Errors
+///
+/// [`WeightsRefusal::TotalAboveDrawRange`] when the scaled total exceeds
+/// `2^256`, before any digest is computed; [`WeightsRefusal::Empty`] or
+/// [`WeightsRefusal::NotPositive`] for a list that is not one of positive
+/// weights.
+pub fn weighted_choice(at: ChoicePoint, weights: &[Rational]) -> Result<usize, WeightsRefusal> {
+    weighted_choice_counted(at, weights).0
 }
 
 #[cfg(test)]
@@ -321,8 +359,10 @@ mod tests {
         let range = Integer::one().shifted_left(256);
         assert!(Weights::from_scaled(vec![range.sub(&Integer::one()), Integer::one()]).is_ok());
         assert_eq!(
-            Weights::from_scaled(vec![range, Integer::one()]),
-            Err(WeightsRefusal::TotalAboveDrawRange)
+            Weights::from_scaled(vec![range.clone(), Integer::one()]),
+            Err(WeightsRefusal::TotalAboveDrawRange(TotalAboveDrawRange {
+                total: range.add(&Integer::one())
+            }))
         );
     }
 
@@ -339,6 +379,66 @@ mod tests {
         };
         assert_eq!(choose(at, &Weights::uniform(1).expect("one")), (0, 0));
         assert!(choose(at, &Weights::uniform(2).expect("two")).1 >= 1);
+    }
+
+    fn at(trace: u64) -> ChoicePoint {
+        ChoicePoint {
+            seed: 424_242,
+            trace,
+            step: 0,
+            choice: 0,
+        }
+    }
+
+    /// FR-188-AC-5: weights `(2^256 − 1, 1)` scale to the total `2^256`,
+    /// which accepts every draw: each choice computes exactly one digest and
+    /// selects index 1 only when `v` is the last value below `2^256`.
+    #[trace("TC-623", "FR-188-AC-5")]
+    #[test]
+    fn a_total_of_two_to_the_256_accepts_every_draw() {
+        let range = Integer::one().shifted_left(256);
+        let first = range.sub(&Integer::one());
+        let weights = [
+            Rational::from_integer(first.clone()),
+            Rational::from_integer(Integer::one()),
+        ];
+        for trace in 0..50 {
+            let (selected, digests) = weighted_choice_counted(at(trace), &weights);
+            assert_eq!(digests, 1, "trace {trace}");
+            let v = big_endian(plain_digest(&DrawPreimage::at(at(trace), 0)));
+            assert_eq!(selected, Ok(usize::from(v >= first)), "trace {trace}");
+        }
+    }
+
+    /// FR-188-AC-5: weights `(2^256, 1)` in canonical value order (QSpec
+    /// TC-354 SM-09) are refused `TotalAboveDrawRange{total: 2^256 + 1}`
+    /// with no digest computed.
+    #[trace("TC-623", "FR-188-AC-5")]
+    #[test]
+    fn weights_above_the_draw_range_refuse_before_any_digest() {
+        let range = Integer::one().shifted_left(256);
+        let weights = [
+            Rational::from_integer(range.clone()),
+            Rational::from_integer(Integer::one()),
+        ];
+        assert_eq!(
+            weighted_choice_counted(at(0), &weights),
+            (
+                Err(WeightsRefusal::TotalAboveDrawRange(TotalAboveDrawRange {
+                    total: range.add(&Integer::one())
+                })),
+                0
+            )
+        );
+    }
+
+    /// FR-188-AC-4: `weighted_choice` over one weight returns 0 with no
+    /// digest computed.
+    #[trace("TC-623", "FR-188-AC-4")]
+    #[test]
+    fn one_weight_selects_index_zero_without_a_digest() {
+        let weights = [Rational::from_integer(Integer::from(7u64))];
+        assert_eq!(weighted_choice_counted(at(0), &weights), (Ok(0), 0));
     }
 
     /// The unit-weight fast path selects exactly what the running-sum
