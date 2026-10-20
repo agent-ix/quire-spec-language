@@ -75,6 +75,7 @@ Not mergeable while SR-13595 FND-001 stands, and the two medium coverage gaps sh
 | FND-005 | fixed | FR-143 on main (#1117) names `Checked(HoldsReduced{reductions: []})` and the typed `UnavailabilityCause`. |
 | FND-006 | fixed | The branch contains #1117 (d2e3c128b). `a_strong_abstract_fairness_constraint_is_unsupported` and `a_hidden_field_is_reported_before_a_strong_constraint` are tagged ("TC-548", "FR-143-AC-6"), and the engine decides the violated-safety strong variant. FR-143-AC-7 is tagged, but only partly covered: FND-008. |
 | FND-007 | fixed | `the_decomposition_of_each_class_charges_the_runs_cancellation_handle` kills M10' (a fresh `Cancel` passed to `analyze`). |
+| FND-008 | fixed | `check_refinement` now delegates to a private `check_with(request, cancel, classes_of)`, whose `classes_of` is a private fn pointer (`abstract_classes` in production); nothing new is public and arch-lint-api-surface-qsl passes. The unit test `a_second_phase_fault_is_a_refusal_carrying_the_fault_and_no_outcome` in refine.rs, tagged ("TC-548", "FR-143-AC-7"), runs a CAS refinement whose safety half holds. With the real provider it gets an outcome; with a failing one it gets `Err(ModelCheckRefusal::Fault(..))` and no outcome. M32 is killed. The integration settlement test is retagged TC-549, with an honest doc comment. |
 
 ## New findings (disposition pass 2)
 
