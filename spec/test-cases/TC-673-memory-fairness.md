@@ -12,7 +12,7 @@ relationships:
 
 Verify the derived memory constraints, their `memory` origin, their effect on liveness, the visibility filter, and that safety verdicts do not change.
 
-Scope: FR-228-AC-1 to FR-228-AC-4.
+Scope: FR-228-AC-1 to FR-228-AC-5.
 
 ## Test Procedure
 
@@ -24,6 +24,9 @@ Scope: FR-228-AC-1 to FR-228-AC-4.
 3. Pass the two synthesized SCCs of FR-228-AC-3 to the filter.
 4. Check ADR-025 §10's TP-1 claim with and without the memory constraints
    read; check a `fair weak flush` constraint.
+5. Pass FR-228-AC-5's SCC (with the load-free sub-cycle `p q`) to the filter and
+   to the certificate check, and check the claim over a protocol with that
+   shape.
 
 Tag the tests `#[trace("TC-673", "FR-228-AC-n")]`.
 
@@ -35,3 +38,4 @@ Tag the tests `#[trace("TC-673", "FR-228-AC-n")]`.
   rejected by `flush(w)`'s; `refuted` with that lasso when ignored.
 - Step 3: rejected, then passed.
 - Step 4: equal verdicts; `missing_declaration`/`missing-name`.
+- Step 5: the SCC is decomposed to `{p, q}` and passed; the claim is `refuted` with the fair lasso `p q`; the certificate check accepts the decomposition.

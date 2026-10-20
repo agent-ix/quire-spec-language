@@ -33,8 +33,9 @@ carry QSpec FR-436's flush fairness, `fair weak each flush(b)` per thread
 (ADR-025 MF-1), and every infinite-trace clause over a subject with an `ra`
 `parallel` SHALL carry QSpec FR-437's visibility fairness (ADR-025 MF-2),
 each with a `memory` origin, beside the authored and scheduler constraints
-(FR-212). FR-126's fairness filter and canonical loop SHALL read them as
-weak constraints (ADR-025 MF-3 to MF-5).
+(FR-212). FR-126's fairness filter and canonical loop SHALL read flush fairness
+as weak constraints and visibility fairness as ADR-025 MF-2's per-pair edge
+Streett condition (ADR-025 MF-3 to MF-5).
 
 ## Use case
 
@@ -63,7 +64,12 @@ visible.
   location) the thread loads for each `ra` `parallel`, each with origin
   `memory`.
 - FR-126's fairness filter SHALL accept an SCC or lasso only when it meets
-  each memory constraint as QSpec FR-436 and FR-437 define it.
+  each memory constraint as QSpec FR-436 and FR-437 define it. For
+  visibility fairness on an SCC, the filter SHALL decompose it per ADR-025
+  MF-2: it SHALL remove the loads of every (thread, location) pair that the
+  SCC loads without a fresh load of the location by that thread, decompose
+  the remainder again, and accept an SCC only when every pair it still loads
+  has a fresh load in it. It SHALL NOT reject an SCC for a stale load alone.
 - The memory constraints SHALL be part of the clause's fairness set, its
   obligation identity, every counterexample and replay (FR-227). ADR-018
   CX-5's walk SHALL take each as a weak obligation.
@@ -78,8 +84,9 @@ visible.
 |----|----------|--------------|
 | FR-228-AC-1 | `eventually holds(c1.r <= 1)` under infinite-trace over `SB` resolved to `tso` carries `fair weak each flush(left)` and `fair weak each flush(right)` with origin `memory` beside the three `scheduler` constraints; resolved to `ra` it carries one visibility constraint per (thread, loaded location) with origin `memory`; resolved to `sc` it carries no memory constraint. | Test (TC-673) |
 | FR-228-AC-2 | A weak `parallel` with branch `w`, one `relaxed` store `x := 1`, and branch `r`, a `repeat` with no maximum whose body is one `relaxed` load of `x` into `c.r` and whose guard is that load's binder reading 0, so that `x` is shared, under `tso`: `eventually holds(c.r = 1)` settles `proved`. The lasso whose stem is `fork`, `w`'s store, and whose loop is `r`'s load reading 0, with `w`'s buffer `[x := 1]` throughout, meets every scheduler constraint, since `w` has no enabled step and `r` steps on every edge, and is rejected by the fairness filter only under `fair weak each flush(w)`; with the memory constraints ignored the claim settles `refuted` with that lasso. | Test (TC-673) |
-| FR-228-AC-3 | The fairness filter, given an SCC on which thread `b` loads `ℓ` only from a message that is not mo-last, rejects it under visibility fairness; given one that also holds a load by `b` of `ℓ`'s mo-last message, it passes it. | Test (TC-673) |
+| FR-228-AC-3 | The fairness filter, given an SCC on which thread `b` loads `ℓ` only from a message that is not mo-last and that has no other cycle, rejects it under visibility fairness; given one that also holds a load by `b` of `ℓ`'s mo-last message, it passes it. | Test (TC-673) |
 | FR-228-AC-4 | The TP-1 claim of ADR-025 §10 settles the same verdicts under `tso` and `ra` with the memory constraints present as when the fairness filter ignores them. A `fair weak` constraint naming `flush` refuses `missing_declaration`/`missing-name`. | Test (TC-673) |
+| FR-228-AC-5 | Given an accepting SCC on states `p`, `q`, `r` with the edges `p → q` and `q → p` (thread `a`, no load by `b`), `q → r` (thread `b` loads `ℓ` from a message that is not mo-last) and `r → q` (thread `a`), where `p` is accepting, the filter does not reject the SCC: it removes the load edge `q → r`, decomposes `{p, q, r}` into `{p, q}` and `{r}`, passes `{p, q}`, and the claim is `refuted` with the lasso `p q p q …`, replayed as fair under visibility fairness; the whole-SCC rule would reject the SCC and settle the claim `proved`. The certificate check of the same SCC accepts the same decomposition. | Test (TC-673) |
 
 ## Dependencies
 
