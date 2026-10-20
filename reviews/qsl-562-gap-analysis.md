@@ -72,3 +72,7 @@ it.
 | FND-002 | fixed 64b082d85 | `ProtocolSystem::claim_reads` derives the reads from the checked `holds` atoms. The AC-1 and AC-2 tests read `temporal Bounded … { always holds(k.v <= 3) }` for `d` and for `c`, and assert the derived set. |
 | FND-003 | accepted-no-change | `Chatter` keeps FR-212's branches, channel and nodes over this fixture's `Cell`. `nudge(peer)` stands for `bump(by)`: `bump` is the fixture's operation with no parameter, and `by` is an attempt-form keyword. Both are stated in the test docs. |
 | FND-004 | deferred: spec | The TC-661 scope text is a spec change, and the spec author owns it. |
+| FND-001 | fixed 64b082d85 | Reviewer disposition round 1, at 078e3cef2. `every_independent_pair_of_steps_commutes` is exhaustive over the reachable states and enabled pairs of 9 fixtures, including the re-fork. Without the SR-12231 FND-001 fix it fails, as the reviewer measured. |
+| FND-002 | fixed 64b082d85 | Reviewer disposition round 1. `claim_reads` translates the checked `Bounded` clause, takes its `holds` atoms' reads through `atom_reads` and `atom_locations`, and the AC-1 and AC-2 tests assert the derived sets (`d.v` and `c.v`). |
+| FND-003 | accepted-no-change | Reviewer disposition round 1. The reason holds: `by` is an attempt keyword, `bump` takes no parameter, and the local `Chatter` keeps FR-212's structure. The test docs record both substitutions. |
+| FND-004 | deferred | Reviewer disposition round 1. This is a spec nit in TC-661's scope line and belongs to the spec owner. It does not block. |
