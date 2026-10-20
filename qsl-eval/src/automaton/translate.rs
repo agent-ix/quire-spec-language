@@ -120,6 +120,27 @@ impl PropertyAutomaton {
         Ok(self.reached.intern(self.initial.clone())?.state)
     }
 
+    /// Whether `state` has nothing left to check: no formula the next
+    /// position must satisfy, no running counter and no pending shift. No
+    /// letter sequence read from a settled state is a bad prefix, so a
+    /// bounded formula's monitor accepts for good there.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::UnknownState`] when `state` has not been reached.
+    pub fn is_settled(&self, state: StateId) -> Result<bool, AutomatonError> {
+        let config = self
+            .reached
+            .key(state)
+            .ok_or(AutomatonError::UnknownState { state })?;
+        Ok(config.must.is_empty()
+            && config.shifts.is_empty()
+            && config
+                .counters
+                .values()
+                .all(|counter| !counter.is_pending()))
+    }
+
     /// The states reached from `from` by reading `letter`, ascending and
     /// without repeats. Each one is numbered the first time it is reached.
     ///

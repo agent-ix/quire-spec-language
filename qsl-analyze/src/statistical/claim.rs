@@ -4,7 +4,8 @@
 //! parameters; and the reduction of a quantile claim to a probability bound
 //! over an event (ADR-024 PF-4).
 
-use qsl_replay::statistical::{ClaimForm, Confidence};
+use qsl_replay::statistical::{ClaimForm, Confidence, StatisticalRefusal};
+use qsl_semantics::check::{CheckedProbabilisticClaim, ProbForm, ProbScheduler};
 use quire_exact::Rational;
 
 use super::bounds::int;
@@ -180,4 +181,32 @@ pub fn reduce_quantile(
             },
         ),
     }
+}
+
+/// Whether statistical evidence can decide `claim` at all (ADR-024 SV-5,
+/// ADR-028 XF-7): the refusal EN-4 gives at negotiation, before it draws a
+/// sample, for a claim only exact evidence decides.
+///
+/// A claim under every scheduler is refused first, then an unbounded
+/// reachability or expected-reward form, then a claim that states no
+/// confidence parameters.
+///
+/// # Errors
+///
+/// [`StatisticalRefusal::EveryScheduler`], [`StatisticalRefusal::ExactOnlyForm`]
+/// or [`StatisticalRefusal::MissingConfidence`].
+pub fn require_statistical(claim: &CheckedProbabilisticClaim) -> Result<(), StatisticalRefusal> {
+    if claim.scheduler == ProbScheduler::Every {
+        return Err(StatisticalRefusal::EveryScheduler);
+    }
+    if matches!(
+        claim.form,
+        ProbForm::Reach { .. } | ProbForm::ExpectedReward { .. }
+    ) {
+        return Err(StatisticalRefusal::ExactOnlyForm);
+    }
+    if claim.confidence.is_none() {
+        return Err(StatisticalRefusal::MissingConfidence);
+    }
+    Ok(())
 }

@@ -20,7 +20,7 @@ use qsl_semantics::check::CheckedLiteral;
 use qsl_semantics::check::{
     Bound, BoundedMeasure, CheckCause, CheckRefusal, CheckedGraph, CheckingLimitKind, Confidence,
     Event, PackageDeclarations, PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause,
-    ProbabilisticFeature, WeightOwner,
+    ProbabilisticFeature, ReachTarget, WeightOwner,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -1809,8 +1809,8 @@ fn what_s3_does_not_check_yet_refuses_not_yet_implemented() {
     let phase_a = format!("holds({IDLE})");
     for (body, construct, at) in [
         (
-            format!("{{ expected accumulate duration until {phase_a} <= 3 }}"),
-            "an `expected ... until` claim",
+            format!("{{ expected elapsed until {phase_a} <= 3 }}"),
+            "an `expected elapsed` claim",
             IDLE,
         ),
         (
@@ -1844,6 +1844,305 @@ fn what_s3_does_not_check_yet_refuses_not_yet_implemented() {
          on each (m: Service::Server) {{ probability >= 0.9 [ {phase_a} ] }}"
     );
     assert_eq!(located(&service(None, &each)), [not_yet("m")]);
+}
+
+/// A claim `C` `using` the profile `profile`, `on origin`, over `Service`'s
+/// `Server`, under `scheduler` and with `confidence`.
+fn exact_claim(profile: &str, scheduler: &str, confidence: &str, body: &str) -> String {
+    service(
+        None,
+        &format!(
+            "{LATENCY}\nprobabilistic C using {profile} on Service {OVER} under {scheduler} \
+             on origin {confidence} {{ {body} }}"
+        ),
+    )
+}
+
+const CONFIDENT: &str = "with alpha 0.01, beta 0.01, indifference 0.002";
+
+fn done() -> String {
+    phase("Done")
+}
+
+/// FR-195-AC-1 (TC-630 step 1): `probability >= 0.99 [eventually holds(..)]`
+/// under the infinite-trace profile and every scheduler checks as
+/// `Reach{AtLeast(99/100), Eventually}`, with `fair strong Server::attempt` it
+/// records the fairness set, and the two have distinct normal forms; a
+/// `holds(A) until holds(B)` event and an `always holds(P)` event check as
+/// `Until` and `Always` under a workload.
+#[trace("TC-630", "FR-195-AC-1")]
+#[test]
+fn an_unbounded_event_under_the_infinite_profile_is_a_reach_form() {
+    let terminates = checked(&exact_claim(
+        "inf",
+        "every scheduler",
+        "",
+        &format!("probability >= 0.99 [ eventually holds({IDLE}) ]"),
+    ));
+    let terminates = claim_of(&terminates);
+    let ProbForm::Reach { bound, target } = &terminates.form else {
+        panic!("a reach form: {:?}", terminates.form);
+    };
+    assert_eq!(*bound, Bound::AtLeast(ratio(99, 100)));
+    assert!(matches!(target, ReachTarget::Eventually(_)));
+    assert_eq!(terminates.scheduler, ProbScheduler::Every);
+    assert!(terminates.fairness.is_empty());
+
+    let fair = checked(&exact_claim(
+        "inf",
+        "every scheduler fair strong Server::attempt",
+        "",
+        &format!("probability >= 0.99 [ eventually holds({IDLE}) ]"),
+    ));
+    let fair = claim_of(&fair);
+    assert!(matches!(
+        fair.form,
+        ProbForm::Reach {
+            target: ReachTarget::Eventually(_),
+            ..
+        }
+    ));
+    let [constraint] = &fair.fairness[..] else {
+        panic!("one fairness constraint: {:?}", fair.fairness);
+    };
+    assert_eq!(
+        (
+            format!("{:?}", constraint.kind()),
+            constraint.operation().name()
+        ),
+        ("Strong".to_owned(), "attempt")
+    );
+    assert_ne!(terminates.normal_form, fair.normal_form);
+
+    let until = checked(&exact_claim(
+        "inf",
+        "Steady",
+        "",
+        &format!(
+            "probability >= 0.95 [ holds(not ({})) until holds({}) ]",
+            done(),
+            done()
+        ),
+    ));
+    let until = claim_of(&until);
+    let ProbForm::Reach { bound, target } = &until.form else {
+        panic!("a reach form: {:?}", until.form);
+    };
+    assert_eq!(*bound, Bound::AtLeast(ratio(19, 20)));
+    assert!(matches!(target, ReachTarget::Until(_, _)));
+
+    let always = checked(&exact_claim(
+        "inf",
+        "Steady",
+        "",
+        &format!("probability <= 0.5 [ always holds({IDLE}) ]"),
+    ));
+    let always = claim_of(&always);
+    let ProbForm::Reach { bound, target } = &always.form else {
+        panic!("a reach form: {:?}", always.form);
+    };
+    assert_eq!(*bound, Bound::AtMost(ratio(1, 2)));
+    assert!(matches!(target, ReachTarget::Always(_)));
+}
+
+/// FR-195-AC-1 (TC-630 step 1): a temporal operator, or a constant, where a
+/// reachability event needs a `holds(P)` state predicate is refused
+/// `not-state-predicate` at the operand; other events under the
+/// infinite-trace profile stay unbounded, and the same `eventually` under a
+/// bounded profile is still an unbounded event.
+#[trace("TC-630", "FR-195-AC-1")]
+#[test]
+fn a_reach_operand_must_be_a_state_predicate() {
+    let holds = format!("holds({IDLE})");
+    let refused = |profile: &str, formula: &str| {
+        located(&exact_claim(
+            profile,
+            "Steady",
+            "",
+            &format!("probability >= 0.9 [ {formula} ]"),
+        ))
+    };
+    for (formula, at) in [
+        (
+            format!("eventually eventually {holds}"),
+            format!("eventually {holds}"),
+        ),
+        (
+            format!("{holds} until eventually {holds}"),
+            format!("eventually {holds}"),
+        ),
+        (format!("always not {holds}"), format!("not {holds}")),
+        ("eventually true".to_owned(), "true".to_owned()),
+    ] {
+        assert_eq!(
+            refused("inf", &formula),
+            [invalid("not-state-predicate", &at)],
+            "{formula}"
+        );
+    }
+    assert_eq!(
+        refused("inf", &format!("eventually[0,5] {holds}")),
+        [invalid(
+            "unbounded-event",
+            &format!("eventually[0,5] {holds}")
+        )]
+    );
+    assert_eq!(
+        refused("inf", &format!("{holds} and eventually {holds}")),
+        [
+            invalid(
+                "unbounded-event",
+                &format!("{holds} and eventually {holds}")
+            ),
+            invalid("unbounded-event", "eventually"),
+        ]
+    );
+    assert_eq!(
+        refused("ev", &format!("eventually {holds}")),
+        [invalid("unbounded-event", "eventually")]
+    );
+}
+
+/// FR-195-AC-2 (TC-630 step 2): `expected accumulate R until holds(B) <= c`
+/// checks as `ExpectedReward` with a threshold that is a rational for an
+/// integer reward and a quantity in the reward's unit for a quantity reward;
+/// a quantity of another dimension, a quantity for an integer reward and an
+/// unknown reward are refused, and `expected elapsed` is not checked (no
+/// subject is timed).
+#[trace("TC-630", "FR-195-AC-2")]
+#[test]
+fn an_expected_reward_claim_is_typed_by_its_rewards_unit() {
+    let expected = |body: &str| exact_claim("ev", "Steady", "", body);
+    let target = format!("holds({IDLE} or {})", done());
+    let graph = checked(&expected(&format!(
+        "expected accumulate duration until {target} <= rational(6, 5)"
+    )));
+    let claim = claim_of(&graph);
+    let ProbForm::ExpectedReward {
+        bound,
+        reward,
+        until,
+    } = &claim.form
+    else {
+        panic!("an expected reward: {:?}", claim.form);
+    };
+    assert_eq!(*bound, Bound::AtMost(ratio(6, 5)));
+    assert_eq!(reward.as_str(), "duration");
+    assert!(until.slots() >= 1, "the over parameter is bound");
+    assert!(claim.confidence.is_none());
+
+    let whole = checked(&expected(&format!(
+        "expected accumulate duration until {target} >= 3"
+    )));
+    assert!(matches!(
+        claim_of(&whole).form,
+        ProbForm::ExpectedReward {
+            bound: Bound::AtLeast(ref found),
+            ..
+        } if *found == ratio(3, 1)
+    ));
+
+    let quantity = checked(&expected(&format!(
+        "expected accumulate latency until {target} <= 0.005 s"
+    )));
+    assert!(matches!(
+        claim_of(&quantity).form,
+        ProbForm::ExpectedReward {
+            bound: Bound::AtMost(ref found),
+            ..
+        } if *found == ratio(5, 1)
+    ));
+
+    let at = IDLE.to_owned() + " or " + &done();
+    assert_eq!(
+        located(&expected(&format!(
+            "expected accumulate latency until {target} <= 5 m"
+        ))),
+        [(Code::IllTyped, Some("unit-mismatch"), "5 m".to_owned())]
+    );
+    assert_eq!(
+        located(&expected(&format!(
+            "expected accumulate duration until {target} <= 5 ms"
+        ))),
+        [(Code::IllTyped, Some("unit-mismatch"), "5 ms".to_owned())]
+    );
+    assert_eq!(
+        located(&expected(&format!(
+            "expected accumulate nothing until {target} <= 3"
+        ))),
+        [(
+            Code::MissingDeclaration,
+            Some("missing-name"),
+            "nothing".to_owned()
+        )]
+    );
+    assert_eq!(
+        located(&expected(&format!(
+            "expected elapsed until {target} <= 3 ms"
+        ))),
+        [not_yet(&at)]
+    );
+}
+
+/// FR-195-AC-3 (TC-630 step 3): `exact_only` is true for a reachability form,
+/// an expected reward, a claim under every scheduler and a claim with no
+/// confidence parameters, each alone, and false for a bounded event under a
+/// workload with its confidence parameters.
+#[trace("TC-630", "FR-195-AC-3")]
+#[test]
+fn exact_only_marks_the_claims_only_exact_evidence_decides() {
+    let bounded = format!("probability >= 0.99 [ always[0,10] holds({IDLE}) ]");
+    let reach = format!("probability >= 0.99 [ eventually holds({IDLE}) ]");
+    let expected = format!("expected accumulate duration until holds({IDLE}) <= 3");
+    for (case, source, only) in [
+        (
+            "P95 with its confidence under a workload",
+            service(None, &format!("{LATENCY}\n{}", p95("5 ms"))),
+            false,
+        ),
+        (
+            "P95 with no confidence",
+            service(
+                None,
+                &format!(
+                    "{LATENCY}\n{}",
+                    p95("5 ms")
+                        .replace(", indifference 0.01", "")
+                        .replace("with alpha 0.01, beta 0.01", "")
+                ),
+            ),
+            true,
+        ),
+        (
+            "a bounded event under every scheduler",
+            exact_claim("ev", "every scheduler", CONFIDENT, &bounded),
+            true,
+        ),
+        (
+            "a bounded event with no confidence",
+            exact_claim("ev", "Steady", "", &bounded),
+            true,
+        ),
+        (
+            "a reach form alone",
+            exact_claim("inf", "Steady", CONFIDENT, &reach),
+            true,
+        ),
+        (
+            "an expected reward alone",
+            exact_claim("ev", "Steady", CONFIDENT, &expected),
+            true,
+        ),
+    ] {
+        let graph = checked(&source);
+        let found = graph
+            .probabilistic_model()
+            .claims()
+            .iter()
+            .find(|claim| claim.name == if case.starts_with("P95") { "P95" } else { "C" })
+            .unwrap_or_else(|| panic!("{case}: the claim checks"));
+        assert_eq!(found.exact_only(), only, "{case}");
+    }
 }
 
 /// FR-186-AC-4 (TC-621 step 4): the claim's normal form binds the subject,

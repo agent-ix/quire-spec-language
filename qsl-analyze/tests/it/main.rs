@@ -4,6 +4,7 @@
 mod closure_certificate;
 mod counter;
 mod deadlock_item;
+mod exact_probabilistic;
 mod example_units;
 mod fill;
 mod flag_world;
@@ -22,6 +23,7 @@ mod model_settle;
 mod model_world;
 mod partial_order;
 mod por_world;
+mod prob_world;
 mod protocol_constructs;
 mod protocol_footprints;
 mod protocol_system;
