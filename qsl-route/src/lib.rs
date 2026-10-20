@@ -2,8 +2,7 @@
 //! `qsl-route`: the ADR-011 §6.1 layer **R** crate (ADR-011 §7.3
 //! X-9) -- the `#185` capability-backend registry and router (ADR-012 §6,
 //! §7). Among the workspace crates it depends only on `qsl-semantics`
-//! (layer 3), `qsl-forms` (layer 2, for the `memory` clause's model names)
-//! and `qsl-foundation` (layer F), and on the layer-SV leaf
+//! (layer 3) and `qsl-foundation` (layer F), and on the layer-SV leaf
 //! `quire-semantic-value` for the [`deadlock`] item's property form; its one
 //! other dependency is `thiserror`.
 //!
@@ -56,10 +55,9 @@ pub mod model_request;
 pub mod request;
 pub mod routing;
 
-use qsl_forms::MemoryModelName;
 use qsl_foundation::bound::DomainKind;
 pub use qsl_foundation::digest::ManifestDigest;
-use qsl_foundation::{BackendId, CatalogCode};
+use qsl_foundation::{BackendId, CatalogCode, MemoryModelName};
 #[cfg(test)]
 use qsl_foundation::{Category, Code, EmptyBackendIdentity};
 use qsl_semantics::check::Capability;

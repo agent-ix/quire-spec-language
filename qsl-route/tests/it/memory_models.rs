@@ -6,8 +6,8 @@
 use std::collections::BTreeSet;
 
 use ix_trace_rs::trace;
-use qsl_forms::MemoryModelName::{self, Ra, Sc, Tso};
 use qsl_foundation::BackendId;
+use qsl_foundation::MemoryModelName::{self, Ra, Sc, Tso};
 use qsl_route::{
     BackendDescriptor, Candidate, CandidateOutcome, ManifestDigest, Mode, ProviderOrigin, Registry,
 };
