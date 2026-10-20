@@ -107,6 +107,14 @@ Not mergeable. PS-2's ordinal rule frees an ordinal that a running descendant st
 | FND-016 | high | 'The ordinal of the instance of that node the forking thread most recently joined' is history, not state. A joined instance is removed (PS-4), and PS-8's `control` entry for the forking thread holds only its rest point, its disposition and its own creation-time read map. In FR-205-AC-7's iteration 2, when `t` forks `Q`, the key holds `a` under both `(0, P, left, 0)` and `(0, P, left, 1)`, and nothing in the key says which one `t` joined last. So two states with equal keys can give different successors, which contradicts PS-8's 'Two states with equal keys are one state'. FT-1's fork footprint then reads a choice that no location holds. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:137 |
 | FND-017 | medium | Read-map entries never change and are never pruned, so they keep naming instances whose binders no live thread can read any more. Two states that differ only in such an entry (for example the ordinal of an earlier `P` iteration) have different keys although the protocol can do the same things from both. That breaks PS-8's own claim that the key is 'a function of what the protocol can still do, not of how it got there', and it multiplies states. Fix: keep an entry only while the binder it names can still be read, the same test PS-5 applies to removing binders. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:140 |
 
+## New findings (disposition pass 5)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-018 | high | PS-5 drops an entry 'once no rest point that thread can reach reads the node'. A branch thread's reach ends at its branch's end, so in `branch left sequence { attempt A1; attempt A2 }` the entry for `a` is dropped when `left` comes to rest at `A2`. That is before it completes, so the completed-thread exception never applies, and `join all` then has nothing to add. The joiner cannot read `a`, the FND-015 defect again, for any branch with a step after its binding. The same wording, read literally, also drops the joiner's entry at `join(P)`: the joiner then rests at `fork Q`, and `Ck` is a node of `Q`'s branch, not a rest point of the joiner, so `fork(Q)` has nothing to copy. The code's reach relation (program.rs:655-700) spans the whole tree-order interval of the thread's scope, nested branch bodies included, and masks a rest at or before the binding node, which is the relation the rule needs. Fix: define reach as that interval, and let a branch thread of an `all` join reach on into its joiner's continuation for entries naming a thread at or below the branch (its S3 `Out`). | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:137 |
+| FND-019 | high | Addition (2), 'a step that rebinds a binder a live descendant's environment still names leaves that descendant its earlier value', has nowhere to keep that value. An environment entry holds a thread path, not a value. `observations` (PS-8) holds one value per (binder node, thread path), so a rebinding by the same thread of the same node, for example in a `repeat`, overwrites it. The descendant's earlier value is in no member of the key, so two states with equal keys can differ in what a descendant reads, against PS-8. Fix: make environment entries hold the bound value, copied at `fork` and at `join all`. The descendant then keeps its copy by construction, and nothing else is needed for this case. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:137 |
+| FND-020 | medium | Addition (1), 'a completed branch thread keeps those entries until its join has read it', keeps binders that no node reads. In `Fill` (no node reads `a` or `b`), `attempt(A)` completes `left`, which then keeps `A`'s entry until `join(Both)`, so `observations` holds `a` in s2 and s4. FR-205-AC-2 says 'Every reachable state of `Fill` has empty `observations`, because no node reads `a` or `b`'. Fix: keep only entries some node after the join reads, which the FND-018 reach rule gives directly. | spec/functional/FR-205-define-the-protocol-subject-and-its-state-key.md:111 |
+
 ## Dispositions
 
 Round 1, head ccae02a7d. The checks were re-run against the code on main. PS-2's new holding rule (instance live, or any live thread's path extends a branch path) is the code's test (steps.rs:445-458), and FT-1's fork reads still cover it. A lower ordinal is freed only by a step that writes the `inst(i_o)` or a descendant `ctl` the fork reads. The taken ordinal is filled only by a fork of the same thread. The compensation analogue now reads `ctl` up to the taken ordinal, and `cend` writes `reg(c, r)`. PD-4's order matches the code: Gate first (steps.rs:951-969); attempt causes (attempt_cause); and receive Constraint, then HeadBlocked, then EmptyQueue (channel.rs:352-372). `Displaced` is spec-ahead-of-code, and an unordered channel is never HeadBlocked. The one mismatch is the send order (FND-010). FT-1's branch-end write is now the whole `inst(i)`, which is sound and coarser: sibling branch ends of one instance are dependent. SE-1 (e) and FR-215 list `fence`. QSpec main is still 44afcf4, and no companion quire-specification PR is open.
@@ -153,3 +161,33 @@ All of that depends on the current state only, it is finite, and it matches S3's
 | --- | --- | --- |
 | FND-013 | still-open | The read map makes a descendant's choice unique, but the rule is not well-defined: the forking thread has no entry (FND-015), and 'most recently joined' is not in the key (FND-016). |
 | FND-014 | fixed | - |
+
+Round 5, head 943685e5a (one commit over d6c8c9bce; base main still 5474b9125). Gates: make check-spec-validation exits 0 with the same 17 warnings, none in a changed file; tools/check-index-completeness.sh exits 0.
+
+Hand derivations, using the code's reach relation (tree-order interval of the scope, masked at or before the binding node). FR-205-AC-2's variant (a node after `join(Both)` reads `a`): `attempt(A)` adds `A` to `left`'s environment, and `left` completes at once and keeps it. `join(Both)` adds it to the root's environment, which reaches the reader, so the binder lives from `attempt(A)` to the reader's step. The variant holds. The base `Fill` does not hold (FND-020). FR-205-AC-7, iteration 1:
+- `join(P)` gives `t` `a` -> `(0, P, left, 0)`, and `fork(Q)` copies it to `u` and `v`.
+- `t`, resting again at `fork P`, sits before the binding node and drops its entry.
+- With `U1` not yet taken, `u`'s entry holds ordinal 0, so the second `fork(P)` takes 1.
+
+Iteration 2:
+- `Q`'s instance 0 is still live while `u` runs, so `Q` forks at 1, and `u2` names `(0, P, left, 1)`.
+- `u` evaluates `Ck` true over ordinal 0 and `u2` false over ordinal 1, and no state refuses.
+- When `u` completes, ordinal 0 is freed.
+
+The AC holds under that reach relation, but not under PS-5's 'rest point' wording (FND-018).
+
+Nested and compensation cases. An inner all-joined `parallel` inside a branch passes its binders up through two joins, and holds only if the branch keeps them (FND-018). A compensation thread is created by activation, not by a fork. It starts with an empty environment and reads its captures and its own attempt binders, which is consistent with CP-1 to CP-5. S3 In/Out: the copy at fork matches In(branch) ⊇ In(`parallel`), and the join adding branch entries matches Out of an all-joined `parallel`. A `choice`, `repeat` or `await` adds nothing past itself, which pruning gives. FT-1: event steps, `join` and `fork` already write the `ctl` that holds the environment, so the footprints are complete for the choice.
+
+Convergence. One decision remains: **do environment entries hold the bound value (copy at `fork` and `join all`) rather than a thread path?** With values:
+- FND-019 is resolved by construction.
+- PS-2's binder hold clause, the fork's clearing of reused paths' `bind` locations, and FT-1's `ctl` read of every live thread below `t` for that purpose can all be deleted, because a reused path can no longer take a value someone reads.
+- The key merges states that differ only in which path bound an equal value.
+
+With paths, addition (2) needs a second value store in the key. FND-018 and FND-020 are wording fixes to the reach relation under either choice.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-013 | fixed | - |
+| FND-015 | fixed | - |
+| FND-016 | fixed | - |
+| FND-017 | fixed | - |

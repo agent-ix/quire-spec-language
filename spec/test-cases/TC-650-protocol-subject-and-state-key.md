@@ -35,9 +35,9 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
 6. Build subjects over two protocols that each declare `channel Pay`, and
    read a key with a queued entry and a `duplicate` identity from each.
 7. Run FR-205-AC-7's `repeat` of `P` and `Q` with both values of `a.ready`;
-   read the ordinal the second fork of `P` takes while the first `u` rests
-   at `U1` and after it completes, each `u`'s binder environment and `Ck` value, and
-   the key's binders `a`.
+   read the ordinals the second forks of `P` and `Q` take while the first
+   `u` rests at `U1`, each `u`'s environment and `Ck` value, and the key's
+   `observations`.
 
 Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 
@@ -57,7 +57,6 @@ Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 - Step 5: ordinal 1 with `(0, Refund, 0)` live, ordinal 0 after `cend`.
 - Step 6: each queue key and identity names its own protocol's qualified
   channel name.
-- Step 7: ordinal 1 while the first `u` rests at `U1` with its `a` still in
-  the key; each `u` reads its own iteration's `a` (true, then false) and no
-  state refuses; the freed ordinal is taken again with no `a` under it
-  until rebound.
+- Step 7: `P` forks at ordinal 0 again and `Q` at ordinal 1; each `u` reads its
+  own iteration's `a` (true, then false) and no state refuses; `observations`
+  holds no `a` under a completed `u`.
