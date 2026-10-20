@@ -39,7 +39,7 @@ use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::{self, EncodingRefusal};
 use crate::simulation::model::encode::{map_enc, Enc};
 use crate::simulation::model::{
-    enumerable, verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict,
+    enumerable, verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::subject::SubjectSystem;
@@ -51,10 +51,6 @@ pub use identity::{
 };
 pub use memory::{GatedStep, MemoryModel, MemoryStep, Sc, ScComponent};
 use program::{Program, Rest};
-
-/// `runtime_invariant`/`established-invariant-broken`.
-const BROKEN: qsl_foundation::CatalogCode =
-    qsl_foundation::CatalogCode::new("runtime_invariant", "established-invariant-broken");
 
 /// A construct this protocol system does not step yet.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,11 +142,13 @@ impl Disposition {
     }
 }
 
-/// One live thread (ADR-027 PS-3).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// One live thread (ADR-027 PS-3): its rest point, its disposition, and
+/// for a branch thread the parallel instance and branch label it runs.
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct Thread {
     rest: Rest,
     disposition: Disposition,
+    owner: Option<(ParallelKey, String)>,
 }
 
 /// A parallel instance's key (ADR-027 PS-4).
@@ -303,13 +301,26 @@ pub fn check_protocol_bounds(
     protocol: &CheckedProtocol,
     position_limit: u64,
 ) -> Result<(), NotSimulated> {
+    let domains = subject_domains(model, protocol);
+    check_requires_bound(&roots(&domains), model.types(), position_limit)
+}
+
+/// The roots of `model` and of `protocol`.
+fn subject_domains(
+    model: &ModelSystem<'_>,
+    protocol: &CheckedProtocol,
+) -> Vec<(WireNodeId, ValueType)> {
     let mut domains = model.domains();
     domains.extend(protocol_domains(protocol));
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
+    domains
+}
+
+/// `domains` as the requires-bound pre-check reads them.
+fn roots(domains: &[(WireNodeId, ValueType)]) -> Vec<(WireNodeId, &ValueType)> {
+    domains
         .iter()
         .map(|(id, value_type)| (*id, value_type))
-        .collect();
-    check_requires_bound(&roots, model.types(), position_limit)
+        .collect()
 }
 
 /// FR-101's `explore_request` over `system`, the roots of its model and of
@@ -325,15 +336,10 @@ pub fn explore_protocol<M: MemoryModel>(
     limits: crate::simulation::explore::Limits,
     poll: impl FnMut() -> bool,
 ) -> Result<crate::simulation::explore::Exploration<ModelFinding>, NotSimulated> {
-    let mut domains = system.model.domains();
-    domains.extend(protocol_domains(system.protocol));
-    let roots: Vec<(WireNodeId, &ValueType)> = domains
-        .iter()
-        .map(|(id, value_type)| (*id, value_type))
-        .collect();
+    let domains = subject_domains(&system.model, system.protocol);
     crate::simulation::explore::explore_request(
         system,
-        &roots,
+        &roots(&domains),
         system.model.types(),
         position_limit,
         limits,
@@ -372,12 +378,11 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         memory: M,
     ) -> Result<Self, ProtocolRefusal> {
         let package = subject.model.simulation.package;
-        let protocol = package
-            .graph()
-            .protocol(&subject.protocol)
-            .ok_or_else(|| ProtocolRefusal::UnknownProtocol {
+        let protocol = package.graph().protocol(&subject.protocol).ok_or_else(|| {
+            ProtocolRefusal::UnknownProtocol {
                 protocol: subject.protocol.clone(),
-            })?;
+            }
+        })?;
         let mut roles = Vec::new();
         for role in protocol.roles.iter().filter(|role| !role.replicated) {
             let binding = subject
@@ -432,14 +437,11 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             object: over.key.clone(),
         };
         let ValueType::Reference(object_type) = input.value_type else {
-            return Err(Unsupported {
+            return Err(ProtocolRefusal::Unsupported(Unsupported {
                 construct: "an `over` input that is no object",
-            })
-            .map_err(ProtocolRefusal::Unsupported);
+            }));
         };
-        let instances = model
-            .instances(&input.value_type)
-            .map_err(|_| refused())?;
+        let instances = model.instances(&input.value_type).map_err(|_| refused())?;
         if !instances.contains(over) {
             return Err(refused());
         }
@@ -463,6 +465,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 Thread {
                     rest,
                     disposition: Disposition::Running,
+                    owner: None,
                 },
             );
             states.push(ProtocolState {
@@ -717,9 +720,9 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                                 model: self.protocol.name.clone(),
                                 cause,
                             }
-                        } else if outcome.incomplete_code().is_some() {
+                        } else if let Some(cause) = outcome.incomplete_code() {
                             return Err(ExpansionStop {
-                                cause: outcome.incomplete_code().unwrap_or(BROKEN),
+                                cause,
                                 limit: Some(ExpansionLimit::EvaluationMeter),
                             });
                         } else {

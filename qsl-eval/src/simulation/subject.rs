@@ -63,10 +63,7 @@ impl SubjectSystem for ModelSystem<'_> {
         ModelSystem::state_key(self, state)
     }
 
-    fn transition_key(
-        &self,
-        transition: &Self::TransitionId,
-    ) -> Result<Vec<u8>, EncodingRefusal> {
+    fn transition_key(&self, transition: &Self::TransitionId) -> Result<Vec<u8>, EncodingRefusal> {
         ModelSystem::transition_key(self, transition)
     }
 

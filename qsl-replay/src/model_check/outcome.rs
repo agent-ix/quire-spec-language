@@ -4,11 +4,11 @@
 
 use crate::certificate::closure::ClosureCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
-use quire_semantic_value::model_transition::ModelTransition;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::{AppliedReduction, IncompleteCause, ReductionKind, SymmetryBrokenCause};
 use qsl_semantics::model::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
+use quire_semantic_value::model_transition::ModelTransition;
 
 /// The counts of one run, whatever ended it.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

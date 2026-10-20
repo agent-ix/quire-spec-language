@@ -240,8 +240,8 @@ pub fn check_protocol_closure(
         })?;
     check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
-    let system = ProtocolSystem::new(model, &request.subject, Sc)
-    .map_err(ClosureRefusal::Protocol)?;
+    let system =
+        ProtocolSystem::new(model, &request.subject, Sc).map_err(ClosureRefusal::Protocol)?;
     check_system(
         &system,
         system.model(),
@@ -366,11 +366,8 @@ struct Pending<S: SubjectSystem> {
 }
 
 /// One expansion of a subject's state.
-type SubjectExpansion<S> = Expansion<
-    <S as TransitionSystem>::TransitionId,
-    <S as TransitionSystem>::State,
-    ModelFinding,
->;
+type SubjectExpansion<S> =
+    Expansion<<S as TransitionSystem>::TransitionId, <S as TransitionSystem>::State, ModelFinding>;
 
 struct Check<'c, S: SubjectSystem> {
     system: &'c S,
@@ -550,8 +547,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                 ModelFinding::ContractUndetermined { .. }
                     | ModelFinding::ProtocolExpressionUndetermined { .. }
             )
-        })
-        {
+        }) {
             return Err(Self::reject(CertificateRule::BadState, at.clone()));
         }
         Ok(expansion)

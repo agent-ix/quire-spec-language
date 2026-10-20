@@ -36,7 +36,9 @@
 use std::collections::BTreeMap;
 
 use qsl_eval::fairness::{check_loop, Constraint, EdgeLabel, Identity, LassoFairness, LoopStep};
-use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject, RoleBinding};
+use qsl_eval::model_subject::{
+    ModelInstance, ModelLetters, ModelSubject, ProtocolSubject, RoleBinding,
+};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
     TerminalClass,
@@ -44,7 +46,9 @@ use qsl_eval::simulation::model::{
 use qsl_eval::simulation::protocol::{
     check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
 };
-use qsl_eval::simulation::{ConstraintValue, Expansion, ExpansionStop, SubjectSystem, TransitionSystem};
+use qsl_eval::simulation::{
+    ConstraintValue, Expansion, ExpansionStop, SubjectSystem, TransitionSystem,
+};
 use qsl_eval::temporal::AtomReading;
 use qsl_eval::temporal::{
     evaluate_open_prefix, evaluate_with_enabledness, LetterStop, TemporalLetters, TemporalOutcome,
@@ -373,16 +377,21 @@ pub fn replay_model_trace(
     letters: &dyn ModelLetters,
     replay_limits: ReplayLimits,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-    replay_on(wire, envelope, replay_limits, |package, simulation, meter| {
-        let clause = resolve_item(envelope, package.0, &package.1)?;
-        let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
-        let formula = clause.map(|clause| FormulaReplay {
-            clause,
-            letters,
-            meter,
-        });
-        settle(&system, envelope.family_payload(), formula)
-    })
+    replay_on(
+        wire,
+        envelope,
+        replay_limits,
+        |package, simulation, meter| {
+            let clause = resolve_item(envelope, package.0, &package.1)?;
+            let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
+            let formula = clause.map(|clause| FormulaReplay {
+                clause,
+                letters,
+                meter,
+            });
+            settle(&system, envelope.family_payload(), formula)
+        },
+    )
 }
 
 /// FR-217 (ADR-027 PX-2): replay `envelope`'s protocol counterexample over
@@ -404,62 +413,69 @@ pub fn replay_protocol_trace(
     letters: &dyn ModelLetters,
     replay_limits: ReplayLimits,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
-    replay_on(wire, envelope, replay_limits, |package, simulation, meter| {
-        let clause = resolve_item(envelope, package.0, &package.1)?;
-        let payload = envelope.family_payload();
-        if payload.lasso.is_some() {
-            return Err(refused(ModelTraceRefusal::ProtocolLasso));
-        }
-        let simulation = simulation(&subject.model);
-        let protocol = package
-            .0
-            .graph()
-            .protocol(&subject.protocol)
-            .ok_or_else(|| {
-                refused(ModelTraceRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
-                    protocol: subject.protocol.clone(),
-                }))
-            })?;
-        let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
-        check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
-            .map_err(|_| fault("a-checked-protocol-subject-is-bounded"))?;
-        let protocol_subject = ProtocolSubject {
-            model: ModelSubject {
-                simulation,
-                proof_bounds: Vec::new(),
-            },
-            protocol: subject.protocol.clone(),
-            over: subject.over.clone(),
-            roles: subject.roles.clone(),
-        };
-        let system = ProtocolSystem::new(model, &protocol_subject, Sc)
-            .map_err(|refusal| refused(ModelTraceRefusal::Protocol(refusal)))?;
-        let positions = match replay_prefix(&system, payload, protocol_not_enabled)? {
-            Some(positions) => positions,
-            None => return Ok((no_value(), Vec::new())),
-        };
-        let settlement = match (&payload.kind, clause) {
-            (CounterexampleKind::Deadlock, _) => deadlock(&system, payload, &positions)?,
-            (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
-                undefined(&system, &NoConstraints, payload, &positions, claimed)?
+    replay_on(
+        wire,
+        envelope,
+        replay_limits,
+        |package, simulation, meter| {
+            let clause = resolve_item(envelope, package.0, &package.1)?;
+            let payload = envelope.family_payload();
+            if payload.lasso.is_some() {
+                return Err(refused(ModelTraceRefusal::ProtocolLasso));
             }
-            (CounterexampleKind::Formula, Some(clause)) => {
-                let formula = FormulaReplay {
-                    clause,
-                    letters,
-                    meter,
-                };
-                check_formula(&system, payload, &positions, &formula, |_| {
-                    Err(fault("a-protocol-lasso-is-refused-before-replay"))
-                })?
+            let simulation = simulation(&subject.model);
+            let protocol = package
                 .0
-            }
-            (CounterexampleKind::Formula, None) => {
-                return Err(fault("formula-counterexample-names-a-clause"))
-            }
-        };
-        Ok((settlement, Vec::new()))
-    })
+                .graph()
+                .protocol(&subject.protocol)
+                .ok_or_else(|| {
+                    refused(ModelTraceRefusal::Protocol(
+                        ProtocolRefusal::UnknownProtocol {
+                            protocol: subject.protocol.clone(),
+                        },
+                    ))
+                })?;
+            let model = ModelSystem::new(simulation.clone()).map_err(ReplayRefusal::Admission)?;
+            check_protocol_bounds(&model, protocol, BOUND_POSITIONS)
+                .map_err(|_| fault("a-checked-protocol-subject-is-bounded"))?;
+            let protocol_subject = ProtocolSubject {
+                model: ModelSubject {
+                    simulation,
+                    proof_bounds: Vec::new(),
+                },
+                protocol: subject.protocol.clone(),
+                over: subject.over.clone(),
+                roles: subject.roles.clone(),
+            };
+            let system = ProtocolSystem::new(model, &protocol_subject, Sc)
+                .map_err(|refusal| refused(ModelTraceRefusal::Protocol(refusal)))?;
+            let positions = match replay_prefix(&system, payload, protocol_not_enabled)? {
+                Some(positions) => positions,
+                None => return Ok((no_value(), Vec::new())),
+            };
+            let settlement = match (&payload.kind, clause) {
+                (CounterexampleKind::Deadlock, _) => deadlock(&system, payload, &positions)?,
+                (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
+                    undefined(&system, &NoConstraints, payload, &positions, claimed)?
+                }
+                (CounterexampleKind::Formula, Some(clause)) => {
+                    let formula = FormulaReplay {
+                        clause,
+                        letters,
+                        meter,
+                    };
+                    check_formula(&system, payload, &positions, &formula, |_| {
+                        Err(fault("a-protocol-lasso-is-refused-before-replay"))
+                    })?
+                    .0
+                }
+                (CounterexampleKind::Formula, None) => {
+                    return Err(fault("formula-counterexample-names-a-clause"))
+                }
+            };
+            Ok((settlement, Vec::new()))
+        },
+    )
 }
 
 /// The type positions the requires-bound pre-check may visit.
@@ -479,7 +495,10 @@ fn replay_on<P: crate::witness::FamilyPayload>(
         Recompiled<'p>,
         &dyn Fn(&ModelTraceSubject) -> ModelSimulationRequest<'p>,
         ScalarLimits,
-    ) -> Result<(ModelTraceSettlement, Vec<StrongFairnessHint>), ReplayRefusal>,
+    ) -> Result<
+        (ModelTraceSettlement, Vec<StrongFairnessHint>),
+        ReplayRefusal,
+    >,
 ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
     let request = ReplayRequest::decode(wire, replay_limits)?;
     let limits = request_limits(
@@ -624,7 +643,10 @@ type SubjectExpansion<S> = Expansion<
 >;
 
 /// The successors of `state`, or the stop an expansion returned.
-#[allow(clippy::type_complexity, reason = "an expansion or its stop, or a refusal")]
+#[allow(
+    clippy::type_complexity,
+    reason = "an expansion or its stop, or a refusal"
+)]
 fn expand<S: SubjectSystem>(
     system: &S,
     state: &S::State,
@@ -853,7 +875,10 @@ impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
 /// reproduces; `true`, or no value, settles `inconclusive`. A reproduced
 /// lasso also names the strong constraints that would exclude it (FR-133),
 /// from the same enabled sets.
-#[allow(clippy::type_complexity, reason = "the loop's states, its stop, or a refusal")]
+#[allow(
+    clippy::type_complexity,
+    reason = "the loop's states, its stop, or a refusal"
+)]
 fn check_formula<S: SubjectSystem>(
     system: &S,
     payload: &TemporalCounterexample<S::TransitionId>,
@@ -1140,7 +1165,10 @@ fn strong_hints(
     hints
 }
 
-fn digest_of<S: SubjectSystem>(system: &S, state: &S::State) -> Result<DigestRecord, ReplayRefusal> {
+fn digest_of<S: SubjectSystem>(
+    system: &S,
+    state: &S::State,
+) -> Result<DigestRecord, ReplayRefusal> {
     SubjectSystem::state_key(system, state)
         .map(|(_, digest)| digest)
         .map_err(|_| fault("replayed-state-encodes"))
@@ -1260,8 +1288,7 @@ fn undefined<S: SubjectSystem>(
             Ok(expansion) => expansion,
             Err(_) => return Ok(no_value()),
         };
-        let found = if let Some((locus, guard_of, cause)) = undefined_finding(&expansion.findings)
-        {
+        let found = if let Some((locus, guard_of, cause)) = undefined_finding(&expansion.findings) {
             Some(UndefinedEvaluation {
                 site: site(locus, guard_of),
                 cause,
@@ -1299,7 +1326,8 @@ fn undefined<S: SubjectSystem>(
 trait Constraints<State> {
     fn has_constraint(&self, name: &str) -> bool;
 
-    fn constraint_value(&self, state: &State, name: &str) -> Result<ConstraintValue, ExpansionStop>;
+    fn constraint_value(&self, state: &State, name: &str)
+        -> Result<ConstraintValue, ExpansionStop>;
 }
 
 impl Constraints<ModelSimState> for ModelSystem<'_> {
@@ -1324,7 +1352,11 @@ impl<State> Constraints<State> for NoConstraints {
         false
     }
 
-    fn constraint_value(&self, _state: &State, _name: &str) -> Result<ConstraintValue, ExpansionStop> {
+    fn constraint_value(
+        &self,
+        _state: &State,
+        _name: &str,
+    ) -> Result<ConstraintValue, ExpansionStop> {
         Ok(ConstraintValue::Holds)
     }
 }

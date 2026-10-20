@@ -12,7 +12,9 @@ use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, Role
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
 };
-use qsl_eval::simulation::protocol::{ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind};
+use qsl_eval::simulation::protocol::{
+    ProtocolState, ProtocolSystem, ProtocolTransition, Sc, StepKind,
+};
 use qsl_eval::simulation::{SubjectSystem, TransitionSystem};
 use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
@@ -194,7 +196,11 @@ pub(crate) fn package(body: &str) -> CheckedPackage {
         qsl_cst::Limits::default(),
     )
     .expect("S1 parses the unit");
-    assert!(parsed.is_admissible(), "S1: {text}: {:?}", parsed.diagnostics());
+    assert!(
+        parsed.is_admissible(),
+        "S1: {text}: {:?}",
+        parsed.diagnostics()
+    );
     let built = qsl_forms::build_unit(&parsed).expect("S2 builds the unit");
     let models = admit_unit(
         &built.selections().models,
@@ -233,7 +239,13 @@ pub(crate) fn protocol(name: &str, members: &str, run: &str, finish: &str) -> St
 
 /// An attempt `node` of `operation` with `contracts`, binder `binder` and
 /// constraint `constraint`.
-pub(crate) fn attempt(node: &str, operation: &str, contracts: &str, binder: &str, constraint: &str) -> String {
+pub(crate) fn attempt(
+    node: &str,
+    operation: &str,
+    contracts: &str,
+    binder: &str,
+    constraint: &str,
+) -> String {
     format!(
         "attempt {node} by w on M::Cell::{operation} contracts [{contracts}] \
          as ({binder}: Boolean) {{ {constraint} }};"
@@ -368,7 +380,7 @@ pub(crate) fn subject<'a>(
 }
 
 /// The system of `subject` under `Sc`.
-pub(crate) fn system<'a>(subject: &ProtocolSubject<'a>) -> ProtocolSystem<'a, Sc> {
+pub(crate) fn sc_system<'a>(subject: &ProtocolSubject<'a>) -> ProtocolSystem<'a, Sc> {
     let model = ModelSystem::new(subject.model.simulation.clone()).expect("the subject admits");
     ProtocolSystem::new(model, subject, Sc).expect("the protocol system builds")
 }

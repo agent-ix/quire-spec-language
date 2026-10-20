@@ -1221,17 +1221,19 @@ pub(crate) fn check(
                 BinderOrigin::Input | BinderOrigin::Activation | BinderOrigin::Capture => None,
             },
             ranged: match binder.origin {
-                BinderOrigin::Node(node) => protocol.declarations.get(node).is_some_and(|declaration| {
-                    matches!(
-                        declaration.kind,
-                        ProtocolNodeKind::Event
-                            | ProtocolNodeKind::Effect
-                            | ProtocolNodeKind::Commit
-                            | ProtocolNodeKind::Send
-                            | ProtocolNodeKind::Receive
-                            | ProtocolNodeKind::Finish
-                    )
-                }),
+                BinderOrigin::Node(node) => {
+                    protocol.declarations.get(node).is_some_and(|declaration| {
+                        matches!(
+                            declaration.kind,
+                            ProtocolNodeKind::Event
+                                | ProtocolNodeKind::Effect
+                                | ProtocolNodeKind::Commit
+                                | ProtocolNodeKind::Send
+                                | ProtocolNodeKind::Receive
+                                | ProtocolNodeKind::Finish
+                        )
+                    })
+                }
                 BinderOrigin::Input | BinderOrigin::Activation | BinderOrigin::Capture => false,
             },
         })

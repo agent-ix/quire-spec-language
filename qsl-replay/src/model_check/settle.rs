@@ -22,8 +22,6 @@ use crate::certificate::closure::{
     check_closure, check_protocol_closure, CertificateRejection, CertificateRequest,
     ClosureCertificate, ClosureRefusal, ProtocolCertificateRequest, TemporalCertificateCheck,
 };
-use qsl_eval::simulation::protocol::ProtocolTransition;
-use quire_semantic_value::model_transition::ModelTransition;
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
@@ -35,6 +33,8 @@ use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, ProofBasis, SettlementBasis, TerminalValue,
     UnavailabilityCause,
 };
+use qsl_eval::simulation::protocol::ProtocolTransition;
+use quire_semantic_value::model_transition::ModelTransition;
 
 /// The settlement method every EN-1 record states (FR-127).
 pub const EXPLICIT_STATE: &str = "explicit-state";
@@ -203,14 +203,13 @@ fn settle<T: Clone>(
     let mut hints = Vec::new();
     let mut depth = None;
     let row = match outcome {
-        ModelCheckOutcome::Holds {
-            certificate,
-            ..
-        } => Row::bound(package_id, package, cancel, || {
-            Row::of_check(closure(certificate), || {
-                Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+        ModelCheckOutcome::Holds { certificate, .. } => {
+            Row::bound(package_id, package, cancel, || {
+                Row::of_check(closure(certificate), || {
+                    Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+                })
             })
-        }),
+        }
         // ADR-021 RV-1: a reduced proof is its own technique, and a
         // constraint-only proof explored the subject without a certificate.
         ModelCheckOutcome::HoldsReduced { reductions, .. } => Row::proof(

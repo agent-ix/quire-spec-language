@@ -60,22 +60,23 @@ use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
 pub(crate) use application::{FirstApplication, OperationRef};
-pub use encode::ModelKey;
 pub(crate) use contracts::{verdict, Verdict};
 pub(crate) use domain::enumerable;
-pub(crate) use walk::Budget;
+pub use encode::ModelKey;
 use encode::{declaration_enc, declaration_text, Enc};
 pub use footprints::{FootprintError, FootprintViolation, WithinStop};
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
+pub(crate) use walk::Budget;
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
 /// evaluation meter, ran out (FR-120 "Post-states", "Contract clauses").
 const EXHAUSTED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
 /// `runtime_invariant`/`established-invariant-broken`: the simulator built an
 /// input itself, so a refusal of it is a broken internal invariant.
-const BROKEN: CatalogCode = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+pub(crate) const BROKEN: CatalogCode =
+    CatalogCode::new("runtime_invariant", "established-invariant-broken");
 
 /// One simulated population and its finite key set (FR-120 "Inputs").
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -255,7 +256,9 @@ impl ModelFinding {
     /// This finding as a protocol expression evaluated undefined (ADR-027
     /// TS-4, QSpec FR-426 "Undefined protocol expressions"), when it is one:
     /// the node's static declaration path and the cause.
-    pub fn undefined_protocol_expression(&self) -> Option<(String, crate::temporal::UndefinedCause)> {
+    pub fn undefined_protocol_expression(
+        &self,
+    ) -> Option<(String, crate::temporal::UndefinedCause)> {
         let Self::ProtocolExpressionUndetermined { node, evaluation } = self else {
             return None;
         };

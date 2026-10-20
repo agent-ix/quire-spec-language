@@ -73,8 +73,8 @@ pub use certificate::closed_form::task_set::{
 };
 pub use certificate::closure::{
     check_closure, check_protocol_closure, CertificateRejection, CertificateRequest,
-    ClosureCertificate, ClosureRefusal, ProtocolCertificateRequest,
-    ProductStateRef, TemporalCertificateCheck,
+    ClosureCertificate, ClosureRefusal, ProductStateRef, ProtocolCertificateRequest,
+    TemporalCertificateCheck,
 };
 pub use certificate::scc::{Component, ComponentWitness};
 pub use certificate::state_graph::{

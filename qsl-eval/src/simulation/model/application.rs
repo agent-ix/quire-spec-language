@@ -139,9 +139,12 @@ impl<'a> ModelSystem<'a> {
         if !self.types.conforms(row.type_id(), operation.receiver) {
             return None;
         }
-        self.applications.get(&row.type_id())?.iter().find(|application| {
-            application.declaring == operation.declaring && application.name == operation.name
-        })
+        self.applications
+            .get(&row.type_id())?
+            .iter()
+            .find(|application| {
+                application.declaring == operation.declaring && application.name == operation.name
+            })
     }
 
     /// ADR-027 ST-1 and TS-3: every application of `operation` at the

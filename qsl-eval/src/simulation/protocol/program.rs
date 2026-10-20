@@ -238,7 +238,9 @@ impl<'a> Program<'a> {
                 return Err(unsupported("join predicate"));
             }
             if parallel.outstanding.is_none() && parallel.policy != CheckedJoinPolicy::All {
-                return Err(unsupported("a join that may leave branches outstanding with no `outstanding` rule"));
+                return Err(unsupported(
+                    "a join that may leave branches outstanding with no `outstanding` rule",
+                ));
             }
             let control = controls
                 .get(&parallel.node)
@@ -316,14 +318,6 @@ impl<'a> Program<'a> {
         Ok(&self.control(node)?.text)
     }
 
-    /// The control whose static declaration path is `text`.
-    pub(super) fn node_of(&self, text: &str) -> Option<ProtocolNodeId> {
-        self.controls
-            .iter()
-            .find(|(_, control)| control.text == text)
-            .map(|(node, _)| *node)
-    }
-
     /// FO-1: apply structural moves from `cursor` until a rest point.
     pub(super) fn settle(&self, mut cursor: Cursor) -> Result<Rest, ProtocolRefusal> {
         // Each move enters a child or leaves a node for its parent's
@@ -366,7 +360,9 @@ impl<'a> Program<'a> {
                             }
                         }
                         ControlStep::Branch => return Ok(Rest::End),
-                        ControlStep::Parallel | ControlStep::Attempt | ControlStep::Unstepped(_) => {
+                        ControlStep::Parallel
+                        | ControlStep::Attempt
+                        | ControlStep::Unstepped(_) => {
                             return Err(ProtocolRefusal::fault("a-parent-is-a-sequence-or-branch"))
                         }
                     }
@@ -403,7 +399,9 @@ impl<'a> Program<'a> {
             let reached = match self.controls.get(node).and_then(|control| control.parent) {
                 None => BTreeSet::from([self.finish.node]),
                 Some(parent) => {
-                    let holder = &self.controls[&parent];
+                    let Some(holder) = self.controls.get(&parent) else {
+                        continue;
+                    };
                     match holder.step {
                         ControlStep::Sequence => {
                             let mut reached = after.get(&parent).cloned().unwrap_or_default();
@@ -439,7 +437,10 @@ impl<'a> Program<'a> {
             match control.step {
                 ControlStep::Parallel => {
                     reach.insert(Rest::Fork(*node), entered);
-                    reach.insert(Rest::Join(*node), after.get(node).cloned().unwrap_or_default());
+                    reach.insert(
+                        Rest::Join(*node),
+                        after.get(node).cloned().unwrap_or_default(),
+                    );
                 }
                 ControlStep::Attempt => {
                     reach.insert(Rest::Node(*node), entered);
@@ -449,12 +450,5 @@ impl<'a> Program<'a> {
         }
         reach.insert(Rest::Finish, BTreeSet::from([self.finish.node]));
         reach
-    }
-
-    /// The `parallel` and branch label a branch thread's last path step
-    /// names.
-    pub(super) fn parallel_of(&self, node_text: &str) -> Option<ProtocolNodeId> {
-        self.node_of(node_text)
-            .filter(|node| self.joins.contains_key(node))
     }
 }

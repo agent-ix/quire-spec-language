@@ -61,11 +61,11 @@ use qsl_eval::automaton::{
     Monitor, SafetyAutomaton, SafetyState, StateId,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject};
-use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
-};
 use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
+};
+use qsl_eval::simulation::protocol::{
+    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
 };
 use qsl_eval::simulation::{
     ConstraintValue, EncodingRefusal, ExpansionLimit, ExpansionStop, NotSimulated, Permutation,
@@ -74,13 +74,13 @@ use qsl_eval::simulation::{
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
+use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
     Instance, ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
     ModelStep, ProductStateRef, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
     UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
-use qsl_replay::undefined_finding;
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::observation::AdmissionFailure;
@@ -480,8 +480,7 @@ pub fn check_protocol(
             model.instances(&clause.over().1).map_err(not_simulated)?
         };
     }
-    let system =
-        ProtocolSystem::new(model, subject, Sc).map_err(ModelCheckRefusal::Protocol)?;
+    let system = ProtocolSystem::new(model, subject, Sc).map_err(ModelCheckRefusal::Protocol)?;
     let mut run = Run {
         system: &system,
         reducer: None,
@@ -855,7 +854,8 @@ trait Reducer<State> {
         group: &SymmetryGroup,
     ) -> Result<(State, Permutation), ExpansionStop>;
 
-    fn constraint_value(&self, state: &State, name: &str) -> Result<ConstraintValue, ExpansionStop>;
+    fn constraint_value(&self, state: &State, name: &str)
+        -> Result<ConstraintValue, ExpansionStop>;
 }
 
 impl Reducer<ModelSimState> for ModelSystem<'_> {

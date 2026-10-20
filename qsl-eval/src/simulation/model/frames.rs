@@ -78,7 +78,10 @@ fn transition_of(
 
 /// The parameter domains of `application` over the objects of `walk`'s
 /// state, one per declared parameter.
-fn argument_domains(walk: &Walk<'_, '_>, application: &Application) -> Result<Vec<Domain>, ExpansionStop> {
+fn argument_domains(
+    walk: &Walk<'_, '_>,
+    application: &Application,
+) -> Result<Vec<Domain>, ExpansionStop> {
     let references = walk.references();
     application
         .declaration

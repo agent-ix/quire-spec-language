@@ -19,14 +19,12 @@ use super::identity::{BlockedThread, ProtocolTransition, ThreadPath, WaitCause};
 use super::memory::{GatedStep, MemoryModel};
 use super::program::{Cursor, Rest};
 use super::{
-    undetermined, Bound, Disposition, Instance, Parallel, ParallelKey,
-    ProtocolRefusal, ProtocolState, ProtocolSystem, Thread,
+    undetermined, Bound, Disposition, Instance, Parallel, ParallelKey, ProtocolRefusal,
+    ProtocolState, ProtocolSystem, Thread,
 };
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::model::encode::{reference_enc, value_enc};
-use crate::simulation::model::{
-    Budget, FirstApplication, ModelFinding, OperationRef, Verdict,
-};
+use crate::simulation::model::{Budget, FirstApplication, ModelFinding, OperationRef, Verdict};
 
 /// One successor of a protocol state.
 type Successor<M> = (ProtocolTransition, ProtocolState<M>);
@@ -88,7 +86,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         }
                     }
                     Rest::Finish => {
-                        self.finish(state, *ordinal, path, &mut budget, &mut successors, &mut findings)?;
+                        self.finish(
+                            state,
+                            *ordinal,
+                            path,
+                            &mut budget,
+                            &mut successors,
+                            &mut findings,
+                        )?;
                     }
                     Rest::End => {}
                 }
@@ -110,10 +115,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         self.memory.gate(&state.memory, path, step)
     }
 
-    fn instance_mut<'s>(
-        state: &'s mut ProtocolState<M>,
+    fn instance_mut(
+        state: &mut ProtocolState<M>,
         ordinal: u64,
-    ) -> Result<&'s mut Instance, ProtocolRefusal> {
+    ) -> Result<&mut Instance, ProtocolRefusal> {
         state
             .instances
             .get_mut(&ordinal)
@@ -158,7 +163,19 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 Disposition::Running
             };
             let child = path.child(&text, label, free);
-            instance.threads.insert(child.clone(), Thread { rest, disposition });
+            let owner = ParallelKey {
+                parent: path.clone(),
+                node,
+                ordinal: free,
+            };
+            instance.threads.insert(
+                child.clone(),
+                Thread {
+                    rest,
+                    disposition,
+                    owner: Some((owner, label.clone())),
+                },
+            );
             dispositions.insert(label.clone(), disposition);
             branches.push(child);
         }
@@ -439,26 +456,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             return Ok(());
         };
         // Each branch thread's disposition, recorded on its instance.
-        let mut owners = Vec::new();
-        for (path, thread) in &instance.threads {
-            let (Some(parent), Some(step)) = (path.parent(), path.steps.last()) else {
-                continue;
-            };
-            let node = self
-                .program
-                .parallel_of(&step.node)
-                .ok_or_else(|| ProtocolRefusal::fault("a-path-step-names-a-parallel"))?;
-            owners.push((
-                path.clone(),
-                ParallelKey {
-                    parent,
-                    node,
-                    ordinal: step.ordinal,
-                },
-                step.branch.clone(),
-                thread.disposition,
-            ));
-        }
+        let owners: Vec<(ThreadPath, ParallelKey, String, Disposition)> = instance
+            .threads
+            .iter()
+            .filter_map(|(path, thread)| {
+                let (key, label) = thread.owner.as_ref()?;
+                Some((path.clone(), key.clone(), label.clone(), thread.disposition))
+            })
+            .collect();
         let mut leaving = BTreeSet::new();
         for (path, key, label, disposition) in &owners {
             let Some(parallel) = instance.parallels.get_mut(key) else {
@@ -528,8 +533,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         }
         let mut keyed = Vec::with_capacity(blocked.len());
         for entry in blocked {
-            let bytes = crate::simulation::key::canonical_bytes(&entry.path, super::identity_limits())
-                .map_err(|_| ProtocolRefusal::fault("a-thread-path-encodes"))?;
+            let bytes =
+                crate::simulation::key::canonical_bytes(&entry.path, super::identity_limits())
+                    .map_err(|_| ProtocolRefusal::fault("a-thread-path-encodes"))?;
             keyed.push((bytes, entry));
         }
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
@@ -549,8 +555,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 .get(&path)
                 .is_some_and(|thread| thread.disposition == Disposition::Running)
             {
-                let bytes = crate::simulation::key::canonical_bytes(&path, super::identity_limits())
-                    .map_err(|_| ProtocolRefusal::fault("a-thread-path-encodes"))?;
+                let bytes =
+                    crate::simulation::key::canonical_bytes(&path, super::identity_limits())
+                        .map_err(|_| ProtocolRefusal::fault("a-thread-path-encodes"))?;
                 keyed.push((bytes, path));
             }
         }
@@ -580,10 +587,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     let key = Self::joined_instance(instance, path, node)
                         .map(|(key, _)| key.ordinal)
                         .ok_or_else(|| ProtocolRefusal::fault("a-waiting-join-has-its-instance"))?;
-                    let needed = join
-                        .joined
-                        .iter()
-                        .map(|label| path.child(text, label, key));
+                    let needed = join.joined.iter().map(|label| path.child(text, label, key));
                     WaitCause::JoinWaiting {
                         threads: Self::running_of(instance, needed)?,
                     }
@@ -635,7 +639,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let observed = self.memory.observe(&state.memory, path, &state.model);
         let select = |clause| attempt.contracts.contains(&clause);
         Ok(
-            match self.model.first_application(&observed, &operation, &select)? {
+            match self
+                .model
+                .first_application(&observed, &operation, &select)?
+            {
                 FirstApplication::Precondition(clause) => WaitCause::Precondition { clause },
                 FirstApplication::None => WaitCause::NoPostState,
                 FirstApplication::Enabled(transition) => {
