@@ -349,6 +349,7 @@ fn a_malformed_certificate_is_rejected() {
     let mut stray = certificate.clone();
     stray.positions.push(CertifiedPosition {
         concrete: certificate.positions[0].concrete,
+        history: Vec::new(),
         abstract_states: Vec::new(),
     });
     stray.successors.push(Vec::new());
@@ -389,6 +390,7 @@ fn listed(world: &World) -> SimulationCertificate {
     };
     let certified = |position: &RefinementPosition| CertifiedPosition {
         concrete: digest(concrete, &position.concrete),
+        history: position.history.key(concrete).expect("a key"),
         abstract_states: position
             .abstract_states
             .iter()

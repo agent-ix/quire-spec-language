@@ -566,14 +566,13 @@ fn a_history_field_writes_no_simulation_record() {
     assert_eq!(records, []);
 }
 
-/// FR-138 Layer 5 (TC-554): a history update whose value leaves its declared
-/// type still computed a value, and the rows read it; one with no value
-/// settles the step as its own outcome. Here `writes` is 2 after the first
-/// `write(r, 1)`, where the `prev` row is defined, so the step is the update's
-/// `Undetermined`, not a refutation read off the value before the step.
-#[trace("TC-554")]
+/// FR-138-AC-8: `writes` leaves its type on `write(r, 1)` and the `prev` row
+/// reads it. The row would be undefined at the value the step started from, so
+/// it is not evaluated there: the step is the update's `Undetermined`, never
+/// `Undefined`.
+#[trace("TC-546", "FR-138-AC-8")]
 #[test]
-fn a_row_over_a_computed_out_of_type_value_does_not_refute() {
+fn a_row_reading_a_failed_update_is_not_evaluated_at_a_stand_in() {
     let unit = Unit::register();
     let text = "refinement RegisterHistory using inf abstract Spec concrete Impl {\n\
          population Spec::regs from Impl::regs;\n\
@@ -588,6 +587,14 @@ fn a_row_over_a_computed_out_of_type_value_does_not_refute() {
         panic!("the update is undetermined: {verdict:?}");
     };
     assert_eq!(undetermined.cause, EvalFailure::OutOfType);
+    assert_eq!(
+        undetermined.row,
+        MappingRowRef::History {
+            object_type: unit.concrete_key("Register"),
+            field: "writes".to_owned(),
+            operation: unit.concrete_key("Register/write"),
+        }
+    );
 }
 
 /// FR-138 Layer 5 (TC-554): an update with no value leaves no state to read
@@ -793,4 +800,131 @@ fn a_history_type_with_no_key_form_is_unsupported() {
         [(Code::UnsupportedConstruct, Some("not-yet-implemented"))]
     );
     assert!(found[0].at.starts_with("Decimal"));
+    let qsl_semantics::check::CheckCause::Refinement(refusal) = &found[0].refusal.cause else {
+        panic!("a refinement refusal");
+    };
+    assert!(matches!(
+        &refusal.cause,
+        qsl_semantics::check::RefinementCause::Unsupported {
+            feature,
+            subject: Some("decimal"),
+            ..
+        } if feature.name() == "history-row"
+    ));
+}
+
+/// FR-138-AC-6 (TC-543): an update that reads its own field outside `pre(..)`
+/// is admitted and reads the value the step started from, so along `write(r,
+/// 1)`, `write(r, 0)` the field `last = self.last` stays 0, 0.
+#[trace("TC-543", "FR-138-AC-6")]
+#[test]
+fn an_update_reads_a_history_field_outside_pre_as_the_value_the_step_started_from() {
+    let unit = Unit::register();
+    let row =
+        "history Impl::Register.last : Int[0, 1] = 0 { on Impl::Register::write : self.last; }";
+    let world = unit.world(&register_history(row));
+    let system = world.concrete_system(UNLIMITED);
+    let lasts: Vec<String> = along(&world, &system, &[1, 0])
+        .into_iter()
+        .map(|history| integer(history.expect("defined").get(&register(&unit), "last")))
+        .collect();
+    assert_eq!(lasts, ["0", "0"]);
+}
+
+/// FR-138-AC-7 (TC-543): over the universe `{r, s}` with the fields `last`
+/// and `writes`, the values are listed `r.last`, `r.writes`, `s.last`,
+/// `s.writes`, and two states that differ in one value have different keys.
+#[trace("TC-543", "FR-138-AC-7")]
+#[test]
+fn the_history_values_are_keyed_by_object_then_field() {
+    let unit = Unit::registers(&["r", "s"], &["r", "s"], Shape::Lifecycle);
+    let text = LIFE.replace(
+        "step Impl::Register::write",
+        "history Impl::Register.writes : Int[0, 1] = 0 { on Impl::Register::write : pre(self.writes); }\nstep Impl::Register::write",
+    );
+    let world = unit.world(&text);
+    let system = world.concrete_system(UNLIMITED);
+    let pre = registers(&world, &[("r", 1), ("s", 0)]);
+    let history = initial_history(world.refinement(), &system, &pre);
+    let listed: Vec<(String, String)> = history
+        .iter()
+        .map(|(object, field, _)| (object.key.clone(), field.to_owned()))
+        .collect();
+    let expected: Vec<(String, String)> = [
+        ("r", "last"),
+        ("r", "writes"),
+        ("s", "last"),
+        ("s", "writes"),
+    ]
+    .iter()
+    .map(|(object, field)| ((*object).to_owned(), (*field).to_owned()))
+    .collect();
+    assert_eq!(listed, expected);
+    let (written, reached) = transition(
+        &world,
+        &unit,
+        &pre,
+        "write",
+        &registers(&world, &[("r", 0), ("s", 0)]),
+    );
+    let after = step_history(
+        world.refinement(),
+        &system,
+        &history,
+        &pre,
+        &written,
+        &reached,
+    )
+    .expect("defined");
+    assert_ne!(
+        history.key(&system).expect("a key"),
+        after.key(&system).expect("a key")
+    );
+}
+
+/// FR-138-AC-2 (TC-543): an invariant of another type that reads a field it
+/// does not declare, whose name a history field has, refuses `missing-name`;
+/// one that reads an undeclared name no history field has refuses
+/// `ill_typed`/`type-mismatch`.
+#[trace("TC-543", "FR-138-AC-2")]
+#[test]
+fn only_a_history_name_makes_an_unknown_field_a_missing_name() {
+    let unit = Unit::register();
+    let other = "invariant OtherLast using v on Impl::Other at current { self.last = 0 }\n";
+    let found = unit.refused(&format!("{other}{}", register_history(LAST)));
+    assert_eq!(
+        codes(&found),
+        [(Code::MissingDeclaration, Some("missing-name"))]
+    );
+    let zzz = "invariant Zzz using v on Impl::Register at current { self.zzz = 0 }\n";
+    let found = unit.refused(&format!("{zzz}{}", register_history(LAST)));
+    assert_eq!(codes(&found), [(Code::IllTyped, Some("type-mismatch"))]);
+}
+
+/// FR-141 (TC-554): an update with no value skips only the rows that read its
+/// field. With `writes` out of type, a `value` row that is undefined at the
+/// post-state is `Undefined` at that row: an undefined read anywhere in the
+/// order wins over the update's `Undetermined`.
+#[trace("TC-554")]
+#[test]
+fn an_undefined_row_that_does_not_read_the_failed_field_wins() {
+    let unit = Unit::register();
+    let text = "refinement RegisterHistory using inf abstract Spec concrete Impl {\n\
+         population Spec::regs from Impl::regs;\n\
+         object Spec::Register from Impl::Register { prev = self.last; value = if 1 mod (1 - self.value) = 0 then self.value else self.value; }\n\
+         history Impl::Register.last : Int[0, 1] = 0 { on Impl::Register::write : pre(self.value); }\n\
+         history Impl::Register.writes : Int[0, 1] = 0 { on Impl::Register::write : pre(self.writes) + 2; }\n\
+         step Impl::Register::write -> Spec::Register::write(self, x);\n\
+         }";
+    let world = unit.world(text);
+    let StepVerdict::Undefined(evaluation) = check_write(&world, &start(&world), 1, 1) else {
+        panic!("the value row is undefined");
+    };
+    let qsl_replay::UndefinedLocus::Mapping(site) = evaluation.site.locus else {
+        panic!("a mapping locus");
+    };
+    assert!(matches!(
+        site.row,
+        MappingRowRef::Field { field, .. } if field == unit.abstract_key("Register/value")
+    ));
 }

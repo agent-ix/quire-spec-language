@@ -10,11 +10,12 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::operation_identity_text;
 use qsl_foundation::diagnostic::{UndefinedReason, UndefinedRecord};
 use qsl_replay::{
-    open_systems, replay_refinement_trace, settle_refinement_safety, CounterexampleKind,
-    InconclusiveCause, MappingRowRef, MappingSite, ModelCheckLimits, ModelCheckRecord, ObjectKey,
-    RefinementFailure, RefinementOutcome, RefinementTraceSettlement, ResultLabel, SafetyOutcome,
-    SafetyUndecided, SettlementBasis, SimulationCertificateRequest, StepRejection,
-    TemporalCounterexample, TerminalValue, UndefinedLocus, Undetermined,
+    check_simulation_certificate, open_systems, replay_refinement_trace, settle_refinement_safety,
+    CounterexampleKind, InconclusiveCause, MappingRowRef, MappingSite, ModelCheckLimits,
+    ModelCheckRecord, ObjectKey, RefinementFailure, RefinementOutcome, RefinementTraceSettlement,
+    ResultLabel, SafetyOutcome, SafetyUndecided, SettlementBasis, SimulationCertificateRequest,
+    StepRejection, TemporalCertificateCheck, TemporalCounterexample, TerminalValue, UndefinedLocus,
+    Undetermined,
 };
 use quire_exact::{Cancel, Undefined};
 
@@ -376,4 +377,52 @@ fn the_product_key_holds_the_candidate_set() {
         panic!("the horizon is reached: {safety:?}");
     };
     assert_eq!(stats.product_states, 3);
+}
+
+/// FR-149 (TC-556): a certified position carries its history values, so two
+/// product states that differ only in history are two positions. A
+/// certificate that lists the first variant twice, in place of the second,
+/// is rejected, as the one lacking a variant is not the relation EN-1 found.
+#[trace("TC-556")]
+#[test]
+fn a_certificate_position_carries_its_history() {
+    let unit = Unit::register();
+    let world = unit.world(&register_history(&format!("{LAST}\n{PARITY}")));
+    let SafetyOutcome::Holds { certificate, .. } = run(&world) else {
+        panic!("the refinement holds");
+    };
+    let request = SimulationCertificateRequest {
+        refinement: world.refinement(),
+        concrete: world.concrete_request(UNLIMITED),
+        abstract_package: world.package(),
+        abstract_initial: vec![world.abstract_initial()],
+    };
+    let check = |certificate: &qsl_replay::SimulationCertificate| {
+        check_simulation_certificate(
+            &request,
+            certificate,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the certificate is checked")
+    };
+    assert!(
+        matches!(check(&certificate), TemporalCertificateCheck::Accepted),
+        "the found relation is accepted"
+    );
+    let positions = &certificate.positions;
+    let (first, second) = (0..positions.len())
+        .flat_map(|i| (0..positions.len()).map(move |j| (i, j)))
+        .find(|(i, j)| {
+            positions[*i].concrete == positions[*j].concrete
+                && positions[*i].abstract_states == positions[*j].abstract_states
+                && positions[*i].history != positions[*j].history
+        })
+        .expect("two positions differ only in history");
+    let mut lacking = *certificate.clone();
+    lacking.positions[second].history = lacking.positions[first].history.clone();
+    assert!(
+        matches!(check(&lacking), TemporalCertificateCheck::Rejected(_)),
+        "a certificate without the second variant is rejected"
+    );
 }

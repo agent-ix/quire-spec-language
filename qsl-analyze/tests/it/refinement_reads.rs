@@ -440,3 +440,17 @@ fn the_first_undefined_read_is_reported() {
     assert!(matches!(found, StepVerdict::Undefined(_)), "{found:?}");
     assert_eq!(locus_row(&found), parameter(0));
 }
+
+/// FR-141-AC-10 (TC-555 step 6): an over-budget `H` is not evaluated into the
+/// rows, but a post-state row that does not read it and is undefined is
+/// `Undefined` at that row: an undefined read anywhere wins over the update's
+/// `Undetermined`.
+#[trace("TC-555", "FR-141-AC-10")]
+#[test]
+fn an_undefined_row_wins_over_an_over_budget_update() {
+    let b = budget();
+    let world = reads_history(&over_budget_argument(), CHEAP_ARGUMENT, ITEMS_UNDEFINED);
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undefined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), items_row());
+}

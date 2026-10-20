@@ -170,6 +170,9 @@ impl Unit {
                         vec![single(package, "Register", "value", &bit(package))],
                         concrete_register_operations(package, shape),
                     ),
+                    // A type no refinement row names, for a clause about a
+                    // field it does not declare.
+                    object_type(package, "Other", Vec::new(), Vec::new()),
                 ]
                 .into_iter()
                 .chain((shape == Shape::Subtype).then(|| {

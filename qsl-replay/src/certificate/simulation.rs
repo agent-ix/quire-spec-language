@@ -28,8 +28,9 @@
 //! Identity of the packages and the obligation is FR-144's, which refuses a
 //! certificate before this checker runs; the checker reads the refinement
 //! node only, so the certificate carries the refinement's declared name and
-//! no package or obligation identity yet. `HistoryValues` are not carried,
-//! because history fields are refused (FR-138). The `UndefinedEvaluation`
+//! no package or obligation identity yet. A position carries the key of its
+//! `HistoryValues` (FR-138), so product states that differ only in history
+//! are different positions. The `UndefinedEvaluation`
 //! verdict writes its `where` and `cause` as kinds only; FR-127's full
 //! encoding of them is remaining work on QSL-549.
 
@@ -66,6 +67,10 @@ use crate::refinement::{
 pub struct CertifiedPosition {
     /// The concrete state's `quire.simulation.state-key/v1` digest.
     pub concrete: DigestRecord,
+    /// The refinement's history values at it, as their typed canonical key
+    /// (QSpec FR-378's encoding): two positions with one concrete state and
+    /// different history are different positions.
+    pub history: Vec<u8>,
     /// The abstract states it stands for, as digests, in the order
     /// [`check_step`] gives them.
     pub abstract_states: Vec<DigestRecord>,
@@ -466,6 +471,9 @@ impl Run<'_, '_> {
     fn matches(&self, listed: &CertifiedPosition, position: &RefinementPosition) -> Step<bool> {
         let (_, concrete) = Self::encoding(self.concrete.state_key_of(&position.concrete))?;
         if listed.concrete != concrete {
+            return Ok(false);
+        }
+        if listed.history != Self::encoding(position.history.key(self.concrete))? {
             return Ok(false);
         }
         let mut digests = Vec::with_capacity(position.abstract_states.len());

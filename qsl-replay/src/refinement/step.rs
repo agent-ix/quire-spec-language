@@ -38,8 +38,8 @@ use crate::refinement::failure::{
 };
 use crate::refinement::history::{advance, has_update, initial_history, HistoryValues};
 use crate::refinement::map::{
-    lift_value, map_state, object_of, EvalFailure, Lifting, MappedState, MappingFailure,
-    MappingRowRef, MappingUndetermined, StepArgument,
+    lift_value, map_state, map_state_without, object_of, EvalFailure, Lifting, MappedState,
+    MappingFailure, MappingRowRef, MappingUndetermined, StepArgument,
 };
 
 /// A concrete state with its history values and the abstract states it
@@ -341,31 +341,26 @@ fn decide_step(
         }
     }
     let history = advanced.values;
-    // An update with no value leaves nothing to read the post-state rows
-    // over, so the step settles as the update's own outcome.
-    let mapped = if advanced.complete {
-        match map_state(
-            refinement,
-            concrete_system,
-            abstract_system,
-            step.post.state(),
-            &history,
-        ) {
-            Ok(mapped) => Some(mapped),
-            Err(failure) => {
-                let verdict = mapping_verdict(
-                    || state_digest(concrete_system, step.post.state()),
-                    step.position,
-                    failure,
-                );
-                if let Err(ended) = soft.record(verdict) {
-                    return ended;
-                }
-                None
+    // A row that reads a field whose update failed is not evaluated at any
+    // stand-in: the update's own outcome stands for it in the read order.
+    let mapped = match map_state_without(
+        refinement,
+        (concrete_system, abstract_system),
+        step.post.state(),
+        (&history, &advanced.failed),
+    ) {
+        Ok(mapped) => Some(mapped),
+        Err(failure) => {
+            let verdict = mapping_verdict(
+                || state_digest(concrete_system, step.post.state()),
+                step.position,
+                failure,
+            );
+            if let Err(ended) = soft.record(verdict) {
+                return ended;
             }
+            None
         }
-    } else {
-        None
     };
     if let Some(verdict) = soft.first() {
         return verdict;
@@ -413,6 +408,14 @@ fn decide_step(
             };
             let mut matched = Vec::new();
             let mut undecided = false;
+            let mapped_digests: Vec<DigestRecord> = match completions(abstract_system, &mapped) {
+                Ok(states) => states
+                    .iter()
+                    .filter_map(|state| abstract_system.state_key_of(state).ok())
+                    .map(|(_, digest)| digest)
+                    .collect(),
+                Err(verdict) => return verdict,
+            };
             for candidate in &pre.abstract_states {
                 let expansion = match abstract_system.expand_state(candidate) {
                     Ok(expansion) => expansion,
@@ -431,10 +434,16 @@ fn decide_step(
                         Err(_) => return fault("successor-encodes"),
                     }
                 }
-                undecided |= expansion
-                    .findings
-                    .iter()
-                    .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }));
+                // An undecided precondition enables its successors in doubt;
+                // an undecided postcondition matters only for a candidate
+                // whose visible part is the mapped one.
+                undecided |= expansion.findings.iter().any(|finding| {
+                    matches!(
+                        finding,
+                        ModelFinding::ContractUndetermined { candidate, .. }
+                            if candidate.as_ref().is_none_or(|digest| mapped_digests.contains(digest))
+                    )
+                });
             }
             // A successor whose contracts did not decide may be a member of
             // the set, so the set is not known (AX-2).

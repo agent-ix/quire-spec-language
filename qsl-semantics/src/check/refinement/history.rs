@@ -91,13 +91,14 @@ fn bounded(declared: &ValueType) -> bool {
     }
 }
 
-/// Whether `declared` is, or wraps, a finite type whose values FR-181 gives
+/// The kind of finite type `declared` is or wraps whose values FR-181 gives
 /// no typed canonical form, so a product state could not key one.
-fn unkeyable(declared: &ValueType) -> bool {
+fn unkeyable(declared: &ValueType) -> Option<&'static str> {
     match declared {
-        ValueType::Enum(_) | ValueType::Decimal(_) => true,
+        ValueType::Enum(_) => Some("enum"),
+        ValueType::Decimal(_) => Some("decimal"),
         ValueType::Option(payload) => unkeyable(payload),
-        _ => false,
+        _ => None,
     }
 }
 
@@ -169,12 +170,13 @@ impl<'c, 'a> Checker<'c, 'a> {
                     continue;
                 }
             };
-            if unkeyable(&declared) {
+            if let Some(subject) = unkeyable(&declared) {
                 self.findings.refuse(
                     row.ty.span,
                     RefinementCause::Unsupported {
-                        feature: UnsupportedFeature::HistoryValueKey,
+                        feature: UnsupportedFeature::HistoryRow,
                         profile: profile.to_owned(),
+                        subject: Some(subject),
                     },
                 );
                 continue;

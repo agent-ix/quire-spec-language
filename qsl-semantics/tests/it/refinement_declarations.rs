@@ -1310,7 +1310,10 @@ fn a_protocol_abstract_side_refuses_and_the_rest_is_still_checked() {
         (Code::UnsupportedConstruct, Some("not-yet-implemented"))
     );
     assert_eq!(protocol.at, "Spec");
-    let RefinementCause::Unsupported { feature, profile } = protocol.refinement() else {
+    let RefinementCause::Unsupported {
+        feature, profile, ..
+    } = protocol.refinement()
+    else {
         panic!("an unsupported feature: {:?}", protocol.refinement());
     };
     assert_eq!(feature.name(), "protocol-abstract-side");

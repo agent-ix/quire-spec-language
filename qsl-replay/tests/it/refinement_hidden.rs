@@ -276,7 +276,7 @@ fn an_any_row_keeps_the_candidates_with_a_matching_successor() {
 /// `Undetermined(UndecidedSuccessor)` and not a pass over the set without it.
 /// The abstract `toss` postcondition `1 mod self.side = 0` is undefined at
 /// `side` 0 and true at `side` 1.
-#[trace("TC-546")]
+#[trace("TC-546", "FR-141-AC-12")]
 #[test]
 fn an_undecided_completion_leaves_the_candidate_set_unknown() {
     let unit = Unit::coin_with_contracts(
@@ -377,4 +377,79 @@ fn a_stutter_step_keeps_the_candidate_set_for_a_stutter_row_and_an_any_row() {
         assert_eq!(taken, Taken::Stutter);
         assert_eq!(sides(&world, &peeked), ["0", "1"]);
     }
+}
+
+/// FR-141-AC-12 (TC-546): with the pre set `[side 1]` and the concrete
+/// `reveal` setting `face` 0, which no completion allows, the step fails
+/// `NoAbstractMatch`, not `AbstractStepRejected`.
+#[trace("TC-546", "FR-141-AC-12")]
+#[test]
+fn a_set_of_one_side_that_a_reveal_contradicts_is_no_abstract_match() {
+    let unit = Unit::coin(1);
+    let world = unit.world(&coin_refines(""));
+    let pre = RefinementPosition {
+        concrete: coin(&world, true, false, 0),
+        history: qsl_replay::HistoryValues::default(),
+        abstract_states: vec![world.abstract_state(&[
+            ("tossed", flag(true)),
+            ("side", int(1)),
+            ("shown", flag(false)),
+            ("face", int(0)),
+        ])],
+    };
+    let verdict = decide(
+        &world,
+        &unit,
+        &pre,
+        ("reveal", &coin(&world, true, true, 0)),
+        2,
+    )
+    .verdict;
+    assert!(
+        matches!(
+            verdict,
+            StepVerdict::Fails(RefinementFailure::NoAbstractMatch { position: 2 })
+        ),
+        "{verdict:?}"
+    );
+}
+
+/// FR-141 (TC-546): in an `any` row an undecided successor counts only when
+/// its visible part is the mapped one. The abstract `show` postcondition is
+/// undefined at `face` 1 and true at `face` 0, so `reveal` to `face` 0 passes
+/// over the one candidate that matches and is not undetermined by the
+/// `face` 1 successor.
+#[trace("TC-546")]
+#[test]
+fn an_undecided_successor_elsewhere_does_not_make_an_any_step_undetermined() {
+    let unit = Unit::coin_with_contracts(
+        "post SpecShown using v on Spec::Coin::show { self.shown and self.face = self.side }",
+        "post SpecShown using v on Spec::Coin::show { self.shown and self.face = self.side and 1 mod (1 - self.face) = 0 }",
+    );
+    let rows = coin_refines("").replace(
+        "step Impl::Coin::reveal -> Spec::Coin::show(self);",
+        "step Impl::Coin::reveal -> any;",
+    );
+    let world = unit.world(&rows);
+    let start = initial(&world);
+    let (tossed, _) = passes(
+        decide(
+            &world,
+            &unit,
+            &start,
+            ("toss", &coin(&world, true, false, 0)),
+            1,
+        )
+        .verdict,
+    );
+    let verdict = decide(
+        &world,
+        &unit,
+        &tossed,
+        ("reveal", &coin(&world, true, true, 0)),
+        2,
+    )
+    .verdict;
+    let (revealed, _) = passes(verdict);
+    assert_eq!(sides(&world, &revealed), ["0"]);
 }

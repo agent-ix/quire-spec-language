@@ -15,7 +15,7 @@
 //! An update that reads a history field outside `pre(..)` reads the value the
 //! pre-state holds: the post-state's value is what the update computes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_eval::simulation::model::{
     operation_identity_text, ModelSimState, ModelSystem, ResolvedStep, RowReading,
@@ -156,13 +156,13 @@ fn carried(
 /// What advancing the history over one step gave: the values, and the first
 /// failure of each kind.
 pub(super) struct Advanced {
-    /// The history at the post-state. An update that evaluated to a value
-    /// outside its declared type wrote that value, so a row over it reads what
-    /// the update computed. An update with no value (undefined, refused or
-    /// incomplete) wrote nothing, and `complete` is false.
+    /// The history at the post-state. An update that failed wrote nothing:
+    /// its field holds the value the step started from, which no row may read.
     pub(super) values: HistoryValues,
-    /// Whether every update that failed still computed a value.
-    pub(super) complete: bool,
+    /// The history fields whose update failed (undefined, refused,
+    /// incomplete or out of type). A post-state row that reads one is not
+    /// evaluated (FR-141 "Undetermined history update").
+    pub(super) failed: BTreeSet<String>,
     /// The updates that evaluated undefined or could not be decided.
     pub(super) outcomes: Outcomes,
 }
@@ -218,11 +218,11 @@ pub(super) fn advance(
 ) -> Result<Advanced, MappingFailure> {
     let mut values = carried(refinement, system, history, post.state());
     let mut outcomes = Outcomes::default();
-    let mut complete = true;
+    let mut failed = BTreeSet::new();
     let Some((transition, resolved)) = step else {
         return Ok(Advanced {
             values,
-            complete,
+            failed,
             outcomes,
         });
     };
@@ -230,7 +230,7 @@ pub(super) fn advance(
         // The step deleted its receiver, so there is no field to write.
         return Ok(Advanced {
             values,
-            complete,
+            failed,
             outcomes,
         });
     };
@@ -286,17 +286,19 @@ pub(super) fn advance(
             .map_err(fault)?;
         match reading {
             RowReading::Value(value) => {
-                if !row.declared.admits(&value) {
+                if row.declared.admits(&value) {
+                    written.push((row.field.clone(), value));
+                } else {
+                    failed.insert(row.field.clone());
                     outcomes.record(MappingFailure::Undetermined(MappingUndetermined {
                         row: at,
                         object: Some(receiver.clone()),
                         cause: EvalFailure::OutOfType,
                     }));
                 }
-                written.push((row.field.clone(), value));
             }
             RowReading::Undefined(cause) => {
-                complete = false;
+                failed.insert(row.field.clone());
                 outcomes.record(MappingFailure::Undefined {
                     row: at,
                     object: Some(receiver.clone()),
@@ -304,7 +306,7 @@ pub(super) fn advance(
                 });
             }
             RowReading::Undetermined(outcome) => {
-                complete = false;
+                failed.insert(row.field.clone());
                 outcomes.record(MappingFailure::Undetermined(MappingUndetermined {
                     row: at,
                     object: Some(receiver.clone()),
@@ -318,7 +320,7 @@ pub(super) fn advance(
     }
     Ok(Advanced {
         values,
-        complete,
+        failed,
         outcomes,
     })
 }

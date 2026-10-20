@@ -91,9 +91,10 @@ pub enum UnsupportedFeature {
     /// An abstract protocol side (FR-147; QSpec has no production for it
     /// yet, Linear STD-182).
     ProtocolAbstractSide,
-    /// A history field of a type whose values have no FR-181 typed canonical
-    /// form (an enum or a decimal), which a product state could not key.
-    HistoryValueKey,
+    /// A history row whose declared type has values with no FR-181 typed
+    /// canonical form (an enum or a decimal), which a product state could not
+    /// key (FR-138).
+    HistoryRow,
 }
 
 impl UnsupportedFeature {
@@ -101,7 +102,7 @@ impl UnsupportedFeature {
     pub fn name(self) -> &'static str {
         match self {
             Self::ProtocolAbstractSide => "protocol-abstract-side",
-            Self::HistoryValueKey => "history-value-key",
+            Self::HistoryRow => "history-row",
         }
     }
 }
@@ -162,6 +163,9 @@ pub enum RefinementCause {
         feature: UnsupportedFeature,
         /// The identity of the profile the declaration selects.
         profile: String,
+        /// The kind of type or form the feature is refused for, when the
+        /// feature alone does not say.
+        subject: Option<&'static str>,
     },
     /// A population-valued row whose bound does not fit the type it is used
     /// as once the subject's universe fixes the population's size:
@@ -234,6 +238,14 @@ pub struct CheckedRow {
 }
 
 impl CheckedRow {
+    /// Whether the body reads the history field named `field` (FR-138),
+    /// whatever object type it was added to.
+    pub fn reads_history(&self, field: &str) -> bool {
+        self.body().descendants().iter().any(
+            |node| matches!(node.kind(), NodeKind::History { field: read, .. } if read == field),
+        )
+    }
+
     /// Every model read of the body and the observation it takes, by the
     /// read's location.
     pub fn reads(&self) -> impl Iterator<Item = (&Location, Observation)> {
@@ -791,6 +803,7 @@ pub(crate) fn check_refinement<'a, 'c>(
                 RefinementCause::Unsupported {
                     feature: UnsupportedFeature::ProtocolAbstractSide,
                     profile: declaration.selection.identity.clone(),
+                    subject: None,
                 },
             );
             alias

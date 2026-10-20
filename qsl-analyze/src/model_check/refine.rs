@@ -519,8 +519,10 @@ impl Run<'_, '_> {
                         .map_err(encodes)
                 })
                 .collect::<Result<_, _>>()?;
+            let history = node.position.history.key(self.concrete).map_err(encodes)?;
             positions.push(CertifiedPosition {
                 concrete,
+                history,
                 abstract_states,
             });
         }
