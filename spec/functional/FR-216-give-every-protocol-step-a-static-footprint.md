@@ -74,9 +74,11 @@ order gives the same answer.
   up to the ordinal the fork takes (the smallest ordinal no live sibling
   holds), `inst(i_o)` of the parallel instance of `p` forked by `t` with
   ordinal `o`, the `ctl` of every thread at or below each of its branch
-  threads and, because a reader of a binder under that ordinal holds it,
-  the `ctl` of every live thread at or below `t`, and it SHALL write each
-  new thread's read map (ADR-027 PS-5) as part of that thread's `ctl`; `W` SHALL be `ctl(t)`, the new instance and its threads' `ctl`, and the
+  threads and, because a live thread whose binder environment names a binder
+  under that ordinal holds it, the `ctl` of every live thread at or below
+  `t`; the binder environments (ADR-027 PS-5) are part of `ctl`, so the
+  fork's write of each new thread's `ctl`, and `join`'s write of `ctl(t)`,
+  carry them; `W` SHALL be `ctl(t)`, the new instance and its threads' `ctl`, and the
   `bind` locations of every path it reuses. An
   ordinal is held while any live thread's path extends the instance's
   branch paths, so those threads' `ctl` are read as stated.
