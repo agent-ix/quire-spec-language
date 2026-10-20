@@ -334,9 +334,10 @@ impl CompileRefusal {
                 | Setting::S1Tokens
                 | Setting::S1Nodes
                 | Setting::S1WorkUnits => SpineStage::Source,
-                Setting::S3Nodes | Setting::S3InputBytes | Setting::S3WorkUnits => {
-                    SpineStage::Check
-                }
+                Setting::S3Nodes
+                | Setting::S3InputBytes
+                | Setting::S3WorkUnits
+                | Setting::S3RationalBits => SpineStage::Check,
                 Setting::S3DecimalScale
                 | Setting::EnvironmentAncestorSteps
                 | Setting::EnvironmentWorkUnits

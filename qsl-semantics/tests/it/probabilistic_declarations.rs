@@ -4,7 +4,7 @@
 //! the S3 typing of a `probabilistic` claim over it.
 //!
 //! `Service` is a domain package with one object type, `Server { phase:
-//! Phase, attempts: Attempts }`, `Phase` and `Outcome` variant types,
+//! Phase, attempts: Attempts }` (and an operation-free `Client { phase }`), `Phase` and `Outcome` variant types,
 //! `Attempts = Int[0, 2]`, and the operations `request`, `attempt(d,
 //! outcome)` and `reset`. ADR-024 types `d` as `Quantity<Time>`; neither a
 //! domain package nor complete-V1 source can declare a quantity-typed
@@ -176,6 +176,22 @@ fn service_document_with(requires: &[&str]) -> Vec<u8> {
             "relationships": [],
         }),
     );
+    let client = definition(
+        "Client",
+        "object_type",
+        json!({
+            "supertypes": [],
+            "fields": [wire_field(&id("Client/phase"), "phase", &id("Phase"), "required", 1)],
+            "operations": [],
+            "relationships": [],
+        }),
+    );
+    let clients = json!({
+        "identity": id("clients"), "displayName": id("clients"),
+        "kind": {"module": P, "name": "population"},
+        "members": [id("Client")], "extent": "closed",
+        "origin": generated("clients"),
+    });
     let population = json!({
         "identity": id("servers"), "displayName": id("servers"),
         "kind": {"module": P, "name": "population"},
@@ -199,8 +215,9 @@ fn service_document_with(requires: &[&str]) -> Vec<u8> {
         bounded_integer("Attempts", "0", "2"),
         bounded_integer("Millis", "1", "12"),
         server,
+        client,
     ]);
-    wire_envelope(constructs, types, json!([population]))
+    wire_envelope(constructs, types, json!([population, clients]))
         .to_string()
         .into_bytes()
 }
@@ -317,13 +334,12 @@ fn invalid(cause: &'static str, at: &str) -> (Code, Option<&'static str>, String
     (Code::InvalidProbabilisticModel, Some(cause), at.to_owned())
 }
 
-/// The limit refusal of an exact value past the 65,536-bit ceiling, at
-/// `at`: FR-255 has no rational-bits setting yet, so it reports the S3 work
-/// budget's (see the PR's spec gaps).
+/// The limit refusal of an exact value past the 65,536-bit default
+/// `s3.rational_bits` ceiling, at `at`.
 fn limit(at: &str) -> (Code, Option<&'static str>, String) {
     (
         Code::StageLimitExceeded,
-        Some("work-budget-exceeded"),
+        Some("rational-bits-exceeded"),
         at.to_owned(),
     )
 }
@@ -623,6 +639,29 @@ fn steady_with_request(weight: &str) -> String {
     )
 }
 
+/// FR-185 "Exact values": a configured `s3.rational_bits` replaces the
+/// default ceiling, inclusive, and the limit refusal names that setting and
+/// the configured limit.
+#[trace("TC-620")]
+#[test]
+fn a_configured_rational_bits_ceiling_is_named_by_the_refusal() {
+    let within = service(Some((STEADY, &steady_with_request("255"))), "");
+    assemble(&within)
+        .check(CheckingLimits::default().with_rational_bits(8))
+        .expect("255 is eight bits");
+    let past = service(Some((STEADY, &steady_with_request("256"))), "");
+    let refusals = assemble(&past)
+        .check(CheckingLimits::default().with_rational_bits(8))
+        .expect_err("256 is nine bits");
+    let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
+        panic!("a limit refusal: {:?}", refusals[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 8, 9)
+    );
+}
+
 /// TC-620 step 2 (FR-185 "Exact values"), each as the weight of
 /// `Server::request`: a value past 65,536 bits as written refuses before it
 /// is reduced or expanded, with the limit refusal, even when it reduces to
@@ -880,6 +919,51 @@ fn quantity_literals_type_against_the_declared_units() {
     assert_eq!(refusals[0].cause.code(), Code::IllTyped, "{refusals:?}");
 }
 
+/// FR-185 "Exact values": a quantity literal's magnitude is bounded by the
+/// configured `s3.rational_bits`, inclusive, in a function body.
+#[trace("TC-620")]
+#[test]
+fn a_quantity_literal_is_bounded_by_the_configured_rational_bits() {
+    let limits = CheckingLimits::default().with_rational_bits(8);
+    let within = assemble("function lag using v(): Boolean pure { 255 ms <= 3 ms }")
+        .check(limits)
+        .expect_err("a quantity literal has no S4 form yet");
+    assert_eq!(within[0].cause.cause(), Some("not-yet-implemented"));
+    let past = assemble("function lag using v(): Boolean pure { 256 ms <= 3 ms }")
+        .check(limits)
+        .expect_err("256 is nine bits");
+    let CheckCause::ResourceExhausted(limit) = &past[0].cause else {
+        panic!("a limit refusal: {:?}", past[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 8, 9)
+    );
+}
+
+/// FR-185-AC-6 under a configured ceiling: weights `1/3` and `1/5` are each
+/// within 3 bits, their sum `8/15` has 4, so the distribution is refused at
+/// `d` naming `s3.rational_bits` and the configured limit.
+#[trace("TC-620", "FR-185-AC-6")]
+#[test]
+fn a_distribution_total_is_bounded_by_the_configured_rational_bits() {
+    let random = "random Server::attempt(d) ~ { 1: rational(1, 3), 3: rational(1, 5) };";
+    let body = service(Some((D, random)), "");
+    let limits = CheckingLimits::default().with_rational_bits(3);
+    let refusals = assemble(&body)
+        .check(limits)
+        .expect_err("the sum is four bits");
+    let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
+        panic!("a limit refusal: {:?}", refusals[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 3, 4)
+    );
+    assemble(&body)
+        .check(CheckingLimits::default().with_rational_bits(7))
+        .expect("the sum is within seven bits (the other declarations' 98)");
+}
 const OVER: &str = "over (s: Service::Server)";
 
 fn claim(body: &str) -> String {
@@ -1200,7 +1284,7 @@ fn a_threshold_converts_within_the_rewards_dimension_and_refuses_another() {
 /// FR-186 "Events and measures": a comparison's threshold has the type of its
 /// measure: a natural number for `steps`, an exact rational in `(0, 1)` for
 /// `fraction`, the reward's type for `accumulate`.
-#[trace("TC-621")]
+#[trace("TC-621", "FR-186-AC-5")]
 #[test]
 fn a_comparison_threshold_has_the_type_of_its_measure() {
     let steps = "steps from holds(s.phase = Service::Phase::Busy) \
@@ -1270,14 +1354,18 @@ fn a_comparison_threshold_has_the_type_of_its_measure() {
         );
         let found = located(&body);
         assert_eq!(found.len(), 1, "{threshold}: {found:?}");
-        assert_eq!(found[0].0, Code::IllTyped, "{threshold}");
+        assert_eq!(
+            (found[0].0, found[0].1, found[0].2.as_str()),
+            (Code::IllTyped, Some("type-mismatch"), threshold),
+            "{threshold}"
+        );
     }
 }
 
 /// FR-186 "Events and measures": `accumulate R` names a reward some operation
 /// of the subject's model declares, and `weighted by R` names one; a name no
 /// operation declares is `missing-name` at the name.
-#[trace("TC-621")]
+#[trace("TC-621", "FR-186-AC-6")]
 #[test]
 fn a_reward_a_claim_names_is_one_the_model_declares() {
     let accumulate = |reward: &str| {
@@ -1362,7 +1450,7 @@ fn a_reward_a_claim_names_is_one_the_model_declares() {
 
 /// A reward name declared with two value types on two operations names no
 /// one reward: `ambiguous_declaration`/`ambiguous-name` at the name.
-#[trace("TC-621")]
+#[trace("TC-621", "FR-186-AC-6")]
 #[test]
 fn a_reward_of_two_value_types_is_ambiguous() {
     let body = service(
@@ -1514,7 +1602,7 @@ fn an_unbounded_event_is_refused_and_a_windowed_one_has_its_horizon() {
 /// that declares nothing, an unknown profile alias, a profile that is no
 /// temporal profile and an unknown workload are `missing-name` or
 /// `not-temporal-profile`, each at the name.
-#[trace("TC-621", "FR-186-AC-3")]
+#[trace("TC-621", "FR-186-AC-3", "FR-186-AC-6")]
 #[test]
 fn a_claim_names_a_model_a_temporal_profile_and_a_workload() {
     let trace = service(
@@ -1614,7 +1702,7 @@ fn a_workload_of_another_model_is_foreign() {
 /// and carries its fairness set, each constraint with its kind, operation and
 /// granularity; a repeated constraint joins the set once; an operation of no
 /// model refuses `missing-name`.
-#[trace("TC-621", "FR-186-AC-3")]
+#[trace("TC-621", "FR-186-AC-3", "FR-186-AC-6")]
 #[test]
 fn every_scheduler_carries_its_fairness_set() {
     let every = |fairness: &str| {
@@ -1975,6 +2063,80 @@ fn the_normal_form_binds_what_the_claim_asserts() {
     assert_ne!(over(OVER), over(""));
 }
 
+/// FR-186-AC-4 (TC-621 step 4): a fairness set written in another order, a
+/// reward declared on its operations in another order and two declarations of
+/// equal content each keep one normal form; a claim that differs only in its
+/// `over` type has another.
+#[trace("TC-621", "FR-186-AC-4")]
+#[test]
+fn the_normal_form_ignores_declaration_order_and_binds_the_over_type() {
+    let normal_form = |extra: &str, body: &str| {
+        let graph = checked(&service(None, &format!("{extra}\n{body}")));
+        claim_of(&graph).normal_form.as_bytes().to_vec()
+    };
+    let fair = |fairness: &str| {
+        normal_form(
+            "",
+            &format!(
+                "probabilistic C using ev on Service {OVER} under every scheduler {fairness} \
+                 on origin {{ probability >= 0.9 [ holds({IDLE}) ] }}"
+            ),
+        )
+    };
+    let forward = fair("fair weak Server::attempt fair strong each Server::reset");
+    assert_eq!(
+        forward,
+        fair("fair strong each Server::reset fair weak Server::attempt")
+    );
+    assert_ne!(forward, fair("fair weak Server::attempt"));
+
+    let accumulate = claim(&format!(
+        "{{ quantile 0.5 of (accumulate latency from holds({IDLE}) until holds({IDLE}) \
+         within 3) <= 4 ms }}"
+    ));
+    let rewards =
+        |first: &str, second: &str| normal_form(&format!("{first}\n{second}"), &accumulate);
+    let on_attempt = "reward latency on Server::attempt = 1 ms;";
+    let on_request = "reward latency on Server::request = 2 ms;";
+    assert_eq!(
+        rewards(on_attempt, on_request),
+        rewards(on_request, on_attempt)
+    );
+    assert_ne!(
+        rewards(on_attempt, on_request),
+        rewards(on_attempt, "reward other on Server::reset = 1;")
+    );
+
+    // Two declarations of equal content, in one unit.
+    let graph = checked(&service(
+        None,
+        &format!(
+            "{}\n{}",
+            claim("{ probability >= 0.9 [ holds(true) ] }"),
+            claim("{ probability >= 0.9 [ holds(true) ] }")
+                .replace("probabilistic C", "probabilistic D"),
+        ),
+    ));
+    let model = graph.probabilistic_model();
+    assert_eq!(
+        model.claim("C").expect("C").normal_form,
+        model.claim("D").expect("D").normal_form
+    );
+
+    // Only the `over` type differs: `Server` and `Client` are two object
+    // types of the one model.
+    let over = |object: &str| {
+        normal_form(
+            "",
+            &format!(
+                "probabilistic C using ev on Service over (s: Service::{object}) \
+                 under Steady on origin {{ probability >= 0.9 [ holds(true) ] }}"
+            ),
+        )
+    };
+    assert_ne!(over("Server"), over("Client"));
+}
+
 /// FR-186 "Events and measures": `accumulate R` names a reward of the
 /// subject's own model: a reward only another model declares is
 /// `missing-name`.
@@ -2007,7 +2169,7 @@ fn a_reward_declared_only_by_another_model_is_not_the_subjects() {
 
 /// An event whose interval bounds sum past `u64` is refused with the limit
 /// refusal, located at the operator whose interval overflowed the sum.
-#[trace("TC-621")]
+#[trace("TC-621", "FR-186-AC-5")]
 #[test]
 fn an_event_horizon_past_u64_is_refused_at_its_operator() {
     let huge = "9223372036854775808";
@@ -2030,7 +2192,7 @@ fn an_event_horizon_past_u64_is_refused_at_its_operator() {
 
 /// An `over` parameter must be of an object type of the model; a threshold
 /// that is not a literal is refused as such.
-#[trace("TC-621")]
+#[trace("TC-621", "FR-186-AC-5")]
 #[test]
 fn an_over_type_and_a_threshold_have_their_required_shape() {
     let scalar = service(
@@ -2307,6 +2469,7 @@ fn a_huge_written_confidence_value_is_refused_with_the_limit_refusal() {
     let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
         panic!("a limit refusal: {:?}", refusal.cause);
     };
+    assert_eq!(limit.kind.setting().name(), "s3.rational_bits");
     assert_eq!(limit.limit, 65_536);
     assert!(limit.actual > 65_536);
 }

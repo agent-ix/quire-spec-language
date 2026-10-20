@@ -128,3 +128,48 @@ Not mergeable as is: changes requested.
 | FND-010 | low | The horizon-overflow refusal of an event is unlocated and untested. When a sum of interval bounds overflows `u64`, `claim.rs` calls `super::horizon_refusal(actual)`, which builds `Location::root` and has no region, so the `Overflow { span }` field is discarded. A temporal clause's overflow is located at the operator (`formula_horizon`). No test reaches either path for a claim. Fix: carry the span into the refusal's region, and add a test with two `[0, 2^63]` intervals. | qsl-semantics/src/check/probabilistic/claim.rs:922-929; qsl-semantics/src/check/probabilistic.rs:580-593 |
 | FND-011 | low | The S4 refusal of a checked claim is tested only through `first_declaration()`. Before this PR an S3 refusal kept every claim from reaching S4. Now `qsl-package::emit` (emit.rs:1234) is the only thing that stops a checked claim from being emitted, and no emit-level test compiles a claim-only package and asserts `ProbabilisticModelNotEmitted` with feature `probabilistic-claim`. Fix: one `emit` test with a claim-only unit, so that a future change to the emitter's guard fails a test. | qsl-semantics/tests/it/probabilistic_declarations.rs:1096-1112; qsl-package/src/emit.rs:1234-1241 |
 | FND-012 | low | A threshold that is not a literal is refused `ill_typed`/`type-mismatch`. `threshold` requires `literal(body.root())`, so a well-typed constant expression in the `expr` position is reported as a type mismatch, although its type matches. FR-186 does not say that a threshold must be a literal. Fix: either state the literal rule in FR-186 and refuse with a cause that names it, or fold constant expressions before the literal check. | qsl-semantics/src/check/probabilistic/claim.rs:1171-1178 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-013 | low | The new refusal `over-not-object-type` (`OverNotObjectType`, `invalid_probabilistic_model`) has no owning statement in the merged FR-186 (#1117). The FR's list of QSL-proposed causes requested in STD-188 does not name it, and the Normal form section names "the `over` type" as content without restricting it. The restriction itself is sound: FR-125 "Instancing" binds `over` to objects of the subject's universes, so a scalar `over` type has no instance, and refusing it is what lets `type_bytes` drop the `Debug` fallback (SR FND-003). Fix: a spec follow-up adding a "Kind and subject" statement ("an `over` parameter SHALL have an object type of the subject's model, or S3 refuses the claim [`over-not-object-type`]"), and adding the cause to the STD-188 list. The code stays as it is. | qsl-semantics/src/check/probabilistic/claim.rs:711-717; qsl-semantics/src/check/probabilistic.rs:439-449 |
+
+## Dispositions
+
+Round 1, reviewed at `ef714e5855d617ed3262a8a6d25dc659d05ef5cf`. The fix
+commits are 96d0012d9 (normal form and review fixes), ae327168b (clippy) and
+ef714e585 (`fraction-bound-out-of-range`). The merge commit 37a2a9f77 merged
+main at 78b8f4e56.
+
+The branch does **not** contain spec PR #1117 (d2e3c128b), which is on main.
+`git merge-tree` shows that the merge is clean, and the dispositions below
+are judged against FR-186 as #1117 left it on main.
+
+Gates, all run on the head: fmt, clippy `-D warnings`, the qsl-eval,
+qsl-replay (869 tests), qsl-analyze, qsl-semantics (1195) and qsl-cst test
+suites, root `--test it` (975 passed, 6 ignored), `make string-edge`, and the
+three arch-lint targets. All passed.
+
+Mutants on the head: 14 run, 12 killed and 2 survived.
+- Killed: the four survivors of the first round, M09, M11, M12 and M17, are
+  now killed. So are unsorted weights, the binder normalisation, the
+  object-type check, the fraction-bound cause, the threshold-not-literal
+  cause, the horizon location, and the fairness kind and granularity tags.
+- Survived: unsorted fairness constraints and unsorted reward operations
+  (SR-13596 FND-007).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 96d0012d9 with spec #1117: `ClaimNormalForm`, documented as not an identity (R-04); O-09's identity stays CG's digest over the S4 node and its occurrence key; equal-content declarations having equal normal forms is now the specified behaviour; the binder name is not content |
+| FND-002 | fixed | 96d0012d9: the weight parts are sorted, and `burst(BURST) == burst(BURST_REORDERED)` is tested (mutant N3 killed) |
+| FND-003 | fixed | 96d0012d9: explicit `weak`/`strong` and `whole`/`each` tags (mutants N9 and N10 killed); `type_bytes` has no `Debug` fallback, and a non-object type is refused before it is encoded; claim.rs has no `format!("{:?}")` left |
+| FND-004 | fixed | 96d0012d9: `broken(...)` refusals in `workload_bytes`, `fairness_bytes`, `type_bytes`, `location` and `exact_location`; `normal_form` is fallible |
+| FND-005 | fixed | 96d0012d9: a commuted predicate in the long-run path, and variants that differ only in the subject and only in the `over` binding (M09, M11 and M12 killed) |
+| FND-006 | fixed | 96d0012d9: `a_reward_declared_only_by_another_model_is_not_the_subjects` (M17 killed) |
+| FND-007 | fixed | spec #1117: FR-186 "Outputs" now states the recorded shape (`name`, `span`, `DefinitionRef`, `Workload(String)`, `fairness`, `OverBinding`, `normal_form: ClaimNormalForm`) |
+| FND-008 | fixed | spec #1117: `trace-subject`, `unbounded-event`, `not-temporal-profile` and `fraction-bound-out-of-range` are listed as QSL-proposed causes (STD-188), and `probabilistic-claim` is in FR-185 "Package emission" and FR-186 "Normal form"; `over-not-object-type` is new and is filed as FND-013 |
+| FND-009 | fixed | ef714e585: `FractionBound` gives `fraction-bound-out-of-range`, and the message does not name the qualitative form; both are tested (mutant N6 killed) |
+| FND-010 | fixed | 96d0012d9: the refusal is located at `Site::Operator`, and two `[0, 2^63]` intervals are tested at `eventually` (mutant N8 killed) |
+| FND-011 | fixed | 96d0012d9: `qsl-package/src/emit/tests/probabilistic.rs` `a_checked_claim_refuses_emission` |
+| FND-012 | fixed | 96d0012d9 with spec #1117: FR-186 states the literal rule, and `ThresholdNotLiteral` refuses `ill_typed`/`type-mismatch` (mutant N7 killed) |

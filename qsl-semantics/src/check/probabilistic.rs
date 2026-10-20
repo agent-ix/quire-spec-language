@@ -14,8 +14,8 @@
 //!
 //! An exact value is measured as written and bounded before it is reduced
 //! ([`exact`]), and a distribution's weight sum is bounded the same way.
-//! Past the 65,536-bit ceiling either refuses with a limit refusal; FR-255
-//! has no rational-bits setting yet, so it reports the S3 work budget's.
+//! Past the `s3.rational_bits` ceiling (default 65,536 bits) either refuses
+//! with a `stage_limit_exceeded`/`rational-bits-exceeded` limit refusal.
 //!
 //! A `probabilistic` claim is checked in two steps ([`claim`]): its form
 //! (thresholds, confidence parameters, a quantile over a fraction), then, once
@@ -595,19 +595,26 @@ impl ProbabilisticCause {
     }
 }
 
-/// The limit refusal of an exact value, written or derived, whose measure
-/// `bits` is past [`exact::RATIONAL_BITS_CEILING`] (FR-185 "Exact values").
-/// FR-255 has no rational-bits setting yet (QSL-883 shipped none), so the
-/// refusal reports the S3 work budget's setting with the fixed ceiling as
-/// its bound.
-fn limit_refusal(bits: u64, location: Location) -> CheckRefusal {
+/// An exact value's measure past the configured `s3.rational_bits` ceiling.
+#[derive(Clone, Copy)]
+struct Excess {
+    /// The measure of the value.
+    bits: u64,
+    /// The configured ceiling it passed.
+    ceiling: u64,
+}
+
+/// The limit refusal of an exact value, written or derived, whose measure is
+/// past the configured `s3.rational_bits` (FR-185 "Exact values"). The
+/// refusal names that setting and the configured limit.
+fn limit_refusal(excess: Excess, location: Location) -> CheckRefusal {
     CheckRefusal {
         location,
         cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {
             stage: CheckingStage::Typing,
-            kind: CheckingLimitKind::WorkBudget,
-            limit: exact::RATIONAL_BITS_CEILING,
-            actual: u128::from(bits),
+            kind: CheckingLimitKind::RationalBits,
+            limit: excess.ceiling,
+            actual: u128::from(excess.bits),
             region: None,
         })),
     }
@@ -630,10 +637,17 @@ fn horizon_refusal(actual: u128, location: Location) -> CheckRefusal {
 }
 
 /// The refusal an exact value at `span` and `location` is.
-fn exact_refusal(fault: exact::ExactFault, span: Span, location: Location) -> CheckRefusal {
+fn exact_refusal(
+    fault: exact::ExactFault,
+    ceiling: u64,
+    span: Span,
+    location: Location,
+) -> CheckRefusal {
     match fault {
         exact::ExactFault::ZeroDenominator => refusal(ProbabilisticCause::ZeroDenominator { span }),
-        exact::ExactFault::AboveCeiling { bits } => limit_refusal(bits, location),
+        exact::ExactFault::AboveCeiling { bits } => {
+            limit_refusal(Excess { bits, ceiling }, location)
+        }
     }
 }
 
@@ -641,9 +655,11 @@ fn exact_refusal(fault: exact::ExactFault, span: Span, location: Location) -> Ch
 /// `location` (FR-185 "Exact values").
 pub(crate) fn quantity_magnitude(
     magnitude: &ExactValueForm,
+    ceiling: u64,
     location: &Location,
 ) -> Result<quire_exact::Rational, CheckRefusal> {
-    exact::value(magnitude).map_err(|fault| exact_refusal(fault, magnitude.span, location.clone()))
+    exact::value(magnitude, ceiling)
+        .map_err(|fault| exact_refusal(fault, ceiling, magnitude.span, location.clone()))
 }
 
 /// The refusal of a quantity literal S4 cannot emit, at `location`.

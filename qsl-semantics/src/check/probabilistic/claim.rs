@@ -472,8 +472,8 @@ fn rational_bytes(value: &Rational) -> Vec<u8> {
 /// The type a fraction threshold is written at: a rational whose written
 /// parts are within the ceiling of an exact value (FR-185 "Exact values"), so
 /// its range is checked as a threshold (`0 < x < 1`), not as a type.
-fn fraction_type() -> Option<ValueType> {
-    let bound = Integer::one().shifted_left(exact::RATIONAL_BITS_CEILING);
+fn fraction_type(ceiling: u64) -> Option<ValueType> {
+    let bound = Integer::one().shifted_left(ceiling);
     let numerator = IntegerInterval::new(bound.neg(), bound.clone()).ok()?;
     let denominator = IntegerInterval::new(Integer::one(), bound).ok()?;
     Some(ValueType::Rational(
@@ -748,7 +748,9 @@ impl Pass<'_, '_> {
     /// `value` reduced under the written-value bound (FR-185 "Exact values").
     fn exact(&self, claim: &ClaimCx<'_>, value: &ExactValueForm) -> Result<Rational, CheckRefusal> {
         let location = claim.exact_location(value)?;
-        exact::value(value).map_err(|fault| exact_refusal(fault, value.span, location))
+        let ceiling = self.input.limits.rational_bits();
+        exact::value(value, ceiling)
+            .map_err(|fault| exact_refusal(fault, ceiling, value.span, location))
     }
 
     /// The claim's form, typed. Every refusal goes onto `refusals`.
@@ -1195,15 +1197,23 @@ impl Pass<'_, '_> {
         let span = root_span(expression, claim.form.span);
         let input = self.input;
         let hint = match measured {
-            Measured::Fraction => {
-                Some(fraction_type().ok_or_else(|| broken("fraction-type-valid"))?)
-            }
+            Measured::Fraction => Some(
+                fraction_type(self.input.limits.rational_bits())
+                    .ok_or_else(|| broken("fraction-type-valid"))?,
+            ),
             Measured::Steps | Measured::Reward(_) => None,
         };
-        let body =
-            input
-                .typer(nodes, cx)
-                .infer(&expression.expression, hint.as_ref(), &location)?;
+        let body = input
+            .typer(nodes, cx)
+            .infer(&expression.expression, hint.as_ref(), &location)
+            // A `rational(n, d)` has no type to take where the measure is
+            // not a fraction: that is a threshold of the wrong type.
+            .map_err(|refused| match refused.cause {
+                CheckCause::IllTyped(IllTypedCause::AmbiguousLiteral) => {
+                    CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch)
+                }
+                _ => refused,
+            })?;
         let mismatch = || CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch);
         let Some(literal) = literal(body.root()) else {
             return Err(refusal(ProbabilisticCause::ThresholdNotLiteral {

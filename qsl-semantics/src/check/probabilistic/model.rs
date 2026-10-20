@@ -637,12 +637,13 @@ pub(super) fn unresolved(unresolved: Unresolved, written: &NameForm) -> Probabil
 /// An exact weight at `location`: a positive rational, or the refusal it is.
 fn weight(
     value: &qsl_forms::ExactValueForm,
+    ceiling: u64,
     location: Location,
     owner: impl FnOnce() -> WeightOwner,
 ) -> Result<Rational, CheckRefusal> {
     let span = value.span;
-    let rational =
-        exact::value(value).map_err(|fault| super::exact_refusal(fault, span, location))?;
+    let rational = exact::value(value, ceiling)
+        .map_err(|fault| super::exact_refusal(fault, ceiling, span, location))?;
     if rational.is_zero() || rational.numerator().is_negative() {
         return Err(refusal(ProbabilisticCause::InvalidWeight {
             owner: owner(),
@@ -788,6 +789,7 @@ impl Pass<'_, '_> {
         for (pair_index, pair) in form.support.iter().enumerate() {
             let weight = weight(
                 &pair.weight,
+                self.input.limits.rational_bits(),
                 site_location(index, Site::Weight(pair_index)),
                 || {
                     let (operation, parameter) = names();
@@ -854,7 +856,7 @@ impl Pass<'_, '_> {
     }
 
     /// Each value's probability: its weight over the sum of the weights.
-    /// The running sum is bounded by the rational-bits ceiling, as a written
+    /// The running sum is bounded by the `s3.rational_bits` ceiling, as a written
     /// value is, measured after each addition, so in-limit weights with
     /// coprime denominators cannot grow it without bound; its refusal is
     /// located at the parameter it names. The handle is polled before each
@@ -865,6 +867,7 @@ impl Pass<'_, '_> {
         support: Vec<(CheckedLiteral, Rational)>,
     ) -> Result<Vec<SupportValue>, CheckRefusal> {
         let location = site_location(index, Site::Declaration);
+        let ceiling = self.input.limits.rational_bits();
         let mut total = Rational::from_integer(quire_exact::Integer::zero());
         for (_, weight) in &support {
             if self.input.cancel.poll() {
@@ -872,9 +875,9 @@ impl Pass<'_, '_> {
             }
             total = total.add(weight);
             let bits = total.max_part_bits();
-            if bits > exact::RATIONAL_BITS_CEILING {
+            if bits > ceiling {
                 return Err(super::limit_refusal(
-                    bits,
+                    super::Excess { bits, ceiling },
                     site_location(index, Site::Parameter),
                 ));
             }
@@ -1010,6 +1013,7 @@ impl Pass<'_, '_> {
         for (position, written) in form.weights.iter().enumerate() {
             let weight = weight(
                 &written.weight,
+                self.input.limits.rational_bits(),
                 site_location(index, Site::Weight(position)),
                 || WeightOwner::Workload {
                     workload: workload.to_owned(),

@@ -52,7 +52,7 @@ fn a_checked_probabilistic_model_refuses_emission() {
 /// guard is all that keeps one out of a checked-package/v2 graph: a package
 /// whose first probabilistic declaration is a claim is refused naming it and
 /// the feature `probabilistic-claim`.
-#[trace("TC-621")]
+#[trace("TC-621", "FR-186-AC-5")]
 #[test]
 fn a_checked_claim_refuses_emission() {
     let document = config_version_unit::DOMAIN_PACKAGE.as_bytes();

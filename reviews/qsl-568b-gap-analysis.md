@@ -101,3 +101,31 @@ ruling. The rest are low.
 - Mutation: 25 hand mutants, 21 killed and 4 survived (SR-13595 FND-005 and
   FND-006).
 - Plan completion: not assessed (planless run; no plan supplied).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | high | FR-186-AC-5 and FR-186-AC-6 are untagged. Spec PR #1117 (on main, d2e3c128b) added them, but the branch does not contain it. `quire matrix` on the clean merge of HEAD with origin/main (`git merge-tree` tree dbcb8519) computes both `untagged`. The tests that assert them exist, but carry only `#[trace("TC-621")]`: `a_comparison_threshold_has_the_type_of_its_measure`, `an_over_type_and_a_threshold_have_their_required_shape`, `an_event_horizon_past_u64_is_refused_at_its_operator` and `qsl-package` `a_checked_claim_refuses_emission` for AC-5; and `a_claim_names_a_model_a_temporal_profile_and_a_workload` (missing names), `a_reward_a_claim_names_is_one_the_model_declares`, `every_scheduler_carries_its_fairness_set` (`Server::nothing`) and `a_reward_of_two_value_types_is_ambiguous` for AC-6. Fix: merge origin/main into the branch, then tag those tests `FR-186-AC-5` and `FR-186-AC-6`. | qsl-semantics/tests/it/probabilistic_declarations.rs:1205; qsl-semantics/tests/it/probabilistic_declarations.rs:1282; qsl-semantics/tests/it/probabilistic_declarations.rs:1367; qsl-semantics/tests/it/probabilistic_declarations.rs:2012; qsl-semantics/tests/it/probabilistic_declarations.rs:2035; qsl-package/src/emit/tests/probabilistic.rs:55 |
+| FND-007 | medium | Three clauses of the merged FR-186-AC-4 have no test. The ACs are "a fairness set with its constraints reordered", "a reward declared on its operations in another order ... keep one normal form", and "Two declarations of equal content have equal normal forms". The first two are shown by surviving mutants: removing `fairness.sort()` survives (N1), and removing `operations.sort()` in `reward_bytes` survives (N2). The third is gone because the first round's twin-declaration assertion (claims `C` and `D`) was deleted. The code sorts both, so behaviour is likely correct, but the AC is unverified. Fix: in `the_normal_form_binds_what_the_claim_asserts`, add `every scheduler fair weak Server::attempt fair strong Server::reset` against the reversed order; add a `latency` reward declared on `request` then `attempt` against the reverse order; and restore the two-declaration equality. | qsl-semantics/tests/it/probabilistic_declarations.rs:1769-1980; qsl-semantics/src/check/probabilistic/claim.rs:1336; qsl-semantics/src/check/probabilistic/claim.rs:1458 |
+| FND-008 | low | Two AC clauses are asserted more weakly than their text. AC-5: `steps ... >= rational(1, 2)` and `>= 5 ms` must be refused `ill_typed`/`type-mismatch`, but the test asserts only `Code::IllTyped` (probabilistic_declarations.rs:1263-1273), so a change of cause would pass. AC-4: "one that differs only in its `over` type" is tested as an `over` present against one absent (`over(OVER) != over("")`), not as another object type. The fixture has one object type, `Server`. Fix: assert `Some("type-mismatch")`, and add a second object type to the fixture, or record the substitution in the test's doc. | qsl-semantics/tests/it/probabilistic_declarations.rs:1263-1273; qsl-semantics/tests/it/probabilistic_declarations.rs:1966-1979 |
+
+## Dispositions
+
+Round 1, reviewed at `ef714e5855d617ed3262a8a6d25dc659d05ef5cf`, against FR-186
+and TC-621 as spec PR #1117 left them on main (d2e3c128b). The branch does not
+yet contain #1117; see FND-006.
+
+The matrix was run on the clean merge tree (HEAD with origin/main):
+- AC-1 to AC-4 are `tagged`.
+- AC-5 and AC-6 are `untagged`.
+
+Gates on the head are all green; see SR-13595's Dispositions.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | spec #1117 removed the "classify ... `probabilistic-satisfaction`" statement from "Kind and subject", so the statement has nothing left to implement; confirmed on main d2e3c128b |
+| FND-002 | fixed | 96d0012d9 retagged `a_comparison_threshold_has_the_type_of_its_measure` to bare `TC-621`, and #1117 states the rule as FR-186-AC-5; the missing AC-5 tag is FND-006 |
+| FND-003 | fixed | spec #1117 adds the missing-name statement (five names), the one-value-type reward rule, the causes and `probabilistic-claim`; `over-not-object-type` is SR-13595 FND-013 |
+| FND-004 | fixed | 96d0012d9: `the_event_and_workload_diagnostics_read_as_the_requirement_states_them` asserts "needs a finite window" and `Throttle` and `Service` in the rendered text |
+| FND-005 | fixed | spec #1117: FR-186 "Normal form" rules that S3's record is not an identity (R-04), and that O-09's identity stays CG's over the S4 node and its occurrence key |
