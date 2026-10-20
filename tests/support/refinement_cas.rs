@@ -321,6 +321,18 @@ pub fn cas_refines_counter() -> String {
     .to_owned()
 }
 
+/// The divergence variant of `CasRefinesCounter` (ADR-020 §8): `assume` rows
+/// only for `commitA` and `commitB`.
+pub fn divergence_refinement() -> String {
+    cas_refines_counter()
+        .lines()
+        .filter(|line| {
+            !line.starts_with("assume") || line.contains("commitA") || line.contains("commitB")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The lost-update refinement: `CasRefinesCounter` without its `retry` rows.
 pub fn lost_update_refinement() -> String {
     cas_refines_counter()

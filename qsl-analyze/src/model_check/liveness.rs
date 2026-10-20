@@ -75,7 +75,7 @@ use qsl_eval::automaton::{
     translate, Atom, AutomatonError, AutomatonKind, Letter, PropertyAutomaton, StateId,
 };
 use qsl_eval::fairness::{
-    analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
+    analyze, Analysis, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
@@ -103,7 +103,7 @@ use super::check::{
     not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
 };
 use super::concretise::{Lift, LiftStop};
-use super::fair_walk::{tree_path, FairModel};
+use super::fair_walk::{fairness_constraints, tree_path, FairModel};
 use super::graph::{retain_reduced, Ample, Choice, ProductStateId, RetainedEdge, RetainedGraph};
 use super::product::{ProductKey, ProductTransition};
 use super::quotient::{
@@ -2199,32 +2199,7 @@ impl FairModel {
             fair.add_acceptance_set(members)
                 .map_err(|_| fault("an-acceptance-member-is-a-vertex"))?;
         }
-        let mut constraints = Vec::new();
-        for constraint in clause.fairness() {
-            let strength = Strength::from(constraint.kind());
-            let operation = constraint.operation();
-            let text = system
-                .operation_text(operation.declaring_type(), operation.name())
-                .ok_or_else(|| LivenessRefusal::UnknownOperation {
-                    name: operation.name().to_owned(),
-                })?;
-            let covered = transitions
-                .iter()
-                .filter(|transition| transition.operation() == text);
-            match constraint.granularity() {
-                FairnessGranularity::Whole => {
-                    let members = covered
-                        .map(&identity)
-                        .collect::<Result<Vec<_>, ModelCheckRefusal>>()?;
-                    constraints.push(Constraint::new(strength, members));
-                }
-                FairnessGranularity::Each => {
-                    for transition in covered {
-                        constraints.push(Constraint::new(strength, [identity(transition)?]));
-                    }
-                }
-            }
-        }
+        let constraints = fairness_constraints(system, clause.fairness(), &transitions, identity)?;
         Ok(Self {
             graph: fair,
             constraints,
