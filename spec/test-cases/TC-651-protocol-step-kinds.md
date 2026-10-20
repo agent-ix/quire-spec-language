@@ -12,7 +12,7 @@ relationships:
 
 Verify the enabledness and effects of the attempt, event, channel, fork, join, timeout and finish steps, the folding of structural moves and the waiting rule.
 
-Scope: FR-206-AC-1 to FR-206-AC-6.
+Scope: FR-206-AC-1 to FR-206-AC-9.
 
 ## Test Procedure
 
@@ -25,9 +25,16 @@ Scope: FR-206-AC-1 to FR-206-AC-6.
    rule of FR-206-AC-3.
 4. Run the channel variants of FR-206-AC-4.
 5. Run the `choice`/`repeat`/`check`/`await` protocol of FR-206-AC-5, and
-   its `repeat` with no maximum and no invariant or variant.
+   its `repeat` with no maximum and no invariant or variant, each with an
+   `exhausted` control `attempt Z`, and the variant with a following
+   `attempt W`.
 6. Run FR-206-AC-6's `join any … outstanding continue` protocol and read
    `finish`'s enabledness before and after branch `b` completes.
+7. Send at an empty and a full capacity-2 `fifo` channel under each
+   overflow policy and read the send record of FR-206-AC-7.
+8. Run FR-206-AC-8's fence protocols under `sc` and `tso`.
+9. Run FR-206-AC-9's nested-cancel protocol to the `join(Outer)` step and
+   explore every later state.
 
 Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
 
@@ -40,9 +47,14 @@ Tag the tests `#[trace("TC-651", "FR-206-AC-n")]`.
 - Step 3: the enabledness and dispositions FR-206-AC-3 states.
 - Step 4: `send`, `receive`, `duplicate` and `lose` enabled exactly as
   FR-206-AC-4 states.
-- Step 5: no step for structural moves; two body entries then `exhausted`;
-  the false `check` waits; `timeout(a)` enabled while waiting; the
-  unbounded `repeat` re-enters its body after each attempt and never
-  enters `exhausted`.
+- Step 5: no step for structural moves; the thread takes `X` twice and then
+  rests at `Z`, or at `W` in the variant; the
+  false `check` waits; `timeout(a)` enabled while waiting; the unbounded
+  `repeat` rests at `X` after each attempt and no reachable state rests
+  at `Z`.
 - Step 6: `finish` not enabled while `b` is `running`; enabled once `b`
   completes, and its step marks the instance finished.
+- Step 7: the send records of FR-206-AC-7.
+- Step 8: the fence enabledness of FR-206-AC-8.
+- Step 9: `b`, `x` and `y` `cancelled`, `Inner` removed, no later step by
+  any of them.
