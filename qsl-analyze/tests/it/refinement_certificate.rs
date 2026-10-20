@@ -15,12 +15,12 @@ use qsl_replay::{
     check_simulation_certificate, check_step, map_state, open_systems, settle_refinement_safety,
     CertificateLocus, CertificateRule, Certification, CertifiedEdge, CertifiedPosition,
     ConcreteStep, DigestRecord, FailedStep, IncompleteCause, InconclusiveCause, ModelCheckLimit,
-    ModelCheckLimits, ProofBasis, ReachedLimit, RefinementFailure, RefinementPosition,
-    SafetyOutcome, SettlementBasis, SimulationCertificate, SimulationCertificateRequest,
-    SimulationCheck, SimulationRefusal, StepRejection, StepVerdict, Taken, TerminalValue,
+    ModelCheckLimits, ProofBasis, RefinementFailure, RefinementPosition, SafetyOutcome,
+    SettlementBasis, SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
+    StepRejection, StepVerdict, Taken, TemporalCertificateCheck, TerminalValue,
 };
 use qsl_semantics::model::state::ModelState;
-use quire_exact::Cancel;
+use quire_exact::{Cancel, CancelCause};
 
 use crate::refinement_fixture::{
     cas_refines_counter, cas_state, key, lost_update_refinement, mutated, Variant, World, CAS,
@@ -73,7 +73,7 @@ fn certificate(world: &World) -> (SimulationCertificate, u64) {
     (*certificate, stats.product_states)
 }
 
-fn check(world: &World, certificate: &SimulationCertificate) -> SimulationCheck {
+fn check(world: &World, certificate: &SimulationCertificate) -> TemporalCertificateCheck {
     check_with(world, certificate, &ModelCheckLimits::default())
 }
 
@@ -81,13 +81,13 @@ fn check_with(
     world: &World,
     certificate: &SimulationCertificate,
     limits: &ModelCheckLimits,
-) -> SimulationCheck {
+) -> TemporalCertificateCheck {
     check_simulation_certificate(&request(world), certificate, limits, &Cancel::new())
         .expect("the certificate is checked")
 }
 
-fn rejected(check: SimulationCheck) -> (CertificateRule, CertificateLocus) {
-    let SimulationCheck::Rejected(rejection) = check else {
+fn rejected(check: TemporalCertificateCheck) -> (CertificateRule, CertificateLocus) {
+    let TemporalCertificateCheck::Rejected(rejection) = check else {
         panic!("the certificate is rejected: {check:?}");
     };
     (rejection.rule, rejection.at)
@@ -151,7 +151,10 @@ fn the_engines_certificate_is_accepted() {
         stored
     );
     assert_eq!(certificate.successors.len(), certificate.positions.len());
-    assert_eq!(check(&world, &certificate), SimulationCheck::Accepted);
+    assert_eq!(
+        check(&world, &certificate),
+        TemporalCertificateCheck::Accepted
+    );
 }
 
 /// FR-149-AC-2 (TC-556 step 2): the `Taken` of the `commitA` edge from
@@ -318,9 +321,9 @@ fn each_corrupted_field_is_rejected() {
     }
 }
 
-/// FR-149-AC-2 (TC-556 step 2): a certificate whose lists do not match, or
-/// that lists a position nothing reaches, is rejected `Malformed`.
-#[trace("TC-556", "FR-149-AC-2")]
+/// FR-149 (TC-556): a certificate whose lists do not match, or that lists a
+/// position nothing reaches, is rejected `Malformed`.
+#[trace("TC-556")]
 #[test]
 fn a_malformed_certificate_is_rejected() {
     let world = safety_only();
@@ -498,25 +501,19 @@ fn a_transition_limit_stops_the_check() {
     limits.limits.max_transitions = 1;
     assert_eq!(
         check_with(&world, &certificate, &limits),
-        SimulationCheck::Stopped(
-            IncompleteCause::ResourceExhausted,
-            Some(ReachedLimit {
-                limit: ModelCheckLimit::MaxTransitions,
-                value: 1
-            })
-        )
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxTransitions,
+            value: 1
+        })
     );
     let mut states = ModelCheckLimits::default();
     states.limits.max_states = 1;
     assert_eq!(
         check_with(&world, &certificate, &states),
-        SimulationCheck::Stopped(
-            IncompleteCause::ResourceExhausted,
-            Some(ReachedLimit {
-                limit: ModelCheckLimit::MaxStates,
-                value: 1
-            })
-        )
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxStates,
+            value: 1
+        })
     );
 }
 
@@ -606,7 +603,7 @@ fn a_rejected_certificate_settles_inconclusive() {
 /// FR-144 Settlement (TC-556): a certificate for another refinement settles
 /// `ReplayRefused(stale_dependency)`, and a check that a limit stops settles
 /// V-7 naming the limit.
-#[trace("TC-556", "FR-144-AC-7")]
+#[trace("TC-556")]
 #[test]
 fn a_stale_or_stopped_check_settles_without_a_proof() {
     let world = safety_only();
@@ -649,5 +646,140 @@ fn a_stale_or_stopped_check_settles_without_a_proof() {
         TerminalValue::Inconclusive(InconclusiveCause::ReplayRefused(
             qsl_replay::Code::StaleDependency
         ))
+    );
+}
+
+/// `CasRefinesCounter` without its `ensure` row, with `peek` and `beginB`
+/// never enabled: a chain of six states ending in a terminal state at depth
+/// 5, whose stutter step ADR-018 SM-4 adds.
+fn terminal_world() -> World {
+    let text = mutated(
+        &cas_refines_counter(),
+        "ensure fair weak each Spec::Counter::inc;",
+        "",
+    );
+    World::new(&format!(
+        "pre PeekNever using v on Impl::Counter::peek {{ false }}\n\
+         pre BeginBNever using v on Impl::Counter::beginB {{ false }}\n{text}"
+    ))
+}
+
+fn run_to(world: &World, max_depth: Option<usize>) -> SafetyOutcome {
+    check_refinement(
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            max_depth,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the refinement is checked")
+    .safety
+}
+
+/// FR-149 Behavior "Production" and "Successors" (TC-556): the certificate
+/// of a model with a terminal state lists the stutter step of ADR-018 SM-4
+/// and is accepted; with that edge removed it is rejected `SuccessorsDiffer`.
+#[trace("TC-556")]
+#[test]
+fn a_terminal_state_lists_its_stutter_step() {
+    let world = terminal_world();
+    let SafetyOutcome::Holds { certificate, .. } = run_to(&world, None) else {
+        panic!("the safety half holds");
+    };
+    assert_eq!(
+        check(&world, &certificate),
+        TemporalCertificateCheck::Accepted
+    );
+    let terminal = certificate
+        .successors
+        .iter()
+        .position(|edges| edges.iter().all(|edge| edge.transition.is_none()) && !edges.is_empty())
+        .expect("a terminal state lists a stutter step");
+    let mut removed = certificate.clone();
+    removed.successors[terminal].clear();
+    assert_eq!(
+        rejected(check(&world, &removed)),
+        (
+            CertificateRule::SuccessorsDiffer,
+            step(u64::try_from(terminal).expect("an index"), None)
+        )
+    );
+}
+
+/// FR-142 horizon and FR-149 Production (TC-556): a horizon at the depth of
+/// a terminal state still gives a certificate that its checker accepts, at
+/// every horizon at which the run holds.
+#[trace("TC-556")]
+#[test]
+fn a_horizon_at_a_terminal_state_gives_an_accepted_certificate() {
+    let world = terminal_world();
+    let mut held = Vec::new();
+    for depth in 0..=8 {
+        if let SafetyOutcome::Holds { certificate, .. } = run_to(&world, Some(depth)) {
+            assert_eq!(
+                check(&world, &certificate),
+                TemporalCertificateCheck::Accepted,
+                "max_depth {depth}"
+            );
+            held.push(depth);
+        }
+    }
+    assert!(
+        held.contains(&5),
+        "the terminal state is at depth 5: {held:?}"
+    );
+}
+
+/// FR-149 Behavior "Successors" (TC-556): a position whose expansion leaves
+/// a contract undetermined has unknown successors, so it is rejected
+/// `BadState`. Here `peek`'s precondition is undefined at `value` 2, and
+/// `successors()` drops the transition, so only `BadState` stops a
+/// certificate that leaves it out.
+#[trace("TC-556")]
+#[test]
+fn an_undetermined_contract_is_a_bad_state() {
+    let (certificate, _) = certificate(&safety_only());
+    let text = mutated(
+        &cas_refines_counter(),
+        "ensure fair weak each Spec::Counter::inc;",
+        "",
+    );
+    let guarded = World::new(&format!(
+        "pre PeekDefined using v on Impl::Counter::peek {{ 6 mod (2 - self.value) >= 0 }}\n{text}"
+    ));
+    assert_eq!(
+        rejected(check(&guarded, &certificate)).0,
+        CertificateRule::BadState
+    );
+}
+
+/// FR-149 Behavior "Limits" (TC-556): a cancelled check is `Stopped` with
+/// the cancellation, never `Accepted` or `Rejected`.
+#[trace("TC-556")]
+#[test]
+fn a_cancelled_check_stops() {
+    let world = safety_only();
+    let (certificate, _) = certificate(&world);
+    let cancel = Cancel::new();
+    cancel.cancel(CancelCause::Requested);
+    let check = check_simulation_certificate(
+        &request(&world),
+        &certificate,
+        &ModelCheckLimits::default(),
+        &cancel,
+    )
+    .expect("the certificate is checked");
+    assert_eq!(
+        check,
+        TemporalCertificateCheck::Stopped(IncompleteCause::Cancelled {
+            source: CancelCause::Requested
+        })
     );
 }

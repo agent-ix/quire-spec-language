@@ -341,10 +341,13 @@ impl Run<'_, '_> {
             )));
         }
         let depth = self.nodes[at].depth;
-        if self.max_depth.is_some_and(|horizon| depth >= horizon) {
-            // A terminal state's stutter coalesces with the state itself, so
-            // only a real successor leaves anything unexplored.
-            self.horizon_cut |= !expansion.successors.is_empty();
+        if self.max_depth.is_some_and(|horizon| depth >= horizon)
+            && !expansion.successors.is_empty()
+        {
+            // A real successor beyond the horizon is left unexplored. A
+            // terminal state's stutter coalesces with the state itself, so
+            // it leaves nothing, and its edge is listed below like any other.
+            self.horizon_cut = true;
             return Ok(());
         }
         let mut edges = Vec::with_capacity(expansion.successors.len());

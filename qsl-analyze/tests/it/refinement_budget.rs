@@ -12,7 +12,7 @@ use qsl_replay::{
     settle_refinement_safety, ConcreteStep, CounterexampleKind, Execution, IncompleteCause,
     ModelCheckLimit, ModelCheckLimits, ModelStep, ReachedLimit, RefinementFailure,
     RefinementPosition, RefinementSystems, RefinementTraceSettlement, SafetyOutcome,
-    SimulationCertificateRequest, SimulationCheck, StepRejection, StepVerdict,
+    SimulationCertificateRequest, StepRejection, StepVerdict, TemporalCertificateCheck,
     TemporalCounterexample, TerminalValue,
 };
 use quire_exact::{Cancel, ScalarLimits};
@@ -223,17 +223,49 @@ fn a_certificate_checked_over_the_budget_stops_not_rejects() {
         )
         .expect("the certificate is checked")
     };
-    assert_eq!(check(UNLIMITED.work_units), SimulationCheck::Accepted);
+    assert_eq!(
+        check(UNLIMITED.work_units),
+        TemporalCertificateCheck::Accepted
+    );
     assert_eq!(
         check(b),
-        SimulationCheck::Stopped(
-            IncompleteCause::ResourceExhausted,
-            Some(ReachedLimit {
-                limit: ModelCheckLimit::EvaluationMeter,
-                value: b
-            })
-        )
+        TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::EvaluationMeter,
+            value: b
+        })
     );
+}
+
+/// FR-149-AC-5 and ADR-018 PC-2 (TC-556): a true certificate checked under a
+/// smaller meter is never `Rejected`: when the meter runs out in a mapping
+/// row, a step-row argument or a concrete contract the check stops naming
+/// `EvaluationMeter`.
+#[trace("TC-556", "FR-149-AC-5")]
+#[test]
+fn a_true_certificate_under_a_small_meter_never_rejects() {
+    let world = RingWorld::new();
+    let SafetyOutcome::Holds { certificate, .. } = run(&world, UNLIMITED.work_units) else {
+        panic!("the light ring holds under a large meter");
+    };
+    let mut stopped = 0;
+    for work in [1, 5, 20, 50, 100, 200, 400, 800, 1600] {
+        let check = check_simulation_certificate(
+            &certified(&world, work),
+            &certificate,
+            &ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("the certificate is checked");
+        match check {
+            TemporalCertificateCheck::Accepted => {}
+            TemporalCertificateCheck::Stopped(IncompleteCause::LimitReached { limit, value }) => {
+                assert_eq!((limit, value), (ModelCheckLimit::EvaluationMeter, work));
+                stopped += 1;
+            }
+            other => panic!("work {work}: a true certificate is not rejected: {other:?}"),
+        }
+    }
+    assert!(stopped > 1);
 }
 
 /// FR-145-AC-6 (TC-550 step 5): replaying a hand-built payload, a recorded

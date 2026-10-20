@@ -34,9 +34,10 @@
 //! `transition` is `None`, which FR-149's `CertifiedEdge` does not name.
 
 use qsl_eval::simulation::model::{
-    check_model_bounds, ModelFinding, ModelSimState, ModelSimulationRequest, ModelSystem,
+    check_model_bounds, ClauseOutcome, ModelFinding, ModelSimState, ModelSimulationRequest,
+    ModelSystem,
 };
-use qsl_eval::simulation::{ExpansionLimit, ExpansionStop, TransitionSystem};
+use qsl_eval::simulation::TransitionSystem;
 use qsl_foundation::digest::DigestRecord;
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::CheckedRefinement;
@@ -44,15 +45,16 @@ use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
 use quire_semantic_value::model_transition::ModelTransition;
 
-use crate::certificate::check::{widen, Checker, BOUND_POSITIONS};
-use crate::certificate::closure::{CertificateRejection, ClosureRefusal};
+use crate::certificate::check::{
+    expansion_halt, finish, poll, stopped, widen, Budgets, Checker, Halt, Step, BOUND_POSITIONS,
+};
+use crate::certificate::closure::{CertificateRejection, ClosureRefusal, TemporalCertificateCheck};
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::counterexample::UndefinedEvaluation;
-use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::proof_result::IncompleteCause;
+use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
 use crate::refinement::{
-    check_initial, check_step, open_systems, ConcreteStep, RefinementFailure, RefinementPosition,
-    RefinementSystems, StepVerdict, SubjectRefusal, Taken, Undetermined,
+    check_initial, check_step, open_systems, ConcreteStep, EvalFailure, RefinementFailure,
+    RefinementPosition, RefinementSystems, StepVerdict, SubjectRefusal, Taken, Undetermined,
 };
 
 /// One position of a simulation certificate: a product state EN-1 stored.
@@ -89,18 +91,6 @@ pub struct SimulationCertificate {
     pub initial: Vec<u64>,
     /// The edges out of each position, in FR-120's canonical order.
     pub successors: Vec<Vec<CertifiedEdge>>,
-}
-
-/// What [`check_simulation_certificate`] returns (FR-149 Outputs).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SimulationCheck {
-    /// Every initial state and edge passed.
-    Accepted,
-    /// A certificate rule failed.
-    Rejected(CertificateRejection),
-    /// A limit or a cancellation stopped the check before it completed: the
-    /// cause, and the limit when a limit stopped it.
-    Stopped(IncompleteCause, Option<ReachedLimit>),
 }
 
 /// What [`check_step`] gave an edge it did not pass: FR-149's locus
@@ -177,13 +167,14 @@ pub fn check_simulation_certificate(
     certificate: &SimulationCertificate,
     limits: &ModelCheckLimits,
     cancel: &Cancel,
-) -> Result<SimulationCheck, SimulationRefusal> {
+) -> Result<TemporalCertificateCheck, SimulationRefusal> {
     if certificate.refinement != request.refinement.name() {
         return Err(SimulationRefusal::Stale {
             certificate: certificate.refinement.clone(),
             request: request.refinement.name().to_owned(),
         });
     }
+    let budgets = Budgets::of(&request.concrete);
     let RefinementSystems {
         concrete,
         abstract_system,
@@ -213,25 +204,12 @@ pub fn check_simulation_certificate(
         certificate,
         limits,
         cancel,
+        budgets,
         known: vec![None; certificate.positions.len()],
         edges: 0,
     };
-    match run.run() {
-        Ok(()) => Ok(SimulationCheck::Accepted),
-        Err(Ended::Check(check)) => Ok(check),
-        Err(Ended::Refusal(refusal)) => Err(refusal.into()),
-    }
+    Ok(finish(run.run())?)
 }
-
-/// How a check ended before it accepted.
-enum Ended {
-    /// A rejection or a stop.
-    Check(SimulationCheck),
-    /// The request, not the certificate, is at fault.
-    Refusal(ClosureRefusal),
-}
-
-type Step<T> = Result<T, Ended>;
 
 /// A position the check has reached: the concrete state that stands for it,
 /// and the position the first passing check gave it.
@@ -248,6 +226,7 @@ struct Run<'r, 'a> {
     certificate: &'r SimulationCertificate,
     limits: &'r ModelCheckLimits,
     cancel: &'r Cancel,
+    budgets: Budgets,
     /// Each position's state, once an initial state or an edge reaches it.
     known: Vec<Option<Known>>,
     /// The edges checked so far.
@@ -260,8 +239,8 @@ impl Run<'_, '_> {
         position: u64,
         edge: Option<u64>,
         verdict: Option<Box<FailedStep>>,
-    ) -> Ended {
-        Ended::Check(SimulationCheck::Rejected(CertificateRejection {
+    ) -> Halt {
+        Halt::Check(TemporalCertificateCheck::Rejected(CertificateRejection {
             rule,
             at: CertificateLocus::SimulationStep {
                 position,
@@ -271,55 +250,39 @@ impl Run<'_, '_> {
         }))
     }
 
-    fn stopped(limit: ModelCheckLimit, value: u64) -> Ended {
-        Self::stopped_at(ReachedLimit { limit, value })
-    }
-
-    fn stopped_at(reached: ReachedLimit) -> Ended {
-        Ended::Check(SimulationCheck::Stopped(
-            IncompleteCause::ResourceExhausted,
-            Some(reached),
-        ))
-    }
-
-    fn fault(invariant: &'static str) -> Ended {
-        Ended::Refusal(Checker::Simulation.fault(invariant))
+    fn fault(invariant: &'static str) -> Halt {
+        Halt::Refusal(Checker::Simulation.fault(invariant))
     }
 
     fn poll(&self) -> Step<()> {
-        if self.cancel.poll() {
-            if let Some(source) = self.cancel.cause() {
-                return Err(Ended::Check(SimulationCheck::Stopped(
-                    IncompleteCause::Cancelled { source },
-                    None,
-                )));
-            }
-        }
-        Ok(())
+        poll(self.cancel)
     }
 
-    /// An expansion stop: a named budget stops the check naming it, a broken
-    /// invariant is a fault, any other stop names no limit.
-    fn expansion_stop(&self, stop: &ExpansionStop) -> Ended {
-        match stop.limit {
-            Some(ExpansionLimit::EvaluationMeter) => Self::stopped(
-                ModelCheckLimit::EvaluationMeter,
-                self.concrete.meter().work_units,
-            ),
-            Some(ExpansionLimit::MaxCandidates) => Self::stopped(
-                ModelCheckLimit::MaxCandidates,
-                self.concrete.max_candidates(),
-            ),
-            None if stop.is_internal_failure() => Self::fault("model-expansion-invariant"),
-            None => Ended::Check(SimulationCheck::Stopped(
-                IncompleteCause::ResourceExhausted,
-                None,
-            )),
-        }
+    /// The stop of a verdict, or a `BadState` finding, that only ran out of
+    /// the evaluation meter (PC-2: a certificate is rejected only when the
+    /// checker found it wrong).
+    fn meter_stop(&self) -> Halt {
+        stopped(
+            ModelCheckLimit::EvaluationMeter,
+            self.concrete.meter().work_units,
+        )
+    }
+
+    /// Whether `undetermined` is a mapping row that only ran out of meter.
+    fn meter_only(undetermined: &Undetermined) -> bool {
+        matches!(
+            undetermined,
+            Undetermined::Mapping(mapping)
+                if matches!(
+                    &mapping.cause,
+                    EvalFailure::Evaluation(outcome)
+                        if matches!(outcome.as_ref(), ClauseOutcome::Incomplete(_))
+                )
+        )
     }
 
     fn encoding<T>(result: Result<T, qsl_eval::simulation::EncodingRefusal>) -> Step<T> {
-        result.map_err(|refusal| Ended::Refusal(refusal.into()))
+        result.map_err(Halt::from)
     }
 
     /// Whether the certificate's position `listed` is `position`.
@@ -361,7 +324,7 @@ impl Run<'_, '_> {
             ));
         }
         if certificate.positions.len() > self.limits.limits.max_states {
-            return Err(Self::stopped(
+            return Err(stopped(
                 ModelCheckLimit::MaxStates,
                 widen(self.limits.limits.max_states),
             ));
@@ -392,7 +355,7 @@ impl Run<'_, '_> {
                 state.state(),
             );
             let StepVerdict::Passes { post, .. } = verdict else {
-                return Err(self.unsound(verdict, mismatch()));
+                return Err(self.unsound(&verdict, mismatch()));
             };
             let slot = usize::try_from(listed)
                 .ok()
@@ -411,12 +374,15 @@ impl Run<'_, '_> {
         Ok(())
     }
 
-    /// The end of a check that did not pass: a stop or a fault ends the
-    /// check as itself, any other verdict is `otherwise`.
-    fn unsound(&self, verdict: StepVerdict, otherwise: Ended) -> Ended {
+    /// The end of a check that did not pass: a stop, a fault or a meter that
+    /// ran out ends the check as itself, any other verdict is `otherwise`.
+    fn unsound(&self, verdict: &StepVerdict, otherwise: Halt) -> Halt {
         match verdict {
-            StepVerdict::Stopped(reached) => Self::stopped_at(reached),
+            StepVerdict::Stopped(reached) => stopped(reached.limit, reached.value),
             StepVerdict::Fault(_) => Self::fault("refinement-step"),
+            StepVerdict::Undetermined(undetermined) if Self::meter_only(undetermined) => {
+                self.meter_stop()
+            }
             _ => otherwise,
         }
     }
@@ -430,12 +396,20 @@ impl Run<'_, '_> {
         let expansion = self
             .concrete
             .successors(&known.state)
-            .map_err(|stop| self.expansion_stop(&stop))?;
-        if expansion
+            .map_err(|stop| expansion_halt(&stop, self.budgets, Checker::Simulation))?;
+        let mut undetermined = expansion
             .findings
             .iter()
-            .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
-        {
+            .filter_map(|finding| match finding {
+                ModelFinding::ContractUndetermined { evaluation, .. } => Some(evaluation),
+                _ => None,
+            });
+        if let Some(evaluation) = undetermined.next() {
+            // A contract that only ran out of meter is a stop, not a verdict
+            // on the certificate (PC-2).
+            if matches!(evaluation, ClauseOutcome::Incomplete(_)) {
+                return Err(self.meter_stop());
+            }
             return Err(Self::reject(CertificateRule::BadState, at, None, None));
         }
         let mut computed = Vec::with_capacity(expansion.successors.len());
@@ -472,7 +446,7 @@ impl Run<'_, '_> {
         {
             self.poll()?;
             if self.edges >= self.limits.limits.max_transitions {
-                return Err(Self::stopped(
+                return Err(stopped(
                     ModelCheckLimit::MaxTransitions,
                     widen(self.limits.limits.max_transitions),
                 ));
@@ -506,9 +480,12 @@ impl Run<'_, '_> {
                     return Err(failed(FailedStep::Undefined(Box::new(evaluation))))
                 }
                 StepVerdict::Undetermined(undetermined) => {
-                    return Err(failed(FailedStep::Undetermined(undetermined)))
+                    if Self::meter_only(&undetermined) {
+                        return Err(self.meter_stop());
+                    }
+                    return Err(failed(FailedStep::Undetermined(undetermined)));
                 }
-                StepVerdict::Stopped(reached) => return Err(Self::stopped_at(reached)),
+                StepVerdict::Stopped(reached) => return Err(stopped(reached.limit, reached.value)),
                 StepVerdict::Fault(_) => return Err(Self::fault("refinement-step")),
             };
             let differs = || Self::reject(CertificateRule::PostDiffers, at, Some(number), None);

@@ -23,9 +23,8 @@
 
 use quire_exact::Cancel;
 
-use crate::certificate::closure::CertificateRejection;
 use crate::certificate::simulation::{
-    check_simulation_certificate, SimulationCertificateRequest, SimulationCheck, SimulationRefusal,
+    check_simulation_certificate, SimulationCertificateRequest, SimulationRefusal,
 };
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
@@ -52,15 +51,13 @@ pub fn settle_refinement_safety(
     let row = match outcome {
         SafetyOutcome::Holds { certificate, .. } => {
             match check_simulation_certificate(certified, certificate, limits, cancel) {
-                Ok(SimulationCheck::Accepted) => {
-                    Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
-                }
-                Ok(SimulationCheck::Rejected(CertificateRejection { rule, at })) => {
-                    Row::inconclusive(InconclusiveCause::CertificateRejected { rule, at })
-                }
-                Ok(SimulationCheck::Stopped(cause, reached)) => Row::stopped_run(cause, reached),
                 Err(SimulationRefusal::Stale { .. }) => Row::stale(),
-                Err(SimulationRefusal::Subject(_)) => Row::failed(),
+                Err(SimulationRefusal::Subject(refusal)) => Row::of_check(Err(refusal), || {
+                    Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+                }),
+                Ok(check) => Row::of_check(Ok(check), || {
+                    Row::proved(ProofBasis::Exhaustive, SettlementBasis::ClosedScope)
+                }),
             }
         }
         SafetyOutcome::Violated {

@@ -78,7 +78,7 @@ pub use certificate::closure::{
 pub use certificate::scc::{Component, ComponentWitness};
 pub use certificate::simulation::{
     check_simulation_certificate, CertifiedEdge, CertifiedPosition, FailedStep,
-    SimulationCertificate, SimulationCertificateRequest, SimulationCheck, SimulationRefusal,
+    SimulationCertificate, SimulationCertificateRequest, SimulationRefusal,
 };
 pub use certificate::state_graph::{
     check_state_graph, StateGraphCertificate, StateGraphCertificateRequest,
