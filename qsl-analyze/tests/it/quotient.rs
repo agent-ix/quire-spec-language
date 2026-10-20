@@ -416,8 +416,9 @@ fn concretising_the_loop_counts_against_max_transitions() {
 /// phase, each at least as long as the shortest, which the run returns. A
 /// budget that leaves less than twice that length after exploration
 /// stops the run naming `max_transitions`: a per-binding copy of the
-/// budget would let both lassos through.
-#[trace("TC-586")]
+/// budget would let both lassos through. A budget of exactly twice that
+/// length refutes, so no step is charged twice. FR-161 "Length and limits"
+/// has no criterion and no test case step, so the test claims none.
 #[test]
 fn every_binding_concretises_within_the_one_max_transitions_budget() {
     const FOUR: [&str; 4] = ["a", "b", "c", "d"];
@@ -475,6 +476,12 @@ fn every_binding_concretises_within_the_one_max_transitions_budget() {
             ..
         }) => assert_eq!(value, u64::try_from(max_transitions).expect("small")),
         other => panic!("expected max_transitions to stop the run: {other:?}"),
+    }
+    match run_with(explored + 2 * steps) {
+        Ok(ModelCheckOutcome::Violated { counterexample, .. }) => {
+            assert_eq!(counterexample.len(), steps);
+        }
+        other => panic!("exactly the two lassos' steps refute: {other:?}"),
     }
 }
 

@@ -1444,7 +1444,10 @@ impl<'r, 'a> Run<'r, 'a> {
                     transition,
                 };
                 // The walk's own transitions are charged once it returns;
-                // until then they bound the concretisation here.
+                // until then they bound the concretisation here. `dead_phase`
+                // charged every earlier lift, so none is pending to be
+                // subtracted from this budget twice.
+                debug_assert_eq!(self.lifted.get(), 0, "no lift pending at a dead walk");
                 self.transitions_left.set(*edges_left);
                 let counterexample = self.dead_counterexample(
                     run,
