@@ -49,6 +49,7 @@ pub enum ComponentWitness {
     MissingAcceptance { set: u32 },
     UnfairWeak { constraint: u32 },           // index into the resolved constraints
     UnfairStrong { constraints: Vec<u32>, sub: Vec<Component> },  // every failing strong constraint
+    UnfairVisibility { constraints: Vec<u32>, sub: Vec<Component> }, // ADR-025 MF-2: every failing visibility pair; a pair resolves to one constraint per (thread, location): thread bytes, then location bytes
 }
 pub enum ProofCertificate {
     Closure(ClosureCertificate),
@@ -99,7 +100,15 @@ constraint, in FR-123's order.
   taken by no edge with both ends in the component, and `sub` to partition
   exactly the component's states at which none of them is enabled, with
   every edge between two of them going to the same or a later
-  sub-component and every sub-component's witness holding (ADR-019 AM-7).
+  sub-component and every sub-component's witness holding (ADR-019 AM-7);
+  The visibility fairness member resolves to one resolved constraint per (thread, location) pair, in ascending order of the thread's identity bytes and then the location's identity bytes, after the clause's other resolved constraints; `UnfairVisibility.constraints` indexes them.
+  `UnfairVisibility{constraints, sub}` needs every listed visibility pair to
+  have an edge with both ends in the component on which the thread loads the
+  location and none on which it loads it from its mo-last message, and `sub`
+  to partition the component's states over the subgraph without the edges that
+  load any listed pair, with every witness below holding over that subgraph.
+  An edge so removed is exempt from `BackwardEdge` and from every witness
+  below the `UnfairVisibility` (ADR-025 MF-2).
 - The checker SHALL accept otherwise.
 
 ## Acceptance Criteria
@@ -108,6 +117,7 @@ constraint, in FR-123's order.
 |----|----------|--------------|
 | FR-339-AC-1 | Accepted vector: FR-126-AC-1's weak `each` outcome returns a `ComponentCertificate` whose accepting components `{(*, 0, q1)}` and `{(*, 1, q1)}` carry `UnfairWeak` naming the `each` constraint's identity `upd(b)`, and `check_components` accepts it. | Test (TC-526) |
 | FR-339-AC-2 | Rejected vectors: AC-1's certificate with the witness of `{(*, 0, q1)}` changed to `UnfairWeak` naming `upd(a)`, which edges inside the component take, is rejected `WitnessFails` at that component's first state; with those two components listed before the components that reach them, `BackwardEdge`; with one state listed in two components, `NotPartition`; with a component's witness `Trivial` over a state with a self-edge, `WitnessFails`. | Test (TC-526) |
+| FR-339-AC-3 | Accepted vector: FR-228-AC-5's synthesized SCC with `r` the only accepting state yields a component certificate whose component `{p, q, r}` carries `UnfairVisibility` naming the pair (`b`, `ℓ`), with `sub` `{r}` (`Trivial`) then `{p, q}` (`MissingAcceptance`), and `check_components` accepts it although the removed edge `q → r` goes from `{p, q}` to the earlier `{r}`; the same certificate with the witness `UnfairWeak` over that pair, or with `q → r` not removed (so `BackwardEdge` fires), is rejected. | Test (TC-526) |
 
 ## Dependencies
 

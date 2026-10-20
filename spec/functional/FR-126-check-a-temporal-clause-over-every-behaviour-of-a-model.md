@@ -351,11 +351,10 @@ automaton states and the depth reached.
 
 ### Unsupported liveness clauses
 
-- The engine SHALL refuse a TP-4 clause whose fairness set holds a strong
-  constraint with `LivenessRefusal::StrongFairness`, and a clause with a
-  guarded `on each` activation (a `when` condition) with
-  `LivenessRefusal::GuardedActivation`, each as `unsupported_construct`/
-  `not-yet-implemented`, before it explores any state.
+- The engine SHALL refuse a clause with a guarded `on each` activation (a
+  `when` condition) with `LivenessRefusal::GuardedActivation`, as
+  `unsupported_construct`/`not-yet-implemented`, before it explores any
+  state. A strong constraint is not refused: FR-130 decides it.
 - A TP-4 item SHALL NOT settle `Holds` without the `ComponentCertificate`
   that FR-339's checker accepts. When the first phase completed with an empty
   frontier and the second phase finds no fair accepting cycle, the engine
@@ -407,7 +406,7 @@ automaton states and the depth reached.
   state, and the second phase's SCCs in topological order, each with the
   first witness that holds for it in the order `Trivial`,
   `MissingAcceptance{set}` (the lowest such set), `UnfairWeak{constraint}`
-  (the first such constraint of the fairness set) (ADR-018 PC-4).
+  (the first such constraint of the fairness set), and, for an `ra` subject, `UnfairVisibility{constraints, sub}` (ADR-025 MF-2), whose `constraints` index the visibility pairs resolved per (thread, location) (FR-339) (ADR-018 PC-4).
 - The certificate SHALL be a function of the subject, the item and the
   limits.
 
@@ -432,7 +431,7 @@ automaton states and the depth reached.
 | FR-126-AC-10 | Over the example subject with initial versions `a` 2 and `b` 0, `always eventually holds(c.versionNumber = 2)` under a weak constraint with no granularity returns `Violated` bound to `b`, with an empty stem and the loop `(2,0) -upd(a)-> (0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)`, length 3, though `a` is the first binding: the counterexample for `a` has a stem of one transition and a loop of three, length 4. | Test (TC-521) |
 | FR-126-AC-11 | Over the example subject with both versions 0, `always holds(6 mod (2 - c.versionNumber) >= 0)` returns `Violated` bound to `a` with the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)` and `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}`, since both bindings are undefined at depth 2 and `a` is the earlier. With initial versions `a` 0 and `b` 1, it returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`. | Test (TC-521) |
 | FR-126-AC-12 | Over the example subject with both versions 0, `eventually (holds(c.versionNumber = 0) and holds(6 mod (2 - c.versionNumber) >= 0))`, whose negation automaton has no move at position 0, returns `Violated` bound to `a` with `kind: UndefinedEvaluation{where: position 2, cause: division-by-zero}` and the prefix `(0,0) -upd(a)-> (1,0) -upd(a)-> (2,0)`, found by the model-only pass; the run's statistics report no product state for the dead positions. With `max_states` 1 it returns `Stopped{ResourceExhausted, {MaxStates, 1}}`, the pass's second state exhausting the budget. | Test (TC-1085) |
-| FR-126-AC-13 | The TP-4 claim of AC-1 under `fair strong each attemptUpdate` returns the `StrongFairness` refusal, `unsupported_construct`/`not-yet-implemented`, having explored no state; the same claim as a checked clause with a guarded `on each ... when` activation, given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337), returns the `GuardedActivation` refusal. AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its statistics when no certificate is built, never `Holds` without one. | Test (TC-1085) |
+| FR-126-AC-13 | The TP-4 claim of AC-1 as a checked clause with a guarded `on each ... when` activation, given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337), returns the `GuardedActivation` refusal. AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its statistics when no certificate is built, never `Holds` without one. | Test (TC-1085) |
 | FR-126-AC-14 | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2. | Test (TC-1085) |
 | FR-126-AC-15 | With initial versions `a` 0 and `b` 1 and the AC-12 claim, whose first phase ends in `a` with a finding at depth 2, `max_states` 6 returns `Stopped{ResourceExhausted, {MaxStates, 6}}`, since binding `b` stops before it completes depth 1; `max_states` 1,000 returns the AC-14 finding for `b`; with both versions 0, `max_states` 1,000 returns the AC-12 finding for `a`, the tie going to the earlier binding. | Test (TC-1085) |
 
