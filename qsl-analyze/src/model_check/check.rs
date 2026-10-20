@@ -163,6 +163,10 @@ pub enum ModelCheckRefusal {
     /// selected: the liveness engine runs reduced under symmetry only.
     #[error("EN-1 does not decide a liveness clause under a state constraint or partial-order reduction yet")]
     ReducedLiveness,
+    /// A refinement with a hidden field, which needs the AX-2 candidate set
+    /// of abstract states (QSL-545).
+    #[error("EN-1 does not decide a refinement with a hidden field yet")]
+    HiddenFields,
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -1327,6 +1331,7 @@ impl Run<'_, '_> {
             fairness,
             kind,
             lasso: None,
+            refinement: None,
         })
     }
 

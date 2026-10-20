@@ -3,6 +3,16 @@
 //! the concrete `example/counter-cas` domain packages, one native unit that
 //! selects both, carries their contracts and declares the refinement, and the
 //! two model systems and states the refinement tests read it through.
+//!
+//! [`Variant`] selects the ADR-020 §8 variants: the lost-update model (both
+//! commit preconditions `self.busyX and self.tmpX < 2`, no `retry`
+//! operations), a concrete initial `value`, and a `SubCounter` subtype that
+//! `counters` admits and no object row names.
+
+#![allow(
+    dead_code,
+    reason = "each test binary uses the part of the fixture it needs"
+)]
 
 use std::collections::BTreeMap;
 
@@ -21,15 +31,18 @@ use quire_exact::{Integer, ScalarLimits, Value};
 use quire_semantic_value::checking::CheckingLimits;
 use serde_json::{json, Value as Json};
 
-pub(crate) const SPEC: &str = "example/counter-spec";
-pub(crate) const CAS: &str = "example/counter-cas";
+pub const SPEC: &str = "example/counter-spec";
+pub const CAS: &str = "example/counter-cas";
+/// A third model, a copy of the abstract one, which the unit selects as
+/// `Third` and no refinement names.
+pub const THIRD: &str = "example/counter-third";
 
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 const INTEGER: &str = "ix://quire/native/Integer";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
 /// A budget no fixture evaluation exhausts.
-pub(crate) const UNLIMITED: ScalarLimits = ScalarLimits {
+pub const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: 1 << 20,
     decimal_digits: 1 << 20,
     scale_expansion: 1 << 20,
@@ -43,7 +56,7 @@ pub(crate) const UNLIMITED: ScalarLimits = ScalarLimits {
 };
 
 /// A budget that admits no charge.
-pub(crate) const ZERO: ScalarLimits = ScalarLimits {
+pub const ZERO: ScalarLimits = ScalarLimits {
     integer_bits: 0,
     decimal_digits: 0,
     scale_expansion: 0,
@@ -61,7 +74,7 @@ fn ident(package: &str, suffix: &str) -> String {
 }
 
 /// The declaration key of `suffix` in `package`.
-pub(crate) fn key(package: &str, suffix: &str) -> DeclarationKey {
+pub fn key(package: &str, suffix: &str) -> DeclarationKey {
     DeclarationKey {
         package: package.to_owned(),
         node: ident(package, suffix),
@@ -132,7 +145,7 @@ fn operation(package: &str, name: &str, modifies: &[&str]) -> Json {
     })
 }
 
-fn document(package: &str, fields: Vec<Json>, operations: Vec<Json>) -> Vec<u8> {
+fn document(package: &str, fields: Vec<Json>, operations: Vec<Json>, sub_counter: bool) -> Vec<u8> {
     let counter = ident(package, "Counter");
     let constructs: Vec<Json> = [
         ("object_type", meaning::OBJECT_TYPE),
@@ -148,6 +161,32 @@ fn document(package: &str, fields: Vec<Json>, operations: Vec<Json>) -> Vec<u8> 
     })
     .collect();
     let population = ident(package, "counters");
+    let sub = ident(package, "SubCounter");
+    let mut types = vec![
+        level(package),
+        wire_type(
+            package,
+            &counter,
+            "object_type",
+            json!({
+                "supertypes": [], "fields": fields, "operations": operations,
+                "relationships": [],
+            }),
+        ),
+    ];
+    let mut members = vec![counter.clone()];
+    if sub_counter {
+        types.push(wire_type(
+            package,
+            &sub,
+            "object_type",
+            json!({
+                "supertypes": [counter], "fields": [], "operations": [],
+                "relationships": [],
+            }),
+        ));
+        members.push(sub);
+    }
     json!({
         "contractVersion": "2.0.0",
         "canonicalization": {"algorithm": "rfc8785-v1", "digest": "sha256-jcs"},
@@ -157,36 +196,70 @@ fn document(package: &str, fields: Vec<Json>, operations: Vec<Json>) -> Vec<u8> 
             "mappingVersions": [], "profileVersions": [], "lockDigest": PLACEHOLDER},
         "occurrences": [], "extensions": [],
         "constructs": constructs,
-        "types": [
-            level(package),
-            wire_type(package, &counter, "object_type", json!({
-                "supertypes": [], "fields": fields, "operations": operations,
-                "relationships": [],
-            })),
-        ],
+        "types": types,
         "populations": [{
             "identity": population, "displayName": population,
             "kind": {"module": package, "name": "population"},
-            "members": [counter], "extent": "closed", "origin": origin(&population),
+            "members": members, "extent": "closed", "origin": origin(&population),
         }],
     })
     .to_string()
     .into_bytes()
 }
 
-/// `Counter { value: Int[0, 2] }` with `inc()`.
-fn spec_document() -> Vec<u8> {
+/// Which ADR-020 §8 model a [`World`] is.
+#[derive(Clone, Copy, Debug)]
+pub struct Variant {
+    /// Both commit preconditions are `self.busyX and self.tmpX < 2`, the
+    /// compare-and-set guard dropped, and there are no `retry` operations.
+    pub lost_update: bool,
+    /// The concrete package also declares `SubCounter`, a subtype of
+    /// `Counter` that `counters` admits and no object row names.
+    pub sub_counter: bool,
+    /// The concrete initial snapshot's `value`.
+    pub concrete_value: i64,
+}
+
+impl Variant {
+    /// The compare-and-set model.
+    pub const CAS: Self = Self {
+        lost_update: false,
+        sub_counter: false,
+        concrete_value: 0,
+    };
+    /// The lost-update model.
+    pub const LOST_UPDATE: Self = Self {
+        lost_update: true,
+        ..Self::CAS
+    };
+}
+
+/// `Counter { value: Int[0, 2] }` with `inc()`, under the package identity
+/// `package`.
+fn spec_document(package: &str) -> Vec<u8> {
     document(
-        SPEC,
-        vec![field(SPEC, "value", &ident(SPEC, "Level"))],
-        vec![operation(SPEC, "inc", &["value"])],
+        package,
+        vec![field(package, "value", &ident(package, "Level"))],
+        vec![operation(package, "inc", &["value"])],
+        false,
     )
 }
 
 /// The compare-and-set counter of ADR-020 §8.
-fn cas_document() -> Vec<u8> {
+fn cas_document(variant: Variant) -> Vec<u8> {
     let level = ident(CAS, "Level");
     let step = |name: &str, modifies: &[&str]| operation(CAS, name, modifies);
+    let mut operations = vec![
+        step("beginA", &["tmpA", "busyA"]),
+        step("commitA", &["value", "busyA"]),
+        step("beginB", &["tmpB", "busyB"]),
+        step("commitB", &["value", "busyB"]),
+        step("peek", &[]),
+    ];
+    if !variant.lost_update {
+        operations.push(step("retryA", &["busyA"]));
+        operations.push(step("retryB", &["busyB"]));
+    }
     document(
         CAS,
         vec![
@@ -196,32 +269,37 @@ fn cas_document() -> Vec<u8> {
             field(CAS, "tmpB", &level),
             field(CAS, "busyB", BOOLEAN),
         ],
-        vec![
-            step("beginA", &["tmpA", "busyA"]),
-            step("commitA", &["value", "busyA"]),
-            step("retryA", &["busyA"]),
-            step("beginB", &["tmpB", "busyB"]),
-            step("commitB", &["value", "busyB"]),
-            step("retryB", &["busyB"]),
-            step("peek", &[]),
-        ],
+        operations,
+        variant.sub_counter,
     )
 }
 
 /// The contracts of one worker (`A` or `B`) of the compare-and-set model.
-fn worker(name: &str) -> String {
+fn worker(name: &str, variant: Variant) -> String {
+    let commit = if variant.lost_update {
+        format!("self.busy{name} and self.tmp{name} < 2")
+    } else {
+        format!("self.busy{name} and self.tmp{name} = self.value and self.value < 2")
+    };
+    let retry = if variant.lost_update {
+        String::new()
+    } else {
+        format!(
+            "pre Retry{name}Pre using v on Impl::Counter::retry{name} {{ self.busy{name} and not (self.tmp{name} = self.value) }}\n\
+             post Retry{name}Post using v on Impl::Counter::retry{name} {{ not self.busy{name} }}\n"
+        )
+    };
     format!(
         "pre Begin{name}Pre using v on Impl::Counter::begin{name} {{ not self.busy{name} }}\n\
          post Begin{name}Post using v on Impl::Counter::begin{name} {{ self.busy{name} and self.tmp{name} = pre(self.value) }}\n\
-         pre Commit{name}Pre using v on Impl::Counter::commit{name} {{ self.busy{name} and self.tmp{name} = self.value and self.value < 2 }}\n\
-         post Commit{name}Post using v on Impl::Counter::commit{name} {{ self.value - pre(self.tmp{name}) = 1 and not self.busy{name} }}\n\
-         pre Retry{name}Pre using v on Impl::Counter::retry{name} {{ self.busy{name} and not (self.tmp{name} = self.value) }}\n\
-         post Retry{name}Post using v on Impl::Counter::retry{name} {{ not self.busy{name} }}\n"
+         pre Commit{name}Pre using v on Impl::Counter::commit{name} {{ {commit} }}\n\
+         post Commit{name}Post using v on Impl::Counter::commit{name} {{ pre(self.tmp{name}) < 2 and self.value = pre(self.tmp{name}) + 1 and not self.busy{name} }}\n\
+         {retry}"
     )
 }
 
 /// ADR-020 §8's `CasRefinesCounter`.
-pub(crate) fn cas_refines_counter() -> String {
+pub fn cas_refines_counter() -> String {
     "refinement CasRefinesCounter using inf abstract Spec concrete Impl {\n\
      population Spec::counters from Impl::counters;\n\
      object Spec::Counter from Impl::Counter { value = self.value; }\n\
@@ -243,14 +321,27 @@ pub(crate) fn cas_refines_counter() -> String {
     .to_owned()
 }
 
+/// The lost-update refinement: `CasRefinesCounter` without its `retry` rows.
+pub fn lost_update_refinement() -> String {
+    cas_refines_counter()
+        .lines()
+        .filter(|line| !line.contains("retry"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// `body` with the one occurrence of `from` replaced by `to`.
-pub(crate) fn mutated(body: &str, from: &str, to: &str) -> String {
+pub fn mutated(body: &str, from: &str, to: &str) -> String {
     assert_eq!(body.matches(from).count(), 1, "{from} occurs once");
     body.replace(from, to)
 }
 
 /// The unit text: both models, their contracts and `refinement`.
-fn unit_text(documents: &BTreeMap<[u8; 32], Vec<u8>>, refinement: &str) -> String {
+fn unit_text(
+    documents: &BTreeMap<[u8; 32], Vec<u8>>,
+    refinement: &str,
+    variant: Variant,
+) -> String {
     let digest = |package: &str| {
         documents
             .iter()
@@ -267,25 +358,31 @@ fn unit_text(documents: &BTreeMap<[u8; 32], Vec<u8>>, refinement: &str) -> Strin
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model Spec = \"{SPEC}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          model Impl = \"{CAS}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
+         model Third = \"{THIRD}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          pre CanInc using v on Spec::Counter::inc {{ self.value < 2 }}\n\
-         post Inc using v on Spec::Counter::inc {{ self.value - pre(self.value) = 1 }}\n\
+         post Inc using v on Spec::Counter::inc {{ pre(self.value) < 2 and self.value = pre(self.value) + 1 }}\n\
          {}{}{refinement}\n",
         digest(SPEC),
         digest(CAS),
-        worker("A"),
-        worker("B"),
+        digest(THIRD),
+        worker("A", variant),
+        worker("B", variant),
     )
 }
 
 /// The two domain packages' documents, by digest.
-pub(crate) fn packages() -> BTreeMap<[u8; 32], Vec<u8>> {
-    package_input([spec_document().as_slice(), cas_document().as_slice()])
+pub fn packages(variant: Variant) -> BTreeMap<[u8; 32], Vec<u8>> {
+    package_input([
+        spec_document(SPEC).as_slice(),
+        cas_document(variant).as_slice(),
+        spec_document(THIRD).as_slice(),
+    ])
 }
 
 /// The checked graph of the unit with `refinement`, or its refusals.
-pub(crate) fn check(refinement: &str) -> Result<CheckedGraph, String> {
-    let documents = packages();
-    let text = unit_text(&documents, refinement);
+pub fn check(variant: Variant, refinement: &str) -> Result<CheckedGraph, String> {
+    let documents = packages(variant);
+    let text = unit_text(&documents, refinement, variant);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "refinement", "git", "1"),
         "refinement.native",
@@ -357,48 +454,103 @@ fn snapshot(
     }
 }
 
-/// The unit's package, the two models' documents and their initial states.
-pub(crate) struct World {
+/// The unit's package, the models' documents and their initial states.
+pub struct World {
     package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     spec_initial: DocumentRef,
     cas_initial: DocumentRef,
+    third_initial: DocumentRef,
 }
 
 impl World {
-    /// The world of the unit with `refinement`.
-    pub(crate) fn new(refinement: &str) -> Self {
-        let graph = check(refinement).unwrap_or_else(|refusals| {
+    /// The world of the compare-and-set unit with `refinement`.
+    pub fn new(refinement: &str) -> Self {
+        Self::with(Variant::CAS, refinement)
+    }
+
+    /// The world of the unit of `variant` with `refinement`.
+    pub fn with(variant: Variant, refinement: &str) -> Self {
+        let graph = check(variant, refinement).unwrap_or_else(|refusals| {
             panic!("{refinement}: the unit checks: {refusals}");
         });
         let mut snapshots = BTreeMap::new();
         let spec_initial = snapshot(
             SPEC,
-            &spec_document(),
+            &spec_document(SPEC),
+            json!({"value": {"integer": "0"}}),
+            &mut snapshots,
+        );
+        let third_initial = snapshot(
+            THIRD,
+            &spec_document(THIRD),
             json!({"value": {"integer": "0"}}),
             &mut snapshots,
         );
         let cas_initial = snapshot(
             CAS,
-            &cas_document(),
+            &cas_document(variant),
             json!({
-                "value": {"integer": "0"}, "tmpA": {"integer": "0"}, "busyA": {"boolean": false},
+                "value": {"integer": variant.concrete_value.to_string()},
+                "tmpA": {"integer": "0"}, "busyA": {"boolean": false},
                 "tmpB": {"integer": "0"}, "busyB": {"boolean": false},
             }),
             &mut snapshots,
         );
         Self {
             package: CheckedPackage::link(graph),
-            packages: packages(),
+            packages: packages(variant),
             snapshots,
             spec_initial,
             cas_initial,
+            third_initial,
         }
     }
 
+    /// The unit's checked package.
+    pub fn package(&self) -> &CheckedPackage {
+        &self.package
+    }
+
+    /// The abstract subject's initial snapshot.
+    pub fn abstract_initial(&self) -> DocumentRef {
+        self.spec_initial.clone()
+    }
+
+    /// The request that builds the system over `model` with `initial`
+    /// states, evaluating each clause under `meter`.
+    pub fn request(
+        &self,
+        model: &str,
+        initial: Vec<DocumentRef>,
+        meter: ScalarLimits,
+    ) -> ModelSimulationRequest<'_> {
+        ModelSimulationRequest {
+            package: &self.package,
+            packages: &self.packages,
+            normalization: ModelNormalizationLimits::default(),
+            snapshots: &self.snapshots,
+            initial,
+            universes: vec![PopulationUniverse {
+                population: key(model, "counters"),
+                keys: vec!["c".to_owned()],
+            }],
+            observation: ObservationLimits::default(),
+            expansion: ExpansionLimits {
+                max_candidates: 1_000_000,
+            },
+            meter,
+        }
+    }
+
+    /// The concrete subject's request.
+    pub fn concrete_request(&self, meter: ScalarLimits) -> ModelSimulationRequest<'_> {
+        self.request(CAS, vec![self.cas_initial.clone()], meter)
+    }
+
     /// The unit's one refinement.
-    pub(crate) fn refinement(&self) -> &CheckedRefinement {
+    pub fn refinement(&self) -> &CheckedRefinement {
         let [refinement] = self.package.graph().refinements() else {
             panic!("one refinement");
         };
@@ -406,12 +558,12 @@ impl World {
     }
 
     /// The abstract subject's system, evaluating each clause under `meter`.
-    pub(crate) fn abstract_system(&self, meter: ScalarLimits) -> ModelSystem<'_> {
+    pub fn abstract_system(&self, meter: ScalarLimits) -> ModelSystem<'_> {
         self.system(SPEC, &self.spec_initial, meter)
     }
 
     /// The concrete subject's system, evaluating each clause under `meter`.
-    pub(crate) fn concrete_system(&self, meter: ScalarLimits) -> ModelSystem<'_> {
+    pub fn concrete_system(&self, meter: ScalarLimits) -> ModelSystem<'_> {
         self.system(CAS, &self.cas_initial, meter)
     }
 
@@ -421,38 +573,22 @@ impl World {
     }
 
     /// A system over the model `model`, or why it does not admit.
-    pub(crate) fn try_system(
+    pub fn try_system(
         &self,
         model: &str,
         initial: &DocumentRef,
         meter: ScalarLimits,
     ) -> Result<ModelSystem<'_>, AdmissionFailure> {
-        ModelSystem::over_model(
-            ModelSimulationRequest {
-                package: &self.package,
-                packages: &self.packages,
-                normalization: ModelNormalizationLimits::default(),
-                snapshots: &self.snapshots,
-                initial: vec![initial.clone()],
-                universes: vec![PopulationUniverse {
-                    population: key(model, "counters"),
-                    keys: vec!["c".to_owned()],
-                }],
-                observation: ObservationLimits::default(),
-                expansion: ExpansionLimits {
-                    max_candidates: 1_000_000,
-                },
-                meter,
-            },
-            model,
-        )
+        ModelSystem::over_model(self.request(model, vec![initial.clone()], meter), model)
+    }
+
+    /// The system over the unit's third model.
+    pub fn third_system(&self) -> ModelSystem<'_> {
+        self.system(THIRD, &self.third_initial, UNLIMITED)
     }
 
     /// A system over `model`, a model the unit does not select.
-    pub(crate) fn unselected_system(
-        &self,
-        model: &str,
-    ) -> Result<ModelSystem<'_>, AdmissionFailure> {
+    pub fn unselected_system(&self, model: &str) -> Result<ModelSystem<'_>, AdmissionFailure> {
         self.try_system(model, &self.cas_initial, UNLIMITED)
     }
 }
@@ -462,7 +598,7 @@ fn integer(value: i64) -> Value {
 }
 
 /// The abstract state with the one counter `c` at `value`.
-pub(crate) fn spec_state(value: i64) -> ModelState {
+pub fn spec_state(value: i64) -> ModelState {
     ModelState {
         populations: BTreeMap::from([(
             key(SPEC, "counters"),
@@ -480,13 +616,7 @@ pub(crate) fn spec_state(value: i64) -> ModelState {
 
 /// The concrete state `(value, tmpA, busyA, tmpB, busyB)` of the one counter
 /// `c`.
-pub(crate) fn cas_state(
-    value: i64,
-    tmp_a: i64,
-    busy_a: bool,
-    tmp_b: i64,
-    busy_b: bool,
-) -> ModelState {
+pub fn cas_state(value: i64, tmp_a: i64, busy_a: bool, tmp_b: i64, busy_b: bool) -> ModelState {
     let field = |name: &str, value: Value| (key(CAS, &format!("Counter/{name}")), value);
     ModelState {
         populations: BTreeMap::from([(
