@@ -72,3 +72,12 @@ Round 1, head be629264f (fix commit be629264f over merge 04fb7d23, which brings 
 | FND-005 | fixed | - |
 
 Round 1 verdict: Not mergeable until FND-006 (medium) is fixed or explicitly deferred: AC-1, AC-2, the Use case and TC-620 step 1 still expect quantity supports, which the new text says do not exist. FND-001 to FND-005 are fixed, and the AC-6 fixtures behave on the engine as stated. FND-007 is low.
+
+Round 2, head efa2a4b4b (fix commit efa2a4b4b over merge cc03e43a, which brings in main 94020c90, a rustfmt-only test change, #1081). Gates: make check-spec-validation exits 0 with the same 17 warnings as main, none in FR-185, TC-620 or FR-091; tools/check-index-completeness.sh passes. The committed reviews/ SR files equal this review's round-1 files. No `ms` or `Quantity<Time>` support remains in FR-185 or TC-620 outside the quantity note. Re-measured on main 40f8707b: Service on the Millis fixture checks with `d: Int[1, 12]`, support 1, 3, 12 at 9/10, 7/100, 3/100, and `duration` typed Int[1, 12] (Millis). `{1: 9, 1: 1}` refuses repeated-support-value; `true` and `1 ms` refuse value-outside-type; the TC-620 precondition test reads `d < 5` and passes. A check whose handle is tripped before it starts reports tripped = Requested and refusals with limit 0, not 65,536. The AC-6 sums and the AC-5 duplicates behave as in round 1. All 28 probabilistic_declarations tests and probes pass.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+
+Round 2 verdict: Mergeable as far as base is concerned: all seven findings are fixed, and the restated fixtures behave on the engine as the ACs state.
