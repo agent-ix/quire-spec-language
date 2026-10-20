@@ -177,8 +177,8 @@ decides.
   `Undetermined` for an update, then `check_step` SHALL count a post-state row
   that reads that history field as an undetermined read at its place in the
   read order above, SHALL NOT evaluate it at any stand-in, and the read-order
-  rule SHALL decide (a read that is undefined before it, or a fault, wins as
-  that rule states). An update that evaluates `Undefined` is not covered:
+  rule SHALL decide (an undefined read anywhere in the order, or a fault, wins
+  as that rule states). An update that evaluates `Undefined` is not covered:
   `check_step` returns `Undefined` for it as above.
 
 ### Deciding the step rules
@@ -213,10 +213,10 @@ how it evaluates them and what it reports:
     `AbstractStepRejected`.
 - **Candidate sets.** With hidden fields, `check_step` SHALL apply the
   rules to each member of `pre.abstract_states` and return the post set
-  sorted by state key. If a completion or successor of any member whose visible part
-  equals the mapped one is undecided, then `check_step` SHALL return `Undetermined(UndecidedSuccessor)`
-  and SHALL NOT drop it from the set, even when another completion is
-  accepted. Each abstract successor computed SHALL count toward
+  sorted by state key. If any member has an undecided completion or successor whose
+  visible part equals the mapped one, then `check_step` SHALL return
+  `Undetermined(UndecidedSuccessor)` and SHALL NOT drop it from the set, even
+  when another completion is accepted. Each abstract successor computed SHALL count toward
   FR-101's `max_transitions` of the run that called `check_step`.
 - If the abstract system's evaluation or expansion exhausts its per-evaluation
   meter or `max_candidates` while `check_step` decides, then it SHALL return

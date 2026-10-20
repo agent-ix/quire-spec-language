@@ -67,3 +67,12 @@ Round 1, head e19819b95 (one fix commit over f481e5899; main is still bdf90d48d)
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
 | FND-005 | fixed | - |
+
+Round 2, head 2c92ed5af (one fix commit over e19819b95; main still bdf90d48d; the round-1 SR files in reviews/ are byte-equal to the reviewer's). origin/qsl-545-history is still 498b438cf: the coder's fix round is not pushed, so the FR-141 rules remain ahead of the code. The narrowed rule checks against the ACs: FR-141-AC-6 (an undefined update) is excluded and stays `Undefined`; in FR-141-AC-10 `H` out of type with `P` over-budget names `H`, and `A1` over-budget with `H` out of type names `A1`, both by read order; in FR-138-AC-8 the post history precedes the post-state rows, so the `writes` update is the first undetermined read and `value = self.value` is defined, giving `Undetermined(MappingUndetermined)` naming it. FR-141-AC-12's fixtures produce their outcomes: from the pre set [side 1], `reveal` to face 0 fails `show`'s `self.face = self.side` for the one member, so the set is empty (`NoAbstractMatch`); with `toss`'s postcondition `self.tossed and 1 mod self.side = 0`, side 0 is undefined (undecided) and side 1 accepted. FR-138-AC-6 dropped the created-object half; the Layer 5 rule's created-object clause has no AC, the same untested created/deleted-object path as SR-13461 FND-005 (Register creates no object), which the code fix round owns. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in a changed file; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |
+| FND-009 | fixed | - |
