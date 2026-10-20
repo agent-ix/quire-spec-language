@@ -22,7 +22,7 @@ Use ADR-018 §6's ConfigVersion example unit.
 2. Resolve the returned triple in the recompiled package.
 3. Compile two structurally identical clause declarations and read both
    triples; compile a clause with no `over` parameter (a clause such as
-   `eventually holds(p = q)` over no bound variable; waits on STD-186, since
+   `eventually holds(true)` with no bound variable; waits on STD-186, since
    S1 requires `over` today) and read it.
 4. Resolve a triple with an unknown NodeId, with a non-temporal node's
    NodeId, with role `invariant`, and with another ordinal.
