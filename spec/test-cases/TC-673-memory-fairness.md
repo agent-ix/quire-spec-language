@@ -48,4 +48,4 @@ Tag the tests `#[trace("TC-673", "FR-228-AC-n")]`.
 - Step 6: `{p, q}` passes with its two kept edges; the loop is `p q`, not `p p`.
 - Step 7: `q → r` is removed at the first level and `s → r` at the second; the passing component is `{p, q}`.
 - Step 8: one refinement step removes state 0 and the edge `1 → 2`; `{3, 4}` passes with the loop `3 → 4 → 3`.
-- Step 9: both pairs' edges are removed in one step and `{1}` is the first passing component. Rationale: refining pair A alone first would pass `{2}`, so only the one-step rule gives `{1}`.
+- Step 9: both pairs' edges are removed in one step and `{1}` is the first passing component. Rationale: refining pair A alone first would pass `{2}` (refining pair B first also gives `{1}`), so the vector catches an implementation that refines one pair at a time starting with pair A.
