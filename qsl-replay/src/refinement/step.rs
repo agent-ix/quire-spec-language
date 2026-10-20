@@ -8,14 +8,17 @@
 //! calls the abstract `ModelSystem` makes when it expands the mapped
 //! pre-state, applied to the one mapped post-state.
 //!
-//! History fields (FR-138) and hidden fields (the AX-2 candidate sets) are
-//! not built: S3 refuses a history row, and a refinement with a hidden field
-//! returns [`StepVerdict::Fault`] here, because no candidate set stands for
-//! its abstract state.
+//! A refinement's history values (FR-138) ride in the position beside the
+//! concrete state. When it has a hidden abstract field (AX-2) a position
+//! holds the candidate set: every abstract state whose visible part is the
+//! mapped one and that is consistent with the behaviour so far. A step is
+//! decided against each member, over every value the hidden fields of the
+//! mapped post-state may take, and the set after it is the union of the
+//! accepted ones.
 
 use qsl_eval::simulation::model::{
     operation_identity_text, AbstractApplication, Judgement, ModelFinding, ModelSimState,
-    ModelSystem, Rejection, RowReading,
+    ModelSystem, Rejection, ResolvedStep, RowReading,
 };
 use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_foundation::digest::DigestRecord;
@@ -33,19 +36,22 @@ use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::refinement::failure::{
     RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, Undetermined,
 };
+use crate::refinement::history::{advance, has_update, initial_history, HistoryValues};
 use crate::refinement::map::{
-    lift_value, map_state, EvalFailure, Lifting, MappedState, MappingFailure, MappingRowRef,
-    MappingUndetermined, ObjectKey, StepArgument,
+    lift_value, map_state, object_of, EvalFailure, Lifting, MappedState, MappingFailure,
+    MappingRowRef, MappingUndetermined, StepArgument,
 };
 
-/// A concrete state with the abstract states it stands for (FR-141
-/// `RefinementPosition`). Without hidden fields the abstract side is the one
-/// state the mapping gives; the AX-2 set and the history values arrive with
-/// the hidden and history fields.
+/// A concrete state with its history values and the abstract states it
+/// stands for (FR-141 `RefinementPosition`). Without hidden fields the
+/// abstract side is the one state the mapping gives; with them it is the
+/// AX-2 candidate set.
 #[derive(Clone, Debug)]
 pub struct RefinementPosition {
     /// The concrete state.
     pub concrete: ModelState,
+    /// The refinement's history values at it (FR-138).
+    pub history: HistoryValues,
     /// The abstract states, sorted by state key.
     pub abstract_states: Vec<ModelState>,
 }
@@ -67,9 +73,51 @@ fn fault(invariant: &'static str) -> StepVerdict {
     StepVerdict::Fault(InternalFault::new("refinement-step", invariant))
 }
 
+/// `state` without its hidden fields: the part of an abstract state a
+/// mapping gives (AX-2), which every member of a candidate set shares.
+fn visible_part(refinement: &CheckedRefinement, state: &ModelState) -> ModelState {
+    let mut visible = state.clone();
+    for objects in visible.populations.values_mut() {
+        for object in objects.values_mut() {
+            let hidden = refinement
+                .objects()
+                .iter()
+                .find(|row| row.abstract_type == object.type_identity)
+                .map(|row| row.hidden.as_slice())
+                .unwrap_or_default();
+            for field in hidden {
+                object.fields.remove(field);
+            }
+        }
+    }
+    visible
+}
+
+/// `states` in state-key order, each state once.
+#[allow(
+    clippy::result_large_err,
+    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
+)]
+fn sorted(
+    system: &ModelSystem<'_>,
+    states: impl IntoIterator<Item = ModelState>,
+) -> Result<Vec<ModelState>, StepVerdict> {
+    let mut keyed = Vec::new();
+    for state in states {
+        let (key, _) = system
+            .state_key_of(&state)
+            .map_err(|_| fault("abstract-state-encodes"))?;
+        keyed.push((key, state));
+    }
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
+    Ok(keyed.into_iter().map(|(_, state)| state).collect())
+}
+
 /// FR-141 "Initial states" (RS-2): `concrete_initial`, the initial state at
-/// `index` of the concrete subject, maps to one of the abstract subject's
-/// own initial states, compared by state key.
+/// `index` of the concrete subject, maps to the abstract subject's own
+/// initial states, compared by state key on the visible part (the whole
+/// state when no field is hidden).
 ///
 /// `Passes` carries `Taken::Stutter`: an initial state takes no step.
 pub fn check_initial(
@@ -79,11 +127,13 @@ pub fn check_initial(
     index: usize,
     concrete_initial: &ModelState,
 ) -> StepVerdict {
+    let history = initial_history(refinement, concrete_system, concrete_initial);
     let mapped = match map_state(
         refinement,
         concrete_system,
         abstract_system,
         concrete_initial,
+        &history,
     ) {
         Ok(mapped) => mapped,
         Err(failure) => {
@@ -94,27 +144,34 @@ pub fn check_initial(
             )
         }
     };
-    if !mapped.hidden.is_empty() {
-        return fault("hidden-fields-need-candidate-sets");
-    }
     let Ok((mapped_key, _)) = abstract_system.state_key_of(&mapped.visible) else {
         return fault("mapped-state-encodes");
     };
+    let mut matching = Vec::new();
     for initial in abstract_system.initial_states() {
-        let Ok((key, _)) = abstract_system.state_key(initial) else {
+        let visible = visible_part(refinement, initial.state());
+        let Ok((key, _)) = abstract_system.state_key_of(&visible) else {
             return fault("initial-state-encodes");
         };
         if key == mapped_key {
-            return StepVerdict::Passes {
-                post: RefinementPosition {
-                    concrete: concrete_initial.clone(),
-                    abstract_states: vec![mapped.visible],
-                },
-                taken: Taken::Stutter,
-            };
+            matching.push(initial.state().clone());
         }
     }
-    StepVerdict::Fails(RefinementFailure::InitialNotAbstract { initial: index })
+    let candidates = match sorted(abstract_system, matching) {
+        Ok(candidates) => candidates,
+        Err(verdict) => return verdict,
+    };
+    if candidates.is_empty() {
+        return StepVerdict::Fails(RefinementFailure::InitialNotAbstract { initial: index });
+    }
+    StepVerdict::Passes {
+        post: RefinementPosition {
+            concrete: concrete_initial.clone(),
+            history,
+            abstract_states: candidates,
+        },
+        taken: Taken::Stutter,
+    }
 }
 
 /// FR-141 "Deciding the step rules" (RS-3 to RS-6): `step` taken from `pre`.
@@ -144,9 +201,9 @@ pub fn check_step(
 }
 
 /// The first undefined and the first undetermined outcome of the step-row
-/// arguments and the post-state's rows, in reading order. Of the row
-/// outcomes the first undefined one outranks the first undetermined one
-/// (QSpec FR-377 "Failure precedence").
+/// arguments, the history updates and the post-state's rows, in reading
+/// order. Of the row outcomes the first undefined one outranks the first
+/// undetermined one (QSpec FR-377 "Failure precedence").
 #[derive(Default)]
 struct Soft {
     undefined: Option<StepVerdict>,
@@ -207,8 +264,8 @@ fn decide_step(
     step: &ConcreteStep<'_>,
     abstract_successors: &mut u64,
 ) -> StepVerdict {
-    let [before] = pre.abstract_states.as_slice() else {
-        return fault("one-abstract-state-without-hidden-fields");
+    let Some(before) = pre.abstract_states.first() else {
+        return fault("a-position-holds-an-abstract-state");
     };
     let row = match step.transition {
         None => None,
@@ -217,21 +274,38 @@ fn decide_step(
             None => return fault("every-concrete-operation-has-a-step-row"),
         },
     };
-    // Every receiver and argument of the row is read at the pre-state, and
-    // every row of the post-state is mapped; the first undefined outcome of
-    // them outranks the first undetermined one.
+    let applies = matches!(
+        row.map(|row| &row.target),
+        Some(StepTarget::Abstract { .. })
+    );
+    // The step's receiver and arguments, found when a row or an update reads
+    // them.
+    let mut resolved = None;
+    if let Some(transition) = step.transition {
+        let Ok(updates) = has_update(refinement, transition) else {
+            return fault("an-operation-has-an-identity-text");
+        };
+        if applies || updates {
+            resolved = match concrete_system.resolve_step(&pre.concrete, transition, step.post) {
+                Ok(Some(found)) => Some(found),
+                Ok(None) => return fault("concrete-step-names-an-argument-vector"),
+                Err(stop) => return stop_verdict(concrete_system, stop),
+            };
+        }
+    }
+    // Every receiver and argument of the row is read at the pre-state, the
+    // history updates are evaluated and every row of the post-state is
+    // mapped, in that order; the first undefined outcome of them outranks
+    // the first undetermined one.
     let mut soft = Soft::default();
     let mut arguments = None;
-    if let (Some(StepTarget::Abstract { .. }), Some(transition)) =
-        (row.map(|row| &row.target), step.transition)
-    {
+    if let (Some(row), Some(resolved), true) = (row, resolved.as_ref(), applies) {
         match evaluate_arguments(
             refinement,
-            concrete_system,
-            abstract_system,
+            (concrete_system, abstract_system),
             pre,
             step,
-            (row, transition),
+            (row, resolved),
         ) {
             Ok((evaluated, found)) => {
                 arguments = evaluated;
@@ -240,11 +314,39 @@ fn decide_step(
             Err(verdict) => return verdict,
         }
     }
+    let advanced = match advance(
+        refinement,
+        concrete_system,
+        &pre.history,
+        (&pre.concrete, step.post),
+        step.transition.zip(resolved.as_ref()),
+    ) {
+        Ok(advanced) => advanced,
+        Err(failure) => {
+            return mapping_verdict(
+                || state_digest(concrete_system, step.post.state()),
+                step.position,
+                failure,
+            )
+        }
+    };
+    for failure in advanced.outcomes.into_failures() {
+        let verdict = mapping_verdict(
+            || state_digest(concrete_system, step.post.state()),
+            step.position,
+            failure,
+        );
+        if let Err(ended) = soft.record(verdict) {
+            return ended;
+        }
+    }
+    let history = advanced.values;
     let mapped = match map_state(
         refinement,
         concrete_system,
         abstract_system,
         step.post.state(),
+        &history,
     ) {
         Ok(mapped) => Some(mapped),
         Err(failure) => {
@@ -265,62 +367,88 @@ fn decide_step(
     let Some(mapped) = mapped else {
         return fault("a-mapping-gives-a-state-or-a-verdict");
     };
-    if !mapped.hidden.is_empty() {
-        return fault("hidden-fields-need-candidate-sets");
-    }
     let Ok((after_key, _)) = abstract_system.state_key_of(&mapped.visible) else {
         return fault("mapped-state-encodes");
     };
-    let Ok((before_key, _)) = abstract_system.state_key_of(before) else {
+    let Ok((before_key, _)) = abstract_system.state_key_of(&visible_part(refinement, before))
+    else {
         return fault("mapped-state-encodes");
     };
     let stuttered = after_key == before_key;
-    let passes = |taken| StepVerdict::Passes {
+    let hidden = !mapped.hidden.is_empty();
+    let passes = |taken, states: Vec<ModelState>| StepVerdict::Passes {
         post: RefinementPosition {
             concrete: step.post.state().clone(),
-            abstract_states: vec![mapped.visible.clone()],
+            history: history.clone(),
+            abstract_states: states,
         },
         taken,
     };
     let Some(row) = row else {
-        return stutter(step, stuttered, passes);
+        return stutter(step, stuttered, || {
+            passes(Taken::Stutter, pre.abstract_states.clone())
+        });
     };
     match &row.target {
-        StepTarget::Stutter => stutter(step, stuttered, passes),
+        StepTarget::Stutter => stutter(step, stuttered, || {
+            passes(Taken::Stutter, pre.abstract_states.clone())
+        }),
         StepTarget::Any => {
-            if stuttered {
-                return passes(Taken::Stutter);
+            if stuttered && !hidden {
+                return passes(Taken::Stutter, pre.abstract_states.clone());
             }
-            let expansion = match abstract_system.expand_state(before) {
-                Ok(expansion) => expansion,
-                Err(stop) => return stop_verdict(abstract_system, stop),
+            // The members after the step: the set itself for a stutter, and
+            // every successor of a member whose visible part is the mapped
+            // one.
+            let mut next: Vec<ModelState> = if stuttered {
+                pre.abstract_states.clone()
+            } else {
+                Vec::new()
             };
             let mut matched = Vec::new();
-            for (transition, successor) in &expansion.successors {
-                match abstract_system.state_key(successor) {
-                    Ok((key, _)) if key == after_key => matched.push(transition.clone()),
-                    Ok(_) => {}
-                    Err(_) => return fault("successor-encodes"),
-                }
-            }
-            *abstract_successors = abstract_successors
-                .saturating_add(u64::try_from(expansion.successors.len()).unwrap_or(u64::MAX));
-            if !matched.is_empty() {
-                return match canonical(abstract_system, matched) {
-                    Ok(matched) => passes(Taken::Abstract(matched)),
-                    Err(verdict) => verdict,
+            let mut undecided = false;
+            for candidate in &pre.abstract_states {
+                let expansion = match abstract_system.expand_state(candidate) {
+                    Ok(expansion) => expansion,
+                    Err(stop) => return stop_verdict(abstract_system, stop),
                 };
+                *abstract_successors = abstract_successors
+                    .saturating_add(u64::try_from(expansion.successors.len()).unwrap_or(u64::MAX));
+                for (transition, successor) in &expansion.successors {
+                    let visible = visible_part(refinement, successor.state());
+                    match abstract_system.state_key_of(&visible) {
+                        Ok((key, _)) if key == after_key => {
+                            matched.push(transition.clone());
+                            next.push(successor.state().clone());
+                        }
+                        Ok(_) => {}
+                        Err(_) => return fault("successor-encodes"),
+                    }
+                }
+                undecided |= expansion
+                    .findings
+                    .iter()
+                    .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }));
             }
-            if expansion
-                .findings
-                .iter()
-                .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }))
-            {
-                return StepVerdict::Undetermined(Undetermined::UndecidedSuccessor);
+            if next.is_empty() {
+                if undecided {
+                    return StepVerdict::Undetermined(Undetermined::UndecidedSuccessor);
+                }
+                return StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+                    position: step.position,
+                });
             }
-            StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
-                position: step.position,
-            })
+            let next = match sorted(abstract_system, next) {
+                Ok(next) => next,
+                Err(verdict) => return verdict,
+            };
+            if stuttered {
+                return passes(Taken::Stutter, next);
+            }
+            match canonical(abstract_system, matched) {
+                Ok(matched) => passes(Taken::Abstract(matched), next),
+                Err(verdict) => verdict,
+            }
         }
         StepTarget::Abstract { operation, .. } => {
             let Some(arguments) = arguments else {
@@ -328,7 +456,7 @@ fn decide_step(
             };
             judge_operation(
                 abstract_system,
-                (before, &mapped),
+                (&pre.abstract_states, &mapped),
                 operation,
                 arguments,
                 step,
@@ -343,10 +471,10 @@ fn decide_step(
 fn stutter(
     step: &ConcreteStep<'_>,
     stuttered: bool,
-    passes: impl FnOnce(Taken) -> StepVerdict,
+    passes: impl FnOnce() -> StepVerdict,
 ) -> StepVerdict {
     if stuttered {
-        passes(Taken::Stutter)
+        passes()
     } else {
         StepVerdict::Fails(RefinementFailure::StutterChanged {
             position: step.position,
@@ -383,6 +511,7 @@ fn canonical(
         keyed.push((key, identity));
     }
     keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    keyed.dedup_by(|later, earlier| later.0 == earlier.0);
     Ok(keyed.into_iter().map(|(_, identity)| identity).collect())
 }
 
@@ -397,20 +526,20 @@ struct Arguments {
 
 /// RS-4: the receiver and arguments of the abstract-operation row `row`,
 /// evaluated at the pre-state over the concrete step's receiver and
-/// arguments (FR-141 "Abstract-operation evaluation").
+/// arguments (FR-141 "Abstract-operation evaluation"), with the history
+/// values the pre-state holds.
 #[allow(
     clippy::result_large_err,
     reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
 )]
 fn evaluate_arguments(
     refinement: &CheckedRefinement,
-    concrete_system: &ModelSystem<'_>,
-    abstract_system: &ModelSystem<'_>,
+    (concrete_system, abstract_system): (&ModelSystem<'_>, &ModelSystem<'_>),
     pre: &RefinementPosition,
     step: &ConcreteStep<'_>,
-    (row, transition): (Option<&StepRow>, &ModelTransition),
+    (row, resolved): (&StepRow, &ResolvedStep),
 ) -> Result<(Option<Arguments>, Soft), StepVerdict> {
-    let Some(StepRow {
+    let StepRow {
         class: StepClass::Operation(concrete_operation),
         target:
             StepTarget::Abstract {
@@ -419,19 +548,19 @@ fn evaluate_arguments(
                 binds_result,
                 ..
             },
-    }) = row
+    } = row
     else {
         return Err(fault("an-abstract-row-names-an-operation"));
     };
-    let resolved = concrete_system
-        .resolve_step(&pre.concrete, transition, step.post)
-        .map_err(|stop| stop_verdict(concrete_system, stop))?;
-    let Some(resolved) = resolved else {
-        return Err(fault("concrete-step-names-an-argument-vector"));
-    };
-    let Ok(observed) = concrete_system.observe(&pre.concrete) else {
-        return Err(fault("pre-state-observes"));
-    };
+    let observed = pre
+        .history
+        .environment(concrete_system, &pre.concrete)
+        .map_err(|_| fault("pre-history-names-its-objects"))
+        .and_then(|history| {
+            concrete_system
+                .observe_with_history(&pre.concrete, history)
+                .map_err(|_| fault("pre-state-observes"))
+        })?;
     let mut bindings = vec![Value::Reference(resolved.receiver.clone())];
     bindings.extend(resolved.arguments.iter().cloned());
     let object = object_of(concrete_system, &pre.concrete, &resolved.receiver);
@@ -505,7 +634,11 @@ fn evaluate_arguments(
         Some(Value::Reference(receiver)) if complete => Some(Arguments {
             receiver,
             supplied,
-            result: if *binds_result { resolved.result } else { None },
+            result: if *binds_result {
+                resolved.result.clone()
+            } else {
+                None
+            },
         }),
         Some(Value::Reference(_)) | None => None,
         Some(_) => return Err(fault("a-receiver-row-is-a-reference")),
@@ -513,61 +646,175 @@ fn evaluate_arguments(
     Ok((evaluated, soft))
 }
 
+/// The abstract states a mapped post-state stands for once its hidden fields
+/// take each value of their finite domains (AX-2): the visible state itself
+/// when no field is hidden.
+#[allow(
+    clippy::result_large_err,
+    reason = "FR-141 fixes StepVerdict's shape: the verdict is also the early return of an inner step"
+)]
+fn completions(
+    system: &ModelSystem<'_>,
+    mapped: &MappedState,
+) -> Result<Vec<ModelState>, StepVerdict> {
+    if mapped.hidden.is_empty() {
+        return Ok(vec![mapped.visible.clone()]);
+    }
+    // A hidden reference ranges over the objects of the mapped state.
+    let objects: Vec<ObjectReference> = mapped
+        .visible
+        .populations
+        .values()
+        .flatten()
+        .filter_map(|(key, object)| system.object_reference(&object.type_identity, key).ok())
+        .collect();
+    let mut domains: Vec<Vec<Option<Value>>> = Vec::with_capacity(mapped.hidden.len());
+    for slot in &mapped.hidden {
+        let Some(object) = mapped
+            .visible
+            .populations
+            .get(&slot.object.population)
+            .and_then(|objects| objects.get(&slot.object.key))
+        else {
+            return Err(fault("a-hidden-slot-names-an-object"));
+        };
+        let Some(field) = system
+            .fields_of(&object.type_identity)
+            .and_then(|fields| fields.iter().find(|field| field.key == slot.field))
+        else {
+            return Err(fault("a-hidden-slot-names-a-field"));
+        };
+        let mut values: Vec<Option<Value>> = system
+            .domain_values(&field.value_type, &objects)
+            .map_err(|stop| stop_verdict(system, stop))?
+            .into_iter()
+            .map(Some)
+            .collect();
+        if field.optional {
+            values.insert(0, None);
+        }
+        domains.push(values);
+    }
+    let total = domains.iter().try_fold(1u64, |total, domain| {
+        total.checked_mul(u64::try_from(domain.len()).ok()?)
+    });
+    if total.is_none_or(|total| total > system.max_candidates()) {
+        return Err(StepVerdict::Stopped(ReachedLimit {
+            limit: ModelCheckLimit::MaxCandidates,
+            value: system.max_candidates(),
+        }));
+    }
+    let mut digits = vec![0_usize; domains.len()];
+    let mut states = Vec::new();
+    'assignments: loop {
+        if domains.iter().any(Vec::is_empty) {
+            break;
+        }
+        let mut state = mapped.visible.clone();
+        for ((slot, domain), digit) in mapped.hidden.iter().zip(&domains).zip(&digits) {
+            let Some(Some(value)) = domain.get(*digit) else {
+                continue;
+            };
+            if let Some(object) = state
+                .populations
+                .get_mut(&slot.object.population)
+                .and_then(|objects| objects.get_mut(&slot.object.key))
+            {
+                object.fields.insert(slot.field.clone(), value.clone());
+            }
+        }
+        states.push(state);
+        // The last slot moves fastest.
+        let mut at = digits.len();
+        loop {
+            let Some(previous) = at.checked_sub(1) else {
+                break 'assignments;
+            };
+            at = previous;
+            digits[at] += 1;
+            if digits[at] < domains[at].len() {
+                break;
+            }
+            digits[at] = 0;
+        }
+    }
+    Ok(states)
+}
+
 /// RS-4: the abstract operation `operation` over the evaluated `arguments`,
-/// judged against the mapped post-state with the calls the abstract system
-/// makes when it expands the mapped pre-state.
+/// judged against each completion of the mapped post-state from each member
+/// of `pre_states`, with the calls the abstract system makes when it expands
+/// the member. The members after the step are the accepted completions.
 fn judge_operation(
     abstract_system: &ModelSystem<'_>,
-    (before, mapped): (&ModelState, &MappedState),
+    (pre_states, mapped): (&[ModelState], &MappedState),
     operation: &DeclarationKey,
     arguments: Arguments,
     step: &ConcreteStep<'_>,
     abstract_successors: &mut u64,
-    passes: impl FnOnce(Taken) -> StepVerdict,
+    passes: impl FnOnce(Taken, Vec<ModelState>) -> StepVerdict,
 ) -> StepVerdict {
-    let judged = match abstract_system.judge_application(&AbstractApplication {
-        pre: before,
-        receiver: &arguments.receiver,
-        operation,
-        arguments: &arguments.supplied,
-        post: &mapped.visible,
-        result: arguments.result.as_ref(),
-    }) {
-        Ok(judged) => judged,
-        Err(stop) => return stop_verdict(abstract_system, stop),
+    let completions = match completions(abstract_system, mapped) {
+        Ok(completions) => completions,
+        Err(verdict) => return verdict,
     };
-    *abstract_successors =
-        abstract_successors.saturating_add(u64::try_from(judged.len()).unwrap_or(u64::MAX));
-    let mut keyed = Vec::with_capacity(judged.len());
-    for found in judged {
-        let Ok(key) = abstract_system.transition_key(&found.transition) else {
-            return fault("transition-encodes");
-        };
-        keyed.push((key, found));
+    let mut next = Vec::new();
+    let mut accepted = Vec::new();
+    let mut rejected = Vec::new();
+    let mut undecided = false;
+    let mut order = 0_usize;
+    for before in pre_states {
+        for post in &completions {
+            let judged = match abstract_system.judge_application(&AbstractApplication {
+                pre: before,
+                receiver: &arguments.receiver,
+                operation,
+                arguments: &arguments.supplied,
+                post,
+                result: arguments.result.as_ref(),
+            }) {
+                Ok(judged) => judged,
+                Err(stop) => return stop_verdict(abstract_system, stop),
+            };
+            *abstract_successors =
+                abstract_successors.saturating_add(u64::try_from(judged.len()).unwrap_or(u64::MAX));
+            for found in judged {
+                let Ok(key) = abstract_system.transition_key(&found.transition) else {
+                    return fault("transition-encodes");
+                };
+                match found.judgement {
+                    Judgement::Accepted => {
+                        next.push(post.clone());
+                        accepted.push(found.transition);
+                    }
+                    Judgement::Undecided(_) => undecided = true,
+                    Judgement::Rejected(rejection) => {
+                        rejected.push((key, order, found.transition, rejection));
+                    }
+                }
+                order += 1;
+            }
+        }
     }
-    keyed.sort_by(|left, right| left.0.cmp(&right.0));
-    let accepted: Vec<ModelTransition> = keyed
-        .iter()
-        .filter(|(_, found)| found.judgement == Judgement::Accepted)
-        .map(|(_, found)| found.transition.clone())
-        .collect();
     if !accepted.is_empty() {
-        return passes(Taken::Abstract(accepted));
+        let (taken, next) = match (
+            canonical(abstract_system, accepted),
+            sorted(abstract_system, next),
+        ) {
+            (Ok(taken), Ok(next)) => (taken, next),
+            (Err(verdict), _) | (_, Err(verdict)) => return verdict,
+        };
+        return passes(Taken::Abstract(taken), next);
     }
-    if keyed
-        .iter()
-        .any(|(_, found)| matches!(found.judgement, Judgement::Undecided(_)))
-    {
+    if undecided {
         return StepVerdict::Undetermined(Undetermined::UndecidedSuccessor);
     }
-    match keyed.into_iter().next() {
-        Some((_, found)) => {
-            let Judgement::Rejected(rejection) = found.judgement else {
-                return fault("a-judgement-is-accepted-undecided-or-rejected");
-            };
+    rejected.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    match rejected.into_iter().next() {
+        Some((_, _, transition, rejection)) => {
             StepVerdict::Fails(RefinementFailure::AbstractStepRejected {
                 position: step.position,
-                transition: found.transition,
+                transition,
                 cause: match rejection {
                     Rejection::Precondition { clause } => StepRejection::Precondition { clause },
                     Rejection::Frame { code } => StepRejection::Frame { code },
@@ -584,25 +831,6 @@ fn judge_operation(
 /// The state-key digest of `state` in `system`.
 fn state_digest(system: &ModelSystem<'_>, state: &ModelState) -> Option<DigestRecord> {
     system.state_key_of(state).ok().map(|(_, digest)| digest)
-}
-
-/// The population and key of `reference` in `state`: the object of that key
-/// whose most-specific type is the reference's.
-fn object_of(
-    system: &ModelSystem<'_>,
-    state: &ModelState,
-    reference: &ObjectReference,
-) -> Option<ObjectKey> {
-    let type_key = system.type_key_of(reference)?;
-    state.populations.iter().find_map(|(population, objects)| {
-        objects
-            .get(reference.object().as_str())
-            .filter(|object| object.type_identity == *type_key)
-            .map(|_| ObjectKey {
-                population: population.clone(),
-                key: reference.object().as_str().to_owned(),
-            })
-    })
 }
 
 /// The verdict of a mapping that gave no state, for the state at `position`,

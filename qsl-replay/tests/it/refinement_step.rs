@@ -5,8 +5,8 @@
 use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_replay::{
-    check_initial, check_step, map_state, ConcreteStep, RefinementFailure, RefinementPosition,
-    StepRejection, StepVerdict, Taken,
+    check_initial, check_step, map_state, ConcreteStep, HistoryValues, RefinementFailure,
+    RefinementPosition, StepRejection, StepVerdict, Taken,
 };
 use qsl_semantics::model::state::ModelState;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -50,10 +50,12 @@ fn position(world: &World, concrete: &ModelState) -> RefinementPosition {
         &world.concrete_system(UNLIMITED),
         &world.abstract_system(UNLIMITED),
         concrete,
+        &HistoryValues::default(),
     )
     .expect("the state maps");
     RefinementPosition {
         concrete: concrete.clone(),
+        history: HistoryValues::default(),
         abstract_states: vec![mapped.visible],
     }
 }
@@ -303,11 +305,11 @@ fn a_swapped_system_is_a_fault_not_a_verdict() {
     assert!(matches!(verdict, StepVerdict::Fault(_)), "{verdict:?}");
 }
 
-/// TC-546, the `commitB` half of Coin3: the lost-update `commitB` step
+/// FR-141-AC-11 (TC-546), the `commitB` half: the lost-update `commitB` step
 /// at `ConcreteStep.position` 3 fails `AbstractStepRejected{position: 3, ..}`
-/// and the check judged one abstract transition. The `Coin3` initial-state
-/// indices and `Coin`'s `toss` need hidden fields (QSL-545) and are not built.
-#[trace("TC-546")]
+/// and the check judged one abstract transition. The `Coin3` half is in
+/// `refinement_hidden`.
+#[trace("TC-546", "FR-141-AC-11")]
 #[test]
 fn a_failed_step_names_its_position_and_counts_the_transitions_it_judged() {
     let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());

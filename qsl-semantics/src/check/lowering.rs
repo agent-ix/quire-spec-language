@@ -3442,10 +3442,12 @@ impl<'a> Lowering<'a> {
                     Operands::One(reference),
                 )
             }
-            // FR-139: a population-valued form lives in a refinement row,
-            // which S4 does not emit yet (FR-310's node): no FR-093 row
-            // lowers it.
-            NodeKind::PopulationObjects { .. } | NodeKind::Seq { .. } => {
+            // FR-139, FR-138: a population-valued form and a history read
+            // live in a refinement row, which S4 does not emit yet
+            // (FR-310's node): no FR-093 row lowers either.
+            NodeKind::PopulationObjects { .. }
+            | NodeKind::History { .. }
+            | NodeKind::Seq { .. } => {
                 return Err(refuse(
                     node.location(),
                     CheckCause::UnsupportedFeature {

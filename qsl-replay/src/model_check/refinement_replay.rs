@@ -31,8 +31,8 @@ use crate::model_check::replay::{
     disagreement, fault, no_value_cause, reexecute, refused, ModelTraceRefusal,
 };
 use crate::refinement::{
-    check_initial, check_step, map_state, ConcreteStep, RefinementFailure, RefinementPosition,
-    RefinementSystems, StepVerdict,
+    check_initial, check_step, initial_history, map_state, step_history, ConcreteStep,
+    RefinementFailure, RefinementPosition, RefinementSystems, StepVerdict,
 };
 use crate::result::DisagreementCause;
 use qsl_semantics::check::CheckedRefinement;
@@ -130,16 +130,34 @@ pub fn replay_refinement_trace(
             }
             StepVerdict::Fails(failure) => {
                 found = Found::Failed(failure);
-                mapped.extend(
+                // The failing position's history is the one its step gives.
+                let history = match (&previous, payload.prefix.get(index.saturating_sub(1))) {
+                    (Some(pre), Some(taken)) if index > 0 => step_history(
+                        refinement,
+                        &systems.concrete,
+                        &pre.history,
+                        &pre.concrete,
+                        &taken.transition,
+                        &position.state,
+                    )
+                    .ok(),
+                    _ => Some(initial_history(
+                        refinement,
+                        &systems.concrete,
+                        position.state.state(),
+                    )),
+                };
+                mapped.extend(history.and_then(|history| {
                     map_state(
                         refinement,
                         &systems.concrete,
                         &systems.abstract_system,
                         position.state.state(),
+                        &history,
                     )
                     .ok()
-                    .map(|state| state.visible),
-                );
+                    .map(|state| state.visible)
+                }));
                 break;
             }
             StepVerdict::Undefined(evaluation) => {

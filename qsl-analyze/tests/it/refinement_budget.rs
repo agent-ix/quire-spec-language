@@ -9,7 +9,7 @@ use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{operation_identity_text, ModelSimState};
 use qsl_replay::{
     check_step, map_state, open_systems, replay_refinement_trace, settle_refinement_safety,
-    ConcreteStep, CounterexampleKind, Execution, IncompleteCause, ModelCheckLimit,
+    ConcreteStep, CounterexampleKind, Execution, HistoryValues, IncompleteCause, ModelCheckLimit,
     ModelCheckLimits, ModelStep, ReachedLimit, RefinementFailure, RefinementPosition,
     RefinementSystems, RefinementTraceSettlement, SafetyOutcome, StepRejection, StepVerdict,
     TemporalCounterexample, TerminalValue,
@@ -110,6 +110,7 @@ fn put(
         &systems.concrete,
         &systems.abstract_system,
         &pre,
+        &HistoryValues::default(),
     )
     .expect("the state maps");
     (
@@ -117,6 +118,7 @@ fn put(
         reached,
         RefinementPosition {
             concrete: pre,
+            history: HistoryValues::default(),
             abstract_states: vec![mapped.visible],
         },
     )

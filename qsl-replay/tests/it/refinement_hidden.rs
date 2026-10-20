@@ -1,0 +1,270 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! FR-141 (TC-546): `check_initial` and `check_step` over a refinement with a
+//! hidden abstract field (ADR-020 AX-2), over `Coin`, whose abstract `toss`
+//! fixes a `side` that the concrete `reveal` shows later.
+
+use ix_trace_rs::trace;
+use qsl_eval::simulation::model::{operation_identity_text, ModelSimState};
+use qsl_replay::{
+    check_initial, check_step, ConcreteStep, RefinementFailure, RefinementPosition, StepRejection,
+    StepVerdict, Taken,
+};
+use quire_exact::Value;
+use quire_semantic_value::model_transition::ModelTransition;
+
+use crate::refinement_aux::{coin_refines, flag, int, Unit, World, UNLIMITED};
+
+/// The concrete state of the one coin `r`.
+fn coin(
+    world: &World<'_>,
+    tossed: bool,
+    shown: bool,
+    face: i64,
+) -> qsl_semantics::model::state::ModelState {
+    world.concrete_state(&[
+        ("tossed", flag(tossed)),
+        ("shown", flag(shown)),
+        ("face", int(face)),
+    ])
+}
+
+/// The concrete transition `operation` takes `pre` to `post`, with the state
+/// it reaches, found in the concrete system's own expansion.
+fn step(
+    world: &World<'_>,
+    unit: &Unit,
+    pre: &qsl_semantics::model::state::ModelState,
+    operation: &str,
+    post: &qsl_semantics::model::state::ModelState,
+) -> (ModelTransition, ModelSimState) {
+    let system = world.concrete_system(UNLIMITED);
+    let text =
+        operation_identity_text(&unit.concrete_key(&format!("Coin/{operation}"))).expect("a text");
+    let wanted = system.state_key_of(post).expect("a key").0;
+    system
+        .expand_state(pre)
+        .expect("the state expands")
+        .successors
+        .into_iter()
+        .find(|(transition, reached)| {
+            transition.operation() == text
+                && system.state_key_of(reached.state()).expect("a key").0 == wanted
+        })
+        .unwrap_or_else(|| panic!("{operation} does not take the state to the other"))
+}
+
+fn passes(verdict: StepVerdict) -> (RefinementPosition, Taken) {
+    let StepVerdict::Passes { post, taken } = verdict else {
+        panic!("the step passes: {verdict:?}");
+    };
+    (post, taken)
+}
+
+/// `check_step` on `operation` from `pre` to `post` at `position`.
+fn decide(
+    world: &World<'_>,
+    unit: &Unit,
+    pre: &RefinementPosition,
+    (operation, post): (&str, &qsl_semantics::model::state::ModelState),
+    position: u64,
+) -> qsl_replay::StepResult {
+    let (transition, reached) = step(world, unit, &pre.concrete, operation, post);
+    check_step(
+        world.refinement(),
+        &world.concrete_system(UNLIMITED),
+        &world.abstract_system(UNLIMITED),
+        pre,
+        &ConcreteStep {
+            position,
+            transition: Some(&transition),
+            post: &reached,
+        },
+    )
+}
+
+/// The `side` of each abstract state of `position`, in its order.
+fn sides(world: &World<'_>, position: &RefinementPosition) -> Vec<String> {
+    let field = world.abstract_key_of("Coin/side");
+    position
+        .abstract_states
+        .iter()
+        .map(|state| {
+            let object = &state.populations.values().next().expect("a population")["r"];
+            match &object.fields[&field] {
+                Value::Integer(integer) => integer.to_string(),
+                other => panic!("an integer side, got {other:?}"),
+            }
+        })
+        .collect()
+}
+
+fn initial(world: &World<'_>) -> RefinementPosition {
+    let system = world.concrete_system(UNLIMITED);
+    let (position, taken) = passes(check_initial(
+        world.refinement(),
+        &system,
+        &world.abstract_system(UNLIMITED),
+        0,
+        system.initial_states()[0].state(),
+    ));
+    assert_eq!(taken, Taken::Stutter);
+    position
+}
+
+/// FR-141-AC-4 (TC-546 step 4): after the concrete `toss` the candidate set
+/// holds two states, `side` 0 and `side` 1; after `reveal` to `face` 1 it
+/// holds the one with `side` 1.
+#[trace("TC-546", "FR-141-AC-4")]
+#[test]
+fn a_hidden_side_is_a_candidate_set_that_a_later_step_narrows() {
+    let unit = Unit::coin(1);
+    let world = unit.world(&coin_refines(""));
+    let start = initial(&world);
+    assert_eq!(sides(&world, &start), ["0"]);
+    let (tossed, taken) = passes(
+        decide(
+            &world,
+            &unit,
+            &start,
+            ("toss", &coin(&world, true, false, 0)),
+            1,
+        )
+        .verdict,
+    );
+    assert!(matches!(taken, Taken::Abstract(identities) if identities.len() == 1));
+    assert_eq!(sides(&world, &tossed), ["0", "1"]);
+    let (revealed, _) = passes(
+        decide(
+            &world,
+            &unit,
+            &tossed,
+            ("reveal", &coin(&world, true, true, 1)),
+            2,
+        )
+        .verdict,
+    );
+    assert_eq!(sides(&world, &revealed), ["1"]);
+}
+
+/// FR-141-AC-4 (TC-546 step 4): with the row `side = self.face` added,
+/// `reveal` to `face` 1 fails `AbstractStepRejected{transition: show(c),
+/// cause: Frame{..}}`, since `show` does not modify `side`.
+#[trace("TC-546", "FR-141-AC-4")]
+#[test]
+fn a_mapped_side_that_changes_at_show_fails_the_frame() {
+    let unit = Unit::coin(1);
+    let world = unit.world(&coin_refines("side = self.face;"));
+    let start = initial(&world);
+    let (tossed, _) = passes(
+        decide(
+            &world,
+            &unit,
+            &start,
+            ("toss", &coin(&world, true, false, 0)),
+            1,
+        )
+        .verdict,
+    );
+    let StepVerdict::Fails(RefinementFailure::AbstractStepRejected {
+        position,
+        transition,
+        cause,
+    }) = decide(
+        &world,
+        &unit,
+        &tossed,
+        ("reveal", &coin(&world, true, true, 1)),
+        2,
+    )
+    .verdict
+    else {
+        panic!("the step is rejected");
+    };
+    assert_eq!(position, 2);
+    assert_eq!(
+        transition.operation(),
+        operation_identity_text(&unit.abstract_key("Coin/show")).expect("a text")
+    );
+    assert!(matches!(cause, StepRejection::Frame { .. }), "{cause:?}");
+}
+
+/// FR-141-AC-11 (TC-546), the `Coin3` half: `check_initial` on index 0
+/// passes and on index 1 and 2 fails `InitialNotAbstract{initial: 1}` and
+/// `{initial: 2}`; `toss` with `side` hidden from the initial state at index
+/// 0 passes, and the check judged two abstract states, one for each `side`.
+#[trace("TC-546", "FR-141-AC-11")]
+#[test]
+fn three_initial_states_and_a_toss_judge_the_hidden_side_both_ways() {
+    let unit = Unit::coin(3);
+    let world = unit.world(&coin_refines(""));
+    let system = world.concrete_system(UNLIMITED);
+    let abstracted = world.abstract_system(UNLIMITED);
+    assert_eq!(system.initial_states().len(), 3);
+    let verdicts: Vec<StepVerdict> = system
+        .initial_states()
+        .iter()
+        .enumerate()
+        .map(|(index, state)| {
+            check_initial(
+                world.refinement(),
+                &system,
+                &abstracted,
+                index,
+                state.state(),
+            )
+        })
+        .collect();
+    assert!(matches!(verdicts[0], StepVerdict::Passes { .. }));
+    for (index, verdict) in verdicts.iter().enumerate().skip(1) {
+        assert!(
+            matches!(verdict, StepVerdict::Fails(RefinementFailure::InitialNotAbstract { initial }) if *initial == index),
+            "{index}: {verdict:?}"
+        );
+    }
+    let start = initial(&world);
+    let result = decide(
+        &world,
+        &unit,
+        &start,
+        ("toss", &coin(&world, true, false, 0)),
+        1,
+    );
+    assert_eq!(result.abstract_successors, 2);
+    assert!(matches!(result.verdict, StepVerdict::Passes { .. }));
+}
+
+/// FR-141 (TC-546): an `any` row over a hidden `side` keeps the candidates
+/// that have a successor with the mapped visible part: `reveal -> any` to
+/// `face` 1 narrows the two candidates after `toss` to the one with `side` 1.
+#[trace("TC-546")]
+#[test]
+fn an_any_row_keeps_the_candidates_with_a_matching_successor() {
+    let unit = Unit::coin(1);
+    let rows = coin_refines("").replace(
+        "step Impl::Coin::reveal -> Spec::Coin::show(self);",
+        "step Impl::Coin::reveal -> any;",
+    );
+    let world = unit.world(&rows);
+    let start = initial(&world);
+    let (tossed, _) = passes(
+        decide(
+            &world,
+            &unit,
+            &start,
+            ("toss", &coin(&world, true, false, 0)),
+            1,
+        )
+        .verdict,
+    );
+    assert_eq!(sides(&world, &tossed), ["0", "1"]);
+    let result = decide(
+        &world,
+        &unit,
+        &tossed,
+        ("reveal", &coin(&world, true, true, 1)),
+        2,
+    );
+    let (revealed, taken) = passes(result.verdict);
+    assert!(matches!(taken, Taken::Abstract(identities) if identities.len() == 1));
+    assert_eq!(sides(&world, &revealed), ["1"]);
+}

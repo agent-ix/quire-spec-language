@@ -18,6 +18,9 @@ mod model_world;
 mod quotient;
 mod reduction;
 mod reduction_world;
+#[path = "../../../tests/support/refinement_aux.rs"]
+mod refinement_aux;
+mod refinement_auxiliary;
 mod refinement_budget;
 #[path = "../../../tests/support/refinement_cas.rs"]
 mod refinement_fixture;

@@ -28,6 +28,8 @@ use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::state::{ModelState, StateField, StateObject};
 use quire_exact::{CollectionKind, ObjectReference, Value, ValueType};
 
+use crate::refinement::history::HistoryValues;
+
 /// An object of a population, by the population and the object's key.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ObjectKey {
@@ -60,6 +62,15 @@ pub enum MappingRowRef {
         /// The expression.
         argument: StepArgument,
     },
+    /// The update of a history field by one concrete operation (FR-138).
+    History {
+        /// The concrete object type the field is added to.
+        object_type: DeclarationKey,
+        /// The history field.
+        field: String,
+        /// The concrete operation whose update it is.
+        operation: DeclarationKey,
+    },
 }
 
 /// Which expression of an abstract-operation `step` row.
@@ -89,6 +100,9 @@ pub enum EvalFailure {
     Evaluation(Box<ClauseOutcome>),
     /// No object row names the concrete object's most-specific type.
     UnmappedType(DeclarationKey),
+    /// A history update's value lies outside the field's declared type
+    /// (FR-138).
+    OutOfType,
 }
 
 /// A mapping row that is refused or incomplete (FR-140 `MappingUndetermined`).
@@ -145,19 +159,19 @@ const WRONG_ROLE_MAPPING: CatalogCode =
 
 /// `runtime_invariant`/`established-invariant-broken`: the concrete state
 /// names an object its own system cannot reference.
-const BROKEN_INVARIANT: CatalogCode =
+pub(super) const BROKEN_INVARIANT: CatalogCode =
     CatalogCode::new("runtime_invariant", "established-invariant-broken");
 
 /// The first row outcome of each kind, in reading order.
 #[derive(Default)]
-struct Outcomes {
+pub(super) struct Outcomes {
     undefined: Option<MappingFailure>,
     undetermined: Option<MappingFailure>,
 }
 
 impl Outcomes {
     /// Keep `failure` when no earlier one of its kind was kept.
-    fn record(&mut self, failure: MappingFailure) {
+    pub(super) fn record(&mut self, failure: MappingFailure) {
         let slot = match failure {
             MappingFailure::Undefined { .. } => &mut self.undefined,
             MappingFailure::Undetermined(_) => &mut self.undetermined,
@@ -168,8 +182,13 @@ impl Outcomes {
 
     /// The failure that outranks the rest: the first undefined row, else the
     /// first undetermined one.
-    fn first(self) -> Option<MappingFailure> {
+    pub(super) fn first(self) -> Option<MappingFailure> {
         self.undefined.or(self.undetermined)
+    }
+
+    /// Both kept outcomes, the undefined one first.
+    pub(super) fn into_failures(self) -> impl Iterator<Item = MappingFailure> {
+        self.undefined.into_iter().chain(self.undetermined)
     }
 }
 
@@ -179,8 +198,8 @@ impl Outcomes {
 ///
 /// The rows are evaluated by the concrete package's clause evaluator over the
 /// concrete state's observation, which only `concrete_system` holds, so it is
-/// a parameter beside FR-140's listed inputs. History values (FR-138) are not
-/// an input yet: a refinement with a history row is refused at S3.
+/// a parameter beside FR-140's listed inputs. A row reads a history field
+/// (FR-138) from `history`, the values at `state`.
 ///
 /// # Errors
 ///
@@ -199,6 +218,7 @@ pub fn map_state(
     concrete_system: &ModelSystem<'_>,
     abstract_system: &ModelSystem<'_>,
     state: &ModelState,
+    history: &HistoryValues,
 ) -> Result<MappedState, MappingFailure> {
     check_systems(refinement, concrete_system, abstract_system)?;
     let mut populations: Vec<&PopulationRow> = refinement.populations().iter().collect();
@@ -235,7 +255,12 @@ pub fn map_state(
                 Some(observation) => observation,
                 None => observed.insert(
                     concrete_system
-                        .observe(state)
+                        .observe_with_history(
+                            state,
+                            history
+                                .environment(concrete_system, state)
+                                .map_err(MappingFailure::Fault)?,
+                        )
                         .map_err(|stop| MappingFailure::Fault(stop.cause))?,
                 ),
             };
@@ -307,6 +332,25 @@ fn check_systems(
         }
         _ => Ok(()),
     }
+}
+
+/// The population and key of `reference` in `state`: the object of that key
+/// whose most-specific type is the reference's.
+pub(super) fn object_of(
+    system: &ModelSystem<'_>,
+    state: &ModelState,
+    reference: &ObjectReference,
+) -> Option<ObjectKey> {
+    let type_key = system.type_key_of(reference)?;
+    state.populations.iter().find_map(|(population, objects)| {
+        objects
+            .get(reference.object().as_str())
+            .filter(|object| object.type_identity == *type_key)
+            .map(|_| ObjectKey {
+                population: population.clone(),
+                key: reference.object().as_str().to_owned(),
+            })
+    })
 }
 
 /// The failure of a concrete object whose type no object row maps. S3

@@ -1810,6 +1810,17 @@ impl<'a, 'm> Machine<'a, 'm> {
                 );
                 value
             }
+            NodeKind::History { field, .. } => {
+                let Value::Reference(reference) = self.pop()? else {
+                    return Err(invariant("history-reference-value-expected"));
+                };
+                // FR-138: a history field is the refinement's, kept beside
+                // the observation; `pre(..)` reads the pre-state's.
+                self.objects_for(node)?
+                    .history(&reference, field)
+                    .cloned()
+                    .ok_or_else(|| invariant("history-value-unresolved"))?
+            }
             NodeKind::Present(_) => {
                 let Value::Option(option) = self.pop()? else {
                     return Err(invariant("option-value-expected"));

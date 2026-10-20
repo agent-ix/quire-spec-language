@@ -1266,31 +1266,6 @@ fn protocol_step_rows_refuse_over_a_model_subject() {
     );
 }
 
-/// FR-138: a history row is not checked yet, so a declaration that writes
-/// one refuses `unsupported_construct`/`not-yet-implemented` (FR-341-AC-5:
-/// S3's refusal of a construct it has no checker for) at the row's `history`
-/// keyword, naming the feature and the selected profile, rather than checking
-/// with the row ignored.
-#[trace("TC-540", "FR-135-AC-5")]
-#[test]
-fn a_history_row_is_refused_until_it_is_checked() {
-    let base = cas_refines_counter();
-    let begin = "step Impl::Counter::beginB -> stutter;";
-    let history = "history Impl::Counter.seen : Boolean = false { }";
-    let found = refused_counter(&mutated(&base, begin, &format!("{begin}\n{history}")));
-    let refused = only(&found);
-    assert_eq!(
-        refused.code_and_cause(),
-        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
-    );
-    assert_eq!(refused.at, "history");
-    let RefinementCause::Unsupported { feature, profile } = refused.refinement() else {
-        panic!("an unsupported feature: {:?}", refused.refinement());
-    };
-    assert_eq!(feature.name(), "history-row");
-    assert_eq!(profile, "quire.temporal.infinite-trace/v1");
-}
-
 /// FR-147: an abstract protocol side is a form QSpec has no production for
 /// (STD-182), so S2 never builds it from source; built by hand, S3 refuses it
 /// `unsupported_construct`/`not-yet-implemented` at the clause name and still
@@ -1630,9 +1605,9 @@ fn an_any_row_writes_no_simulation_record() {
     assert_eq!(simulation_records(&graph), []);
 }
 
-/// TC-551 step 2, the hidden-field case only: a refinement with a hidden
-/// field writes no record. `RegisterHistory` needs the unchecked history row
-/// (FR-138), so that case is not tested.
+/// TC-551 step 2, the hidden-field case: a refinement with a hidden field
+/// writes no record. The `RegisterHistory` case is in `qsl-replay`'s
+/// `refinement_history`, whose fixture has the bounded history field.
 #[trace("TC-551")]
 #[test]
 fn a_hidden_field_writes_no_simulation_record() {

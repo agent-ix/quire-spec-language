@@ -114,7 +114,7 @@ fn reproduced(
 /// TC-550 step 1: the lost-update counterexample replays,
 /// recomputing the mapped values 0, 0, 0, 1, 1, to the recorded
 /// `AbstractStepRejected{position: 4, ..}`.
-#[trace("TC-550")]
+#[trace("TC-550", "FR-145-AC-1")]
 #[test]
 fn the_lost_update_counterexample_replays_with_its_mapped_values() {
     let world = World::with(Variant::LOST_UPDATE, &lost_update_refinement());
@@ -158,7 +158,7 @@ fn the_lost_update_counterexample_replays_with_its_mapped_values() {
 
 /// TC-550 step 1): the `InitialNotAbstract` and
 /// `StutterChanged` counterexamples each reproduce.
-#[trace("TC-550")]
+#[trace("TC-550", "FR-145-AC-1")]
 #[test]
 fn the_initial_and_stutter_counterexamples_replay() {
     let initial = World::with(

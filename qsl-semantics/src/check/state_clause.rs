@@ -51,7 +51,7 @@ use quire_semantic_value::location::Location;
 /// for an invariant, `pre` for a precondition, `post` for a postcondition.
 /// The checker types the clause's reads by it and S6a selects the clause's
 /// own observation by it.
-fn observation_of(kind: StateClauseKind) -> Observation {
+pub(crate) fn observation_of(kind: StateClauseKind) -> Observation {
     match kind {
         StateClauseKind::Invariant => Observation::Current,
         StateClauseKind::Precondition => Observation::Pre,

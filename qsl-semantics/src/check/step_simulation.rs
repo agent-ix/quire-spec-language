@@ -8,9 +8,7 @@
 //! package's invariant clauses as hypotheses. With a hidden field or an
 //! `any` row it writes none: an `any` row has no per-step obligation, so the
 //! other rows' records would not discharge the safety half, and a hidden
-//! field makes `map` no function of the visible state. A history row is
-//! refused before a [`CheckedRefinement`] exists (FR-138 is not checked
-//! yet), so a checked refinement never has a history field here.
+//! field or a history field makes `map` no function of the concrete step.
 //!
 //! A record's members are the refinement node, the obligation and the
 //! hypotheses, which the obligation identity will bind once its preimage is
@@ -46,7 +44,8 @@ pub struct StepRowOverflow;
 /// The records name rows by position in FR-375's order; [`step_row_refs`]
 /// maps a source row to its position.
 ///
-/// Empty when the refinement has a hidden field or an `any` row.
+/// Empty when the refinement has a hidden field, a history field or an `any`
+/// row.
 ///
 /// # Errors
 ///
@@ -64,7 +63,7 @@ pub fn step_simulation_records(
         .steps()
         .iter()
         .any(|row| matches!(row.target, StepTarget::Any));
-    if has_hidden || has_any {
+    if has_hidden || has_any || !refinement.history().is_empty() {
         return Ok(Vec::new());
     }
     let hypotheses: Vec<NodeKey> = clauses
