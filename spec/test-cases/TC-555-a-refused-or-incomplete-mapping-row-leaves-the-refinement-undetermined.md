@@ -51,4 +51,4 @@ Tag the tests `#[trace("TC-555", "<AC id>")]`.
   `refuted`, `decisive-counterexample`, cause `UndefinedEvaluation`.
 - Step 4: `StepVerdict::Fault` for each; the item settles `failed`.
 - Step 5: `StepVerdict::Stopped{EvaluationMeter, B}`; FR-142 ends `Stopped{ResourceExhausted, {EvaluationMeter, B}}` after the concrete states expanded; the item settles with execution `resource-incomplete`, `Incomplete(LimitReached{EvaluationMeter, B, setting})`, category incomplete, never `TerminalValue::Failed`.
-- Step 6: the verdicts of FR-141-AC-10, the swapped system returning `Fault`.
+- Step 6: the verdicts of FR-141-AC-10, including the order between read groups (`R` before `A1`, `A1` before `P`, `A1` before `H`, `H` before `P`), the swapped system returning `Fault`.

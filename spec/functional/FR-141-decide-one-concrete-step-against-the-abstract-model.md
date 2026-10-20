@@ -156,7 +156,7 @@ decides.
   order), and SHALL return:
   - `StepVerdict::Fault` when any read returns `MappingFailure::Fault` or
     `WrongSystem`, whatever the other reads return (a fault takes no part in
-    the order, QSpec FR-377 and FR-383);
+    the order, QSpec FR-377-AC-12 and FR-383);
   - otherwise `Undefined` for the first read that is undefined, even when an
     earlier read is undetermined, naming the step's `position`, the row and
     the object;
@@ -164,9 +164,8 @@ decides.
     undetermined: refused, incomplete, out of type (`OutOfType`) or of an
     unmapped type (`UnmappedType`).
 
-  This order across the receiver, arguments, post history and post-state
-  rows is QSL's extension of FR-140's precedence, which QSpec FR-377 states
-  for the rows of one `map(s, h)` only.
+  This is QSpec FR-377's failure precedence across a step (FR-377-AC-12),
+  which `check_step` implements.
 
 ### Deciding the step rules
 
@@ -203,7 +202,7 @@ how it evaluates them and what it reports:
 - If the abstract system's evaluation or expansion exhausts its per-evaluation
   meter or `max_candidates` while `check_step` decides, then it SHALL return
   `StepVerdict::Stopped` with that limit and its value; such a stop is a
-  budget stop, never `Fault`, `Fails` or `Undetermined`. `check_initial`
+  budget stop, never `Fault`, `Fails` or `Undetermined` (QSpec FR-377-AC-13: every clause evaluation of either subject gets a fresh meter, and the abstract subject exhausting its meter stops the run). `check_initial`
   takes the abstract initial states from snapshots and compares their keys,
   evaluates nothing on the abstract side, and never returns `Stopped`. A mapping
   row or step-row argument that is incomplete stays `Undetermined`
@@ -241,7 +240,7 @@ how it evaluates them and what it reports:
 | FR-141-AC-7 | Over `RingIsQueue` with the pure function `g using v(i: Int[0, 1]): Int[0, 1] pure { if 1 mod i = 0 then 0 else 1 }` and the row `put -> enq(self.ring, g(self.index))` (`mod` is always Euclidean, so no division law is selected), `check_step` on `put(1)` with receiver `s0` (index 0) from the empty queue (`head = 0`, `size = 0`) returns `Undefined` naming the step-row argument, cause `division-by-zero`, with `RefinementFailure::Undefined{position: 1, row: put}` written by the engine; with receiver `s1` (index 1) the argument is `g(1)` = 0, since `1 mod 1 = 0`. With the original row and a per-evaluation meter budget of zero for the argument `self.ring`, `check_step` returns `Undetermined(MappingUndetermined)`. | Test (TC-555) |
 | FR-141-AC-8 | A `MappingFailure::Fault` from FR-140 during `check_step`, and a `WrongSystem` from a swapped system passed to it, each return `StepVerdict::Fault`; FR-144 settles the item `failed`, not `refuted` or `inconclusive`, even when an earlier step of the run was undefined or an earlier read of the same step is undefined (FR-141-AC-10). | Test (TC-555) |
 | FR-141-AC-9 | Fixture `HeavyEnq`: `RingIsQueue` whose abstract `enq` postcondition is a conjunction over every ring slot costing more than the per-evaluation meter budget B, while every concrete contract evaluation, mapping row and step-row argument fits in B. With the meter at B, `check_step` on `put(1)` from the empty queue returns `StepVerdict::Stopped` with limit `EvaluationMeter` and value B, not `Fault`. FR-142 over `HeavyEnq` with that meter ends the run `Stopped{ResourceExhausted, {EvaluationMeter, B}}` after the initial state's concrete expansion, and FR-144 settles the item as FR-127's V-7 row spells it: execution `resource-incomplete`, `TerminalValue::Incomplete(LimitReached{EvaluationMeter, B, setting})`, category incomplete, never `TerminalValue::Failed`. | Test (TC-555) |
-| FR-141-AC-10 | Fixture `Reads`: a refinement whose row is `put -> enq(R, A1, A2)` over a model where each of the receiver `R`, the arguments `A1` and `A2`, the post-history update `H` and a post-state row `P` can be chosen as cheap, over-budget (costing more than the meter B, so incomplete), undefined (division by zero), out of type (`H` only) or of an unmapped type (`P` only). `check_step` returns: `Undefined` at `A1` for `R` over-budget and `A1` undefined; `Undefined` at `P` for `A1` over-budget and `P` undefined; `Undefined` at `A1` for `A1` and `A2` both undefined; `Undetermined(MappingUndetermined)` naming `H` for `H` out of type and `P` over-budget; `Undetermined` naming `P` for `P` of an unmapped type and nothing undefined; and `StepVerdict::Fault` for a swapped system with `A1` undefined. | Test (TC-555) |
+| FR-141-AC-10 | Fixture `Reads`: a refinement whose row is `put -> enq(R, A1, A2)` over a model where each of the receiver `R`, the arguments `A1` and `A2`, the post-history update `H` and a post-state row `P` can be chosen as cheap, over-budget (costing more than the meter B, so incomplete), undefined (division by zero), out of type (`H` only) or of an unmapped type (`P` only). `check_step` returns: `Undefined` at `A1` for `R` over-budget and `A1` undefined; `Undefined` at `P` for `A1` over-budget and `P` undefined; `Undefined` at `A1` for `A1` and `A2` both undefined; `Undetermined(MappingUndetermined)` naming `H` for `H` out of type and `P` over-budget; `Undetermined` naming `P` for `P` of an unmapped type and nothing undefined; `Undefined` at `R` for `R` and `A1` both undefined; `Undefined` at `A1` for `A1` and `P` both undefined; `Undetermined(MappingUndetermined)` naming `A1` for `A1` incomplete and `H` out of type; `Undefined` at `H` for `H` and `P` both undefined; and `StepVerdict::Fault` for a swapped system with `A1` undefined (QSpec FR-377-AC-12, TC-315 step 9). | Test (TC-555) |
 | FR-141-AC-11 | Fixture `Coin3`: `Coin` (FR-141-AC-4) with three concrete initial states: index 0 with all fields false and 0, index 1 with `face` 1 and index 2 with `tossed` true. `check_initial` on index 0 passes and on index 1 and 2 fails `InitialNotAbstract{initial: 1}` and `InitialNotAbstract{initial: 2}`. `check_step` of the lost-update `commitB` step of AC-1 with `ConcreteStep.position` 3 fails `AbstractStepRejected{position: 3, …}` with `abstract_successors` 1; `Coin`'s `toss` with `side` hidden from the initial state at index 0 passes with `abstract_successors` 2. | Test (TC-546) |
 
 ## Dependencies
