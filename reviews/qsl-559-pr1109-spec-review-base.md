@@ -100,3 +100,9 @@ Round 2, head 771649f1d (one fix commit over ccae02a7d; base main still 5474b912
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-009 | fixed | - |
+
+Round 3, head d9d55d263 (one fix commit over 771649f1d; base main still 5474b9125). The three reviews/round0-*.md files are deleted, and reviews/ now holds only the three qsl-559-pr1109-spec-review-*.md files, each equal to the reviewer's round-2 copy. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in a changed file; tools/check-index-completeness.sh exits 0.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-010 | fixed | - |
