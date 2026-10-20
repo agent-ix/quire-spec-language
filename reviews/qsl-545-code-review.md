@@ -73,6 +73,7 @@ Not mergeable: FND-001 and FND-002 each give a wrong `refuted` verdict, and both
 | FND-008 | fixed | `CertifiedPosition.history` is filled by the producer and compared in `matches`; a_certificate_position_carries_its_history; M25 is killed |
 | FND-009 | fixed | the any arm counts an undecided postcondition only for a candidate digest among the mapped completions; M26 is killed (the positive half is untested: SR-13461 FND-010) |
 | FND-010 | fixed | `failed` is keyed by (object, field) and a row of another object is evaluated; a_failed_update_skips_the_rows_of_its_own_object_only; the name-only mutant (M28) is killed. The stated reference-reach limit is a new defect: FND-011 |
+| FND-011 | fixed | advance drops failed (object, field) entries from the post history, and the evaluator's unresolved History read is a typed refusal, so any row reaching the field, of any object and by any path, is undetermined; the row-skip machinery is removed; a_row_reaching_a_failed_field_through_a_population_is_undetermined (probe 5); M29, M30 and M31 are killed |
 
 ## New findings (disposition pass 2)
 
