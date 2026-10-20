@@ -398,9 +398,10 @@ impl MemoryModel for Tso {
                 true
             }
             FootprintStep::Gated(GatedStep::Receive | GatedStep::Attempt) => true,
+            // `flush` is the one internal step `tso` takes (TSO-4), so its
+            // model and thread identify it.
             FootprintStep::Memory { identity, stored } => {
                 if identity.model != MemoryModelName::Tso
-                    || identity.step != "flush"
                     || identity.thread != *thread
                     || !buffered
                 {
