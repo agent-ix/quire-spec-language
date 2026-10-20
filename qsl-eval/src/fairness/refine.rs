@@ -243,8 +243,19 @@ impl Filter<'_> {
         // The pairs whose loads the one step also removed, among those the
         // remaining states still load: the certificate states their removal
         // as an `UnfairVisibility` over the remaining states, below the
-        // `UnfairStrong` (ADR-018 PC-4), with the same refinement.
-        let still = self.failing_visibility(&remaining, removed);
+        // `UnfairStrong` (ADR-018 PC-4), with the same refinement. Only the
+        // pairs that failed on the whole component are listed: a pair whose
+        // fresh loads all touched a removed state fails only below, inside
+        // `refined`, where its own witness states it.
+        let still: Vec<usize> = visibility
+            .iter()
+            .copied()
+            .filter(|index| {
+                self.constraints.get(*index).is_some_and(|constraint| {
+                    self.inside(&remaining, removed, |label| constraint.is_owed_by(label))
+                })
+            })
+            .collect();
         let sub = if still.is_empty() || remaining.is_empty() {
             refined
         } else {

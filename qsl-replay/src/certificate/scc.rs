@@ -1192,4 +1192,130 @@ mod tests {
             rejected(CertificateRule::BackwardEdge, q.clone())
         );
     }
+
+    /// The certificate EN-1 writes from the filter's witness tree over
+    /// `product` (ADR-018 PC-4): each analysis as a component with its
+    /// outcome's witness, the components of each level listed in
+    /// topological order over the level's kept edges (ties in the filter's
+    /// order). A fair outcome has no witness, so it is `None`.
+    fn certificate_of(
+        product: &ProductGraph,
+        analyses: &[qsl_eval::fairness::Analysis],
+    ) -> Option<Vec<Component>> {
+        use qsl_eval::fairness::Outcome;
+        let removed = analyses
+            .first()
+            .map(|analysis| analysis.removed().clone())
+            .unwrap_or_default();
+        let owner: BTreeMap<Vertex, usize> = analyses
+            .iter()
+            .enumerate()
+            .flat_map(|(at, analysis)| analysis.vertices().iter().map(move |vertex| (*vertex, at)))
+            .collect();
+        let live = |edge: &Edge| match edge.label {
+            EdgeLabel::Transition(identity) => !removed.contains(&identity),
+            EdgeLabel::Stutter => true,
+        };
+        let mut order = Vec::new();
+        let mut left: Vec<usize> = (0..analyses.len()).collect();
+        while !left.is_empty() {
+            let pick = left.iter().copied().find(|&candidate| {
+                !left.iter().any(|&other| {
+                    other != candidate
+                        && analyses[other].vertices().iter().any(|vertex| {
+                            product.graph.edges_from(*vertex).iter().any(|edge| {
+                                live(edge) && owner.get(&edge.target) == Some(&candidate)
+                            })
+                        })
+                })
+            })?;
+            left.retain(|&at| at != pick);
+            order.push(pick);
+        }
+        let index = |at: &usize| u32::try_from(*at).expect("a small index");
+        order
+            .into_iter()
+            .map(|at| {
+                let analysis = &analyses[at];
+                let witness = match analysis.outcome() {
+                    Outcome::Trivial => ComponentWitness::Trivial,
+                    Outcome::MissingAcceptance { set } => {
+                        ComponentWitness::MissingAcceptance { set: index(set) }
+                    }
+                    Outcome::UnfairWeak { constraint } => ComponentWitness::UnfairWeak {
+                        constraint: index(constraint),
+                    },
+                    Outcome::UnfairVisibility { constraints, sub } => {
+                        ComponentWitness::UnfairVisibility {
+                            constraints: constraints.iter().map(index).collect(),
+                            sub: certificate_of(product, sub)?,
+                        }
+                    }
+                    Outcome::UnfairStrong { constraints, sub } => ComponentWitness::UnfairStrong {
+                        constraints: constraints.iter().map(index).collect(),
+                        sub: certificate_of(product, sub)?,
+                    },
+                    Outcome::Fair => return None,
+                };
+                Some(Component {
+                    states: analysis
+                        .vertices()
+                        .iter()
+                        .map(|vertex| product.state(*vertex).cloned())
+                        .collect::<Option<_>>()?,
+                    witness,
+                })
+            })
+            .collect()
+    }
+
+    /// SR-12217 FND-004: states 0 to 2, a strong constraint enabled only at
+    /// 0 and never taken, the fresh load `0 -> 1`, `1 -> 0`, the stale load
+    /// `1 -> 2` and `2 -> 1`, states 1 and 2 accepting. The pair does not
+    /// fail on the whole SCC (its fresh load is inside), so the one step
+    /// removes only state 0; the pair then fails on `{1, 2}` below. The
+    /// certificate the filter's witness tree gives is accepted.
+    #[trace("TC-673", "FR-228-AC-8")]
+    #[test]
+    fn a_pair_failing_only_after_a_strong_removal_certifies_once() {
+        const STRONG: Identity = Identity::new(9);
+        const STALE: Identity = Identity::new(10);
+        const FRESH: Identity = Identity::new(11);
+        let mut product = ProductGraph::new();
+        let ends: Vec<Vertex> = (0..3_u8)
+            .map(|index| {
+                let enabled = if index == 0 { vec![STRONG] } else { vec![] };
+                product
+                    .add_state(product_state([index, 0], "q1"), enabled)
+                    .expect("a new state")
+            })
+            .collect();
+        for (from, to, label) in [
+            (0, 1, FRESH),
+            (1, 0, Identity::new(20)),
+            (1, 2, STALE),
+            (2, 1, Identity::new(21)),
+        ] {
+            product
+                .add_edge(ends[from], ends[to], EdgeLabel::Transition(label))
+                .expect("known vertices");
+        }
+        product
+            .add_acceptance_set([ends[1], ends[2]])
+            .expect("known vertices");
+        let constraints = [
+            Constraint::strong([STRONG]),
+            Constraint::visibility([STALE, FRESH], [FRESH]),
+        ];
+        let all: BTreeSet<Vertex> = product.graph.vertices().collect();
+        let analyses =
+            qsl_eval::fairness::analyze(&product.graph, &all, &constraints, &Cancel::new())
+                .expect("the filter runs");
+        assert!(qsl_eval::fairness::Analysis::first_fair_in(&analyses).is_none());
+        let certificate = certificate_of(&product, &analyses).expect("no fair component");
+        assert_eq!(
+            check(&product, &certificate, &constraints),
+            TemporalCertificateCheck::Accepted
+        );
+    }
 }
