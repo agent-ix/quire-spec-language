@@ -46,6 +46,12 @@ Round 1, head f518f3698. The fix commit f518f3698 sits on a merge, d7573afcf, wh
 
 No new findings in this round.
 
+## New findings (disposition pass 2)
+
+Round 2, head dd66e262a (one commit over f518f3698). The diff against main 70c7092b9 still touches only FR-226, TC-671 and ADR-025, plus this review's round-1 SR files, committed unchanged under reviews/; this file supersedes them. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in FR-226 or TC-671; tools/check-index-completeness.sh passes. QSpec #293 is now at head 11741c6f3 (open). Its FR-439-AC-9 uses the same oracle ('equal to the settlement without it') and the same absent-member rule ('a candidate whose descriptor has no memory_models receives SB resolved to sc and not SB resolved to tso or ra'), so the two specs agree. Merge order unchanged: this PR merges after QSpec #293.
+
+No new findings in this round.
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -54,3 +60,5 @@ No new findings in this round.
 | FND-002 | fixed | round 1, f518f3698: Note. Which locations are shared is decided only at request time (ADR-025 MA-1), so EN-1's pre-check, not S3, reports the shape; a shared location exists only in a weak `parallel`, and the load-buffering condition of MX-4 applies only under `ra`. |
 
 Round 1 verdict: Round 1: both findings fixed. The bullet is split into three single-SHALL statements, and the negative S3 statement is gone; its reason is kept as a note. The grammar lint reports nothing in FR-226. Clean for EARS.
+
+Round 2 verdict: Round 2: no open findings and no new ones. The changed route bullet and AC-3 are well-formed. Clean.

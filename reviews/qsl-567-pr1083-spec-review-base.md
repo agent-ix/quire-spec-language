@@ -60,6 +60,12 @@ Round 1, head f518f3698. The fix commit f518f3698 sits on a merge, d7573afcf, wh
 | --- | --- | --- | --- |
 | FND-005 | medium | AC-1's new oracle compares against the wrong thing. It says the record's 'value, label, basis, counterexample and obligation identity equal those of the same request with the load made `acquire`', and TC-671's expected result says the same. That variant is a different program. Its source differs, so its checked package identity differs, and ADR-025 MM-5 puts the subject beside the model in the obligation identity, so the obligation identities cannot be equal. Under `ra` an `acquire` load also joins the message's view into `cur_b` (RA-2), so the explored behaviours differ too. For some claims the value or counterexample differs as well, and AC-1 names no claim. The round-0 base FND-004 suggested this comparison as an example; that suggestion was wrong. Fix: compare against the same request, as QSpec #293's FR-439-AC-7 does ('equal to the settlement without it'). For example: removing `warnings` from the record leaves a record equal to the one EN-1 writes for the same request with the shape check off. Or assert directly that the obligation identity and the counterexample's replay identity are computed without the warnings. Keep the `acquire` variant only as the no-warning case. | spec/functional/FR-226-state-the-code-link-preconditions-of-a-weak-memory-verdict.md:138 |
 
+## New findings (disposition pass 2)
+
+Round 2, head dd66e262a (one commit over f518f3698). The diff against main 70c7092b9 still touches only FR-226, TC-671 and ADR-025, plus this review's round-1 SR files, committed unchanged under reviews/; this file supersedes them. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in FR-226 or TC-671; tools/check-index-completeness.sh passes. QSpec #293 is now at head 11741c6f3 (open). Its FR-439-AC-9 uses the same oracle ('equal to the settlement without it') and the same absent-member rule ('a candidate whose descriptor has no memory_models receives SB resolved to sc and not SB resolved to tso or ra'), so the two specs agree. Merge order unchanged: this PR merges after QSpec #293.
+
+No new findings in this round.
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -68,5 +74,8 @@ Round 1, head f518f3698. The fix commit f518f3698 sits on a merge, d7573afcf, wh
 | FND-002 | fixed | round 1, f518f3698: QSpec #293 head 48428b7c0: schema Warning gains the arm {code: memory.load-buffering-shape, load: TransitionIdentity, store: TransitionIdentity}, required, additionalProperties false; FR-331-AC-31 and TC-431 test it; FR-439 gains the emission rule and FR-439-AC-7. FR-226 Dependencies: - QSpec owns the provider manifest's memory-model member and the warning's wire form (QSpec FR-331) and the rou... |
 | FND-003 | fixed | round 1, f518f3698: freedom for plain fields, and a target that compiles RC11 soundly. The item's terminal record warns them where a relaxed load followed by a store needs a target that excludes load buffering, once the request has decided which locations are shared. |
 | FND-004 | fixed | round 1, f518f3698: - The warning SHALL be outside the counterexample, its replay identity and the obligation identity, and SHALL change no verdict, as FR-133 states of its hint. |
+| FND-005 | fixed | round 2, dd66e262a: \| FR-226-AC-1 \| For a request resolved to `ra` over a package with branch `t` (`r1 := x (relaxed); y := 1 (relaxed)`) and branch `s` (`y := 0 (relaxed); x := 1 (relaxed)`), which makes `x` and `y` shared, EN-1's pre-check puts one `memory.load-buffering-shape{load, store}` warning naming both `t` attempts in the item's terminal record `warnings`, and the record's value, label, basis, counterexa... |
 
 Round 1 verdict: Round 1: FND-001 to FND-004 fixed. One new medium, FND-005: AC-1's equality oracle compares against a different package, whose obligation identity cannot match. Not mergeable until FND-005 is fixed. The fix is a one-line change in AC-1 and in TC-671's expected result. Then merge after QSpec #293.
+
+Round 2 verdict: Round 2: FND-005 fixed. AC-1 and TC-671 now compare the record with the same request settled without the warning, as QSpec FR-439-AC-9 does, and the `acquire` variant appears only as a no-warning case. Every base finding is fixed. Mergeable once QSpec #293 has merged.

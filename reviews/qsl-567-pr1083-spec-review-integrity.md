@@ -58,6 +58,14 @@ Round 1, head f518f3698. The fix commit f518f3698 sits on a merge, d7573afcf, wh
 | --- | --- | --- | --- |
 | FND-004 | low | AC-2 now also asserts 'a descriptor without the member advertises `sc` only'. No FR-226 Behavior statement says so: the manifest bullet covers only EN-1's own descriptor, and the route bullet says only 'whose manifest advertises the subject's resolved model'. TC-671 step 2 reads only EN-1's manifest, and its expected result does not cover the absent-member case. The rule is QSpec #293's ('absent means sc only'). Fix: add it to the `route` candidate bullet ('a manifest without `memory_models` advertises `sc` only, QSpec FR-331'). Add a TC-671 step: for example, a temporal test candidate with no `memory_models` is in the candidate set of the `sc` request over `SB` and not of the `tso` item. | spec/functional/FR-226-state-the-code-link-preconditions-of-a-weak-memory-verdict.md:123-129, 139 |
 
+## New findings (disposition pass 2)
+
+Round 2, head dd66e262a (one commit over f518f3698). The diff against main 70c7092b9 still touches only FR-226, TC-671 and ADR-025, plus this review's round-1 SR files, committed unchanged under reviews/; this file supersedes them. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in FR-226 or TC-671; tools/check-index-completeness.sh passes. QSpec #293 is now at head 11741c6f3 (open). Its FR-439-AC-9 uses the same oracle ('equal to the settlement without it') and the same absent-member rule ('a candidate whose descriptor has no memory_models receives SB resolved to sc and not SB resolved to tso or ra'), so the two specs agree. Merge order unchanged: this PR merges after QSpec #293.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | FR-226-AC-3 says a candidate with no `memory_models` is a candidate for 'no `tso` or `ra` request'. TC-671 step 3's expected result checks only the `sc` and `tso` requests, not `ra`. 'repeat with a test candidate whose descriptor has no `memory_models`' also does not say whether EN-1 is registered for the repeat; the expected `{candidate}` implies it is not. Add the `ra` request to step 3 and its expected result, and say the member-less candidate is registered alone. | spec/test-cases/TC-671-code-link-warning-and-routing.md:27-30, 41-43 |
+
 ## Dispositions
 
 | FND | outcome | reason |
@@ -65,5 +73,8 @@ Round 1, head f518f3698. The fix commit f518f3698 sits on a merge, d7573afcf, wh
 | FND-001 | fixed | round 1, f518f3698: - target: ix://agent-ix/quire-specification/FR-331 type: depends_on; - QSpec owns the provider manifest's memory-model member and the warning's wire form (QSpec FR-331) and the routing by resolved model (QSpec FR-439, FR-290) and the abstraction relation (QSpec FR-353). |
 | FND-002 | fixed | round 1, f518f3698: - The checked protocol clause with its classified accesses (FR-220) and source defaults (FR-219). - The item's resolved memory model (ADR-025 MM-2) and EN-1's instantiated footprints with the shared locations they decide (ADR-025 MA-1). - The registered backends and their QSpec FR-290 provider manifests (FR-075). |
 | FND-003 | fixed | round 1, f518f3698: 1. Check the package of branch `t` (`r1 := x (relaxed); y := 1 (relaxed)`) with branch `s` (`y := 0 (relaxed); x := 1 (relaxed)`), which makes `x` and `y` shared, and run EN-1's pre-check on a request resolved to `ra`. Repeat with the load `acquire`, with an `acquire` fence between the two, with a same-location load and store, with the load of a location only `t` accesses, and with the store to... |
+| FND-004 | fixed | round 2, dd66e262a: - The `route` candidate step SHALL include in the candidate set of an item over a subject with a weak `parallel` only backends whose manifest advertises the subject's resolved model (a descriptor with no `memory_models` advertises `sc` only), and SHALL write the request with the resolved model unchanged. / 3. Compute the candidate set of a `tso` item over `SB` with EN-1 and an `sc`-only test ca... |
 
 Round 1 verdict: Round 1: FND-001 to FND-003 fixed. One new low, FND-004: AC-2's absent-member clause has no Behavior statement and no TC step. It does not block merge on its own.
+
+Round 2 verdict: Round 2: FND-004 fixed. One new low, FND-005: TC-671 step 3 omits the `ra` request that AC-3 names. It does not block merge on its own.
