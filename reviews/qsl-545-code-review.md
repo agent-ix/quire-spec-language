@@ -72,9 +72,16 @@ Not mergeable: FND-001 and FND-002 each give a wrong `refuted` verdict, and both
 | FND-007 | fixed | only rows reading a failed field are skipped; probe 4 returns Undefined at `items`; M27 (skip every row) is killed |
 | FND-008 | fixed | `CertifiedPosition.history` is filled by the producer and compared in `matches`; a_certificate_position_carries_its_history; M25 is killed |
 | FND-009 | fixed | the any arm counts an undecided postcondition only for a candidate digest among the mapped completions; M26 is killed (the positive half is untested: SR-13461 FND-010) |
+| FND-010 | fixed | `failed` is keyed by (object, field) and a row of another object is evaluated; a_failed_update_skips_the_rows_of_its_own_object_only; the name-only mutant (M28) is killed. The stated reference-reach limit is a new defect: FND-011 |
 
 ## New findings (disposition pass 2)
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-010 | low | `map_object` skips a row when `row.expression.reads_history(name)` matches by field name alone, for any object. A row that reads the same-named field of an object whose update did not fail is also skipped. When the failed update is undetermined and that row would be undefined, the merged FR-141 rule says Undefined wins, but the code returns Undetermined: a missed refutation, never a wrong one. | qsl-replay/src/refinement/map.rs:431-434; qsl-semantics/src/check/refinement.rs:241-247 |
+
+## New findings (disposition pass 3)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | high | A row of another object that reaches a failed history field (through a reference or a population read) is evaluated at the stand-in: the failed field "holds the value the step started from", and the object-keyed skip matches only the row's own object. That is FND-002's wrong refutation on a cross-object path. Probe: Reads with `h` out of type on `s0` and the ring's `items` row reading `s.h` through `only(s in R::slots ...)` as `1 mod (0 - s.h)`: undefined at the stand-in 0, defined at the computed 2. `put(1)` returns Undefined at `items`; merged FR-138/FR-141 require Undetermined naming `h`. Fix: drop the failed (object, field) entries from the post history environment, and make the evaluator's unresolved History read an undetermined outcome rather than the `history-value-unresolved` invariant fault. That decides per read, for any path. | qsl-replay/src/refinement/map.rs:430-439; qsl-replay/src/refinement/history.rs:159-161; qsl-eval/src/value/expression/evaluate.rs:1813-1822 |

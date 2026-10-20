@@ -81,6 +81,7 @@ Not mergeable as is, because of SR-13460's two high findings. Coverage of the ti
 | FND-004 | fixed | a_protocol_abstract_side_refuses_and_the_rest_is_still_checked is tagged FR-135-AC-5 |
 | FND-008 | fixed | the branch contains #1103; FR-138-AC-2 (new clauses), AC-6, AC-7, AC-8 and FR-141-AC-12 each have a tagged test |
 | FND-009 | fixed | the SR files are at reviews/qsl-545-code-review.md and reviews/qsl-545-gap-analysis.md |
+| FND-010 | fixed | an_undecided_matching_successor_beside_an_accepted_one_is_undetermined; M19 is killed |
 
 ## New findings (disposition pass 2)
 
