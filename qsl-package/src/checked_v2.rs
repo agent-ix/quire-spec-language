@@ -1008,15 +1008,15 @@ impl ClosureReader<'_> {
         })
     }
 
-    /// Supply `evidence` with the admitted package of every entry of
-    /// `package`'s `dependency_selections`.
+    /// Supply `evidence` with the admitted package of every direct selection
+    /// in `package`'s lock.
     fn supply(
         &mut self,
         package: &CheckedPackage,
         evidence: &mut CheckedPackageEvidence,
     ) -> Result<(), ImportViewRefusal> {
         self.admit_closure(package)?;
-        for (dependency, resolved) in package.dependency_selections() {
+        for (dependency, resolved) in package.direct_dependency_selections() {
             let admitted = self.admitted.get(&resolved.package_id).ok_or_else(|| {
                 ImportViewRefusal::UnheldDependency {
                     identity: dependency.clone(),
@@ -1039,8 +1039,7 @@ impl ClosureReader<'_> {
     fn admit_closure(&mut self, package: &CheckedPackage) -> Result<(), ImportViewRefusal> {
         // (library identity, package id, whether its dependencies are queued)
         let mut pending: Vec<(LibraryName, PackageId, bool)> = package
-            .dependency_selections()
-            .iter()
+            .direct_dependency_selections()
             .rev()
             .map(|(identity, resolved)| (identity.clone(), resolved.package_id, false))
             .collect();
@@ -1056,7 +1055,7 @@ impl ClosureReader<'_> {
                 })?;
             if !expanded {
                 pending.push((identity, id, true));
-                for (dependency, resolved) in held.dependency_selections().iter().rev() {
+                for (dependency, resolved) in held.direct_dependency_selections().rev() {
                     if !self.admitted.contains_key(&resolved.package_id) {
                         pending.push((dependency.clone(), resolved.package_id, false));
                     }
