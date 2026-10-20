@@ -461,7 +461,8 @@ fn no_crate_below_layer_three_depends_on_the_check_core() {
         }
         if crate_name == "qsl-route" {
             // Layer R (ADR-011 §6.1 row "4, 3, F, SV, K"): `route` names
-            // layer 3's `Capability`, F's `ByteDigest` and `CatalogCode`,
+            // layer 3's `Capability`, F's `ByteDigest`, `CatalogCode` and
+            // `MemoryModelName` (FR-226),
             // SV's `PropertyForm` for the FR-124 deadlock-freedom item, and
             // `thiserror` for `RegistrationRefusal`, and nothing of layer 4,
             // K or the root crate. The whole `[dependencies]` table is checked, so a
