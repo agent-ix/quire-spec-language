@@ -12,9 +12,7 @@ mod outcome;
 mod step;
 mod subject;
 
-pub use failure::{
-    RefinementFailure, StepOutcome, StepRejection, StepVerdict, Taken, Undetermined,
-};
+pub use failure::{RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, Undetermined};
 pub use map::{
     map_state, EvalFailure, HiddenSlot, MappedState, MappingFailure, MappingRowRef,
     MappingUndetermined, ObjectKey, StepArgument,

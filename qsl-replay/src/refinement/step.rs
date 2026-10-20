@@ -17,7 +17,7 @@ use qsl_eval::simulation::model::{
     operation_identity_text, AbstractApplication, Judgement, ModelFinding, ModelSimState,
     ModelSystem, Rejection, RowReading,
 };
-use qsl_eval::simulation::ExpansionStop;
+use qsl_eval::simulation::{ExpansionLimit, ExpansionStop};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::InternalFault;
 use qsl_semantics::check::{CheckedRefinement, CheckedRow, StepClass, StepRow, StepTarget};
@@ -29,8 +29,9 @@ use quire_semantic_value::model_transition::ModelTransition;
 use crate::model_check::counterexample::{
     MappingSite, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
+use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::refinement::failure::{
-    RefinementFailure, StepOutcome, StepRejection, StepVerdict, Taken, Undetermined,
+    RefinementFailure, StepRejection, StepResult, StepVerdict, Taken, Undetermined,
 };
 use crate::refinement::map::{
     lift_value, map_state, EvalFailure, Lifting, MappedState, MappingFailure, MappingRowRef,
@@ -126,7 +127,7 @@ pub fn check_step(
     abstract_system: &ModelSystem<'_>,
     pre: &RefinementPosition,
     step: &ConcreteStep<'_>,
-) -> StepOutcome {
+) -> StepResult {
     let mut abstract_successors = 0;
     let verdict = decide_step(
         refinement,
@@ -136,7 +137,7 @@ pub fn check_step(
         step,
         &mut abstract_successors,
     );
-    StepOutcome {
+    StepResult {
         verdict,
         abstract_successors,
     }
@@ -174,14 +175,24 @@ impl Soft {
     }
 }
 
-/// A verdict for an `ExpansionStop` of a system: a budget stop is a
-/// [`StepVerdict::Stopped`], a broken invariant a fault.
-fn stop_verdict(stop: ExpansionStop) -> StepVerdict {
+/// A verdict for an `ExpansionStop` of `system`: a budget stop is a
+/// [`StepVerdict::Stopped`] naming the limit and its value (a result domain
+/// too large to order counts against the candidate bound), a broken
+/// invariant a fault.
+fn stop_verdict(system: &ModelSystem<'_>, stop: ExpansionStop) -> StepVerdict {
     if stop.is_internal_failure() {
-        fault("system-invariant")
-    } else {
-        StepVerdict::Stopped(stop)
+        return fault("system-invariant");
     }
+    StepVerdict::Stopped(match stop.limit {
+        Some(ExpansionLimit::EvaluationMeter) => ReachedLimit {
+            limit: ModelCheckLimit::EvaluationMeter,
+            value: system.meter().work_units,
+        },
+        Some(ExpansionLimit::MaxCandidates) | None => ReachedLimit {
+            limit: ModelCheckLimit::MaxCandidates,
+            value: system.max_candidates(),
+        },
+    })
 }
 
 #[allow(
@@ -282,7 +293,7 @@ fn decide_step(
             }
             let expansion = match abstract_system.expand_state(before) {
                 Ok(expansion) => expansion,
-                Err(stop) => return stop_verdict(stop),
+                Err(stop) => return stop_verdict(abstract_system, stop),
             };
             let mut matched = Vec::new();
             for (transition, successor) in &expansion.successors {
@@ -414,7 +425,7 @@ fn evaluate_arguments(
     };
     let resolved = concrete_system
         .resolve_step(&pre.concrete, transition, step.post)
-        .map_err(stop_verdict)?;
+        .map_err(|stop| stop_verdict(concrete_system, stop))?;
     let Some(resolved) = resolved else {
         return Err(fault("concrete-step-names-an-argument-vector"));
     };
@@ -523,7 +534,7 @@ fn judge_operation(
         result: arguments.result.as_ref(),
     }) {
         Ok(judged) => judged,
-        Err(stop) => return stop_verdict(stop),
+        Err(stop) => return stop_verdict(abstract_system, stop),
     };
     *abstract_successors =
         abstract_successors.saturating_add(u64::try_from(judged.len()).unwrap_or(u64::MAX));
@@ -649,6 +660,35 @@ mod tests {
             soft.first(),
             Some(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor))
         ));
+    }
+
+    /// FR-141 (TC-555): of the row outcomes recorded the undefined one
+    /// outranks an undetermined one recorded before it.
+    #[trace("TC-555")]
+    #[test]
+    fn an_undefined_row_outranks_an_undetermined_one_recorded_first() {
+        use qsl_foundation::digest::{DigestDomain, DigestRecord};
+
+        let undefined = StepVerdict::Undefined(UndefinedEvaluation {
+            site: UndefinedSite {
+                position: 2,
+                state_key: DigestRecord::mint(DigestDomain::Sha256Jcs, [0; 32]),
+                locus: UndefinedLocus::Constraint("c".to_owned()),
+                transition: None,
+            },
+            cause: qsl_eval::temporal::UndefinedCause::InsufficientData(
+                qsl_eval::temporal::InsufficientData {
+                    count: 0,
+                    min_count: 1,
+                },
+            ),
+        });
+        let mut soft = Soft::default();
+        assert!(soft
+            .record(StepVerdict::Undetermined(Undetermined::UndecidedSuccessor))
+            .is_ok());
+        assert!(soft.record(undefined).is_ok());
+        assert!(matches!(soft.first(), Some(StepVerdict::Undefined(_))));
     }
 
     /// FR-141-AC-8 (TC-555 step 4): a `Fault` and a `WrongSystem` from

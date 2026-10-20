@@ -12,7 +12,10 @@
 //! A `Holds` half settles `inconclusive` with
 //! `SimulationCertificateNotBuilt`: FR-144 settles `proved` only after
 //! FR-149's checker accepts the simulation certificate, which does not exist
-//! yet, so no proof is claimed. The certificate's ticket flips this row.
+//! yet, so no proof is claimed. `SimulationCertificateNotBuilt` is an interim cause that
+//! no spec names: the one existing `unsupported-requested-capability` cause is
+//! `UnsupportedReduction`, which needs a reduction. The planner decides the
+//! cause; QSL-549 flips this row.
 //!
 //! What this does not do yet: the requirement record and its `Refinement`
 //! property form, the obligation identity, the liveness half and the

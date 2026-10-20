@@ -378,7 +378,8 @@ pub enum InconclusiveCause {
     MappingUndetermined,
     /// A refinement's safety half holds by exhaustive exploration, and the
     /// simulation certificate (FR-149) that FR-144 requires before `proved`
-    /// is not built, so no proof is settled.
+    /// is not built, so no proof is settled. Interim: no spec names this
+    /// cause; QSL-549 removes it when the certificate exists.
     SimulationCertificateNotBuilt,
     /// The core rejected a certificate, retaining its failing rule and locus.
     CertificateRejected {

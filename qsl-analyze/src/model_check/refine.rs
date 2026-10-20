@@ -32,7 +32,7 @@ use qsl_replay::{
     check_initial, check_step, open_systems, ConcreteStep, CounterexampleKind, IncompleteCause,
     ModelCheckLimit, ModelCheckLimits, ModelStep, ReachedLimit, RefinementFailure,
     RefinementOutcome, RefinementPosition, RefinementSystems, RunStats, SafetyOutcome,
-    SafetyUndecided, StepOutcome, StepVerdict, SubjectRefusal, TemporalCounterexample,
+    SafetyUndecided, StepResult, StepVerdict, SubjectRefusal, TemporalCounterexample,
     UndefinedEvaluation, Undetermined,
 };
 use qsl_semantics::check::CheckedRefinement;
@@ -340,7 +340,7 @@ impl Run<'_, '_> {
             }
             self.transitions += 1;
             self.edges += 1;
-            let StepOutcome {
+            let StepResult {
                 verdict,
                 abstract_successors,
             } = check_step(
@@ -422,7 +422,10 @@ impl Run<'_, '_> {
             StepVerdict::Undetermined(undetermined) => {
                 Err(End::Undecided(SafetyUndecided::Undetermined(undetermined)))
             }
-            StepVerdict::Stopped(stop) => Err(self.expansion_stop(stop)),
+            StepVerdict::Stopped(reached) => Err(End::Stopped(
+                IncompleteCause::ResourceExhausted,
+                Some(reached),
+            )),
             StepVerdict::Fault(fault) => Err(End::Fault(fault)),
         }
     }
