@@ -74,3 +74,11 @@ Round 1, head d4cd7a4f6 (one commit over 91a8b0938; base main 693c16869). Checke
 | FND-002 | fixed | PX-1 now carries `send_record` on `send` steps only, outside the key and the transition identity. PX-2, FR-217 and FR-217-AC-5/AC-6 recompute and compare it, and TC-662 step 5 tests that. The missing refusal code is recorded as FND-005. |
 | FND-003 | fixed | PS-5 now excludes entries bound in an `await`, and says that its matched event and `then` binders do not escape. That matches FR-466's Out(await) = In(await) and protocol_slots.rs:1528-1536. |
 | FND-004 | fixed | PS-5 now says that the environment is keyed in `observations` by binder node and thread path, and not in the thread's `control` entry, matching PS-8 and merged FR-425. |
+
+## Dispositions (round 2)
+
+Round 2, head e0cb217fe (one commit over d4cd7a4f6; base main 693c16869). Gates: `make check-spec-validation` exits 0, with 17 warnings, none in a changed file; `tools/check-index-completeness.sh` exits 0. reviews/ held the round-1 SR files byte for byte, and must be re-copied for this round's section.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | PX-2, the FR-217 bullet, FR-217-AC-6 and TC-662 step 5 now name `invalid_runtime_input`/`invalid-value` for a missing or extra `send_record`, citing FR-183-AC-6. That refusal is raised before replay and is separate from the `stale_dependency`/`content-mismatch` refusal for a differing record. Merged QSpec FR-433 names no code, so there is no contradiction. |

@@ -75,3 +75,11 @@ Round 1, head d4cd7a4f6, checked against merged QSpec main 4ea88c8. Gates are gr
 | FND-002 | fixed | The fixture is now ADR-027 §7.1's `Pay`, with template `Refund`, commit node `Committed`, branches `pay` and `settle`, and the expected threads `(0, Refund, 0)` and `(0)`. The template-name rendering and the sentence are recorded as FND-005. |
 | FND-003 | fixed | The repeated `exactly-once-premise` sentence is gone. |
 | FND-004 | fixed | PS-5 now says 'Within the joined branch ...' and 'a `repeat` that encloses the `parallel` itself does not exclude the branch's entries', so FR-205-AC-7 reads correctly. |
+
+## Dispositions (round 2)
+
+Round 2, head e0cb217fe. The whole spec tree and the PR diff were searched for `<qualified-name>`. The remaining hits are unrelated and predate this PR (FR-101, FR-120, FR-070, FR-218, FR-308 and others); none is in the template or cause wording.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-005 | fixed | The fixture no longer claims that `Refund` is the template's `<qualified-name>`, and its main sentence is now an ordered sequence. `Fail` with `failed` true activates the registration and creates `(0, Refund, 0)`. Then `settle` takes `Committed` while that thread is at its first compensation attempt, giving `CommitClosed{Refund}` and the root `FinishWaiting{[(0, Refund, 0)]}`, which is the sound trace. |
