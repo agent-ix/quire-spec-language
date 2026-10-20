@@ -44,6 +44,7 @@ use crate::spine::{
     CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit,
     FrontEndFailure, ParsedSource, RunRefusal, SpineStage,
 };
+use crate::statistical::{self, Decision, StatisticalVerdict};
 use crate::ReplayRefusal;
 use quire_semantic_value::fairness::PropertyForm;
 
@@ -177,6 +178,9 @@ pub enum ItemLabel {
     Inconclusive,
     /// The tool failed.
     Failed,
+    /// A completed statistical run's measurement (FR-192), never proof
+    /// evidence.
+    Measured,
 }
 
 /// Why a replay settled inconclusive: its disagreement reason and the two
@@ -385,8 +389,37 @@ pub struct OutcomeItem {
     basis: Option<ProofBasis>,
     #[serde(skip_serializing_if = "Option::is_none")]
     certification: Option<Certification>,
+    /// A `measured` item's QSpec FR-409 decision: `accepted`, `rejected` or
+    /// `undecided`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    measured: Option<&'static str>,
     #[serde(serialize_with = "category_str")]
     category: Category,
+}
+
+/// QSpec FR-409's `measured` label and FR-331 cause of a statistical
+/// verdict: `undefined-evaluation` for a rejection by an undefined sample,
+/// the undecided cause for `undecided`, no cause otherwise. The typed
+/// verdict keeps the undefined evaluation's test, trace and position.
+fn measured(verdict: &StatisticalVerdict) -> (&'static str, Option<ItemCause>) {
+    match verdict.decision {
+        Decision::Accepted => ("accepted", None),
+        Decision::Rejected => (
+            "rejected",
+            verdict
+                .tests
+                .iter()
+                .any(|test| test.undefined.is_some())
+                .then(|| ItemCause::kind("undefined-evaluation")),
+        ),
+        Decision::Undecided(cause) => (
+            "undecided",
+            Some(ItemCause::kind(match cause {
+                statistical::UndecidedCause::IndifferenceRegion => "indifference-region",
+                statistical::UndecidedCause::UndecidedSuccessor => "undecided-successor",
+            })),
+        ),
+    }
 }
 
 impl OutcomeItem {
@@ -439,6 +472,7 @@ impl OutcomeItem {
                 (ItemLabel::Incomplete, Some(item))
             }
             TerminalValue::Failed => (ItemLabel::Failed, None),
+            TerminalValue::Measured(verdict) => (ItemLabel::Measured, measured(verdict).1),
         };
         let (basis, certification) = match value {
             TerminalValue::Proved {
@@ -457,7 +491,19 @@ impl OutcomeItem {
             | TerminalValue::Unsupported(_)
             | TerminalValue::Incomplete(_)
             | TerminalValue::Inconclusive(_)
-            | TerminalValue::Failed => (None, None),
+            | TerminalValue::Failed
+            | TerminalValue::Measured(_) => (None, None),
+        };
+        let measured = match value {
+            TerminalValue::Measured(verdict) => Some(measured(verdict).0),
+            TerminalValue::Proved { .. }
+            | TerminalValue::Tested
+            | TerminalValue::Refuted
+            | TerminalValue::Declined { .. }
+            | TerminalValue::Unsupported(_)
+            | TerminalValue::Incomplete(_)
+            | TerminalValue::Inconclusive(_)
+            | TerminalValue::Failed => None,
         };
         Self {
             request_index: record.request_index().get(),
@@ -465,6 +511,7 @@ impl OutcomeItem {
             cause,
             basis,
             certification,
+            measured,
             category: value.category(),
         }
     }
@@ -482,6 +529,7 @@ impl OutcomeItem {
             cause: Some(ItemCause::undefined_evaluation(at, cause)),
             basis: None,
             certification: None,
+            measured: None,
             category: Category::Violation,
         }
     }

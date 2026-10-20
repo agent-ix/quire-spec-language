@@ -9,12 +9,19 @@
 //! verdict type the settlement map and CG read in `qsl-replay`.
 
 use qsl_eval::model_subject::ModelInstance;
-use qsl_eval::simulation::ExpansionStop;
+use qsl_eval::simulation::{ExpansionStop, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::InternalFault;
 use quire_exact::{CancelCause, Integer, Rational};
 
 use crate::UndefinedEvaluation;
+
+mod settle;
+
+pub use settle::{
+    settle_statistical, settle_statistical_refusal, NotStatisticalRequest, StatisticalRecord,
+    SubjectLimits,
+};
 
 /// How a request decides a claim from its samples (FR-189, FR-190;
 /// ADR-024 ST-4, ST-5, ST-7). A request setting, outside the obligation
@@ -214,6 +221,15 @@ pub enum StatisticalLimit {
 }
 
 impl StatisticalLimit {
+    /// The budget's FR-331 spelling, as QSpec FR-408 names it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MaxSamples => "max_samples",
+            Self::MaxDraws => "max_draws",
+            Self::MaxCycleSteps => "max_cycle_steps",
+        }
+    }
+
     /// The request setting that raises this limit, by FR-255's convention
     /// (`statistical.` and the member name; QSpec FR-408 owns the name).
     pub const fn setting(self) -> &'static str {
@@ -345,8 +361,39 @@ pub struct StatisticalProvenance {
     pub tests: Vec<TestProvenance>,
 }
 
-/// A completed run's verdict (FR-192 `StatisticalVerdict`, without the
-/// sampled witnesses FR-193 adds).
+/// What a sampled witness's claim evaluated to (FR-193): the sampled value
+/// on the violating side of the claim's bound, or the undefined evaluation
+/// that rejected its test.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum WitnessValue {
+    /// The event's value (a quantile claim's reduced event among them):
+    /// `false` against a `>= θ` bound, `true` against a `<= θ` bound.
+    Event(bool),
+    /// A mean-of-fraction sample's fraction, below `θ` against a `>= θ`
+    /// bound or above it against a `<= θ` bound.
+    Fraction(Rational),
+    /// The claim evaluated undefined on the sample (ADR-024 SV-11).
+    Undefined(UndefinedEvaluation),
+}
+
+/// One sampled witness (FR-193; ADR-024 SV-6): a sample on the violating
+/// side of the claim's bound, or one on which the claim evaluated
+/// undefined, with the steps it took and their exact path probability.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SampledWitness {
+    /// The test's index.
+    pub test: u32,
+    /// The sample's trace index.
+    pub trace: u64,
+    /// The sample's steps (FR-188), one per position after the first.
+    pub steps: Vec<SampledStep>,
+    /// The product of the steps' probabilities.
+    pub path_probability: Rational,
+    /// What the claim evaluated to on the sample.
+    pub value: WitnessValue,
+}
+
+/// A completed run's verdict (FR-192 `StatisticalVerdict`).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StatisticalVerdict {
     /// Accepted when every test accepts, Rejected when any rejects,
@@ -362,6 +409,46 @@ pub struct StatisticalVerdict {
     pub provenance: StatisticalProvenance,
     /// Each test's result, in order.
     pub tests: Vec<TestResult>,
+    /// The sampled witnesses kept (FR-193): every undefined one, and up to
+    /// `max_witnesses` others, the first in trace-index order across tests.
+    pub witnesses: Vec<SampledWitness>,
+}
+
+impl StatisticalVerdict {
+    /// Bytes the verdict adds to an encoded record beyond its fixed size:
+    /// its tests, its provenance's tests and each witness with its steps,
+    /// selections, drawn values and rewards (FR-069-AC-4).
+    pub(crate) fn measured_bytes(&self) -> usize {
+        let step = |step: &SampledStep| {
+            size_of::<SampledStep>()
+                .saturating_add(step.choices.len().saturating_mul(size_of::<u32>()))
+                .saturating_add(
+                    step.random
+                        .len()
+                        .saturating_add(step.rewards.len())
+                        .saturating_mul(size_of::<quire_exact::Value>()),
+                )
+        };
+        let witnesses = self.witnesses.iter().fold(0_usize, |bytes, witness| {
+            let steps = witness
+                .steps
+                .iter()
+                .fold(0_usize, |sum, each| sum.saturating_add(step(each)));
+            bytes
+                .saturating_add(size_of::<SampledWitness>())
+                .saturating_add(steps)
+        });
+        self.tests
+            .len()
+            .saturating_mul(size_of::<TestResult>())
+            .saturating_add(
+                self.provenance
+                    .tests
+                    .len()
+                    .saturating_mul(size_of::<TestProvenance>()),
+            )
+            .saturating_add(witnesses)
+    }
 }
 
 /// Why a run stopped before its method completed (FR-191; ADR-024 SV-4).

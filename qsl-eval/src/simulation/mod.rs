@@ -46,6 +46,9 @@ pub use reduction::{
     ConstraintValue, OfferedReductions, Permutation, SymmetryClass, SymmetryGroup,
 };
 pub use sample::{sample_request, sample_request_until, SampleRequest};
-pub use sampled::{sample_probabilistic, SampleStop, SampledBehaviour, SampledStep};
+pub use sampled::{
+    replay_sampled, sample_probabilistic, SampleStop, SampledBehaviour, SampledDisagreement,
+    SampledRecord, SampledReplay, SampledReplayRefusal, SampledStep,
+};
 pub use subject::SubjectSystem;
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};
