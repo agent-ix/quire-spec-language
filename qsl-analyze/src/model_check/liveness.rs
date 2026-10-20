@@ -36,7 +36,13 @@
 //! holds a state of every acceptance set and satisfies every weak
 //! constraint (FA-4), and builds the canonical lasso (CX-5): the stem is the
 //! breadth-first tree path to the first passing component's first state and
-//! the loop is the greedy walk inside it. Enabledness is read from each
+//! the loop is the greedy walk inside it. A component that satisfies the
+//! weak constraints but starves a strong one is refined recursively (ADR-019
+//! FS-2): the kernels remove the states where a starved strong constraint is
+//! enabled and decide the remainder again, depth first, so the passing
+//! component can be a sub-component of an SCC, and the greedy walk owes a
+//! strong constraint an edge only when the component enables it somewhere
+//! (FS-7). Enabledness is read from each
 //! model state's own successor relation, never from product edges (FA-2).
 //!
 //! A product graph whose second phase finds no passing component proves the
@@ -83,7 +89,7 @@ use qsl_replay::{
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits};
-use quire_semantic_value::fairness::{FairnessGranularity, FairnessKind};
+use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{
@@ -105,12 +111,6 @@ const STOPPED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficien
 /// Why EN-1 refused a liveness clause, or could not settle one it explored.
 #[derive(Debug, thiserror::Error)]
 pub enum LivenessRefusal {
-    /// The fairness set of an unreduced run holds a strong constraint, whose
-    /// filter (ADR-019 FS-2) and counterexample obligations the unreduced
-    /// second phase does not decide yet; the annotated quotient decides it
-    /// under symmetry.
-    #[error("EN-1 decides weak fairness only; the clause holds a strong fairness constraint")]
-    StrongFairness,
     /// The clause has no property automaton.
     #[error(transparent)]
     Automaton(#[from] AutomatonError),
@@ -144,14 +144,6 @@ pub(super) fn check(
         return Err(fault("a-liveness-item-is-a-clause"));
     };
     let symmetric = !request.reductions.symmetry.is_empty();
-    if !symmetric
-        && clause
-            .fairness()
-            .iter()
-            .any(|constraint| constraint.kind() == FairnessKind::Strong)
-    {
-        return Err(LivenessRefusal::StrongFairness.into());
-    }
     if matches!(clause.activation(), Activation::Each { guarded: true }) {
         return Err(ModelCheckRefusal::GuardedActivation);
     }
@@ -1679,8 +1671,8 @@ impl<'r, 'a> Run<'r, 'a> {
     /// as the annotated quotient.
     fn second_phase(&self, run: &Explored<'_, '_>) -> Result<Second, ModelCheckRefusal> {
         // A reduced run reads its product as the annotated quotient even
-        // under a trivial stabiliser: only the quotient decides strong
-        // fairness, which the request admits under symmetry.
+        // under a trivial stabiliser: the quotient is what concretises a
+        // reduced run's loop and what decides `each` fairness over orbits.
         if run.binding.applied.is_some() {
             return self.quotient_phase(run);
         }
@@ -1857,10 +1849,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 }
             }
             constraints.push(QuotientConstraint {
-                strength: match constraint.kind() {
-                    FairnessKind::Weak => Strength::Weak,
-                    FairnessKind::Strong => Strength::Strong,
-                },
+                strength: Strength::from(constraint.kind()),
                 granularity: constraint.granularity(),
                 identities,
             });
@@ -2087,6 +2076,7 @@ impl FairModel {
         }
         let mut constraints = Vec::new();
         for constraint in clause.fairness() {
+            let strength = Strength::from(constraint.kind());
             let operation = constraint.operation();
             let text = system
                 .operation_text(operation.declaring_type(), operation.name())
@@ -2101,11 +2091,11 @@ impl FairModel {
                     let members = covered
                         .map(&identity)
                         .collect::<Result<Vec<_>, ModelCheckRefusal>>()?;
-                    constraints.push(Constraint::weak(members));
+                    constraints.push(Constraint::new(strength, members));
                 }
                 FairnessGranularity::Each => {
                     for transition in covered {
-                        constraints.push(Constraint::weak([identity(transition)?]));
+                        constraints.push(Constraint::new(strength, [identity(transition)?]));
                     }
                 }
             }
@@ -2317,21 +2307,31 @@ impl Inside<'_> {
     }
 }
 
-/// The obligations of a component not yet discharged (CX-5): one state of
-/// each acceptance set, for each enablement weak constraint an edge that
-/// takes it or a state that disables it, and for each visibility constraint
-/// the component's subgraph loads an edge that takes it.
+/// The obligations of a component not yet discharged (CX-5, ADR-019 FS-7):
+/// one state of each acceptance set, for each weak constraint an edge that
+/// takes it or a state that disables it, for each strong constraint enabled
+/// at some state of the component an edge that takes it, and for each
+/// visibility constraint a kept edge of the component loads (ADR-025 MF-2)
+/// an edge that takes it.
 struct Open {
     sets: BTreeSet<usize>,
     constraints: BTreeSet<usize>,
 }
 
 impl Open {
-    /// The obligations of the component `inside`: a visibility constraint
-    /// whose loads no kept edge of the component takes is owed nothing.
+    /// The obligations of the component `inside`: a strong constraint
+    /// enabled at no state of it, and a visibility constraint whose loads no
+    /// kept edge of it takes, have none.
     fn of(model: &FairModel, inside: &Inside<'_>) -> Self {
         let owed = |constraint: &Constraint| match constraint.obligation() {
-            Obligation::Enablement(_) => true,
+            Obligation::Enablement(Strength::Weak) => true,
+            Obligation::Enablement(Strength::Strong) => inside.component.iter().any(|vertex| {
+                model
+                    .graph
+                    .enabled(*vertex)
+                    .and_then(|enabled| constraint.is_enabled_in(enabled))
+                    == Some(true)
+            }),
             Obligation::Visibility { .. } => inside.component.iter().any(|vertex| {
                 model
                     .graph
@@ -2356,14 +2356,19 @@ impl Open {
         self.sets.is_empty() && self.constraints.is_empty()
     }
 
+    /// Whether `vertex` discharges the obligation of `constraint`: a weak
+    /// constraint is disabled there. A strong constraint is never discharged
+    /// by a state.
     fn disabled_at(model: &FairModel, constraint: usize, vertex: Vertex) -> bool {
         match (
             model.constraints.get(constraint),
             model.graph.enabled(vertex),
         ) {
-            // A visibility constraint has no enabledness: no state
-            // discharges it.
-            (Some(constraint), Some(enabled)) => constraint.is_enabled_in(enabled) == Some(false),
+            // Only an enablement weak constraint is discharged by a state.
+            (Some(constraint), Some(enabled)) => {
+                constraint.obligation() == &Obligation::Enablement(Strength::Weak)
+                    && constraint.is_enabled_in(enabled) == Some(false)
+            }
             _ => false,
         }
     }
@@ -2470,7 +2475,7 @@ mod tests {
     /// `v0 -> v1 -> v0` loads nothing. The filter removes the stale load and
     /// passes the rest, and the walk takes only the kept edges: never the
     /// stale self-loop, whose loop would be unfair.
-    #[trace("TC-673", "FR-228-AC-3")]
+    #[trace("TC-673", "FR-228-AC-6")]
     #[test]
     fn the_walk_takes_no_edge_a_visibility_refinement_removed() {
         let (stale, fresh, other) = (Identity::new(10), Identity::new(11), Identity::new(20));
@@ -2519,5 +2524,63 @@ mod tests {
         let analyses = analyze(&graph, &BTreeSet::from([v0]), &constraints, &Cancel::new())
             .expect("the filter");
         assert!(Analysis::first_fair_in(&analyses).is_none());
+    }
+
+    /// FR-228-AC-8: a strong constraint (identity 9, enabled only at state
+    /// 0) and a failing pair (stale `1 -> 2`) refine in one step; the second
+    /// pair (stale `3 -> 3`, fresh `3 -> 4`) still loads `{3, 4}`, so the
+    /// walk from the accepting state 3 discharges it by the fresh load and
+    /// the loop is `3 -> 4 -> 3`.
+    #[trace("TC-673", "FR-228-AC-8")]
+    #[test]
+    fn the_walk_discharges_a_pair_the_passing_component_still_loads() {
+        let id = Identity::new;
+        let mut graph = Graph::new();
+        let vertices: Vec<Vertex> = (0..5)
+            .map(|index| graph.add_vertex(if index == 0 { vec![id(9)] } else { vec![] }))
+            .collect();
+        for (from, to, label) in [
+            (0, 1, 20),
+            (1, 0, 21),
+            (1, 2, 10),
+            (2, 3, 22),
+            (3, 1, 23),
+            (3, 3, 12),
+            (3, 4, 13),
+            (4, 3, 24),
+        ] {
+            graph
+                .add_edge(
+                    vertices[from],
+                    vertices[to],
+                    EdgeLabel::Transition(id(label)),
+                )
+                .expect("both vertices exist");
+        }
+        graph
+            .add_acceptance_set([vertices[3]])
+            .expect("vertex 3 exists");
+        let model = FairModel {
+            graph,
+            constraints: vec![
+                Constraint::strong([id(9)]),
+                Constraint::visibility([id(10)], [id(11)]),
+                Constraint::visibility([id(12), id(13)], [id(13)]),
+            ],
+        };
+        let all: BTreeSet<Vertex> = model.graph.vertices().collect();
+        let analyses =
+            analyze(&model.graph, &all, &model.constraints, &Cancel::new()).expect("the filter");
+        let passing = Analysis::first_fair_in(&analyses).expect("a fair component");
+        let component: BTreeSet<Vertex> = passing.vertices().iter().copied().collect();
+        assert_eq!(component, BTreeSet::from([vertices[3], vertices[4]]));
+        let walk = model
+            .greedy_loop(&component, passing.removed(), vertices[3])
+            .expect("a walk exists");
+        let path: Vec<(usize, usize)> = walk
+            .iter()
+            .map(|(from, edge)| (from.index(), edge.target.index()))
+            .collect();
+        assert_eq!(path, [(3, 4), (4, 3)]);
     }
 }

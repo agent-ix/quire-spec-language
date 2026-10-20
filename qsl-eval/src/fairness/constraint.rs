@@ -2,7 +2,7 @@
 //! Fairness constraints and their membership (ADR-018 FA-1 to FA-5; ADR-025
 //! MF-2).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::fairness::graph::{EdgeLabel, Identity};
 
@@ -18,6 +18,15 @@ pub enum Strength {
     Strong,
 }
 
+impl From<quire_semantic_value::fairness::FairnessKind> for Strength {
+    fn from(kind: quire_semantic_value::fairness::FairnessKind) -> Self {
+        match kind {
+            quire_semantic_value::fairness::FairnessKind::Weak => Self::Weak,
+            quire_semantic_value::fairness::FairnessKind::Strong => Self::Strong,
+        }
+    }
+}
+
 /// What owes a constraint on a cycle, and so which filter rule reads it
 /// (ADR-018 FA-5: a new kind adds a variant and its filter rule).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -29,7 +38,8 @@ pub enum Obligation {
     /// an edge Streett pair: a cycle that takes one of `loads`, the pair's
     /// load identities at every message depth, also takes one of the
     /// constraint's members, the loads of the location's mo-last message
-    /// (depth 0). It is weak (MF-5) and has no enabledness.
+    /// (depth 0). It is of kind strong (ADR-025 MF-5: "infinitely often a
+    /// load implies infinitely often a fresh load") and has no enabledness.
     Visibility {
         /// Every load identity of the pair, the fresh loads among them.
         loads: BTreeSet<Identity>,
@@ -82,12 +92,14 @@ impl Constraint {
         }
     }
 
-    /// The constraint's strength: its enablement strength, or weak for a
-    /// visibility constraint (ADR-025 MF-5).
+    /// The constraint's fairness kind: its enablement strength, or strong
+    /// for a visibility constraint (ADR-025 MF-5), so routing by fairness
+    /// kind sends an `ra` item only to a backend that decides strong
+    /// fairness.
     pub const fn strength(&self) -> Strength {
         match self.obligation {
             Obligation::Enablement(strength) => strength,
-            Obligation::Visibility { .. } => Strength::Weak,
+            Obligation::Visibility { .. } => Strength::Strong,
         }
     }
 
@@ -136,4 +148,42 @@ impl Constraint {
             Obligation::Visibility { .. } => None,
         }
     }
+}
+
+/// One (thread, location) pair of an item's visibility fairness member
+/// (ADR-025 MF-2, MF-5): the thread's and the location's canonical identity
+/// bytes, every load identity of the pair and the loads of the location's
+/// mo-last message among them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VisibilityPair {
+    /// The thread's identity bytes.
+    pub thread: Vec<u8>,
+    /// The location's identity bytes.
+    pub location: Vec<u8>,
+    /// Every load of the location by the thread, at any message depth.
+    pub loads: BTreeSet<Identity>,
+    /// The loads of the location's mo-last message (depth 0).
+    pub fresh: BTreeSet<Identity>,
+}
+
+/// A pair's load identities and its fresh loads among them.
+type PairLoads = (BTreeSet<Identity>, BTreeSet<Identity>);
+
+/// Resolve an item's one visibility fairness member to its constraints
+/// (ADR-018 PC-4, FR-339): one per (thread, location) pair, in ascending
+/// order of the thread's identity bytes and then the location's, which the
+/// caller appends after the clause's other resolved constraints so that an
+/// `UnfairVisibility` witness indexes them. A pair listed twice is one pair,
+/// with the union of its loads.
+pub fn visibility_constraints(pairs: impl IntoIterator<Item = VisibilityPair>) -> Vec<Constraint> {
+    let mut resolved: BTreeMap<(Vec<u8>, Vec<u8>), PairLoads> = BTreeMap::new();
+    for pair in pairs {
+        let entry = resolved.entry((pair.thread, pair.location)).or_default();
+        entry.0.extend(pair.loads);
+        entry.1.extend(pair.fresh);
+    }
+    resolved
+        .into_values()
+        .map(|(loads, fresh)| Constraint::visibility(loads, fresh))
+        .collect()
 }

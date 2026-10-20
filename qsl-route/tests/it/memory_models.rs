@@ -57,8 +57,9 @@ fn candidates(registry: &Registry, model: MemoryModelName) -> Vec<Candidate> {
 /// FR-226-AC-3's candidate step: with EN-1 (`sc`, `tso`, `ra`) and a test
 /// candidate advertising only `sc`, the `tso` item over `SB` has `{EN-1}`;
 /// with the test candidate alone it has none, and the `sc` request has
-/// `{test candidate}`. A backend advertising no model still decides an
-/// item whose subject resolves only to `sc`.
+/// `{test candidate}`. A backend whose descriptor carries no memory models
+/// advertises `sc` only: it decides the `sc` request and no `tso` or `ra`
+/// one.
 #[trace("TC-671")]
 #[test]
 fn a_weak_item_is_given_only_backends_advertising_its_resolved_model() {
@@ -80,4 +81,7 @@ fn a_weak_item_is_given_only_backends_advertising_its_resolved_model() {
     let unadvertised = registry([temporal("plain", 3, &[])]);
     assert_eq!(candidates(&unadvertised, Sc), [candidate("plain")]);
     assert_eq!(candidates(&unadvertised, Tso), []);
+    assert_eq!(candidates(&unadvertised, Ra), []);
+    let tso_only = registry([temporal("tso-only", 4, &[Tso])]);
+    assert_eq!(candidates(&tso_only, Sc), []);
 }

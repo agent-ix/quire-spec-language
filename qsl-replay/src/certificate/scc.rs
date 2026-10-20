@@ -1115,4 +1115,81 @@ mod tests {
             rejected(CertificateRule::WitnessFails, a())
         );
     }
+
+    /// FR-339-AC-3 (TC-526 step 3): FR-228-AC-5's SCC on `p`, `q`, `r`
+    /// (`p -> q`, `q -> p`, `r -> q`, and the stale load `q -> r`) with `r`
+    /// the only accepting state. `{p, q, r}` carries `UnfairVisibility`
+    /// naming the pair, with `sub` `{r}` (`Trivial`) then `{p, q}`
+    /// (`MissingAcceptance`): accepted although the removed `q -> r` runs
+    /// from `{p, q}` to the earlier `{r}`. The witness `UnfairWeak` over the
+    /// pair is rejected, and so is the same partition with `q -> r` not
+    /// removed, at `BackwardEdge`.
+    #[trace("TC-526", "FR-339-AC-3")]
+    #[test]
+    fn a_removed_edge_is_exempt_from_backward_edge_below_its_witness() {
+        const STALE: Identity = Identity::new(10);
+        const FRESH: Identity = Identity::new(11);
+        let state = |index: u8| product_state([index, 0], "q1");
+        let (p, q, r) = (state(0), state(1), state(2));
+        let mut product = ProductGraph::new();
+        let ends: Vec<Vertex> = [p.clone(), q.clone(), r.clone()]
+            .into_iter()
+            .map(|at| product.add_state(at, []).expect("a new state"))
+            .collect();
+        for (from, to, label) in [
+            (0, 1, Identity::new(20)),
+            (1, 0, Identity::new(21)),
+            (2, 1, Identity::new(22)),
+            (1, 2, STALE),
+        ] {
+            product
+                .add_edge(ends[from], ends[to], EdgeLabel::Transition(label))
+                .expect("known vertices");
+        }
+        product
+            .add_acceptance_set([ends[2]])
+            .expect("known vertices");
+        let constraints = [Constraint::visibility([STALE, FRESH], [FRESH])];
+        let split = || {
+            vec![
+                Component {
+                    states: vec![r.clone()],
+                    witness: ComponentWitness::Trivial,
+                },
+                Component {
+                    states: vec![p.clone(), q.clone()],
+                    witness: ComponentWitness::MissingAcceptance { set: 0 },
+                },
+            ]
+        };
+        let whole = |witness| {
+            vec![Component {
+                states: vec![p.clone(), q.clone(), r.clone()],
+                witness,
+            }]
+        };
+        assert_eq!(
+            check(
+                &product,
+                &whole(ComponentWitness::UnfairVisibility {
+                    constraints: vec![0],
+                    sub: split(),
+                }),
+                &constraints
+            ),
+            TemporalCertificateCheck::Accepted
+        );
+        assert_eq!(
+            check(
+                &product,
+                &whole(ComponentWitness::UnfairWeak { constraint: 0 }),
+                &constraints
+            ),
+            rejected(CertificateRule::WitnessFails, p.clone())
+        );
+        assert_eq!(
+            check(&product, &split(), &constraints),
+            rejected(CertificateRule::BackwardEdge, q.clone())
+        );
+    }
 }

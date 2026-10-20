@@ -5,10 +5,7 @@
 //!
 //! Over ADR-018 section 6's ConfigVersion unit (`crate::example_units`), the
 //! `Counter` subject (`crate::counter`) and ADR-019 section 6's mutex written
-//! over `Counter`. Not covered: FR-133-AC-1's `strong` (whole) half, which
-//! needs replay of a strong constraint (FR-131, QSL-532), and the
-//! suppression of a hint for a constraint the clause already holds, which
-//! needs a clause with a strong constraint (replay refuses one today).
+//! over `Counter`.
 
 use ix_trace_rs::trace;
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -244,9 +241,8 @@ fn a_stutter_loop_a_bounded_prefix_and_a_deadlock_carry_no_hint() {
 /// post-state 0). Under `fair weak each acquire`, `always eventually
 /// holds(value = 1)` is refuted by `0 -acq(2)-> 2 -rel-> 0` with an empty
 /// stem; the one hint is `{Strong, acquire, Each}`, identity `acq(1)`, loop
-/// position 0, and `release`, taken in the loop, gets none. The strong
-/// (whole) half waits on replay of a strong constraint (FR-131).
-#[trace("TC-534")]
+/// position 0, and `release`, taken in the loop, gets none.
+#[trace("TC-534", "FR-133-AC-1")]
 #[test]
 fn the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero() {
     let fixture = mutex("fair weak each M::Counter::setTo;");
@@ -257,6 +253,13 @@ fn the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero() {
     assert_eq!(fixture.values(counterexample, "c"), [0, 2, 0]);
     assert_eq!(counterexample.lasso.map(|lasso| lasso.entry), Some(0));
     let hints = hints_of(&fixture, counterexample, is_one);
+    let record = crate::strong_fairness::settle_en1(&fixture, &outcome, is_one);
+    assert_eq!(record.value, TerminalValue::Refuted);
+    assert_eq!(
+        record.counterexample.as_ref(),
+        Some(counterexample.as_ref())
+    );
+    assert_eq!(record.hints, hints);
     assert_eq!(hints.len(), 1, "{hints:?}");
     let hint = &hints[0];
     assert_eq!(hint.suggested.kind(), FairnessKind::Strong);
@@ -284,6 +287,39 @@ fn the_weak_each_mutex_refutation_names_acq_one_at_loop_position_zero() {
     assert_eq!(hints[0].first_enabled_position, 0);
 }
 
+/// FR-133-AC-1's `strong` (whole) half: under `fair strong acquire` the
+/// mutex is refuted by the same lasso, and the clause's whole constraint does
+/// not suppress the `each` hint, which names `acq(1)` at loop position 0.
+#[trace("TC-534", "FR-133-AC-1")]
+#[test]
+fn the_strong_whole_mutex_refutation_carries_the_same_hint() {
+    let fixture = mutex("fair strong M::Counter::setTo;");
+    let outcome = fixture.decide(is_one).expect("checked");
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("expected a violation, got {outcome:?}");
+    };
+    assert_eq!(fixture.values(counterexample, "c"), [0, 2, 0]);
+    let hints = hints_of(&fixture, counterexample, is_one);
+    let record = crate::strong_fairness::settle_en1(&fixture, &outcome, is_one);
+    assert_eq!(record.value, TerminalValue::Refuted);
+    assert_eq!(
+        record.counterexample.as_ref(),
+        Some(counterexample.as_ref())
+    );
+    assert_eq!(record.hints, hints);
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    let hint = &hints[0];
+    assert_eq!(hint.suggested.kind(), FairnessKind::Strong);
+    assert_eq!(hint.suggested.granularity(), FairnessGranularity::Each);
+    assert_eq!(hint.suggested.operation().name(), "setTo");
+    assert_eq!(hint.first_enabled_position, 0);
+    let identity = hint.identity.as_ref().expect("an identity");
+    assert!(counterexample
+        .prefix
+        .iter()
+        .all(|step| step.transition != *identity));
+}
+
 /// The hints come in the model's operation order: by the declaring type's
 /// effective identity, then operation name bytes. Over `Counter`'s `setTo`
 /// variant with no constraint, `inc` precedes `setTo`.
@@ -306,13 +342,13 @@ fn hints_come_in_the_models_operation_order() {
     assert_eq!(names, ["inc", "setTo"]);
 }
 
-fn is_one(value: i64) -> Option<bool> {
+pub(crate) fn is_one(value: i64) -> Option<bool> {
     Some(value == 1)
 }
 
 /// ADR-019 section 6's mutex over `Counter`'s ranged `setTo`, with
 /// `fairness`.
-fn mutex(fairness: &str) -> crate::liveness::Fixture {
+pub(crate) fn mutex(fairness: &str) -> crate::liveness::Fixture {
     let body = "pre Free using v on M::Counter::setTo { self.value = 0 and n >= 1 and n <= 2 }\n\
         post Takes using v on M::Counter::setTo { self.value = n }\n\
         pre Held using v on M::Counter::inc { self.value != 0 }\n\

@@ -33,9 +33,12 @@ pub enum Outcome {
         constraint: usize,
     },
     /// Every visibility constraint in `constraints` (ADR-025 MF-2) is loaded
-    /// by an edge inside the component and taken by none, so a fair cycle
+    /// by an edge inside the component and taken by none, so a fair loop
     /// avoids its loads. The component is refined: the edges that load any
-    /// of them are removed and `sub` is the analysis of the rest.
+    /// of them are removed and `sub` is the analysis of the rest. When strong
+    /// constraints fail on the same component, the one refinement step
+    /// (ADR-019 FS-2 as amended) is an [`Outcome::UnfairStrong`] whose `sub`
+    /// is this outcome over the remaining states.
     UnfairVisibility {
         /// The indices of the failing visibility constraints, ascending.
         constraints: Vec<usize>,
@@ -45,8 +48,11 @@ pub enum Outcome {
     },
     /// Every strong constraint in `constraints` is enabled at some vertex of
     /// the component and taken by no edge inside it. The component is
-    /// refined: the vertices where any of them is enabled are removed and
-    /// `sub` is the analysis of the rest.
+    /// refined: the vertices where any of them is enabled are removed, in the
+    /// same step as the load edges of every failing visibility pair, and
+    /// `sub` is the analysis of the rest (with those pairs' removal stated
+    /// as one [`Outcome::UnfairVisibility`] over the remaining states when
+    /// they still load an edge there).
     UnfairStrong {
         /// The indices of the failing strong constraints, ascending.
         constraints: Vec<usize>,
@@ -190,25 +196,10 @@ impl Filter<'_> {
                 return Ok(Outcome::UnfairWeak { constraint: index });
             }
         }
-        let mut cut = removed.clone();
-        let mut visibility = Vec::new();
-        for (index, constraint) in self.constraints.iter().enumerate() {
-            if let Obligation::Visibility { loads } = constraint.obligation() {
-                let owed = self.inside(members, removed, |label| constraint.is_owed_by(label));
-                if owed && !taken(constraint) {
-                    visibility.push(index);
-                    cut.extend(loads.iter().copied());
-                }
-            }
-        }
-        if !visibility.is_empty() {
-            let sub = self.analyze(members, &cut)?;
-            return Ok(Outcome::UnfairVisibility {
-                constraints: visibility,
-                sub,
-            });
-        }
-        let failing: Vec<usize> = self
+        // ADR-019 FS-2 as amended by ADR-025 MF-2: the states of every
+        // failing strong constraint and the load edges of every failing
+        // visibility pair are removed in one refinement step.
+        let strong: Vec<usize> = self
             .constraints
             .iter()
             .enumerate()
@@ -219,25 +210,76 @@ impl Filter<'_> {
             })
             .map(|(index, _)| index)
             .collect();
-        if failing.is_empty() {
+        let visibility = self.failing_visibility(members, removed);
+        if strong.is_empty() && visibility.is_empty() {
             return Ok(Outcome::Fair);
+        }
+        let mut cut = removed.clone();
+        for index in &visibility {
+            if let Some(Obligation::Visibility { loads }) =
+                self.constraints.get(*index).map(Constraint::obligation)
+            {
+                cut.extend(loads.iter().copied());
+            }
+        }
+        if strong.is_empty() {
+            return Ok(Outcome::UnfairVisibility {
+                constraints: visibility,
+                sub: self.analyze(members, &cut)?,
+            });
         }
         let remaining: BTreeSet<Vertex> = members
             .iter()
             .copied()
             .filter(|vertex| {
-                !failing.iter().any(|index| {
+                !strong.iter().any(|index| {
                     self.constraints
                         .get(*index)
                         .is_some_and(|constraint| self.enabled_at(*vertex, constraint))
                 })
             })
             .collect();
-        let sub = self.analyze(&remaining, removed)?;
+        let refined = self.analyze(&remaining, &cut)?;
+        // The pairs whose loads the one step also removed, among those the
+        // remaining states still load: the certificate states their removal
+        // as an `UnfairVisibility` over the remaining states, below the
+        // `UnfairStrong` (ADR-018 PC-4), with the same refinement.
+        let still = self.failing_visibility(&remaining, removed);
+        let sub = if still.is_empty() || remaining.is_empty() {
+            refined
+        } else {
+            vec![Analysis {
+                vertices: remaining.iter().copied().collect(),
+                outcome: Outcome::UnfairVisibility {
+                    constraints: still,
+                    sub: refined,
+                },
+                removed: removed.clone(),
+            }]
+        };
         Ok(Outcome::UnfairStrong {
-            constraints: failing,
+            constraints: strong,
             sub,
         })
+    }
+
+    /// The visibility constraints a live edge inside `members` loads and no
+    /// live edge inside takes (ADR-025 MF-2), ascending.
+    fn failing_visibility(
+        &self,
+        members: &BTreeSet<Vertex>,
+        removed: &BTreeSet<Identity>,
+    ) -> Vec<usize> {
+        self.constraints
+            .iter()
+            .enumerate()
+            .filter(|(_, constraint)| {
+                matches!(constraint.obligation(), Obligation::Visibility { .. })
+                    && self.inside(members, removed, |label| constraint.is_owed_by(label))
+                    && !self.inside(members, removed, |label| constraint.is_taken_by(label))
+            })
+            .map(|(index, _)| index)
+            .collect()
     }
 
     fn enabled_at(&self, vertex: Vertex, constraint: &Constraint) -> bool {

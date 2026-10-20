@@ -29,7 +29,7 @@ mod lasso;
 mod refine;
 mod scc;
 
-pub use constraint::{Constraint, Obligation, Strength};
+pub use constraint::{visibility_constraints, Constraint, Obligation, Strength, VisibilityPair};
 pub use error::FairnessError;
 pub use graph::{Edge, EdgeLabel, Graph, Identity, Vertex};
 pub use lasso::{check_loop, LassoFairness, LoopStep};

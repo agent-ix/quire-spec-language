@@ -229,10 +229,9 @@ pub fn descriptor_from_manifest<'a>(
         advertises,
         domains,
         fairness_kinds,
-        // QSpec FR-331's manifest names no memory-model member yet (QSpec
-        // FR-439 places the models in the capability advertisement without
-        // a spelling), so a manifest advertises none: it is no candidate for
-        // an item over a weak subject (FR-226).
+        // Remaining work: QSpec FR-331-AC-30's `memory_models` member is not
+        // read here yet, so a manifest descriptor advertises `sc` only, as a
+        // descriptor without the member does (FR-226).
         memory_models: BTreeSet::new(),
     })
 }
@@ -349,8 +348,8 @@ impl BackendDescriptor {
 
     /// Advertise the memory models this backend decides (FR-226, ADR-025
     /// MX-7, QSpec FR-439), by the names of the `memory` clause. A
-    /// descriptor built without this call advertises none, so it is no
-    /// candidate for an item over a subject with a weak `parallel`.
+    /// descriptor built without this call advertises `sc` only (QSpec
+    /// FR-331), so it is no candidate for an item resolved to `tso` or `ra`.
     #[must_use]
     pub fn with_memory_models(mut self, models: impl IntoIterator<Item = MemoryModelName>) -> Self {
         self.memory_models = models.into_iter().collect();
@@ -363,11 +362,16 @@ impl BackendDescriptor {
     }
 
     /// Whether this backend decides an item whose subject resolves its
-    /// outermost `parallel` controls to `resolved` (FR-226): every item
-    /// whose subject has no weak `parallel` is decided whatever the backend
-    /// advertises; otherwise the backend advertises every resolved model.
+    /// outermost `parallel` controls to `resolved` (FR-226): it advertises
+    /// every resolved model, and a descriptor with no `memory_models`
+    /// advertises `sc` only (QSpec FR-331). An item over a subject with no
+    /// `parallel` resolves no model and is decided by every backend.
     fn decides_models(&self, resolved: &BTreeSet<MemoryModelName>) -> bool {
-        !resolved.iter().any(|model| model.is_weak()) || resolved.is_subset(&self.memory_models)
+        if self.memory_models.is_empty() {
+            resolved.iter().all(|model| !model.is_weak())
+        } else {
+            resolved.is_subset(&self.memory_models)
+        }
     }
 
     /// The boundable domain kinds the manifest accepts a finite bound for
@@ -843,10 +847,11 @@ impl Registry {
     /// Compute `kind`'s candidate set for an item whose fairness set uses
     /// the kinds `required` and whose subject resolves its outermost
     /// `parallel` controls to the models `resolved` (FR-226, ADR-025 MX-7):
-    /// as [`Self::candidates_for_fairness`], and, when a resolved model is
-    /// weak, leaving out every backend that does not advertise each resolved
-    /// model. The models are never weakened to fit a backend; when none
-    /// advertises them the set is empty, an ordinary set (FR-075).
+    /// as [`Self::candidates_for_fairness`], leaving out every backend that
+    /// does not advertise each resolved model (a backend advertising no
+    /// models advertises `sc` only). The
+    /// models are never weakened to fit a backend; when none advertises
+    /// them the set is empty, an ordinary set (FR-075).
     pub fn candidates_for_models(
         &self,
         kind: Capability,
