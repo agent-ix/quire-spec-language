@@ -207,7 +207,7 @@ so unchecked input cannot reach an evaluator or backend.
 | **Reference evaluation** | Deterministic, side-effect-free execution against supplied data. Ends in one of the outcomes above. |
 | **Model checking** | In-process engines for temporal and protocol rules: model checking, timed-zone search, schedulability and probabilistic analysis. |
 | **Proof backends** | [Contract IR](https://github.com/agent-ix/quire-contract-ir) reads the v2 bytes. [Contract codegen](https://github.com/agent-ix/quire-contract-codegen) generates code, property tests and bounded proofs from it. |
-| **Replay** | A counterexample from any engine is recompiled from its source and re-run on the reference evaluator. A backend's "violated" stands only if the reference evaluator agrees. |
+| **Replay** | A counterexample from any engine is recompiled from its source and re-run on the reference evaluator. A backend's "violated" result is accepted only if the reference evaluator returns the same outcome. |
 
 ## Usage
 
@@ -280,7 +280,8 @@ backends as one tool.
 
 The standard defines the language. QSL compiles rules into checked packages.
 Contract IR turns them into contracts for code generation, the runtime and the
-analyzers. The driver runs the chain. Shared libraries sit underneath.
+analyzers. The driver runs the chain. All of them use a set of shared `no_std` libraries.
+
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/ecosystem-dark.svg">
