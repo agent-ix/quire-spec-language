@@ -714,6 +714,7 @@ pub(crate) fn admit_clause_observations(
             declaration: operation.declaration.clone(),
         }),
         operations: graph.scope().operations().clone(),
+        named_populations: clause.named_reads(),
     };
     admit_observations(
         graph.model_selections(),

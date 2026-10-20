@@ -188,7 +188,8 @@ pub(crate) fn observe_state(
         environment: ObjectEnvironment::new(closure)
             .with_extents(extents)
             .with_population_sizes(sizes)
-            .with_population_members(listed),
+            .with_population_members(listed)
+            .with_population_completeness(completeness.clone()),
         populations: completeness,
         out_of_range: Vec::new(),
     })

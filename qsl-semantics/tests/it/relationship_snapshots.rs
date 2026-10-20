@@ -489,6 +489,7 @@ impl Admission {
             context: clause.context(),
             operation: None,
             operations: Default::default(),
+            named_populations: clause.named_reads(),
         };
         let admitted = admit_observations(
             self.graph.model_selections(),
@@ -1267,6 +1268,7 @@ impl Admission {
                 declaration: OperationDeclaration::new("rehome", Vec::new(), None, effect.clone()),
             }),
             operations: Default::default(),
+            named_populations: checked_clause.named_reads(),
         };
         admit_observations(
             self.graph.model_selections(),

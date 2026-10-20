@@ -598,6 +598,7 @@ fn clause_facts(package: &CheckedPackage, name: &str) -> ClauseFacts {
             declaration: operation.declaration.clone(),
         }),
         operations: package.graph().scope().operations().clone(),
+        named_populations: checked.named_reads(),
     }
 }
 

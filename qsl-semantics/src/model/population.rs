@@ -2529,11 +2529,10 @@ pub fn lookup(
     ) {
         Ok(true) => {}
         Ok(false) => {
-            return LookupOutcome::Refused(ModelRefusal {
-                code: Code::IllTyped,
-                cause: ModelRefusalCause::TypeMismatch,
-                detail: format!("{} does not conform to {}", r.static_type.node, t.node),
-            });
+            return LookupOutcome::Refused(ModelRefusal::type_mismatch(
+                r.static_type.node.clone(),
+                t.node.clone(),
+            ));
         }
         Err(refusal) => return LookupOutcome::Refused(refusal),
     }
@@ -2577,26 +2576,10 @@ pub fn lookup(
 
     match mode {
         AbsenceMode::Undefined => LookupOutcome::Undefined,
-        AbsenceMode::Refused => {
-            let display = match std::str::from_utf8(&r.object) {
-                Ok(object) => object.to_owned(),
-                // Distinguishable from a well-formed identity string, which
-                // this format can never itself produce: no JSON string
-                // (`PopulationDocument`'s own member identity shape)
-                // contains "(not UTF-8)" as a literal suffix of a bare hex
-                // run, since a JSON string is already valid UTF-8 by
-                // construction.
-                Err(_) => format!("identity bytes 0x{} (not UTF-8)", hex(&r.object)),
-            };
-            LookupOutcome::Refused(ModelRefusal {
-                code: Code::InvalidRuntimeInput,
-                cause: ModelRefusalCause::AbsentKey {
-                    binding: binding.population_id().to_string(),
-                    key: r.object.clone(),
-                },
-                detail: format!("{display} is not a member of the bound population"),
-            })
-        }
+        AbsenceMode::Refused => LookupOutcome::Refused(ModelRefusal::absent_key(
+            binding.population_id().to_string(),
+            r.object.clone(),
+        )),
         AbsenceMode::Empty => {
             if let Err(incomplete) = charge_result_retain(meter, 1) {
                 return LookupOutcome::Incomplete(incomplete);

@@ -81,6 +81,11 @@ pub struct ClauseFacts {
     /// the invocation's own is resolved in the machine it names (FR-106
     /// check 5).
     pub operations: OperationTable,
+    /// The domain-package populations the clause names (FR-391), by
+    /// declaration identity, each with the observation it reads them at:
+    /// FR-106 requires each complete in that observation's snapshot.
+    /// `check::CheckedStateClause::named_reads` gives them.
+    pub named_populations: Vec<(String, crate::model::clause_observation::Observation)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1653,6 +1658,34 @@ pub fn admit_current_snapshot(
     )
 }
 
+/// FR-330: one snapshot of a temporal clause's trace, admitted as
+/// [`admit_current_snapshot`] admits it, except that `required`, the
+/// populations the clause's `holds` atoms name (FR-391), are required to be
+/// complete (FR-106 check 7), repeatedly through their reference fields and
+/// relationship ends: a trace over one not listed `complete` is `Incomplete`
+/// `incomplete_population`/`incomplete-scope`, as a state clause's
+/// observation is.
+#[allow(clippy::too_many_arguments)]
+pub fn admit_trace_snapshot(
+    model_selections: &[DomainPackageRef],
+    types: &TypeEnvironment,
+    packages: &BTreeMap<[u8; 32], Vec<u8>>,
+    model_limits: ModelNormalizationLimits,
+    provision: &BTreeMap<[u8; 32], Vec<u8>>,
+    selected: &DocumentRef,
+    limits: ObservationLimits,
+    required: &[String],
+) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
+    admit_current_environment(
+        model_selections,
+        types,
+        (packages, model_limits),
+        (provision, selected, limits),
+        &[],
+        required,
+    )
+}
+
 /// FR-098 step 3: a replayed function's object environment, admitted as
 /// [`admit_current_snapshot`] admits it, except that the populations holding
 /// an object that equals one of the converted `arguments` are required to be
@@ -1668,6 +1701,30 @@ pub fn admit_object_environment(
     selected: &DocumentRef,
     limits: ObservationLimits,
     arguments: &[ObjectReference],
+) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
+    admit_current_environment(
+        model_selections,
+        types,
+        (packages, model_limits),
+        (provision, selected, limits),
+        arguments,
+        &[],
+    )
+}
+
+/// One current snapshot's object environment, with the populations holding
+/// `arguments` and the populations `required` required to be complete.
+fn admit_current_environment(
+    model_selections: &[DomainPackageRef],
+    types: &TypeEnvironment,
+    (packages, model_limits): (&BTreeMap<[u8; 32], Vec<u8>>, ModelNormalizationLimits),
+    (provision, selected, limits): (
+        &BTreeMap<[u8; 32], Vec<u8>>,
+        &DocumentRef,
+        ObservationLimits,
+    ),
+    arguments: &[ObjectReference],
+    required: &[String],
 ) -> Result<(ObjectEnvironment, AdmissionUsage), AdmissionFailure> {
     let views = model_views(model_selections, packages, model_limits)?;
     let read = read_document(DocumentKind::Snapshot, provision, selected, limits)?;
@@ -1687,6 +1744,7 @@ pub fn admit_object_environment(
         snapshot,
         &read.identity,
         arguments,
+        required,
         model_limits.ancestor_steps,
     )?;
     Ok((admitted.environment, read.usage))
@@ -1819,6 +1877,9 @@ pub fn admit_observations(
     // A precondition's pre-call observation, selected by `PreCall` or by
     // `Invocation`, and a state machine's invariant on side `pre`, are
     // admitted against this one context.
+    // FR-391: the populations the clause names, required (FR-106 check 7)
+    // with their closure in the snapshot of the observation each is read at.
+    let named = NamedReads::of(&clause.named_populations);
     macro_rules! pre_call_context {
         ($operation:expr, $as_context:expr) => {
             PreCallContext {
@@ -1832,6 +1893,7 @@ pub fn admit_observations(
                 operation: $operation,
                 as_context: $as_context,
                 ancestor_steps: model_limits.ancestor_steps,
+                named: &named.pre,
             }
         };
     }
@@ -1843,7 +1905,7 @@ pub fn admit_observations(
             .ok_or_else(|| fault("clause-declares-no-operation"))
     };
 
-    match &selection.input {
+    let admitted = match &selection.input {
         ClauseSelectionInput::Current {
             snapshot,
             anchor,
@@ -1860,6 +1922,7 @@ pub fn admit_observations(
             self_object
                 .as_ref()
                 .ok_or_else(|| fault("object-invariant-names-no-self"))?,
+            &named.current,
             limits,
             model_limits.ancestor_steps,
         ),
@@ -1913,6 +1976,7 @@ pub fn admit_observations(
                         .ok_or_else(|| fault("clause-declares-no-operation"))?,
                 ),
                 false,
+                &named,
                 provisions,
                 invocation,
                 limits,
@@ -1937,12 +2001,41 @@ pub fn admit_observations(
                 clause.context,
                 OperationSource::Any(&clause.operations),
                 true,
+                &named,
                 provisions,
                 invocation,
                 limits,
                 model_limits,
             ),
         },
+    }?;
+    Ok(admitted)
+}
+
+/// FR-391 "Evaluation": the populations a clause names, by the observation
+/// each is read at. Each is required (FR-106 check 7, "required
+/// population") in that observation's snapshot, and so, repeatedly, is every
+/// population a reference field of its objects names: one not listed
+/// `complete` is `Incomplete` `incomplete_population`/`incomplete-scope`.
+#[derive(Debug, Default)]
+struct NamedReads {
+    current: Vec<String>,
+    pre: Vec<String>,
+    post: Vec<String>,
+}
+
+impl NamedReads {
+    fn of(named: &[(String, crate::model::clause_observation::Observation)]) -> Self {
+        use crate::model::clause_observation::Observation as Read;
+        let mut reads = Self::default();
+        for (population, observation) in named {
+            match observation {
+                Read::Current => reads.current.push(population.clone()),
+                Read::Pre => reads.pre.push(population.clone()),
+                Read::Post => reads.post.push(population.clone()),
+            }
+        }
+        reads
     }
 }
 
@@ -1983,6 +2076,7 @@ fn admit_invariant(
     selected: &DocumentRef,
     anchor: &SelectedAnchor,
     self_object: &SelectedObject,
+    named: &[String],
     limits: ObservationLimits,
     ancestor_steps: u64,
 ) -> Result<AdmittedObservations, AdmissionFailure> {
@@ -2035,6 +2129,7 @@ fn admit_invariant(
         snapshot,
         &read.identity,
         Some(&self_object.population),
+        named,
         ancestor_steps,
     )?;
 
@@ -2231,6 +2326,7 @@ fn admit_invocation_documents(
     clause_context: EffectiveId,
     source: OperationSource<'_>,
     post_self: bool,
+    named: &NamedReads,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
@@ -2352,6 +2448,9 @@ fn admit_invocation_documents(
     let mut pre_required =
         document::parameter_populations(views, &operation, &invocation.call.parameters);
     pre_required.extend(pre_values.read_context_populations());
+    pre_required.extend(named.pre.iter().cloned());
+    let mut post_required = post_values.read_context_populations();
+    post_required.extend(named.post.iter().cloned());
     document::check_population_completeness(
         &pre_snapshot.populations,
         &pre_values.completeness,
@@ -2363,7 +2462,7 @@ fn admit_invocation_documents(
         &post_snapshot.populations,
         &post_values.completeness,
         post_self_population,
-        &post_values.read_context_populations(),
+        &post_required,
         &post_values.extents,
     )?;
     document::check_population_closure(
@@ -2481,6 +2580,9 @@ struct PreCallContext<'a> {
     /// invocation's `parameters` are neither read nor checked.
     as_context: bool,
     ancestor_steps: u64,
+    /// The populations the clause names at `pre` (FR-391), required with
+    /// the reference parameters'.
+    named: &'a [String],
 }
 
 /// FR-106 check 5: an invocation's `context` and `operation` against the
@@ -2660,6 +2762,7 @@ fn admit_pre_call(
         document::parameter_populations(context.views, &operation, input.parameters)
     };
     required.extend(values.read_context_populations());
+    required.extend(context.named.iter().cloned());
     document::check_population_completeness(
         &snapshot.populations,
         &values.completeness,
@@ -2757,6 +2860,7 @@ fn admit_operation(
     clause_context: EffectiveId,
     source: OperationSource<'_>,
     as_context: bool,
+    named: &NamedReads,
     provisions: &Provisions<'_>,
     selected: &DocumentRef,
     limits: ObservationLimits,
@@ -2770,6 +2874,7 @@ fn admit_operation(
         clause_context,
         source,
         true,
+        named,
         provisions,
         selected,
         limits,
@@ -3102,6 +3207,7 @@ pub fn admit_frame_invocation<'t>(
         frame.context,
         OperationSource::Clause(&frame.operation),
         false,
+        &NamedReads::default(),
         provisions,
         selected,
         limits,

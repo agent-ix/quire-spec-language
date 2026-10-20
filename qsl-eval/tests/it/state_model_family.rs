@@ -730,6 +730,7 @@ fn observations(graph: &CheckedGraph, view: &EffectiveView) -> AdmittedObservati
             declaration: operation.declaration.clone(),
         }),
         operations: Default::default(),
+        named_populations: clause.named_reads(),
     };
     let selection = ClauseSelection {
         name: "F".to_owned(),
