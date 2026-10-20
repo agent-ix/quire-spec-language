@@ -80,3 +80,5 @@ Head c6ad506f8. Engine re-measured on origin/main 469f8b49c (main has not moved)
 | FND-003 | fixed | - |
 | FND-004 | deferred | The gate now records that the clock rules for a `Clock` outside a model object type are "not yet stated", and they cannot run until the facet is selectable (FR-230-AC-8), so stating them is out of scope here. |
 | FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |

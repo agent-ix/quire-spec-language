@@ -51,3 +51,4 @@ Findings, all low. Bullet 2 is a well-formed ubiquitous constraint. FR-361 item 
 | FND-001 | fixed | - |
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
+| FND-004 | fixed | - |

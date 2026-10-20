@@ -60,3 +60,5 @@ Findings. Consistent: FR-393's "S2 never refuses for facet; S3 decides" now name
 | FND-002 | fixed | - |
 | FND-003 | fixed | - |
 | FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
