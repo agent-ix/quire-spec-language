@@ -134,7 +134,8 @@ body is typed, so S3 resolves and refuses it (see "Requirements").
   else, then the checker SHALL refuse `wrong_snapshot`/`wrong-anchor` at
   `result`, naming the clause kind and the operation.
 - A clause names a population by `M::P` as the operand of `allInstances` or
-  `lookup`; FR-391 owns its resolution, typing and domain.
+  `lookup` or as the domain of a quantifier or population form; FR-391 owns
+  its resolution, typing and domain.
 - The checker SHALL bring each parameter of the operation into scope by name
   in a `pre` or `post` body, typed as FR-103 declares it, and no parameter
   into an invariant's scope.
