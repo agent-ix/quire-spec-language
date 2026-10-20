@@ -1508,6 +1508,7 @@ fn run_frame_clause_with(
             }
         }),
         operations: Default::default(),
+        named_populations: clause.named_reads(),
     };
     qsl_semantics::model::observation::admit_observations(
         graph.model_selections(),
@@ -2880,6 +2881,7 @@ fn run_tc465_with_clauses_under(
             }
         }),
         operations: Default::default(),
+        named_populations: clause.named_reads(),
     };
     let selection = qsl_semantics::model::observation::ClauseSelection {
         name: clause_name.to_owned(),

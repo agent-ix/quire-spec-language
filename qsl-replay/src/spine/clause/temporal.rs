@@ -15,7 +15,7 @@ use qsl_foundation::diagnostic::Code;
 use qsl_semantics::check::TemporalProfile;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use qsl_semantics::model::observation::{
-    admit_current_snapshot, population_universe_for, AdmissionFailure, AdmissionRecord,
+    admit_trace_snapshot, population_universe_for, AdmissionFailure, AdmissionRecord,
     AdmissionUsage, DocumentRef,
 };
 use quire_exact::{Meter, ValueType};
@@ -139,8 +139,9 @@ pub(super) fn run_temporal(
 
     let mut admitted = AdmissionUsage::default();
     let mut environments: Vec<ObjectEnvironment> = Vec::new();
+    let named = node.named_populations();
     for document in trace.documents() {
-        match admit_current_snapshot(
+        match admit_trace_snapshot(
             graph.model_selections(),
             graph.scope().types(),
             run.packages,
@@ -148,6 +149,7 @@ pub(super) fn run_temporal(
             run.provisions.snapshots,
             document,
             run.observation_limits,
+            &named,
         ) {
             Ok((environment, usage)) => {
                 admitted.document_bytes =

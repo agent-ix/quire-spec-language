@@ -531,6 +531,23 @@ pub(crate) fn population_of(
     }
 }
 
+/// The domain and authored bound of each population of `named` that the
+/// checked `root` names (FR-391 "Requirements").
+pub(crate) fn named_domains(
+    root: super::ir::CheckedNode<'_>,
+    named: &super::check::NamedScope,
+) -> Vec<(PopulationDomain, Option<AuthoredBound>)> {
+    root.descendants()
+        .into_iter()
+        .filter_map(|node| match node.kind() {
+            NodeKind::NamedPopulation { population, .. } => named
+                .keyed(population)
+                .map(|population| (population.domain, population.bound.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The authored bound (FR-380) of the one population that covers `object`,
 /// when the unit bounds it: what a reachability over `object` links to.
 fn walked_bound(
@@ -589,10 +606,13 @@ impl FamilyContract for ProtocolClauseFamily {
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> CheckOutcome<TypedStateClause, CheckRefusal> {
         let declarations = cx.declarations();
-        check_clause(
+        // FR-391: a unit-level state clause's body is a population position.
+        let named = super::check::NamedScope::of(declarations.models, declarations.scope);
+        check_clause_in(
             &form.view(),
             declarations,
             &mut cx.reborrow(declarations.scope),
+            Some(named),
         )
         .map(Staged::new)
         .map_err(StageFailure::Refused)
@@ -643,6 +663,18 @@ pub(crate) fn check_clause(
     input: &ClauseDeclarations<'_>,
     cx: &mut CheckContext<'_, Scope>,
 ) -> Result<TypedStateClause, CheckRefusal> {
+    check_clause_in(form, input, cx, None)
+}
+
+/// [`check_clause`] in a population position (FR-391) when `named` is
+/// given: the body may name the populations of `named`, each a domain of
+/// the clause's record.
+fn check_clause_in(
+    form: &ClauseView<'_>,
+    input: &ClauseDeclarations<'_>,
+    cx: &mut CheckContext<'_, Scope>,
+    named: Option<super::check::NamedScope>,
+) -> Result<TypedStateClause, CheckRefusal> {
     let location = input.location;
     let mut nodes = input.nodes_used;
     let (parameters, has_result) = form.parameters();
@@ -656,6 +688,9 @@ pub(crate) fn check_clause(
     .with_cancel(input.cancel)
     .with_complete_value(form.complete_value)
     .with_context(cx.reborrow(input.scope));
+    if let Some(named) = named.clone() {
+        typer = typer.with_named_populations(named);
+    }
     bind_parameters(&mut typer, &parameters, location)?;
     let mut parent_projections = BTreeMap::new();
     if let (StateClauseKind::Postcondition, Some(operation), Some(staged), Some(context)) = (
@@ -742,6 +777,18 @@ pub(crate) fn check_clause(
             clause_populations.extend(walked);
         }
     }
+    // FR-391 "Requirements": each population the body names is a domain
+    // of the clause's record, with its authored bound.
+    let mut named_bounds = Vec::new();
+    let mut named_only = BTreeSet::new();
+    if let Some(named) = &named {
+        for (domain, bound) in named_domains(body.root(), named) {
+            if clause_populations.insert(domain) {
+                named_only.insert(domain);
+            }
+            named_bounds.extend(bound);
+        }
+    }
     let mut body = body;
     for (id, bound) in linked {
         body.link_population(id, bound);
@@ -759,8 +806,9 @@ pub(crate) fn check_clause(
     let mut bounds: Vec<AuthoredBound> = claims
         .iter()
         .flat_map(|claim| &claim.populations)
-        .filter(|domain| domain.maximum.is_some())
+        .filter(|domain| domain.maximum.is_some() && !named_only.contains(*domain))
         .filter_map(|domain| walked_bound(input.models, domain.object, input.scope.types()))
+        .chain(named_bounds)
         .collect();
     bounds.sort_by(|left, right| left.label.cmp(&right.label));
     bounds.dedup();
@@ -880,6 +928,33 @@ impl CheckedStateClause {
     /// The clause's `claim` occurrence of its node (ADR-013 O-07).
     pub fn claim(&self) -> &Origin {
         &self.claim
+    }
+
+    /// FR-391 "Evaluation": each domain-package population the body names,
+    /// by its declaration identity, with the observation it is read at, in
+    /// body order and once each. FR-106 requires each complete in the
+    /// snapshot of its observation.
+    pub fn named_reads(&self) -> Vec<(String, Observation)> {
+        let mut reads: Vec<(String, Observation)> = Vec::new();
+        for node in self.body.root().descendants() {
+            let (NodeKind::AllInstances { population } | NodeKind::Lookup { population, .. }) =
+                node.kind()
+            else {
+                continue;
+            };
+            let NodeKind::NamedPopulation { population, .. } = node.at(*population).kind() else {
+                continue;
+            };
+            let observation = self
+                .observations
+                .of_read(node.location())
+                .unwrap_or_else(|| self.observation());
+            let read = (population.node.clone(), observation);
+            if !reads.contains(&read) {
+                reads.push(read);
+            }
+        }
+        reads
     }
 }
 

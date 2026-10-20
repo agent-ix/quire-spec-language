@@ -427,6 +427,7 @@ pub(crate) fn lifecycle_selection_with(
             declaration: operation.declaration.clone(),
         }),
         operations: package.graph().scope().operations().clone(),
+        named_populations: checked.named_reads(),
     };
     admit_observations(
         package.graph().model_selections(),
@@ -1985,6 +1986,7 @@ fn lifecycle_pre_call(
             declaration: operation.declaration.clone(),
         }),
         operations: Default::default(),
+        named_populations: checked.named_reads(),
     };
     admit_observations(
         package.graph().model_selections(),

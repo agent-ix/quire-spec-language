@@ -309,11 +309,16 @@ impl TemporalClaim {
     /// by the clause's checked node and each parameter's, in the order the
     /// clause declares them. `population` is the key of
     /// [`Self::population`]; the record takes no universe (FR-336-AC-1).
+    ///
+    /// `named` are the keys of the unbounded populations the clause's
+    /// `holds` atoms name (FR-391 "Requirements"), each a population domain
+    /// of the record.
     pub fn requirements(
         &self,
         clause: WireNodeId,
         parameters: &[WireNodeId],
         population: Option<DomainKey>,
+        named: &[DomainKey],
     ) -> Result<Requirements, InternalFault> {
         let mut domains = BTreeMap::new();
         for ((index, path), kind) in &self.parameter_domains {
@@ -341,6 +346,9 @@ impl TemporalClaim {
             let key =
                 population.ok_or_else(|| InternalFault::new(STAGE, "population-domain-keyed"))?;
             domains.insert(key, DomainKind::Population);
+        }
+        for key in named {
+            domains.insert(key.clone(), DomainKind::Population);
         }
         Ok(
             Requirements::new(self.kind, ClaimExtent::from_domains(domains))

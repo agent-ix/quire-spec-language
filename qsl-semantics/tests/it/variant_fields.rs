@@ -1189,6 +1189,7 @@ impl Replay {
                 declaration,
             }),
             operations: Default::default(),
+            named_populations: Vec::new(),
         }
     }
 

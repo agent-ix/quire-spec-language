@@ -12,9 +12,9 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
-    identity_string, HistoryUnresolved, ModelQueryRefusal, NavigationRefusal, PreconditionFailure,
-    ProtocolClauseSnapshot, ProtocolClauseUnsupported, ProtocolReferenceUnsupported,
-    ReferenceUnresolved, StateModelUndefined,
+    identity_string, HistoryUnresolved, ModelQueryRefusal, NamedPopulationIncomplete,
+    NavigationRefusal, PreconditionFailure, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
+    ProtocolReferenceUnsupported, ReferenceUnresolved, StateModelUndefined,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
@@ -386,6 +386,11 @@ fn population_of(source: CheckedNode<'_>) -> Result<String, Halt> {
 /// A visit: one `collection.visit` work unit.
 fn charge_visit(meter: &mut Meter) -> Result<(), Stop> {
     Ok(meter.charge(Charge::new(ChargePoint::CollectionVisit))?)
+}
+
+/// Whether `node` is a named population operand (FR-391).
+fn is_named(node: CheckedNode<'_>) -> bool {
+    matches!(node.kind(), NodeKind::NamedPopulation { .. })
 }
 
 /// One `collection.element` before a literal element.
@@ -1375,6 +1380,21 @@ impl<'a, 'm> Machine<'a, 'm> {
                 self.tasks.push(Task::Eval(node.at(*source)));
                 return Ok(());
             }
+            // FR-391: a named population is read from the snapshot by its
+            // parent, never evaluated as an operand.
+            NodeKind::AllInstances { population } if is_named(node.at(*population)) => {
+                self.tasks.push(Task::Apply(node));
+                return Ok(());
+            }
+            NodeKind::Lookup {
+                population,
+                reference,
+                ..
+            } if is_named(node.at(*population)) => {
+                self.tasks.push(Task::Apply(node));
+                self.tasks.push(Task::Eval(node.at(*reference)));
+                return Ok(());
+            }
             NodeKind::Pre(operand) => {
                 // FR-153: read the invocation pre population for every
                 // `allInstances`/`lookup` under `operand`, then restore.
@@ -2079,6 +2099,29 @@ impl<'a, 'm> Machine<'a, 'm> {
                 unique,
                 ..
             } => self.navigate(node, relationship, *near, *unique)?,
+            NodeKind::NamedPopulation { .. } => {
+                return Err(invariant("named-population-is-read-by-its-parent"))
+            }
+            NodeKind::AllInstances { population }
+                if let NodeKind::NamedPopulation {
+                    population,
+                    members,
+                } = node.at(*population).kind() =>
+            {
+                self.named_all_instances(node, population, members)?
+            }
+            NodeKind::Lookup {
+                population,
+                absence,
+                ..
+            } if let NodeKind::NamedPopulation {
+                population,
+                members,
+            } = node.at(*population).kind() =>
+            {
+                let reference = self.pop()?;
+                self.named_lookup(node, population, members, *absence, reference)?
+            }
             NodeKind::AllInstances { population } => {
                 if self.is_protocol_clause() {
                     return Err(Halt::Family(FamilyResult::Refused(Box::new(
@@ -2345,6 +2388,180 @@ impl<'a, 'm> Machine<'a, 'm> {
         self.log_membership_of(population, None);
         let elements = members.iter().cloned().map(Value::Reference).collect();
         Ok(outcome_into_stop(form(result_type, elements, self.meter))?)
+    }
+
+    /// FR-391: `allInstances<T>(M::P)`, and a named population read as a
+    /// domain, over the population the snapshot of the node's observation
+    /// lists: every member whose type conforms to `T`, one `population.visit`
+    /// charge per member, FR-084's typed incomplete result when no declared
+    /// member type covers `T`.
+    fn named_all_instances(
+        &mut self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+        members: &[quire_exact::EffectiveId],
+    ) -> Result<Value, Halt> {
+        let ValueType::Collection(result_type) = node.value_type() else {
+            return Err(invariant("all-instances-collection-result-expected"));
+        };
+        let ValueType::Reference(target) = result_type.element() else {
+            return Err(invariant("all-instances-reference-element-expected"));
+        };
+        self.named_covers(members, *target)?;
+        let types = self.scope.types();
+        let listed = self.named_members(node, population)?;
+        let mut selected = Vec::new();
+        for reference in listed {
+            charge_named(self.meter, ChargePoint::PopulationVisit)?;
+            if types.conforms(reference.object_type(), *target) {
+                selected.push(Value::Reference(reference.clone()));
+            }
+        }
+        let count = u64::try_from(selected.len()).unwrap_or(u64::MAX);
+        self.meter.charge(
+            Charge::new(ChargePoint::CollectionBound).size(LimitKind::ValueOccurrences, count),
+        )?;
+        self.log_membership_of(population, None);
+        Ok(outcome_into_stop(form(result_type, selected, self.meter))?)
+    }
+
+    /// FR-084's coverage check for a named population (FR-391 "Typing"):
+    /// FR-084's typed incomplete result when no declared member type of the
+    /// population covers `target`. It charges nothing.
+    fn named_covers(
+        &self,
+        members: &[quire_exact::EffectiveId],
+        target: quire_exact::EffectiveId,
+    ) -> Result<(), Halt> {
+        let types = self.scope.types();
+        if members.iter().any(|member| types.conforms(target, *member)) {
+            return Ok(());
+        }
+        let queried = self
+            .graph
+            .object_type_key(target)
+            .ok_or_else(|| invariant("named-queried-type-declared"))?
+            .node
+            .clone();
+        Err(ModelQueryHalt::IncompleteClosure {
+            queried_type: queried.clone(),
+            uncovered_subtypes: vec![queried],
+        }
+        .into())
+    }
+
+    /// The objects the snapshot of `node`'s observation lists for
+    /// `population` (FR-391 "Evaluation"): a population that snapshot does
+    /// not list `complete` stops `incomplete_population`/`incomplete-scope`,
+    /// whichever path admitted it.
+    fn named_members(
+        &self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+    ) -> Result<&'a [ObjectReference], Halt> {
+        let objects = self.objects_for(node)?;
+        if !objects.population_complete(&population.node) {
+            return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                NamedPopulationIncomplete {
+                    population: population.node.clone(),
+                },
+            ))));
+        }
+        objects
+            .population_members(&population.node)
+            .ok_or_else(|| invariant("named-population-unobserved"))
+    }
+
+    /// FR-391: `lookup<T>(M::P, r) absent m` over the population the snapshot
+    /// of the node's observation lists, with FR-084's coverage check of `T`
+    /// and `lookup`'s conformance of the reference to `T`.
+    fn named_lookup(
+        &mut self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+        members: &[quire_exact::EffectiveId],
+        absence: qsl_foundation::absence::AbsenceMode,
+        reference: Value,
+    ) -> Result<Value, Halt> {
+        use qsl_foundation::absence::AbsenceMode;
+        let Value::Reference(reference) = reference else {
+            return Err(invariant("lookup-reference-value-expected"));
+        };
+        let target = match node.value_type() {
+            ValueType::Option(payload) => &**payload,
+            other => other,
+        };
+        let ValueType::Reference(target) = target else {
+            return Err(invariant("lookup-reference-result-expected"));
+        };
+        self.named_covers(members, *target)?;
+        if !self
+            .scope
+            .types()
+            .conforms(reference.object_type(), *target)
+        {
+            return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                ModelQueryRefusal::from(
+                    qsl_semantics::model::normalize::ModelRefusal::type_mismatch(
+                        self.graph
+                            .object_type_key(reference.object_type())
+                            .ok_or_else(|| invariant("named-reference-type-declared"))?
+                            .node
+                            .clone(),
+                        self.graph
+                            .object_type_key(*target)
+                            .ok_or_else(|| invariant("named-queried-type-declared"))?
+                            .node
+                            .clone(),
+                    ),
+                ),
+            ))));
+        }
+        self.meter
+            .charge(Charge::new(ChargePoint::LookupKey).size(LimitKind::ValueOccurrences, 1))?;
+        let present = self.named_members(node, population)?.contains(&reference);
+        self.log_membership_of(population, Some(reference.clone()));
+        let retain = |meter: &mut Meter, occurrences: u64| -> Result<(), Halt> {
+            Ok(meter.charge(
+                Charge::new(ChargePoint::LookupResultRetain)
+                    .size(LimitKind::ValueOccurrences, occurrences)
+                    .results(occurrences),
+            )?)
+        };
+        let payload = || match node.value_type() {
+            ValueType::Option(payload) => Ok((**payload).clone()),
+            _ => Err(invariant("lookup-option-result-expected")),
+        };
+        let key = identity_string(reference.object().as_str().as_bytes());
+        match (present, absence) {
+            (true, AbsenceMode::Empty) => {
+                retain(self.meter, 2)?;
+                Ok(OptionValue::from_admitted(
+                    payload()?,
+                    Some(Value::Reference(reference)),
+                ))
+            }
+            (true, AbsenceMode::Undefined | AbsenceMode::Refused) => {
+                retain(self.meter, 1)?;
+                Ok(Value::Reference(reference))
+            }
+            (false, AbsenceMode::Empty) => {
+                retain(self.meter, 1)?;
+                Ok(OptionValue::from_admitted(payload()?, None))
+            }
+            (false, AbsenceMode::Undefined) => Err(Halt::Family(FamilyResult::Undefined(
+                Box::new(StateModelUndefined::AbsentKey {
+                    binding: population.node.clone(),
+                    key,
+                }),
+            ))),
+            (false, AbsenceMode::Refused) => Err(Halt::Family(FamilyResult::Refused(Box::new(
+                ModelQueryRefusal::from(qsl_semantics::model::normalize::ModelRefusal::absent_key(
+                    population.node.clone(),
+                    reference.object().as_str().as_bytes().to_vec(),
+                )),
+            )))),
+        }
     }
 
     /// FR-139: start `seq(i in low .. high: e)` over its evaluated bounds.

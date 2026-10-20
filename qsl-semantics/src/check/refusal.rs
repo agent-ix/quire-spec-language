@@ -1579,6 +1579,19 @@ pub enum CheckCause {
     WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name`.
     MissingName(String),
+    /// `missing_declaration` / `missing-name` for the population segment of
+    /// a two-segment `M::P` name (FR-391 "Resolution"), located at that
+    /// segment: it starts `offset` bytes into the written name.
+    MissingSegment {
+        /// The name as written.
+        name: String,
+        /// The byte offset of the segment that names nothing.
+        offset: usize,
+        /// The name's own span, when the form that writes it records one
+        /// (a population form's domain); otherwise the name is the node at
+        /// the refusal's location.
+        span: Option<Span>,
+    },
     /// `missing_declaration` / `missing-name` for `self` written where no
     /// state clause binds it (FR-104): a typed cause, not a `MissingName`
     /// whose text is `"self"`.
@@ -1608,10 +1621,10 @@ pub enum CheckCause {
     /// population. A record or event value is evaluated with no object
     /// universe, so there is nothing for the read to observe.
     ObjectReadInValueInvariant,
-    /// FR-139: a concrete population name or one of the population-valued
-    /// forms outside a refinement declaration's rows:
-    /// `unsupported_construct` / `expression-form`, at the form. State-clause
-    /// bodies keep ADR-016 FE-4.
+    /// FR-139: a `seq` outside a refinement declaration's rows:
+    /// `unsupported_construct` / `expression-form`, at the form. FR-391
+    /// admits the other population forms in a state clause and a `holds`
+    /// atom.
     PopulationFormOutsideRefinement,
     /// FR-139: a population-valued form that S3 does not check yet:
     /// `unsupported_construct` / `not-yet-implemented`, naming what is
@@ -2080,7 +2093,9 @@ impl CheckCause {
             | Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
-            Self::MissingName(_) | Self::MissingSelf => Code::MissingDeclaration,
+            Self::MissingName(_) | Self::MissingSegment { .. } | Self::MissingSelf => {
+                Code::MissingDeclaration
+            }
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
@@ -2149,7 +2164,9 @@ impl CheckCause {
                 Some("type-mismatch")
             }
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
-            Self::MissingName(_) | Self::MissingSelf => Some("missing-name"),
+            Self::MissingName(_) | Self::MissingSegment { .. } | Self::MissingSelf => {
+                Some("missing-name")
+            }
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }

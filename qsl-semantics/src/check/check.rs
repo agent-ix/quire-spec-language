@@ -1174,6 +1174,11 @@ impl Scope {
             .find(|declared| declared.key() == key)
     }
 
+    /// Whether `name` is the name of an enum of the unit.
+    pub(crate) fn names_enum(&self, name: &str) -> bool {
+        self.index.enum_members.contains_key(name)
+    }
+
     /// The package's admitted enum declarations, in declaration order.
     pub(crate) fn enums(&self) -> &[EnumBinding] {
         &self.enums
@@ -1506,9 +1511,13 @@ pub(crate) struct Typer<'a> {
     /// The nodes typed so far, each stored once a parent names it.
     body: BodyBuilder,
     /// The concrete populations a refinement row reads (FR-139); `None`
-    /// outside a refinement declaration, where a population name or form
-    /// refuses `unsupported_construct`/`expression-form`.
+    /// outside a refinement declaration, where a population name resolves
+    /// through `named` (FR-391) and `seq` refuses
+    /// `unsupported_construct`/`expression-form`.
     populations: Option<PopulationScope>,
+    /// The populations a population position may name (FR-391); `None`
+    /// outside one, where a `M::P` name names no population.
+    named: Option<NamedScope>,
     /// The history fields a refinement row reads (FR-138); empty outside a
     /// refinement declaration, where the name of one is a missing field.
     history: Vec<ScopedHistory>,
@@ -1555,6 +1564,104 @@ pub(crate) struct ScopedPopulation {
     pub(crate) key: DeclarationKey,
     /// The object type its members are, `T` of `Set<Reference<T>>[0, n]`.
     pub(crate) member: EffectiveId,
+}
+
+/// The domain-package populations a population position may name
+/// (FR-391): the body of a unit-level state clause or a `holds` atom.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct NamedScope {
+    /// Every population of the unit's models, by the name `M::P` spells.
+    pub(crate) populations: Vec<NamedPopulation>,
+    /// The model aliases that also name an enum of the unit: a two-segment
+    /// name under one is ambiguous.
+    pub(crate) ambiguous: Vec<String>,
+    /// Every model alias of the unit: a two-segment name under one that
+    /// names no population is missing at its second segment.
+    pub(crate) aliases: Vec<String>,
+}
+
+/// One population a population position may name (FR-391).
+#[derive(Clone, Debug)]
+pub(crate) struct NamedPopulation {
+    /// The qualified name a clause writes, `Alias::P`.
+    pub(crate) name: String,
+    /// The population's declaration.
+    pub(crate) key: DeclarationKey,
+    /// Its declared member types.
+    pub(crate) members: Vec<EffectiveId>,
+    /// The requirement-record domain it adds (FR-104 "Requirements").
+    pub(crate) domain: super::state_clause::PopulationDomain,
+    /// The unit's authored bound on it (FR-380).
+    pub(crate) bound: Option<super::lowering::AuthoredBound>,
+}
+
+impl NamedScope {
+    /// The scope over `models`, with `scope`'s enums for the ambiguity rule.
+    pub(crate) fn of(models: &[super::lowering::AdmittedModel], scope: &Scope) -> Self {
+        let mut populations = Vec::new();
+        let mut ambiguous = Vec::new();
+        let mut aliases = Vec::new();
+        for model in models {
+            let Some(alias) = model.alias() else {
+                continue;
+            };
+            aliases.push(alias.to_owned());
+            if scope.names_enum(alias) {
+                ambiguous.push(alias.to_owned());
+            }
+            populations.extend(model.named_populations().map(|record| NamedPopulation {
+                name: format!("{alias}::{}", record.name),
+                key: record.key.clone(),
+                members: record.members,
+                domain: super::state_clause::PopulationDomain {
+                    object: record.canonical,
+                    ordinal: record.ordinal,
+                    maximum: record.bound.map(|bound| bound.maximum),
+                },
+                bound: record.bound.cloned(),
+            }));
+        }
+        Self {
+            populations,
+            ambiguous,
+            aliases,
+        }
+    }
+
+    /// The population `name` spells, when it spells one.
+    pub(crate) fn named(&self, name: &str) -> Option<&NamedPopulation> {
+        self.populations
+            .iter()
+            .find(|population| population.name == name)
+    }
+
+    /// The population whose declaration is `key`.
+    pub(crate) fn keyed(&self, key: &DeclarationKey) -> Option<&NamedPopulation> {
+        self.populations
+            .iter()
+            .find(|population| &population.key == key)
+    }
+
+    /// Whether `name` is two segments whose first is a model alias that
+    /// also names an enum of the unit.
+    pub(crate) fn is_ambiguous(&self, name: &str) -> bool {
+        alias_of(name).is_some_and(|alias| self.ambiguous.iter().any(|known| known == alias))
+    }
+
+    /// Whether `name` is two segments whose first is a model alias of the
+    /// unit (FR-391 "Resolution").
+    pub(crate) fn is_under_alias(&self, name: &str) -> bool {
+        alias_of(name).is_some_and(|alias| self.aliases.iter().any(|known| known == alias))
+    }
+}
+
+/// The first segment of `name` when it is exactly two segments.
+fn alias_of(name: &str) -> Option<&str> {
+    let mut segments = name.split("::");
+    match (segments.next(), segments.next(), segments.next()) {
+        (Some(alias), Some(_), None) => Some(alias),
+        _ => None,
+    }
 }
 
 /// A state clause's own typing context (FR-104 "Typing"): its kind, the
@@ -1792,6 +1899,7 @@ impl<'a> Typer<'a> {
             units: UnitScope::new(scope.types.units()),
             body: BodyBuilder::default(),
             populations: None,
+            named: None,
             history: Vec::new(),
         }
     }
@@ -1810,6 +1918,14 @@ impl<'a> Typer<'a> {
     #[must_use]
     pub(crate) fn with_populations(mut self, populations: PopulationScope) -> Self {
         self.populations = Some(populations);
+        self
+    }
+
+    /// This pass typing a population position (FR-391): `M::P` names a
+    /// population of `named`.
+    #[must_use]
+    pub(crate) fn with_named_populations(mut self, named: NamedScope) -> Self {
+        self.named = Some(named);
         self
     }
 
