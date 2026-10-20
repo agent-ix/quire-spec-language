@@ -18,7 +18,7 @@
 //! outranks every row outcome; of the row outcomes the first undefined one
 //! outranks the first undetermined one (QSpec FR-377 "Failure precedence").
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use qsl_eval::simulation::model::{ClauseOutcome, ModelSystem, RowReading, StateObservation};
 use qsl_eval::temporal::UndefinedCause;
@@ -220,29 +220,6 @@ pub fn map_state(
     state: &ModelState,
     history: &HistoryValues,
 ) -> Result<MappedState, MappingFailure> {
-    map_state_without(
-        refinement,
-        (concrete_system, abstract_system),
-        state,
-        (history, &BTreeSet::new()),
-    )
-}
-
-/// [`map_state`] that does not evaluate a row reading a history field of
-/// `failed` (by object), whose update failed at this step: a row of that
-/// object that reads the field counts as read and maps no object, and the
-/// failed update's outcome decides in its place. The same row of another
-/// object is evaluated.
-#[allow(
-    clippy::result_large_err,
-    reason = "FR-140 fixes MappingFailure's shape: a row, an object and the evaluator's cause"
-)]
-pub(super) fn map_state_without(
-    refinement: &CheckedRefinement,
-    (concrete_system, abstract_system): (&ModelSystem<'_>, &ModelSystem<'_>),
-    state: &ModelState,
-    (history, failed): (&HistoryValues, &BTreeSet<(ObjectKey, String)>),
-) -> Result<MappedState, MappingFailure> {
     check_systems(refinement, concrete_system, abstract_system)?;
     let mut populations: Vec<&PopulationRow> = refinement.populations().iter().collect();
     populations.sort_by(|left, right| left.abstract_population.cmp(&right.abstract_population));
@@ -293,7 +270,6 @@ pub(super) fn map_state_without(
                 abstract_system,
                 observation,
                 (object_row, &at),
-                failed,
                 &mut outcomes,
             )? {
                 for field in &object_row.hidden {
@@ -406,7 +382,6 @@ fn map_object(
     abstract_system: &ModelSystem<'_>,
     observed: &StateObservation,
     (object_row, at): (&ObjectRow, &ObjectKey),
-    failed: &BTreeSet<(ObjectKey, String)>,
     outcomes: &mut Outcomes,
 ) -> Result<Option<StateObject>, MappingFailure> {
     let receiver = concrete_system
@@ -430,13 +405,6 @@ fn map_object(
     let mut fields = BTreeMap::new();
     let mut mapped = true;
     for (row, field) in rows {
-        if failed
-            .iter()
-            .any(|(object, name)| object == at && row.expression.reads_history(name))
-        {
-            mapped = false;
-            continue;
-        }
         let reading = concrete_system
             .read_row(
                 &row.expression,

@@ -238,14 +238,6 @@ pub struct CheckedRow {
 }
 
 impl CheckedRow {
-    /// Whether the body reads the history field named `field` (FR-138),
-    /// whatever object type it was added to.
-    pub fn reads_history(&self, field: &str) -> bool {
-        self.body().descendants().iter().any(
-            |node| matches!(node.kind(), NodeKind::History { field: read, .. } if read == field),
-        )
-    }
-
     /// Every model read of the body and the observation it takes, by the
     /// read's location.
     pub fn reads(&self) -> impl Iterator<Item = (&Location, Observation)> {

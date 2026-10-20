@@ -156,13 +156,11 @@ fn carried(
 /// What advancing the history over one step gave: the values, and the first
 /// failure of each kind.
 pub(super) struct Advanced {
-    /// The history at the post-state. An update that failed wrote nothing:
-    /// its field holds the value the step started from, which no row may read.
+    /// The history at the post-state. A field whose update failed
+    /// (undefined, refused, incomplete or out of type) holds no value, so a
+    /// post-state row that reads it, of any object, is undetermined and is
+    /// never evaluated at a stand-in (FR-141 "Undetermined history update").
     pub(super) values: HistoryValues,
-    /// The history fields, by object, whose update failed (undefined, refused,
-    /// incomplete or out of type). A post-state row that reads one is not
-    /// evaluated (FR-141 "Undetermined history update").
-    pub(super) failed: BTreeSet<(ObjectKey, String)>,
     /// The updates that evaluated undefined or could not be decided.
     pub(super) outcomes: Outcomes,
 }
@@ -218,21 +216,13 @@ pub(super) fn advance(
 ) -> Result<Advanced, MappingFailure> {
     let mut values = carried(refinement, system, history, post.state());
     let mut outcomes = Outcomes::default();
-    let mut failed = BTreeSet::new();
+    let mut failed: BTreeSet<(ObjectKey, String)> = BTreeSet::new();
     let Some((transition, resolved)) = step else {
-        return Ok(Advanced {
-            values,
-            failed,
-            outcomes,
-        });
+        return Ok(Advanced { values, outcomes });
     };
     let Some(receiver) = object_of(system, post.state(), &resolved.receiver) else {
         // The step deleted its receiver, so there is no field to write.
-        return Ok(Advanced {
-            values,
-            failed,
-            outcomes,
-        });
+        return Ok(Advanced { values, outcomes });
     };
     let Some(receiver_type) = post
         .state()
@@ -318,11 +308,10 @@ pub(super) fn advance(
     for (field, value) in written {
         values.entries.insert((receiver.clone(), field), value);
     }
-    Ok(Advanced {
-        values,
-        failed,
-        outcomes,
-    })
+    for entry in &failed {
+        values.entries.remove(entry);
+    }
+    Ok(Advanced { values, outcomes })
 }
 
 /// FR-138: the history at `post`, after the concrete step `transition` took

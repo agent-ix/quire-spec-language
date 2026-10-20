@@ -454,3 +454,19 @@ fn an_undefined_row_wins_over_an_over_budget_update() {
     assert!(matches!(found, StepVerdict::Undefined(_)), "{found:?}");
     assert_eq!(locus_row(&found), items_row());
 }
+
+/// FR-138 / FR-141 (TC-555 step 6): a row of the ring that reaches `h` of
+/// another object through a population read is not evaluated at a stand-in
+/// either. `h` of `s0` leaves its type, and the `items` row reads `s.h` as
+/// `1 mod (0 - s.h)`, which is undefined at the value the step started from
+/// and defined at the computed 2: the step is `Undetermined` naming `h`.
+#[trace("TC-555", "FR-141-AC-10")]
+#[test]
+fn a_row_reaching_a_failed_field_through_a_population_is_undetermined() {
+    let b = budget();
+    let items = "items = seq(i in 0 .. self.size - 1: only(s in R::slots where s.ring = self and s.index + 0 = (self.head + i) mod 2: if 1 mod (0 - s.h) = 0 then s.value else s.value));";
+    let world = reads_history(OUT_OF_TYPE, CHEAP_ARGUMENT, items);
+    let found = verdict(&world, b, empty, one, false);
+    assert!(matches!(found, StepVerdict::Undetermined(_)), "{found:?}");
+    assert_eq!(locus_row(&found), history_row());
+}

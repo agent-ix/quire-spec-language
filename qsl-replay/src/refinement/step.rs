@@ -38,8 +38,8 @@ use crate::refinement::failure::{
 };
 use crate::refinement::history::{advance, has_update, initial_history, HistoryValues};
 use crate::refinement::map::{
-    lift_value, map_state, map_state_without, object_of, EvalFailure, Lifting, MappedState,
-    MappingFailure, MappingRowRef, MappingUndetermined, StepArgument,
+    lift_value, map_state, object_of, EvalFailure, Lifting, MappedState, MappingFailure,
+    MappingRowRef, MappingUndetermined, StepArgument,
 };
 
 /// A concrete state with its history values and the abstract states it
@@ -341,13 +341,15 @@ fn decide_step(
         }
     }
     let history = advanced.values;
-    // A row that reads a field whose update failed is not evaluated at any
-    // stand-in: the update's own outcome stands for it in the read order.
-    let mapped = match map_state_without(
+    // A row that reads a field whose update failed finds no value there, so
+    // it is undetermined and the update's own outcome decides in the read
+    // order.
+    let mapped = match map_state(
         refinement,
-        (concrete_system, abstract_system),
+        concrete_system,
+        abstract_system,
         step.post.state(),
-        (&history, &advanced.failed),
+        &history,
     ) {
         Ok(mapped) => Some(mapped),
         Err(failure) => {
