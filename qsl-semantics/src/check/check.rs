@@ -824,6 +824,10 @@ struct ScopeIndex {
     /// Each protocol declaration's name to its index in the unit's
     /// protocols (FR-218: a protocol reference binds a local protocol only).
     protocols: BTreeMap<String, usize>,
+    /// Each unit the unit declares, by its declared name (FR-091 "Dimension
+    /// and unit declarations": a unit is used by name outside a type form).
+    /// A quantity literal names its unit here (FR-185).
+    units: BTreeMap<String, quire_exact::UnitId>,
 }
 
 impl ScopeIndex {
@@ -1037,6 +1041,38 @@ impl Scope {
     pub(crate) fn with_complete_model(mut self, complete_model: bool) -> Self {
         self.complete_model = complete_model;
         self
+    }
+
+    /// This scope with the unit's admitted dimension and unit declarations
+    /// (FR-091): every unit of `graph` joins the type environment's unit
+    /// table, so a quantity of it types and lowers (FR-094), and is named by
+    /// its declared name for a quantity literal (FR-185). An empty graph
+    /// leaves the scope unchanged.
+    pub(crate) fn with_declared_units(
+        mut self,
+        graph: &quire_semantic_value::unit::UnitGraph,
+    ) -> Self {
+        if graph.units().next().is_none() {
+            return self;
+        }
+        let declared = quire_semantic_value::quantity::UnitTable::declared(graph);
+        for unit in graph.units() {
+            let name = declared
+                .nominal_node(unit.key().as_bytes())
+                .map(|node| node.declaration.qualified_declaration.as_slice());
+            if let Some([name]) = name {
+                self.index.units.insert(name.clone(), unit.id());
+            }
+        }
+        let mut units = self.types.units().clone();
+        units.append(declared);
+        self.types = std::mem::take(&mut self.types).with_units(units);
+        self
+    }
+
+    /// The unit the unit declares under `name`, as a quantity's unit id.
+    pub(crate) fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
+        self.index.units.get(name).copied()
     }
 
     /// This scope with the unit's protocol declarations named `names`, in
