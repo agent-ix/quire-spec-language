@@ -36,3 +36,11 @@ Ticket: QSL-570. PR: quire-spec-language#1101, head f810277ee, scoped to `git di
 ## Verdict
 
 One low finding. FR-192-AC-1 and TC-627 step 1 each name the new row's result and cause, one for one, and TC-627's scope is unchanged (FR-192-AC-1 to AC-4).
+
+## Dispositions
+
+Round 1, head 51e9aaa53: fix commits 02b07326 and 51e9aaa53 over f810277ee. The diff against main 8a5569839 holds only FR-192, TC-627 and this review's three round-0 SR files, which are unchanged; this file supersedes them. The restored reviews/comment-*.md files are byte-equal to main and show no diff. QSpec #300 is merged (44afcf4a9): QSpec main's FR-331 and FR-408 now admit `confidence-beyond-precision`, so the merge-order condition is met. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in FR-192 or TC-627; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |

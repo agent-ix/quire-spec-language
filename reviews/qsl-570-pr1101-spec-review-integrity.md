@@ -39,3 +39,11 @@ Ticket: QSL-570. PR: quire-spec-language#1101, head f810277ee, scoped to `git di
 ## Verdict
 
 One medium finding. What holds: the spelling `confidence-beyond-precision` matches QSpec #300's FR-408 Admission, FR-331 list, schema enum and vectors. The engine raises the refusal before any sample, as FR-408 Admission requires. The remaining four refusals keep the merged #1098 diagnostic row unchanged. Merge order: correct as the PR body states, after QSpec #300; #300 is still open, so #1101 is not mergeable yet even once FND-001 is fixed.
+
+## Dispositions
+
+Round 1, head 51e9aaa53: fix commits 02b07326 and 51e9aaa53 over f810277ee. The diff against main 8a5569839 holds only FR-192, TC-627 and this review's three round-0 SR files, which are unchanged; this file supersedes them. The restored reviews/comment-*.md files are byte-equal to main and show no diff. QSpec #300 is merged (44afcf4a9): QSpec main's FR-331 and FR-408 now admit `confidence-beyond-precision`, so the merge-order condition is met. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in FR-192 or TC-627; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
