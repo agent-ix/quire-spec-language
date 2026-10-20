@@ -9,6 +9,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-272
+    type: depends_on
 ---
 # FR-185: Declare random parameters, workloads and rewards
 
@@ -25,8 +27,8 @@ checks.
 
 ## Use case
 
-A modeller writes `random Server::attempt(d) ~ { 1 ms: 90, 3 ms: 7, 12 ms:
-3 };`, a `workload Steady on Service` with one weight per operation and
+A modeller writes `random Server::attempt(d) ~ { 1: 90, 3: 7, 12: 3 };`, with `d` typed
+`Millis = Int[1, 12]`, a `workload Steady on Service` with one weight per operation and
 `reward duration on Server::attempt = d;` (FR-311). S3 accepts the model, or refuses it with a diagnostic
 that names the declaration and the rule it breaks.
 
@@ -97,6 +99,25 @@ not an `exact-value`, so S1 refuses it `invalid_syntax`.
 - The same measure, bound and refusal apply to every `exact-value` that
   FR-186 reads. This refusal is a limit refusal, not an
   `invalid_probabilistic_model` cause.
+- The total of a distribution's weights, which S3 derives to record each
+  probability, SHALL be bounded by the rational-bits ceiling, measured after
+  each addition as the larger bit length of the running sum's reduced
+  numerator and denominator.
+- If the running sum exceeds the ceiling, then S3 SHALL refuse the
+  distribution with the same limit refusal (`LimitExceeded`, carried as
+  `stage_limit_exceeded`/`work-budget-exceeded`), naming the parameter.
+- S3 SHALL poll the checker's cancellation before each addition (FR-276); a
+  check whose handle is tripped before it starts ends cancelled, with the
+  handle reporting requested, and the limit it reports is not the 65,536-bit
+  ceiling.
+
+Notes. The ceiling is the fixed rational-bits ceiling (65,536 bits,
+inclusive) of the rule above; its `CheckingLimits` field waits on QSL-883.
+S3 derives no workload total (it records the raw weights; FR-187 divides by
+the sum over the operations enabled at each state), and no reward sum. A
+probability is the quotient of two values within the ceiling, so it is
+bounded by twice the ceiling in bits, which is the bound FR-187's products
+of probabilities start from.
 
 ### Random parameters
 
@@ -133,6 +154,17 @@ not an `exact-value`, so S1 refuses it `invalid_syntax`.
   refuse it [`invalid-weight`], naming the workload and the operation.
 - A workload SHALL be a named, checked node with an identity, so a claim can
   name it and the obligation identity can bind it (FR-186).
+- If a package has a second workload of a name already declared on any of its
+  models, then S3 SHALL refuse the second
+  `conflicting_declaration`/`duplicate-declaration`, with `subject` the
+  workload name and `related` both workload declarations, each with its label
+  span, in source order.
+
+Note. A workload name is a package-wide identifier (FR-186), so a same-named
+workload on another model is a repeat too. No `invalid_probabilistic_model`
+cause names a repeated workload, and the code and cause are those of QSpec
+FR-272's `conflicting_declaration` row, as FR-246 uses them for a repeated
+name.
 
 ### Rewards
 
@@ -148,14 +180,38 @@ not an `exact-value`, so S1 refuses it `invalid_syntax`.
 - S3 SHALL leave the non-negativity check to model admission, which runs
   it over the parameters' finite domains (FR-187).
 
+### Quantity-typed parameters
+
+A quantity-typed operation parameter, such as `d: Quantity<Time>` in ADR-024
+§7.2, is not available: no domain package defines a quantity type for a
+parameter, and complete-V1 source has no quantity type reference
+(FR-091-OQ-11(d), STD-113). A distribution's support values are written in
+the parameter's own type, an integer range such as `Millis = Int[1, 12]` in
+the `Service` fixture, and a support value outside that type is refused
+`value-outside-type` (Random parameters). Admitting `1 ms`-style supports
+needs a quantity native or a package quantity type reference from QSpec
+(STD-113) and is open.
+
+### Package emission
+
+If a checked package holds a random parameter, a workload or a reward, then
+S4 SHALL refuse the package `unsupported_construct`/`not-yet-implemented`,
+naming the first such declaration in source order, its feature name
+(`random-parameter`, `workload` or `reward`) and the selected profile
+identity (QSpec FR-272). S3's checked record is unaffected, and FR-187 reads
+it from the checked package, not from the emitted wire.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-185-AC-1 | ADR-024 §7.2's `Service` model checks. `Server::attempt` records `d` with support `1 ms`, `3 ms`, `12 ms` and probabilities `9/10`, `7/100`, `3/100`, and `outcome` with `Ok` at `49/50` and `Fail` at `1/50`; the reward `duration` has value type `Quantity<Time>`; the workload `Steady` records weight 1 for each of the three operations. | Test (TC-620) |
-| FR-185-AC-2 | Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter and carrying the cause: a weight `0` and a weight `rational(-1, 1)` (`invalid-weight`); the value `1 ms` listed twice (`repeated-support-value`); the value `true` on a `Quantity<Time>` parameter (`value-outside-type`); a precondition `pre self.phase = Busy and d < 5 ms` reading `d` (`random-read-in-precondition`); a second `random Server::attempt(d) ~ …` (`duplicate-distribution`). A bare weight `-1` is not an `exact-value`, so S1 refuses it `invalid_syntax` and S3 never sees it. Exact-value bounds, each as the weight of `Server::request`: `decimal(1, 4294967295)` and `rational(n, n)` with `n` of 70,000 bits are each refused with a limit refusal (`LimitExceeded`) pending QSL-883 (the second although it reduces to `1`); `rational(m, 1)` with `m` of exactly 65,536 bits and `decimal(1, 19728)` (65,535 bits) are admitted; `rational(m, 1)` with `m` of exactly 65,537 bits and `decimal(1, 19729)` (65,539 bits) are refused with the limit refusal; `decimal(25, 3)` is admitted as `1/40`; `decimal(5, 0)` is admitted with a denominator of 1 bit. | Test (TC-620) |
+| FR-185-AC-1 | ADR-024 §7.2's `Service` model checks. `Server::attempt` records `d` with support `1`, `3`, `12` (`d` typed `Millis = Int[1, 12]`) and probabilities `9/10`, `7/100`, `3/100`, and `outcome` with `Ok` at `49/50` and `Fail` at `1/50`; the reward `duration` has value type `Millis`; the workload `Steady` records weight 1 for each of the three operations. | Test (TC-620) |
+| FR-185-AC-2 | Each of these random-parameter variants of `Service` is refused at S3 with a diagnostic naming the parameter and carrying the cause: a weight `0` and a weight `rational(-1, 1)` (`invalid-weight`); the value `1` listed twice (`repeated-support-value`); the value `true` on the `Millis` parameter (`value-outside-type`); a precondition `pre self.phase = Busy and d < 5` reading `d` (`random-read-in-precondition`); a second `random Server::attempt(d) ~ …` (`duplicate-distribution`). A bare weight `-1` is not an `exact-value`, so S1 refuses it `invalid_syntax` and S3 never sees it. Exact-value bounds, each as the weight of `Server::request`: `decimal(1, 4294967295)` and `rational(n, n)` with `n` of 70,000 bits are each refused with a limit refusal (`LimitExceeded`) pending QSL-883 (the second although it reduces to `1`); `rational(m, 1)` with `m` of exactly 65,536 bits and `decimal(1, 19728)` (65,535 bits) are admitted; `rational(m, 1)` with `m` of exactly 65,537 bits and `decimal(1, 19729)` (65,539 bits) are refused with the limit refusal; `decimal(25, 3)` is admitted as `1/40`; `decimal(5, 0)` is admitted with a denominator of 1 bit. | Test (TC-620) |
 | FR-185-AC-3 | Each of these workload variants is refused at S3 naming the workload and the operation and carrying the cause: `Steady` without `Server::reset` (`incomplete-workload`); a weight for an operation not in `Service` (`unknown-operation`); two weights for `Server::request` (`duplicate-weight`); a weight `0` for `Server::request` (`invalid-weight`). | Test (TC-620) |
 | FR-185-AC-4 | Each of these reward variants is refused at S3 naming the reward and carrying the cause: `reward duration on Server::attempt = self.attempts` (`state-read-in-reward`); `reward ok on Server::attempt = (outcome = Ok)` (`reward-type`); a second `reward duration on Server::attempt = …` (`duplicate-reward`). `reward cost on Server::request = 2` checks. | Test (TC-620) |
+| FR-185-AC-5 | A second `workload Steady on Service` and a `workload Steady on Other` (a second model of the package) are each refused `conflicting_declaration`/`duplicate-declaration` with `subject` `Steady` and `related` both declarations in source order, and the first remains the package's `Steady`. | Test (TC-620) |
+| FR-185-AC-6 | The distribution `{1: rational(1, 3), 3: rational(1, 2^65534 + 1)}` (running-sum denominator of 65,536 bits) checks; `{1: rational(1, 3), 3: rational(1, 2^65535 + 5)}` (65,537 bits) is refused with the limit refusal naming the parameter; a check whose cancellation handle is tripped before it starts ends cancelled (FR-276), the handle reporting requested and the reported limit not being the 65,536-bit ceiling. | Test (TC-620) |
+| FR-185-AC-7 | `Service` (with `d` typed `Millis = Int[1, 12]`) checks at S3 and refuses at S4 with `unsupported_construct`/`not-yet-implemented` naming the first random parameter in source order, `random-parameter` and the selected profile, with the checked record intact. | Test (TC-620) |
 
 ## Dependencies
 

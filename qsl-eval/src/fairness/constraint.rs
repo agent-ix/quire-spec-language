@@ -17,6 +17,15 @@ pub enum Strength {
     Strong,
 }
 
+impl From<quire_semantic_value::fairness::FairnessKind> for Strength {
+    fn from(kind: quire_semantic_value::fairness::FairnessKind) -> Self {
+        match kind {
+            quire_semantic_value::fairness::FairnessKind::Weak => Self::Weak,
+            quire_semantic_value::fairness::FairnessKind::Strong => Self::Strong,
+        }
+    }
+}
+
 /// One fairness constraint: its strength and the transition identities it
 /// covers. A `whole` constraint covers every identity of its operation, an
 /// `each` constraint one identity. The order of constraints in a fairness
