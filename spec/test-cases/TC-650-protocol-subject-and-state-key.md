@@ -12,7 +12,7 @@ relationships:
 
 Verify the protocol subject's construction and refusals, the thread paths and ordinals, binder removal and the canonical state key.
 
-Scope: FR-205-AC-1 to FR-205-AC-6.
+Scope: FR-205-AC-1 to FR-205-AC-7.
 
 ## Test Procedure
 
@@ -34,6 +34,8 @@ Use ADR-027 §7's `Fill` unit (universe `{c}`, `c.v = 0`).
    `cend` between them.
 6. Build subjects over two protocols that each declare `channel Pay`, and
    read a key with a queued entry and a `duplicate` identity from each.
+7. Run FR-205-AC-7's `repeat` of `P` and `Q` and read the key and the
+   frame of a running `Q` branch before and after the re-fork.
 
 Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 
@@ -53,3 +55,5 @@ Tag the tests `#[trace("TC-650", "FR-205-AC-n")]`.
 - Step 5: ordinal 1 with `(0, Refund, 0)` live, ordinal 0 after `cend`.
 - Step 6: each queue key and identity names its own protocol's qualified
   channel name.
+- Step 7: no binder `a` under the re-forked path until rebound; the `Q`
+  branch's frame holds no value for `a` in every state.

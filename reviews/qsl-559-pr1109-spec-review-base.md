@@ -67,3 +67,24 @@ What was checked. (1) The FT-1 fork footprint was checked against the fork code 
 ## Verdict
 
 Not mergeable. FR-211-AC-5 cannot pass under the default delivery policy (FND-001), and the compensation-thread ordinal leaves a non-commuting pair reported independent, the same kind of defect this PR fixes for forks (FND-002). The fork footprint is sound for the stated pair. The send record, fence and visibility ACs are traced. FR-206-AC-5 is now non-vacuous. The index is complete and validation is clean on every changed file.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | FR-206-AC-9's state ('`b` has forked `Inner` and `y` is `running` and `a` has completed') does not say where `x` and `b` are. If `x` has completed, `Inner`'s `join any` may have settled and `b` may rest at `After`, and `x` may already have left the state. In that state 'the `join(Outer)` step makes `b`, `x` and `y` `cancelled`' cannot hold for `x`. Fix: name the state as `x` and `y` both `running` and `b` resting at `Inner`'s join, or state the outcome for each thread that is still `running`. | spec/functional/FR-206-take-the-protocol-step-kinds-with-folded-structural-moves.md:101 |
+
+## Dispositions
+
+Round 1, head ccae02a7d: one fix commit over 389b22c99, base main still 5474b9125. The three SR files the commit adds to reviews/ are byte-equal to the reviewer's round-0 files. Gates on the head: make check-spec-validation exits 0 with the same 17 warnings, none in a changed file; tools/check-index-completeness.sh exits 0. FR-211-AC-5's cases were checked one by one under the new PD-4 order. FullQueue: queue [P] at capacity 1. HeadBlocked: queue [P, Q] with head P. Constraint: head P fails the constraint, fifo and unordered. Displaced by loss head: [Q]. Displaced by loss new: Q lost, queue [P]. Displaced by `lose` under at-most-once. EmptyQueue: the second P displaces the first, R1 receives it, and R2 waits after a `receive`. All give the stated causes, and `exactly-once-premise` leaves no `lose` or `duplicate` enabled.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | fixed | - |

@@ -75,7 +75,7 @@ order gives the same answer.
   holds), `inst(i_o)` of the parallel instance of `p` forked by `t` with
   ordinal `o` and the `ctl` of every thread at or below each of its branch
   threads; `W` SHALL be `ctl(t)`, the new instance and its threads' `ctl`, and the
-  `bind` and iteration-counter locations of every path it reuses. An
+  `bind` locations of every path it reuses. An
   ordinal is held while any live thread's path extends the instance's
   branch paths, so those threads' `ctl` are read as stated.
   The fork reads the earlier ordinals because the ordinal it takes depends

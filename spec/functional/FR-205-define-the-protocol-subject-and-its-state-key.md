@@ -113,6 +113,7 @@ has already seen instead of a new one.
 | FR-205-AC-4 | A `Fill` subject with two initial snapshots (`c.v = 0` and `c.v = 1`) has two initial protocol states, each with the root at `fork Both`. An `on each` protocol's initial protocol state holds no instance. | Test (TC-650) |
 | FR-205-AC-5 | A template `Refund` with two registrations, whose first activates and whose compensation thread `(0, Refund, 0)` is still live when the second activates: the second thread takes ordinal 1. When `cend` has removed `(0, Refund, 0)` before the second activates, the second thread takes ordinal 0. | Test (TC-650) |
 | FR-205-AC-6 | Two protocol definitions in one package, each declaring `channel Pay`, give two subjects whose state keys hold `queues` entries, and whose `duplicate` and `lose` identities hold channel names, each in its own protocol's qualified name; no key or identity of one names the other's channel. | Test (TC-650) |
+| FR-205-AC-7 | `parallel P { branch left attempt A1 binding a; branch right attempt B1 } join all` followed by `parallel Q { branch u attempt U1; branch v attempt V1 } join any [u, v] outstanding continue`, inside a `repeat` of maximum 2, with a node after the first `P` join that reads `a`: the forking thread reads `a` after the join; once the second iteration re-forks `P` at ordinal 0, the key holds no binder `a` for `(0, P, left, 0)` until the new `left` binds it; and a still-running branch of `Q` holds no binder `a` before or after the re-fork, its frame holding no value for `a`. | Test (TC-650) |
 
 ## Dependencies
 

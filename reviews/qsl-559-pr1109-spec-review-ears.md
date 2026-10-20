@@ -41,3 +41,14 @@ Tickets: QSL-559, QSL-562. PR quire-spec-language#1109, head 389b22c99. This fil
 ## Verdict
 
 Conforms apart from four low wording findings. None of them blocks merge on its own. The blocking findings are in SR-13583 and SR-13585.
+
+## Dispositions
+
+Round 1, head ccae02a7d. Every new statement now has a SHALL on a named system subject: the protocol system for the fence and the send record, the model checker for the wait-cause bullets (now split into four), and S3 for the qualified channel name. The new FR-206 cancellation bullet conforms. Grammar warnings are unchanged, and none is in a changed file.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |

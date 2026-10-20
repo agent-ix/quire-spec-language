@@ -77,3 +77,26 @@ A note on the in-flight code, outside this diff. origin/qsl-559b-impl binds `{pa
 ## Verdict
 
 Not mergeable. PS-2's ordinal rule frees an ordinal that a running descendant still sits under, which the code and FT-1 both avoid (FND-001). The fence rule has no seam member that supplies it (FND-002), and the cause precedence has two readings (FND-003). The send record, fence semantics under `sc`, `tso` and `ra`, FT-5 visibility, and the fork footprint for the stated pair are all consistent.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | FT-1's fork now writes, and clears, the `bind` locations of every path it reuses. Under the new PS-2 rule, a path can be reused while a live thread outside it can still reach a node that reads its binder. Example: a branch of a later `parallel Q` of the same parent, still running under `outstanding continue`, that reads `a` from the all-branch-joined `P`. PS-5 keeps a binder 'while some rest point of some live thread can still reach a node that reads it', so the clear contradicts PS-5, and the read changes meaning depending on the order. The code does the same (steps.rs:470-476). Fix: also hold the ordinal while a live thread can still reach a reader of a binder under it, or state in PS-5 that a re-fork ends the old binder and say what the reader then sees. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:137 |
+| FND-010 | medium | For a `send`, PD-4 says '`FullQueue` when `block` finds the queue at capacity, else `Constraint`', so a full queue gives `FullQueue` even when no payload satisfies the constraint. FR-211 says `FullQueue` 'for a `send` disabled only because `block` finds the queue at capacity', which excludes that case. The code on main follows FR-211 (channel.rs:375-411: `FullQueue` only when some admitted payload exists, else `Constraint`). The full-queue, unsatisfiable-constraint send therefore has two causes. Fix: in PD-4, 'A `send`: `Constraint` when no payload satisfies its constraint, else `FullQueue`', to match FR-211 and the code, and add that case to FR-211-AC-5. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:251 |
+| FND-011 | low | FT-1's fork `W` names 'iteration-counter locations', but FT-3's `ProtocolLocation` has no counter location. A counter is keyed by thread path (PS-8 `bounds`) and is covered by that path's `ctl`, which the fork already writes. Fix: drop 'and iteration-counter', or say counters are part of `ctl(t)`. | spec/decisions/ADR-027-protocol-transition-system-for-parallel.md:294 |
+
+## Dispositions
+
+Round 1, head ccae02a7d. The checks were re-run against the code on main. PS-2's new holding rule (instance live, or any live thread's path extends a branch path) is the code's test (steps.rs:445-458), and FT-1's fork reads still cover it. A lower ordinal is freed only by a step that writes the `inst(i_o)` or a descendant `ctl` the fork reads. The taken ordinal is filled only by a fork of the same thread. The compensation analogue now reads `ctl` up to the taken ordinal, and `cend` writes `reg(c, r)`. PD-4's order matches the code: Gate first (steps.rs:951-969); attempt causes (attempt_cause); and receive Constraint, then HeadBlocked, then EmptyQueue (channel.rs:352-372). `Displaced` is spec-ahead-of-code, and an unordered channel is never HeadBlocked. The one mismatch is the send order (FND-010). FT-1's branch-end write is now the whole `inst(i)`, which is sound and coarser: sibling branch ends of one instance are dependent. SE-1 (e) and FR-215 list `fence`. QSpec main is still 44afcf4, and no companion quire-specification PR is open.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | deferred | The companion quire-specification PR carries FR-429's cause list and narrowed empty-queue, the FR-426 send record, nested cancellation and the waiting list, and FR-425's ordinal and channel-name rules (PR body). No such PR is open, and QSpec main 44afcf4 does not have it, so QSL stays ahead of QSpec until it lands. |
