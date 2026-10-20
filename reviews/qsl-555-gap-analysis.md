@@ -68,3 +68,24 @@ Declared out of scope, and confirmed not built: the `Proved{Reduced, Certified}`
 | FND-012 | low | `a_swap_that_exchanges_acceptance_sets_is_not_applied` is tagged FR-174-AC-2, but it asserts the CS-3 fallback: a swap that exchanges acceptance sets is withheld, and the product is stored whole. AC-2 does not state that. Tag it `#[trace("TC-599")]` only, and take the AC id out of its doc-comment opening. | qsl-analyze/tests/it/hyper_swap.rs:146-172 |
 | FND-013 | low | `three_copies_store_one_state_for_each_multiset_of_secrets` is tagged FR-174-AC-2, but it asserts the symmetric group of three copies (8 against 16 states, and a three-copy refutation that replays), which AC-2 does not state. Tag it `#[trace("TC-599")]` only, and take the AC id out of its doc-comment opening. | qsl-analyze/tests/it/hyper_swap.rs:192-230 |
 | FND-014 | low | FR-174 applies copy-swap to HP-6 as well as HP-2 ('on every HP-2 and HP-6 clause'). The projected product (QSL-554, #1121) is not on main, so this PR cannot cover it. But nothing tracks it: the PR body and the module docs are silent. When #1121 lands, its product needs the `copy_swap` input and the canonical hook, and a monitor-state rename in place of the automaton exchange. File a follow-up ticket, ordered after QSL-554. | spec/functional/FR-174-reduce-hyper-products-and-check-copy-swap-symmetry.md:Description |
+
+## Dispositions
+
+Round 1, at PR #1123 head 4da6d7719. Matrix (`quire matrix` 0.36.2, exit 0) at 4da6d7719: FR-174-AC-1 is tagged (hyper_clauses.rs:675). FR-174-AC-2 is untagged, which is honest: it is not delivered, and the count fix and settlement are recorded on QSL-555. FR-174-AC-3 is tagged by 9 tests (hyper_swap.rs:263, :296, :326, :418, :459, :523, :572, :885, :953). FR-174-AC-4 is tagged by :602 alone. No hyper_swap.rs doc comment opens with an AC id.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | The code now withholds copy-swap from any class with fairness (SR-13605 FND-001, fixed; oracle 1,400 of 1,400). The spec half, ADR-023 CS-3 and PH-5 claiming the quotient keeps fairness, is recorded as remaining work (2) on QSL-555 for /specify; the ticket stays open after the PR. |
+| FND-002 | fixed | The five former AC-2 tests are tagged `#[trace("TC-599")]` only, and their doc comments no longer open with an AC id, so FR-174-AC-2 now reads untagged in the matrix. The count fix (7 and 10) and the `Proved{Reduced}` settlement are recorded as remaining work (1) on QSL-555. Matrix (`quire matrix` 0.36.2, exit 0) at 4da6d7719: FR-174-AC-1 is tagged (hyper_clauses.rs:675). FR-174-AC-2 is untagged, which is honest: it is not delivered, and the count fix and settlement are recorded on QSL-555. FR-174-AC-3 is tagged by 9 tests (hyper_swap.rs:263, :296, :326, :418, :459, :523, :572, :885, :953). FR-174-AC-4 is tagged by :602 alone. No hyper_swap.rs doc comment opens with an AC id. |
+| FND-003 | deferred | The V-8 stopgap against 'SHALL admit' is recorded as remaining work (3) on QSL-555, which stays open after the PR. |
+| FND-004 | fixed | Tagged TC-599 only; the doc opens with prose. |
+| FND-005 | fixed | New tests `a_step_out_of_a_swapped_state_is_reported_for_the_copy_that_took_it` and `an_undefined_match_at_a_swapped_state_names_the_copy_that_took_the_step`. Mutants L2 and U2 are killed. |
+| FND-006 | fixed | New tests for a past-operator body (7 against 5 states) and an interval body (8 against 5). Mutants N5 and N6 are killed. The S3 check is deleted as implied by the initial-state check, and I accept the argument (SR-13605 FND-003 row). |
+| FND-007 | fixed | New test `the_key_symmetry_rows_read_the_fairness_granularity_and_the_form`. Mutants F4 and F6 are killed. |
+| FND-008 | fixed | Tagged TC-599 only. |
+| FND-009 | deferred | Recorded as remaining work (4) on QSL-555 for /specify: which canonical lasso a refutation under copy-swap reports. The behaviour is deterministic and real; the oracle again saw 8 agreeing refutations with a different lasso. |
+| FND-010 | deferred | Recorded as remaining work (4) on QSL-555 for /specify: CS-3 does not describe the acceptance-set fallback. The code is sound; mutants S1 and H2 are killed. |
+| FND-011 | fixed | Tagged TC-599 only. |
+| FND-012 | fixed | Tagged TC-599 only. |
+| FND-013 | fixed | Tagged TC-599 only. |
+| FND-014 | deferred | Recorded as remaining work (5) on QSL-555: copy-swap for HP-6, ordered after QSL-554 (#1121). |
