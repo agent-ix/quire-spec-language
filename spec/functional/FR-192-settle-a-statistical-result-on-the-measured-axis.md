@@ -106,7 +106,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
   for a quantile claim with the empirical nearest-rank quantile of the
   counted samples beside it, the sample mean for a mean of a fraction, and
   the ratio estimate for a long-run fraction; for several tests it is the
-  least favourable test's. `interval` SHALL be present for Okamoto and the
+  least favourable test's (FR-189). `interval` SHALL be present for Okamoto and the
   regenerative method and absent for SPRT. `coverage` SHALL be
   `Asymptotic` for the regenerative method and `FiniteSample` otherwise.
 - `TerminalValue::category` SHALL map `Measured{Accepted}` to success,

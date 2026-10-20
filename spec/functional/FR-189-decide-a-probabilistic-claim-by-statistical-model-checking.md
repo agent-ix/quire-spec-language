@@ -70,11 +70,14 @@ pub fn check_statistical(
 ```rust
 pub enum StatisticalOutcome {
     Completed(StatisticalVerdict),                  // FR-192
-    Stopped { cause: IncompleteCause, limit: StatisticalLimit, partial: StatisticalBasis },
-    Unsupported(UnsupportedCause),                  // NotMarkov
-}
+    Stopped { cause: IncompleteCause, limit: Option<ReachedStatisticalLimit>,
+              partial: StatisticalBasis, provenance: StatisticalProvenance },
+    Unsupported { cause: UnsupportedCause, provenance: StatisticalProvenance },
+}                                                   // cause: NotMarkov, TotalAboveDrawRange
+pub struct ReachedStatisticalLimit { pub limit: StatisticalLimit, pub value: u64,
+    pub setting: &'static str }                     // `statistical.<member>`; None for Cancelled
 pub struct TestResult { pub index: u32, pub initial: u32, pub binding: Option<Binding>,
-    pub decision: Decision, pub estimate: Rational, pub interval: Option<(Rational, Rational)>,
+    pub decision: Decision, pub estimate: Option<Rational>, pub interval: Option<(Rational, Rational)>,
     pub samples: u64, pub draws: u64,
     pub undefined: Option<UndefinedEvaluation> }   // ADR-024 SV-11; `where` names the sample
 pub enum Decision { Accepted, Rejected, Undecided(UndecidedCause) }
@@ -84,6 +87,7 @@ pub enum UndecidedCause { IndifferenceRegion, UndecidedSuccessor }
 `StatisticalRefusal` holds FR-120's `AdmissionFailure`, FR-101's
 `RequiresBound` and `GeneratorMismatch`, `EveryScheduler` for a claim `under every scheduler` and
 `MissingConfidence` for a claim without confidence parameters,
+`NoInitialState` for a subject with no (initial state, binding) pair,
 `ExactOnlyForm` for a claim form only EN-5 decides (QSpec FR-411, ADR-028
 XF-5), or `NotStatistical` for a method
 the claim's form does not admit (FR-190, SPRT below).
@@ -143,6 +147,27 @@ the claim's form does not admit (FR-190, SPRT below).
 - The claim SHALL be Accepted when every test accepts, Rejected when any
   test rejects, and Undecided otherwise. The verdict SHALL keep each test's
   result.
+- A test's `estimate` SHALL be `Some(count / samples)` (or the method's
+  estimate, FR-190) once it has counted a sample or a cycle, and `None` when
+  it has counted none, as for a test that rejected on an undefined first
+  sample.
+- The **least favourable test** of a verdict SHALL be the first rejecting
+  test in subject order when the claim is Rejected, the first Undecided test
+  when it is Undecided, and, when it is Accepted, the accepting test with the
+  smallest margin to the claim's threshold (for a lower bound `>= θ`, the
+  smallest lower end minus `θ`; for an upper bound `<= θ`, `θ` minus the
+  largest upper end; for a test with no interval, its estimate in place of
+  the interval end), the lowest index breaking a tie. FR-192's `estimate`
+  and `interval` are the least favourable test's.
+- If the subject has no (initial state, binding) pair, then EN-4 SHALL refuse
+  with `StatisticalRefusal::NoInitialState`, so an empty product is never
+  Accepted vacuously.
+- If a test rejects on an undefined sample and stops the run, then the
+  verdict SHALL keep the results of the tests that finished before it and the
+  rejecting test's own result, and no result for a test that did not start.
+- If a quantile claim's samples are all non-activated, then the run SHALL
+  continue until `max_draws` stops it (FR-191); it SHALL never decide on zero
+  counted samples.
 - A contract conjunction evaluated undecided during a sampled step SHALL end
   that test Undecided with `UndecidedSuccessor`.
 - A `SampleStop::NotMarkov` SHALL return `Unsupported(NotMarkov{…})`; an
@@ -171,6 +196,7 @@ the claim's form does not admit (FR-190, SPRT below).
 | FR-189-AC-5 | The ADR-024 §7.1 `NoFault` claim with Okamoto at `indifference 0.0005` computes `N = 9,210,341`. A `Health` variant with a non-unique post-state returns `Unsupported(NotMarkov)`; a variant with an undecided contract conjunction settles that test Undecided, `UndecidedSuccessor`; a `mean of` claim with SPRT is refused `NotStatistical`. | Test (TC-624) |
 | FR-189-AC-6 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0; operation `flip(b: Int[0, 1])` with `random Coin::flip(b) ~ { 0: 1, 1: 1 };` and postcondition `self.v = b`; workload weight `flip` 1) and the claim `probability >= 0.5 [ always[0,3] holds(1 / (1 - c.v) = 1) ]` with `alpha 0.01, beta 0.01, indifference 0.1`, Okamoto and seed 7, the test decides Rejected at the first sample in trace-index order that reaches `v = 1`, draws no further sample, and carries `UndefinedEvaluation` naming that sample's test index 0, its trace index and the first position with `v = 1`, cause `division-by-zero`; the claim settles `Completed` Rejected. | Test (TC-640) |
 | FR-189-AC-7 | Over a `Wide` model (object `w` with `v: Boolean`, initially false; operation `spin(x: Boolean)` with `random Wide::spin(x) ~ { true: 1, false: 115792089237316195423570985008687907853269984665640564039457584007913129639936 };` (that decimal is 2^256) and postcondition `self.v = x`; workload weight `spin` 1) and the claim `probability >= 0.5 [ always[0,3] holds(w.v or not w.v) ]` with `alpha 0.01, beta 0.01, indifference 0.1`, one initial state so `m = 1`, Okamoto and seed 7, the run stops at the first sample and returns `Unsupported(TotalAboveDrawRange{total})` with `total` `2^256 + 1`; the claim settles `unsupported` with cause `total-above-draw-range` and `total` `"115792089237316195423570985008687907853269984665640564039457584007913129639937"` (QSpec TC-354 SM-09). | Test (TC-624) |
+| FR-189-AC-8 | Over `Service`, a test that counts no sample (the first sample undefined, FR-189-AC-6's `Coin`) has `estimate` `None`; a two-test run whose second test rejects has the first test's result kept and the verdict's least favourable test is test 1 (the first rejecting); an all-accepting two-test run's least favourable test is the one with the smaller margin to the threshold, the lower index on a tie; a subject with no initial state is refused `NoInitialState`; a quantile claim whose every sample is non-activated stops at `max_draws`. | Test (TC-624) |
 
 ## Dependencies
 

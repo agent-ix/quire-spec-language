@@ -47,10 +47,13 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMet
 ## Outputs
 
 - `StatisticalOutcome::Stopped{cause, limit, partial}` (FR-189), carrying
-  the limit, its value, the request member that raises it, and the counts
-  reached.
-- On every outcome, `StatisticalProvenance{seed, sampler, tests}` with, per
-  test, its index, initial state, binding and trace-index range.
+  `limit: Some(ReachedStatisticalLimit{limit, value, setting})` for a budget
+  (`None` for a cancelled `Cancel`) with the request member that raises it, and
+  the counts reached.
+- On every outcome (a `Completed` verdict, a `Stopped` and an `Unsupported`,
+  each carrying the field, FR-189), `StatisticalProvenance{seed, sampler,
+  tests}` with, per test, its index, initial state, binding and trace-index
+  range. A refusal carries none, since no run began.
 
 ## Behavior
 
@@ -63,6 +66,10 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMet
   convention. QSpec FR-408 owns each limit and its setting name; QSL
   publishes the default value. No member SHALL be
   fixed by the language, and none enters the obligation identity.
+- A test SHALL stop on `max_samples` after it has counted `max_samples`
+  samples (or cycles) and its method needs another, before it draws the next
+  sample; a method that decides at exactly `max_samples` samples completes.
+  `max_draws` and `max_cycle_steps` apply to a draw or step in the same way.
 - When a test would count one more sample or cycle than `max_samples`,
   draw one more sample than `max_draws`, or take one more step in a cycle
   than `max_cycle_steps`, EN-4 SHALL stop and return `Stopped` with cause
@@ -98,6 +105,7 @@ pub enum StatisticalLimit { MaxSamples, MaxDraws, MaxCycleSteps, Time, ClauseMet
 | FR-191-AC-2 | FR-189-AC-4's activation variant with `max_draws` 1,000 stops naming `statistical.max_draws`; a cancelled `Cancel` handle stops with `Cancelled`; neither carries a decision. FR-190-AC-2's transient variant stops `ResourceExhausted` with no decision, settling `incomplete`, `limit-reached` naming `statistical.max_cycle_steps`. | Test (TC-626) |
 | FR-191-AC-3 | `P95` with SPRT and seed 7 run twice gives byte-equal results: provenance, per-test counts, estimates and decision. The run stopped by `max_samples` 100 and the rerun with the default limit draw equal samples at trace indices 0 to 99. A run with seed 8 records seed 8, the same obligation identity, and a different sample at some trace index. | Test (TC-626) |
 | FR-191-AC-4 | A two-test run records per test its initial state index, binding and trace-index range, with test 1's first trace index equal to 1 and its step 2. Changing the method from Okamoto to SPRT changes the result's method and leaves its obligation identity unchanged. | Test (TC-626) |
+| FR-191-AC-5 | `NoFault` with `max_samples` 9,210,341 completes at exactly 9,210,341 samples while 9,210,340 stops `MaxSamples` after counting 9,210,340 samples without drawing another; a `Stopped` and an `Unsupported` outcome each carry the run's `StatisticalProvenance`, and a `Stopped` by `max_samples` carries `Some(ReachedStatisticalLimit{MaxSamples, value, "statistical.max_samples"})`, a cancelled handle `None`. | Test (TC-626) |
 
 ## Dependencies
 

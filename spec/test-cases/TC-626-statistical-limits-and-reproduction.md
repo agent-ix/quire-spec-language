@@ -12,7 +12,7 @@ relationships:
 
 Verify each `StatisticalLimits` member, its default, the stop record, reproduction from the seed, and that method and limits stay out of the obligation identity.
 
-Scope: FR-191-AC-1 to FR-191-AC-4.
+Scope: FR-191-AC-1 to FR-191-AC-5.
 
 ## Test Procedure
 
@@ -22,6 +22,7 @@ Fixtures: `NoFault`, `P95`, FR-189-AC-4's activation variant, FR-190-AC-2's tran
 2. The activation variant at `max_draws` 1,000; the transient variant; a cancelled `Cancel` handle.
 3. `P95` with SPRT and seed 7 twice; with `max_samples` 100 and then the default; with seed 8.
 4. The two-test variant; `P95` with Okamoto and with SPRT.
+5. `NoFault` at `max_samples` 9,210,340 and 9,210,341; read the provenance of a Stopped and an Unsupported outcome and the limit of a Stopped by `max_samples` and by a cancelled handle.
 
 Tag the tests `#[trace("TC-626", "FR-191-AC-n")]`.
 
@@ -31,3 +32,4 @@ Tag the tests `#[trace("TC-626", "FR-191-AC-n")]`.
 - Step 2: `Stopped` naming `statistical.max_draws` and `Cancelled`, neither with a decision; the transient variant `Stopped`, `ResourceExhausted`, no decision, `limit-reached` naming `statistical.max_cycle_steps`.
 - Step 3: byte-equal results; equal samples at trace indices 0 to 99; seed 8 recorded, equal obligation identity, a differing sample.
 - Step 4: per-test provenance with test 1 starting at trace 1 in steps of 2; the method changes and the obligation identity does not.
+- Step 5: complete at exactly 9,210,341, `MaxSamples` after 9,210,340 counted; provenance on both outcomes; `Some(ReachedStatisticalLimit{…})` and `None`.

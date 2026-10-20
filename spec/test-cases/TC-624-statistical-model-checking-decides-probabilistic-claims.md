@@ -12,7 +12,7 @@ relationships:
 
 Verify EN-4's Okamoto and SPRT decisions on `P95`, the exact sample counts and thresholds, Bonferroni and symmetry, activation, and the stops and refusals.
 
-Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7.
+Scope: FR-189-AC-1 to FR-189-AC-5, FR-189-AC-7, FR-189-AC-8.
 
 ## Test Procedure
 
@@ -24,6 +24,7 @@ Fixtures: `Service` and `P95` at `5 ms` and `2 ms`; a two-initial-state variant;
 4. Run the activation variant with Okamoto; reduce `quantile 0.5 of (M) >= 3` (`M` is a placeholder for the claim's parenthesised measure) over the two-point variant.
 5. Compute `N` for `NoFault`; run the `Health` variants; request `mean of` with SPRT.
 6. Run the `Wide` claim of FR-189-AC-7 with Okamoto.
+7. Run FR-189-AC-8's edge cases: the undefined first sample, the two-test rejecting and all-accepting runs, the empty subject and the all-non-activated quantile claim.
 
 Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 
@@ -35,3 +36,4 @@ Tag the tests `#[trace("TC-624", "FR-189-AC-n")]`.
 - Step 4: `samples = 23,026`, `draws > samples`; the event `M < 3` with the strict bound `< 1/2`, false at `Pr(M < 3) = 1/2`.
 - Step 5: 9,210,341; `Unsupported(NotMarkov)` and Undecided `UndecidedSuccessor`; `NotStatistical`.
 - Step 6: `Unsupported(TotalAboveDrawRange{total})` with `total` `2^256 + 1`, settled `unsupported`, cause `total-above-draw-range`, `total` the decimal string `"115792089237316195423570985008687907853269984665640564039457584007913129639937"`.
+- Step 7: `estimate` `None`; the least favourable test as AC-8 states; `NoInitialState`; `max_draws` stop.
