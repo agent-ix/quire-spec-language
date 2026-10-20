@@ -44,7 +44,7 @@ use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::{self, EncodingRefusal};
 use crate::simulation::model::encode::{map_enc, Enc};
 use crate::simulation::model::{
-    enumerable, verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
+    verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::subject::SubjectSystem;
@@ -92,6 +92,9 @@ pub enum Unsupported {
     UnboundAttemptBinder,
     /// A slot that reads a binder with no node other than the `over` input.
     NodelessBinder,
+    /// A step binder whose bounded record type has no enumeration here (a
+    /// record, an enum or a bounded text type).
+    UnenumerableRecord,
 }
 
 impl Unsupported {
@@ -112,6 +115,7 @@ impl Unsupported {
             Self::OverNotAnObject => "over input of no object type",
             Self::UnboundAttemptBinder => "read of an unbound attempt binder",
             Self::NodelessBinder => "read of a nodeless binder",
+            Self::UnenumerableRecord => "step binder of an unenumerable record type",
         }
     }
 }
@@ -146,6 +150,10 @@ pub enum ProtocolRefusal {
     /// (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: {}", .0.construct())]
     Unsupported(Unsupported),
+    /// An initial state's settling stopped: a guard's evaluation ran out of
+    /// a budget, or broke.
+    #[error("{}/{}: settling an initial state", .0.cause.code(), .0.cause.cause())]
+    InitialStop(ExpansionStop),
     /// An invariant of the checked protocol broke.
     #[error("the protocol system broke invariant {0:?}")]
     Fault(InternalFault),
@@ -163,6 +171,9 @@ impl ProtocolRefusal {
                 Code::InvalidRuntimeInput
             }
             Self::Unsupported(_) => Code::UnsupportedConstruct,
+            Self::InitialStop(stop) => {
+                Code::from_code(stop.cause.code()).unwrap_or(Code::RuntimeInvariant)
+            }
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -173,6 +184,7 @@ impl ProtocolRefusal {
             Self::UnknownProtocol { .. } | Self::OverBinding { .. } => "invalid-value",
             Self::RoleMapping { .. } => "wrong-role-mapping",
             Self::Unsupported(_) => "not-yet-implemented",
+            Self::InitialStop(stop) => stop.cause.cause(),
             Self::Fault(_) => "established-invariant-broken",
         }
     }
@@ -432,21 +444,22 @@ impl<C: Encode> Encode for ProtocolKey<C> {
 /// FR-215 "Model checking a protocol subject" (ADR-027 TS-5): the roots of
 /// `protocol` beside its model's: the record type of every binder of an
 /// `event`, `send`, `receive` and `finish` step, each named by the
-/// protocol and the binder. A type this module cannot enumerate is listed
-/// as an unbounded domain.
+/// protocol and the binder. A bounded record type this module cannot
+/// enumerate is refused when the system is built
+/// ([`Unsupported::UnenumerableRecord`]).
 pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueType)> {
-    let mut roots = Vec::new();
-    for binder in protocol.slots.binders.iter().filter(|binder| binder.ranged) {
-        roots.push((
-            binder_root(&protocol.name, &binder.name),
-            if enumerable(&binder.value_type) {
-                binder.value_type.clone()
-            } else {
-                ValueType::Integer
-            },
-        ));
-    }
-    roots
+    protocol
+        .slots
+        .binders
+        .iter()
+        .filter(|binder| binder.ranged)
+        .map(|binder| {
+            (
+                binder_root(&protocol.name, &binder.name),
+                binder.value_type.clone(),
+            )
+        })
+        .collect()
 }
 
 /// The root a protocol binder's record type is named by: the digest of
@@ -635,8 +648,10 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     program::Cursor::Enter(self.program.root),
                     &model,
                 )
-                .map_err(|_| ProtocolRefusal::fault("an-initial-state-settles"))?
-            {
+                .map_err(|error| match error {
+                    settle::SettleError::Refused(refusal) => refusal,
+                    settle::SettleError::Stopped(stop) => ProtocolRefusal::InitialStop(stop),
+                })? {
                 settle::Settled::Rest(rest) => rest,
                 settle::Settled::Undecided(_) => {
                     return Err(ProtocolRefusal::Unsupported(

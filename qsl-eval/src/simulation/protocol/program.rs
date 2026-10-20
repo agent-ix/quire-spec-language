@@ -22,6 +22,7 @@ use qsl_semantics::check::{
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 
 use super::{ProtocolRefusal, Unsupported};
+use crate::simulation::model::enumerable;
 
 /// One control of the `run` tree.
 pub(super) struct Control {
@@ -258,6 +259,15 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
     }
     if protocol.roles.iter().any(|role| role.replicated) {
         return Err(unsupported(Unsupported::ReplicatedRole));
+    }
+    // The pre-check (TS-5) has already refused an unbounded record type.
+    if protocol
+        .slots
+        .binders
+        .iter()
+        .any(|binder| binder.ranged && !enumerable(&binder.value_type))
+    {
+        return Err(unsupported(Unsupported::UnenumerableRecord));
     }
     Ok(())
 }

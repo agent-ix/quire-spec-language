@@ -12,8 +12,10 @@ use qsl_eval::simulation::protocol::{
 use qsl_eval::simulation::SubjectSystem;
 use serde_json::{json, Value as Json};
 
+use qsl_foundation::diagnostic::Code;
+
 use crate::fill::{
-    attempt, contracts, json_of, projections, protocol, reachable, sc_system, Reached,
+    attempt, compiled, contracts, json_of, projections, protocol, reachable, sc_system, Reached,
 };
 use crate::protocol_system::{touch, Case};
 
@@ -454,7 +456,17 @@ fn structural_moves_add_no_step() {
         }
     }
 
-    // `repeat` with no maximum.
+    // `repeat` with no maximum. It can never enter `exhausted`: the grammar
+    // gives `exhausted` only to a `repeat` with a maximum.
+    let exhausted = format!(
+        "repeat Loop by w visible () while {{ true }} {} exhausted {}",
+        touch("X"),
+        touch("E"),
+    );
+    let refused = compiled(&(contracts("self.v = 0") + &protocol("P", "", &exhausted, "d")))
+        .err()
+        .expect("`exhausted` needs a maximum");
+    assert_eq!(refused.code(), Code::InvalidSyntax, "{refused}");
     let run = format!(
         "repeat Loop by w visible () while {{ true }} {}",
         touch("X")
@@ -466,6 +478,7 @@ fn structural_moves_add_no_step() {
     assert_eq!(reached.len(), 1);
     assert_eq!(reached[0].steps.len(), 1);
     assert_eq!(reached[0].steps[0].0.kind(), StepKind::Attempt);
+    assert_eq!(last(&reached[0].steps[0].0), "X");
     assert_eq!(reached[0].steps[0].1, 0);
     assert_eq!(
         key(&system, &reached[0].state)["bounds"]["entries"],
@@ -614,5 +627,109 @@ fn a_branch_reads_its_parents_binding_as_of_its_fork() {
     assert!(
         checked > 0,
         "some state holds a rebound `f` and a differing copy"
+    );
+}
+
+/// ADR-027 PS-2's "no live sibling holds" over a sibling whose branch
+/// threads left the state while a thread they forked still runs: a
+/// `repeat` with maximum 2 around `parallel Outer`, whose branch `p` binds
+/// `f` and forks `Inner` joined `any … outstanding continue`, its branch
+/// `c` reading `f`. When the second iteration forks `Outer` while the first
+/// `c` still runs, ordinal 0 is not free, so the new threads take ordinal 1
+/// and the first `c` keeps reading its own `p`'s binding: the protocol
+/// explores. So it does with maximum 1, and with `outstanding cancel`.
+#[trace("TC-650")]
+#[test]
+fn an_ordinal_stays_held_while_a_descendant_of_its_branch_runs() {
+    let unit = |max: u64, outstanding: &str| {
+        let run = format!(
+            "sequence Main {{ repeat Loop by w visible () max {max} while {{ true }} \
+             parallel Outer {{ branch p sequence Pb {{ event F by w as (f: Boolean) {{ true }}; \
+             parallel Inner {{ branch c {} branch d {} }} join any [c, d] outstanding {outstanding}; }} \
+             branch q {} }} join all [p, q]; exhausted sequence Out {{ }} }}",
+            attempt("A", "touch", "TouchPre", "aa", "f"),
+            touch("Dd"),
+            touch("Qq"),
+        );
+        case("", &run)
+    };
+    for (max, outstanding) in [(2, "continue"), (1, "continue"), (2, "cancel")] {
+        let built = unit(max, outstanding);
+        let subject = built.subject("P");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        assert!(!reached.is_empty());
+        let late_fork = reached.iter().any(|state| {
+            system
+                .threads(&state.state)
+                .expect("threads")
+                .iter()
+                .any(|thread| {
+                    thread
+                        .path
+                        .steps
+                        .first()
+                        .is_some_and(|step| step.node == "Main/Loop/Outer" && step.ordinal == 1)
+                })
+        });
+        assert_eq!(
+            late_fork,
+            (max, outstanding) == (2, "continue"),
+            "{max} {outstanding}"
+        );
+    }
+}
+
+/// ADR-027 PD-4 for a waiting `receive`: behind another send's head of a
+/// `fifo` queue it is `head-blocked`; with its own send's entry deliverable
+/// but failing its constraint, `constraint`; with nothing of its send
+/// queued, `empty-queue`.
+#[trace("TC-651")]
+#[test]
+fn a_waiting_receive_names_why_it_waits() {
+    let premises = "ordering fifo by (m: Boolean) { true } delivery exactly-once-premise \
+                    capacity 2 overflow block";
+    let cause = |receive: &str| {
+        let run = format!(
+            "sequence Main {{ send S1 via ch as (s1: Boolean) {{ s1 }}; \
+             send S2 via ch as (s2: Boolean) {{ s2 }}; {receive} }}"
+        );
+        let unit = case(&channel("ch", premises), &run);
+        let subject = unit.subject("P");
+        let system = sc_system(&subject);
+        let reached = reachable(&system);
+        let waiting = follow(&reached, &[(StepKind::Send, "S1"), (StepKind::Send, "S2")]);
+        assert!(reached[waiting].steps.is_empty());
+        system.blocked(&reached[waiting].state).expect("blocked")[0]
+            .cause
+            .clone()
+    };
+    let channel_name = || "P::ch".to_owned();
+    assert_eq!(
+        cause("receive R via ch of S2 as (r: Boolean) { true };"),
+        WaitCause::HeadBlocked {
+            channel: channel_name()
+        }
+    );
+    assert_eq!(
+        cause("receive R via ch of S1 as (r: Boolean) { not r };"),
+        WaitCause::Constraint
+    );
+    let run = "sequence Main { send S1 via ch as (s1: Boolean) { s1 }; \
+               receive R via ch of S1 as (r: Boolean) { true }; \
+               receive Again via ch of S1 as (again: Boolean) { true }; }";
+    let unit = case(&channel("ch", premises), run);
+    let subject = unit.subject("P");
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let waiting = follow(
+        &reached,
+        &[(StepKind::Send, "S1"), (StepKind::Receive, "R")],
+    );
+    assert_eq!(
+        system.blocked(&reached[waiting].state).expect("blocked")[0].cause,
+        WaitCause::EmptyQueue {
+            channel: channel_name()
+        }
     );
 }

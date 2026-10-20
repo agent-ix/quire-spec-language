@@ -983,8 +983,8 @@ fn the_repaired_fill_is_deadlock_free_over_ten_states() {
 }
 
 /// FR-215-AC-4 (TC-660): a protocol with an `event` node whose record type
-/// is the unbounded `Integer` returns `RequiresBound` naming that binder
-/// before any state is explored. EN-1 over the `Fill` deadlock-freedom item
+/// has an unbounded `Integer` field returns `RequiresBound` naming that
+/// binder and the field before any state is explored. EN-1 over the `Fill` deadlock-freedom item
 /// returns `Violated` with `kind: Deadlock`, and over the repaired `Fill`
 /// `Holds` over ten states; running each twice gives equal outcomes and
 /// byte-equal counterexamples.
@@ -992,10 +992,16 @@ fn the_repaired_fill_is_deadlock_free_over_ten_states() {
 #[test]
 fn a_protocol_model_check_is_deterministic() {
     let run = format!(
-        "sequence Main {{ event Tally by w as (tally: Integer) {{ tally = 0 }}; {} }}",
+        "sequence Main {{ event Tally by w as (tally: Count) {{ true }}; {} }}",
         touch("T")
     );
-    let counted = p_case(&run, 0);
+    let counted = Case::new(
+        &format!(
+            "record Count {{ n: Integer; }}\n{}",
+            one_protocol("self.v = 0", &run)
+        ),
+        &[0],
+    );
     let refusal = check_protocol(
         ProtocolCheckRequest {
             subject: counted.subject("P"),
@@ -1014,7 +1020,7 @@ fn a_protocol_model_check_is_deterministic() {
         named,
         [DomainKey::Node {
             node: binder_root("P", "tally"),
-            path: Vec::new(),
+            path: vec![0],
         }]
     );
 

@@ -28,6 +28,37 @@ pub(super) enum Settled {
     Undecided(Box<ModelFinding>),
 }
 
+/// Why a settling stopped: an invariant of the checked protocol broke, or
+/// an evaluation stopped. Kept apart so an initial state reports which.
+#[derive(Debug)]
+pub(super) enum SettleError {
+    /// An invariant of the checked protocol broke.
+    Refused(ProtocolRefusal),
+    /// A guard's evaluation stopped.
+    Stopped(ExpansionStop),
+}
+
+impl From<ProtocolRefusal> for SettleError {
+    fn from(refusal: ProtocolRefusal) -> Self {
+        Self::Refused(refusal)
+    }
+}
+
+impl From<ExpansionStop> for SettleError {
+    fn from(stop: ExpansionStop) -> Self {
+        Self::Stopped(stop)
+    }
+}
+
+impl From<SettleError> for ExpansionStop {
+    fn from(error: SettleError) -> Self {
+        match error {
+            SettleError::Refused(refusal) => refusal.into(),
+            SettleError::Stopped(stop) => stop,
+        }
+    }
+}
+
 /// A guard's value, or the finding of an undecided one.
 enum Decision {
     Value(bool),
@@ -45,7 +76,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         path: &ThreadPath,
         mut cursor: Cursor,
         model: &ModelSimState,
-    ) -> Result<Settled, ExpansionStop> {
+    ) -> Result<Settled, SettleError> {
         // Each move enters a child, leaves a node for its parent's
         // continuation or passes a `repeat`'s guard. A `repeat` body takes a
         // step on every cycle (PS-6), so a settling passes each control at

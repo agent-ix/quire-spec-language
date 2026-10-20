@@ -45,6 +45,14 @@ pub(super) struct Gathered<M: MemoryModel> {
     pub(super) findings: Vec<ModelFinding>,
 }
 
+/// The thread that reads a node's slots, and the node.
+#[derive(Clone, Copy)]
+pub(super) struct Reader<'r> {
+    pub(super) instance: &'r Instance,
+    pub(super) path: &'r ThreadPath,
+    pub(super) node: ProtocolNodeId,
+}
+
 /// The JCS bytes of `value` under the identity limits.
 pub(super) fn jcs(value: &impl quire_canonical::Encode) -> Result<Vec<u8>, ProtocolRefusal> {
     crate::simulation::key::canonical_bytes(value, super::identity_limits())
@@ -289,18 +297,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(())
     }
 
-    /// Whether `constraint` holds for the binder of `node` bound to `record`,
-    /// read by the thread `path` at `observed`; an undecided constraint
+    /// Whether `constraint` holds for the binder of the reader's node bound
+    /// to `record`, read by the reader's thread at `observed`; an undecided
+    /// constraint
     /// pushes its finding and holds for no record.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "one constraint's reader, node, binder, record and findings"
-    )]
     pub(super) fn admits(
         &self,
-        instance: &Instance,
-        path: &ThreadPath,
-        node: ProtocolNodeId,
+        reader: Reader<'_>,
         constraint: Option<&CheckedBody>,
         slot: usize,
         record: &Value,
@@ -310,6 +313,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let Some(constraint) = constraint else {
             return Ok(true);
         };
+        let Reader {
+            instance,
+            path,
+            node,
+        } = reader;
         let mut frame = self.frame(instance, path, node)?;
         if let Some(entry) = frame.get_mut(slot) {
             *entry = Some(record.clone());
@@ -349,9 +357,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .ok_or_else(|| ProtocolRefusal::fault("an-event-type-is-bounded"))?;
         for value in values {
             if !self.admits(
-                instance,
-                path,
-                node,
+                Reader {
+                    instance,
+                    path,
+                    node,
+                },
                 record.constraint,
                 record.slot,
                 &value,
@@ -427,12 +437,23 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let text = self.program.text(node)?.to_owned();
         let mut next = state.clone();
         let instance = Self::instance_mut(&mut next, ordinal)?;
+        // PS-2's "no live sibling holds" reads a sibling as live while its
+        // instance is, or while any thread its branch threads forked still
+        // runs: a reused path would otherwise become the nearest ancestor of
+        // that running descendant, and the clear below would take bindings
+        // it still reads.
         let free = (0u64..)
             .find(|candidate| {
                 !instance.parallels.contains_key(&ParallelKey {
                     parent: path.clone(),
                     node,
                     ordinal: *candidate,
+                }) && !join.branches.iter().any(|(label, _)| {
+                    let branch = path.child(&text, label, *candidate);
+                    instance
+                        .threads
+                        .keys()
+                        .any(|thread| branch.is_prefix_of(thread))
                 })
             })
             .ok_or_else(|| ProtocolRefusal::fault("an-ordinal-is-free"))?;
@@ -740,9 +761,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .ok_or_else(|| ProtocolRefusal::fault("a-finish-type-is-bounded"))?;
         for record in records {
             if !self.admits(
-                instance,
-                path,
-                finish.node,
+                Reader {
+                    instance,
+                    path,
+                    node: finish.node,
+                },
                 finish.constraint,
                 *slot,
                 &record,
@@ -943,9 +966,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     if !self.gate(state, path, GatedStep::Receive) {
                         WaitCause::Gate
                     } else {
-                        WaitCause::EmptyQueue {
-                            channel: self.channel_of(node)?.name.clone(),
-                        }
+                        self.receive_cause(instance, node)?
                     }
                 }
                 ControlStep::Event => WaitCause::Constraint,

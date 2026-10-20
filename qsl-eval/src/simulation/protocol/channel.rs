@@ -10,8 +10,9 @@
 //! capacity waits under `block`; under `reject` it leaves the queue
 //! unchanged; under `loss` it drops the oldest (`head`) or newest (`tail`)
 //! entry and appends, or drops its own (`new`). Its binder records its
-//! outcome, `sent`, `rejected` or `lost`, in the `send-record` the step
-//! binds, beside the payload its readers read.
+//! outcome, `sent`, `rejected`, `displaced` (another entry was lost for
+//! it) or `lost` (its own entry was), in the `send-record` the step binds,
+//! beside the payload its readers read.
 
 use qsl_semantics::check::ProtocolNodeId;
 use qsl_semantics::check::{ChannelOverflow, LossSelector};
@@ -21,7 +22,7 @@ use quire_exact::{Meter, Outcome, Value};
 use super::identity::{ProtocolTransition, StepKind, ThreadPath, WaitCause};
 use super::memory::MemoryModel;
 use super::program::{Channel, Cursor, Message};
-use super::steps::{jcs, Gathered};
+use super::steps::{jcs, Gathered, Reader};
 use super::{
     broken, undetermined, Bound, Entry, FifoKey, Instance, ProtocolRefusal, ProtocolState,
     ProtocolSystem, QueueKey,
@@ -38,8 +39,12 @@ enum SendOutcome {
     Sent,
     /// Refused at capacity under `overflow reject`.
     Rejected,
-    /// Admitted at capacity under `overflow loss`, losing one entry.
+    /// Not queued: at capacity under `overflow loss new`, its own entry
+    /// was lost.
     Lost,
+    /// Queued at capacity under `overflow loss head` or `tail`, which lost
+    /// another entry in its place.
+    Displaced,
 }
 
 impl SendOutcome {
@@ -48,6 +53,7 @@ impl SendOutcome {
             Self::Sent => "sent",
             Self::Rejected => "rejected",
             Self::Lost => "lost",
+            Self::Displaced => "displaced",
         }
     }
 }
@@ -159,9 +165,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .ok_or_else(|| ProtocolRefusal::fault("a-channel-type-is-bounded"))?;
         for payload in payloads {
             if !self.admits(
-                instance,
-                path,
-                node,
+                Reader {
+                    instance,
+                    path,
+                    node,
+                },
                 message.record.constraint,
                 message.record.slot,
                 &payload,
@@ -210,8 +218,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         if let Some(at) = dropped {
                             queue.remove(at);
                             queue.push(entry.clone());
+                            SendOutcome::Displaced
+                        } else {
+                            SendOutcome::Lost
                         }
-                        SendOutcome::Lost
                     }
                 }
             };
@@ -265,9 +275,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let instance = Self::instance(state, ordinal)?;
         for (at, entry) in Self::deliverable(instance, message) {
             if !self.admits(
-                instance,
-                path,
-                node,
+                Reader {
+                    instance,
+                    path,
+                    node,
+                },
                 message.record.constraint,
                 message.record.slot,
                 &entry.payload,
@@ -333,6 +345,33 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         found
     }
 
+    /// PD-4 for a waiting `receive`: `constraint` when an entry it could
+    /// take fails its constraint; `head-blocked` when its send's entries
+    /// wait behind another send's head of a `fifo` queue; else
+    /// `empty-queue`.
+    pub(super) fn receive_cause(
+        &self,
+        instance: &Instance,
+        node: ProtocolNodeId,
+    ) -> Result<WaitCause, ProtocolRefusal> {
+        let message = self.message(node)?;
+        let channel = self.channel_of(node)?.name.clone();
+        if !Self::deliverable(instance, message).is_empty() {
+            return Ok(WaitCause::Constraint);
+        }
+        let queued = instance
+            .queues
+            .iter()
+            .filter(|(key, _)| key.channel == message.channel)
+            .flat_map(|(_, queue)| queue.iter())
+            .any(|entry| Some(entry.send) == message.from);
+        Ok(if queued {
+            WaitCause::HeadBlocked { channel }
+        } else {
+            WaitCause::EmptyQueue { channel }
+        })
+    }
+
     /// PD-4 for a waiting `send`: `full-queue` when some payload its
     /// constraint admits waits only on its queue's capacity, else
     /// `constraint`.
@@ -353,9 +392,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .ok_or_else(|| ProtocolRefusal::fault("a-channel-type-is-bounded"))?;
         for payload in payloads {
             if self.admits(
-                instance,
-                path,
-                node,
+                Reader {
+                    instance,
+                    path,
+                    node,
+                },
                 message.record.constraint,
                 message.record.slot,
                 &payload,

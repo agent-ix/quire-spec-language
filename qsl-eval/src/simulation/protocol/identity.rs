@@ -381,8 +381,14 @@ pub enum WaitCause {
     /// An event, attempt or `finish` whose constraint no record satisfies,
     /// or a `send` whose constraint no payload satisfies.
     Constraint,
-    /// A `receive` with no deliverable entry.
+    /// A `receive` with no entry of its send queued.
     EmptyQueue {
+        /// The channel's qualified name.
+        channel: String,
+    },
+    /// A `receive` whose send's entries all wait behind the head of a `fifo`
+    /// queue that another send of the channel put there.
+    HeadBlocked {
         /// The channel's qualified name.
         channel: String,
     },
