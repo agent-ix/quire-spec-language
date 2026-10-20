@@ -52,7 +52,7 @@ pub struct StatisticalRequest<'a> {
     pub subject: ModelSubject<'a>,                  // FR-125
     pub claim: &'a CheckedProbabilisticClaim,       // FR-186, scheduler Workload, confidence Some
     pub method: StatisticalMethod,
-    pub seed: Seed,
+    pub seed: u64,
     pub sampler: DefinitionRef,                     // checked by identity: quire.simulation.sampler/v1 (FR-188)
     pub limits: StatisticalLimits,                  // FR-191
     pub max_witnesses: u32,                         // FR-193; default 8

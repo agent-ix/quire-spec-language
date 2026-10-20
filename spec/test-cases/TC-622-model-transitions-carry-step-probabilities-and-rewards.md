@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-622", "FR-187-AC-n")]`.
 - Step 1: six steps with the probabilities of FR-187-AC-1 summing to 1 and `duration = d`; one `request` step with probability 1.
 - Step 2: `9/20`, `1/20`, `2/5`, `1/10`; two actions with draws summing to 1; the stutter step with probability 1.
 - Step 3: `NotMarkov` with 2 post-states and an action whose draws carry two successors; `NotMarkov` with 0 post-states.
-- Step 4: `NegativeReward` naming `n = 0`; equal sets.
+- Step 4: `invalid_probabilistic_model`/`negative-reward` naming the operation, `refund` and `n = 0`; equal sets.

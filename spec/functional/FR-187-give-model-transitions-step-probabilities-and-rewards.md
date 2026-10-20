@@ -61,12 +61,15 @@ pub struct Draw {
 }
 pub enum TransitionId { Operation(ModelTransition), Stutter } // the terminal stutter step is no operation's
 pub struct WeightedStep { pub transition: TransitionId, pub post: ModelSimState, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
+pub struct UndecidedSuccessor { pub state: DigestRecord } // a contract conjunction was undecided at the state
+pub enum Unsteppable { NotMarkov(NotMarkov), UndecidedSuccessor(UndecidedSuccessor) }
 pub struct NotMarkov { pub state: DigestRecord, pub transition: ScheduledIdentity, pub random: Vec<Value>, pub post_states: u32 } // state: the state-key digest
 
 impl ModelSystem {
-    pub fn actions(&self, state: &ModelSimState) -> Result<Vec<Action>, ExpansionStop>;
+    pub fn actions(&self, state: &ModelSimState)
+        -> Result<Result<Vec<Action>, UndecidedSuccessor>, ExpansionStop>;
     pub fn weighted_steps(&self, state: &ModelSimState, workload: &Workload)
-        -> Result<Result<Vec<WeightedStep>, NotMarkov>, ExpansionStop>;
+        -> Result<Result<Vec<WeightedStep>, Unsteppable>, ExpansionStop>;
 }
 ```
 
@@ -105,13 +108,17 @@ impl ModelSystem {
   refusal record `invalid_probabilistic_model`/`negative-reward`, carrying
   `operation`, `reward` and `arguments`, for the first negative value in
   canonical order.
-- When a contract conjunction is undecided during expansion, the expansion
-  SHALL report FR-120's `ContractUndetermined` finding, and the sampler (FR-188)
-  SHALL stop with `SampleStop::UndecidedSuccessor`.
-- FR-120's state key and transition identity encode `Boolean` and bounded
-  `Int` values and no enumeration value, so a model whose state, parameter
-  or random value is an enumeration cannot be expanded here; a fixture
-  declares such a field as a bounded `Int` or a `Boolean`.
+- If a contract conjunction is undecided at an application during expansion
+  (FR-120's `ContractUndetermined` finding), then `ModelSystem` SHALL return
+  `UndecidedSuccessor{state}` from `actions` and, under `weighted_steps`,
+  `Unsteppable::UndecidedSuccessor`, and SHALL NOT drop the application.
+
+Note: FR-120's state key and transition identity have no encoding for an
+enumeration or quantity value (FR-120 "State key"), so a state, parameter or
+random value of such a type is refused with an `EncodingRefusal`; FR-187-AC-1
+declares the `Service` fixture's enumerations as a bounded `Int` and a
+`Boolean`.
+
 - Weights play no part in the support graph: the transitions that
   `weighted_steps` gives positive probability SHALL be exactly FR-120's
   successors (ADR-024 PM-6).
