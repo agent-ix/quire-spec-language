@@ -297,7 +297,7 @@ ADR-019" note.
   kind.
 - **AM-7, ADR-018 PC-4 and FR-339:** the component certificate's witnesses gain
   `UnfairStrong{constraints, sub}`: every strong constraint of the clause's resolved constraints that the component fails, each taken by no edge with both ends in the component, and `sub`, the component's states at which none of them is enabled, partitioned into sub-components in topological order among themselves, each with its own witness. A cycle fair under those constraints takes none of them inside the component, so it avoids every state where one is enabled and lies inside one sub-component. This is FS-2's removal of every failing constraint's enabled states at once. FS-2's refinement is the certificate's recursion, and EN-1
-  emits it for every component that a strong constraint rejects. Amended by ADR-025 MF-2: a fifth witness `UnfairVisibility{constraints, sub}` removes edges in place of states (ADR-018 PC-4).
+  emits it for every component that a strong constraint rejects. Amended by ADR-025 MF-2: a fifth witness `UnfairVisibility{constraints, sub}` removes edges in place of states (ADR-018 PC-4); its `constraints` index the visibility pairs resolved one per (thread, location) in ascending thread then location identity bytes.
 - `spec/spec.md`: index row.
 
 ## Alternatives Considered

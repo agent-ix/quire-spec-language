@@ -47,7 +47,7 @@ pub struct Component { pub states: Vec<ProductStateRef>, pub witness: ComponentW
 pub enum ComponentWitness {
     Trivial,
     MissingAcceptance { set: u32 },
-    UnfairWeak { constraint: u32 },           // index into the resolved constraints
+    UnfairWeak { constraint: u32 },           // index into the resolved constraints  // a visibility pair resolves to one constraint per (thread, location): thread bytes, then location bytes
     UnfairStrong { constraints: Vec<u32>, sub: Vec<Component> },  // every failing strong constraint
     UnfairVisibility { constraints: Vec<u32>, sub: Vec<Component> }, // ADR-025 MF-2: every failing visibility pair
 }
@@ -101,6 +101,7 @@ constraint, in FR-123's order.
   exactly the component's states at which none of them is enabled, with
   every edge between two of them going to the same or a later
   sub-component and every sub-component's witness holding (ADR-019 AM-7);
+  The visibility fairness member resolves to one resolved constraint per (thread, location) pair, in ascending order of the thread's identity bytes and then the location's identity bytes, after the clause's other resolved constraints; `UnfairVisibility.constraints` indexes them.
   `UnfairVisibility{constraints, sub}` needs every listed visibility pair to
   have an edge with both ends in the component on which the thread loads the
   location and none on which it loads it from its mo-last message, and `sub`

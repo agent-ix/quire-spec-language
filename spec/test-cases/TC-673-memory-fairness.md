@@ -12,7 +12,7 @@ relationships:
 
 Verify the derived memory constraints, their `memory` origin, their effect on liveness, the visibility filter, and that safety verdicts do not change.
 
-Scope: FR-228-AC-1 to FR-228-AC-8.
+Scope: FR-228-AC-1 to FR-228-AC-9.
 
 ## Test Procedure
 
@@ -32,6 +32,7 @@ Scope: FR-228-AC-1 to FR-228-AC-8.
    to the filter and record the edges removed at each level.
 8. Pass FR-228-AC-8's SCC, which fails a strong constraint and a visibility
    pair, to the filter.
+9. Pass FR-228-AC-9's three-state SCC with pairs A and B to the filter.
 
 Tag the tests `#[trace("TC-673", "FR-228-AC-n")]`.
 
@@ -47,3 +48,4 @@ Tag the tests `#[trace("TC-673", "FR-228-AC-n")]`.
 - Step 6: `{p, q}` passes with its two kept edges; the loop is `p q`, not `p p`.
 - Step 7: `q → r` is removed at the first level and `s → r` at the second; the passing component is `{p, q}`.
 - Step 8: one refinement step removes state 0 and the edge `1 → 2`; `{3, 4}` passes with the loop `3 → 4 → 3`.
+- Step 9: both pairs' edges are removed in one step and `{0}` is the first passing component, not `{1}`.
