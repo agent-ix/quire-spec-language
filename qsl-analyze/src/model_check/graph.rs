@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! ADR-018 EN-1: canonical breadth-first discovery retaining all explored edges.
+//!
+//! Under a symmetry group (ADR-021 EI-2, EI-3) every initial state and every
+//! successor is canonicalised through the system's `canonical` hook before
+//! it is keyed, and each retained edge keeps the permutation its target was
+//! canonicalised by: the annotated quotient (AQ-1).
 
 use std::collections::{BTreeMap, VecDeque};
 
-use qsl_eval::simulation::{Limit, Limits, Outcome, Stats, TransitionSystem};
+use qsl_eval::simulation::{
+    Limit, Limits, Outcome, Permutation, Stats, SymmetryGroup, TransitionSystem,
+};
 use qsl_foundation::digest::{DigestDomain, DigestRecord};
 use qsl_foundation::{ByteDigest, CatalogCode, IdentityLimits};
 use quire_canonical::Encode;
@@ -19,18 +26,10 @@ impl ProductStateId {
     }
 }
 
-/// The unreduced edge mapping: it leaves any concrete state unchanged.
-///
-/// This is not the later symmetry permutation contract.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct IdentityPermutation;
-
-impl IdentityPermutation {
-    /// Apply the identity mapping to the original concrete successor.
-    pub fn apply<S>(self, state: S) -> S {
-        state
-    }
-}
+/// `runtime_invariant`/`established-invariant-broken`: a system asked to
+/// canonicalise under a group it does not offer symmetry for.
+const NOT_OFFERED: CatalogCode =
+    CatalogCode::new("runtime_invariant", "established-invariant-broken");
 
 /// Every explored edge, including incoming, back, self and parallel edges.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,8 +40,9 @@ pub struct RetainedEdge<T> {
     pub transition: T,
     /// Coalesced target state handle.
     pub target: ProductStateId,
-    /// Identity mapping, since this graph performs no symmetry reduction.
-    pub permutation: IdentityPermutation,
+    /// The permutation `π` the target was canonicalised by: the target is
+    /// `π(t(source))` (ADR-021 AQ-1). The identity under the trivial group.
+    pub permutation: Permutation,
 }
 
 /// A discovered state with its original payload and canonical identity.
@@ -187,6 +187,51 @@ pub fn retain<S: TransitionSystem>(
     limits: Limits,
     identity: IdentityLimits,
     max_depth: Option<usize>,
+    poll: impl FnMut() -> bool,
+) -> RetainResult<S> {
+    retain_reduced(
+        system,
+        &SymmetryGroup::default(),
+        limits,
+        identity,
+        max_depth,
+        poll,
+    )
+}
+
+/// `state` canonicalised under `group` by `system`'s hook, with the
+/// permutation that maps it there: `state` and the identity under the
+/// trivial group.
+fn canonical<S: TransitionSystem>(
+    system: &S,
+    group: &SymmetryGroup,
+    state: S::State,
+) -> Result<(S::State, Permutation), CatalogCode> {
+    if group.is_trivial() {
+        return Ok((state, Permutation::identity()));
+    }
+    match system.canonical(&state, group) {
+        Some(Ok(canonical)) => Ok(canonical),
+        Some(Err(stop)) => Err(stop.cause),
+        None => Err(NOT_OFFERED),
+    }
+}
+
+/// [`retain`] over the quotient by `group` (ADR-021 EI-2, EI-3): every
+/// initial state and successor is replaced by its canonical form before it
+/// is keyed, so states coalesce by canonical key, and each edge keeps the
+/// permutation of its target. A canonicalisation that stops ends the run
+/// `Stopped` with its cause, as an expansion stop does; a system that offers
+/// no symmetry stops it with `runtime_invariant`.
+///
+/// # Errors
+/// As [`retain`].
+pub fn retain_reduced<S: TransitionSystem>(
+    system: &S,
+    group: &SymmetryGroup,
+    limits: Limits,
+    identity: IdentityLimits,
+    max_depth: Option<usize>,
     mut poll: impl FnMut() -> bool,
 ) -> RetainResult<S> {
     let mut graph = RetainedGraph {
@@ -195,11 +240,21 @@ pub fn retain<S: TransitionSystem>(
         outgoing: Vec::new(),
         initial: Vec::new(),
     };
-    let mut initial = system
-        .initial()
-        .into_iter()
-        .map(|state| encode(&system.key(&state), identity).map(|key| (key, state)))
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut initial = Vec::new();
+    for state in system.initial() {
+        let state = match canonical(system, group, state) {
+            Ok((state, _)) => state,
+            Err(cause) => {
+                let outcome = Outcome::Stopped {
+                    stats: graph.stats(0),
+                    frontier: Vec::new(),
+                    cause,
+                };
+                return Ok(GraphExploration { graph, outcome });
+            }
+        };
+        initial.push((encode(&system.key(&state), identity)?, state));
+    }
     initial.sort_by(|(a, _), (b, _)| a.cmp(b));
     initial.dedup_by(|(a, _), (b, _)| a == b);
     let initial_frontier = initial.iter().map(|(key, _)| digest(key)).collect();
@@ -249,17 +304,24 @@ pub fn retain<S: TransitionSystem>(
                 }
             }
         };
-        let mut successors = expansion
-            .successors
-            .into_iter()
-            .map(|(transition, state)| {
-                let order = encode(&transition, identity)?;
-                let key = encode(&system.key(&state), identity)?;
-                Ok((order, key, transition, state))
-            })
-            .collect::<Result<Vec<_>, quire_canonical::Error>>()?;
+        let mut successors = Vec::with_capacity(expansion.successors.len());
+        for (transition, state) in expansion.successors {
+            let (state, permutation) = match canonical(system, group, state) {
+                Ok(canonical) => canonical,
+                Err(cause) => {
+                    break 'run Outcome::Stopped {
+                        stats: graph.stats(transitions),
+                        frontier: graph.frontier(source, &queue),
+                        cause,
+                    }
+                }
+            };
+            let order = encode(&transition, identity)?;
+            let key = encode(&system.key(&state), identity)?;
+            successors.push((order, key, transition, state, permutation));
+        }
         successors.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-        for (_, key, transition, state) in successors {
+        for (_, key, transition, state, permutation) in successors {
             if transitions >= limits.max_transitions {
                 break 'run Outcome::Bounded {
                     stats: graph.stats(transitions),
@@ -292,7 +354,7 @@ pub fn retain<S: TransitionSystem>(
                 source,
                 transition,
                 target,
-                permutation: IdentityPermutation,
+                permutation,
             });
         }
         graph.states[source.0].findings = expansion.findings;
