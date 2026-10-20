@@ -169,6 +169,21 @@ pub enum EmitRefusal {
         /// Why the handle was cancelled.
         cause: quire_exact::CancelCause,
     },
+    /// The package declares checked random parameters, rewards or
+    /// workloads (FR-185), which FR-322's v2 vocabulary has no node for:
+    /// the emitter refuses rather than write a package without them.
+    #[error(
+        "the package declares {random_parameters} random parameters, {rewards} rewards and \
+         {workloads} workloads, which a checked-package/v2 graph cannot hold yet"
+    )]
+    ProbabilisticModelNotEmitted {
+        /// How many random parameters it declares.
+        random_parameters: usize,
+        /// How many rewards it declares.
+        rewards: usize,
+        /// How many workloads it declares.
+        workloads: usize,
+    },
 }
 
 impl From<quire_canonical::Error> for EmitRefusal {
@@ -187,6 +202,7 @@ impl EmitRefusal {
             Self::Encoding { .. } => Code::OutputFailure,
             Self::StaleProtocolReference { .. } => Code::MissingDeclaration,
             Self::Cancelled { .. } => Code::Cancelled,
+            Self::ProbabilisticModelNotEmitted { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -194,6 +210,7 @@ impl EmitRefusal {
     pub fn cause(&self) -> Option<&'static str> {
         match self {
             Self::StaleProtocolReference { .. } => Some("missing-name"),
+            Self::ProbabilisticModelNotEmitted { .. } => Some("not-yet-implemented"),
             Self::NothingToEmit { .. }
             | Self::UnlocatedOccurrence { .. }
             | Self::UnknownOccurrenceRole { .. }
@@ -1143,6 +1160,14 @@ fn emit_package_inner(
         return Err(refusal);
     }
     let graph = package.graph();
+    let probabilistic = graph.probabilistic_model();
+    if !probabilistic.is_empty() {
+        return Err(EmitRefusal::ProbabilisticModelNotEmitted {
+            random_parameters: probabilistic.random_parameters().len(),
+            rewards: probabilistic.rewards().len(),
+            workloads: probabilistic.workloads().len(),
+        });
+    }
     let candidates = candidates_of(graph)?;
     let omitted = omissions(&candidates, graph.source(), decodes);
     stale_protocol_reference(&candidates, &omitted)?;
