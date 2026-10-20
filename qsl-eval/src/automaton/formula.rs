@@ -322,9 +322,9 @@ impl Ir {
     }
 
     /// Where each node of `order`, in ascending order, goes when atom `a`
-    /// becomes atom `exchange[a]`; `None` when the exchange takes a temporal
-    /// operator of `order` to a node outside it, so the arena is not closed
-    /// under the exchange.
+    /// becomes atom `exchange[a]`. A node's image is built from the images of
+    /// its operands, so the image of a state's operators stays in the arena
+    /// whenever the exchange fixes the target, which the caller checks.
     ///
     /// # Errors
     ///
@@ -333,7 +333,7 @@ impl Ir {
         &mut self,
         order: &[NodeId],
         exchange: &[usize],
-    ) -> Result<Option<BTreeMap<NodeId, NodeId>>, AutomatonError> {
+    ) -> Result<BTreeMap<NodeId, NodeId>, AutomatonError> {
         let mut images: BTreeMap<NodeId, NodeId> = BTreeMap::new();
         let image = |images: &BTreeMap<NodeId, NodeId>, id: NodeId| {
             images
@@ -389,16 +389,7 @@ impl Ir {
             };
             images.insert(*id, exchanged);
         }
-        // A state names only temporal operators, which the translation keeps
-        // in the arena. The suffixes of a folded `and` or `or` are not named
-        // by any state, and the image of one need not be a node of the arena.
-        let operators_stay = images.iter().all(|(from, to)| {
-            !matches!(
-                self.nodes.get(from.0),
-                Some(Node::Past { .. } | Node::Future { .. })
-            ) || order.binary_search(to).is_ok()
-        });
-        Ok(operators_stay.then_some(images))
+        Ok(images)
     }
 
     /// A past operator; its operands must be state formulas.

@@ -65,7 +65,8 @@ pub fn copy_symmetry(copy: &CopyGroup) -> SymmetryGroup {
 pub struct CopySwapInputs<'r> {
     /// The clause's trace variables, in quantifier order.
     pub variables: Vec<&'r str>,
-    /// The clause's copy group (FR-174 Outputs).
+    /// The copy group the product reduces by: the clause's (FR-174 Outputs),
+    /// or the classes of it the caller reduces by.
     pub group: &'r CopyGroup,
 }
 
@@ -81,25 +82,6 @@ impl CopySwap {
             variables: inputs.variables.iter().map(|v| (*v).to_owned()).collect(),
             generators: inputs.group.generators.clone(),
         }
-    }
-
-    /// The generators whose two variables `group` puts in one class.
-    fn active(&self, group: &SymmetryGroup) -> Vec<usize> {
-        let population = copy_population();
-        self.generators
-            .iter()
-            .enumerate()
-            .filter(|(_, generator)| {
-                let name = |position: usize| self.variables.get(position);
-                match (name(generator.first), name(generator.second)) {
-                    (Some(first), Some(second)) => group
-                        .class_of(&population, first)
-                        .is_some_and(|class| class.keys.contains(second)),
-                    _ => false,
-                }
-            })
-            .map(|(index, _)| index)
-            .collect()
     }
 }
 
@@ -137,9 +119,7 @@ impl HyperProduct<'_, '_> {
         &self,
         swap: &CopySwap,
         state: &HyperState,
-        group: &SymmetryGroup,
     ) -> Result<(HyperState, Permutation), ExpansionStop> {
-        let active = swap.active(group);
         let mut orbit = vec![Member {
             key: self.key_bytes(state)?,
             state: state.clone(),
@@ -149,9 +129,8 @@ impl HyperProduct<'_, '_> {
         let mut next = 0;
         while let Some(member) = orbit.get(next) {
             let mut found = Vec::new();
-            for index in &active {
-                let generator = &swap.generators[*index];
-                let exchanged = self.exchange(member, *index, generator)?;
+            for (index, generator) in swap.generators.iter().enumerate() {
+                let exchanged = self.exchange(member, index, generator)?;
                 if seen.insert(exchanged.key.clone()) {
                     found.push(exchanged);
                 }

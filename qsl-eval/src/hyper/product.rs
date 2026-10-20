@@ -507,10 +507,10 @@ impl TransitionSystem for HyperProduct<'_, '_> {
     fn canonical(
         &self,
         state: &HyperState,
-        group: &SymmetryGroup,
+        _group: &SymmetryGroup,
     ) -> Option<Result<(HyperState, Permutation), ExpansionStop>> {
         let swap = self.copy_swap.as_ref()?;
-        Some(self.canonicalise(swap, state, group))
+        Some(self.canonicalise(swap, state))
     }
 
     fn successors(

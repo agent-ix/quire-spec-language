@@ -714,6 +714,11 @@ impl Seams<'_> {
                 {
                     input_of(label(x)) == input_of(label(y))
                 }
+                [x, "!=", y]
+                    if x.ends_with(".step.Vault::step.i") && y.ends_with(".step.Vault::step.i") =>
+                {
+                    input_of(label(x)) != input_of(label(y))
+                }
                 [x, "=", "V::Vault::step"] if x.ends_with(".step.op") => {
                     operation_of(label(x)).is_some_and(is_step)
                 }

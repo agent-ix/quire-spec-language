@@ -457,10 +457,9 @@ fn translate_formula(
                 .generators
                 .iter()
                 .map(|exchange| ir.exchanged(&order, exchange))
-                .collect::<Result<Option<Vec<_>>, _>>()
+                .collect::<Result<Vec<_>, _>>()
         })
         .transpose()?
-        .flatten()
         .unwrap_or_default();
     let translator = Translator { ir, order };
     let eventualities: Vec<NodeId> = translator.eventualities()?.into_iter().collect();

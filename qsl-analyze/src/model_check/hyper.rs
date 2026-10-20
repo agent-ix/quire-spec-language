@@ -56,7 +56,8 @@
 //! no request selecting it: every initial state and successor is replaced by
 //! the least member of its orbit, so each unordered pair of runs is stored
 //! once. A counterexample found on the quotient is lifted back to the concrete
-//! tuple of behaviours it stands for before it is returned (`lift`). A request
+//! tuple of behaviours it stands for before it is returned (`lift`). A class
+//! of copies that carry fairness is not swapped (`unfair_classes`). A request
 //! that selects a reduction is settled against ADR-023 §5's rows before any
 //! state is expanded (`reductions`).
 //!
@@ -102,7 +103,7 @@ use qsl_replay::{
     HyperStep, HyperTrace, HyperUndefined, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
     ModelStep, ReachedLimit, RunStats, UndecidedCause,
 };
-use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId, HyperForm};
+use qsl_semantics::check::{CheckedHyperClause, CopyGroup, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits, ValueType};
 use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -235,15 +236,55 @@ pub fn check_hyper(
         .map(|quantifier| slot_of(quantifier.alias.as_str()))
         .collect::<Result<Vec<_>, _>>()?;
     let instances = instances(clause, &systems, &slot_of)?;
+    let copy = unfair_classes(clause);
     let run = Run {
         request: &request,
         systems,
-        group: copy_symmetry(clause.copy_group()),
+        group: copy_symmetry(&copy),
+        copy,
         slots,
         witness: matches!(clause.form(), Some(HyperForm::ForallExistsSafety)),
         cancel,
     };
     run.decide(&instances)
+}
+
+/// The classes of `clause`'s copy group that EN-1 reduces by: those whose
+/// variables have an empty fairness set. A fairness constraint is read on the
+/// stored state's slot of its variable, but the quotient moves a concrete copy
+/// between slots wherever an edge swaps them, so a slot's enabled and taken
+/// steps are not one behaviour's and the quotient would decide fair cycles
+/// wrongly. A class with fairness is stored whole and named no reduction.
+fn unfair_classes(clause: &CheckedHyperClause) -> CopyGroup {
+    let group = clause.copy_group();
+    let quantifiers = clause.quantifiers();
+    let fair = |name: &str| {
+        quantifiers
+            .iter()
+            .any(|quantifier| quantifier.variable == name && !quantifier.fairness.is_empty())
+    };
+    let classes: Vec<Vec<String>> = group
+        .classes
+        .iter()
+        .filter(|class| !class.iter().any(|name| fair(name)))
+        .cloned()
+        .collect();
+    let kept = |position: usize| {
+        quantifiers.get(position).is_some_and(|quantifier| {
+            classes
+                .iter()
+                .any(|class| class.contains(&quantifier.variable))
+        })
+    };
+    CopyGroup {
+        generators: group
+            .generators
+            .iter()
+            .filter(|generator| kept(generator.first))
+            .cloned()
+            .collect(),
+        classes,
+    }
 }
 
 /// The instances of the clause's object parameters: one binding of each
@@ -520,6 +561,9 @@ struct Run<'r, 'a> {
     /// The group the products are reduced by: the clause's copy group
     /// (FR-174), trivial when it has none.
     group: SymmetryGroup,
+    /// The classes of the clause's copy group the run reduces by (FR-174):
+    /// those whose variables carry no fairness.
+    copy: CopyGroup,
     /// The index in `systems` of each trace variable's subject.
     slots: Vec<usize>,
     /// Whether the clause is HP-3: its leading `universals` variables are
@@ -925,7 +969,7 @@ impl<'a> Run<'_, 'a> {
             }
         }
         let swapped = if explored.iter().any(|run| run.reduced) {
-            self.request.clause.copy_group().classes.clone()
+            self.copy.classes.clone()
         } else {
             Vec::new()
         };
@@ -1122,7 +1166,7 @@ impl<'a> Run<'_, 'a> {
                         .iter()
                         .map(|quantifier| quantifier.variable.as_str())
                         .collect(),
-                    group: clause.copy_group(),
+                    group: &self.copy,
                 }),
             })
             .map(Built::Universal)
@@ -1673,7 +1717,7 @@ impl<'a> Run<'_, 'a> {
                 let component = positions
                     .iter()
                     .position(|stored| *stored == component)
-                    .unwrap_or(component);
+                    .ok_or_else(|| fault("a-lifted-path-holds-every-component"))?;
                 let digests = self.digests(state)?;
                 let digest = digests
                     .get(component)

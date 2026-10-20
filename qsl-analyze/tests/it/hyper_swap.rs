@@ -18,7 +18,7 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{Reductions, SymmetryDeclaration};
-use qsl_eval::hyper::{HyperLetters, ParameterBinding};
+use qsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
 use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_replay::{
@@ -46,13 +46,13 @@ fn run(world: &World) -> HyperOutcome {
         .expect("not refused")
 }
 
-/// FR-174-AC-2: over ADR-023 section 8.1's secure vault, `NonInterference`
+/// Over ADR-023 section 8.1's secure vault, `NonInterference`
 /// stores 6 states against the unreduced 8 and holds, naming `CopySwap{[[a,
 /// b]]}`: the 4 states whose two components are equal are fixed by the swap
 /// and the 4 others pair up. Over the leaky vault it stores 7 against the
 /// unreduced 10 and is refuted, as the unreduced product has its two
 /// accepting components: the 4 fixed states and the 6 others in 3 pairs.
-#[trace("TC-599", "FR-174-AC-2")]
+#[trace("TC-599")]
 #[test]
 fn the_swap_halves_the_pair_product_and_keeps_both_verdicts() {
     let secure = World::new(
@@ -87,11 +87,11 @@ fn the_swap_halves_the_pair_product_and_keeps_both_verdicts() {
     );
 }
 
-/// FR-174-AC-2, the other side: a clause the swap changes gets no swap. The
+/// A clause the swap changes gets no swap. The
 /// second disjunct reads `a` alone, so exchanging `a` and `b` does not leave
 /// the body equal in normal form, the copy group is empty, and the engine
 /// stores the unreduced product and names no reduction.
-#[trace("TC-599", "FR-174-AC-2")]
+#[trace("TC-599")]
 #[test]
 fn an_asymmetric_clause_is_stored_unreduced() {
     let clause = format!(
@@ -111,7 +111,7 @@ fn an_asymmetric_clause_is_stored_unreduced() {
     );
 }
 
-/// FR-174-AC-2: a body whose automaton the swap permutes is stored reduced.
+/// A body whose automaton the swap permutes is stored reduced.
 /// Both copies must eventually output 1; the negation is `always not` of
 /// either, two operators the swap exchanges, so it permutes the automaton's
 /// states by renaming the operator each records. Writing `A` for a copy at
@@ -121,7 +121,7 @@ fn an_asymmetric_clause_is_stored_unreduced() {
 /// `(AA, dead)` and `(BB, dead)` and pairs the others, `(AA, ¬a)` with
 /// `(AA, ¬b)`, `(AB, ¬a)` with `(BA, ¬b)` and `(AB, dead)` with `(BA, dead)`:
 /// 5. The item holds.
-#[trace("TC-599", "FR-174-AC-2")]
+#[trace("TC-599")]
 #[test]
 fn a_swap_that_permutes_the_automaton_s_states_halves_the_product() {
     let world = World::new(
@@ -143,12 +143,12 @@ fn a_swap_that_permutes_the_automaton_s_states_halves_the_product() {
     assert_eq!(stats.product_states, 5);
 }
 
-/// FR-174-AC-2, the soundness side: a swap that moves one acceptance set of
+/// A swap that moves one acceptance set of
 /// the body's automaton to another does not keep acceptance on the quotient,
 /// so the engine stores the product whole and names no reduction. Each copy
 /// must always output 0; the negation is `eventually not` of either, two
 /// acceptance sets the swap exchanges.
-#[trace("TC-599", "FR-174-AC-2")]
+#[trace("TC-599")]
 #[test]
 fn a_swap_that_exchanges_acceptance_sets_is_not_applied() {
     let world = World::new(
@@ -189,12 +189,12 @@ fn three_copies() -> String {
     )
 }
 
-/// FR-174-AC-2: three copies swappable in one class have the symmetric group
+/// Three copies swappable in one class have the symmetric group
 /// of three as their copy group. The secure product stores one state for each
 /// multiset of secrets and each shared output, 4 times 2, against the
 /// unreduced 8 triples of secrets times 2; the leaky one is refuted by a
 /// counterexample that is a real behaviour of each of the three copies.
-#[trace("TC-599", "FR-174-AC-2")]
+#[trace("TC-599")]
 #[test]
 fn three_copies_store_one_state_for_each_multiset_of_secrets() {
     let secure = World::new(Vault::Secure, false, &STARTS, &three_copies());
@@ -252,7 +252,7 @@ fn assert_lockstep_behaviours(world: &World, counterexample: &HyperCounterexampl
     ));
 }
 
-/// FR-174-AC-3: the leaky refutation under copy-swap is an ordinary
+/// The leaky refutation under copy-swap is an ordinary
 /// `HyperCounterexample`: the traces are `a`'s and `b`'s in quantifier order,
 /// each a behaviour of the vault from its own initial state, `a` from
 /// `(0, 0)` and `b` from `(1, 0)`, with the outputs differing at joint
@@ -286,7 +286,7 @@ fn the_leaky_refutation_under_the_swap_is_a_concrete_counterexample_that_replays
     assert_lockstep_behaviours(&world, &counterexample);
 }
 
-/// FR-174-AC-3: a path of the quotient that lands on a swapped state is
+/// A path of the quotient that lands on a swapped state is
 /// followed through the swap. With no `match` the secure vault pairs unequal
 /// inputs, `(step(0), step(1))` and `(step(1), step(0))` reach swapped states
 /// that the quotient stores once; the refutation it finds is still each
@@ -315,7 +315,7 @@ const TOGGLING: Vault = Vault::Custom(
      { (pre(self.l) = 0 and self.l = 1) or (pre(self.l) = 1 and self.l = 0) }\n",
 );
 
-/// FR-174-AC-3: a loop of the quotient that closes on a swapped state is
+/// A loop of the quotient that closes on a swapped state is
 /// repeated until the concrete tuple closes. From `a = (0, 0)` and `b = (0, 1)`
 /// both copies flip `l` at each step, so the pair swaps its outputs: the
 /// quotient stores the pair once, with one edge from it to itself that carries
@@ -409,7 +409,7 @@ impl HyperLetters for UndefinedForTheCopyAhead<'_> {
     }
 }
 
-/// FR-174-AC-3: the atom an undefined evaluation names is the concrete
+/// The atom an undefined evaluation names is the concrete
 /// tuple's. After `(step(0), step(1))`, `a` is at `l = 1` while `b` is at
 /// `l = 0`, so the atom of `a` has no value; the quotient stores the swapped
 /// pair, where it is the atom of the other variable that has none.
@@ -449,7 +449,7 @@ fn an_undefined_atom_names_the_atom_of_the_concrete_tuple() {
     assert_eq!(positions(&world, &counterexample, 1), [(0, 0), (0, 0)]);
 }
 
-/// FR-174-AC-3: with three copies the stored tuple can be the concrete one
+/// With three copies the stored tuple can be the concrete one
 /// rotated, and the atom named is still the concrete tuple's. After
 /// `(step(0), step(1), step(1))`, `a` is at `l = 1` while `b` and `c` are at
 /// `l = 0`; the quotient stores the tuple sorted by output, with the copy at
@@ -514,7 +514,7 @@ fn an_undefined_atom_of_three_copies_names_the_atom_of_the_concrete_tuple() {
     assert_eq!(positions(&world, &counterexample, 2), [(0, 0), (0, 0)]);
 }
 
-/// FR-174-AC-3: an undefined evaluation found at a stored state is reported
+/// An undefined evaluation found at a stored state is reported
 /// for the concrete tuple. With no `match`, `(step(0), step(1))` leaves `a` at
 /// `l = 1` and `b` at `l = 0`, which the quotient stores as the swapped pair
 /// `(l = 0, l = 1)`; the counterexample names the copies as they stepped.
@@ -562,7 +562,7 @@ const DIVIDING: Vault = Vault::Custom(
      post Step using v on V::Vault::step { (i = 0 and self.l = 1) or (i = 1 and self.l = 0) }\n",
 );
 
-/// FR-174-AC-3: an undefined contract found at one component of a stored state
+/// An undefined contract found at one component of a stored state
 /// names the variable of that component in the concrete tuple. `(step(0),
 /// step(1))` leaves `a` at `l = 1` and `b` at `l = 0`, whose precondition has no
 /// value; the quotient stores the pair swapped, with the component at `l = 0`
@@ -593,7 +593,7 @@ fn an_undefined_contract_names_the_variable_of_the_concrete_tuple() {
     assert_eq!(undefined.state_keys, [step.post_state]);
 }
 
-/// FR-174-AC-4: partial-order reduction settles `NonInterference`
+/// Partial-order reduction settles `NonInterference`
 /// `ReductionNotPreserving` before any state is expanded, for every hyper form
 /// (ADR-023 PH-2); so does a state constraint for `Opaque` (PH-6) and key
 /// symmetry for `SavesPower`'s two subjects (PH-3).
@@ -673,11 +673,11 @@ fn symmetry() -> Reductions {
     }
 }
 
-/// FR-174-AC-4, the rows that read "yes": a reduction the table admits is not
+/// A reduction the table admits is not
 /// refused as non-preserving. This engine does not offer key symmetry or a
 /// state constraint for a hyper item, so the item settles `unsupported`
 /// naming the first selected reduction, still before any state is expanded.
-#[trace("TC-599", "FR-174-AC-4")]
+#[trace("TC-599")]
 #[test]
 fn a_reduction_whose_row_reads_yes_is_not_refused_as_non_preserving() {
     let interference = World::new(
@@ -713,4 +713,412 @@ fn a_reduction_whose_row_reads_yes_is_not_refused_as_non_preserving() {
         interference.run(Default::default(), &Cancel::new()),
         Ok(HyperOutcome::HoldsReduced { .. })
     ));
+}
+
+/// The engine's run of `world` stores the product whole: it names no
+/// reduction and stores as many states as the unreduced product has.
+fn assert_stored_whole(world: &World, outcome: &HyperOutcome) {
+    assert!(!world.clause.copy_group().classes.is_empty());
+    assert!(
+        !matches!(outcome, HyperOutcome::HoldsReduced { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        outcome.stats().product_states,
+        u64::try_from(world.explore().graph.states().len()).expect("fits")
+    );
+}
+
+/// The vault whose `reset` is enabled at `l = 1` and keeps it there.
+const RESET_KEEPS: &str = "pre R using v on V::Vault::reset { self.l = 1 }\n\
+     post Reset using v on V::Vault::reset { self.l = 1 }\n";
+
+/// The vault whose `reset` is enabled at `l = 0` and sets it to 1.
+const RESET_RAISES: &str = "pre R using v on V::Vault::reset { self.l = 0 }\n\
+     post Reset using v on V::Vault::reset { self.l = 1 }\n";
+
+/// A swap of copies that carry fairness is not applied: a fairness
+/// constraint is read on the slot of the stored state, and the quotient moves
+/// a concrete copy between slots wherever an edge swaps them. Every `step`
+/// flips `l`, so from `a = (0, 0)` and `b = (0, 1)` the copies alternate their
+/// outputs and each one's `reset` is enabled at every other step only, which
+/// weak fairness allows. The pair differs forever, so the item is refuted, and
+/// the counterexample is fair. Reduced, the copy at `l = 1` sits in one slot
+/// and its `reset` is enabled and never taken there, which rejects the cycle
+/// and would prove the item.
+#[trace("TC-599")]
+#[test]
+fn copies_alternating_their_outputs_under_fairness_are_stored_whole() {
+    let contracts: &'static str = Box::leak(
+        format!(
+            "post Step using v on V::Vault::step \
+             {{ (pre(self.l) = 0 and self.l = 1) or (pre(self.l) = 1 and self.l = 0) }}\n{RESET_KEEPS}"
+        )
+        .into_boxed_str(),
+    );
+    let world = World::new(
+        Vault::Custom(contracts),
+        true,
+        &[(0, 0), (0, 1)],
+        "hyper P using inf over behaviours (v: V::Vault) \
+         forall trace a of V fair weak V::Vault::reset; \
+         forall trace b of V fair weak V::Vault::reset; \
+         match { a.step.op = b.step.op } { always holds(v.l @ a = v.l @ b) }",
+    );
+    let outcome = run(&world);
+    assert_stored_whole(&world, &outcome);
+    assert_eq!(outcome.stats().product_states, 4);
+    let counterexample = refuted(outcome);
+    assert_eq!(positions(&world, &counterexample, 0)[..2], [(0, 0), (0, 1)]);
+    assert_lockstep_behaviours(&world, &counterexample);
+}
+
+/// A swap of copies that carry fairness is not applied, under a body that
+/// asks the outputs to agree infinitely often: with the leaky `step` and a
+/// `reset` enabled at `l = 0`, the item is refuted from `(1, 1)`.
+#[trace("TC-599")]
+#[test]
+fn a_liveness_body_under_fairness_is_refuted_as_the_unreduced_check_refutes_it() {
+    let contracts: &'static str = Box::leak(
+        format!(
+            "post Step using v on V::Vault::step \
+             {{ (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }}\n{RESET_RAISES}"
+        )
+        .into_boxed_str(),
+    );
+    let world = World::new(
+        Vault::Custom(contracts),
+        true,
+        &[(1, 1)],
+        "hyper P using inf over behaviours (v: V::Vault) \
+         forall trace a of V fair weak V::Vault::reset; \
+         forall trace b of V fair weak V::Vault::reset; \
+         match { a.step.op = b.step.op } { always eventually holds(v.l @ a = v.l @ b) }",
+    );
+    let outcome = run(&world);
+    assert_stored_whole(&world, &outcome);
+    assert_eq!(outcome.stats().product_states, 10);
+    assert_lockstep_behaviours(&world, &refuted(outcome));
+}
+
+/// A swap of three copies that carry fairness is not applied. With `step`
+/// setting `l` to its input and `reset` raising `l`, every copy eventually
+/// outputs 1 on every fair behaviour, so the item holds over the 20 states of
+/// the whole product; the quotient found a behaviour that replay refused as
+/// unfair.
+#[trace("TC-599")]
+#[test]
+fn three_copies_under_fairness_hold_as_the_unreduced_check_holds_them() {
+    let contracts: &'static str = Box::leak(
+        format!("post Step using v on V::Vault::step {{ self.l = i }}\n{RESET_RAISES}")
+            .into_boxed_str(),
+    );
+    let world = World::new(
+        Vault::Custom(contracts),
+        true,
+        &[(1, 0)],
+        "hyper P using inf over behaviours (v: V::Vault) \
+         forall trace a of V fair weak V::Vault::reset; \
+         forall trace b of V fair weak V::Vault::reset; \
+         forall trace c of V fair weak V::Vault::reset; \
+         { eventually holds(v.l @ a = 1) and eventually holds(v.l @ b = 1) \
+           and eventually holds(v.l @ c = 1) }",
+    );
+    let outcome = run(&world);
+    assert!(matches!(outcome, HyperOutcome::Holds { .. }), "{outcome:?}");
+    assert_stored_whole(&world, &outcome);
+    assert_eq!(outcome.stats().product_states, 20);
+}
+
+/// Only the classes without fairness are swapped. `a` and `b` carry the same
+/// fairness set and `c` and `d` none, so the copy group has two classes and
+/// the engine reduces by the second alone: the outcome names `[[c, d]]`. The
+/// whole product has the 16 tuples of four secrets and the 4 pairs of shared
+/// outputs, 64 states; the swap of `c` and `d` takes the 4 pairs of their
+/// secrets to 3, so 48.
+#[trace("TC-599")]
+#[test]
+fn only_the_classes_without_fairness_are_swapped() {
+    let world = World::new(
+        Vault::Secure,
+        false,
+        &[(0, 0), (1, 0)],
+        "hyper P using inf over behaviours (v: V::Vault) \
+         forall trace a of V fair weak V::Vault::step; \
+         forall trace b of V fair weak V::Vault::step; \
+         forall trace c of V forall trace d of V \
+         match { a.step.op = b.step.op and a.step.Vault::step.i = b.step.Vault::step.i \
+                 and c.step.op = d.step.op and c.step.Vault::step.i = d.step.Vault::step.i } \
+         { always (holds(v.l @ a = v.l @ b) and holds(v.l @ c = v.l @ d)) }",
+    );
+    assert_eq!(
+        world.clause.copy_group().classes,
+        [["a", "b"], ["c", "d"]].map(|class| class.map(str::to_owned).to_vec())
+    );
+    let unreduced = world.explore().graph.states().len();
+    let HyperOutcome::HoldsReduced { reductions, stats } = run(&world) else {
+        panic!("expected the item to hold under the swap of c and d");
+    };
+    assert_eq!(
+        reductions,
+        [AppliedReduction::CopySwap {
+            classes: vec![vec!["c".to_owned(), "d".to_owned()]]
+        }]
+    );
+    assert_eq!((unreduced, stats.product_states), (64, 48));
+}
+
+/// A vault whose `step` flips `l` on input 0 and keeps it on input 1.
+const FLIPPING_ON_ZERO: Vault = Vault::Custom(
+    "post Step using v on V::Vault::step \
+     { (i = 0 and self.l != pre(self.l)) or (i = 1 and self.l = pre(self.l)) }\n",
+);
+
+/// A step taken from a swapped stored state is reported in the concrete
+/// tuple's order. With the inputs required to differ, `(step(0), step(1))`
+/// leaves `a` at `l = 1` and `b` at `l = 0`, which the quotient stores
+/// swapped; the next joint step the refutation takes, to the state where both
+/// are at 1, is stored as `(step(0), step(1))` too, and is `a` taking
+/// `step(1)` and `b` taking `step(0)`.
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn a_step_out_of_a_swapped_state_is_reported_for_the_copy_that_took_it() {
+    let world = World::new(
+        FLIPPING_ON_ZERO,
+        false,
+        &[(0, 0)],
+        "hyper P using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V \
+         match { a.step.Vault::step.i != b.step.Vault::step.i } \
+         { always (holds(v.l @ a = 0) or holds(v.l @ b = 0)) }",
+    );
+    assert!(!world.clause.copy_group().classes.is_empty());
+    let counterexample = refuted(run(&world));
+    assert_eq!(inputs(&counterexample, 0)[..2], [0, 1]);
+    assert_eq!(inputs(&counterexample, 1)[..2], [1, 0]);
+    assert_eq!(
+        positions(&world, &counterexample, 0)[..3],
+        [(0, 0), (0, 1), (0, 1)]
+    );
+    assert_eq!(
+        positions(&world, &counterexample, 1)[..3],
+        [(0, 0), (0, 0), (0, 1)]
+    );
+    assert_lockstep_behaviours(&world, &counterexample);
+}
+
+/// A `match` with no value on a joint step of which exactly one component is a
+/// `reset`.
+struct UndefinedForMixedSteps<'w>(Seams<'w>);
+
+impl StepMatch for UndefinedForMixedSteps<'_> {
+    fn universal(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        let resets = steps
+            .iter()
+            .filter(|step| {
+                matches!(step, StepLabel::Operation(t) if t.operation().contains("/Vault/reset\""))
+            })
+            .count();
+        if resets == 1 {
+            return Ok(MatchReading::Undefined {
+                conjunct: 0,
+                cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
+            });
+        }
+        self.0.universal(instance, steps, meter)
+    }
+
+    fn existential(
+        &self,
+        instance: &[ParameterBinding],
+        steps: &[StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<MatchReading, Incomplete> {
+        self.0.existential(instance, steps, meter)
+    }
+}
+
+/// An undefined `match` found on a joint step out of a swapped stored state
+/// names the step and the post-states in the concrete tuple's order. `reset`
+/// is enabled where `l = 1`; after `(step(0), step(1))` only `b` is at 1, so
+/// the quotient stores the pair swapped and the joint steps with a `reset`
+/// have it in the first slot. The counterexample says `a` takes the `reset`.
+#[trace("TC-599", "FR-174-AC-3")]
+#[test]
+fn an_undefined_match_at_a_swapped_state_names_the_copy_that_took_the_step() {
+    let contracts: &'static str = Box::leak(
+        format!(
+            "post Step using v on V::Vault::step \
+             {{ (i = 0 and self.l != pre(self.l)) or (i = 1 and self.l = pre(self.l)) }}\n\
+             {RESET_KEEPS}"
+        )
+        .into_boxed_str(),
+    );
+    let world = World::new(
+        Vault::Custom(contracts),
+        true,
+        &[(0, 0)],
+        "hyper P using inf over behaviours (v: V::Vault) \
+         forall trace a of V forall trace b of V \
+         match { a.step.Vault::step.i != b.step.Vault::step.i } \
+         { always holds(v.l @ a = v.l @ b) }",
+    );
+    assert!(!world.clause.copy_group().classes.is_empty());
+    let matcher = UndefinedForMixedSteps(world.seams());
+    let outcome = world
+        .run_through(
+            &world.seams(),
+            &matcher,
+            ModelCheckLimits::default(),
+            &Cancel::new(),
+        )
+        .expect("not refused");
+    let counterexample = refuted(outcome);
+    let HyperCounterexampleKind::Undefined(undefined) = &counterexample.kind else {
+        panic!("expected an undefined-evaluation counterexample");
+    };
+    assert!(matches!(undefined.locus, HyperLocus::Match { .. }));
+    assert_eq!(undefined.position, 2);
+    let last = |trace: usize| match counterexample.traces[trace].steps.last() {
+        Some(qsl_replay::HyperStep::Model(step)) => step.clone(),
+        other => panic!("a model step, not {other:?}"),
+    };
+    assert!(last(0).transition.operation().contains("/Vault/reset\""));
+    assert!(last(1).transition.operation().contains("/Vault/step\""));
+    assert_eq!(
+        undefined.state_keys,
+        [last(0).post_state, last(1).post_state]
+    );
+    // `a` is at `l = 1` before the joint step that has no value.
+    assert_eq!(positions(&world, &counterexample, 0)[1], (0, 1));
+    assert_eq!(positions(&world, &counterexample, 1)[1], (0, 0));
+}
+
+/// A body that remembers: a past operator keeps its memory in the automaton's
+/// state, and the swap renames the operator each memory belongs to. Over the
+/// flipping vault from `A = (0, 0)` and `B = (0, 1)`, whether either copy
+/// has output 1 so far is always true after position 1, so the item holds.
+#[trace("TC-599")]
+#[test]
+fn the_swap_renames_the_memory_of_past_operators() {
+    let world = World::new(
+        TOGGLING,
+        false,
+        &[(0, 0), (0, 1)],
+        &format!(
+            "hyper Past using inf over behaviours (v: V::Vault) \
+             forall trace a of V forall trace b of V {EQUAL_INPUTS} \
+             {{ eventually always (once holds(v.l @ a = 1) and once holds(v.l @ b = 1)) }}"
+        ),
+    );
+    assert_eq!(world.clause.copy_group().generators.len(), 1);
+    let unreduced = world.explore().graph.states().len();
+    let HyperOutcome::HoldsReduced { reductions, stats } = run(&world) else {
+        panic!("expected the item to hold under the swap");
+    };
+    assert_eq!(reductions, [swapped()]);
+    assert_eq!(
+        (unreduced, stats.product_states),
+        (PAST_UNREDUCED, PAST_REDUCED)
+    );
+}
+
+/// A body with an interval: the counter of the bounded `eventually` is part of
+/// the automaton's state, and the swap renames the operator each counter
+/// belongs to. Both copies must output 1 within two steps, which the flipping
+/// vault does.
+#[trace("TC-599")]
+#[test]
+fn the_swap_renames_the_counters_of_interval_operators() {
+    let world = World::new(
+        TOGGLING,
+        false,
+        &[(0, 0), (0, 1)],
+        &format!(
+            "hyper Within using inf over behaviours (v: V::Vault) \
+             forall trace a of V forall trace b of V {EQUAL_INPUTS} \
+             {{ eventually[0,2] holds(v.l @ a = 1) and eventually[0,2] holds(v.l @ b = 1) }}"
+        ),
+    );
+    assert_eq!(world.clause.copy_group().generators.len(), 1);
+    let unreduced = world.explore().graph.states().len();
+    let HyperOutcome::HoldsReduced { reductions, stats } = run(&world) else {
+        panic!("expected the item to hold under the swap");
+    };
+    assert_eq!(reductions, [swapped()]);
+    assert_eq!(
+        (unreduced, stats.product_states),
+        (INTERVAL_UNREDUCED, INTERVAL_REDUCED)
+    );
+}
+
+/// The states of the whole and the quotient product of the past-operator body,
+/// as measured: the swap fixes the states whose copies are equal and pairs
+/// the others.
+const PAST_UNREDUCED: usize = 7;
+const PAST_REDUCED: u64 = 5;
+/// The same for the interval body.
+const INTERVAL_UNREDUCED: usize = 8;
+const INTERVAL_REDUCED: u64 = 5;
+
+/// Key symmetry for `NonInterference` with a `fair each` constraint settles
+/// `ReductionNotPreserving` (ADR-023 PH-3), while the same selection with
+/// `whole` fairness reads "yes" (PH-2), and key symmetry for `Opaque` reads
+/// "yes" too (PH-6): both settle `unsupported`.
+#[trace("TC-599")]
+#[test]
+fn the_key_symmetry_rows_read_the_fairness_granularity_and_the_form() {
+    let each = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        "hyper P using inf over behaviours (v: V::Vault) \
+         forall trace a of V fair weak each V::Vault::step; \
+         forall trace b of V fair weak each V::Vault::step; \
+         match { a.step.op = b.step.op } { always holds(v.l @ a = v.l @ b) }",
+    );
+    assert_eq!(
+        each.run_selecting(symmetry()).expect("not refused"),
+        HyperOutcome::Reduction {
+            cause: HyperReductionCause::NotPreserving {
+                reduction: ReductionKind::Symmetry,
+                form: HyperForm::Universal
+            },
+            stats: qsl_replay::RunStats::default()
+        }
+    );
+    let whole = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        "hyper P using inf over behaviours (v: V::Vault) \
+         forall trace a of V fair weak V::Vault::step; \
+         forall trace b of V fair weak V::Vault::step; \
+         match { a.step.op = b.step.op } { always holds(v.l @ a = v.l @ b) }",
+    );
+    let opaque = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        "hyper Opaque using inf over behaviours (v: V::Vault) \
+         forall trace a of V exists trace b of V \
+         match { a.step.Vault::step.i = b.step.Vault::step.i } \
+         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }",
+    );
+    for world in [&whole, &opaque] {
+        assert_eq!(
+            world.run_selecting(symmetry()).expect("not refused"),
+            HyperOutcome::Reduction {
+                cause: HyperReductionCause::Unsupported {
+                    reduction: ReductionKind::Symmetry
+                },
+                stats: qsl_replay::RunStats::default()
+            }
+        );
+    }
 }
