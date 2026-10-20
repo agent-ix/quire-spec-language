@@ -46,7 +46,8 @@ use qsl_eval::simulation::model::{
     TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
+    check_protocol_bounds, MemoryModel, ProtocolRefusal, ProtocolSystem, ProtocolTransition,
+    ResolvedMemory, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
     ConstraintValue, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
@@ -104,6 +105,12 @@ pub struct ProtocolTraceSubject {
     pub over: ModelInstance,
     /// Each static role's binding.
     pub roles: Vec<RoleBinding>,
+    /// The resolved memory model of each outermost `parallel` (FR-227,
+    /// ADR-025 MK-1).
+    pub memory: ResolvedMemory,
+    /// The `max_store_buffer` the run used; `None` for the default 4
+    /// (FR-225).
+    pub max_store_buffer: Option<u64>,
 }
 
 /// Why [`replay_model_trace`] settled no result (FR-128).
@@ -492,7 +499,9 @@ pub fn replay_model_trace(
 
 /// FR-217 (ADR-027 PX-2): replay `envelope`'s protocol counterexample over
 /// `subject` by [`replay_model_trace`]'s rules, re-executing each step
-/// through the subject's `ProtocolSystem<Sc>`. For a deadlock it checks
+/// through the subject's protocol system under its resolved memory models
+/// and store buffer bound (FR-227): a step whose recomputed post-state
+/// differs under them refuses on its digest. For a deadlock it checks
 /// that no protocol step is enabled at the last state, that some protocol
 /// instance is live there, and that the blocked threads recompute equal
 /// to the payload's.
@@ -542,36 +551,66 @@ pub fn replay_protocol_trace(
                 protocol: subject.protocol.clone(),
                 over: subject.over.clone(),
                 roles: subject.roles.clone(),
+                memory: subject.memory.clone(),
             };
-            let system = ProtocolSystem::new(model, &protocol_subject, Sc)
-                .map_err(|refusal| refused(ModelTraceRefusal::Protocol(refusal)))?;
-            let positions = match replay_prefix(&system, payload, protocol_not_enabled)? {
-                Some(positions) => positions,
-                None => return Ok((no_value(), Vec::new())),
+            let built = |refusal| refused(ModelTraceRefusal::Protocol(refusal));
+            let replayed = ProtocolReplay {
+                payload,
+                clause,
+                letters,
+                meter,
             };
-            let settlement = match (&payload.kind, clause) {
-                (CounterexampleKind::Deadlock, _) => deadlock(&system, payload, &positions)?,
-                (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
-                    undefined(&system, &NoConstraints, payload, &positions, claimed)?
-                }
-                (CounterexampleKind::Formula, Some(clause)) => {
-                    let formula = FormulaReplay {
-                        clause,
-                        letters,
-                        meter,
-                    };
-                    check_formula(&system, payload, &positions, &formula, |_| {
-                        Err(fault("a-protocol-lasso-is-refused-before-replay"))
-                    })?
-                    .0
-                }
-                (CounterexampleKind::Formula, None) => {
-                    return Err(fault("formula-counterexample-names-a-clause"))
-                }
+            let settlement = match SubjectMemory::of(&subject.memory, subject.max_store_buffer) {
+                SubjectMemory::Sc => replayed
+                    .settle(&ProtocolSystem::new(model, &protocol_subject, Sc).map_err(built)?)?,
+                SubjectMemory::Tso(tso) => replayed
+                    .settle(&ProtocolSystem::new(model, &protocol_subject, tso).map_err(built)?)?,
             };
             Ok((settlement, Vec::new()))
         },
     )
+}
+
+/// What a protocol replay settles over its rebuilt system.
+struct ProtocolReplay<'r> {
+    payload: &'r TemporalCounterexample<ProtocolTransition>,
+    clause: Option<&'r CheckedTemporalClause>,
+    letters: &'r dyn ModelLetters,
+    meter: ScalarLimits,
+}
+
+impl ProtocolReplay<'_> {
+    /// FR-217 over `system`, under whichever memory model the subject's
+    /// resolved models need (FR-227).
+    fn settle<M: MemoryModel>(
+        &self,
+        system: &ProtocolSystem<'_, M>,
+    ) -> Result<ModelTraceSettlement, ReplayRefusal> {
+        let payload = self.payload;
+        let Some(positions) = replay_prefix(system, payload, protocol_not_enabled)? else {
+            return Ok(no_value());
+        };
+        Ok(match (&payload.kind, self.clause) {
+            (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions)?,
+            (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
+                undefined(system, &NoConstraints, payload, &positions, claimed)?
+            }
+            (CounterexampleKind::Formula, Some(clause)) => {
+                let formula = FormulaReplay {
+                    clause,
+                    letters: self.letters,
+                    meter: self.meter,
+                };
+                check_formula(system, payload, &positions, &formula, |_| {
+                    Err(fault("a-protocol-lasso-is-refused-before-replay"))
+                })?
+                .0
+            }
+            (CounterexampleKind::Formula, None) => {
+                return Err(fault("formula-counterexample-names-a-clause"))
+            }
+        })
+    }
 }
 
 /// The recompiled package and its `package_id` record.

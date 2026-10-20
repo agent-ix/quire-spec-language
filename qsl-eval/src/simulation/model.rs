@@ -15,6 +15,7 @@
 //! probabilistic structure of a state's successors.
 
 mod application;
+mod cells;
 mod constraint;
 mod contracts;
 mod domain;
@@ -67,6 +68,7 @@ use crate::simulation::trace::{replay, ReplayError, Trace};
 use crate::value::QualifiedName;
 
 pub(crate) use application::{FirstApplication, OperationRef};
+pub use cells::Cell;
 pub(crate) use contracts::{verdict, Verdict};
 pub(crate) use domain::enumerable;
 pub use encode::ModelKey;
@@ -82,7 +84,7 @@ pub use probabilistic::{
 pub use refine::{RowReading, StateObservation};
 pub use state_predicate::PredicateReading;
 pub use terminal::TerminalClass;
-pub(crate) use walk::Budget;
+pub(crate) use walk::{Applied, Budget};
 
 /// `resource_exhausted`/`insufficient-next-charge`: a candidate count, or an
 /// evaluation meter, ran out (FR-120 "Post-states", "Contract clauses").

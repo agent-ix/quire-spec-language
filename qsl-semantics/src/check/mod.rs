@@ -312,7 +312,9 @@ pub use protocol_slots::{
 };
 /// The premises a [`CheckedChannel`] records exactly as written (FR-218
 /// "Channels"), which its readers match on.
-pub use qsl_forms::{ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector};
+pub use qsl_forms::{
+    AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelOverflow, LossSelector,
+};
 pub use refusal::{
     AliasKind, AmbiguousMember, AmbiguousQualified, ArmFault, ChannelEnd, CheckCause, CheckRefusal,
     CheckingLimitKind, CheckingStage, DispatchFunctionRole, DispatchLinkCause,

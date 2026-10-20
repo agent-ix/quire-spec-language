@@ -153,6 +153,7 @@ fn settle_liveness(
         // The second phase of a refinement returns no other outcome.
         ModelCheckOutcome::Holds { .. }
         | ModelCheckOutcome::Reduction { .. }
+        | ModelCheckOutcome::Memory { .. }
         | ModelCheckOutcome::BoundReached { .. } => Row::failed(),
     };
     record_of(row, limits, None, counterexample)
@@ -177,6 +178,7 @@ fn record_of(
         limit_reached: row.limit_reached,
         counterexample,
         hints: Vec::new(),
+        memory_bound: None,
     }
 }
 

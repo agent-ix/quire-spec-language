@@ -313,8 +313,8 @@ fn takes(class: AccessClass, ordering: AccessOrdering) -> bool {
 ///   such as two fields of the receiver.
 ///
 /// `footprint_of` gives an attempt's symbolic footprint; an attempt whose
-/// footprint has no derivation refuses `unsupported_construct`/
-/// `not-yet-implemented`.
+/// footprint has no derivation is recorded with no class and its ordering,
+/// and is left to EN-1, which classifies on the instantiated footprints.
 pub(crate) fn classify(
     protocol: &ProtocolDeclarationForm,
     checked: &CheckedProtocol,
@@ -370,20 +370,18 @@ pub(crate) fn classify(
         else {
             continue;
         };
-        let found = match footprint_of(binding) {
-            Ok(footprint) => Accesses::of(&footprint),
-            Err(_) => {
-                refusals.push((
-                    form.operation.span,
-                    refusal(ProtocolAnchorCause::Unimplemented {
-                        name: protocol.name.name.clone(),
-                        construct: "attempt footprint",
-                        span: form.operation.span,
-                    }),
-                ));
-                continue;
-            }
+        // An operation whose clauses read through a form with no footprint
+        // rule leaves every kind possible here: EN-1 instantiates its
+        // footprint, and refuses it there under a weak model.
+        let Ok(footprint) = footprint_of(binding) else {
+            accesses.push(CheckedAccess {
+                node,
+                class: None,
+                ordering: ordering.map(|ordering| ordering.value),
+            });
+            continue;
         };
+        let found = Accesses::of(&footprint);
         let possible = found.possible();
 
         if let (Some(model), false) = (weak, found.wide_writes.is_empty()) {

@@ -226,21 +226,14 @@ fn unsupported(construct: Unsupported) -> ProtocolRefusal {
 /// The constructs this protocol system steps: `sequence`, `parallel` and its
 /// branches, `choice`, `repeat`, `check`, `await`, `attempt`, `send`,
 /// `receive`, domain `event`, `commit` and `finish`, channels with a
-/// literal capacity, under `activation on origin`, every `parallel` under
-/// `sc` (ADR-027 §9 sequencing steps 3 and 4).
+/// literal capacity, under `activation on origin` (ADR-027 §9 sequencing
+/// steps 3 and 4). Which memory model each `parallel` runs under is the
+/// subject's resolved model, read when the system is built.
 fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal> {
     for control in &protocol.controls.controls {
         if let ControlStep::Unstepped(construct) = control.step() {
             return Err(unsupported(Unsupported::Control(construct)));
         }
-    }
-    if protocol
-        .memory
-        .parallels
-        .iter()
-        .any(|parallel| !parallel.is_sequentially_consistent())
-    {
-        return Err(unsupported(Unsupported::WeakMemory));
     }
     for channel in &protocol.channels {
         if matches!(channel.capacity, ChannelCapacity::Symbolic(_)) {

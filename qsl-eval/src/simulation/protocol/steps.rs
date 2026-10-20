@@ -16,12 +16,13 @@
 use std::collections::BTreeSet;
 
 use qsl_semantics::check::{
-    CheckedBody, CheckedJoinPolicy, CheckedOutstanding, ControlStep, ProtocolNodeId,
+    AccessClass, CheckedBody, CheckedJoinPolicy, CheckedOutstanding, ControlStep, ProtocolNodeId,
 };
 use quire_exact::Value;
 
+use super::access::InstanceAccess;
 use super::identity::{BlockedThread, ProtocolTransition, StepKind, ThreadPath, WaitCause};
-use super::memory::{GatedStep, MemoryModel};
+use super::memory::{Access, GatedStep, MemoryModel, SharedCell, Written};
 use super::program::{Cursor, Join, Rest};
 use super::settle::Settled;
 use super::{
@@ -31,11 +32,15 @@ use super::{
 use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::model::encode::{reference_enc, value_enc};
 use crate::simulation::model::{
-    Budget, FirstApplication, ModelFinding, ModelSimState, OperationRef, Verdict,
+    Applied, Budget, FirstApplication, ModelFinding, ModelSimState, OperationRef, Verdict,
 };
 
 /// One successor of a protocol state.
 pub(super) type Successor<M> = (ProtocolTransition, ProtocolState<M>);
+
+/// One protocol state's expansion.
+pub(super) type ProtocolExpansion<M> =
+    Expansion<ProtocolTransition, ProtocolState<M>, ModelFinding>;
 
 /// What one expansion gathers: its candidate budget, its successors and its
 /// findings.
@@ -43,6 +48,8 @@ pub(super) struct Gathered<M: MemoryModel> {
     pub(super) budget: Budget,
     pub(super) successors: Vec<Successor<M>>,
     pub(super) findings: Vec<ModelFinding>,
+    /// Whether a memory bound left a store unexpanded (ADR-025 MB-3).
+    pub(super) cut: bool,
 }
 
 /// The thread that reads a node's slots, and the node.
@@ -79,14 +86,18 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// findings: FR-120's invariant findings of its model state, then each
     /// running thread's contract and protocol-expression findings, threads
     /// in ascending JCS bytes of their paths (ADR-027 TS-4).
-    pub(super) fn expand(
+    ///
+    /// Beside the expansion, whether a memory bound left a store of the
+    /// state unexpanded, which makes the state bound-limited (ADR-025 MB-3).
+    pub(super) fn expand_bounded(
         &self,
         state: &ProtocolState<M>,
-    ) -> Result<Expansion<ProtocolTransition, ProtocolState<M>, ModelFinding>, ExpansionStop> {
+    ) -> Result<(ProtocolExpansion<M>, bool), ExpansionStop> {
         let mut gathered = Gathered {
             budget: self.model.budget(),
             successors: Vec::new(),
             findings: self.model.invariant_findings(&state.model)?,
+            cut: false,
         };
         let mut running = Vec::new();
         for (ordinal, instance) in &state.instances {
@@ -165,13 +176,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             keyed.push((jcs(&transition)?, transition, next));
         }
         keyed.sort_by(|left, right| left.0.cmp(&right.0));
-        Ok(Expansion {
-            successors: keyed
-                .into_iter()
-                .map(|(_, transition, next)| (transition, next))
-                .collect(),
-            findings: gathered.findings,
-        })
+        Ok((
+            Expansion {
+                successors: keyed
+                    .into_iter()
+                    .map(|(_, transition, next)| (transition, next))
+                    .collect(),
+                findings: gathered.findings,
+            },
+            gathered.cut,
+        ))
     }
 
     /// The steps of the thread `path` at the event node `node`, by its kind,
@@ -491,7 +505,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         if let Some(thread) = instance.threads.get_mut(path) {
             thread.rest = Rest::Join(node);
         }
-        next.memory = self.memory.split(&next.memory, path, &children);
+        // `new` resolved a model for every `parallel`, so a missing one is
+        // a broken invariant, never a silent `sc`.
+        let model = self
+            .governing
+            .get(&node)
+            .copied()
+            .ok_or_else(|| ProtocolRefusal::fault("a-forked-parallel-has-a-model"))?;
+        next.memory = self.memory.split(&next.memory, path, &children, model);
         self.normalize(&mut next, ordinal)?;
         gathered
             .successors
@@ -717,6 +738,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }
             }
+            let access = self.access(node, &applied, &observed)?;
             let identity = ProtocolTransition::attempt(
                 path.clone(),
                 text.clone(),
@@ -724,10 +746,19 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 reference_enc(&applied.receiver),
                 applied.arguments.iter().map(value_enc).collect(),
             );
-            let mut next = state.clone();
             let (model, memory) =
-                self.memory
-                    .write(&state.memory, path, &state.model, applied.state);
+                match self
+                    .memory
+                    .write(&state.memory, path, &access, &state.model, applied.state)
+                {
+                    Written::Applied(model, memory) => (model, memory),
+                    Written::Disabled => continue,
+                    Written::Cut => {
+                        gathered.cut = true;
+                        continue;
+                    }
+                };
+            let mut next = state.clone();
             next.model = model;
             next.memory = memory;
             if let Some(bound) = bound {
@@ -739,6 +770,50 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             }
         }
         Ok(())
+    }
+
+    /// FR-220: what the application `applied` of the attempt `node` is, as
+    /// EN-1 classified it; local for an attempt outside every weak
+    /// `parallel`. A read-modify-write whose post-state leaves its location
+    /// at the value `observed` gives it applies as a load (ADR-025 MA-5).
+    fn access<'s>(
+        &'s self,
+        node: ProtocolNodeId,
+        applied: &Applied,
+        observed: &ModelSimState,
+    ) -> Result<Access<'s>, ProtocolRefusal> {
+        let Some(weak) = self.weak.of(node) else {
+            return Ok(Access::local());
+        };
+        let Some(InstanceAccess::Access { class, location }) = weak.instance(&applied.transition)
+        else {
+            return Err(ProtocolRefusal::fault(
+                "a-weak-attempt-application-is-one-classified-access",
+            ));
+        };
+        let shared = match location {
+            Some(location) => Some(SharedCell {
+                location,
+                cell: self
+                    .weak
+                    .cell(location)
+                    .ok_or_else(|| ProtocolRefusal::fault("a-shared-location-has-a-cell"))?,
+            }),
+            None => None,
+        };
+        let unchanged = shared.is_some_and(|shared| {
+            observed.cell(shared.cell).map(value_enc)
+                == applied.state.cell(shared.cell).map(value_enc)
+        });
+        Ok(Access {
+            class: if *class == AccessClass::Rmw && unchanged {
+                AccessClass::Load
+            } else {
+                *class
+            },
+            ordering: weak.ordering,
+            shared,
+        })
     }
 
     /// Every thread of the instance but `path` has left `running` (ST-9).
@@ -881,7 +956,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         &self,
         state: &ProtocolState<M>,
     ) -> Result<Vec<BlockedThread>, ExpansionStop> {
-        let expansion = self.expand(state)?;
+        let (expansion, _) = self.expand_bounded(state)?;
         let stepping: BTreeSet<&ThreadPath> = expansion
             .successors
             .iter()
