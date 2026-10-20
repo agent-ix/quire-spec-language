@@ -230,3 +230,19 @@ Major findings: none. FND-021 is medium and FND-022 is low. FND-008 (QSpec compa
 | FND-018 | fixed | - |
 | FND-019 | fixed | - |
 | FND-020 | fixed | - |
+
+Round 7, head 5147ce366 (one commit over 3a6b41fea; base main still 5474b9125). Gates: make check-spec-validation exits 0 with the same 17 warnings, none in a changed file; tools/check-index-completeness.sh exits 0.
+
+Nested case re-derived. `x`, a branch of the `all` join `R`, reaches everything `left` reaches. `left`, a branch of `Both`'s `all` join, reaches the root's continuation, which holds the reader of `b`. So `x` keeps `b` through `join(R)`, `join(R)` copies it into `left` (Out(R)), and `join(Both)` copies it into the root, because it was bound below `left` after the fork. The root holds it until the reader's step, which matches the new FR-205-AC-2 case.
+
+Interactions checked:
+- `join any`, `quorum` and `predicate`: a branch of a non-`all` join gets no extension. So an all-joined `R` inside a branch of a `join any` keeps `b` only for readers in that branch's own body, matching S3 (only `all` adds `Out`).
+- Repeat back edges: the widening applies to the joiner's reach at its current rest point. Every joiner in the chain rests at its `all` join while its branches live, so a branch's reach cannot change under it. The mask at or before the binding node is still taken at each thread's own rest. Reach therefore depends only on the current state, and a branch's entries change only through its own steps.
+- FT-1 and FT-2 now give `join` under `all` the joined branches' `ctl`, which closes FND-022.
+
+No new findings. FND-008 (the QSpec companion edit to FR-425, FR-426, FR-429 and FR-170) stays deferred. quire-specification main is still 44afcf4, and no companion PR is open.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-021 | fixed | - |
+| FND-022 | fixed | - |
