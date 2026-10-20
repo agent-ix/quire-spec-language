@@ -265,9 +265,11 @@ fn expand(
                 application,
                 &clauses,
                 &mut budget,
-                &mut contract,
-                &mut successors,
-                enabled.as_deref_mut(),
+                frames::Outputs {
+                    contract: &mut contract,
+                    successors: &mut successors,
+                    enabled: enabled.as_deref_mut(),
+                },
             )?;
         }
     }
@@ -292,4 +294,74 @@ pub(super) fn sorted_contract_findings(mut contract: Vec<ContractFinding>) -> Ve
             .then_with(|| left.clause.cmp(&right.clause))
     });
     contract.into_iter().map(|entry| entry.finding).collect()
+}
+
+/// Every transition identity of the subject at `state`, enabled or not, in
+/// canonical transition order (FR-156 "Candidates", FR-155 "State-free"):
+/// each application of the operations of every object the state holds and of
+/// every object a universe key could name that it does not hold yet, to every
+/// argument vector of its parameter domains. The objects not held are taken at
+/// each concrete type their population admits, since a triple carries the
+/// most-specific type.
+pub(super) fn identities_of(
+    system: &ModelSystem<'_>,
+    state: &ModelSimState,
+) -> Result<Vec<ModelTransition>, ExpansionStop> {
+    let mut walk = walk_of(system, state, None)?;
+    walk.rows.extend(absent_rows(system, state));
+    let mut budget = Budget {
+        used: 0,
+        max: system.limits.max_candidates,
+    };
+    let mut found = Vec::new();
+    for row in &walk.rows {
+        let Some(applications) = system.applications.get(&row.type_id()) else {
+            continue;
+        };
+        for application in applications {
+            frames::identities(&walk, row, application, &mut budget, &mut found)?;
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+/// One row for each universe key a population does not hold at `state`, at
+/// each non-abstract object type that conforms to a member type of the
+/// population.
+fn absent_rows(system: &ModelSystem<'_>, state: &ModelSimState) -> Vec<Row> {
+    let mut rows = Vec::new();
+    for population in &system.populations {
+        let Some(keys) = system.universes.get(&population.key) else {
+            continue;
+        };
+        let held = state.state.populations.get(&population.key);
+        for key in keys
+            .iter()
+            .filter(|key| !held.is_some_and(|held| held.contains_key(*key)))
+        {
+            for declaration in system.types.object_types() {
+                let Some(type_key) = system.model.type_key(declaration.key()) else {
+                    continue;
+                };
+                let admitted = population.member_types.iter().any(|member| {
+                    system
+                        .model
+                        .type_identity(member)
+                        .is_some_and(|member| system.types.conforms(declaration.key(), member))
+                });
+                if system.model.is_abstract(type_key) || !admitted {
+                    continue;
+                }
+                if let Ok(reference) = system.model.object_reference(type_key, key) {
+                    rows.push(Row {
+                        population: population.key.clone(),
+                        key: key.clone(),
+                        reference,
+                    });
+                }
+            }
+        }
+    }
+    rows
 }

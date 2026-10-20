@@ -123,6 +123,31 @@ fn arguments_of(
         .ok_or_else(|| stop(BROKEN))
 }
 
+/// Every transition identity of `application` at `row`, enabled or not
+/// (FR-156 "Candidates"): one per argument vector of its parameter domains,
+/// each counted against `budget`.
+///
+/// # Errors
+///
+/// An [`ExpansionStop`] when the identities cannot be listed within the
+/// candidate bound.
+pub(super) fn identities(
+    walk: &Walk<'_, '_>,
+    row: &Row,
+    application: &Application,
+    budget: &mut Budget,
+    out: &mut Vec<ModelTransition>,
+) -> Result<(), ExpansionStop> {
+    let domains = argument_domains(walk, application)?;
+    let mut arguments = Odometer::new(domains.iter().map(Domain::len).collect());
+    while let Some(digits) = arguments.next_digits() {
+        budget.charge()?;
+        let args = arguments_of(application, &domains, &digits)?;
+        out.push(transition_of(row, application, &args)?);
+    }
+    Ok(())
+}
+
 /// Apply `application` to `row` for every argument vector of its parameter
 /// domains under the `pre` and `post` clauses `clauses` selects: check its
 /// effective precondition, and for an enabled application generate its
@@ -142,10 +167,13 @@ pub(super) fn apply(
     application: &Application,
     clauses: &Selected<'_>,
     budget: &mut Budget,
-    contract: &mut Vec<ContractFinding>,
-    successors: &mut Vec<Applied>,
-    mut enabled: Option<&mut Vec<EnabledVector>>,
+    outputs: Outputs<'_>,
 ) -> Result<(), ExpansionStop> {
+    let Outputs {
+        contract,
+        successors,
+        mut enabled,
+    } = outputs;
     let system = walk.system;
     let domains = argument_domains(walk, application)?;
     let preconditions = &clauses.preconditions;
@@ -260,6 +288,17 @@ pub(super) fn first_precondition(
         }
     }
     Ok(Some((transition, None)))
+}
+
+/// Where [`apply`] records what one application found: its contract
+/// findings, its successors and, when given, its enabled argument vectors.
+pub(super) struct Outputs<'o> {
+    /// The contract findings.
+    pub(super) contract: &'o mut Vec<ContractFinding>,
+    /// The successors.
+    pub(super) successors: &'o mut Vec<Applied>,
+    /// Each enabled argument vector, when the caller records them.
+    pub(super) enabled: Option<&'o mut Vec<EnabledVector>>,
 }
 
 /// One argument vector of an application whose effective precondition holds

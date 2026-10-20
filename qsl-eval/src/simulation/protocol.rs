@@ -13,14 +13,19 @@
 //! over the clauses its `contracts` select (TS-3), and the system reaches
 //! memory only through [`MemoryModel`] (SE-1).
 //!
-//! This system steps `sequence`, `parallel` with its join policies, `attempt`
-//! and `finish` under `activation on origin` (ADR-027 §9 step 3). A protocol
-//! that holds any other construct is refused, before any state is built,
-//! with `unsupported_construct`/`not-yet-implemented` naming it.
+//! This system steps `sequence`, `parallel` with its join policies `all`,
+//! `any` and `quorum`, `choice`, `repeat`, `check`, `await` with its
+//! `timeout`, `attempt`, `send`, `receive`, domain `event`, `commit`,
+//! channel `duplicate` and `lose`, and `finish`, under `activation on origin`
+//! (ADR-027 §9 steps 3 and 4). A protocol that holds any other construct is
+//! refused, before any state is built, with
+//! `unsupported_construct`/`not-yet-implemented` naming it.
 
+mod channel;
 mod identity;
 mod memory;
 mod program;
+mod settle;
 mod steps;
 
 use std::borrow::Cow;
@@ -39,7 +44,7 @@ use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::{self, EncodingRefusal};
 use crate::simulation::model::encode::{map_enc, Enc};
 use crate::simulation::model::{
-    enumerable, verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
+    verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
 use crate::simulation::subject::SubjectSystem;
@@ -59,8 +64,14 @@ pub enum Unsupported {
     Control(&'static str),
     /// A `parallel` whose resolved memory model is not `sc`.
     WeakMemory,
-    /// A `channel` member.
-    Channel,
+    /// A channel whose capacity is `symbolic(..)`, with no bound to read.
+    SymbolicCapacity,
+    /// An `unordered` channel whose overflow loses its `head` or `tail`,
+    /// which a bag does not order.
+    UnorderedLossSelector,
+    /// A `choice` guard, `repeat` guard or `check` undecided at an initial
+    /// state, before any position a finding can name.
+    UndecidedInitialGuard,
     /// A `compensate` obligation.
     Compensation,
     /// A protocol capture.
@@ -81,6 +92,9 @@ pub enum Unsupported {
     UnboundAttemptBinder,
     /// A slot that reads a binder with no node other than the `over` input.
     NodelessBinder,
+    /// A step binder whose bounded record type has no enumeration here (a
+    /// record, an enum or a bounded text type).
+    UnenumerableRecord,
 }
 
 impl Unsupported {
@@ -89,7 +103,9 @@ impl Unsupported {
         match self {
             Self::Control(keyword) => keyword,
             Self::WeakMemory => "memory",
-            Self::Channel => "channel",
+            Self::SymbolicCapacity => "symbolic channel capacity",
+            Self::UnorderedLossSelector => "ordered loss selector on an unordered channel",
+            Self::UndecidedInitialGuard => "undecided guard at an initial state",
             Self::Compensation => "compensation",
             Self::Capture => "capture",
             Self::ActivationOnEach => "activation on each",
@@ -99,6 +115,7 @@ impl Unsupported {
             Self::OverNotAnObject => "over input of no object type",
             Self::UnboundAttemptBinder => "read of an unbound attempt binder",
             Self::NodelessBinder => "read of a nodeless binder",
+            Self::UnenumerableRecord => "step binder of an unenumerable record type",
         }
     }
 }
@@ -133,6 +150,10 @@ pub enum ProtocolRefusal {
     /// (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: {}", .0.construct())]
     Unsupported(Unsupported),
+    /// An initial state's settling stopped: a guard's evaluation ran out of
+    /// a budget, or broke.
+    #[error("{}/{}: settling an initial state", .0.cause.code(), .0.cause.cause())]
+    InitialStop(ExpansionStop),
     /// An invariant of the checked protocol broke.
     #[error("the protocol system broke invariant {0:?}")]
     Fault(InternalFault),
@@ -150,6 +171,9 @@ impl ProtocolRefusal {
                 Code::InvalidRuntimeInput
             }
             Self::Unsupported(_) => Code::UnsupportedConstruct,
+            Self::InitialStop(stop) => {
+                Code::from_code(stop.cause.code()).unwrap_or(Code::RuntimeInvariant)
+            }
             Self::Fault(_) => Code::RuntimeInvariant,
         }
     }
@@ -160,6 +184,7 @@ impl ProtocolRefusal {
             Self::UnknownProtocol { .. } | Self::OverBinding { .. } => "invalid-value",
             Self::RoleMapping { .. } => "wrong-role-mapping",
             Self::Unsupported(_) => "not-yet-implemented",
+            Self::InitialStop(stop) => stop.cause.cause(),
             Self::Fault(_) => "established-invariant-broken",
         }
     }
@@ -217,12 +242,127 @@ struct Bound {
     enc: Enc,
 }
 
+/// A FIFO key's value: its encoding, ordered by its JCS bytes.
+#[derive(Clone, Debug)]
+struct FifoKey {
+    bytes: Vec<u8>,
+    enc: Enc,
+}
+
+impl PartialEq for FifoKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl Eq for FifoKey {}
+
+impl PartialOrd for FifoKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FifoKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.bytes.cmp(&other.bytes)
+    }
+}
+
+/// One queue of a protocol instance (ADR-027 PS-7): its channel, by index,
+/// and its FIFO key, `None` for an `unordered` channel.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct QueueKey {
+    channel: usize,
+    fifo: Option<FifoKey>,
+}
+
+/// One queue entry (ADR-027 PS-7): the send node and the payload, with the
+/// entry's encoding, which names the sending thread too, and its JCS bytes.
+#[derive(Clone, Debug)]
+struct Entry {
+    send: qsl_semantics::check::ProtocolNodeId,
+    payload: Value,
+    enc: Enc,
+    bytes: Vec<u8>,
+}
+
 /// One live protocol instance (ADR-027 AE-2).
 #[derive(Clone, Debug, Default)]
 struct Instance {
     threads: BTreeMap<ThreadPath, Thread>,
     parallels: BTreeMap<ParallelKey, Parallel>,
     binders: BTreeMap<(qsl_semantics::check::ProtocolNodeId, ThreadPath), Bound>,
+    /// Each `repeat` counter, by (repeat node, thread) (ADR-027 PS-6).
+    counters: BTreeMap<(qsl_semantics::check::ProtocolNodeId, ThreadPath), u64>,
+    /// Each non-empty queue, a `fifo` one in delivery order and an
+    /// `unordered` one in ascending JCS bytes of its entries (PS-7).
+    queues: BTreeMap<QueueKey, Vec<Entry>>,
+}
+
+impl Instance {
+    /// The binding of `node` the thread `reader` reads (ADR-027 PS-5): the
+    /// binding by the nearest of `reader` and its ancestors, else the one
+    /// binding by a thread it forked. A thread's binding is its own until
+    /// it binds the node again, so `reader` reads its ancestor's binding as
+    /// of its fork (a re-binding copies the old one to each descendant
+    /// branch that still reads it). Two bindings by threads `reader` forked
+    /// break an invariant: a reader reads a branch's binder only after an
+    /// `all` join, whose instance leaves the state, and a fork that reuses
+    /// an ordinal clears what the old threads of that path bound.
+    fn binding(
+        &self,
+        node: qsl_semantics::check::ProtocolNodeId,
+        reader: &ThreadPath,
+    ) -> Result<Option<(&ThreadPath, &Bound)>, ProtocolRefusal> {
+        let mut nearest: Option<(&ThreadPath, &Bound)> = None;
+        let mut below: Option<(&ThreadPath, &Bound)> = None;
+        for ((_, by), bound) in self
+            .binders
+            .range((node, ThreadPath::root(0))..)
+            .take_while(|((bound, _), _)| *bound == node)
+        {
+            if by.is_prefix_of(reader) {
+                if nearest.is_none_or(|(path, _)| path.steps.len() < by.steps.len()) {
+                    nearest = Some((by, bound));
+                }
+            } else if reader.is_prefix_of(by) {
+                if below.is_some() {
+                    return Err(ProtocolRefusal::fault(
+                        "a-reader-sees-one-binding-of-a-node",
+                    ));
+                }
+                below = Some((by, bound));
+            }
+        }
+        Ok(nearest.or(below))
+    }
+
+    /// The threads whose binding of `node` the thread `reader` may read: the
+    /// nearest of `reader` and its ancestors with one, else every thread it
+    /// forked with one ([`Self::binding`] refuses two of those when read).
+    fn read_by(
+        &self,
+        node: qsl_semantics::check::ProtocolNodeId,
+        reader: &ThreadPath,
+    ) -> Vec<ThreadPath> {
+        let bound = || {
+            self.binders
+                .range((node, ThreadPath::root(0))..)
+                .take_while(move |((bound, _), _)| *bound == node)
+                .map(|((_, by), _)| by)
+        };
+        let nearest = bound()
+            .filter(|by| by.is_prefix_of(reader))
+            .max_by_key(|by| by.steps.len());
+        match nearest {
+            Some(by) => vec![by.clone()],
+            None => bound()
+                .filter(|by| reader.is_prefix_of(by))
+                .cloned()
+                .collect(),
+        }
+    }
 }
 
 /// A protocol state (ADR-027 PS-8).
@@ -304,21 +444,22 @@ impl<C: Encode> Encode for ProtocolKey<C> {
 /// FR-215 "Model checking a protocol subject" (ADR-027 TS-5): the roots of
 /// `protocol` beside its model's: the record type of every binder of an
 /// `event`, `send`, `receive` and `finish` step, each named by the
-/// protocol and the binder. A type this module cannot enumerate is listed
-/// as an unbounded domain.
+/// protocol and the binder. A bounded record type this module cannot
+/// enumerate is refused when the system is built
+/// ([`Unsupported::UnenumerableRecord`]).
 pub fn protocol_domains(protocol: &CheckedProtocol) -> Vec<(WireNodeId, ValueType)> {
-    let mut roots = Vec::new();
-    for binder in protocol.slots.binders.iter().filter(|binder| binder.ranged) {
-        roots.push((
-            binder_root(&protocol.name, &binder.name),
-            if enumerable(&binder.value_type) {
-                binder.value_type.clone()
-            } else {
-                ValueType::Integer
-            },
-        ));
-    }
-    roots
+    protocol
+        .slots
+        .binders
+        .iter()
+        .filter(|binder| binder.ranged)
+        .map(|binder| {
+            (
+                binder_root(&protocol.name, &binder.name),
+                binder.value_type.clone(),
+            )
+        })
+        .collect()
 }
 
 /// The root a protocol binder's record type is named by: the digest of
@@ -496,14 +637,30 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// FO-3: for each initial model state, instance 0 with its root thread
     /// settled from the start of `run`.
     fn initial_states(&self) -> Result<Vec<ProtocolState<M>>, ProtocolRefusal> {
-        let rest = self
-            .program
-            .settle(program::Cursor::Enter(self.program.root))?;
         let mut states = Vec::new();
+        let root = ThreadPath::root(0);
         for model in self.model.initial() {
             let mut instance = Instance::default();
+            let rest = match self
+                .settle(
+                    &mut instance,
+                    &root,
+                    program::Cursor::Enter(self.program.root),
+                    &model,
+                )
+                .map_err(|error| match error {
+                    settle::SettleError::Refused(refusal) => refusal,
+                    settle::SettleError::Stopped(stop) => ProtocolRefusal::InitialStop(stop),
+                })? {
+                settle::Settled::Rest(rest) => rest,
+                settle::Settled::Undecided(_) => {
+                    return Err(ProtocolRefusal::Unsupported(
+                        Unsupported::UndecidedInitialGuard,
+                    ))
+                }
+            };
             instance.threads.insert(
-                ThreadPath::root(0),
+                root.clone(),
                 Thread {
                     rest,
                     disposition: Disposition::Running,
@@ -579,7 +736,7 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             })
         };
         match rest {
-            Rest::Node(node) => named(RestKind::Node, node),
+            Rest::Node(node) | Rest::Await(node) | Rest::Check(node) => named(RestKind::Node, node),
             Rest::Fork(node) => named(RestKind::Fork, node),
             Rest::Join(node) => named(RestKind::Join, node),
             Rest::Finish => named(RestKind::Node, self.program.finish.node),
@@ -597,6 +754,8 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         let mut control = Vec::new();
         let mut observations = Vec::new();
         let mut roles = Vec::new();
+        let mut queues = Vec::new();
+        let mut bounds = Vec::new();
         for (ordinal, instance) in &state.instances {
             control.push((
                 Enc::tagged(
@@ -664,6 +823,46 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     bound.enc.clone(),
                 ));
             }
+            for ((node, thread), counter) in &instance.counters {
+                let node = self
+                    .program
+                    .text(*node)
+                    .map_or(Enc::Unencodable("a repeat node"), Enc::text);
+                bounds.push((
+                    Enc::tagged(
+                        "repeat-counter",
+                        vec![("node", node), ("thread", thread.enc())],
+                    ),
+                    Enc::tagged("integer", vec![("value", Enc::text(counter.to_string()))]),
+                ));
+            }
+            for (key, entries) in &instance.queues {
+                let Some(channel) = self.program.channels.get(key.channel) else {
+                    queues.push((Enc::Unencodable("a queue's channel"), Enc::Null));
+                    continue;
+                };
+                let (kind, fifo) = match &key.fifo {
+                    Some(fifo) => ("sequence", fifo.enc.clone()),
+                    None => ("bag", Enc::Null),
+                };
+                queues.push((
+                    Enc::tagged(
+                        "queue",
+                        vec![
+                            ("instance", Enc::text(ordinal.to_string())),
+                            ("channel", Enc::text(channel.name.clone())),
+                            ("fifo_key", fifo),
+                        ],
+                    ),
+                    Enc::tagged(
+                        kind,
+                        vec![(
+                            "elements",
+                            Enc::Array(entries.iter().map(|entry| entry.enc.clone()).collect()),
+                        )],
+                    ),
+                ));
+            }
             for (role, model) in &self.roles {
                 roles.push((
                     Enc::tagged(
@@ -681,28 +880,22 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             ("type", Enc::text("simulation-state")),
             ("semantic", self.model.semantic_enc(&state.model)),
             ("control", map_enc(control)),
-            ("queues", map_enc(Vec::new())),
+            ("queues", map_enc(queues)),
             ("roles", map_enc(roles)),
             ("observations", map_enc(observations)),
-            ("bounds", map_enc(Vec::new())),
+            ("bounds", map_enc(bounds)),
         ]
     }
 
-    /// The value of each binder slot that a node of the thread `path` reads:
-    /// slot 0, the `over` input; a binder of a node, the one bound by a
-    /// thread `path` sees, that is `path` itself, an ancestor of it, or a
-    /// thread it forked.
-    ///
-    /// Each node of a protocol is bound at most once per instance by the
-    /// threads one reader sees, so at most one bound value qualifies. A
-    /// `repeat` (FR-205-AC-3) re-binds a node under reused ordinals; it must
-    /// say which binding a reader sees before it is admitted, and until then
-    /// a second qualifying binding is a broken invariant, never a silent
-    /// choice.
+    /// The value of each binder slot the node `reader` of the thread `path`
+    /// reads: slot 0, the `over` input; a binder of a node, the binding
+    /// [`Instance::binding`] selects. A slot `reader` does not read is
+    /// `None`.
     fn frame(
         &self,
         instance: &Instance,
         path: &ThreadPath,
+        reader: qsl_semantics::check::ProtocolNodeId,
     ) -> Result<Vec<Option<Value>>, ProtocolRefusal> {
         let mut frame = Vec::with_capacity(self.program.slots.len());
         for (slot, node) in self.program.slots.iter().enumerate() {
@@ -710,19 +903,10 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 None if slot == 0 => Some(self.over.clone()),
                 // Refused in `Program::new` when any slot reads one.
                 None => None,
-                Some(node) => {
-                    let mut seen = instance
-                        .binders
-                        .iter()
-                        .filter(|((bound, thread), _)| bound == node && sees(path, thread));
-                    let first = seen.next();
-                    if seen.next().is_some() {
-                        return Err(ProtocolRefusal::fault(
-                            "a-reader-sees-one-binding-of-a-node",
-                        ));
-                    }
-                    first.map(|(_, bound)| bound.value.clone())
-                }
+                Some(_) if !self.program.reads(slot, reader) => None,
+                Some(node) => instance
+                    .binding(*node, path)?
+                    .map(|(_, bound)| bound.value.clone()),
             };
             frame.push(value);
         }
@@ -795,12 +979,6 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             }
         }
     }
-}
-
-/// Whether the thread `reader` sees a binder bound by `bound_by`: its own,
-/// an ancestor's, or one of a thread it forked.
-fn sees(reader: &ThreadPath, bound_by: &ThreadPath) -> bool {
-    bound_by.is_prefix_of(reader) || reader.is_prefix_of(bound_by)
 }
 
 /// `runtime_invariant`/`established-invariant-broken`.

@@ -127,6 +127,19 @@ pub struct CheckedProtocol {
     /// The `finish` node and its name (ADR-027 ST-9); `None` only for a
     /// form that declares none, which the grammar does not admit.
     pub finish: Option<(ProtocolNodeId, String)>,
+    /// Each `send` and `receive` with the channel it is written `via`, in
+    /// declaration order (ADR-027 ST-3, ST-4).
+    pub vias: Vec<CheckedVia>,
+}
+
+/// One `send` or `receive` and the channel it is written `via` (ADR-027
+/// ST-3, ST-4: the queue a message step appends to or takes from).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedVia {
+    /// The `send` or `receive` node.
+    pub node: ProtocolNodeId,
+    /// The channel's declared name.
+    pub channel: String,
 }
 
 /// One role of a checked protocol (ADR-027 PS-1).
@@ -190,6 +203,22 @@ pub enum ControlStep {
     Parallel,
     /// An `attempt`: ST-1.
     Attempt,
+    /// A `choice`: the one case whose guard is true.
+    Choice,
+    /// A `case` of a `choice`: its one body.
+    Case,
+    /// A `repeat`: its guard, its body and its `exhausted` control.
+    Repeat,
+    /// An `await`: its matched event's step or `timeout` (ST-8).
+    Await,
+    /// A `check`: continue while true, rest while false.
+    Check,
+    /// A `send`: ST-3.
+    Send,
+    /// A `receive`: ST-4.
+    Receive,
+    /// A domain `event` or a `commit`: ST-2.
+    Event,
     /// Another construct, by its keyword.
     Unstepped(&'static str),
 }
@@ -203,19 +232,17 @@ impl CheckedControl {
             K::Branch => ControlStep::Branch,
             K::Parallel => ControlStep::Parallel,
             K::Attempt => ControlStep::Attempt,
-            K::Send
-            | K::Receive
-            | K::Effect
-            | K::Event
-            | K::Commit
-            | K::Finish
-            | K::CompensateTemplate
-            | K::Choice
-            | K::Repeat
-            | K::Case
-            | K::Await
-            | K::Check
-            | K::Fence => ControlStep::Unstepped(self.kind.label()),
+            K::Choice => ControlStep::Choice,
+            K::Case => ControlStep::Case,
+            K::Repeat => ControlStep::Repeat,
+            K::Await => ControlStep::Await,
+            K::Check => ControlStep::Check,
+            K::Send => ControlStep::Send,
+            K::Receive => ControlStep::Receive,
+            K::Event | K::Commit => ControlStep::Event,
+            K::Effect | K::Finish | K::CompensateTemplate | K::Fence => {
+                ControlStep::Unstepped(self.kind.label())
+            }
         }
     }
 }

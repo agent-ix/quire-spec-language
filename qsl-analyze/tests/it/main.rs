@@ -16,9 +16,13 @@ mod model_check_safety;
 mod model_instances;
 mod model_settle;
 mod model_world;
+mod partial_order;
+mod por_world;
+mod protocol_constructs;
 mod protocol_system;
 mod quotient;
 mod reduction;
+mod reduction_differential;
 mod reduction_world;
 #[path = "../../../tests/support/refinement_aux.rs"]
 mod refinement_aux;

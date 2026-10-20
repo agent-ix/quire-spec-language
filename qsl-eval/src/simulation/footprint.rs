@@ -42,6 +42,18 @@ pub enum Location {
 }
 
 impl Location {
+    /// Whether a write to this location can change what a read of `read`
+    /// observes, by the cells each location stands for. A written membership
+    /// (a creation or a deletion) changes the membership cell and every field
+    /// cell of its object, so it meets both. A written field changes only its
+    /// own field cell and never whether an object is a member, so a field
+    /// location written does not meet a membership location read.
+    pub fn affects(&self, read: &Self) -> bool {
+        let field_write = matches!(self, Self::Field { .. } | Self::AnyField { .. });
+        let membership_read = matches!(read, Self::Membership { .. } | Self::AnyMembership { .. });
+        !(field_write && membership_read) && self.meets(read)
+    }
+
     /// Whether the two locations share a cell of the state.
     ///
     /// Two field locations meet when they name the same field and, for two
@@ -116,16 +128,23 @@ pub struct Footprint {
     pub enabling: BTreeSet<Location>,
 }
 
+/// Whether some location of `writes` affects some location of `reads`.
+pub fn any_affects(writes: &BTreeSet<Location>, reads: &BTreeSet<Location>) -> bool {
+    writes
+        .iter()
+        .any(|written| reads.iter().any(|read| written.affects(read)))
+}
+
 /// Whether some location of `left` meets some location of `right`.
 fn any_meet(left: &BTreeSet<Location>, right: &BTreeSet<Location>) -> bool {
     left.iter()
-        .any(|written| right.iter().any(|read| written.meets(read)))
+        .any(|written| right.iter().any(|other| written.meets(other)))
 }
 
 /// Whether `t` and `u` are independent (FR-155 "Independence"): neither
 /// writes a location the other reads or writes.
 pub fn independent(t: &Footprint, u: &Footprint) -> bool {
-    !(any_meet(&t.writes, &u.reads)
+    !(any_affects(&t.writes, &u.reads)
         || any_meet(&t.writes, &u.writes)
-        || any_meet(&u.writes, &t.reads))
+        || any_affects(&u.writes, &t.reads))
 }

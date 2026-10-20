@@ -68,8 +68,8 @@ use qsl_eval::simulation::protocol::{
     check_protocol_bounds, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
 };
 use qsl_eval::simulation::{
-    ConstraintValue, EncodingRefusal, ExpansionLimit, ExpansionStop, NotSimulated, Permutation,
-    RequiresBound, SubjectSystem, SymmetryGroup,
+    ConstraintValue, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, NotSimulated,
+    Permutation, RequiresBound, SubjectSystem, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
@@ -78,8 +78,8 @@ use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
     Instance, ItemRefusal, ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome,
-    ModelStep, ProductStateRef, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
-    UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    ModelStep, ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats,
+    TemporalCounterexample, UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
@@ -88,6 +88,7 @@ use quire_exact::{Cancel, Meter};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use quire_semantic_value::model_transition::ModelTransition;
 
+use super::ample::{Atoms, Por};
 use super::concretise::{Lift, LiftStop};
 use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
 
@@ -165,10 +166,15 @@ pub enum ModelCheckRefusal {
         /// The request's constraint name.
         name: String,
     },
-    /// A liveness clause with a state constraint or partial-order reduction
-    /// selected: the liveness engine runs reduced under symmetry only.
-    #[error("EN-1 does not decide a liveness clause under a state constraint or partial-order reduction yet")]
+    /// A liveness clause with a state constraint selected: the liveness
+    /// engine runs reduced under symmetry and partial-order reduction only.
+    #[error("EN-1 does not decide a liveness clause under a state constraint yet")]
     ReducedLiveness,
+    /// FR-155: partial-order reduction needs a footprint of an atom or a
+    /// state constraint that reads through a form QSpec FR-383 gives no
+    /// rule for.
+    #[error(transparent)]
+    Footprint(#[from] qsl_eval::simulation::model::FootprintError),
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -253,6 +259,23 @@ type Step<T> = Result<T, Halt>;
 
 /// What reading a position found, and the instance that found it.
 type Finding = (CounterexampleKind, usize);
+
+/// Each instance's monitor state after reading a position, and what the read
+/// found.
+type Reading = (Vec<StateId>, Option<Finding>);
+
+/// One successor of an expansion: the transition identity's order bytes, the
+/// successor's state-key bytes and digest, the transition (none for the
+/// terminal stutter), the canonical state and the permutation that
+/// canonicalised it.
+type Successor<S> = (
+    Vec<u8>,
+    Vec<u8>,
+    DigestRecord,
+    Option<<S as TransitionSystem>::TransitionId>,
+    <S as TransitionSystem>::State,
+    Permutation,
+);
 
 /// An ended run, or a refusal discovered after exploration started.
 enum Halt {
@@ -380,6 +403,7 @@ pub fn check_model(
         group: SymmetryGroup::default(),
         constraint: None,
         boundary: 0,
+        chooser: None,
     };
     if let Some(source) = root_cancelled {
         return Ok(ModelCheckOutcome::Stopped {
@@ -500,6 +524,7 @@ pub fn check_protocol(
         group: SymmetryGroup::default(),
         constraint: None,
         boundary: 0,
+        chooser: None,
     };
     if let Some(source) = root_cancelled {
         return Ok(ModelCheckOutcome::Stopped {
@@ -621,6 +646,11 @@ fn check_reduced(
         if let Item::Clause { bindings, .. } = &mut item {
             *bindings = plan.bindings;
         }
+        let ample = if reductions.partial_order {
+            Some(ample_of(&system, &item, reductions.constraint.as_deref())?)
+        } else {
+            None
+        };
         let mut run = Run {
             system: &system,
             reducer: Some(&system),
@@ -641,6 +671,7 @@ fn check_reduced(
             group: plan.group.clone(),
             constraint: reductions.constraint.as_deref(),
             boundary: 0,
+            chooser: ample.as_ref().map(|ample| ample as &dyn Chooser<_, _>),
         };
         let explored = run.explore();
         total = sum(total, run.stats());
@@ -700,6 +731,12 @@ fn check_reduced(
             }
         }
     }
+    if reductions.partial_order {
+        applied.push(AppliedReduction::PartialOrder {
+            proviso: Proviso::BreadthFirstRevisit,
+        });
+    }
+    let max_depth = widen(request.max_depth.unwrap_or(0));
     Ok(if boundary > 0 {
         ModelCheckOutcome::Reduction {
             cause: ReductionCause::ConstraintReached {
@@ -707,9 +744,16 @@ fn check_reduced(
             },
             stats: total,
         }
+    } else if horizon && reductions.partial_order {
+        // ADR-021 RV-5: a reduced graph does not keep short counterexamples
+        // short, so a partial-order run to the horizon proves no bound.
+        ModelCheckOutcome::Reduction {
+            cause: ReductionCause::Horizon { max_depth },
+            stats: total,
+        }
     } else if horizon {
         ModelCheckOutcome::BoundReached {
-            depth: widen(request.max_depth.unwrap_or(0)),
+            depth: max_depth,
             stats: total,
         }
     } else {
@@ -718,6 +762,82 @@ fn check_reduced(
             stats: total,
         }
     })
+}
+
+/// The ample-set choice and the enforcing expansion of a partial-order run
+/// (FR-156, FR-155 "Read enforcement"), read by [`Run`] through [`Chooser`].
+trait Chooser<State, Transition> {
+    /// `state`'s expansion, holding every step to its footprint.
+    fn expand(
+        &self,
+        state: &State,
+    ) -> Result<Expansion<Transition, State, ModelFinding>, ExpansionStop>;
+
+    /// The ample set among `enabled` at `state`, where `fresh` says whether
+    /// every successor through a transition is a product state not yet
+    /// discovered (C3).
+    fn choose(
+        &self,
+        state: &State,
+        enabled: &[Transition],
+        fresh: &dyn Fn(&Transition) -> bool,
+    ) -> Result<Vec<Transition>, ExpansionStop>;
+}
+
+/// A model subject's ample sets: [`Por`] over its `ModelSystem`.
+struct ModelAmple<'r, 'a> {
+    system: &'r ModelSystem<'a>,
+    por: Por<'r, 'a>,
+}
+
+impl Chooser<ModelSimState, ModelTransition> for ModelAmple<'_, '_> {
+    fn expand(
+        &self,
+        state: &ModelSimState,
+    ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+        self.system.successors_enforced(state)
+    }
+
+    fn choose(
+        &self,
+        state: &ModelSimState,
+        enabled: &[ModelTransition],
+        fresh: &dyn Fn(&ModelTransition) -> bool,
+    ) -> Result<Vec<ModelTransition>, ExpansionStop> {
+        let mut enabled = enabled.to_vec();
+        enabled.sort();
+        enabled.dedup();
+        self.por.ample(state, &enabled, fresh)
+    }
+}
+
+/// The inputs of ample-set choice for `item` over `system` under the state
+/// constraint `constraint` (FR-156 "Atom footprints", "Visibility").
+fn ample_of<'r, 'a>(
+    system: &'r ModelSystem<'a>,
+    item: &'r Item<'r>,
+    constraint: Option<&str>,
+) -> Result<ModelAmple<'r, 'a>, ModelCheckRefusal> {
+    let por = match item {
+        Item::Clause {
+            bindings,
+            letters,
+            fairness,
+            atoms,
+            ..
+        } => Por::new(
+            system,
+            Some(Atoms {
+                letters: *letters,
+                nodes: atoms,
+            }),
+            bindings,
+            fairness,
+            constraint,
+        ),
+        Item::Deadlock => Por::new(system, None, &[], &[], constraint),
+    }?;
+    Ok(ModelAmple { system, por })
 }
 
 /// What FR-159's pre-check admits: the run's group, or an outcome it
@@ -903,6 +1023,9 @@ struct Run<'r, S: SubjectSystem> {
     constraint: Option<&'r str>,
     /// The boundary states stored.
     boundary: usize,
+    /// The ample-set choice when partial-order reduction is selected
+    /// (FR-156); `None` for a subject that offers none.
+    chooser: Option<&'r dyn Chooser<S::State, S::TransitionId>>,
 }
 
 impl<S: SubjectSystem> Run<'_, S> {
@@ -1047,7 +1170,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 permutation,
                 boundary: false,
             };
-            self.create(key, node, &before)?;
+            self.create(key, node, &before, None)?;
         }
         while let Some(at) = self.queue.pop_front() {
             self.poll()?;
@@ -1061,7 +1184,11 @@ impl<S: SubjectSystem> Run<'_, S> {
             if self.nodes[at].boundary {
                 continue;
             }
-            let expansion = match self.system.successors(&self.nodes[at].state) {
+            let expanded = match self.chooser {
+                Some(chooser) => chooser.expand(&self.nodes[at].state),
+                None => self.system.successors(&self.nodes[at].state),
+            };
+            let expansion = match expanded {
                 Ok(expansion) => expansion,
                 Err(stop) => return Err(self.expansion_stop(stop)),
             };
@@ -1122,6 +1249,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 self.horizon_cut |= unexplored;
                 continue;
             }
+            let mut reads = self.ample(at, &before, &mut steps)?.into_iter();
             for (_, key, digest, transition, state, permutation) in steps {
                 if self.edges >= self.limits.limits.max_transitions {
                     return Err(Self::stopped(
@@ -1141,13 +1269,87 @@ impl<S: SubjectSystem> Run<'_, S> {
                     permutation,
                     boundary: false,
                 };
-                self.create(key, node, &before)?;
+                self.create(key, node, &before, reads.next().flatten())?;
                 if self.first_bad.is_some() {
                     break;
                 }
             }
         }
         Ok(())
+    }
+
+    /// FR-156: keep of `steps`, the canonical successors of node `at`, those
+    /// through its ample set. A step through the terminal stutter edge or a
+    /// state with a single enabled transition is kept; so is every step when
+    /// no candidate satisfies C2 and C3.
+    ///
+    /// Judging C3 reads each successor's letter, so the readings come back,
+    /// one per kept step, for `create` to use instead of reading the letter
+    /// again; they are all `None` when nothing was judged.
+    fn ample(
+        &mut self,
+        at: usize,
+        before: &[StateId],
+        steps: &mut Vec<Successor<S>>,
+    ) -> Step<Vec<Option<Reading>>> {
+        let Some(chooser) = self.chooser else {
+            return Ok(vec![None; steps.len()]);
+        };
+        let mut enabled: Vec<S::TransitionId> = Vec::new();
+        for transition in steps.iter().filter_map(|step| step.3.as_ref()) {
+            if !enabled.contains(transition) {
+                enabled.push(transition.clone());
+            }
+        }
+        if enabled.len() <= 1 {
+            return Ok(vec![None; steps.len()]);
+        }
+        // C3 on product states (POR-8): a step is fresh when its product
+        // state is bad, which is always created, or not yet discovered.
+        let depth = self.nodes[at].depth;
+        let mut fresh: Vec<bool> = Vec::with_capacity(steps.len());
+        let mut readings: Vec<Reading> = Vec::with_capacity(steps.len());
+        for (_, key, digest, _, state, permutation) in steps.iter() {
+            let node = Node {
+                state: state.clone(),
+                digest: *digest,
+                depth: depth.saturating_add(1),
+                parent: Some((at, None)),
+                initial_index: self.nodes[at].initial_index,
+                monitor: Vec::new(),
+                permutation: permutation.clone(),
+                boundary: false,
+            };
+            let (after, bad) = self.advance(&node, before)?;
+            fresh.push(bad.is_some() || !self.known.contains_key(&(key.clone(), after.clone())));
+            readings.push((after, bad));
+        }
+        let reaches_known = |transition: &S::TransitionId| {
+            steps
+                .iter()
+                .zip(&fresh)
+                .any(|(step, fresh)| step.3.as_ref() == Some(transition) && !fresh)
+        };
+        let chosen = chooser
+            .choose(&self.nodes[at].state, &enabled, &|transition| {
+                !reaches_known(transition)
+            })
+            .map_err(|stop| self.expansion_stop(stop))?;
+        let kept: Vec<bool> = steps
+            .iter()
+            .map(|step| {
+                step.3
+                    .as_ref()
+                    .is_none_or(|transition| chosen.contains(transition))
+            })
+            .collect();
+        let mut kept_flags = kept.iter();
+        steps.retain(|_| *kept_flags.next().unwrap_or(&true));
+        Ok(readings
+            .into_iter()
+            .zip(kept)
+            .filter_map(|(reading, kept)| kept.then_some(Some(reading)))
+            .collect())
     }
 
     /// `state`'s canonical form under the run's group and the permutation
@@ -1181,8 +1383,12 @@ impl<S: SubjectSystem> Run<'_, S> {
         key: Vec<u8>,
         mut node: Node<S::State, S::TransitionId>,
         before: &[StateId],
+        read: Option<Reading>,
     ) -> Step<()> {
-        let (after, mut bad) = self.advance(&node, before)?;
+        let (after, mut bad) = match read {
+            Some(read) => read,
+            None => self.advance(&node, before)?,
+        };
         node.monitor = after;
         let product = (key, node.monitor.clone());
         if bad.is_none() && self.known.contains_key(&product) {
