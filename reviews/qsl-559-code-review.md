@@ -68,3 +68,32 @@ What is sound:
 | FND-009 | low | `ProtocolSystem::threads` and `binders` silently skip an entry whose node fails to name (`if let Ok` / `filter_map`). A broken program invariant then shows up as a missing thread in tests and blocked lists, not as a fault. | qsl-eval/src/simulation/protocol.rs:491-517 |
 | FND-010 | low | `BOUND_POSITIONS` (`1 << 20`) is now declared in three places: `qsl-analyze` check.rs, `qsl-replay` closure.rs and `qsl-replay` replay.rs. Check, certificate and replay must classify the same roots under the same position limit, and nothing ties the copies together. | qsl-replay/src/certificate/closure.rs:257, qsl-replay/src/model_check/replay.rs:498 |
 | FND-011 | low | `TemporalCounterexample::measured_bytes` counts `prefix` and `fairness` but not the new `blocked` list, so a deadlock payload's measured size under-counts its blocked threads and their paths. | qsl-replay/src/model_check/counterexample.rs:218-230 |
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at head cf4888b16. It holds fix commit e11ea8f4c and a merge of main that resolved a conflict in `qsl-replay/src/certificate/check.rs`. No gates were run. The fix commit and the merge resolution were read against the code. The resolution keeps one `BOUND_POSITIONS`, in `qsl-eval/src/simulation/not_simulated.rs`, and main's new `certificate/simulation.rs` imports it.
+
+How the two rewrites were checked:
+
+- **Reachability.** The new `reads_from` takes the preorder interval from the rest point to the end of its scope, which is the nearest enclosing `branch`, or the whole tree plus `finish` for the root. That interval holds the node's subtree, the later siblings of every enclosing `sequence` within the scope, and every nested branch body those contain. This is exactly the set the old `subtree ∪ after` computed. A `Join` rest starts one past the parallel's subtree, so the forking thread does not reach its own branches, as before. The test is one `BTreeSet::range` query per reader slot, so the quadratic precompute is gone.
+- **Cancellation.** The join cancels every running thread whose path extends a cancelled branch, and settles every parallel instance whose parent is such a thread. `normalize` then removes those threads and instances (PS-3, PS-4). `a_cancelled_branch_takes_the_threads_it_forked_with_it` checks that no attempt of the inner `parallel` stays enabled. The ruling is in the PR body and the `join` doc comment.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-012 | low | `not_simulated_code` maps each `NotSimulated` arm to a `Code` in a second table beside `NotSimulated::catalog_code`, and `ModelTraceRefusal::cause` reads the cause from `catalog_code`. The two tables must be kept in step by hand: a new `NotSimulated` arm, or a changed catalog code, can give a code and a cause that disagree. | qsl-replay/src/model_check/replay.rs:302-320 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e11ea8f4c: under `outstanding cancel`, `join` cancels every running thread whose path a cancelled branch prefixes, and settles the parallel instances those threads own, so `normalize` removes them. Tested by `a_cancelled_branch_takes_the_threads_it_forked_with_it`. The QSpec FR-426 reading is recorded in the PR body and the doc comment. |
+| FND-002 | deferred | The types belong in quire-semantic-value, which is a cross-repo SV change outside this PR. Nothing reads the types outside `qsl-eval`, `qsl-analyze` and `qsl-replay` yet, so moving them later is mechanical. |
+| FND-003 | fixed | e11ea8f4c: `frame` selects only binders the reader `sees` (its own, an ancestor's, or a descendant's), and faults `a-reader-sees-one-binding-of-a-node` on a second qualifying binding instead of choosing one. `normalize` keeps a binder only while a running thread that sees it `reads_from` a reader. PR 2's `repeat` must define the binding a reader sees before it lifts the guard. |
+| FND-004 | fixed | e11ea8f4c: the replay pre-check failure is `ModelTraceRefusal::NotSimulated(Box<NotSimulated>)`, and `RequiresBound` maps to `invalid_runtime_input`/`invalid-value`. Tested by `a_replay_over_an_unbounded_protocol_subject_refuses_requires_bound`. |
+| FND-005 | fixed | e11ea8f4c: per-rest reach sets are replaced by preorder spans with a scope end, plus one range query over each slot's reader positions. That is O(n) to build and O(log n) per query, and equivalent to the old reach (see the note above). |
+| FND-006 | fixed | e11ea8f4c: `expand` visits running threads in ascending JCS bytes of their paths, and sorts successors by the JCS bytes of their identities. |
+| FND-007 | fixed | e11ea8f4c: `Unsupported` is an enum of typed variants, with `construct()` for the diagnostic text. |
+| FND-008 | fixed | e11ea8f4c: `Program::new` refuses `Unsupported::NodelessBinder` when any slot other than slot 0 reads a nodeless binder, and `frame` gives `over` to slot 0 only. |
+| FND-009 | fixed | e11ea8f4c: `threads()` and `binders()` return `Result` and propagate a broken invariant. |
+| FND-010 | fixed | e11ea8f4c and the merge cf4888b16: a single `pub const BOUND_POSITIONS` in `qsl-eval::simulation`. Every caller imports it, including main's `certificate/simulation.rs`. |
+| FND-011 | fixed | e11ea8f4c: `measured_bytes` adds each blocked thread's inline size, its path steps, its rest node and the paths its cause names. |

@@ -73,3 +73,17 @@ The `Part of` doc comments on the untagged tests state honestly what is left out
 - Stubs and inflation: none found. No `todo!`, `unimplemented!`, placeholder `Ok(Default::default())` or tautological assertion in the diff.
 - Semantic review: done as part of SR-12223 (intent↔test↔code per tagged AC, above), not as a separate fan-out pass.
 - Plan completion: not assessed
+
+## Dispositions
+
+Disposition pass 1 at head cf4888b16 (fix commit e11ea8f4c and a merge of main). No new findings.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e11ea8f4c: `ModelTraceRefusal::PostState` carries `reached`, the digests the step's identity does reach, beside `recorded`. The FR-217-AC-2 test asserts both. |
+| FND-002 | deferred | The protocol subject's obligation identity needs the compiled `package_id` to bind the `terminal` member, which FR-383's emission does not do yet. FR-205-AC-1 stays untagged until then. Its refusal half is tested. |
+| FND-003 | deferred | The checking half of FR-211-AC-1 is now tested by `fill_checks_under_each_terminal_form`, untagged. The pairwise-different identities wait on the same FR-383 binding as FND-002. |
+| FND-004 | deferred | The undefined contract and constraint paths are now tested by `an_undefined_contract_or_constraint_ends_an_undefined_evaluation`, untagged. The V-6 `UndecidedSuccessor` row needs a fixture whose evaluation is refused but neither undefined nor incomplete, and this suite has none. FR-215-AC-2 stays untagged. |
+| FND-005 | deferred | No wire form exists yet for `TemporalCounterexample`, whether model or protocol. The envelope serialization row of FR-217-AC-1 lands with the counterexample wire encoding. FR-217-AC-1 stays untagged. |
+| FND-006 | deferred | The coordinator assigns these constructs to QSL-559 PR 2 and PR 3 as remainders. They stay refused `not-yet-implemented` until then, and their ACs stay untagged. |
+| FND-007 | deferred | The protocol entry points get production callers when the request path wires protocol subjects, as the model-subject counterparts will. This PR adds no request-writer change. |
