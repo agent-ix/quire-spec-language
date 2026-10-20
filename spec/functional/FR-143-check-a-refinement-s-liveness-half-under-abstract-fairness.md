@@ -34,7 +34,10 @@ constraint is enabled at every mapped state and taken by no step. A
 refinement with hidden fields and a non-empty `F_A` settles the liveness
 half `unsupported` with its cause named (ADR-020 AX-5), and so does a refinement
 whose `F_A` holds a strong constraint, because the second phase defines only
-the weak reading.
+the weak reading: it reads an `F_A` class as enabled at every state of a loop,
+and a strong class is violated by a loop that enables it at some state only.
+ADR-020 roadmap step 4 defers strong fairness to ADR-018 FA-5; until then this
+build settles it `unsupported` (ADR-020 AX-6).
 
 ## Use case
 
@@ -57,18 +60,22 @@ model is a valid safety refinement.
 ```rust
 pub enum LivenessHalf {
     Checked(ModelCheckOutcome),          // FR-126's outcome type
-    Unsupported(UnavailabilityCause),    // AX-5: hidden abstract fields; a strong F_A constraint
+    Unsupported(UnavailabilityCause),    // AX-5: hidden abstract fields; AX-6: a strong F_A constraint
 }
 ```
 
-A holding half is `Checked(HoldsReduced{reductions: []})`: the half has no
-reduction, and no closure certificate (ADR-018 PC-3) can exist for it, since
-the core has no checker for a liveness verdict (ADR-020 CT-4). Its item
-settles `proved` labelled `Uncertified` (FR-144).
+A holding half is `Checked(HoldsReduced{reductions: []})`: a holding outcome
+with an empty reduction list, which FR-160's row "`Holds` with only a
+constraint, no boundary state reached" maps. The half has no reduction and
+cannot carry a closure certificate (ADR-018 PC-3), since the core has no
+checker for a liveness verdict (ADR-020 CT-4). It settles
+`Proved{basis: Exhaustive, certification: Uncertified}` (FR-144), never a
+`Reduced` basis.
 
 The `Unsupported` cause is a typed unavailability cause, one for liveness
 through hidden abstract fields and one for liveness under a strong `F_A`
-constraint. Each travels under the wire cause
+constraint; a refinement that has both a hidden field and a strong constraint
+settles the hidden-field cause. Each travels under the wire cause
 `unsupported-requested-capability` and the code `unsupported_projection`, as
 an unsupported reduction does (ADR-018 V-8).
 
@@ -86,15 +93,18 @@ the concrete subject with failure `Divergence{constraint}` or
   `Unsupported`, with the typed cause for liveness through hidden abstract
   fields (wire cause `unsupported-requested-capability`), and no second
   phase SHALL run.
-- With `F_A` non-empty and a strong constraint in it (FR-137-AC-4 admits
-  `ensure fair strong`), `liveness` SHALL be `Unsupported`, with the typed
-  cause for liveness under a strong abstract fairness constraint, and no
-  second phase SHALL run. The safety half is decided and reported beside it as
-  usual. The second phase reads an `F_A` class as weak, enabled at every
-  state of a loop, and a strong class is violated by a loop that enables it
-  at some state only; this build does not decide that reading.
-- With `F_A` non-empty, no hidden field and a safety half other than
-  `Holds`, the second phase SHALL NOT run and `liveness` SHALL be `None`.
+- With `F_A` non-empty, no hidden field and a strong constraint in it
+  (FR-137-AC-4 admits `ensure fair strong`), `liveness` SHALL be
+  `Unsupported`, with the typed cause for liveness under a strong abstract
+  fairness constraint, and no second phase SHALL run, whatever the safety half
+  is. The safety half is decided and reported beside it.
+- With `F_A` non-empty, no hidden field, no strong constraint and a safety
+  half other than `Holds`, the second phase SHALL NOT run and `liveness` SHALL
+  be `None`.
+- If the second phase meets an internal fault, `check_refinement` SHALL return
+  a refusal carrying the fault, not a `RefinementOutcome`; the safety half
+  already decided is not returned with it, and FR-144 settles the item
+  `failed`.
 
 ### Enabled and taken through the mapping (CO-2)
 
@@ -134,10 +144,6 @@ the concrete subject with failure `Divergence{constraint}` or
 - The phase SHALL respect FR-126's limits and FR-142's `cancel` handle and
   return `Stopped`
   with the limit reached.
-- If the second phase meets an internal fault, `check_refinement` SHALL
-  return a refusal (an internal fault), not a `LivenessHalf`, as FR-126's
-  liveness check does; the safety half already decided is not returned with
-  it.
 
 ## Acceptance Criteria
 
@@ -148,11 +154,12 @@ the concrete subject with failure `Divergence{constraint}` or
 | FR-143-AC-3 | Fixture `Pair`: abstract and concrete `Pair` with `a: Int[0, 1]`, `b: Int[0, 1]`, operations `flipA()` and `flipB()` with no precondition (each negates its field), both mapped by name, `assume fair weak each Impl::Pair::flipA`, `ensure fair weak each Spec::Pair::flipB`. It returns `Checked(Violated)` with an empty stem, a loop of two `flipA` steps and `AbstractUnfair{constraint: flipB}`. Adding `assume fair weak each Impl::Pair::flipB` makes it `Checked(HoldsReduced{reductions: []})`. | Test (TC-548) |
 | FR-143-AC-4 | `RegisterHistory` (FR-138) with the `prev` row removed and `ensure fair weak Spec::Register::write` returns safety `Holds{Exhaustive}` and liveness `Unsupported` with the typed cause for liveness through hidden abstract fields (wire cause `unsupported-requested-capability`); without the `ensure` row, `liveness` is `None`. | Test (TC-548) |
 | FR-143-AC-5 | Over a concrete protocol subject, an SCC in which branch `B`'s step class is enabled at every state and taken by no edge fails the `F_C` filter through `B`'s `Scheduler` constraint (FR-137-AC-3) and so violates no `F_A` class; with `scheduling adversarial` on the protocol the same SCC passes the filter and is returned as the violation. | Test (TC-548) |
-| FR-143-AC-6 | `Pair` with `ensure fair strong whole Spec::Pair::flipB`, `flipB` having the precondition `self.a = 0` on both models and `assume fair weak each Impl::Pair::flipA`, returns safety `Holds{Exhaustive}` and liveness `Unsupported` with the typed cause for liveness under a strong abstract fairness constraint, not a checked verdict; the same refinement with `ensure fair weak whole Spec::Pair::flipB` runs the second phase. | Test (TC-548) |
+| FR-143-AC-6 | `Pair` with `ensure fair strong whole Spec::Pair::flipB`, `flipB` having the precondition `self.a = 0` on both models and `assume fair weak each Impl::Pair::flipA`, returns safety `Holds{Exhaustive}` and liveness `Unsupported` with the typed cause for liveness under a strong abstract fairness constraint; the same refinement with `ensure fair weak whole Spec::Pair::flipB` returns `Checked(HoldsReduced{reductions: []})`. The strong variant whose safety half is violated also returns liveness `Unsupported` with that cause, beside the violated safety half. `RegisterHistory` without its `prev` row and with `ensure fair strong Spec::Register::write` returns liveness `Unsupported` with the hidden-field cause. | Test (TC-548) |
+| FR-143-AC-7 | A second-phase internal fault, injected into a refinement whose safety half holds, makes `check_refinement` return a refusal carrying the fault and no `RefinementOutcome`; the item settles `failed` (FR-144). | Test (TC-548) |
 
 ## Dependencies
 
-- ADR-020 §2 RS-7, RS-10, RS-12, RS-13, §3 CO-2, §4 AX-5, §5 RE-1, §6 RC-1
+- ADR-020 §2 RS-7, RS-10, RS-12, RS-13, §3 CO-2, §4 AX-5, AX-6, §5 RE-1, §6 RC-1
   and §11 RU-2, RU-4; ADR-018 §4 FA-1 to FA-4; ADR-027 PA-1 to PA-3.
 - [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (the fairness filter, canonical lasso and limits),

@@ -110,7 +110,9 @@ beside it as a separate item.
   `inconclusive` SHALL settle V-6 with `ReplayParity` (wire cause
   `replay-parity`, QSpec FR-379), a refusal V-6 with
   `ReplayRefused`, and a fault `failed`. A `StepVerdict::Fault` (FR-141), from
-  an internal fault in the mapping, settles the item `failed` likewise.
+  an internal fault in the mapping, settles the item `failed` likewise. A
+  refusal from `check_refinement` (FR-143: an internal fault in the second
+  phase) settles the item `failed` with that fault and no half value.
 - The record SHALL read neither model's `terminal` declaration; its value SHALL
   be the same under every combination of them.
 - **Certificate.** A safety half that the product proves SHALL settle
