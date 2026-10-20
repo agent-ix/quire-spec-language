@@ -1,12 +1,12 @@
 ---
 id: TC-671
-title: "S3 warns of load-buffering shapes and candidate sets follow the resolved model"
+title: "EN-1 warns of load-buffering shapes and candidate sets follow the resolved model"
 type: TC
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-226
     type: verifies
 ---
-# TC-671: S3 warns of load-buffering shapes and candidate sets follow the resolved model
+# TC-671: EN-1 warns of load-buffering shapes and candidate sets follow the resolved model
 
 ## Description
 
