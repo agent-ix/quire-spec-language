@@ -81,11 +81,19 @@ no CI or workflow change. Narrow test run at the reviewed sha:
 `cargo test -p qsl-analyze --test it -- quotient::` passed its 5 tests,
 plus the scratch probe for FND-001, which failed as described.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | Merging #1045 (bindings ranked across the run) leaves each binding's concretisation budget stale. `explore` fixes `Explored.budget = totals.remaining(spent).1` when that binding is explored (liveness.rs:1143). Since #1045, every binding is explored, and its dead pass charged, before any second phase runs, and the shortest lasso is chosen across bindings. So binding 1's lasso is lifted against a budget that ignores the edges later bindings explored, and each binding's lift spends its own copy. The concrete steps of a run can then exceed `max_transitions`, against FR-161 "Length and limits". This overruns a limit; it does not make a verdict wrong. Fix: take the budget from the run's totals when the lift starts, and charge the lifted steps back to them. | qsl-analyze/src/model_check/liveness.rs:1143, qsl-analyze/src/model_check/liveness.rs:1545, qsl-analyze/src/model_check/liveness.rs:1626 |
+
 ## Dispositions
 
-- FND-001: fixed 8bd6b9d24. Every product of a symmetry run reads its graph as the annotated quotient, including one under a trivial stabiliser (`second_phase` routes on `binding.applied`). The regression `strong_each_under_a_trivial_stabiliser_is_decided_on_the_quotient` fails without the fix.
-- FND-002: fixed 8bd6b9d24. `order()` is deleted. The pass loop stops at the concrete entry, polls cancellation each pass, and spends `max_transitions` per concrete step. A trivial-group loop must close in one pass.
-- FND-003: fixed 8bd6b9d24. `analyze` uses a worklist with no recursion. It lists components depth first, each naming its `parent`, so `first_fair_in` is a flat scan. Each component charges the meter.
-- FND-004: fixed 8bd6b9d24. `Walker::step` and `cycle`'s length walk charge the meter.
-- FND-005: fixed 8bd6b9d24. The run holds one meter that every product's quotient work charges.
-- FND-006: fixed 8bd6b9d24. The meter tests carry `TC-571` and the `max_transitions` test `TC-586`.
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8bd6b9d24: `second_phase` routes on `binding.applied.is_some()`, so a trivial-stabiliser product of a symmetry run is decided on the quotient. Verified at ffe5f97fb: `strong_each_under_a_trivial_stabiliser_is_decided_on_the_quotient` asserts `HoldsReduced`, with an empty stabiliser, for the exact case the round-0 probe reproduced as `Violated`, and it passes. |
+| FND-002 | fixed | 8bd6b9d24: `order()` is deleted. The pass loop polls cancellation each pass, stops at the concrete entry, and is bounded by the per-step `max_transitions` budget. A trivial-group loop faults unless it closes in one pass. |
+| FND-003 | fixed | 8bd6b9d24: `analyze` is a worklist with `parent` links. Pushing components in reverse discovery order keeps the old depth-first order, and `first_fair_in` is a flat scan. |
+| FND-004 | fixed | 8bd6b9d24: `Walker::step` and `cycle`'s length walk call `charge()`. |
+| FND-005 | fixed | 8bd6b9d24: `Run.meter: RefCell<Meter>` is borrowed by every product's quotient phase. No nested borrow exists on that path. |
+| FND-006 | fixed | 8bd6b9d24: the meter tests carry `TC-571` and the `max_transitions` test carries `TC-586`. |

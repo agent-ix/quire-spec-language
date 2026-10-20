@@ -57,9 +57,9 @@ blocking.
 
 ## Dispositions
 
-- FND-001: fixed 8bd6b9d24 with `strong_each_under_a_trivial_stabiliser_is_decided_on_the_quotient` (it fails without the fix).
-- FND-002: deferred. The unreduced strong filter (ADR-019) is not on main; AC-4 stays untagged and is ticketed as remainder.
-- FND-003: fixed 8bd6b9d24.
-  - `a_whole_loop_under_symmetry_concretises_in_one_pass` covers FR-161-AC-1: upd(b) three times, one pass, replayed.
-  - `a_loop_that_needs_two_passes_closes_at_the_concrete_entry` covers FR-161-AC-2: two passes, replayed. The AC's single initial state fails SYM-4, so the subject also lists its image under (a b), which is a spec gap.
-- FND-004: fixed 8bd6b9d24. With #1044 on main, the `each` refutation now replays through FR-128 to `reproduced-with-evaluated-witness`, and FR-161-AC-3 is tagged.
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8bd6b9d24: `strong_each_under_a_trivial_stabiliser_is_decided_on_the_quotient` (TC-571) binds over `x: M::Toggle`, asserts `HoldsReduced` with an empty stabiliser, and checks that weak `each` still refutes. It passes at ffe5f97fb. |
+| FND-002 | deferred | FR-153-AC-4's agreement clause needs the unreduced strong-fairness filter (ADR-019), which is not on main, so AC-4 stays untagged. The meter clause is now tagged TC-571. No follow-up ticket id is named on QSL-541 yet; the leader should link one, for example under QSL-365. |
+| FND-003 | fixed | 8bd6b9d24: `a_whole_loop_under_symmetry_concretises_in_one_pass` (FR-161-AC-1) and `a_loop_that_needs_two_passes_closes_at_the_concrete_entry` (FR-161-AC-2) both run, the latter with two passes and holders `b, a, b`, and both replay. Note: AC-2's single initial state is not closed under `(a b)` (SYM-4), so the fixture adds its image. That is a spec gap in FR-161-AC-2, not a test defect. |
+| FND-004 | fixed | 8bd6b9d24 (with #1044 on main): `an_each_refutation_concretises_to_a_loop_through_every_receiver` now replays through FR-128 to `Reproduced{Truth(false)}` and carries FR-161-AC-3 / TC-586. |
