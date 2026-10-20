@@ -149,6 +149,7 @@ impl Case {
                 declaration,
             }),
             operations: Default::default(),
+            named_populations: checked.named_reads(),
         };
         let model = json!({"identity": "example/config-version", "version": "1.0.0",
             "digest": format!("sha256-jcs:{}", qsl_semantics::model::key::hex(&model_digest))});
