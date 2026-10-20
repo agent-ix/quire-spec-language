@@ -129,3 +129,16 @@ Gates on the head are all green; see SR-13595's Dispositions.
 | FND-003 | fixed | spec #1117 adds the missing-name statement (five names), the one-value-type reward rule, the causes and `probabilistic-claim`; `over-not-object-type` is SR-13595 FND-013 |
 | FND-004 | fixed | 96d0012d9: `the_event_and_workload_diagnostics_read_as_the_requirement_states_them` asserts "needs a finite window" and `Throttle` and `Service` in the rendered text |
 | FND-005 | fixed | spec #1117: FR-186 "Normal form" rules that S3's record is not an identity (R-04), and that O-09's identity stays CG's over the S4 node and its occurrence key |
+
+Round 2, reviewed at `20a7023c0556c145e71c9bb46e3f029d21b914e8`. Spec #1117 is
+now in the branch, through the merge of main at 47ac2d4fd.
+
+`quire matrix` on the head computes FR-186-AC-1 to AC-6 as tagged.
+FR-185-AC-1, AC-2 and AC-8 and FR-311-AC-3 are untagged, but they were
+untagged on the round-0 base too, and this PR does not touch them.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | 20a7023c0: AC-5 tags on `a_comparison_threshold_has_the_type_of_its_measure`, `an_event_horizon_past_u64_is_refused_at_its_operator`, `an_over_type_and_a_threshold_have_their_required_shape` and `a_checked_claim_refuses_emission`; AC-6 tags on the missing-name, reward and fairness tests; the matrix shows both tagged |
+| FND-007 | fixed | 20a7023c0: `the_normal_form_ignores_declaration_order_and_binds_the_over_type` covers reversed fairness, reversed reward declarations and two equal-content declarations (mutants N1 and N2 killed) |
+| FND-008 | fixed | 20a7023c0: the `steps` refusals assert `(IllTyped, "type-mismatch", threshold)`; the fixture gained the object type `Client`, and `over("Server") != over("Client")` is tested |

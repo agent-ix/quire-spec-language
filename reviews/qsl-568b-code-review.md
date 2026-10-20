@@ -173,3 +173,31 @@ Mutants on the head: 14 run, 12 killed and 2 survived.
 | FND-010 | fixed | 96d0012d9: the refusal is located at `Site::Operator`, and two `[0, 2^63]` intervals are tested at `eventually` (mutant N8 killed) |
 | FND-011 | fixed | 96d0012d9: `qsl-package/src/emit/tests/probabilistic.rs` `a_checked_claim_refuses_emission` |
 | FND-012 | fixed | 96d0012d9 with spec #1117: FR-186 states the literal rule, and `ThresholdNotLiteral` refuses `ill_typed`/`type-mismatch` (mutant N7 killed) |
+
+Round 2, reviewed at `20a7023c0556c145e71c9bb46e3f029d21b914e8`. That is
+merge commit 20a7023c0, which brings in main at 47ac2d4fd (spec #1117 and
+QSL-883 `s3.rational_bits`) together with the fix round.
+
+The resolution was reviewed with `git show --remerge-diff`. It has one
+conflict, in `probabilistic_declarations.rs`, where both sides are kept: main's
+two `s3.rational_bits` tests and the branch's `OVER` const. Its `claim.rs`
+changes are:
+- the configured `rational_bits()` ceiling is passed to `exact::value`,
+  `exact_refusal` and `fraction_type`;
+- `AmbiguousLiteral` maps to `type-mismatch` for a `rational(n, d)` threshold
+  of a non-fraction measure (FR-186-AC-5).
+
+Gates on the head: fmt, clippy `-D warnings`, the qsl-eval, qsl-replay,
+qsl-analyze, qsl-semantics (1199) and qsl-cst suites, root `--test it` (975
+passed, 6 ignored), `make string-edge`, and the three arch-lint targets. All
+passed.
+
+`quire matrix`: FR-186-AC-1 to AC-6 are tagged.
+
+Mutants re-run: N1 (fairness unsorted) and N2 (reward operations unsorted)
+are now killed by `the_normal_form_ignores_declaration_order_and_binds_the_over_type`.
+M09, M11, M12, M17, N3, N4 and N7 stay killed.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-013 | deferred | The coder keeps `over-not-object-type` and lists it as a spec follow-up: an FR-186 "Kind and subject" statement and the STD-188 cause list. The restriction is consistent with FR-125 "Instancing". No ticket id was given, so the code lead should file it in Linear before merge. |
