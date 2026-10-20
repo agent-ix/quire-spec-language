@@ -74,6 +74,8 @@ pub struct Unit {
     contracts: String,
     abstract_fields: Json,
     concrete_initials: Vec<Json>,
+    /// Abstract initial states beyond `abstract_fields`.
+    abstract_extra: Vec<Json>,
     /// The keys of the population's universe, and those present initially.
     keys: Vec<&'static str>,
     present: Vec<&'static str>,
@@ -213,6 +215,7 @@ impl Unit {
                 .to_owned(),
             abstract_fields: json!({"value": integer_field(0), "prev": integer_field(0)}),
             concrete_initials: vec![json!({"value": integer_field(0)})],
+            abstract_extra: Vec::new(),
         }
     }
 
@@ -254,6 +257,7 @@ impl Unit {
             ),
             abstract_fields: json!({"value": integer_field(0)}),
             concrete_initials: vec![json!({"value": integer_field(0)})],
+            abstract_extra: Vec::new(),
         }
     }
 
@@ -300,6 +304,54 @@ impl Unit {
             contracts: negate("Spec") + &negate("Impl"),
             abstract_fields: json!({"a": integer_field(0), "b": integer_field(0)}),
             concrete_initials: vec![json!({"a": integer_field(0), "b": integer_field(0)})],
+            abstract_extra: Vec::new(),
+        }
+    }
+
+    /// A `Pair` whose models both declare `flipA`, `flipB` and `setA(x)`, the
+    /// concrete model also `peek`, under `contracts` (see [`probe_contracts`])
+    /// and starting at each of `initials`, the abstract one at each too.
+    pub fn probe_pair(contracts: String, initials: &[(i64, i64)]) -> Self {
+        let pair = |package: &'static str, concrete: bool| {
+            let bit = node(package, "Bit");
+            let mut operations = vec![
+                operation(package, "Pair", "flipA", &[], None, &["a"]),
+                operation(package, "Pair", "flipB", &[], None, &["b"]),
+                operation(package, "Pair", "setA", &[("x", &bit)], None, &["a"]),
+            ];
+            if concrete {
+                operations.push(operation(package, "Pair", "peek", &[], None, &[]));
+            }
+            document(
+                package,
+                vec![
+                    bounded(package, "Bit", 1),
+                    object_type(
+                        package,
+                        "Pair",
+                        vec![
+                            single(package, "Pair", "a", &bit),
+                            single(package, "Pair", "b", &bit),
+                        ],
+                        operations,
+                    ),
+                ],
+                vec![population(package, "pairs", "Pair")],
+            )
+        };
+        let fields = |(a, b): &(i64, i64)| json!({"a": integer_field(*a), "b": integer_field(*b)});
+        Self {
+            keys: vec!["r"],
+            present: vec!["r"],
+            abstract_package: PAIR_SPEC,
+            concrete_package: PAIR_IMPL,
+            object: "Pair",
+            population: "pairs",
+            documents: (pair(PAIR_SPEC, false), pair(PAIR_IMPL, true)),
+            contracts,
+            abstract_fields: fields(&initials[0]),
+            concrete_initials: initials.iter().map(fields).collect(),
+            abstract_extra: initials[1..].iter().map(fields).collect(),
         }
     }
 
@@ -427,6 +479,7 @@ impl Unit {
             abstract_fields: json!({"tossed": {"boolean": false}, "side": integer_field(0),
                 "shown": {"boolean": false}, "face": integer_field(0)}),
             concrete_initials,
+            abstract_extra: Vec::new(),
         }
     }
 
@@ -596,6 +649,7 @@ pub struct World<'u> {
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     abstract_initial: DocumentRef,
+    abstract_extra: Vec<DocumentRef>,
     concrete_initials: Vec<DocumentRef>,
 }
 
@@ -609,6 +663,20 @@ impl<'u> World<'u> {
             &unit.abstract_fields,
             &mut snapshots,
         );
+        let abstract_extra = unit
+            .abstract_extra
+            .iter()
+            .enumerate()
+            .map(|(index, fields)| {
+                snapshot(
+                    unit,
+                    (unit.abstract_package, &unit.documents.0),
+                    &format!("start-{}", index + 1),
+                    fields,
+                    &mut snapshots,
+                )
+            })
+            .collect();
         let concrete_initials = unit
             .concrete_initials
             .iter()
@@ -629,6 +697,7 @@ impl<'u> World<'u> {
             packages: unit.packages(),
             snapshots,
             abstract_initial,
+            abstract_extra,
             concrete_initials,
         }
     }
@@ -654,6 +723,13 @@ impl<'u> World<'u> {
     /// The abstract subject's initial snapshot.
     pub fn abstract_initial(&self) -> DocumentRef {
         self.abstract_initial.clone()
+    }
+
+    /// Every abstract initial snapshot: the first, then the extra ones.
+    pub fn abstract_initials(&self) -> Vec<DocumentRef> {
+        std::iter::once(self.abstract_initial.clone())
+            .chain(self.abstract_extra.iter().cloned())
+            .collect()
     }
 
     /// The request over `package` with `initial` states, the universe
@@ -874,5 +950,48 @@ pub fn register_history_ensured() -> String {
     register_history(LAST).replace(
         "step Impl::Register::write",
         "ensure fair weak Spec::Register::write;\nstep Impl::Register::write",
+    )
+}
+
+/// A precondition no state satisfies.
+pub const NEVER: &str = "self.a = 0 and self.a = 1";
+
+/// The contracts of [`Unit::probe_pair`]: a precondition for each concrete
+/// operation (`flipA`, `flipB`, `setA`, `peek`) and each abstract one
+/// (`flipA`, `flipB`, `setA`), empty for none, and the postconditions that
+/// negate `a` and `b` and set `a`.
+pub fn probe_contracts(concrete: [&str; 4], abstract_: [&str; 3]) -> String {
+    const OPERATIONS: [&str; 4] = ["flipA", "flipB", "setA", "peek"];
+    let mut contracts = String::new();
+    for (model, guards) in [("Impl", &concrete[..]), ("Spec", &abstract_[..])] {
+        for (operation, guard) in OPERATIONS.iter().zip(guards) {
+            if !guard.is_empty() {
+                contracts += &format!(
+                    "pre {model}Pre{operation} using v on {model}::Pair::{operation} {{ {guard} }}\n"
+                );
+            }
+        }
+        contracts += &format!(
+            "post {model}FlipA using v on {model}::Pair::flipA {{ self.a = 1 - pre(self.a) }}\n\
+             post {model}FlipB using v on {model}::Pair::flipB {{ self.b = 1 - pre(self.b) }}\n\
+             post {model}SetA using v on {model}::Pair::setA {{ self.a = x }}\n"
+        );
+    }
+    contracts
+}
+
+/// The refinement of [`Unit::probe_pair`]'s models, with the fairness `rows`
+/// (each a whole `assume fair ...;` or `ensure fair ...;` line).
+pub fn probe_refinement(rows: &[&str]) -> String {
+    let rows: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    format!(
+        "refinement Probe using inf abstract Spec concrete Impl {{\n\
+         population Spec::pairs from Impl::pairs;\n\
+         object Spec::Pair from Impl::Pair {{ a = self.a; b = self.b; }}\n\
+         step Impl::Pair::flipA -> Spec::Pair::flipA(self);\n\
+         step Impl::Pair::flipB -> Spec::Pair::flipB(self);\n\
+         step Impl::Pair::setA -> Spec::Pair::setA(self, x);\n\
+         step Impl::Pair::peek -> stutter;\n\
+         {rows}}}"
     )
 }

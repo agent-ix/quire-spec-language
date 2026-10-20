@@ -110,7 +110,10 @@ pub enum LivenessHalf {
 pub struct RefinementOutcome {
     /// The safety half.
     pub safety: SafetyOutcome,
-    /// The liveness half: `None` with `F_A` empty, and with a non-empty `F_A`
-    /// when the safety half is other than `Holds`.
+    /// The liveness half: `None` with `F_A` empty. With a non-empty `F_A` it
+    /// is `Unsupported` for a refinement with a hidden abstract field or a
+    /// strong `F_A` constraint, whatever the safety half is; otherwise it is
+    /// `None` when the safety half is other than `Holds`, and `Checked`
+    /// when it holds.
     pub liveness: Option<LivenessHalf>,
 }

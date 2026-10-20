@@ -56,6 +56,7 @@ use qsl_replay::{
 use qsl_semantics::check::CheckedRefinement;
 use qsl_semantics::model::observation::DocumentRef;
 use quire_exact::Cancel;
+use quire_semantic_value::fairness::FairnessKind;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
@@ -128,7 +129,9 @@ impl From<ModelCheckRefusal> for End {
 ///
 /// [`ModelCheckRefusal`] when a subject does not admit or a root of either is
 /// unbounded, nothing being explored then, and when the liveness half meets
-/// an internal fault.
+/// an internal fault. A fault of the liveness half is a refusal, not a
+/// `Fault` outcome, as FR-126's liveness phase returns it; the safety half
+/// and its certificate are discarded with it.
 pub fn check_refinement(
     request: RefinementCheckRequest<'_>,
     cancel: &Cancel,
@@ -219,6 +222,18 @@ pub fn check_refinement(
     {
         Some(LivenessHalf::Unsupported(
             UnavailabilityCause::HiddenFieldLiveness,
+        ))
+    } else if refinement
+        .abstract_fairness()
+        .iter()
+        .any(|constraint| constraint.kind() == FairnessKind::Strong)
+    {
+        // A hidden field is reported first (above), so a refinement with
+        // both gets `HiddenFieldLiveness`. The second phase reads a class as weak (enabled at every state of
+        // the loop); a strong class needs another reading the spec has not
+        // given, so the half is not decided.
+        Some(LivenessHalf::Unsupported(
+            UnavailabilityCause::StrongAbstractFairness,
         ))
     } else if matches!(safety, SafetyOutcome::Holds { .. }) {
         Some(LivenessHalf::Checked(run.liveness()?))
@@ -707,7 +722,6 @@ impl Run<'_, '_> {
             identity,
         )?;
         for class in &classes {
-            self.poll()?;
             let (graph, vertices) = self.fair_graph(class, &identity)?;
             let within: BTreeSet<Vertex> = vertices
                 .iter()

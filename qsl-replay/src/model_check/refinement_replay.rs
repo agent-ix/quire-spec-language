@@ -29,6 +29,7 @@
 use qsl_eval::simulation::model::ModelFinding;
 use qsl_foundation::diagnostic::Category;
 use qsl_semantics::model::state::ModelState;
+use quire_semantic_value::fairness::FairnessKind;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::execute::ReplayRefusal;
@@ -326,10 +327,14 @@ fn replay_lasso(
     )? {
         return Err(ReplayRefusal::UnfairLasso { constraint });
     }
+    // A strong constraint is outside the weak reading the engine writes
+    // lassos by, so no lasso of one is replayed as a reproduction.
     let Some(index) = refinement
         .abstract_fairness()
         .iter()
-        .position(|abstract_constraint| abstract_constraint == constraint)
+        .position(|abstract_constraint| {
+            abstract_constraint == constraint && abstract_constraint.kind() == FairnessKind::Weak
+        })
     else {
         return Ok(RefinementTraceSettlement::Inconclusive(disagreement(
             Category::Success,

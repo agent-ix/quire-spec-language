@@ -319,6 +319,10 @@ pub enum UnavailabilityCause {
     /// non-empty `F_A` has no liveness half to decide. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
     HiddenFieldLiveness,
+    /// A refinement with a strong constraint in `F_A`, whose liveness half
+    /// the second phase does not decide: it reads a class as weak. Wire cause
+    /// `unsupported_projection`/`unsupported-requested-capability`.
+    StrongAbstractFairness,
 }
 
 impl UnavailabilityCause {
@@ -328,9 +332,9 @@ impl UnavailabilityCause {
             Self::SolverAbsent => "solver-absent",
             Self::BackendAbsent => "backend-absent",
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
-            Self::UnsupportedReduction { .. } | Self::HiddenFieldLiveness => {
-                "unsupported-requested-capability"
-            }
+            Self::UnsupportedReduction { .. }
+            | Self::HiddenFieldLiveness
+            | Self::StrongAbstractFairness => "unsupported-requested-capability",
         }
     }
 
@@ -341,7 +345,8 @@ impl UnavailabilityCause {
             Self::SolverAbsent | Self::BackendAbsent => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
-            | Self::HiddenFieldLiveness => Some("unsupported_projection"),
+            | Self::HiddenFieldLiveness
+            | Self::StrongAbstractFairness => Some("unsupported_projection"),
         }
     }
 
