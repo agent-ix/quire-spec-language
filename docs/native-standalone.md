@@ -1,12 +1,11 @@
 # Run and compile requests
 
 `quire-spec run` and `quire-spec compile` each read one JSON request file. The
-request selects every input by file name and digest, so a result always says
-exactly which source, model and data it was computed from. Nothing else is
-needed: no network service and no other tool.
+request selects every input by file name and digest. Each result names the
+source, model and data it was computed from.
 
-This page describes requests for `1-draft` units. The quickest way to see one
-is the ConfigVersion example:
+This page covers requests for `1-draft` units. The ConfigVersion example
+generates both kinds:
 
 ```sh
 cargo run --locked --example config_version_fixtures -- /tmp/config-version
@@ -92,8 +91,8 @@ A run prints one JSON result on stdout and ends with the outcome's exit code:
 | 22 | incomplete: the data does not claim to be complete, or a work counter ran out |
 | 30 | internal failure |
 
-Only a completed run carries a truth value. A refused or incomplete result has
-none, so it can never be read as *false*. Request errors are JSON on stderr.
+Only a completed run carries a truth value. Refused and incomplete results have
+no truth field. Request errors are JSON on stderr.
 The [diagnostic codes](native-error-codes.md) page lists every code.
 
 The request shapes are pinned by the CLI tests in
