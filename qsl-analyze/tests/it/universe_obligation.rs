@@ -75,6 +75,7 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
             WireNodeId::from_digest([1; 32]),
             &[WireNodeId::from_digest([2; 32])],
             Some(population),
+            &[],
         )
         .expect("keyed");
     assert!(matches!(requirements.extent(), ClaimExtent::Unbounded(_)));

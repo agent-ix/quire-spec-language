@@ -149,6 +149,38 @@ impl ModelRefusal {
     pub fn catalog_code(&self) -> qsl_foundation::diagnostic::CatalogCode {
         self.cause.catalog_code()
     }
+
+    /// FR-090 `lookup`: a reference of type `actual` does not conform to the
+    /// queried type `required` (`ill_typed`/`type-mismatch`).
+    pub fn type_mismatch(actual: String, required: String) -> Self {
+        Self {
+            code: Code::IllTyped,
+            cause: ModelRefusalCause::TypeMismatch,
+            detail: format!("{actual} does not conform to {required}"),
+        }
+    }
+
+    /// FR-090 `lookup` with absence `Refused`: `key`, an object identity's
+    /// bytes, names no member of the population `binding`.
+    pub fn absent_key(binding: String, key: Vec<u8>) -> Self {
+        let display = match std::str::from_utf8(&key) {
+            Ok(object) => object.to_owned(),
+            // Distinguishable from a well-formed identity string, which
+            // this format can never itself produce: no JSON string
+            // (`PopulationDocument`'s own member identity shape) contains
+            // "(not UTF-8)" as a literal suffix of a bare hex run, since a
+            // JSON string is already valid UTF-8 by construction.
+            Err(_) => format!(
+                "identity bytes 0x{} (not UTF-8)",
+                crate::model::key::hex(&key)
+            ),
+        };
+        Self {
+            code: Code::InvalidRuntimeInput,
+            cause: ModelRefusalCause::AbsentKey { binding, key },
+            detail: format!("{display} is not a member of the bound population"),
+        }
+    }
 }
 
 /// A non-empty [`ModelRefusal`] list (L1 finding, PR #228 review):

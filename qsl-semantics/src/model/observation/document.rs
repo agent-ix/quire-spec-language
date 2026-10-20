@@ -2798,6 +2798,24 @@ pub(super) fn finish_populations(
         .iter()
         .map(|(reference, _)| reference.clone())
         .collect();
+    // The objects each population lists, ascending, so a clause that names
+    // a population can read it (FR-391 "Evaluation"). Every listed
+    // population has an entry, so a complete population with no objects is
+    // an empty domain.
+    let mut members: BTreeMap<String, Vec<ObjectReference>> = values
+        .completeness
+        .keys()
+        .map(|population| (population.clone(), Vec::new()))
+        .collect();
+    for (holder, reference) in values.holders.iter().zip(&references) {
+        members
+            .entry(holder.clone())
+            .or_default()
+            .push(reference.clone());
+    }
+    for listed in members.values_mut() {
+        listed.sort();
+    }
     let environment = ObjectEnvironment::new(
         ObjectClosure::new(closure_types, values.objects, &tolerated)
             .map_err(map_environment_refusal)?,
@@ -2805,7 +2823,9 @@ pub(super) fn finish_populations(
     .with_references(references)
     .with_out_of_range(out_of_range.clone())
     .with_extents(extents)
-    .with_population_sizes(population_sizes);
+    .with_population_sizes(population_sizes)
+    .with_population_members(members)
+    .with_population_completeness(values.completeness.clone());
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -2856,6 +2876,7 @@ pub(super) fn admit_populations(
     snapshot: &SnapshotDocument,
     document: &DocumentRef,
     self_population: Option<&str>,
+    required: &[String],
     ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     let values = admit_population_values(
@@ -2871,7 +2892,7 @@ pub(super) fn admit_populations(
         &snapshot.populations,
         &values.completeness,
         self_population,
-        &[],
+        required,
         &values.extents,
     )?;
     check_population_closure(
@@ -2991,6 +3012,7 @@ pub(super) fn admit_argument_populations(
     snapshot: &SnapshotDocument,
     document: &DocumentRef,
     arguments: &[ObjectReference],
+    named: &[String],
     ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     let values = admit_population_values(
@@ -3002,7 +3024,8 @@ pub(super) fn admit_argument_populations(
         PostStateRange::Refuse,
         ancestor_steps,
     )?;
-    let required = values.populations_holding(arguments);
+    let mut required = values.populations_holding(arguments);
+    required.extend(named.iter().cloned());
     check_population_completeness(
         &snapshot.populations,
         &values.completeness,

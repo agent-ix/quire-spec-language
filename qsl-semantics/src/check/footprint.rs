@@ -476,11 +476,22 @@ impl<'a> Reader<'a> {
                     observation,
                 ));
             }
+            // A clause that names one population (`M::P`, FR-391) reads that
+            // population's membership alone.
+            NodeKind::AllInstances { population } | NodeKind::Lookup { population, .. }
+                if let NodeKind::NamedPopulation { population, .. } =
+                    node.at(*population).kind() =>
+            {
+                reads.push((
+                    SymbolicLocation::AnyMembership {
+                        population: population.clone(),
+                    },
+                    observation,
+                ));
+            }
             // The population operand is a population-typed parameter, which
             // names no population, so every population related to the result
-            // type is read. A clause that names one population (`M::P`,
-            // FR-391) reads that population's membership alone; that form
-            // cannot reach this derivation until S3 resolves it.
+            // type is read.
             NodeKind::AllInstances { .. } | NodeKind::Lookup { .. } => {
                 let mut targets = Vec::new();
                 referenced_types(node.value_type(), &mut targets);

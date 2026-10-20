@@ -224,10 +224,9 @@ fn reproduced(settlement: &ModelTraceSettlement) -> bool {
     )
 }
 
-/// AC-3's claim, `eventually` every toggle fired. A temporal atom cannot
-/// name a population (S3 refuses `M::toggles` there with `missing-name`),
-/// so the atom is spelled over the bound watcher and read by the test's
-/// letters as "every toggle has fired".
+/// AC-3's claim, `eventually` every toggle fired, as the AC writes it: over
+/// the bound watcher, with the run's letter, "every toggle has fired",
+/// supplied by the test.
 const EVENTUALLY_FIRED: &str = "eventually holds(w = w)";
 
 const WEAK: &str = "fair weak each M::Toggle::flip; fair weak each M::Toggle::fire;";

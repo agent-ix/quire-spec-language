@@ -32,6 +32,7 @@ mod kernel_refusal_payloads;
 mod machine_contexts;
 mod model_reference_queries;
 mod model_simulation;
+mod named_population;
 mod native_literals;
 mod native_scalar_equality;
 mod property_automata;
