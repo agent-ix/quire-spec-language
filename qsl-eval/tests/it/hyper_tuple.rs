@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-175 (TC-600): the layer-5 evaluator reads a hyper body over a tuple of
-//! behaviours in lockstep.
+//! behaviours in lockstep. FR-178 (TC-603): it reads one three-valued over a
+//! tuple of projected prefixes.
 //!
 //! Each clause is real complete-V1 source taken through S1, S2, the assembler
 //! and the hyper check (FR-172). The `holds` conditions are not checked at
@@ -10,8 +11,8 @@
 
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
-    evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
-    TemporalPosition, TemporalRefusal, TupleLetters, UndefinedCause,
+    evaluate_projected_prefix, evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace,
+    LetterStop, TemporalOutcome, TemporalPosition, TemporalRefusal, TupleLetters, UndefinedCause,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
@@ -465,8 +466,8 @@ fn an_atom_with_no_value_makes_the_body_undefined_at_the_first_such_joint_positi
     );
 }
 
-/// FR-175 covers lockstep only: a clause with `align skip` (FR-178) is
-/// refused as not yet implemented.
+/// FR-175 covers lockstep only: a clause with `align skip` (FR-178) is read
+/// over projected prefixes, and the lockstep evaluator refuses it.
 #[trace("TC-600")]
 #[test]
 fn a_clause_with_align_skip_is_refused_as_not_yet_implemented() {
@@ -584,4 +585,106 @@ fn a_tuple_of_the_wrong_size_or_with_an_empty_component_is_refused() {
         ),
         Err(TemporalRefusal::EmptyLoop)
     );
+}
+
+/// The tuple of projected prefixes `observations`, one per component, read by
+/// `evaluate_projected_prefix` over `len` projected positions.
+fn prefix<'a>(
+    fixture: &'a Fixture,
+    len: u64,
+    observations: Vec<Vec<i64>>,
+) -> (TemporalOutcome, Letters<'a>) {
+    let mut letters = Letters::new(fixture, observations);
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let outcome = evaluate_projected_prefix(&fixture.clause, len, &mut letters, &mut meter)
+        .expect("the prefix is readable");
+    (outcome, letters)
+}
+
+/// The fixture of FR-178: `always holds(c.value @ a = c.value @ b)` with
+/// `align skip { M::Counter::acquire }`.
+fn projected(body: &str) -> Fixture {
+    fixture_with(
+        vec![increment(), acquire()],
+        "align skip { M::Counter::acquire }",
+        body,
+    )
+}
+
+/// FR-178-AC-3: over a joint projected prefix whose last projected position
+/// has unequal values the three-valued reading is false, whichever of the
+/// positions before it agree; over one with equal values throughout it
+/// returns no false, only `Pending`, since a position past the prefix is
+/// neither true nor false.
+#[trace("TC-603", "FR-178-AC-3")]
+#[test]
+fn a_prefix_ending_in_unequal_values_is_false_and_an_equal_one_is_not() {
+    let fixture = projected(ALWAYS_EQUAL);
+    let (unequal, _) = prefix(&fixture, 3, vec![vec![0, 1, 2], vec![0, 1, 3]]);
+    assert_eq!(unequal, violated(0));
+    let (equal, _) = prefix(&fixture, 3, vec![vec![0, 1, 2], vec![0, 1, 2]]);
+    assert_eq!(equal, TemporalOutcome::Pending);
+}
+
+/// FR-178-AC-3, the extent of the prefix: only the projected positions below
+/// `len` are read. The values differ at position 2, so a prefix of 2
+/// positions is no bad prefix and one of 3 is; a prefix whose unequal values
+/// are in the middle is false too.
+#[trace("TC-603", "FR-178-AC-3")]
+#[test]
+fn only_the_projected_positions_of_the_prefix_are_read() {
+    let fixture = projected(ALWAYS_EQUAL);
+    let observations = || vec![vec![0, 1, 5], vec![0, 1, 6]];
+    let (short, letters) = prefix(&fixture, 2, observations());
+    assert_eq!(short, TemporalOutcome::Pending);
+    assert!(letters.joints.iter().all(|joint| *joint < 2));
+    let (long, _) = prefix(&fixture, 3, observations());
+    assert_eq!(long, violated(0));
+    let (middle, _) = prefix(&fixture, 3, vec![vec![0, 4, 2], vec![0, 1, 2]]);
+    assert_eq!(middle, violated(0));
+}
+
+/// FR-178-AC-3, indexing: joint position `j` is projected position `j` of
+/// every component, and no component stutters at any of them.
+#[trace("TC-603", "FR-178-AC-3")]
+#[test]
+fn every_component_reads_the_same_projected_position_without_stuttering() {
+    let fixture = projected(ALWAYS_EQUAL);
+    let (_, letters) = prefix(&fixture, 2, vec![vec![3, 3], vec![3, 3]]);
+    assert!(!letters.stutters.is_empty());
+    for (joint, stutters) in &letters.stutters {
+        assert!(*joint < 2);
+        assert_eq!(stutters, &[false, false]);
+    }
+}
+
+/// FR-178-AC-3, undefined: an atom with no value at a projected position makes
+/// the body undefined there, with its cause; the prefix is neither true nor
+/// false.
+#[trace("TC-603", "FR-178-AC-3")]
+#[test]
+fn an_atom_with_no_value_in_a_prefix_is_undefined_at_its_projected_position() {
+    let fixture = projected("always holds(1 / c.value @ a = 1)");
+    let (outcome, _) = prefix(&fixture, 3, vec![vec![1, 0, 1], vec![0, 0, 0]]);
+    let TemporalOutcome::Undefined(undefined) = outcome else {
+        panic!("{outcome:?}");
+    };
+    assert_eq!(undefined.at, TemporalPosition::new(1));
+    assert_eq!(
+        undefined.cause,
+        UndefinedCause::Kernel(Undefined::DivisionByZero)
+    );
+}
+
+/// FR-178 "Three-valued prefix evaluation": a prefix holds the initial
+/// position at least.
+#[trace("TC-603", "FR-178-AC-3")]
+#[test]
+fn a_prefix_of_no_position_is_refused() {
+    let fixture = projected(ALWAYS_EQUAL);
+    let mut letters = Letters::new(&fixture, vec![vec![], vec![]]);
+    let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
+    let refusal = evaluate_projected_prefix(&fixture.clause, 0, &mut letters, &mut meter)
+        .expect_err("an empty prefix");
+    assert_eq!(refusal, TemporalRefusal::EmptyTrace);
 }

@@ -12,7 +12,14 @@
 //! component indexing (ADR-014 TR-2's prefix-then-loop rule) and the
 //! terminal stutter of a component that ends (ADR-023 HM-5).
 //!
-//! The traces are fair by the caller's premise: the domain of a variable is
+//! [`evaluate_projected_prefix`] is the other reading of a tuple, for a clause
+//! with `align skip` (HP-6, ADR-023 PA-2, PA-3, PA-6): the components are
+//! finite projected traces of one length, joint position `j` is projected
+//! position `j` of every component, and the body is read by ADR-014 A-4's
+//! three-valued prefix semantics, so a position past the prefix is neither
+//! true nor false.
+//!
+//! The traces of a lockstep tuple are fair by the caller's premise: the domain of a variable is
 //! its subject's fair behaviours (HM-1), checked by the engine that produced
 //! the tuple and by replay (FR-183), so the body is evaluated with no
 //! fairness set to check.
@@ -344,4 +351,75 @@ pub fn evaluate_tuple<L: TupleLetters>(
         ),
         other => Ok(other),
     }
+}
+
+/// The body's atoms at a joint projected position: every component reads the
+/// same projected position, and none stutters (ADR-023 PA-2).
+struct Projected<'a, L> {
+    letters: &'a mut L,
+    components: usize,
+}
+
+impl<L: TupleLetters> TemporalLetters for Projected<'_, L> {
+    fn atom(
+        &mut self,
+        atom: FormulaNodeId,
+        position: TemporalPosition,
+        meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        let reads = vec![
+            ComponentPosition {
+                position,
+                stutter: false,
+            };
+            self.components
+        ];
+        self.letters.atom(atom, position, &reads, meter)
+    }
+
+    fn activation(
+        &mut self,
+        _position: TemporalPosition,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, LetterStop> {
+        Err(LetterStop::Fault(fault("hyper-body-activates-on-origin")))
+    }
+}
+
+/// Evaluate `body` three-valued over the joint projected prefix of `len`
+/// positions, one projected trace of that length per variable (FR-178
+/// "Three-valued prefix evaluation"; ADR-023 PA-3, PA-6).
+///
+/// The reading is the temporal evaluator's on a finite prefix of an unknown
+/// continuation (ADR-014 A-4): `Violated` exactly when the prefix is a bad
+/// prefix of the body, whose `at` is the activation, and `Pending` when it
+/// decides nothing, which is no `false`. Interval operators count projected
+/// positions. `Undefined` is the first projected position at which an atom is
+/// undefined. The `align skip` list is not read: the components are already
+/// projected, and the caller's letters read each at its projected position.
+///
+/// # Errors
+///
+/// [`TemporalRefusal::EmptyTrace`] when `len` is 0, since position 0 is
+/// always projected.
+pub fn evaluate_projected_prefix<L: TupleLetters>(
+    body: &CheckedHyperClause,
+    len: u64,
+    letters: &mut L,
+    meter: &mut Meter,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    if len == 0 {
+        return Err(TemporalRefusal::EmptyTrace);
+    }
+    let mut projected = Projected {
+        letters,
+        components: body.quantifiers().len(),
+    };
+    engine::run(
+        subject(body),
+        TemporalTrace::Finite { len },
+        Goal::Clause,
+        &mut projected,
+        meter,
+    )
 }

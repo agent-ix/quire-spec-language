@@ -26,7 +26,8 @@
 //! this function takes the recompiled clause and the admitted systems it
 //! would hand over. A counterexample that breaks QSpec FR-400's reader rules
 //! is refused here as the shape it breaks. The other arms (`witness-exhausted`,
-//! `projected`, `step-tuple`) join with their engines.
+//! `projected`, `step-tuple`) join with their replays: the first two are
+//! refused as not yet implemented.
 
 use qsl_eval::automaton::translate_negation;
 use qsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
@@ -93,11 +94,14 @@ pub fn replay_hyper_trace_tuple(
     replay: &HyperReplay<'_, '_>,
     counterexample: &HyperCounterexample,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
-    if matches!(
-        counterexample.kind,
-        HyperCounterexampleKind::WitnessExhausted { .. }
-    ) {
-        return Err(refused(ModelTraceRefusal::HyperWitnessExhausted));
+    match counterexample.kind {
+        HyperCounterexampleKind::WitnessExhausted { .. } => {
+            return Err(refused(ModelTraceRefusal::HyperWitnessExhausted));
+        }
+        HyperCounterexampleKind::Projected => {
+            return Err(refused(ModelTraceRefusal::HyperProjected));
+        }
+        HyperCounterexampleKind::Lockstep { .. } | HyperCounterexampleKind::Undefined(_) => {}
     }
     shape(replay, counterexample)?;
     let Some(executed) = execute(replay, counterexample)? else {
@@ -110,8 +114,8 @@ pub fn replay_hyper_trace_tuple(
         HyperCounterexampleKind::Undefined(claimed) => {
             undefined(replay, counterexample, &executed, claimed)
         }
-        HyperCounterexampleKind::WitnessExhausted { .. } => {
-            Err(fault("a-witness-exhausted-counterexample-is-refused-first"))
+        HyperCounterexampleKind::WitnessExhausted { .. } | HyperCounterexampleKind::Projected => {
+            Err(fault("an-unreplayed-counterexample-is-refused-first"))
         }
     }
 }
@@ -166,8 +170,8 @@ fn shape(
                 return Err(shape_error("re-enters its loop outside its steps"));
             }
         }
-        HyperCounterexampleKind::WitnessExhausted { .. } => {
-            return Err(fault("a-witness-exhausted-counterexample-is-refused-first"));
+        HyperCounterexampleKind::WitnessExhausted { .. } | HyperCounterexampleKind::Projected => {
+            return Err(fault("an-unreplayed-counterexample-is-refused-first"));
         }
         HyperCounterexampleKind::Undefined(claimed) => {
             let position = u64::try_from(steps).unwrap_or(u64::MAX);

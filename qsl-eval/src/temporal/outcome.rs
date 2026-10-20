@@ -85,9 +85,10 @@ pub enum TemporalRefusal {
         /// The components supplied.
         found: usize,
     },
-    /// A hyper clause with `align skip` (HP-6, FR-178), which is not
-    /// lockstep and is not built yet.
-    #[error("a clause with `align skip` is not evaluated in lockstep; FR-178 is not built")]
+    /// A hyper clause with `align skip` (HP-6, FR-178) handed to the lockstep
+    /// evaluator: it is read over projected prefixes, and no replay of that
+    /// reading is built yet.
+    #[error("a clause with `align skip` is not evaluated in lockstep; its replay is not built")]
     AlignSkipNotImplemented,
     /// A lasso with an empty loop (FR-329 "Lasso shape").
     #[error("a lasso holds at least one loop position")]

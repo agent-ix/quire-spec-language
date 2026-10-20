@@ -17,7 +17,9 @@
 //! evaluator receives a Boolean per position.
 //!
 //! [`evaluate_tuple`] evaluates a hyper body over a tuple of behaviours in
-//! lockstep (FR-175) by reading the tuple as one lasso.
+//! lockstep (FR-175) by reading the tuple as one lasso;
+//! [`evaluate_projected_prefix`] evaluates it three-valued over a tuple of
+//! projected prefixes (FR-178).
 //!
 //! The trace's observations and the `holds` conditions are the caller's:
 //! the evaluator reaches them only through [`TemporalLetters`], the seam to
@@ -39,7 +41,9 @@ pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use observed::{evaluate_observed, HoldsStop, ObservedRun};
 pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 pub use position::{PositionRefusal, TemporalPosition};
-pub use tuple::{evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters};
+pub use tuple::{
+    evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,
+};
 pub use window::{
     AggregateAtom, AggregateKind, AggregateTerm, InsufficientData, PastWindow, TermRefusal,
     WindowLimitReached, WindowRefusal, WindowSource, WindowTrace, DEFAULT_MAX_WINDOW_VALUES,
