@@ -150,3 +150,50 @@ What is correct:
 | FND-008 | low | `Por::visible` and `Por::candidate_seeded_by` are `pub` methods of the shipped `qsl_analyze::model_check` API, but only the tests call them; production calls only `Por::ample`. That is test-only public surface in a library crate. Either make them test hooks the repo's way, or justify them as API. | qsl-analyze/src/model_check/ample.rs:190-227 |
 | FND-009 | low | The safety engine evaluates every successor's monitor twice under POR. `Run::ample` calls `self.advance` on every successor to judge C3. `create` then calls `advance` again on each step the loop keeps, so every atom is evaluated twice, with fresh meters, at each reduced expansion. Pass the `(after, bad)` pairs from `ample` to the loop. | qsl-analyze/src/model_check/check.rs:1066-1115; qsl-analyze/src/model_check/check.rs:1142-1143 |
 | FND-010 | low | FR-157-AC-3's test checks the reduced lasso entry (2) and position count (5), and the unreduced lasso entry (0) and count (3). It never checks the operations. The AC names the stem `arm, arm2` and the loop `toggle, toggle`, and any 2-step stem with a 2-step loop passes. | qsl-analyze/tests/it/partial_order.rs:612-641 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-011 | medium | The test now tagged FR-156-AC-4, `the_candidate_holds_the_writers_of_a_disabled_members_enabling_footprint`, does not test the scenario the AC states in companion spec PR #1096. The test adds `setd()` (pre `not self.d`), seeds the candidate with `arm`, and asserts candidate `{arm, arm2, go, setd}` with enabled part `{arm, setd}`. The AC as amended in #1096 adds `touch()` (framed `modifies self.d`, no pre), seeds with `touch`, and states enabled part `{touch, arm}`. Both scenarios do exercise the closure: with it removed, the test fails (mutation M2) and the oracle gives `{touch}`. But once both PRs merge, the tag would claim a different vector from the AC's. Align the test with the AC (or the AC with the test) before the pair merges. | qsl-analyze/tests/it/partial_order.rs:594-628; qsl-analyze/tests/it/por_world.rs:697-710 |
+| FND-012 | low | The rewritten doc comment on `Location::affects` ends "POR-4 and QSpec FR-383 state the meet symmetrically, which makes every operation on one object depend on every other". Companion spec PRs #1096 and #299 make POR-4 and FR-383 directional, so once they merge the comment contradicts the spec it cites. Cite the directional POR-4 and FR-383 rule instead. | qsl-eval/src/simulation/footprint.rs:45-53 |
+
+## Dispositions
+
+Round 1, reviewed at `4afad2ca6e5572595130bdc82f936cfc0642793a`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 4afad2ca6: `identities_of` adds `absent_rows`, one row per universe key the state does not hold, at each concrete type the key's population admits. The rows also feed argument domains. Probe: the candidate seeded by `cancel(x)` now holds `probe(y, d, x)`, so `A(s) = E(s)`. Mutation (rows removed): the new test `the_candidate_holds_transitions_over_objects_no_state_holds_yet` fails. Scale, release build, with an `Item` universe of n keys and a two-parameter operation over items: n=64 gives 4,226 identities, listed in 40 ms, and `ample` takes 110 ms. That is the size the identity set already reaches when every key is held, and `max_candidates` still bounds it. No blow-up beyond the universe's size. |
+| FND-002 | fixed | Spec side: companion PRs #1096 and #299 make POR-4, POR-11 and FR-383 directional (SR-13530 and SR-13531, both fixed in round 1). |
+| FND-003 | fixed | 4afad2ca6: `Por::new` calls `check_footprints_derivable` first. Probe: unreduced returns `Violated`; POR returns `Err(Footprint(Refused(UnsupportedForm{clause: "SpinP", form: "function call"})))`. Mutation (check removed): `an_operation_with_no_footprint_rule_refuses_partial_order_reduction` fails. |
+| FND-004 | fixed | 4afad2ca6: the circular `enabled_part` assertion is gone. The new test reads the enabled part from `candidate_seeded_by` and fails with the disabled-member closure removed (mutation M2). Scenario alignment with the AC is FND-011. |
+| FND-005 | fixed | 4afad2ca6: the FR-156-AC-2 test asserts the path `a, a, b, b, c, c`, and #1096 states the same path. |
+| FND-006 | fixed | Spec side: #1096 states QSpec FR-181's escaped-byte order, `arm2` before `arm`. |
+| FND-007 | fixed | Spec side: #1096 defines the count as model states in the model-level reduced search. I checked each stated count against the engine: 8, 6, 4, 5, 6 and 6, all agree. The tests still assert reduced equal to unreduced rather than absolute counts. |
+| FND-008 | fixed | 4afad2ca6: `Por::visible` and `Por::candidate_seeded_by` are `#[cfg(feature = "test-support")]`. The crate enables the feature for its own integration tests through a dev-dependency on itself (+1 Cargo.lock line). `test-support` is the repo's convention (qsl-cst, qsl-package, qsl-semantics, quire-exact). This is the first crate to enable it on itself, but it is the standard Cargo way to reach an integration-test hook, and `cfg(test)` does not reach `tests/`. Resolver 2 limits it to test builds. `no_shipped_dependency_enables_test_support` (root `cargo test --test it`), `arch-lint-api-surface-qsl` and `clippy -p qsl-analyze --all-features` all pass. Acceptable. |
+| FND-009 | fixed | 4afad2ca6: `Run::ample` returns the `(after, bad)` reading of each kept step, and `create` uses it in place of reading again. The readings stay in step order through the `kept` flags. |
+| FND-010 | fixed | 4afad2ca6: the FR-157-AC-3 test asserts the operations: reduced `arm, arm2, toggle, toggle`, unreduced `toggle, toggle`. |
+
+Re-run at 4afad2ca6, all green:
+
+- `cargo test -p qsl-eval -p qsl-replay -p qsl-analyze -p qsl-semantics`
+- root `cargo test --test it`
+- `cargo clippy --locked --workspace --all-targets -D warnings`
+- `cargo clippy -p qsl-analyze --all-targets --all-features -D warnings`
+- `make string-edge`
+- `make arch-lint-api-surface-qsl`
+- `make arch-lint-canonical-encoder`
+- `make arch-lint-qualified-core`
+
+Mutations:
+
+- M1, fairness visibility off: 6 tests fail, the differential among them.
+- M2, disabled-member closure off: 5 tests fail, among them the new
+  FR-156-AC-4 test and the differential.
+- M3, `affects` replaced by `meets`: 9 tests fail.
+
+`a_probe_over_an_absent_object_keeps_the_verdicts` still passes with the
+absent rows removed. Today's engine hides that case end to end (a no-op
+successor that fails C3), so the candidate-level test is the one that guards
+it.

@@ -694,18 +694,18 @@ pub(crate) fn gate(guard: Guard, spawn: bool, claims: &[&str]) -> Fixture {
     gate_with(guard, spawn, false, claims)
 }
 
-/// [`gate`] with `setd()` (framed `modifies self.d`, pre `not self.d`) when
-/// `setd` is set: it reads nothing `arm` writes, and writes what `arm2`'s
+/// [`gate`] with `touch()` (framed `modifies self.d`, pre `not self.d`) when
+/// `touch` is set: it reads nothing `arm` writes, and writes what `arm2`'s
 /// and `go`'s enablings read.
-pub(crate) fn gate_with(guard: Guard, spawn: bool, setd: bool, claims: &[&str]) -> Fixture {
+pub(crate) fn gate_with(guard: Guard, spawn: bool, touch: bool, claims: &[&str]) -> Fixture {
     let mut operations = vec![
         operation("Gate", "arm", None, &writes("Gate", &["c"])),
         operation("Gate", "arm2", None, &writes("Gate", &["d"])),
         operation("Gate", "go", None, &writes("Gate", &["done"])),
         operation("Gate", "toggle", None, &writes("Gate", &["a"])),
     ];
-    if setd {
-        operations.push(operation("Gate", "setd", None, &writes("Gate", &["d"])));
+    if touch {
+        operations.push(operation("Gate", "touch", None, &writes("Gate", &["d"])));
     }
     if spawn {
         operations.push(operation(
@@ -733,9 +733,9 @@ pub(crate) fn gate_with(guard: Guard, spawn: bool, setd: bool, claims: &[&str]) 
         go,
         "post ToggleQ using v on M::Gate::toggle { self.a = not pre(self.a) }",
     ];
-    if setd {
-        contracts.push("pre SetdP using v on M::Gate::setd { not self.d }");
-        contracts.push("post SetdQ using v on M::Gate::setd { self.d }");
+    if touch {
+        contracts.push("pre TouchP using v on M::Gate::touch { not self.d }");
+        contracts.push("post TouchQ using v on M::Gate::touch { self.d }");
     }
     let clauses: Vec<Temporal<'_>> = claims
         .iter()

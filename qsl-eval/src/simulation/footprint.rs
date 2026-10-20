@@ -43,14 +43,11 @@ pub enum Location {
 
 impl Location {
     /// Whether a write to this location can change what a read of `read`
-    /// observes. ADR-021 POR-11's cell argument is what commutation needs: a
-    /// step's writes change no cell the other step reads. A written
-    /// membership (a creation or a deletion) changes the membership cell and
-    /// every field cell of its object, so it meets both; a written field
-    /// changes only its own field cell and never whether an object is a
-    /// member, so a field location written does not meet a membership
-    /// location read. POR-4 and QSpec FR-383 state the meet symmetrically,
-    /// which makes every operation on one object depend on every other.
+    /// observes, by the cells each location stands for. A written membership
+    /// (a creation or a deletion) changes the membership cell and every field
+    /// cell of its object, so it meets both. A written field changes only its
+    /// own field cell and never whether an object is a member, so a field
+    /// location written does not meet a membership location read.
     pub fn affects(&self, read: &Self) -> bool {
         let field_write = matches!(self, Self::Field { .. } | Self::AnyField { .. });
         let membership_read = matches!(read, Self::Membership { .. } | Self::AnyMembership { .. });

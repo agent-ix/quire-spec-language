@@ -591,11 +591,11 @@ fn the_candidate_reaches_through_a_disabled_member_and_the_choice_is_determinist
     );
 }
 
-/// FR-156-AC-4's closure through a disabled member: `setd` writes `d`, which
-/// the disabled `arm2` and `go` read to be enabled, and reads nothing `arm`
-/// writes, so it is independent of `arm`. The candidate seeded by `arm` holds
-/// it only through those disabled members' enabling footprints, and its
-/// enabled part is `{arm, setd}`.
+/// FR-156-AC-4's closure through a disabled member, over the `Gate` with an
+/// added enabled `touch()` framed `modifies self.d`: the candidate seeded by
+/// `touch` holds `arm2` (dependent on it through `d`) and, through `arm2`'s
+/// enabling footprint, `arm`, which writes `c` and is independent of `touch`.
+/// Its enabled part is `{touch, arm}`; without the closure it is `{touch}`.
 #[trace("TC-577", "FR-156-AC-4")]
 #[test]
 fn the_candidate_holds_the_writers_of_a_disabled_members_enabling_footprint() {
@@ -612,20 +612,20 @@ fn the_candidate_holds_the_writers_of_a_disabled_members_enabling_footprint() {
         .map(|(transition, _)| transition)
         .collect();
     enabled.sort();
-    let arm = named(&holder.system, &start, "arm");
+    let touch = named(&holder.system, &start, "touch");
     let candidate = por
-        .candidate_seeded_by(&start, &enabled, &arm)
+        .candidate_seeded_by(&start, &enabled, &touch)
         .expect("a candidate");
     let mut names: Vec<String> = candidate.iter().map(operation_of).collect();
     names.sort();
-    assert_eq!(names, ["arm", "arm2", "go", "setd"]);
+    assert_eq!(names, ["arm", "arm2", "go", "touch"]);
     let mut enabled_part: Vec<String> = candidate
         .iter()
         .filter(|transition| enabled.contains(transition))
         .map(operation_of)
         .collect();
     enabled_part.sort();
-    assert_eq!(enabled_part, ["arm", "setd"]);
+    assert_eq!(enabled_part, ["arm", "touch"]);
 }
 
 /// FR-155-AC-7's candidate clause and FR-162: `spawn(y)` creates an `Item`
