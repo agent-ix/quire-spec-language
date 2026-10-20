@@ -206,6 +206,27 @@ work: STD-192). Until it lands:
   SHALL refuse `missing_declaration`/`missing-name`, naming the missing
   `time` member.
 
+### Timed facet gate
+
+QSpec's shared grammar admits the timed forms (`time-decl`, `time-invariant`,
+`urgent-decl` and the `Clock` type) when the unit selects the temporal facet
+`quire.temporal.complete/v1` in its header, and gives a recognised form whose
+facet is absent a located `unsupported_construct`. S1 and S2 build these forms
+under every selection (FR-393), so the refusal is S3's.
+
+- When a unit's header does not select `quire.temporal.complete/v1`, S3 SHALL
+  refuse each `time` member, each `time invariant`, each `urgent`
+  declaration and each field, parameter or result of type `Clock`, in source
+  order and every one, with `unsupported_construct`/`declaration-form`
+  at the construct's span, retaining the construct's family, the header
+  layers the unit selected in source order and the required facet
+  `quire.temporal.complete/v1`, as FR-361 items 10 and 11 do for the model
+  forms.
+- A construct S3 refuses under this gate SHALL receive no other FR-230
+  refusal.
+- A unit that selects `quire.temporal.complete/v1` is checked by the rules
+  above.
+
 ### Limits
 
 - The checker SHALL accept any number of clocks, any constant and any
@@ -222,6 +243,7 @@ work: STD-192). Until it lands:
 | FR-230-AC-4 | A guard `(x < 1 or x > 2) and self.ready` checks to two convex parts, `x < 1` and `x > 2`, each with the data predicate `self.ready`. A model with 64 clock fields over a universe of 100 objects and a constant of `10^40 ms` checks with no refusal. Waits on STD-192 (Remaining work: STD-192): it declares clock fields. | Test (TC-685) |
 | FR-230-AC-5 | In a graph whose own source declares base dimension `Time`, root `s` and `ms` (`1/1000` of `s`), `time dense unit ms` and `time dense unit s` check, and a quantity `3 ms` read under `unit s` converts to `3/1000`. A unit of a derived dimension `Duration = Time` refuses `ill_typed`/`type-mismatch`, because `Duration` is not the `Time` node. `time dense unit hour` refuses `missing_declaration`/`missing-name` naming `hour`; a graph with no base `Time` refuses `time dense unit ms` `missing_declaration`/`missing-name` naming `Time` (and not `ms`); two dimensions named `Time` in the unit's source refuse `ambiguous_declaration`/`ambiguous-name` at assembly; a unit `degc` of a time dimension with offset `273` refuses `ill_typed`/`type-mismatch`. Two graphs that declare `ms` as `1/1000` and as `1/100` give different package identities. The same vectors with the units supplied by the admitted domain package, and a `Time` declared in both the source and the domain package (`conflicting_declaration`), wait on STD-192 (Remaining work: STD-192). | Test (TC-685) |
 | FR-230-AC-6 | Until STD-192 lands, a `Clock` field of a package-admitted object type refuses `unsupported_construct`/`not-yet-implemented` at the field's span. This criterion is replaced by FR-230-AC-1, FR-230-AC-4 and the clock refusals of FR-230-AC-2 when STD-192 lands. | Test (TC-685) |
+| FR-230-AC-7 | ADR-026 §11's `Rpc` unit with its header selecting no `quire.temporal.complete/v1` refuses its `time dense unit ms;`, its two time invariants and its `Clock` field, each `unsupported_construct`/`declaration-form` at its span in source order, naming the unit's selected layers and the required facet, with no other FR-230 refusal; with the facet selected it checks as FR-230-AC-1 states. | Test (TC-685) |
 
 ## Dependencies
 

@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 admits the `time` member, `Clock` fields, resets, clock constraints, time invariants and urgency, records them on the checked state model, and refuses every misuse at its span.
 
-Scope: FR-230-AC-1 to FR-230-AC-6. Steps 1, 2 (clock refusals) and 4 wait on STD-192.
+Scope: FR-230-AC-1 to FR-230-AC-7. Steps 1, 2 (clock refusals) and 4 wait on STD-192.
 
 ## Test Procedure
 
@@ -24,6 +24,7 @@ Fixtures: ADR-026 §11's `Rpc` unit with `T = 3 ms` and `T = 4 ms`, universe `{c
 4. Check the disjunctive guard and the 64-clock model with the `10^40 ms` constant.
 5. Check, with units declared in the unit's own source, `time dense unit ms` and `unit s`, the quantity `3 ms` under `unit s`, `unit hour`, a graph with no base `Time`, two dimensions named `Time` in the source, a unit of `Duration = Time`, a time unit with a nonzero offset, and two graphs declaring `ms` differently.
 6. Check a `Clock` field of a package-admitted object type.
+7. Check `Rpc` with its header selecting no `quire.temporal.complete/v1`, then with it selected (FR-230-AC-7).
 
 Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 
@@ -35,3 +36,4 @@ Tag the tests `#[trace("TC-685", "FR-230-AC-n")]`.
 - Step 4: two convex parts each with `self.ready`; the large model checks with no refusal.
 - Step 5: both models check and `3 ms` converts to `3/1000`; `missing_declaration`/`missing-name` naming `hour`; `missing_declaration`/`missing-name` naming `Time`; `ambiguous_declaration`/`ambiguous-name` at assembly; `ill_typed`/`type-mismatch` for the `Duration` unit; `ill_typed`/`type-mismatch`; different package identities. The same vectors with domain-package units wait on STD-192.
 - Step 6: `unsupported_construct`/`not-yet-implemented` at the field, until STD-192 lands.
+- Step 7: every timed construct refused `unsupported_construct`/`declaration-form` at its span in source order with no other refusal; with the facet selected, as step 1.
