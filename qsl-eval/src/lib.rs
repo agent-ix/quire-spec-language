@@ -6,7 +6,7 @@
 //! prototype v2 function-package codec -- the finite exploration engine
 //! [`simulation`], and the property-automaton kernels [`automaton`] and
 //! fairness kernels [`fairness`] that the model checker and the certificate
-//! checkers share.
+//! checkers share, and the self-composition product [`hyper`] they explore.
 //!
 //! This crate depends on layer 4 (`qsl-package`), layer 3 (`qsl-semantics`),
 //! F (`qsl-foundation`) and K (`quire-exact`). It never names the root crate
@@ -17,6 +17,7 @@
 
 pub mod automaton;
 pub mod fairness;
+pub mod hyper;
 pub mod model_subject;
 pub mod simulation;
 pub mod temporal;
