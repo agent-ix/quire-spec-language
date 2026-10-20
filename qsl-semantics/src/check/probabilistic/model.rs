@@ -81,6 +81,9 @@ pub struct SupportValue {
 /// (FR-185 "Outputs").
 #[derive(Clone, Debug, PartialEq)]
 pub struct RandomParameter {
+    /// The declaration's index among the unit's probabilistic
+    /// declarations: its source order.
+    declared: usize,
     operation: ProbabilisticOperation,
     parameter: String,
     position: usize,
@@ -119,6 +122,8 @@ impl RandomParameter {
 /// (FR-185 "Workloads").
 #[derive(Clone, Debug, PartialEq)]
 pub struct Workload {
+    /// The declaration's source order, as [`RandomParameter`]'s.
+    declared: usize,
     name: String,
     model: String,
     weights: Vec<(ProbabilisticOperation, Rational)>,
@@ -146,6 +151,8 @@ impl Workload {
 /// operation's parameters (FR-185 "Rewards").
 #[derive(Debug)]
 pub struct Reward {
+    /// The declaration's source order, as [`RandomParameter`]'s.
+    declared: usize,
     name: String,
     operation: ProbabilisticOperation,
     parameters: Vec<(String, ValueType)>,
@@ -234,6 +241,62 @@ impl CheckedProbabilisticModel {
     pub fn is_empty(&self) -> bool {
         self.random_parameters.is_empty() && self.rewards.is_empty() && self.workloads.is_empty()
     }
+
+    /// The first checked declaration in source order, with its feature:
+    /// what S4 names when it refuses the package (FR-185 "Package
+    /// emission"). A random parameter is named `operation(parameter)`, a
+    /// reward and a workload by their declared names.
+    pub fn first_declaration(&self) -> Option<(ProbabilisticFeature, String)> {
+        let random = self.random_parameters.iter().map(|random| {
+            (
+                random.declared,
+                ProbabilisticFeature::RandomParameter,
+                format!("{}({})", random.operation.name, random.parameter),
+            )
+        });
+        let rewards = self.rewards.iter().map(|reward| {
+            (
+                reward.declared,
+                ProbabilisticFeature::Reward,
+                reward.name.clone(),
+            )
+        });
+        let workloads = self.workloads.iter().map(|workload| {
+            (
+                workload.declared,
+                ProbabilisticFeature::Workload,
+                workload.name.clone(),
+            )
+        });
+        random
+            .chain(rewards)
+            .chain(workloads)
+            .min_by_key(|(declared, _, _)| *declared)
+            .map(|(_, feature, name)| (feature, name))
+    }
+}
+
+/// The kind of a probabilistic declaration, by its feature name (FR-185
+/// "Package emission").
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProbabilisticFeature {
+    /// A `random` declaration: `random-parameter`.
+    RandomParameter,
+    /// A `workload` declaration: `workload`.
+    Workload,
+    /// A `reward` declaration: `reward`.
+    Reward,
+}
+
+impl ProbabilisticFeature {
+    /// The feature name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::RandomParameter => "random-parameter",
+            Self::Workload => "workload",
+            Self::Reward => "reward",
+        }
+    }
 }
 
 /// Which precondition reads a parameter (FR-185 "Random parameters").
@@ -298,6 +361,8 @@ enum Site {
     Weight(usize),
     /// A reward's expression.
     Reward,
+    /// A random declaration's parameter name.
+    Parameter,
 }
 
 /// The `Origin::TypeDeclaration` site name of `site` of declaration
@@ -308,6 +373,7 @@ fn site_name(declaration: usize, site: Site) -> String {
         Site::Value(pair) => format!("probabilistic {declaration} value {pair}"),
         Site::Weight(pair) => format!("probabilistic {declaration} weight {pair}"),
         Site::Reward => format!("probabilistic {declaration} reward"),
+        Site::Parameter => format!("probabilistic {declaration} parameter"),
     }
 }
 
@@ -335,6 +401,7 @@ pub(crate) fn site_spans(
             match declaration {
                 ProbabilisticDeclaration::Random(form) => {
                     sites.push((Site::Declaration, spanned(form.span)));
+                    sites.push((Site::Parameter, spanned(form.parameter.span)));
                     for (pair, value) in form.support.iter().enumerate() {
                         sites.push((Site::Value(pair), Some(value.value.spans.clone())));
                         sites.push((Site::Weight(pair), spanned(value.weight.span)));
@@ -587,8 +654,8 @@ struct Pass<'i, 'a> {
     distributions: Vec<(ProbabilisticOperation, String)>,
     /// Each (operation, name) a `reward` declaration resolved to.
     rewards: Vec<(DeclarationKey, String)>,
-    /// Each workload name declared so far.
-    workloads: Vec<String>,
+    /// Each workload name declared so far, with its name span.
+    workloads: Vec<(String, Span)>,
     refusals: Vec<CheckRefusal>,
 }
 
@@ -696,6 +763,7 @@ impl Pass<'_, '_> {
         }
         match self.probabilities(index, support) {
             Ok(support) => self.model.random_parameters.push(RandomParameter {
+                declared: index,
                 operation,
                 parameter: parameter.to_owned(),
                 position,
@@ -708,8 +776,10 @@ impl Pass<'_, '_> {
 
     /// Each value's probability: its weight over the sum of the weights.
     /// The running sum is bounded by the rational-bits ceiling, as a written
-    /// value is, so in-limit weights with coprime denominators cannot grow
-    /// it without bound, and the handle is polled at every step.
+    /// value is, measured after each addition, so in-limit weights with
+    /// coprime denominators cannot grow it without bound; its refusal is
+    /// located at the parameter it names. The handle is polled before each
+    /// addition (FR-185 "Exact values").
     fn probabilities(
         &self,
         index: usize,
@@ -724,7 +794,10 @@ impl Pass<'_, '_> {
             total = total.add(weight);
             let bits = total.max_part_bits();
             if bits > exact::RATIONAL_BITS_CEILING {
-                return Err(super::limit_refusal(bits, location));
+                return Err(super::limit_refusal(
+                    bits,
+                    site_location(index, Site::Parameter),
+                ));
             }
         }
         support
@@ -792,6 +865,7 @@ impl Pass<'_, '_> {
                     });
                 }
                 self.model.rewards.push(Reward {
+                    declared: index,
                     name: name.to_owned(),
                     operation,
                     parameters,
@@ -830,18 +904,20 @@ impl Pass<'_, '_> {
         let workload = form.name.name.as_str();
         let model = form.model.name.as_str();
         // A claim names a workload by its name alone (FR-186), so a name
-        // names one workload of the unit.
-        if self
+        // names one workload of the package, whichever model it is on.
+        if let Some((_, first)) = self
             .workloads
             .iter()
-            .any(|earlier| earlier.as_str() == workload)
+            .find(|(earlier, _)| earlier.as_str() == workload)
         {
+            let first = *first;
             return self.refuse(ProbabilisticCause::DuplicateWorkload {
                 workload: workload.to_owned(),
                 span: form.name.span,
+                related: [first, form.name.span],
             });
         }
-        self.workloads.push(workload.to_owned());
+        self.workloads.push((workload.to_owned(), form.name.span));
         if !self.input.model_objects.contains_key(model) {
             return self.refuse(ProbabilisticCause::UnresolvedModel {
                 workload: workload.to_owned(),
@@ -914,6 +990,7 @@ impl Pass<'_, '_> {
             return;
         }
         self.model.workloads.push(Workload {
+            declared: index,
             name: workload.to_owned(),
             model: model.to_owned(),
             weights,

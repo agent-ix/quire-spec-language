@@ -336,3 +336,30 @@ fn the_support_graph_is_the_state_graph() {
     // and Done at 1 and 2.
     assert_eq!(seen.len(), 7);
 }
+
+/// FR-185-AC-7 (TC-620 step 7): `Service`, with `d` typed `Millis = Int[1,
+/// 12]`, checks at S3 with its record intact and refuses at S4
+/// `unsupported_construct`/`not-yet-implemented`, naming its first random
+/// parameter in source order, `random-parameter` and the selected profile.
+#[trace("TC-620", "FR-185-AC-7")]
+#[test]
+fn service_checks_and_refuses_emission_naming_its_first_random_parameter() {
+    let world = World::new(&world::service(""));
+    let model = world.package.graph().probabilistic_model();
+    assert_eq!(model.random_parameters().len(), 2);
+    assert_eq!(model.rewards().len(), 1);
+    assert_eq!(model.workloads().len(), 1);
+    let refusal = qsl_package::emit_checked(&world.package).expect_err("S4 refuses");
+    assert_eq!(
+        refusal,
+        qsl_package::EmitRefusal::ProbabilisticModelNotEmitted {
+            declaration: "attempt(d)".to_owned(),
+            feature: qsl_semantics::check::ProbabilisticFeature::RandomParameter,
+            profile: Some("quire.model.complete/v1"),
+        }
+    );
+    assert_eq!(
+        (refusal.code(), refusal.cause()),
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
+    );
+}
