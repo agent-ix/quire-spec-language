@@ -1059,6 +1059,3 @@ decided; the last column names the fact that reopens it.
   needs one as well, and STD-112 does not list it yet. Until QSpec answers,
   FR-091-AC-35's code is the interim `invalid_package`/`unit-graph-topology`. A missing root cannot arise from source
   that passes the other checks.
-
-## References
-
