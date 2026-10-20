@@ -173,8 +173,8 @@ QSpec FR-375 and the FR-136 to FR-149 family specify more refinement forms
 than a build may yet check. QSpec FR-375 owns the closed set of feature names
 and the not-yet-built refusal; this section states how S3 applies them. The
 build holds a closed **support set** of refinement feature names,
-a build capability constant and not a request or test parameter. It names
-four feature names: `history-row` (FR-138), spelled by a `history` row; `protocol-abstract-side` (FR-147), spelled by `abstract <A>::<protocol>`;
+a build capability constant and not a request or test parameter. QSpec
+FR-375's closed set holds four feature names, which it names: `history-row` (FR-138), spelled by a `history` row; `protocol-abstract-side` (FR-147), spelled by `abstract <A>::<protocol>`;
 `refinement-internal-list` (FR-147), spelled by a non-empty resolved internal
 list for the refinement, which is located at the first token of the name after
 `abstract`, once per refinement; and `nested-reference-row`, spelled by a

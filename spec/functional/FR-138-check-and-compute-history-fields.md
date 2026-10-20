@@ -112,9 +112,10 @@ exactly as they were.
   `MappingFailure::Undetermined(MappingUndetermined)` naming the history
   field, the object and the step.
 - Either way the step SHALL remain a step of the behaviour (ADR-020 AX-3).
-- If an update fails, then a post-state row that reads that history field
-  SHALL NOT be evaluated at any stand-in value: the read is undetermined
-  (FR-141 "Failed history update").
+- If an update returns `Undetermined`, then a post-state row that reads that
+  history field SHALL NOT be evaluated at any stand-in value: the read is
+  undetermined and the read order decides (FR-141 "Undetermined history
+  update").
 - History values SHALL be a function of the concrete prefix, and SHALL be
   read by the mapping (FR-140) and the product key (FR-142) only.
 - The product key SHALL encode the history values in the order of
@@ -144,7 +145,7 @@ and not its range, so the range is left only at run time.
 | FR-138-AC-3 | Along `write(r, 1)`, `write(r, 0)`, `write(r, 1)` from the initial state, `step_history` gives `last` = 0, 1, 0 after each step. | Test (TC-543) |
 | FR-138-AC-4 | With a second history field `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 1; }` added, `step_history` along `write(r, 0)`, `write(r, 0)` gives `writes` 1 after the first step and returns `MappingFailure::Undetermined(MappingUndetermined)` naming `writes`, `r` and the second step, whose post-state is still the concrete successor `ModelSystem` gives. | Test (TC-543) |
 | FR-138-AC-5 | With a second history field `inv: Int[0, 1] = 0 { on Impl::Register::write: (1 mod x) + 1; }` added, `step_history` along `write(r, 1)` gives `inv` 1 (integer `/` has no typing in a refinement row, which selects no division law, so the fixture spells the intent with `mod`), and along `write(r, 0)` returns `MappingFailure::Undefined` naming `inv`, `r`, the step and cause `division-by-zero`; the post-state is still the concrete successor `ModelSystem` gives. | Test (TC-554) |
-| FR-138-AC-6 | With `on Impl::Register::write: self.last;` (no `pre`), S3 admits the row and `step_history` along `write(r, 1)`, `write(r, 0)` gives `last` = 0, 0 (the value the step started from); for an object the step creates, the same read gives the initial literal. | Test (TC-543) |
+| FR-138-AC-6 | With `on Impl::Register::write: self.last;` (no `pre`), S3 admits the row and `step_history` along `write(r, 1)`, `write(r, 0)` gives `last` = 0, 0 (the value the step started from). | Test (TC-543) |
 | FR-138-AC-7 | Over a `Register` universe `{r, s}` with the history fields `last` and `writes`, the product key of the history values lists `r.last`, `r.writes`, `s.last`, `s.writes` in that order, and two states that differ only in one history value have different keys. | Test (TC-543) |
 | FR-138-AC-8 | With `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 2; }` (out of type) and `prev = if 1 mod (1 - self.value + self.writes) = 0 then self.last else self.last`, `check_step` on `write(r, 1)` returns `Undetermined(MappingUndetermined)` naming the `writes` update, never `Undefined`: the `prev` row reads the failed field and is not evaluated at any stand-in. | Test (TC-546) |
 
@@ -160,8 +161,8 @@ and not its range, so the range is left only at run time.
 
 - The QSpec half (history field semantics): QSpec FR-378 (Linear STD-133).
   QSpec FR-378 words the product key's order as "history-row order"; the key
-  here orders by object, then field name. QSpec should align its wording
-  (follow-up for the planner; no ticket yet).
+  here orders by object, then field name. QSpec's wording should be aligned
+  to it.
 - The history-row production, the `history-literal` spellings and the
   history-literal conformance rule: QSpec FR-375. The covering test for the
   `none`, `true`/`false` and enum-member cases, which FR-138 does not

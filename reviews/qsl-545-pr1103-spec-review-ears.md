@@ -39,3 +39,11 @@ Ticket: QSL-545. PR: quire-spec-language#1103, head f481e5899, scoped to `git di
 ## Verdict
 
 One low finding. The other new statements are ubiquitous SHALL statements with a subject; the new missing-name sentences define the names of the existing SHALL, which is acceptable. The ACs are direct assertions. The quire grammar lint reports nothing in FR-135, FR-138 or TC-554.
+
+## Dispositions
+
+Round 1, head e19819b95 (one fix commit over f481e5899; main is still bdf90d48d). The three round-0 SR files in reviews/ are byte-equal to the reviewer's; this file supersedes them. The coder's code branch origin/qsl-545-history is still 498b438cf, so the new FR-141 rules (failed history update, undecided completion, NoAbstractMatch precedence) state behaviour the code does not have yet; that is the coder's fix round, not a spec defect. Checked against 498b438cf: the outside-`pre` read of a created object gives the initial literal (`carried`, history.rs:118-140); missing-name needs no field and no navigable end (state_model.rs:286-290); the key order of FR-138-AC-7 (r.last, r.writes, s.last, s.writes) is the BTreeMap order on (ObjectKey, field). FR-138-AC-8's probe: at `write(r, 1)` the stand-in `writes` 0 makes `1 mod (1 - 1 + 0)` undefined, while the computed 2 makes it `1 mod 2` = 1, defined, so `Undetermined` is the honest verdict. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in FR-135, FR-138, FR-141, TC-540, TC-543, TC-546 or TC-554; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |

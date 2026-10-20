@@ -28,7 +28,7 @@ Fixture: `Register` and `RegisterHistory` (FR-138).
 3. Compute history along `write(r, 1)`, `write(r, 0)`, `write(r, 1)`.
 4. Add the `writes` history field and compute along `write(r, 0)`, `write(r,
    0)`.
-5. Add the update `self.last` (no `pre`) and compute along `write(r, 1)`, `write(r, 0)`, then for an object a step creates (FR-138-AC-6).
+5. Add the update `self.last` (no `pre`) and compute along `write(r, 1)`, `write(r, 0)` (FR-138-AC-6).
 6. Key the history values over `{r, s}` with two fields (FR-138-AC-7).
 
 Tag the tests `#[trace("TC-543", "FR-138-AC-n")]`.
@@ -41,5 +41,5 @@ Tag the tests `#[trace("TC-543", "FR-138-AC-n")]`.
 - Step 3: `last` = 0, 1, 0.
 - Step 4: `writes` 1, then `MappingUndetermined` naming `writes`, `r` and
   the second step, whose post-state is the concrete successor.
-- Step 5: `last` = 0, 0; the created object reads the initial literal.
+- Step 5: `last` = 0, 0.
 - Step 6: the order `r.last`, `r.writes`, `s.last`, `s.writes`; a one-value difference changes the key.

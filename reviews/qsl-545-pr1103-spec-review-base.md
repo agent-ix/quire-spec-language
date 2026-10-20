@@ -50,3 +50,24 @@ Ticket: QSL-545. PR: quire-spec-language#1103, head f481e5899, scoped to `git di
 ## Verdict
 
 Not mergeable. Follow-ups (1), (2), (3), (5) match the code, and (1)'s expected values hold. (4) contradicts QSpec FR-375's closed feature set, and (6) is stated in a form that is false and does not settle FR-141. FR-138 and FR-141 are still silent on SR-13460 FND-002 and ambiguous on FND-001, so the spec does not yet rule out either soundness bug: FND-001 and FND-002 here ask for the Undetermined rule to be written down.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | high | The new 'Failed history update' rule says that if `step_history` fails, `check_step` returns `Undetermined(MappingUndetermined)` naming the update unless an independent read is undefined. It covers an update that evaluates undefined, so FR-141-AC-6 (the `inv` update undefined, `Undefined` at position 1) and FR-141-AC-10 ('`Undefined` at `H` for `H` and `P` both undefined') now contradict it. It also overrides the read order: FR-141-AC-10 names `A1`, not the update, for `A1` over-budget and `H` out of type. Fix: 'If an update is undetermined (refused, incomplete or out of type), then a post-state row that reads its history field SHALL count as an undetermined read at that row's place in the read order and SHALL NOT be evaluated at any stand-in value; the read-order rule above then decides.' | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:176 |
+| FND-008 | low | 'If a completion or successor of any member is undecided' also covers an `any` row's undecided successor whose visible part differs from the mapped one, which could never join the set. The step then settles `Undetermined` where it is decidable. Fix: 'a completion or successor whose visible part equals the mapped one'. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:212 |
+| FND-009 | low | 'The build holds a closed support set' followed by 'It names four feature names' still makes the support set the subject, and the new bullet then says the support set holds `history-row` only. Fix: 'QSpec FR-375's closed set has four feature names: ...', with the support set described by the new bullet alone. | spec/functional/FR-135-check-a-refinement-declaration-s-subjects-and-state-mapping.md:172 |
+
+## Dispositions
+
+Round 1, head e19819b95 (one fix commit over f481e5899; main is still bdf90d48d). The three round-0 SR files in reviews/ are byte-equal to the reviewer's; this file supersedes them. The coder's code branch origin/qsl-545-history is still 498b438cf, so the new FR-141 rules (failed history update, undecided completion, NoAbstractMatch precedence) state behaviour the code does not have yet; that is the coder's fix round, not a spec defect. Checked against 498b438cf: the outside-`pre` read of a created object gives the initial literal (`carried`, history.rs:118-140); missing-name needs no field and no navigable end (state_model.rs:286-290); the key order of FR-138-AC-7 (r.last, r.writes, s.last, s.writes) is the BTreeMap order on (ObjectKey, field). FR-138-AC-8's probe: at `write(r, 1)` the stand-in `writes` 0 makes `1 mod (1 - 1 + 0)` undefined, while the computed 2 makes it `1 mod 2` = 1, defined, so `Undetermined` is the honest verdict. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in FR-135, FR-138, FR-141, TC-540, TC-543, TC-546 or TC-554; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |

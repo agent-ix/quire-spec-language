@@ -46,3 +46,24 @@ Ticket: QSL-545. PR: quire-spec-language#1103, head f481e5899, scoped to `git di
 ## Verdict
 
 Not mergeable: TC-540 still expects the refusal FR-135-AC-5 dropped (FND-001). FR-138-AC-5 and TC-554 agree on the respelled update, FR-141-AC-6 and FR-142-AC-8 cite it by name, and the index is complete.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | Neither new case names a fixture that produces it. From `Coin`'s post-toss set {side 0, side 1} every face 0 or 1 matches a candidate, so 'a `face` that no candidate completion allows' needs a stated pre set (for example `abstract_states` = [side 1] and `reveal` to face 0). 'A completion undecided while another is accepted' needs a stated abstract contract (SR-13460's `toss` postcondition `self.tossed and 1 mod self.side = 0`, then `reveal` to face 0). Fix: write both fixtures into the AC and TC-546 step 7. | spec/functional/FR-141-decide-one-concrete-step-against-the-abstract-model.md:271 |
+| FND-007 | low | The created-object half has no fixture: `Register` has the universe {r} and no operation creates an object. Fix: name an operation that creates its receiver (or a second population) and the update it runs. | spec/functional/FR-138-check-and-compute-history-fields.md:147 |
+| FND-008 | low | '(follow-up for the planner; no ticket yet)' is process status inside a spec and goes stale once a ticket exists. Fix: drop the parenthesis, or cite the ticket when there is one. | spec/functional/FR-138-check-and-compute-history-fields.md:161 |
+| FND-009 | low | TC-546 now verifies FR-138-AC-8 but its frontmatter has no `verifies` edge to FR-138 (TC-554 lists every FR it covers), its tag line names only `FR-141-AC-n`, and the step 7 expected result sits after the closing 'Every call passes' paragraph instead of in the list. Fix: add the FR-138 edge, say `FR-138-AC-8` is tagged too, and move the step 7 line above the paragraph. | spec/test-cases/TC-546-check-step-decides-each-concrete-step.md:1 |
+
+## Dispositions
+
+Round 1, head e19819b95 (one fix commit over f481e5899; main is still bdf90d48d). The three round-0 SR files in reviews/ are byte-equal to the reviewer's; this file supersedes them. The coder's code branch origin/qsl-545-history is still 498b438cf, so the new FR-141 rules (failed history update, undecided completion, NoAbstractMatch precedence) state behaviour the code does not have yet; that is the coder's fix round, not a spec defect. Checked against 498b438cf: the outside-`pre` read of a created object gives the initial literal (`carried`, history.rs:118-140); missing-name needs no field and no navigable end (state_model.rs:286-290); the key order of FR-138-AC-7 (r.last, r.writes, s.last, s.writes) is the BTreeMap order on (ObjectKey, field). FR-138-AC-8's probe: at `write(r, 1)` the stand-in `writes` 0 makes `1 mod (1 - 1 + 0)` undefined, while the computed 2 makes it `1 mod 2` = 1, defined, so `Undetermined` is the honest verdict. Gates: make check-spec-validation exits 0 with the same 17 warnings, none in FR-135, FR-138, FR-141, TC-540, TC-543, TC-546 or TC-554; tools/check-index-completeness.sh passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
