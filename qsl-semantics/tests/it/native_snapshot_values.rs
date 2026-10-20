@@ -544,6 +544,7 @@ impl Replay {
                 context: self.item(),
                 operation: Some(self.operation(operation)),
                 operations: Default::default(),
+                named_populations: Vec::new(),
             },
             &self.packages,
             ModelNormalizationLimits::default(),
