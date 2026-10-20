@@ -23,6 +23,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-437
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-365
+    type: depends_on
 ---
 # FR-228: Derive flush fairness under tso and visibility fairness under ra
 
@@ -113,7 +115,7 @@ visible.
   FA-6, CX-5; ADR-027 PA-1 to PA-3, SE-1 (h).
 - [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (fairness filter), FR-212 (fairness set and scheduler constraints),
-  FR-221, FR-222, FR-339 (the component certificate).
+  FR-221, FR-222, FR-339 (the component certificate); QSpec FR-365 (the SCC search and its refinement order).
 - QSpec FR-436 and FR-437 own memory fairness and its `memory` origin.
 
 ## References
