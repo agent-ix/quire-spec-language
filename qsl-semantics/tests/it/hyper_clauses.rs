@@ -234,7 +234,7 @@ fn unbounded(clause: &CheckedHyper) -> bool {
         .map(|index| WireNodeId::from_digest([index + 2; 32]))
         .collect();
     let record = claim
-        .requirements(WireNodeId::from_digest([1; 32]), &params, None)
+        .requirements(WireNodeId::from_digest([1; 32]), &params, None, &[])
         .expect("the record is keyed");
     assert_eq!(record.kind(), Capability::TemporalSatisfaction);
     matches!(record.extent(), ClaimExtent::Unbounded(_))

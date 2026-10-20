@@ -7,21 +7,22 @@
 //!   (frame `modifies_receiver on`) and `fire()` (frame `modifies_receiver
 //!   fired`), both toggles initially all false;
 //! - FR-161-AC-2's `Token`: `Holder` (`tok`) in `holders`, with `pass()`
-//!   (frame `modifies tok`), `a.tok` false and `b.tok` true. A
-//!   postcondition cannot name a population outside a refinement (S3
-//!   refuses `allInstances<M::Holder>(M::holders)` there), so each holder
-//!   names the other in a reference field `next`, and `pass()` hands the
-//!   token to `self.next`: with two holders, every other holder.
+//!   (frame `modifies tok`), `a.tok` false and `b.tok` true. FR-161-AC-2's
+//!   postcondition ranges over `M::holders` (FR-391), which S3 admits but
+//!   package emission refuses until FR-322 encodes the population
+//!   reference (QSL-869), and the run reads the clause root from the
+//!   emitted package; so each holder names the other in a reference field
+//!   `next`, and `pass()` hands the token to `self.next`: with two holders,
+//!   every other holder.
 //!
 //! The unit writes the contracts. A temporal clause always has an `over`
 //! parameter, so a claim the ACs write with none is bound to the one object
 //! `w` of a second population, `watchers` of the field-less `Watch`, which
 //! no symmetry declaration names: its one instance runs under the full
 //! group. A clause may instead be bound over the subject's own type, whose
-//! one orbit then runs under a trivial stabiliser. A temporal atom cannot
-//! name a population (S3 refuses `M::toggles` there with `missing-name`),
-//! so the one `holds` atom is read by the test's letters as "every object's
-//! flag is true".
+//! one orbit then runs under a trivial stabiliser. The one `holds` atom is
+//! read by the test's letters as "every object's flag is true", as the ACs
+//! state the run supplies it.
 
 use std::collections::BTreeMap;
 

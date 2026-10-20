@@ -57,6 +57,23 @@ pub struct AdmittedModel {
     population_bounds: BTreeMap<DeclarationKey, AuthoredBound>,
 }
 
+/// One population of an admitted package as FR-391 names it
+/// ([`AdmittedModel::named_populations`]).
+pub(crate) struct NamedPopulationRecord<'m> {
+    /// The population's name past the package identity, `P` of `M::P`.
+    pub(crate) name: &'m str,
+    /// The population's declaration.
+    pub(crate) key: &'m DeclarationKey,
+    /// Its ordinal among the package's populations.
+    pub(crate) ordinal: usize,
+    /// Its canonical member type.
+    pub(crate) canonical: EffectiveId,
+    /// Its declared member types the package admits.
+    pub(crate) members: Vec<EffectiveId>,
+    /// The unit's authored bound on it.
+    pub(crate) bound: Option<&'m AuthoredBound>,
+}
+
 /// The `Origin::TypeDeclaration` name the `[N]` of the `bound` declaration
 /// labelled `label` is located under. Spaced, so it names no declared type.
 pub(crate) fn bound_origin(label: &str) -> String {
@@ -587,6 +604,38 @@ impl AdmittedModel {
                 )
             })
             .collect()
+    }
+
+    /// FR-391: every population of this package as a population position
+    /// names it: the name past the package's identity, its ordinal and
+    /// canonical member (as [`Self::population_domains`] gives them), the
+    /// effective identity of each declared member type this package admits,
+    /// and the unit's authored bound on it (FR-380).
+    pub(crate) fn named_populations(&self) -> impl Iterator<Item = NamedPopulationRecord<'_>> {
+        self.population_domains()
+            .filter_map(move |(ordinal, record, canonical)| {
+                let name = crate::model::intake::type_identity_segment(
+                    &record.key.package,
+                    &record.key.node,
+                )?;
+                let members = record
+                    .member_types
+                    .iter()
+                    .filter_map(|member| {
+                        self.types
+                            .iter()
+                            .find_map(|(id, declared)| (declared == member).then_some(*id))
+                    })
+                    .collect();
+                Some(NamedPopulationRecord {
+                    name,
+                    key: &record.key,
+                    ordinal,
+                    canonical,
+                    members,
+                    bound: self.population_bounds.get(&record.key),
+                })
+            })
     }
 
     /// FR-150: each object type of this package that a `symmetric`
