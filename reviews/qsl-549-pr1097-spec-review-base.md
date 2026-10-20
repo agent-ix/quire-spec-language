@@ -43,3 +43,11 @@ Gates on the head: make check-spec-validation exits 0 with 17 warnings, the same
 ## Verdict
 
 One medium soundness finding. The PR's central claim is true on main: an incomplete contract is an FR-120 expansion stop with `limit: Some(EvaluationMeter)`, never a `ContractUndetermined` finding. `expansion_halt` turns that stop into `Stopped(LimitReached{EvaluationMeter, B})`, so dropping the BadState clause from Meter stops loses nothing. AC-5 (c) and TC-556 step 6 agree. The remaining gap is that the unchanged Undecided state rule is wider than the meaning the PR gives it: it still names non-meter incomplete contracts, which the expansion stop always takes first. Not mergeable until FND-001 is fixed or the lead dispositions it.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: **Named expansion stop.** When an FR-120 expansion of a position stops at a named limit, the checker SHALL end the check with `Stopped(LimitReached{limit, value})`. A concrete contract that is incomplete stops the expansion this way, because FR-120 turns every incomplete contract into an expansion stop and never into a finding; FR-120 labels each such stop, the counter limits of the exact kernel included, with limit `EvaluationMeter`. |
+
+Round 1 verdict: Round 1 (head d4e956195): FND-001 is fixed. Undecided state now reads 'undefined or refused', which is FR-120's `ContractUndetermined` set, so it no longer names an incomplete contract. Named expansion stop states that every incomplete contract is an expansion stop and that FR-120 labels it `EvaluationMeter`, counter limits included. That matches `clause_set::verdict` and `contracts.rs:164` on main and `expansion_halt` in check.rs. AC-5(c), AC-7 and TC-556 steps 6, 8 and 11 still agree. #1089 head 85274c320 now rejects `BadState` on any `ContractUndetermined` finding, which is the narrowed rule. Gates: check-spec-validation exits 0 with 17 warnings, none in FR-149, and index completeness exits 0. No new finding.

@@ -32,3 +32,11 @@ Ticket: QSL-549. PR: quire-spec-language#1097, head 100f4dc1d, scoped to `git di
 ## Verdict
 
 One low finding: the Expansion stop bullet holds two separately testable statements. Meter stops is now a well-formed event-driven statement: 'When the verdict ... is an `Undetermined` that is meter-only, the checker SHALL stop ... and not reject', which is one behaviour and its negation. Both new When-clauses have the checker as subject. AC-5 (c)'s added 'which stops the position's successor expansion' says where the stop happens and still asserts a falsifiable outcome.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: **Named expansion stop.** When an FR-120 expansion of a position stops at a named limit, the checker SHALL end the check with `Stopped(LimitReached{limit, value})`. **Unnamed expansion stop.** When an FR-120 expansion stops naming no limit and is not an internal failure, the checker SHALL end the check with `Stopped(ResourceExhausted)`. |
+
+Round 1 verdict: Round 1 (head d4e956195): FND-001 is fixed. Named expansion stop and Unnamed expansion stop are separate bullets, each with one When-condition, the checker as subject and one SHALL. The FR-120 sentences are the first bullet's rationale. Undecided state stays a single SHALL. No new finding.
