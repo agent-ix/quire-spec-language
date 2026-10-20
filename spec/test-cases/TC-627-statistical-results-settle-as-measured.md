@@ -27,7 +27,7 @@ Tag the tests `#[trace("TC-627", "FR-192-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: each row as FR-192's table states, with no truth and no basis; the meter stop settles `incomplete`, `limit-reached` with limit `EvaluationMeter`, the configured value and setting `model_check.meter`; the internal unnamed stop settles `failed`, `runtime_invariant`/`established-invariant-broken`; the non-internal unnamed stop settles `incomplete`, `limit-reached` naming the evaluation meter.
+- Step 1: each row as FR-192's table states, with no truth and no basis; the meter stop settles `incomplete`, `limit-reached` with limit `EvaluationMeter`, the configured value and setting `model_check.meter`; the internal unnamed stop settles `failed`, `runtime_invariant`/`established-invariant-broken`; the non-internal unnamed stop settles `failed` carrying the stop's own FR-181 cause as its one diagnostic.
 - Step 2: the values of FR-192-AC-2.
 - Step 3: the gate fails as on one violation, then passes; 0 proved.
 - Step 4: exactly (`probabilistic-satisfaction`, `statistical`); `EveryScheduler`, `MissingConfidence`, `ExactOnlyForm`, each `unsupported` with no sample drawn.
