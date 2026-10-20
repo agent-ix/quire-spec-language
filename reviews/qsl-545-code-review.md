@@ -67,3 +67,14 @@ Not mergeable: FND-001 and FND-002 each give a wrong `refuted` verdict, and both
 | FND-003 | fixed | a hidden-field row whose set comes out empty returns NoAbstractMatch; M20 is killed |
 | FND-004 | still-open | the Fault is now an S3 refusal, but it names a fifth feature `history-value-key`; merged FR-135 and QSpec FR-375 define a closed set of four names, and this build must hold `history-row` and omit the other three. Enum literals are FR-375-AC-9-legal. Needs a spec ruling (add the name to FR-375/FR-135, refuse by another code, or encode enum/decimal in FR-181) |
 | FND-005 | fixed | the conflict check now covers subtypes' declared fields; M23 is killed |
+| FND-004 | deferred | spec follow-up on QSL-545 (no new Linear issue can be filed): the refusal now uses the closed-set name `history-row` with a new `subject: enum/decimal` payload member, but FR-135 says this build holds `history-row`, and FR-138 / FR-375-AC-9 make enum literals legal; FR-135/FR-138 must state the partial support and the payload member |
+| FND-006 | fixed | an out-of-type value is no longer written and its field joins `failed`; rows that read it are not evaluated; probe 3 returns Undetermined; M24 and M21 are killed |
+| FND-007 | fixed | only rows reading a failed field are skipped; probe 4 returns Undefined at `items`; M27 (skip every row) is killed |
+| FND-008 | fixed | `CertifiedPosition.history` is filled by the producer and compared in `matches`; a_certificate_position_carries_its_history; M25 is killed |
+| FND-009 | fixed | the any arm counts an undecided postcondition only for a candidate digest among the mapped completions; M26 is killed (the positive half is untested: SR-13461 FND-010) |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | `map_object` skips a row when `row.expression.reads_history(name)` matches by field name alone, for any object. A row that reads the same-named field of an object whose update did not fail is also skipped. When the failed update is undetermined and that row would be undefined, the merged FR-141 rule says Undefined wins, but the code returns Undetermined: a missed refutation, never a wrong one. | qsl-replay/src/refinement/map.rs:431-434; qsl-semantics/src/check/refinement.rs:241-247 |

@@ -78,3 +78,12 @@ Not mergeable as is, because of SR-13460's two high findings. Coverage of the ti
 | FND-005 | fixed | an_update_writes_the_receiver_only and a_created_object_starts_at_the_initial_literal_and_a_deleted_one_loses_its_values; M03 is killed |
 | FND-006 | fixed | M04, M05, M12, M15 and M17 are each killed by new tests (product key, candidate key, stutter/any set, update on a non-abstract row) |
 | FND-007 | fixed | #1103 FR-138 now states the key's object-then-field order; QSpec FR-378's wording is left to QSpec (noted in FR-138 References) |
+| FND-004 | fixed | a_protocol_abstract_side_refuses_and_the_rest_is_still_checked is tagged FR-135-AC-5 |
+| FND-008 | fixed | the branch contains #1103; FR-138-AC-2 (new clauses), AC-6, AC-7, AC-8 and FR-141-AC-12 each have a tagged test |
+| FND-009 | fixed | the SR files are at reviews/qsl-545-code-review.md and reviews/qsl-545-gap-analysis.md |
+
+## New findings (disposition pass 2)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-010 | low | Mutation M19 (dropping the any-arm `hidden && undecided` return) still survives. Only the negative case, an_undecided_successor_elsewhere_does_not_make_an_any_step_undetermined, is tested. No test has an `any` row with an undecided successor whose visible part matches alongside an accepted one, which FR-141's candidate-set rule makes Undetermined(UndecidedSuccessor). | qsl-replay/src/refinement/step.rs:448-452; qsl-replay/tests/it/refinement_hidden.rs:422 |
