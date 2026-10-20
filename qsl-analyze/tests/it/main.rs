@@ -16,6 +16,7 @@ mod model_check_safety;
 mod model_instances;
 mod model_settle;
 mod model_world;
+mod protocol_constructs;
 mod protocol_system;
 mod quotient;
 mod reduction;
