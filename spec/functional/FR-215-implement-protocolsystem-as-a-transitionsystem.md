@@ -66,8 +66,8 @@ thing, and an attempt means exactly what the operation's contract means in
 pub trait MemoryModel {
     type Component: Serialize;            // (a) member of the state key
     // (b) observe, (c) write, (d) internal steps with identity,
-    // enabledness and effect, (e) gate on fork, join, send, receive and
-    // attempt, (f) split and merge, (g) atom values, (h) fairness with a
+    // enabledness and effect, (e) gate on fork, join, send, receive,
+    // attempt and fence, (f) split and merge, (g) atom values, (h) fairness with a
     // `memory` origin
 }
 

@@ -26,8 +26,11 @@
 //! row's use once a subject supplies the universes. A bound that depends on
 //! `n` through any other form is refused as not yet checked.
 
+mod history;
+
 use std::collections::BTreeMap;
 
+pub use history::{HistoryRow, HistoryUpdate};
 use qsl_forms::{
     AbstractSideForm, ArgumentForm, ExpressionForm, FairnessConstraintForm,
     FairnessGranularity as FormGranularity, FairnessKind as FormKind, FairnessSide, RefinementForm,
@@ -45,13 +48,17 @@ use quire_semantic_value::fairness::{
 };
 use quire_semantic_value::location::{Location, Origin};
 
-use super::check::{bind_parameters, PopulationScope, ScopedPopulation, StateContext, Typer};
+use super::check::{
+    bind_parameters, PopulationScope, ScopedHistory, ScopedPopulation, StateContext, Typer,
+};
 use super::ir::{static_integer_range, CheckedBody, CheckedNode, NodeKind, Visit};
 use super::lowering::AdmittedModel;
+use super::observation::Observations;
 use super::profile::TemporalProfile;
 use super::refusal::{CheckCause, CheckRefusal, KeyFault};
-use super::state_clause::{ClauseDeclarations, ClauseOperation};
+use super::state_clause::{observation_of, ClauseDeclarations, ClauseOperation};
 use crate::family::CheckContext;
+use crate::model::clause_observation::Observation;
 use crate::model::domain_package::PopulationRecord;
 use crate::model::intake::type_identity_segment;
 use crate::model::key::DeclarationKey;
@@ -81,19 +88,21 @@ pub enum RowClass {
 /// A spelling of a refinement declaration that S3 has no checker for yet.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum UnsupportedFeature {
-    /// A `history` row (FR-138).
-    HistoryRow,
     /// An abstract protocol side (FR-147; QSpec has no production for it
     /// yet, Linear STD-182).
     ProtocolAbstractSide,
+    /// A history row whose declared type has values with no FR-181 typed
+    /// canonical form (an enum or a decimal), which a product state could not
+    /// key (FR-138).
+    HistoryRow,
 }
 
 impl UnsupportedFeature {
     /// The feature's name in a refusal.
     pub fn name(self) -> &'static str {
         match self {
-            Self::HistoryRow => "history-row",
             Self::ProtocolAbstractSide => "protocol-abstract-side",
+            Self::HistoryRow => "history-row",
         }
     }
 }
@@ -154,6 +163,9 @@ pub enum RefinementCause {
         feature: UnsupportedFeature,
         /// The identity of the profile the declaration selects.
         profile: String,
+        /// The kind of type or form the feature is refused for, when the
+        /// feature alone does not say.
+        subject: Option<&'static str>,
     },
     /// A population-valued row whose bound does not fit the type it is used
     /// as once the subject's universe fixes the population's size:
@@ -219,9 +231,19 @@ pub struct CheckedRow {
     pub(crate) body: CheckedBody,
     pub(crate) slots: usize,
     pub(crate) uses: Vec<PopulationUse>,
+    /// The observation each model read of the body takes, by the clause kind
+    /// the row is typed as (FR-104). A history update reads its post-state
+    /// fields at `post` and `pre(..)` operands at `pre`.
+    pub(crate) observations: Observations,
 }
 
 impl CheckedRow {
+    /// Every model read of the body and the observation it takes, by the
+    /// read's location.
+    pub fn reads(&self) -> impl Iterator<Item = (&Location, Observation)> {
+        self.observations.iter()
+    }
+
     /// The parameters the body is checked over, `self` first.
     pub fn parameters(&self) -> &[(String, ValueType)] {
         &self.parameters
@@ -500,6 +522,7 @@ pub struct CheckedRefinement {
     pub(crate) populations: Vec<PopulationRow>,
     pub(crate) objects: Vec<ObjectRow>,
     pub(crate) steps: Vec<StepRow>,
+    pub(crate) history: Vec<HistoryRow>,
     pub(crate) concrete_fairness: Vec<FairnessConstraint>,
     pub(crate) abstract_fairness: Vec<FairnessConstraint>,
     pub(crate) concrete_object_types: Vec<EffectiveId>,
@@ -539,6 +562,11 @@ impl CheckedRefinement {
     /// The step rows, in source order.
     pub fn steps(&self) -> &[StepRow] {
         &self.steps
+    }
+
+    /// The history rows, in source order (FR-138).
+    pub fn history(&self) -> &[HistoryRow] {
+        &self.history
     }
 
     /// The concrete fairness set `F_C`: every `assume` row once, in source
@@ -590,6 +618,19 @@ pub(crate) fn population_names(models: &[AdmittedModel]) -> Vec<String> {
             )
         })
         .flatten()
+        .collect()
+}
+
+/// The names of the history fields `declarations` write (FR-138), which no
+/// clause but the declaring refinement's rows may read.
+pub(crate) fn history_names(declarations: &[RefinementDeclaration]) -> Vec<String> {
+    declarations
+        .iter()
+        .flat_map(|declaration| &declaration.form.rows)
+        .filter_map(|row| match row {
+            RefinementRowForm::History(row) => Some(row.field.name.clone()),
+            _ => None,
+        })
         .collect()
 }
 
@@ -754,6 +795,7 @@ pub(crate) fn check_refinement<'a, 'c>(
                 RefinementCause::Unsupported {
                     feature: UnsupportedFeature::ProtocolAbstractSide,
                     profile: declaration.selection.identity.clone(),
+                    subject: None,
                 },
             );
             alias
@@ -788,12 +830,14 @@ pub(crate) fn check_refinement<'a, 'c>(
         maps_complete: true,
         baseline: 0,
         populations: None,
+        history: Vec::new(),
     };
     checker.baseline = checker.findings.refusals.len();
-    checker.refuse_history_rows(form, &declaration.selection.identity);
+    let headers = checker.history_headers(form, &declaration.selection.identity);
     let populations = checker.populations(form);
     let objects = checker.objects(form, cx);
     let steps = checker.steps(form, cx);
+    let history = checker.history_rows(headers, cx);
     let concrete_fairness = checker.fairness(form, FairnessSide::Assume);
     let abstract_fairness = checker.fairness(form, FairnessSide::Ensure);
     let concrete_object_types = checker
@@ -815,6 +859,7 @@ pub(crate) fn check_refinement<'a, 'c>(
             populations,
             objects,
             steps,
+            history,
             concrete_fairness,
             abstract_fairness,
             concrete_object_types,
@@ -841,6 +886,9 @@ struct Checker<'c, 'a> {
     baseline: usize,
     /// The concrete populations a row may name, resolved on first use.
     populations: Option<PopulationScope>,
+    /// The history fields a row may read (FR-138), in scope once their rows'
+    /// headers check.
+    history: Vec<ScopedHistory>,
 }
 
 impl<'c, 'a> Checker<'c, 'a> {
@@ -885,22 +933,6 @@ impl<'c, 'a> Checker<'c, 'a> {
 
     fn types(&self) -> &'a TypeEnvironment {
         self.declarations.scope.types()
-    }
-
-    /// FR-138: a history field is not checked yet, so a declaration that
-    /// writes one is refused rather than checked with the row ignored.
-    fn refuse_history_rows(&mut self, form: &RefinementForm, profile: &str) {
-        for row in &form.rows {
-            if let RefinementRowForm::History(row) = row {
-                self.findings.refuse(
-                    row.keyword,
-                    RefinementCause::Unsupported {
-                        feature: UnsupportedFeature::HistoryRow,
-                        profile: profile.to_owned(),
-                    },
-                );
-            }
-        }
     }
 
     /// FR-135 "Population map".
@@ -1238,6 +1270,7 @@ impl<'c, 'a> Checker<'c, 'a> {
                     kind: qsl_forms::StateClauseKind::Invariant,
                     operation: None,
                     label: format!("{}.{written}", target.name),
+                    range_agnostic: false,
                 },
                 cx,
             );
@@ -1314,6 +1347,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             kind,
             operation,
             label,
+            range_agnostic,
         } = context;
         let populations = self.population_scope();
         let typed = (|| {
@@ -1332,7 +1366,8 @@ impl<'c, 'a> Checker<'c, 'a> {
             )
             .with_cancel(declarations.cancel)
             .with_context(cx.reborrow(declarations.scope))
-            .with_populations(populations.clone());
+            .with_populations(populations.clone())
+            .with_history(self.history.clone());
             bind_parameters(&mut typer, &parameters, &location)?;
             typer.enter_state_clause(StateContext {
                 parent_projections: BTreeMap::new(),
@@ -1345,29 +1380,40 @@ impl<'c, 'a> Checker<'c, 'a> {
             // the type it defines (ADR-016 SC-2), never a range-checked
             // coercion into it.
             let body = typer.infer(&expression.expression, Some(required), &location)?;
-            let uses = population_uses(
-                declarations.scope.types(),
-                &body,
-                required,
-                (&label, &populations),
-                expression
-                    .spans
-                    .at(&[])
-                    .unwrap_or(Span { start: 0, end: 0 }),
-            )
-            .map_err(|cause| match cause {
-                Some(cause) => refuse_with(&location, cause),
-                None => CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch),
-            })?;
+            let types = declarations.scope.types();
+            let uses =
+                if range_agnostic && relaxed_conforms(types, body.root().value_type(), required) {
+                    Vec::new()
+                } else {
+                    population_uses(
+                        types,
+                        &body,
+                        required,
+                        (&label, &populations),
+                        expression
+                            .spans
+                            .at(&[])
+                            .unwrap_or(Span { start: 0, end: 0 }),
+                    )
+                    .map_err(|cause| match cause {
+                        Some(cause) => refuse_with(&location, cause),
+                        None => CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch),
+                    })?
+                };
             Ok::<_, CheckRefusal>((body, typer.slots(), uses))
         })();
         match typed {
-            Ok((body, slots, uses)) => Some(CheckedRow {
-                parameters,
-                body,
-                slots,
-                uses,
-            }),
+            Ok((body, slots, uses)) => {
+                let observations =
+                    Observations::of(body.root(), observation_of(kind), parameters.len());
+                Some(CheckedRow {
+                    parameters,
+                    body,
+                    slots,
+                    uses,
+                    observations,
+                })
+            }
             Err(refusal) => {
                 match super::region::span_at(&expression.spans, &refusal.location)
                     .or_else(|| expression.spans.at(&[]))
@@ -1581,6 +1627,7 @@ impl<'c, 'a> Checker<'c, 'a> {
             kind: qsl_forms::StateClauseKind::Postcondition,
             operation: Some(concrete.name().to_owned()),
             label: format!("step {}", concrete.name()),
+            range_agnostic: false,
         };
         let mut complete = true;
         let receiver_type = lift(&self.lifting, &ValueType::Reference(target_type.id));
@@ -1717,6 +1764,11 @@ struct RowContext {
     operation: Option<String>,
     /// The row, as a refusal names it: `Type.field` or `step operation`.
     label: String,
+    /// Whether the row's type conforms to the type it defines when only the
+    /// native types are compared and not the integer ranges, which are left
+    /// to run time: a history update (FR-138), whose value is computed and
+    /// not a literal.
+    range_agnostic: bool,
 }
 
 fn refuse_with(location: &Location, cause: CheckCause) -> CheckRefusal {

@@ -150,6 +150,34 @@ pub fn evaluate_refinement_row(
     .run(row.body(), row.slots(), bindings)
 }
 
+/// FR-138 (ADR-020 AX-1): evaluate one history update `row` of `package`
+/// through the one clause evaluator (FR-107), as a postcondition-kind body
+/// over the step: its model reads observe `post`, except inside `pre(..)`,
+/// where they observe `pre`, as the row's own `reads` say. `bindings` fill
+/// the row's parameters in order, `self` (the receiver) first.
+pub fn evaluate_history_update(
+    package: &CheckedPackage,
+    row: &qsl_semantics::check::CheckedRow,
+    (pre, post): (&ObjectEnvironment, &ObjectEnvironment),
+    bindings: Vec<Value>,
+    meter: &mut Meter,
+) -> Result<Evaluation, InternalFault> {
+    let reads: std::collections::BTreeMap<_, _> = row
+        .reads()
+        .map(|(location, observation)| (location.clone(), observation))
+        .collect();
+    Machine::with_pre(
+        package.graph().scope(),
+        package.graph(),
+        post,
+        Some(pre),
+        Some(&reads),
+        meter,
+        package.graph().dispatch_tables(),
+    )
+    .run(row.body(), row.slots(), bindings)
+}
+
 /// FR-167 (ADR-022 GM-3): evaluate the state-graph predicate `predicate` of
 /// `package` with its `over` parameter bound to `over` (`None` for a claim
 /// with no `over`) at the state whose objects are `current`, through the one

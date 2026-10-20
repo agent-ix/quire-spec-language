@@ -179,10 +179,6 @@ pub enum ModelCheckRefusal {
     /// rule for.
     #[error(transparent)]
     Footprint(#[from] qsl_eval::simulation::model::FootprintError),
-    /// A refinement with a hidden field, which needs the AX-2 candidate set
-    /// of abstract states (QSL-545).
-    #[error("EN-1 does not decide a refinement with a hidden field yet")]
-    HiddenFields,
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
     Fault(InternalFault),

@@ -9,6 +9,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/ADR-011
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-142
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-071
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-072
@@ -441,7 +443,7 @@ the first paragraph of the Description states.
 
 The union cases of AC-8 and AC-9 depend on QSL-503's S6a union
 arguments. A quantity-typed parameter in source (AC-10) depends on
-STD-113; the quantity conversion is tested directly.
+QSpec FR-142's `Quantity<u>`, S1's `Quantity<qualified-name>` production and FR-091's unit-namespace type lookup; the quantity conversion is tested directly.
 
 ## Dependencies
 

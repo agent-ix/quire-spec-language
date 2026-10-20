@@ -27,6 +27,9 @@ mod quotient;
 mod reduction;
 mod reduction_differential;
 mod reduction_world;
+#[path = "../../../tests/support/refinement_aux.rs"]
+mod refinement_aux;
+mod refinement_auxiliary;
 mod refinement_budget;
 mod refinement_certificate;
 #[path = "../../../tests/support/refinement_cas.rs"]

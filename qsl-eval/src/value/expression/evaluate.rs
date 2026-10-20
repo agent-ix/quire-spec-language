@@ -12,7 +12,7 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
-    identity_string, ModelQueryRefusal, NavigationRefusal, PreconditionFailure,
+    identity_string, HistoryUnresolved, ModelQueryRefusal, NavigationRefusal, PreconditionFailure,
     ProtocolClauseSnapshot, ProtocolClauseUnsupported, ProtocolReferenceUnsupported,
     ReferenceUnresolved, StateModelUndefined,
 };
@@ -1821,6 +1821,22 @@ impl<'a, 'm> Machine<'a, 'm> {
                     Some(&read_reference),
                 );
                 value
+            }
+            NodeKind::History { field, .. } => {
+                let Value::Reference(reference) = self.pop()? else {
+                    return Err(invariant("history-reference-value-expected"));
+                };
+                // FR-138: a history field is the refinement's, kept beside
+                // the observation; `pre(..)` reads the pre-state's.
+                // A failed update leaves no value to read: undetermined.
+                self.objects_for(node)?
+                    .history(&reference, field)
+                    .cloned()
+                    .ok_or_else(|| {
+                        Halt::Family(FamilyResult::Refused(Box::new(HistoryUnresolved {
+                            field: field.clone(),
+                        })))
+                    })?
             }
             NodeKind::Present(_) => {
                 let Value::Option(option) = self.pop()? else {
