@@ -2917,7 +2917,7 @@ fn a_direct_import_reached_transitively_first_stays_in_the_lock() {
     )
     .expect("equal direct and transitive paths unify");
     assert_eq!(
-        root.dependency_selections()[&lib("test/units")].path,
+        root.dependency_selections()[&lib("test/units")].path(&lib("test/units")),
         path(&["test/mid", "test/units"])
     );
     let written = wire(&emit(&root));
