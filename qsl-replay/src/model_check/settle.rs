@@ -216,6 +216,8 @@ pub fn settle_model_check(
             UndecidedCause::UndecidedSuccessor => InconclusiveCause::UndecidedSuccessor,
             UndecidedCause::NoInitialState => InconclusiveCause::NoInitialState,
             UndecidedCause::NoInstance => InconclusiveCause::NoInstance,
+            UndecidedCause::MatchUndetermined => InconclusiveCause::MatchUndetermined,
+            UndecidedCause::VacuousMatch => InconclusiveCause::VacuousMatch,
         }),
         ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         ModelCheckOutcome::Violated {

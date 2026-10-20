@@ -313,6 +313,8 @@ impl ItemCause {
                 InconclusiveCause::UndecidedSuccessor
                 | InconclusiveCause::NoInitialState
                 | InconclusiveCause::NoInstance
+                | InconclusiveCause::MatchUndetermined
+                | InconclusiveCause::VacuousMatch
                 | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SimulationCertificateNotBuilt
                 | InconclusiveCause::SufficientTestFailed

@@ -373,6 +373,12 @@ pub enum InconclusiveCause {
     NoInitialState,
     /// The item has zero instances (FR-125).
     NoInstance,
+    /// `match-undetermined` (ADR-023 HV-4): a hyper item's `match` block was
+    /// refused or incomplete at a reachable joint step.
+    MatchUndetermined,
+    /// `vacuous-match` (ADR-023 HM-7): a hyper item's non-empty universal
+    /// `match` is satisfied by no fair tuple of universal behaviours.
+    VacuousMatch,
     /// `mapping-undetermined` (ADR-020 RE-4): a refinement's mapping row or
     /// step-row argument was refused or incomplete at a reachable state.
     MappingUndetermined,
@@ -451,6 +457,8 @@ impl InconclusiveCause {
             Self::UndecidedSuccessor => "undecided-successor",
             Self::NoInitialState => "no-initial-state",
             Self::NoInstance => "no-instance",
+            Self::MatchUndetermined => "match-undetermined",
+            Self::VacuousMatch => "vacuous-match",
             Self::MappingUndetermined => "mapping-undetermined",
             Self::SimulationCertificateNotBuilt => "simulation-certificate-not-built",
             Self::CertificateRejected { .. } => "certificate-rejected",
@@ -475,6 +483,8 @@ impl InconclusiveCause {
             | Self::UndecidedSuccessor
             | Self::NoInitialState
             | Self::NoInstance
+            | Self::MatchUndetermined
+            | Self::VacuousMatch
             | Self::MappingUndetermined
             | Self::SimulationCertificateNotBuilt
             | Self::SufficientTestFailed

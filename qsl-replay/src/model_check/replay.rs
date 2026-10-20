@@ -66,6 +66,7 @@ use crate::model_check::counterexample::{
     deadlock_freedom_clause, CounterexampleKind, Lasso, TemporalCounterexample,
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
+use crate::model_check::hyper_counterexample::HyperUndefined;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::WitnessEnvelope;
@@ -173,6 +174,28 @@ pub enum ModelTraceRefusal {
     /// failures write and replay does not build yet.
     #[error("unsupported_construct/not-yet-implemented: replay of a refinement lasso")]
     RefinementLasso,
+    /// A hyper counterexample whose traces do not match the clause: in
+    /// number, order, variable, alias or instance; of unequal step counts;
+    /// or whose loop entry is not a position of a step (FR-183 "Common").
+    #[error("invalid_runtime_input/invalid-value: the hyper counterexample {reason}")]
+    HyperShape {
+        /// What does not match.
+        reason: &'static str,
+    },
+    /// A joint step on which `μ_U` is false, or has no value where the
+    /// counterexample does not claim it (FR-183 "Common").
+    #[error("invalid_runtime_input/invalid-value: `match` does not hold at joint step {joint}")]
+    HyperUnmatched {
+        /// The joint step's position.
+        joint: u64,
+    },
+    /// A trace that is unfair under its own fairness set on its own loop
+    /// (FR-183 "Common").
+    #[error("invalid_runtime_input/invalid-value: trace `{variable}` is unfair on its loop")]
+    HyperUnfair {
+        /// The trace variable.
+        variable: String,
+    },
     /// A step's transition identity is not enabled at its pre-state.
     #[error("invalid_runtime_input/invalid-value: step {step} is not enabled")]
     NotEnabled {
@@ -209,7 +232,10 @@ impl ModelTraceRefusal {
             | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
-            | Self::StutterNotTerminal { .. } => Code::InvalidRuntimeInput,
+            | Self::StutterNotTerminal { .. }
+            | Self::HyperShape { .. }
+            | Self::HyperUnmatched { .. }
+            | Self::HyperUnfair { .. } => Code::InvalidRuntimeInput,
         }
     }
 
@@ -229,7 +255,10 @@ impl ModelTraceRefusal {
             | Self::NoRefinementFailure
             | Self::PrefixShort { .. }
             | Self::LoopOpen { .. }
-            | Self::StutterNotTerminal { .. } => "invalid-value",
+            | Self::StutterNotTerminal { .. }
+            | Self::HyperShape { .. }
+            | Self::HyperUnmatched { .. }
+            | Self::HyperUnfair { .. } => "invalid-value",
         }
     }
 }
@@ -243,6 +272,9 @@ pub enum ModelTraceValue {
     Truth(bool),
     /// The undefined value reproduced at `where`.
     Undefined(UndefinedEvaluation),
+    /// The undefined value a hyper counterexample reproduced at its joint
+    /// position (FR-183 "Undefined evaluation").
+    HyperUndefined(HyperUndefined),
 }
 
 /// FR-128's settlement of a model counterexample's replay.
@@ -492,7 +524,7 @@ pub(super) struct Position {
 }
 
 /// The successors of `state`, or the stop an expansion returned.
-fn expand(
+pub(super) fn expand(
     system: &ModelSystem<'_>,
     state: &ModelSimState,
 ) -> Result<
@@ -721,7 +753,7 @@ fn check_formula(
                 None => return Ok((no_value(), Vec::new())),
             }
             if let Some(constraint) =
-                unfair_constraint(system, &loop_states, lasso, formula.clause)?
+                unfair_constraint(system, &loop_states, lasso, formula.clause.fairness())?
             {
                 return Err(ReplayRefusal::UnfairLasso { constraint });
             }
@@ -806,11 +838,11 @@ fn ends_terminal(system: &ModelSystem<'_>, positions: &[Position]) -> Result<boo
 
 /// One model step of a lasso's loop: where it starts, the transition
 /// identities enabled there (FA-2) and the one it takes.
-struct LoopState {
+pub(super) struct LoopState {
     /// The step's position in the loop, from its entry.
-    position: usize,
-    enabled: Vec<ModelTransition>,
-    taken: ModelTransition,
+    pub(super) position: usize,
+    pub(super) enabled: Vec<ModelTransition>,
+    pub(super) taken: ModelTransition,
 }
 
 /// The model steps of the lasso's loop with the identities enabled at each
@@ -853,11 +885,11 @@ fn loop_states_of(
 /// lasso's loop is unfair under. A `each` constraint is one constraint per
 /// transition identity of its operation that the loop takes or enables; a
 /// `whole` constraint is one over all of them.
-fn unfair_constraint(
+pub(super) fn unfair_constraint(
     system: &ModelSystem<'_>,
     states: &[LoopState],
     lasso: Lasso,
-    clause: &CheckedTemporalClause,
+    fairness: &[FairnessConstraint],
 ) -> Result<Option<FairnessConstraint>, ReplayRefusal> {
     let mut numbered: BTreeMap<ModelTransition, Identity> = BTreeMap::new();
     let mut number = |transition: &ModelTransition| {
@@ -880,7 +912,7 @@ fn unfair_constraint(
     // The constraints, each remembering the authored constraint it came from.
     let mut constraints = Vec::new();
     let mut authored = Vec::new();
-    for constraint in clause.fairness() {
+    for constraint in fairness {
         let strength = Strength::from(constraint.kind());
         let operation = constraint.operation();
         let text = system
@@ -968,7 +1000,7 @@ fn strong_hints(system: &ModelSystem<'_>, states: &[LoopState]) -> Vec<StrongFai
     hints
 }
 
-fn digest_of(
+pub(super) fn digest_of(
     system: &ModelSystem<'_>,
     state: &ModelSimState,
 ) -> Result<DigestRecord, ReplayRefusal> {
