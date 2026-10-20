@@ -14,11 +14,12 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    explore_protocol, BlockedThread, Disposition, GatedStep, MemoryModel, MemoryStep,
+    binder_root, explore_protocol, BlockedThread, Disposition, GatedStep, MemoryModel, MemoryStep,
     ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition, RestKind, RestPoint, Sc,
     ScComponent, StepKind, ThreadPath, WaitCause,
 };
 use qsl_eval::simulation::{Limits, NotSimulated, Outcome, SubjectSystem, TransitionSystem};
+use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
@@ -981,13 +982,42 @@ fn the_repaired_fill_is_deadlock_free_over_ten_states() {
     assert_eq!(*derived[0].subject(), "Fill");
 }
 
-/// Part of FR-215-AC-4 (TC-660): EN-1 over the `Fill` deadlock-freedom item
+/// FR-215-AC-4 (TC-660): a protocol with an `event` node whose record type
+/// is the unbounded `Integer` returns `RequiresBound` naming that binder
+/// before any state is explored. EN-1 over the `Fill` deadlock-freedom item
 /// returns `Violated` with `kind: Deadlock`, and over the repaired `Fill`
 /// `Holds` over ten states; running each twice gives equal outcomes and
-/// byte-equal counterexamples. Not covered: an `event` node's unbounded
-/// record type, whose step is not built yet.
+/// byte-equal counterexamples.
+#[trace("TC-660", "FR-215-AC-4")]
 #[test]
 fn a_protocol_model_check_is_deterministic() {
+    let run = format!(
+        "sequence Main {{ event Tally by w as (tally: Integer) {{ tally = 0 }}; {} }}",
+        touch("T")
+    );
+    let counted = p_case(&run, 0);
+    let refusal = check_protocol(
+        ProtocolCheckRequest {
+            subject: counted.subject("P"),
+            item: ModelCheckItem::DeadlockFreedom,
+            max_depth: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("the event binder is unbounded");
+    let ModelCheckRefusal::RequiresBound(bound) = refusal else {
+        panic!("{refusal:?}");
+    };
+    let named: Vec<_> = bound.domains.iter().map(|(key, _)| key.clone()).collect();
+    assert_eq!(
+        named,
+        [DomainKey::Node {
+            node: binder_root("P", "tally"),
+            path: Vec::new(),
+        }]
+    );
+
     let case = Case::new(&fill_unit("self.v = 0", ""), &[0]);
     let first = case.deadlock("Fill");
     assert_eq!(violated(&first).kind, CounterexampleKind::Deadlock);
