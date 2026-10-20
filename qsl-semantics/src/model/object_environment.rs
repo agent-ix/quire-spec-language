@@ -60,6 +60,10 @@ pub struct ObjectEnvironment {
     /// population's declaration identity, in ascending key order (FR-139);
     /// empty for an environment no snapshot admitted.
     population_members: BTreeMap<String, Vec<ObjectReference>>,
+    /// Whether the snapshot marks each population it lists `complete`, by
+    /// the population's declaration identity (FR-106); empty for an
+    /// environment no snapshot document admitted.
+    population_completeness: BTreeMap<String, bool>,
     /// Where an evaluation over this environment records what it reads.
     read_log: Option<ReadLog>,
 }
@@ -76,6 +80,7 @@ impl ObjectEnvironment {
             population_sizes: BTreeMap::new(),
             references: Vec::new(),
             population_members: BTreeMap::new(),
+            population_completeness: BTreeMap::new(),
             read_log: None,
         }
     }
@@ -112,6 +117,24 @@ impl ObjectEnvironment {
     /// population.
     pub fn population_members(&self, population: &str) -> Option<&[ObjectReference]> {
         self.population_members.get(population).map(Vec::as_slice)
+    }
+
+    /// Records whether the admitted snapshot marks each population it lists
+    /// `complete`, by the population's declaration identity (FR-106).
+    #[must_use]
+    pub fn with_population_completeness(mut self, completeness: BTreeMap<String, bool>) -> Self {
+        self.population_completeness = completeness;
+        self
+    }
+
+    /// Whether the snapshot lists the population whose declaration identity
+    /// is `population` and marks it `complete`: what a clause naming it
+    /// requires before it is read (FR-391 "Evaluation").
+    pub fn population_complete(&self, population: &str) -> bool {
+        self.population_completeness
+            .get(population)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Records every object the snapshot admitted, so an evaluation that

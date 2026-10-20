@@ -2799,8 +2799,14 @@ pub(super) fn finish_populations(
         .map(|(reference, _)| reference.clone())
         .collect();
     // The objects each population lists, ascending, so a clause that names
-    // a population can read it (FR-391 "Evaluation").
-    let mut members: BTreeMap<String, Vec<ObjectReference>> = BTreeMap::new();
+    // a population can read it (FR-391 "Evaluation"). Every listed
+    // population has an entry, so a complete population with no objects is
+    // an empty domain.
+    let mut members: BTreeMap<String, Vec<ObjectReference>> = values
+        .completeness
+        .keys()
+        .map(|population| (population.clone(), Vec::new()))
+        .collect();
     for (holder, reference) in values.holders.iter().zip(&references) {
         members
             .entry(holder.clone())
@@ -2818,7 +2824,8 @@ pub(super) fn finish_populations(
     .with_out_of_range(out_of_range.clone())
     .with_extents(extents)
     .with_population_sizes(population_sizes)
-    .with_population_members(members);
+    .with_population_members(members)
+    .with_population_completeness(values.completeness.clone());
     Ok(AdmittedEnvironment {
         environment,
         completeness: values.completeness,
@@ -2869,6 +2876,7 @@ pub(super) fn admit_populations(
     snapshot: &SnapshotDocument,
     document: &DocumentRef,
     self_population: Option<&str>,
+    required: &[String],
     ancestor_steps: u64,
 ) -> Result<AdmittedEnvironment, AdmissionFailure> {
     let values = admit_population_values(
@@ -2884,7 +2892,7 @@ pub(super) fn admit_populations(
         &snapshot.populations,
         &values.completeness,
         self_population,
-        &[],
+        required,
         &values.extents,
     )?;
     check_population_closure(

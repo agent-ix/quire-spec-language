@@ -563,19 +563,15 @@ impl Derivation<'_> {
             // A clause that names one population (`M::P`, FR-391) reads that
             // population's membership alone.
             NodeKind::AllInstances { population } | NodeKind::Lookup { population, .. }
-                if matches!(
-                    node.at(*population).kind(),
-                    NodeKind::NamedPopulation { .. }
-                ) =>
+                if let NodeKind::NamedPopulation { population, .. } =
+                    node.at(*population).kind() =>
             {
-                if let NodeKind::NamedPopulation { population, .. } = node.at(*population).kind() {
-                    reads.push((
-                        SymbolicLocation::AnyMembership {
-                            population: population.clone(),
-                        },
-                        observation,
-                    ));
-                }
+                reads.push((
+                    SymbolicLocation::AnyMembership {
+                        population: population.clone(),
+                    },
+                    observation,
+                ));
             }
             // The population operand is a population-typed parameter, which
             // names no population, so every population related to the result

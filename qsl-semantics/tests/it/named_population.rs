@@ -176,7 +176,7 @@ fn an_unknown_population_or_an_alias_that_is_also_an_enum_refuses() {
         (code.as_str(), cause.as_str()),
         ("missing_declaration", "missing-name")
     );
-    assert_eq!(at, "M::nothing");
+    assert_eq!(at, "nothing");
     let (code, cause, at) = refused(false, &format!("enum M {{ a, b }}\n{ROOM}"));
     assert_eq!(
         (code.as_str(), cause.as_str()),
@@ -212,7 +212,7 @@ fn a_population_as_a_value_refuses_as_operator_ineligible() {
         (code.as_str(), cause.as_str()),
         ("missing_declaration", "missing-name")
     );
-    assert_eq!(at, "M::Counter");
+    assert_eq!(at, "Counter");
 }
 
 /// TC-1076 rows 5 and 6 (FR-391-AC-4): with `bound B on M::counters [3]` the
@@ -383,10 +383,13 @@ fn a_population_is_the_domain_of_a_quantifier_a_count_and_a_holds_atom() {
     );
 }
 
-/// TC-1076 row 10 (FR-391-AC-8): `M::counters` in a function body names no
-/// population, `missing_declaration`/`missing-name` at the name; `seq` in an
-/// invariant refuses `unsupported_construct`/`expression-form` at its span.
-#[trace("TC-1076", "FR-391-AC-8")]
+/// TC-1076 row 10, two of FR-391-AC-8's three cases: `M::counters` in a
+/// function body names no population, `missing_declaration`/`missing-name`
+/// at `counters`; `seq` in an invariant refuses
+/// `unsupported_construct`/`expression-form` at its span. The type-level
+/// invariant case has no fixture here (a domain-package clause record), so
+/// the test claims no criterion.
+#[trace("TC-1076")]
 #[test]
 fn a_function_body_names_no_population_and_seq_stays_refused() {
     let (code, cause, at) = refused(
@@ -397,7 +400,7 @@ fn a_function_body_names_no_population_and_seq_stays_refused() {
         (code.as_str(), cause.as_str()),
         ("missing_declaration", "missing-name")
     );
-    assert_eq!(at, "M::counters");
+    assert_eq!(at, "counters");
     let (code, cause, at) = refused(
         false,
         "invariant S using v on M::Counter at current { size(seq(i in 0 .. 2: i)) = 3 }",

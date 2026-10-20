@@ -1572,6 +1572,15 @@ pub enum CheckCause {
     WrongSnapshot(WrongSnapshotCause),
     /// `missing_declaration` / `missing-name`.
     MissingName(String),
+    /// `missing_declaration` / `missing-name` for the population segment of
+    /// a two-segment `M::P` name (FR-391 "Resolution"), located at that
+    /// segment: `segment` starts `offset` bytes into the written name.
+    MissingSegment {
+        /// The name as written.
+        name: String,
+        /// The byte offset of the segment that names nothing.
+        offset: usize,
+    },
     /// `missing_declaration` / `missing-name` for `self` written where no
     /// state clause binds it (FR-104): a typed cause, not a `MissingName`
     /// whose text is `"self"`.
@@ -2072,7 +2081,9 @@ impl CheckCause {
             | Self::IntegerOutsideI128(_)
             | Self::MalformedUuidLiteral { .. } => Code::IllTyped,
             Self::WrongSnapshot(_) | Self::UnanchoredResult { .. } => Code::WrongSnapshot,
-            Self::MissingName(_) | Self::MissingSelf => Code::MissingDeclaration,
+            Self::MissingName(_) | Self::MissingSegment { .. } | Self::MissingSelf => {
+                Code::MissingDeclaration
+            }
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Code::AmbiguousDeclaration
             }
@@ -2140,7 +2151,9 @@ impl CheckCause {
                 Some("type-mismatch")
             }
             Self::UnanchoredResult { .. } => Some("wrong-anchor"),
-            Self::MissingName(_) | Self::MissingSelf => Some("missing-name"),
+            Self::MissingName(_) | Self::MissingSegment { .. } | Self::MissingSelf => {
+                Some("missing-name")
+            }
             Self::AmbiguousName { .. } | Self::AmbiguousMember(_) | Self::AmbiguousQualified(_) => {
                 Some("ambiguous-name")
             }

@@ -150,6 +150,16 @@ impl ModelRefusal {
         self.cause.catalog_code()
     }
 
+    /// FR-090 `lookup`: a reference of type `actual` does not conform to the
+    /// queried type `required` (`ill_typed`/`type-mismatch`).
+    pub fn type_mismatch(actual: String, required: String) -> Self {
+        Self {
+            code: Code::IllTyped,
+            cause: ModelRefusalCause::TypeMismatch,
+            detail: format!("{actual} does not conform to {required}"),
+        }
+    }
+
     /// FR-090 `lookup` with absence `Refused`: `key`, an object identity's
     /// bytes, names no member of the population `binding`.
     pub fn absent_key(binding: String, key: Vec<u8>) -> Self {

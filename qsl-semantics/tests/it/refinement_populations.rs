@@ -355,7 +355,7 @@ fn a_population_name_and_a_seq_outside_a_refinement_refuse() {
         ),
         (
             "function f using v(): Boolean pure { size(R::slots) = 2 }",
-            "R::slots",
+            "slots",
             Code::MissingDeclaration,
             "missing-name",
         ),

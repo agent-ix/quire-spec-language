@@ -1530,6 +1530,9 @@ pub(crate) struct NamedScope {
     /// The model aliases that also name an enum of the unit: a two-segment
     /// name under one is ambiguous.
     pub(crate) ambiguous: Vec<String>,
+    /// Every model alias of the unit: a two-segment name under one that
+    /// names no population is missing at its second segment.
+    pub(crate) aliases: Vec<String>,
 }
 
 /// One population a population position may name (FR-391).
@@ -1552,10 +1555,12 @@ impl NamedScope {
     pub(crate) fn of(models: &[super::lowering::AdmittedModel], scope: &Scope) -> Self {
         let mut populations = Vec::new();
         let mut ambiguous = Vec::new();
+        let mut aliases = Vec::new();
         for model in models {
             let Some(alias) = model.alias() else {
                 continue;
             };
+            aliases.push(alias.to_owned());
             if scope.names_enum(alias) {
                 ambiguous.push(alias.to_owned());
             }
@@ -1574,6 +1579,7 @@ impl NamedScope {
         Self {
             populations,
             ambiguous,
+            aliases,
         }
     }
 
@@ -1594,8 +1600,22 @@ impl NamedScope {
     /// Whether `name` is two segments whose first is a model alias that
     /// also names an enum of the unit.
     pub(crate) fn is_ambiguous(&self, name: &str) -> bool {
-        let segments: Vec<&str> = name.split("::").collect();
-        matches!(segments[..], [alias, _] if self.ambiguous.iter().any(|known| known == alias))
+        alias_of(name).is_some_and(|alias| self.ambiguous.iter().any(|known| known == alias))
+    }
+
+    /// Whether `name` is two segments whose first is a model alias of the
+    /// unit (FR-391 "Resolution").
+    pub(crate) fn is_under_alias(&self, name: &str) -> bool {
+        alias_of(name).is_some_and(|alias| self.aliases.iter().any(|known| known == alias))
+    }
+}
+
+/// The first segment of `name` when it is exactly two segments.
+fn alias_of(name: &str) -> Option<&str> {
+    let mut segments = name.split("::");
+    match (segments.next(), segments.next(), segments.next()) {
+        (Some(alias), Some(_), None) => Some(alias),
+        _ => None,
     }
 }
 

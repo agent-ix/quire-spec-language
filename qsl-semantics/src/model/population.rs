@@ -2529,11 +2529,10 @@ pub fn lookup(
     ) {
         Ok(true) => {}
         Ok(false) => {
-            return LookupOutcome::Refused(ModelRefusal {
-                code: Code::IllTyped,
-                cause: ModelRefusalCause::TypeMismatch,
-                detail: format!("{} does not conform to {}", r.static_type.node, t.node),
-            });
+            return LookupOutcome::Refused(ModelRefusal::type_mismatch(
+                r.static_type.node.clone(),
+                t.node.clone(),
+            ));
         }
         Err(refusal) => return LookupOutcome::Refused(refusal),
     }

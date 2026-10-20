@@ -257,6 +257,26 @@ impl CatalogCoded for ProtocolReferenceUnsupported {
     }
 }
 
+/// FR-391 "Evaluation": a clause or a `holds` atom names a population the
+/// observation's snapshot does not list `complete`. FR-106 requires every
+/// population a clause names, so the read stops `incomplete_population`/
+/// `incomplete-scope` naming it, whichever path admitted the snapshot.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct NamedPopulationIncomplete {
+    /// The population's declaration identity.
+    pub(crate) population: String,
+}
+
+impl CatalogCoded for NamedPopulationIncomplete {
+    fn catalog_code(&self) -> CatalogCode {
+        CatalogCode::new("incomplete_population", "incomplete-scope")
+    }
+
+    fn catalog_fields(&self) -> Option<BTreeMap<&'static str, String>> {
+        Some(BTreeMap::from([("population", self.population.clone())]))
+    }
+}
+
 /// A read through a `Reference<T>` over an object environment that holds no
 /// object: a replay (FR-098) admits a reference argument by its identity, and
 /// a call that dereferences it completes no value.

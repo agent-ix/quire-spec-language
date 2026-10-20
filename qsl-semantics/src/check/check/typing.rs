@@ -111,14 +111,30 @@ fn int_type(low: Integer, high: Integer, location: &Location) -> Result<ValueTyp
 }
 
 /// A two-segment name whose alias also names an enum of the unit (FR-391
-/// "Resolution"): ambiguous, naming both.
+/// "Resolution"): ambiguous, naming the alias, which the model selection and
+/// the enum both declare. Neither declaration is a position of the checked
+/// tree, so the one locus is the name.
 fn ambiguous_alias(name: &str, location: &Location) -> CheckRefusal {
-    let alias = name.split_once("::").map_or(name, |(alias, _)| alias);
+    let alias = name.split("::").next().unwrap_or(name);
     refuse(
         location,
         CheckCause::AmbiguousName {
-            name: format!("{alias} (model alias and enum)"),
+            name: alias.to_owned(),
             loci: vec![location.clone()],
+        },
+    )
+}
+
+/// `missing_declaration`/`missing-name` for a two-segment `M::P` name that
+/// names no population here, located at its second segment (FR-391
+/// "Resolution").
+fn missing_segment(name: &str, location: &Location) -> CheckRefusal {
+    let offset = name.rfind("::").map_or(0, |at| at + 2);
+    refuse(
+        location,
+        CheckCause::MissingSegment {
+            name: name.to_owned(),
+            offset,
         },
     )
 }
@@ -938,19 +954,36 @@ impl<'a> Typer<'a> {
                 return Err(if self.named.is_some() {
                     CheckRefusal::ill_typed(&location, IllTypedCause::OperatorIneligible)
                 } else {
-                    refuse(&location, CheckCause::MissingName(name.to_owned()))
+                    missing_segment(name, &location)
                 });
             }
             ExprNode::Name(name) if self.population_named(name).is_some() => {
                 self.population_objects(name, &location)?
             }
-            ExprNode::Name(name) => match resolve_target(self, name, &location, || Ok(()))? {
-                ResolvedTarget::UnionMember(member) => {
-                    member.admit_shape(None, &location)?;
-                    member.finish(Vec::new(), &location)
+            ExprNode::Name(name) => {
+                let resolved = match resolve_target(self, name, &location, || Ok(())) {
+                    Ok(ResolvedTarget::UnionMember(member)) => member
+                        .admit_shape(None, &location)
+                        .map(|()| member.finish(Vec::new(), &location)),
+                    Ok(ResolvedTarget::Value(())) => self.name(name, hint.as_deref(), &location),
+                    Err(refusal) => Err(refusal),
+                };
+                // FR-391 "Resolution": in a population position an `M::X`
+                // that names no population (a type such as `M::Counter`
+                // included) is missing at its second segment.
+                let under_alias = self
+                    .named
+                    .as_ref()
+                    .is_some_and(|named| named.is_under_alias(name));
+                match resolved {
+                    Err(refusal)
+                        if under_alias && matches!(refusal.cause, CheckCause::MissingName(_)) =>
+                    {
+                        return Err(missing_segment(name, &location));
+                    }
+                    resolved => resolved?,
                 }
-                ResolvedTarget::Value(()) => self.name(name, hint.as_deref(), &location)?,
-            },
+            }
             ExprNode::ProtocolReference { target } => self.protocol_reference(target, &location)?,
             // A `hyper` clause's reads and labels have a meaning only inside
             // the clause; S2 builds them nowhere else.
@@ -2654,7 +2687,11 @@ impl<'a> Typer<'a> {
         if named.is_ambiguous(name) {
             return Err(ambiguous_alias(name, location));
         }
-        Ok(named.named(name).cloned())
+        match named.named(name) {
+            Some(population) => Ok(Some(population.clone())),
+            None if named.is_under_alias(name) => Err(missing_segment(name, location)),
+            None => Ok(None),
+        }
     }
 
     /// The population operand `expression` of `allInstances` or `lookup`,
@@ -2718,18 +2755,37 @@ impl<'a> Typer<'a> {
                 if named.is_ambiguous(population) {
                     return Err(ambiguous_alias(population, &location));
                 }
-                let Some(named) = named.named(population).cloned() else {
-                    return Err(refuse(
-                        &location,
-                        CheckCause::MissingName(population.to_owned()),
-                    ));
-                };
-                self.population_domain(&named, &location.child(0))?
+                match named.named(population).cloned() {
+                    Some(named) => self.population_domain(&named, &location.child(0))?,
+                    None if named.is_under_alias(population) => {
+                        return Err(refuse(
+                            &location,
+                            CheckCause::MissingName(population.to_owned()),
+                        ))
+                    }
+                    None => {
+                        return Err(refuse(
+                            &location,
+                            CheckCause::PopulationFormOutsideRefinement,
+                        ))
+                    }
+                }
             }
+            // A function body or type-level invariant: `M::P` names nothing
+            // there (FR-391); any other domain is FR-139's expression form.
             (None, None) => {
                 return Err(refuse(
                     &location,
-                    CheckCause::MissingName(population.to_owned()),
+                    if self
+                        .scope
+                        .known_populations
+                        .iter()
+                        .any(|known| known == population)
+                    {
+                        CheckCause::MissingName(population.to_owned())
+                    } else {
+                        CheckCause::PopulationFormOutsideRefinement
+                    },
                 ))
             }
         };

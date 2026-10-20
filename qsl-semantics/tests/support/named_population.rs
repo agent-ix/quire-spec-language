@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! TC-1076's fixture (FR-391): the `Counter` unit of FR-155-AC-1, a
-//! `test/counter` domain package with `Counter` (`v: Int[0, 2]`, `bump()`)
+//! `test/counter` domain package with `Counter` (`v: Int[0, 2]`, an
+//! optional reference `link` to an `Other`, `bump()`)
 //! in `counters`, `Widget` (`grow()`) in `widgets`, the field-less `Watch` in
 //! `watchers` and `Other` in `others`, and, when asked for, a second
 //! population `archive` of `Counter`. A unit over it selects the package as
@@ -101,11 +102,19 @@ pub fn document(archive: bool) -> Vec<u8> {
             "multiplicity": one(), "origin": origin(&identity),
         })
     };
+    let link = {
+        let identity = ident("Counter/link");
+        json!({
+            "identity": identity, "name": "link", "typeRef": ident("Other"),
+            "presence": "optional", "nullable": false, "defaultKind": "none",
+            "multiplicity": one(), "origin": origin(&identity),
+        })
+    };
     let types = vec![
         level(),
         object_type(
             "Counter",
-            vec![field],
+            vec![field, link],
             vec![operation("Counter", "bump", &["v"])],
         ),
         object_type("Widget", vec![], vec![operation("Widget", "grow", &[])]),
@@ -191,6 +200,7 @@ pub fn check(archive: bool, declarations: &str) -> Result<Checked, Vec<Refused>>
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile t = \"quire.temporal.infinite-trace/v1\";\n\
+         profile m = \"quire.model.complete/v1\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          {declarations}\n",
         hex(&digest),

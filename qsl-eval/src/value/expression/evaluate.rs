@@ -12,9 +12,9 @@ use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use super::causes::{
-    identity_string, ModelQueryRefusal, NavigationRefusal, PreconditionFailure,
-    ProtocolClauseSnapshot, ProtocolClauseUnsupported, ProtocolReferenceUnsupported,
-    ReferenceUnresolved, StateModelUndefined,
+    identity_string, ModelQueryRefusal, NamedPopulationIncomplete, NavigationRefusal,
+    PreconditionFailure, ProtocolClauseSnapshot, ProtocolClauseUnsupported,
+    ProtocolReferenceUnsupported, ReferenceUnresolved, StateModelUndefined,
 };
 use super::s6a::separation::{
     locatable, occurrence_at, InvocationBinding, Provenance, RuntimeValuePath, Separation,
@@ -2098,9 +2098,13 @@ impl<'a, 'm> Machine<'a, 'm> {
                 population,
                 absence,
                 ..
-            } if let NodeKind::NamedPopulation { population, .. } = node.at(*population).kind() => {
+            } if let NodeKind::NamedPopulation {
+                population,
+                members,
+            } = node.at(*population).kind() =>
+            {
                 let reference = self.pop()?;
-                self.named_lookup(node, population, *absence, reference)?
+                self.named_lookup(node, population, members, *absence, reference)?
             }
             NodeKind::AllInstances { population } => {
                 if self.is_protocol_clause() {
@@ -2387,27 +2391,9 @@ impl<'a, 'm> Machine<'a, 'm> {
         let ValueType::Reference(target) = result_type.element() else {
             return Err(invariant("all-instances-reference-element-expected"));
         };
+        self.named_covers(members, *target)?;
         let types = self.scope.types();
-        if !members
-            .iter()
-            .any(|member| types.conforms(*target, *member))
-        {
-            let queried = self
-                .graph
-                .object_type_key(*target)
-                .ok_or_else(|| invariant("all-instances-queried-type-declared"))?
-                .node
-                .clone();
-            return Err(ModelQueryHalt::IncompleteClosure {
-                queried_type: queried.clone(),
-                uncovered_subtypes: vec![queried],
-            }
-            .into());
-        }
-        let objects = self.objects_for(node)?;
-        let listed = objects
-            .population_members(&population.node)
-            .ok_or_else(|| invariant("named-population-unobserved"))?;
+        let listed = self.named_members(node, population)?;
         let mut selected = Vec::new();
         for reference in listed {
             charge_named(self.meter, ChargePoint::PopulationVisit)?;
@@ -2423,12 +2409,61 @@ impl<'a, 'm> Machine<'a, 'm> {
         Ok(outcome_into_stop(form(result_type, selected, self.meter))?)
     }
 
+    /// FR-084's coverage check for a named population (FR-391 "Typing"):
+    /// FR-084's typed incomplete result when no declared member type of the
+    /// population covers `target`. It charges nothing.
+    fn named_covers(
+        &self,
+        members: &[quire_exact::EffectiveId],
+        target: quire_exact::EffectiveId,
+    ) -> Result<(), Halt> {
+        let types = self.scope.types();
+        if members.iter().any(|member| types.conforms(target, *member)) {
+            return Ok(());
+        }
+        let queried = self
+            .graph
+            .object_type_key(target)
+            .ok_or_else(|| invariant("named-queried-type-declared"))?
+            .node
+            .clone();
+        Err(ModelQueryHalt::IncompleteClosure {
+            queried_type: queried.clone(),
+            uncovered_subtypes: vec![queried],
+        }
+        .into())
+    }
+
+    /// The objects the snapshot of `node`'s observation lists for
+    /// `population` (FR-391 "Evaluation"): a population that snapshot does
+    /// not list `complete` stops `incomplete_population`/`incomplete-scope`,
+    /// whichever path admitted it.
+    fn named_members(
+        &self,
+        node: CheckedNode<'a>,
+        population: &DeclarationKey,
+    ) -> Result<&'a [ObjectReference], Halt> {
+        let objects = self.objects_for(node)?;
+        if !objects.population_complete(&population.node) {
+            return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                NamedPopulationIncomplete {
+                    population: population.node.clone(),
+                },
+            ))));
+        }
+        objects
+            .population_members(&population.node)
+            .ok_or_else(|| invariant("named-population-unobserved"))
+    }
+
     /// FR-391: `lookup<T>(M::P, r) absent m` over the population the snapshot
-    /// of the node's observation lists.
+    /// of the node's observation lists, with FR-084's coverage check of `T`
+    /// and `lookup`'s conformance of the reference to `T`.
     fn named_lookup(
         &mut self,
         node: CheckedNode<'a>,
         population: &DeclarationKey,
+        members: &[quire_exact::EffectiveId],
         absence: qsl_foundation::absence::AbsenceMode,
         reference: Value,
     ) -> Result<Value, Halt> {
@@ -2436,13 +2471,39 @@ impl<'a, 'm> Machine<'a, 'm> {
         let Value::Reference(reference) = reference else {
             return Err(invariant("lookup-reference-value-expected"));
         };
+        let target = match node.value_type() {
+            ValueType::Option(payload) => &**payload,
+            other => other,
+        };
+        let ValueType::Reference(target) = target else {
+            return Err(invariant("lookup-reference-result-expected"));
+        };
+        self.named_covers(members, *target)?;
+        if !self
+            .scope
+            .types()
+            .conforms(reference.object_type(), *target)
+        {
+            return Err(Halt::Family(FamilyResult::Refused(Box::new(
+                ModelQueryRefusal::from(
+                    qsl_semantics::model::normalize::ModelRefusal::type_mismatch(
+                        self.graph
+                            .object_type_key(reference.object_type())
+                            .ok_or_else(|| invariant("named-reference-type-declared"))?
+                            .node
+                            .clone(),
+                        self.graph
+                            .object_type_key(*target)
+                            .ok_or_else(|| invariant("named-queried-type-declared"))?
+                            .node
+                            .clone(),
+                    ),
+                ),
+            ))));
+        }
         self.meter
             .charge(Charge::new(ChargePoint::LookupKey).size(LimitKind::ValueOccurrences, 1))?;
-        let objects = self.objects_for(node)?;
-        let present = objects
-            .population_members(&population.node)
-            .ok_or_else(|| invariant("named-population-unobserved"))?
-            .contains(&reference);
+        let present = self.named_members(node, population)?.contains(&reference);
         self.log_membership_of(population, Some(reference.clone()));
         let retain = |meter: &mut Meter, occurrences: u64| -> Result<(), Halt> {
             Ok(meter.charge(
