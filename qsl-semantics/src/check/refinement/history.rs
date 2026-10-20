@@ -18,12 +18,12 @@ use qsl_forms::{
 };
 use qsl_foundation::Span;
 use quire_exact::{
-    admit_text, Decimal, EffectiveId, IllTypedCause, Meter, OptionValue, Outcome, Rational,
-    TextPayload, Value, ValueType,
+    admit_text, EffectiveId, IllTypedCause, Meter, OptionValue, Outcome, Rational, TextPayload,
+    Value, ValueType,
 };
 use quire_semantic_value::location::{Location, Origin};
 
-use super::{CheckedRow, Checker, RefinementCause, RowContext};
+use super::{CheckedRow, Checker, RefinementCause, RowContext, UnsupportedFeature};
 use crate::check::check::ScopedHistory;
 use crate::check::refusal::CheckCause;
 use crate::check::state_clause::{ClauseDeclarations, ClauseOperation};
@@ -72,13 +72,12 @@ pub(super) struct Header<'f> {
 /// (FR-138 "S3": a bounded value type).
 fn bounded(declared: &ValueType) -> bool {
     match declared {
-        ValueType::Boolean
-        | ValueType::Int(_)
-        | ValueType::Enum(_)
-        | ValueType::Text(_)
-        | ValueType::Rational(_)
-        | ValueType::Decimal(_) => true,
+        ValueType::Boolean | ValueType::Int(_) | ValueType::Text(_) | ValueType::Rational(_) => {
+            true
+        }
         ValueType::Option(payload) => bounded(payload),
+        // Finite, but no FR-181 form keys one in a product state.
+        ValueType::Enum(_) | ValueType::Decimal(_) => false,
         ValueType::Integer
         | ValueType::Float(_)
         | ValueType::Quantity(_)
@@ -92,6 +91,16 @@ fn bounded(declared: &ValueType) -> bool {
     }
 }
 
+/// Whether `declared` is, or wraps, a finite type whose values FR-181 gives
+/// no typed canonical form, so a product state could not key one.
+fn unkeyable(declared: &ValueType) -> bool {
+    match declared {
+        ValueType::Enum(_) | ValueType::Decimal(_) => true,
+        ValueType::Option(payload) => unkeyable(payload),
+        _ => false,
+    }
+}
+
 fn mismatch() -> RefinementCause {
     RefinementCause::Check(CheckCause::IllTyped(IllTypedCause::TypeMismatch))
 }
@@ -100,7 +109,11 @@ impl<'c, 'a> Checker<'c, 'a> {
     /// The history rows of `form` whose type, name and initial literal
     /// check. Their fields are in the typer's scope from here on, so every
     /// row and update is typed with every field in view.
-    pub(super) fn history_headers(&mut self, form: &'c RefinementForm) -> Vec<Header<'c>> {
+    pub(super) fn history_headers(
+        &mut self,
+        form: &'c RefinementForm,
+        profile: &str,
+    ) -> Vec<Header<'c>> {
         let types = self.types();
         let concrete_types = {
             let found = self.concrete_side.object_types(types);
@@ -122,7 +135,11 @@ impl<'c, 'a> Checker<'c, 'a> {
                 continue;
             };
             let name = row.field.name.as_str();
-            let declared_by_type = types.attribute(object.id, name).is_some();
+            // The type, its ancestors and every subtype declare the name: a
+            // history field would shadow a subtype's own field in a row.
+            let declared_by_type = concrete_types.iter().any(|other| {
+                types.conforms(other.id, object.id) && types.attribute(other.id, name).is_some()
+            });
             // A field of a type and a field of its ancestor or subtype with one
             // name would be one name on the subtype's objects.
             let earlier = seen
@@ -152,6 +169,16 @@ impl<'c, 'a> Checker<'c, 'a> {
                     continue;
                 }
             };
+            if unkeyable(&declared) {
+                self.findings.refuse(
+                    row.ty.span,
+                    RefinementCause::Unsupported {
+                        feature: UnsupportedFeature::HistoryValueKey,
+                        profile: profile.to_owned(),
+                    },
+                );
+                continue;
+            }
             if !bounded(&declared) {
                 self.findings.refuse(row.ty.span, mismatch());
                 continue;
@@ -217,32 +244,6 @@ impl<'c, 'a> Checker<'c, 'a> {
                 Rational::new(number.first.clone(), number.second.clone())
                     .map(Value::Rational)
                     .map_err(|_| mismatch())
-            }
-            (HistoryLiteralForm::Exact(number), ValueType::Decimal(_))
-                if number.kind == ExactNumberKind::Decimal =>
-            {
-                let scale = number
-                    .second
-                    .to_u64()
-                    .and_then(|scale| u32::try_from(scale).ok())
-                    .ok_or_else(mismatch)?;
-                Ok(Value::Decimal(Decimal::new(number.first.clone(), scale)))
-            }
-            (HistoryLiteralForm::EnumMember(name), ValueType::Enum(shape)) => {
-                let scope = self.declarations.scope;
-                // The path is written with the model's alias; the scope
-                // names an enum by its declared name.
-                let members: Vec<_> = scope.enum_members_named(&name.name).collect();
-                match members.as_slice() {
-                    [] => Err(RefinementCause::Unresolved {
-                        name: name.name.clone(),
-                        held_by: None,
-                    }),
-                    [(binding, member)] if binding.shape() == *shape => {
-                        Ok(crate::check::check::enum_value(binding, member))
-                    }
-                    _ => Err(mismatch()),
-                }
             }
             (literal, ValueType::Option(payload)) => {
                 let inner = self.literal(literal, payload)?;

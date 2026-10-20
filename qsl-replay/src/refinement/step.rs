@@ -341,25 +341,31 @@ fn decide_step(
         }
     }
     let history = advanced.values;
-    let mapped = match map_state(
-        refinement,
-        concrete_system,
-        abstract_system,
-        step.post.state(),
-        &history,
-    ) {
-        Ok(mapped) => Some(mapped),
-        Err(failure) => {
-            let verdict = mapping_verdict(
-                || state_digest(concrete_system, step.post.state()),
-                step.position,
-                failure,
-            );
-            if let Err(ended) = soft.record(verdict) {
-                return ended;
+    // An update with no value leaves nothing to read the post-state rows
+    // over, so the step settles as the update's own outcome.
+    let mapped = if advanced.complete {
+        match map_state(
+            refinement,
+            concrete_system,
+            abstract_system,
+            step.post.state(),
+            &history,
+        ) {
+            Ok(mapped) => Some(mapped),
+            Err(failure) => {
+                let verdict = mapping_verdict(
+                    || state_digest(concrete_system, step.post.state()),
+                    step.position,
+                    failure,
+                );
+                if let Err(ended) = soft.record(verdict) {
+                    return ended;
+                }
+                None
             }
-            None
         }
+    } else {
+        None
     };
     if let Some(verdict) = soft.first() {
         return verdict;
@@ -429,6 +435,11 @@ fn decide_step(
                     .findings
                     .iter()
                     .any(|finding| matches!(finding, ModelFinding::ContractUndetermined { .. }));
+            }
+            // A successor whose contracts did not decide may be a member of
+            // the set, so the set is not known (AX-2).
+            if hidden && undecided {
+                return StepVerdict::Undetermined(Undetermined::UndecidedSuccessor);
             }
             if next.is_empty() {
                 if undecided {
@@ -796,6 +807,11 @@ fn judge_operation(
             }
         }
     }
+    // With a hidden field a completion that did not decide may be a member of
+    // the set after the step, so the set is not known (AX-2).
+    if !mapped.hidden.is_empty() && undecided {
+        return StepVerdict::Undetermined(Undetermined::UndecidedSuccessor);
+    }
     if !accepted.is_empty() {
         let (taken, next) = match (
             canonical(abstract_system, accepted),
@@ -808,6 +824,13 @@ fn judge_operation(
     }
     if undecided {
         return StepVerdict::Undetermined(Undetermined::UndecidedSuccessor);
+    }
+    // A set that comes out empty has no abstract match, whichever candidate
+    // and completion rejected (QSpec FR-378).
+    if !mapped.hidden.is_empty() {
+        return StepVerdict::Fails(RefinementFailure::NoAbstractMatch {
+            position: step.position,
+        });
     }
     rejected.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
     match rejected.into_iter().next() {

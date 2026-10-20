@@ -19,7 +19,8 @@ use qsl_replay::{
 use quire_exact::{Cancel, Undefined};
 
 use crate::refinement_aux::{
-    coin_refines, int, register_history, Unit, World, INV, LAST, UNLIMITED, WRITES,
+    coin_refines, coin_refines_extended, int, register_history, Unit, World, INV, LAST, PARITY,
+    UNLIMITED, WRITES,
 };
 
 fn run(world: &World<'_>) -> SafetyOutcome {
@@ -330,4 +331,49 @@ fn history_failures_settle_as_their_kind_says() {
         record.counterexample.map(|payload| payload.kind),
         Some(CounterexampleKind::UndefinedEvaluation(_))
     ));
+}
+
+/// FR-142 (TC-547): the product key holds the history values. A field no
+/// row reads (`parity`) still separates product states that map to one
+/// abstract state: the (value, last) pairs are 4 and with `parity` the
+/// reachable (value, last, parity) triples are 8.
+#[trace("TC-547")]
+#[test]
+fn the_product_key_holds_the_history_values() {
+    let unit = Unit::register();
+    let world = unit.world(&register_history(&format!("{LAST}\n{PARITY}")));
+    let SafetyOutcome::Holds { stats, .. } = run(&world) else {
+        panic!("the refinement holds");
+    };
+    assert_eq!(stats.product_states, 8);
+}
+
+/// FR-142 (TC-547): the product key holds the candidate set. `toss` and
+/// `tossZero` reach one concrete state, with the candidates `side` 0 and 1
+/// after the first and `side` 0 after the second, so the product has three
+/// states within one step and not two.
+#[trace("TC-547")]
+#[test]
+fn the_product_key_holds_the_candidate_set() {
+    let unit = Unit::coin_extended();
+    let world = unit.world(&coin_refines_extended(""));
+    let RefinementOutcome { safety } = check_refinement(
+        RefinementCheckRequest {
+            refinement: world.refinement(),
+            concrete: ModelSubject {
+                simulation: world.concrete_request(UNLIMITED),
+                proof_bounds: Vec::new(),
+            },
+            abstract_package: world.package(),
+            abstract_initial: vec![world.abstract_initial()],
+            max_depth: Some(1),
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect("the refinement is checked");
+    let SafetyOutcome::BoundReached { stats, .. } = safety else {
+        panic!("the horizon is reached: {safety:?}");
+    };
+    assert_eq!(stats.product_states, 3);
 }

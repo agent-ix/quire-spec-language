@@ -7,12 +7,14 @@ use ix_trace_rs::trace;
 use qsl_eval::simulation::model::{operation_identity_text, ModelSimState};
 use qsl_replay::{
     check_initial, check_step, ConcreteStep, RefinementFailure, RefinementPosition, StepRejection,
-    StepVerdict, Taken,
+    StepVerdict, Taken, Undetermined,
 };
 use quire_exact::Value;
 use quire_semantic_value::model_transition::ModelTransition;
 
-use crate::refinement_aux::{coin_refines, flag, int, Unit, World, UNLIMITED};
+use crate::refinement_aux::{
+    coin_refines, coin_refines_extended, flag, int, Unit, World, UNLIMITED,
+};
 
 /// The concrete state of the one coin `r`.
 fn coin(
@@ -267,4 +269,112 @@ fn an_any_row_keeps_the_candidates_with_a_matching_successor() {
     let (revealed, taken) = passes(result.verdict);
     assert!(matches!(taken, Taken::Abstract(identities) if identities.len() == 1));
     assert_eq!(sides(&world, &revealed), ["1"]);
+}
+
+/// FR-141 (TC-546): a completion of the hidden `side` whose contracts do not
+/// decide may be a member of the set after the step, so the step is
+/// `Undetermined(UndecidedSuccessor)` and not a pass over the set without it.
+/// The abstract `toss` postcondition `1 mod self.side = 0` is undefined at
+/// `side` 0 and true at `side` 1.
+#[trace("TC-546")]
+#[test]
+fn an_undecided_completion_leaves_the_candidate_set_unknown() {
+    let unit = Unit::coin_with_contracts(
+        "post SpecTossed using v on Spec::Coin::toss { self.tossed }",
+        "post SpecTossed using v on Spec::Coin::toss { self.tossed and 1 mod self.side = 0 }",
+    );
+    let world = unit.world(&coin_refines(""));
+    let start = initial(&world);
+    let verdict = decide(
+        &world,
+        &unit,
+        &start,
+        ("toss", &coin(&world, true, false, 0)),
+        1,
+    )
+    .verdict;
+    assert!(
+        matches!(
+            verdict,
+            StepVerdict::Undetermined(Undetermined::UndecidedSuccessor)
+        ),
+        "{verdict:?}"
+    );
+}
+
+/// FR-141, QSpec FR-378 (TC-546): a step after which the candidate set is
+/// empty fails `NoAbstractMatch`, whichever candidate and completion the
+/// abstract operation rejected. Here `show` can never hold.
+#[trace("TC-546")]
+#[test]
+fn an_empty_candidate_set_is_no_abstract_match() {
+    let unit = Unit::coin_with_contracts(
+        "post SpecShown using v on Spec::Coin::show { self.shown and self.face = self.side }",
+        "post SpecShown using v on Spec::Coin::show { self.shown and self.face = self.side and not self.shown }",
+    );
+    let world = unit.world(&coin_refines(""));
+    let start = initial(&world);
+    let (tossed, _) = passes(
+        decide(
+            &world,
+            &unit,
+            &start,
+            ("toss", &coin(&world, true, false, 0)),
+            1,
+        )
+        .verdict,
+    );
+    let verdict = decide(
+        &world,
+        &unit,
+        &tossed,
+        ("reveal", &coin(&world, true, true, 1)),
+        2,
+    )
+    .verdict;
+    assert!(
+        matches!(
+            verdict,
+            StepVerdict::Fails(RefinementFailure::NoAbstractMatch { position: 2 })
+        ),
+        "{verdict:?}"
+    );
+}
+
+/// FR-141 (TC-546): a `stutter` step over a hidden `side` keeps the whole
+/// candidate set, as an `any` row does when the visible part is unchanged.
+#[trace("TC-546")]
+#[test]
+fn a_stutter_step_keeps_the_candidate_set_for_a_stutter_row_and_an_any_row() {
+    let unit = Unit::coin_extended();
+    for rows in [
+        coin_refines_extended(""),
+        coin_refines_extended("").replace("peek -> stutter", "peek -> any"),
+    ] {
+        let world = unit.world(&rows);
+        let start = initial(&world);
+        let (tossed, _) = passes(
+            decide(
+                &world,
+                &unit,
+                &start,
+                ("toss", &coin(&world, true, false, 0)),
+                1,
+            )
+            .verdict,
+        );
+        assert_eq!(sides(&world, &tossed), ["0", "1"]);
+        let (peeked, taken) = passes(
+            decide(
+                &world,
+                &unit,
+                &tossed,
+                ("peek", &coin(&world, true, false, 0)),
+                2,
+            )
+            .verdict,
+        );
+        assert_eq!(taken, Taken::Stutter);
+        assert_eq!(sides(&world, &peeked), ["0", "1"]);
+    }
 }

@@ -91,6 +91,9 @@ pub enum UnsupportedFeature {
     /// An abstract protocol side (FR-147; QSpec has no production for it
     /// yet, Linear STD-182).
     ProtocolAbstractSide,
+    /// A history field of a type whose values have no FR-181 typed canonical
+    /// form (an enum or a decimal), which a product state could not key.
+    HistoryValueKey,
 }
 
 impl UnsupportedFeature {
@@ -98,6 +101,7 @@ impl UnsupportedFeature {
     pub fn name(self) -> &'static str {
         match self {
             Self::ProtocolAbstractSide => "protocol-abstract-side",
+            Self::HistoryValueKey => "history-value-key",
         }
     }
 }
@@ -824,7 +828,7 @@ pub(crate) fn check_refinement<'a, 'c>(
         history: Vec::new(),
     };
     checker.baseline = checker.findings.refusals.len();
-    let headers = checker.history_headers(form);
+    let headers = checker.history_headers(form, &declaration.selection.identity);
     let populations = checker.populations(form);
     let objects = checker.objects(form, cx);
     let steps = checker.steps(form, cx);

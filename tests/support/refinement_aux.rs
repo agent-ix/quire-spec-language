@@ -74,6 +74,42 @@ pub struct Unit {
     contracts: String,
     abstract_fields: Json,
     concrete_initials: Vec<Json>,
+    /// The keys of the population's universe, and those present initially.
+    keys: Vec<&'static str>,
+    present: Vec<&'static str>,
+}
+
+/// How the concrete `Register` differs from the plain one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Shape {
+    /// One operation, `write`.
+    Plain,
+    /// Also `spawn`, which creates a register, and `remove`, which deletes
+    /// one.
+    Lifecycle,
+    /// Also a subtype `SubRegister` that declares a field `last`.
+    Subtype,
+}
+
+/// The operations of the concrete `Register`.
+fn concrete_register_operations(package: &str, shape: Shape) -> Vec<Json> {
+    let bit = node(package, "Bit");
+    let mut operations = vec![operation(
+        package,
+        "Register",
+        "write",
+        &[("x", &bit)],
+        None,
+        &["value"],
+    )];
+    if shape == Shape::Lifecycle {
+        let mut spawn = operation(package, "Register", "spawn", &[], None, &[]);
+        spawn["frame"]["creates"] = json!([node(package, "Register")]);
+        let mut remove = operation(package, "Register", "remove", &[], None, &[]);
+        remove["frame"]["deletes"] = json!([node(package, "Register")]);
+        operations.extend([spawn, remove]);
+    }
+    operations
 }
 
 const REGISTER_SPEC: &str = "example/register-spec";
@@ -89,6 +125,12 @@ impl Unit {
     /// FR-138's `Register`: the abstract register keeps `value` and the
     /// `prev` the concrete register does not; `write(x)` of either.
     pub fn register() -> Self {
+        Self::registers(&["r"], &["r"], Shape::Plain)
+    }
+
+    /// `Register` over the universe `keys`, of which `present` exist at the
+    /// start, in the given `shape`.
+    pub fn registers(keys: &[&'static str], present: &[&'static str], shape: Shape) -> Self {
         let bit = |package: &str| node(package, "Bit");
         let spec = {
             let package = REGISTER_SPEC;
@@ -126,20 +168,34 @@ impl Unit {
                         package,
                         "Register",
                         vec![single(package, "Register", "value", &bit(package))],
-                        vec![operation(
-                            package,
-                            "Register",
-                            "write",
-                            &[("x", &bit(package))],
-                            None,
-                            &["value"],
-                        )],
+                        concrete_register_operations(package, shape),
                     ),
-                ],
-                vec![population(package, "regs", "Register")],
+                ]
+                .into_iter()
+                .chain((shape == Shape::Subtype).then(|| {
+                    let mut sub = object_type(
+                        package,
+                        "SubRegister",
+                        vec![single(package, "SubRegister", "last", &bit(package))],
+                        Vec::new(),
+                    );
+                    sub["supertypes"] = json!([node(package, "Register")]);
+                    sub
+                }))
+                .collect(),
+                vec![{
+                    let mut regs = population(package, "regs", "Register");
+                    if shape == Shape::Subtype {
+                        regs["members"] =
+                            json!([node(package, "Register"), node(package, "SubRegister")]);
+                    }
+                    regs
+                }],
             )
         };
         Self {
+            keys: keys.to_vec(),
+            present: present.to_vec(),
             abstract_package: REGISTER_SPEC,
             concrete_package: REGISTER_IMPL,
             object: "Register",
@@ -157,6 +213,29 @@ impl Unit {
     /// first has every field false and 0; with three, the second has `face`
     /// 1 and the third has `tossed` true (FR-141-AC-11's `Coin3`).
     pub fn coin(initials: usize) -> Self {
+        Self::coin_model(initials, false)
+    }
+
+    /// `Coin` whose contract text `from` is `to`.
+    pub fn coin_with_contracts(from: &str, to: &str) -> Self {
+        let mut unit = Self::coin(1);
+        assert_eq!(
+            unit.contracts.matches(from).count(),
+            1,
+            "{from} occurs once"
+        );
+        unit.contracts = unit.contracts.replace(from, to);
+        unit
+    }
+
+    /// `Coin` with two more concrete operations: `peek`, which changes
+    /// nothing, and `tossZero`, a `toss` that the abstract `tossZero` pairs
+    /// with the choice `side` 0.
+    pub fn coin_extended() -> Self {
+        Self::coin_model(1, true)
+    }
+
+    fn coin_model(initials: usize, extended: bool) -> Self {
         let bit = |package: &str| node(package, "Bit");
         let spec = {
             let package = COIN_SPEC;
@@ -173,10 +252,15 @@ impl Unit {
                             single(package, "Coin", "shown", BOOLEAN),
                             single(package, "Coin", "face", &bit(package)),
                         ],
-                        vec![
+                        [
                             operation(package, "Coin", "toss", &[], None, &["tossed", "side"]),
                             operation(package, "Coin", "show", &[], None, &["shown", "face"]),
-                        ],
+                        ]
+                        .into_iter()
+                        .chain(extended.then(|| {
+                            operation(package, "Coin", "tossZero", &[], None, &["tossed", "side"])
+                        }))
+                        .collect(),
                     ),
                 ],
                 vec![population(package, "coins", "Coin")],
@@ -196,10 +280,16 @@ impl Unit {
                             single(package, "Coin", "shown", BOOLEAN),
                             single(package, "Coin", "face", &bit(package)),
                         ],
-                        vec![
+                        [
                             operation(package, "Coin", "toss", &[], None, &["tossed"]),
                             operation(package, "Coin", "reveal", &[], None, &["shown", "face"]),
-                        ],
+                        ]
+                        .into_iter()
+                        .chain(extended.then(|| {
+                            operation(package, "Coin", "tossZero", &[], None, &["tossed"])
+                        }))
+                        .chain(extended.then(|| operation(package, "Coin", "peek", &[], None, &[])))
+                        .collect(),
                     ),
                 ],
                 vec![population(package, "coins", "Coin")],
@@ -214,7 +304,17 @@ impl Unit {
             concrete_initials.push(state(false, 1));
             concrete_initials.push(state(true, 0));
         }
+        let more = if extended {
+            "pre SpecTossZero using v on Spec::Coin::tossZero { not self.tossed }\n\
+             post SpecTossedZero using v on Spec::Coin::tossZero { self.tossed and self.side = 0 }\n\
+             pre ImplTossZero using v on Impl::Coin::tossZero { not self.tossed }\n\
+             post ImplTossedZero using v on Impl::Coin::tossZero { self.tossed }\n"
+        } else {
+            ""
+        };
         Self {
+            keys: vec!["r"],
+            present: vec!["r"],
             abstract_package: COIN_SPEC,
             concrete_package: COIN_IMPL,
             object: "Coin",
@@ -228,7 +328,8 @@ impl Unit {
                         post ImplTossed using v on Impl::Coin::toss { self.tossed }\n\
                         pre ImplReveal using v on Impl::Coin::reveal { self.tossed and not self.shown }\n\
                         post ImplRevealed using v on Impl::Coin::reveal { self.shown }\n"
-                .to_owned(),
+                .to_owned()
+                + more,
             abstract_fields: json!({"tossed": {"boolean": false}, "side": integer_field(0),
                 "shown": {"boolean": false}, "face": integer_field(0)}),
             concrete_initials,
@@ -374,7 +475,9 @@ fn snapshot(
             "digest": format!("sha256-jcs:{}", hex(&model_digest))},
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": node(package, unit.population), "complete": true,
-            "objects": [{"key": "r", "type": node(package, unit.object), "fields": fields}]}],
+            "objects": unit.present.iter().map(|key| json!({
+                "key": key, "type": node(package, unit.object), "fields": fields}))
+                .collect::<Vec<_>>()}],
     });
     let bytes = snapshot.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -474,7 +577,7 @@ impl<'u> World<'u> {
             initial,
             universes: vec![PopulationUniverse {
                 population: ring_queue::key(package, self.unit.population),
-                keys: vec!["r".to_owned()],
+                keys: self.unit.keys.iter().map(|key| (*key).to_owned()).collect(),
             }],
             observation: ObservationLimits::default(),
             expansion: ExpansionLimits {
@@ -523,25 +626,40 @@ impl<'u> World<'u> {
     }
 
     fn state(&self, package: &str, fields: &[(&str, Value)]) -> ModelState {
+        self.objects(package, &[("r", fields)])
+    }
+
+    /// The concrete state holding each object of `objects`, by key and
+    /// fields.
+    pub fn concrete_objects(&self, objects: &[(&str, &[(&str, Value)])]) -> ModelState {
+        self.objects(self.unit.concrete_package, objects)
+    }
+
+    fn objects(&self, package: &str, objects: &[(&str, &[(&str, Value)])]) -> ModelState {
         let owner = self.unit.object;
         ModelState {
             populations: BTreeMap::from([(
                 ring_queue::key(package, self.unit.population),
-                BTreeMap::from([(
-                    "r".to_owned(),
-                    StateObject {
-                        type_identity: ring_queue::key(package, owner),
-                        fields: fields
-                            .iter()
-                            .map(|(name, value)| {
-                                (
-                                    ring_queue::key(package, &format!("{owner}/{name}")),
-                                    value.clone(),
-                                )
-                            })
-                            .collect(),
-                    },
-                )]),
+                objects
+                    .iter()
+                    .map(|(key, fields)| {
+                        (
+                            (*key).to_owned(),
+                            StateObject {
+                                type_identity: ring_queue::key(package, owner),
+                                fields: fields
+                                    .iter()
+                                    .map(|(name, value)| {
+                                        (
+                                            ring_queue::key(package, &format!("{owner}/{name}")),
+                                            value.clone(),
+                                        )
+                                    })
+                                    .collect(),
+                            },
+                        )
+                    })
+                    .collect(),
             )]),
             extents: Vec::new(),
         }
@@ -578,12 +696,24 @@ pub const LAST: &str =
 /// The `writes` history field of FR-138-AC-4, which no row reads.
 pub const WRITES: &str = "history Impl::Register.writes : Int[0, 1] = 0 { on Impl::Register::write : pre(self.writes) + 1; }";
 
+/// A history field no row reads, which flips on every write: it tells two
+/// product states with one mapped state apart.
+pub const PARITY: &str = "history Impl::Register.parity : Int[0, 1] = 0 { on Impl::Register::write : (pre(self.parity) + 1) mod 2; }";
+
 /// The `inv` history field of FR-138-AC-5: 1 for `x` = 1 and undefined for
 /// `x` = 0. The spec writes `1 / x`, which no refinement row can type as an
 /// `Int[0, 1]` (`/` of integers needs a `Rational` context, and a row admits
 /// no integer-division law); `mod` is Euclidean in every profile.
 pub const INV: &str =
     "history Impl::Register.inv : Int[0, 1] = 0 { on Impl::Register::write : (1 mod x) + 1; }";
+
+/// The extended coin's refinement, with the object row's field rows `rows`.
+pub fn coin_refines_extended(rows: &str) -> String {
+    coin_refines(rows).replace(
+        "}\nstep Impl::Coin::toss",
+        "}\nstep Impl::Coin::tossZero -> Spec::Coin::tossZero(self);\nstep Impl::Coin::peek -> stutter;\nstep Impl::Coin::toss",
+    )
+}
 
 /// The coin refinement, with the object row's field rows `rows`.
 pub fn coin_refines(rows: &str) -> String {

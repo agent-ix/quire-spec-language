@@ -17,7 +17,7 @@ use quire_exact::{Undefined, Value};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::refinement_aux::{
-    int, register_history, Refused, Unit, World, INV, LAST, UNLIMITED, WRITES,
+    int, register_history, Refused, Shape, Unit, World, INV, LAST, UNLIMITED, WRITES,
 };
 
 /// The concrete transition `write(r, x)` takes `pre` to the state with
@@ -564,4 +564,233 @@ fn a_history_field_writes_no_simulation_record() {
     )
     .expect("the rows fit a step row reference");
     assert_eq!(records, []);
+}
+
+/// FR-138 Layer 5 (TC-554): a history update whose value leaves its declared
+/// type still computed a value, and the rows read it; one with no value
+/// settles the step as its own outcome. Here `writes` is 2 after the first
+/// `write(r, 1)`, where the `prev` row is defined, so the step is the update's
+/// `Undetermined`, not a refutation read off the value before the step.
+#[trace("TC-554")]
+#[test]
+fn a_row_over_a_computed_out_of_type_value_does_not_refute() {
+    let unit = Unit::register();
+    let text = "refinement RegisterHistory using inf abstract Spec concrete Impl {\n\
+         population Spec::regs from Impl::regs;\n\
+         object Spec::Register from Impl::Register { prev = if 1 mod (1 - self.value + self.writes) = 0 then self.last else self.last; value = self.value; }\n\
+         history Impl::Register.last : Int[0, 1] = 0 { on Impl::Register::write : pre(self.value); }\n\
+         history Impl::Register.writes : Int[0, 1] = 0 { on Impl::Register::write : pre(self.writes) + 2; }\n\
+         step Impl::Register::write -> Spec::Register::write(self, x);\n\
+         }";
+    let world = unit.world(text);
+    let verdict = check_write(&world, &start(&world), 1, 1);
+    let StepVerdict::Undetermined(Undetermined::Mapping(undetermined)) = verdict else {
+        panic!("the update is undetermined: {verdict:?}");
+    };
+    assert_eq!(undetermined.cause, EvalFailure::OutOfType);
+}
+
+/// FR-138 Layer 5 (TC-554): an update with no value leaves no state to read
+/// the post-state rows over, so the step is the update's `Undefined` even
+/// when a row would be undefined too, and `check_step` reads the update for a
+/// `stutter` or `any` row as for an abstract one.
+#[trace("TC-554")]
+#[test]
+fn an_update_is_read_whatever_the_row_of_its_operation_says() {
+    let unit = Unit::register();
+    for target in ["any", "stutter"] {
+        let text = register_history(&format!("{LAST}\n{INV}")).replace(
+            "step Impl::Register::write -> Spec::Register::write(self, x);",
+            &format!("step Impl::Register::write -> {target};"),
+        );
+        let world = unit.world(&text);
+        let verdict = check_write(&world, &start(&world), 0, 1);
+        assert!(
+            matches!(verdict, StepVerdict::Undefined(_)),
+            "{target}: {verdict:?}"
+        );
+    }
+}
+
+/// The concrete state holding the registers `values`, by key.
+fn registers(world: &World<'_>, values: &[(&str, i64)]) -> ModelState {
+    let fields: Vec<Vec<(&str, Value)>> = values
+        .iter()
+        .map(|(_, value)| vec![("value", int(*value))])
+        .collect();
+    let objects: Vec<(&str, &[(&str, Value)])> = values
+        .iter()
+        .zip(&fields)
+        .map(|((key, _), fields)| (*key, fields.as_slice()))
+        .collect();
+    world.concrete_objects(&objects)
+}
+
+/// The concrete transition `operation` takes `pre` to `post`, with the state
+/// it reaches.
+fn transition(
+    world: &World<'_>,
+    unit: &Unit,
+    pre: &ModelState,
+    operation: &str,
+    post: &ModelState,
+) -> (ModelTransition, ModelSimState) {
+    let system = world.concrete_system(UNLIMITED);
+    let text = qsl_eval::simulation::model::operation_identity_text(
+        &unit.concrete_key(&format!("Register/{operation}")),
+    )
+    .expect("a text");
+    let wanted = system.state_key_of(post).expect("a key").0;
+    system
+        .expand_state(pre)
+        .expect("the state expands")
+        .successors
+        .into_iter()
+        .find(|(found, reached)| {
+            found.operation() == text
+                && system.state_key_of(reached.state()).expect("a key").0 == wanted
+        })
+        .unwrap_or_else(|| panic!("{operation} does not reach the state"))
+}
+
+const LIFE: &str = "refinement RegisterLife using inf abstract Spec concrete Impl {\n\
+     population Spec::regs from Impl::regs;\n\
+     object Spec::Register from Impl::Register { value = self.value; }\n\
+     history Impl::Register.last : Int[0, 1] = 0 { on Impl::Register::write : pre(self.value); }\n\
+     step Impl::Register::write -> any;\n\
+     step Impl::Register::spawn -> any;\n\
+     step Impl::Register::remove -> any;\n\
+     }";
+
+fn key_of(unit: &Unit, key: &str) -> ObjectKey {
+    ObjectKey {
+        population: unit.concrete_key("regs"),
+        key: key.to_owned(),
+    }
+}
+
+/// FR-138 Layer 5 (TC-543): a step writes the receiver's history field only
+/// and keeps every other value. `write(r, 0)` over registers `r` = 1 and `s` =
+/// 0 sets `r`'s `last` to 1 and leaves `s`'s at 0.
+#[trace("TC-543")]
+#[test]
+fn an_update_writes_the_receiver_only() {
+    let unit = Unit::registers(&["r", "s"], &["r", "s"], Shape::Lifecycle);
+    let world = unit.world(LIFE);
+    let system = world.concrete_system(UNLIMITED);
+    let pre = registers(&world, &[("r", 1), ("s", 0)]);
+    let history = initial_history(world.refinement(), &system, &pre);
+    let (written, reached) = transition(
+        &world,
+        &unit,
+        &pre,
+        "write",
+        &registers(&world, &[("r", 0), ("s", 0)]),
+    );
+    let after = step_history(
+        world.refinement(),
+        &system,
+        &history,
+        &pre,
+        &written,
+        &reached,
+    )
+    .expect("defined");
+    assert_eq!(integer(after.get(&key_of(&unit, "r"), "last")), "1");
+    assert_eq!(integer(after.get(&key_of(&unit, "s"), "last")), "0");
+}
+
+/// FR-138 Layer 5 (TC-543): an object a step creates takes the initial
+/// literal and keeps nobody else's value; an object it deletes loses its
+/// values.
+#[trace("TC-543")]
+#[test]
+fn a_created_object_starts_at_the_initial_literal_and_a_deleted_one_loses_its_values() {
+    let unit = Unit::registers(&["r", "s"], &["r"], Shape::Lifecycle);
+    let world = unit.world(LIFE);
+    let system = world.concrete_system(UNLIMITED);
+    let pre = registers(&world, &[("r", 1)]);
+    let history = initial_history(world.refinement(), &system, &pre);
+    let (written, reached) = transition(
+        &world,
+        &unit,
+        &pre,
+        "write",
+        &registers(&world, &[("r", 0)]),
+    );
+    let history = step_history(
+        world.refinement(),
+        &system,
+        &history,
+        &pre,
+        &written,
+        &reached,
+    )
+    .expect("defined");
+    assert_eq!(integer(history.get(&key_of(&unit, "r"), "last")), "1");
+
+    let pre = reached.state().clone();
+    let both = registers(&world, &[("r", 0), ("s", 0)]);
+    let (spawned, reached) = transition(&world, &unit, &pre, "spawn", &both);
+    let history = step_history(
+        world.refinement(),
+        &system,
+        &history,
+        &pre,
+        &spawned,
+        &reached,
+    )
+    .expect("defined");
+    assert_eq!(integer(history.get(&key_of(&unit, "r"), "last")), "1");
+    assert_eq!(integer(history.get(&key_of(&unit, "s"), "last")), "0");
+
+    let pre = reached.state().clone();
+    let (removed, reached) = transition(
+        &world,
+        &unit,
+        &pre,
+        "remove",
+        &registers(&world, &[("r", 0)]),
+    );
+    let history = step_history(
+        world.refinement(),
+        &system,
+        &history,
+        &pre,
+        &removed,
+        &reached,
+    )
+    .expect("defined");
+    assert_eq!(integer(history.get(&key_of(&unit, "r"), "last")), "1");
+    assert!(history.get(&key_of(&unit, "s"), "last").is_none());
+}
+
+/// FR-138 S3 (TC-543): a history field named like a field a subtype declares
+/// is refused, since it would shadow that field in every row.
+#[trace("TC-543")]
+#[test]
+fn a_history_field_named_like_a_subtype_field_is_refused() {
+    let unit = Unit::registers(&["r"], &["r"], Shape::Subtype);
+    let found = unit.refused(&register_history(LAST));
+    assert!(
+        codes(&found).contains(&(Code::InvalidModelBinding, Some("conflicting-binding"))),
+        "{:?}",
+        codes(&found)
+    );
+}
+
+/// FR-138 S3 (TC-543): a history type whose values FR-181 gives no key form,
+/// a decimal here, is refused `unsupported_construct`/`not-yet-implemented`
+/// at the type, not admitted to fault in a product.
+#[trace("TC-543")]
+#[test]
+fn a_history_type_with_no_key_form_is_unsupported() {
+    let unit = Unit::register();
+    let bad = "history Impl::Register.d : Decimal[0, 100; 0, 2; nearest-even] = decimal(0, 0) { }";
+    let found = unit.refused(&register_history(&format!("{LAST}\n{bad}")));
+    assert_eq!(
+        codes(&found),
+        [(Code::UnsupportedConstruct, Some("not-yet-implemented"))]
+    );
+    assert!(found[0].at.starts_with("Decimal"));
 }

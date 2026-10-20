@@ -153,12 +153,16 @@ fn carried(
     HistoryValues { entries }
 }
 
-/// What advancing the history over one step gave: the values, with the stand-in
-/// of an unchanged value for a field whose update failed, and the first
+/// What advancing the history over one step gave: the values, and the first
 /// failure of each kind.
 pub(super) struct Advanced {
-    /// The history at the post-state.
+    /// The history at the post-state. An update that evaluated to a value
+    /// outside its declared type wrote that value, so a row over it reads what
+    /// the update computed. An update with no value (undefined, refused or
+    /// incomplete) wrote nothing, and `complete` is false.
     pub(super) values: HistoryValues,
+    /// Whether every update that failed still computed a value.
+    pub(super) complete: bool,
     /// The updates that evaluated undefined or could not be decided.
     pub(super) outcomes: Outcomes,
 }
@@ -214,12 +218,21 @@ pub(super) fn advance(
 ) -> Result<Advanced, MappingFailure> {
     let mut values = carried(refinement, system, history, post.state());
     let mut outcomes = Outcomes::default();
+    let mut complete = true;
     let Some((transition, resolved)) = step else {
-        return Ok(Advanced { values, outcomes });
+        return Ok(Advanced {
+            values,
+            complete,
+            outcomes,
+        });
     };
     let Some(receiver) = object_of(system, post.state(), &resolved.receiver) else {
         // The step deleted its receiver, so there is no field to write.
-        return Ok(Advanced { values, outcomes });
+        return Ok(Advanced {
+            values,
+            complete,
+            outcomes,
+        });
     };
     let Some(receiver_type) = post
         .state()
@@ -272,34 +285,42 @@ pub(super) fn advance(
             )
             .map_err(fault)?;
         match reading {
-            RowReading::Value(value) if row.declared.admits(&value) => {
+            RowReading::Value(value) => {
+                if !row.declared.admits(&value) {
+                    outcomes.record(MappingFailure::Undetermined(MappingUndetermined {
+                        row: at,
+                        object: Some(receiver.clone()),
+                        cause: EvalFailure::OutOfType,
+                    }));
+                }
                 written.push((row.field.clone(), value));
             }
-            RowReading::Value(_) => {
-                outcomes.record(MappingFailure::Undetermined(MappingUndetermined {
+            RowReading::Undefined(cause) => {
+                complete = false;
+                outcomes.record(MappingFailure::Undefined {
                     row: at,
                     object: Some(receiver.clone()),
-                    cause: EvalFailure::OutOfType,
-                }))
+                    cause: Box::new(cause),
+                });
             }
-            RowReading::Undefined(cause) => outcomes.record(MappingFailure::Undefined {
-                row: at,
-                object: Some(receiver.clone()),
-                cause: Box::new(cause),
-            }),
             RowReading::Undetermined(outcome) => {
+                complete = false;
                 outcomes.record(MappingFailure::Undetermined(MappingUndetermined {
                     row: at,
                     object: Some(receiver.clone()),
                     cause: EvalFailure::Evaluation(Box::new(outcome)),
-                }))
+                }));
             }
         }
     }
     for (field, value) in written {
         values.entries.insert((receiver.clone(), field), value);
     }
-    Ok(Advanced { values, outcomes })
+    Ok(Advanced {
+        values,
+        complete,
+        outcomes,
+    })
 }
 
 /// FR-138: the history at `post`, after the concrete step `transition` took
