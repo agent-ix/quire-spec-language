@@ -17,12 +17,16 @@ proved safety half, rejects each kind of tampered or false certificate,
 stops at a limit, and that settlement labels a proof certified, uncertified
 or rejected.
 
-Scope: FR-149-AC-1 to FR-149-AC-8, FR-144-AC-7.
+Scope: FR-149-AC-1 to FR-149-AC-10, FR-144-AC-7.
 
 ## Test Procedure
 
 Fixtures: ADR-020 §8's `CasRefinesCounter` with and without its `ensure`
-row, and its lost-update model.
+row, and its lost-update model; the light ring fixture `RingIsQueue`
+(FR-141-AC-9) built unmetered, for a meter sweep of its mapping rows; a model
+whose concrete contract costs more than B; and `CasRefinesCounter` without its
+`ensure` row and with preconditions that disable `peek` and the second thread's
+`begin` once the counter is at its bound, for a terminal state.
 
 1. Run the refinement without the `ensure` row and check its certificate.
 2. Check the tampered certificates of FR-149-AC-2.
@@ -31,10 +35,21 @@ row, and its lost-update model.
    another refinement node, and the AC-1 certificate twice.
 5. Settle `CasRefinesCounter` without and with its `ensure` row, and with
    step 2's first tampered certificate.
-6. Build a `HeavyEnq` certificate under a larger meter, then check it under the meter B (FR-141-AC-9).
-7. Check a certificate with a terminal state, with and without its stutter edge (FR-149-AC-6).
-8. Check the malformed certificates and the undecided-contract position of FR-149-AC-7.
-9. Serialize the rejections of AC-3 and AC-2 (FR-149-AC-8).
+6. Check the unmetered `RingIsQueue` certificate under a meter that runs out in
+   the initial states' mapping rows, then under a larger one that runs out in a
+   step's mapping row; check the concrete-contract model's certificate under B;
+   build a `HeavyEnq` certificate under a larger meter, then check it under B
+   (FR-149-AC-5).
+7. Check the terminal-state fixture's certificate, with and without its stutter
+   edge (FR-149-AC-6).
+8. Check the malformed certificates and the refused-contract position of
+   FR-149-AC-7.
+9. Serialize the rejections of AC-3 and AC-2, and one verdict of each other
+   kind (FR-149-AC-8).
+10. Settle items whose certificate names another `concrete_package` and another
+    `obligation` (FR-149-AC-9).
+11. Cancel a check between positions, and force an expansion stop that names no
+    limit (FR-149-AC-10).
 
 Tag the tests `#[trace("TC-556", "<AC id>")]`.
 
@@ -49,7 +64,9 @@ Tag the tests `#[trace("TC-556", "<AC id>")]`.
   `stale_dependency`/`content-mismatch`; equal results.
 - Step 5: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`,
   `CertificateRejected`.
-- Step 6: `Stopped(LimitReached{EvaluationMeter, B})`, not `Rejected`.
+- Step 6: `Stopped(LimitReached{EvaluationMeter, B})` for each of the four, never `Rejected`.
 - Step 7: `Accepted`; rule `SuccessorsDiffer`.
-- Step 8: rule `Malformed` three times; rule `BadState`.
-- Step 9: the locus of FR-149-AC-8.
+- Step 8: rule `Malformed` at the positions AC-7 names, three times; rule `BadState`.
+- Step 9: the locus of FR-149-AC-8; `null` verdict for `PostDiffers`; each kind's members.
+- Step 10: `stale_dependency`/`content-mismatch` twice; the checker is not called.
+- Step 11: `Stopped(Cancelled{source})`; `Stopped(ResourceExhausted)`; each settles V-7.
