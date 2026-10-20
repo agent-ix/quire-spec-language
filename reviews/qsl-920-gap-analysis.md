@@ -46,3 +46,16 @@ Leaving AC-1 and AC-2 untagged is truthful: the matrix does not credit them, sin
 | FND-004 | low | `a_checked_probabilistic_model_refuses_emission` (the S4 refusal) is tagged `TC-620`, but TC-620 has no S4 step and FR-185 does not state the S4 refusal. The behaviour is right; the binding claims TC-620 coverage it does not provide. Tag it to the requirement that owns S4 emission scope, or leave it untagged with a doc comment naming the decision. | qsl-package/src/emit/tests/probabilistic.rs:30-48 |
 | FND-005 | low | Spec gap: FR-185 "Workloads" makes a workload a named node with an identity that a claim binds by name, but gives no cause for two workloads of one name (on one model or across models). Without one, the code admits both (SR-12213 FND-004). Ask the planner for a cause in FR-185, a QSL-proposed one like `duplicate-reward` if QSpec FR-272 has none, plus an AC-3 row. | spec/functional/FR-185-declare-random-parameters-workloads-and-rewards.md (Workloads) |
 | FND-006 | low | Spec gap: FR-185 bounds each exact value as written, but not the exact arithmetic S3 does itself: the sum of a distribution's weights and each probability. FR-203's `max_rational_bits` covers only the exact engine. The result is SR-12213 FND-001, where in-limit weights produce a sum of n·65,536 bits. State that the rational-bits ceiling (or the checking work budget) also bounds S3's derived probabilities, with the same limit refusal, and add an AC-2 row. | spec/functional/FR-185-declare-random-parameters-workloads-and-rewards.md (Exact values, Random parameters) |
+
+## Dispositions
+
+Disposition pass 1 at head 1df0c5feb.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | deferred | `Quantity<Time>` parameters (FR-185-AC-1 and the quantity rows of AC-2 and AC-4) stay unbuilt. They remain open scope on QSL-920, whose description lists them, so QSL-920 must not close until they land. AC-1 and AC-2 stay untagged, so the matrix overclaims nothing. |
+| FND-002 | fixed | 1df0c5feb: AC-1's support is asserted exactly, as `[1, 3, 12]` `CheckedLiteral(Value::Integer)`. |
+| FND-003 | fixed | 1df0c5feb: both TC-621 tests are back. `a_huge_written_confidence_value_is_read_without_expansion` covers `alpha decimal(1, 4294967295)`, and `an_event_window_is_not_refused_before_profiles_resolve` keeps its four events. |
+| FND-004 | fixed | 1df0c5feb: `a_checked_probabilistic_model_refuses_emission` is untagged, with a doc comment naming the S4 decision. |
+| FND-005 | deferred | Spec gap, listed in the PR body as spec gap 5 for the planner: FR-185 defines no cause for a duplicate workload name. The code uses `conflicting_declaration`/`duplicate-declaration` in the meantime. |
+| FND-006 | deferred | Spec gap, listed in the PR body as spec gap 2 for the planner: FR-185 does not say the ceiling bounds S3's derived sum and probabilities. The code now applies it to them (SR-12213 FND-001). |

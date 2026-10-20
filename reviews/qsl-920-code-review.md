@@ -48,3 +48,24 @@ What is sound:
 | FND-006 | low | `random-read-in-precondition` is checked only against admitted random parameters (`self.model.random_parameters`). A precondition that reads a parameter whose distribution was refused (for example for `invalid-weight`) is not reported (probe). Match against `self.distributions`, which f60a3bdb3 already records, so every cause shows in one run. | qsl-semantics/src/check/probabilistic/model.rs:854-874 |
 | FND-007 | low | A support value is silently dropped if `weight.div(&total)` returns `None`. `filter_map` discards it, and the comment says it cannot happen. If it ever did, a recorded distribution would have fewer values than declared and probabilities that do not sum to 1. Return an internal fault (or refuse) instead of filtering. | qsl-semantics/src/check/probabilistic/model.rs:666-677 |
 | FND-008 | low | Packages with random parameters, rewards and workloads now pass S3. `qsl-eval`'s simulator takes a `CheckedGraph` directly and does not read `probabilistic_model()`, so it enumerates a random parameter over its whole type domain, not its support, until FR-187 lands. No CLI path reaches it today, because S4 refuses first. Before FR-187, have `StateModel` admission refuse a graph with a non-empty probabilistic model, or document that the support is ignored. | qsl-eval/src/simulation/model.rs:597-610; qsl-semantics/src/check/mod.rs:3426-3430 |
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at head 1df0c5feb (fix commit 1df0c5feb over 92fdee243 and a merge of main). No gates were run. The claim that no rational-bits setting exists was checked: there is no `rational_bits` or `RationalBits` in QSL's Rust sources or in the locked quire-semantic-value. The only `max_rational_bits` is FR-203's exact-engine budget, which is spec-only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The interim limit refusal reports `CheckingLimitKind::WorkBudget`, which maps to `s3.work_units`, with `limit: 65_536`. The setting's real default is 16,777,216, and raising it does not change the fixed rational-bits ceiling. A user who reads the refusal and raises `s3.work_units` sees no effect. The PR body discloses this (spec gap 2). Add a dedicated limit kind with the rational-bits setting once FR-255 has one. Until then, keep the refusal text from naming a setting that does not govern it. | qsl-semantics/src/check/probabilistic.rs:163-174 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 1df0c5feb: `probabilities` checks `total.max_part_bits()` against the 65,536-bit ceiling after every addition and refuses with the limit refusal. It polls `cancel` before each addition and each division. Each addition therefore works on operands of at most 65,536 bits, so the cost is linear in the support size instead of cubic. My 12-value coprime-denominator probe is now the test `a_weight_sum_past_the_ceiling_refuses_promptly` (one limit refusal, under 60 s); the sum passes the ceiling at the second addition. Re-run at 1df0c5feb, debug build: all 23 `probabilistic_declarations` tests, this one included, finish in 0.83 s, where the round-0 probe took 1,247 s for its 12-value case alone. |
+| FND-002 | fixed | 1df0c5feb: `ExactValueAboveCeiling` (`not-yet-implemented`) is gone. An over-ceiling value or sum refuses `stage_limit_exceeded` (`ResourceExhausted`, limit 65,536, actual = the measure), and `exact_values_are_bounded_as_written` asserts it for all four over-ceiling values. Verified that no rational-bits setting exists anywhere to use instead. The setting label is FND-009. |
+| FND-003 | fixed | 1df0c5feb: `weighted` records every resolved operation key whatever its weight. Test `a_second_weight_after_an_invalid_one_is_still_a_duplicate` expects both `invalid-weight` and `duplicate-weight`. |
+| FND-004 | fixed | 1df0c5feb: `Pass::workloads` records each name, and a second workload of a name refuses `conflicting_declaration`/`duplicate-declaration` at that name (test `a_second_workload_of_one_name_refuses`). The cause is QSL-chosen; the spec gap is SR-12214 FND-005. |
+| FND-005 | fixed | 1df0c5feb: `reward` resolves the operation and records the name before returning on a state read. Test `a_reward_after_one_that_reads_state_is_still_a_duplicate` expects both causes. |
+| FND-006 | fixed | 1df0c5feb: `preconditions` matches against `self.distributions`, which records every resolved distribution. Test `a_precondition_read_of_a_refused_distribution_still_refuses` expects both causes. |
+| FND-007 | fixed | 1df0c5feb: `weight.div(&total)` failing is now an `InternalFault` (`probabilistic-weight-sum-is-nonzero`) through `ok_or_else`, not a `filter_map` drop. |
+| FND-008 | deferred | Left by the coder and recorded in the PR body (item 7). No CLI path reaches the simulator, because S4 refuses first. FR-187, QSL-920 part 2, is where the simulator starts reading the supports. |
