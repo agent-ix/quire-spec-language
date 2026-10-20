@@ -82,3 +82,13 @@ Round 1, head 989dfbe67 (fix commit 989dfbe67 over merge e74b107e3 of main fe54e
 | FND-007 | fixed | - |
 
 Verdict after round 1: all 7 original findings fixed; 3 new low findings (FND-008 to FND-010) on the new fixtures. No blocker from this lane.
+
+Round 2, head 34b3144b5 (fix commit 34b3144b5 over 989dfbe67). make check-spec-validation exits 0 (17 warnings, none in the touched files); tools/check-index-completeness.sh passes; git diff --check is clean; the branch's reviews/ copies equal the round-1 files. Coin3 checked by hand (FND-009 rationale): index 0 (all false and 0) maps to tossed f, shown f, face 0, and the abstract initial state (all false, side 0) matches, so it passes with the one-candidate set side 0. Index 1 (face 1) maps face 1, and no abstract initial state has face 1, so it fails InitialNotAbstract{initial: 1}. Index 2 (tossed true) maps tossed t and fails InitialNotAbstract{initial: 2}. Each call takes its own index, so the two failures are separate calls of the same rule, and that is exactly what AC-11 expects. AC-11 does not run FR-142 over Coin3, which would stop at index 1 first, so nothing in the AC depends on that. The toss count from index 0 stays 2 (candidates side 0 and 1).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | fixed | - |
+| FND-009 | fixed | - |
+| FND-010 | fixed | - |
+
+Verdict after round 2: all 10 findings fixed. Clean.

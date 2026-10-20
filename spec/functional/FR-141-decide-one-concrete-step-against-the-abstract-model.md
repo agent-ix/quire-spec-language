@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-120
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-126
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-125
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-136
