@@ -925,6 +925,7 @@ impl<'a> Typer<'a> {
             ExprNode::Quantity(quantity) => {
                 let magnitude = super::super::probabilistic::quantity_magnitude(
                     &quantity.magnitude,
+                    self.limits.rational_bits(),
                     &location,
                 )?;
                 let Some(unit) = self.scope.unit_named(&quantity.unit.name) else {

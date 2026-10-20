@@ -382,7 +382,10 @@ applicable clauses of one kind, with a fresh meter for each clause and each
 clause in ascending name order (UTF-8 bytes):
 
 - An `Incomplete` result stops the expansion with `resource_exhausted`/
-  `insufficient-next-charge` at once: the successor set is not known.
+  `insufficient-next-charge` at once: the successor set is not known. The stop
+  names the limit `EvaluationMeter` whichever counter of the evaluation ran out,
+  the counter limits of the exact kernel included (FR-149 relies on this
+  label).
 - A `CallFailure` stops the expansion with `runtime_invariant`/
   `established-invariant-broken` at once: the simulator built the
   observations itself, so a refused selection is a broken internal

@@ -61,6 +61,7 @@ ported takes its row, with its limits type, when that operation lands.
 | `s3.nodes` | S3 | node count | `CheckingLimits` nodes | 100000 units |
 | `s3.input_bytes` | S3 | input bytes | `CheckingLimits` declaration preimage bytes | 16777216 bytes |
 | `s3.work_units` | S3 | work budget | `CheckingLimits` work budget | 16777216 units |
+| `s3.rational_bits` | S3 | rational bits | `CheckingLimits` rational bits | 65536 bits |
 | `s3.decimal_scale` | S3 assembly | work budget | `AssemblyLimits` decimal scale | 4096 digits |
 | `environment.ancestor_steps` | S3 type-environment admission | edge count | `TypeEnvironmentLimits` ancestor_steps | 16777216 edges |
 | `environment.work_units` | S3 type-environment admission | work budget | `TypeEnvironmentLimits` work_units | 16777216 units |

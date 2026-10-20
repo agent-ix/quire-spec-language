@@ -1291,6 +1291,9 @@ pub enum CheckingLimitKind {
     /// (`qsl_foundation::diagnostic::LimitKind::WorkBudget`), and lowering's
     /// `declaration.check` charges.
     WorkBudget,
+    /// The bit length of an exact value's rational numerator or denominator
+    /// (`qsl_foundation::diagnostic::LimitKind::RationalBits`).
+    RationalBits,
 }
 
 impl CheckingLimitKind {
@@ -1301,6 +1304,7 @@ impl CheckingLimitKind {
             Self::Nodes => Setting::S3Nodes,
             Self::InputBytes => Setting::S3InputBytes,
             Self::WorkBudget => Setting::S3WorkUnits,
+            Self::RationalBits => Setting::S3RationalBits,
         }
     }
 }
@@ -1317,6 +1321,7 @@ impl TryFrom<Setting> for CheckingLimitKind {
             Setting::S3Nodes => Ok(Self::Nodes),
             Setting::S3InputBytes => Ok(Self::InputBytes),
             Setting::S3WorkUnits => Ok(Self::WorkBudget),
+            Setting::S3RationalBits => Ok(Self::RationalBits),
             Setting::S1InputBytes
             | Setting::S1Tokens
             | Setting::S1Nodes
@@ -2303,6 +2308,7 @@ mod tests {
             (CheckingLimitKind::Nodes, "node-count-exceeded"),
             (CheckingLimitKind::InputBytes, "input-bytes-exceeded"),
             (CheckingLimitKind::WorkBudget, "work-budget-exceeded"),
+            (CheckingLimitKind::RationalBits, "rational-bits-exceeded"),
         ];
         for (kind, cause) in cases {
             let refused = CheckCause::ResourceExhausted(Box::new(StageLimitCause {
@@ -2322,7 +2328,7 @@ mod tests {
         }
     }
 
-    /// The three settings a checking limit names convert back; every other
+    /// The four settings a checking limit names convert back; every other
     /// setting names a limit of another stage, refuses, and names the
     /// `KeyFault` `check::mod` raises for it.
     #[test]
@@ -2332,6 +2338,7 @@ mod tests {
                 Setting::S3Nodes => Ok(CheckingLimitKind::Nodes),
                 Setting::S3InputBytes => Ok(CheckingLimitKind::InputBytes),
                 Setting::S3WorkUnits => Ok(CheckingLimitKind::WorkBudget),
+                Setting::S3RationalBits => Ok(CheckingLimitKind::RationalBits),
                 other => Err(other),
             };
             assert_eq!(CheckingLimitKind::try_from(setting), expected, "{setting}");
