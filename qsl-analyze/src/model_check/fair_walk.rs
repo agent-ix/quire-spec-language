@@ -13,10 +13,53 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use qsl_eval::fairness::{
     Constraint, Edge, EdgeLabel, Graph, Identity, Obligation, Strength, Vertex,
 };
+use qsl_eval::simulation::model::ModelSystem;
+use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity};
+use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{fault, ModelCheckRefusal};
 use super::graph::{ProductStateId, RetainedEdge, RetainedGraph};
+use super::liveness::LivenessRefusal;
 use super::quotient::LoopEdge;
+
+/// The kernels' constraints for `fairness` over `transitions`, the
+/// transition identities the graph holds, numbered by `identity`: a `whole`
+/// constraint covers every transition of its operation, an `each` constraint
+/// is one constraint per such transition (ADR-018 FA-1).
+pub(super) fn fairness_constraints(
+    system: &ModelSystem<'_>,
+    fairness: &[FairnessConstraint],
+    transitions: &[ModelTransition],
+    identity: impl Fn(&ModelTransition) -> Result<Identity, ModelCheckRefusal>,
+) -> Result<Vec<Constraint>, ModelCheckRefusal> {
+    let mut constraints = Vec::new();
+    for constraint in fairness {
+        let strength = Strength::from(constraint.kind());
+        let operation = constraint.operation();
+        let text = system
+            .operation_text(operation.declaring_type(), operation.name())
+            .ok_or_else(|| LivenessRefusal::UnknownOperation {
+                name: operation.name().to_owned(),
+            })?;
+        let covered = transitions
+            .iter()
+            .filter(|transition| transition.operation() == text);
+        match constraint.granularity() {
+            FairnessGranularity::Whole => {
+                let members = covered
+                    .map(&identity)
+                    .collect::<Result<Vec<_>, ModelCheckRefusal>>()?;
+                constraints.push(Constraint::new(strength, members));
+            }
+            FairnessGranularity::Each => {
+                for transition in covered {
+                    constraints.push(Constraint::new(strength, [identity(transition)?]));
+                }
+            }
+        }
+    }
+    Ok(constraints)
+}
 
 /// The breadth-first tree path to `at`: the initial state it starts from and
 /// the edges that first discovered each state on the way.

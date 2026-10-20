@@ -236,7 +236,7 @@ impl Soft {
 /// [`StepVerdict::Stopped`] naming the limit and its value (a result domain
 /// too large to order counts against the candidate bound), a broken
 /// invariant a fault.
-fn stop_verdict(system: &ModelSystem<'_>, stop: ExpansionStop) -> StepVerdict {
+pub(crate) fn stop_verdict(system: &ModelSystem<'_>, stop: ExpansionStop) -> StepVerdict {
     if stop.is_internal_failure() {
         return fault("system-invariant");
     }

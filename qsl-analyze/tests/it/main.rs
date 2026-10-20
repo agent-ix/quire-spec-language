@@ -36,6 +36,7 @@ mod refinement_budget;
 mod refinement_certificate;
 #[path = "../../../tests/support/refinement_cas.rs"]
 mod refinement_fixture;
+mod refinement_liveness;
 mod refinement_reads;
 mod refinement_replay;
 mod refinement_safety;
