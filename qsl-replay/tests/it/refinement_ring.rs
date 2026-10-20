@@ -7,7 +7,7 @@ use qsl_eval::simulation::model::{operation_identity_text, ModelSimState, ModelS
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_replay::{
-    check_step, map_state, ConcreteStep, EvalFailure, MappingFailure, MappingRowRef,
+    check_step, map_state, ConcreteStep, EvalFailure, HistoryValues, MappingFailure, MappingRowRef,
     RefinementFailure, RefinementPosition, StepArgument, StepRejection, StepVerdict, Taken,
     Undetermined,
 };
@@ -66,6 +66,7 @@ fn the_slots_map_to_the_items_of_one_queue() {
         &concrete,
         &abstracted,
         &ring_state(&concrete, 1, 2, [0, 1]),
+        &HistoryValues::default(),
     )
     .expect("the state maps");
     assert!(mapped.hidden.is_empty());
@@ -105,6 +106,7 @@ fn an_only_that_finds_two_objects_is_undefined() {
             &concrete,
             &abstracted,
             &ring_state(&concrete, head, size, [0, 1]),
+            &HistoryValues::default(),
         ) else {
             panic!("the mapping is undefined at {head}, {size}");
         };
@@ -126,6 +128,7 @@ fn an_only_that_finds_two_objects_is_undefined() {
         &concrete,
         &abstracted,
         &ring_state(&concrete, 1, 0, [0, 1]),
+        &HistoryValues::default(),
     )
     .is_ok());
 }
@@ -144,6 +147,7 @@ fn an_incomplete_items_row_leaves_the_mapping_undetermined() {
         &concrete,
         &abstracted,
         &ring_state(&concrete, 1, 2, [0, 1]),
+        &HistoryValues::default(),
     ) else {
         panic!("the mapping is undetermined");
     };
@@ -191,10 +195,12 @@ fn position(world: &RingWorld, concrete: &ModelState) -> RefinementPosition {
         &world.concrete_system(UNLIMITED),
         &world.abstract_system(UNLIMITED),
         concrete,
+        &HistoryValues::default(),
     )
     .expect("the state maps");
     RefinementPosition {
         concrete: concrete.clone(),
+        history: HistoryValues::default(),
         abstract_states: vec![mapped.visible],
     }
 }
