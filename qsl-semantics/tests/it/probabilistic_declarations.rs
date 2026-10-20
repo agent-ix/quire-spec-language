@@ -896,6 +896,52 @@ fn quantity_literals_type_against_the_declared_units() {
     assert_eq!(refusals[0].cause.code(), Code::IllTyped, "{refusals:?}");
 }
 
+/// FR-185 "Exact values": a quantity literal's magnitude is bounded by the
+/// configured `s3.rational_bits`, inclusive, in a function body.
+#[trace("TC-620")]
+#[test]
+fn a_quantity_literal_is_bounded_by_the_configured_rational_bits() {
+    let limits = CheckingLimits::default().with_rational_bits(8);
+    let within = assemble("function lag using v(): Boolean pure { 255 ms <= 3 ms }")
+        .check(limits)
+        .expect_err("a quantity literal has no S4 form yet");
+    assert_eq!(within[0].cause.cause(), Some("not-yet-implemented"));
+    let past = assemble("function lag using v(): Boolean pure { 256 ms <= 3 ms }")
+        .check(limits)
+        .expect_err("256 is nine bits");
+    let CheckCause::ResourceExhausted(limit) = &past[0].cause else {
+        panic!("a limit refusal: {:?}", past[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 8, 9)
+    );
+}
+
+/// FR-185-AC-6 under a configured ceiling: weights `1/3` and `1/5` are each
+/// within 3 bits, their sum `8/15` has 4, so the distribution is refused at
+/// `d` naming `s3.rational_bits` and the configured limit.
+#[trace("TC-620", "FR-185-AC-6")]
+#[test]
+fn a_distribution_total_is_bounded_by_the_configured_rational_bits() {
+    let random = "random Server::attempt(d) ~ { 1: rational(1, 3), 3: rational(1, 5) };";
+    let body = service(Some((D, random)), "");
+    let limits = CheckingLimits::default().with_rational_bits(3);
+    let refusals = assemble(&body)
+        .check(limits)
+        .expect_err("the sum is four bits");
+    let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
+        panic!("a limit refusal: {:?}", refusals[0].cause);
+    };
+    assert_eq!(
+        (limit.kind.setting().name(), limit.limit, limit.actual),
+        ("s3.rational_bits", 3, 4)
+    );
+    assemble(&body)
+        .check(CheckingLimits::default().with_rational_bits(7))
+        .expect("the sum is within seven bits (the other declarations' 98)");
+}
+
 fn claim(body: &str) -> String {
     format!("probabilistic C using v on Service under Steady on origin {body}")
 }

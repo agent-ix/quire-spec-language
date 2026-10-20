@@ -798,8 +798,7 @@ impl Pass<'_, '_> {
             let bits = total.max_part_bits();
             if bits > ceiling {
                 return Err(super::limit_refusal(
-                    bits,
-                    ceiling,
+                    super::Excess { bits, ceiling },
                     site_location(index, Site::Parameter),
                 ));
             }

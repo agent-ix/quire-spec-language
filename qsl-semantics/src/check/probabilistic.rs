@@ -409,17 +409,26 @@ impl ProbabilisticCause {
     }
 }
 
-/// The limit refusal of an exact value, written or derived, whose measure
-/// `bits` is past `ceiling`, the configured `s3.rational_bits` (FR-185
-/// "Exact values"). The refusal names that setting and the configured limit.
-fn limit_refusal(bits: u64, ceiling: u64, location: Location) -> CheckRefusal {
+/// An exact value's measure past the configured `s3.rational_bits` ceiling.
+#[derive(Clone, Copy)]
+struct Excess {
+    /// The measure of the value.
+    bits: u64,
+    /// The configured ceiling it passed.
+    ceiling: u64,
+}
+
+/// The limit refusal of an exact value, written or derived, whose measure is
+/// past the configured `s3.rational_bits` (FR-185 "Exact values"). The
+/// refusal names that setting and the configured limit.
+fn limit_refusal(excess: Excess, location: Location) -> CheckRefusal {
     CheckRefusal {
         location,
         cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {
             stage: CheckingStage::Typing,
             kind: CheckingLimitKind::RationalBits,
-            limit: ceiling,
-            actual: u128::from(bits),
+            limit: excess.ceiling,
+            actual: u128::from(excess.bits),
             region: None,
         })),
     }
@@ -434,7 +443,9 @@ fn exact_refusal(
 ) -> CheckRefusal {
     match fault {
         exact::ExactFault::ZeroDenominator => refusal(ProbabilisticCause::ZeroDenominator { span }),
-        exact::ExactFault::AboveCeiling { bits } => limit_refusal(bits, ceiling, location),
+        exact::ExactFault::AboveCeiling { bits } => {
+            limit_refusal(Excess { bits, ceiling }, location)
+        }
     }
 }
 
