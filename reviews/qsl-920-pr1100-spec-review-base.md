@@ -54,3 +54,21 @@ Ticket: QSL-920. PR: quire-spec-language#1100, head 6152faf2a, scoped to `git di
 ## Verdict
 
 Not mergeable. FND-001 (high) must be fixed or explicitly recorded as a code follow-up: SampleStop::UndecidedSuccessor is not in #1099, so AC-7's second clause cannot pass there. FND-002 and FND-003 (medium) should be fixed in this PR. What holds: the six AC-1 probabilities are right. With d at 90/7/3 per 100 and outcome at 98/2 per 100, and attempt the only operation enabled at phase 1, they are 441/500, 9/500, 343/5000, 7/5000, 147/5000 and 3/5000. They sum to 1, and #1099's test asserts each one. WeightsRefusal matches choice.rs:72-87 and 130-190: an empty list gives Empty, (1, 0) and (1, -1/2) give NotPositive{index: 1}, and a refusal computes no digest (weighted_choice_counted). The Empty/NotPositive to Expansion(BROKEN) mapping matches sampled.rs:143-147, and BROKEN is runtime_invariant/established-invariant-broken (model.rs:82). invalid_probabilistic_model/negative-reward is in QSpec FR-272's closed set, and the record carries operation, reward and arguments, with a random parameter ranging over its support (probabilistic.rs:415-485). Every realised type matches the code: operation String, ObjectReference, DigestRecord, u64 seed, TransitionId{Operation, Stutter}, ModelSimState. Owner decision 6 is confirmed: frames/judge.rs:178-183 and 274-286 build each parameter's domain with Domain::of over its full type, and FR-141, FR-142 and FR-187 say nothing about random parameters there. The recommendation (judge over the support) is consistent with FR-187's first Behavior bullet. No status wording.
+
+## New findings (disposition pass 1)
+
+Round 1, head 8c75e31b1: fix commit 8c75e31b1 over 6152faf2a. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Terra's #1099 branch is now at 441223cc, which adds only review files over 9bf87265. It still has no UndecidedSuccessor result or SampleStop variant. The PR body now says item 3 is a requirement that branch does not build yet, which is accurate. QSL-920 has no comment yet recording the code follow-up for terra. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in the changed files. tools/check-index-completeness.sh passes. No status wording in the FR text. The PR body's item 1 still says 'encode Boolean and bounded Int and no enumeration value', which the new FR-187 Note no longer says. That is PR-body wording only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | The new FR-187 bullet gives two results: `UndecidedSuccessor{state}` from `actions`, and `Unsteppable::UndecidedSuccessor` from `weighted_steps`. No FR-187 AC or TC-622 step tests either one. FR-188-AC-8 checks `actions` through the sampler test only, and nothing checks the `weighted_steps` arm. Fix: add an FR-187 AC, or extend AC-3, with a TC-622 step. On the undecided Health variant, `actions` should return `UndecidedSuccessor{state}` and `weighted_steps` `Unsteppable::UndecidedSuccessor`, each naming the initial state's digest. | spec/functional/FR-187-give-model-transitions-step-probabilities-and-rewards.md:111-114 |
+
+## Dispositions
+
+Round 1, head 8c75e31b1: fix commit 8c75e31b1 over 6152faf2a. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Terra's #1099 branch is now at 441223cc, which adds only review files over 9bf87265. It still has no UndecidedSuccessor result or SampleStop variant. The PR body now says item 3 is a requirement that branch does not build yet, which is accurate. QSL-920 has no comment yet recording the code follow-up for terra. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in the changed files. tools/check-index-completeness.sh passes. No status wording in the FR text. The PR body's item 1 still says 'encode Boolean and bounded Int and no enumeration value', which the new FR-187 Note no longer says. That is PR-body wording only.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |

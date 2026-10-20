@@ -51,3 +51,23 @@ Ticket: QSL-920. PR: quire-spec-language#1100, head 6152faf2a, scoped to `git di
 ## Verdict
 
 Five low findings. None blocks merge on its own; FND-002 to FND-004 come from the new UndecidedSuccessor variant and should be fixed with base FND-001/002. What holds: FR-189 (Decision::Undecided(UndecidedSuccessor), the undecided-step bullet and AC-5) agrees with the new SampleStop variant. FR-192's Completed/Undecided row settles any UndecidedCause, so it needs no new row. FR-192's internal-failure expansion row settles the Empty/NotPositive stop failed with runtime_invariant/established-invariant-broken, the cause FR-188 names. TC-623's scope (AC-1 to AC-7) and step 5 cover the new AC, and TC-622 step 1 matches AC-1. Index completeness passes.
+
+## New findings (disposition pass 1)
+
+Round 1, head 8c75e31b1: fix commit 8c75e31b1 over 6152faf2a. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Terra's #1099 branch is now at 441223cc, which adds only review files over 9bf87265. It still has no UndecidedSuccessor result or SampleStop variant. The PR body now says item 3 is a requirement that branch does not build yet, which is accurate. QSL-920 has no comment yet recording the code follow-up for terra. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in the changed files. tools/check-index-completeness.sh passes. No status wording in the FR text. The PR body's item 1 still says 'encode Boolean and bounded Int and no enumeration value', which the new FR-187 Note no longer says. That is PR-body wording only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | `Unsteppable` has two arms, NotMarkov and UndecidedSuccessor. At a state where one application is undecided and a decided application's draw gives 0 or 2 post-states, both apply, and FR-187 does not say which `weighted_steps` returns. FR-189 settles the two differently (Unsupported against an Undecided test), so implementations could disagree on the verdict. The bullet also says 'at an application', but FR-120's ContractUndetermined is also raised for a postcondition candidate. Fix: say which arm wins (UndecidedSuccessor first, as ADR-018 V-6 keeps the state open), and say 'at an application or candidate'. | spec/functional/FR-187-give-model-transitions-step-probabilities-and-rewards.md:64-65, 111-114 |
+
+## Dispositions
+
+Round 1, head 8c75e31b1: fix commit 8c75e31b1 over 6152faf2a. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Terra's #1099 branch is now at 441223cc, which adds only review files over 9bf87265. It still has no UndecidedSuccessor result or SampleStop variant. The PR body now says item 3 is a requirement that branch does not build yet, which is accurate. QSL-920 has no comment yet recording the code follow-up for terra. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in the changed files. tools/check-index-completeness.sh passes. No status wording in the FR text. The PR body's item 1 still says 'encode Boolean and bounded Int and no enumeration value', which the new FR-187 Note no longer says. That is PR-body wording only.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | still-open | AC-8 and TC-623 step 6 now point at 'FR-189-AC-5's Health variant, whose second contract conjunction is left undecided at the initial state'. But FR-189-AC-5 and TC-624 only say 'a variant with an undecided contract conjunction', and ADR-024 §7.1's Health has one contract, tick's postcondition, so 'its second contract conjunction' has nothing to refer to. TC-623's Fixtures line still does not list the variant. Fix: define the variant in AC-8, for example tick with a second postcondition clause that evaluation leaves undefined at the initial state, and name the clause. Then add the variant to TC-623's Fixtures line. |
+| FND-005 | fixed | - |

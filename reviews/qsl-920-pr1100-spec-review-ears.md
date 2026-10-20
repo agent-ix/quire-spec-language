@@ -41,3 +41,20 @@ Ticket: QSL-920. PR: quire-spec-language#1100, head 6152faf2a, scoped to `git di
 ## Verdict
 
 Two low findings. The new FR-188 weights statements and the FR-188 undecided statement are well-formed If/then unwanted-behaviour EARS. The FR-187 negative-reward statement keeps its When event form. The FR-187 undecided bullet adds the only new grammar warnings (FND-001).
+
+## New findings (disposition pass 1)
+
+Round 1, head 8c75e31b1: fix commit 8c75e31b1 over 6152faf2a. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Terra's #1099 branch is now at 441223cc, which adds only review files over 9bf87265. It still has no UndecidedSuccessor result or SampleStop variant. The PR body now says item 3 is a requirement that branch does not build yet, which is accurate. QSL-920 has no comment yet recording the code follow-up for terra. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in the changed files. tools/check-index-completeness.sh passes. No status wording in the FR text. The PR body's item 1 still says 'encode Boolean and bounded Int and no enumeration value', which the new FR-187 Note no longer says. That is PR-body wording only.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The bullet is now a well-formed If/then statement with ModelSystem as its subject, and quire's lint is clean. It still joins two obligations, 'SHALL return ...' and 'SHALL NOT drop the application'. The second follows from the first: an application that is reported is not dropped. Fix: drop ', and SHALL NOT drop the application', or move it to a Note that explains the change from FR-120's expansion, which leaves the application out. | spec/functional/FR-187-give-model-transitions-step-probabilities-and-rewards.md:111-114 |
+
+## Dispositions
+
+Round 1, head 8c75e31b1: fix commit 8c75e31b1 over 6152faf2a. The fix commit also commits this review's round-0 SR files under reviews/ unchanged; this file supersedes them. Terra's #1099 branch is now at 441223cc, which adds only review files over 9bf87265. It still has no UndecidedSuccessor result or SampleStop variant. The PR body now says item 3 is a requirement that branch does not build yet, which is accurate. QSL-920 has no comment yet recording the code follow-up for terra. Gates: make check-spec-validation exits 0 with 17 warnings, the same as main, none in the changed files. tools/check-index-completeness.sh passes. No status wording in the FR text. The PR body's item 1 still says 'encode Boolean and bounded Int and no enumeration value', which the new FR-187 Note no longer says. That is PR-body wording only.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |

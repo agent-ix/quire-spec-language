@@ -108,10 +108,13 @@ impl ModelSystem {
   refusal record `invalid_probabilistic_model`/`negative-reward`, carrying
   `operation`, `reward` and `arguments`, for the first negative value in
   canonical order.
-- If a contract conjunction is undecided at an application during expansion
-  (FR-120's `ContractUndetermined` finding), then `ModelSystem` SHALL return
-  `UndecidedSuccessor{state}` from `actions` and, under `weighted_steps`,
-  `Unsteppable::UndecidedSuccessor`, and SHALL NOT drop the application.
+- If a contract conjunction is undecided at an application or at a
+  postcondition candidate during expansion (FR-120's `ContractUndetermined`
+  finding), then `ModelSystem` SHALL return `UndecidedSuccessor{state}` from
+  `actions` and, under `weighted_steps`, `Unsteppable::UndecidedSuccessor`.
+- When a state has both an undecided conjunction and a drawn vector that is
+  not Markov, `ModelSystem` SHALL return the undecided result, because the
+  expansion that finds it runs before any draw is judged.
 
 Note: FR-120's state key and transition identity have no encoding for an
 enumeration or quantity value (FR-120 "State key"), so a state, parameter or
