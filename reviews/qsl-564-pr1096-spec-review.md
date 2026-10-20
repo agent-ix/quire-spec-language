@@ -88,3 +88,52 @@ FR-157-AC-1 through POR-10.
 | FND-006 | low | The terms disagree between POR-4 and POR-11. POR-4 says a written location "affects more than it covers" and keeps "covers" for read locations. POR-11 says "a written (population, membership of `k`) covers the membership cell and every field cell of `k`". POR-4's "a written field location affects the field locations it meets" is circular, because "meet" is then defined from "affects". Use "affects" for writes throughout, and define the field-write case by shared field cells, as QSpec FR-383 does. | spec/decisions/ADR-021-state-space-reduction.md:181; spec/decisions/ADR-021-state-space-reduction.md:174 |
 | FND-007 | low | The rewritten FR-156-AC-4 adds "an enabled `touch()` framed `modifies self.d`" but does not say which unit it joins. The other symbols (`arm`, `arm2`, `c`, `d`) are FR-157's `Gate`, and adding `touch` to that Gate would change its other vectors. Name the subject, for example "FR-157's `Gate` with an added operation `touch()`". | spec/functional/FR-156-expand-ample-sets-with-the-breadth-first-proviso.md:101 |
 | FND-008 | low | FR-155-AC-5 and AC-6 still say "so `set(a)` meets it" for a write against an enabling (read) footprint. That case is field against field, where meeting and affecting coincide, so the meaning holds; for the new terms, the word should be "affects". | spec/functional/FR-155-derive-and-enforce-read-and-write-footprints.md:163-164 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | Two test-case steps still use "meets" for a write against a read location. TC-589 step 1: `AnyField{v}`, "which `set(a)` meets". TC-617 step 2: `AnyMembership{gates}`, "which meets `Membership{gates, g}`". Both pairs are ones where the two relations agree (field against field, and a written membership against a read membership), so the meaning holds. But FR-155, FR-156, FR-157 and ADR-021 now say "affects" for every write/read pair. | spec/test-cases/TC-589-complete-enabling-footprints-and-membership-keep-safety-violations.md:44; spec/test-cases/TC-617-complete-enabling-footprints-keep-fair-violations.md:37 |
+
+## Dispositions
+
+Round 1, reviewed at `886ff3b40ccad6e2f445f24a285963e133b22035`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 886ff3b40: POR-5, POR-7, POR-10 and ADR-027 FT-5 now say "affects". |
+| FND-002 | fixed | 886ff3b40: FR-157-AC-5, TC-617 and §7.6's second Gate vector now say 8 model states, which matches my measurement. The unverifiable type-wide-delete count is gone from FR-156-AC-6, TC-589 and §7.6. Every count now carries the "model-level reduced search" qualifier. |
+| FND-003 | fixed | 886ff3b40: the preamble now cites QSpec FR-181 and the escape `\` (0x5C) against `2` (0x32), and states the order `arm2`, `arm`. |
+| FND-004 | fixed | 886ff3b40: TC-577 step 2 is seeded by `touch` with enabled part `{touch, arm}`; TC-576 step 2 gives the `a, a, b, b, c, c` path; TC-589 and TC-617 counts are defined. |
+| FND-005 | fixed | 886ff3b40: the POR-4 rationale names only §7.5's same-object operations, and the oracle count is gone. |
+| FND-006 | fixed | 886ff3b40: POR-11 says a written membership "affects"; POR-4 defines field writes by shared field cells, and write/write meeting by the cells the other covers. |
+| FND-007 | fixed | 886ff3b40: FR-156-AC-4 says "over FR-157's `Gate` with an added operation `touch()`". |
+| FND-008 | fixed | 886ff3b40: FR-155-AC-5 and AC-6 say "`set(a)` affects it". |
+
+Counts that the author did not re-measure, checked against my measurements
+on PR #1094's engine (6fc896165, model-level reduced search):
+
+| Vector | Spec | Measured | Agree |
+| --- | --- | --- | --- |
+| §7.5 Gate, guard in the precondition | 8 | 8 | yes |
+| §7.6 guard in the postcondition (FR-156-AC-5) | 6 | 6 | yes |
+| §7.6 deleting the receiver | 4 | 4 | yes |
+| §7.6 blocked delete | 5 | 5 | yes |
+| §7.6 navigation | 6 | 6 | yes |
+| §7.6 result read (FR-155-AC-6) | 6 | 6 | yes |
+
+All six agree. §7.6's "proved over 3 model states" sentences describe runs
+with the footprint left incomplete. No such engine exists, so they cannot be
+measured; they are narrative, not ACs.
+
+I grepped the PR's files for "meets". Every remaining use is a write/write
+meet, the symmetry refinement `B meets u_c(E(c))`, or a reference to "FR-383's
+locations, meets and derivation" (POR-1, ADR-021 §9, FR-155 lines 39 and 177).
+The two exceptions are FND-009.
+
+Gates at 886ff3b40:
+
+- `make check-index-completeness`: pass.
+- `make check-spec-validation`: pass. The only warning on these files is
+  FR-155 line 113, which was already there.
+- The committed copy of this file passes `quire validate`.

@@ -41,7 +41,7 @@ Tag the tests `#[trace("TC-589", "<AC id>")]`.
 ## Expected Results
 
 - Step 1: `boom`'s enabling footprint holds `AnyField{v}`, which `set(a)`
-  meets; `cancel(j)` writes `Membership{jobs, j}` and is dependent with
+  affects; `cancel(j)` writes `Membership{jobs, j}` and is dependent with
   `boom(j)`; `cancel(m)` writes `AnyMembership{jobs}` and is dependent with
   `boom(j)`; `cancel(k)` reads `AnyField{peer}`, which `unlink(j)` writes;
   the navigation subject's `boom` reads `(g, cell)`, which `point` writes.
