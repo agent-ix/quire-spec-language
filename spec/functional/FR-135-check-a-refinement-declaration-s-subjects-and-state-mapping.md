@@ -174,8 +174,7 @@ than a build may yet check. QSpec FR-375 owns the closed set of feature names
 and the not-yet-built refusal; this section states how S3 applies them. The
 build holds a closed **support set** of refinement feature names,
 a build capability constant and not a request or test parameter. QSpec
-FR-375's closed set holds four feature names, which it names: `history-row` (FR-138), spelled by a `history` row whose declared type has no typed canonical value
-form (below); `protocol-abstract-side` (FR-147), spelled by `abstract <A>::<protocol>`;
+FR-375's closed set holds four feature names, which it names: `history-row` (FR-138), spelled by a `history` row; `protocol-abstract-side` (FR-147), spelled by `abstract <A>::<protocol>`;
 `refinement-internal-list` (FR-147), spelled by a non-empty resolved internal
 list for the refinement, which is located at the first token of the name after
 `abstract`, once per refinement; and `nested-reference-row`, spelled by a
@@ -194,17 +193,21 @@ non-empty resolved list reaches this refusal (FR-147).
   `refinement-internal-list` and `nested-reference-row` has no `subject`
   member.
 - The refusal is decided before the feature's own checks, so no other
-  diagnostic about that row is reported; the rest of the declaration is
+  diagnostic about that row is reported, except that the `history-row` refusal
+  follows the checks FR-138 orders before it (the object type, the name
+  conflicts and the type form); the rest of the declaration is
   checked as usual and its own refusals are reported beside it.
-- This build's support set SHALL hold `history-row` for the declared types
-  FR-181 gives a typed canonical value form, which FR-138 checks, and SHALL omit
-  the other three names. A `history` row whose declared type is an enum type or a
-  decimal type, or an option of one, is outside the support set: it SHALL refuse
+- This build's support set SHALL hold `history-row` for the history types its
+  history key can encode, which FR-138 checks, and SHALL omit the other three
+  names.
+- S3 SHALL refuse a `history` row whose declared type is an enum type or a
+  decimal type, or an option of one, with
   `unsupported_construct`/`not-yet-implemented` naming `history-row`, at the
   span of the declared type and once for the row, with `subject` `enum` or
-  `decimal` for the kind of type. A product state could not key such a value.
-  The values are legal history literals (QSpec FR-375-AC-9), so the refusal marks
-  a build limit and not an error in the source. FR-138-AC-9 states the case.
+  `decimal` for the kind of type. The build's history key cannot yet encode such
+  a value. The values are legal history literals (QSpec FR-375-AC-9), so the
+  refusal marks a build limit and not an error in the source. FR-138-AC-9
+  states the case.
 - A feature in the support set is checked by its own requirement.
 
 `unknown_required_feature` is not used: a source refusal, which FR-341
@@ -232,7 +235,7 @@ standing.
 | FR-135-AC-2 | Refusals, each at its span with no `CheckedRefinement`: the abstract alias `Nope`, resolving to no model (`missing_declaration`/`missing-name`); the `population` row removed (`missing_declaration`/`missing-name` naming `Spec::counters`); the row written twice (`invalid_model_binding`/`conflicting-binding`); the row reversed as `population Impl::counters from Spec::counters` (`invalid_model_binding`/`malformed-declaration`); the `object` row removed (`missing_declaration`/`missing-name` naming `Spec::Counter`); `value` mapped twice (`invalid_model_binding`/`conflicting-binding` naming both rows); the declaration in a unit that selects a bounded profile (`unknown_profile`/`wrong-selection-role` at the alias). | Test (TC-540) |
 | FR-135-AC-3 | `value = self.busyA` refuses `ill_typed`/`type-mismatch` at the expression's span. In ADR-020 §8's `RingIsQueue`, a field of type `Reference<Q::Queue>` mapped by `self.ring` (of type `Reference<R::Ring>`) checks, and the same field mapped by an expression of type `Reference<R::Slot>` refuses `ill_typed`/`type-mismatch`. | Test (TC-540) |
 | FR-135-AC-4 | With the `value` row removed, `CasRefinesCounter` checks with `value` in `hidden`. Changing the `value` row to `value = self.tmpA` changes the refinement's node identity and the `package_id`. | Test (TC-540) |
-| FR-135-AC-5 | A declaration whose abstract side is a protocol (`CasTwice`, FR-147), in a build whose support set omits `protocol-abstract-side`, refuses `unsupported_construct`/`not-yet-implemented` at the span of `Twice`, naming `protocol-abstract-side`, `CasTwice` and the profile identity, with no `subject` member, no other diagnostic about the abstract side and no `CheckedRefinement`. It classifies `unsupported` (FR-341-AC-5). `CasRefinesCounter`, which uses none of the features, checks as FR-135-AC-1 states. The vector refuses a row that uses a feature the build has not built; it does not select a support set. | Test (TC-540) |
+| FR-135-AC-5 | A declaration whose abstract side is a protocol (`CasTwice`, FR-147), in a build whose support set omits `protocol-abstract-side`, refuses `unsupported_construct`/`not-yet-implemented` at the span of `Twice`, naming `protocol-abstract-side`, `CasTwice` and the profile identity, with a payload that has no `subject` member (a test of the payload asserts it absent), no other diagnostic about the abstract side and no `CheckedRefinement`. It classifies `unsupported` (FR-341-AC-5). `CasRefinesCounter`, which uses none of the features, checks as FR-135-AC-1 states. The vector refuses a row that uses a feature the build has not built; it does not select a support set. | Test (TC-540) |
 | FR-135-AC-6 | `RingIsQueue` with a `Sequence<Reference<Queue>>[0, 2]` field mapped by a row of type `Sequence<Reference<Ring>>[0, 2]` refuses `unsupported_construct`/`not-yet-implemented` naming `nested-reference-row` at the row's expression; a population-reference row `cells = R::slots` checks, as does the same field as a plain `Reference<Queue>` mapped by `self`. | Test (TC-540) |
 | FR-135-AC-7 | `RingIsQueue` with the abstract `Queue` declaring a relationship refuses `unsupported_construct`/`declaration-form` at the abstract alias `Q` of the declaration header, once, whatever the support set holds, and no `CheckedRefinement`. | Test (TC-540) |
 | FR-135-AC-8 | In a unit whose own declarations select no layer, `RingIsQueue`'s rows `s.ring = self` and `(self.head + i) mod 2` check, because they are admitted under the layers the governing infinite-trace profile requires; a Boolean field row naming a protocol declared in the unit refuses `unsupported_construct`/`expression-form` at the `protocol` token, naming the layer that admits it (`quire.protocol.complete/v1`). | Test (TC-540) |
@@ -251,3 +254,10 @@ standing.
 ## References
 
 - The QSpec half (grammar, semantics, wire node): QSpec FR-375 (Linear STD-133).
+  The `history-row` refusal departs from QSpec in three ways, which QSpec's
+  wording should be aligned to: FR-375 places it at the `history` keyword and
+  here it is at the declared type; FR-375 holds `history-row` for every history
+  row and FR-375-AC-9 admits enum-member literals, while this build holds it
+  for the types its history key encodes; and QSpec FR-272's `not-yet-implemented`
+  payload names the feature, the declaration and the profile only, where this
+  build adds the `subject` member.

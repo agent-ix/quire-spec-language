@@ -125,7 +125,7 @@ names, plus `UndefinedEvaluation` and `Undetermined`, and whose other members ar
 | `AbstractStepRejected` | `position`, `transition` (the transition identity encoding of QSpec FR-364, from FR-181), `cause` |
 | `NoAbstractMatch` | `position` |
 | `UndefinedEvaluation` | `where` and `cause` (FR-127's `UndefinedEvaluation` encoding), the step verdict `Undefined`; QSpec FR-379's `Undefined{position, row}` is the same failure as the engine writes it, and `check_step` never returns that form |
-| `Undetermined` | `cause` (`MappingUndetermined` or `UndecidedSuccessor`) and `evaluation` (`{"outcome": "refused"}` or `{"outcome": "incomplete", "limit": <limit spelling>}`, where the limit spelling is `evaluation-meter` for the evaluation meter (FR-126's spelling) and quire-exact's `LimitKind` name for another counter of the evaluation, in snake case such as `integer_bits`) |
+| `Undetermined` | `cause` (`MappingUndetermined` or `UndecidedSuccessor`) and `evaluation` (`{"outcome": "refused"}` or `{"outcome": "incomplete", "limit": <limit spelling>}`, where the limit spelling is `evaluation-meter` for the evaluation meter (FR-127's model-check limit spelling) and quire-exact's `LimitKind` name for another counter of the evaluation, in snake case such as `integer_bits`) |
 
 `position` inside a verdict is the refinement position FR-141 names and need
 not equal the locus `position`. A `cause` is `{"kind": "Precondition",
@@ -175,7 +175,8 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
   `Stopped(LimitReached{EvaluationMeter, value})`, with `value` the evaluation
   meter's work units, and not reject: a certificate is rejected only when the
   checker found it wrong (ADR-018 PC-2).
-- **History.** A position SHALL be identified by its concrete state key, the
+- **History.** The checker and the producer SHALL identify a position by its
+  concrete state key, the
   typed canonical key of its history values (FR-138's `HistoryValues`, in the
   product key's order) and its sorted abstract state keys. Wherever the checker
   compares a listed position with a position it computed, at an initial state
@@ -239,7 +240,7 @@ not equal the locus `position`. A `cause` is `{"kind": "Precondition",
 | FR-149-AC-8 | The terminal record of AC-3's rejection writes the locus `{"position": "<n>", "edge": "<n>", "verdict": {"kind": "AbstractStepRejected", "position": "<n>", "transition": <ModelTransition encoding of inc(c)>, "cause": {"kind": "Postcondition"}}}`, writes `"verdict": null` for AC-2's `PostDiffers`, and writes each other kind's members as the wire-form table lists them. | Test (TC-556) |
 | FR-149-AC-9 | FR-144 refuses `stale_dependency`/`content-mismatch`, before the checker runs, a certificate whose `concrete_package` differs from the recompile, and one whose `obligation` differs; the checker is not called in either case. | Test (TC-556) |
 | FR-149-AC-10 | A check cancelled between positions returns `Stopped(Cancelled{source})`, and an FR-120 expansion stop that names no limit, produced by a concrete model whose state constraint has a family that evaluation refuses, returns `Stopped(ResourceExhausted)`; FR-144 settles each V-7. | Test (TC-556) |
-| FR-149-AC-11 | Over `RegisterHistory` with a history field that makes two stored product states differ only in history, the engine's certificate carries the history key in each position and the checker returns `Accepted`; the same certificate with the second state's position given the first state's history key returns `Rejected`. | Test (TC-556) |
+| FR-149-AC-11 | Over `RegisterHistory` with a history field that makes two stored product states differ only in history, the engine's certificate carries the history key in each position and the checker returns `Accepted`; the same certificate with the second state's position given the first state's history key returns `Rejected` with rule `PostDiffers` (or `InitialMismatch` when the position is an initial one), and never `Malformed`. | Test (TC-556) |
 
 ## Dependencies
 

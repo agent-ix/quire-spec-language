@@ -62,13 +62,14 @@ exactly as they were.
 - The object type SHALL resolve to a concrete object type, and each `on`
   operation to an operation of that type; a name that does not resolve
   SHALL refuse `missing_declaration`/`missing-name`.
-- A declared type that is an enum type or a decimal type, or an option of
-  one, SHALL refuse `unsupported_construct`/`not-yet-implemented` at the type,
-  naming `history-row` with `subject` `enum` or `decimal` (FR-135 "Refinement
-  features the build does not check"): the type is finite and its literals are
-  legal, but FR-181 gives its values no typed canonical form, so a product state
-  could not key one. The refusal comes after the name conflict checks and before
-  the bounded-type and initial-literal checks.
+- S3 SHALL refuse a declared type that is an enum type or a decimal type, or
+  an option of one, with `unsupported_construct`/`not-yet-implemented` at the
+  type, naming `history-row` with `subject` `enum` or `decimal` (FR-135
+  "Refinement features the build does not check"): the type is finite and its
+  literals are legal, but the build's history key cannot yet encode its values.
+  The refusal follows the refusals for an unresolved object type, a name
+  conflict and an unresolved type form, and precedes the bounded-type and
+  initial-literal checks.
 - Any other declared type SHALL be a bounded value type (finite domain); an
   unbounded type SHALL refuse `ill_typed`/`type-mismatch` at the type.
 - A history field whose name equals a declared field of the concrete type,
@@ -171,7 +172,11 @@ and not its range, so the range is left only at run time.
   QSpec FR-378 words the product key's order as "history-row order"; the key
   here orders by object, then field name. QSpec's wording should be aligned
   to it.
+- The enum and decimal refusal departs from QSpec in the three ways FR-135's
+  References state.
 - The history-row production, the `history-literal` spellings and the
   history-literal conformance rule: QSpec FR-375. The covering test for the
   `none`, `true`/`false` and enum-member cases, which FR-138 does not
-  restate, is QSpec TC-310 mutation 10 (FR-375-AC-9).
+  restate, is QSpec TC-310 mutation 10 (FR-375-AC-9). This build refuses an
+  enum-typed history row before its literal is checked (FR-138-AC-9), so it
+  admits no enum-member history literal for now.
