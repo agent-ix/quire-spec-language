@@ -328,86 +328,126 @@ fn mutex(fairness: &str) -> crate::liveness::Fixture {
 
 /// The operation order is by declaring type, then name, whatever order a type
 /// declares its operations in and whichever admitted type inherits them:
-/// `Counter` inherits `inc` and `setTo` from a `Base` that declares them (in
-/// either order) and declares `bump` itself; with `Counter` alone admitted,
-/// or with `Base` admitted before or after it, the operations are the same
-/// three, each once, in declaring-type then name order.
+/// `Counter` inherits `inc` and `setTo` from a supertype that declares them
+/// (in either order) and declares `zap` itself. Across supertype names, the
+/// declaring identities fall both ways round: where `Counter` sorts below its
+/// supertype the order is `zap, inc, setTo` (the own operation first although
+/// its name sorts last), where above `inc, setTo, zap`,
+/// with the supertype alone, before or after the subtype among the admitted
+/// types, and with only the subtype admitted (inherited operations).
 #[trace("TC-534", "FR-133-AC-4")]
 #[test]
 fn operations_are_ordered_by_declaring_type_then_name() {
-    use qsl_eval::simulation::model::ModelSystem;
-    const COUNTER: &str = "ix://test/counter/Counter";
-    const BASE: &str = "ix://test/counter/Base";
-    let mut orders = Vec::new();
-    for (reversed, admitted) in [
-        (false, vec![COUNTER]),
-        (true, vec![COUNTER]),
-        (false, vec![BASE, COUNTER]),
-        (true, vec![COUNTER, BASE]),
+    let mut seen = [false, false];
+    for base in [
+        "Base", "Root", "Alpha", "Zed", "Core", "Mid", "Top", "Under",
     ] {
-        let mut domain: serde_json::Value =
-            serde_json::from_slice(&document_with_ranged_parameter()).expect("JSON");
-        let types = domain["types"].as_array_mut().expect("types");
-        let counter = types
-            .iter_mut()
-            .find(|node| node["identity"] == COUNTER)
-            .expect("Counter");
-        let mut operations = counter["operations"].as_array().expect("ops").clone();
-        let mut bump = operations[0].clone();
-        if reversed {
-            operations.reverse();
+        let mut subtype_first = None;
+        for (reversed, admitted) in [(false, "c"), (true, "c"), (false, "bc"), (true, "cb")] {
+            let (names, first) = operation_names(base, reversed, admitted);
+            match subtype_first {
+                None => subtype_first = Some(first),
+                Some(known) => assert_eq!(known, first, "{base}: identities are fixed"),
+            }
+            let expected: [&str; 3] = if first {
+                ["zap", "inc", "setTo"]
+            } else {
+                ["inc", "setTo", "zap"]
+            };
+            assert_eq!(
+                names, expected,
+                "{base} reversed {reversed} admitting {admitted}"
+            );
         }
-        let mut base = counter.clone();
-        base["operations"] = operations.into();
-        let mut base: serde_json::Value = serde_json::from_str(
-            &base
-                .to_string()
-                .replace("test/counter/Counter/", "test/counter/Base/"),
-        )
-        .expect("JSON");
-        base["identity"] = BASE.into();
-        bump["identity"] = "ix://test/counter/Counter/bump".into();
-        bump["name"] = "bump".into();
-        bump["frame"]["modifies"] = serde_json::json!(["ix://test/counter/Base/value"]);
-        counter["supertypes"] = serde_json::json!([BASE]);
-        counter["fields"] = serde_json::json!([]);
-        counter["operations"] = serde_json::json!([bump]);
-        types.push(base);
-        domain["populations"][0]["members"] = serde_json::json!(admitted);
-        let document = domain.to_string().into_bytes();
-        let fixture = crate::liveness::fixture(
-            document,
-            "",
-            "",
-            "always eventually holds(c.value = 3)",
-            &[("c", 0)],
-        );
-        let system = ModelSystem::new(
-            crate::counter::subject(
-                &fixture.package,
-                &fixture.documents,
-                fixture.initial.clone(),
-                &fixture.keys,
-                crate::counter::UNLIMITED,
-            )
-            .simulation,
-        )
-        .expect("admits");
-        let operations = system.operations();
-        let mut sorted = operations.clone();
-        sorted.sort_by(|a, b| (a.0, a.1.as_bytes()).cmp(&(b.0, b.1.as_bytes())));
-        assert_eq!(operations, sorted);
-        orders.push(
-            operations
-                .iter()
-                .map(|(_, name, _)| (*name).to_owned())
-                .collect::<Vec<_>>(),
-        );
+        seen[usize::from(subtype_first == Some(true))] = true;
     }
-    assert!(
-        orders.iter().all(|order| *order == orders[0]),
-        "neither declaration order nor the admitting type matters: {orders:?}"
+    assert_eq!(
+        seen,
+        [true, true],
+        "both orders of the identities are exercised"
     );
-    assert_eq!(orders[0].iter().filter(|name| *name == "inc").count(), 1);
-    assert_eq!(orders[0].len(), 3, "{:?}", orders[0]);
+}
+
+/// The operation names of a `Counter` subtype whose supertype `base` declares
+/// `inc` and `setTo` (reversed or not), with the types in `admitted` (`c`
+/// the subtype, `b` the supertype) admitted in that order, and whether the
+/// declaring identity of `zap` sorts before that of `inc`.
+fn operation_names(base_name: &str, reversed: bool, admitted: &str) -> (Vec<String>, bool) {
+    use qsl_eval::simulation::model::ModelSystem;
+    let counter_id = "ix://test/counter/Counter".to_owned();
+    let base_id = format!("ix://test/counter/{base_name}");
+    let mut domain: serde_json::Value =
+        serde_json::from_slice(&document_with_ranged_parameter()).expect("JSON");
+    let types = domain["types"].as_array_mut().expect("types");
+    let counter = types
+        .iter_mut()
+        .find(|node| node["identity"] == counter_id.as_str())
+        .expect("Counter");
+    let mut operations = counter["operations"].as_array().expect("ops").clone();
+    let mut zap = operations[0].clone();
+    if reversed {
+        operations.reverse();
+    }
+    let mut base = counter.clone();
+    base["operations"] = operations.into();
+    let mut base: serde_json::Value = serde_json::from_str(&base.to_string().replace(
+        "test/counter/Counter/",
+        &format!("test/counter/{base_name}/"),
+    ))
+    .expect("JSON");
+    base["identity"] = base_id.clone().into();
+    zap["identity"] = "ix://test/counter/Counter/zap".into();
+    zap["name"] = "zap".into();
+    zap["frame"]["modifies"] = serde_json::json!([format!("{base_id}/value")]);
+    counter["supertypes"] = serde_json::json!([base_id]);
+    counter["fields"] = serde_json::json!([]);
+    counter["operations"] = serde_json::json!([zap]);
+    types.push(base);
+    let members: Vec<&str> = admitted
+        .chars()
+        .map(|kind| {
+            if kind == 'c' {
+                counter_id.as_str()
+            } else {
+                base_id.as_str()
+            }
+        })
+        .collect();
+    domain["populations"][0]["members"] = serde_json::json!(members);
+    let fixture = crate::liveness::fixture(
+        domain.to_string().into_bytes(),
+        "",
+        "",
+        "always eventually holds(c.value = 3)",
+        &[("c", 0)],
+    );
+    let system = ModelSystem::new(
+        crate::counter::subject(
+            &fixture.package,
+            &fixture.documents,
+            fixture.initial.clone(),
+            &fixture.keys,
+            crate::counter::UNLIMITED,
+        )
+        .simulation,
+    )
+    .expect("admits");
+    // The ids of the declaring types of `zap` and of the inherited `inc`
+    // follow the order the operations were declared in; read them by name.
+    let operations = system.operations();
+    let id_of = |wanted: &str| {
+        operations
+            .iter()
+            .find(|(_, name, _)| *name == wanted)
+            .map(|(id, ..)| *id)
+            .expect("the operation is listed")
+    };
+    let first = id_of("zap") < id_of("inc");
+    (
+        operations
+            .iter()
+            .map(|(_, name, _)| (*name).to_owned())
+            .collect(),
+        first,
+    )
 }
