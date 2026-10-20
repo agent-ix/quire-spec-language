@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-290
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: depends_on
   - target: ix://agent-ix/quire-specification/FR-353
     type: depends_on
   - target: ix://agent-ix/quire-specification/FR-439
@@ -30,10 +32,9 @@ relationships:
 
 A proof under resolved model `M` transfers to concurrent code only under the
 preconditions MX-1 to MX-4 below, which QSL states as preconditions of the
-code claim (ADR-025 §8). EN-1's pre-check SHALL warn of each load-buffering
-shape of its subject, whatever the model a request resolves (ADR-025 MX-4);
-S3 emits no such warning, since which locations are shared is decided only at
-request time (MA-1). EN-1's provider manifest SHALL advertise the
+code claim (ADR-025 §8). For an item resolved to `ra`, EN-1's pre-check SHALL
+warn of each load-buffering shape of its subject (ADR-025 MX-4). EN-1's
+provider manifest SHALL advertise the
 memory models it decides, and QSL's `route` candidate step (FR-075) SHALL
 give an item over a subject with a weak `parallel` only candidates that
 advertise its resolved model (ADR-025 MX-7).
@@ -44,20 +45,24 @@ A verification operator has proved a claim under `ra` and wants to rely on
 it for their Rust code. They read which conditions the code must meet: one
 atomic access per attempted operation, at least the declared ordering, race
 freedom for plain fields, and a target that compiles RC11 soundly. The
-compiler warns them where a relaxed load followed by a store needs a target
-that excludes load buffering.
+item's terminal record warns them where a relaxed load followed by a store
+needs a target that excludes load buffering, once the request has decided
+which locations are shared.
 
 ## Inputs
 
 - The checked protocol clause with its classified accesses (FR-220) and
   source defaults (FR-219).
+- The item's resolved memory model (ADR-025 MM-2) and EN-1's instantiated
+  footprints with the shared locations they decide (ADR-025 MA-1).
 - The registered backends and their QSpec FR-290 provider manifests
   (FR-075).
 
 ## Outputs
 
-- The warning `memory.load-buffering-shape{load, store}` on the item's
-  FR-331 terminal record, naming the load and the store.
+- For an item resolved to `ra`, the warning
+  `memory.load-buffering-shape{load, store}` on the item's FR-331 terminal
+  record, naming the load and the store.
 - EN-1's provider manifest entry carrying `memory_models` `sc`, `tso` and
   `ra` (QSpec FR-331).
 - The candidate set of an item over a subject with a weak `parallel`.
@@ -98,15 +103,23 @@ function against its operation's contract (ADR-017 AR-5):
 
 ## Behavior
 
-- When a branch of a `parallel` has a `relaxed` or non-atomic load followed
-  in program order by a store to another shared location, with no `acquire`
-  or `seq_cst` load and no `acquire` fence between them, EN-1's pre-check
-  SHALL report the warning `memory.load-buffering-shape{load, store}`, naming
-  the load and the store, in the `warnings` of the item's FR-331 terminal
-  record, after it has decided the shared locations (ADR-025 MA-1). The
-  warning SHALL leave the item's verdict unchanged. S3 SHALL emit no
-  load-buffering warning and SHALL leave the package's checked result
-  unaffected by the shape.
+- When an item's resolved model is `ra` and a branch of a `parallel` has a
+  `relaxed` or non-atomic load followed in program order by a store to
+  another shared location, with no `acquire` or `seq_cst` load and no
+  `acquire` fence between them, EN-1's pre-check SHALL add one
+  `memory.load-buffering-shape{load, store}` warning, naming the load and the
+  store, to the `warnings` of the item's FR-331 terminal record for each
+  distinct (load, store) shape.
+- The warning SHALL be outside the counterexample, its replay identity and
+  the obligation identity, and SHALL change no verdict, as FR-133 states of
+  its hint.
+- EN-1 SHALL add no such warning to an item resolved to `sc` or `tso`.
+
+Note. Which locations are shared is decided only at request time (ADR-025
+MA-1), so EN-1's pre-check, not S3, reports the shape; a shared location
+exists only in a weak `parallel`, and the load-buffering condition of MX-4
+applies only under `ra`.
+
 - EN-1's provider manifest descriptor SHALL carry the `memory_models` member
   (QSpec FR-331) listing `sc`, `tso` and `ra` by the names of the `memory`
   clause.
@@ -122,8 +135,8 @@ function against its operation's contract (ADR-017 AR-5):
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-226-AC-1 | For a request over a subject with a branch `r1 := x (relaxed); y := 1 (relaxed)` on shared locations `x` and `y`, EN-1's pre-check puts the warning `memory.load-buffering-shape{load, store}` naming both attempts in the item's terminal record `warnings`, and the verdict is unchanged; S3 checks the package with no warning. With the load `acquire`, or an `acquire` fence between the two, no warning is reported. A load followed by a store to the same location reports none, and neither does a branch whose load or store touches a location no other branch accesses. | Test (TC-671) |
-| FR-226-AC-2 | EN-1's registered provider manifest descriptor carries `memory_models` `sc`, `tso` and `ra` (QSpec FR-331-AC-30). | Test (TC-671) |
+| FR-226-AC-1 | For a request resolved to `ra` over a package with branch `t` (`r1 := x (relaxed); y := 1 (relaxed)`) and branch `s` (`y := 0 (relaxed); x := 1 (relaxed)`), which makes `x` and `y` shared, EN-1's pre-check puts one `memory.load-buffering-shape{load, store}` warning naming both `t` attempts in the item's terminal record `warnings`, and the record's value, label, basis, counterexample and obligation identity equal those of the same request with the load made `acquire`. With the load `acquire`, or an `acquire` fence between the two, no warning is reported. A load followed by a store to the same location reports none; neither does a variant whose load is of a location only `t` accesses, nor one whose store is to a location only `t` accesses. The same package resolved to `sc` or `tso` reports none. | Test (TC-671) |
+| FR-226-AC-2 | EN-1's registered provider manifest descriptor carries `memory_models` `sc`, `tso` and `ra` (QSpec FR-331-AC-30); a descriptor without the member advertises `sc` only. | Test (TC-671) |
 | FR-226-AC-3 | With EN-1 and a test candidate whose manifest advertises only `sc`, an item over `SB` resolved to `tso` has the candidate set `{EN-1}`. With the test candidate alone, the item's candidate set is empty, and the `sc` request over `SB` has the candidate set `{test candidate}`. | Test (TC-671) |
 
 ## Dependencies
@@ -131,7 +144,8 @@ function against its operation's contract (ADR-017 AR-5):
 - ADR-025 §8 MX-1 to MX-7; ADR-017 AR-2, AR-5.
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md)
   (candidates and manifests), FR-219, FR-220, FR-224.
-- QSpec owns the provider manifest's memory-model member and the routing by
+- QSpec owns the provider manifest's memory-model member and the warning's
+  wire form (QSpec FR-331) and the routing by
   resolved model (QSpec FR-439, FR-290) and the abstraction relation (QSpec
   FR-353).
 

@@ -16,10 +16,13 @@ Scope: FR-226-AC-1 to FR-226-AC-3.
 
 ## Test Procedure
 
-1. Check the package of the branch `r1 := x (relaxed); y := 1 (relaxed)` at S3
-   and run EN-1's pre-check on a request over it, then its `acquire` and
-   fenced variants, a same-location load and store, and a variant whose
-   locations no other branch accesses.
+1. Check the package of branch `t` (`r1 := x (relaxed); y := 1 (relaxed)`)
+   with branch `s` (`y := 0 (relaxed); x := 1 (relaxed)`), which makes `x` and
+   `y` shared, and run EN-1's pre-check on a request resolved to `ra`. Repeat
+   with the load `acquire`, with an `acquire` fence between the two, with a
+   same-location load and store, with the load of a location only `t`
+   accesses, and with the store to a location only `t` accesses. Run the
+   first request resolved to `sc` and to `tso`.
 2. Read EN-1's registered provider manifest.
 3. Compute the candidate set of a `tso` item over `SB` with EN-1 and an
    `sc`-only test candidate registered, then with the test candidate alone;
@@ -29,9 +32,10 @@ Tag the tests `#[trace("TC-671", "FR-226-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: S3 checks with no warning; EN-1's pre-check puts one
-  `memory.load-buffering-shape` warning naming both attempts in the terminal
-  record `warnings`, the verdict unchanged; no warning in the other variants.
+- Step 1: under `ra` one `memory.load-buffering-shape` warning naming both
+  attempts in the terminal record `warnings`, the record equal to the
+  `acquire` variant's apart from the warning; no warning in the other `ra`
+  variants; none under `sc` or `tso`.
 - Step 2: `memory_models` `sc`, `tso` and `ra`.
 - Step 3: `{EN-1}`; the empty set; `{test candidate}` for the `sc`
   request.
