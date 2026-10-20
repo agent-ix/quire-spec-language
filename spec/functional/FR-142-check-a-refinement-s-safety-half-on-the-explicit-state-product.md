@@ -83,7 +83,7 @@ pub fn check_refinement(
 ## Behavior
 
 - The engine SHALL pass `check_initial` and `check_step` the refinement's concrete `ModelSystem` (the system whose states it explores) and its abstract system.
-- A `StepVerdict::Fault` from FR-141 SHALL end the run with a fault outcome that FR-144 settles `failed` (QSpec FR-383), and writes no counterexample for it. A `StepVerdict::Stopped` SHALL end the run with `Stopped{ResourceExhausted, limit}` naming that `EvaluationMeter` or `MaxCandidates` limit and its value, which FR-144 settles by FR-127's map as `incomplete`; it writes no counterexample.
+- A `StepVerdict::Fault` from FR-141 SHALL end the run with a fault outcome that FR-144 settles `failed` (QSpec FR-383), and writes no counterexample for it. A `StepVerdict::Stopped` SHALL end the run with `Stopped{ResourceExhausted, limit}` naming that `EvaluationMeter` or `MaxCandidates` limit and its value, which FR-144 settles by FR-127's V-7 row (execution `resource-incomplete`, `Incomplete(LimitReached)`, category incomplete); it writes no counterexample.
 
 ### Subjects and pre-check
 

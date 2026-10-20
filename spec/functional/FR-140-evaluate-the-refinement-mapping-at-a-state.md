@@ -157,7 +157,8 @@ step row, or a history update.
   for a mapped state to hold.
 - `map_state` SHALL read the rows in a fixed order that does not depend on
   the order they were written in: the populations in ascending node-key digest order of
-  their declarations in the checked graph (QSpec FR-375), within each population its objects in ascending key order, and per
+  the row's first named declaration, the abstract population (QSpec FR-375;
+  FR-146 uses the same wording for `steps`), within each population its objects in ascending key order, and per
   object its type's object row and then that type's field rows in ascending
   field name as UTF-8 bytes (QSpec FR-377 "Failure precedence").
   `map_state` SHALL return the first `MappingFailure::Undefined` in that
@@ -213,6 +214,7 @@ step row, or a history update.
 | FR-140-AC-12 | Over `RingIsQueue` with the abstract `Queue` also declaring `cells: Set<Reference<Cell>>[0, 2]`, an object row `Cell` from `Slot`, `population Q::cells from R::slots` and the row `cells = R::slots`, the state of AC-2 maps `cells` to the two `Cell` references with keys `s0` and `s1`, in key order, each of type `Cell`, not `Slot`. | Test (TC-1086) |
 | FR-140-AC-13 | Fixture `TwoRings`: `RingIsQueue` with the `rings` universe `{a, b}` and the `slots` universe `{a0, a1, b0, b1}` (`a0`, `a1` in ring `a` with indices 0 and 1; `b0`, `b1` in ring `b` with indices 0 and 1) and the `AC-3` `only` condition (`s.ring = self`), so `items` is undefined on both rings at `size >= 1`, and `Queue` also declaring `x: Int[0, 1]` and `y: Int[0, 1]` with rows `x = g(self.head)` and `y = g(self.head)`, `g` being FR-141-AC-7's function with parameter `Int[0, 1]`, so both are undefined at `head = 0`. At the state with `head = 0` and `size = 1` on both rings (two slots satisfy `s.ring = self` per ring), `map_state` reports the undefined `items` row of object `a`, not `b`; with `items` made defined (the original `items` row) at `head = 0`, `size = 1` it reports object `a`'s field `x` before `y` (UTF-8 byte order); writing the population, object and field rows in any other source order changes neither the order nor the reported row, object or cause. | Test (TC-1086) |
 | FR-140-AC-14 | A broken evaluator invariant while reading a row returns `MappingFailure::Fault` with its catalog code at once, even when an earlier row was undefined, and never `Undefined` or `Undetermined`. | Test (TC-1086) |
+| FR-140-AC-15 | Fixture `TwoPopulations`: a refinement with two populations `P` and `Q` whose first named declarations (the abstract populations) have node-key digest order opposite to their `DeclarationKey` byte order, each with a row that evaluates undefined at the state. `map_state` returns the `MappingFailure::Undefined` naming the row and object of the population first in digest order, and a state with only the other population undefined returns that one. | Test (TC-545) |
 
 ## Dependencies
 
