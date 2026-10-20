@@ -81,7 +81,15 @@ exactly as they were.
   (ADR-016 SC-2), refusing `ill_typed`/`type-mismatch` otherwise.
 - A history field SHALL be readable only inside the declaring refinement.
   A reference to it from any other clause SHALL refuse
-  `missing_declaration`/`missing-name`.
+  `missing_declaration`/`missing-name`. The names that refuse `missing-name`
+  are the history field names of every refinement of the unit: a read of
+  `x.f` where the receiver's type declares no field `f`, and `f` is a history
+  field name of the unit, refuses `missing-name`, and so does an unrelated
+  undeclared field of another type that shares such a name. Any other
+  unknown field refuses `ill_typed`/`type-mismatch` (FR-363-AC-2).
+- An update that reads a history field outside `pre(...)` SHALL read the
+  value the pre-state holds, because the post-state's value is what the
+  update computes; S3 SHALL NOT refuse it.
 
 ### Layer 5
 
@@ -105,6 +113,13 @@ exactly as they were.
 - Either way the step SHALL remain a step of the behaviour (ADR-020 AX-3).
 - History values SHALL be a function of the concrete prefix, and SHALL be
   read by the mapping (FR-140) and the product key (FR-142) only.
+- The product key SHALL encode the history values in the order of
+  `HistoryValues`: by object (its population, then its key), then by field
+  name, each with its typed canonical value. QSpec FR-378 words this order as
+  "history-row order"; this requirement's order is the one the key uses.
+- History values SHALL play no part in the candidate rule: FR-141's
+  `NoAbstractMatch` for an empty post candidate set of a hidden-field
+  abstract side is unchanged by a history row.
 
 ## Acceptance Criteria
 
@@ -128,7 +143,7 @@ and not its range, so the range is left only at run time.
 | FR-138-AC-2 | Refusals: `history Impl::Register.value: …` (`invalid_model_binding`/`conflicting-binding`); `last: Int` with no bounds (`ill_typed`/`type-mismatch`); initial literal `true` or `5`, a non-member of `Int[0, 1]` (each `ill_typed`/`type-mismatch` at the literal); two `on write` updates (`invalid_model_binding`/`conflicting-binding`); `on Impl::Register::erase` (`missing_declaration`/`missing-name`); an invariant of `Impl::Register` reading `self.last` (`missing_declaration`/`missing-name`). | Test (TC-543) |
 | FR-138-AC-3 | Along `write(r, 1)`, `write(r, 0)`, `write(r, 1)` from the initial state, `step_history` gives `last` = 0, 1, 0 after each step. | Test (TC-543) |
 | FR-138-AC-4 | With a second history field `writes: Int[0, 1] = 0 { on Impl::Register::write: pre(self.writes) + 1; }` added, `step_history` along `write(r, 0)`, `write(r, 0)` gives `writes` 1 after the first step and returns `MappingFailure::Undetermined(MappingUndetermined)` naming `writes`, `r` and the second step, whose post-state is still the concrete successor `ModelSystem` gives. | Test (TC-543) |
-| FR-138-AC-5 | With a second history field `inv: Int[0, 1] = 0 { on Impl::Register::write: 1 / x; }` added, `step_history` along `write(r, 1)` gives `inv` 1, and along `write(r, 0)` returns `MappingFailure::Undefined` naming `inv`, `r`, the step and cause `division-by-zero`; the post-state is still the concrete successor `ModelSystem` gives. | Test (TC-554) |
+| FR-138-AC-5 | With a second history field `inv: Int[0, 1] = 0 { on Impl::Register::write: (1 mod x) + 1; }` added, `step_history` along `write(r, 1)` gives `inv` 1 (integer `/` has no typing in a refinement row, which selects no division law, so the fixture spells the intent with `mod`), and along `write(r, 0)` returns `MappingFailure::Undefined` naming `inv`, `r`, the step and cause `division-by-zero`; the post-state is still the concrete successor `ModelSystem` gives. | Test (TC-554) |
 
 ## Dependencies
 
