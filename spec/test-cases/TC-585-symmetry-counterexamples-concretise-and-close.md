@@ -20,6 +20,7 @@ Fixtures: ADR-021 §7.1's annotated subject; the `Token` unit of FR-161-AC-2.
 
 1. Concretise the §7.1 `fair weak whole` lasso and replay it.
 2. Run the `Token` claim with symmetry, concretise its lasso and replay it.
+3. Run the same claim with only the first initial state.
 
 Tag the tests `#[trace("TC-585", "FR-161-AC-n")]`.
 
@@ -27,3 +28,4 @@ Tag the tests `#[trace("TC-585", "FR-161-AC-n")]`.
 
 - Step 1: `upd(b)` three times through `(0,1,0)`, `(0,2,0)`, `(0,0,0)`, one pass; `reproduced-with-evaluated-witness`.
 - Step 2: empty stem, loop `pass(b)`, `pass(a)`; it replays.
+- Step 3: `inconclusive`, `SymmetryBroken{InitialStatesNotClosed{0, (a b)}}`, no state expanded.
