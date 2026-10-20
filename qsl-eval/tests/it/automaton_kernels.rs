@@ -195,6 +195,54 @@ fn the_monitor_trims_states_with_no_infinite_run() {
 }
 
 #[test]
+fn the_monitor_reads_the_viable_states_of_the_safety_automaton_itself() {
+    // ADR-023 HC-2's safety automaton: the states with an infinite run, not
+    // their subsets. On `P` the initial state moves to `live`, which loops,
+    // and to `end`, which has no run; on not-`P` it moves to `end` only.
+    let p = Guard::always().requiring(atom(0));
+    let not_p = Guard::always().forbidding(atom(0));
+    let mut builder = GbaBuilder::new();
+    let live = builder.add_state();
+    let end = builder.add_state();
+    for (from, guard, to) in [
+        (Gba::INITIAL, p, live),
+        (Gba::INITIAL, p, end),
+        (Gba::INITIAL, not_p, end),
+        (live, Guard::always(), live),
+    ] {
+        builder
+            .add_transition(from, guard, to)
+            .expect("both states were added");
+    }
+    let mut monitor = Monitor::bad_prefix(builder.build(), 16).expect("a safety automaton");
+    assert_eq!(monitor.viable_initial(), Ok(Some(Gba::INITIAL)));
+    assert_eq!(
+        monitor.viable_successors(Gba::INITIAL, letter(&[0])),
+        Ok(vec![live])
+    );
+    assert_eq!(
+        monitor.viable_successors(Gba::INITIAL, letter(&[])),
+        Ok(vec![])
+    );
+    assert_eq!(monitor.viable_successors(live, letter(&[])), Ok(vec![live]));
+    assert_eq!(
+        monitor.viable_successors(foreign_state(), letter(&[])),
+        Err(AutomatonError::UnknownState {
+            state: foreign_state()
+        })
+    );
+
+    // An initial state with no run is not viable.
+    let mut dead_end = GbaBuilder::new();
+    let end = dead_end.add_state();
+    dead_end
+        .add_transition(Gba::INITIAL, Guard::always(), end)
+        .expect("both states were added");
+    let mut monitor = Monitor::bad_prefix(dead_end.build(), 16).expect("a safety automaton");
+    assert_eq!(monitor.viable_initial(), Ok(None));
+}
+
+#[test]
 fn a_monitor_is_refused_for_an_automaton_with_acceptance_sets() {
     let (gba, _, _) = negated_liveness();
     assert_eq!(

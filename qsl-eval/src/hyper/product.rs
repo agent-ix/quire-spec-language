@@ -32,26 +32,22 @@
 //! `TransitionSystem` stop carries a catalog code only.
 
 use std::cell::{Ref, RefCell};
-use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use qsl_foundation::digest::DigestRecord;
-use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
+use qsl_foundation::InternalFault;
 use qsl_semantics::check::{CheckedFormula, FormulaNodeId, TemporalProfile};
 use quire_canonical::{Encode, Sink, Writer};
-use quire_exact::{Cancel, CancelCause, Meter, ScalarLimits};
+use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use crate::automaton::{
-    translate_negation, Atom, AutomatonError, Letter, PropertyAutomaton, StateId,
-};
-use crate::hyper::seam::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
+use crate::automaton::{translate_negation, AutomatonError, PropertyAutomaton, StateId};
+use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading};
+use crate::hyper::seam::{HyperLetters, ParameterBinding, StepLabel, StepMatch};
+use crate::hyper::witness::{Partner, WitnessSet};
 use crate::simulation::model::{ModelFinding, ModelKey, ModelSimState, ModelSystem};
 use crate::simulation::{EncodingRefusal, Expansion, ExpansionStop, TransitionSystem};
-use crate::temporal::{AtomReading, UndefinedCause};
-
-/// `resource_exhausted`/`insufficient-next-charge`, the code of an expansion
-/// that stopped; [`Halt`] records which budget it was.
-const STOPPED: CatalogCode = CatalogCode::new("resource_exhausted", "insufficient-next-charge");
+use crate::temporal::UndefinedCause;
 
 /// The property component of a product state.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -67,7 +63,12 @@ pub enum Property {
         atom: FormulaNodeId,
         /// Why it has no value.
         cause: UndefinedCause,
+        /// For an HP-3 product, the existential tuple whose joint position
+        /// the letter was read at: how it was reached. `None` for HP-2.
+        partner: Option<Rc<Partner>>,
     },
+    /// HP-3: the witness set `X` of the universal tuple (ADR-023 HC-2).
+    Witnesses(WitnessSet),
 }
 
 /// A product state: the components' model states and the property state.
@@ -148,6 +149,43 @@ enum PropertyKey {
     After(usize),
     Dead,
     Undefined,
+    Witnesses(Vec<(Vec<ModelKey>, usize)>),
+}
+
+impl HyperKey {
+    /// The key of `state`, whose components are over `systems` in quantifier
+    /// order.
+    pub(super) fn of(systems: &[&ModelSystem<'_>], state: &HyperState) -> Self {
+        Self {
+            components: systems
+                .iter()
+                .zip(&state.components)
+                .map(|(system, component)| system.key(component))
+                .collect(),
+            property: match &state.property {
+                Property::After(at) => PropertyKey::After(at.index()),
+                Property::Dead => PropertyKey::Dead,
+                Property::Undefined { .. } => PropertyKey::Undefined,
+                Property::Witnesses(set) => PropertyKey::Witnesses(
+                    set.members()
+                        .iter()
+                        .map(|member| {
+                            let offset = state.components.len();
+                            let keys = member
+                                .states()
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(index, held)| {
+                                    systems.get(offset + index).map(|system| system.key(held))
+                                })
+                                .collect();
+                            (keys, member.automaton().index())
+                        })
+                        .collect(),
+                ),
+            },
+        }
+    }
 }
 
 impl Encode for HyperKey {
@@ -162,13 +200,24 @@ impl Encode for HyperKey {
         }
         writer.end_array()?;
         writer.begin_array()?;
-        match self.property {
+        match &self.property {
             PropertyKey::After(index) => {
                 writer.string("after")?;
-                writer.integer(i128::try_from(index).unwrap_or(i128::MAX))?;
+                writer.integer(i128::try_from(*index).unwrap_or(i128::MAX))?;
             }
             PropertyKey::Dead => writer.string("dead")?,
             PropertyKey::Undefined => writer.string("undefined")?,
+            PropertyKey::Witnesses(members) => {
+                writer.string("witnesses")?;
+                for (components, automaton) in members {
+                    writer.begin_array()?;
+                    for component in components {
+                        component.encode_into(writer)?;
+                    }
+                    writer.integer(i128::try_from(*automaton).unwrap_or(i128::MAX))?;
+                    writer.end_array()?;
+                }
+            }
         }
         writer.end_array()?;
         writer.end_array()
@@ -207,9 +256,27 @@ pub enum HyperFinding {
         /// Why it has no value.
         cause: UndefinedCause,
     },
-    /// `μ_U` was refused or incomplete on a joint step: the successor
-    /// relation is not exactly known.
+    /// `μ_U` or `μ_E` was refused or incomplete on a joint step: the
+    /// successor relation is not exactly known.
     MatchRefused,
+    /// HP-3: `μ_E` has no value on a joint step of a witness set's member
+    /// against a universal step (ADR-023 HV-8). The step is no successor.
+    ExistentialMatchUndefined {
+        /// The joint step, every component's.
+        step: HyperTransition,
+        /// The digest of each component's post-state, in quantifier order.
+        posts: Vec<DigestRecord>,
+        /// The index of the conjunct among the existential conjuncts.
+        conjunct: usize,
+        /// Why it has no value.
+        cause: UndefinedCause,
+        /// How the member's existential tuple was reached.
+        partner: Rc<Partner>,
+    },
+    /// HP-3: a contract conjunction an existential member's expansion
+    /// evaluated undefined or refused. FR-177 states no verdict for it, so the
+    /// successor relation of the member is not exactly known.
+    MemberContract,
 }
 
 /// Why a product's exploration ended before its frontier emptied.
@@ -224,6 +291,9 @@ pub enum Halt {
     },
     /// An atom's evaluation exhausted the meter.
     Meter,
+    /// HP-3: a witness set would hold more members than `max_witness_set`
+    /// (FR-184); the count is the size it would have reached.
+    WitnessSet(u64),
     /// The caller cancelled the run.
     Cancelled(CancelCause),
     /// The automaton reached `max_automaton_states`.
@@ -257,16 +327,6 @@ pub struct HyperInputs<'r, 's> {
     pub cancel: &'r Cancel,
 }
 
-/// One joint position's letter, or the first atom that has no value there.
-#[derive(Clone, Debug)]
-enum Reading {
-    Defined(Letter),
-    Undefined {
-        atom: FormulaNodeId,
-        cause: UndefinedCause,
-    },
-}
-
 /// Where the automaton is before a joint position is read.
 #[derive(Clone, Copy)]
 enum Before {
@@ -278,18 +338,10 @@ enum Before {
 /// The self-composition of a hyper clause's subjects as a
 /// [`TransitionSystem`] (ADR-023 HC-1).
 pub struct HyperProduct<'r, 's> {
-    systems: Vec<&'r ModelSystem<'s>>,
-    instance: &'r [ParameterBinding],
-    letters: &'r dyn HyperLetters,
-    matcher: Option<&'r dyn StepMatch>,
-    atoms: Vec<FormulaNodeId>,
+    joint: Joint<'r, 's>,
     automaton: RefCell<PropertyAutomaton>,
     start: StateId,
-    readings: RefCell<BTreeMap<Vec<DigestRecord>, Reading>>,
     initial: Vec<HyperState>,
-    meter: ScalarLimits,
-    cancel: &'r Cancel,
-    halt: RefCell<Option<Halt>>,
 }
 
 impl<'r, 's> HyperProduct<'r, 's> {
@@ -305,18 +357,19 @@ impl<'r, 's> HyperProduct<'r, 's> {
             translate_negation(inputs.body, inputs.profile, inputs.max_automaton_states)?;
         let start = automaton.initial()?;
         Ok(Self {
-            systems: inputs.systems,
-            instance: inputs.instance,
-            letters: inputs.letters,
-            matcher: inputs.matcher,
-            atoms: automaton.atoms().to_vec(),
+            joint: Joint::new(
+                inputs.systems,
+                inputs.instance,
+                inputs.letters,
+                inputs.matcher,
+                None,
+                automaton.atoms().to_vec(),
+                inputs.meter,
+                inputs.cancel,
+            ),
             automaton: RefCell::new(automaton),
             start,
-            readings: RefCell::new(BTreeMap::new()),
             initial: Vec::new(),
-            meter: inputs.meter,
-            cancel: inputs.cancel,
-            halt: RefCell::new(None),
         })
     }
 
@@ -328,11 +381,15 @@ impl<'r, 's> HyperProduct<'r, 's> {
     ///
     /// The stop the exploration engine takes; [`Self::take_halt`] says why.
     pub fn start(&mut self) -> Result<(), ExpansionStop> {
-        let lists: Vec<Vec<ModelSimState>> =
-            self.systems.iter().map(|system| system.initial()).collect();
+        let lists: Vec<Vec<ModelSimState>> = self
+            .joint
+            .systems
+            .iter()
+            .map(|system| system.initial())
+            .collect();
         let mut initial = Vec::new();
         for components in cartesian(&lists) {
-            let reading = self.reading(&components)?;
+            let reading = self.joint.reading(&components)?;
             for property in self.step(Before::Start, &reading)? {
                 initial.push(HyperState {
                     components: components.clone(),
@@ -346,7 +403,7 @@ impl<'r, 's> HyperProduct<'r, 's> {
 
     /// Why the exploration stopped, once; `None` when it did not stop here.
     pub fn take_halt(&self) -> Option<Halt> {
-        self.halt.borrow_mut().take()
+        self.joint.take_halt()
     }
 
     /// The automaton of the negated body: its acceptance sets and the states
@@ -357,82 +414,7 @@ impl<'r, 's> HyperProduct<'r, 's> {
 
     /// The `ModelSystem` of each trace variable, in quantifier order.
     pub fn systems(&self) -> &[&'r ModelSystem<'s>] {
-        &self.systems
-    }
-
-    /// Record why the run stops, keeping the first reason, and return the stop
-    /// the exploration engine takes.
-    fn record(&self, halt: Halt) -> ExpansionStop {
-        let mut slot = self.halt.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(halt);
-        }
-        ExpansionStop {
-            cause: STOPPED,
-            limit: None,
-        }
-    }
-
-    fn poll(&self) -> Result<(), ExpansionStop> {
-        if self.cancel.poll() {
-            if let Some(source) = self.cancel.cause() {
-                return Err(self.record(Halt::Cancelled(source)));
-            }
-        }
-        Ok(())
-    }
-
-    /// The FR-101 state-key digest of each component.
-    fn digests(&self, components: &[ModelSimState]) -> Result<Vec<DigestRecord>, ExpansionStop> {
-        self.systems
-            .iter()
-            .zip(components)
-            .map(|(system, state)| {
-                system
-                    .state_key(state)
-                    .map(|(_, digest)| digest)
-                    .map_err(|refusal| self.record(Halt::Encoding(refusal)))
-            })
-            .collect()
-    }
-
-    /// The letter of the joint position `components`, read once per tuple of
-    /// model states.
-    fn reading(&self, components: &[ModelSimState]) -> Result<Reading, ExpansionStop> {
-        let digests = self.digests(components)?;
-        if let Some(known) = self.readings.borrow().get(&digests) {
-            return Ok(known.clone());
-        }
-        let states: Vec<&ModelSimState> = components.iter().collect();
-        let mut letter = Letter::default();
-        let mut reading = None;
-        for (index, atom) in self.atoms.iter().enumerate() {
-            self.poll()?;
-            let mut meter = Meter::new(self.meter);
-            let value = self
-                .letters
-                .atom(*atom, self.instance, &states, &mut meter)
-                .map_err(|_| self.record(Halt::Meter))?;
-            match value {
-                AtomReading::True => {
-                    let atom = Atom::new(index).map_err(|_| {
-                        self.record(Halt::Fault(InternalFault::new(
-                            "hyper-product",
-                            "atom-in-range",
-                        )))
-                    })?;
-                    letter = letter.with(atom);
-                }
-                AtomReading::False => {}
-                AtomReading::Undefined(cause) => {
-                    reading = Some(Reading::Undefined { atom: *atom, cause });
-                    break;
-                }
-            }
-        }
-        let reading = reading.unwrap_or(Reading::Defined(letter));
-        self.readings.borrow_mut().insert(digests, reading.clone());
-        Ok(reading)
+        &self.joint.systems
     }
 
     /// The property states a joint position reads into, from `before`.
@@ -442,6 +424,7 @@ impl<'r, 's> HyperProduct<'r, 's> {
                 return Ok(vec![Property::Undefined {
                     atom: *atom,
                     cause: cause.clone(),
+                    partner: None,
                 }])
             }
             Reading::Defined(letter) => *letter,
@@ -456,8 +439,8 @@ impl<'r, 's> HyperProduct<'r, 's> {
             .borrow_mut()
             .successors(from, letter)
             .map_err(|error| match error {
-                AutomatonError::StateLimit { limit } => self.record(Halt::Automaton(limit)),
-                _ => self.record(Halt::Fault(InternalFault::new(
+                AutomatonError::StateLimit { limit } => self.joint.record(Halt::Automaton(limit)),
+                _ => self.joint.record(Halt::Fault(InternalFault::new(
                     "hyper-product",
                     "a-reached-automaton-state-expands",
                 ))),
@@ -468,60 +451,7 @@ impl<'r, 's> HyperProduct<'r, 's> {
             targets.into_iter().map(Property::After).collect()
         })
     }
-
-    /// `μ_U` over `step`, or a finding when it has no value or was refused.
-    fn matched(&self, step: &HyperTransition) -> Result<Matched, ExpansionStop> {
-        let Some(matcher) = self.matcher else {
-            return Ok(Matched::Holds);
-        };
-        self.poll()?;
-        let labels = step.labels();
-        let mut meter = Meter::new(self.meter);
-        Ok(
-            match matcher.universal(self.instance, &labels, &mut meter) {
-                Ok(MatchReading::Holds) => Matched::Holds,
-                Ok(MatchReading::Fails) => Matched::Fails,
-                Ok(MatchReading::Undefined { conjunct, cause }) => {
-                    Matched::Undefined { conjunct, cause }
-                }
-                Ok(MatchReading::Refused) | Err(_) => Matched::Refused,
-            },
-        )
-    }
 }
-
-/// What `μ_U` made of one joint step.
-enum Matched {
-    Holds,
-    Fails,
-    Undefined {
-        conjunct: usize,
-        cause: UndefinedCause,
-    },
-    Refused,
-}
-
-/// Every tuple that takes one element of each list, in the order of the
-/// lists: the last list varies fastest. No list gives no tuple but the empty
-/// one; an empty list gives none.
-pub fn cartesian<T: Clone>(lists: &[Vec<T>]) -> Vec<Vec<T>> {
-    lists.iter().fold(vec![Vec::new()], |tuples, list| {
-        tuples
-            .into_iter()
-            .flat_map(|tuple| {
-                list.iter().map(move |element| {
-                    let mut next = tuple.clone();
-                    next.push(element.clone());
-                    next
-                })
-            })
-            .collect()
-    })
-}
-
-/// A component's step options out of its expansion: each enabled transition
-/// and its post-state, or the stutter step at a terminal component.
-type Options = Vec<(ComponentStep, ModelSimState)>;
 
 impl TransitionSystem for HyperProduct<'_, '_> {
     type State = HyperState;
@@ -534,26 +464,14 @@ impl TransitionSystem for HyperProduct<'_, '_> {
     }
 
     fn key(&self, state: &HyperState) -> HyperKey {
-        HyperKey {
-            components: self
-                .systems
-                .iter()
-                .zip(&state.components)
-                .map(|(system, component)| system.key(component))
-                .collect(),
-            property: match &state.property {
-                Property::After(at) => PropertyKey::After(at.index()),
-                Property::Dead => PropertyKey::Dead,
-                Property::Undefined { .. } => PropertyKey::Undefined,
-            },
-        }
+        HyperKey::of(&self.joint.systems, state)
     }
 
     fn successors(
         &self,
         state: &HyperState,
     ) -> Result<Expansion<HyperTransition, HyperState, HyperFinding>, ExpansionStop> {
-        self.poll()?;
+        self.joint.poll()?;
         let before = match &state.property {
             // The first phase ends at this state; nothing follows it.
             Property::Undefined { .. } => {
@@ -564,67 +482,39 @@ impl TransitionSystem for HyperProduct<'_, '_> {
             }
             Property::Dead => Before::Dead,
             Property::After(at) => Before::At(*at),
+            Property::Witnesses(_) => {
+                return Err(self.joint.record(Halt::Fault(InternalFault::new(
+                    "hyper-product",
+                    "a-self-composition-state-has-no-witness-set",
+                ))))
+            }
         };
         let mut findings = Vec::new();
-        let mut options: Vec<Options> = Vec::with_capacity(self.systems.len());
-        for (component, (system, model)) in self.systems.iter().zip(&state.components).enumerate() {
-            let expansion = system.successors(model).inspect_err(|&stop| {
-                self.record(Halt::Expansion { component, stop });
-            })?;
+        let mut options: Vec<Options> = Vec::with_capacity(state.components.len());
+        for (component, model) in state.components.iter().enumerate() {
+            let stepping = self.joint.stepping(component, model)?;
             findings.extend(
-                expansion
-                    .findings
+                stepping
+                    .contracts
                     .into_iter()
-                    .filter(|finding| {
-                        finding.undefined_contract().is_some() || finding.is_refused_contract()
-                    })
                     .map(|finding| HyperFinding::Contract { component, finding }),
             );
-            let mut enabled: Vec<ModelTransition> = expansion
-                .successors
-                .iter()
-                .map(|(transition, _)| transition.clone())
-                .collect();
-            enabled.sort();
-            enabled.dedup();
             findings.push(HyperFinding::Enabled {
                 component,
-                transitions: enabled,
+                transitions: stepping.enabled,
             });
-            options.push(if expansion.successors.is_empty() {
-                vec![(ComponentStep::Stutter, model.clone())]
-            } else {
-                expansion
-                    .successors
-                    .into_iter()
-                    .map(|(transition, post)| (ComponentStep::Model(transition), post))
-                    .collect()
-            });
+            options.push(stepping.options);
         }
         // The joint steps in the canonical order of their identities, so the
         // first undefined `μ_U` is the first in canonical order (FR-176-AC-4).
-        let mut candidates: Vec<(Vec<u8>, HyperTransition, Vec<ModelSimState>)> = Vec::new();
-        for choice in cartesian(&options) {
-            let (steps, posts): (Vec<ComponentStep>, Vec<ModelSimState>) =
-                choice.into_iter().unzip();
-            let step = HyperTransition(steps);
-            let identity = IdentityLimits::default();
-            let order =
-                quire_canonical::to_vec(&step, quire_canonical::Limits::new(identity.input_bytes))
-                    .map_err(|error| {
-                        self.record(Halt::Encoding(EncodingRefusal::of(&error, identity)))
-                    })?;
-            candidates.push((order, step, posts));
-        }
-        candidates.sort_by(|left, right| left.0.cmp(&right.0));
         let mut successors = Vec::new();
-        for (_, step, posts) in candidates {
-            match self.matched(&step)? {
+        for (step, posts) in self.joint.joint_steps(&options)? {
+            match self.joint.matched_universal(&step)? {
                 Matched::Fails => continue,
                 Matched::Holds => {}
                 Matched::Undefined { conjunct, cause } => {
                     findings.push(HyperFinding::MatchUndefined {
-                        posts: self.digests(&posts)?,
+                        posts: self.joint.digests(&posts)?,
                         step,
                         conjunct,
                         cause,
@@ -636,7 +526,7 @@ impl TransitionSystem for HyperProduct<'_, '_> {
                     continue;
                 }
             }
-            let reading = self.reading(&posts)?;
+            let reading = self.joint.reading(&posts)?;
             for property in self.step(before, &reading)? {
                 successors.push((
                     step.clone(),
