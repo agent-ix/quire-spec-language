@@ -709,6 +709,9 @@ struct Unit {
     /// Each `temporal` clause's form, in source order, for FR-326's
     /// `check::temporal_clause` checker to resolve at S3.
     temporal_clauses: Vec<super::temporal_clause::TemporalDeclaration>,
+    /// Each `abstraction` declaration (FR-304), in source order, for
+    /// `CheckedGraph::abstraction` to check at S3.
+    abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
     /// Each `hyper` clause and `relation`, in source order, for
     /// `check::hyper_clause` to resolve at S3.
     hyper_clauses: Vec<super::hyper_clause::HyperDeclaration>,
@@ -741,6 +744,7 @@ impl Unit {
             population_bounds: Vec::new(),
             protocols: Vec::new(),
             temporal_clauses: Vec::new(),
+            abstractions: Vec::new(),
             hyper_clauses: Vec::new(),
             probabilistic: Vec::new(),
             terminals: Vec::new(),
@@ -752,6 +756,7 @@ impl Unit {
             let span = form.span();
             match form.into_form() {
                 DeclarationForm::Function(function) => unit.functions.push(*function),
+                DeclarationForm::Abstraction(abstraction) => unit.abstractions.push(*abstraction),
                 DeclarationForm::Alias(alias) => {
                     unit.declare(&alias.name, Declared::Alias(unit.aliases.len()));
                     unit.aliases.push(alias);
@@ -2606,11 +2611,28 @@ impl PackageDeclarations {
                 });
             }
         }
+        // FR-304: an `abstraction` declaration's `using` alias names one of
+        // the unit's profile selections.
+        for abstraction in &unit.abstractions {
+            if !selections
+                .profiles
+                .iter()
+                .any(|profile| profile.alias == abstraction.profile.alias)
+            {
+                errors.push(AssemblyError {
+                    cause: AssemblyCause::UndeclaredAlias {
+                        alias: abstraction.profile.alias.clone(),
+                    },
+                    span: abstraction.profile.span,
+                });
+            }
+        }
         // FR-361: S3 refuses each model construct the unit writes unless its
         // header selects the model profile.
         errors.extend(model_gate::refusals(
             &selections.profiles,
             &model_gate::Declarations {
+                abstractions: &unit.abstractions,
                 functions: &unit.functions,
                 state_clauses: &unit.state_clauses,
                 operation_bodies: &unit.operation_bodies,
@@ -3321,6 +3343,14 @@ impl PackageDeclarations {
             .collect();
         package.protocols = unit.protocols;
         package.temporal_clauses = unit.temporal_clauses;
+        // FR-451: a declaration is located under its own spaced name.
+        declared_type_spans.extend(unit.abstractions.iter().map(|abstraction| {
+            (
+                super::abstraction::declaration_origin(&abstraction.name.name),
+                abstraction.name.span,
+            )
+        }));
+        package.abstractions = unit.abstractions;
         package.hyper_clauses = unit.hyper_clauses;
         package.probabilistic = unit.probabilistic;
         package.temporal_selections = selections

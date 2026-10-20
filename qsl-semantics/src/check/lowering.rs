@@ -87,12 +87,14 @@ use quire_semantic_value::enumeration::EnumValue;
 use quire_semantic_value::location::{Location, Origin};
 use quire_semantic_value::quantity::UnitTable;
 
+mod abstraction;
 mod model;
 mod protocol;
 mod state;
 mod temporal;
 mod wire;
 
+pub(crate) use abstraction::{object_type_node, population_node, relation_node, text_scalar_node};
 pub(crate) use model::ParentSlotFailure;
 pub(crate) use model::{bound_origin, record_node_key, variant_type_node_key, RecordKeyError};
 pub use model::{AdmittedModel, AuthoredBound, ForeignView, ModelClause};
@@ -4652,6 +4654,7 @@ fn named_nodes(node: &SemanticNode) -> Vec<NodeKey> {
                     .map(|node| node.0),
             );
         }
+        BodyTerm::Abstraction(term) => named.extend(term.targets()),
         BodyTerm::Leaf(_) | BodyTerm::Aggregate(_) => {}
     }
     // A dependency's node is not a node of this graph.

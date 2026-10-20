@@ -83,6 +83,7 @@ pub use abstraction::{
     CheckedBinding, CheckedFrameBinding, FrameBinding, FrameNodes, MalformedEntry, ObjectBinding,
     OperationKey, PopulationBinding, RustField, RustParameter, RustPath, RustReceiver,
 };
+pub use abstraction::{AbstractionNodeRefusal, AbstractionNodes};
 pub use dispatch_link::PendingLinks;
 mod facts;
 mod family;
@@ -199,6 +200,7 @@ pub use lowering::{
     AdmittedModel, AuthoredBound, ForeignView, LockEvidence, ModelClause, NominalNode,
     SemanticGraph, SemanticNode,
 };
+pub use node_key::AbstractionTerm;
 pub use node_key::{
     AggregateTerm, ApplicationTerm, Binding, BindingValue, BodyTerm, FrameDeletesScoped,
     FrameField, FrameModifies, FrameScope, FrameTerm, GroupMember, GroupTerm, InvalidModelOwner,
@@ -498,6 +500,15 @@ pub struct CheckedGraph {
     terminals: Vec<CheckedTerminal>,
     /// FR-135 to FR-137: every checked refinement, in declaration order.
     refinements: Vec<CheckedRefinement>,
+    /// FR-304: the unit's `abstraction` declarations, in declaration order,
+    /// checked into [`Self::abstraction`].
+    abstractions: Vec<qsl_forms::AbstractionDeclarationForm>,
+    /// FR-304: what each `model` alias exports, for the names an
+    /// `abstraction` declaration writes.
+    model_names: BTreeMap<String, abstraction::ModelNames>,
+    /// FR-304: the relation the `abstraction` declarations check to, when
+    /// the unit holds any.
+    abstraction: Option<CheckedAbstractionRelation>,
     /// FR-113: every checked protocol declaration, in declaration order.
     protocols: Vec<CheckedProtocol>,
     /// FR-337: every emitted temporal clause, in declaration order.
@@ -540,6 +551,9 @@ pub struct CheckedGraph {
     /// index-aligned with `protocols`, so an `Origin::ProtocolAttempt`
     /// resolves.
     attempt_spans: Vec<Vec<Option<qsl_foundation::Span>>>,
+    /// The byte limit every node identity of this package encodes under,
+    /// kept for the nodes built from it after `check` (FR-306).
+    identity: qsl_foundation::IdentityLimits,
 }
 
 /// One emitted temporal clause (FR-337 "Outputs"): the checked clause, its
@@ -1106,6 +1120,7 @@ impl PackageDeclarations {
             .pending_types
             .map(|staged| std::cell::RefCell::new(staged.0));
         let (model_objects, object_types) = model_object_tables(&models);
+        let model_names = abstraction::model_names(&models);
         let model_populations = model_population_tables(&models);
         let population_bounds = checked_population_bounds(&models);
         let population_keys = population_key_table(&models);
@@ -3027,7 +3042,7 @@ impl PackageDeclarations {
                 .map(state_graph_claim::not_emitted)
                 .collect());
         }
-        Ok(CheckedGraph {
+        let mut graph = CheckedGraph {
             source,
             scope,
             functions,
@@ -3050,6 +3065,8 @@ impl PackageDeclarations {
             type_invariants,
             terminals,
             refinements,
+            abstractions: self.abstractions,
+            model_names,
             protocols: checked_protocols,
             temporal_clauses,
             state_graph_claims: checked_state_graph_claims,
@@ -3063,7 +3080,24 @@ impl PackageDeclarations {
             population_keys,
             declaration_keys,
             attempt_spans: regions.attempt_spans,
-        })
+            abstraction: None,
+            identity: self.identity,
+        };
+        // FR-304: the unit's `abstraction` declarations check to the one
+        // relation the package carries.
+        match graph.check_declared_abstraction() {
+            Ok(relation) => graph.abstraction = relation,
+            Err(found) => {
+                return Err(found
+                    .into_iter()
+                    .map(|(index, refusal)| CheckRefusal {
+                        location: graph.abstraction_location(index),
+                        cause: CheckCause::Abstraction(Box::new(refusal)),
+                    })
+                    .collect());
+            }
+        }
+        Ok(graph)
     }
 }
 

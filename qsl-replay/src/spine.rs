@@ -934,6 +934,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 ),
             };
         }
+        CheckCause::Abstraction(refusal) => {
+            message = format!("{message}: in an `abstraction` declaration: {refusal:?}");
+        }
         CheckCause::TerminalNotEmitted { name, .. } => {
             message = format!("{message}: `terminal {name}` checks but is not emitted yet");
         }
