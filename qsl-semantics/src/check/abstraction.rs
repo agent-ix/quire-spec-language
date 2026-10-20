@@ -512,16 +512,18 @@ impl CheckedGraph {
     fn authored_binding(
         &self,
         binding: &AbstractionBindingForm,
-    ) -> Result<AuthoredBinding, AbstractionRefusal> {
-        let unresolved = |name: &NameForm| AbstractionRefusal::UnresolvedName {
-            package: name
-                .name
-                .split("::")
-                .next()
-                .and_then(|alias| self.model_names.get(alias))
-                .map(|model| model.package.clone()),
-            name: name.name.clone(),
-            span: name.span,
+    ) -> Result<AuthoredBinding, Box<AbstractionRefusal>> {
+        let unresolved = |name: &NameForm| {
+            Box::new(AbstractionRefusal::UnresolvedName {
+                package: name
+                    .name
+                    .split("::")
+                    .next()
+                    .and_then(|alias| self.model_names.get(alias))
+                    .map(|model| model.package.clone()),
+                name: name.name.clone(),
+                span: name.span,
+            })
         };
         let export = |alias: &Identifier, name: &Identifier| {
             self.model_names
@@ -530,10 +532,12 @@ impl CheckedGraph {
                 .cloned()
         };
         let identifier = |name: &qsl_forms::DeclaredName| {
-            Identifier::new(&name.name).map_err(|_| AbstractionRefusal::UnresolvedName {
-                package: None,
-                name: name.name.clone(),
-                span: name.span,
+            Identifier::new(&name.name).map_err(|_| {
+                Box::new(AbstractionRefusal::UnresolvedName {
+                    package: None,
+                    name: name.name.clone(),
+                    span: name.span,
+                })
             })
         };
         match binding {
@@ -549,14 +553,14 @@ impl CheckedGraph {
                     if let Some((first, first_span)) = written.get(&name) {
                         // QSpec FR-450 rule 4: a field bound twice, equal or
                         // not.
-                        return Err(AbstractionRefusal::ConflictingField {
+                        return Err(Box::new(AbstractionRefusal::ConflictingField {
                             key: AbstractionKey::Object(key),
                             field: name,
                             first: first.clone(),
                             first_span: *first_span,
                             second: rust,
                             second_span: field.span,
-                        });
+                        }));
                     }
                     written.insert(name.clone(), (rust.clone(), field.span));
                     fields.insert(name, rust);
@@ -594,10 +598,10 @@ impl CheckedGraph {
                     let name = identifier(&parameter.parameter)?;
                     let rust = RustParameter::new(&parameter.rust_parameter.text);
                     if parameters.insert(name.clone(), rust).is_some() {
-                        return Err(AbstractionRefusal::MalformedDeclaration {
+                        return Err(Box::new(AbstractionRefusal::MalformedDeclaration {
                             key: AbstractionKey::Frame(key),
                             entry: MalformedEntry::DuplicateEntry(name),
-                        });
+                        }));
                     }
                 }
                 Ok(AuthoredBinding::Frame {
@@ -636,7 +640,7 @@ impl CheckedGraph {
     /// come in the order of `items`, each with its binding's tag.
     fn check_resolved<T: Copy>(
         &self,
-        items: Vec<(T, Result<AuthoredBinding, AbstractionRefusal>)>,
+        items: Vec<(T, Result<AuthoredBinding, Box<AbstractionRefusal>>)>,
     ) -> Result<CheckedAbstractionRelation, Vec<(T, AbstractionRefusal)>> {
         let mut accepted: BTreeMap<AbstractionKey, AuthoredBinding> = BTreeMap::new();
         let mut refusals = Vec::new();
@@ -644,7 +648,7 @@ impl CheckedGraph {
             let binding = match item {
                 Ok(binding) => binding,
                 Err(refusal) => {
-                    refusals.push((tag, refusal));
+                    refusals.push((tag, *refusal));
                     continue;
                 }
             };
