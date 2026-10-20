@@ -94,21 +94,34 @@ impl Analysis {
     /// The first fair component under this one, depth first: this component
     /// when it is fair, otherwise the first in its refinement.
     pub fn first_fair(&self) -> Option<&Analysis> {
+        self.fair_components().next()
+    }
+
+    /// Every fair component under this one, in order, depth first through
+    /// the refinement: this component when it is fair, otherwise those of
+    /// its refinement.
+    pub fn fair_components(&self) -> Box<dyn Iterator<Item = &Analysis> + '_> {
         match &self.outcome {
-            Outcome::Fair => Some(self),
+            Outcome::Fair => Box::new(std::iter::once(self)),
             Outcome::UnfairStrong { sub, .. } | Outcome::UnfairVisibility { sub, .. } => {
-                Self::first_fair_in(sub)
+                Self::fair_in(sub)
             }
             Outcome::Trivial | Outcome::MissingAcceptance { .. } | Outcome::UnfairWeak { .. } => {
-                None
+                Box::new(std::iter::empty())
             }
         }
+    }
+
+    /// Every fair component among `analyses`, in order, depth first through
+    /// each refinement (ADR-019 FS-6).
+    pub fn fair_in(analyses: &[Analysis]) -> Box<dyn Iterator<Item = &Analysis> + '_> {
+        Box::new(analyses.iter().flat_map(Analysis::fair_components))
     }
 
     /// The first fair component among `analyses`, in order, depth first
     /// through each refinement (ADR-019 FS-6).
     pub fn first_fair_in(analyses: &[Analysis]) -> Option<&Analysis> {
-        analyses.iter().find_map(Analysis::first_fair)
+        Self::fair_in(analyses).next()
     }
 }
 

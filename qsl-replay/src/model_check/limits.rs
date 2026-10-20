@@ -7,6 +7,14 @@ use qsl_eval::simulation::Limits;
 /// FR-126's published default for `max_automaton_states`: 2^20.
 pub const DEFAULT_MAX_AUTOMATON_STATES: u64 = 1_048_576;
 
+/// FR-184's published default for `max_witness_set`: 2^16 members of one
+/// HP-3 witness set.
+pub const DEFAULT_MAX_WITNESS_SET: u64 = 65_536;
+
+/// FR-184's published default for `max_relation_tuples`: 2^24 tuples of one
+/// HP-1 run.
+pub const DEFAULT_MAX_RELATION_TUPLES: u64 = 16_777_216;
+
 /// FR-166's published default for `witness_samples`: 64 phase 0 walks per
 /// initial state (QSpec FR-392).
 pub const DEFAULT_WITNESS_SAMPLES: u64 = 64;
@@ -32,17 +40,24 @@ pub struct ModelCheckLimits {
     pub witness_samples: u64,
     /// The most steps one phase 0 walk takes (FR-166).
     pub max_walk_steps: u64,
+    /// The most members one HP-3 witness set may reach (FR-184).
+    pub max_witness_set: u64,
+    /// The most tuples one HP-1 run may evaluate (FR-184).
+    pub max_relation_tuples: u64,
 }
 
 impl Default for ModelCheckLimits {
     /// FR-101's `Limits::default()`, `max_automaton_states` 1,048,576,
-    /// `witness_samples` 64 and `max_walk_steps` 4,096.
+    /// `witness_samples` 64, `max_walk_steps` 4,096, `max_witness_set` 65,536
+    /// and `max_relation_tuples` 16,777,216.
     fn default() -> Self {
         Self {
             limits: Limits::default(),
             max_automaton_states: DEFAULT_MAX_AUTOMATON_STATES,
             witness_samples: DEFAULT_WITNESS_SAMPLES,
             max_walk_steps: DEFAULT_MAX_WALK_STEPS,
+            max_witness_set: DEFAULT_MAX_WITNESS_SET,
+            max_relation_tuples: DEFAULT_MAX_RELATION_TUPLES,
         }
     }
 }
@@ -87,6 +102,10 @@ pub enum ModelCheckLimit {
     WitnessSamples,
     /// `ModelCheckLimits::max_walk_steps` (FR-166).
     MaxWalkSteps,
+    /// `ModelCheckLimits::max_witness_set` (FR-184).
+    MaxWitnessSet,
+    /// `ModelCheckLimits::max_relation_tuples` (FR-184).
+    MaxRelationTuples,
 }
 
 impl ModelCheckLimit {
@@ -101,6 +120,8 @@ impl ModelCheckLimit {
             Self::SolverSteps => "solver-steps",
             Self::WitnessSamples => "witness-samples",
             Self::MaxWalkSteps => "max-walk-steps",
+            Self::MaxWitnessSet => "max-witness-set",
+            Self::MaxRelationTuples => "max-relation-tuples",
         }
     }
 
@@ -115,6 +136,8 @@ impl ModelCheckLimit {
             Self::SolverSteps => "max_solver_steps",
             Self::WitnessSamples => "witness_samples",
             Self::MaxWalkSteps => "max_walk_steps",
+            Self::MaxWitnessSet => "max_witness_set",
+            Self::MaxRelationTuples => "max_relation_tuples",
         }
     }
 }

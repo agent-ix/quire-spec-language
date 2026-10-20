@@ -203,6 +203,12 @@ pub enum ModelTraceRefusal {
     /// failures write and replay does not build yet.
     #[error("unsupported_construct/not-yet-implemented: replay of a refinement lasso")]
     RefinementLasso,
+    /// A witness-exhausted hyper counterexample, which FR-183's HP-3 replay
+    /// recomputes and replay does not build yet.
+    #[error(
+        "unsupported_construct/not-yet-implemented: replay of a witness-exhausted counterexample"
+    )]
+    HyperWitnessExhausted,
     /// A hyper counterexample whose traces do not match the clause: in
     /// number, order, variable, alias or instance; of unequal step counts;
     /// or whose loop entry is not a position of a step (FR-183 "Common").
@@ -284,6 +290,7 @@ impl ModelTraceRefusal {
             Self::AuthoredUndefined
             | Self::GuardedActivation
             | Self::RefinementLasso
+            | Self::HyperWitnessExhausted
             | Self::ProtocolLasso => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
@@ -311,6 +318,7 @@ impl ModelTraceRefusal {
             Self::AuthoredUndefined
             | Self::GuardedActivation
             | Self::RefinementLasso
+            | Self::HyperWitnessExhausted
             | Self::ProtocolLasso => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {
