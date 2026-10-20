@@ -24,7 +24,7 @@ use quire_semantic_value::location::{Location, Origin};
 use super::super::check::{bind_parameters, Scope, Signatures, Typer};
 use super::super::facts::Definedness;
 use super::super::ir::{CheckedBody, CheckedLiteral, CheckedNode, DispatchTable, NodeKind};
-use super::super::refusal::{CheckCause, CheckRefusal};
+use super::super::refusal::{CheckCause, CheckRefusal, KeyFault};
 use super::super::state_clause::ClauseOperation;
 use super::super::AdmittedModel;
 use super::{exact, refusal, ProbabilisticCause, ProbabilisticDeclaration, WeightOwner};
@@ -286,13 +286,16 @@ pub(crate) fn precondition_reads(
         .collect()
 }
 
-/// A site of a probabilistic declaration with an expression tree of its
-/// own, by the declaration's index among the unit's probabilistic
-/// declarations.
+/// A located site of a probabilistic declaration, by the declaration's
+/// index among the unit's probabilistic declarations.
 #[derive(Clone, Copy, Debug)]
 enum Site {
+    /// The whole declaration.
+    Declaration,
     /// The `value` of a random parameter's distribution pair.
     Value(usize),
+    /// The weight of a distribution pair or of a workload operation.
+    Weight(usize),
     /// A reward's expression.
     Reward,
 }
@@ -301,8 +304,10 @@ enum Site {
 /// `declaration`. Spaced, so it names no declared type.
 fn site_name(declaration: usize, site: Site) -> String {
     match site {
-        Site::Value(pair) => format!("random {declaration} value {pair}"),
-        Site::Reward => format!("reward {declaration}"),
+        Site::Declaration => format!("probabilistic {declaration}"),
+        Site::Value(pair) => format!("probabilistic {declaration} value {pair}"),
+        Site::Weight(pair) => format!("probabilistic {declaration} weight {pair}"),
+        Site::Reward => format!("probabilistic {declaration} reward"),
     }
 }
 
@@ -310,6 +315,11 @@ fn site_location(declaration: usize, site: Site) -> Location {
     Location::root(Origin::TypeDeclaration {
         name: site_name(declaration, site),
     })
+}
+
+/// The spans of a site with no expression tree: its own span alone.
+fn spanned(span: Span) -> Option<qsl_forms::ExpressionSpans> {
+    qsl_forms::ExpressionSpans::new(span).ok()
 }
 
 /// The expression spans of every site of `declarations`, by site name, for
@@ -321,27 +331,28 @@ pub(crate) fn site_spans(
         .iter()
         .enumerate()
         .flat_map(|(index, declaration)| {
-            let sites: Vec<(String, qsl_forms::ExpressionSpans)> = match declaration {
-                ProbabilisticDeclaration::Random(form) => form
-                    .support
-                    .iter()
-                    .enumerate()
-                    .map(|(pair, value)| {
-                        (
-                            site_name(index, Site::Value(pair)),
-                            value.value.spans.clone(),
-                        )
-                    })
-                    .collect(),
-                ProbabilisticDeclaration::Reward(form) => vec![(
-                    site_name(index, Site::Reward),
-                    form.expression.spans.clone(),
-                )],
-                ProbabilisticDeclaration::Workload(_) | ProbabilisticDeclaration::Claim(_) => {
-                    Vec::new()
+            let mut sites: Vec<(Site, Option<qsl_forms::ExpressionSpans>)> = Vec::new();
+            match declaration {
+                ProbabilisticDeclaration::Random(form) => {
+                    sites.push((Site::Declaration, spanned(form.span)));
+                    for (pair, value) in form.support.iter().enumerate() {
+                        sites.push((Site::Value(pair), Some(value.value.spans.clone())));
+                        sites.push((Site::Weight(pair), spanned(value.weight.span)));
+                    }
                 }
-            };
+                ProbabilisticDeclaration::Reward(form) => {
+                    sites.push((Site::Reward, Some(form.expression.spans.clone())));
+                }
+                ProbabilisticDeclaration::Workload(form) => {
+                    for (weight, written) in form.weights.iter().enumerate() {
+                        sites.push((Site::Weight(weight), spanned(written.weight.span)));
+                    }
+                }
+                ProbabilisticDeclaration::Claim(_) => {}
+            }
             sites
+                .into_iter()
+                .filter_map(move |(site, spans)| Some((site_name(index, site), spans?)))
         })
 }
 
@@ -484,18 +495,20 @@ fn unresolved(unresolved: Unresolved, written: &NameForm) -> ProbabilisticCause 
     }
 }
 
-/// An exact weight: a positive rational, or the cause it refuses with.
+/// An exact weight at `location`: a positive rational, or the refusal it is.
 fn weight(
     value: &qsl_forms::ExactValueForm,
+    location: Location,
     owner: impl FnOnce() -> WeightOwner,
-) -> Result<Rational, ProbabilisticCause> {
+) -> Result<Rational, CheckRefusal> {
     let span = value.span;
-    let rational = exact::value(value).map_err(|fault| super::exact_cause(fault, span))?;
+    let rational =
+        exact::value(value).map_err(|fault| super::exact_refusal(fault, span, location))?;
     if rational.is_zero() || rational.numerator().is_negative() {
-        return Err(ProbabilisticCause::InvalidWeight {
+        return Err(refusal(ProbabilisticCause::InvalidWeight {
             owner: owner(),
             span,
-        });
+        }));
     }
     Ok(rational)
 }
@@ -514,6 +527,16 @@ fn literal(node: CheckedNode<'_>) -> Option<CheckedLiteral> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// A broken invariant of this check, never a refusal of the input.
+fn fault(location: Location, invariant: &'static str) -> CheckRefusal {
+    CheckRefusal {
+        location,
+        cause: CheckCause::InternalFault(Box::new(KeyFault::StageFault(
+            qsl_foundation::InternalFault::new("S3", invariant),
+        ))),
     }
 }
 
@@ -537,13 +560,14 @@ pub(crate) fn check(
         model: CheckedProbabilisticModel::default(),
         distributions: Vec::new(),
         rewards: Vec::new(),
+        workloads: Vec::new(),
         refusals: Vec::new(),
     };
     for (index, declaration) in declarations.iter().enumerate() {
         match declaration {
             ProbabilisticDeclaration::Random(form) => pass.random(index, form, cx, nodes),
             ProbabilisticDeclaration::Reward(form) => pass.reward(index, form, cx, nodes),
-            ProbabilisticDeclaration::Workload(form) => pass.workload(form),
+            ProbabilisticDeclaration::Workload(form) => pass.workload(index, form),
             ProbabilisticDeclaration::Claim(form) => pass.claim(form),
         }
     }
@@ -558,10 +582,13 @@ struct Pass<'i, 'a> {
     input: &'i ProbabilisticInput<'a>,
     model: CheckedProbabilisticModel,
     /// Each (operation, parameter) a `random` declaration resolved to, so a
-    /// second is a duplicate whether or not the first was admitted.
-    distributions: Vec<(DeclarationKey, String)>,
+    /// second is a duplicate, and a precondition read of it refuses,
+    /// whether or not its distribution was admitted.
+    distributions: Vec<(ProbabilisticOperation, String)>,
     /// Each (operation, name) a `reward` declaration resolved to.
     rewards: Vec<(DeclarationKey, String)>,
+    /// Each workload name declared so far.
+    workloads: Vec<String>,
     refusals: Vec<CheckRefusal>,
 }
 
@@ -595,8 +622,11 @@ impl Pass<'_, '_> {
             });
         };
         let names = || (form.operation.name.clone(), parameter.to_owned());
-        let distribution = (operation.key.clone(), parameter.to_owned());
-        if self.distributions.contains(&distribution) {
+        if self
+            .distributions
+            .iter()
+            .any(|(earlier, name)| earlier.key == operation.key && name.as_str() == parameter)
+        {
             let (operation, parameter) = names();
             return self.refuse(ProbabilisticCause::DuplicateDistribution {
                 operation,
@@ -604,18 +634,23 @@ impl Pass<'_, '_> {
                 span: form.span,
             });
         }
-        self.distributions.push(distribution);
-        let mut causes = Vec::new();
+        self.distributions
+            .push((operation.clone(), parameter.to_owned()));
+        let mut refusals: Vec<CheckRefusal> = Vec::new();
         let mut support: Vec<(CheckedLiteral, Rational)> = Vec::with_capacity(form.support.len());
         let mut seen: Vec<CheckedLiteral> = Vec::with_capacity(form.support.len());
         for (pair_index, pair) in form.support.iter().enumerate() {
-            let weight = weight(&pair.weight, || {
-                let (operation, parameter) = names();
-                WeightOwner::Parameter {
-                    operation,
-                    parameter,
-                }
-            });
+            let weight = weight(
+                &pair.weight,
+                site_location(index, Site::Weight(pair_index)),
+                || {
+                    let (operation, parameter) = names();
+                    WeightOwner::Parameter {
+                        operation,
+                        parameter,
+                    }
+                },
+            );
             let value_span = pair.value.spans.at(&[]).unwrap_or(pair.span);
             let location = site_location(index, Site::Value(pair_index));
             let typed =
@@ -626,62 +661,89 @@ impl Pass<'_, '_> {
                 Ok(body) => literal(body.root()),
                 Err(refusal) if refusal.cause.code() == Code::IllTyped => None,
                 Err(refusal) => {
-                    causes.extend(weight.err());
-                    self.refusals.push(refusal);
+                    refusals.extend(weight.err());
+                    refusals.push(refusal);
                     continue;
                 }
             };
             let Some(value) = value else {
-                causes.extend(weight.err());
+                refusals.extend(weight.err());
                 let (operation, parameter) = names();
-                causes.push(ProbabilisticCause::ValueOutsideType {
+                refusals.push(refusal(ProbabilisticCause::ValueOutsideType {
                     operation,
                     parameter,
                     span: value_span,
-                });
+                }));
                 continue;
             };
             if seen.contains(&value) {
                 let (operation, parameter) = names();
-                causes.push(ProbabilisticCause::RepeatedSupportValue {
+                refusals.push(refusal(ProbabilisticCause::RepeatedSupportValue {
                     operation,
                     parameter,
                     span: value_span,
-                });
+                }));
             }
             seen.push(value.clone());
             match weight {
                 Ok(weight) => support.push((value, weight)),
-                Err(cause) => causes.push(cause),
+                Err(refused) => refusals.push(refused),
             }
         }
-        if !causes.is_empty() || support.len() != form.support.len() {
-            self.refusals.extend(causes.into_iter().map(refusal));
+        if !refusals.is_empty() || support.len() != form.support.len() {
+            self.refusals.extend(refusals);
             return;
         }
-        let total = support.iter().fold(
-            Rational::from_integer(quire_exact::Integer::zero()),
-            |sum, (_, weight)| sum.add(weight),
-        );
-        let support = support
+        match self.probabilities(index, support) {
+            Ok(support) => self.model.random_parameters.push(RandomParameter {
+                operation,
+                parameter: parameter.to_owned(),
+                position,
+                value_type: value_type.clone(),
+                support,
+            }),
+            Err(refused) => self.refusals.push(refused),
+        }
+    }
+
+    /// Each value's probability: its weight over the sum of the weights.
+    /// The running sum is bounded by the rational-bits ceiling, as a written
+    /// value is, so in-limit weights with coprime denominators cannot grow
+    /// it without bound, and the handle is polled at every step.
+    fn probabilities(
+        &self,
+        index: usize,
+        support: Vec<(CheckedLiteral, Rational)>,
+    ) -> Result<Vec<SupportValue>, CheckRefusal> {
+        let location = site_location(index, Site::Declaration);
+        let mut total = Rational::from_integer(quire_exact::Integer::zero());
+        for (_, weight) in &support {
+            if self.input.cancel.poll() {
+                return Err(super::super::check::cancelled_refusal(&location));
+            }
+            total = total.add(weight);
+            let bits = total.max_part_bits();
+            if bits > exact::RATIONAL_BITS_CEILING {
+                return Err(super::limit_refusal(bits, location));
+            }
+        }
+        support
             .into_iter()
-            .filter_map(|(value, weight)| {
+            .map(|(value, weight)| {
+                if self.input.cancel.poll() {
+                    return Err(super::super::check::cancelled_refusal(&location));
+                }
                 // `total` is a sum of positive weights, so it is not zero.
-                let probability = weight.div(&total)?;
-                Some(SupportValue {
+                let probability = weight.div(&total).ok_or_else(|| {
+                    fault(location.clone(), "probabilistic-weight-sum-is-nonzero")
+                })?;
+                Ok(SupportValue {
                     value,
                     weight,
                     probability,
                 })
             })
-            .collect();
-        self.model.random_parameters.push(RandomParameter {
-            operation,
-            parameter: parameter.to_owned(),
-            position,
-            value_type: value_type.clone(),
-            support,
-        });
+            .collect()
     }
 
     fn reward(
@@ -692,17 +754,17 @@ impl Pass<'_, '_> {
         nodes: &mut u64,
     ) {
         let reads = super::reward(form);
-        if !reads.is_empty() {
-            self.refusals.extend(reads.into_iter().map(refusal));
-            return;
-        }
         let (operation, declaration) = match self.input.operation(&form.operation, None) {
             Ok(resolved) => resolved,
-            Err(fault) => return self.refuse(unresolved(fault, &form.operation)),
+            Err(fault) => {
+                self.refusals.extend(reads.into_iter().map(refusal));
+                return self.refuse(unresolved(fault, &form.operation));
+            }
         };
         let name = form.name.name.as_str();
         let declared = (operation.key.clone(), name.to_owned());
         if self.rewards.contains(&declared) {
+            self.refusals.extend(reads.into_iter().map(refusal));
             return self.refuse(ProbabilisticCause::DuplicateReward {
                 reward: name.to_owned(),
                 operation: form.operation.name.clone(),
@@ -710,6 +772,10 @@ impl Pass<'_, '_> {
             });
         }
         self.rewards.push(declared);
+        if !reads.is_empty() {
+            self.refusals.extend(reads.into_iter().map(refusal));
+            return;
+        }
         let parameters = declaration.parameters().to_vec();
         let location = site_location(index, Site::Reward);
         match self.typed_reward(form, &parameters, &location, cx, nodes) {
@@ -760,9 +826,22 @@ impl Pass<'_, '_> {
         Ok((body, slots))
     }
 
-    fn workload(&mut self, form: &WorkloadForm) {
+    fn workload(&mut self, index: usize, form: &WorkloadForm) {
         let workload = form.name.name.as_str();
         let model = form.model.name.as_str();
+        // A claim names a workload by its name alone (FR-186), so a name
+        // names one workload of the unit.
+        if self
+            .workloads
+            .iter()
+            .any(|earlier| earlier.as_str() == workload)
+        {
+            return self.refuse(ProbabilisticCause::DuplicateWorkload {
+                workload: workload.to_owned(),
+                span: form.name.span,
+            });
+        }
+        self.workloads.push(workload.to_owned());
         if !self.input.model_objects.contains_key(model) {
             return self.refuse(ProbabilisticCause::UnresolvedModel {
                 workload: workload.to_owned(),
@@ -770,64 +849,68 @@ impl Pass<'_, '_> {
                 span: form.model.span,
             });
         }
-        let mut causes = Vec::new();
+        let mut refusals: Vec<CheckRefusal> = Vec::new();
+        let mut weighted: Vec<DeclarationKey> = Vec::new();
         let mut weights: Vec<(ProbabilisticOperation, Rational)> = Vec::new();
-        for written in &form.weights {
-            let weight = weight(&written.weight, || WeightOwner::Workload {
-                workload: workload.to_owned(),
-                operation: written.operation.name.clone(),
-            });
+        for (position, written) in form.weights.iter().enumerate() {
+            let weight = weight(
+                &written.weight,
+                site_location(index, Site::Weight(position)),
+                || WeightOwner::Workload {
+                    workload: workload.to_owned(),
+                    operation: written.operation.name.clone(),
+                },
+            );
             let operation = match self.input.operation(&written.operation, Some(model)) {
                 Ok((operation, _)) => operation,
                 Err(Unresolved::Missing) => {
-                    causes.extend(weight.err());
-                    causes.push(ProbabilisticCause::UnknownOperation {
+                    refusals.extend(weight.err());
+                    refusals.push(refusal(ProbabilisticCause::UnknownOperation {
                         workload: workload.to_owned(),
                         operation: written.operation.name.clone(),
                         span: written.operation.span,
-                    });
+                    }));
                     continue;
                 }
                 Err(fault @ Unresolved::Ambiguous) => {
-                    causes.extend(weight.err());
-                    causes.push(unresolved(fault, &written.operation));
+                    refusals.extend(weight.err());
+                    refusals.push(refusal(unresolved(fault, &written.operation)));
                     continue;
                 }
             };
-            if weights
-                .iter()
-                .any(|(earlier, _)| earlier.key == operation.key)
-            {
-                causes.push(ProbabilisticCause::DuplicateWeight {
+            if weighted.contains(&operation.key) {
+                refusals.extend(weight.err());
+                refusals.push(refusal(ProbabilisticCause::DuplicateWeight {
                     workload: workload.to_owned(),
                     operation: written.operation.name.clone(),
                     span: written.span,
-                });
+                }));
                 continue;
             }
+            weighted.push(operation.key.clone());
             match weight {
                 Ok(weight) => weights.push((operation, weight)),
-                Err(cause) => causes.push(cause),
+                Err(refused) => refusals.push(refused),
             }
         }
         for (declaring, name, spelled) in self.input.model_operations(model) {
-            let weighted = form.weights.iter().any(|written| {
+            let covered = form.weights.iter().any(|written| {
                 self.input
                     .operation(&written.operation, Some(model))
                     .is_ok_and(|(operation, _)| {
                         operation.declaring == declaring && operation.name.as_str() == name
                     })
             });
-            if !weighted {
-                causes.push(ProbabilisticCause::IncompleteWorkload {
+            if !covered {
+                refusals.push(refusal(ProbabilisticCause::IncompleteWorkload {
                     workload: workload.to_owned(),
                     operation: spelled,
                     span: form.span,
-                });
+                }));
             }
         }
-        if !causes.is_empty() {
-            self.refusals.extend(causes.into_iter().map(refusal));
+        if !refusals.is_empty() {
+            self.refusals.extend(refusals);
             return;
         }
         self.model.workloads.push(Workload {
@@ -850,13 +933,14 @@ impl Pass<'_, '_> {
         self.refusals.extend(causes.into_iter().map(refusal));
     }
 
-    /// Every precondition read of a random parameter refuses at the read.
+    /// Every precondition read of a random parameter refuses at the read,
+    /// whether or not the parameter's distribution was admitted.
     fn preconditions(&mut self) {
         for read in self.input.preconditions {
-            let random = self.model.random_parameters.iter().any(|random| {
-                random.operation.declaring == read.declaring
-                    && random.operation.name.as_str() == read.operation.as_str()
-                    && random.parameter.as_str() == read.parameter.as_str()
+            let random = self.distributions.iter().any(|(operation, parameter)| {
+                operation.declaring == read.declaring
+                    && operation.name.as_str() == read.operation.as_str()
+                    && parameter.as_str() == read.parameter.as_str()
             });
             if random {
                 self.refusals.push(CheckRefusal {

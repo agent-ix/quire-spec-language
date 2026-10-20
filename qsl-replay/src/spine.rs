@@ -1039,10 +1039,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 } => format!(
                     "{message}: reward `{reward}` on `{operation}` is neither an integer nor a quantity"
                 ),
-                ProbabilisticCause::ExactValueAboveCeiling { bits, .. } => format!(
-                    "{message}: an exact value of {bits} bits as written is past the rational-bits \
-                     ceiling"
-                ),
+                ProbabilisticCause::DuplicateWorkload { workload, .. } => {
+                    format!("{message}: a workload `{workload}` is already declared")
+                }
                 ProbabilisticCause::QuantityLiteral => {
                     format!("{message}: a quantity literal is not emitted in this position yet")
                 }

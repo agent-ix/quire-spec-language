@@ -16,6 +16,7 @@
 
 use ix_trace_rs::trace;
 use qsl_foundation::diagnostic::Code;
+use qsl_semantics::check::CheckedLiteral;
 use qsl_semantics::check::{
     CheckCause, CheckRefusal, CheckedGraph, PackageDeclarations, PreconditionSite,
     ProbabilisticCause, WeightOwner,
@@ -300,6 +301,13 @@ fn invalid(cause: &'static str, at: &str) -> (Code, Option<&'static str>, String
     (Code::InvalidProbabilisticModel, Some(cause), at.to_owned())
 }
 
+/// The limit refusal of an exact value past the 65,536-bit ceiling, at
+/// `at`: FR-255 has no rational-bits setting yet, so it reports the S3 work
+/// budget's (see the PR's spec gaps).
+fn limit(at: &str) -> (Code, Option<&'static str>, String) {
+    (Code::StageLimitExceeded, Some("work-budget-exceeded"), at.to_owned())
+}
+
 fn not_yet(at: &str) -> (Code, Option<&'static str>, String) {
     (
         Code::UnsupportedConstruct,
@@ -347,15 +355,11 @@ fn the_service_model_checks_and_records_its_declarations() {
     assert_eq!(d.position(), 0);
     let probabilities: Vec<Rational> = d.support().iter().map(|v| v.probability.clone()).collect();
     assert_eq!(probabilities, [ratio(9, 10), ratio(7, 100), ratio(3, 100)]);
-    let values: Vec<String> = d
-        .support()
-        .iter()
-        .map(|value| format!("{:?}", value.value.0))
-        .collect();
-    assert_eq!(values.len(), 3);
-    assert!(
-        values[0].contains('1') && values[2].contains("12"),
-        "{values:?}"
+    let values: Vec<CheckedLiteral> = d.support().iter().map(|v| v.value.clone()).collect();
+    assert_eq!(
+        values,
+        [1_i64, 3, 12]
+            .map(|value| CheckedLiteral(quire_exact::Value::Integer(Integer::from(value))))
     );
     assert_eq!(
         outcome
@@ -601,9 +605,8 @@ fn steady_with_request(weight: &str) -> String {
 
 /// TC-620 step 2 (FR-185 "Exact values"), each as the weight of
 /// `Server::request`: a value past 65,536 bits as written refuses before it
-/// is reduced or expanded (`not-yet-implemented` until QSL-883 names its
-/// limit refusal), even when it reduces to 1; one within the ceiling is
-/// admitted and recorded reduced.
+/// is reduced or expanded, with the limit refusal, even when it reduces to
+/// 1; one within the ceiling is admitted and recorded reduced.
 #[trace("TC-620")]
 #[test]
 fn exact_values_are_bounded_as_written() {
@@ -615,7 +618,13 @@ fn exact_values_are_bounded_as_written() {
         "decimal(1, 19729)".to_owned(),
     ] {
         let body = service(Some((STEADY, &steady_with_request(&value))), "");
-        assert_eq!(located(&body), [not_yet(&value)], "{value:.40}");
+        assert_eq!(located(&body), [limit(&value)], "{value:.40}");
+        let refusals = refusals_of(&body);
+        let CheckCause::ResourceExhausted(limit) = &refusals[0].cause else {
+            panic!("a limit refusal: {:?}", refusals[0].cause);
+        };
+        assert_eq!(limit.limit, 65_536);
+        assert!(limit.actual > 65_536, "{value:.40}");
     }
     let m = integer_of_bits(65_536);
     for (value, expected) in [
@@ -996,4 +1005,146 @@ fn a_duplicate_of_a_refused_declaration_is_still_a_duplicate() {
             invalid("duplicate-reward", second)
         ]
     );
+}
+
+/// FR-185 "Exact values" applied to S3's own arithmetic: weights each within
+/// the ceiling whose denominators are large and coprime would grow the
+/// weight sum without bound, so the sum is bounded by the same ceiling and
+/// the declaration refuses promptly with the limit refusal.
+#[trace("TC-620")]
+#[test]
+fn a_weight_sum_past_the_ceiling_refuses_promptly() {
+    let weights: Vec<String> = (0..12_u64)
+        .map(|k| {
+            let denominator = Integer::one()
+                .shifted_left(65_534)
+                .add(&Integer::from(2 * k + 1));
+            format!("rational(1, {denominator})")
+        })
+        .collect();
+    let pairs: Vec<String> = weights
+        .iter()
+        .enumerate()
+        .map(|(value, weight)| format!("{}: {weight}", value + 1))
+        .collect();
+    let random = format!("random Server::attempt(d) ~ {{ {} }};", pairs.join(", "));
+    let started = std::time::Instant::now();
+    let refusals = refusals_of(&service(Some((D, &random)), ""));
+    let [refusal] = &refusals[..] else {
+        panic!("one refusal: {refusals:?}");
+    };
+    let CheckCause::ResourceExhausted(limit) = &refusal.cause else {
+        panic!("a limit refusal: {:?}", refusal.cause);
+    };
+    assert_eq!(limit.limit, 65_536);
+    // A wide margin over the one or two bounded additions it takes: the
+    // unbounded sum took minutes.
+    assert!(started.elapsed() < std::time::Duration::from_secs(60));
+}
+
+/// FR-185 "Workloads": an operation weighted twice refuses `duplicate-weight`
+/// even when its first weight is invalid.
+#[trace("TC-620")]
+#[test]
+fn a_second_weight_after_an_invalid_one_is_still_a_duplicate() {
+    let workload = "workload Steady on Service { weight Server::request = 0; \
+         weight Server::attempt = 1; weight Server::reset = 1; weight Server::request = 2; }";
+    assert_eq!(
+        located(&service(Some((STEADY, workload)), "")),
+        [
+            invalid("invalid-weight", "0"),
+            invalid("duplicate-weight", "weight Server::request = 2;")
+        ]
+    );
+}
+
+/// FR-185 "Workloads": a claim names a workload by its name alone, so a
+/// second workload of one name refuses `conflicting_declaration`/
+/// `duplicate-declaration` at its name (FR-185 names no cause: a spec gap).
+#[trace("TC-620")]
+#[test]
+fn a_second_workload_of_one_name_refuses() {
+    let body = service(None, STEADY);
+    assert_eq!(
+        located(&body),
+        [(
+            Code::ConflictingDeclaration,
+            Some("duplicate-declaration"),
+            "Steady".to_owned()
+        )]
+    );
+}
+
+/// FR-185 "Rewards": a reward that reads state still declares its name, so a
+/// later reward of that name on that operation is a duplicate.
+#[trace("TC-620")]
+#[test]
+fn a_reward_after_one_that_reads_state_is_still_a_duplicate() {
+    let second = "reward duration on Server::attempt = d;";
+    let body = service(
+        Some((
+            DURATION,
+            "reward duration on Server::attempt = self.attempts;",
+        )),
+        second,
+    );
+    assert_eq!(
+        located(&body),
+        [
+            invalid("state-read-in-reward", "self"),
+            invalid("duplicate-reward", second)
+        ]
+    );
+}
+
+/// FR-185 "Random parameters": a precondition read of a random parameter
+/// refuses even when the parameter's distribution was refused.
+#[trace("TC-620")]
+#[test]
+fn a_precondition_read_of_a_refused_distribution_still_refuses() {
+    let pre = "pre Busy using v on Service::Server::attempt \
+               { self.phase = Service::Phase::Busy and d < 5 }";
+    let body = service(Some((D, "random Server::attempt(d) ~ { 1: 0 };")), pre);
+    assert_eq!(
+        located(&body),
+        [
+            invalid("invalid-weight", "0"),
+            invalid("random-read-in-precondition", "d")
+        ]
+    );
+}
+
+/// TC-621: a claim's huge written confidence value is read without
+/// expansion, so the claim refuses only `not-yet-implemented`.
+#[trace("TC-621")]
+#[test]
+fn a_huge_written_confidence_value_is_read_without_expansion() {
+    let source = claim(
+        "with alpha decimal(1, 4294967295), beta 0.01, indifference 0.0005 \
+         { probability >= 0.999 [ holds(true) ] }",
+    );
+    assert_eq!(located(&service(None, &source)), [not_yet(&source)]);
+}
+
+/// FR-186 "Events and measures": an event's window is not checked yet, so a
+/// claim with an operator that has no closed interval refuses
+/// `not-yet-implemented` like any other claim, not for its window: QSpec
+/// FR-407 admits `[always holds(P)]` and the like under the infinite-trace
+/// profile, and profiles do not resolve here yet.
+#[trace("TC-621")]
+#[test]
+fn an_event_window_is_not_refused_before_profiles_resolve() {
+    for event in [
+        "always holds(n.healthy)",
+        "eventually[0,*] holds(n.healthy)",
+        "eventually[0,100] always[0,10] holds(n.healthy)",
+        "holds(a) and not holds(b)",
+    ] {
+        let source = claim(&format!("{{ probability >= 0.99 [ {event} ] }}"));
+        assert_eq!(
+            located(&service(None, &source)),
+            [not_yet(&source)],
+            "{event}"
+        );
+    }
 }

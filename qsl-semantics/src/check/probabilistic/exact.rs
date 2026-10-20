@@ -12,9 +12,8 @@
 use qsl_forms::{ExactValueForm, ExactValueKind};
 use quire_exact::{Integer, Rational};
 
-/// FR-185's default rational-bits ceiling, inclusive. The `CheckingLimits`
-/// setting that lets a caller change it, and the limit refusal past it, wait
-/// on QSL-883.
+/// FR-185's default rational-bits ceiling, inclusive. It is fixed: no
+/// `CheckingLimits` setting changes it yet (FR-255 has no rational-bits row).
 pub(crate) const RATIONAL_BITS_CEILING: u64 = 65_536;
 
 /// A lower bound of `log₂ 10`, as `LOG2_10_LOWER / 10^28`, truncated from

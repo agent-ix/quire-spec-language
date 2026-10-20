@@ -28,8 +28,9 @@ fn probabilistic_package() -> CheckedPackage {
 
 /// The checked workload and reward are recorded on the graph, and the
 /// emitter refuses `unsupported_construct`/`not-yet-implemented`, naming how
-/// many of each it cannot write.
-#[ix_trace_rs::trace("TC-620")]
+/// many of each it cannot write. Untagged: TC-620 has no S4 step, and no
+/// requirement states this refusal yet; it is this PR's decision that S4
+/// refuses rather than drops what FR-322 has no node for.
 #[test]
 fn a_checked_probabilistic_model_refuses_emission() {
     let refusal = emit_checked(&probabilistic_package()).expect_err("emission refuses");

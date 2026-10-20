@@ -867,8 +867,10 @@ impl<'a> Typer<'a> {
             // FR-185: a quantity literal is its magnitude, measured and
             // reduced as an exact value, in the unit its name declares.
             ExprNode::Quantity(quantity) => {
-                let magnitude =
-                    super::super::probabilistic::quantity_magnitude(&quantity.magnitude)?;
+                let magnitude = super::super::probabilistic::quantity_magnitude(
+                    &quantity.magnitude,
+                    &location,
+                )?;
                 let Some(unit) = self.scope.unit_named(&quantity.unit.name) else {
                     return Err(CheckRefusal {
                         location,

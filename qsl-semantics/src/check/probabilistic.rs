@@ -13,8 +13,9 @@
 //! declaration, or the typer's own refusal.
 //!
 //! An exact value is measured as written and bounded before it is reduced
-//! ([`exact`]). The bound's limit refusal and its setting wait on QSL-883, so
-//! a value past the default ceiling refuses `not-yet-implemented`.
+//! ([`exact`]), and a distribution's weight sum is bounded the same way.
+//! Past the 65,536-bit ceiling either refuses with a limit refusal; FR-255
+//! has no rational-bits setting yet, so it reports the S3 work budget's.
 //!
 //! A `probabilistic` claim is checked only as far as its form lets S3 refuse
 //! it (thresholds, confidence parameters, a quantile over a fraction); one
@@ -39,7 +40,7 @@ use quire_exact::Integer;
 use quire_semantic_value::location::{Location, Origin};
 
 use super::layer::visit_located;
-use super::refusal::{CheckCause, CheckRefusal};
+use super::refusal::{CheckCause, CheckRefusal, CheckingLimitKind, CheckingStage, StageLimitCause};
 
 /// The largest scale a decimal is expanded at when a confidence range is
 /// compared. A larger scale leaves the range unchecked here; the claim still
@@ -284,13 +285,13 @@ pub enum ProbabilisticCause {
         /// The expression's span.
         span: Span,
     },
-    /// An exact value past the default rational-bits ceiling, as written
-    /// (FR-185 "Exact values"). Its limit refusal and setting wait on
-    /// QSL-883. `unsupported_construct`/`not-yet-implemented`.
-    ExactValueAboveCeiling {
-        /// The value's measure.
-        bits: u64,
-        /// The value's span.
+    /// A second `workload` of one name: a claim names a workload by its
+    /// name alone. QSL-proposed; FR-185 names no cause for it.
+    /// `conflicting_declaration`/`duplicate-declaration`.
+    DuplicateWorkload {
+        /// The workload.
+        workload: String,
+        /// The second declaration's name span.
         span: Span,
     },
     /// A quantity literal in a function body or clause: it types, but the
@@ -332,7 +333,7 @@ impl ProbabilisticCause {
             | Self::IncompleteWorkload { span, .. }
             | Self::UnknownOperation { span, .. }
             | Self::RewardType { span, .. }
-            | Self::ExactValueAboveCeiling { span, .. }
+            | Self::DuplicateWorkload { span, .. }
             | Self::NotYetImplemented { span, .. } => Some(*span),
             Self::QuantityLiteral | Self::RandomReadInPrecondition { .. } => None,
         }
@@ -361,9 +362,8 @@ impl ProbabilisticCause {
             | Self::UnresolvedParameter { .. }
             | Self::UnresolvedModel { .. } => Code::MissingDeclaration,
             Self::AmbiguousOperation { .. } => Code::AmbiguousDeclaration,
-            Self::ExactValueAboveCeiling { .. }
-            | Self::QuantityLiteral
-            | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
+            Self::DuplicateWorkload { .. } => Code::ConflictingDeclaration,
+            Self::QuantityLiteral | Self::NotYetImplemented { .. } => Code::UnsupportedConstruct,
         }
     }
 
@@ -390,29 +390,45 @@ impl ProbabilisticCause {
             | Self::UnresolvedParameter { .. }
             | Self::UnresolvedModel { .. } => "missing-name",
             Self::AmbiguousOperation { .. } => "ambiguous-name",
-            Self::ExactValueAboveCeiling { .. }
-            | Self::QuantityLiteral
-            | Self::NotYetImplemented { .. } => "not-yet-implemented",
+            Self::DuplicateWorkload { .. } => "duplicate-declaration",
+            Self::QuantityLiteral | Self::NotYetImplemented { .. } => "not-yet-implemented",
         }
     }
 }
 
-/// The cause an exact value at `span` refuses with.
-fn exact_cause(fault: exact::ExactFault, span: Span) -> ProbabilisticCause {
+/// The limit refusal of an exact value, written or derived, whose measure
+/// `bits` is past [`exact::RATIONAL_BITS_CEILING`] (FR-185 "Exact values").
+/// FR-255 has no rational-bits setting yet (QSL-883 shipped none), so the
+/// refusal reports the S3 work budget's setting with the fixed ceiling as
+/// its bound.
+fn limit_refusal(bits: u64, location: Location) -> CheckRefusal {
+    CheckRefusal {
+        location,
+        cause: CheckCause::ResourceExhausted(Box::new(StageLimitCause {
+            stage: CheckingStage::Typing,
+            kind: CheckingLimitKind::WorkBudget,
+            limit: exact::RATIONAL_BITS_CEILING,
+            actual: u128::from(bits),
+            region: None,
+        })),
+    }
+}
+
+/// The refusal an exact value at `span` and `location` is.
+fn exact_refusal(fault: exact::ExactFault, span: Span, location: Location) -> CheckRefusal {
     match fault {
-        exact::ExactFault::ZeroDenominator => ProbabilisticCause::ZeroDenominator { span },
-        exact::ExactFault::AboveCeiling { bits } => {
-            ProbabilisticCause::ExactValueAboveCeiling { bits, span }
-        }
+        exact::ExactFault::ZeroDenominator => refusal(ProbabilisticCause::ZeroDenominator { span }),
+        exact::ExactFault::AboveCeiling { bits } => limit_refusal(bits, location),
     }
 }
 
-/// A quantity literal's magnitude, reduced, or the refusal it is (FR-185
-/// "Exact values").
+/// A quantity literal's magnitude, reduced, or the refusal it is at
+/// `location` (FR-185 "Exact values").
 pub(crate) fn quantity_magnitude(
     magnitude: &ExactValueForm,
+    location: &Location,
 ) -> Result<quire_exact::Rational, CheckRefusal> {
-    exact::value(magnitude).map_err(|fault| refusal(exact_cause(fault, magnitude.span)))
+    exact::value(magnitude).map_err(|fault| exact_refusal(fault, magnitude.span, location.clone()))
 }
 
 /// The refusal of a quantity literal S4 cannot emit, at `location`.
