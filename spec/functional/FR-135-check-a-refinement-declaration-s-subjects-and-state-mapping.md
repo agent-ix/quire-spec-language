@@ -130,7 +130,7 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
 - The checker SHALL check `e` with `self` bound to the concrete object type
   and the concrete model's fields, functions, history fields (FR-138) and
   population-valued forms (FR-139) in scope, admitting the forms a state
-  clause body admits (ADR-016 FE-4).
+  clause body admits (FR-391).
 - The checker SHALL lift references: a field of declared type
   `Reference<T_A>` SHALL accept an expression of type `Reference<T_C>`
   exactly when an object row maps `T_A` from `T_C`.

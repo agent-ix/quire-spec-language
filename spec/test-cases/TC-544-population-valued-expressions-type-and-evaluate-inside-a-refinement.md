@@ -40,7 +40,7 @@ Tag the tests `#[trace("TC-544", "FR-139-AC-n")]`.
 - Step 1: S3 checks with `n` symbolic; at admission `R::slots` is
   `Set<Reference<R::Slot>>[0, 2]`, `seq`'s maximum
   length is 2 and the row conforms; an integer; `Boolean`.
-- Step 2: `unsupported_construct`/`expression-form`; `ill_typed`/`type-mismatch` at `s.index`.
+- Step 2: the invariant checks (FR-391-AC-7); `ill_typed`/`type-mismatch` at `s.index`.
 - Step 3: `[1, 0]`; `[]`; 2; `false`.
 - Step 4: undefined; undefined.
 - Step 5: checks; admitted; `ill_typed`/`type-mismatch` naming the row,

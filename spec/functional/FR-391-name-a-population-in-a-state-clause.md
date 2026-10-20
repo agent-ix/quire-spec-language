@@ -1,6 +1,6 @@
 ---
 id: FR-391
-title: "Name a domain-package population as the operand of allInstances and lookup in a state clause"
+title: "Name a domain-package population in a clause body"
 type: FR
 relationships:
   - target: ix://agent-ix/quire-spec-language/US-012
@@ -19,6 +19,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-107
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-139
+    type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-155
     type: traces_to
   - target: ix://agent-ix/quire-spec-language/FR-380
@@ -26,7 +28,7 @@ relationships:
   - target: ix://agent-ix/quire-specification/FR-153
     type: depends_on
 ---
-# FR-391: Name a domain-package population as the operand of allInstances and lookup in a state clause
+# FR-391: Name a domain-package population in a clause body
 
 ## Description
 
@@ -49,8 +51,19 @@ environment. QSpec needs a follow-up that states this name-to-binding rule and
 the spelling of a population in a state clause, so the two specifications agree.
 
 A population is a binding, not a value. The name therefore denotes the
-population only as the population operand of `allInstances` or `lookup`;
-it is no operand of any other operator, no `let` initializer and no result.
+population only where a population is read: as the population operand of
+`allInstances` or `lookup`, and as the domain of a quantifier or of one of
+FR-139's six forms (`count`, `sum`, `exists`, `all`, `only`, `seq`), in any
+clause body: a state clause, a function body or a `holds` atom of a temporal
+clause. It is wherever an ordinary quantifier domain is admitted, and it is no
+operand of any other operator, no `let` initializer and no result.
+
+This requirement is the home of population names and forms in clause
+bodies. It narrows FR-139, which admits them inside a refinement
+declaration and formerly refused them in every other clause body with
+`unsupported_construct`/`expression-form`; that refusal no longer applies, and
+FR-139 supplies the typing and evaluation of the six forms that this
+requirement reuses.
 
 ## Use case
 
@@ -81,8 +94,8 @@ read that FR-155 derives `AnyMembership{counters}` from.
 
 ### Resolution
 
-- The assembler SHALL resolve a two-segment `Name` inside a state clause
-  body as a population when its first segment is a model alias of the unit
+- The assembler SHALL resolve a two-segment `Name` inside a clause body (a
+  state clause, FR-102) as a population when its first segment is a model alias of the unit
   and its second names a population of that alias's domain package.
 - If the first segment is a model alias and the second names no population
   of its domain package, then the assembler SHALL refuse
@@ -90,16 +103,20 @@ read that FR-155 derives `AnyMembership{counters}` from.
 - If the first segment names both a model alias and an enum of the unit,
   then the assembler SHALL refuse `ambiguous_declaration`/`ambiguous-name`
   at the name, naming both.
-- Outside a state clause body a `M::P` name resolves as it did before this
-  requirement: it names no population, and the population forms of a
-  function remain its `Population<T>[N]` parameters.
+- The assembler SHALL resolve a two-segment `Name` in a function body or in
+  a `holds` atom of a temporal clause as a population by the same rule. A
+  function may also keep naming a population through a `Population<T>[N]`
+  parameter. A `M::P` name outside a clause body (a declaration header or an
+  `on` target) SHALL resolve as it did before this requirement.
 
 ### Typing
 
 - The checker SHALL type the resolved population as `Population<U>[N]` and
-  admit it only as the population operand of `allInstances` or `lookup`.
-  Anywhere else it SHALL refuse `ill_typed`/`operator-ineligible` at the
-  name: a population is no value.
+  admit it as the population operand of `allInstances` or `lookup`, and as
+  the domain of a quantifier or of an FR-139 form, where it reads as the set of
+  the population's objects, typed `Set<Reference<U>>[0,N]` (unbounded when
+  `P` has no authored maximum). Anywhere else it SHALL refuse
+  `ill_typed`/`operator-ineligible` at the name: a population is no value.
 - The checker SHALL check `T` of `allInstances<T>` and `lookup<T>` as it does
   for a parameter operand (FR-084); the queried type need not be `U`, only
   covered by a member type of the population at evaluation, where an
@@ -165,10 +182,11 @@ read that FR-155 derives `AnyMembership{counters}` from.
 |----|----------|--------------|
 | FR-391-AC-1 | Over the `Counter` unit (model alias `M`, `Counter` with `v: Int[0, 2]`, operation `bump()`, population `counters`), `pre Room using v on M::Counter::bump { forall(o in allInstances<M::Counter>(M::counters) : o.v < 2) }` checks as a `Precondition` with the population operand typed `Population<Counter>`, the `allInstances` result `Set<Reference<Counter>>` and every read at `pre`; the invariant `invariant Cap using v on M::Counter at current { count<M::Counter>(o in allInstances<M::Counter>(M::counters) : true) < 4 }` checks with reads at `current`. | Test (TC-1076) |
 | FR-391-AC-2 | `M::nothing` as the operand refuses `missing_declaration`/`missing-name` at `nothing`; an alias `M` that is also an enum name refuses `ambiguous_declaration`/`ambiguous-name` at the name. | Test (TC-1076) |
-| FR-391-AC-3 | `M::counters = M::counters`, `let q = M::counters in allInstances<M::Counter>(q)`, `size(M::counters)` and a clause body that is `M::counters` each refuse `ill_typed`/`operator-ineligible` at the name; in a function body `allInstances<M::Counter>(M::counters)` names no population and refuses `missing_declaration`/`missing-name`, as does a type name `M::Counter` used as a value, because only populations resolve as a two-segment name there. | Test (TC-1076) |
+| FR-391-AC-3 | `M::counters = M::counters`, `let q = M::counters in allInstances<M::Counter>(q)`, `size(M::counters)` and a clause body that is `M::counters` each refuse `ill_typed`/`operator-ineligible` at the name, as does `M::Counter` used as a value, because a population is no value. | Test (TC-1076) |
 | FR-391-AC-4 | With `bound B on M::counters [3]` the operand is `Population<Counter>[3]` and `allInstances<M::Counter>(M::counters)` is `Set<Reference<Counter>>[0,3]`; the record's `counters` domain is `Population(Some(3))`. With a second population `archive` of `Counter`, a clause on `M::Counter` refuses `ambiguous_declaration`/`ambiguous-name` at its `on` (FR-104-AC-5) whichever population its body names. With a type `Widget` that only a population `widgets` covers, a clause on `M::Widget` whose body names `M::counters` records `widgets` (the context population) and `counters` as its two domains. | Test (TC-1076) |
 | FR-391-AC-5 | Evaluated at S6a over a snapshot whose `counters` holds `a`, `b` and `c`, the precondition of AC-1 decides over exactly those three, in canonical reference-key order; over a snapshot in which `counters` is not marked `complete`, it returns `Incomplete` with `incomplete_population`/`incomplete-scope`, as for a parameter operand; `allInstances<M::Other>(M::counters)` with `Other` uncovered by the population is FR-084's typed incomplete result. | Test (TC-1076) |
 | FR-391-AC-6 | With populations `counters` and `archive` of `Counter` and an operation `grow` on `Widget`, a type covered only by `widgets`, the preconditions `pre A using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::counters) : true) }` and `pre B using v on M::Widget::grow { forall(o in allInstances<M::Counter>(M::archive) : true) }` check to two different terms, each carrying its own population's declaration key, and of the populations `A` reads `AnyMembership{counters}` and not `AnyMembership{archive}`, and `B` the reverse (each footprint also holds the receiver's own `Membership` per FR-155); the precondition of FR-155-AC-2 over `counters` holds `AnyField{v}` and `AnyMembership{counters}`. A package with such a clause refuses at emission with `unsupported_construct`/`not-yet-implemented` until the IR encoding exists. | Test (TC-1076) |
+| FR-391-AC-7 | A population name is admitted as the domain of a quantifier or an FR-139 form in a precondition, a postcondition, an invariant, a function body and a temporal `holds` atom: `post P using v on M::Counter::bump { forall(o in M::counters : o.v < 2) }` checks as a `Postcondition` reading `post`; `count(o in M::counters where o.v = 0)` in an invariant of `R::Ring` checks with the result typed `Int[0, N]`; `eventually holds(forall(x in M::counters : x.v < 2))` over a watcher checks with the population as a domain of the clause. No such form refuses `unsupported_construct`/`expression-form`. | Test (TC-1076) |
 
 ## Dependencies
 
