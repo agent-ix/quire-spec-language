@@ -138,7 +138,7 @@ DefinitionLock catalog's `header_selectable_layers` (FR-110).
    temporal facet. Neither is a model construct, and QSL's
    `header_selectable_layers` has no row for either. Not gated: QSpec names
    `quire.protocol.complete/v1` and `quire.temporal.complete/v1`; QSL has no
-   such layer. QSL adds no layer and no gate for them here (the timed forms are gated by FR-230's "Timed facet gate", on the unit's header selection); FR-308 and FR-309
+   such layer. QSL adds no layer and no gate for them here (FR-230's "Timed facet gate" refuses the timed forms; E3 refuses a header that selects `quire.temporal.complete/v1`, because no catalog holds the identity, so every timed construct that reaches S3 lacks the facet); FR-308 and FR-309
    name the protocol facet accordingly.
 9. **Why the test is on the unit.** QSpec's shared grammar says a recognised
    construct whose required facet is absent receives a located
