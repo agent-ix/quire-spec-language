@@ -318,6 +318,9 @@ pub struct TemporalClaim {
     /// admit over a timed subject (FR-234 "Punctuality"): the request writer
     /// disposes its item `Unsupported`, `PunctualInterval`.
     punctual: Option<Span>,
+    /// Whether the clause is over a model subject: its `over` binding is a
+    /// model reference (FR-331, FR-368).
+    model_subject: bool,
 }
 
 impl TemporalClaim {
@@ -327,6 +330,7 @@ impl TemporalClaim {
     pub(crate) fn new(
         parameter_domains: BTreeMap<(usize, Vec<u32>), DomainKind>,
         infinite_trace: bool,
+        model_subject: bool,
     ) -> Self {
         Self {
             kind: Capability::TemporalSatisfaction,
@@ -335,6 +339,7 @@ impl TemporalClaim {
             population: None,
             fairness: BTreeSet::new(),
             punctual: None,
+            model_subject,
         }
     }
 
@@ -397,6 +402,11 @@ impl TemporalClaim {
         }
         let requirements = Requirements::new(self.kind, ClaimExtent::from_domains(domains))
             .with_fairness(self.fairness.iter().copied());
+        let requirements = if self.model_subject {
+            requirements.over_model_subject()
+        } else {
+            requirements
+        };
         Ok(match self.punctual {
             Some(span) => requirements.with_unsupported(UnsupportedItem::PunctualInterval { span }),
             None => requirements,
@@ -962,6 +972,7 @@ fn check_clause(
             population,
             fairness: fairness.iter().map(FairnessConstraint::kind).collect(),
             punctual: unsupported_punctual,
+            model_subject,
         },
         formula,
         activation,

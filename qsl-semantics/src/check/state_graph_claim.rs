@@ -193,7 +193,7 @@ impl StateGraphClaim {
             },
             DomainKind::InfiniteTrace,
         )]);
-        Requirements::new(self.kind, ClaimExtent::from_domains(domains))
+        Requirements::new(self.kind, ClaimExtent::from_domains(domains)).over_model_subject()
     }
 }
 
