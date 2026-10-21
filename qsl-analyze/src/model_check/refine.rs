@@ -294,6 +294,7 @@ impl Run<'_, '_> {
             automaton_states: 0,
             depth: widen(self.nodes.iter().map(|node| node.depth).max().unwrap_or(0)),
             bound_limited: 0,
+            instance_limited: 0,
         }
     }
 
