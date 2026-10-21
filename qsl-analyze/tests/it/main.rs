@@ -49,6 +49,7 @@ mod refinement_safety;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod schedulability;
+mod scheduler_fairness;
 mod state_graph;
 mod state_graph_certificate;
 mod state_graph_settle;

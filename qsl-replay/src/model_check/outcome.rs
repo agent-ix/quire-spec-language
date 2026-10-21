@@ -9,6 +9,7 @@ use crate::proof_result::{
     AppliedReduction, IncompleteCause, MemoryBound, ReductionKind, SymmetryBrokenCause,
 };
 use qsl_eval::simulation::protocol::WeakAccessShape;
+use qsl_eval::simulation::SubjectTransition;
 use qsl_semantics::model::key::DeclarationKey;
 use quire_semantic_value::fairness::PropertyForm;
 use quire_semantic_value::model_transition::ModelTransition;
@@ -107,7 +108,7 @@ pub enum MemoryCause {
 
 /// One EN-1 run's outcome (FR-126 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ModelCheckOutcome<T = ModelTransition> {
+pub enum ModelCheckOutcome<T: SubjectTransition = ModelTransition> {
     /// Every reachable product state was examined and none is bad (V-1),
     /// with the closure certificate the core checks before the proof
     /// settles (ADR-018 PC-3).
@@ -178,7 +179,7 @@ pub enum ModelCheckOutcome<T = ModelTransition> {
     },
 }
 
-impl<T> ModelCheckOutcome<T> {
+impl<T: SubjectTransition> ModelCheckOutcome<T> {
     /// The run's counts.
     pub fn stats(&self) -> RunStats {
         match self {

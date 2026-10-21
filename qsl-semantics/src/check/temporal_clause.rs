@@ -31,8 +31,13 @@
 //! constraint is checked into one shared `FairnessConstraint` (kind,
 //! resolved operation, granularity); a constraint under a bounded profile
 //! refuses `unsupported_construct`/`expression-form`, and one naming no
-//! operation of an admitted model refuses `missing_declaration`/`missing-name`.
-//! A clause over a model subject is classified into one `PropertyForm`.
+//! operation of an admitted model, and no protocol target in QSpec FR-430's
+//! spelling (FR-212 "Targets at S3": a protocol's root, attempt node or
+//! `parallel` branch), refuses `missing_declaration`/`missing-name`. A
+//! constraint that names a protocol target is kept apart from the shared
+//! operation set; S4 has no member to emit it with yet, so its clause is
+//! [`not_emitted`]. A clause over a model subject is classified into one
+//! `PropertyForm`.
 //!
 //! FR-234 adds the timed profile (`timed`): a clause under it binds
 //! `model-time`, its timed intervals are checked in exact rational time,
@@ -119,6 +124,9 @@ pub struct TemporalDeclarations<'a> {
     /// The admitted models whose populations the `over` object type's
     /// population is found in (FR-336-AC-1).
     pub(crate) models: &'a [AdmittedModel],
+    /// The unit's checked protocol clauses, whose attempt nodes, branches
+    /// and roots a fairness constraint may name (FR-212 "Targets at S3").
+    pub(crate) protocols: &'a [super::CheckedProtocol],
     /// What a clause under the timed profile reads (FR-234).
     pub(crate) timed: TimedContext<'a>,
 }
@@ -418,11 +426,52 @@ pub struct CheckedTemporalClause {
     /// The index among the written constraints of each fairness set
     /// member's first occurrence, in set order.
     fairness_sources: Vec<usize>,
+    /// The constraints that name a protocol target, each once, in source
+    /// order of first occurrence (FR-212 "Targets at S3"), each with the
+    /// span of its first occurrence's name.
+    protocol_fairness: Vec<(CheckedProtocolFairness, Span)>,
     property_form: Option<PropertyForm>,
     /// Under the timed profile: the clause's `model-time` binding.
     time_binding: Option<ModelTimeBinding>,
     /// Under the timed profile: the clause's timed property form.
     timed_form: Option<TimedPropertyForm>,
+}
+
+/// What a fairness constraint over a protocol names beside an operation
+/// (FR-212 "Targets at S3", ADR-027 PA-1), in QSpec FR-430's spelling:
+/// `<protocol>::<node>` an attempt node, `<protocol>::<parallel>::<branch>`
+/// a branch, and `<protocol>` the root.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedProtocolTarget {
+    /// An attempt node, by its static declaration path. S4 has no member
+    /// that can emit an attempt-node target yet, so `qsl_eval` has no class
+    /// for it; the class is unreachable until S4 emits one.
+    AttemptNode {
+        /// The node's static declaration path.
+        node: String,
+    },
+    /// The protocol's root thread.
+    Root,
+    /// A branch of a `parallel`.
+    Branch {
+        /// The `parallel` node's static declaration path.
+        parallel: String,
+        /// The branch label.
+        branch: String,
+    },
+}
+
+/// A checked fairness constraint whose target is a protocol's (FR-212).
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedProtocolFairness {
+    /// The constraint's strength.
+    pub kind: FairnessKind,
+    /// The protocol whose target it names.
+    pub protocol: String,
+    /// The target.
+    pub target: CheckedProtocolTarget,
+    /// The constraint's granularity.
+    pub granularity: FairnessGranularity,
 }
 
 impl CheckedTemporalClause {
@@ -484,6 +533,14 @@ impl CheckedTemporalClause {
     /// first occurrence (FR-123).
     pub fn fairness(&self) -> &[FairnessConstraint] {
         &self.fairness
+    }
+
+    /// The clause's constraints whose targets are a protocol's (FR-212),
+    /// each once, in source order of first occurrence.
+    pub fn protocol_fairness(&self) -> impl Iterator<Item = &CheckedProtocolFairness> {
+        self.protocol_fairness
+            .iter()
+            .map(|(constraint, _)| constraint)
     }
 
     /// The clause's property form (FR-123 "Property form"); `None` for a
@@ -828,7 +885,7 @@ fn check_clause(
     };
     let mut refusals: Vec<TemporalCause> = Vec::new();
     let (operators, punctual) = checked_operators(&form.formula, &reading, &mut refusals)?;
-    let (fairness, fairness_sources) =
+    let (fairness, fairness_sources, protocol_fairness) =
         checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
     if let Some(first) = refusals.into_iter().min_by_key(|cause| cause.span().start) {
         return Err(refuse(first));
@@ -910,27 +967,35 @@ fn check_clause(
         activation,
         fairness,
         fairness_sources,
+        protocol_fairness,
         property_form,
         time_binding,
         timed_form,
     })
 }
 
-/// The checked fairness set (FR-123, FR-129): each constraint once, in
-/// source order of first occurrence. An unmarked kind is `weak` and an
-/// unmarked granularity is `whole` (ADR-018 FA-6). A constraint under a
-/// bounded profile, or naming no operation of an admitted model, pushes its
-/// refusal onto `refusals` and joins no set. Each member comes with the
-/// index of the written constraint it was first read from.
+/// The checked fairness set (FR-123, FR-129, FR-212): each constraint
+/// once, in source order of first occurrence. An unmarked kind is `weak`
+/// and an unmarked granularity is `whole` (ADR-018 FA-6). A name that is no
+/// operation of an admitted model is read as a protocol target (FR-212
+/// "Targets at S3"); one that is neither, or a constraint under a bounded
+/// profile, pushes its refusal onto `refusals` and joins no set. Each
+/// operation member comes with the index of the written constraint it was
+/// first read from.
 fn checked_fairness(
     form: &TemporalClauseForm,
     bounded: bool,
     declarations: &TemporalDeclarations<'_>,
     over: Option<&ValueType>,
     refusals: &mut Vec<TemporalCause>,
-) -> (Vec<FairnessConstraint>, Vec<usize>) {
+) -> (
+    Vec<FairnessConstraint>,
+    Vec<usize>,
+    Vec<(CheckedProtocolFairness, Span)>,
+) {
     let mut set: Vec<FairnessConstraint> = Vec::new();
     let mut sources = Vec::new();
+    let mut protocol_set: Vec<(CheckedProtocolFairness, Span)> = Vec::new();
     for (index, written) in form.fairness.iter().enumerate() {
         if bounded {
             refusals.push(TemporalCause::FairnessUnderBoundedProfile { span: written.span });
@@ -938,6 +1003,28 @@ fn checked_fairness(
         }
         let operation = match resolve_fairness_operation(written, declarations.scope, over) {
             Ok(operation) => operation,
+            Err(TemporalCause::UnresolvedFairnessOperation { name, span }) => {
+                match resolve_protocol_target(&name, declarations.protocols) {
+                    TargetLookup::Found(protocol, target) => {
+                        let constraint = CheckedProtocolFairness {
+                            kind: checked_kind(written),
+                            protocol,
+                            target,
+                            granularity: checked_granularity(written),
+                        };
+                        if !protocol_set.iter().any(|(known, _)| *known == constraint) {
+                            protocol_set.push((constraint, span));
+                        }
+                    }
+                    TargetLookup::Missing => {
+                        refusals.push(TemporalCause::UnresolvedFairnessOperation { name, span });
+                    }
+                    TargetLookup::Ambiguous => {
+                        refusals.push(TemporalCause::AmbiguousFairnessOperation { name, span });
+                    }
+                }
+                continue;
+            }
             Err(cause) => {
                 refusals.push(cause);
                 continue;
@@ -949,7 +1036,72 @@ fn checked_fairness(
             sources.push(index);
         }
     }
-    (set, sources)
+    (set, sources, protocol_set)
+}
+
+/// What a fairness constraint's name resolves to among the unit's
+/// protocols.
+enum TargetLookup {
+    /// One target, of the named protocol.
+    Found(String, CheckedProtocolTarget),
+    /// No protocol target.
+    Missing,
+    /// Two or more attempt nodes or branches.
+    Ambiguous,
+}
+
+/// FR-212 "Targets at S3": the protocol target `name` spells in QSpec
+/// FR-430's form, with the protocol it names: `<protocol>` the root,
+/// `<protocol>::<node>` an attempt node and
+/// `<protocol>::<parallel>::<branch>` a branch.
+fn resolve_protocol_target(name: &str, protocols: &[super::CheckedProtocol]) -> TargetLookup {
+    let segments: Vec<&str> = name.split("::").collect();
+    let Some((first, rest)) = segments.split_first() else {
+        return TargetLookup::Missing;
+    };
+    let Some(protocol) = protocols.iter().find(|protocol| protocol.name == *first) else {
+        return TargetLookup::Missing;
+    };
+    let tree = &protocol.controls;
+    let found: Vec<CheckedProtocolTarget> = match rest {
+        [] => vec![CheckedProtocolTarget::Root],
+        [node] => tree
+            .controls
+            .iter()
+            .filter(|control| {
+                control.step() == super::ControlStep::Attempt && control.name == *node
+            })
+            .map(|control| CheckedProtocolTarget::AttemptNode {
+                node: control.path.join("/"),
+            })
+            .collect(),
+        [parallel, branch] => tree
+            .controls
+            .iter()
+            .filter(|control| {
+                control.step() == super::ControlStep::Parallel && control.name == *parallel
+            })
+            .flat_map(|control| {
+                control
+                    .children
+                    .iter()
+                    .filter_map(|child| tree.control(*child))
+                    .filter(|child| {
+                        child.step() == super::ControlStep::Branch && child.name == *branch
+                    })
+                    .map(|_| CheckedProtocolTarget::Branch {
+                        parallel: control.path.join("/"),
+                        branch: (*branch).to_owned(),
+                    })
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    match found.as_slice() {
+        [] => TargetLookup::Missing,
+        [target] => TargetLookup::Found(protocol.name.clone(), target.clone()),
+        _ => TargetLookup::Ambiguous,
+    }
 }
 
 /// `written` with its resolved `operation`: an unmarked kind is `weak` and an
@@ -959,16 +1111,26 @@ pub(crate) fn checked_constraint(
     operation: FairnessOperation,
 ) -> FairnessConstraint {
     FairnessConstraint::new(
-        match written.kind {
-            None | Some(FormKind::Weak) => FairnessKind::Weak,
-            Some(FormKind::Strong) => FairnessKind::Strong,
-        },
+        checked_kind(written),
         operation,
-        match written.granularity {
-            None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
-            Some(FormGranularity::Each) => FairnessGranularity::Each,
-        },
+        checked_granularity(written),
     )
+}
+
+/// `written`'s kind: an unmarked kind is `weak` (ADR-018 FA-6).
+fn checked_kind(written: &FairnessConstraintForm) -> FairnessKind {
+    match written.kind {
+        None | Some(FormKind::Weak) => FairnessKind::Weak,
+        Some(FormKind::Strong) => FairnessKind::Strong,
+    }
+}
+
+/// `written`'s granularity: an unmarked granularity is `whole` (FA-6).
+fn checked_granularity(written: &FairnessConstraintForm) -> FairnessGranularity {
+    match written.granularity {
+        None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
+        Some(FormGranularity::Each) => FairnessGranularity::Each,
+    }
 }
 
 /// The operation a fairness constraint names, resolved in an admitted
@@ -1331,22 +1493,30 @@ fn formula_horizon(
     })
 }
 
-/// Whether S4 emits `form`'s clause, checked as `checked` (FR-337): one
-/// that activates `on origin`, declares no capture and is not under the
-/// timed profile. The `on each` activation and the captures are not
-/// checked, and S4 writes no timed interval (QSpec FR-370's timed form), so
-/// a clause with any of them is [`not_emitted`].
+/// Whether S4 emits `checked`, the clause of `form` (FR-337, FR-212): one
+/// that activates `on origin`, declares no capture, names no protocol
+/// target and is not under the timed profile. The `on each` activation and
+/// the captures are not checked, no emitted member names a protocol target,
+/// and S4 writes no timed interval (QSpec FR-370's timed form), so a clause
+/// with any of them is [`not_emitted`].
 pub(crate) fn is_emitted(form: &TemporalClauseForm, checked: &CheckedTemporalClause) -> bool {
     matches!(form.activation, ActivationForm::Origin)
         && form.captures.is_empty()
+        && checked.protocol_fairness.is_empty()
         && checked.time_binding.is_none()
 }
 
 /// The refusal for a clause that checked but that no S4 emission writes
-/// (an `on each` activation, a capture or the timed profile,
-/// [`is_emitted`]): refused rather
-/// than compiled and silently missing from the package.
+/// ([`is_emitted`]): refused rather than compiled and silently missing from
+/// the package. A clause naming a protocol target refuses at that
+/// constraint, with the target it resolved to.
 pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
+    if let Some((constraint, span)) = checked.protocol_fairness.first() {
+        return refusal(TemporalCause::ProtocolFairnessNotEmitted {
+            constraint: Box::new(constraint.clone()),
+            span: *span,
+        });
+    }
     refusal(TemporalCause::NotEmitted {
         name: checked.name.clone(),
         span: checked.span,
@@ -1378,6 +1548,7 @@ pub fn check_clauses(
         embedding: None,
         position_limit: 10_000,
         models: &package.models,
+        protocols: &[],
         timed: TimedContext {
             units: &units,
             time_sources: &package.time_sources,

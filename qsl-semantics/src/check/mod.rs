@@ -335,9 +335,10 @@ pub use temporal_clause::check_clauses;
 
 pub use temporal_clause::{
     Activation, BinaryTemporal, CheckedFormula, CheckedInterval, CheckedOperator,
-    CheckedTemporalClause, FormulaNode, FormulaNodeId, ModelTimeBinding, ModelTimeSource,
-    TemporalClaim, TemporalDeclaration, TemporalDeclarations, TemporalSelection,
-    TemporalTraceFamily, TimeSourceKind, TimedPropertyForm, UnaryTemporal,
+    CheckedProtocolFairness, CheckedProtocolTarget, CheckedTemporalClause, FormulaNode,
+    FormulaNodeId, ModelTimeBinding, ModelTimeSource, TemporalClaim, TemporalDeclaration,
+    TemporalDeclarations, TemporalSelection, TemporalTraceFamily, TimeSourceKind,
+    TimedPropertyForm, UnaryTemporal,
 };
 
 /// A checked function.
@@ -2028,6 +2029,7 @@ impl PackageDeclarations {
             embedding: embedding.as_deref(),
             position_limit: limits.nodes(),
             models: &models,
+            protocols: &checked_protocols,
             timed: temporal_clause::TimedContext {
                 units: &time_units,
                 time_sources: &self.time_sources,
@@ -2206,6 +2208,7 @@ impl PackageDeclarations {
                 embedding: embedding.as_deref(),
                 position_limit: limits.nodes(),
                 models: &models,
+                protocols: &checked_protocols,
                 timed: temporal_clause::TimedContext {
                     units: &time_units,
                     time_sources: &self.time_sources,
