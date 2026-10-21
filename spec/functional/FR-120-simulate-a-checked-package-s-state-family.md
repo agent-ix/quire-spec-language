@@ -364,14 +364,11 @@ the clause's context type.
 
 The effective precondition is `true` when no `pre` clause applies, and
 otherwise is the conjunction of the applicable clauses. QSpec FR-151:88-90
-defines the effective precondition as "the disjunction of its own
-precondition clauses with the effective preconditions of the members it
-redefines", which joins a member's own precondition to the inherited ones,
-and makes an absent precondition `true`. How several own clauses of one
-member combine is QSL's inference where FR-151 is silent: they are
-conjoined, as own postcondition clauses are, which is the reading TC-196
-D06 ("its absent (true) clause disjoined with PA") and `effective_terms`
-(`qsl-semantics/src/check/checked_dispatch.rs:477`) take. On the spine every
+defines the effective precondition as `(own) or (eff(r1)) or ...`, with
+`own` the conjunction of the member's own precondition clauses (`true` when it
+has none) and `eff(r)` the effective precondition of each member it redefines
+(QSpec FR-151-AC-17, TC-196 D09), which `effective_terms`
+(`qsl-semantics/src/check/checked_dispatch.rs:477`) takes. On the spine every
 operation record's `redefines` is `None` (`qsl-semantics/src/model/
 intake.rs:1444`), so the applicable clauses are the selected member's own.
 The effective postcondition is the conjunction of the applicable `post`
