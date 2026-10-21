@@ -16,6 +16,10 @@
 //! at atom evaluation as an exact function of the trace, so the temporal
 //! evaluator receives a Boolean per position.
 //!
+//! [`evaluate_timed_at`] reads a clause under the timed profile at one
+//! position of a [`TimedTrace`], whose positions carry exact rational time
+//! stamps (FR-234).
+//!
 //! [`evaluate_tuple`] evaluates a hyper body over a tuple of behaviours in
 //! lockstep (FR-175) by reading the tuple as one lasso;
 //! [`evaluate_projected_prefix`] evaluates it three-valued over a tuple of
@@ -38,6 +42,7 @@ mod outcome;
 mod plan;
 mod position;
 mod steps;
+mod timed;
 mod tuple;
 mod window;
 
@@ -47,6 +52,7 @@ pub use letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
 pub use observed::{evaluate_observed, HoldsStop, ObservedRun};
 pub use outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 pub use position::{PositionRefusal, TemporalPosition};
+pub use timed::{evaluate_timed_at, TimedTrace};
 pub use tuple::{
     evaluate_projected_prefix, evaluate_tuple, ComponentPosition, ComponentTrace, TupleLetters,
 };

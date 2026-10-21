@@ -92,6 +92,8 @@ mod terminal_declarations;
 #[cfg(feature = "test-support")]
 mod timed_declarations;
 #[cfg(feature = "test-support")]
+mod timed_intervals;
+#[cfg(feature = "test-support")]
 mod type_environment_model;
 mod variant_fields;
 mod variant_type;

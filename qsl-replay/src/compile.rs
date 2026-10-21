@@ -7,7 +7,7 @@ use qsl_foundation::SourceIdentity;
 use qsl_semantics::model::intake::package_input;
 
 use crate::bounds::ReplayLimits;
-use crate::execute::{request_limits, run_spine, ReplayRefusal};
+use crate::execute::{request_limits, run_spine, Recompiled, ReplayRefusal};
 use crate::request::StageLimits;
 use crate::spine::{self, DependencyInput};
 use crate::DigestRecord;
@@ -20,6 +20,10 @@ pub struct CompiledPackage {
 }
 
 impl CompiledPackage {
+    pub(crate) fn new(emitted: spine::EmittedUnit) -> Self {
+        Self { emitted }
+    }
+
     /// The emitted `quire.checked-package/v2` bytes.
     pub fn bytes(&self) -> &[u8] {
         self.emitted.package().bytes()
@@ -56,6 +60,29 @@ pub fn compile_package<'a>(
     limits: StageLimits,
     replay_limits: ReplayLimits,
 ) -> Result<CompiledPackage, ReplayRefusal> {
+    let compiled = recompile_unit(
+        source,
+        path,
+        bytes,
+        packages,
+        dependencies,
+        limits,
+        replay_limits,
+    )?;
+    Ok(CompiledPackage::new(compiled.emitted))
+}
+
+/// The one compile [`compile_package`] and [`crate::compile_admitted`] both
+/// run: the spine over `bytes`, keeping the checked unit.
+pub(crate) fn recompile_unit<'a>(
+    source: SourceIdentity,
+    path: &str,
+    bytes: &[u8],
+    packages: impl IntoIterator<Item = &'a [u8]>,
+    dependencies: &DependencyInput,
+    limits: StageLimits,
+    replay_limits: ReplayLimits,
+) -> Result<Recompiled, ReplayRefusal> {
     let limits = request_limits(
         &limits,
         crate::limits::AccountingLimits::default().0,
@@ -64,15 +91,12 @@ pub fn compile_package<'a>(
     dependencies
         .check_unit_owner(&source)
         .map_err(ReplayRefusal::DependencyInput)?;
-    let compiled = run_spine(
+    run_spine(
         &source,
         path,
         bytes,
         &package_input(packages),
         dependencies,
         limits.spine,
-    )?;
-    Ok(CompiledPackage {
-        emitted: compiled.emitted,
-    })
+    )
 }

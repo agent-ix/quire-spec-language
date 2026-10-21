@@ -165,7 +165,9 @@ impl Shape {
         };
         let represented = trace.represented().ok_or(TemporalRefusal::TraceTooLong)?;
         let mode = match (profile, trace) {
-            (TemporalProfile::TimestampedEventFiniteWindow, _) => {
+            // The timed profile reads time stamps: `evaluate_timed_at` is its
+            // evaluator (FR-234).
+            (TemporalProfile::TimestampedEventFiniteWindow | TemporalProfile::Timed, _) => {
                 return Err(TemporalRefusal::ProfileNotEvaluated { profile })
             }
             (
@@ -338,16 +340,23 @@ pub(super) fn run<L: TemporalLetters>(
         }
     }
     let plan = Plan::new(clause.formula).map_err(TemporalRefusal::Fault)?;
-    // ADR-027 PB-3: a loop with an uncounted step is not read in counted
-    // steps.
-    let steps = match Steps::read(shape.represented, &*source, meter) {
-        Ok(steps) => steps,
-        Err(ReadStop::Incomplete(incomplete)) => {
-            return Ok(TemporalOutcome::Incomplete(incomplete))
+    // ADR-027 PB-3: only an interval measures distance, and a loop with an
+    // uncounted step is not read in counted steps.
+    let steps = if plan.measures_distance() {
+        match Steps::read(shape.represented, &*source, meter) {
+            Ok(steps) => steps,
+            Err(ReadStop::Incomplete(incomplete)) => {
+                return Ok(TemporalOutcome::Incomplete(incomplete))
+            }
+            Err(ReadStop::Fault(internal)) => return Err(TemporalRefusal::Fault(internal)),
         }
-        Err(ReadStop::Fault(internal)) => return Err(TemporalRefusal::Fault(internal)),
+    } else {
+        None
     };
-    if shape.mode == Mode::Lasso && (steps.is_some() || !source.counts_loop_edge()) {
+    if shape.mode == Mode::Lasso
+        && plan.measures_distance()
+        && (steps.is_some() || !source.counts_loop_edge())
+    {
         return Err(TemporalRefusal::UncountedLasso);
     }
     let evaluation = Evaluator::new(clause, plan, shape, steps, meter)

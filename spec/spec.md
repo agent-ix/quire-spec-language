@@ -748,6 +748,8 @@ relationships:
     type: contains
   - target: ix://agent-ix/quire-spec-language/FR-393
     type: contains
+  - target: ix://agent-ix/quire-spec-language/FR-394
+    type: contains
   - target: ix://agent-ix/quire-spec-language/US-027
     type: contains
 ---
@@ -1274,6 +1276,7 @@ The full task is tmp/formalization-agent-a-language-core.md in the workspace. Th
 | [FR-391](functional/FR-391-name-a-population-in-a-state-clause.md) | FR |
 | [FR-392](functional/FR-392-build-the-probabilistic-claim-form-at-s2.md) | FR |
 | [FR-393](functional/FR-393-parse-time-declarations-clocks-and-timed-intervals-and-build-their-s2-forms.md) | FR |
+| [FR-394](functional/FR-394-expose-the-admitted-enum-key-table-through-the-replay-facade.md) | FR |
 | [NFR-012](non-functional/NFR-012-bound-model-normalization-and-population-admission.md) | NFR |
 | [NFR-013](non-functional/NFR-013-isolate-native-ci-feature-artifacts.md) | NFR |
 | [ADR-014](decisions/ADR-014-temporal-trace-and-boundedness-architecture.md) | ADR |

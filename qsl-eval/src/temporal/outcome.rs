@@ -120,6 +120,27 @@ pub enum TemporalRefusal {
         /// The clause's profile.
         profile: TemporalProfile,
     },
+    /// A clause handed to the timed evaluator that was not checked under the
+    /// timed profile (FR-234).
+    #[error("the timed evaluator reads a clause under the timed profile, not {profile:?}")]
+    NotTimedProfile {
+        /// The clause's profile.
+        profile: TemporalProfile,
+    },
+    /// A timed trace whose stamp is negative (FR-231: a stamp is a
+    /// non-negative exact rational).
+    #[error("the time stamp at {position:?} is negative")]
+    NegativeStamp {
+        /// The first position with a negative stamp.
+        position: TemporalPosition,
+    },
+    /// A timed trace whose stamp is below its predecessor's (FR-231: stamps
+    /// are non-decreasing).
+    #[error("the time stamp at {position:?} is below its predecessor's")]
+    DecreasingStamp {
+        /// The first position whose stamp decreases.
+        position: TemporalPosition,
+    },
     /// A position is outside the represented trace (FR-327 "Positions").
     #[error(transparent)]
     Position(#[from] PositionRefusal),
@@ -143,12 +164,15 @@ impl TemporalRefusal {
             | Self::EmptyLoop
             | Self::TraceTooLong
             | Self::TupleArity { .. }
+            | Self::NegativeStamp { .. }
+            | Self::DecreasingStamp { .. }
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
             Self::AlignSkipNotLockstep
             | Self::NotProjectionAligned
             | Self::LassoUnderBoundedProfile { .. }
             | Self::UncountedLasso
-            | Self::ProfileNotEvaluated { .. } => {
+            | Self::ProfileNotEvaluated { .. }
+            | Self::NotTimedProfile { .. } => {
                 CatalogCode::new("unsupported_construct", "expression-form")
             }
             Self::Position(refusal) => refusal.catalog_code(),
