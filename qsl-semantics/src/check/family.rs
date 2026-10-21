@@ -1338,7 +1338,7 @@ pub(crate) enum OccurrenceRole {
 
 impl OccurrenceRole {
     /// The kernel role this role is carried as.
-    fn kernel_role(self) -> Role {
+    pub(crate) fn kernel_role(self) -> Role {
         Role::new(match self {
             Self::Anchor => "anchor",
             Self::Claim => "claim",

@@ -13,9 +13,9 @@ use std::collections::BTreeMap;
 use ix_trace_rs::trace;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    step_row_refs, step_simulation_records, AssemblyRefusal, CheckCause, CheckRefusal,
-    CheckedGraph, CheckedRefinement, PackageDeclarations, RefinementCause, RowClass, StepClass,
-    StepTarget,
+    step_record_location, step_row_refs, step_simulation_records, AssemblyRefusal, CheckCause,
+    CheckRefusal, CheckedGraph, CheckedRefinement, PackageDeclarations, RefinementCause, RowClass,
+    StepClass, StepTarget,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -1530,6 +1530,21 @@ fn the_counter_refinement_writes_an_initial_and_a_step_record_per_row() {
     for record in &records {
         assert_eq!(record.refinement, refinement_key());
         assert!(record.hypotheses.is_empty());
+    }
+}
+
+/// ADR-013 O-07 (FR-146 "Record identity and occurrence"): each record's
+/// occurrence is its refinement node, role `generated`, ordinal 0 for
+/// `Initial` and `row + 1` for a `Step` row, all distinct.
+#[trace("TC-551")]
+#[test]
+fn each_record_is_written_at_a_generated_occurrence_of_the_refinement() {
+    let records = simulation_records(&checked_counter(&cas_refines_counter()));
+    let locations: Vec<_> = records.iter().map(step_record_location).collect();
+    for (ordinal, location) in locations.iter().enumerate() {
+        assert_eq!(location.node(), refinement_key());
+        assert_eq!(location.occurrence().role().as_str(), "generated");
+        assert_eq!(location.occurrence().ordinal(), ordinal as u64);
     }
 }
 

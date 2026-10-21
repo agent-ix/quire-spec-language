@@ -26,9 +26,10 @@
 use std::collections::BTreeSet;
 
 use qsl_forms::StateClauseKind;
-use quire_exact::NodeKey;
+use quire_exact::{Location, NodeKey, Origin};
 use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimulationRecord};
 
+use super::family::OccurrenceRole;
 use super::{CheckedRefinement, CheckedStateClause, StepClass, StepTarget};
 use crate::model::key::DeclarationKey;
 
@@ -92,6 +93,24 @@ pub fn step_simulation_records(
         ));
     }
     Ok(records)
+}
+
+/// The O-07 occurrence a record is written at: the owning refinement node,
+/// role `generated`, with ordinal 0 for the `Initial` record and `row + 1`
+/// for a `Step` record (ADR-013 O-07, QSpec FR-322-AC-88 through AC-91). The
+/// ordinal follows the record's row position, never source order, so a source
+/// permutation cannot change it. A record exists only for a proof-eligible
+/// refinement, so this is the only case that carries generated occurrences.
+#[must_use]
+pub fn step_record_location(record: &StepSimulationRecord) -> Location {
+    let ordinal = match record.obligation {
+        StepObligation::Initial => 0,
+        StepObligation::Step { row } => u64::from(row.index()) + 1,
+    };
+    Location::new(
+        record.refinement,
+        Origin::new(OccurrenceRole::Generated.kernel_role(), ordinal),
+    )
 }
 
 /// The [`StepRowRef`] of each step row of `refinement`, indexed by the row's
