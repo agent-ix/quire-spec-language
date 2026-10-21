@@ -90,3 +90,25 @@ What each fix was checked against:
 - **FND-005.** Both FR-183-AC-4 tests match `DisagreementCause::Verdicts`.
 - **FND-006.** The test reads `X_0` off the engine's `WitnessProduct` initial state, which is the same code the replay runs, and the test doc says so.
 - **FND-007.** Mutants S10 and E5 are killed (an injected liveness stop, and two-instance horizon tests for HP-2 and HP-3).
+
+### Disposition pass 2
+
+Round 2 is at c7850b20a. Gates, oracles and mutants are in SR-13624's pass-2 notes. FND-001 and FND-002 keep their round-1 `deferred` rows; QSL-929 now tracks both spec gaps (PR gaps 0, 0a, 0b and 0d). QSL-930 tracks the HP-2 replay bug on main that the round-1 notes mention.
+
+What each fix was checked against:
+- **FND-008 to FND-010:** the eight tests at `qsl-analyze/tests/it/hyper_replay.rs` lines 459, 500, 542, 556, 657, 698, 802 and 854 now carry `TC-608` alone. FR-183-AC-1, AC-4 and AC-6 stay tagged by their round-0 tests.
+- **FND-011:** mutants N4, N5 and N14 are killed.
+  - N4 by `a_witness_replay_through_a_state_with_a_refused_contract_reproduces_nothing`, whose guard is refused because it reaches a protocol reference.
+  - N5 by `a_witness_set_beside_a_step_whose_universal_match_is_undefined_reproduces_nothing`.
+  - N14 by the `alternating` case of `a_position_past_a_longer_or_late_loop_reads_the_state_it_goes_around_to`.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | fixed | - |
+| FND-009 | fixed | - |
+| FND-010 | fixed | - |
+| FND-011 | fixed | - |
+
+## Verdict (disposition pass 2)
+
+**Mergeable.** Every finding in SR-13624 and SR-13625 is fixed or deferred to QSL-929.

@@ -157,3 +157,27 @@ What each fix was checked against:
 ## Verdict (disposition pass 1)
 
 **Not mergeable** until FND-008 is fixed or deferred with a ticket and FND-009 is fixed. Every round-0 finding is fixed, and the two high soundness defects are gone, as the oracles above show.
+
+### Disposition pass 2
+
+Round 2 is at c7850b20a. It is the fix commit on b227321ff, a clean merge of main 15e011cca: `git show --remerge-diff` shows no conflict hunks. The branch also merges cleanly onto the current main, 4639aa67d.
+
+**Gates:** all exit 0 in my own clone: fmt, clippy `-D warnings`, the qsl-eval, qsl-replay, qsl-analyze and qsl-semantics tests (4,093 passed, 0 failed), root `cargo test --test it` (975 passed, 6 ignored), `make string-edge`, and the three arch-lint targets.
+
+**Oracles:** re-run at the new head, with results identical to round 1.
+- Depth oracle: 600 cases, 0 bugs. There are 553 HP-2 `{k, JointSteps}` records and 505 HP-3 `{k, ProductDepth}` records, and every counterexample replays.
+- Replay-soundness oracle: 320 cases. All 1,032 WitnessExhausted and 195 Lockstep counterexamples replay in their own world. No cross replay reproduces where the target engine holds, is bounded, is vacuous, or is undecided by a refusal on the path.
+- The FND-001, FND-002 and FND-004 repros give the same results as in round 1.
+
+**Mutants:** all 32 re-run, 31 killed. Only N10 survives, and it is equivalent. N21 is now killed by `a_plain_holds_outcome_settles_no_record_until_the_product_closure_checker_exists`.
+
+**Header change:** the test-world header now declares `profile p = "quire.protocol.finite-global/v1"`. That line is in the clause unit's text, not in the model package, so package digests and state keys do not change. Every other test's outcome is unchanged, and the full suite passes.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | deferred | QSL-929 (Backlog) tracks it: the owner decides whether to widen the external `PropertyForm` or amend FR-182/FR-174. The refusal's doc comment now cites QSL-929 and FR-182's V-6 row, and the PR body lists it. |
+| FND-009 | fixed | - |
+
+## Verdict (disposition pass 2)
+
+**Mergeable.** Every round-0 and round-1 finding is fixed, except FND-008, which is deferred to QSL-929 with an owner decision pending.
