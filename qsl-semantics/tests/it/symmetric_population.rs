@@ -179,9 +179,8 @@ fn an_annotated_population_checks_and_changes_the_package_selection() {
 /// An order-dependent `fold` over a set of references into an annotated
 /// population refuses `identity-observing-form` at the `fold`, naming the
 /// form and the population; unannotated it keeps today's FR-145 refusal
-/// (`operator-ineligible`), so this does not verify the AC's "unannotated
-/// checks" half.
-#[trace("TC-565")]
+/// (`operator-ineligible`, FR-145 wins per STD-177).
+#[trace("TC-565", "FR-150-AC-2")]
 #[test]
 fn a_fold_over_references_into_an_annotated_population_refuses() {
     let body = format!(
@@ -197,6 +196,19 @@ fn a_fold_over_references_into_an_annotated_population_refuses() {
         causes(&unannotated),
         [(Code::IllTyped, Some("operator-ineligible"))]
     );
+}
+
+/// A counting `fold` over the reference set uses a commutative and associative
+/// step, so it checks in the annotated and the unannotated unit alike.
+#[trace("TC-565", "FR-150-AC-2")]
+#[test]
+fn a_counting_fold_over_references_checks_in_both_units() {
+    let body = format!(
+        "{FLAG}invariant Count using v on Config::ConfigVersion at current {{ \
+           fold<Tally>(acc, p in self.peers: acc + 1, identity: 0) <= 5 }}\n"
+    );
+    check(&with_peers(&document()), &body).expect("unannotated counting fold checks");
+    check(&annotated(&with_peers(&document())), &body).expect("annotated counting fold checks");
 }
 
 /// `reduce`, and a conversion of a reference, refuse the same way.
