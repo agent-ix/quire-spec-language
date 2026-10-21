@@ -92,3 +92,68 @@ What holds up: the settlement rows match FR-127/FR-182 (V-4 only through replay;
 | FND-005 | medium | The branch does not merge onto main (97654ffd4): conflicts in `qsl-analyze/src/model_check/hyper.rs`, `qsl-analyze/tests/it/main.rs` and `qsl-replay/src/lib.rs`, from #1123 (copy-swap). The module doc this PR rewrites still lists 'the copy-swap reduction (FR-174)' as not built, which is false on main. Rebase or merge main, keep both features (`HoldsReduced`, `reductions`, `copy_swap` beside `bounded`/`covers`), fix the doc, and re-run the gates and the oracle on the merge. | qsl-analyze/src/model_check/hyper.rs:75-80 |
 | FND-006 | low | Stale doc: `World::max_depth` is documented 'The search horizon of an HP-6 run (`max_depth`)', but HP-2 and HP-3 runs now read it too. | qsl-analyze/tests/it/hyper_world.rs:406 |
 | FND-007 | low | Two new doc comments open with an AC id: `/// FR-177-AC-5's outcome settles ...` above the `FR-182-AC-8` test, and `/// FR-177-AC-5's Undefined counterexample ...` above the `FR-183-AC-6` test. The trace tag carries the id; the doc should say what the test checks. | qsl-analyze/tests/it/hyper_settle.rs:199; qsl-analyze/tests/it/hyper_witness.rs:1243 |
+
+## New findings (disposition pass 1)
+
+Round 1 re-review at 09480caa4 (fix commit) on the merge 4956306e1 of main 9db72300e. The branch also merges cleanly onto the current main, 9c8c9b102.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | medium | A hyper `Reduction::NotPreserving` outcome now settles no record. FR-182's V-6 row lists `ReductionNotPreserving` (wire cause `reduction-not-preserving`) as a settled `inconclusive` record, and FR-174 says a request that selects a non-preserving reduction settles V-6 before any expansion. The merge resolution returns `Err(HyperSettleRefusal::ReductionFormNotRepresentable)` instead, because `InconclusiveCause::ReductionNotPreserving.form` is the external `quire_semantic_value` `PropertyForm`, which has no hyper member. The refusal is honest and is listed as spec gap 0d in the PR body, but it means a settled V-6 verdict is replaced by a refusal, and no Linear ticket tracks the fix. The fix needs a decision from the owner: widen the cause's `form` member upstream (quire-semantic-value), or amend FR-182/FR-174. Either way it needs a ticket before this ships as a refusal. | qsl-replay/src/model_check/hyper_settle.rs:118-121; spec/functional/FR-182-settle-a-hyper-verdict.md:86 |
+| FND-009 | low | Two tests the merge loosened now accept `Holds { .. } \| HoldsReduced { .. }`, although the outcome is deterministic: `NonInterference` over the secure vault holds with copy-swap (FR-174-AC-7), so it is always `HoldsReduced`. As a result, no test settles a plain `Holds`. Mutant N21 (a plain `Holds` settles an `inconclusive` record instead of being refused) survives. Fix: assert `HoldsReduced` in both tests, and settle a plain `Holds` from a clause with a trivial copy group (or a hand-built `HyperOutcome::Holds`) in the settlement test. | qsl-analyze/tests/it/hyper_settle.rs:494-499; qsl-analyze/tests/it/hyper.rs:1153-1156 |
+
+## Dispositions
+
+Round 1, at 09480caa4. Gates run in my own clone with its own `CARGO_TARGET_DIR`, all exit 0: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test -p qsl-eval -p qsl-replay -p qsl-analyze -p qsl-semantics` (4,063 passed, 0 failed, 1 ignored), root `cargo test --test it` (975 passed, 6 ignored), `make string-edge`, `make arch-lint-api-surface-qsl`, `make arch-lint-canonical-encoder`, `make arch-lint-qualified-core`.
+
+**Oracle.** The probe was re-run in a scratch copy that was never pushed. Bodies are `or`-free (QSL-923).
+
+- **Depth oracle:** 600 cases over seeds 7, 11, 23 and 41, 0 bugs. These were 200 HP-2 refutations, 173 HP-3 refutations and 223 holding items, and every unbounded counterexample replays `Reproduced`. A bounded `Holds` appears only where the unbounded run holds, and a bounded `Violated` only where the unbounded run refutes, always replaying. No `BoundReached` follows a `Violated` at a smaller horizon. Every HP-2 `BoundReached` is `{k, JointSteps}`, and no HP-2 counterexample has a lasso of at most `k` steps (553 records). Every HP-3 one is `{k, ProductDepth}` (505 records). A horizon past the product gives the unbounded outcome.
+- **New replay-soundness oracle:** 320 cases, each with 3 vault models over one clause (random contracts, one with a guard that has no value in some states, one nondeterministic `step`), crossed with up to 5 seams. The seams are plain, `μ_E` undefined or incomplete for one input, `μ_U` undefined or incomplete for one input, letters undefined at one state, and `μ_E` incomplete everywhere. Every engine counterexample was replayed in its own world and seam, and in every other.
+  - All 1,032 `WitnessExhausted` and 195 `Lockstep` counterexamples replay `Reproduced` in their own world.
+  - Of 3,766 cross replays of a `WitnessExhausted` counterexample that reproduce, the target engine refutes in 3,705. In the other 61 the target is an engine refusal `NoPartnerPath` (an undefined universal evaluation, which HV-8/RU-5 call not holding), or `MatchUndetermined` from a refusal off the counterexample's path. Case 79 (seed 23) was checked by hand: the refused `μ_E` is on the universal trace from `(1, 1)`, and the counterexample's trace starts at `(0, 0)`.
+  - No counterexample reproduces where its target holds, is bounded, is vacuous, or is undecided because of a refusal on the path. The replay never reproduces a held property.
+
+**Mutants:** 32 hand-made mutants run against `qsl-analyze --test it`, plus `qsl-replay` for qsl-replay mutants.
+
+- **27 killed:**
+  - the findings check removed;
+  - its contract, refused-contract, refused-`match`, undefined-`μ_E` and member-contract arms;
+  - `Enabled` counted as a drop;
+  - three unrolling-arithmetic mutants, and `at` reading the raw joint;
+  - the replay count dropped, or set to the budget's value;
+  - the settled count dropped;
+  - HP-3 covers `JointSteps`, and HP-2 covers `ProductDepth`;
+  - `HoldsReduced` settles a record;
+  - an unsupported reduction refused;
+  - the round-0 survivors R5, R7, R8, R11, S10 and E5;
+  - R9, R14 and E9.
+- **5 survived:**
+  - N10 (`joint <= steps` to `<`): equivalent, since the state at `steps` is the loop entry's.
+  - N4 (a refused universal contract is not a drop), N5 (an undefined `μ_U` is not a drop) and N14 (a step past the last one always reads the last step): test gaps, see SR-13625 FND-011.
+  - N21: FND-009.
+
+**Not counted here (on main before this PR):** an HP-2 item over a vault with a guard `1 div (1 - self.h)` and a letter undefined at the same initial state. The engine names the guard (`Contract("G")`) at position 0, and the `Undefined` replay reads the letter first and settles `Verdicts`. The result is the same on origin/main 9c8c9b102, so this PR did not introduce it. It is reported to the lead for a ticket.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | - |
+| FND-002 | fixed | - |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | still-open | New this round: no fix yet; needs a fix, or a deferral with a ticket and an owner decision. |
+| FND-009 | still-open | New this round: no fix yet. |
+
+What each fix was checked against:
+
+- **FND-001.** The round-0 repro now gives `Inconclusive(NoValue)` and settles `inconclusive`, `ReplayParity(NoValue)`. A dropped member whose letter was undefined still shrinks `X`, with an `Undefined` sibling state, and can reproduce. That is not a defect: an undefined claim does not hold (ADR-023 RU-5, HV-8), and the engine would refute the item too.
+- **FND-002.** The repro, and its `once[1,1] once[1,1]` and `once[3,3]` variants, replay to positions 2, 2 and 3. Positions one earlier or later, and 100,000, give `Verdicts` within 9 ms.
+- **FND-004.** Budget 0 gives count `Some(1)` from both the replay and the engine.
+- **FND-005.** I read the merge with `git show --remerge-diff`. The conflict hunks keep both features, and the module doc is correct.
+
+## Verdict (disposition pass 1)
+
+**Not mergeable** until FND-008 is fixed or deferred with a ticket and FND-009 is fixed. Every round-0 finding is fixed, and the two high soundness defects are gone, as the oracles above show.

@@ -491,10 +491,24 @@ fn a_holds_outcome_settles_no_record_until_the_product_closure_checker_exists() 
         &non_interference(EQUAL_INPUTS),
     );
     let outcome = run(&secure, ModelCheckLimits::default());
-    assert!(matches!(
-        outcome,
-        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. }
-    ));
+    // FR-174-AC-7: a run that proves its claim reports `HoldsReduced`.
+    assert!(matches!(outcome, HyperOutcome::HoldsReduced { .. }));
+    let result = settle_hyper_check(&outcome, &ModelCheckLimits::default(), &[], |_| {
+        panic!("a holds outcome replays nothing")
+    });
+    assert_eq!(
+        result,
+        Err(qsl_replay::HyperSettleRefusal::ProductClosureCheckerNotBuilt)
+    );
+}
+
+/// A plain `Holds` outcome waits for the same checker as `HoldsReduced`.
+#[trace("TC-607")]
+#[test]
+fn a_plain_holds_outcome_settles_no_record_until_the_product_closure_checker_exists() {
+    let outcome = HyperOutcome::Holds {
+        stats: RunStats::default(),
+    };
     let result = settle_hyper_check(&outcome, &ModelCheckLimits::default(), &[], |_| {
         panic!("a holds outcome replays nothing")
     });

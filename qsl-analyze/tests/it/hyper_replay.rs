@@ -456,7 +456,7 @@ fn rotated() -> World {
 /// FR-183 "WitnessExhausted": the replay reads joint positions past the last
 /// step around the loop, so the engine's own counterexample, whose position
 /// the canonical rotation leaves past its steps, replays to its position.
-#[trace("TC-608", "FR-183-AC-1")]
+#[trace("TC-608")]
 #[test]
 fn a_witness_exhausted_position_past_a_rotated_lasso_reads_around_the_loop() {
     let world = rotated();
@@ -497,7 +497,7 @@ fn no_value_settlement(result: Result<ModelTraceSettlement, ReplayRefusal>) {
 /// meter, has every member refused, so `X_1` is empty; the engine over those
 /// inputs is `Undecided(MatchUndetermined)`, and the replay completes no value
 /// and the item settles `inconclusive`, never `refuted`.
-#[trace("TC-608", "FR-183-AC-4")]
+#[trace("TC-608")]
 #[test]
 fn a_witness_set_emptied_by_a_refused_match_reproduces_nothing() {
     let secure = opaque_over(Vault::Secure);
@@ -539,7 +539,7 @@ fn a_witness_set_emptied_by_a_refused_match_reproduces_nothing() {
 /// A set emptied by an existential `μ_E` with no value is the same: §8.2's
 /// leaky counterexample replayed over the leaky vault with `b`'s input divided
 /// into, whose engine run is `Undefined`, not an exhausted set.
-#[trace("TC-608", "FR-183-AC-4")]
+#[trace("TC-608")]
 #[test]
 fn a_witness_set_emptied_by_an_undefined_match_reproduces_nothing() {
     let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
@@ -553,7 +553,7 @@ fn a_witness_set_emptied_by_an_undefined_match_reproduces_nothing() {
 /// which the guard divides by zero. `a` runs `(1, 0) -step(0)-> (1, 1)` and
 /// loops there; the replay reads the guard's finding when it expands the
 /// product state at joint position 1.
-#[trace("TC-608", "FR-183-AC-4")]
+#[trace("TC-608")]
 #[test]
 fn a_witness_set_that_lost_a_member_to_an_undefined_contract_reproduces_nothing() {
     let world = World::new(GUARDED, false, &STARTS, GUARDED_CLAUSE);
@@ -654,7 +654,7 @@ const CHOOSING: Vault =
 /// 0 or 1 and the body needs `l = 0` on `a`, so the set empties only along a
 /// path that takes the post-state with `l = 1`; the replay follows the
 /// engine's counterexample to it and reproduces.
-#[trace("TC-608", "FR-183-AC-1")]
+#[trace("TC-608")]
 #[test]
 fn a_witness_replay_follows_the_post_state_a_nondeterministic_step_took() {
     let clause = "hyper Chosen using inf over behaviours (v: V::Vault) \
@@ -695,7 +695,7 @@ fn a_witness_replay_follows_the_post_state_a_nondeterministic_step_took() {
 /// steps, one that goes around a two-step loop from its first step and one
 /// that goes around a one-step loop re-entered at step 1: the replay reads
 /// the position through the loop, whatever its entry and length.
-#[trace("TC-608", "FR-183-AC-1")]
+#[trace("TC-608")]
 #[test]
 fn a_position_past_a_longer_or_late_loop_reads_the_state_it_goes_around_to() {
     let toggling = Vault::Custom(
@@ -704,9 +704,24 @@ fn a_position_past_a_longer_or_late_loop_reads_the_state_it_goes_around_to() {
     let fresh = Vault::Custom(
         "pre Fresh using v on V::Vault::step { self.l = 0 }\npost Step using v on V::Vault::step { self.l = i }\n",
     );
+    // A loop of two different transitions: only `step(1)` leaves `l = 0` and
+    // only `step(0)` leaves `l = 1`, so reading the wrong step of the loop
+    // reaches no state of the lasso.
+    let alternating = Vault::Custom(
+        "post Step using v on V::Vault::step { (pre(self.l) = 0 and self.l = 1 and i = 1) or (pre(self.l) = 1 and self.l = 0 and i = 0) }\n",
+    );
     let cases = [
         (
             toggling,
+            &[(0, 1), (1, 0)][..],
+            "hyper P using inf over behaviours (v: V::Vault) \
+             forall trace a of V exists trace b of V \
+             { holds(v.h @ a != v.h @ b) and always (once[3,3] holds(v.l @ b = 1) \
+             implies holds(v.l @ b = 1)) }",
+            (0, 2, 3),
+        ),
+        (
+            alternating,
             &[(0, 1), (1, 0)][..],
             "hyper P using inf over behaviours (v: V::Vault) \
              forall trace a of V exists trace b of V \
@@ -799,7 +814,7 @@ impl qsl_eval::hyper::HyperLetters for UndefinedWhereBIsHigh<'_> {
 /// which the `match` rejects, into a state where an atom has no value and the
 /// payload names that atom: without the rejection the replay would
 /// reproduce it, with it the replay settles `inconclusive`, `Verdicts`.
-#[trace("TC-608", "FR-183-AC-6")]
+#[trace("TC-608")]
 #[test]
 fn an_undefined_witness_path_through_a_rejected_existential_step_is_not_reproduced() {
     let world = World::new(Vault::Secure, false, &STARTS, &opaque(""));
@@ -851,7 +866,7 @@ fn an_undefined_witness_path_through_a_rejected_existential_step_is_not_reproduc
 /// `a`'s component and none for a member. The
 /// counterexample is the leaky one with `reset` in the vault, which the
 /// engine would not return from such a run.
-#[trace("TC-608", "FR-183-AC-4")]
+#[trace("TC-608")]
 #[test]
 fn a_witness_set_computed_past_a_universal_contract_with_no_value_reproduces_nothing() {
     let world = World::new(
@@ -868,5 +883,97 @@ fn a_witness_set_computed_past_a_universal_contract_with_no_value_reproduces_not
     let (step, _) = take(&world, &system.initial()[0], 0);
     let mut counterexample = exhausted();
     counterexample.traces[0].steps = vec![HyperStep::Model(step)];
+    no_value_settlement(world.replay(&counterexample));
+}
+
+/// A `μ_U` with no value on every `step(1)` and the vault world's reading of
+/// every other joint step.
+struct UndefinedOnStepOne<'w>(crate::hyper_world::Seams<'w>);
+
+impl qsl_eval::hyper::StepMatch for UndefinedOnStepOne<'_> {
+    fn universal(
+        &self,
+        instance: &[qsl_eval::hyper::ParameterBinding],
+        steps: &[qsl_eval::hyper::StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<qsl_eval::hyper::MatchReading, Incomplete> {
+        if crate::hyper_world::input_of(&steps[0]) == Some(1) {
+            return Ok(qsl_eval::hyper::MatchReading::Undefined {
+                conjunct: 0,
+                cause: UndefinedCause::Kernel(Undefined::DivisionByZero),
+            });
+        }
+        self.0.universal(instance, steps, meter)
+    }
+
+    fn existential(
+        &self,
+        instance: &[qsl_eval::hyper::ParameterBinding],
+        steps: &[qsl_eval::hyper::StepLabel<'_>],
+        meter: &mut Meter,
+    ) -> Result<qsl_eval::hyper::MatchReading, Incomplete> {
+        self.0.existential(instance, steps, meter)
+    }
+}
+
+/// A sibling step whose `μ_U` has no value is a step the expansion left out
+/// without saying whether the path's witness set kept a member through it:
+/// the set that follows is not the one the engine computed, so the replay
+/// reproduces nothing. §8.2's leaky counterexample, which takes `step(0)`
+/// throughout, is replayed with a `μ_U` that has no value on `step(1)`.
+#[trace("TC-608")]
+#[test]
+fn a_witness_set_beside_a_step_whose_universal_match_is_undefined_reproduces_nothing() {
+    let confined = " and (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) \
+                    else 0) = 0";
+    let world = World::new(Vault::Leaky, false, &STARTS, &opaque(confined));
+    let counterexample = refuted(&world);
+    assert!(matches!(
+        counterexample.kind,
+        HyperCounterexampleKind::WitnessExhausted { .. }
+    ));
+    assert_eq!(
+        world.replay(&counterexample).expect("the replay settles"),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::Truth(false),
+            trace_position: Some(counterexample.trace_position),
+        }
+    );
+    no_value_settlement(world.replay_through(
+        &counterexample,
+        &world.seams(),
+        &UndefinedOnStepOne(world.seams()),
+        65_536,
+    ));
+}
+
+/// The vault of [`GUARDED`] whose guard is refused rather than undefined where
+/// `l = 1` and `h = 1`: a protocol reference is a clause no stage evaluates
+/// (FR-308), and the guard reaches it only there.
+const REFUSED: Vault = Vault::Custom(
+    "protocol Fill using v over (input: Boolean) on origin { role R on V::Vault; run sequence Main { } finish End as (outcome: Boolean) { true }; }\n\
+     pre Guard using v on V::Vault::step { self.l = 0 or self.h = 0 or protocol Fill }\n\
+     post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n",
+);
+
+/// The same for a universal variable's own contract that is refused: `a` runs
+/// `(1, 0) -step(0)-> (1, 1)` and rests there, a state whose guard is refused,
+/// so the successor relation of the state is not exactly known and the replay
+/// reproduces nothing, as it does where the contract has no value.
+#[trace("TC-608")]
+#[test]
+fn a_witness_replay_through_a_state_with_a_refused_contract_reproduces_nothing() {
+    let world = World::new(REFUSED, false, &STARTS, GUARDED_CLAUSE);
+    let system = ModelSystem::new(world.subject().simulation).expect("the subject admits");
+    let initial = system.initial()[1].clone();
+    let (first, _) = take(&world, &initial, 0);
+    let mut counterexample = exhausted();
+    counterexample.traces[0].initial = 1;
+    counterexample.traces[0].steps = vec![HyperStep::Model(first), HyperStep::TerminalStutter];
+    counterexample.kind = HyperCounterexampleKind::WitnessExhausted {
+        loop_entry: 1,
+        position: 2,
+    };
+    counterexample.trace_position = 2;
     no_value_settlement(world.replay(&counterexample));
 }

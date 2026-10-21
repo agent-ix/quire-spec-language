@@ -85,6 +85,10 @@ pub enum HyperSettleRefusal {
     /// A reduction whose preservation row reads "no" for a hyper form settles
     /// `ReductionNotPreserving` naming that form (ADR-023 section 5), and the
     /// cause's `form` member is a `PropertyForm`, which has no hyper member.
+    ///
+    /// Deferred: QSL-929. FR-182's V-6 row says this outcome is inconclusive
+    /// `ReductionNotPreserving`; representing it needs an owner decision on the
+    /// external `PropertyForm` type, so the refusal stands until then.
     #[error("a hyper `ReductionNotPreserving` names a hyper form, which the cause's `PropertyForm` member cannot hold")]
     ReductionFormNotRepresentable,
 }

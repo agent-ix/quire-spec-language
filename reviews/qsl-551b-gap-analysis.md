@@ -53,3 +53,40 @@ Mutation results (33 mutants, 25 killed, 8 survived, 2 equivalent) are in SR-136
 | FND-005 | low | FR-183-AC-4 says the two hand-built envelopes settle `inconclusive`, `Verdicts`; the tests assert `Inconclusive(_)`, which a `NoValue` cause also passes. Match `DisagreementCause::Verdicts { .. }`. | qsl-analyze/tests/it/hyper_replay.rs:190-210, 277-300 |
 | FND-006 | low | FR-183-AC-1's second sentence names the recomputed sets, `X_0 = {((1, 0), g)}` and an empty `X_1`; the replay test asserts only `Reproduced` at position 1, and the sets are asserted by the FR-177 tests on the engine's product, not on the replay's. Mutant R9 (one position short) is killed, so the empty `X_1` is covered; `X_0`'s member is not. State that in the test doc, or expose the replay's recomputed sets to the test. | qsl-analyze/tests/it/hyper_replay.rs:249-266 |
 | FND-007 | low | Untested or unreachable: mutant S10 survives, since no liveness replay returns `ModelTraceSettlement::Stopped`, so the new arm in FR-127's `settle` is reachable only if one does; and mutant E5 (the HP-3 ranking cap takes the larger of ranking and horizon) survives, since no test runs two instances under a horizon. Add a two-instance horizon test for HP-2 and HP-3, and either a test or a comment that the liveness arm exists for exhaustiveness. | qsl-replay/src/model_check/settle.rs:342-345; qsl-analyze/src/model_check/hyper.rs:724-727 |
+
+## New findings (disposition pass 1)
+
+Round 1 re-review at 09480caa4. `quire matrix` is unchanged for the claimed ACs, but the new tests carry AC tags whose criteria they do not test (FND-008 to FND-010). The ACs stay covered by their round-0 tests, so coverage is not inflated, but the bindings are wrong. Three branches of the new replay code are untested (FND-011).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | Wrong trace: three new tests are tagged `FR-183-AC-1`, but none of them tests what AC-1 states, which is §8.1's leaky `Lockstep` and §8.2's leaky `WitnessExhausted{position: 1}` with its sets. They test a rotated lasso read around its loop, a longer or late loop, and a nondeterministic step's post-state. That behaviour has no AC (PR spec gap 0b). Tag them `TC-608` alone. | qsl-analyze/tests/it/hyper_replay.rs:459, 657, 698 |
+| FND-009 | low | Wrong trace: four new tests are tagged `FR-183-AC-4`, but they assert `NoValue` for a set that lost a member to a refused or undefined `μ_E`, an undefined member contract, or a universal contract. AC-4 states the two `Verdicts` envelopes and the `max_witness_set` 0 stop. The dropped-member rule has no AC (spec gap 0b). Tag them `TC-608` alone. | qsl-analyze/tests/it/hyper_replay.rs:500, 542, 556, 854 |
+| FND-010 | low | Wrong trace: `an_undefined_witness_path_through_a_rejected_existential_step_is_not_reproduced` is tagged `FR-183-AC-6`, but it asserts `Verdicts` for a path through a step that `μ_E` rejects. AC-6 states FR-177-AC-5's counterexample reproducing, and the refusal when the existential trace is removed. Tag it `TC-608` alone. | qsl-analyze/tests/it/hyper_replay.rs:802 |
+| FND-011 | low | Three branches of the new `WitnessExhausted` replay are untested. Mutant N4 survives: a refused (not undefined) universal contract on the path is not a drop. Mutant N5 survives: an undefined `μ_U` on a sibling step is not a drop. Mutant N14 survives: a step past the last one always reads the last step, because every engine counterexample in the tests that goes past its steps has a loop whose steps carry the same transition. Add a seam whose universal contract is refused (meter) on the path, a `μ_U` with no value on a sibling step, and a counterexample past its steps around a loop of two different transitions. | qsl-replay/src/model_check/hyper_replay.rs:654-662, 670-682 |
+
+## Dispositions
+
+Round 1, at 09480caa4. Gates, oracle and mutants are in SR-13624's Dispositions.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | deferred | Spec change, not this code PR. The code takes the conservative reading (`BoundCovers::ProductDepth` for HP-3), and the PR body lists it as spec gaps 0 and 0a. No Linear ticket tracks the HV-3 and `max_depth` AC change yet (`ix-board search` found none), so the lead should file one. |
+| FND-002 | deferred | Spec change, not this code PR. The code reads past positions around the loop and settles `NoValue` for a dropped member, and the PR body lists both as spec gap 0b. No Linear ticket tracks the FR-183 sentence yet, so the lead should file one. |
+| FND-003 | fixed | - |
+| FND-004 | fixed | - |
+| FND-005 | fixed | - |
+| FND-006 | fixed | - |
+| FND-007 | fixed | - |
+| FND-008 | still-open | New this round: no fix yet. |
+| FND-009 | still-open | New this round: no fix yet. |
+| FND-010 | still-open | New this round: no fix yet. |
+| FND-011 | still-open | New this round: no fix yet. |
+
+What each fix was checked against:
+
+- **FND-003.** Mutants R7, R8 and R11 are killed by the new tests.
+- **FND-004.** Mutant R5 is killed. The envelope is now a `Lockstep` clause's own `a`/`b` counterexample.
+- **FND-005.** Both FR-183-AC-4 tests match `DisagreementCause::Verdicts`.
+- **FND-006.** The test reads `X_0` off the engine's `WitnessProduct` initial state, which is the same code the replay runs, and the test doc says so.
+- **FND-007.** Mutants S10 and E5 are killed (an injected liveness stop, and two-instance horizon tests for HP-2 and HP-3).

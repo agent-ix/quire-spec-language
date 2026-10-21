@@ -289,6 +289,7 @@ fn unit_text(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile p = \"quire.protocol.finite-global/v1\";\n\
          model V = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          {second}function Noop using v(): Boolean pure {{ true }}\n{}{body}",
         hex(&digest),

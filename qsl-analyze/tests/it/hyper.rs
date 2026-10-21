@@ -1150,10 +1150,7 @@ fn a_lockstep_run_that_completes_inside_its_horizon_holds() {
         &non_interference(EQUAL_INPUTS),
     );
     world.max_depth = Some(64);
-    assert!(matches!(
-        run(&world),
-        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. }
-    ));
+    assert!(matches!(run(&world), HyperOutcome::HoldsReduced { .. }));
     world.max_depth = Some(1);
     assert!(matches!(
         run(&world),
