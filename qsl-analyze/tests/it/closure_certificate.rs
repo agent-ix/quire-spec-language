@@ -9,10 +9,9 @@
 //! rejection loci are computed from the Counter arithmetic, not from the
 //! checker.
 //!
-//! Not covered: ADR-018 §6's `ConfigVersion` subject and FR-120-AC-9's
-//! `test/tallies` subject, which have no model-check fixture; the Counter
-//! subject stands in for both, so the FR-338-AC-1 to AC-3 vectors are not
-//! verified as written.
+//! Not covered: ADR-018 §6's `ConfigVersion` subject, which has no
+//! model-check fixture; the Counter subject stands in for it, so the
+//! FR-338-AC-1 and AC-2 vectors are not verified as written.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
@@ -420,9 +419,8 @@ fn a_deadlock_is_bad_for_the_deadlock_item_alone() {
     );
 }
 
-/// FR-338's `ContractUndetermined` vector, over the Counter subject with
-/// `pre CanInc { 6 mod (2 - self.value) >= 0 }` standing in for
-/// `test/tallies`: a certificate for `always holds(true)` holding values 0
+/// FR-338-AC-3's `ContractUndetermined` vector, over the Counter subject with
+/// `pre CanInc { 6 mod (2 - self.value) >= 0 }`: a certificate for `always holds(true)` holding values 0
 /// to 2 is rejected `BadState` at value 2, whose expansion evaluates the
 /// precondition undefined. An atom that is undefined or false at a reached
 /// state is `BadState` there under the rejecting state.

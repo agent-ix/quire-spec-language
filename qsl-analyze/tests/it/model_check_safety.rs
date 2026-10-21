@@ -10,8 +10,10 @@
 //! that computes the condition its source text spells.
 //!
 //! Not covered here: FR-126-AC-1, AC-3 to AC-5, AC-7 and AC-8 rest on TP-4
-//! claims (QSL-530); AC-6's refused-contract and `test/tallies` rows and
-//! AC-9's TP-4 row have no fixture in this module.
+//! claims (QSL-530); AC-9's TP-4 row has no fixture in this module; AC-6's
+//! refused-contract row has none either: every kernel refusal a contract can
+//! raise is proved away by S3, and a family refusal needs a population
+//! reference (`PopulationReferenceNotEmitted`) or a dispatch family.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
@@ -474,4 +476,43 @@ fn a_liveness_clause_is_decided_and_a_guarded_activation_is_refused() {
         matches!(refusal, ModelCheckRefusal::GuardedActivation),
         "{refusal:?}"
     );
+}
+
+/// FR-126-AC-6's empty-prefix row: from an initial state whose `pre`
+/// evaluates undefined, `always holds(true)` is violated by the empty prefix
+/// at that state, with `kind: UndefinedEvaluation` at position 0. Over the
+/// Counter subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from
+/// value 2, the modulus is undefined (`DivisionByZero`) in the initial
+/// state's own expansion. FR-120-AC-9's `test/tallies` subject, whose
+/// `sum<Low>` would be undefined (`SumOutOfDomain`), is not constructible:
+/// QSpec FR-145's range proof refuses at S3 a `sum<N>` it cannot prove within
+/// `N`, and `SumOutOfDomain` is raised only by a `sum` checked under
+/// `CheckMode::Kernel`, so no linked package reaches it.
+#[trace("TC-521")]
+#[test]
+fn an_undefined_precondition_at_the_initial_state_is_an_empty_prefix_violation() {
+    let world = World::new(
+        model_world::counter(),
+        "pre CanInc using v on M::Counter::inc { 6 mod (2 - self.value) >= 0 }\n\
+         post Inc using v on M::Counter::inc { self.value - pre(self.value) = 1 }\n",
+        INFINITE,
+        &[Clause {
+            activation: ORIGIN,
+            formula: "always holds(true)",
+        }],
+        &[("c", json!({"value": {"integer": "2"}}))],
+    );
+    let outcome = checked(&world, 0, &["c"], vec![Box::new(|_, _| Some(true))]);
+    let counterexample = violated(&outcome);
+    assert!(counterexample.prefix.is_empty(), "{counterexample:?}");
+    assert_eq!(counterexample.lasso, None);
+    let CounterexampleKind::UndefinedEvaluation(evaluation) = &counterexample.kind else {
+        panic!("expected an undefined evaluation: {counterexample:?}");
+    };
+    assert_eq!(evaluation.site.position, 0);
+    assert_eq!(
+        evaluation.cause,
+        UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
+    );
+    assert_eq!(values(&world, &["c"], counterexample, "c", "value"), [2]);
 }
