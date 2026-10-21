@@ -129,6 +129,31 @@ fn the_vault_is_refuted_in_lockstep_and_held_on_its_projection() {
     assert_eq!(stats.product_states, 18);
 }
 
+/// The always-equal body of section 13's clause written as a disjunction whose
+/// first disjunct is a plain state test.
+const OR_BODY: &str = "holds(v.l @ a = 1) or always holds(v.l @ a = v.l @ b)";
+
+/// QSL-923: every vault state starts with `l = 0` in both runs, so the state
+/// test `l @ a = 1` is false at position 0 and the clause is section 13's:
+/// it is held on its projection and refuted by a projected counterexample at
+/// position 1 when the vault leaks. A translation that loses the `always`
+/// disjunct has no behaviour in the body and refutes the held clause at once.
+#[trace("TC-603")]
+#[test]
+fn a_projected_body_with_a_state_test_disjunct_keeps_the_other_disjunct() {
+    let held = World::busy(Vault::Busy, &IDLE, &aligned_over(OR_BODY, &[]));
+    assert!(matches!(run(&held), HyperOutcome::Holds { .. }));
+
+    let leaky = World::busy(
+        Vault::BusyLeaky,
+        &MID_OPERATION,
+        &aligned_over(OR_BODY, &[]),
+    );
+    let counterexample = refuted(run(&leaky));
+    assert_eq!(counterexample.kind, HyperCounterexampleKind::Projected);
+    assert_eq!(counterexample.trace_position, 1);
+}
+
 /// FR-178-AC-2: the leaky `l = (i + h) mod 2` over a secret-1 run that starts
 /// mid-operation. The first path to a rejecting monitor state takes that
 /// run's `mix` as a skip move, then both runs' `step(0)` together: the

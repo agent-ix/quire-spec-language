@@ -146,6 +146,40 @@ fn the_leaky_vault_exhausts_the_witness_set_at_position_one() {
     assert_eq!(positions(&world, &counterexample, 0), [(0, 0), (0, 0)]);
 }
 
+/// `Opaque` with the always-equal conjunct written as a disjunction whose
+/// first disjunct is a plain state test.
+fn opaque_or() -> String {
+    "hyper Opaque using inf over behaviours (v: V::Vault) \
+     forall trace a of V exists trace b of V \
+     match { a.step.Vault::step.i = b.step.Vault::step.i } \
+     { holds(v.h @ a != v.h @ b) and (holds(v.l @ a = 1) or \
+     always holds(v.l @ a = v.l @ b)) }"
+        .to_owned()
+}
+
+/// QSL-923: both vaults start with `l = 0`, so at position 0 the state-test
+/// disjunct `l @ a = 1` is false and the body is `Opaque`'s: the secure
+/// vault keeps its singleton witness set and holds, and the leaky vault
+/// exhausts the set at position 1. A translation that loses the `always`
+/// disjunct has an empty witness set at once and refutes the secure vault.
+#[trace("TC-602")]
+#[test]
+fn a_witness_body_with_a_state_test_disjunct_keeps_the_other_disjunct() {
+    let secure = World::new(Vault::Secure, false, &STARTS, &opaque_or());
+    let outcome = run(&secure, ModelCheckLimits::default());
+    assert!(matches!(outcome, HyperOutcome::Holds { .. }), "{outcome:?}");
+
+    let leaky = World::new(Vault::Leaky, false, &STARTS, &opaque_or());
+    let counterexample = refuted(run(&leaky, ModelCheckLimits::default()));
+    assert_eq!(
+        counterexample.kind,
+        HyperCounterexampleKind::WitnessExhausted {
+            loop_entry: 0,
+            position: 1
+        }
+    );
+}
+
 /// FR-177-AC-2: `Opaque` over the secure vault. Every reachable universal
 /// state `(h, l)` has `X = {((1 - h, l), g)}`, the product has 4 states, and
 /// the item returns `Holds`.

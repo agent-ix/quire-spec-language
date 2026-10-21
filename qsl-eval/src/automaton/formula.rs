@@ -461,6 +461,16 @@ impl Ir {
                 }
                 seen.resize(self.len(), false);
             }
+            if let Node::Or(left, right) = node {
+                // The `or` rule asserts the negation of a state operand in
+                // the branch that does not discharge on it.
+                for operand in [left, right] {
+                    if !self.has_future(operand) {
+                        pending.push(self.not(operand)?);
+                    }
+                }
+                seen.resize(self.len(), false);
+            }
         }
         Ok(seen
             .iter()
