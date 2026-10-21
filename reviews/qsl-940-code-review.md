@@ -72,6 +72,7 @@ Re-reviewed at head ca37b7138 (fix commit ca37b7138 over 59112ebf2). The fix wid
 | FND-003 | fixed | `with_literal` and its dead `(7, 7)` range are removed; the test asserts `ScalarOperand::literal(7).range == (7, 7)` and an agreeing `add(2, 1)`. |
 | FND-004 | fixed | FR-358 step 6 now states the narrowed case: an integer literal the checker wraps in `numeric.narrow` is `graph_child` of the narrow node with the empty `bounds`, and an unwrapped one (an `Integer` peer) is `inline_literal` with the singleton `range`. The FR-093 row, FR-093-AC-30 and TC-415 step 12 agree, the producer matches, and the composite arm computes exactly this form. The unamended ADR-013 O-09 domain rule is FND-006. |
 | FND-005 | fixed | `tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it` drives both forms from source (`k`: `a = 3` over `Integer`, giving `InlineLiteral` with `range` (3, 3); `m`: over `Int[0, 9]`, giving a non-parameter `GraphChild` with `bounds`). A mutant of the composite arm's (`Literal`, `InlineLiteral`) domain to empty `bounds` fails it. |
+| FND-006 | fixed | ADR-013 O-09's Domain rule now carries the narrowed case: an integer literal the checker wraps in `numeric.narrow` is `graph_child` with the narrow node's id and the empty `bounds`, and only an unwrapped integer literal is `inline_literal` with the singleton `range`. This matches FR-358 step 6, FR-093, TC-415 and the composite arm. Verified at head 63543b3f5. |
 
 ## New findings (disposition pass 2)
 
