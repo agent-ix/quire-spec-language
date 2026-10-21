@@ -503,8 +503,13 @@ fn undefined(
     claimed: &HyperUndefined,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     let steps = counterexample.steps();
-    let automaton = translate_negation(replay.clause.body(), replay.clause.profile(), u64::MAX)
-        .map_err(|_| fault("the-recompiled-body-translates"))?;
+    let automaton = translate_negation(
+        replay.clause.body(),
+        replay.clause.profile(),
+        u64::MAX,
+        None,
+    )
+    .map_err(|_| fault("the-recompiled-body-translates"))?;
     let mut found = None;
     'positions: for joint in 0..=steps {
         if joint >= 1 {

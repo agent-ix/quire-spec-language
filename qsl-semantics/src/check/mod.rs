@@ -148,7 +148,7 @@ pub use probabilistic::{
     CheckedTemporalFormula, ClaimNormalForm, Confidence, ConfidenceFault, Event, FractionMeasure,
     ModelSubjectRef, OverBinding, PreconditionSite, ProbForm, ProbScheduler, ProbabilisticCause,
     ProbabilisticDeclaration, ProbabilisticFeature, ProbabilisticOperation, RandomParameter,
-    Reward, SupportValue, WeightOwner, Workload,
+    ReachTarget, Reward, SupportValue, WeightOwner, Workload,
 };
 pub use state_model::StateModelRefusal;
 pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause};
@@ -278,9 +278,9 @@ pub use field_refinement::RefinementObligation;
 pub use hyper_clause::check_hyper_clauses;
 pub use hyper_clause::{
     ArgumentRead, CheckedHyper, CheckedHyperClause, CheckedModelRelation, CheckedQuantifier,
-    CheckedStepPredicate, CopyGroup, HyperCause, HyperDeclaration, HyperDeclarations, HyperForm,
-    HyperIdentity, HyperTraceFamily, HyperUnsupported, ModelAlias, ObjectParameter,
-    OperationContractClaim, StepRead,
+    CheckedStepPredicate, CopyGenerator, CopyGroup, HyperCause, HyperDeclaration,
+    HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily, HyperUnsupported, ModelAlias,
+    ObjectParameter, OperationContractClaim, StepRead,
 };
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,
@@ -326,7 +326,7 @@ pub use refusal::{
 };
 pub use state_graph_claim::{
     CheckedPredicateBody, CheckedStateGraphClaim, CheckedStatePredicate, OverParameter,
-    StateGraphClaim, StateGraphDeclaration, StateGraphFamily, StateGraphForm,
+    StateGraphClaim, StateGraphDeclaration, StateGraphFamily, StateGraphForm, StatePredicate,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use temporal_clause::check_clauses;

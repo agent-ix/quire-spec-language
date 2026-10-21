@@ -17,7 +17,7 @@
 //! A clause that checks is refused as not emitted until S4 writes its node,
 //! as a `temporal` clause is (`temporal_clause::not_emitted`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use qsl_forms::{
     BinaryOperator, ExprId, ExprNode, ExprRef, Expression, ExpressionSpans, HyperBehavioursForm,
@@ -239,6 +239,23 @@ pub enum HyperUnsupported {
 pub struct CopyGroup {
     /// Each class of two or more swappable variables, in quantifier order.
     pub classes: Vec<Vec<String>>,
+    /// One generator for each pair of consecutive variables of a class, which
+    /// together generate the symmetric group of the class. EN-1 permutes the
+    /// states of the body's automaton with them (FR-174 "Canonicalisation").
+    pub generators: Vec<CopyGenerator>,
+}
+
+/// The exchange of two universal variables, as it acts on the body's atoms.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CopyGenerator {
+    /// The position in quantifier order of the first variable.
+    pub first: usize,
+    /// The position in quantifier order of the second variable.
+    pub second: usize,
+    /// For each `holds` atom of the body, in arena order, the atom whose
+    /// normal form is its normal form with the two variables exchanged. An
+    /// involution.
+    pub atoms: Vec<usize>,
 }
 
 /// Everything that changes a clause's meaning (ADR-023 HV-7): the subject
@@ -2110,6 +2127,7 @@ fn copy_group(
         .collect();
     let (plain_body, _) = encode_formula(body, Swap(None, None));
     let (plain_mu, _) = encode_conjuncts(match_expression, mu_universal, Swap(None, None));
+    let (plain_atoms, _) = atom_encodings(body, Swap(None, None));
     let swappable = |first: &CheckedQuantifier, second: &CheckedQuantifier| {
         if first.alias != second.alias || !same_set(&first.fairness, &second.fairness) {
             return false;
@@ -2139,19 +2157,80 @@ fn copy_group(
             }
         }
     }
-    let mut classes: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    let mut classes: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
     for (position, variable) in universal.iter().enumerate() {
         classes
             .entry(class_of[position])
             .or_default()
-            .push(variable.variable.clone());
+            .push(variable.variable.as_str());
+    }
+    // A generator for each pair of consecutive variables of a class. A class
+    // whose pair cannot be matched atom for atom is left out, so the group
+    // stays inside the symmetries the test proved.
+    let position = |name: &str| {
+        quantifiers
+            .iter()
+            .position(|quantifier| quantifier.variable == name)
+    };
+    let mut kept: Vec<Vec<String>> = Vec::new();
+    let mut generators = Vec::new();
+    for class in classes.into_values().filter(|class| class.len() >= 2) {
+        let pairs: Option<Vec<CopyGenerator>> = class
+            .windows(2)
+            .map(|pair| {
+                let (swapped, _) = atom_encodings(body, Swap(Some((pair[0], pair[1])), None));
+                Some(CopyGenerator {
+                    first: position(pair[0])?,
+                    second: position(pair[1])?,
+                    atoms: atom_exchange(&plain_atoms, &swapped)?,
+                })
+            })
+            .collect();
+        if let Some(pairs) = pairs {
+            generators.extend(pairs);
+            kept.push(class.into_iter().map(str::to_owned).collect());
+        }
     }
     CopyGroup {
-        classes: classes
-            .into_values()
-            .filter(|class| class.len() >= 2)
-            .collect(),
+        classes: kept,
+        generators,
     }
+}
+
+/// The normal-form encoding of each `holds` atom of `body` under `swap`, in
+/// arena order.
+fn atom_encodings(body: &TemporalFormulaForm, swap: Swap<'_>) -> (Vec<Vec<u8>>, bool) {
+    let mut opaque_mention = false;
+    let encodings = body
+        .nodes()
+        .iter()
+        .filter_map(|node| match node {
+            TemporalNodeForm::Holds { condition, .. } => {
+                let encodings = encode_expression(&condition.expression, swap, &[]);
+                opaque_mention |= encodings.opaque_mention;
+                Some(encodings.root)
+            }
+            _ => None,
+        })
+        .collect();
+    (encodings, opaque_mention)
+}
+
+/// For each atom, the atom whose encoding in `plain` is its encoding in
+/// `swapped`, equal encodings paired in arena order; `None` unless that is an
+/// involution.
+fn atom_exchange(plain: &[Vec<u8>], swapped: &[Vec<u8>]) -> Option<Vec<usize>> {
+    let mut candidates: BTreeMap<&[u8], VecDeque<usize>> = BTreeMap::new();
+    for (index, encoding) in plain.iter().enumerate() {
+        candidates.entry(encoding).or_default().push_back(index);
+    }
+    let exchange: Vec<usize> = swapped
+        .iter()
+        .map(|encoding| candidates.get_mut(encoding.as_slice())?.pop_front())
+        .collect::<Option<_>>()?;
+    (0..exchange.len())
+        .all(|atom| exchange[exchange[atom]] == atom)
+        .then_some(exchange)
 }
 
 /// Whether two fairness sets hold the same constraints.

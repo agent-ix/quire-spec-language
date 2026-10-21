@@ -20,18 +20,21 @@
 //! a request input; this check names it by the `model` alias and the domain
 //! package the alias selects.
 //!
-//! Only the four forms FR-186 lists are typed. An `expected ... until` claim,
-//! an `elapsed` measure, a timed window and an `on each` activation are
-//! forms FR-195 and the timed checks own; each refuses
-//! `unsupported_construct`/`not-yet-implemented`, so no claim compiles
-//! unchecked.
+//! The four forms FR-186 lists are typed, and the two forms only exact
+//! evidence decides (FR-195): an unbounded `eventually`, `until` or `always`
+//! event under the infinite-trace profile, and an `expected accumulate ...
+//! until` claim. An `expected elapsed` claim, an `elapsed` measure, a timed
+//! window and an `on each` activation are forms the timed checks own; each
+//! refuses `unsupported_construct`/`not-yet-implemented`, so no claim
+//! compiles unchecked.
 
 use std::collections::BTreeMap;
 
 use qsl_forms::{
-    ActivationForm, BoundOp, ClauseKind, EventForm, ExactValueForm, ExpressionForm, FractionForm,
-    HorizonForm, MeasureForm, MeasureWindowForm, ProbabilisticBody, ProbabilisticForm,
-    SchedulerForm, StateClauseKind, TemporalFormulaForm, TemporalNodeForm, WeightingForm,
+    ActivationForm, BoundOp, ClauseKind, EventForm, ExactValueForm, ExpectedQuantity,
+    ExpressionForm, FractionForm, HorizonForm, MeasureForm, MeasureWindowForm, ProbabilisticBody,
+    ProbabilisticForm, SchedulerForm, StateClauseKind, TemporalFormulaForm, TemporalNodeForm,
+    TemporalNodeId, TemporalOperator, TemporalOperatorForm, WeightingForm,
 };
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::Span;
@@ -52,6 +55,7 @@ use super::super::ir::{CheckedBody, CheckedNode};
 use super::super::observation::Observations;
 use super::super::profile::{TemporalProfile, CLAUSE_PROFILE_AUTHORITY};
 use super::super::refusal::{CheckCause, CheckRefusal, KeyFault, TemporalCause};
+use super::super::state_graph_claim::StatePredicate;
 use super::super::temporal_clause::{
     build_formula, checked_constraint, checked_operators, horizon, CheckedFormula, HorizonFault,
 };
@@ -137,6 +141,16 @@ impl CheckedPredicate {
     }
 }
 
+impl StatePredicate for CheckedPredicate {
+    fn body(&self) -> CheckedNode<'_> {
+        Self::body(self)
+    }
+
+    fn slots(&self) -> usize {
+        Self::slots(self)
+    }
+}
+
 /// A claim's temporal event: a bounded formula and the predicate of each of
 /// its `holds` atoms.
 #[derive(Debug)]
@@ -217,7 +231,20 @@ pub enum BoundedMeasure {
     Fraction(FractionMeasure),
 }
 
-/// A claim's form (ADR-024 PF-2 to PF-6).
+/// What an unbounded reachability claim asks of its state predicates
+/// (ADR-028 XF-4): each is a state predicate over the `over` parameter, with
+/// no temporal operator inside.
+#[derive(Debug)]
+pub enum ReachTarget {
+    /// `eventually holds(P)`.
+    Eventually(CheckedPredicate),
+    /// `holds(A) until holds(B)`.
+    Until(CheckedPredicate, CheckedPredicate),
+    /// `always holds(P)`.
+    Always(CheckedPredicate),
+}
+
+/// A claim's form (ADR-024 PF-2 to PF-6, ADR-028 XF-4, XF-5).
 #[derive(Debug)]
 pub enum ProbForm {
     /// `probability op θ [event]`.
@@ -251,6 +278,25 @@ pub enum ProbForm {
         predicate: CheckedPredicate,
         /// The reward positions are weighted by, when written.
         weight: Option<Identifier>,
+    },
+    /// `probability op θ [eventually | until | always]` over the
+    /// infinite-trace profile, which only exact evidence decides.
+    Reach {
+        /// The probability bound `θ`.
+        bound: Bound,
+        /// The reachability target.
+        target: ReachTarget,
+    },
+    /// `expected accumulate R until holds(B) op c`, which only exact
+    /// evidence decides. An `expected elapsed` claim is not typed: no
+    /// subject is timed yet.
+    ExpectedReward {
+        /// The bound `c` on the expected reward, in the reward's own unit.
+        bound: Bound,
+        /// The reward `R`.
+        reward: Identifier,
+        /// `B`.
+        until: CheckedPredicate,
     },
 }
 
@@ -320,6 +366,28 @@ pub struct CheckedProbabilisticClaim {
     pub(super) declared: usize,
 }
 
+impl CheckedProbabilisticClaim {
+    /// Whether only exact evidence decides the claim (ADR-028 XF-7): an
+    /// unbounded reachability or expected-reward form, a claim `under every
+    /// scheduler`, or a claim that states no confidence parameters
+    /// (ADR-024 PF-10). Statistical evidence for such a claim is refused at
+    /// negotiation.
+    pub fn exact_only(&self) -> bool {
+        self.exact_only_form()
+            || self.scheduler == ProbScheduler::Every
+            || self.confidence.is_none()
+    }
+
+    /// Whether the claim's form is one only exact evidence decides: an
+    /// unbounded reachability or expected-reward form.
+    pub fn exact_only_form(&self) -> bool {
+        matches!(
+            self.form,
+            ProbForm::Reach { .. } | ProbForm::ExpectedReward { .. }
+        )
+    }
+}
+
 /// Every expression a claim's checked parts are typed from, in the order
 /// [`site_expressions`] numbers them: a site names an expression by its
 /// position in this list.
@@ -351,8 +419,12 @@ pub(super) fn claim_expressions(form: &ProbabilisticForm) -> Vec<&ExpressionForm
             expressions.push(&fraction.predicate);
         }
         ProbabilisticBody::LongRunFraction { predicate, .. } => expressions.push(predicate),
-        // Checked by FR-195; refused here before any of it is typed.
-        ProbabilisticBody::ExpectedUntil { .. } => {}
+        ProbabilisticBody::ExpectedUntil {
+            target, threshold, ..
+        } => {
+            expressions.push(target);
+            expressions.push(threshold);
+        }
     }
     expressions
 }
@@ -393,6 +465,9 @@ enum Measured {
     Fraction,
     /// A reward's value: an integer or a quantity in the reward's unit.
     Reward(RewardValue),
+    /// The expectation of a reward: an exact rational, or a quantity in the
+    /// reward's unit, since a mean of integers is not an integer.
+    Expectation(RewardValue),
 }
 
 /// A reward's value type, as a threshold must match it.
@@ -479,6 +554,47 @@ fn fraction_type(ceiling: u64) -> Option<ValueType> {
     Some(ValueType::Rational(
         RationalDomain::new(numerator, denominator).ok()?,
     ))
+}
+
+/// Whether the profile a claim's `using` alias selected is the infinite-trace
+/// profile; a claim whose profile was refused is not.
+fn is_infinite(profile: Option<&DefinitionRef>) -> bool {
+    profile.and_then(|profile| TemporalProfile::from_identity(profile.identity()))
+        == Some(TemporalProfile::InfiniteTrace)
+}
+
+/// Which unbounded reachability operator a formula is.
+#[derive(Clone, Copy)]
+enum ReachKind {
+    Eventually,
+    Until,
+    Always,
+}
+
+/// An event that is exactly one `eventually`, `until` or `always` written
+/// with no interval, and its operands in source order.
+struct ReachShape<'f> {
+    kind: ReachKind,
+    operands: &'f [TemporalNodeId],
+}
+
+/// `formula`'s [`ReachShape`], when it has one: its root is one of the three
+/// operators with no interval and the operator's arity of operands. What the
+/// operands are is for [`Pass::reach`] to judge.
+fn reach_shape(formula: &TemporalFormulaForm) -> Option<ReachShape<'_>> {
+    let Some(TemporalNodeForm::Operator(operator)) = formula.node(formula.root()) else {
+        return None;
+    };
+    let (kind, arity) = match operator.operator {
+        TemporalOperator::Eventually => (ReachKind::Eventually, 1),
+        TemporalOperator::Always => (ReachKind::Always, 1),
+        TemporalOperator::Until => (ReachKind::Until, 2),
+        _ => return None,
+    };
+    (operator.interval.is_none() && operator.operands.len() == arity).then_some(ReachShape {
+        kind,
+        operands: &operator.operands,
+    })
 }
 
 /// The span of an expression's root.
@@ -770,6 +886,15 @@ impl Pass<'_, '_> {
             } => {
                 let bound = keep(refusals, self.exact(claim, threshold))
                     .map(|bound| Bound::new(*op, bound));
+                if let (EventForm::Temporal(formula), true) = (event, is_infinite(profile)) {
+                    if let Some(shape) = reach_shape(formula) {
+                        let target = self.reach(claim, formula, shape, cx, nodes, refusals);
+                        return Some(ProbForm::Reach {
+                            bound: bound?,
+                            target: target?,
+                        });
+                    }
+                }
                 let event = self.event(claim, profile, event, cx, nodes, refusals);
                 Some(ProbForm::Probability {
                     bound: bound?,
@@ -825,14 +950,85 @@ impl Pass<'_, '_> {
                     weight: weight?,
                 })
             }
-            ProbabilisticBody::ExpectedUntil { target, .. } => {
-                refusals.push(refusal(ProbabilisticCause::NotYetImplemented {
-                    claim: claim.claim().to_owned(),
-                    construct: "an `expected ... until` claim",
-                    span: root_span(target, claim.form.span),
-                }));
-                None
+            ProbabilisticBody::ExpectedUntil {
+                quantity,
+                target,
+                op,
+                threshold,
+            } => match quantity {
+                ExpectedQuantity::Elapsed => {
+                    // No subject is timed yet (the timed facet is not
+                    // selectable), so no `elapsed` quantity exists to sum.
+                    refusals.push(refusal(ProbabilisticCause::NotYetImplemented {
+                        claim: claim.claim().to_owned(),
+                        construct: "an `expected elapsed` claim",
+                        span: root_span(target, claim.form.span),
+                    }));
+                    None
+                }
+                ExpectedQuantity::Accumulate(name) => {
+                    let measured = keep(refusals, self.reward_named(claim, &name.name, name.span));
+                    let until = keep(refusals, self.predicate(claim, target, cx, nodes));
+                    let (reward, value) = measured?;
+                    let bound = keep(
+                        refusals,
+                        self.threshold(claim, threshold, Measured::Expectation(value), cx, nodes),
+                    )
+                    .map(|value| Bound::new(*op, value));
+                    Some(ProbForm::ExpectedReward {
+                        bound: bound?,
+                        reward,
+                        until: until?,
+                    })
+                }
+            },
+        }
+    }
+
+    /// An unbounded reachability claim's state predicates (ADR-028 XF-4):
+    /// each operand of the one operator is a `holds(P)`. A nested temporal
+    /// operator is not a state predicate (FR-195). A constant (`eventually
+    /// true`) is refused too, which FR-195 does not say: it has no checked
+    /// predicate to label the states with. A judgment call, open for the spec.
+    fn reach(
+        &mut self,
+        claim: &ClaimCx<'_>,
+        formula: &TemporalFormulaForm,
+        shape: ReachShape,
+        cx: &mut CheckContext<'_, Scope>,
+        nodes: &mut u64,
+        refusals: &mut Vec<CheckRefusal>,
+    ) -> Option<ReachTarget> {
+        let mut predicates = Vec::with_capacity(shape.operands.len());
+        for operand in shape.operands {
+            match formula.node(*operand) {
+                Some(TemporalNodeForm::Holds { condition, .. }) => {
+                    predicates.push(keep(refusals, self.predicate(claim, condition, cx, nodes)));
+                }
+                Some(
+                    TemporalNodeForm::Operator(TemporalOperatorForm { span, .. })
+                    | TemporalNodeForm::Constant { span, .. },
+                ) => {
+                    predicates.push(None);
+                    refusals.push(refusal(ProbabilisticCause::NotStatePredicate {
+                        claim: claim.claim().to_owned(),
+                        span: *span,
+                    }));
+                }
+                None => {
+                    refusals.push(broken("reach-operand-is-in-the-formula"));
+                    return None;
+                }
             }
+        }
+        let mut predicates = predicates.into_iter();
+        match (shape.kind, predicates.next()?, predicates.next()) {
+            (ReachKind::Eventually, Some(target), None) => Some(ReachTarget::Eventually(target)),
+            (ReachKind::Always, Some(target), None) => Some(ReachTarget::Always(target)),
+            (ReachKind::Until, Some(left), Some(Some(right))) => {
+                Some(ReachTarget::Until(left, right))
+            }
+            _ => None,
         }
     }
 
@@ -1197,7 +1393,7 @@ impl Pass<'_, '_> {
         let span = root_span(expression, claim.form.span);
         let input = self.input;
         let hint = match measured {
-            Measured::Fraction => Some(
+            Measured::Fraction | Measured::Expectation(_) => Some(
                 fraction_type(self.input.limits.rational_bits())
                     .ok_or_else(|| broken("fraction-type-valid"))?,
             ),
@@ -1244,9 +1440,20 @@ impl Pass<'_, '_> {
                     }))
                 }
             }
-            (Measured::Reward(RewardValue::Quantity(unit)), Value::Quantity(quantity)) => {
-                self.convert(claim, &quantity, unit, span)
-            }
+            (Measured::Expectation(RewardValue::Integer), value) => match value {
+                Value::Rational(rational) => Ok(rational),
+                Value::Decimal(decimal) => Ok(decimal.representation().to_rational()),
+                Value::Integer(integer) => Ok(Rational::from_integer(integer)),
+                Value::Quantity(quantity) => {
+                    Err(self.unit_mismatch(claim, quantity.unit(), None, span))
+                }
+                _ => Err(mismatch()),
+            },
+            (
+                Measured::Reward(RewardValue::Quantity(unit))
+                | Measured::Expectation(RewardValue::Quantity(unit)),
+                Value::Quantity(quantity),
+            ) => self.convert(claim, &quantity, unit, span),
             (Measured::Reward(RewardValue::Integer), Value::Quantity(quantity)) => {
                 Err(self.unit_mismatch(claim, quantity.unit(), None, span))
             }
@@ -1567,6 +1774,33 @@ impl Pass<'_, '_> {
                     bound.bytes(),
                     predicate.normal_form.clone(),
                     self.weight_bytes(subject, weight.as_ref()),
+                ],
+            ),
+            ProbForm::Reach { bound, target } => {
+                let target = match target {
+                    ReachTarget::Eventually(target) => {
+                        node_bytes(b"eventually", std::slice::from_ref(&target.normal_form))
+                    }
+                    ReachTarget::Until(left, right) => node_bytes(
+                        b"until",
+                        &[left.normal_form.clone(), right.normal_form.clone()],
+                    ),
+                    ReachTarget::Always(target) => {
+                        node_bytes(b"always", std::slice::from_ref(&target.normal_form))
+                    }
+                };
+                node_bytes(b"reach", &[bound.bytes(), target])
+            }
+            ProbForm::ExpectedReward {
+                bound,
+                reward,
+                until,
+            } => node_bytes(
+                b"expected-reward",
+                &[
+                    bound.bytes(),
+                    self.reward_bytes(subject, reward),
+                    until.normal_form.clone(),
                 ],
             ),
         }

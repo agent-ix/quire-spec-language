@@ -14,6 +14,7 @@ mod ample;
 mod check;
 mod concretise;
 mod fair_walk;
+pub(crate) mod false_extension;
 mod graph;
 mod hyper;
 mod liveness;
