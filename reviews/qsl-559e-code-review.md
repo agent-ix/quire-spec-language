@@ -59,3 +59,22 @@ What holds:
 - **Spec gap 3** (send/receive ownership): real. FR-218 states no owner output. Reading the owner from the channel's `from`/`to` is the only reading consistent with PD-4.
 - **Spec gap 4** (locations of the `retire` and guard reads): partly stated already. FT-1 gives `retire` "the model and binder locations p reads", and FT-3 lists the guard. The derivation rule (field reads on any object) is unstated and is a sound over-approximation.
 - **The `ActivationOnEachTemplate` refusal** names a real missing slot in the template frames. It is an honest `not-yet-implemented` (SR-12252 FND-004).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | high | An instance-limited state with no expanded successor is still closed as a terminal state. `Run::explore` records `cut.instances` but, unlike `cut.memory` (MB-3's `continue`), it goes on to `terminal = expansion.successors.is_empty()`. That runs `close(at)` (the TP-2 closed-boundary false extension) and the TP-1/TP-3 terminal stutter. AE-4 says such a state is never terminal. Replay's `ends_terminal` uses the unbounded `expand`, so it accepts the same trace. Scenario: FR-211-AC-4's stuck unit (the one attempt's precondition is false in every state, so `v` stays 0) with a bounded claim `always[0,5] holds(k.v = 0)` and the default bound 3. From s0 the run takes three `activate`s to s3, which is instance-limited and has no successor. It is then closed with every atom false, so the monitor rejects and the run settles V-4 `refuted`. Every real behaviour keeps `v = 0` and satisfies the claim, so the answer should be V-6 `InstanceBoundReached`. Position-anchored atoms are likewise misread by the fabricated stutter. Fix: handle `cut.instances` with an empty expansion as MB-3 handles a memory cut (record it, `continue`, no close, no stutter, no deadlock letter), have replay's `ends_terminal` and its terminal-stutter check refuse a state whose bounded expansion has `cut.instances`, and add a test with a bounded claim. | qsl-analyze/src/model_check/check.rs:1348-1369, qsl-replay/src/model_check/replay.rs:1272-1284, qsl-replay/src/model_check/replay.rs:1099-1105 |
+
+## Dispositions
+
+Round 1, head c83e872e8. The test run was not repeated, because the session's permission layer refused it in the review pass; each outcome was judged by reading the fix commit. The coder reports `qsl-analyze --test it` green (544 tests).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c83e872e8 |
+| FND-002 | fixed | c83e872e8 |
+| FND-003 | fixed | c83e872e8 |
+| FND-004 | fixed | c83e872e8 |
+| FND-005 | deferred | STD-243 gap 2 owns `from pop` resolution and the refusal of an unknown population name. While the state model has one population per object type, the result does not change. |
+| FND-006 | still-open | New in this round. An instance-limited state with no successor is closed or stutter-extended as terminal, which can give a false V-4. No fix yet. |

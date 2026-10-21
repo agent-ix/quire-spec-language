@@ -58,3 +58,15 @@ Bindings checked:
 - Stubs: none found.
 - Semantic review: skipped as a separate pass. The bindings were read by hand.
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, head c83e872e8. The tests were not re-run, because the permission layer refused them in the review pass; each outcome was judged by reading the tests. The coder reports `qsl-analyze --test it` green (544 tests).
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | c83e872e8 |
+| FND-002 | fixed | c83e872e8 |
+| FND-003 | fixed | c83e872e8 |
+| FND-004 | deferred | STD-243 owns spec gaps 1 to 4 (and item 5, FR-209-AC-4's identity half). The `ActivationOnEachTemplate` refusal stays a QSL-559 remainder: the ticket stays open, and the refusal is an honest not-yet-implemented. |
+| FND-005 | fixed | c83e872e8 |
