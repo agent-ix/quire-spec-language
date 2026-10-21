@@ -25,7 +25,7 @@ use crate::certificate::closure::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause, UndecidedCause};
+use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause};
 use crate::model_check::replay::{
     no_value_cause, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
     StrongFairnessHint,
@@ -355,19 +355,7 @@ fn settle<T: SubjectTransition>(
             depth = Some(*reached);
             Row::inconclusive(InconclusiveCause::BoundReached { depth: *reached })
         }
-        ModelCheckOutcome::Undecided { cause, .. } => Row::inconclusive(match cause {
-            UndecidedCause::UndecidedSuccessor => InconclusiveCause::UndecidedSuccessor,
-            UndecidedCause::NoInitialState => InconclusiveCause::NoInitialState,
-            UndecidedCause::NoInstance => InconclusiveCause::NoInstance,
-            UndecidedCause::MatchUndetermined => InconclusiveCause::MatchUndetermined,
-            UndecidedCause::VacuousMatch => InconclusiveCause::VacuousMatch,
-            UndecidedCause::InstanceBoundReached { bound, states } => {
-                InconclusiveCause::InstanceBoundReached {
-                    bound: *bound,
-                    states: *states,
-                }
-            }
-        }),
+        ModelCheckOutcome::Undecided { cause, .. } => Row::inconclusive(cause.inconclusive()),
         ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         ModelCheckOutcome::Violated {
             counterexample: payload,
@@ -390,6 +378,10 @@ fn settle<T: SubjectTransition>(
                 settlement: ModelTraceSettlement::Inconclusive(cause),
                 ..
             }) => Row::inconclusive(InconclusiveCause::ReplayParity(cause)),
+            Ok(ModelTraceReplayResult {
+                settlement: ModelTraceSettlement::Stopped { reached, .. },
+                ..
+            }) => Row::stopped_run(IncompleteCause::ResourceExhausted, Some(reached)),
             // EN-1 builds only fair lassos (ADR-019 FS-7), so replay's refusal
             // of one as unfair is a disagreement between the two (SV-4).
             Err(ReplayRefusal::UnfairLasso { .. }) => {

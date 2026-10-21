@@ -1125,3 +1125,53 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
         );
     }
 }
+
+/// FR-396-AC-6 (TC-1090): a union witness that names the admitted union's
+/// `composite_type` node id and a member by its admitted identifier replays on
+/// both arms; the same witness naming the kernel key refuses.
+#[trace("TC-1090", "FR-396-AC-9")]
+#[test]
+fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
+    let fixture = fixture(
+        "union Shape { Empty, Circle(Integer) }\n\
+         function p using v(x: Shape): Boolean pure \
+         { case x { Empty: false; Circle(r): r > 3; } }\n",
+    );
+    let admitted = crate::compile_admitted(
+        SourceIdentity::new(AUTHORITY, IDENTITY, NAMESPACE, REVISION),
+        IDENTITY,
+        fixture.source.as_bytes(),
+        [],
+        &crate::spine::DependencyInput::default(),
+        crate::request::StageLimits::default(),
+        ReplayLimits::default(),
+    )
+    .expect("the unit compiles");
+    let shape = admitted
+        .context()
+        .composites()
+        .find(|composite| {
+            composite.qualified_name().last().map(Identifier::as_str) == Some("Shape")
+        })
+        .cloned()
+        .expect("the admitted union");
+    let member = shape.union_members().expect("members")[1]
+        .identifier()
+        .as_str()
+        .to_owned();
+    let id = |key: quire_exact::NodeKey| WireNodeId::from_digest(*key.as_bytes());
+    let value = |declaration: WireNodeId| WitnessValue::Union {
+        declaration,
+        member: member.clone(),
+        components: vec![int(2)],
+    };
+    for result in fixture.both("p", value(id(shape.node()))) {
+        assert_reproduced(result);
+    }
+    for result in fixture.both("p", value(id(shape.key()))) {
+        assert!(
+            result.is_err(),
+            "the kernel key is not the settled union id: {result:?}"
+        );
+    }
+}

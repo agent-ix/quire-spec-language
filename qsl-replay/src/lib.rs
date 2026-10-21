@@ -62,7 +62,7 @@ mod witness;
 pub use admitted::{
     compile_admitted, AdmittedCompilation, AdmittedComposite, AdmittedCompositeForm,
     AdmittedContext, AdmittedEnum, AdmittedEnumCase, AdmittedLookupRefusal, AdmittedRefusal,
-    AdmittedResource,
+    AdmittedResource, AdmittedUnionMember,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
 pub use call_requirements::{
@@ -132,8 +132,11 @@ pub use model_check::hyper_counterexample::{
     HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace,
     HyperUndefined, StepMark,
 };
-pub use model_check::hyper_outcome::{HyperOutcome, HyperReductionCause};
+pub use model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCause};
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
+pub use model_check::hyper_settle::{
+    settle_hyper_check, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
+};
 pub use model_check::identity::{node_occurrence, ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 pub use model_check::limits::{
