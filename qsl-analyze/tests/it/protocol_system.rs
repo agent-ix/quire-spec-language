@@ -161,7 +161,7 @@ impl Case {
 
     /// FR-127's record of `outcome` over `protocol`, its counterexample
     /// replayed by FR-217.
-    fn settle(
+    pub(crate) fn settle(
         &self,
         protocol: &str,
         outcome: &ModelCheckOutcome<ProtocolTransition>,
@@ -182,7 +182,7 @@ impl Case {
 }
 
 /// The counterexample of a `Violated` outcome.
-fn violated(
+pub(crate) fn violated(
     outcome: &ModelCheckOutcome<ProtocolTransition>,
 ) -> TemporalCounterexample<ProtocolTransition> {
     match outcome {
@@ -366,8 +366,8 @@ fn thread_state(entries: &[Json], path: &ThreadPath) -> Json {
         .steps
         .iter()
         .map(|step| {
-            json!({"node": step.node, "branch": step.branch,
-                "ordinal": step.ordinal.to_string()})
+            json!({"node": step.node(), "branch": step.branch(),
+                "ordinal": step.ordinal().to_string()})
         })
         .collect();
     let wanted = json!({"instance": "0", "steps": steps, "type": "thread-path"});
@@ -1048,9 +1048,10 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
 /// `Displaced`, and so is a `lose(ch, P)` under `at-most-once`; when the
 /// last removal of `P`'s entries was a `receive`, the cause is
 /// `EmptyQueue`. The root at `finish` while a branch still runs is
-/// `FinishWaiting`, naming it. Not covered: the `Pay` compensation fixture
-/// (`CommitClosed`), replicated roles (`NoRoleInstance`) and the `tso` fence,
-/// which this system refuses.
+/// `FinishWaiting`, naming it. The `Pay` compensation fixture
+/// (`CommitClosed`) is `protocol_compensation`'s, and the `tso` fence
+/// `weak_memory`'s. Not covered: replicated roles (`NoRoleInstance`), which
+/// this system refuses.
 #[test]
 fn each_channel_wait_cause_names_its_condition() {
     let fifo = "ordering fifo by (m: Boolean) { true }";

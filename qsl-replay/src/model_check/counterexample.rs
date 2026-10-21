@@ -251,6 +251,7 @@ fn blocked_bytes(thread: &BlockedThread) -> usize {
         | WaitCause::FullQueue { channel }
         | WaitCause::Displaced { channel } => channel.len(),
         WaitCause::CheckFalse { node } => node.len(),
+        WaitCause::CommitClosed { template } => template.len(),
         WaitCause::NoPostState | WaitCause::Constraint | WaitCause::Gate => 0,
     };
     std::mem::size_of::<BlockedThread>()
@@ -266,7 +267,6 @@ fn path_bytes(path: &ThreadPath) -> usize {
         .fold(std::mem::size_of::<ThreadPath>(), |bytes, step| {
             bytes
                 .saturating_add(std::mem::size_of_val(step))
-                .saturating_add(step.node.len())
-                .saturating_add(step.branch.len())
+                .saturating_add(step.text_len())
         })
 }

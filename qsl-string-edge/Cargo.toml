@@ -1,0 +1,29 @@
+[package]
+name = "qsl-string-edge"
+version = "0.1.0"
+publish = false
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-or-later"
+description = "FR-064: the standalone string-edge scanner -- reports a string comparison or string `match` outside a `#[string_edge]`-marked function in the crate source roots a caller names. QSL's `xtask string-edge` and every consumer repository run this one detector."
+
+[dependencies]
+# The `#[string_edge]` marker the scanner's own marked functions carry.
+qsl-attrs = { path = "../qsl-attrs" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.151" }
+# `span-locations` is what gives `syn` a source line for each occurrence.
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
+syn = { version = "2.0.119", features = ["full", "visit"] }
+thiserror = "2.0.20"
+
+[dev-dependencies]
+ix-trace-rs = { git = "https://github.com/agent-ix/ix-trace-rs", branch = "main" }
+tempfile = "3.27.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[lints.clippy]
+all = "deny"

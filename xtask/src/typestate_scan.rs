@@ -439,7 +439,9 @@ impl<'ast> Visit<'ast> for Scanner<'_> {
         if has_cfg_test(&node.attrs) {
             return;
         }
-        let previous = self.self_type.replace(crate::impl_self_name(&node.self_ty));
+        let previous = self
+            .self_type
+            .replace(qsl_string_edge::impl_self_name(&node.self_ty));
         syn::visit::visit_item_impl(self, node);
         self.self_type = previous;
     }

@@ -13,20 +13,92 @@ use quire_semantic_value::model_transition::ModelTransition;
 use super::memory::MemoryStepId;
 use crate::simulation::model::encode::Enc;
 
-/// One step of a branch thread's path (QSpec FR-425): the `parallel` that
-/// forked it, its branch label and the parallel instance's ordinal.
+/// One step of a thread's path (QSpec FR-425): for a branch thread, the
+/// `parallel` that forked it, its branch label and the parallel instance's
+/// ordinal; for a compensation thread, its template and its ordinal
+/// (ADR-027 PS-2).
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct PathStep {
-    /// The `parallel` node's static declaration path.
-    pub node: String,
-    /// The branch label.
-    pub branch: String,
-    /// The ordinal (ADR-027 PS-2).
-    pub ordinal: u64,
+pub enum PathStep {
+    /// A branch thread's step.
+    Branch {
+        /// The `parallel` node's static declaration path.
+        node: String,
+        /// The branch label.
+        branch: String,
+        /// The ordinal (ADR-027 PS-2).
+        ordinal: u64,
+    },
+    /// A compensation thread's step (ADR-027 CP-3).
+    Compensation {
+        /// The template's qualified name.
+        template: String,
+        /// The ordinal (ADR-027 PS-2).
+        ordinal: u64,
+    },
+}
+
+impl PathStep {
+    /// A branch step's `parallel` node; `None` for a compensation step.
+    pub fn node(&self) -> Option<&str> {
+        match self {
+            Self::Branch { node, .. } => Some(node),
+            Self::Compensation { .. } => None,
+        }
+    }
+
+    /// A branch step's label; `None` for a compensation step.
+    pub fn branch(&self) -> Option<&str> {
+        match self {
+            Self::Branch { branch, .. } => Some(branch),
+            Self::Compensation { .. } => None,
+        }
+    }
+
+    /// A compensation step's template; `None` for a branch step.
+    pub fn template(&self) -> Option<&str> {
+        match self {
+            Self::Compensation { template, .. } => Some(template),
+            Self::Branch { .. } => None,
+        }
+    }
+
+    /// The step's ordinal.
+    pub fn ordinal(&self) -> u64 {
+        match self {
+            Self::Branch { ordinal, .. } | Self::Compensation { ordinal, .. } => *ordinal,
+        }
+    }
+
+    /// The bytes of the names the step holds.
+    pub fn text_len(&self) -> usize {
+        match self {
+            Self::Branch { node, branch, .. } => node.len().saturating_add(branch.len()),
+            Self::Compensation { template, .. } => template.len(),
+        }
+    }
+
+    pub(crate) fn enc(&self) -> Enc {
+        match self {
+            Self::Branch {
+                node,
+                branch,
+                ordinal,
+            } => Enc::Object(vec![
+                ("node", Enc::text(node.clone())),
+                ("branch", Enc::text(branch.clone())),
+                ("ordinal", Enc::text(ordinal.to_string())),
+            ]),
+            Self::Compensation { template, ordinal } => Enc::Object(vec![
+                ("template", Enc::text(template.clone())),
+                ("ordinal", Enc::text(ordinal.to_string())),
+            ]),
+        }
+    }
 }
 
 /// A thread's path (ADR-027 PS-2): its protocol instance's ordinal, then
-/// one [`PathStep`] per `parallel` above it, outermost first.
+/// one [`PathStep`] per `parallel` above it, outermost first, or, for a
+/// compensation thread, its one compensation step.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ThreadPath {
     /// The protocol instance's ordinal.
@@ -48,7 +120,7 @@ impl ThreadPath {
     /// `node` forked by this thread.
     pub fn child(&self, node: &str, branch: &str, ordinal: u64) -> Self {
         let mut steps = self.steps.clone();
-        steps.push(PathStep {
+        steps.push(PathStep::Branch {
             node: node.to_owned(),
             branch: branch.to_owned(),
             ordinal,
@@ -56,6 +128,18 @@ impl ThreadPath {
         Self {
             instance: self.instance,
             steps,
+        }
+    }
+
+    /// The compensation thread of template `template` with ordinal
+    /// `ordinal` of protocol instance `instance` (ADR-027 PS-2, CP-3).
+    pub fn compensation(instance: u64, template: &str, ordinal: u64) -> Self {
+        Self {
+            instance,
+            steps: vec![PathStep::Compensation {
+                template: template.to_owned(),
+                ordinal,
+            }],
         }
     }
 
@@ -80,18 +164,7 @@ impl ThreadPath {
                 ("instance", Enc::text(self.instance.to_string())),
                 (
                     "steps",
-                    Enc::Array(
-                        self.steps
-                            .iter()
-                            .map(|step| {
-                                Enc::Object(vec![
-                                    ("node", Enc::text(step.node.clone())),
-                                    ("branch", Enc::text(step.branch.clone())),
-                                    ("ordinal", Enc::text(step.ordinal.to_string())),
-                                ])
-                            })
-                            .collect(),
-                    ),
+                    Enc::Array(self.steps.iter().map(PathStep::enc).collect()),
                 ),
             ],
         )
@@ -107,12 +180,15 @@ impl Encode for ThreadPath {
 /// What a thread rests at (QSpec FR-425 `<rest>`).
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RestKind {
-    /// An event node, or the `finish` node.
+    /// An event node, the `finish` node, or a compensation thread's
+    /// compensation attempt, named by its template.
     Node,
     /// A `parallel` waiting to fork.
     Fork,
     /// The join of a `parallel` the thread forked.
     Join,
+    /// A compensation thread's retry point (ADR-027 CP-3).
+    RetryPoint,
     /// The end of a branch body.
     End,
 }
@@ -123,6 +199,7 @@ impl RestKind {
             Self::Node => "node",
             Self::Fork => "fork",
             Self::Join => "join",
+            Self::RetryPoint => "retry-point",
             Self::End => "end",
         }
     }
@@ -177,6 +254,10 @@ pub enum StepKind {
     Memory,
     /// SE-5: a `fence`.
     Fence,
+    /// ST-11: a compensation attempt.
+    CAttempt,
+    /// ST-12: the end of a compensation thread.
+    CEnd,
 }
 
 impl StepKind {
@@ -194,6 +275,8 @@ impl StepKind {
             Self::Finish => "finish",
             Self::Memory => "memory",
             Self::Fence => "fence",
+            Self::CAttempt => "cattempt",
+            Self::CEnd => "cend",
         }
     }
 }
@@ -224,6 +307,49 @@ enum Members {
     Memory { identity: MemoryStepId },
     /// `ordering`: a `fence`'s ordering (QSpec FR-426).
     Fence { ordering: &'static str },
+    /// A `cattempt`'s `operation`, `receiver` and `arguments`, with the
+    /// FR-120 identity of the application, and its `template` and
+    /// `registration`.
+    CAttempt {
+        application: ModelTransition,
+        operation: String,
+        receiver: Enc,
+        arguments: Vec<Enc>,
+        template: String,
+        registration: RegistrationKey,
+    },
+    /// A `cend`'s `template` and `registration`.
+    CEnd {
+        template: String,
+        registration: RegistrationKey,
+    },
+}
+
+/// A compensation registration's key (ADR-027 CP-1, QSpec FR-425): its
+/// template's qualified name, the path of the thread whose effect step
+/// registered it, and its ordinal. Its canonical form is
+/// `{"type":"registration","template","thread","ordinal"}`.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RegistrationKey {
+    /// The template's qualified name.
+    pub template: String,
+    /// The thread whose forward effect registered it.
+    pub thread: ThreadPath,
+    /// The ordinal (ADR-027 CP-1).
+    pub ordinal: u64,
+}
+
+impl RegistrationKey {
+    pub(crate) fn enc(&self) -> Enc {
+        Enc::tagged(
+            "registration",
+            vec![
+                ("template", Enc::text(self.template.clone())),
+                ("thread", self.thread.enc()),
+                ("ordinal", Enc::text(self.ordinal.to_string())),
+            ],
+        )
+    }
 }
 
 /// What a `send` did with its entry (ADR-027 ST-3, QSpec FR-170).
@@ -371,7 +497,7 @@ impl CarriedComponent {
 /// MS-2).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PositionAnchor<'a> {
-    /// An `attempt`: its operation's anchor, by the operation's qualified
+    /// An `attempt` or `cattempt`: its operation's anchor, by the operation's qualified
     /// name (ADR-018 SM-3).
     Operation(&'a str),
     /// Every other protocol step: the `protocol` anchor naming its kind and
@@ -502,6 +628,50 @@ impl ProtocolTransition {
         }
     }
 
+    /// `cattempt` by the compensation thread `thread` of `registration`,
+    /// applying `application` (ADR-027 ST-11, TS-2).
+    pub(crate) fn cattempt(
+        thread: ThreadPath,
+        registration: RegistrationKey,
+        application: ModelTransition,
+        receiver: Enc,
+        arguments: Vec<Enc>,
+    ) -> Self {
+        Self {
+            kind: StepKind::CAttempt,
+            thread: Some(thread),
+            node: None,
+            members: Members::CAttempt {
+                operation: application.operation().to_owned(),
+                application,
+                receiver,
+                arguments,
+                template: registration.template.clone(),
+                registration,
+            },
+            removed: None,
+            send_record: None,
+            memory: None,
+        }
+    }
+
+    /// `cend` by the compensation thread `thread` of `registration`
+    /// (ADR-027 ST-12, TS-2).
+    pub(crate) fn cend(thread: ThreadPath, registration: RegistrationKey) -> Self {
+        Self {
+            kind: StepKind::CEnd,
+            thread: Some(thread),
+            node: None,
+            members: Members::CEnd {
+                template: registration.template.clone(),
+                registration,
+            },
+            removed: None,
+            send_record: None,
+            memory: None,
+        }
+    }
+
     pub(crate) fn memory(identity: MemoryStepId) -> Self {
         Self {
             kind: StepKind::Memory,
@@ -570,20 +740,23 @@ impl ProtocolTransition {
     /// `memory` anchor naming it, and every other step's `protocol` anchor.
     pub fn anchor(&self) -> PositionAnchor<'_> {
         match &self.members {
-            Members::Attempt { operation, .. } => PositionAnchor::Operation(operation),
+            Members::Attempt { operation, .. } | Members::CAttempt { operation, .. } => {
+                PositionAnchor::Operation(operation)
+            }
             Members::Memory { identity } => PositionAnchor::Memory(identity),
             Members::Channel { name, .. } => PositionAnchor::Protocol {
                 step: self.kind,
                 node: None,
                 channel: Some(name),
             },
-            Members::Control | Members::Record { .. } | Members::Fence { .. } => {
-                PositionAnchor::Protocol {
-                    step: self.kind,
-                    node: self.node.as_deref(),
-                    channel: None,
-                }
-            }
+            Members::Control
+            | Members::Record { .. }
+            | Members::Fence { .. }
+            | Members::CEnd { .. } => PositionAnchor::Protocol {
+                step: self.kind,
+                node: self.node.as_deref(),
+                channel: None,
+            },
         }
     }
 
@@ -597,27 +770,50 @@ impl ProtocolTransition {
         self.kind
     }
 
+    /// For a `cattempt` or `cend`, its template's qualified name.
+    pub fn template(&self) -> Option<&str> {
+        self.registration().map(|key| key.template.as_str())
+    }
+
+    /// For a `cattempt` or `cend`, the registration its thread compensates.
+    pub fn registration(&self) -> Option<&RegistrationKey> {
+        match &self.members {
+            Members::CAttempt { registration, .. } | Members::CEnd { registration, .. } => {
+                Some(registration)
+            }
+            Members::Attempt { .. }
+            | Members::Control
+            | Members::Record { .. }
+            | Members::Channel { .. }
+            | Members::Memory { .. }
+            | Members::Fence { .. } => None,
+        }
+    }
+
     /// The owning thread's path; `None` for a channel or memory step.
     pub fn thread(&self) -> Option<&ThreadPath> {
         self.thread.as_ref()
     }
 
-    /// The node's static declaration path; `None` for a channel or memory
-    /// step.
+    /// The node's static declaration path; `None` for a channel, memory,
+    /// `cattempt` or `cend` step.
     pub fn node(&self) -> Option<&str> {
         self.node.as_deref()
     }
 
-    /// For an `attempt`, the FR-120 transition identity of the application
-    /// it applied (ADR-027 TS-3).
+    /// For an `attempt` or a `cattempt`, the FR-120 transition identity of
+    /// the application it applied (ADR-027 TS-3).
     pub fn application(&self) -> Option<&ModelTransition> {
         match &self.members {
-            Members::Attempt { application, .. } => Some(application),
+            Members::Attempt { application, .. } | Members::CAttempt { application, .. } => {
+                Some(application)
+            }
             Members::Control
             | Members::Record { .. }
             | Members::Channel { .. }
             | Members::Memory { .. }
-            | Members::Fence { .. } => None,
+            | Members::Fence { .. }
+            | Members::CEnd { .. } => None,
         }
     }
 
@@ -629,7 +825,9 @@ impl ProtocolTransition {
             | Members::Control
             | Members::Record { .. }
             | Members::Channel { .. }
-            | Members::Fence { .. } => None,
+            | Members::Fence { .. }
+            | Members::CAttempt { .. }
+            | Members::CEnd { .. } => None,
         }
     }
 
@@ -642,7 +840,9 @@ impl ProtocolTransition {
             | Members::Control
             | Members::Record { .. }
             | Members::Memory { .. }
-            | Members::Fence { .. } => None,
+            | Members::Fence { .. }
+            | Members::CAttempt { .. }
+            | Members::CEnd { .. } => None,
         }
     }
 
@@ -688,6 +888,27 @@ impl ProtocolTransition {
                 members.push(("memory_step", identity.enc()));
             }
             Members::Fence { ordering } => members.push(("ordering", Enc::text(*ordering))),
+            Members::CAttempt {
+                operation,
+                receiver,
+                arguments,
+                template,
+                registration,
+                ..
+            } => {
+                members.push(("operation", Enc::text(operation.clone())));
+                members.push(("receiver", receiver.clone()));
+                members.push(("arguments", Enc::Array(arguments.clone())));
+                members.push(("template", Enc::text(template.clone())));
+                members.push(("registration", registration.enc()));
+            }
+            Members::CEnd {
+                template,
+                registration,
+            } => {
+                members.push(("template", Enc::text(template.clone())));
+                members.push(("registration", registration.enc()));
+            }
         }
         Enc::tagged("protocol-transition", members)
     }
@@ -764,6 +985,13 @@ pub enum WaitCause {
     FinishWaiting {
         /// The threads, in ascending JCS bytes of their paths.
         threads: Vec<ThreadPath>,
+    },
+    /// A compensation thread at its first compensation attempt after a
+    /// step of its template's commit node has occurred in its instance,
+    /// naming the template.
+    CommitClosed {
+        /// The template's qualified name.
+        template: String,
     },
     /// A step disabled only by its memory model's gate.
     Gate,

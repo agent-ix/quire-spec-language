@@ -704,8 +704,9 @@ fn buffers(state: &ProtocolState<Tso>) -> BTreeMap<String, Vec<(String, i64)>> {
             let label = thread
                 .steps
                 .last()
-                .map(|step| step.branch.clone())
-                .unwrap_or_default();
+                .and_then(|step| step.branch())
+                .unwrap_or_default()
+                .to_owned();
             let entries = state
                 .memory()
                 .buffer(thread)
@@ -864,7 +865,7 @@ fn a_seq_cst_fence_waits_for_its_store_buffer_under_tso() {
                     .path
                     .steps
                     .first()
-                    .is_some_and(|step| step.branch == label)
+                    .is_some_and(|step| step.branch() == Some(label))
                     && thread
                         .rest_point
                         .node
