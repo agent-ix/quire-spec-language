@@ -49,3 +49,14 @@ Gates run at efa450952 via locked-build: the three admitted test binaries (9 tes
 ## Verdict
 
 Not mergeable. FND-001 is a correctness defect: the facade returns a key that QSL's own replay does not use for the same declaration, so the published capability does not do what QSL-937 asks. FND-002 is why the tests pass anyway. The refusal ordering (own, then Foreign, then WrongKind, then Unknown), the transitive dependency walk, the `CompositeForm` plumbing, union exclusion, the root-only consumer surface, clippy, string-edge and the api-surface arch lint are all sound. The enum facade (FR-394) regressions still pass.
+
+## Dispositions
+
+| FND | Outcome | SHA |
+| --- | --- | --- |
+| FND-001 | fixed: key() is the TypeEnvironment handle, node() is the composite_type node id | 1a902624f |
+| FND-002 | fixed: oracles compare with the checked TypeEnvironment, a checked signature and a replayed witness (FR-396-AC-5) | 1a902624f |
+| FND-003 | fixed: kind-neutral Unknown and Foreign text | 1a902624f |
+| FND-004 | fixed: the memory growth is documented on the field and in FR-396 Behavior; the set stays because WrongKind is specified | 1a902624f |
+| FND-005 | fixed: the breaking WrongKind variant is stated in the PR body; no #[non_exhaustive], as no other lookup enum in qsl-replay uses it | 1a902624f |
+| FND-006 | fixed: FR-396 states a unit cannot name an imported composite (assembler refuses ImportedTypeName), so the case cannot occur | 1a902624f |

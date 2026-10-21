@@ -41,3 +41,12 @@ Ticket: QSL-937. Plan completion: not assessed. Checked the five QSL-937 accepta
 ## Verdict
 
 FR-396-AC-3 (Unknown, WrongKind for enum/union/function, Foreign directly and through an intermediate library) and FR-394-AC-1..5 (AC-4) are covered and pass. AC-1 and AC-2 have tagged tests that pass but cannot fail for the wrong key, so the gap is QSL-937 checks 1, 2 and 5. Check 4: the FR-394 tests pass, and `arch-lint-api-surface-qsl` passes, including FR-100-AC-8 and T12-F. Bindings: tc_1090 root_only → FR-396-AC-1 (tagged correctly, oracle weak); composite_keys_are_the_spines_distinct_and_stable → FR-396-AC-2 (tagged correctly, oracle weak); composite_lookups_refuse_unknown_and_wrong_kind_ids and a_dependencys_composite_is_foreign → FR-396-AC-3 (correct); the two FR-394 tests re-tagged FR-396-AC-4 (correct).
+
+## Dispositions
+
+| FND | Outcome | SHA |
+| --- | --- | --- |
+| FND-001 | fixed: key() is the TypeEnvironment handle | 1a902624f |
+| FND-002 | fixed: FR-396-AC-2 and AC-5 oracles are independent of the implementation | 1a902624f |
+| FND-003 | fixed: the root-only test no longer imports qsl-foundation; AC-1 names the kernel | 1a902624f |
+| FND-004 | fixed: case cannot occur; FR-396 Behavior states it | 1a902624f |

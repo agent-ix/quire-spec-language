@@ -38,3 +38,11 @@ Ticket: QSL-937. Reviewed the new FR-396 and TC-1090 and the spec.md index rows.
 ## Verdict
 
 The structure, relationships, index entry, EARS-style Behavior and the refusal order (own, Foreign, WrongKind, Unknown, with the enum lookups never returning WrongKind) are clear and testable. FND-001 and FND-002 must be fixed with the code: the spec currently encodes the wrong identity and a circular oracle.
+
+## Dispositions
+
+| FND | Outcome | SHA |
+| --- | --- | --- |
+| FND-001 | fixed: FR-396 Description names the TypeEnvironment key, looked up by the composite_type node id | 1a902624f |
+| FND-002 | fixed: FR-396-AC-2 rewritten, FR-396-AC-5 added, TC-1090 updated | 1a902624f |
+| FND-003 | fixed: AC-1 names the kernel (quire-exact), not qsl-foundation | 1a902624f |
