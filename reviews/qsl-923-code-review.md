@@ -52,3 +52,51 @@ Evidence:
 | FND-002 | medium | The claim that shape 2 (the fault) does not reproduce through any entry point on main is wrong, and no test pins it end to end. On merge base 9c8c9b102, secure vault from (0,0),(1,0), HP-3 `forall trace a of V exists trace b of V { (always holds(v.l @ b = 0)) or (holds(v.l @ b = 1) or holds(v.l @ a = 1)) }` is refused with `Fault(witness-product, a-reached-automaton-state-expands)`. HP-2, on `Vault::Terminal` from (0,0) with `fair weak V::Vault::step;` on both universals, `holds(v.l @ a = 0) and holds(v.l @ b = 0) and (eventually holds(v.l @ a = 1) or eventually holds(v.l @ b = 1))` is refused with `Fault(hyper-product, a-reached-automaton-state-expands)`. The copy-swap probe hit this refusal 22 times. HP-6 `align skip` clauses with `r or always q` bodies are refused with `the-evaluator-confirms...`. The cause is the same: the negation of a state `or` operand, for example `p or q`, is never interned, because lowering builds `Not` only over atoms and past operators. At this head all of them decide (HP-3 `Holds`, HP-2 `Violated`). Shape 2 is pinned only at the automaton level (`a_disjunction_of_a_negation_an_until_and_a_nested_or_translates`). Fix: add the HP-3 and HP-2 bodies above, and an HP-6 one, as end-to-end regression tests that assert the decided verdict, not a refusal. | qsl-eval/src/automaton/formula.rs:464-473; qsl-eval/src/automaton/translate.rs:1087-1092; qsl-analyze/tests/it/{hyper,hyper_witness,hyper_projected}.rs |
 | FND-003 | low | The doc comment of `Ir::reachable` still describes only the earlier rule: "with the negation of every state operand of a future operator (the translation asserts it when a counter's operand does not hold)". It now also adds the negation of every state operand of an `or`. Fix: state both sources of the negations. | qsl-eval/src/automaton/formula.rs:439-442 |
 | FND-004 | low | The new block runs for every reachable `Or`, including a state `or`, one with no future operator. A state `or` is asserted whole through `truths` and never reaches the `or` rule, so the negations of its operands are never asserted. Mutant M6 (block guarded by `self.has_future(id)`) passes every suite and every oracle above, so the guard is equivalent. The extra `Not` nodes enlarge `order`, and every `truths` call computes `Dnf::negate` of each state sub-disjunction at every expansion. Wide state disjunctions such as `(p1 and q1) or ... or (pn and qn)` then pay for DNF negations that are never read. Fix: guard the block with `self.has_future(id)`, so the code states the rule's reach. | qsl-eval/src/automaton/formula.rs:464-473 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | The rewritten swap test's doc misstates its counterexample. It says the body "is violated by the pair that takes `step(0)` once and then stays at the terminal state, where `l` is 0 forever". On `Vault::Terminal`, `step(0)` from `(0, 0)` returns to `(0, 0)`, where `step` stays enabled, so that state is not terminal. The engine's counterexample at e3d9a51a5 is `Lockstep { loop_entry: 0 }` with both traces `(0,0) -step(0)-> (0,0)`, a step loop, not a terminal stutter. The doc's next sentence also has a word missing ("holds a disjunction the state formula"). Fix: say the pair that takes `step(0)` forever, where `l` stays 0, and repair the sentence. | qsl-analyze/tests/it/hyper.rs:836-844 |
+
+## Dispositions
+
+Round 1, reviewed at `e3d9a51a5767c4bdd006917341e0749d381c96c6` (fix commit e3d9a51a5 over the merge e73f50a6a; the merge changes nothing in qsl-eval, qsl-analyze or qsl-replay).
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | e3d9a51a5 |
+| FND-002 | fixed | e3d9a51a5 |
+| FND-003 | fixed | e3d9a51a5 |
+| FND-004 | fixed | e3d9a51a5 |
+
+FND-001 and FND-002. The new tests were run against the merge base by placing e3d9a51a5's hyper.rs, hyper_witness.rs and hyper_projected.rs on 9c8c9b102. Seven fail there, each on the defect's own symptom:
+
+- the table test: `(not l=1) and always l=0` is a false Holds;
+- `a_negated_body...`: a false Holds;
+- the swap Terminal clause and the held swap-quotient clause: `Fault(hyper-product, a-reached-automaton-state-expands)`, confirmed separately for the held clause run alone;
+- the HP-3 nested-or test: `Fault(witness-product, ...)`;
+- the HP-3 state-disjunct test: a false `WitnessExhausted` at position 0;
+- the two HP-6 tests: `Fault(projected-product, a-reached-monitor-state-steps)` and `Fault(model-check, the-evaluator-confirms-the-monitor)`.
+
+Mutants against the hyper tests only, at e3d9a51a5:
+
+| Mutant | Result |
+| --- | --- |
+| M0 (fix reverted) | killed by 7 |
+| M1 (left operand only) | killed by 6 |
+| M2 (right operand only) | killed by 2 |
+| M3 (negation not ordered) | killed by 7 |
+| M4 (skipped in normal form) | killed by 1, the held swap clause |
+| M5 (normal form only) | killed by 7 |
+| M7 (no `seen.resize`) | killed by 1 |
+| M6 (`has_future` guard removed) | survives; equivalent by design |
+
+FND-004: the reviewer's lasso oracle at e3d9a51a5 compared 57.7M lassos in 7 modes (seeds 7 and 11 and the fixed shapes), with 0 failures. HP-2 and HP-3 brute force, 600 cases each, found 0 bugs. HP-6 `or` oracle, 400 cases: 0 mismatches. Copy-swap, 400 cases: all agree, none skipped.
+
+After-excerpts:
+
+- FND-001: `(format!("(not {ONE}) and always {ZERO_L}"), false),` and, in the swap test, `Vault::Terminal, ... forall trace a of V fair weak V::Vault::step; forall trace b of V fair weak V::Vault::step; {{ {body} }}` asserting `HyperOutcome::Violated`, plus the held clause `((not holds(v.l @ a = 1)) or (not holds(v.l @ b = 1))) and always holds(v.l @ a = v.l @ b)` asserting `HoldsReduced`.
+- FND-002: `fn a_witness_body_with_a_nested_state_disjunction_is_decided()` with `{ (always holds(v.l @ b = 0)) or (holds(v.l @ b = 1) or holds(v.l @ a = 1)) }` asserting `Holds`; `fn a_projected_body_with_a_nested_state_disjunction_is_decided()`.
+- FND-003: `/// negation of every state operand of a future operator and of an `or` that holds a future operator`.
+- FND-004: `if let (Node::Or(left, right), true) = (node, self.has_future(id)) {`.

@@ -53,3 +53,23 @@ Semantic check (intent, test and code) for the changed triple: the code matches 
 - Stubs and hollow evidence: none in source. Two hollow HP-2 tests (SR-13656 FND-001).
 - Semantic review: performed for the changed triple only (dispatched reviewer; no interactive opt-in available).
 - Plan completion: not assessed
+
+## Dispositions
+
+Round 1, reviewed at `e3d9a51a5767c4bdd006917341e0749d381c96c6`.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | e3d9a51a5 adds no FR-126 criterion, and no follow-up ticket is named. The translation's exactness still has no acceptance criterion. It needs a /specify cycle in this PR, or a tracked follow-up ticket, after which it can be recorded as deferred. That is the lead's call, not the coder's or the reviewer's. |
+| FND-002 | fixed | e3d9a51a5 |
+| FND-003 | fixed | e3d9a51a5 |
+
+FND-002: entry-point tests now cover both shapes on every caller in scope:
+
+- HP-2: the table test, `a_negated_body...` and the swap test (Terminal repro plus held quotient).
+- HP-3: `a_witness_body_with_a_nested_state_disjunction_is_decided`.
+- HP-6: `a_projected_body_with_a_nested_state_disjunction_is_decided`.
+
+Each fails on the merge base on the defect's own symptom (SR-13656 Dispositions). After-excerpt: `fn a_witness_body_with_a_nested_state_disjunction_is_decided()`.
+
+FND-003: the four `#[trace("TC-601")]` attributes and the `use ix_trace_rs::trace;` import are removed from qsl-eval/tests/it/property_automata.rs. After-excerpt: `#[test]\nfn the_automaton_of_a_random_body_accepts_exactly_the_lassos_of_its_semantics() {`.

@@ -836,8 +836,8 @@ fn a_negated_body_is_violated_by_the_behaviour_that_never_sets_the_output() {
 /// QSL-923, HP-2 on a swap-symmetric clause (normal form): over the terminal
 /// vault from `(0, 0)` with `fair weak step` on both traces, the body
 /// `l @ a = 0 and l @ b = 0 and (eventually l @ a = 1 or eventually l @ b = 1)`
-/// is violated by the pair that takes `step(0)` once and then stays at the
-/// terminal state, where `l` is 0 forever. Its negation holds a disjunction
+/// is violated by the pair whose traces both loop `(0, 0) -step(0)-> (0, 0)`,
+/// where `l` is 0 forever. Its negation holds a disjunction with
 /// the state formula `l @ a = 1 or l @ b = 1`, whose negation lowering
 /// never builds, so the translation refused it with a fault in the
 /// self-composition product. The held clause after it is stored as the
