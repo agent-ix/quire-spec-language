@@ -4819,9 +4819,6 @@ pub(crate) fn generated_location() -> Location {
     Location::root(Origin::Expression)
 }
 
-#[cfg(test)]
-mod tests;
-
 /// Whether `identity` is an integer operator whose integer literal operands
 /// are inline literal terms: the FR-357 operators `add`, `sub`, `mul` and
 /// `negate`, and the integer `eq` and `ne` of FR-358 step 6.
@@ -4836,3 +4833,6 @@ fn takes_inline_integer_literals(identity: &str) -> bool {
             | "quire.op.integer.ne"
     )
 }
+
+#[cfg(test)]
+mod tests;

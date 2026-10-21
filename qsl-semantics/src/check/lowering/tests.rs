@@ -2112,6 +2112,20 @@ fn is_inline_integer(argument: &Json, value: &str) -> bool {
         && argument["value"] == value
 }
 
+/// Assert no node of `graph` is a `value`/`literal` holding the integer
+/// `value`: an inline literal operand has no node of its own.
+fn assert_no_literal_node(graph: &SemanticGraph, value: &str) {
+    for node in graph.nodes() {
+        let json = preimage(node);
+        assert!(
+            !(json["body"]["term"] == "literal"
+                && json["body"]["value_kind"] == "integer"
+                && json["body"]["value"] == value),
+            "a node holds the literal {value}: {json}"
+        );
+    }
+}
+
 /// FR-092 L6: a literal `1` that is not an operand of an FR-357 operator is
 /// a `value`/`literal` node.
 #[trace("FR-092-AC-11", "TC-413")]
@@ -2133,14 +2147,7 @@ fn an_integer_literal_right_operand_of_add_is_inline() {
     let arguments = &add["body"]["arguments"];
     assert_eq!(arguments[0]["term"], "reference");
     assert!(is_inline_integer(&arguments[1], "1"), "{arguments}");
-    assert!(
-        graph
-            .semantic_graph()
-            .nodes()
-            .map(preimage)
-            .all(|json| json["body"]["value"] != json!("1")),
-        "no node holds the literal 1"
-    );
+    assert_no_literal_node(graph.semantic_graph(), "1");
 }
 
 /// The literal on the left, and every operator FR-357 settles.
@@ -2161,11 +2168,19 @@ fn integer_literals_are_inline_on_either_side_of_each_scalar_operator() {
             "{identity}: {arguments}"
         );
         assert_eq!(arguments[1]["term"], "reference", "{identity}");
+        assert_no_literal_node(graph.semantic_graph(), "1");
     }
+    let right = binary(BinaryOperator::Subtract, name_expr("x"), integer_expr(1));
+    let graph = check(vec![integer_function("f", right)]).expect("checks");
+    assert_no_literal_node(graph.semantic_graph(), "1");
+    let right = binary(BinaryOperator::Multiply, name_expr("x"), integer_expr(2));
+    let graph = check(vec![integer_function("f", right)]).expect("checks");
+    assert_no_literal_node(graph.semantic_graph(), "2");
     let negate = Expression::negate(integer_expr(5));
     let graph = check(vec![integer_function("f", negate)]).expect("checks");
     let node = application(graph.semantic_graph(), "quire.op.integer.negate");
     assert!(is_inline_integer(&node["body"]["arguments"][0], "5"));
+    assert_no_literal_node(graph.semantic_graph(), "5");
 }
 
 /// Nested arithmetic: each literal is inline in its own application, and the
@@ -2182,6 +2197,8 @@ fn nested_arithmetic_keeps_each_literal_inline_in_its_application() {
     assert!(is_inline_integer(&add["body"]["arguments"][1], "1"));
     assert!(is_inline_integer(&mul["body"]["arguments"][0], "2"));
     assert_eq!(mul["body"]["arguments"][1]["term"], "reference");
+    assert_no_literal_node(semantic, "1");
+    assert_no_literal_node(semantic, "2");
 }
 
 /// A literal operand of any other operator stays a `value`/`literal` node:
@@ -2249,6 +2266,7 @@ fn integer_literals_are_inline_operands_of_integer_equality() {
                 "{identity}: {arguments}"
             );
             assert_eq!(arguments[other]["term"], "reference", "{identity}");
+            assert_no_literal_node(graph.semantic_graph(), "1");
         }
         let narrowed = function(
             "n",
@@ -2258,11 +2276,27 @@ fn integer_literals_are_inline_operands_of_integer_equality() {
             binary(operator, name_expr("x"), integer_expr(1)),
         );
         let graph = check(vec![narrowed]).expect("n checks");
-        let node = application(graph.semantic_graph(), identity);
-        assert_eq!(node["body"]["arguments"][1]["term"], "reference");
-        let narrow = application(graph.semantic_graph(), "quire.op.numeric.narrow");
-        assert_eq!(narrow["body"]["arguments"][0]["term"], "reference");
-        assert_holds(graph.semantic_graph(), "L6");
+        let semantic = graph.semantic_graph();
+        let node = application(semantic, identity);
+        let narrow_key = semantic
+            .nodes()
+            .find(|candidate| {
+                preimage(candidate)["body"]["operation"]["identity"] == "quire.op.numeric.narrow"
+            })
+            .expect("the literal is narrowed")
+            .key()
+            .to_string();
+        assert_eq!(
+            node["body"]["arguments"][1]["target"]["digest"], narrow_key,
+            "{identity} compares `x` with the narrow node"
+        );
+        let narrow = application(semantic, "quire.op.numeric.narrow");
+        assert_eq!(
+            narrow["body"]["arguments"][0]["target"]["digest"],
+            vector_key("L6"),
+            "the narrow node applies to the literal node L6"
+        );
+        assert_holds(semantic, "L6");
     }
     let boolean_equality = function(
         "h",
