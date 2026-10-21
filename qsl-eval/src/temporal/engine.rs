@@ -38,6 +38,7 @@ use super::letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
 use super::outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 use super::plan::{fault, slot, Direction, Node, Plan, Scan, Window};
 use super::position::TemporalPosition;
+use super::steps::{LoopShape, ReadStop, Steps};
 use super::window::{WindowLimitReached, WindowRefusal};
 
 /// The named point every visit charges, one work unit each. `quire-exact`
@@ -155,7 +156,16 @@ struct Shape {
 }
 
 impl Shape {
-    fn new(profile: TemporalProfile, trace: TemporalTrace) -> Result<Self, TemporalRefusal> {
+    /// The shape of `trace` under `profile`. `no_progress` says a lasso's
+    /// loop has no counted step (ADR-027 PB-3): its positions stay inside
+    /// every bounded horizon, which the false extension never reaches, so a
+    /// bounded profile reads it as the infinite trace it is. Remaining work:
+    /// STD-254 settles that exception against FR-329's refusal.
+    fn new(
+        profile: TemporalProfile,
+        trace: TemporalTrace,
+        no_progress: bool,
+    ) -> Result<Self, TemporalRefusal> {
         let (prefix, real_loop) = match trace {
             TemporalTrace::Finite { len: 0 } => return Err(TemporalRefusal::EmptyTrace),
             TemporalTrace::Finite { len } => (len, 0),
@@ -174,6 +184,11 @@ impl Shape {
                 | TemporalProfile::FixedSampleFalseExtension,
                 TemporalTrace::Finite { .. },
             ) => Mode::Closed,
+            (
+                TemporalProfile::EventPositionFalseExtension
+                | TemporalProfile::FixedSampleFalseExtension,
+                TemporalTrace::Lasso { .. },
+            ) if no_progress => Mode::Lasso,
             (
                 TemporalProfile::EventPositionFalseExtension
                 | TemporalProfile::FixedSampleFalseExtension,
@@ -242,9 +257,16 @@ fn convert(value: u128) -> Result<i128, InternalFault> {
 }
 
 /// The unrolling of `plan` over a word of `prefix` positions and loops of
-/// `period` positions.
-fn unroll(plan: &Plan, prefix: u64, period: u64) -> Result<Unrolling, InternalFault> {
-    let reach = plan.past_reach(u128::from(period))?;
+/// `period` positions, whose steps count `per_pass` (ADR-027 PB-3) in one
+/// pass of the loop when some do not.
+fn unroll(
+    plan: &Plan,
+    prefix: u64,
+    period: u64,
+    per_pass: Option<i128>,
+) -> Result<Unrolling, InternalFault> {
+    let per_pass = per_pass.map(|steps| u128::try_from(steps).unwrap_or(0));
+    let reach = plan.past_reach(u128::from(period), per_pass)?;
     let past_reach = slot(&reach, plan.root)?;
     let copies = past_reach.div_ceil(u128::from(period)).saturating_add(1);
     let positions = u128::from(prefix).saturating_add(copies.saturating_mul(u128::from(period)));
@@ -286,9 +308,9 @@ pub fn unrolling(
     trace: TemporalTrace,
 ) -> Result<Unrolling, TemporalRefusal> {
     let subject = Subject::of_clause(clause);
-    let shape = Shape::new(subject.profile, trace)?;
+    let shape = Shape::new(subject.profile, trace, false)?;
     let plan = Plan::new(subject.formula).map_err(TemporalRefusal::Fault)?;
-    unroll(&plan, shape.prefix, shape.period()).map_err(TemporalRefusal::Fault)
+    unroll(&plan, shape.prefix, shape.period(), None).map_err(TemporalRefusal::Fault)
 }
 
 /// How many positions of `trace` a prefix must hold to show every `false` of
@@ -299,9 +321,10 @@ pub(super) fn bad_prefix_bound(
     subject: Subject<'_>,
     trace: TemporalTrace,
 ) -> Result<u128, TemporalRefusal> {
-    let shape = Shape::new(subject.profile, trace)?;
+    let shape = Shape::new(subject.profile, trace, false)?;
     let plan = Plan::new(subject.formula).map_err(TemporalRefusal::Fault)?;
-    let unrolled = unroll(&plan, shape.prefix, shape.period()).map_err(TemporalRefusal::Fault)?;
+    let unrolled =
+        unroll(&plan, shape.prefix, shape.period(), None).map_err(TemporalRefusal::Fault)?;
     // `left_floor` counts the atom itself as one position.
     let future = slot(&plan.left_floor, plan.root)
         .map_err(TemporalRefusal::Fault)?
@@ -317,6 +340,20 @@ pub(super) enum Goal {
     At(TemporalPosition),
 }
 
+/// Whether the loop of the lasso `trace` has no counted step, its closing step
+/// included (ADR-027 PB-3).
+fn loop_without_progress<L: TemporalLetters>(trace: TemporalTrace, letters: &L) -> bool {
+    let TemporalTrace::Lasso { prefix, loop_len } = trace else {
+        return false;
+    };
+    let Some(end) = prefix.checked_add(loop_len) else {
+        return false;
+    };
+    !letters.counts_loop_edge()
+        && (prefix.saturating_add(1)..end)
+            .all(|index| !letters.counts_step(TemporalPosition::new(index)))
+}
+
 /// Evaluate `clause` on `trace` (FR-327, FR-328, FR-329).
 pub(super) fn run<L: TemporalLetters>(
     clause: Subject<'_>,
@@ -325,7 +362,10 @@ pub(super) fn run<L: TemporalLetters>(
     source: &mut L,
     meter: &mut Meter,
 ) -> Result<TemporalOutcome, TemporalRefusal> {
-    let shape = Shape::new(clause.profile, trace)?;
+    let no_progress = clause.profile.is_bounded()
+        && matches!(trace, TemporalTrace::Lasso { .. })
+        && loop_without_progress(trace, &*source);
+    let shape = Shape::new(clause.profile, trace, no_progress)?;
     if let Goal::At(position) = goal {
         trace.admit(position)?;
     }
@@ -339,7 +379,25 @@ pub(super) fn run<L: TemporalLetters>(
         }
     }
     let plan = Plan::new(clause.formula).map_err(TemporalRefusal::Fault)?;
-    let evaluation = Evaluator::new(clause, plan, shape, meter)
+    // ADR-027 PB-3: only an interval measures distance. A lasso's loop is
+    // read in counted steps too, its closing step included.
+    let steps = if plan.measures_distance() {
+        let lasso = (shape.mode == Mode::Lasso).then(|| LoopShape {
+            prefix: shape.prefix,
+            loop_len: shape.real_loop,
+            edge_counts: source.counts_loop_edge(),
+        });
+        match Steps::read(shape.represented, lasso, &*source, meter) {
+            Ok(steps) => steps,
+            Err(ReadStop::Incomplete(incomplete)) => {
+                return Ok(TemporalOutcome::Incomplete(incomplete))
+            }
+            Err(ReadStop::Fault(internal)) => return Err(TemporalRefusal::Fault(internal)),
+        }
+    } else {
+        None
+    };
+    let evaluation = Evaluator::new(clause, plan, shape, steps, meter)
         .and_then(|mut evaluator| evaluator.execute(clause, goal, source));
     match evaluation {
         Ok(outcome) => Ok(outcome),
@@ -436,6 +494,9 @@ struct Evaluator<'a> {
     floors: Vec<i128>,
     /// The letter at the sentinel position.
     sentinel: Tri,
+    /// The counted steps of a trace with an uncounted step; `None` when
+    /// distance is the distance in positions.
+    steps: Option<Steps>,
     /// The atoms read, by (node, represented position).
     letters: HashMap<(usize, u64), bool>,
     /// The first represented position the letter does not supply.
@@ -448,9 +509,15 @@ impl<'a> Evaluator<'a> {
         clause: Subject<'a>,
         plan: Plan,
         shape: Shape,
+        steps: Option<Steps>,
         meter: &'a mut Meter,
     ) -> Result<Self, Stop> {
-        let unrolled = unroll(&plan, shape.prefix, shape.period())?;
+        let unrolled = unroll(
+            &plan,
+            shape.prefix,
+            shape.period(),
+            steps.as_ref().and_then(Steps::per_pass),
+        )?;
         let geometry = Geometry {
             prefix: i128::from(shape.prefix),
             period: i128::from(shape.period()),
@@ -474,6 +541,7 @@ impl<'a> Evaluator<'a> {
                 Mode::Prefix => Tri::Unknown,
                 Mode::Closed | Mode::Lasso => Tri::False,
             },
+            steps,
             letters: HashMap::new(),
             unknown_from: None,
             memo: HashMap::new(),
@@ -552,9 +620,7 @@ impl<'a> Evaluator<'a> {
         // An `on origin` bounded clause reads positions 0 to its horizon;
         // every other clause reads every represented position (UE-1).
         let read = match (clause_goal, activation, clause.horizon) {
-            (true, Activation::Origin, Some(horizon)) => {
-                horizon.saturating_add(1).min(self.represented)
-            }
+            (true, Activation::Origin, Some(horizon)) => self.through_horizon(horizon)?,
             _ => self.represented,
         };
         let guarded = clause_goal && matches!(activation, Activation::Each { guarded: true });
@@ -750,17 +816,24 @@ impl<'a> Evaluator<'a> {
         };
         Ok(match (scan.base.direction(), scan.window) {
             (Direction::Future, Window::Closed { lower, upper }) => {
-                let start = p + i128::from(lower);
-                let last = (p + i128::from(upper)).min(start.max(n) + l - 1);
+                // No position of a loop without a counted step is as far as
+                // the lower bound: the window is empty.
+                let Some(start) = self.ahead(p, lower)? else {
+                    return Ok(Run::linear(0, 1, 0));
+                };
+                let cap = start.max(n) + l - 1;
+                let last = self.ahead_last(p, upper)?.map_or(cap, |last| last.min(cap));
                 Run::linear(start, 1, span(start, last)?)
             }
             (Direction::Past, Window::Closed { lower, upper }) => {
-                let (a, b) = (i128::from(lower), i128::from(upper));
-                let farthest = b.min(a.max(p - floor));
-                Run::linear(p - a, -1, span(a, farthest)?)
+                let first = self.behind(p, lower)?;
+                let farthest = self.behind_far(p, upper)?.max(first.min(floor));
+                Run::linear(first, -1, span(farthest, first)?)
             }
             (Direction::Future, Window::From { lower }) => {
-                let s0 = p + i128::from(lower);
+                let Some(s0) = self.ahead(p, lower)? else {
+                    return Ok(Run::linear(0, 1, 0));
+                };
                 if s0 < 0 {
                     let start = s0.max(floor);
                     Run::linear(start, 1, span(start, n - 1)?)
@@ -782,7 +855,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             (Direction::Past, Window::From { lower }) => {
-                let s0 = p - i128::from(lower);
+                let s0 = self.behind(p, lower)?;
                 if s0 < floor {
                     Run::linear(floor, -1, 1)
                 } else {
@@ -790,6 +863,61 @@ impl<'a> Evaluator<'a> {
                 }
             }
         })
+    }
+
+    /// The last position to read of a bounded `on origin` clause with
+    /// horizon `horizon` (ADR-018 TP-2), counted in steps (ADR-027 PB-3),
+    /// as a count of positions. A lasso whose loop has no counted step never
+    /// leaves the horizon: it reads every represented position.
+    fn through_horizon(&self, horizon: u64) -> Result<u64, InternalFault> {
+        let Some(steps) = &self.steps else {
+            return Ok(horizon.saturating_add(1).min(self.represented));
+        };
+        let Some(last) = steps.last_within(i128::from(horizon))? else {
+            return Ok(self.represented);
+        };
+        let positions = u64::try_from(last + 1).map_err(|_| fault("horizon-position-in-u64"))?;
+        Ok(positions.min(self.represented))
+    }
+
+    /// The first position at distance `offset` or more at or after `p`;
+    /// `None` when no position of the lasso is that far.
+    fn ahead(&self, p: i128, offset: u64) -> Result<Option<i128>, InternalFault> {
+        match &self.steps {
+            None => Ok(Some(p + i128::from(offset))),
+            Some(steps) => Ok(steps
+                .first_reaching(steps.to(p)? + i128::from(offset))?
+                .map(|first| first.max(p))),
+        }
+    }
+
+    /// The last position at distance `offset` or less after `p`; `None` when
+    /// every position of the lasso after some point is.
+    fn ahead_last(&self, p: i128, offset: u64) -> Result<Option<i128>, InternalFault> {
+        match &self.steps {
+            None => Ok(Some(p + i128::from(offset))),
+            Some(steps) => steps.last_within(steps.to(p)? + i128::from(offset)),
+        }
+    }
+
+    /// The last position at distance `offset` or more at or before `p`.
+    fn behind(&self, p: i128, offset: u64) -> Result<i128, InternalFault> {
+        match &self.steps {
+            None => Ok(p - i128::from(offset)),
+            Some(steps) => Ok(steps
+                .last_within(steps.to(p)? - i128::from(offset))?
+                .map_or(p, |last| last.min(p))),
+        }
+    }
+
+    /// The first position at distance `offset` or less before `p`.
+    fn behind_far(&self, p: i128, offset: u64) -> Result<i128, InternalFault> {
+        match &self.steps {
+            None => Ok(p - i128::from(offset)),
+            Some(steps) => steps
+                .first_reaching(steps.to(p)? - i128::from(offset))?
+                .ok_or_else(|| fault("a-position-before-p-is-within-reach")),
+        }
     }
 
     /// Run `frame` as far as the visits already made allow: to its value,

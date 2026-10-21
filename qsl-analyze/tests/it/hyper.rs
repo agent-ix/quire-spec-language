@@ -28,7 +28,7 @@ use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_replay::{
-    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep,
+    BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep,
     IncompleteCause, ModelCheckLimit, ModelCheckLimits, ReachedLimit, UndecidedCause,
 };
 use qsl_semantics::check::FormulaNodeId;
@@ -719,6 +719,173 @@ fn a_co_safety_body_is_decided_and_its_counterexample_replays() {
     }
 }
 
+/// The verdict of `body` over the secure vault from `(0, 0)`, whose behaviours
+/// start with `l = 0` and then take any `l` at each step.
+fn secure_verdict(quantifiers: &str, body: &str) -> Result<(), Box<HyperCounterexample>> {
+    let clause =
+        format!("hyper H using inf over behaviours (v: V::Vault) {quantifiers} {{ {body} }}");
+    let world = World::new(Vault::Secure, false, &STARTS[..1], &clause);
+    match run(&world) {
+        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. } => Ok(()),
+        HyperOutcome::Violated { counterexample, .. } => {
+            assert!(
+                matches!(
+                    world.replay(&counterexample),
+                    Ok(qsl_replay::ModelTraceSettlement::Reproduced { .. })
+                ),
+                "{body}: the counterexample replays"
+            );
+            Err(counterexample)
+        }
+        other => panic!("{body}: expected Holds or a violation, got {other:?}"),
+    }
+}
+
+/// QSL-923: the disjunction of a state test and a temporal formula keeps
+/// both disjuncts. Over the secure vault from `(0, 0)` the behaviours are
+/// `l = 0` and then any bit, so each verdict is read off the disjuncts: the
+/// first disjunct of `l = 1 or always l = 0` is false at position 0 and the
+/// second fails on the behaviour that takes `step(1)`; `l = 0 or always l = 1`
+/// holds at position 0; `l = 1 or eventually l = 1` fails on the behaviour
+/// that takes `step(0)` forever; `not l = 0 or eventually l = 0` holds at
+/// position 0 by its second disjunct; and `l = 1 or always l = 0 or
+/// eventually l = 1` holds on every behaviour because `l` is a bit. The
+/// conjunctions at the end have a negation that is a disjunction of a state
+/// test and a temporal formula, with the state test on either side of the
+/// operator's operands, which is the shape the translation of a negated body
+/// must keep both disjuncts of.
+#[trace("TC-601")]
+#[test]
+fn a_universal_body_with_a_state_test_disjunct_is_decided_by_both_disjuncts() {
+    const ONE: &str = "holds(v.l @ a = 1)";
+    const ZERO_L: &str = "holds(v.l @ a = 0)";
+    let cases = [
+        (format!("{ONE} or always {ZERO_L}"), false),
+        (format!("{ZERO_L} or always {ONE}"), true),
+        (format!("{ONE} or eventually {ONE}"), false),
+        (format!("not {ZERO_L} or eventually {ZERO_L}"), true),
+        (
+            format!("{ONE} or (always {ZERO_L} or eventually {ONE})"),
+            true,
+        ),
+        (
+            format!("(not {ONE}) or (({ONE} until {ONE}) or ({ONE} or {ONE}))"),
+            true,
+        ),
+        (format!("always ({ONE} or eventually {ZERO_L})"), true),
+        (format!("always ({ONE} or always {ONE})"), false),
+        (format!("(not {ONE}) and always {ZERO_L}"), false),
+        (format!("always {ZERO_L} and (not {ONE})"), false),
+        (format!("(not {ONE}) and eventually {ONE}"), false),
+        (format!("eventually {ONE} and (not {ONE})"), false),
+        (
+            format!("(not {ONE}) and (always {ZERO_L} or eventually {ONE})"),
+            true,
+        ),
+        (format!("(not {ONE}) and ({ONE} or always {ZERO_L})"), false),
+        (
+            format!("(not {ONE}) and (eventually {ONE} or {ONE})"),
+            false,
+        ),
+        (
+            format!("(not {ONE}) and ({ZERO_L} or eventually {ONE})"),
+            true,
+        ),
+    ];
+    for (body, holds) in &cases {
+        assert_eq!(
+            secure_verdict("forall trace a of V", body).is_ok(),
+            *holds,
+            "{body}"
+        );
+    }
+}
+
+/// QSL-923, HP-2: `(not l = 1) and eventually l = 1` is violated by every
+/// behaviour, because `l = 1` would have to be false and later true, so the
+/// negated body `l = 1 or always l = 0` is satisfied by `step(0)` forever and
+/// the product has an accepting cycle. The lockstep counterexample's loop
+/// replays.
+#[trace("TC-601")]
+#[test]
+fn a_negated_body_is_violated_by_the_behaviour_that_never_sets_the_output() {
+    let body = "(not holds(v.l @ a = 1)) and eventually holds(v.l @ a = 1)";
+    for quantifiers in [
+        "forall trace a of V forall trace b of V",
+        "forall trace a of V",
+    ] {
+        let counterexample =
+            secure_verdict(quantifiers, body).expect_err("a violated body is not held");
+        assert!(
+            matches!(
+                counterexample.kind,
+                HyperCounterexampleKind::Lockstep { .. }
+            ),
+            "{quantifiers}"
+        );
+    }
+    // The negated body on its own: the secure vault has the behaviour that
+    // never sets the output, which falsifies `l = 1 or always l = 0`.
+    assert!(secure_verdict(
+        "forall trace a of V",
+        "holds(v.l @ a = 1) or always holds(v.l @ a = 0)"
+    )
+    .is_err());
+}
+
+/// QSL-923, HP-2 on a swap-symmetric clause (normal form): over the terminal
+/// vault from `(0, 0)` with `fair weak step` on both traces, the body
+/// `l @ a = 0 and l @ b = 0 and (eventually l @ a = 1 or eventually l @ b = 1)`
+/// is violated by the pair whose traces both loop `(0, 0) -step(0)-> (0, 0)`,
+/// where `l` is 0 forever. Its negation holds a disjunction with
+/// the state formula `l @ a = 1 or l @ b = 1`, whose negation lowering
+/// never builds, so the translation refused it with a fault in the
+/// self-composition product. The held clause after it is stored as the
+/// quotient by the swap and explores the whole automaton.
+#[trace("TC-601")]
+#[test]
+fn a_swap_symmetric_body_with_a_nested_disjunction_is_decided() {
+    let body = "holds(v.l @ a = 0) and holds(v.l @ b = 0) and \
+                (eventually holds(v.l @ a = 1) or eventually holds(v.l @ b = 1))";
+    let world = World::new(
+        Vault::Terminal,
+        false,
+        &STARTS[..1],
+        &format!(
+            "hyper S using inf over behaviours (v: V::Vault) \
+             forall trace a of V fair weak V::Vault::step; \
+             forall trace b of V fair weak V::Vault::step; {{ {body} }}"
+        ),
+    );
+    assert!(
+        matches!(run(&world), HyperOutcome::Violated { .. }),
+        "the terminal pair falsifies the body"
+    );
+
+    // A held clause explores the whole quotient automaton, so a lost
+    // negation is reached: both outputs are 0 at position 0 and equal after
+    // it under equal inputs. In normal form the operands of an `or` are
+    // flattened, so the state operand whose negation is needed is a
+    // conjunction: the body's negation is `(l @ a = 1 and l @ b = 1) or
+    // eventually` a difference.
+    let held = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &format!(
+            "hyper S using inf over behaviours (v: V::Vault) \
+             forall trace a of V forall trace b of V {EQUAL_INPUTS} \
+             {{ ((not holds(v.l @ a = 1)) or (not holds(v.l @ b = 1))) and \
+             always holds(v.l @ a = v.l @ b) }}"
+        ),
+    );
+    assert!(!held.clause.copy_group().classes.is_empty());
+    assert!(
+        matches!(run(&held), HyperOutcome::HoldsReduced { .. }),
+        "the pair agrees"
+    );
+}
+
 /// The lassos of several instances (second phase): the instance that has a
 /// violation is the answer when the others hold, and at equal length the
 /// earlier instance wins. These violations are lassos, not first-phase
@@ -886,6 +1053,39 @@ fn a_finding_at_depth_one_caps_the_later_instances() {
     assert_eq!(*again, *counterexample);
 }
 
+/// A search horizon deeper than the finding that caps a later instance does
+/// not widen it: the instance is explored through the finding's depth, so the
+/// run of the test above, with a horizon of 5, has the same counts and the
+/// same counterexample.
+#[trace("TC-601")]
+#[test]
+fn a_horizon_deeper_than_a_finding_does_not_widen_the_later_instances() {
+    let run_with = |max_depth: Option<usize>| {
+        let mut world = World::with_vaults(Vault::Secure, &[("v0", (0, 0)), ("v1", (0, 0))], PAIR);
+        world.max_depth = max_depth;
+        let letters = UndefinedFor {
+            seams: world.seams(),
+            key: "v0",
+        };
+        let HyperOutcome::Violated {
+            counterexample,
+            stats,
+        } = world
+            .run_through(
+                &letters,
+                &world.seams(),
+                ModelCheckLimits::default(),
+                &Cancel::new(),
+            )
+            .expect("not refused")
+        else {
+            panic!("expected a violation");
+        };
+        (counterexample, stats)
+    };
+    assert_eq!(run_with(Some(5)), run_with(None));
+}
+
 /// A `match` finding is at the depth of the joint position it ends at, one
 /// deeper than the state it is found at. The first instance has an undefined
 /// letter at depth 1; the second has an undefined `match` on its first joint
@@ -1043,4 +1243,84 @@ fn a_stutter_loop_at_a_terminal_state_is_a_matched_fair_cycle() {
     assert_eq!(cause, UndecidedCause::VacuousMatch);
     let terminal = World::new(Vault::Terminal, false, &[(0, 1)], clause);
     assert!(matches!(run(&terminal), HyperOutcome::HoldsReduced { .. }));
+}
+
+/// A search horizon on an HP-2 item (ADR-023 HV-3, ADR-018 UE-4): the leaky
+/// vault's counterexample is a two-step lasso whose loop is a self-loop at
+/// product depth 1, so a horizon of 1 creates that state and expands nothing
+/// past it and returns `BoundReached` covering joint steps, while a horizon of
+/// 2 finds the counterexample an unbounded run finds. A horizon of 0 expands
+/// nothing at all.
+#[trace("TC-601")]
+#[test]
+fn a_horizon_cuts_the_lockstep_search_before_its_lasso() {
+    let mut world = World::new(
+        Vault::Leaky,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let unbounded = refuted(run(&world));
+    for depth in [0, 1] {
+        world.max_depth = Some(depth);
+        let HyperOutcome::BoundReached {
+            depth: reached,
+            covers,
+            ..
+        } = run(&world)
+        else {
+            panic!("expected the horizon to be reached at {depth}");
+        };
+        assert_eq!((reached, covers), (depth as u64, BoundCovers::JointSteps));
+    }
+    world.max_depth = Some(2);
+    assert_eq!(refuted(run(&world)), unbounded);
+}
+
+/// A finding the first phase makes inside the horizon is returned and one
+/// beyond it is not: the undefined `match` conjunct of the secure vault is
+/// read on the joint steps out of the initial states, which a horizon of 0
+/// does not expand and a horizon of 1 does.
+#[trace("TC-601")]
+#[test]
+fn a_first_phase_finding_is_returned_only_inside_the_horizon() {
+    let divided = "match { a.step.op = b.step.op and \
+         a.step.Vault::step.i = b.step.Vault::step.i and \
+         (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 }";
+    let mut world = World::new(Vault::Secure, false, &STARTS, &non_interference(divided));
+    world.max_depth = Some(0);
+    assert!(matches!(
+        run(&world),
+        HyperOutcome::BoundReached { depth: 0, .. }
+    ));
+    world.max_depth = Some(1);
+    let counterexample = refuted(run(&world));
+    assert!(matches!(
+        counterexample.kind,
+        HyperCounterexampleKind::Undefined(_)
+    ));
+    world.max_depth = None;
+    assert_eq!(refuted(run(&world)), counterexample);
+}
+
+/// A run that completes inside its horizon holds, as it does with none; a
+/// horizon shorter than the product reaches `BoundReached` instead of
+/// `Holds`, and with a non-empty `μ_U` no vacuity verdict is read off the
+/// part of the product the horizon cut.
+#[trace("TC-601")]
+#[test]
+fn a_lockstep_run_that_completes_inside_its_horizon_holds() {
+    let mut world = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    world.max_depth = Some(64);
+    assert!(matches!(run(&world), HyperOutcome::HoldsReduced { .. }));
+    world.max_depth = Some(1);
+    assert!(matches!(
+        run(&world),
+        HyperOutcome::BoundReached { depth: 1, .. }
+    ));
 }

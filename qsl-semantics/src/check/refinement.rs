@@ -27,19 +27,22 @@
 //! `n` through any other form is refused as not yet checked.
 
 mod history;
+mod internal_list;
 mod protocol;
 mod step_label;
 
 use std::collections::BTreeMap;
 
 pub use history::{HistoryRow, HistoryUpdate};
+pub use internal_list::{AbstractStepClass, AbstractStepKind, ListDefect, ListDefectKind};
+pub(crate) use internal_list::{NodeClass, ParsedLists, ProtocolClasses};
 pub use protocol::{ChannelStepKind, MemoryStepKind, ProtocolStepKind, RoleStepKind};
 pub(crate) use protocol::{ProtocolClause, ProtocolRefinement, SelectedProtocol};
 use qsl_forms::{
     AbstractSideForm, ArgumentForm, ExpressionForm, FairnessConstraintForm,
     FairnessGranularity as FormGranularity, FairnessKind as FormKind, FairnessSide,
-    ProtocolDeclarationForm, RefinementForm, RefinementRowForm, StepRowForm, StepSourceForm,
-    StepTargetForm,
+    ProtocolDeclarationForm, ProtocolNodeKind, RefinementForm, RefinementRowForm, StepRowForm,
+    StepSourceForm, StepTargetForm,
 };
 use qsl_foundation::selection::ProfileSelection;
 use qsl_foundation::{Code, InternalFault, Span};
@@ -52,7 +55,7 @@ use quire_semantic_value::fairness::{
     FairnessConstraint, FairnessGranularity, FairnessKind, FairnessOperation,
 };
 use quire_semantic_value::location::{Location, Origin};
-pub use step_label::{observation, RowObservation, StepLabel};
+pub use step_label::{observation, LabelStep, RowObservation, StepLabel};
 
 use super::check::{
     bind_parameters, PopulationScope, ScopedHistory, ScopedPopulation, StateContext, Typer,
@@ -109,9 +112,12 @@ pub enum RowClass {
 /// A spelling of a refinement declaration that S3 has no checker for yet.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum UnsupportedFeature {
-    /// An abstract protocol side (FR-147; QSpec has no production for it
-    /// yet, Linear STD-182).
+    /// An abstract protocol side (FR-147, QSpec FR-375's
+    /// `protocol-abstract-side`).
     ProtocolAbstractSide,
+    /// A non-empty resolved internal list (FR-147, QSpec FR-375's
+    /// `refinement-internal-list`).
+    RefinementInternalList,
     /// A history row whose declared type has values with no FR-181 typed
     /// canonical form (an enum or a decimal), which a product state could not
     /// key (FR-138).
@@ -127,9 +133,37 @@ impl UnsupportedFeature {
     pub fn name(self) -> &'static str {
         match self {
             Self::ProtocolAbstractSide => "protocol-abstract-side",
+            Self::RefinementInternalList => "refinement-internal-list",
             Self::HistoryRow => "history-row",
             Self::ProtocolStepApplication => "protocol-step-application",
         }
+    }
+}
+
+/// The refinement features this build has built (FR-135 "Refinement
+/// features the build does not check"): a build capability and not a request
+/// parameter. A declaration that uses a feature outside the set is refused
+/// `unsupported_construct`/`not-yet-implemented`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RefinementSupport {
+    /// `protocol-abstract-side`: `abstract <A>::<protocol>` (FR-147).
+    pub protocol_abstract_side: bool,
+    /// `refinement-internal-list`: a non-empty resolved internal list
+    /// (FR-147).
+    pub refinement_internal_list: bool,
+}
+
+impl RefinementSupport {
+    /// What this build has built: both features of FR-147's S3 half.
+    pub const BUILD: Self = Self {
+        protocol_abstract_side: true,
+        refinement_internal_list: true,
+    };
+}
+
+impl Default for RefinementSupport {
+    fn default() -> Self {
+        Self::BUILD
     }
 }
 
@@ -193,6 +227,18 @@ pub enum RefinementCause {
         /// feature alone does not say.
         subject: Option<&'static str>,
     },
+    /// A defect of the unit's `refinement_internals` value, located by the
+    /// JSON Pointer inside it and not by a source span (FR-147 "Defects").
+    InternalList(ListDefect),
+    /// A class the internal list names that a step row's right side also
+    /// names: `invalid_model_binding`/`conflicting-binding`, at the row and
+    /// naming the entry (FR-147 "One class, one decision").
+    ListEntryConflict {
+        /// The class, by its alias-free spelling.
+        class: String,
+        /// The pointer of the list entry that names it.
+        entry: String,
+    },
     /// A population-valued row whose bound does not fit the type it is used
     /// as once the subject's universe fixes the population's size:
     /// `ill_typed`/`type-mismatch` (FR-139).
@@ -227,7 +273,15 @@ impl RefinementCause {
             Self::WrongProfile { .. } => Code::UnknownProfile,
             Self::Unresolved { .. } | Self::MissingRow { .. } => Code::MissingDeclaration,
             Self::Ambiguous { .. } => Code::AmbiguousDeclaration,
-            Self::Conflicting { .. } | Self::Malformed { .. } => Code::InvalidModelBinding,
+            Self::Conflicting { .. } | Self::Malformed { .. } | Self::ListEntryConflict { .. } => {
+                Code::InvalidModelBinding
+            }
+            Self::InternalList(defect) => match defect.kind {
+                ListDefectKind::Missing => Code::MissingDeclaration,
+                ListDefectKind::Malformed | ListDefectKind::Conflicting => {
+                    Code::InvalidModelBinding
+                }
+            },
             Self::Unsupported { .. } => Code::UnsupportedConstruct,
             Self::PopulationBound { .. } => Code::IllTyped,
             Self::Check(cause) => cause.code(),
@@ -240,7 +294,14 @@ impl RefinementCause {
             Self::WrongProfile { .. } => Some("wrong-selection-role"),
             Self::Unresolved { .. } | Self::MissingRow { .. } => Some("missing-name"),
             Self::Ambiguous { .. } => Some("ambiguous-name"),
-            Self::Conflicting { .. } => Some("conflicting-binding"),
+            Self::Conflicting { .. } | Self::ListEntryConflict { .. } => {
+                Some("conflicting-binding")
+            }
+            Self::InternalList(defect) => Some(match defect.kind {
+                ListDefectKind::Missing => "missing-name",
+                ListDefectKind::Malformed => "malformed-declaration",
+                ListDefectKind::Conflicting => "conflicting-binding",
+            }),
             Self::Malformed { .. } => Some("malformed-declaration"),
             Self::Unsupported { .. } => Some("not-yet-implemented"),
             Self::PopulationBound { .. } => Some("type-mismatch"),
@@ -437,6 +498,9 @@ impl CheckedRefinement {
                     } => std::iter::once(receiver)
                         .chain(arguments.iter().flatten())
                         .collect::<Vec<_>>(),
+                    StepTarget::Node { arguments, .. } => {
+                        arguments.iter().flatten().collect::<Vec<_>>()
+                    }
                     StepTarget::Stutter | StepTarget::Any => Vec::new(),
                 }
             }));
@@ -559,6 +623,18 @@ pub enum StepTarget {
         /// result is then bound to the concrete one for.
         binds_result: bool,
     },
+    /// `node <A>::<protocol>::<node>(argument, ...)`: an `attempt`, `event`,
+    /// `send`, `receive` or `finish` node of the abstract protocol, with one
+    /// entry per argument written (FR-147 "Step rows and observations").
+    Node {
+        /// The abstract protocol clause.
+        protocol: String,
+        /// The abstract node.
+        node: String,
+        /// The expressions over the concrete step, in source order; `None`
+        /// is `_`.
+        arguments: Vec<Option<CheckedRow>>,
+    },
     /// `stutter`.
     Stutter,
     /// `any`.
@@ -580,6 +656,8 @@ pub struct CheckedRefinement {
     pub(crate) name: String,
     pub(crate) profile: ProfileSelection,
     pub(crate) abstract_model: String,
+    pub(crate) abstract_side: AbstractSide,
+    pub(crate) abstract_internal: Vec<AbstractStepClass>,
     pub(crate) concrete_model: String,
     pub(crate) populations: Vec<PopulationRow>,
     pub(crate) objects: Vec<ObjectRow>,
@@ -608,6 +686,19 @@ impl CheckedRefinement {
     /// The abstract model's alias.
     pub fn abstract_model(&self) -> &str {
         &self.abstract_model
+    }
+
+    /// The abstract subject: the model, or a protocol clause of it (FR-147).
+    pub fn abstract_side(&self) -> &AbstractSide {
+        &self.abstract_side
+    }
+
+    /// The abstract step classes the refinement's internal list makes
+    /// internal, in ascending UTF-8 byte order of their alias-free
+    /// spellings; empty for a model subject and for an absent list
+    /// (FR-147 "Outputs").
+    pub fn abstract_internal(&self) -> &[AbstractStepClass] {
+        &self.abstract_internal
     }
 
     /// The concrete model's alias, the declaring package's.
@@ -665,6 +756,19 @@ impl CheckedRefinement {
 struct Side<'a> {
     alias: &'a str,
     model: &'a AdmittedModel,
+}
+
+/// The abstract subject of a checked refinement (FR-135, FR-147).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AbstractSide {
+    /// `abstract A`: the abstract model.
+    Model,
+    /// `abstract A::protocol`: a checked protocol clause of the abstract
+    /// model.
+    Protocol {
+        /// The protocol clause's declared name.
+        clause: String,
+    },
 }
 
 /// One population of a model, with the name a row spells it by.
@@ -766,6 +870,15 @@ impl Findings {
                 cause,
             })),
         });
+    }
+
+    /// A defect of the internal list, located inside its value and not by a
+    /// source span.
+    fn list_defect(&mut self, defect: ListDefect) {
+        self.refuse(
+            Span { start: 0, end: 0 },
+            RefinementCause::InternalList(defect),
+        );
     }
 
     fn unresolved(&mut self, name: &str, span: Span, held_by: Option<&str>) {
@@ -900,6 +1013,7 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     protocols: &'c [ProtocolDeclarationForm],
     declarations: &'c ClauseDeclarations<'a>,
     cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+    env: &RefinementEnv<'_>,
 ) -> (RefinementCheck<'f>, u64) {
     let form = &declaration.form;
     let mut findings = Findings {
@@ -920,17 +1034,19 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
     let abstract_alias = match &form.abstract_side {
         AbstractSideForm::Model(alias) => alias,
         AbstractSideForm::Protocol { alias, clause } => {
-            // FR-147: the protocol side has no checker yet. Its model alias
-            // still resolves, so the rest of the declaration is checked and
-            // its refusals reported beside this one.
-            findings.refuse(
-                clause.span,
-                RefinementCause::Unsupported {
-                    feature: UnsupportedFeature::ProtocolAbstractSide,
-                    profile: declaration.selection.identity.clone(),
-                    subject: None,
-                },
-            );
+            if !env.support.protocol_abstract_side {
+                // FR-147: a build that has not built the protocol side
+                // refuses it before any check of the side, and still checks
+                // the rest of the declaration.
+                findings.refuse(
+                    clause.span,
+                    RefinementCause::Unsupported {
+                        feature: UnsupportedFeature::ProtocolAbstractSide,
+                        profile: declaration.selection.identity.clone(),
+                        subject: None,
+                    },
+                );
+            }
             alias
         }
     };
@@ -953,6 +1069,24 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         }
         return (RefinementCheck::Refused(findings.refusals), nodes);
     };
+    let subject = match &form.abstract_side {
+        AbstractSideForm::Model(_) => ListSubject::Model,
+        AbstractSideForm::Protocol { clause, .. } => resolve_protocol(
+            &mut findings,
+            env,
+            clause,
+            &abstract_side,
+            declarations.scope.types(),
+        ),
+    };
+    let internal = internal_list(
+        &mut findings,
+        env,
+        form,
+        &declaration.selection.identity,
+        &subject,
+    );
+    let clause_refused = matches!(subject, ListSubject::Refused);
     let mut checker = Checker {
         declarations,
         protocols,
@@ -965,6 +1099,12 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         baseline: 0,
         populations: None,
         history: Vec::new(),
+        protocol_subject: matches!(form.abstract_side, AbstractSideForm::Protocol { .. }),
+        protocol: match subject {
+            ListSubject::Protocol(classes) => Some(*classes),
+            _ => None,
+        },
+        internal,
     };
     checker.baseline = checker.findings.refusals.len();
     let headers = checker.history_headers(form, &declaration.selection.identity);
@@ -989,12 +1129,27 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         lifting,
         maps_complete,
         history: scoped_history,
+        internal,
+        protocol_subject,
+        protocol: abstract_classes,
         ..
     } = checker;
     let checked = CheckedRefinement {
         name: form.name.name.clone(),
         profile: declaration.selection.clone(),
         abstract_model: abstract_alias.name.clone(),
+        abstract_side: match &form.abstract_side {
+            AbstractSideForm::Model(_) => AbstractSide::Model,
+            AbstractSideForm::Protocol { clause, .. } => AbstractSide::Protocol {
+                clause: clause.name.clone(),
+            },
+        },
+        abstract_internal: {
+            let mut classes: Vec<AbstractStepClass> =
+                internal.iter().map(|(class, _)| class.clone()).collect();
+            classes.sort();
+            classes
+        },
         concrete_model: form.concrete.name.clone(),
         populations,
         objects,
@@ -1005,7 +1160,10 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         concrete_object_types,
         concrete_protocol: None,
     };
+    // A protocol abstract side refused by its own clause checks reported
+    // those refusals (FR-147 "Abstract side"); the refinement gives no check.
     let check = match protocol {
+        _ if clause_refused => RefinementCheck::Refused(findings.refusals),
         // A protocol subject keeps every refusal found so far beside the
         // clause's, whichever part they come from: the clause check does
         // not wait on them (FR-136 "Order of the checks").
@@ -1022,6 +1180,9 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
                 lifting,
                 maps_complete,
                 history: scoped_history,
+                protocol_subject,
+                abstract_classes,
+                internal: internal.clone(),
             },
         })),
         None if findings.refusals.is_empty() => {
@@ -1048,6 +1209,149 @@ struct StepRows<'f> {
     protocol: Option<(protocol::Selection, Vec<(usize, &'f StepRowForm)>)>,
 }
 
+/// What the check of a refinement reads beyond the unit's models.
+pub(crate) struct RefinementEnv<'e> {
+    /// The refinement features this build has built.
+    pub(crate) support: RefinementSupport,
+    /// The unit's `refinement_internals` value, parsed.
+    pub(crate) lists: &'e ParsedLists,
+    /// The unit's protocol clauses, which a protocol subject selects among.
+    pub(crate) protocols: &'e [ProtocolView<'e>],
+}
+
+/// One protocol clause of the unit and its check: `checked` is `None` when
+/// the clause was refused by its own checks.
+pub(crate) struct ProtocolView<'e> {
+    pub(crate) form: &'e qsl_forms::ProtocolDeclarationForm,
+    pub(crate) checked: Option<&'e super::protocol_clause::CheckedProtocol>,
+}
+
+/// How a refinement's abstract subject resolved, which decides what its
+/// internal list is resolved against.
+enum ListSubject {
+    /// A model subject: a list is never resolved against a protocol.
+    Model,
+    /// A protocol subject whose clause resolved.
+    Protocol(Box<ProtocolClasses>),
+    /// A protocol subject whose clause did not resolve, or whose side the
+    /// build has not built: it reported what it reports and its entries
+    /// resolve against nothing.
+    Unresolved,
+    /// A protocol subject whose clause was refused by its own checks, which
+    /// reported its refusals (FR-147 "Abstract side").
+    Refused,
+}
+
+/// FR-147 "Abstract side": the checked clause `clause` names, among the
+/// unit's protocol clauses whose roles act on the abstract model.
+fn resolve_protocol(
+    findings: &mut Findings,
+    env: &RefinementEnv<'_>,
+    clause: &qsl_forms::DeclaredName,
+    abstract_side: &Side<'_>,
+    types: &TypeEnvironment,
+) -> ListSubject {
+    // A build that has not built the side refused it already and reports
+    // nothing else about it.
+    let report = env.support.protocol_abstract_side;
+    let Some(view) = env
+        .protocols
+        .iter()
+        .find(|view| view.form.name.name == clause.name)
+    else {
+        if report {
+            findings.unresolved(&clause.name, clause.span, None);
+        }
+        return ListSubject::Unresolved;
+    };
+    let Some(checked) = view.checked else {
+        return ListSubject::Refused;
+    };
+    let acts_on_abstract_model = {
+        let object_types = abstract_side.object_types(types).unwrap_or_default();
+        checked.roles.iter().any(|role| {
+            role.context
+                .is_some_and(|context| object_types.iter().any(|object| object.id == context))
+        })
+    };
+    if !acts_on_abstract_model {
+        if report {
+            findings.malformed(&clause.name, clause.span);
+        }
+        return ListSubject::Unresolved;
+    }
+    ListSubject::Protocol(Box::new(ProtocolClasses::of(view.form, checked)))
+}
+
+/// FR-147 "The refinement's internal list": the classes `form`'s list makes
+/// internal, each with the pointer of its entry, and the refusals the list
+/// gives for this refinement. A defect found while parsing the value has
+/// been reported with the value; a refinement with one has no list.
+fn internal_list(
+    findings: &mut Findings,
+    env: &RefinementEnv<'_>,
+    form: &RefinementForm,
+    profile: &str,
+    subject: &ListSubject,
+) -> Vec<(AbstractStepClass, String)> {
+    let name = &form.name.name;
+    let (AbstractSideForm::Model(alias) | AbstractSideForm::Protocol { alias, .. }) =
+        &form.abstract_side;
+    let Some(object) = env.lists.object_of(name) else {
+        return Vec::new();
+    };
+    if env.lists.is_defective(name) {
+        return Vec::new();
+    }
+    let not_built = |findings: &mut Findings| {
+        findings.refuse(
+            alias.span,
+            RefinementCause::Unsupported {
+                feature: UnsupportedFeature::RefinementInternalList,
+                profile: profile.to_owned(),
+                subject: None,
+            },
+        );
+    };
+    match subject {
+        ListSubject::Protocol(classes) => {
+            let (resolved, missing) = classes.resolve_list(&alias.name, object);
+            for pointer in &missing {
+                findings.list_defect(ListDefect {
+                    kind: ListDefectKind::Missing,
+                    pointer: pointer.clone(),
+                    first: None,
+                });
+            }
+            if !missing.is_empty() {
+                return Vec::new();
+            }
+            if !resolved.is_empty() && !env.support.refinement_internal_list {
+                not_built(findings);
+            }
+            resolved
+        }
+        ListSubject::Model => {
+            // A model subject selects no protocol to resolve an entry
+            // against: a well-formed non-empty list is not yet built, or
+            // malformed once it is.
+            if object.non_empty {
+                if env.support.refinement_internal_list {
+                    findings.list_defect(ListDefect {
+                        kind: ListDefectKind::Malformed,
+                        pointer: object.pointer.clone(),
+                        first: None,
+                    });
+                } else {
+                    not_built(findings);
+                }
+            }
+            Vec::new()
+        }
+        ListSubject::Unresolved | ListSubject::Refused => Vec::new(),
+    }
+}
+
 struct Checker<'c, 'a> {
     declarations: &'c ClauseDeclarations<'a>,
     /// The unit's protocol declarations, which a step row may select.
@@ -1071,6 +1375,14 @@ struct Checker<'c, 'a> {
     /// The history fields a row may read (FR-138), in scope once their rows'
     /// headers check.
     history: Vec<ScopedHistory>,
+    /// Whether the abstract side is written `abstract A::protocol`.
+    protocol_subject: bool,
+    /// The step classes of the selected abstract protocol clause, when the
+    /// side is a protocol subject that resolved.
+    protocol: Option<ProtocolClasses>,
+    /// The classes the internal list makes internal, each with the pointer
+    /// of the entry that names it.
+    internal: Vec<(AbstractStepClass, String)>,
 }
 
 impl<'c, 'a> Checker<'c, 'a> {
@@ -1415,6 +1727,16 @@ impl<'c, 'a> Checker<'c, 'a> {
         for field in &row.fields {
             let written = field.field.name.as_str();
             let Some(attribute) = types.attribute(target.id, written) else {
+                // The protocol's state takes no row (FR-147 "Abstract side").
+                if self
+                    .protocol
+                    .as_ref()
+                    .is_some_and(|classes| classes.has_state(written))
+                {
+                    self.findings.malformed(written, field.field.span);
+                    complete = false;
+                    continue;
+                }
                 self.findings.unresolved(
                     &format!("{}.{written}", target.name),
                     field.field.span,
@@ -1516,6 +1838,18 @@ impl<'c, 'a> Checker<'c, 'a> {
         context: RowContext,
         cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
     ) -> Option<CheckedRow> {
+        self.check_row_as(expression, Some(required), context, cx)
+    }
+
+    /// [`Self::check_row`] where the type the row defines is `required`, or
+    /// any type when there is none.
+    fn check_row_as(
+        &mut self,
+        expression: &ExpressionForm,
+        required: Option<&ValueType>,
+        context: RowContext,
+        cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+    ) -> Option<CheckedRow> {
         let declarations = self.declarations;
         let location = Location::root(Origin::Expression);
         let RowContext {
@@ -1555,27 +1889,31 @@ impl<'c, 'a> Checker<'c, 'a> {
             // One rule for every row: the expression's own type conforms to
             // the type it defines (ADR-016 SC-2), never a range-checked
             // coercion into it.
-            let body = typer.infer(&expression.expression, Some(required), &location)?;
+            let body = typer.infer(&expression.expression, required, &location)?;
             let types = declarations.scope.types();
-            let uses =
-                if range_agnostic && relaxed_conforms(types, body.root().value_type(), required) {
+            let uses = match required {
+                None => Vec::new(),
+                Some(required)
+                    if range_agnostic
+                        && relaxed_conforms(types, body.root().value_type(), required) =>
+                {
                     Vec::new()
-                } else {
-                    population_uses(
-                        types,
-                        &body,
-                        required,
-                        (&label, &populations),
-                        expression
-                            .spans
-                            .at(&[])
-                            .unwrap_or(Span { start: 0, end: 0 }),
-                    )
-                    .map_err(|cause| match cause {
-                        Some(cause) => refuse_with(&location, cause),
-                        None => CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch),
-                    })?
-                };
+                }
+                Some(required) => population_uses(
+                    types,
+                    &body,
+                    required,
+                    (&label, &populations),
+                    expression
+                        .spans
+                        .at(&[])
+                        .unwrap_or(Span { start: 0, end: 0 }),
+                )
+                .map_err(|cause| match cause {
+                    Some(cause) => refuse_with(&location, cause),
+                    None => CheckRefusal::ill_typed(&location, IllTypedCause::TypeMismatch),
+                })?,
+            };
             Ok::<_, CheckRefusal>((body, typer.slots(), uses))
         })();
         match typed {
@@ -1693,12 +2031,9 @@ impl<'c, 'a> Checker<'c, 'a> {
             let target = match &row.target {
                 StepTargetForm::Stutter { .. } => Some(StepTarget::Stutter),
                 StepTargetForm::Any { .. } => Some(StepTarget::Any),
-                StepTargetForm::Node { node, .. } => {
-                    // FR-147: while the abstract side is a model subject, a
-                    // right side naming a protocol node is malformed.
-                    self.findings.malformed(&node.name, row.span);
-                    None
-                }
+                StepTargetForm::Node {
+                    node, arguments, ..
+                } => self.node_target(row.span, node, arguments, (object, concrete), cx),
                 StepTargetForm::Apply {
                     operation,
                     arguments,
@@ -1788,6 +2123,86 @@ impl<'c, 'a> Checker<'c, 'a> {
                 None
             }
         }
+    }
+
+    /// A step row whose right side is `node <A>::<protocol>::<node>(...)`
+    /// (FR-147 "Step rows and observations").
+    fn node_target(
+        &mut self,
+        row_span: Span,
+        node: &qsl_forms::NameForm,
+        arguments: &[ArgumentForm],
+        (object, concrete): (&ObjectType, &crate::model::operation::OperationDeclaration),
+        cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+    ) -> Option<StepTarget> {
+        if !self.protocol_subject {
+            // While the abstract side is a model subject, a right side
+            // naming a protocol node is malformed.
+            self.findings.malformed(&node.name, node.span);
+            return None;
+        }
+        // A protocol subject that did not resolve reported why.
+        let classes = self.protocol.as_ref()?;
+        let named = match node.name.split("::").collect::<Vec<_>>()[..] {
+            [alias, protocol, member]
+                if alias == self.abstract_side.alias
+                    && protocol == classes.protocol
+                    && matches!(
+                        classes.node(member),
+                        Some(NodeClass::Bare(
+                            ProtocolNodeKind::Attempt
+                                | ProtocolNodeKind::Effect
+                                | ProtocolNodeKind::Event
+                                | ProtocolNodeKind::Commit
+                                | ProtocolNodeKind::Send
+                                | ProtocolNodeKind::Receive
+                                | ProtocolNodeKind::Finish
+                        ))
+                    ) =>
+            {
+                AbstractStepClass::node(protocol, member)
+            }
+            _ => {
+                self.findings.unresolved(&node.name, node.span, None);
+                return None;
+            }
+        };
+        if let Some((_, entry)) = self.internal.iter().find(|(class, _)| *class == named) {
+            let conflict = RefinementCause::ListEntryConflict {
+                class: named.spelling().to_owned(),
+                entry: entry.clone(),
+            };
+            self.findings.refuse(row_span, conflict);
+            return None;
+        }
+        let mut parameters = vec![("self".to_owned(), ValueType::Reference(object.id))];
+        parameters.extend(concrete.parameters().iter().cloned());
+        let mut checked = Vec::new();
+        let mut complete = true;
+        for argument in arguments {
+            match argument {
+                ArgumentForm::Open { .. } => checked.push(None),
+                ArgumentForm::Expression(expression) => {
+                    let context = RowContext {
+                        parameters: parameters.clone(),
+                        kind: qsl_forms::StateClauseKind::Postcondition,
+                        operation: Some(concrete.name().to_owned()),
+                        label: format!("step {}", concrete.name()),
+                        range_agnostic: false,
+                    };
+                    match self.check_row_as(expression, None, context, cx) {
+                        Some(row) => checked.push(Some(row)),
+                        None => complete = false,
+                    }
+                }
+            }
+        }
+        let (protocol, member) = named.spelling().split_once("::")?;
+        complete.then(|| StepTarget::Node {
+            protocol: protocol.to_owned(),
+            node: member.to_owned(),
+            arguments: checked,
+        })
     }
 
     /// A step row whose right side applies an abstract operation.

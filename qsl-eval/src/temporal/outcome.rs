@@ -102,7 +102,9 @@ pub enum TemporalRefusal {
     #[error("a lasso's prefix and loop exceed u64 positions")]
     TraceTooLong,
     /// A lasso under a bounded profile: only the infinite-trace profile
-    /// reads one (FR-329).
+    /// reads one (FR-329), but for a lasso whose loop has no counted step
+    /// (ADR-027 PB-3, FR-338), which never leaves a bounded horizon. Remaining
+    /// work: STD-254 settles that exception against FR-329.
     #[error("a lasso is read under the infinite-trace profile only, not {profile:?}")]
     LassoUnderBoundedProfile {
         /// The clause's profile.
@@ -122,6 +124,14 @@ pub enum TemporalRefusal {
         /// The clause's profile.
         profile: TemporalProfile,
     },
+    /// A timed lasso whose loop has no positive total delay: the behaviour
+    /// would not be time-divergent (ADR-026 CT-2).
+    #[error("a timed lasso's loop has no positive total delay")]
+    NonPositiveLoopDelay,
+    /// A timed lasso whose loop re-enters its start before the last
+    /// represented position's stamp.
+    #[error("a timed lasso's loop re-enters its start before the last represented stamp")]
+    LoopReentersBeforeLastStamp,
     /// A timed trace whose stamp is negative (FR-231: a stamp is a
     /// non-negative exact rational).
     #[error("the time stamp at {position:?} is negative")]
@@ -161,6 +171,8 @@ impl TemporalRefusal {
             | Self::TupleArity { .. }
             | Self::NegativeStamp { .. }
             | Self::DecreasingStamp { .. }
+            | Self::NonPositiveLoopDelay
+            | Self::LoopReentersBeforeLastStamp
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
             Self::AlignSkipNotLockstep
             | Self::NotProjectionAligned

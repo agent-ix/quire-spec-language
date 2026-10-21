@@ -472,6 +472,7 @@ fn decide_step(
                 Err(verdict) => verdict,
             }
         }
+        StepTarget::Node { .. } => fault("a-protocol-node-row-needs-a-protocol-abstract-subject"),
         StepTarget::Abstract { operation, .. } => {
             let Some(arguments) = arguments else {
                 return fault("an-abstract-row-evaluates-its-arguments");

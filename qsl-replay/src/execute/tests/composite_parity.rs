@@ -34,7 +34,9 @@ const UNIT: &str = "record Q { x: Int[0, 9]; s: Sequence<Int[0, 9]>[0, 3]; }\n\
      function c using v(a: Color, b: Color): Boolean pure { a = b }\n\
      record R { x: Int[0, 9]; label: Text[0, 4; nfc]; }\n\
      function t using v(a: R, b: R): Boolean pure { a = b }\n\
-     function d using v(a: Q, b: Q): Boolean pure { (a = b) and (a = b) }\n";
+     function d using v(a: Q, b: Q): Boolean pure { (a = b) and (a = b) }\n\
+     function k using v(a: Integer): Boolean pure { a = 3 }\n\
+     function m using v(a: Int[0, 9]): Boolean pure { a = 3 }\n";
 
 struct Unit {
     source: String,
@@ -1801,4 +1803,39 @@ fn tc_907_a_raised_replay_input_bound_admits_what_the_default_refuses() {
         report.result(),
         VerifiedShadowResult::Proved { .. }
     ));
+}
+
+/// FR-358 step 6, an integer literal operand: unwrapped (an `Integer` peer)
+/// it is an inline literal with the singleton `range`; wrapped in a
+/// `numeric.narrow` application (a bounded peer) the operand is that
+/// application, a graph child with the empty `bounds`.
+#[trace("TC-907", "FR-358-AC-3")]
+#[test]
+fn tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it() {
+    use crate::execute::parity_identity::Domain;
+    let unit = unit();
+
+    let claim = unit.claim("k", EqualityOperator::Equal, vec![]);
+    let (_, compiled, site) = prepared(&unit, "k", &claim);
+    let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
+    assert_eq!(
+        preimage.arguments[1].identity,
+        OperandIdentity::InlineLiteral
+    );
+    let Domain::Range(range) = &preimage.arguments[1].domain else {
+        panic!("an inline literal has a range domain");
+    };
+    assert_eq!(
+        *range,
+        quire_exact::IntegerInterval::spanning(Integer::from(3_i64), Integer::from(3_i64))
+    );
+
+    let claim = unit.claim("m", EqualityOperator::Equal, vec![]);
+    let (_, compiled, site) = prepared(&unit, "m", &claim);
+    let preimage = parity_preimage(&compiled, &site, &claim).unwrap();
+    let OperandIdentity::GraphChild(narrow) = preimage.arguments[1].identity else {
+        panic!("a narrowed literal is a graph child");
+    };
+    assert_ne!(narrow, unit.parameter("m", 0));
+    assert!(matches!(&preimage.arguments[1].domain, Domain::Bounds(_)));
 }

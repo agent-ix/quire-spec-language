@@ -62,6 +62,13 @@
 //! concrete entry. A state constraint on a liveness clause is refused
 //! ([`ModelCheckRefusal::ReducedLiveness`]).
 //!
+//! A protocol subject under `sc` (FR-212) is one more [`LiveSubject`]: its
+//! products are explored and decided by the same phases, the fairness
+//! filter reads the clause's fairness set over the subject (its authored
+//! operation constraints and the protocol's scheduler constraints) over
+//! FR-212's classes of protocol transition identities, and its run is never
+//! reduced.
+//!
 //! Under partial-order reduction (ADR-021 POR-6 to POR-11) each product
 //! state is expanded through the ample set `ample` chooses at its model
 //! component: the fairness filter still reads each state's full enabled set
@@ -75,36 +82,42 @@ use qsl_eval::automaton::{
     translate, Atom, AutomatonError, AutomatonKind, Letter, PropertyAutomaton, StateId,
 };
 use qsl_eval::fairness::{
-    analyze, Analysis, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
+    analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
 };
-use qsl_eval::model_subject::{ModelInstance, ModelLetters};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject};
 use qsl_eval::simulation::model::{check_model_bounds, ModelFinding, ModelSimState, ModelSystem};
+use qsl_eval::simulation::protocol::{
+    protocol_constraints, ProtocolFairness, ProtocolSystem, ProtocolTransition, Sc,
+};
 use qsl_eval::simulation::{
     EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, Footprint, Limit, Limits,
-    OfferedReductions, Outcome, Permutation, SymmetryGroup, TransitionSystem,
+    OfferedReductions, Outcome, Permutation, SubjectSystem, SubjectTransition, SymmetryGroup,
+    TransitionSystem,
 };
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
 use qsl_replay::{
-    AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind, IncompleteCause,
-    ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome, ModelStep, Proviso,
-    ReachedLimit, ReductionCause, RunStats, TemporalCounterexample, UndecidedCause,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    undefined_finding, AppliedReduction, ClauseIdentity, ClauseRootRefusal, CounterexampleKind,
+    IncompleteCause, ItemRefusal, Lasso, ModelCheckItem, ModelCheckLimit, ModelCheckOutcome,
+    ModelStep, Proviso, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
+    UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, CheckedTemporalClause, FormulaNodeId};
 use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Meter, ScalarLimits};
-use quire_semantic_value::fairness::FairnessGranularity;
+use quire_semantic_value::fairness::{FairnessConstraint, FairnessGranularity};
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::ample::{Atoms, Por};
 use super::check::{
     not_simulated, precheck, Admitted, ModelCheckRefusal, ModelCheckRequest, BOUND_POSITIONS,
 };
-use super::concretise::{Lift, LiftStop};
+use super::concretise::{Lift, LiftStop, PermuterOf};
 use super::fair_walk::{fairness_constraints, tree_path, FairModel};
-use super::graph::{retain_reduced, Ample, Choice, ProductStateId, RetainedEdge, RetainedGraph};
+use super::graph::{
+    retain_reduced, Ample, Choice, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
+};
 use super::product::{ProductKey, ProductTransition};
 use super::quotient::{
     Analysis as QuotientAnalysis, Analyzer, LoopEdge, Quotient, QuotientConstraint, QuotientEdge,
@@ -214,8 +227,116 @@ pub(super) fn check(
             })
             .collect()
     };
+    decide_bindings(
+        &system,
+        Bound {
+            clause,
+            letters,
+            fairness: clause.fairness(),
+            bindings: &bindings,
+            root_cancelled,
+            no_initial,
+        },
+        RunRequest {
+            max_depth: request.max_depth,
+            partial_order: request.reductions.partial_order,
+            limits: request.limits,
+            meter,
+            max_candidates,
+        },
+        cancel,
+    )
+}
+
+/// FR-126 and FR-212 for a liveness (TP-4) clause over a protocol subject
+/// under `sc`: the same first and second phase over the product of the
+/// protocol system with the clause's negation automaton, whose fairness
+/// filter reads the clause's fairness set over the subject (its authored
+/// operation constraints and, unless the protocol declares `scheduling
+/// adversarial`, one `fair weak whole` scheduler constraint per thread
+/// target) over FR-212's classes. A protocol subject offers no reduction.
+///
+/// # Errors
+///
+/// [`ModelCheckRefusal`] as [`check`] returns it.
+pub(super) fn check_protocol(
+    subject: &ProtocolSubject<'_>,
+    system: &ProtocolSystem<'_, Sc>,
+    item: ModelCheckItem<'_>,
+    max_depth: Option<usize>,
+    limits: qsl_replay::ModelCheckLimits,
+    cancel: &Cancel,
+) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+    let ModelCheckItem::Clause { clause, letters } = item else {
+        return Err(fault("a-liveness-item-is-a-clause"));
+    };
+    if matches!(clause.activation(), Activation::Each { guarded: true }) {
+        return Err(ModelCheckRefusal::GuardedActivation);
+    }
+    let model = system.model();
+    let simulation = &subject.model.simulation;
+    let root_cancelled =
+        match ClauseIdentity::resolve(simulation.package, simulation.packages, clause, cancel) {
+            Ok(_) => None,
+            Err(ClauseRootRefusal::Cancelled(cause)) => Some(cause),
+            Err(refusal) => return Err(ModelCheckRefusal::Item(ItemRefusal::ClauseRoot(refusal))),
+        };
+    let fairness = system.fairness_set(clause.fairness())?;
+    let bindings: Vec<Binding> = model
+        .instances(&clause.over().1)
+        .map_err(not_simulated)?
+        .into_iter()
+        .map(|instance| Binding {
+            instance,
+            group: SymmetryGroup::default(),
+            applied: None,
+        })
+        .collect();
+    decide_bindings(
+        system,
+        Bound {
+            clause,
+            letters,
+            fairness: &fairness,
+            bindings: &bindings,
+            root_cancelled,
+            no_initial: simulation.initial.is_empty(),
+        },
+        RunRequest {
+            max_depth,
+            partial_order: false,
+            limits,
+            meter: simulation.meter,
+            max_candidates: simulation.expansion.max_candidates,
+        },
+        cancel,
+    )
+}
+
+/// What a run decides over its subject: the clause, its letters and its
+/// fairness set over the subject, the bindings it explores, and what the
+/// request settles before any is explored.
+struct Bound<'r, S: LiveSubject> {
+    clause: &'r CheckedTemporalClause,
+    letters: &'r dyn ModelLetters,
+    fairness: &'r [Fair<S>],
+    bindings: &'r [Binding],
+    /// The cancellation that stopped the clause identity's resolution.
+    root_cancelled: Option<CancelCause>,
+    no_initial: bool,
+}
+
+/// The bindings' run over `system`, after the settlements no exploration
+/// reaches: a cancelled resolution or request, no initial state, no
+/// instance.
+fn decide_bindings<S: LiveSubject>(
+    system: &S,
+    bound: Bound<'_, S>,
+    request: RunRequest,
+    cancel: &Cancel,
+) -> Result<ModelCheckOutcome<Tr<S>>, ModelCheckRefusal> {
     let totals = Totals::default();
-    if let Some(source) = root_cancelled {
+    if let Some(source) = bound.root_cancelled {
         return Ok(stopped(
             IncompleteCause::Cancelled { source },
             None,
@@ -231,36 +352,196 @@ pub(super) fn check(
             ));
         }
     }
-    if no_initial {
+    if bound.no_initial {
         return Ok(ModelCheckOutcome::Undecided {
             cause: UndecidedCause::NoInitialState,
             stats: totals.stats(),
         });
     }
-    if bindings.is_empty() {
+    if bound.bindings.is_empty() {
         return Ok(ModelCheckOutcome::Undecided {
             cause: UndecidedCause::NoInstance,
             stats: totals.stats(),
         });
     }
+    let meter = request.meter;
+    let max_transitions = request.limits.limits.max_transitions;
     let run = Run {
-        system: &system,
-        clause,
-        letters,
-        bindings: &bindings,
-        request: RunRequest {
-            max_depth: request.max_depth,
-            partial_order: request.reductions.partial_order,
-            limits: request.limits,
-            meter,
-            max_candidates,
-        },
+        system,
+        clause: bound.clause,
+        fairness: bound.fairness,
+        letters: bound.letters,
+        bindings: bound.bindings,
+        request,
         cancel,
         meter: RefCell::new(Meter::new(meter)),
-        transitions_left: Cell::new(request.limits.limits.max_transitions),
+        transitions_left: Cell::new(max_transitions),
         lifted: Cell::new(0),
     };
     run.decide(totals)
+}
+
+/// What the liveness engine reads of a subject beside [`SubjectSystem`]: a
+/// model subject offers symmetry and partial-order reduction, a protocol
+/// subject neither, so its run is never reduced.
+trait LiveSubject: SubjectSystem<TransitionId: Ord> + Sized {
+    /// The subject's expansion of `state`, its steps held to their
+    /// footprints when `enforce` (FR-155 "Read enforcement").
+    fn expand_live(
+        &self,
+        state: &Self::State,
+        enforce: bool,
+    ) -> Result<Expansion<Tr<Self>, Self::State, ModelFinding>, ExpansionStop>;
+
+    /// The subject's symmetry, which lifts a reduced path (FR-161).
+    fn permuter(&self) -> Option<PermuterOf<'_, Self>>;
+
+    /// The kernels' constraints of `fairness` over `transitions`, the
+    /// identities a retained graph holds, numbered by `identity`.
+    fn constraints(
+        &self,
+        fairness: &[Fair<Self>],
+        transitions: &[Tr<Self>],
+        identity: &dyn Fn(&Tr<Self>) -> Result<Identity, ModelCheckRefusal>,
+    ) -> Result<Vec<Constraint>, ModelCheckRefusal>;
+
+    /// Retain `binding`'s product in FR-101's canonical order within
+    /// `limits`, through ample sets when the request selects partial-order
+    /// reduction.
+    fn retain(
+        run: &Run<'_, Self>,
+        product: &LassoSystem<'_, Self>,
+        binding: &Binding,
+        limits: Limits,
+    ) -> Result<Exploration<Self>, ModelCheckRefusal>;
+
+    /// The second phase over a reduced graph (FR-153).
+    fn reduced_second_phase(
+        run: &Run<'_, Self>,
+        explored: &Explored<'_, Self>,
+    ) -> Result<Second<Tr<Self>>, ModelCheckRefusal>;
+}
+
+/// The retained product of `product` under `group` and `ample`.
+fn retained<'l, S: LiveSubject>(
+    run: &Run<'_, S>,
+    product: &LassoSystem<'l, S>,
+    group: &SymmetryGroup,
+    ample: Option<&dyn Ample<LassoSystem<'l, S>>>,
+    limits: Limits,
+) -> Result<Exploration<S>, ModelCheckRefusal> {
+    retain_reduced(
+        product,
+        group,
+        ample,
+        limits,
+        IdentityLimits::default(),
+        None,
+        || run.cancel.poll() && run.cancel.cause().is_some(),
+    )
+    .map_err(|error| {
+        ModelCheckRefusal::Encoding(EncodingRefusal::of(&error, IdentityLimits::default()))
+    })
+}
+
+impl<'a> LiveSubject for ModelSystem<'a> {
+    fn expand_live(
+        &self,
+        state: &ModelSimState,
+        enforce: bool,
+    ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
+        if enforce {
+            self.successors_enforced(state)
+        } else {
+            self.successors(state)
+        }
+    }
+
+    fn permuter(&self) -> Option<PermuterOf<'_, Self>> {
+        Some(self)
+    }
+
+    fn constraints(
+        &self,
+        fairness: &[FairnessConstraint],
+        transitions: &[ModelTransition],
+        identity: &dyn Fn(&ModelTransition) -> Result<Identity, ModelCheckRefusal>,
+    ) -> Result<Vec<Constraint>, ModelCheckRefusal> {
+        fairness_constraints(self, fairness, transitions, identity)
+    }
+
+    fn retain(
+        run: &Run<'_, Self>,
+        product: &LassoSystem<'_, Self>,
+        binding: &Binding,
+        limits: Limits,
+    ) -> Result<Exploration<Self>, ModelCheckRefusal> {
+        if !run.request.partial_order {
+            return retained(run, product, &binding.group, None, limits);
+        }
+        let atoms = Atoms {
+            letters: run.letters,
+            nodes: &product.atoms,
+        };
+        let por = Por::new(
+            run.system,
+            Some(atoms),
+            std::slice::from_ref(&binding.instance),
+            run.fairness,
+            None,
+        )?;
+        let ample = LassoAmple { product, por: &por };
+        retained(run, product, &binding.group, Some(&ample), limits)
+    }
+
+    fn reduced_second_phase(
+        run: &Run<'_, Self>,
+        explored: &Explored<'_, Self>,
+    ) -> Result<Second<ModelTransition>, ModelCheckRefusal> {
+        run.quotient_phase(explored)
+    }
+}
+
+impl LiveSubject for ProtocolSystem<'_, Sc> {
+    fn expand_live(
+        &self,
+        state: &Self::State,
+        _enforce: bool,
+    ) -> Result<Expansion<ProtocolTransition, Self::State, ModelFinding>, ExpansionStop> {
+        self.successors(state)
+    }
+
+    fn permuter(&self) -> Option<PermuterOf<'_, Self>> {
+        None
+    }
+
+    fn constraints(
+        &self,
+        fairness: &[ProtocolFairness],
+        transitions: &[ProtocolTransition],
+        identity: &dyn Fn(&ProtocolTransition) -> Result<Identity, ModelCheckRefusal>,
+    ) -> Result<Vec<Constraint>, ModelCheckRefusal> {
+        Ok(protocol_constraints(fairness, transitions, identity)?
+            .into_iter()
+            .map(|(_, constraint)| constraint)
+            .collect())
+    }
+
+    fn retain(
+        run: &Run<'_, Self>,
+        product: &LassoSystem<'_, Self>,
+        binding: &Binding,
+        limits: Limits,
+    ) -> Result<Exploration<Self>, ModelCheckRefusal> {
+        retained(run, product, &binding.group, None, limits)
+    }
+
+    fn reduced_second_phase(
+        _run: &Run<'_, Self>,
+        _explored: &Explored<'_, Self>,
+    ) -> Result<Second<ProtocolTransition>, ModelCheckRefusal> {
+        Err(fault("a-protocol-run-is-never-reduced"))
+    }
 }
 
 fn fault(invariant: &'static str) -> ModelCheckRefusal {
@@ -279,11 +560,11 @@ fn widen(value: usize) -> u64 {
     u64::try_from(value).unwrap_or(u64::MAX)
 }
 
-fn stopped(
+fn stopped<T: SubjectTransition>(
     cause: IncompleteCause,
     limit: Option<ReachedLimit>,
     stats: RunStats,
-) -> ModelCheckOutcome {
+) -> ModelCheckOutcome<T> {
     ModelCheckOutcome::Stopped {
         cause,
         limit,
@@ -291,7 +572,11 @@ fn stopped(
     }
 }
 
-fn exhausted(limit: ModelCheckLimit, value: u64, stats: RunStats) -> ModelCheckOutcome {
+fn exhausted<T: SubjectTransition>(
+    limit: ModelCheckLimit,
+    value: u64,
+    stats: RunStats,
+) -> ModelCheckOutcome<T> {
     stopped(
         IncompleteCause::ResourceExhausted,
         Some(ReachedLimit { limit, value }),
@@ -336,10 +621,11 @@ impl Totals {
             automaton_states: self.automaton_states,
             depth: self.depth,
             bound_limited: 0,
+            instance_limited: 0,
         }
     }
 
-    fn add(&mut self, graph: &RetainedGraph<LState, PT, Finding>, edges: usize, automaton: u64) {
+    fn add<S: LiveSubject>(&mut self, graph: &Retained<S>, edges: usize, automaton: u64) {
         self.states = self.states.saturating_add(widen(graph.states().len()));
         self.edges = self.edges.saturating_add(widen(edges));
         // Every binding translates the same clause into the same automaton.
@@ -411,25 +697,39 @@ impl Encode for PropertyKey {
     }
 }
 
-/// A product state: a model state and the property state it was reached in,
-/// with the depth it was created at.
+/// A product state: a subject state and the property state it was reached
+/// in, with the depth it was created at.
 #[derive(Clone)]
-struct LState {
-    model: ModelSimState,
+struct LState<State> {
+    model: State,
     property: Property,
     depth: usize,
 }
 
-type PT = ProductTransition<ModelTransition>;
+/// A subject's transition identity.
+type Tr<S> = <S as TransitionSystem>::TransitionId;
+
+/// One member of a fairness set over a subject.
+type Fair<S> = <Tr<S> as SubjectTransition>::Fairness;
+
+/// A product edge's identity over a subject's identities `T`.
+type PT<T> = ProductTransition<T>;
+
+/// One binding's explored product over the subject `S`.
+type Exploration<S> =
+    GraphExploration<LState<<S as TransitionSystem>::State>, PT<Tr<S>>, Finding<Tr<S>>>;
+
+/// One binding's retained product over the subject `S`.
+type Retained<S> = RetainedGraph<LState<<S as TransitionSystem>::State>, PT<Tr<S>>, Finding<Tr<S>>>;
 
 /// What an expansion found, beside its successors.
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum Finding {
-    /// A contract conjunction the model's expansion evaluated undefined or
-    /// refused.
+enum Finding<T> {
+    /// A contract conjunction, or a protocol step's constraint, the
+    /// subject's expansion evaluated undefined or refused.
     Contract(ModelFinding),
-    /// The transition identities the model state enables (FA-2).
-    Enabled(Vec<ModelTransition>),
+    /// The transition identities the subject state enables (FA-2).
+    Enabled(Vec<T>),
     /// The state is at the search horizon and has an edge that was not taken.
     HorizonCut,
 }
@@ -456,25 +756,25 @@ enum Before {
 }
 
 /// A model state reached where the negation automaton has no move.
-struct DeadRoot {
+struct DeadRoot<State, T> {
     /// The product state it was reached from, by its model state's digest and
     /// automaton state, and the transition taken; `None` for an initial state.
-    via: Option<(DigestRecord, StateId, PT)>,
-    model: ModelSimState,
+    via: Option<(DigestRecord, StateId, PT<T>)>,
+    model: State,
     depth: usize,
 }
 
 /// One binding's product as a `TransitionSystem`.
-struct LassoSystem<'r, 'a> {
-    system: &'r ModelSystem<'a>,
+struct LassoSystem<'r, S: LiveSubject> {
+    system: &'r S,
     letters: &'r dyn ModelLetters,
     binding: &'r ModelInstance,
     atoms: Vec<FormulaNodeId>,
     automaton: RefCell<PropertyAutomaton>,
     start: StateId,
     readings: RefCell<BTreeMap<DigestRecord, Reading>>,
-    initial: Vec<LState>,
-    dead: RefCell<Vec<DeadRoot>>,
+    initial: Vec<LState<S::State>>,
+    dead: RefCell<Vec<DeadRoot<S::State, Tr<S>>>>,
     meter: ScalarLimits,
     cancel: &'r Cancel,
     max_depth: Option<usize>,
@@ -488,7 +788,7 @@ struct LassoSystem<'r, 'a> {
     halt: RefCell<Option<Halt>>,
 }
 
-impl LassoSystem<'_, '_> {
+impl<S: LiveSubject> LassoSystem<'_, S> {
     /// Record why the run stops, keeping the first reason, and return the
     /// stop the exploration engine takes.
     fn record(&self, halt: Halt) -> ExpansionStop {
@@ -518,22 +818,19 @@ impl LassoSystem<'_, '_> {
         Ok(())
     }
 
-    /// The model's expansion of `state`, recording why when it stops.
+    /// The subject's expansion of `state`, recording why when it stops.
     fn expand(
         &self,
-        state: &ModelSimState,
-    ) -> Result<Expansion<ModelTransition, ModelSimState, ModelFinding>, ExpansionStop> {
-        let expansion = if self.enforce {
-            self.system.successors_enforced(state)
-        } else {
-            self.system.successors(state)
-        };
-        expansion.inspect_err(|&stop| {
-            self.record(Halt::Expansion(stop));
-        })
+        state: &S::State,
+    ) -> Result<Expansion<Tr<S>, S::State, ModelFinding>, ExpansionStop> {
+        self.system
+            .expand_live(state, self.enforce)
+            .inspect_err(|&stop| {
+                self.record(Halt::Expansion(stop));
+            })
     }
 
-    fn digest_of(&self, state: &ModelSimState) -> Result<DigestRecord, ExpansionStop> {
+    fn digest_of(&self, state: &S::State) -> Result<DigestRecord, ExpansionStop> {
         self.system
             .state_key(state)
             .map(|(_, digest)| digest)
@@ -541,11 +838,13 @@ impl LassoSystem<'_, '_> {
     }
 
     /// The letter of `state` for this binding, read once per model state.
-    fn reading(&self, state: &ModelSimState) -> Result<Reading, ExpansionStop> {
+    fn reading(&self, state: &S::State) -> Result<Reading, ExpansionStop> {
         let digest = self.digest_of(state)?;
         if let Some(known) = self.readings.borrow().get(&digest) {
             return Ok(known.clone());
         }
+        let state = self.system.atom_state(state);
+        let state = state.as_ref();
         let mut letter = Letter::default();
         let mut reading = None;
         for (index, atom) in self.atoms.iter().enumerate() {
@@ -627,17 +926,17 @@ impl LassoSystem<'_, '_> {
     }
 }
 
-impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
-    type State = LState;
-    type TransitionId = PT;
-    type Key = ProductKey<<ModelSystem<'a> as TransitionSystem>::Key, PropertyKey>;
-    type Finding = Finding;
+impl<S: LiveSubject> TransitionSystem for LassoSystem<'_, S> {
+    type State = LState<S::State>;
+    type TransitionId = PT<Tr<S>>;
+    type Key = ProductKey<S::Key, PropertyKey>;
+    type Finding = Finding<Tr<S>>;
 
-    fn initial(&self) -> Vec<LState> {
+    fn initial(&self) -> Vec<Self::State> {
         self.initial.clone()
     }
 
-    fn key(&self, state: &LState) -> Self::Key {
+    fn key(&self, state: &Self::State) -> Self::Key {
         ProductKey {
             model: self.system.key(&state.model),
             property: match &state.property {
@@ -647,7 +946,10 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
         }
     }
 
-    fn successors(&self, state: &LState) -> Result<Expansion<PT, LState, Finding>, ExpansionStop> {
+    fn successors(
+        &self,
+        state: &Self::State,
+    ) -> Result<Expansion<Self::TransitionId, Self::State, Self::Finding>, ExpansionStop> {
         self.poll()?;
         let before = match &state.property {
             // The first phase ends at this state; nothing follows it.
@@ -660,15 +962,16 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
             Property::After(at) => Before::At(*at),
         };
         let expansion = self.expand(&state.model)?;
-        let mut findings: Vec<Finding> = expansion
+        let mut findings: Vec<Self::Finding> = expansion
             .findings
             .into_iter()
             .filter(|finding| {
-                finding.undefined_contract().is_some() || finding.is_refused_contract()
+                undefined_finding(std::slice::from_ref(finding)).is_some()
+                    || finding.is_refused_contract()
             })
             .map(Finding::Contract)
             .collect();
-        let mut enabled: Vec<ModelTransition> = expansion
+        let mut enabled: Vec<Tr<S>> = expansion
             .successors
             .iter()
             .map(|(transition, _)| transition.clone())
@@ -676,10 +979,10 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
         enabled.sort();
         enabled.dedup();
         findings.push(Finding::Enabled(enabled));
-        if findings.iter().any(|finding| {
-            matches!(finding, Finding::Contract(contract)
-                if contract.undefined_contract().is_some() || contract.is_refused_contract())
-        }) {
+        if findings
+            .iter()
+            .any(|finding| matches!(finding, Finding::Contract(_)))
+        {
             self.found_at(state.depth);
         }
         let met_finding = self
@@ -695,7 +998,7 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
                 findings,
             });
         }
-        let steps: Vec<(PT, ModelSimState)> = if expansion.successors.is_empty() {
+        let steps: Vec<(Self::TransitionId, S::State)> = if expansion.successors.is_empty() {
             vec![(ProductTransition::TerminalStutter, state.model.clone())]
         } else {
             expansion
@@ -746,7 +1049,10 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
     /// ADR-021 EI-4: a model transition has its model component's footprint,
     /// and the terminal stutter edge has none, so no ample-set candidate
     /// holds it (FR-162).
-    fn footprint(&self, transition: &PT) -> Option<Result<Footprint, ExpansionStop>> {
+    fn footprint(
+        &self,
+        transition: &Self::TransitionId,
+    ) -> Option<Result<Footprint, ExpansionStop>> {
         match transition {
             ProductTransition::Model(transition) => {
                 TransitionSystem::footprint(self.system, transition)
@@ -759,12 +1065,12 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
     /// component kept, so the automaton is never reduced.
     fn canonical(
         &self,
-        state: &LState,
+        state: &Self::State,
         group: &SymmetryGroup,
-    ) -> Option<Result<(LState, Permutation), ExpansionStop>> {
+    ) -> Option<Result<(Self::State, Permutation), ExpansionStop>> {
         Some(
             self.system
-                .canonicalise(&state.model, group)
+                .canonical(&state.model, group)?
                 .map(|(model, permutation)| {
                     (
                         LState {
@@ -785,17 +1091,17 @@ impl<'a> TransitionSystem for LassoSystem<'_, 'a> {
 /// FR-156: the ample sets of one binding's product, chosen at the model
 /// component of each product state.
 struct LassoAmple<'p, 'r, 'a> {
-    product: &'p LassoSystem<'r, 'a>,
+    product: &'p LassoSystem<'r, ModelSystem<'a>>,
     por: &'p Por<'r, 'a>,
 }
 
-impl<'r, 'a> Ample<LassoSystem<'r, 'a>> for LassoAmple<'_, 'r, 'a> {
+impl<'r, 'a> Ample<LassoSystem<'r, ModelSystem<'a>>> for LassoAmple<'_, 'r, 'a> {
     fn choose(
         &self,
-        state: &LState,
-        findings: &[Finding],
-        successors: &[(&PT, bool)],
-    ) -> Result<Choice<PT>, ExpansionStop> {
+        state: &LState<ModelSimState>,
+        findings: &[Finding<ModelTransition>],
+        successors: &[(&PT<ModelTransition>, bool)],
+    ) -> Result<Choice<PT<ModelTransition>>, ExpansionStop> {
         let enabled: &[ModelTransition] = findings
             .iter()
             .find_map(|finding| match finding {
@@ -837,9 +1143,9 @@ enum Ending {
 }
 
 /// One explored binding.
-struct Explored<'r, 'a> {
-    product: LassoSystem<'r, 'a>,
-    graph: RetainedGraph<LState, PT, Finding>,
+struct Explored<'r, S: LiveSubject> {
+    product: LassoSystem<'r, S>,
+    graph: Retained<S>,
     binding: &'r Binding,
     ending: Ending,
     /// Whether a model state reached where the automaton has no move was
@@ -849,21 +1155,24 @@ struct Explored<'r, 'a> {
 
 /// A built counterexample, or the stop that ended its concretisation
 /// (FR-161 "Length and limits").
-enum Built {
-    Counterexample(Box<TemporalCounterexample>),
+enum Built<T: SubjectTransition> {
+    Counterexample(Box<TemporalCounterexample<T>>),
     Stopped(IncompleteCause, Option<ReachedLimit>),
 }
 
 /// The first phase's finding: a counterexample, or a refused contract.
-enum FirstHit {
-    Violated(Box<TemporalCounterexample>),
+enum FirstHit<T: SubjectTransition> {
+    Violated(Box<TemporalCounterexample<T>>),
     Undecided,
     /// Concretising the counterexample stopped the run.
     Stopped(IncompleteCause, Option<ReachedLimit>),
 }
 
-impl From<Built> for FirstHit {
-    fn from(built: Built) -> Self {
+/// A first-phase finding with the depth it was found at.
+type Ranked<T> = (usize, FirstHit<T>);
+
+impl<T: SubjectTransition> From<Built<T>> for FirstHit<T> {
+    fn from(built: Built<T>) -> Self {
         match built {
             Built::Counterexample(counterexample) => Self::Violated(counterexample),
             Built::Stopped(cause, limit) => Self::Stopped(cause, limit),
@@ -871,8 +1180,8 @@ impl From<Built> for FirstHit {
     }
 }
 
-impl FirstHit {
-    fn outcome(self, stats: RunStats) -> ModelCheckOutcome {
+impl<T: SubjectTransition> FirstHit<T> {
+    fn outcome(self, stats: RunStats) -> ModelCheckOutcome<T> {
         match self {
             Self::Violated(counterexample) => ModelCheckOutcome::Violated {
                 counterexample,
@@ -916,18 +1225,27 @@ impl Depths {
 
 /// A model state of the model-only pass over the states a dead automaton
 /// leaves: how it was reached, from a root or from another such state.
-struct DeadNode {
-    model: ModelSimState,
-    parent: Option<(usize, ModelTransition)>,
+struct DeadNode<State, T> {
+    model: State,
+    parent: Option<(usize, T)>,
     root: usize,
 }
 
 /// What the model-only pass found.
-#[derive(Default)]
-struct DeadPhase {
-    hit: Option<(usize, FirstHit)>,
+struct DeadPhase<T: SubjectTransition> {
+    hit: Option<Ranked<T>>,
     cut: bool,
     stopped: Option<Ending>,
+}
+
+impl<T: SubjectTransition> Default for DeadPhase<T> {
+    fn default() -> Self {
+        Self {
+            hit: None,
+            cut: false,
+            stopped: None,
+        }
+    }
 }
 
 /// The annotated quotient of one reduced product and its constraints.
@@ -956,8 +1274,8 @@ impl From<ModelCheckRefusal> for LoopStop {
 }
 
 /// What the second phase found in one graph.
-enum Second {
-    Lasso(Box<TemporalCounterexample>),
+enum Second<T: SubjectTransition> {
+    Lasso(Box<TemporalCounterexample<T>>),
     Cancelled(CancelCause),
     /// A limit stopped the annotated quotient's analysis or the lasso's
     /// concretisation.
@@ -965,8 +1283,8 @@ enum Second {
     NoneFair,
 }
 
-impl From<Built> for Second {
-    fn from(built: Built) -> Self {
+impl<T: SubjectTransition> From<Built<T>> for Second<T> {
+    fn from(built: Built<T>) -> Self {
         match built {
             Built::Counterexample(counterexample) => Self::Lasso(counterexample),
             Built::Stopped(cause, limit) => Self::Stopped(cause, limit),
@@ -975,9 +1293,11 @@ impl From<Built> for Second {
 }
 
 /// The run: the subject's system, the item and the request.
-struct Run<'r, 'a> {
-    system: &'r ModelSystem<'a>,
+struct Run<'r, S: LiveSubject> {
+    system: &'r S,
     clause: &'r CheckedTemporalClause,
+    /// The clause's fairness set over the subject (FR-123, FR-212).
+    fairness: &'r [Fair<S>],
     letters: &'r dyn ModelLetters,
     bindings: &'r [Binding],
     request: RunRequest,
@@ -994,14 +1314,14 @@ struct Run<'r, 'a> {
     lifted: Cell<usize>,
 }
 
-impl<'r, 'a> Run<'r, 'a> {
-    fn decide(&self, mut totals: Totals) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+impl<'r, S: LiveSubject> Run<'r, S> {
+    fn decide(&self, mut totals: Totals) -> Result<ModelCheckOutcome<Tr<S>>, ModelCheckRefusal> {
         let mut explored = Vec::with_capacity(self.bindings.len());
         // The finding that ranks first so far, with its depth: a later
         // binding replaces it only with a strictly shallower one (a tie goes
         // to the earlier binding), so it is explored through `depth - 1`
         // alone and not at all past a finding at depth 0.
-        let mut best: Option<(usize, FirstHit)> = None;
+        let mut best: Option<Ranked<Tr<S>>> = None;
         for (index, binding) in self.bindings.iter().enumerate() {
             let cap = match best {
                 Some((0, _)) => break,
@@ -1082,7 +1402,7 @@ impl<'r, 'a> Run<'r, 'a> {
         // bindings, measured in transitions, the earlier binding winning a
         // tie.
         let mut cut = false;
-        let mut shortest: Option<Box<TemporalCounterexample>> = None;
+        let mut shortest: Option<Box<TemporalCounterexample<Tr<S>>>> = None;
         for run in &explored {
             cut |= run.dead_cut
                 || run
@@ -1163,7 +1483,7 @@ impl<'r, 'a> Run<'r, 'a> {
         binding: &'r Binding,
         cap: Option<usize>,
         totals: &mut Totals,
-    ) -> Result<Result<Explored<'r, 'a>, ModelCheckOutcome>, ModelCheckRefusal> {
+    ) -> Result<Result<Explored<'r, S>, ModelCheckOutcome<Tr<S>>>, ModelCheckRefusal> {
         let mut automaton = translate(self.clause, self.request.limits.max_automaton_states)
             .map_err(LivenessRefusal::from)?;
         if automaton.kind() != AutomatonKind::Liveness {
@@ -1210,39 +1530,7 @@ impl<'r, 'a> Run<'r, 'a> {
             max_states,
             max_transitions,
         };
-        let por = if self.request.partial_order {
-            let atoms = Atoms {
-                letters: self.letters,
-                nodes: &product.atoms,
-            };
-            Some(Por::new(
-                self.system,
-                Some(atoms),
-                std::slice::from_ref(&binding.instance),
-                self.clause.fairness(),
-                None,
-            )?)
-        } else {
-            None
-        };
-        let ample = por.as_ref().map(|por| LassoAmple {
-            product: &product,
-            por,
-        });
-        let exploration = retain_reduced(
-            &product,
-            &binding.group,
-            ample
-                .as_ref()
-                .map(|ample| ample as &dyn Ample<LassoSystem<'_, '_>>),
-            remaining,
-            IdentityLimits::default(),
-            None,
-            || self.cancel.poll() && self.cancel.cause().is_some(),
-        )
-        .map_err(|error| {
-            ModelCheckRefusal::Encoding(EncodingRefusal::of(&error, IdentityLimits::default()))
-        })?;
+        let exploration = S::retain(self, &product, binding, remaining)?;
         let transitions = match &exploration.outcome {
             Outcome::Exhaustive(stats) => stats.transitions,
             Outcome::BoundReached { stats, .. }
@@ -1251,7 +1539,7 @@ impl<'r, 'a> Run<'r, 'a> {
             | Outcome::Stopped { stats, .. } => stats.transitions,
         };
         let automaton_states = widen(product.automaton.borrow().reached_states());
-        totals.add(&exploration.graph, transitions, automaton_states);
+        totals.add::<S>(&exploration.graph, transitions, automaton_states);
         self.charge_lifted(totals);
         let ending = match &exploration.outcome {
             Outcome::Exhaustive(_) => Ending::Complete,
@@ -1292,9 +1580,9 @@ impl<'r, 'a> Run<'r, 'a> {
     /// The outcome of a product that halted before it had a graph.
     fn halted(
         &self,
-        product: &LassoSystem<'_, '_>,
+        product: &LassoSystem<'_, S>,
         totals: &Totals,
-    ) -> Result<ModelCheckOutcome, ModelCheckRefusal> {
+    ) -> Result<ModelCheckOutcome<Tr<S>>, ModelCheckRefusal> {
         match self.halt_ending(product)? {
             Some(Ending::Stopped(cause, limit)) => Ok(stopped(cause, limit, totals.stats())),
             Some(Ending::Complete) | None => Err(fault("a-halted-start-recorded-its-halt")),
@@ -1304,7 +1592,7 @@ impl<'r, 'a> Run<'r, 'a> {
     /// What the product recorded when it stopped the exploration.
     fn halt_ending(
         &self,
-        product: &LassoSystem<'_, '_>,
+        product: &LassoSystem<'_, S>,
     ) -> Result<Option<Ending>, ModelCheckRefusal> {
         let Some(halt) = product.halt.borrow_mut().take() else {
             return Ok(None);
@@ -1350,12 +1638,12 @@ impl<'r, 'a> Run<'r, 'a> {
     /// leaves it undecided. The finding comes with the depth it was at.
     fn first_phase(
         &self,
-        run: &Explored<'_, '_>,
-    ) -> Result<Option<(usize, FirstHit)>, ModelCheckRefusal> {
+        run: &Explored<'_, S>,
+    ) -> Result<Option<Ranked<Tr<S>>>, ModelCheckRefusal> {
         let mut refused = false;
         for (index, state) in run.graph.states().iter().enumerate() {
             let id = ProductStateId(index);
-            let violated = |kind| -> Result<Option<(usize, FirstHit)>, ModelCheckRefusal> {
+            let violated = |kind| -> Result<Option<Ranked<Tr<S>>>, ModelCheckRefusal> {
                 let built = self.prefix_counterexample(run, id, kind)?;
                 Ok(Some((state.state.depth, FirstHit::from(built))))
             };
@@ -1372,17 +1660,12 @@ impl<'r, 'a> Run<'r, 'a> {
                 let Finding::Contract(contract) = finding else {
                     continue;
                 };
-                if let Some(undefined) = contract.undefined_contract() {
-                    let site = self.site(
-                        &state.state,
-                        UndefinedLocus::Contract(undefined.clause),
-                        undefined.guard_of,
-                    )?;
+                if let Some((locus, guard, cause)) =
+                    undefined_finding(std::slice::from_ref(contract))
+                {
+                    let site = self.site(&state.state, locus, guard)?;
                     return violated(CounterexampleKind::UndefinedEvaluation(
-                        UndefinedEvaluation {
-                            site,
-                            cause: undefined.cause,
-                        },
+                        UndefinedEvaluation { site, cause },
                     ));
                 }
                 refused |= contract.is_refused_contract();
@@ -1406,10 +1689,10 @@ impl<'r, 'a> Run<'r, 'a> {
     /// that exhausts either stops the run naming it.
     fn dead_phase(
         &self,
-        run: &Explored<'_, '_>,
+        run: &Explored<'_, S>,
         bound: Option<usize>,
         spent: &mut Totals,
-    ) -> Result<DeadPhase, ModelCheckRefusal> {
+    ) -> Result<DeadPhase<Tr<S>>, ModelCheckRefusal> {
         self.charge_lifted(spent);
         let (mut states_left, mut edges_left) = spent.remaining(self.request.limits.limits);
         let (states_before, edges_before) = (states_left, edges_left);
@@ -1437,7 +1720,7 @@ impl<'r, 'a> Run<'r, 'a> {
 
     /// `lift`'s concrete steps, noting the ones it charged to the run's
     /// budget.
-    fn steps_of(&self, lift: Lift<'_, '_>) -> Vec<ModelStep> {
+    fn steps_of(&self, lift: Lift<'_, S>) -> Vec<ModelStep<Tr<S>>> {
         self.lifted
             .set(self.lifted.get().saturating_add(lift.charged()));
         lift.into_steps()
@@ -1454,11 +1737,11 @@ impl<'r, 'a> Run<'r, 'a> {
     /// [`Self::dead_phase`]'s walk, decrementing the budget it is given.
     fn dead_walk(
         &self,
-        run: &Explored<'_, '_>,
+        run: &Explored<'_, S>,
         bound: Option<usize>,
         states_left: &mut usize,
         edges_left: &mut usize,
-    ) -> Result<DeadPhase, ModelCheckRefusal> {
+    ) -> Result<DeadPhase<Tr<S>>, ModelCheckRefusal> {
         let roots = std::mem::take(&mut *run.product.dead.borrow_mut());
         let mut phase = DeadPhase::default();
         if roots.is_empty() {
@@ -1483,7 +1766,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 live.insert((digest, *at), ProductStateId(index));
             }
         }
-        let mut nodes: Vec<DeadNode> = Vec::new();
+        let mut nodes: Vec<DeadNode<S::State, Tr<S>>> = Vec::new();
         let mut frontier: BTreeSet<(usize, usize)> = BTreeSet::new();
         for (root, entry) in roots.iter().enumerate() {
             if bound.is_some_and(|bound| entry.depth >= bound) {
@@ -1504,7 +1787,7 @@ impl<'r, 'a> Run<'r, 'a> {
             }
         }
         let mut found: Option<usize> = None;
-        let stop = |phase: &mut DeadPhase| -> Result<(), ModelCheckRefusal> {
+        let stop = |phase: &mut DeadPhase<Tr<S>>| -> Result<(), ModelCheckRefusal> {
             phase.stopped = self.halt_ending(&run.product)?;
             Ok(())
         };
@@ -1536,17 +1819,7 @@ impl<'r, 'a> Run<'r, 'a> {
             let kind = if let Reading::Undefined { atom, cause } = reading {
                 Some((UndefinedLocus::Atom(atom), None, cause))
             } else {
-                expansion
-                    .findings
-                    .iter()
-                    .find_map(ModelFinding::undefined_contract)
-                    .map(|undefined| {
-                        (
-                            UndefinedLocus::Contract(undefined.clause),
-                            undefined.guard_of,
-                            undefined.cause,
-                        )
-                    })
+                undefined_finding(&expansion.findings)
             };
             if let Some(found) = kind {
                 let (locus, transition, cause) = found;
@@ -1642,13 +1915,13 @@ impl<'r, 'a> Run<'r, 'a> {
     /// model path from the root, concretised (FR-161).
     fn dead_counterexample(
         &self,
-        run: &Explored<'_, '_>,
-        roots: &[DeadRoot],
-        nodes: &[DeadNode],
+        run: &Explored<'_, S>,
+        roots: &[DeadRoot<S::State, Tr<S>>],
+        nodes: &[DeadNode<S::State, Tr<S>>],
         live: &BTreeMap<(DigestRecord, StateId), ProductStateId>,
         at: usize,
         mut kind: CounterexampleKind,
-    ) -> Result<Built, ModelCheckRefusal> {
+    ) -> Result<Built<Tr<S>>, ModelCheckRefusal> {
         let mut chain = Vec::new();
         let mut cursor = at;
         while let Some(node) = nodes.get(cursor) {
@@ -1666,7 +1939,7 @@ impl<'r, 'a> Run<'r, 'a> {
         else {
             return Err(fault("a-dead-node-has-a-root"));
         };
-        let lifted = (|| -> Result<(usize, Lift<'_, '_>), LiftStop> {
+        let lifted = (|| -> Result<(usize, Lift<'_, S>), LiftStop> {
             // A dead root and the model path from it were never
             // canonicalised: each is a step with the identity permutation.
             let identity = Permutation::identity();
@@ -1686,6 +1959,7 @@ impl<'r, 'a> Run<'r, 'a> {
                 // An initial model state with no automaton move is concrete.
                 None => Lift::start(
                     self.system,
+                    self.system.permuter(),
                     &SymmetryGroup::default(),
                     &root.model,
                     self.concrete_budget(),
@@ -1706,7 +1980,7 @@ impl<'r, 'a> Run<'r, 'a> {
             initial_state,
             prefix: self.steps_of(lift),
             over_binding: Some(run.binding.instance.clone()),
-            fairness: self.clause.fairness().to_vec(),
+            fairness: self.fairness.to_vec(),
             kind,
             lasso: None,
             blocked: Vec::new(),
@@ -1716,7 +1990,7 @@ impl<'r, 'a> Run<'r, 'a> {
 
     fn site(
         &self,
-        state: &LState,
+        state: &LState<S::State>,
         locus: UndefinedLocus,
         transition: Option<ModelTransition>,
     ) -> Result<UndefinedSite, ModelCheckRefusal> {
@@ -1728,7 +2002,7 @@ impl<'r, 'a> Run<'r, 'a> {
         })
     }
 
-    fn digest(&self, state: &ModelSimState) -> Result<DigestRecord, ModelCheckRefusal> {
+    fn digest(&self, state: &S::State) -> Result<DigestRecord, ModelCheckRefusal> {
         Ok(self.system.state_key(state)?.1)
     }
 
@@ -1736,12 +2010,12 @@ impl<'r, 'a> Run<'r, 'a> {
     /// breadth-first tree path, concretised (FR-161).
     fn prefix_counterexample(
         &self,
-        run: &Explored<'_, '_>,
+        run: &Explored<'_, S>,
         at: ProductStateId,
         mut kind: CounterexampleKind,
-    ) -> Result<Built, ModelCheckRefusal> {
+    ) -> Result<Built<Tr<S>>, ModelCheckRefusal> {
         let (root, path) = tree_path(&run.graph, at);
-        let lifted = (|| -> Result<(usize, Lift<'_, '_>), LiftStop> {
+        let lifted = (|| -> Result<(usize, Lift<'_, S>), LiftStop> {
             let (initial, mut lift) = self.lift_start(run, root)?;
             self.lift_edges(run, &mut lift, &path)?;
             lift.site(&mut kind)?;
@@ -1751,7 +2025,7 @@ impl<'r, 'a> Run<'r, 'a> {
             initial_state,
             prefix: self.steps_of(lift),
             over_binding: Some(run.binding.instance.clone()),
-            fairness: self.clause.fairness().to_vec(),
+            fairness: self.fairness.to_vec(),
             kind,
             lasso: None,
             blocked: Vec::new(),
@@ -1762,15 +2036,16 @@ impl<'r, 'a> Run<'r, 'a> {
     /// FR-161 "Start" at product root `root`, under the binding's group.
     fn lift_start(
         &self,
-        run: &Explored<'_, '_>,
+        run: &Explored<'_, S>,
         root: ProductStateId,
-    ) -> Result<(usize, Lift<'r, 'a>), LiftStop> {
+    ) -> Result<(usize, Lift<'r, S>), LiftStop> {
         let state = run
             .graph
             .state(root)
             .ok_or_else(|| fault("a-path-starts-at-a-retained-state"))?;
         Lift::start(
             self.system,
+            self.system.permuter(),
             &run.binding.group,
             &state.state.model,
             self.concrete_budget(),
@@ -1781,9 +2056,9 @@ impl<'r, 'a> Run<'r, 'a> {
     /// is no model step.
     fn lift_edges(
         &self,
-        run: &Explored<'_, '_>,
-        lift: &mut Lift<'_, '_>,
-        edges: &[&RetainedEdge<PT>],
+        run: &Explored<'_, S>,
+        lift: &mut Lift<'_, S>,
+        edges: &[&RetainedEdge<PT<Tr<S>>>],
     ) -> Result<(), LiftStop> {
         for edge in edges {
             let ProductTransition::Model(transition) = &edge.transition else {
@@ -1803,8 +2078,8 @@ impl<'r, 'a> Run<'r, 'a> {
     /// `max_transitions` (FR-161 "Length and limits").
     fn built(
         &self,
-        lifted: Result<TemporalCounterexample, LiftStop>,
-    ) -> Result<Built, ModelCheckRefusal> {
+        lifted: Result<TemporalCounterexample<Tr<S>>, LiftStop>,
+    ) -> Result<Built<Tr<S>>, ModelCheckRefusal> {
         match lifted {
             Ok(counterexample) => Ok(Built::Counterexample(Box::new(counterexample))),
             Err(LiftStop::Expansion(stop)) => match self.ending(Halt::Expansion(stop))? {
@@ -1825,14 +2100,14 @@ impl<'r, 'a> Run<'r, 'a> {
     /// The second phase over one graph: the canonical lasso of its first
     /// passing component, if some component passes. A reduced graph is read
     /// as the annotated quotient.
-    fn second_phase(&self, run: &Explored<'_, '_>) -> Result<Second, ModelCheckRefusal> {
+    fn second_phase(&self, run: &Explored<'_, S>) -> Result<Second<Tr<S>>, ModelCheckRefusal> {
         // A reduced run reads its product as the annotated quotient even
         // under a trivial stabiliser: the quotient is what concretises a
         // reduced run's loop and what decides `each` fairness over orbits.
         if run.binding.applied.is_some() {
-            return self.quotient_phase(run);
+            return S::reduced_second_phase(self, run);
         }
-        let model = FairModel::build(self.system, self.clause, run)?;
+        let model = FairModel::build(self.system, self.fairness, run)?;
         let all: BTreeSet<Vertex> = model.graph.vertices().collect();
         let analyses = match analyze(&model.graph, &all, &model.constraints, self.cancel) {
             Ok(analyses) => analyses,
@@ -1854,18 +2129,123 @@ impl<'r, 'a> Run<'r, 'a> {
         self.lasso(run, entry, |_| Ok(loop_edges))
     }
 
-    fn cancelled(&self) -> Result<Second, ModelCheckRefusal> {
+    fn cancelled(&self) -> Result<Second<Tr<S>>, ModelCheckRefusal> {
         match self.cancel.cause() {
             Some(source) => Ok(Second::Cancelled(source)),
             None => Err(fault("a-cancelled-run-has-a-cause")),
         }
     }
 
+    /// The outcome of an analysis that stopped: the meter settles V-7
+    /// naming it (FR-153 "Limits").
+    fn quotient_stop(&self, stop: QuotientStop) -> Result<Second<Tr<S>>, ModelCheckRefusal> {
+        match stop {
+            QuotientStop::Meter => Ok(Second::Stopped(
+                IncompleteCause::ResourceExhausted,
+                Some(ReachedLimit {
+                    limit: ModelCheckLimit::EvaluationMeter,
+                    value: self.request.meter.work_units,
+                }),
+            )),
+            QuotientStop::Cancelled => self.cancelled(),
+            QuotientStop::Rename(stop) => match self.ending(Halt::Expansion(stop))? {
+                Ending::Stopped(cause, limit) => Ok(Second::Stopped(cause, limit)),
+                Ending::Complete => Err(fault("an-expansion-stop-is-a-stop")),
+            },
+            QuotientStop::Fault(invariant) => Err(fault(invariant)),
+        }
+    }
+
+    /// The lasso to the component entry `entry`: the stem is the
+    /// breadth-first tree path, and `pass` gives one pass of the loop from
+    /// the entry, given `σ` there. Both are concretised, and the loop is
+    /// repeated until the concrete state equals the concrete entry state,
+    /// which it does within the order of the pass's word (FR-161 "Loop
+    /// closure"); every pass polls the cancellation and every concrete step
+    /// spends `max_transitions`, so no pass count is computed up front.
+    fn lasso(
+        &self,
+        run: &Explored<'_, S>,
+        entry: ProductStateId,
+        pass: impl FnOnce(&Permutation) -> Result<Vec<LoopEdge>, LoopStop>,
+    ) -> Result<Second<Tr<S>>, ModelCheckRefusal> {
+        let (root, stem) = tree_path(&run.graph, entry);
+        let lifted = (|| -> Result<TemporalCounterexample<Tr<S>>, LoopStop> {
+            let (initial_state, mut lift) = self.lift_start(run, root)?;
+            self.lift_edges(run, &mut lift, &stem)?;
+            let entry_index = lift.len();
+            let entry_state = lift.digest();
+            let loop_edges = pass(lift.sigma())?;
+            let mut edges = Vec::with_capacity(loop_edges.len());
+            for (source, position) in loop_edges {
+                let edge = run
+                    .graph
+                    .outgoing(source)
+                    .nth(position)
+                    .ok_or_else(|| fault("a-loop-edge-is-retained"))?;
+                edges.push(edge);
+            }
+            // A terminal model state has only its stutter edge, so a loop
+            // holds stutter edges alone or model edges alone.
+            let stutters = edges
+                .iter()
+                .filter(|edge| edge.transition == ProductTransition::TerminalStutter)
+                .count();
+            let terminal_stutter = stutters > 0;
+            if terminal_stutter && stutters != edges.len() {
+                return Err(
+                    LiftStop::from(fault("a-loop-is-all-stutter-or-all-model-steps")).into(),
+                );
+            }
+            // Each pass of a reduced loop with a model step spends the
+            // concrete-step budget, so the repetition ends at the concrete
+            // entry or at `max_transitions`; a concrete (trivial-group) loop
+            // closes after one pass.
+            loop {
+                if self.cancel.poll() && self.cancel.cause().is_some() {
+                    return Err(LoopStop::Quotient(QuotientStop::Cancelled));
+                }
+                self.lift_edges(run, &mut lift, &edges)?;
+                if lift.digest() == entry_state {
+                    break;
+                }
+                if run.binding.group.is_trivial() {
+                    return Err(LiftStop::from(fault("a-concrete-loop-closes-in-one-pass")).into());
+                }
+            }
+            Ok(TemporalCounterexample {
+                initial_state,
+                prefix: self.steps_of(lift),
+                over_binding: Some(run.binding.instance.clone()),
+                fairness: self.fairness.to_vec(),
+                kind: CounterexampleKind::Formula,
+                lasso: Some(Lasso {
+                    entry: entry_index,
+                    terminal_stutter,
+                }),
+                blocked: Vec::new(),
+                refinement: None,
+            })
+        })();
+        match lifted {
+            Ok(counterexample) => self.built(Ok(counterexample)).map(Second::from),
+            Err(LoopStop::Lift(stop)) => self.built(Err(stop)).map(Second::from),
+            Err(LoopStop::Quotient(stop)) => self.quotient_stop(stop),
+        }
+    }
+}
+
+/// The second phase of a reduced model run (FR-153), which only a model
+/// subject has.
+impl<'a> Run<'_, ModelSystem<'a>> {
     /// FR-153: the second phase over a symmetry-reduced graph, on the
     /// annotated quotient. The loop of the first fair component is CX-5's
     /// greedy walk when every constraint is weak and `whole` (EI-6), and
     /// AQ-7's otherwise.
-    fn quotient_phase(&self, run: &Explored<'_, '_>) -> Result<Second, ModelCheckRefusal> {
+    fn quotient_phase(
+        &self,
+        run: &Explored<'_, ModelSystem<'a>>,
+    ) -> Result<Second<ModelTransition>, ModelCheckRefusal> {
         let mut meter = self.meter.borrow_mut();
         let (quotient, constraints) = match self.quotient(run, &mut meter)? {
             Ok(built) => built,
@@ -1898,7 +2278,7 @@ impl<'r, 'a> Run<'r, 'a> {
         });
         self.lasso(run, entry, |sigma| {
             if greedy {
-                let model = FairModel::build(self.system, self.clause, run)?;
+                let model = FairModel::build(self.system, self.fairness, run)?;
                 let vertices: Vec<Vertex> = model.graph.vertices().collect();
                 let vertex = |id: &ProductStateId| {
                     vertices
@@ -1926,7 +2306,7 @@ impl<'r, 'a> Run<'r, 'a> {
     /// state, so it passes every test and leaves no verdict changed.
     fn quotient(
         &self,
-        run: &Explored<'_, '_>,
+        run: &Explored<'_, ModelSystem<'a>>,
         meter: &mut Meter,
     ) -> Result<Result<Annotated, QuotientStop>, ModelCheckRefusal> {
         let graph = &run.graph;
@@ -1976,7 +2356,7 @@ impl<'r, 'a> Run<'r, 'a> {
             .collect();
         let generators = reduce::generators(&run.binding.group);
         let mut constraints = Vec::new();
-        for constraint in self.clause.fairness() {
+        for constraint in self.fairness {
             let operation = constraint.operation();
             let text = self
                 .system
@@ -2019,114 +2399,16 @@ impl<'r, 'a> Run<'r, 'a> {
             constraints,
         )))
     }
-
-    /// The outcome of an analysis that stopped: the meter settles V-7
-    /// naming it (FR-153 "Limits").
-    fn quotient_stop(&self, stop: QuotientStop) -> Result<Second, ModelCheckRefusal> {
-        match stop {
-            QuotientStop::Meter => Ok(Second::Stopped(
-                IncompleteCause::ResourceExhausted,
-                Some(ReachedLimit {
-                    limit: ModelCheckLimit::EvaluationMeter,
-                    value: self.request.meter.work_units,
-                }),
-            )),
-            QuotientStop::Cancelled => self.cancelled(),
-            QuotientStop::Rename(stop) => match self.ending(Halt::Expansion(stop))? {
-                Ending::Stopped(cause, limit) => Ok(Second::Stopped(cause, limit)),
-                Ending::Complete => Err(fault("an-expansion-stop-is-a-stop")),
-            },
-            QuotientStop::Fault(invariant) => Err(fault(invariant)),
-        }
-    }
-
-    /// The lasso to the component entry `entry`: the stem is the
-    /// breadth-first tree path, and `pass` gives one pass of the loop from
-    /// the entry, given `σ` there. Both are concretised, and the loop is
-    /// repeated until the concrete state equals the concrete entry state,
-    /// which it does within the order of the pass's word (FR-161 "Loop
-    /// closure"); every pass polls the cancellation and every concrete step
-    /// spends `max_transitions`, so no pass count is computed up front.
-    fn lasso(
-        &self,
-        run: &Explored<'_, '_>,
-        entry: ProductStateId,
-        pass: impl FnOnce(&Permutation) -> Result<Vec<LoopEdge>, LoopStop>,
-    ) -> Result<Second, ModelCheckRefusal> {
-        let (root, stem) = tree_path(&run.graph, entry);
-        let lifted = (|| -> Result<TemporalCounterexample, LoopStop> {
-            let (initial_state, mut lift) = self.lift_start(run, root)?;
-            self.lift_edges(run, &mut lift, &stem)?;
-            let entry_index = lift.len();
-            let entry_state = lift.digest();
-            let loop_edges = pass(lift.sigma())?;
-            let mut edges = Vec::with_capacity(loop_edges.len());
-            for (source, position) in loop_edges {
-                let edge = run
-                    .graph
-                    .outgoing(source)
-                    .nth(position)
-                    .ok_or_else(|| fault("a-loop-edge-is-retained"))?;
-                edges.push(edge);
-            }
-            // A terminal model state has only its stutter edge, so a loop
-            // holds stutter edges alone or model edges alone.
-            let stutters = edges
-                .iter()
-                .filter(|edge| edge.transition == ProductTransition::TerminalStutter)
-                .count();
-            let terminal_stutter = stutters > 0;
-            if terminal_stutter && stutters != edges.len() {
-                return Err(
-                    LiftStop::from(fault("a-loop-is-all-stutter-or-all-model-steps")).into(),
-                );
-            }
-            // Each pass of a reduced loop with a model step spends the
-            // concrete-step budget, so the repetition ends at the concrete
-            // entry or at `max_transitions`; a concrete (trivial-group) loop
-            // closes after one pass.
-            loop {
-                if self.cancel.poll() && self.cancel.cause().is_some() {
-                    return Err(LoopStop::Quotient(QuotientStop::Cancelled));
-                }
-                self.lift_edges(run, &mut lift, &edges)?;
-                if lift.digest() == entry_state {
-                    break;
-                }
-                if run.binding.group.is_trivial() {
-                    return Err(LiftStop::from(fault("a-concrete-loop-closes-in-one-pass")).into());
-                }
-            }
-            Ok(TemporalCounterexample {
-                initial_state,
-                prefix: self.steps_of(lift),
-                over_binding: Some(run.binding.instance.clone()),
-                fairness: self.clause.fairness().to_vec(),
-                kind: CounterexampleKind::Formula,
-                lasso: Some(Lasso {
-                    entry: entry_index,
-                    terminal_stutter,
-                }),
-                blocked: Vec::new(),
-                refinement: None,
-            })
-        })();
-        match lifted {
-            Ok(counterexample) => self.built(Ok(counterexample)).map(Second::from),
-            Err(LoopStop::Lift(stop)) => self.built(Err(stop)).map(Second::from),
-            Err(LoopStop::Quotient(stop)) => self.quotient_stop(stop),
-        }
-    }
 }
 
 impl FairModel {
-    fn build(
-        system: &ModelSystem<'_>,
-        clause: &CheckedTemporalClause,
-        run: &Explored<'_, '_>,
+    fn build<S: LiveSubject>(
+        system: &S,
+        fairness: &[Fair<S>],
+        run: &Explored<'_, S>,
     ) -> Result<Self, ModelCheckRefusal> {
         let graph = &run.graph;
-        let mut seen: BTreeSet<&ModelTransition> = BTreeSet::new();
+        let mut seen: BTreeSet<&Tr<S>> = BTreeSet::new();
         for edge in graph.edges() {
             if let ProductTransition::Model(transition) = &edge.transition {
                 seen.insert(transition);
@@ -2139,13 +2421,13 @@ impl FairModel {
                 }
             }
         }
-        let transitions: Vec<ModelTransition> = seen.into_iter().cloned().collect();
-        let numbered: BTreeMap<&ModelTransition, Identity> = transitions
+        let transitions: Vec<Tr<S>> = seen.into_iter().cloned().collect();
+        let numbered: BTreeMap<&Tr<S>, Identity> = transitions
             .iter()
             .enumerate()
             .map(|(index, transition)| (transition, Identity::new(widen(index))))
             .collect();
-        let identity = |transition: &ModelTransition| {
+        let identity = |transition: &Tr<S>| {
             numbered
                 .get(transition)
                 .copied()
@@ -2200,7 +2482,7 @@ impl FairModel {
             fair.add_acceptance_set(members)
                 .map_err(|_| fault("an-acceptance-member-is-a-vertex"))?;
         }
-        let constraints = fairness_constraints(system, clause.fairness(), &transitions, identity)?;
+        let constraints = system.constraints(fairness, &transitions, &identity)?;
         Ok(Self {
             graph: fair,
             constraints,

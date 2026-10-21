@@ -493,6 +493,13 @@ pub struct PackageDeclarations {
     /// order, each resolved by the FR-091 assembler and checked after the
     /// state clauses.
     pub refinements: Vec<super::RefinementDeclaration>,
+    /// FR-147: the unit's `refinement_internals` input, supplied beside the
+    /// source and unchecked (QSpec FR-375): a JSON array of `{"refinement":
+    /// name, "internal": [class, ...]}` objects. `None` is the empty list.
+    pub refinement_internals: Option<serde_json::Value>,
+    /// FR-135: the refinement features this build has built. A build
+    /// capability, not a request parameter; only a test replaces it.
+    pub refinement_support: super::RefinementSupport,
     /// Test-only: check a package that holds a `refinement` declaration
     /// without refusing it as not emitted (FR-135).
     pub emit_unwritten_refinements: bool,
@@ -534,6 +541,23 @@ impl PackageDeclarations {
     #[must_use]
     pub fn with_unwritten_refinements(mut self) -> Self {
         self.emit_unwritten_refinements = true;
+        self
+    }
+
+    /// These declarations with the unit's `refinement_internals` input
+    /// (FR-147).
+    #[must_use]
+    pub fn with_refinement_internals(mut self, value: serde_json::Value) -> Self {
+        self.refinement_internals = Some(value);
+        self
+    }
+
+    /// These declarations, to be checked as a build that has built only
+    /// `support` (FR-135).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_refinement_support(mut self, support: super::RefinementSupport) -> Self {
+        self.refinement_support = support;
         self
     }
 
@@ -627,6 +651,8 @@ impl PackageDeclarations {
             terminals: Vec::new(),
             emit_unwritten_terminals: false,
             refinements: Vec::new(),
+            refinement_internals: None,
+            refinement_support: super::RefinementSupport::BUILD,
             emit_unwritten_refinements: false,
             emit_unwritten_state_graph_claims: false,
             operation_bodies: Vec::new(),

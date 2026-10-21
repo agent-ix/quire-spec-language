@@ -40,7 +40,7 @@ pub use product::{
 };
 pub use reduce::{
     admit, closure, generators, instance_groups, not_preserving, preserves, unoffered,
-    ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, SymmetryRefusal, TableForm,
+    ClosureRefusal, InstanceGroup, Reductions, SymmetryDeclaration, TableForm,
 };
 pub use refine::{check_refinement, RefinementCheckRequest};
 pub use scc::Component;

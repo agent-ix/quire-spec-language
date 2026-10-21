@@ -692,7 +692,9 @@ pub trait CheckedPackageEvaluation: family::sealed::Sealed {
     /// the entries together with their combined outcome (FR-120).
     ///
     /// Invariants come first, then preconditions, then postconditions, each
-    /// group in ascending name order; postconditions are evaluated only
+    /// group in ascending name order. The preconditions stop at the first one
+    /// that is not `Completed(true)` (FR-006's short-circuit): the ones after
+    /// it are neither evaluated nor charged. Postconditions are evaluated only
     /// when every precondition is `Completed(true)`. Refuses as
     /// [`Self::evaluate_clause`] does for an unknown clause or mismatched
     /// observations, before evaluating any clause.

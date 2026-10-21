@@ -8,13 +8,28 @@
 use super::{StepRow, StepTarget};
 use crate::model::key::DeclarationKey;
 
+/// The abstract step a label names (FR-214 "Behavior": the label carries its
+/// node or its operation).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LabelStep {
+    /// An abstract operation.
+    Operation(DeclarationKey),
+    /// A node of the abstract protocol clause (FR-147).
+    Node {
+        /// The abstract protocol clause.
+        protocol: String,
+        /// The abstract node.
+        node: String,
+    },
+}
+
 /// The abstract step a visible row maps its concrete step to (ADR-027 PR-2's
 /// observation label): the abstract operation and the binder record the
 /// row's arguments give.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StepLabel {
-    /// The abstract operation.
-    pub operation: DeclarationKey,
+    /// The abstract step: an operation or a protocol node.
+    pub step: LabelStep,
     /// The positions of the arguments the row leaves open with `_`, in
     /// ascending order.
     pub open_arguments: Vec<usize>,
@@ -47,16 +62,35 @@ pub fn observation(row: &StepRow) -> RowObservation {
             ..
         } => RowObservation::Visible {
             label: StepLabel {
-                operation: operation.clone(),
-                open_arguments: arguments
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(position, argument)| argument.is_none().then_some(position))
-                    .collect(),
+                step: LabelStep::Operation(operation.clone()),
+                open_arguments: open_positions(arguments),
                 binds_result: *binds_result,
+            },
+        },
+        StepTarget::Node {
+            protocol,
+            node,
+            arguments,
+        } => RowObservation::Visible {
+            label: StepLabel {
+                step: LabelStep::Node {
+                    protocol: protocol.clone(),
+                    node: node.clone(),
+                },
+                open_arguments: open_positions(arguments),
+                binds_result: false,
             },
         },
         StepTarget::Stutter => RowObservation::Internal,
         StepTarget::Any => RowObservation::Either,
     }
+}
+
+/// The positions of the arguments a row leaves open with `_`.
+fn open_positions<T>(arguments: &[Option<T>]) -> Vec<usize> {
+    arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(position, argument)| argument.is_none().then_some(position))
+        .collect()
 }

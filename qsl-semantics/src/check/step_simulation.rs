@@ -11,8 +11,11 @@
 //! field or a history field makes `map` no function of the concrete step.
 //!
 //! A record's members are the refinement node, the obligation and the
-//! hypotheses, which the obligation identity will bind once its preimage is
-//! specified (ADR-013 O-09; the occurrence key and preimage are not built).
+//! hypotheses: QSV's canonical encoding of them is the record's content
+//! identity (ADR-013 O-09, which CG hashes). Each record is carried with its
+//! occurrence key (ADR-013 O-07): the refinement node, role `generated`, and
+//! ordinal 0 for `Initial` or row position + 1 for a `Step`. The key is a
+//! locator and not a member of the content identity.
 //! The hypotheses are sorted ascending by node key and deduplicated, so the
 //! order of the invariant clauses in the source does not change a record.
 //!
@@ -26,9 +29,12 @@
 use std::collections::BTreeSet;
 
 use qsl_forms::StateClauseKind;
-use quire_exact::NodeKey;
+use qsl_foundation::source::provenance::OccurrenceKey;
+use quire_exact::{NodeKey, Origin};
 use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimulationRecord};
 
+use super::claims::wire;
+use super::family::OccurrenceRole;
 use super::{CheckedRefinement, CheckedStateClause, StepClass, StepTarget};
 use crate::model::key::DeclarationKey;
 
@@ -44,6 +50,34 @@ pub enum StepRowRefusal {
     /// protocol subject's rows have no position yet.
     #[error("a protocol subject's step rows have no order yet: protocol node keys are not minted")]
     ProtocolSubject,
+}
+
+/// One per-step simulation record with its ADR-013 O-07 occurrence key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StepSimulationEntry {
+    occurrence: OccurrenceKey,
+    record: StepSimulationRecord,
+}
+
+impl StepSimulationEntry {
+    fn new(refinement: NodeKey, ordinal: u64, record: StepSimulationRecord) -> Self {
+        let origin = Origin::new(OccurrenceRole::Generated.kernel_role(), ordinal);
+        Self {
+            occurrence: OccurrenceKey::new(wire(refinement), origin),
+            record,
+        }
+    }
+
+    /// The occurrence key: the refinement node, role `generated`, and
+    /// ordinal 0 for the `Initial` record or the row's position + 1.
+    pub fn occurrence(&self) -> &OccurrenceKey {
+        &self.occurrence
+    }
+
+    /// The QSV record.
+    pub fn record(&self) -> &StepSimulationRecord {
+        &self.record
+    }
 }
 
 /// The per-step simulation records of `refinement`, keyed by its node
@@ -64,7 +98,7 @@ pub fn step_simulation_records(
     refinement_key: NodeKey,
     refinement: &CheckedRefinement,
     clauses: &[CheckedStateClause],
-) -> Result<Vec<StepSimulationRecord>, StepRowRefusal> {
+) -> Result<Vec<StepSimulationEntry>, StepRowRefusal> {
     operation_rows(refinement)?;
     let has_hidden = refinement
         .objects()
@@ -89,17 +123,23 @@ pub fn step_simulation_records(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let mut records = vec![StepSimulationRecord::new(
+    let mut records = vec![StepSimulationEntry::new(
         refinement_key,
-        StepObligation::Initial,
-        hypotheses.clone(),
+        0,
+        StepSimulationRecord::new(refinement_key, StepObligation::Initial, hypotheses.clone()),
     )];
     for index in 0..refinement.steps().len() {
-        let row = StepRowRef::new(u32::try_from(index).map_err(|_| StepRowRefusal::Overflow)?);
-        records.push(StepSimulationRecord::new(
+        let position = u32::try_from(index).map_err(|_| StepRowRefusal::Overflow)?;
+        records.push(StepSimulationEntry::new(
             refinement_key,
-            StepObligation::Step { row },
-            hypotheses.clone(),
+            u64::from(position) + 1,
+            StepSimulationRecord::new(
+                refinement_key,
+                StepObligation::Step {
+                    row: StepRowRef::new(position),
+                },
+                hypotheses.clone(),
+            ),
         ));
     }
     Ok(records)

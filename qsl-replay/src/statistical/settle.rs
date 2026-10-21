@@ -133,6 +133,10 @@ pub enum UnsettledRefusal {
     /// failure.
     #[error("the subject did not admit")]
     Admission,
+    /// A symmetry declaration of the request is malformed (FR-151): the
+    /// request is invalid, so the refusal is the caller's to report.
+    #[error("a symmetry declaration is malformed")]
+    Symmetry,
 }
 
 /// FR-192: settle `outcome` as one terminal record. `subject` supplies the
@@ -206,8 +210,8 @@ fn expansion_stop(stop: &ExpansionStop, subject: SubjectLimits<'_>) -> Statistic
 ///
 /// # Errors
 ///
-/// [`UnsettledRefusal`] for a `NotStatistical`, `RequiresBound` or
-/// `Admission` refusal, which settles no terminal record.
+/// [`UnsettledRefusal`] for a `NotStatistical`, `RequiresBound`,
+/// `Admission` or `Symmetry` refusal, which settles no terminal record.
 pub fn settle_statistical_refusal(
     refusal: &StatisticalRefusal,
 ) -> Result<StatisticalRecord, UnsettledRefusal> {
@@ -225,6 +229,7 @@ pub fn settle_statistical_refusal(
         }
         StatisticalRefusal::RequiresBound(_) => return Err(UnsettledRefusal::RequiresBound),
         StatisticalRefusal::Admission(_) => return Err(UnsettledRefusal::Admission),
+        StatisticalRefusal::Symmetry(_) => return Err(UnsettledRefusal::Symmetry),
         StatisticalRefusal::PredicateRefused(_) => return Err(UnsettledRefusal::PredicateRefused),
         StatisticalRefusal::GeneratorMismatch { .. } => {
             request(StatisticalRequestRefusal::GeneratorMismatch)
@@ -316,6 +321,7 @@ mod tests {
             decision,
             estimate: Some(ratio(97, 100)),
             interval: Some((ratio(96, 100), ratio(98, 100))),
+            quantile: None,
             basis: basis(),
             provenance: provenance(),
             tests: Vec::new(),

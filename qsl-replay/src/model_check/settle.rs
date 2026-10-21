@@ -25,15 +25,20 @@ use crate::certificate::closure::{
 use crate::execute::ReplayRefusal;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
-use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause, UndecidedCause};
+use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause};
 use crate::model_check::replay::{
-    no_value_cause, ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
+    no_value_cause, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
+    StrongFairnessHint,
 };
 use crate::proof_result::{
-    Certification, IncompleteCause, InconclusiveCause, MemoryBound, MemoryBoundMember, ProofBasis,
-    SettlementBasis, StatedMemoryBound, TerminalValue, UnavailabilityCause,
+    Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
+    MemoryBoundMember, ProofBasis, SettlementBasis, StatedInstanceBound, StatedMemoryBound,
+    TerminalValue, UnavailabilityCause,
 };
-use qsl_eval::simulation::protocol::{ProtocolTransition, SubjectMemory, WeakAccessShape};
+use qsl_eval::simulation::protocol::{
+    activates_on_each, live_instance_bound, ProtocolTransition, SubjectMemory, WeakAccessShape,
+};
+use qsl_eval::simulation::SubjectTransition;
 use quire_semantic_value::model_transition::ModelTransition;
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -98,7 +103,7 @@ pub enum Truth {
 
 /// One EN-1 item's terminal record (FR-127 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelCheckRecord<T = ModelTransition> {
+pub struct ModelCheckRecord<T: SubjectTransition = ModelTransition> {
     /// The terminal value.
     pub value: TerminalValue,
     /// Its QSpec FR-360 label.
@@ -128,6 +133,10 @@ pub struct ModelCheckRecord<T = ModelTransition> {
     /// MB-2, FR-225); `None` for a subject whose memory model has no bound,
     /// such as one under `sc`.
     pub memory_bound: Option<StatedMemoryBound>,
+    /// The instance bound the run used and whether it was reached (ADR-027
+    /// AE-4, FR-209); `None` for a protocol that does not activate `on each`
+    /// and for a model subject.
+    pub instance_bound: Option<StatedInstanceBound>,
 }
 
 /// FR-127: settle `outcome`, a run under `limits` over the package
@@ -192,24 +201,50 @@ pub fn settle_protocol_check(
         |closure| check_protocol_closure(certificate, closure, limits, cancel),
         replay,
     );
-    record.memory_bound =
-        match SubjectMemory::of(&certificate.subject.memory, certificate.max_store_buffer) {
-            SubjectMemory::Sc => None,
-            SubjectMemory::Tso(tso) => Some(StatedMemoryBound {
-                bound: MemoryBound {
-                    member: MemoryBoundMember::MaxStoreBuffer,
-                    value: tso.max_store_buffer(),
-                },
-                // Reached whenever a store was cut: by the engine's run,
-                // whatever it settled (a `refuted` run too), or by the
-                // closure checker's re-expansion.
-                reached: outcome.stats().bound_limited > 0
-                    || matches!(
-                        record.value,
-                        TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached { .. })
-                    ),
-            }),
-        };
+    let bound = match SubjectMemory::of(&certificate.subject.memory, certificate.max_store_buffer) {
+        SubjectMemory::Sc => None,
+        SubjectMemory::Tso(tso) => Some(MemoryBound {
+            member: MemoryBoundMember::MaxStoreBuffer,
+            value: tso.max_store_buffer(),
+        }),
+        SubjectMemory::Ra(ra) => Some(MemoryBound {
+            member: MemoryBoundMember::MaxMessages,
+            value: ra.max_messages(),
+        }),
+    };
+    record.memory_bound = bound.map(|bound| StatedMemoryBound {
+        bound,
+        // Reached whenever a store was cut: by the engine's run, whatever
+        // it settled (a `refuted` run too), or by the closure checker's
+        // re-expansion.
+        reached: outcome.stats().bound_limited > 0
+            || matches!(
+                record.value,
+                TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached { .. })
+            ),
+    });
+    // ADR-027 AE-4: every verdict over an `on each` protocol states the
+    // instance bound it ran under and whether a state of the run reached it,
+    // by the engine's run, whatever it settled, or by the closure checker's
+    // re-expansion.
+    let on_each = certificate
+        .subject
+        .model
+        .simulation
+        .package
+        .graph()
+        .protocol(&certificate.subject.protocol)
+        .is_some_and(activates_on_each);
+    record.instance_bound = on_each.then(|| StatedInstanceBound {
+        bound: InstanceBound {
+            value: live_instance_bound(certificate.max_live_instances),
+        },
+        reached: outcome.stats().instance_limited > 0
+            || matches!(
+                record.value,
+                TerminalValue::Inconclusive(InconclusiveCause::InstanceBoundReached { .. })
+            ),
+    });
     record
 }
 
@@ -233,7 +268,7 @@ fn weak_access_shape(shape: &WeakAccessShape) -> Option<UnavailabilityCause> {
     })
 }
 
-fn settle<T: Clone>(
+fn settle<T: SubjectTransition>(
     outcome: &ModelCheckOutcome<T>,
     limits: &ModelCheckLimits,
     package_id: &DigestRecord,
@@ -320,13 +355,7 @@ fn settle<T: Clone>(
             depth = Some(*reached);
             Row::inconclusive(InconclusiveCause::BoundReached { depth: *reached })
         }
-        ModelCheckOutcome::Undecided { cause, .. } => Row::inconclusive(match cause {
-            UndecidedCause::UndecidedSuccessor => InconclusiveCause::UndecidedSuccessor,
-            UndecidedCause::NoInitialState => InconclusiveCause::NoInitialState,
-            UndecidedCause::NoInstance => InconclusiveCause::NoInstance,
-            UndecidedCause::MatchUndetermined => InconclusiveCause::MatchUndetermined,
-            UndecidedCause::VacuousMatch => InconclusiveCause::VacuousMatch,
-        }),
+        ModelCheckOutcome::Undecided { cause, .. } => Row::inconclusive(cause.inconclusive()),
         ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         ModelCheckOutcome::Violated {
             counterexample: payload,
@@ -349,9 +378,18 @@ fn settle<T: Clone>(
                 settlement: ModelTraceSettlement::Inconclusive(cause),
                 ..
             }) => Row::inconclusive(InconclusiveCause::ReplayParity(cause)),
+            Ok(ModelTraceReplayResult {
+                settlement: ModelTraceSettlement::Stopped { reached, .. },
+                ..
+            }) => Row::stopped_run(IncompleteCause::ResourceExhausted, Some(reached)),
             // EN-1 builds only fair lassos (ADR-019 FS-7), so replay's refusal
             // of one as unfair is a disagreement between the two (SV-4).
             Err(ReplayRefusal::UnfairLasso { .. }) => {
+                Row::inconclusive(InconclusiveCause::ReplayParity(no_value_cause()))
+            }
+            Err(ReplayRefusal::ModelTrace(refusal))
+                if matches!(*refusal, ModelTraceRefusal::UnfairProtocolLasso { .. }) =>
+            {
                 Row::inconclusive(InconclusiveCause::ReplayParity(no_value_cause()))
             }
             Err(refusal) => Row::refused(&refusal),
@@ -370,6 +408,7 @@ fn settle<T: Clone>(
         counterexample,
         hints,
         memory_bound: None,
+        instance_bound: None,
     }
 }
 
@@ -527,6 +566,9 @@ impl Row {
             }
             Ok(TemporalCertificateCheck::MemoryBoundReached { bound, states }) => {
                 Self::inconclusive(InconclusiveCause::MemoryBoundReached { bound, states })
+            }
+            Ok(TemporalCertificateCheck::InstanceBoundReached { bound, states }) => {
+                Self::inconclusive(InconclusiveCause::InstanceBoundReached { bound, states })
             }
             Err(ClosureRefusal::NoInstance) => Self::inconclusive(InconclusiveCause::NoInstance),
             Err(ClosureRefusal::NoInitialState) => {

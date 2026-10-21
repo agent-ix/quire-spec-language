@@ -22,7 +22,7 @@ use super::syntax::{
 use super::temporal_clause::expression_form;
 use super::value::{
     exact_number, has_token, integer, items, name_form, nodes_of, only, production_node, spelled,
-    text, tokens_of, type_form, unexpected, Item,
+    text, type_form, unexpected, Item,
 };
 
 /// `refinement Name using p abstract A concrete C { row* }` (FR-310
@@ -49,10 +49,9 @@ pub struct RefinementForm {
 pub enum AbstractSideForm {
     /// `abstract A`: a model alias.
     Model(DeclaredName),
-    /// `abstract A::protocol`: a model alias and a protocol clause of it.
-    /// QSpec FR-375's header admits a model alias only, so S1 never produces
-    /// this side from source; it waits on that production (Linear STD-182,
-    /// ADR-020 QS-11).
+    /// `abstract A::protocol`: a model alias and the name of a protocol
+    /// clause of it (QSpec FR-375's `abstract-subject`). Whether either name
+    /// resolves is S3's (FR-147).
     Protocol {
         /// The model alias.
         alias: DeclaredName,
@@ -324,14 +323,39 @@ pub(crate) fn refinement_declaration(
     let cst = construct.cst;
     let node = production_node(construct)?;
     let declaration_items = items(cst, node);
-    // `refinement Name using p abstract A concrete C { ... }`: the two
-    // leading words are contextual, so the declaration's direct identifier
-    // tokens are the word, the name, the `using` alias, the word, the
-    // abstract alias, the word and the concrete alias.
-    let [_, name, alias, _, abstract_model, _, concrete_model] =
-        tokens_of(&declaration_items, TokenKind::Identifier)[..]
-    else {
-        return Err(unexpected(node));
+    // `refinement Name using p abstract A[::protocol] concrete C { ... }`:
+    // the direct tokens before the rows are the word, the name, `using`, the
+    // alias, the word, the abstract model alias, an optional `::` and
+    // protocol name (`member-name` admits reserved words, so the name is read
+    // by position, not by token kind), the word, the concrete alias and `{`.
+    let header: Vec<&CstToken> = declaration_items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Token(token) => Some(*token),
+            Item::Node(_) => None,
+        })
+        .collect();
+    let (name, alias, abstract_side, concrete_model) = match header[..] {
+        [_, name, _, alias, _, model, colons, clause, _, concrete_model, ..]
+            if colons.spelling() == b"::" =>
+        {
+            (
+                name,
+                alias,
+                AbstractSideForm::Protocol {
+                    alias: declared(model, node)?,
+                    clause: declared(clause, node)?,
+                },
+                concrete_model,
+            )
+        }
+        [_, name, _, alias, _, model, _, concrete_model, ..] => (
+            name,
+            alias,
+            AbstractSideForm::Model(declared(model, node)?),
+            concrete_model,
+        ),
+        _ => return Err(unexpected(node)),
     };
     let rows = declaration_items
         .iter()
@@ -347,7 +371,7 @@ pub(crate) fn refinement_declaration(
             alias: text(alias, node)?,
             span: alias.span(),
         },
-        abstract_side: AbstractSideForm::Model(declared(abstract_model, node)?),
+        abstract_side,
         concrete: declared(concrete_model, node)?,
         rows,
         span: node.span(),

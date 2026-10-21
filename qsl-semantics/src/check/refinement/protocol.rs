@@ -296,6 +296,13 @@ pub(super) struct Typing {
     pub(super) lifting: BTreeMap<EffectiveId, EffectiveId>,
     pub(super) maps_complete: bool,
     pub(super) history: Vec<ScopedHistory>,
+    /// Whether the abstract side is a protocol subject.
+    pub(super) protocol_subject: bool,
+    /// The abstract protocol's step classes, when the subject resolved.
+    pub(super) abstract_classes: Option<super::ProtocolClasses>,
+    /// The classes the refinement's internal list makes internal, each with
+    /// the pointer of its entry.
+    pub(super) internal: Vec<(super::AbstractStepClass, String)>,
 }
 
 /// The concrete protocol clause of a refinement, as the unit checked it.
@@ -673,6 +680,9 @@ impl ProtocolRefinement<'_> {
             baseline: 0,
             populations: None,
             history: typing.history,
+            protocol_subject: typing.protocol_subject,
+            protocol: typing.abstract_classes,
+            internal: typing.internal,
         };
         let outcome = checker.complete_rows(
             clause,
@@ -808,11 +818,51 @@ impl<'a> Checker<'_, 'a> {
             let target = match &row.target {
                 StepTargetForm::Stutter { .. } => StepTarget::Stutter,
                 StepTargetForm::Any { .. } => StepTarget::Any,
-                StepTargetForm::Node { node, .. } => {
+                StepTargetForm::Node {
+                    span,
+                    node,
+                    arguments,
+                } => {
                     // While the abstract side is a model subject, a right
-                    // side naming a protocol node is malformed (FR-147).
-                    self.findings.malformed(&node.name, row.span);
-                    continue;
+                    // side naming a protocol node is malformed (FR-147). Over
+                    // a protocol subject it is typed over the concrete step
+                    // as an application is, which only a step with an
+                    // operation has.
+                    if !self.protocol_subject {
+                        self.findings.malformed(&node.name, row.span);
+                        continue;
+                    }
+                    let applied = applied_operation(&entry.class, clause).and_then(|applied| {
+                        let object = concrete_types
+                            .iter()
+                            .find(|object| object.id == applied.0)?;
+                        Some((object, applied.1))
+                    });
+                    match applied {
+                        Some((object, concrete_operation)) => {
+                            match self.node_target(
+                                row.span,
+                                node,
+                                arguments,
+                                (object, &concrete_operation),
+                                cx,
+                            ) {
+                                Some(target) => target,
+                                None => continue,
+                            }
+                        }
+                        None => {
+                            self.findings.refuse(
+                                *span,
+                                RefinementCause::Unsupported {
+                                    feature: UnsupportedFeature::ProtocolStepApplication,
+                                    profile: profile.clone(),
+                                    subject: None,
+                                },
+                            );
+                            continue;
+                        }
+                    }
                 }
                 StepTargetForm::Apply {
                     span,

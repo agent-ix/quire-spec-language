@@ -41,12 +41,24 @@
 //! closure certificate the core checks before the proof settles (ADR-018
 //! PC-3, FR-338): for a TP-1 clause under infinite-trace and the
 //! deadlock-freedom item, every explored model state with the canonical key,
-//! under each instance's context, of the carried root. A run that reaches its
+//! under each instance's context, of the carried root; for a bounded clause
+//! `eventually[0,u] holds(A)` or `always[0,u] holds(A)` on origin (TP-2), every
+//! explored model state with the key of the bounded monitor state it was read
+//! to, which the run follows beside its own monitor's. A run that reaches its
 //! horizon with a state left unexpanded settles V-5; a run that reaches a
 //! limit or is cancelled settles V-7; neither is ever `Holds`.
 //!
-//! Remaining work: QSL-878 gives the TP-2 and TP-3 translation states their
-//! FR-338 canonical keys. Until it lands such a `Holds` carries an empty
+//! A protocol subject's steps that do not count (ADR-027 PB-3) leave interval
+//! distance where it was, so a cycle of them can keep an interval eventuality
+//! open for ever. The run records those steps between the product states that
+//! owe an eventuality; after a frontier that empties, a cycle fair under the
+//! scheduler constraints of FR-212 and the clause's own is a behaviour that
+//! never meets the interval, and the run settles with its lasso. A cycle the
+//! scheduler constraints exclude, because a thread can still move, is no
+//! behaviour and the run proves.
+//!
+//! Remaining work: QSL-878 gives the other TP-2 and TP-3 translation states
+//! their FR-338 canonical keys. Until it lands such a `Holds` carries an empty
 //! closure certificate, which the core checker cannot admit, so it never
 //! settles `proved`. A liveness clause (TP-4) is decided by `liveness`,
 //! which adds the second phase; an `on each` activation with a `when`
@@ -57,20 +69,23 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
-    translate, Atom, AutomatonError, AutomatonKind, Gba, GbaBuilder, Guard, KeyRefusal, Letter,
-    Monitor, SafetyAutomaton, SafetyState, StateId,
+    bounded_shape, translate, translate_counted, Atom, AutomatonError, AutomatonKind, BoundedState,
+    BoundedTranslation, Gba, GbaBuilder, Guard, KeyRefusal, Letter, Monitor, SafetyAutomaton,
+    SafetyState, StateId,
 };
+use qsl_eval::fairness::{EdgeLabel, Vertex};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, MemoryModel, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
-    SubjectMemory,
+    activates_on_each, check_protocol_bounds, live_instance_bound, MemoryModel,
+    ProtocolFairnessError, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    ConstraintValue, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, NotSimulated,
-    Permutation, RequiresBound, SubjectSystem, SymmetryGroup, TransitionSystem,
+    ConstraintValue, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, FairLoop,
+    NotSimulated, Permutation, RequiresBound, SubjectSystem, SubjectTransition, SymmetryGroup,
+    TransitionSystem, ZeroProgress, ZeroProgressError,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
@@ -78,10 +93,11 @@ use qsl_foundation::InternalFault;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
-    Instance, ItemRefusal, MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ProductStateRef, Proviso,
-    ReachedLimit, ReductionCause, RunStats, TemporalCounterexample, UndecidedCause,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    Instance, InstanceBound, ItemRefusal, Lasso, MemoryBound, MemoryBoundMember, MemoryCause,
+    ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
+    ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats, SymmetryRefusal,
+    TemporalCounterexample, Translation, UndecidedCause, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
@@ -92,8 +108,9 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use super::ample::{Atoms, Por};
 use super::concretise::{Lift, LiftStop};
+use super::fair_walk::FairModel;
 use super::false_extension::false_extension_rejects;
-use super::reduce::{self, InstanceGroup, Reductions, SymmetryRefusal, TableForm};
+use super::reduce::{self, InstanceGroup, Reductions, TableForm};
 
 pub(super) use qsl_eval::simulation::BOUND_POSITIONS;
 
@@ -177,6 +194,17 @@ pub enum ModelCheckRefusal {
         /// The request's constraint name.
         name: String,
     },
+    /// A liveness clause over a protocol subject with a weak `parallel`,
+    /// whose memory constraints (FR-228) the liveness engine does not read
+    /// yet (`unsupported_construct`/`not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over a weak `parallel` yet")]
+    WeakLiveness,
+    /// A liveness clause over an `activation on each` protocol: the liveness
+    /// engine does not read the instance bound (FR-209) yet, so a run could
+    /// pass over instance-limited states
+    /// (`unsupported_construct`/`not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over an `activation on each` protocol yet")]
+    InstanceLiveness,
     /// A liveness clause with a state constraint selected: the liveness
     /// engine runs reduced under symmetry and partial-order reduction only.
     #[error("EN-1 does not decide a liveness clause under a state constraint yet")]
@@ -186,6 +214,11 @@ pub enum ModelCheckRefusal {
     /// rule for.
     #[error(transparent)]
     Footprint(#[from] qsl_eval::simulation::model::FootprintError),
+    /// A refinement whose abstract side is a protocol clause: the engine
+    /// decides no abstract protocol step yet (FR-148)
+    /// (`unsupported_construct/not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a refinement over an abstract protocol subject yet")]
+    ProtocolAbstractSide,
     /// An invariant of the engine or the subject broke.
     #[error("model check broke invariant {0:?}")]
     Fault(InternalFault),
@@ -204,17 +237,35 @@ enum Item<'a> {
         /// The atom true at every represented position of a bounded `on
         /// each` clause.
         live: Option<Atom>,
+        /// The atom true where the step into a position does not count for
+        /// interval distance (ADR-027 PB-3).
+        uncounted: Option<Atom>,
+        /// How the subject's steps count.
+        counting: Counting,
         /// Whether a terminal state closes the monitor by the bounded
         /// profile's closed-boundary rule (TP-2) rather than stuttering.
         bounded: bool,
         /// The last position the claim reads: the horizon `h` of a TP-2 `on
         /// origin` clause, none when it reads every position (UE-1).
         last_read: Option<u64>,
+        /// Each instance's canonical bounded translation, whose states the
+        /// run follows beside the monitor's to key a TP-2 proof's closure
+        /// certificate (FR-338); empty for every other run.
+        canonical: Vec<BoundedTranslation>,
     },
     Deadlock,
 }
 
 impl Item<'_> {
+    /// The item's authored fairness set: empty for the deadlock-freedom
+    /// item.
+    fn fairness(&self) -> &[FairnessConstraint] {
+        match self {
+            Self::Clause { fairness, .. } => fairness,
+            Self::Deadlock => &[],
+        }
+    }
+
     /// The number of instances, each with its own monitor state.
     fn instance_count(&self) -> usize {
         match self {
@@ -232,6 +283,9 @@ struct Node<State, Transition> {
     state: State,
     digest: DigestRecord,
     depth: usize,
+    /// The counted steps from the initial state (ADR-027 PB-3): the depth
+    /// when every step counts.
+    distance: usize,
     parent: Option<(usize, Option<Transition>)>,
     initial_index: usize,
     monitor: Vec<StateId>,
@@ -244,6 +298,11 @@ struct Node<State, Transition> {
     /// boundary state is stored and read, never expanded.
     boundary: bool,
 }
+
+/// A product state's key: the model state's key bytes, the monitor state of
+/// each instance and, where it decides which later positions the claim
+/// reads, the counted distance (see [`Run::product`]).
+type ProductKey = (Vec<u8>, Vec<StateId>, usize);
 
 /// Why the run ended before its frontier emptied.
 enum Finish {
@@ -271,9 +330,9 @@ type Step<T> = Result<T, Halt>;
 /// What reading a position found, and the instance that found it.
 type Finding = (CounterexampleKind, usize);
 
-/// Each instance's monitor state after reading a position, and what the read
-/// found.
-type Reading = (Vec<StateId>, Option<Finding>);
+/// Each instance's monitor state and canonical bounded state after reading a
+/// position, and what the read found.
+type Reading = (Vec<StateId>, Vec<BoundedState>, Option<Finding>);
 
 /// One successor of an expansion: the transition identity's order bytes, the
 /// successor's state-key bytes and digest, the transition (none for the
@@ -312,6 +371,17 @@ impl From<EncodingRefusal> for Halt {
     }
 }
 
+impl From<ProtocolFairnessError> for ModelCheckRefusal {
+    fn from(error: ProtocolFairnessError) -> Self {
+        match error {
+            ProtocolFairnessError::UnknownOperation { name } => {
+                super::liveness::LivenessRefusal::UnknownOperation { name }.into()
+            }
+            ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
+        }
+    }
+}
+
 pub(super) fn fault(invariant: &'static str) -> ModelCheckRefusal {
     ModelCheckRefusal::Fault(InternalFault::new("model-check", invariant))
 }
@@ -323,6 +393,15 @@ pub(super) fn widen(value: usize) -> u64 {
 /// The item, the automaton its monitor reads, and whether the run's proof
 /// has a canonical closure certificate.
 type Prepared<'a> = (Item<'a>, Box<dyn SafetyAutomaton>, bool);
+
+/// How a subject's steps count for interval distance.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Counting {
+    /// Every step counts: a model subject (ADR-018).
+    Every,
+    /// A step counts by its kind: a protocol subject (ADR-027 PB-3).
+    ByKind,
+}
 
 /// FR-126: decide `request`'s item over every behaviour of its subject,
 /// polling `cancel` before every expansion and every atom evaluation.
@@ -361,7 +440,8 @@ pub fn check_model(
     }
     let max_automaton_states = request.limits.max_automaton_states;
     // The form is refused before admission reads any snapshot.
-    let (mut item, automaton, certified) = prepare(request.item, max_automaton_states)?;
+    let (mut item, automaton, certified) =
+        prepare(request.item, max_automaton_states, Counting::Every)?;
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
@@ -380,9 +460,18 @@ pub fn check_model(
     } else {
         (Vec::new(), None)
     };
-    if let (Item::Clause { bindings, .. }, ModelCheckItem::Clause { clause, .. }) =
-        (&mut item, request.item)
+    if let (
+        Item::Clause {
+            bindings,
+            canonical,
+            ..
+        },
+        ModelCheckItem::Clause { clause, .. },
+    ) = (&mut item, request.item)
     {
+        if certified {
+            *canonical = bounded_translations(&instances);
+        }
         // FR-125: the instances come from the subject's universes; a
         // certified proof's are those its certificate's translations carry.
         *bindings = if certified {
@@ -396,6 +485,7 @@ pub fn check_model(
     }
     let mut run = Run {
         system: &system,
+        fairness: item.fairness(),
         reducer: Some(&system),
         item: &item,
         limits: request.limits,
@@ -404,7 +494,10 @@ pub fn check_model(
         max_candidates,
         cancel,
         nodes: Vec::new(),
+        canonical: Vec::new(),
         known: BTreeMap::new(),
+        uncounted_edges: Vec::new(),
+        enabled: BTreeMap::new(),
         queue: VecDeque::new(),
         edges: 0,
         horizon_cut: false,
@@ -417,6 +510,8 @@ pub fn check_model(
         chooser: None,
         memory_bound: None,
         bound_limited: BTreeSet::new(),
+        instance_bound: None,
+        instance_limited: BTreeSet::new(),
     };
     if let Some(source) = root_cancelled {
         return Ok(ModelCheckOutcome::Stopped {
@@ -453,6 +548,10 @@ pub struct ProtocolCheckRequest<'a> {
     /// The method bound `max_store_buffer` (FR-225, ADR-025 MB-2): the
     /// entries per thread's buffer under `tso`; `None` runs with 4.
     pub max_store_buffer: Option<u64>,
+    /// The method bound `max_live_instances` (FR-209, ADR-027 AE-4): the live
+    /// instances of an `activation on each` protocol; `None` runs with 3. It
+    /// is outside the subject and its obligation identity.
+    pub max_live_instances: Option<u64>,
     /// The run's caller-raisable budgets.
     pub limits: ModelCheckLimits,
 }
@@ -461,26 +560,37 @@ pub struct ProtocolCheckRequest<'a> {
 /// behaviour of its protocol subject with [`check_model`]'s engine, over
 /// the subject's protocol system under its resolved memory models
 /// (FR-219): `ProtocolSystem<Sc>`, or `ProtocolSystem<Tso>` bounded by
-/// `max_store_buffer` when a `parallel` resolves to `tso` (FR-221, FR-225).
+/// `max_store_buffer` when a `parallel` resolves to `tso` (FR-221, FR-225),
+/// or `ProtocolSystem<Ra>` bounded by `max_messages` when one resolves to
+/// `ra` (FR-222).
 /// The requires-bound pre-check reads the model's roots and the protocol's
 /// before any state is explored, and EN-1's access-shape pre-check settles
 /// `WeakAccessShape` before any state is explored (FR-220). A run that left
 /// a store unexpanded under the bound and found no counterexample settles
 /// `MemoryBoundReached` (ADR-025 MB-4). A deadlock counterexample names the
-/// waiting threads of its last state (ADR-027 PD-4).
+/// waiting threads of its last state (ADR-027 PD-4). A liveness clause is
+/// decided by the liveness engine's two phases, its fairness filter reading
+/// the clause's fairness set over the subject, scheduler constraints
+/// included (FR-212).
 ///
 /// # Errors
 ///
 /// [`ModelCheckRefusal`] as [`check_model`] returns it,
-/// [`ModelCheckRefusal::FormNotDecided`] for a liveness clause, whose
-/// scheduler fairness (FR-212) this engine does not read yet, and
-/// [`ModelCheckRefusal::Protocol`] when the protocol system does not build.
+/// [`ModelCheckRefusal::WeakLiveness`] for a liveness clause over a weak
+/// `parallel`, and [`ModelCheckRefusal::Protocol`] when the protocol system
+/// does not build.
 pub fn check_protocol(
     request: ProtocolCheckRequest<'_>,
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+    if let ModelCheckItem::Clause { clause, .. } = request.item {
+        if clause.property_form() == Some(PropertyForm::Liveness) {
+            return check_protocol_liveness(request, cancel);
+        }
+    }
     let max_automaton_states = request.limits.max_automaton_states;
-    let (mut item, automaton, certified) = prepare(request.item, max_automaton_states)?;
+    let (mut item, automaton, certified) =
+        prepare(request.item, max_automaton_states, Counting::ByKind)?;
     let subject = &request.subject;
     let simulation = subject.model.simulation.clone();
     let meter = simulation.meter;
@@ -500,6 +610,10 @@ pub fn check_protocol(
             })
         })?;
     check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
+    let live_instances = live_instance_bound(request.max_live_instances);
+    let instance_bound = activates_on_each(protocol).then_some(InstanceBound {
+        value: live_instances,
+    });
     let (instances, root_cancelled) = if certified {
         match request.item.instances(&subject.model, &model, cancel) {
             Ok(instances) => (instances, None),
@@ -512,9 +626,18 @@ pub fn check_protocol(
     } else {
         (Vec::new(), None)
     };
-    if let (Item::Clause { bindings, .. }, ModelCheckItem::Clause { clause, .. }) =
-        (&mut item, request.item)
+    if let (
+        Item::Clause {
+            bindings,
+            canonical,
+            ..
+        },
+        ModelCheckItem::Clause { clause, .. },
+    ) = (&mut item, request.item)
     {
+        if certified {
+            *canonical = bounded_translations(&instances);
+        }
         *bindings = if certified {
             instances
                 .iter()
@@ -535,18 +658,42 @@ pub fn check_protocol(
         max_candidates,
         cancel,
         max_automaton_states,
+        instance_bound,
     };
     let memory = SubjectMemory::of(&subject.memory, request.max_store_buffer);
     let built = match memory {
-        SubjectMemory::Sc => ProtocolSystem::new(model, subject, Sc)
-            .map(|system| protocol_run.decide(&system, automaton, None)),
+        SubjectMemory::Sc => ProtocolSystem::new(model, subject, Sc).map(|system| {
+            protocol_run.decide(
+                &system.with_max_live_instances(live_instances),
+                automaton,
+                None,
+            )
+        }),
         SubjectMemory::Tso(tso) => {
             let bound = MemoryBound {
                 member: MemoryBoundMember::MaxStoreBuffer,
                 value: tso.max_store_buffer(),
             };
-            ProtocolSystem::new(model, subject, tso)
-                .map(|system| protocol_run.decide(&system, automaton, Some(bound)))
+            ProtocolSystem::new(model, subject, tso).map(|system| {
+                protocol_run.decide(
+                    &system.with_max_live_instances(live_instances),
+                    automaton,
+                    Some(bound),
+                )
+            })
+        }
+        SubjectMemory::Ra(ra) => {
+            let bound = MemoryBound {
+                member: MemoryBoundMember::MaxMessages,
+                value: ra.max_messages(),
+            };
+            ProtocolSystem::new(model, subject, ra).map(|system| {
+                protocol_run.decide(
+                    &system.with_max_live_instances(live_instances),
+                    automaton,
+                    Some(bound),
+                )
+            })
         }
     };
     match built {
@@ -559,6 +706,47 @@ pub fn check_protocol(
         }),
         Err(refusal) => Err(ModelCheckRefusal::Protocol(refusal)),
     }
+}
+
+/// FR-126 and FR-212 for a liveness clause over a protocol subject under
+/// `sc` ([`super::liveness::check_protocol`]). A subject with a weak
+/// `parallel` is refused before any state is explored: its memory
+/// constraints (FR-228) and its memory bound are not read by the liveness
+/// engine yet.
+fn check_protocol_liveness(
+    request: ProtocolCheckRequest<'_>,
+    cancel: &Cancel,
+) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+    let subject = &request.subject;
+    let model = ModelSystem::new(subject.model.simulation.clone())
+        .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
+    let protocol = subject
+        .model
+        .simulation
+        .package
+        .graph()
+        .protocol(&subject.protocol)
+        .ok_or_else(|| {
+            ModelCheckRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
+                protocol: subject.protocol.clone(),
+            })
+        })?;
+    check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
+    let SubjectMemory::Sc = SubjectMemory::of(&subject.memory, request.max_store_buffer) else {
+        return Err(ModelCheckRefusal::WeakLiveness);
+    };
+    if activates_on_each(protocol) {
+        return Err(ModelCheckRefusal::InstanceLiveness);
+    }
+    let system = ProtocolSystem::new(model, subject, Sc).map_err(ModelCheckRefusal::Protocol)?;
+    super::liveness::check_protocol(
+        subject,
+        &system,
+        request.item,
+        request.max_depth,
+        request.limits,
+        cancel,
+    )
 }
 
 /// What [`check_protocol`] runs over its protocol system, whichever memory
@@ -574,6 +762,8 @@ struct ProtocolRun<'r> {
     max_candidates: u64,
     cancel: &'r Cancel,
     max_automaton_states: u64,
+    /// The instance bound of an `activation on each` protocol.
+    instance_bound: Option<InstanceBound>,
 }
 
 impl ProtocolRun<'_> {
@@ -585,8 +775,15 @@ impl ProtocolRun<'_> {
         automaton: Box<dyn SafetyAutomaton>,
         bound: Option<MemoryBound>,
     ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+        // FR-430 adds scheduler constraints to infinite-trace clauses, not
+        // to the derived deadlock-freedom item.
+        let fairness = match self.item {
+            Item::Deadlock => Vec::new(),
+            Item::Clause { .. } => system.fairness_set(self.item.fairness())?,
+        };
         let mut run = Run {
             system,
+            fairness: &fairness,
             reducer: None,
             item: self.item,
             limits: self.limits,
@@ -595,7 +792,10 @@ impl ProtocolRun<'_> {
             max_candidates: self.max_candidates,
             cancel: self.cancel,
             nodes: Vec::new(),
+            canonical: Vec::new(),
             known: BTreeMap::new(),
+            uncounted_edges: Vec::new(),
+            enabled: BTreeMap::new(),
             queue: VecDeque::new(),
             edges: 0,
             horizon_cut: false,
@@ -608,6 +808,8 @@ impl ProtocolRun<'_> {
             chooser: None,
             memory_bound: bound,
             bound_limited: BTreeSet::new(),
+            instance_bound: self.instance_bound,
+            instance_limited: BTreeSet::new(),
         };
         if let Some(source) = self.root_cancelled {
             return Ok(ModelCheckOutcome::Stopped {
@@ -656,6 +858,7 @@ fn sum(left: RunStats, right: RunStats) -> RunStats {
         automaton_states: left.automaton_states.saturating_add(right.automaton_states),
         depth: left.depth.max(right.depth),
         bound_limited: left.bound_limited.saturating_add(right.bound_limited),
+        instance_limited: left.instance_limited.saturating_add(right.instance_limited),
     }
 }
 
@@ -672,7 +875,7 @@ fn check_reduced(
     let reductions = &request.reductions;
     let max_automaton_states = request.limits.max_automaton_states;
     // The form is refused before admission reads any snapshot.
-    prepare(request.item, max_automaton_states)?;
+    prepare(request.item, max_automaton_states, Counting::Every)?;
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
@@ -727,7 +930,8 @@ fn check_reduced(
     let mut horizon = false;
     let mut applied = Vec::new();
     for plan in plans {
-        let (mut item, automaton, _) = prepare(request.item, max_automaton_states)?;
+        let (mut item, automaton, _) =
+            prepare(request.item, max_automaton_states, Counting::Every)?;
         if let Item::Clause { bindings, .. } = &mut item {
             *bindings = plan.bindings;
         }
@@ -738,6 +942,7 @@ fn check_reduced(
         };
         let mut run = Run {
             system: &system,
+            fairness: item.fairness(),
             reducer: Some(&system),
             item: &item,
             limits: request.limits,
@@ -746,7 +951,10 @@ fn check_reduced(
             max_candidates,
             cancel,
             nodes: Vec::new(),
+            canonical: Vec::new(),
             known: BTreeMap::new(),
+            uncounted_edges: Vec::new(),
+            enabled: BTreeMap::new(),
             queue: VecDeque::new(),
             edges: 0,
             horizon_cut: false,
@@ -759,6 +967,8 @@ fn check_reduced(
             chooser: ample.as_ref().map(|ample| ample as &dyn Chooser<_, _>),
             memory_bound: None,
             bound_limited: BTreeSet::new(),
+            instance_bound: None,
+            instance_limited: BTreeSet::new(),
         };
         let explored = run.explore();
         total = sum(total, run.stats());
@@ -1000,6 +1210,7 @@ pub(super) fn not_simulated(refusal: NotSimulated) -> ModelCheckRefusal {
 fn prepare(
     item: ModelCheckItem<'_>,
     max_automaton_states: u64,
+    counting: Counting,
 ) -> Result<Prepared<'_>, ModelCheckRefusal> {
     let ModelCheckItem::Clause { clause, letters } = item else {
         return Ok((Item::Deadlock, Box::new(deadlock_automaton()?), true));
@@ -1015,13 +1226,17 @@ fn prepare(
     if matches!(clause.activation(), Activation::Each { guarded: true }) {
         return Err(ModelCheckRefusal::GuardedActivation);
     }
-    let automaton =
-        translate(clause, max_automaton_states).map_err(ModelCheckRefusal::Translation)?;
+    let automaton = match counting {
+        Counting::Every => translate(clause, max_automaton_states),
+        Counting::ByKind => translate_counted(clause, max_automaton_states),
+    }
+    .map_err(ModelCheckRefusal::Translation)?;
     if automaton.kind() == AutomatonKind::Liveness {
         return Err(fault("a-safety-form-translates-to-a-safety-automaton"));
     }
-    let certified = form == Some(PropertyForm::ReachableInvariant)
-        && clause.profile() == TemporalProfile::InfiniteTrace;
+    let certified = (form == Some(PropertyForm::ReachableInvariant)
+        && clause.profile() == TemporalProfile::InfiniteTrace)
+        || (bounded && bounded_shape(clause).is_some());
     let last_read = match clause.activation() {
         Activation::Origin if bounded => clause.horizon(),
         Activation::Origin | Activation::Each { .. } => None,
@@ -1032,10 +1247,25 @@ fn prepare(
         fairness: clause.fairness().to_vec(),
         atoms: automaton.atoms().to_vec(),
         live: automaton.live(),
+        uncounted: automaton.uncounted(),
+        counting,
         bounded,
         last_read,
+        canonical: Vec::new(),
     };
     Ok((prepared, Box::new(automaton), certified))
+}
+
+/// The canonical bounded translation of each instance, none for a run whose
+/// instances translate otherwise.
+fn bounded_translations(instances: &[Instance]) -> Vec<BoundedTranslation> {
+    instances
+        .iter()
+        .filter_map(|instance| match &instance.translation {
+            Translation::Bounded(translation) => Some(translation.clone()),
+            Translation::Safety(_) => None,
+        })
+        .collect()
 }
 
 /// The automaton of `always a`, with `a` the letter's atom 0 (`not
@@ -1084,6 +1314,9 @@ impl Reducer<ModelSimState> for ModelSystem<'_> {
 
 struct Run<'r, S: SubjectSystem> {
     system: &'r S,
+    /// The item's fairness set over the subject, which every counterexample
+    /// carries: empty for the deadlock-freedom item (FR-123, FR-212).
+    fairness: &'r [<S::TransitionId as SubjectTransition>::Fairness],
     /// The system's reductions; `None` for a subject that offers none.
     reducer: Option<&'r dyn Reducer<S::State>>,
     item: &'r Item<'r>,
@@ -1093,9 +1326,21 @@ struct Run<'r, S: SubjectSystem> {
     max_candidates: u64,
     cancel: &'r Cancel,
     nodes: Vec<Node<S::State, S::TransitionId>>,
+    /// For each node, each instance's canonical bounded state after reading
+    /// its position; empty unless the item has canonical translations.
+    canonical: Vec<Vec<BoundedState>>,
     /// Each product state's index by its key: the model state's key bytes
     /// and the monitor state of each instance.
-    known: BTreeMap<(Vec<u8>, Vec<StateId>), usize>,
+    known: BTreeMap<ProductKey, usize>,
+    /// The product edges taken on a step that does not count for interval
+    /// distance (ADR-027 PB-3), by node, kept only for a claim that reads
+    /// the distinction.
+    uncounted_edges: Vec<(usize, usize, S::TransitionId)>,
+    /// The transitions each expanded node enables, kept for a claim that
+    /// reads uncounted steps so the zero-progress search reads them from the
+    /// charged expansion (FR-212). A reduced run (`chooser`) keeps none: its
+    /// expansion is a subset, and the search expands those nodes in full.
+    enabled: BTreeMap<usize, Vec<S::TransitionId>>,
     queue: VecDeque<usize>,
     edges: usize,
     horizon_cut: bool,
@@ -1120,6 +1365,13 @@ struct Run<'r, S: SubjectSystem> {
     /// the memory bound (ADR-025 MB-3); a model state read under several
     /// monitor states counts once.
     bound_limited: BTreeSet<DigestRecord>,
+    /// The instance bound the subject's `activation on each` runs under
+    /// (ADR-027 AE-4); `None` for a subject with none.
+    instance_bound: Option<InstanceBound>,
+    /// The distinct model states, by digest, left with an `activate` step
+    /// unexpanded at the instance bound (ADR-027 AE-4); a model state read
+    /// under several monitor states counts once.
+    instance_limited: BTreeSet<DigestRecord>,
 }
 
 impl<S: SubjectSystem> Run<'_, S> {
@@ -1130,21 +1382,42 @@ impl<S: SubjectSystem> Run<'_, S> {
             automaton_states: widen(self.monitor.automaton().state_count()),
             depth: widen(self.nodes.iter().map(|node| node.depth).max().unwrap_or(0)),
             bound_limited: widen(self.bound_limited.len()),
+            instance_limited: widen(self.instance_limited.len()),
         }
     }
 
-    /// The closure certificate of a run that proved its item: every explored
-    /// model state under each instance's carried root, sorted by model state
-    /// then key. With no instance translation (a TP-2 or TP-3 clause) it is
-    /// empty; Remaining work: QSL-878.
+    /// The closure certificate of a run that proved its item: for a TP-1
+    /// clause or the deadlock-freedom item, every explored model state under
+    /// each instance's carried root; for a bounded clause, every explored
+    /// model state under the canonical bounded state it was read to. Sorted
+    /// by model state then key. With no instance translation (a clause of
+    /// another shape) it is empty; Remaining work: QSL-878.
     fn certificate(&self, instances: &[Instance]) -> Result<ClosureCertificate, ModelCheckRefusal> {
         let mut states = Vec::with_capacity(self.nodes.len().saturating_mul(instances.len()));
-        for instance in instances {
-            let key = instance.translation.key(SafetyState::Carried)?;
-            states.extend(self.nodes.iter().map(|node| ProductStateRef {
-                model_state: node.digest,
-                automaton_state: key.clone(),
-            }));
+        for (index, instance) in instances.iter().enumerate() {
+            match &instance.translation {
+                Translation::Safety(translation) => {
+                    let key = translation.key(SafetyState::Carried)?;
+                    states.extend(self.nodes.iter().map(|node| ProductStateRef {
+                        model_state: node.digest,
+                        automaton_state: key.clone(),
+                    }));
+                }
+                Translation::Bounded(translation) => {
+                    for (node, canonical) in self.nodes.iter().zip(&self.canonical) {
+                        let state = canonical
+                            .get(index)
+                            .ok_or_else(|| fault("a-bounded-node-has-a-canonical-state"))?;
+                        if state.is_rejecting() {
+                            return Err(fault("a-proved-run-reaches-no-rejecting-state"));
+                        }
+                        states.push(ProductStateRef {
+                            model_state: node.digest,
+                            automaton_state: translation.key(*state)?,
+                        });
+                    }
+                }
+            }
         }
         states.sort();
         states.dedup();
@@ -1194,7 +1467,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         instances: &[Instance],
     ) -> Result<ModelCheckOutcome<S::TransitionId>, ModelCheckRefusal> {
         match self.explore() {
-            // ADR-025 MB-4: a bound-limited state settles before the horizon.
+            // ADR-025 MB-4: a bound-limited state settles first.
             Ok(()) => Ok(
                 if let (Some(bound), true) = (self.memory_bound, !self.bound_limited.is_empty()) {
                     ModelCheckOutcome::Memory {
@@ -1204,11 +1477,25 @@ impl<S: SubjectSystem> Run<'_, S> {
                         },
                         stats: self.stats(),
                     }
+                } else if let (Some(bound), true) =
+                    (self.instance_bound, !self.instance_limited.is_empty())
+                {
+                    // ADR-027 AE-4: an instance-limited state settles before
+                    // the horizon, after a bound-limited one.
+                    ModelCheckOutcome::Undecided {
+                        cause: UndecidedCause::InstanceBoundReached {
+                            bound,
+                            states: widen(self.instance_limited.len()),
+                        },
+                        stats: self.stats(),
+                    }
                 } else if self.horizon_cut {
                     ModelCheckOutcome::BoundReached {
                         depth: widen(self.max_depth.unwrap_or(0)),
                         stats: self.stats(),
                     }
+                } else if let Some(outcome) = self.zero_progress_outcome()? {
+                    outcome
                 } else {
                     ModelCheckOutcome::Holds {
                         certificate: self.certificate(instances)?,
@@ -1270,6 +1557,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 state,
                 digest,
                 depth: 0,
+                distance: 0,
                 parent: None,
                 initial_index: index,
                 monitor: Vec::new(),
@@ -1293,7 +1581,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             let expanded = match self.chooser {
                 Some(chooser) => chooser
                     .expand(&self.nodes[at].state)
-                    .map(|expansion| (expansion, false)),
+                    .map(|expansion| (expansion, Cut::default())),
                 None => self.system.successors_bounded(&self.nodes[at].state),
             };
             let (expansion, cut) = match expanded {
@@ -1301,7 +1589,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 Err(stop) => return Err(self.expansion_stop(stop)),
             };
             self.contracts(at, &expansion.findings)?;
-            if cut {
+            if cut.memory {
                 self.bound_limited.insert(self.nodes[at].digest);
                 // ADR-025 MB-3: a state whose only enabled steps are cut
                 // stores is a boundary state: never stutter-extended and
@@ -1310,9 +1598,34 @@ impl<S: SubjectSystem> Run<'_, S> {
                     continue;
                 }
             }
+            // ADR-027 AE-4: an instance-limited state is never terminal. With
+            // no expanded successor it is a boundary state, as MB-3's is:
+            // never closed, stutter-extended or a deadlock.
+            if cut.instances {
+                self.instance_limited.insert(self.nodes[at].digest);
+                if expansion.successors.is_empty() {
+                    continue;
+                }
+            }
             if matches!(self.item, Item::Deadlock) {
-                let after = self.deadlock_letter(at, !expansion.successors.is_empty())?;
+                let after = self.deadlock_letter(at, &expansion, cut)?;
                 self.nodes[at].monitor = vec![after];
+            }
+            if self.chooser.is_none()
+                && matches!(
+                    self.item,
+                    Item::Clause {
+                        uncounted: Some(_),
+                        ..
+                    }
+                )
+            {
+                let enabled = expansion
+                    .successors
+                    .iter()
+                    .map(|(transition, _)| transition.clone())
+                    .collect();
+                self.enabled.insert(at, enabled);
             }
             let terminal = expansion.successors.is_empty();
             if terminal {
@@ -1351,14 +1664,18 @@ impl<S: SubjectSystem> Run<'_, S> {
                             state,
                             digest,
                             depth: depth.saturating_add(1),
+                            distance: self.distance_after(at, None),
                             parent: Some((at, None)),
                             initial_index: self.nodes[at].initial_index,
                             monitor: Vec::new(),
                             permutation,
                             boundary: false,
                         };
-                        let (after, bad) = self.advance(&node, &before)?;
-                        bad.is_some() || !self.known.contains_key(&(key, after))
+                        let (after, _, bad) = self.advance(&node, &before)?;
+                        bad.is_some()
+                            || !self
+                                .known
+                                .contains_key(&self.product(key, after, node.distance))
                     }
                     Some(_) => true,
                     None => false,
@@ -1380,6 +1697,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     state,
                     digest,
                     depth: depth.saturating_add(1),
+                    distance: self.distance_after(at, transition.as_ref()),
                     parent: Some((at, transition)),
                     initial_index: self.nodes[at].initial_index,
                     monitor: Vec::new(),
@@ -1426,20 +1744,28 @@ impl<S: SubjectSystem> Run<'_, S> {
         let depth = self.nodes[at].depth;
         let mut fresh: Vec<bool> = Vec::with_capacity(steps.len());
         let mut readings: Vec<Reading> = Vec::with_capacity(steps.len());
-        for (_, key, digest, _, state, permutation) in steps.iter() {
+        for (_, key, digest, transition, state, permutation) in steps.iter() {
             let node = Node {
                 state: state.clone(),
                 digest: *digest,
                 depth: depth.saturating_add(1),
-                parent: Some((at, None)),
+                distance: self.distance_after(at, transition.as_ref()),
+                parent: Some((at, transition.clone())),
                 initial_index: self.nodes[at].initial_index,
                 monitor: Vec::new(),
                 permutation: permutation.clone(),
                 boundary: false,
             };
-            let (after, bad) = self.advance(&node, before)?;
-            fresh.push(bad.is_some() || !self.known.contains_key(&(key.clone(), after.clone())));
-            readings.push((after, bad));
+            let (after, canonical, bad) = self.advance(&node, before)?;
+            fresh.push(
+                bad.is_some()
+                    || !self.known.contains_key(&self.product(
+                        key.clone(),
+                        after.clone(),
+                        node.distance,
+                    )),
+            );
+            readings.push((after, canonical, bad));
         }
         let reaches_known = |transition: &S::TransitionId| {
             steps
@@ -1490,6 +1816,244 @@ impl<S: SubjectSystem> Run<'_, S> {
         matches!(self.item, Item::Clause { bounded: false, .. })
     }
 
+    /// The counted distance of the node reached from node `at` by
+    /// `transition`, `None` for the terminal stutter step, which counts
+    /// (ADR-027 PB-3).
+    fn distance_after(&self, at: usize, transition: Option<&S::TransitionId>) -> usize {
+        let counted = transition.is_none_or(|transition| self.system.counts_step(transition));
+        self.nodes[at].distance.saturating_add(usize::from(counted))
+    }
+
+    /// Record the edge into `node`, which is product node `target`, when its
+    /// step does not count and the claim reads that distinction.
+    fn note_uncounted_edge(&mut self, node: &Node<S::State, S::TransitionId>, target: usize) {
+        if !matches!(
+            self.item,
+            Item::Clause {
+                uncounted: Some(_),
+                ..
+            }
+        ) {
+            return;
+        }
+        if let Some((parent, Some(transition))) = &node.parent {
+            if !self.system.counts_step(transition) {
+                self.uncounted_edges
+                    .push((*parent, target, transition.clone()));
+            }
+        }
+    }
+
+    /// The outcome that replaces `Holds` when a fair cycle of steps that do
+    /// not count keeps an interval eventuality open (ADR-027 PB-3, FR-338
+    /// "Protocol non-progress acceptance"), or when the search is cancelled.
+    fn zero_progress_outcome(
+        &self,
+    ) -> Result<Option<ModelCheckOutcome<S::TransitionId>>, ModelCheckRefusal> {
+        Ok(match self.zero_progress() {
+            Ok(None) => None,
+            Ok(Some(counterexample)) => Some(ModelCheckOutcome::Violated {
+                counterexample: Box::new(counterexample),
+                stats: self.stats(),
+            }),
+            Err(Halt::Refusal(refusal)) => return Err(refusal),
+            Err(Halt::Finish(Finish::Stopped(cause, limit))) => Some(ModelCheckOutcome::Stopped {
+                cause,
+                limit,
+                stats: self.stats(),
+            }),
+            Err(Halt::Finish(_)) => return Err(fault("a-zero-progress-search-stops-or-finds")),
+        })
+    }
+
+    /// The lasso of the first fair cycle of steps that do not count among
+    /// the product states that owe an interval eventuality, for the first
+    /// instance that has one. An uncounted step neither ages the debt nor,
+    /// being on a cycle, discharges it for good, so the behaviour that takes
+    /// the cycle forever never meets the interval; it is a counterexample when
+    /// the scheduler constraints and the claim's own admit it, each read over
+    /// the complete subject at every state of the cycle (FR-212).
+    fn zero_progress(&self) -> Step<Option<TemporalCounterexample<S::TransitionId>>> {
+        let Item::Clause {
+            uncounted: Some(_),
+            bindings,
+            ..
+        } = self.item
+        else {
+            return Ok(None);
+        };
+        if self.uncounted_edges.is_empty() {
+            return Ok(None);
+        }
+        for instance in 0..bindings.len() {
+            let owing = self.owing(instance)?;
+            let owes = |node: &usize| owing.get(*node).copied().unwrap_or(false);
+            let edges: Vec<&(usize, usize, S::TransitionId)> = self
+                .uncounted_edges
+                .iter()
+                .filter(|(from, to, _)| owes(from) && owes(to))
+                .collect();
+            let mut touched: Vec<usize> = edges
+                .iter()
+                .flat_map(|(from, to, _)| [*from, *to])
+                .collect();
+            touched.sort_unstable();
+            touched.dedup();
+            let mut graph = ZeroProgress::<S>::new();
+            let mut vertex_of = BTreeMap::new();
+            for node in &touched {
+                self.poll()?;
+                let state = &self
+                    .nodes
+                    .get(*node)
+                    .ok_or_else(|| fault("an-edge-names-a-node"))?
+                    .state;
+                let reexpanded;
+                let enabled: Vec<&S::TransitionId> = match self.enabled.get(node) {
+                    Some(enabled) => enabled.iter().collect(),
+                    None => {
+                        reexpanded = self
+                            .system
+                            .successors_bounded(state)
+                            .map_err(|stop| self.expansion_stop(stop))?
+                            .0;
+                        reexpanded
+                            .successors
+                            .iter()
+                            .map(|(transition, _)| transition)
+                            .collect()
+                    }
+                };
+                vertex_of.insert(*node, graph.vertex(self.system, enabled)?);
+            }
+            for (from, to, transition) in &edges {
+                let (Some(from), Some(to)) = (vertex_of.get(from), vertex_of.get(to)) else {
+                    return Err(fault("an-edge-joins-two-vertices").into());
+                };
+                graph.edge(self.system, *from, *to, transition)?;
+            }
+            let found = graph
+                .fair_loop(self.system, self.item.fairness(), self.cancel)
+                .map_err(|error| self.progress_stop(error))?;
+            let Some(found) = found else {
+                continue;
+            };
+            return self
+                .zero_progress_lasso(instance, &touched, found)
+                .map(Some);
+        }
+        Ok(None)
+    }
+
+    /// Whether each node's instance `instance` monitor state owes an
+    /// interval eventuality.
+    fn owing(&self, instance: usize) -> Step<Vec<bool>> {
+        let mut owing = vec![false; self.nodes.len()];
+        for (index, node) in self.nodes.iter().enumerate() {
+            let Some(state) = node.monitor.get(instance) else {
+                continue;
+            };
+            let members = self
+                .monitor
+                .members(*state)
+                .ok_or_else(|| fault("a-node-has-a-monitor-state"))?;
+            if let Some(slot) = owing.get_mut(index) {
+                *slot = members
+                    .iter()
+                    .any(|member| self.monitor.automaton().owes_eventuality(*member));
+            }
+        }
+        Ok(owing)
+    }
+
+    /// The halt of a failed search for a fair cycle.
+    fn progress_stop(&self, error: ZeroProgressError) -> Halt {
+        match error {
+            ZeroProgressError::Encoding(refusal) => refusal.into(),
+            ZeroProgressError::Fairness(error) => ModelCheckRefusal::from(error).into(),
+            ZeroProgressError::Cancelled => match self.cancel.cause() {
+                Some(source) => Finish::Stopped(IncompleteCause::Cancelled { source }, None).into(),
+                None => fault("a-cancelled-run-has-a-cause").into(),
+            },
+            ZeroProgressError::Graph => fault("the-zero-progress-graph-is-built-from-nodes").into(),
+        }
+    }
+
+    /// The counterexample whose stem is the breadth-first tree path to the
+    /// first node of the fair component `found` and whose loop is CX-5's
+    /// greedy walk inside it. `touched` numbers the component's nodes by
+    /// vertex.
+    fn zero_progress_lasso(
+        &self,
+        instance: usize,
+        touched: &[usize],
+        found: FairLoop<S::TransitionId>,
+    ) -> Step<TemporalCounterexample<S::TransitionId>> {
+        let FairLoop {
+            graph,
+            constraints,
+            component,
+            fair_vertices: _,
+            removed,
+            entry,
+            transitions,
+        } = found;
+        let model = FairModel { graph, constraints };
+        let walk = model.greedy_loop(&component, &removed, entry)?;
+        let node_of = |vertex: Vertex| {
+            touched
+                .get(vertex.index())
+                .copied()
+                .ok_or_else(|| fault("a-vertex-is-a-node"))
+        };
+        let mut counterexample = self.counterexample(
+            CounterexampleKind::Formula,
+            node_of(entry)?,
+            self.binding_of(instance),
+        )?;
+        let entry_position = counterexample.prefix.len();
+        for (_, edge) in &walk {
+            let EdgeLabel::Transition(identity) = edge.label else {
+                return Err(fault("a-zero-progress-edge-is-a-transition").into());
+            };
+            let transition = usize::try_from(identity.value())
+                .ok()
+                .and_then(|number| transitions.get(number))
+                .ok_or_else(|| fault("an-edge-names-a-transition"))?;
+            let node = &self.nodes[node_of(edge.target)?];
+            counterexample.prefix.push(ModelStep {
+                transition: self
+                    .system
+                    .reported(transition.clone(), &node.state)
+                    .map_err(|stop| self.expansion_stop(stop))?,
+                post_state: node.digest,
+            });
+        }
+        counterexample.lasso = Some(Lasso {
+            entry: entry_position,
+            terminal_stutter: false,
+        });
+        Ok(counterexample)
+    }
+
+    /// The product key of a model state's `key` read to the monitor states
+    /// `monitor` at counted distance `distance`. When the subject's steps
+    /// count by kind and the claim reads positions up to a horizon, the
+    /// distance decides which later positions it reads, so a state reached
+    /// at two distances up to the horizon is two product states; otherwise
+    /// the distance is not part of the key.
+    fn product(&self, key: Vec<u8>, monitor: Vec<StateId>, distance: usize) -> ProductKey {
+        let reach = match self.item {
+            Item::Clause {
+                counting: Counting::ByKind,
+                last_read: Some(last),
+                ..
+            } => usize::try_from(*last).map_or(usize::MAX, |last| last.saturating_add(1)),
+            Item::Clause { .. } | Item::Deadlock => 0,
+        };
+        (key, monitor, distance.min(reach))
+    }
+
     /// Create the product state of `node`'s model state reached with the
     /// monitor states `before`: read its letter for each instance and step
     /// the monitor, then coalesce it with an existing state of the same key
@@ -1502,13 +2066,15 @@ impl<S: SubjectSystem> Run<'_, S> {
         before: &[StateId],
         read: Option<Reading>,
     ) -> Step<()> {
-        let (after, mut bad) = match read {
+        let (after, canonical, mut bad) = match read {
             Some(read) => read,
             None => self.advance(&node, before)?,
         };
         node.monitor = after;
-        let product = (key, node.monitor.clone());
-        if bad.is_none() && self.known.contains_key(&product) {
+        let product = self.product(key, node.monitor.clone(), node.distance);
+        let target = self.known.get(&product).copied();
+        self.note_uncounted_edge(&node, target.unwrap_or(self.nodes.len()));
+        if bad.is_none() && target.is_some() {
             return Ok(());
         }
         if self.nodes.len() >= self.limits.limits.max_states {
@@ -1548,6 +2114,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         let at = self.nodes.len();
         self.nodes.push(node);
+        self.canonical.push(canonical);
         self.queue.push_back(at);
         match bad {
             Some((kind, instance)) => {
@@ -1569,15 +2136,43 @@ impl<S: SubjectSystem> Run<'_, S> {
         &mut self,
         node: &Node<S::State, S::TransitionId>,
         before: &[StateId],
-    ) -> Step<(Vec<StateId>, Option<Finding>)> {
+    ) -> Step<Reading> {
         if matches!(self.item, Item::Deadlock) {
-            return Ok((before.to_vec(), None));
+            return Ok((before.to_vec(), Vec::new(), None));
         }
+        let counted = match &node.parent {
+            Some((_, Some(transition))) => self.system.counts_step(transition),
+            // An initial state has no step into it, and the terminal stutter
+            // step counts (ADR-027 PB-3).
+            Some((_, None)) | None => true,
+        };
+        let earlier: Vec<BoundedState> = node
+            .parent
+            .as_ref()
+            .and_then(|(parent, _)| self.canonical.get(*parent))
+            .cloned()
+            .unwrap_or_default();
         let mut after = Vec::with_capacity(before.len());
+        let mut canonical = Vec::new();
         let mut bad = None;
         for (instance, from) in before.iter().enumerate() {
-            let (state, finding) = self.read(node, instance, *from)?;
+            let (state, finding, holds) = self.read(node, instance, *from, counted)?;
             after.push(state);
+            if let Item::Clause {
+                canonical: translations,
+                ..
+            } = self.item
+            {
+                if let Some(translation) = translations.get(instance) {
+                    // A position the claim does not read carries no letter;
+                    // a step out of the window closes it before one.
+                    let holds = holds.unwrap_or(false);
+                    canonical.push(match earlier.get(instance) {
+                        Some(previous) => translation.step(*previous, counted, holds),
+                        None => translation.start(holds),
+                    });
+                }
+            }
             match finding {
                 Some(undefined @ CounterexampleKind::UndefinedEvaluation(_)) => {
                     bad = Some((undefined, instance));
@@ -1590,7 +2185,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             }
         }
         after.extend_from_slice(before.get(after.len()..).unwrap_or_default());
-        Ok((after, bad))
+        Ok((after, canonical, bad))
     }
 
     /// Instance `instance`'s monitor state after reading `node`'s letter
@@ -1602,12 +2197,14 @@ impl<S: SubjectSystem> Run<'_, S> {
         node: &Node<S::State, S::TransitionId>,
         instance: usize,
         from: StateId,
-    ) -> Step<(StateId, Option<CounterexampleKind>)> {
+        counted: bool,
+    ) -> Step<(StateId, Option<CounterexampleKind>, Option<bool>)> {
         let Item::Clause {
             bindings,
             letters,
             atoms,
             live,
+            uncounted,
             last_read,
             ..
         } = self.item
@@ -1618,8 +2215,14 @@ impl<S: SubjectSystem> Run<'_, S> {
             .get(instance)
             .ok_or_else(|| fault("instance-has-a-binding"))?;
         let mut letter = live.map_or_else(Letter::default, |live| Letter::default().with(live));
-        let reads_position = last_read.is_none_or(|last| widen(node.depth) <= last);
+        if let Some(uncounted) = uncounted.filter(|_| !counted) {
+            letter = letter.with(uncounted);
+        }
+        let reads_position = last_read.is_none_or(|last| widen(node.distance) <= last);
         let read: &[FormulaNodeId] = if reads_position { atoms } else { &[] };
+        // The first atom's reading, the one atom a canonical bounded clause
+        // has.
+        let mut holds = None;
         for (index, formula_atom) in read.iter().enumerate() {
             let atom = Atom::new(index).map_err(|_| fault("clause-atom-in-range"))?;
             self.poll()?;
@@ -1635,21 +2238,24 @@ impl<S: SubjectSystem> Run<'_, S> {
                     Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units)
                 })?;
             match reading {
-                AtomReading::True => letter = letter.with(atom),
-                AtomReading::False => {}
+                AtomReading::True => {
+                    letter = letter.with(atom);
+                    holds = holds.or(Some(true));
+                }
+                AtomReading::False => holds = holds.or(Some(false)),
                 AtomReading::Undefined(cause) => {
                     let site = Self::site(node, UndefinedLocus::Atom(*formula_atom), None);
                     let kind = CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
                         site,
                         cause,
                     });
-                    return Ok((from, Some(kind)));
+                    return Ok((from, Some(kind), None));
                 }
             }
         }
         let after = self.monitor.step(from, letter).map_err(Self::automaton)?;
         let finding = self.rejects(after)?.then_some(CounterexampleKind::Formula);
-        Ok((after, finding))
+        Ok((after, finding, holds))
     }
 
     /// QSpec FR-091's closed-boundary rule at the terminal node `at` of a
@@ -1718,10 +2324,15 @@ impl<S: SubjectSystem> Run<'_, S> {
     /// deadlock. An undefined `terminal when` ends it with an undefined
     /// evaluation, before the monitor steps; a refused one leaves it
     /// undecided.
-    fn deadlock_letter(&mut self, at: usize, has_successor: bool) -> Step<StateId> {
+    fn deadlock_letter(
+        &mut self,
+        at: usize,
+        expansion: &Expansion<S::TransitionId, S::State, ModelFinding>,
+        cut: Cut,
+    ) -> Step<StateId> {
         let class = match self
             .system
-            .terminal_class(&self.nodes[at].state, has_successor)
+            .terminal_class(&self.nodes[at].state, expansion, cut)
         {
             Ok(class) => class,
             Err(stop) => return Err(self.expansion_stop(stop)),
@@ -1830,10 +2441,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         initial_state: usize,
         prefix: Vec<ModelStep<S::TransitionId>>,
     ) -> Step<TemporalCounterexample<S::TransitionId>> {
-        let fairness = match self.item {
-            Item::Clause { fairness, .. } => fairness.clone(),
-            Item::Deadlock => Vec::new(),
-        };
+        let fairness = self.fairness.to_vec();
         let blocked = if matches!(kind, CounterexampleKind::Deadlock) {
             let steps: Vec<&S::TransitionId> = prefix.iter().map(|step| &step.transition).collect();
             self.system
@@ -1889,7 +2497,13 @@ impl Run<'_, ModelSystem<'_>> {
             .max_transitions
             .saturating_sub(self.edges);
         let lifted = (|| {
-            let (initial, mut lift) = Lift::start(self.system, &self.group, &first.state, budget)?;
+            let (initial, mut lift) = Lift::start(
+                self.system,
+                Some(self.system),
+                &self.group,
+                &first.state,
+                budget,
+            )?;
             for index in path.iter().skip(1) {
                 let node = &self.nodes[*index];
                 // The terminal stutter edge is no model step.

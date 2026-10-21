@@ -327,6 +327,26 @@ fn readers_are_recorded_and_a_scope_role_records_its_region() {
     );
 }
 
+/// ADR-027 RR-2, RR-4: the checked protocol records the role that owns each
+/// node a role acts at: in FR-208-AC-1's protocol, `Work` is owned by the
+/// replicated role `r`, and the `check` and the `finish` node by none.
+#[trace("TC-653")]
+#[test]
+fn a_node_records_the_role_that_owns_it() {
+    let text = workers("workflow");
+    let graph = checks(&text);
+    let protocol = graph.protocol("Workers").expect("checked");
+    assert_eq!(
+        protocol.owners,
+        [crate::check::CheckedOwner {
+            node: node_id(&text, "Work"),
+            role: 1,
+        }]
+    );
+    assert_eq!(protocol.roles[1].name, "r");
+    assert!(protocol.roles[1].replicated);
+}
+
 /// ADR-027 §7.1's `Pay` over fixture R: an attempt, its effect with a
 /// refund template, and a failure event.
 const PAY: &str = "protocol Pay using v over (k: M::Node) on origin {\n\

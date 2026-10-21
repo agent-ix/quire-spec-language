@@ -26,7 +26,7 @@ walk that runs a recursive composite past its first reentry, and an
 optional field's leaf path without `inner`.
 
 Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8, FR-093-AC-10,
-FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-CON-1.
+FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-AC-30, FR-093-CON-1.
 
 ## Test Procedure
 
@@ -99,6 +99,10 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
     `let v = x in ((let w = x in w) + (let u = x in v + u))`. Check
     `if a then value(o) else 0`, `if a then 0 else value(o)` and
     `if present(o) then value(o) else 0`.
+12. Over `x: Int[0, 9]` and `a: Boolean`, check `x + 1`, `1 + x`, `x - 1`,
+    `x * 2`, `-5`, `x == 1`, `2 * (x + 1)`, `x > 0` and `a == true`, over
+    `x: Integer` check `x == 1` and `1 != x`, and check the function whose
+    body is `1`.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
@@ -146,3 +150,11 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. The two
   unguarded `value(o)` bodies each refuse with
   `undefined_expression`/`unproved-presence` alone; the guarded one checks.
+- Step 12: each arithmetic body and each equality over `Integer` holds its integer
+  literal as an inline `literal` term of the application's `arguments`,
+  typed at the builtin `Integer` node, with no node for the literal; in
+  `2 * (x + 1)` each literal is inline in its own application; over
+  `x: Int[0, 9]`, `x == 1` compares `x` with a `numeric.narrow`
+  application of the literal's node, a `graph_child` operand under
+  FR-358 step 6; `x > 0` and `a == true` reference
+  their literal nodes; the body `1` gives L6.

@@ -78,8 +78,8 @@ pub enum StepObligation {
 ```
 
 Each is written as a requirement record of kind `operation-contract`. The
-record's occurrence key and obligation identity are not yet specified: see
-"Record identity, pending" below.
+record's content identity is specified by ADR-013 O-09; its occurrence key
+follows QSpec FR-322-AC-88 through AC-91, as described below.
 `StepSimulationRecord` and `StepObligation` live in `quire-semantic-value`,
 since the compiler writes them and CG reads them (ADR-018 LA-5).
 
@@ -133,12 +133,13 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   the UTF-8 bytes of the alias-free class spelling (the memory kind name for
   `memory` rows). Reordering the rows in source SHALL change none.
 
-### Record identity, pending
+### Record identity and occurrence
 
-The requirement record's occurrence key (ADR-013 O-07) and obligation
-identity (ADR-013 O-09) for these records are pending an ADR-013 O-07/O-09
-amendment, a CG ask for the digest, and a QSpec FR-322 occurrence-role
-ruling. This requirement states no role, ordinal or identity preimage. The
+ADR-013 O-09 defines the requirement record's content identity from QSV's
+`StepSimulationRecord`, and CG FR-015-AC-120 through AC-122 govern its digest,
+carrier and refusals. QSpec FR-322-AC-88 through AC-91 define the
+generated-owner occurrence role, ordinal, region and proof-eligibility rule
+that ADR-013 O-07 follows. The
 types `StepRowRef`, `StepObligation` and the `hypotheses` rule are owned by
 quire-semantic-value FR-123, which still says "declaration order" and "the
 concrete package's invariant clauses"; it is to change to this requirement's
@@ -201,12 +202,13 @@ wording.
 | FR-146-AC-6 | With a package that holds `Spec::Counter` and `Impl::Counter` and an invariant `AbsInv` on `Spec::Counter` beside `CasInv` on `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` and not `AbsInv` in `hypotheses`, and writing the clauses in the opposite source order leaves each record's `hypotheses` unchanged. | Test (TC-551) |
 | FR-146-AC-7 | The settlement map treats a certificate by what FR-314 finds: a backend outcome "holds" for a `Step` record whose certificate FR-314 shows wrong settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{rule, at})` with FR-314's rule and locus, never `proved`; the same outcome with a certificate that FR-314 cannot verify and does not show wrong settles `Proved{Inductive{depth: 1}, Uncertified}`. The vector feeds the settlement map the checker's `Rejected` and `Unverifiable` results directly. | Test (TC-551) |
 | FR-146-AC-8 | The safety half of `CasRefinesCounter` settles from its eight records and hypothesis items by QSpec FR-468: `proved`, `Certified` when all eight records are proved with verified certificates and every hypothesis item is certified; `proved`, `Uncertified` when one hypothesis item is `Uncertified`; `inconclusive`, `hypotheses-not-established` for the invariant `self.value < 0` whose hypothesis items are not proved, although every step record is proved; `Inconclusive(InductionNotClosed{depth: 1})` for a backend counterexample for one `Step` record; `refuted` through FR-145's replay for a counterexample for the `Initial` record. | Test (TC-551) |
+| FR-146-AC-9 | Each of `CasRefinesCounter`'s eight `StepSimulationRecord`s is written with the occurrence key ADR-013 O-07 gives it: the refinement node, role `generated`, ordinal 0 for the `Initial` record and `i + 1` for the `Step { row: i }` record. | Test (TC-551) |
 
 ## Dependencies
 
 - ADR-020 §5 RE-2, RE-3, "Claim kinds" and "Strength", §9 DS-2 and DS-3;
   ADR-018 EN-2 and V-3, V-6, V-8; ADR-012 (requirement records at S3);
-  ADR-013 O-07 and O-09 (identity pending); ADR-018 PC-2 and PC-6; ADR-020
+  ADR-013 O-07 and O-09; QSpec FR-322-AC-88 through AC-91; ADR-018 PC-2 and PC-6; ADR-020
   RM-1; QSpec FR-375 (row order).
 - [FR-075](FR-075-compute-candidates-from-registered-backends.md),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md),

@@ -15,7 +15,6 @@ use qsl_foundation::diagnostic::{Code, InternalFault};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::{checked_node_id, checked_occurrence, CheckedPackage};
-use qsl_semantics::check::NodeTag;
 use qsl_semantics::model::key::hex;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
 use quire_contract_model::{
@@ -135,12 +134,9 @@ pub enum OperandSource {
         /// The parameter node's declared level, as decimal text.
         level: String,
     },
-    /// An integer literal; no argument fed the operand.
-    InlineLiteral {
-        /// The `value`/`literal` graph node the operand references, or
-        /// `None` for an inline literal term of the application.
-        node: Option<WireNodeId>,
-    },
+    /// An integer literal term of the application; no argument fed the
+    /// operand.
+    InlineLiteral,
 }
 
 /// Why the occurrence is not the claim's scalar application (FR-357's
@@ -463,7 +459,6 @@ struct Resolved {
 /// Decides each operand's source and value (FR-367 Behavior 4 and 5).
 struct Resolver<'a> {
     ir: &'a CheckedPackageV2,
-    checked: &'a CheckedPackage,
     /// The called function's parameters in declared order.
     parameters: &'a [(String, ValueType)],
     /// Their node ids, in the same order.
@@ -493,7 +488,6 @@ impl<'a> Resolver<'a> {
             .collect();
         Ok(Self {
             ir: package.admitted,
-            checked,
             parameters,
             parameter_nodes,
             arguments,
@@ -540,19 +534,13 @@ impl<'a> Resolver<'a> {
             CheckedScalarOperandChild::InlineLiteral { .. } => {
                 return Ok(resolved(
                     Integer::from(operand.range.lower),
-                    OperandSource::InlineLiteral { node: None },
+                    OperandSource::InlineLiteral,
                 ));
             }
             CheckedScalarOperandChild::GraphChild(id) => id,
         };
         let node = WireNodeId::from_hex(&id.digest)
             .ok_or_else(|| Halt::Run(fault("operand-child-id-is-a-wire-node-id")))?;
-        if let Some(value) = self.literal_value(node) {
-            return Ok(resolved(
-                value,
-                OperandSource::InlineLiteral { node: Some(node) },
-            ));
-        }
         let declaration = self
             .ir
             .parameter_declaration(id)
@@ -598,23 +586,6 @@ impl<'a> Resolver<'a> {
                 level,
             },
         ))
-    }
-
-    /// The value of `node` when the checked package holds it as a
-    /// `value`/`literal` node of an integer.
-    #[qsl_attrs::string_edge]
-    fn literal_value(&self, node: WireNodeId) -> Option<Integer> {
-        let graph = self.checked.graph().semantic_graph();
-        let semantic = graph.resolve_wire(node).and_then(|key| graph.node(key))?;
-        if semantic.node_tag() != NodeTag::Value || semantic.semantic_form() != "literal" {
-            return None;
-        }
-        let preimage = serde_json::from_slice::<serde_json::Value>(semantic.preimage()).ok()?;
-        let body = &preimage["body"];
-        if body["value_kind"] != "integer" {
-            return None;
-        }
-        body["value"].as_str()?.parse().ok()
     }
 }
 

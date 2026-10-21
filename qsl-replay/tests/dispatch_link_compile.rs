@@ -18,8 +18,8 @@ use qsl_semantics::model::observation::{
     AdmissionUsage, AdmittedObservations, DocumentRef, Observation,
 };
 use quire_exact::{
-    EffectiveId, FieldValue, Integer, Meter, ObjectId, ObjectReference, Outcome, UniverseId,
-    Value as Quire,
+    EffectiveId, FieldValue, Integer, LimitKind, Meter, ObjectId, ObjectReference, Outcome,
+    UniverseId, Value as Quire,
 };
 use quire_semantic_value::object_closure::ObjectClosure;
 
@@ -1054,8 +1054,13 @@ fn object_reference(effective: EffectiveId, key: &str) -> ObjectReference {
 }
 
 /// Evaluates clause `name` of `checked` over one object of type `receiver`,
-/// a `ConfigVersion` with `versionNumber` 1 and no parent.
-fn evaluate_pre(checked: &CheckedUnit, name: &str, receiver: EffectiveId) -> bool {
+/// a `ConfigVersion` with `versionNumber` 1 and no parent, and gives the
+/// outcome with the work units it consumed.
+fn run_pre(
+    checked: &CheckedUnit,
+    name: &str,
+    receiver: EffectiveId,
+) -> (FamilyOutcome<Quire>, u64) {
     let package = checked.package();
     let graph = package.graph();
     let clause = graph.state_clause(name).expect("the clause");
@@ -1113,7 +1118,12 @@ fn evaluate_pre(checked: &CheckedUnit, name: &str, receiver: EffectiveId) -> boo
         )
         .unwrap_or_else(|failure| panic!("{name} evaluates, got {failure:?}"))
         .evaluation;
-    match evaluation.outcome {
+    (evaluation.outcome, meter.consumed(LimitKind::WorkUnits))
+}
+
+/// [`run_pre`]'s completed Boolean.
+fn evaluate_pre(checked: &CheckedUnit, name: &str, receiver: EffectiveId) -> bool {
+    match run_pre(checked, name, receiver).0 {
         FamilyOutcome::Evaluated(Outcome::Completed(Quire::Boolean(value))) => value,
         other => panic!("a completed Boolean, got {other:?}"),
     }
@@ -1151,4 +1161,116 @@ fn evaluation_runs_the_body_the_linked_table_selects_for_the_receivers_type() {
     assert_ne!(a, b);
     assert!(evaluate_pre(&checked, "onA", b));
     assert!(!evaluate_pre(&checked, "onA", a));
+}
+
+/// FR-395-AC-12 (TC-1089 step 8): a function the checker synthesizes from an
+/// operation `body` owns its arithmetic record though no call can name it,
+/// and that record is no fault for a call to an unrelated function.
+#[trace("TC-1089", "FR-395-AC-12")]
+#[test]
+fn a_clause_function_is_a_known_owner_and_no_fault() {
+    let declarations = format!(
+        "{}\nfunction inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}",
+        add_unit(
+            "body renamed using v on Config::ConfigVersion::add(n) { n + deref(self).versionNumber }"
+        )
+    );
+    let document = add_package();
+    let checked = compiled(&document, &declarations, SpineLimits::default());
+    let graph = checked.package().graph();
+    let clause_owner = graph
+        .requirements()
+        .values()
+        .filter_map(|record| record.owner())
+        .find(|owner| *owner != "inc")
+        .expect("the body's record has a clause function as owner");
+    assert!(graph.declares_function(clause_owner));
+    assert!(graph.callable(clause_owner).is_none());
+
+    let (text, packages) = unit(&document, &declarations);
+    let call = qsl_replay::Call {
+        function: "inc".to_owned(),
+        arguments: vec![qsl_replay::CallArgument {
+            parameter: "x".to_owned(),
+            value: quire_exact::Value::Integer(Integer::from(3_i64)),
+        }],
+        accounting: spine::default_accounting(1_000_000),
+        supplied: qsl_replay::SuppliedLimits::default(),
+    };
+    let result = qsl_replay::run_with_requirements(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &call,
+        &qsl_replay::ObjectEnvironment::default(),
+        &Cancel::new(),
+    )
+    .expect("a clause function's record is no fault");
+    assert_eq!(result.requirements().members().len(), 1);
+}
+
+/// FR-151-AC-19, QSpec TC-196 D10 on the dispatch path (QSL-935): a member's
+/// own `pre` clauses are conjoined in ascending clause name under FR-006's
+/// short-circuit, whatever their source order. `ConfigVersion::size` has the
+/// clauses `Aaa` and `Zzz`, one `false` and the other undefined (it calls
+/// `other`, whose own precondition is `false`). With the false clause named
+/// first the undefined clause is neither evaluated nor reported (the call is
+/// undefined for `size`'s own false precondition); with the undefined clause
+/// named first the false one is not reached (the call is undefined for
+/// `other`'s). Swapping only the source order changes neither the outcome nor
+/// the charges.
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-19", "FR-120-AC-15")]
+#[test]
+fn own_precondition_clauses_conjoin_in_ascending_name_whatever_the_source_order() {
+    let document = package(
+        vec![
+            query("ConfigVersion", "size", &[], None),
+            query("ConfigVersion", "other", &[], None),
+            query("ConfigVersion", "probe", &[], None),
+        ],
+        &[],
+    );
+    let run = |first: &str, second: &str| {
+        let declarations = format!(
+            "body sizeA using v on Config::ConfigVersion::size() {{ 1 }}\n\
+             body otherA using v on Config::ConfigVersion::other() {{ 1 }}\n\
+             pre otherPre using v on Config::ConfigVersion::other {{ false }}\n\
+             {first}\n{second}\n\
+             pre c1 using v on Config::ConfigVersion::probe {{ self.size() > 0 }}\n"
+        );
+        let checked = compiled(&document, &declarations, SpineLimits::default());
+        let receiver = checked
+            .package()
+            .graph()
+            .state_clause("c1")
+            .expect("c1")
+            .context();
+        let (outcome, charged) = run_pre(&checked, "c1", receiver);
+        (format!("{outcome:?}"), charged)
+    };
+    let falsy =
+        |name: &str| format!("pre {name} using v on Config::ConfigVersion::size {{ false }}");
+    let undefined = |name: &str| {
+        format!("pre {name} using v on Config::ConfigVersion::size {{ self.other() > 0 }}")
+    };
+
+    // The false clause sorts first: the undefined one is never evaluated.
+    let false_first = run(&falsy("Aaa"), &undefined("Zzz"));
+    assert_eq!(false_first, run(&undefined("Zzz"), &falsy("Aaa")));
+    // The undefined clause sorts first: the false one is never reached.
+    let undefined_first = run(&undefined("Aaa"), &falsy("Zzz"));
+    assert_eq!(undefined_first, run(&falsy("Zzz"), &undefined("Aaa")));
+    // The two orders differ in what they evaluate: the false clause makes
+    // `size`'s own precondition false, the undefined one carries `other`'s.
+    assert!(
+        false_first.0.contains("\"operation\": \"size\""),
+        "{false_first:?}"
+    );
+    assert!(
+        undefined_first.0.contains("\"operation\": \"other\""),
+        "{undefined_first:?}"
+    );
 }

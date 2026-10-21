@@ -16,7 +16,7 @@ use qsl_foundation::Span;
 
 use crate::check::{
     observation, step_row_refs, step_simulation_records, CheckCause, CheckRefusal, CheckedGraph,
-    CheckedRefinement, MemoryStepKind, PackageDeclarations, ProtocolStepKind, RefinementCause,
+    CheckedRefinement, LabelStep, MemoryStepKind, PackageDeclarations, ProtocolStepKind, RefinementCause,
     RefinementRefusal, RowClass, RowObservation, StepClass, StepLabel, StepRowRefusal,
     UnsupportedFeature,
 };
@@ -373,7 +373,7 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
         other => panic!("a visible row, got {other:?}"),
     };
     let add = StepLabel {
-        operation: abstract_key("Acc/add"),
+        step: LabelStep::Operation(abstract_key("Acc/add")),
         open_arguments: Vec::new(),
         binds_result: false,
     };
@@ -775,7 +775,7 @@ fn a_row_target_gives_its_observation() {
         .collect();
     let label = |open_arguments| RowObservation::Visible {
         label: StepLabel {
-            operation: abstract_key("Acc/addBy"),
+            step: LabelStep::Operation(abstract_key("Acc/addBy")),
             open_arguments,
             binds_result: false,
         },

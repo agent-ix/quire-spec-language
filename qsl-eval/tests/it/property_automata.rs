@@ -12,9 +12,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use ix_trace_rs::trace;
 use qsl_eval::automaton::{
-    translate, Atom, AutomatonError, AutomatonKind, Gba, Letter, Monitor, PropertyAutomaton,
-    StateId,
+    translate, translate_counted, translate_negation, Atom, AtomSymmetry, AutomatonError,
+    AutomatonKind, Gba, Letter, Monitor, PropertyAutomaton, StateId,
 };
 use qsl_eval::temporal::{
     evaluate, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
@@ -63,6 +64,23 @@ fn bounded(body: &str) -> Subject {
     subject_with(EVENT, ORIGIN, body)
 }
 
+/// A bounded `on origin` clause translated for a subject whose steps count
+/// by kind (ADR-027 PB-3).
+fn counted(body: &str) -> Subject {
+    let fixture = fixture(EVENT, "c: Counter", ORIGIN, body);
+    let mut property =
+        translate_counted(&fixture.clause, LIMIT).unwrap_or_else(|why| panic!("{body}: {why}"));
+    let gba = property
+        .explore()
+        .unwrap_or_else(|why| panic!("{body}: {why}"));
+    Subject {
+        body: body.to_owned(),
+        fixture,
+        property,
+        gba,
+    }
+}
+
 fn translation_of(body: &str) -> Result<PropertyAutomaton, AutomatonError> {
     translate(&fixture(INFINITE, "c: Counter", ORIGIN, body).clause, LIMIT)
 }
@@ -75,6 +93,9 @@ fn atom(index: usize) -> Atom {
 struct WordLetters<'a> {
     property: &'a PropertyAutomaton,
     word: &'a [Letter],
+    /// Whether the step that closes a lasso's loop counts: the step into
+    /// the loop's entry, which its letter says.
+    loop_edge_counts: bool,
 }
 
 impl WordLetters<'_> {
@@ -108,6 +129,16 @@ impl TemporalLetters for WordLetters<'_> {
         let when = self.property.when().expect("the clause has a `when`");
         Ok(reading(self.letter(position).holds(when)))
     }
+
+    fn counts_step(&self, position: TemporalPosition) -> bool {
+        self.property
+            .uncounted()
+            .is_none_or(|uncounted| !self.letter(position).holds(uncounted))
+    }
+
+    fn counts_loop_edge(&self) -> bool {
+        self.loop_edge_counts
+    }
 }
 
 fn reading(holds: bool) -> AtomReading {
@@ -120,9 +151,17 @@ fn reading(holds: bool) -> AtomReading {
 
 /// Whether the clause holds on `trace` over `word`, by the evaluator.
 fn evaluator_holds(subject: &Subject, word: &[Letter], trace: TemporalTrace) -> bool {
+    let loop_edge_counts = match (trace, subject.property.uncounted()) {
+        (TemporalTrace::Lasso { prefix, .. }, Some(uncounted)) => usize::try_from(prefix)
+            .ok()
+            .and_then(|entry| word.get(entry))
+            .is_none_or(|letter| !letter.holds(uncounted)),
+        _ => true,
+    };
     let mut letters = WordLetters {
         property: &subject.property,
         word,
+        loop_edge_counts,
     };
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     match evaluate(&subject.fixture.clause, trace, &mut letters, &mut meter) {
@@ -220,10 +259,12 @@ fn words(width: usize, longest: usize) -> Vec<Vec<Letter>> {
     all
 }
 
-/// The number of letter atoms the evaluator supplies: the clause's atoms
-/// and its `when`.
+/// The number of letter atoms the evaluator supplies: the clause's atoms,
+/// its `when` and the atom that marks a step that does not count.
 fn width(subject: &Subject) -> usize {
-    subject.property.atoms().len() + usize::from(subject.property.when().is_some())
+    subject.property.atoms().len()
+        + usize::from(subject.property.when().is_some())
+        + usize::from(subject.property.uncounted().is_some())
 }
 
 /// Compare the automaton of `subject` with the evaluator on every word of up
@@ -231,10 +272,21 @@ fn width(subject: &Subject) -> usize {
 /// clause both holds on some word and fails on another, so neither answer is
 /// trivially right.
 fn agree(subject: &Subject, longest: usize) -> usize {
+    agree_on(subject, longest, true)
+}
+
+fn agree_on(subject: &Subject, longest: usize, both: bool) -> usize {
     let property = &subject.property;
     let mut compared = 0;
     let mut verdicts = BTreeSet::new();
     for word in words(width(subject), longest) {
+        // No step leads into position 0, which the evaluator reads as one
+        // counted step from before the trace.
+        if let (Some(uncounted), Some(first)) = (property.uncounted(), word.first()) {
+            if first.holds(uncounted) {
+                continue;
+            }
+        }
         match property.kind() {
             AutomatonKind::Bounded => {
                 let expected = evaluator_holds(
@@ -267,6 +319,27 @@ fn agree(subject: &Subject, longest: usize) -> usize {
             }
             AutomatonKind::Safety | AutomatonKind::Liveness => {
                 for prefix in 0..word.len() {
+                    // A bad-prefix or finitely-accepting automaton cannot see
+                    // that a loop with no counted step never meets a future
+                    // interval eventuality: EN-1 decides those loops by the
+                    // non-progress check, and the evaluator reads them
+                    // directly. A body without one (past operators, `always`,
+                    // `release`) is decided by the automaton on those loops
+                    // too.
+                    let owes =
+                        subject.body.contains("eventually") || subject.body.contains("until");
+                    if let Some(uncounted) = property.uncounted().filter(|_| owes) {
+                        // The loop's steps are those into its positions after
+                        // the entry, and its closing step is the entry's own.
+                        let progress = word
+                            .get(prefix..)
+                            .into_iter()
+                            .flatten()
+                            .any(|letter| !letter.holds(uncounted));
+                        if !progress {
+                            continue;
+                        }
+                    }
                     let expected = evaluator_holds(
                         subject,
                         &word,
@@ -291,9 +364,8 @@ fn agree(subject: &Subject, longest: usize) -> usize {
             }
         }
     }
-    assert_eq!(
-        verdicts.len(),
-        2,
+    assert!(
+        !both || verdicts.len() == 2,
         "{}: one verdict on every word",
         subject.body
     );
@@ -342,6 +414,135 @@ fn a_bounded_clause_translates_to_a_finite_monitor_that_answers_to_the_closed_tr
         "holds(p) and not eventually[0,1] holds(q)",
     ] {
         bounded_agrees(body, if body.contains("holds(r)") { 4 } else { 6 });
+    }
+}
+
+/// ADR-027 PB-3 (FR-213-AC-3): for a subject whose steps count by kind, a
+/// bounded clause's finite monitor answers to the closed trace evaluation
+/// over a letter that also says which steps do not count, whatever the
+/// interval shape. A clause without an interval operator reads no such atom.
+#[trace("TC-658")]
+#[test]
+fn a_counted_clause_translates_to_a_monitor_that_answers_to_counted_distance() {
+    for body in [
+        "eventually[0,2] holds(p)",
+        "eventually[1,2] holds(p)",
+        "always[0,2] holds(p)",
+        "always[1,2] holds(p)",
+        "eventually[0,1] (holds(p) and eventually[0,1] holds(q))",
+        "always[0,2] (holds(p) implies eventually[1,2] holds(q))",
+        "holds(p) until[0,2] holds(q)",
+        "holds(p) until[1,3] holds(q)",
+        "holds(p) release[0,2] holds(q)",
+        "holds(p) release[1,2] holds(q)",
+        "eventually[1,2] always[0,1] holds(p)",
+    ] {
+        let subject = counted(body);
+        assert_eq!(subject.property.kind(), AutomatonKind::Bounded, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, if body.contains("holds(q)") { 4 } else { 5 }) > 0);
+    }
+    let plain = counted("holds(p) and not holds(q)");
+    assert_eq!(plain.property.uncounted(), None);
+}
+
+/// ADR-027 PB-3 (FR-338, FR-092): a past operator with an interval over a
+/// subject whose steps count by kind measures its window backwards in counted
+/// steps, as the evaluator does: the age of a lower-bound-0 operator and the
+/// shift of a lower bound move only on a counted step, several positions
+/// share a distance, and an operand read at an uncounted step is still read.
+/// The automaton answers to the closed-trace evaluation over every word of
+/// up to four positions, `once`, `historically`, `since` and `triggered`
+/// included.
+#[trace("TC-658")]
+#[test]
+fn a_past_interval_over_counted_steps_answers_to_counted_distance() {
+    for body in [
+        "always[0,3] (holds(p) implies once[0,1] holds(q))",
+        "always[0,3] (holds(p) implies once[1,2] holds(q))",
+        "always[0,3] (holds(p) implies once[2,3] holds(q))",
+        "always[0,3] (holds(p) implies historically[0,1] holds(q))",
+        "always[0,3] (holds(p) implies historically[1,2] holds(q))",
+        "always[0,3] (holds(p) implies (holds(p) since[0,1] holds(q)))",
+        "always[0,3] (holds(p) implies (holds(q) since[1,2] holds(p)))",
+        "always[0,3] (holds(p) implies (holds(q) triggered[0,1] holds(p)))",
+        "always[0,3] (holds(p) implies (holds(p) triggered[1,2] holds(q)))",
+        "eventually[1,3] (holds(p) and once[1,1] holds(q))",
+    ] {
+        let subject = counted(body);
+        assert_eq!(subject.property.kind(), AutomatonKind::Bounded, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, 4) > 0, "{body}");
+    }
+}
+
+/// ADR-027 PB-3 (FR-338): an infinite-trace clause with an interval over a
+/// subject whose steps count by kind answers to the lasso evaluation in
+/// counted steps, over every lasso of up to four positions and every split
+/// into prefix and loop. A loop with no counted step keeps every distance
+/// constant, so an interval that needs a counted step after the loop is
+/// entered is not met on it; the loop's closing step counts as its entry's
+/// letter says.
+#[trace("TC-658")]
+#[test]
+fn a_counted_lasso_answers_to_counted_distance() {
+    for (body, kind) in [
+        ("eventually[1,2] holds(p)", AutomatonKind::Safety),
+        (
+            "always (holds(p) implies eventually[0,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies eventually[1,2] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies always[1,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies (holds(q) until[0,2] holds(p)))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies once[1,2] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies eventually[2,3] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies once[2,3] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies historically[0,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        ("always eventually[0,1] holds(p)", AutomatonKind::Safety),
+        ("eventually[0,1] always holds(p)", AutomatonKind::Safety),
+        (
+            "always (holds(p) implies eventually[1,*] holds(q))",
+            AutomatonKind::Liveness,
+        ),
+        ("eventually always[0,1] holds(p)", AutomatonKind::Liveness),
+    ] {
+        let fixture = fixture(INFINITE, "c: Counter", ORIGIN, body);
+        let mut property =
+            translate_counted(&fixture.clause, LIMIT).unwrap_or_else(|why| panic!("{body}: {why}"));
+        let gba = property
+            .explore()
+            .unwrap_or_else(|why| panic!("{body}: {why}"));
+        let subject = Subject {
+            body: body.to_owned(),
+            fixture,
+            property,
+            gba,
+        };
+        assert_eq!(subject.property.kind(), kind, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, 4) > 0, "{body}");
     }
 }
 
@@ -679,4 +880,400 @@ fn a_past_operator_over_a_future_operator_is_refused() {
         translation_of("always once eventually holds(p)").unwrap_err(),
         AutomatonError::PastOverFuture
     );
+}
+
+// QSL-923: the disjunction rule asserts the negation of a state operand in the
+// branch that does not discharge on it, so that negation has to be evaluated
+// like any other state formula. The tests below compare the automaton of an
+// `or` body with a lasso semantics written here from the definitions of the
+// operators, independent of the translator and of the clause evaluator.
+
+/// A formula over numbered leaves. Leaf `n` is the `n`th `holds` of the text,
+/// which is the `n`th atom of the clause: each occurrence has its own letter
+/// bit.
+#[derive(Clone, Debug)]
+enum Form {
+    Leaf(usize),
+    Not(Box<Form>),
+    And(Box<Form>, Box<Form>),
+    Or(Box<Form>, Box<Form>),
+    Next(Box<Form>),
+    Always(Box<Form>),
+    Eventually(Box<Form>),
+    Until(Box<Form>, Box<Form>),
+    Release(Box<Form>, Box<Form>),
+}
+
+impl Form {
+    fn text(&self) -> String {
+        match self {
+            Self::Leaf(n) => format!("holds(a{n})"),
+            Self::Not(a) => format!("not ({})", a.text()),
+            Self::And(a, b) => format!("({}) and ({})", a.text(), b.text()),
+            Self::Or(a, b) => format!("({}) or ({})", a.text(), b.text()),
+            Self::Next(a) => format!("eventually[1,1] ({})", a.text()),
+            Self::Always(a) => format!("always ({})", a.text()),
+            Self::Eventually(a) => format!("eventually ({})", a.text()),
+            Self::Until(a, b) => format!("({}) until ({})", a.text(), b.text()),
+            Self::Release(a, b) => format!("({}) release ({})", a.text(), b.text()),
+        }
+    }
+
+    /// The leaves renumbered in reading order, which is the order of the
+    /// clause's atoms, and how many there are.
+    fn numbered(&self, next: &mut usize) -> Self {
+        let mut two = |a: &Self, b: &Self, make: fn(Box<Self>, Box<Self>) -> Self| {
+            let a = a.numbered(next);
+            let b = b.numbered(next);
+            make(Box::new(a), Box::new(b))
+        };
+        match self {
+            Self::Leaf(_) => {
+                *next += 1;
+                Self::Leaf(*next - 1)
+            }
+            Self::Not(a) => Self::Not(Box::new(a.numbered(next))),
+            Self::Next(a) => Self::Next(Box::new(a.numbered(next))),
+            Self::Always(a) => Self::Always(Box::new(a.numbered(next))),
+            Self::Eventually(a) => Self::Eventually(Box::new(a.numbered(next))),
+            Self::And(a, b) => two(a, b, Self::And),
+            Self::Or(a, b) => two(a, b, Self::Or),
+            Self::Until(a, b) => two(a, b, Self::Until),
+            Self::Release(a, b) => two(a, b, Self::Release),
+        }
+    }
+
+    /// The truth at each position of the lasso `word` whose loop starts at
+    /// `prefix`, straight from the semantics: a position's successor is the
+    /// next one, or the loop start after the last.
+    fn truth(&self, word: &[Letter], prefix: usize) -> Vec<bool> {
+        let n = word.len();
+        let succ = |i: usize| if i + 1 == n { prefix } else { i + 1 };
+        // The positions from `i` on, `n` of them cover every distinct one.
+        let from = |i: usize| {
+            let mut run = vec![i];
+            for _ in 1..n {
+                run.push(succ(*run.last().expect("a start")));
+            }
+            run
+        };
+        match self {
+            Self::Leaf(k) => word.iter().map(|letter| letter.holds(atom(*k))).collect(),
+            Self::Not(a) => a.truth(word, prefix).iter().map(|v| !v).collect(),
+            Self::And(a, b) => {
+                let (a, b) = (a.truth(word, prefix), b.truth(word, prefix));
+                a.iter().zip(&b).map(|(x, y)| *x && *y).collect()
+            }
+            Self::Or(a, b) => {
+                let (a, b) = (a.truth(word, prefix), b.truth(word, prefix));
+                a.iter().zip(&b).map(|(x, y)| *x || *y).collect()
+            }
+            Self::Next(a) => {
+                let a = a.truth(word, prefix);
+                (0..n).map(|i| a[succ(i)]).collect()
+            }
+            Self::Always(a) => {
+                let a = a.truth(word, prefix);
+                (0..n).map(|i| from(i).iter().all(|j| a[*j])).collect()
+            }
+            Self::Eventually(a) => {
+                let a = a.truth(word, prefix);
+                (0..n).map(|i| from(i).iter().any(|j| a[*j])).collect()
+            }
+            Self::Until(a, b) => {
+                let (a, b) = (a.truth(word, prefix), b.truth(word, prefix));
+                (0..n)
+                    .map(|i| {
+                        let run = from(i);
+                        run.iter()
+                            .position(|j| b[*j])
+                            .is_some_and(|at| run[..at].iter().all(|j| a[*j]))
+                    })
+                    .collect()
+            }
+            Self::Release(a, b) => {
+                let (a, b) = (a.truth(word, prefix), b.truth(word, prefix));
+                // `a release b` is `not (not a until not b)`.
+                (0..n)
+                    .map(|i| {
+                        let run = from(i);
+                        !run.iter()
+                            .position(|j| !b[*j])
+                            .is_some_and(|at| run[..at].iter().all(|j| !a[*j]))
+                    })
+                    .collect()
+            }
+        }
+    }
+}
+
+fn leaf() -> Form {
+    Form::Leaf(0)
+}
+
+fn not(a: Form) -> Form {
+    Form::Not(Box::new(a))
+}
+
+fn or(a: Form, b: Form) -> Form {
+    Form::Or(Box::new(a), Box::new(b))
+}
+
+fn and(a: Form, b: Form) -> Form {
+    Form::And(Box::new(a), Box::new(b))
+}
+
+fn until(a: Form, b: Form) -> Form {
+    Form::Until(Box::new(a), Box::new(b))
+}
+
+fn always(a: Form) -> Form {
+    Form::Always(Box::new(a))
+}
+
+fn eventually(a: Form) -> Form {
+    Form::Eventually(Box::new(a))
+}
+
+/// Compare the automaton of `form` with its semantics on every lasso with a
+/// stem of at most `stem` and a loop of 1 to `looped` positions; the number of
+/// lassos compared and how many of them satisfy the formula.
+fn lassos_agree(form: &Form, stem: usize, looped: usize) -> (usize, usize) {
+    let mut totals = (0, 0);
+    for mode in [
+        Mode::Clause,
+        Mode::Negation,
+        Mode::Itself,
+        Mode::ItselfNormal,
+    ] {
+        let (compared, satisfying) = lassos_agree_in(form, stem, looped, mode);
+        totals = (totals.0 + compared, totals.1 + satisfying);
+    }
+    totals
+}
+
+/// Which automaton of a body is compared with its semantics.
+#[derive(Clone, Copy, Debug)]
+enum Mode {
+    /// The automaton of the clause, the one a safety body is checked by.
+    Clause,
+    /// The automaton of the negation in normal form (ADR-023 CS-2), whose
+    /// `or` operands are a flattened set: what a hyper product follows.
+    Negation,
+    /// The automaton of the body itself, whatever its fragment, which is the
+    /// negation of the clause `not body`.
+    Itself,
+    /// [`Self::Itself`] in normal form.
+    ItselfNormal,
+}
+
+fn lassos_agree_in(form: &Form, stem: usize, looped: usize, mode: Mode) -> (usize, usize) {
+    let form = form.numbered(&mut 0);
+    let body = form.text();
+    let (normal, itself) = match mode {
+        Mode::Clause => (false, false),
+        Mode::Negation => (true, false),
+        Mode::Itself => (false, true),
+        Mode::ItselfNormal => (true, true),
+    };
+    let subject = if normal || itself {
+        let clause = if itself {
+            format!("not ({body})")
+        } else {
+            body.clone()
+        };
+        let mut subject = infinite(&clause);
+        let symmetry = AtomSymmetry { generators: &[] };
+        subject.property = translate_negation(
+            subject.fixture.clause.formula(),
+            subject.fixture.clause.profile(),
+            LIMIT,
+            normal.then_some(&symmetry),
+        )
+        .unwrap_or_else(|why| panic!("{body}: {why}"));
+        subject.gba = subject
+            .property
+            .explore()
+            .unwrap_or_else(|why| panic!("{body}: {why}"));
+        subject
+    } else {
+        infinite(&body)
+    };
+    let atoms = subject.property.atoms().len();
+    let (mut compared, mut satisfying) = (0, 0);
+    for length in 1..=stem + looped {
+        for word in words_of(atoms, length) {
+            for prefix in length.saturating_sub(looped)..=stem.min(length - 1) {
+                let expected = form.truth(&word, prefix)[0];
+                // A liveness automaton accepts the words that violate its
+                // clause, which are the words satisfying the body for `Itself`.
+                let violating = subject.property.kind() == AutomatonKind::Liveness && !itself;
+                assert_eq!(
+                    accepts(&subject.gba, &word, prefix),
+                    expected != violating,
+                    "{body} ({mode:?}): the automaton and the semantics disagree \
+                     on the lasso {:?} with the loop from {prefix}",
+                    bits(&word)
+                );
+                compared += 1;
+                satisfying += usize::from(expected);
+            }
+        }
+    }
+    (compared, satisfying)
+}
+
+/// Every word of exactly `length` letters over `width` atoms.
+fn words_of(width: usize, length: usize) -> Vec<Vec<Letter>> {
+    words(width, length)
+        .into_iter()
+        .filter(|word| word.len() == length)
+        .collect()
+}
+
+/// The shape of QSL-923's first effect: the negation of a plain state test is
+/// the other branch of the disjunction, so `p or always q` holds on a word
+/// that falsifies `p` and keeps `q`, and is not decided by `p` alone.
+#[test]
+fn a_disjunct_of_a_plain_state_test_is_not_dropped() {
+    for form in [
+        or(leaf(), always(leaf())),
+        or(always(leaf()), leaf()),
+        or(not(leaf()), eventually(leaf())),
+        and(not(leaf()), eventually(leaf())),
+        or(leaf(), until(leaf(), leaf())),
+        or(or(leaf(), leaf()), always(leaf())),
+        or(and(leaf(), leaf()), always(leaf())),
+        or(not(or(leaf(), leaf())), eventually(leaf())),
+    ] {
+        let (compared, satisfying) = lassos_agree(&form, 2, 3);
+        assert!(compared > 0 && satisfying > 0 && satisfying < compared);
+    }
+    // `p or always q` on the word whose first letter has neither: `p` fails
+    // and `q` holds forever, so the formula holds, and the translation that
+    // loses the second disjunct rejects it.
+    let subject = infinite("holds(a0) or always holds(a1)");
+    let word = [Letter::from_bits(0b10)];
+    assert!(
+        accepts(&subject.gba, &word, 0) != (subject.property.kind() == AutomatonKind::Liveness)
+    );
+}
+
+/// The shape of QSL-923's second effect: a disjunction of a negation, an
+/// `until` and a nested `or`, which the translation refused as a fault.
+#[test]
+fn a_disjunction_of_a_negation_an_until_and_a_nested_or_translates() {
+    for form in [
+        or(not(leaf()), or(until(leaf(), leaf()), or(leaf(), leaf()))),
+        or(not(leaf()), or(until(leaf(), leaf()), leaf())),
+        or(not(leaf()), or(until(leaf(), leaf()), not(leaf()))),
+        or(or(until(leaf(), leaf()), leaf()), not(leaf())),
+    ] {
+        let width = form.numbered(&mut 0).text().matches("holds").count();
+        let (compared, _) = lassos_agree(&form, if width > 4 { 1 } else { 2 }, 2);
+        assert!(compared > 0);
+    }
+}
+
+struct Rng(u64);
+
+impl Rng {
+    fn below(&mut self, n: usize) -> usize {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        (self.0 % n as u64) as usize
+    }
+}
+
+/// A formula of at most `leaves` leaves.
+fn random_form(rng: &mut Rng, leaves: usize) -> Form {
+    if leaves <= 1 {
+        return if rng.below(3) == 0 {
+            not(leaf())
+        } else {
+            leaf()
+        };
+    }
+    let split = 1 + rng.below(leaves - 1);
+    let (a, b) = (random_form(rng, split), random_form(rng, leaves - split));
+    match rng.below(9) {
+        0 => Form::Next(Box::new(random_form(rng, leaves))),
+        1 => always(random_form(rng, leaves)),
+        2 => eventually(random_form(rng, leaves)),
+        3 => not(random_form(rng, leaves)),
+        4 => and(a, b),
+        5 | 6 => or(a, b),
+        7 => until(a, b),
+        _ => Form::Release(Box::new(a), Box::new(b)),
+    }
+}
+
+/// The automaton of random bodies over `or`, `and`, `not`, `until`,
+/// `release`, `always`, `eventually` and `next` of up to 3 atoms accepts
+/// exactly the lassos the formula's semantics accepts, for every stem and
+/// loop up to 3 positions (2 positions for the 3-atom bodies' stem).
+#[test]
+fn the_automaton_of_a_random_body_accepts_exactly_the_lassos_of_its_semantics() {
+    let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+    let mut checked = 0;
+    let mut mixed = 0;
+    while checked < 24 {
+        let leaves = 2 + rng.below(2);
+        let form = random_form(&mut rng, leaves);
+        let atoms = form.numbered(&mut 0).text().matches("holds").count();
+        if atoms > 3 {
+            continue;
+        }
+        let (stem, looped) = if atoms == 3 { (2, 3) } else { (3, 3) };
+        let (compared, satisfying) = lassos_agree(&form, stem, looped);
+        checked += 1;
+        mixed += usize::from(satisfying > 0 && satisfying < compared);
+    }
+    assert!(
+        mixed > 8,
+        "{mixed} of the {checked} bodies split the lassos"
+    );
+}
+
+/// `or` bodies over bounded intervals and past operators answer to the
+/// evaluator on the closed traces and lassos, in the bounded and the
+/// infinite-trace profile.
+#[test]
+fn an_or_body_over_intervals_and_past_operators_answers_to_the_evaluator() {
+    for body in [
+        "holds(p) or eventually[0,2] holds(q)",
+        "holds(p) or always[1,2] holds(q)",
+        "not holds(p) or (holds(q) until[0,2] holds(r))",
+        "holds(p) or (holds(q) release[1,2] holds(r))",
+        "once[0,2] holds(p) or eventually[1,2] holds(q)",
+        "(holds(p) since[0,2] holds(q)) or eventually[0,1] holds(r)",
+        "not holds(p) or eventually[1,2] (holds(q) or always[0,1] holds(r))",
+    ] {
+        bounded_loose(body, if body.contains("holds(r)") { 3 } else { 5 });
+    }
+    for body in [
+        "holds(p) or always holds(q)",
+        "not holds(p) or eventually holds(q)",
+        "holds(p) or always[1,*] holds(q)",
+        "always (holds(p) or eventually[0,2] holds(q))",
+        "always (not holds(p) or once[0,2] holds(q))",
+        "always (holds(p) or (holds(q) since[1,2] holds(r)))",
+        "eventually (holds(p) or once[1,1] holds(q))",
+        "holds(p) or (holds(q) until[1,*] holds(r))",
+    ] {
+        let subject = infinite(body);
+        loose(&subject, if body.contains("holds(r)") { 3 } else { 5 });
+    }
+}
+
+fn bounded_loose(body: &str, longest: usize) {
+    let subject = bounded(body);
+    assert_eq!(subject.property.kind(), AutomatonKind::Bounded, "{body}");
+    loose(&subject, longest);
+}
+
+/// `agree`, for a body that may hold on every word compared.
+fn loose(subject: &Subject, longest: usize) {
+    assert!(agree_on(subject, longest, false) > 0);
 }

@@ -220,6 +220,10 @@ it, with a fresh meter built from `limits` (FR-120).
 - The set SHALL evaluate its invariants, then its preconditions, then its
   postconditions, each group in ascending name order (UTF-8 bytes) whatever
   order the slice lists them in.
+- The set SHALL stop its preconditions at the first one that is not
+  `Completed(true)` (FR-006's short-circuit, QSpec FR-151-AC-19): the
+  preconditions after it are neither evaluated nor charged, and have no
+  entry.
 - The set SHALL evaluate its postconditions only when it evaluated every
   precondition it holds and every one is `Completed(true)`: a call whose
   precondition is not true is outside the operation's contract (FR-120, "An
@@ -267,7 +271,7 @@ it, with a fresh meter built from `limits` (FR-120).
 | FR-107-AC-11 | `Consistent`'s reads of `self.placed` and `self.cancelled` are located at the receiver binding of `i1` with the steps `[field placed]` and `[field cancelled]`, `FlagsPlaced`'s read of `flags.placed` at the parameter binding `flags` of `i1` with `[field placed]`; the two `placed` paths compare unequal, the parameter path orders first, and their wire forms are the objects TC-1040 lists. | Test (TC-1040) |
 | FR-107-AC-12 | The elements of the list `[value(self.parent), self]` built inside `GuardedAll` are read at the built-list subject with the steps `[index 0, reference root, member versionNumber]` and `[index 1, reference mid, member versionNumber]`. | Test (TC-1040) |
 | FR-107-AC-13 | `evaluate_clause_set` over `UpdateAllowed` and `UpdateRaises` gives two results, both `Completed(true)` and outcome `True`, for a call from version 1 to 2, and exactly one result, `UpdateAllowed` `Completed(false)`, and outcome `False` for a call from version 3 to 4; the slice order does not change a result. | Test (TC-1039) |
-| FR-107-AC-14 | With `UpdateNotMax` added, the call from 3 to 4 gives the two results `UpdateAllowed` `Completed(false)` and `UpdateNotMax` `Completed(true)`, in that order, and no result for `UpdateRaises`; with the invariant `NoCycle` over its own observation added instead, the results are `NoCycle` `Completed(true)` then `UpdateAllowed` `Completed(false)`, and still none for `UpdateRaises`. | Test (TC-1039) |
+| FR-107-AC-14 | With `UpdateNotMax` added, the call from 3 to 4 gives the one result `UpdateAllowed` `Completed(false)`, and no result for `UpdateNotMax` or `UpdateRaises`; with the invariant `NoCycle` over its own observation added instead, the results are `NoCycle` `Completed(true)` then `UpdateAllowed` `Completed(false)`, and still none for `UpdateRaises`. | Test (TC-1039) |
 | FR-107-AC-15 | With `limits` whose work budget is zero the call from 1 to 2 gives one result, `UpdateAllowed` `Incomplete`, and outcome `Incomplete`; an empty set gives no result and outcome `True`; the same set evaluated twice gives equal results. | Test (TC-1039) |
 | FR-107-AC-16 | A set naming `UpdateAllowed` twice is refused `InputRefusal::DuplicateClause`; a set naming the function `sameIdentity` is refused `InputRefusal::UnknownClause`; a set pairing `UpdateAllowed`'s name with observations admitted for `UpdateRaises` is refused `InputRefusal::ObservationsMismatch`; none returns a result. | Test (TC-1039) |
 | FR-107-AC-17 | A selection on `self.home`, a relationship navigation, is located at the declared object identity of the tank `t1` with the step `[member level]` and the navigation records no entry. This criterion depends on clause-level navigation evaluation (FR-364) and is built when that lands. | Test (TC-1040) |

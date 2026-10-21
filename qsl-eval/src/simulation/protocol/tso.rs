@@ -24,7 +24,7 @@
 //! (TSO-8), so it changes no behaviour here.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_foundation::MemoryModelName;
 use qsl_semantics::check::{AccessClass, AccessOrdering};
@@ -35,8 +35,8 @@ use quire_semantic_value::fairness::FairnessConstraint;
 use super::access::location_enc;
 use super::identity::ThreadPath;
 use super::memory::{
-    buffer_location, Access, FootprintStep, GatedStep, MemoryModel, MemoryStep, MemoryStepId,
-    Written,
+    buffer_location, Access, Chosen, FootprintStep, GatedStep, MemoryModel, MemoryStep,
+    MemoryStepId, ReadChoice, SharedCell, Written,
 };
 use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::encode::{map_enc, value_enc, Enc};
@@ -61,6 +61,48 @@ impl Tso {
     /// The bound it runs under.
     pub fn max_store_buffer(&self) -> u64 {
         self.max_store_buffer
+    }
+
+    /// TSO-2 and TSO-5: where `thread`'s attempt `access` writes its delta.
+    fn write_one(
+        &self,
+        component: &TsoComponent,
+        thread: &ThreadPath,
+        access: &Access<'_>,
+        pre: &ModelSimState,
+        post: ModelSimState,
+    ) -> Written<TsoComponent> {
+        let Some(buffer) = component.buffers.get(thread) else {
+            return Written::Applied(post, component.clone());
+        };
+        if locked(access.class, access.ordering) {
+            if !buffer.is_empty() {
+                return Written::Disabled;
+            }
+            return Written::Applied(post, component.clone());
+        }
+        match (access.class, access.shared) {
+            (AccessClass::Store, Some(shared)) => {
+                if u64::try_from(buffer.len()).map_or(true, |held| held >= self.max_store_buffer) {
+                    return Written::Cut;
+                }
+                let value = post.cell(shared.cell).cloned();
+                let mut model = unbuffered(pre, post, buffer);
+                model.set_cell(shared.cell, pre.cell(shared.cell).cloned());
+                let mut next = component.clone();
+                if let Some(owned) = next.buffers.get_mut(thread) {
+                    owned.push(Buffered {
+                        location: shared.location.clone(),
+                        cell: shared.cell.clone(),
+                        enc: value.as_ref().map_or(Enc::Null, value_enc),
+                        value,
+                        location_enc: location_enc(shared.location, Some(shared.cell)),
+                    });
+                }
+                Written::Applied(model, next)
+            }
+            _ => Written::Applied(unbuffered(pre, post, buffer), component.clone()),
+        }
     }
 }
 
@@ -206,40 +248,11 @@ impl MemoryModel for Tso {
         component: &TsoComponent,
         thread: &ThreadPath,
         access: &Access<'_>,
+        _read: Option<ReadChoice>,
         pre: &ModelSimState,
         post: ModelSimState,
-    ) -> Written<TsoComponent> {
-        let Some(buffer) = component.buffers.get(thread) else {
-            return Written::Applied(post, component.clone());
-        };
-        if locked(access.class, access.ordering) {
-            if !buffer.is_empty() {
-                return Written::Disabled;
-            }
-            return Written::Applied(post, component.clone());
-        }
-        match (access.class, access.shared) {
-            (AccessClass::Store, Some(shared)) => {
-                if u64::try_from(buffer.len()).map_or(true, |held| held >= self.max_store_buffer) {
-                    return Written::Cut;
-                }
-                let value = post.cell(shared.cell).cloned();
-                let mut model = unbuffered(pre, post, buffer);
-                model.set_cell(shared.cell, pre.cell(shared.cell).cloned());
-                let mut next = component.clone();
-                if let Some(owned) = next.buffers.get_mut(thread) {
-                    owned.push(Buffered {
-                        location: shared.location.clone(),
-                        cell: shared.cell.clone(),
-                        enc: value.as_ref().map_or(Enc::Null, value_enc),
-                        value,
-                        location_enc: location_enc(shared.location, Some(shared.cell)),
-                    });
-                }
-                Written::Applied(model, next)
-            }
-            _ => Written::Applied(unbuffered(pre, post, buffer), component.clone()),
-        }
+    ) -> Vec<Chosen<TsoComponent>> {
+        Chosen::only(self.write_one(component, thread, access, pre, post))
     }
 
     /// TSO-4: `flush(b)` for each non-empty buffer.
@@ -298,6 +311,8 @@ impl MemoryModel for Tso {
         _parent: &ThreadPath,
         branches: &[ThreadPath],
         model: MemoryModelName,
+        _shared: &[SharedCell<'_>],
+        _state: &ModelSimState,
     ) -> TsoComponent {
         if model != MemoryModelName::Tso {
             return component.clone();
@@ -359,6 +374,7 @@ impl MemoryModel for Tso {
         component: &TsoComponent,
         thread: &ThreadPath,
         step: FootprintStep<'_>,
+        _shared: &BTreeSet<Location>,
         footprint: &mut Footprint,
     ) -> bool {
         let buffered = component.buffers.contains_key(thread);
