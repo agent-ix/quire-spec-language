@@ -46,3 +46,25 @@ Author judgment calls: (1) a report sorted by file, line and item across roots m
 | FND-006 | low | AllowListGatesABranch names `file:item` but not the line of the branch-gating occurrence that caused the refusal. AC-5 says the rejection names its file and line, and the line is already available in `found` at lib.rs:98-110. | qsl-string-edge/src/error.rs:136-146 |
 | FND-007 | low | NoProductionSources documents its path as "the root as the caller named it", but load_root fills it with the canonicalised root. A consumer passing `--crate-root src` sees /private/var/... in the message. The other root variants do carry the caller spelling. | qsl-string-edge/src/error.rs:62-68; qsl-string-edge/src/source.rs:100-104 |
 | FND-008 | low | An absolute allow-list `file` is stripped against the canonical base only. Reproduced on macOS: `--base-dir /tmp/.../ws` is accepted, but the entry `/tmp/.../ws/d/src/lib.rs` is refused as outside the base, exit 2. The same file spelled under /private/tmp is accepted. FR-064 says absolute inputs are accepted. Canonicalise the entry parent before stripping, or strip against both spellings of the base. | qsl-string-edge/src/rules.rs:81-83 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | LinkIntoRoot only refuses a link whose target lies inside a selected root. A link to a directory that contains a selected root is still followed. Reproduced at 19bb1d944: with roots a/src (holding linkb -> ../../b) and b/src, the same occurrence is reported twice (a/src/linkb/src/lib.rs:1 and b/src/lib.rs:1, exit 1), and b is scanned in a constant scope. Fix: also refuse when `root.starts_with(&target)`, and add a test for that shape. | qsl-string-edge/src/source.rs:151-157 |
+
+## Dispositions
+
+Round 1, reviewed at 19bb1d94489baf1cfbbb8d742da6bf4599a06e4a (delta 930274142 plus main merge).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: Report::render: "  {}:{} in {}{}\n", occurrence.file, occurrence.line, occurrence.item, branch tag; command stdout == render() and names `T::kind` (tests/it/command.rs the_binary_and_the_library_report_the_same_item; mutant R1 killed). |
+| FND-002 | fixed | after: if roots.iter().any(/root/ target.starts_with(root)) && !ancestors.contains(&target) { return Err(Error::LinkIntoRoot { path }); } (source.rs; links.rs a_link_into_a_selected_root_is_refused; mutants R2, R3, R3b killed). The residual shape is FND-009. |
+| FND-003 | fixed | after: if is_dir { if name == "tests" { continue; } ... (README: no other directory is skipped by name; library.rs directories_named_target_are_production_source; mutant R4 killed). |
+| FND-004 | accepted-no-change | The helper is shared by four xtask scans, and the alternative is a second copy; the PR body records it as a shared helper rather than specified consumer API. Accepted for this PR. |
+| FND-005 | fixed | after: command.rs outside_overlapping_and_non_directory_roots_exit_two: an existing out-of-base root, overlapping roots and a non-directory root each exit 2 with an empty stdout. |
+| FND-006 | fixed | after: "string-edge: allow-list entry {file}:{line} ({item}) gates a branch ..."; line: gating.occurrence.line (mutant R5 killed). |
+| FND-007 | fixed | after: NoProductionSources { /// The root, resolved against the base directory. path: PathBuf } |
+| FND-008 | fixed | after: path.strip_prefix(base).ok().or_else(// path.strip_prefix(given?).ok())? with given = std::path::absolute(given_base); library.rs an_absolute_entry_may_use_the_base_as_given (symlinked alias); mutants R6 and R7 killed. |
+| FND-009 | still-open | New in this round: a link to a directory containing a selected root still double-reports (see New findings). |

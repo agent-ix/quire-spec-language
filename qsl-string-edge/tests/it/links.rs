@@ -93,6 +93,18 @@ fn a_link_into_a_selected_root_is_refused() {
         "{error:?}"
     );
 
+    // A link to a directory that contains another selected root.
+    let tree = Tree::new();
+    tree.write("a/src/lib.rs", CLEAN);
+    tree.write("b/src/lib.rs", VIOLATION);
+    let holder = tree.path().join("a/src/linkb");
+    symlink(tree.path().join("b"), &holder).expect("symlink");
+    let error = scan(&request(tree.path(), &["a/src", "b/src"])).expect_err("link to a holder");
+    assert!(
+        matches!(&error, Error::LinkIntoRoot { path } if *path == holder),
+        "{error:?}"
+    );
+
     let tree = Tree::new();
     tree.write("src/one/lib.rs", VIOLATION);
     tree.write("src/two/lib.rs", CLEAN);

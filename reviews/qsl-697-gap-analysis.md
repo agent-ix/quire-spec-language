@@ -34,3 +34,14 @@ Gates (own clone at b16ba868c31d637c85ebdfba7ccfbe235bbf606b, own CARGO_TARGET_D
 | FND-002 | medium | Two tagged tests assert behaviour FR-064 does not allow. test_code_is_not_scanned (AC-3) requires src/target/generated.rs to be skipped by directory name. a_directory_link_cycle_is_an_error_and_an_inside_link_is_followed (AC-9) requires a link to another tree to be followed under the link path. The matrix counts both criteria as tagged while the evidence protects SR-13625 FND-003 and FND-002. | qsl-string-edge/tests/it/library.rs:149; qsl-string-edge/tests/it/links.rs:58-64 |
 | FND-003 | low | The Git-install and Git-library-dependency half of AC-10 is backed only by an #[ignore]d test that no default lane runs, and against main it can only pass after merge. The reviewer ran it against the PR branch with QSL_STRING_EDGE_BRANCH=qsl-697-string-edge and it passed (1 passed, 26.19s). FR-064 still requires the acceptance run of the documented `--branch main` route once merged, and nothing in the repo records that run. | qsl-string-edge/tests/it/consumer.rs:99-188 |
 | FND-004 | low | Reverse gap: the public function impl_self_name in the scanner crate has no owning requirement. FR-064 defines the consumer API as the request, report, typed error and rules. The function serves only other xtask scans (see SR-13625 FND-004). | qsl-string-edge/src/lib.rs:130-155 |
+
+## Dispositions
+
+Round 1, reviewed at 19bb1d94489baf1cfbbb8d742da6bf4599a06e4a (delta 930274142 plus main merge).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | after: command.rs the_binary_and_the_library_report_the_same_item: assert_eq!(stdout(&output), report.render()); stdout contains "src/lib.rs:3 in T::kind (branch-gating)". |
+| FND-002 | fixed | after: test_code_is_not_scanned no longer requires a target/ skip; directories_named_target_are_production_source asserts src/target/mod.rs is reported. The link test now asserts LinkIntoRoot for links into a selected root, and following only for a directory elsewhere in the base (residual shape: SR-13625 FND-009). |
+| FND-003 | deferred | The post-merge run of the ignored Git-install test against --branch main is recorded in the PR body as a follow-up; it cannot pass before merge. The branch run passed. |
+| FND-004 | accepted-no-change | Same decision as SR-13625 FND-004: a shared helper used by four xtask scans, kept public to avoid a second copy. |

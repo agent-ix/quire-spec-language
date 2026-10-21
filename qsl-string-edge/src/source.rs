@@ -149,8 +149,10 @@ fn walk(
                         return Err(Error::LinkEscapesBase { path });
                     }
                     // The target's source is already scanned under its own
-                    // root; following the link would report it twice.
-                    if roots.iter().any(|root| target.starts_with(root))
+                    // root (or the target holds a selected root); following the link would report it twice.
+                    if roots
+                        .iter()
+                        .any(|root| target.starts_with(root) || root.starts_with(&target))
                         && !ancestors.contains(&target)
                     {
                         return Err(Error::LinkIntoRoot { path });
