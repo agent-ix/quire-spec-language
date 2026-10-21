@@ -129,9 +129,10 @@ package the call ran against; nothing is recomputed.
   them. The root SHALL also re-export every type of `run`'s signature and
   result that it does not export today, so that a consumer calls the entry
   and reads its result without naming `qsl_replay::spine`: `Call`,
-  `CallArgument`, `CallOutcome`, `CallValue`, `CallRefusal` and
-  `CallIncomplete` (the payloads of `CallOutcome::Refused` and
-  `::Incomplete`), `RunRefusal`, `SpineLimits`, `PackageId` (from
+  `CallArgument`, `CallOutcome`, `CallValue`, `CallRefusal`,
+  `CallLocus` (the locus of `CallRefusal`'s record) and `CallIncomplete` (the
+  payloads of `CallOutcome::Refused` and `::Incomplete`), `RunRefusal` and
+  `CompileRefusal` (the payload of `RunRefusal::Compile`), `SpineLimits`, `PackageId` (from
   `qsl_semantics::library`), `ObjectEnvironment` (from `qsl_semantics`' model
   object environment), `SuppliedLimits` (from `qsl_semantics`' value
   supplied module) and `Cancel` (with `CancelCause`, from `quire_exact`).

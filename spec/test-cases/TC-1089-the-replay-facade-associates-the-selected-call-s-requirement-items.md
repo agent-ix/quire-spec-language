@@ -37,8 +37,8 @@ their owners, and the items `items_from_requirements` writes) is read through
    steps 1 to 3 and compare.
 5. Call `nope`, the empty name, `inc.x` and `1inc`; call a source that does
    not parse; call with a cancelled handle.
-6. Read each record's owner in the checked graph for FR-062's RR-1 to RR-17,
-   for QSpec TC-198 L07's `post Q` unit and for the temporal clause `Reaches` of TC-842 over the ConfigVersion unit (a `temporal-satisfaction` record in `graph().requirements()`, as `tests/it/temporal_negotiation.rs` reads it); the state-graph claim `possible P` is not used.
+6. Read each record's owner (the temporal unit below runs in the root crate's integration tests, which hold the ConfigVersion domain package in their test support, `crate::support::config_version_spine::spine::DOMAIN_PACKAGE`, not in `qsl-replay/tests`) in the checked graph for FR-062's RR-1 to RR-17,
+   for QSpec TC-198 L07's `post Q` unit and for the unit `language "ix:native" edition "1-draft"; profile v = "quire.model.complete/v1"; profile t = "quire.temporal.infinite-trace/v1"; model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:<digest of DOMAIN_PACKAGE>"; temporal Reaches using t over (c: Config::ConfigVersion) clock "model-steps" on origin { eventually holds(c.versionNumber = 2) }` (the temporal clause `Reaches` of TC-842) (a `temporal-satisfaction` record in `graph().requirements()`, as `tests/it/temporal_negotiation.rs` reads it); the state-graph claim `possible P` is not used.
 7. Call `add` of FR-062 RR-3 with the arguments `x`, `y` and then `y`, `x`.
 8. Fault arm: in a `qsl-replay` unit test, build a checked package whose
    record map is altered through the crate-internal test support (the same
