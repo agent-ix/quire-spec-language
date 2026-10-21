@@ -11,7 +11,7 @@ relationships:
 ## Description
 
 Verify the O-20 request writer (`qsl_route::request`). Scope: FR-097-AC-3, FR-097-AC-4
-and FR-097-AC-9 (kind emission).
+FR-097-AC-9 (kind emission) and FR-097-AC-10 (temporal subject proof bounds).
 
 ## Test Procedure
 
@@ -23,6 +23,9 @@ and FR-097-AC-9 (kind emission).
    mismatched bound kind; an empty set.
 4. Write a bounded item over a `population`, an `integer` and a `recursive`
    domain, with a cardinality, an integer range and a depth bound.
+5. Supply subject proof bounds to a temporal item over a model subject, over
+   a supplied trace, and to a non-temporal item; supply a non-population key
+   and a non-cardinality bound.
 
 ## Expected Results
 
@@ -36,3 +39,8 @@ and FR-097-AC-9 (kind emission).
 - Step 4: each emitted proof bound carries a kind, `population`, `integer`
   and `recursive` respectively, and each kind's `finite_kind` equals its
   bound's kind.
+- Step 5: over a model subject the bounds read back in key order with the
+  `population` kind, and the extent, index, occurrence and `proof_bounds()`
+  are unchanged; a supplied-trace item and a non-temporal item have none
+  (`None`) and refuse; the non-population key and the non-cardinality bound
+  refuse; each refusal is `invalid_runtime_input`/`invalid-value`.

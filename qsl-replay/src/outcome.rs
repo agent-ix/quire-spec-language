@@ -370,6 +370,7 @@ impl ItemCause {
                 | InconclusiveCause::NoInstance
                 | InconclusiveCause::MatchUndetermined
                 | InconclusiveCause::VacuousMatch
+                | InconclusiveCause::UncountedLoop
                 | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::SolverInconclusive,
@@ -563,7 +564,8 @@ impl OutcomeItem {
                     | UnavailabilityCause::HiddenFieldLiveness
                     | UnavailabilityCause::StrongAbstractFairness
                     | UnavailabilityCause::NotMarkov
-                    | UnavailabilityCause::ConfidenceBeyondPrecision => {}
+                    | UnavailabilityCause::ConfidenceBeyondPrecision
+                    | UnavailabilityCause::PunctualInterval { .. } => {}
                 }
                 (ItemLabel::Unsupported, Some(item))
             }
