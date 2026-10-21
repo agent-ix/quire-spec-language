@@ -8,6 +8,8 @@ relationships:
     type: verifies
   - target: ix://agent-ix/quire-spec-language/FR-096
     type: verifies
+  - target: ix://agent-ix/quire-spec-language/FR-397
+    type: verifies
 ---
 # TC-917: Evaluator invariant producers have explicit QSL classifications
 
@@ -15,7 +17,7 @@ relationships:
 
 Verify every production evaluator detecting site in FR-090's producer
 table. Scope: FR-090-AC-15, FR-090-AC-16, FR-090-AC-17, FR-090-AC-18,
-FR-090-AC-20 and FR-096-AC-15.
+FR-090-AC-20, FR-096-AC-15 and FR-397-AC-9 (the `ieee-profile-unresolved` producer row).
 Fixtures are private malformed checked-state probes, not public unchecked
 authority. A test of `InternalFault::new` alone does not exercise a producer.
 `record-present-value-missing` uses its existing local source-inspection
