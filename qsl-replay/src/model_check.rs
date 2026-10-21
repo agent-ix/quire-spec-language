@@ -16,6 +16,7 @@ pub mod graph_settle;
 pub mod hyper_counterexample;
 pub mod hyper_outcome;
 pub mod hyper_replay;
+pub mod hyper_settle;
 pub mod identity;
 pub mod item;
 pub mod limits;

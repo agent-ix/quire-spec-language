@@ -9,11 +9,12 @@
 //! The tests that read the product itself explore it through
 //! `qsl-eval`'s `WitnessProduct` and the engine's own retained graph.
 //!
-//! Not claimed here: FR-183-AC-6 (the reader and replay of a counterexample
-//! with an existential path) and the recomputation of `X` by replay, which are
-//! FR-183's; FR-184-AC-3 (`max_relation_tuples` on FR-179's `Det`), which
-//! needs the HP-1 engine; and the "marked as published defaults" half of
-//! FR-184-AC-1, which is a member of FR-182's terminal record.
+//! The replay of a `WitnessExhausted` counterexample, which recomputes the
+//! witness sets (FR-183, TC-608), and of an `Undefined` one with an existential
+//! path (FR-183-AC-6) are tested here beside the runs that produce them.
+//!
+//! Not claimed here: FR-184-AC-3 (`max_relation_tuples` on FR-179's `Det`),
+//! which needs the HP-1 engine.
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{HyperRefusal, ModelCheckRefusal};
@@ -24,25 +25,15 @@ use qsl_eval::simulation::model::ModelSimState;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_replay::{
     HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep, IncompleteCause, ModelCheckLimit,
-    ModelCheckLimits, ModelTraceRefusal, ReachedLimit, ReplayRefusal, UndecidedCause,
-    DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WITNESS_SET,
+    ModelCheckLimits, ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, ReachedLimit,
+    ReplayRefusal, UndecidedCause, DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WITNESS_SET,
 };
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Cancel, CancelCause, Charge, ChargePoint, Incomplete, Meter, Undefined};
 
 use crate::counter::ZERO;
 use crate::hyper::{inputs, positions, refuted};
-use crate::hyper_world::{high, low, Vault, World, STARTS};
-
-/// ADR-023 section 8.2's `Opaque`, with `conjuncts` added to its `match`.
-fn opaque(conjuncts: &str) -> String {
-    format!(
-        "hyper Opaque using inf over behaviours (v: V::Vault) \
-         forall trace a of V exists trace b of V \
-         match {{ a.step.Vault::step.i = b.step.Vault::step.i{conjuncts} }} \
-         {{ holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }}"
-    )
-}
+use crate::hyper_world::{high, low, opaque, Vault, World, STARTS};
 
 /// The clause of FR-177's third criterion: two existential variables and no universal one.
 const TWO_EXISTENTIAL: &str = "hyper Hidden using inf over behaviours (v: V::Vault) \
@@ -73,7 +64,7 @@ fn run(world: &World, limits: ModelCheckLimits) -> HyperOutcome {
 }
 
 /// The `(h, l)` of each existential member of the witness set of `state`.
-fn members(state: &qsl_eval::hyper::HyperState) -> Vec<(i64, i64)> {
+pub(crate) fn members(state: &qsl_eval::hyper::HyperState) -> Vec<(i64, i64)> {
     let Property::Witnesses(set) = &state.property else {
         panic!("an HP-3 state holds a witness set");
     };
@@ -365,7 +356,7 @@ fn an_undefined_existential_match_ends_the_item_with_a_path_for_b() {
 
 /// A `match` whose existential conjuncts exhaust their meter, reading
 /// everything else as the vault world does.
-struct ExhaustedExistential<'w>(crate::hyper_world::Seams<'w>);
+pub(crate) struct ExhaustedExistential<'w>(pub(crate) crate::hyper_world::Seams<'w>);
 
 impl StepMatch for ExhaustedExistential<'_> {
     fn universal(
@@ -893,24 +884,6 @@ fn the_budget_counts_the_members_of_one_set() {
     assert!(matches!(run(&world, four), HyperOutcome::Holds { .. }));
 }
 
-/// A `WitnessExhausted` counterexample is not replayed yet: FR-183 recomputes
-/// the witness sets along its universal traces, and until that is built the
-/// replay refuses it as unsupported rather than reading it as a lockstep one.
-#[trace("TC-602")]
-#[test]
-fn a_witness_exhausted_counterexample_is_refused_by_replay_until_fr_183() {
-    let world = leaky();
-    let counterexample = refuted(run(&world, ModelCheckLimits::default()));
-    let Err(ReplayRefusal::ModelTrace(refusal)) = world.replay(&counterexample) else {
-        panic!("expected the replay to refuse");
-    };
-    assert_eq!(*refusal, ModelTraceRefusal::HyperWitnessExhausted);
-    assert_eq!(
-        refusal.to_string(),
-        "unsupported_construct/not-yet-implemented: replay of a witness-exhausted counterexample"
-    );
-}
-
 /// The leaky `step`, enabled only while `l = 0`, and a `reset` that sets `l`
 /// to 1 (and enabled only while `l = 0`): from `(0, 0)` a step can reach the
 /// empty witness set in a state with
@@ -1024,6 +997,29 @@ fn a_violation_at_position_zero_bounds_the_later_instances() {
     assert!(matches!(run(&world, limits), HyperOutcome::Stopped { .. }));
 }
 
+/// The same bound under a search horizon: instance `w` is explored through the
+/// depth that expands its initial states and no deeper, whatever the horizon,
+/// so a horizon of 5 leaves the 7 to 9 states that suffice without one enough,
+/// and 6 still stop it.
+#[trace("TC-602")]
+#[test]
+fn a_horizon_deeper_than_the_ranking_depth_does_not_widen_a_later_instance() {
+    let mut world = two_instances(Vault::Secure, &[(0, 0)], "");
+    world.max_depth = Some(5);
+    for max_states in 7..=9 {
+        let mut limits = ModelCheckLimits::default();
+        limits.limits.max_states = max_states;
+        let outcome = run(&world, limits);
+        assert!(
+            matches!(outcome, HyperOutcome::Violated { .. }),
+            "max_states {max_states}: {outcome:?}"
+        );
+    }
+    let mut limits = ModelCheckLimits::default();
+    limits.limits.max_states = 6;
+    assert!(matches!(run(&world, limits), HyperOutcome::Stopped { .. }));
+}
+
 /// A clause with two universal variables: the counterexample holds a trace for
 /// each of them and none for the existential one, and the universal tuple is
 /// two components of every product state.
@@ -1084,10 +1080,17 @@ fn the_safety_automaton_stops_at_max_automaton_states() {
 /// The leaky `step`, with a precondition that has no value in the state
 /// `(0, 1)`, which `a` never reaches under the `match` below but a partner
 /// does.
-const GUARDED: Vault = Vault::Custom(
+pub(crate) const GUARDED: Vault = Vault::Custom(
     "pre Guard using v on V::Vault::step { 1 div (1 - self.l + self.h) >= 0 }\n\
      post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n",
 );
+
+/// `Opaque` over [`GUARDED`] with a `match` that confines `a` to `step(0)`.
+pub(crate) const GUARDED_CLAUSE: &str = "hyper Opaque using inf over behaviours (v: V::Vault) \
+     forall trace a of V exists trace b of V \
+     match { (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) else 0) = 0 \
+     and b.step.op != stutter } \
+     { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
 
 /// FR-177 states no verdict for an existential member whose contract has no
 /// value (the spec follow-up), so the engine does not claim one: the
@@ -1097,12 +1100,7 @@ const GUARDED: Vault = Vault::Custom(
 #[trace("TC-602")]
 #[test]
 fn an_existential_member_with_an_undefined_contract_leaves_the_item_undecided() {
-    let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
-         forall trace a of V exists trace b of V \
-         match { (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) else 0) = 0 \
-         and b.step.op != stutter } \
-         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
-    let world = World::new(GUARDED, false, &STARTS, clause);
+    let world = World::new(GUARDED, false, &STARTS, GUARDED_CLAUSE);
     let outcome = run(&world, ModelCheckLimits::default());
     let HyperOutcome::Undecided { cause, .. } = outcome else {
         panic!("expected no decision, got {outcome:?}");
@@ -1309,4 +1307,96 @@ fn an_unstated_undefined_evaluation_ranks_before_an_empty_witness_set_at_its_pos
         ),
         "{refusal:?}"
     );
+}
+
+/// The model refusal of a refused replay.
+fn refusal(result: Result<ModelTraceSettlement, ReplayRefusal>) -> ModelTraceRefusal {
+    match result {
+        Err(ReplayRefusal::ModelTrace(refusal)) => *refusal,
+        other => panic!("expected a model-trace refusal, got {other:?}"),
+    }
+}
+
+/// The `Undefined` counterexample of an HP-3 clause (FR-177-AC-5), whose
+/// traces include the existential variable's path to the state where `μ_E`
+/// has no value, replays
+/// to the `UndefinedEvaluation` it carries; with the existential trace removed
+/// the reader refuses it as `invalid_runtime_input`/`invalid-value` before any
+/// replay.
+#[trace("TC-602", "FR-183-AC-6")]
+#[test]
+fn an_undefined_existential_match_counterexample_replays_and_needs_its_existential_path() {
+    let divided = " and (if present(b.step.Vault::step.i) then 1 / value(b.step.Vault::step.i) \
+                   else 1) = 1";
+    let world = World::new(Vault::Secure, false, &STARTS, &opaque(divided));
+    let counterexample = refuted(run(&world, ModelCheckLimits::default()));
+    let HyperCounterexampleKind::Undefined(claimed) = counterexample.kind.clone() else {
+        panic!("expected an undefined-evaluation counterexample");
+    };
+    assert_eq!(
+        world.replay(&counterexample).expect("the replay settles"),
+        ModelTraceSettlement::Reproduced {
+            value: ModelTraceValue::HyperUndefined(claimed),
+            trace_position: Some(1),
+        }
+    );
+
+    let mut universal_only = counterexample;
+    universal_only.traces.truncate(1);
+    let refused = refusal(world.replay(&universal_only));
+    assert!(matches!(refused, ModelTraceRefusal::HyperShape { .. }));
+    assert_eq!(
+        (refused.code(), refused.cause()),
+        (
+            qsl_foundation::diagnostic::Code::InvalidRuntimeInput,
+            "invalid-value"
+        )
+    );
+}
+
+/// A search horizon on an HP-3 item (ADR-023 HV-3): the leaky vault's
+/// counterexample is the lasso at the empty set, a self-loop at product depth
+/// 1, so a horizon of 1 creates that state and expands nothing past it and
+/// returns `BoundReached`, while a horizon of 2 finds the counterexample an
+/// unbounded run finds. A horizon of 0 expands nothing at all.
+#[trace("TC-602")]
+#[test]
+fn a_horizon_cuts_the_witness_set_search_before_its_lasso() {
+    let mut world = leaky();
+    let unbounded = refuted(run(&world, ModelCheckLimits::default()));
+    for depth in [0, 1] {
+        world.max_depth = Some(depth);
+        let HyperOutcome::BoundReached {
+            depth: reached,
+            covers,
+            ..
+        } = run(&world, ModelCheckLimits::default())
+        else {
+            panic!("expected the horizon to be reached at {depth}");
+        };
+        assert_eq!(
+            (reached, covers),
+            (depth as u64, qsl_replay::BoundCovers::ProductDepth)
+        );
+    }
+    world.max_depth = Some(2);
+    assert_eq!(refuted(run(&world, ModelCheckLimits::default())), unbounded);
+}
+
+/// A run that completes inside its horizon holds, as it does with none; a
+/// horizon shorter than the product reaches `BoundReached` instead of `Holds`.
+#[trace("TC-602")]
+#[test]
+fn a_witness_set_run_that_completes_inside_its_horizon_holds() {
+    let mut world = secure();
+    world.max_depth = Some(64);
+    assert!(matches!(
+        run(&world, ModelCheckLimits::default()),
+        HyperOutcome::Holds { .. }
+    ));
+    world.max_depth = Some(1);
+    assert!(matches!(
+        run(&world, ModelCheckLimits::default()),
+        HyperOutcome::BoundReached { depth: 1, .. }
+    ));
 }

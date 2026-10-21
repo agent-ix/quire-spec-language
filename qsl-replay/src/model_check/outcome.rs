@@ -6,8 +6,8 @@ use crate::certificate::closure::ClosureCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::{
-    AppliedReduction, IncompleteCause, InstanceBound, MemoryBound, ReductionKind,
-    SymmetryBrokenCause,
+    AppliedReduction, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
+    ReductionKind, SymmetryBrokenCause,
 };
 use qsl_eval::simulation::protocol::WeakAccessShape;
 use qsl_eval::simulation::SubjectTransition;
@@ -60,6 +60,22 @@ pub enum UndecidedCause {
         /// The instance-limited states.
         states: u64,
     },
+}
+
+impl UndecidedCause {
+    /// The V-6 cause the run's settlement states (FR-127, FR-182).
+    pub(super) fn inconclusive(self) -> InconclusiveCause {
+        match self {
+            Self::UndecidedSuccessor => InconclusiveCause::UndecidedSuccessor,
+            Self::NoInitialState => InconclusiveCause::NoInitialState,
+            Self::NoInstance => InconclusiveCause::NoInstance,
+            Self::MatchUndetermined => InconclusiveCause::MatchUndetermined,
+            Self::VacuousMatch => InconclusiveCause::VacuousMatch,
+            Self::InstanceBoundReached { bound, states } => {
+                InconclusiveCause::InstanceBoundReached { bound, states }
+            }
+        }
+    }
 }
 
 /// Why a run under reductions settles `inconclusive` (ADR-021 RV-2 to

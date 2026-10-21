@@ -77,6 +77,7 @@ use crate::model_check::counterexample::{
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use crate::model_check::hyper_counterexample::HyperUndefined;
+use crate::model_check::limits::ReachedLimit;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::WitnessEnvelope;
@@ -211,12 +212,6 @@ pub enum ModelTraceRefusal {
         /// The loop's entry position.
         entry: usize,
     },
-    /// A witness-exhausted hyper counterexample, which FR-183's HP-3 replay
-    /// recomputes and replay does not build yet.
-    #[error(
-        "unsupported_construct/not-yet-implemented: replay of a witness-exhausted counterexample"
-    )]
-    HyperWitnessExhausted,
     /// A hyper counterexample of an `align skip` clause (HP-6), `Projected`
     /// or `Undefined`, which FR-183's HP-6 replay (ADR-023 PA-7) checks and
     /// replay does not build yet.
@@ -354,10 +349,9 @@ impl ModelTraceRefusal {
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => Code::StaleDependency,
             Self::FairnessSet { .. } | Self::ProtocolFairnessSet { .. } => Code::StaleDependency,
-            Self::AuthoredUndefined
-            | Self::GuardedActivation
-            | Self::HyperWitnessExhausted
-            | Self::HyperProjected => Code::UnsupportedConstruct,
+            Self::AuthoredUndefined | Self::GuardedActivation | Self::HyperProjected => {
+                Code::UnsupportedConstruct
+            }
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
@@ -388,10 +382,9 @@ impl ModelTraceRefusal {
             | Self::PostState { .. }
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => "content-mismatch",
-            Self::AuthoredUndefined
-            | Self::GuardedActivation
-            | Self::HyperWitnessExhausted
-            | Self::HyperProjected => "not-yet-implemented",
+            Self::AuthoredUndefined | Self::GuardedActivation | Self::HyperProjected => {
+                "not-yet-implemented"
+            }
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {
                 Some(code) => code.cause(),
@@ -453,6 +446,14 @@ pub enum ModelTraceSettlement {
     /// `inconclusive`: the replay disagrees with the engine
     /// (`Verdicts`) or completed no value (`NoValue`).
     Inconclusive(DisagreementCause),
+    /// A limit stopped the replay before it settled (FR-183 "WitnessExhausted"
+    /// names `max_witness_set`): no result, which FR-182 settles V-7.
+    Stopped {
+        /// The limit and its value.
+        reached: ReachedLimit,
+        /// The count a counted budget reached, one past its value (FR-184).
+        count: Option<u64>,
+    },
 }
 
 /// FR-133 (ADR-019 SV-6): a strong constraint that would exclude a
