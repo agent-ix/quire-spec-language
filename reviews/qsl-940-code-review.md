@@ -70,3 +70,13 @@ Re-reviewed at head ca37b7138 (fix commit ca37b7138 over 59112ebf2). The fix wid
 | FND-001 | fixed | `takes_inline_integer_literals` adds `quire.op.integer.eq` and `ne`; `integer_literals_are_inline_operands_of_integer_equality` covers both operators on both sides over `Integer`; dropping eq/ne, or ne alone, fails it (M7, M8). The narrowed-literal case is FND-004. |
 | FND-002 | fixed | `tc_904_a_second_operand_outside_its_range_is_refused_at_index_1` over a two-parameter `x + y` asserts `RefusedInput(OperandRefusal { index: 1 })`; the `.enumerate().take(1)` mutant of scalar.rs `compare` now fails it. |
 | FND-003 | fixed | `with_literal` and its dead `(7, 7)` range are removed; the test asserts `ScalarOperand::literal(7).range == (7, 7)` and an agreeing `add(2, 1)`. |
+| FND-004 | fixed | FR-358 step 6 now states the narrowed case: an integer literal the checker wraps in `numeric.narrow` is `graph_child` of the narrow node with the empty `bounds`, and an unwrapped one (an `Integer` peer) is `inline_literal` with the singleton `range`. The FR-093 row, FR-093-AC-30 and TC-415 step 12 agree, the producer matches, and the composite arm computes exactly this form. The unamended ADR-013 O-09 domain rule is FND-006. |
+| FND-005 | fixed | `tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it` drives both forms from source (`k`: `a = 3` over `Integer`, giving `InlineLiteral` with `range` (3, 3); `m`: over `Int[0, 9]`, giving a non-parameter `GraphChild` with `bounds`). A mutant of the composite arm's (`Literal`, `InlineLiteral`) domain to empty `bounds` fails it. |
+
+## New findings (disposition pass 2)
+
+Re-reviewed at head dde724464. Fix commit dde724464 amends FR-358 step 6, the FR-093 Literal row, FR-093-AC-30 and TC-415, and adds `tc_907_an_integer_literal_operand_is_inline_unless_the_checker_narrows_it`. The producer is unchanged.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | FR-358 step 6 now gives a narrowed integer literal operand the empty `bounds` domain "as a composite literal operand is". ADR-013 O-09, which the PR treats as the authority over the parity preimage, was not amended. Its *Domain* rule gives `range` to a scalar operand and `bounds` to a composite operand, and it scopes the empty-`bounds` literal case to "a record or collection literal". A narrowed `Int[0, 9]` literal is a scalar operand, so under the ADR as written it takes a `range`. ADR-013 O-09 needs the same narrowed-literal bullet, or FR-358 must use the ADR's domain. | spec/decisions/ADR-013-canonical-type-package-conversion-ownership.md:339-343; spec/functional/FR-358-settle-a-composite-bounded-shadow-item.md:270-276 |
