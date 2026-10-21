@@ -1565,6 +1565,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "qsl-string-edge"
+version = "0.1.0"
+dependencies = [
+ "ix-trace-rs",
+ "proc-macro2",
+ "qsl-attrs",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "qsl-walk-grow"
 version = "0.1.0"
 dependencies = [
@@ -2751,6 +2765,7 @@ dependencies = [
  "qsl-foundation",
  "qsl-replay",
  "qsl-semantics",
+ "qsl-string-edge",
  "serde",
  "serde_json",
  "syn 2.0.119",
