@@ -71,9 +71,11 @@ paragraph. Fix them in this PR. None blocks.
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewer-checked at 347524461 (fix commit 10ee126e9).
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | 10ee126e9 |
-| FND-002 | fixed | 10ee126e9 |
-| FND-003 | fixed | 10ee126e9 |
-| FND-004 | fixed | 10ee126e9 |
+| FND-001 | fixed | 10ee126e9. The Rich test asserts `cend Spec::Rich::Wait` and `cend Spec::Rich::Tried` each refuse `MISSING`. The mutant `AbstractStepKind::Cend => self.nodes.contains_key(member)` now fails `the_timeout_cattempt_cend_and_activate_classes_resolve` (65 passed, 1 failed). Reverted, the run is 66 passed. |
+| FND-002 | fixed | 10ee126e9. TC-552 Fixtures line: "`Twice`, `CasTwice`, `Full` and `Rich` (FR-147)". Step 8: "Resolve a value naming one entry of every class over `Full` and `Rich`." |
+| FND-003 | fixed | 10ee126e9. `each_class_spells_and_resolves_over_a_protocol_that_has_it` carries `#[trace("TC-552", "FR-147-AC-8")]`, and its doc no longer says "Part of". |
+| FND-004 | fixed | 10ee126e9. FR-147: "the refinement `CasTwice`, with its abstract side set to `Full`, selects it" and "`CasTwice` with its abstract side set to `Rich` selects it". |

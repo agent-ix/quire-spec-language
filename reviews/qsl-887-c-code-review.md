@@ -66,6 +66,4 @@ records no defect.
 
 ## Dispositions
 
-| FND | outcome | sha |
-| --- | --- | --- |
-| FND-001 | accepted-no-change (placeholder; no defect) | 10ee126e9 |
+Round 1, reviewer-checked at 347524461: none needed. This review recorded no defect. Its only row is the schema placeholder, which takes no outcome. Re-checked at 347524461: fix commit 10ee126e9 changes only test assertions, a trace tag and spec text. Clippy `--all-features --tests -D warnings` is clean, fmt is clean, and `--test it refinement` gives 66 passed.
