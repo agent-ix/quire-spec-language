@@ -261,6 +261,13 @@ fn agree(subject: &Subject, longest: usize) -> usize {
     let mut compared = 0;
     let mut verdicts = BTreeSet::new();
     for word in words(width(subject), longest) {
+        // No step leads into position 0, which the evaluator reads as one
+        // counted step from before the trace.
+        if let (Some(uncounted), Some(first)) = (property.uncounted(), word.first()) {
+            if first.holds(uncounted) {
+                continue;
+            }
+        }
         match property.kind() {
             AutomatonKind::Bounded => {
                 let expected = evaluator_holds(
@@ -374,8 +381,7 @@ fn a_bounded_clause_translates_to_a_finite_monitor_that_answers_to_the_closed_tr
 /// ADR-027 PB-3 (FR-213-AC-3): for a subject whose steps count by kind, a
 /// bounded clause's finite monitor answers to the closed trace evaluation
 /// over a letter that also says which steps do not count, whatever the
-/// interval shape. A clause without an interval operator reads no such atom,
-/// and a past operator with an interval is refused.
+/// interval shape. A clause without an interval operator reads no such atom.
 #[trace("TC-658")]
 #[test]
 fn a_counted_clause_translates_to_a_monitor_that_answers_to_counted_distance() {
@@ -399,16 +405,36 @@ fn a_counted_clause_translates_to_a_monitor_that_answers_to_counted_distance() {
     }
     let plain = counted("holds(p) and not holds(q)");
     assert_eq!(plain.property.uncounted(), None);
-    let past = fixture(
-        EVENT,
-        "c: Counter",
-        ORIGIN,
+}
+
+/// ADR-027 PB-3 (FR-338, FR-092): a past operator with an interval over a
+/// subject whose steps count by kind measures its window backwards in counted
+/// steps, as the evaluator does: the age of a lower-bound-0 operator and the
+/// shift of a lower bound move only on a counted step, several positions
+/// share a distance, and an operand read at an uncounted step is still read.
+/// The automaton answers to the closed-trace evaluation over every word of
+/// up to four positions, `once`, `historically`, `since` and `triggered`
+/// included.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn a_past_interval_over_counted_steps_answers_to_counted_distance() {
+    for body in [
         "always[0,3] (holds(p) implies once[0,1] holds(q))",
-    );
-    assert_eq!(
-        translate_counted(&past.clause, LIMIT).err(),
-        Some(AutomatonError::PastIntervalInCountedSteps)
-    );
+        "always[0,3] (holds(p) implies once[1,2] holds(q))",
+        "always[0,3] (holds(p) implies once[2,3] holds(q))",
+        "always[0,3] (holds(p) implies historically[0,1] holds(q))",
+        "always[0,3] (holds(p) implies historically[1,2] holds(q))",
+        "always[0,3] (holds(p) implies (holds(p) since[0,1] holds(q)))",
+        "always[0,3] (holds(p) implies (holds(q) since[1,2] holds(p)))",
+        "always[0,3] (holds(p) implies (holds(q) triggered[0,1] holds(p)))",
+        "always[0,3] (holds(p) implies (holds(p) triggered[1,2] holds(q)))",
+        "eventually[1,3] (holds(p) and once[1,1] holds(q))",
+    ] {
+        let subject = counted(body);
+        assert_eq!(subject.property.kind(), AutomatonKind::Bounded, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, 4) > 0, "{body}");
+    }
 }
 
 /// SM-6: a bounded `on each` clause activates at every position of the

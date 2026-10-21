@@ -541,6 +541,51 @@ fn an_uncounted_cend_and_finish_end_the_window_after_the_refund() {
     assert_eq!(behaviour.at(case.clause(), 4), TemporalOutcome::Holds);
 }
 
+/// FR-338 distance-history forms (FR-213, TC-658): a past operator with an
+/// interval measures its window backwards in counted steps. On the repaired
+/// `Fill` taking `B` before `A`, `k.v` is 0, 0 (`fork`), 2 (`setTwo`), 3
+/// (`inc`), 3 (`join`), 3 (`finish`): the one counted step back from `join`
+/// and from `finish` is `setTwo`'s position, where `k.v` is 2, so
+/// `always[0,5] (holds(k.v = 3) implies not once[1,1] holds(k.v = 3))` holds
+/// at position 0. Counting every step, `join`'s one step back is `inc`'s
+/// position, where `k.v = 3`, and the claim fails. EN-1 decides the claim on
+/// the counted monitor over every interleaving, and refutes the claim with
+/// `not` removed on a prefix that replays.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn a_past_window_is_measured_in_counted_steps() {
+    let case =
+        repaired_fill("always[0,5] (holds(k.v = 3) implies not once[1,1] holds(k.v = 3))");
+    let subject = case.subject("Fill");
+    let system = sc_system(&subject);
+    let mut behaviour = Behaviour::follow(&system, is_three, preferring("/B"));
+    assert_eq!(behaviour.counted(), [false, true, true, false, false]);
+    assert_eq!(behaviour.at(case.clause(), 0), TemporalOutcome::Holds);
+    behaviour.by_kind = false;
+    assert!(matches!(
+        behaviour.at(case.clause(), 0),
+        TemporalOutcome::Violated { .. }
+    ));
+
+    let letters = CellV(is_three);
+    let outcome = case.check("Fill", &letters);
+    assert!(
+        matches!(outcome, ModelCheckOutcome::Holds { .. }),
+        "{outcome:?}"
+    );
+
+    let missed = repaired_fill("always[0,5] (holds(k.v = 3) implies once[1,1] holds(k.v = 3))");
+    let outcome = missed.check("Fill", &letters);
+    assert!(
+        matches!(outcome, ModelCheckOutcome::Violated { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        missed.label("Fill", &letters, &outcome),
+        ResultLabel::Refuted
+    );
+}
+
 /// ADR-027 PB-3: a cycle of uncounted steps keeps an interval that needs a
 /// counted step open, so it is not met on that lasso. On a channel whose
 /// delivery is `unknown`, `duplicate` then `lose` returns to the state it

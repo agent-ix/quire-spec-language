@@ -1417,7 +1417,6 @@ impl<S: SubjectSystem> Run<'_, S> {
             | AutomatonError::NotSafetyAutomaton { .. }
             | AutomatonError::InvertedInterval { .. }
             | AutomatonError::PastOverFuture
-            | AutomatonError::PastIntervalInCountedSteps
             | AutomatonError::ProfileNotTranslated { .. }
             | AutomatonError::Invariant { .. } => fault("monitor-steps").into(),
         }
