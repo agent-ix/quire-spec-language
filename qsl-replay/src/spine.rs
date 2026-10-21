@@ -1173,7 +1173,7 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::UnitlessTimedBound { .. } => {
                     format!("{message}: a `model-time` interval bound needs a time unit")
                 }
-                TemporalCause::TimeQuantity { cause, .. } => match cause {
+                TemporalCause::TimeQuantity { cause, .. } => match &**cause {
                     TimeUnitCause::NoTimeDimension => {
                         format!("{message}: the unit graph has no base dimension `Time`")
                     }

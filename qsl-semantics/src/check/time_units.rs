@@ -41,7 +41,9 @@ pub struct TimeUnits {
 
 impl TimeUnits {
     /// The time units of `graph`, whose dimension and unit node keys are
-    /// `keys` (the assembler's `nominal_spans` keys).
+    /// `keys` (the assembler's `nominal_spans` keys). The one place a
+    /// declared dimension's spelling is read for FR-230's `Time` base.
+    #[qsl_attrs::string_edge]
     pub fn new(graph: &UnitGraph, keys: impl IntoIterator<Item = NodeKey>) -> Self {
         let table = UnitTable::declared(graph);
         let mut time = None;

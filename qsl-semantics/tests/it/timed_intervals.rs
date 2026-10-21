@@ -406,7 +406,7 @@ fn timed_bounds_are_time_quantities_of_the_unit_graph() {
         assert_eq!(
             cause,
             TemporalCause::TimeQuantity {
-                cause: expected,
+                cause: Box::new(expected),
                 span: at,
             },
             "{body}"

@@ -1086,8 +1086,9 @@ pub enum TemporalCause {
     /// interval bound: the bound's unit is not a time unit of the checked
     /// package's unit graph.
     TimeQuantity {
-        /// Why the unit is not a time unit.
-        cause: TimeUnitCause,
+        /// Why the unit is not a time unit (boxed: an affine unit's offset
+        /// is an exact rational).
+        cause: Box<TimeUnitCause>,
         /// The unit name's span.
         span: Span,
     },
@@ -1178,7 +1179,7 @@ impl TemporalCause {
                 Code::InvalidTimedModel
             }
             Self::UnitlessTimedBound { .. } => Code::IllTyped,
-            Self::TimeQuantity { cause, .. } => match cause {
+            Self::TimeQuantity { cause, .. } => match &**cause {
                 TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
                     Code::MissingDeclaration
                 }
@@ -1214,7 +1215,7 @@ impl TemporalCause {
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
             Self::UnitlessTimedBound { .. } => "type-mismatch",
-            Self::TimeQuantity { cause, .. } => match cause {
+            Self::TimeQuantity { cause, .. } => match &**cause {
                 TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
                     "missing-name"
                 }

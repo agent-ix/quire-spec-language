@@ -183,7 +183,7 @@ impl TimedReader<'_> {
             .convert(&magnitude, &quantity.unit.name, &self.target)
             .map_err(|cause| {
                 IntervalFailure::Cause(TemporalCause::TimeQuantity {
-                    cause,
+                    cause: Box::new(cause),
                     span: quantity.unit.span,
                 })
             })
