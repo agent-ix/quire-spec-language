@@ -17,15 +17,16 @@ use crate::model_check::limits::ModelCheckLimit;
 use crate::model_check::state_graph::WitnessSource;
 use crate::result::{DisagreementCause, ReplayResult, WitnessSettlement};
 use crate::scalar::ScalarAgreement;
+use crate::statistical::{Decision, StatisticalVerdict};
 use qsl_eval::simulation::{Permutation, SymmetryClass};
 use qsl_eval::temporal::TemporalOutcome;
-use qsl_foundation::diagnostic::{Category, Code};
+use qsl_foundation::diagnostic::{CatalogCode, Category, Code};
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
-use quire_exact::CancelCause;
+use quire_exact::{CancelCause, Integer};
 use quire_semantic_value::fairness::{FairnessConstraint, PropertyForm};
 use serde::Serialize;
 
@@ -336,6 +337,50 @@ pub enum UnavailabilityCause {
     /// the second phase does not decide: it reads a class as weak. Wire cause
     /// `unsupported_projection`/`unsupported-requested-capability`.
     StrongAbstractFairness,
+    /// FR-192: a drawn step of an EN-4 run broke the Markov condition
+    /// (ADR-024 PM-3). Wire cause `not-markov`.
+    NotMarkov,
+    /// FR-192: a choice's scaled weight total exceeds `2^256`, so no draw is
+    /// accepted (QSpec FR-181-AC-14). Wire cause `total-above-draw-range`,
+    /// `total` a decimal string.
+    TotalAboveDrawRange {
+        /// The scaled total.
+        total: Integer,
+    },
+    /// FR-192: `min(α', β')` has no normal-quantile bound for the
+    /// regenerative method (QSpec FR-408 Admission). Wire cause
+    /// `confidence-beyond-precision`.
+    ConfidenceBeyondPrecision,
+    /// FR-192: EN-4 refused a request it cannot run as asked. Wire cause
+    /// `unsupported_projection`/`unsupported-requested-capability`, naming
+    /// the refusal.
+    StatisticalRequest(StatisticalRequestRefusal),
+}
+
+/// The EN-4 refusal an [`UnavailabilityCause::StatisticalRequest`] names
+/// (FR-189, FR-192).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum StatisticalRequestRefusal {
+    /// The sampler is not `quire.simulation.sampler/v1`.
+    GeneratorMismatch,
+    /// More tests than a test index counts.
+    TooManyTests,
+    /// `max_draws · m` exceeds the trace-index range.
+    TraceIndexRange,
+    /// The sampler returned a fraction for a Bernoulli test.
+    FractionForEvent,
+}
+
+impl StatisticalRequestRefusal {
+    /// The refusal's name, as the diagnostic names it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::GeneratorMismatch => "generator-mismatch",
+            Self::TooManyTests => "too-many-tests",
+            Self::TraceIndexRange => "trace-index-range",
+            Self::FractionForEvent => "fraction-for-event",
+        }
+    }
 }
 
 impl UnavailabilityCause {
@@ -347,7 +392,11 @@ impl UnavailabilityCause {
             Self::MissingFairnessPremise { .. } => "missing-fairness-premise",
             Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
-            | Self::StrongAbstractFairness => "unsupported-requested-capability",
+            | Self::StrongAbstractFairness
+            | Self::StatisticalRequest(_) => "unsupported-requested-capability",
+            Self::NotMarkov => "not-markov",
+            Self::TotalAboveDrawRange { .. } => "total-above-draw-range",
+            Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
         }
     }
@@ -356,11 +405,17 @@ impl UnavailabilityCause {
     /// one (QSpec FR-362).
     pub const fn code(&self) -> Option<&'static str> {
         match self {
-            Self::SolverAbsent | Self::BackendAbsent | Self::WeakAccessShape { .. } => None,
+            Self::SolverAbsent
+            | Self::BackendAbsent
+            | Self::NotMarkov
+            | Self::TotalAboveDrawRange { .. }
+            | Self::ConfidenceBeyondPrecision
+            | Self::WeakAccessShape { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
-            | Self::StrongAbstractFairness => Some("unsupported_projection"),
+            | Self::StrongAbstractFairness
+            | Self::StatisticalRequest(_) => Some("unsupported_projection"),
         }
     }
 
@@ -635,7 +690,8 @@ pub enum DeclineCode {
 
 /// One FR-331 terminal record's result value (ADR-013 O-16 proof column).
 /// FR-331's `results` vocabulary admits eight wire values and `measured`
-/// is a ninth; this type names seven of the proof column's, with `Proved`
+/// is a ninth; this type names seven of the proof column's and `measured`
+/// (FR-192), with `Proved`
 /// distinguishing a vacuous run (zero SUCCESS checks, FR-331-AC-8's
 /// `inconclusive`) from an ordinary one by its own field rather than by a
 /// second variant (ADR-013 C-09), so the category-mapping reader can tell
@@ -675,6 +731,10 @@ pub enum TerminalValue {
     Inconclusive(InconclusiveCause),
     /// A backend result of `failed`: the tool itself failed.
     Failed,
+    /// FR-192: a completed statistical run's `measured` result, on its own
+    /// axis with no truth and no basis; never proof evidence (ADR-024
+    /// SV-1, SV-10).
+    Measured(Box<StatisticalVerdict>),
 }
 
 impl ReportedInconclusiveCause {
@@ -717,6 +777,13 @@ impl TerminalValue {
             Self::Unsupported(_) => Category::Unsupported,
             Self::Incomplete(_) => Category::Incomplete,
             Self::Failed => Category::InternalFailure,
+            // FR-192 (ADR-024 RU-2): a rejected measurement fails the
+            // pipeline as a violation does.
+            Self::Measured(verdict) => match verdict.decision {
+                Decision::Accepted => Category::Success,
+                Decision::Rejected => Category::Violation,
+                Decision::Undecided(_) => Category::Inconclusive,
+            },
         }
     }
 
@@ -743,7 +810,8 @@ impl TerminalValue {
             | Self::Declined { .. }
             | Self::Unsupported(_)
             | Self::Incomplete(_)
-            | Self::Failed => None,
+            | Self::Failed
+            | Self::Measured(_) => None,
         }
     }
 
@@ -798,6 +866,7 @@ impl TerminalValue {
             | Self::Unsupported(_)
             | Self::Incomplete(_)
             | Self::Failed => 0,
+            Self::Measured(verdict) => verdict.measured_bytes(),
         }
     }
 }
@@ -817,6 +886,11 @@ pub struct TerminalRecord {
     backend: Option<BackendId>,
     value: TerminalValue,
     replay: Option<ReplayResult>,
+    /// The one diagnostic a `failed` record carries, when its settlement
+    /// names one (FR-192: an internal failure's
+    /// `runtime_invariant`/`established-invariant-broken`, or an expansion
+    /// stop's own cause).
+    diagnostic: Option<CatalogCode>,
 }
 
 impl TerminalRecord {
@@ -888,6 +962,7 @@ impl TerminalRecord {
             backend: Some(backend),
             value: TerminalValue::Refuted,
             replay: Some(replay.clone()),
+            diagnostic: None,
         })
     }
 
@@ -957,12 +1032,17 @@ impl TerminalRecord {
         Self::with_backend(request_index, backend, TerminalValue::Failed)
     }
 
-    fn with_backend(request_index: RequestIndex, backend: BackendId, value: TerminalValue) -> Self {
+    pub(crate) fn with_backend(
+        request_index: RequestIndex,
+        backend: BackendId,
+        value: TerminalValue,
+    ) -> Self {
         Self {
             request_index,
             backend: Some(backend),
             value,
             replay: None,
+            diagnostic: None,
         }
     }
 
@@ -979,6 +1059,7 @@ impl TerminalRecord {
             backend: None,
             value,
             replay: None,
+            diagnostic: None,
         }
     }
 
@@ -1002,6 +1083,20 @@ impl TerminalRecord {
     /// through [`Self::new`].
     pub fn replay_result(&self) -> Option<&ReplayResult> {
         self.replay.as_ref()
+    }
+
+    /// The diagnostic a `failed` record carries, when its settlement names
+    /// one.
+    pub fn diagnostic(&self) -> Option<CatalogCode> {
+        self.diagnostic
+    }
+
+    /// This record with `diagnostic`, the one diagnostic its settlement
+    /// names.
+    #[must_use]
+    pub(crate) fn with_diagnostic(mut self, diagnostic: Option<CatalogCode>) -> Self {
+        self.diagnostic = diagnostic;
+        self
     }
 }
 

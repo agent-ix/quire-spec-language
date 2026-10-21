@@ -96,7 +96,7 @@ pub(crate) use clause::{
 };
 // FR-268: the separation check settles a stopped evaluation through
 // FR-100's outcome mapping.
-pub(crate) use call::convert_outcome;
+pub(crate) use call::{convert_outcome, kernel_undefined_reason};
 
 /// Why the spine's front-end operations produced no output. Each
 /// variant is the stage that refused, with its typed cause and, where the

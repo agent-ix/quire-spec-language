@@ -4,6 +4,8 @@
 
 use qsl_eval::simulation::Limits;
 
+use crate::statistical::StatisticalLimit;
+
 /// FR-126's published default for `max_automaton_states`: 2^20.
 pub const DEFAULT_MAX_AUTOMATON_STATES: u64 = 1_048_576;
 
@@ -106,6 +108,8 @@ pub enum ModelCheckLimit {
     MaxWitnessSet,
     /// `ModelCheckLimits::max_relation_tuples` (FR-184).
     MaxRelationTuples,
+    /// An EN-4 budget (FR-191, FR-192).
+    Statistical(StatisticalLimit),
 }
 
 impl ModelCheckLimit {
@@ -122,6 +126,7 @@ impl ModelCheckLimit {
             Self::MaxWalkSteps => "max-walk-steps",
             Self::MaxWitnessSet => "max-witness-set",
             Self::MaxRelationTuples => "max-relation-tuples",
+            Self::Statistical(limit) => limit.as_str(),
         }
     }
 
@@ -138,6 +143,7 @@ impl ModelCheckLimit {
             Self::MaxWalkSteps => "max_walk_steps",
             Self::MaxWitnessSet => "max_witness_set",
             Self::MaxRelationTuples => "max_relation_tuples",
+            Self::Statistical(limit) => limit.setting(),
         }
     }
 }

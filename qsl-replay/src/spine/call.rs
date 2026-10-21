@@ -861,7 +861,7 @@ pub(crate) fn convert_call_failure(failure: qsl_eval::value::CallFailure) -> Box
 }
 
 /// The kernel's own kebab-case `Undefined` spelling (FR-100).
-fn kernel_undefined_reason(reason: Undefined) -> &'static str {
+pub(crate) fn kernel_undefined_reason(reason: Undefined) -> &'static str {
     match reason {
         Undefined::DivisionByZero => "division-by-zero",
         Undefined::IeeeNotFinite => "ieee-not-finite",
