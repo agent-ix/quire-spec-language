@@ -27,7 +27,7 @@ Tag the tests `#[trace("TC-601", "FR-176-AC-n")]`.
 
 ## Expected Results
 
-- Step 1: 14 states, `Violated` with the §8.1 `Lockstep` shape; 8 states, `Holds{Exhaustive}`.
+- Step 1: 10 states, `Violated` with the §8.1 `Lockstep` shape; 8 states, `Holds{Exhaustive}`.
 - Step 2: `Violated`; `Undecided(VacuousMatch)`.
 - Step 3: `Holds` and `Violated` with a `step(1)` loop; `a`'s stutter pairs only with `b`'s stutter.
 - Step 4: `Stopped(ResourceExhausted, MaxStates)` before the product; `Violated` with an `Undefined` counterexample (QSpec FR-400), a path for `a` and for `b` ending at the first joint step whose `a` step is `step(0)`, cause `division-by-zero`; byte-equal counterexamples.

@@ -30,4 +30,4 @@ Tag the tests `#[trace("TC-609", "FR-184-AC-n")]`.
 - Step 1: both records state 65,536 and 16,777,216, marked as published
   defaults.
 - Step 2: `Stopped(ResourceExhausted, MaxWitnessSet)`, value 0, count 1, no counterexample; FR-177-AC-1's outcome.
-- Step 3: `Stopped(ResourceExhausted, MaxRelationTuples)`, value 63, count 63; `Holds`.
+- Step 3: `Stopped(ResourceExhausted, MaxRelationTuples)`, value 63, count 64; `Holds`.
