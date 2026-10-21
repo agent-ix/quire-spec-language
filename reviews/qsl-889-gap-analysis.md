@@ -66,7 +66,9 @@ FND-002 is low: the ticket's AC-2 item needs an owner after this PR.
 
 ## Dispositions
 
-| FND | outcome | sha |
-|-----|---------|-----|
-| FND-001 | fixed: FR-336-AC-5 and its test gain the differs-only-in-checked-package arm | 10ee83f10 |
-| FND-002 | accepted-no-change: QSL-889 stays open for the AC-2 explored half; the PR body says so | 10ee83f10 |
+Round 1, reviewed at 9d08ad686 (fix commit 10ee83f10). The reviewer checked each row against the fix diff and replaced the coder's draft table with these checked rows.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 10ee83f10. FR-336-AC-5 now names the "only in its checked package" arm and the unselected-package arm, and the test asserts both. The package arm is mutation-checked (SR-12285 FND-001 row). |
+| FND-002 | deferred | QSL-889 stays open (state In Progress, checked) for the explored half of FR-336-AC-2. Its blocker is EN-1's liveness `FormNotDecided`. Close the ticket only when that half lands or moves to a ticket of its own. |

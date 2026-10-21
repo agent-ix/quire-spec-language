@@ -53,9 +53,11 @@ FND-001 shows in code. FND-002 to FND-004 are low.
 
 ## Dispositions
 
-| FND | outcome | sha |
-|-----|---------|-----|
-| FND-001 | fixed: the projection bullet names the checked package | 10ee83f10 |
-| FND-002 | fixed: only order is immaterial; repetition dropped | 10ee83f10 |
-| FND-003 | fixed: the exclusion sentence names normalization limits and the snapshot provision | 10ee83f10 |
-| FND-004 | fixed: reads as the packages the checked package's model selections name | 10ee83f10 |
+Round 1, reviewed at 9d08ad686 (fix commit 10ee83f10). The reviewer checked each row against the fix diff and replaced the coder's draft table with these checked rows.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 10ee83f10. The projection bullet names the checked package by its canonical package identity, "which covers every contract the package's successor relation reads". |
+| FND-002 | fixed | 10ee83f10. "The order of the initial states and of a universe's keys SHALL NOT change the identity." Repetition is dropped. |
+| FND-003 | fixed | 10ee83f10. The exclusion sentence names "the observation and normalization limits and the snapshot provision". |
+| FND-004 | fixed | 10ee83f10. "the digests of the domain packages the checked package's model selections name". |

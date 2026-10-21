@@ -90,12 +90,20 @@ FND-002 to FND-005 are recorded and do not block.
 | FND-004 | low | `clause_occurrence` re-derives the occurrence triple that `qsl_replay::ClauseIdentity::resolve` already builds the same way (`WireNodeId::from_digest(node.identity())`, `node.claim()`). Two copies of the O-07 triple construction can drift. Reuse one. | qsl-analyze/src/model_check/request.rs:96-101; qsl-replay/src/model_check/identity.rs:68-71 |
 | FND-005 | low | `pub mod request;` exposes the module path, while every other `model_check` submodule is private and re-exported with `pub use`. Follow the module's pattern (a private `mod request;` plus `pub use request::{...}`). | qsl-analyze/src/model_check/mod.rs:25 |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | low | `SubjectIdentity::of` calls `emit_checked(simulation.package)` to read the `package_id`, so every `author_clause` call emits the whole checked package again. A request of N clauses over one subject emits it N times. Compute the `package_id` once (per subject, or by the caller) and pass it in. Performance only: the result is correct. | qsl-analyze/src/model_check/request.rs:68 |
+
 ## Dispositions
 
-| FND | outcome | sha |
-|-----|---------|-----|
-| FND-001 | fixed: SubjectIdentity holds the checked package's emitted package_id; test arm fails without it | 10ee83f10 |
-| FND-002 | fixed: domain digests come from the package's model selections only; test arm with an unselected package | 10ee83f10 |
-| FND-003 | fixed: repetition case replaced by the admitted reordering [b, a] | 10ee83f10 |
-| FND-004 | fixed: qsl_replay::node_occurrence is the one triple construction, used by ClauseIdentity::resolve and author_clause | 10ee83f10 |
-| FND-005 | fixed: private mod request plus pub use | 10ee83f10 |
+Round 1, reviewed at 9d08ad686 (fix commit 10ee83f10). The reviewer checked each row against the fix diff and replaced the coder's draft table with these checked rows.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 10ee83f10. Measured: the new AC-5 arm builds the reviewer's two-package case (same clause, `post Inc` `= 1` against `= 2`), asserts equal `node_occurrence`, unequal identity and two indices. With the `package` field removed, `a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_is_refused` fails at universe_obligation.rs:169 (`assert_ne!(identity(&rival_subject), plain)`); after the revert both tests pass. `PackageId` is the O-02 content-addressed `package_id`, the load-bearing identity. |
+| FND-002 | fixed | 10ee83f10. Domain digests come from `package.graph().model_selections()`, and the new test arm adds an unselected `[7; 32]` package to the provision with identity unchanged. |
+| FND-003 | fixed | 10ee83f10. The repetition case is now the admitted reordering `["b", "a"]`. |
+| FND-004 | fixed | 10ee83f10. `qsl_replay::node_occurrence` is the one construction of the triple, used by `ClauseIdentity::resolve` and `author_clause`. qsl-analyze already depends on qsl-replay (A -> 6), so the edge is not new. A method on `TemporalClauseNode` in qsl-semantics would be the more natural owner, but this one is acceptable. |
+| FND-005 | fixed | 10ee83f10. `mod request;` plus `pub use request::{author_clause, RequestRefusal, SubjectIdentity}`. |
