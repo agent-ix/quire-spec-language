@@ -182,6 +182,10 @@ pub enum ClosureRefusal {
     /// The subject's protocol system does not build (FR-205).
     #[error(transparent)]
     Protocol(ProtocolRefusal),
+    /// The refinement's concrete subject is a protocol, whose refinement
+    /// check is not built yet (FR-142, FR-145).
+    #[error("a refinement over a concrete protocol is not checked yet")]
+    ProtocolRefinement,
     /// An invariant of the subject broke.
     #[error("the closure check broke invariant {0:?}")]
     Fault(InternalFault),

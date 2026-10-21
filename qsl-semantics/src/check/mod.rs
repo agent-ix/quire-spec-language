@@ -156,9 +156,10 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 pub mod stratum;
 mod termination;
 pub use refinement::{
-    CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, ObjectRow, PopulationRow,
-    PopulationUse, PopulationValue, RefinementCause, RefinementDeclaration, RefinementRefusal,
-    RowClass, StepClass, StepRow, StepTarget, UnsupportedFeature,
+    observation, ChannelStepKind, CheckedRefinement, CheckedRow, FieldRow, HistoryRow,
+    HistoryUpdate, MemoryStepKind, ObjectRow, PopulationRow, PopulationUse, PopulationValue,
+    ProtocolStepKind, RefinementCause, RefinementDeclaration, RefinementRefusal, RoleStepKind,
+    RowClass, RowObservation, StepClass, StepLabel, StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
     CheckedTerminal, CheckedTerminalPredicate, TerminalClauseDeclaration, TerminalClauseKind,
@@ -263,7 +264,7 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
-pub use step_simulation::{step_row_refs, step_simulation_records, StepRowOverflow};
+pub use step_simulation::{step_row_refs, step_simulation_records, StepRowRefusal};
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -1660,8 +1661,13 @@ impl PackageDeclarations {
         }
         terminals.sort_by(|left, right| left.model.cmp(&right.model));
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
-        // state-clause bodies over the concrete object.
-        let mut refinements = Vec::new();
+        // state-clause bodies over the concrete object. A refinement over a
+        // concrete protocol is checked in full except for the rows the
+        // protocol clause decides, which wait for the clause (FR-136 "Order
+        // of the checks"); its refusals do not stop the unit before the
+        // clauses are checked.
+        let mut refinement_slots: Vec<Option<CheckedRefinement>> = Vec::new();
+        let mut protocol_refinements = Vec::new();
         for refinement in &self.refinements {
             let location = Location::root(Origin::Expression);
             let declarations = state_clause::ClauseDeclarations {
@@ -1682,21 +1688,42 @@ impl PackageDeclarations {
                 &mut contract_diagnostics,
                 &mut contract_scopes,
             );
-            match refinement::check_refinement(refinement, &declarations, &mut contract_cx) {
-                Ok((checked, used)) => {
-                    nodes_used = used;
-                    refinements.push(checked);
+            let (checked, used) = refinement::check_refinement(
+                refinement,
+                &self.protocols,
+                &declarations,
+                &mut contract_cx,
+            );
+            nodes_used = used;
+            // A limit or a cancellation stops the unit at a refusal, as every
+            // other declaration's does.
+            let (found, stop) = match checked {
+                refinement::RefinementCheck::Checked(checked) => {
+                    refinement_slots.push(Some(*checked));
+                    (Vec::new(), false)
                 }
-                Err((found, used)) => {
-                    nodes_used = used;
-                    let exhausted = found.iter().any(|refusal| {
-                        matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_))
-                    });
-                    refusals.extend(found);
-                    if exhausted || cancel.tripped().is_some() {
-                        return Err(refusals);
-                    }
+                refinement::RefinementCheck::Protocol(pending) => {
+                    let stop = pending.exhausted() || cancel.tripped().is_some();
+                    protocol_refinements.push((refinement_slots.len(), *pending));
+                    refinement_slots.push(None);
+                    (Vec::new(), stop)
                 }
+                refinement::RefinementCheck::Refused(found) => {
+                    let stop = cancel.tripped().is_some()
+                        || found.iter().any(|refusal| {
+                            matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_))
+                        });
+                    (found, stop)
+                }
+            };
+            refusals.extend(found);
+            if stop {
+                refusals.extend(
+                    protocol_refinements
+                        .into_iter()
+                        .flat_map(|(_, pending)| pending.into_refusals()),
+                );
+                return Err(refusals);
             }
         }
         // FR-218: a second reference to one protocol in the unit refuses at
@@ -1845,7 +1872,13 @@ impl PackageDeclarations {
                 )
                 .chain(scope.type_names().map(|name| (name, "type"))),
         );
+        // Each protocol's place among the checked ones, and whether its own
+        // checks refused it: a refinement over a refused clause reports the
+        // clause's refusals alone (FR-136 "Order of the checks").
+        let mut protocol_places: Vec<Option<usize>> = Vec::with_capacity(self.protocols.len());
+        let mut protocol_refused: Vec<bool> = Vec::with_capacity(self.protocols.len());
         for (index, protocol) in self.protocols.iter().enumerate() {
+            let refusals_before = refusals.len();
             let attempts = self
                 .protocol_attempts
                 .get(index)
@@ -1994,9 +2027,11 @@ impl PackageDeclarations {
                         Err(control_refusals) => refusals.extend(control_refusals),
                     }
                     protocol_bindings.push(bound);
+                    protocol_places.push(Some(checked_protocols.len()));
                     checked_protocols.push(checked);
                 }
                 Err(protocol_refusals) => {
+                    protocol_places.push(None);
                     refusals.extend(protocol_refusals);
                     if let protocol_obligation::Obligations::Refused(obligation_refusals) =
                         obligations
@@ -2005,10 +2040,54 @@ impl PackageDeclarations {
                     }
                 }
             }
+            protocol_refused.push(refusals.len() > refusals_before);
             if cancel.tripped().is_some() {
                 return Err(refusals);
             }
         }
+        // FR-136 "Order of the checks": a refinement over a concrete protocol
+        // has its rows resolved and its step classes covered now that the
+        // clause is checked. A refused clause reports its own refusals
+        // alone, and the refinement none beyond those it already found.
+        let mut selected_protocols: Vec<Option<refinement::SelectedProtocol>> =
+            std::iter::repeat_with(|| None)
+                .take(refinement_slots.len())
+                .collect();
+        for (slot, pending) in protocol_refinements {
+            let index = pending.protocol();
+            let place = protocol_places.get(index).copied().flatten();
+            let clause = match (place, protocol_refused.get(index)) {
+                (Some(place), Some(false)) => {
+                    match (
+                        self.protocols.get(index),
+                        checked_protocols.get(place),
+                        protocol_bindings.get(place),
+                    ) {
+                        (Some(form), Some(checked), Some(attempts)) => {
+                            Some(refinement::ProtocolClause {
+                                form,
+                                checked,
+                                attempts,
+                            })
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            match pending.complete(clause.as_ref(), &models) {
+                Ok((checked, selected)) => {
+                    refinement_slots[slot] = Some(checked);
+                    selected_protocols[slot] = Some(selected);
+                }
+                Err(found) => refusals.extend(found),
+            }
+        }
+        let (mut refinements, selected_protocols): (Vec<_>, Vec<_>) = refinement_slots
+            .into_iter()
+            .zip(selected_protocols)
+            .filter_map(|(checked, selected)| Some((checked?, selected)))
+            .unzip();
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions typed over its `over` parameter,
@@ -2324,6 +2403,16 @@ impl PackageDeclarations {
         match lowering.protocol_nodes(&protocol_reference::inputs(&self.protocols)) {
             Ok(unsupported) => refusals.extend(unsupported),
             Err(refusal) => refusals.push(refusal),
+        }
+        // FR-135: the clause a refinement's rows select, by its node.
+        for (checked, selected) in refinements.iter_mut().zip(&selected_protocols) {
+            let Some(selected) = selected else {
+                continue;
+            };
+            match lowering.protocol_key(selected.protocol(), &root(Origin::Expression)) {
+                Ok(key) => checked.concrete_protocol = Some(key),
+                Err(refusal) => refusals.push(selected.unkeyed(refusal)),
+            }
         }
         for group in &order {
             let inputs: Vec<lowering::FunctionInput<'_>> = group

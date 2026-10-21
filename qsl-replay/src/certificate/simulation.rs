@@ -381,6 +381,7 @@ pub fn check_simulation_certificate(
     )
     .map_err(|refusal| match refusal {
         SubjectRefusal::Admission(failure) => ClosureRefusal::Admission(failure),
+        SubjectRefusal::ProtocolSubject => ClosureRefusal::ProtocolRefinement,
         SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
             Checker::Simulation.fault("the-subjects-of-a-refinement-open")
         }

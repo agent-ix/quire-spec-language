@@ -129,6 +129,10 @@ pub enum ModelCheckRefusal {
     /// The subject's protocol system does not build (FR-205).
     #[error(transparent)]
     Protocol(ProtocolRefusal),
+    /// The refinement's concrete subject is a protocol, whose refinement
+    /// check is not built yet (FR-142, FR-145).
+    #[error("a refinement over a concrete protocol is not checked yet")]
+    ProtocolRefinement,
     /// The clause's property form is not one this engine decides yet: a
     /// liveness clause (TP-4), or a clause with no property form.
     #[error("EN-1 does not decide the property form {form:?} yet")]

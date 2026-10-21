@@ -368,6 +368,7 @@ fn unit_text(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+         profile pp = \"quire.protocol.finite-global/v1\";\n\
          model Spec = \"{SPEC}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          model Impl = \"{CAS}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
          model Third = \"{THIRD}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\

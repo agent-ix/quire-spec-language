@@ -32,10 +32,19 @@ use quire_semantic_value::step_simulation::{StepObligation, StepRowRef, StepSimu
 use super::{CheckedRefinement, CheckedStateClause, StepClass, StepTarget};
 use crate::model::key::DeclarationKey;
 
-/// Why a refinement has more step rows than a [`StepRowRef`] names.
+/// Why a refinement's step rows have no [`StepRowRef`]s.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("a refinement's step rows outnumber the positions a step row reference names")]
-pub struct StepRowOverflow;
+pub enum StepRowRefusal {
+    /// The refinement has more step rows than a [`StepRowRef`] names.
+    #[error("a refinement's step rows outnumber the positions a step row reference names")]
+    Overflow,
+    /// A row of the refinement is not an operation row. FR-136 orders a
+    /// protocol subject's rows by the node key of the declaration each names,
+    /// and a protocol node has no node key of its own (FR-113), so a
+    /// protocol subject's rows have no position yet.
+    #[error("a protocol subject's step rows have no order yet: a protocol node has no node key")]
+    ProtocolSubject,
+}
 
 /// The per-step simulation records of `refinement`, keyed by its node
 /// `refinement_key`, with `clauses` the declaring package's checked state
@@ -49,12 +58,14 @@ pub struct StepRowOverflow;
 ///
 /// # Errors
 ///
-/// [`StepRowOverflow`] when a row's position exceeds `u32`.
+/// [`StepRowRefusal::Overflow`] when a row's position exceeds `u32`;
+/// [`StepRowRefusal::ProtocolSubject`] when a row is not an operation row.
 pub fn step_simulation_records(
     refinement_key: NodeKey,
     refinement: &CheckedRefinement,
     clauses: &[CheckedStateClause],
-) -> Result<Vec<StepSimulationRecord>, StepRowOverflow> {
+) -> Result<Vec<StepSimulationRecord>, StepRowRefusal> {
+    operation_rows(refinement)?;
     let has_hidden = refinement
         .objects()
         .iter()
@@ -84,7 +95,7 @@ pub fn step_simulation_records(
         hypotheses.clone(),
     )];
     for index in 0..refinement.steps().len() {
-        let row = StepRowRef::new(u32::try_from(index).map_err(|_| StepRowOverflow)?);
+        let row = StepRowRef::new(u32::try_from(index).map_err(|_| StepRowRefusal::Overflow)?);
         records.push(StepSimulationRecord::new(
             refinement_key,
             StepObligation::Step { row },
@@ -101,19 +112,16 @@ pub fn step_simulation_records(
 ///
 /// # Errors
 ///
-/// [`StepRowOverflow`] when a row's position exceeds `u32`.
+/// [`StepRowRefusal::Overflow`] when a row's position exceeds `u32`;
+/// [`StepRowRefusal::ProtocolSubject`] when a row is not an operation row.
 pub fn step_row_refs(
     refinement: &CheckedRefinement,
     operation_key: impl Fn(&DeclarationKey) -> NodeKey,
-) -> Result<Vec<StepRowRef>, StepRowOverflow> {
-    let mut order: Vec<(NodeKey, &str, usize)> = refinement
-        .steps()
-        .iter()
+) -> Result<Vec<StepRowRef>, StepRowRefusal> {
+    let mut order: Vec<(NodeKey, &str, usize)> = operation_rows(refinement)?
+        .into_iter()
         .enumerate()
-        .map(|(source, row)| {
-            let StepClass::Operation(operation) = &row.class;
-            (operation_key(operation), operation.node.as_str(), source)
-        })
+        .map(|(source, operation)| (operation_key(operation), operation.node.as_str(), source))
         .collect();
     order.sort_by(|left, right| {
         left.0
@@ -123,7 +131,20 @@ pub fn step_row_refs(
     });
     let mut refs = vec![StepRowRef::new(0); order.len()];
     for (position, (_, _, source)) in order.into_iter().enumerate() {
-        refs[source] = StepRowRef::new(u32::try_from(position).map_err(|_| StepRowOverflow)?);
+        refs[source] =
+            StepRowRef::new(u32::try_from(position).map_err(|_| StepRowRefusal::Overflow)?);
     }
     Ok(refs)
+}
+
+/// The concrete operation of each step row of `refinement`, in source order.
+fn operation_rows(refinement: &CheckedRefinement) -> Result<Vec<&DeclarationKey>, StepRowRefusal> {
+    refinement
+        .steps()
+        .iter()
+        .map(|row| match &row.class {
+            StepClass::Operation(operation) => Ok(operation),
+            _ => Err(StepRowRefusal::ProtocolSubject),
+        })
+        .collect()
 }

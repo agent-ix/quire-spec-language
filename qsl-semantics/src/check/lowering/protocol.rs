@@ -171,7 +171,11 @@ impl Lowering<'_> {
     /// The node key of the `protocol`-th declaration, or the refusal that
     /// the package selected no protocol profile for it to carry, or that its
     /// root names no operator.
-    fn protocol_key(&self, protocol: usize, location: &Location) -> Result<NodeKey, CheckRefusal> {
+    pub(crate) fn protocol_key(
+        &self,
+        protocol: usize,
+        location: &Location,
+    ) -> Result<NodeKey, CheckRefusal> {
         match self.protocol_keys.get(protocol) {
             Some(ProtocolKey::Keyed(key)) => Ok(*key),
             Some(ProtocolKey::UnsupportedRoot(root)) => Err(unsupported_root(root, location)),
