@@ -26,7 +26,8 @@
 //! this function takes the recompiled clause and the admitted systems it
 //! would hand over. A counterexample that breaks QSpec FR-400's reader rules
 //! is refused here as the shape it breaks. The other arms (`witness-exhausted`,
-//! `projected`, `step-tuple`) join with their engines.
+//! `projected`, `step-tuple`) join with their replays: the first two are
+//! refused as not yet implemented.
 
 use qsl_eval::automaton::translate_negation;
 use qsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
@@ -82,7 +83,7 @@ pub struct HyperReplay<'a, 's> {
 /// is not a step (`HyperShape`); an `initial` outside its subject, a step
 /// that is not enabled, a post-state digest no successor has, a loop that does
 /// not close and a stutter step at a state that is not terminal, as FR-128
-/// does; a joint step at which `μ_U` is false (`HyperUnmatched`); and a trace
+/// does; a counterexample of an `align skip` clause, `HyperProjected`; a joint step at which `μ_U` is false (`HyperUnmatched`); and a trace
 /// that is unfair on its own loop (`HyperUnfair`). An expansion that stops, a
 /// meter that runs out or a cancellation completes no value.
 ///
@@ -93,11 +94,25 @@ pub fn replay_hyper_trace_tuple(
     replay: &HyperReplay<'_, '_>,
     counterexample: &HyperCounterexample,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
-    if matches!(
-        counterexample.kind,
-        HyperCounterexampleKind::WitnessExhausted { .. }
-    ) {
-        return Err(refused(ModelTraceRefusal::HyperWitnessExhausted));
+    if !counterexample.marks_match_kind() {
+        return Err(shape_error(
+            "marks its steps other than as its kind does: every step of a projected one and none of any other",
+        ));
+    }
+    match counterexample.kind {
+        HyperCounterexampleKind::WitnessExhausted { .. } => {
+            return Err(refused(ModelTraceRefusal::HyperWitnessExhausted));
+        }
+        HyperCounterexampleKind::Projected => {
+            return Err(refused(ModelTraceRefusal::HyperProjected));
+        }
+        HyperCounterexampleKind::Lockstep { .. } | HyperCounterexampleKind::Undefined(_) => {}
+    }
+    // A clause with `align skip` is read over projected prefixes, so even an
+    // `Undefined` counterexample of one has paths of unequal length and
+    // positions that count visible steps: FR-183 does not state their replay.
+    if !replay.clause.align_skip().is_empty() {
+        return Err(refused(ModelTraceRefusal::HyperProjected));
     }
     shape(replay, counterexample)?;
     let Some(executed) = execute(replay, counterexample)? else {
@@ -110,8 +125,8 @@ pub fn replay_hyper_trace_tuple(
         HyperCounterexampleKind::Undefined(claimed) => {
             undefined(replay, counterexample, &executed, claimed)
         }
-        HyperCounterexampleKind::WitnessExhausted { .. } => {
-            Err(fault("a-witness-exhausted-counterexample-is-refused-first"))
+        HyperCounterexampleKind::WitnessExhausted { .. } | HyperCounterexampleKind::Projected => {
+            Err(fault("an-unreplayed-counterexample-is-refused-first"))
         }
     }
 }
@@ -166,8 +181,8 @@ fn shape(
                 return Err(shape_error("re-enters its loop outside its steps"));
             }
         }
-        HyperCounterexampleKind::WitnessExhausted { .. } => {
-            return Err(fault("a-witness-exhausted-counterexample-is-refused-first"));
+        HyperCounterexampleKind::WitnessExhausted { .. } | HyperCounterexampleKind::Projected => {
+            return Err(fault("an-unreplayed-counterexample-is-refused-first"));
         }
         HyperCounterexampleKind::Undefined(claimed) => {
             let position = u64::try_from(steps).unwrap_or(u64::MAX);

@@ -213,6 +213,11 @@ pub enum ModelTraceRefusal {
         "unsupported_construct/not-yet-implemented: replay of a witness-exhausted counterexample"
     )]
     HyperWitnessExhausted,
+    /// A hyper counterexample of an `align skip` clause (HP-6), `Projected`
+    /// or `Undefined`, which FR-183's HP-6 replay (ADR-023 PA-7) checks and
+    /// replay does not build yet.
+    #[error("unsupported_construct/not-yet-implemented: replay of a counterexample of an `align skip` clause")]
+    HyperProjected,
     /// A hyper counterexample whose traces do not match the clause: in
     /// number, order, variable, alias or instance; of unequal step counts;
     /// or whose loop entry is not a position of a step (FR-183 "Common").
@@ -294,6 +299,7 @@ impl ModelTraceRefusal {
             Self::AuthoredUndefined
             | Self::GuardedActivation
             | Self::HyperWitnessExhausted
+            | Self::HyperProjected
             | Self::ProtocolLasso => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
@@ -322,6 +328,7 @@ impl ModelTraceRefusal {
             Self::AuthoredUndefined
             | Self::GuardedActivation
             | Self::HyperWitnessExhausted
+            | Self::HyperProjected
             | Self::ProtocolLasso => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {

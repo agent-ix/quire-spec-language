@@ -3,10 +3,10 @@
 //! `WitnessEnvelope<HyperCounterexample>`, mirroring QSpec FR-400 member for
 //! member.
 //!
-//! This is the `lockstep` (HP-2), `witness-exhausted` (HP-3) and `undefined`
-//! arms that FR-176's and FR-177's EN-1 engines return. The `projected` and
-//! `step-tuple` arms join with the engines that return them (FR-178,
-//! FR-179).
+//! This is the `lockstep` (HP-2), `witness-exhausted` (HP-3), `projected`
+//! (HP-6) and `undefined` arms that FR-176's, FR-177's and FR-178's EN-1
+//! engines return. The `step-tuple` arm joins with the engine that returns it
+//! (FR-179).
 
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
@@ -26,6 +26,16 @@ pub enum HyperStep {
     TerminalStutter,
 }
 
+/// Whether a step of a `Projected` counterexample's trace is skipped or
+/// visible (ADR-023 PA-2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StepMark {
+    /// The step's operation is in the clause's `align skip` list.
+    Skipped,
+    /// The step's operation is not.
+    Visible,
+}
+
 /// One trace of a tuple: the behaviour of one trace variable (QSpec FR-400
 /// `HyperTrace`).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -39,6 +49,9 @@ pub struct HyperTrace {
     pub initial: u32,
     /// Its steps, in order.
     pub steps: Vec<HyperStep>,
+    /// For a `Projected` counterexample, the mark of each step, in step
+    /// order; empty for every other kind.
+    pub marks: Vec<StepMark>,
 }
 
 /// The expression of a hyper clause that has no value (QSpec FR-400
@@ -102,6 +115,13 @@ pub enum HyperCounterexampleKind {
         /// The first joint position at which the witness set is empty.
         position: u64,
     },
+    /// HP-6: one finite trace per variable to a rejecting state of the body's
+    /// safety monitor, each step marked skipped or visible. Every trace has
+    /// the same number of visible steps; the total lengths are free, and
+    /// differ when a trace takes skipped steps (ADR-023 PA-6). There is no
+    /// loop, and `trace_position` is the projected position the visible steps
+    /// reach.
+    Projected,
     /// Any form: the traces are finite paths to the state an undefined
     /// evaluation reads, one per trace variable (ADR-023 HV-8).
     Undefined(HyperUndefined),
@@ -138,6 +158,12 @@ impl FamilyPayload for HyperCounterexample {
                             .len()
                             .saturating_mul(std::mem::size_of::<HyperStep>()),
                     )
+                    .saturating_add(
+                        trace
+                            .marks
+                            .len()
+                            .saturating_mul(std::mem::size_of::<StepMark>()),
+                    )
             })
             .sum();
         let instance: usize = self
@@ -153,8 +179,19 @@ impl FamilyPayload for HyperCounterexample {
 
 impl HyperCounterexample {
     /// The number of steps every trace of a `Lockstep` counterexample has,
-    /// and of an `Undefined` one's paths.
+    /// and of an `Undefined` one's paths in lockstep. A `Projected`
+    /// counterexample's traces may differ in step count.
     pub fn steps(&self) -> usize {
         self.traces.first().map_or(0, |trace| trace.steps.len())
+    }
+
+    /// Whether the marks agree with the kind (QSpec FR-400): a `Projected`
+    /// counterexample marks every step of every trace, and any other kind
+    /// marks none.
+    pub fn marks_match_kind(&self) -> bool {
+        self.traces.iter().all(|trace| match self.kind {
+            HyperCounterexampleKind::Projected => trace.marks.len() == trace.steps.len(),
+            _ => trace.marks.is_empty(),
+        })
     }
 }

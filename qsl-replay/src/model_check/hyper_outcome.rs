@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-176, FR-177 Outputs (ADR-023 HV-1 to HV-8): what an EN-1 run over an
-//! HP-2 or HP-3 item returns, which FR-182 settles.
+//! FR-176, FR-177, FR-178 Outputs (ADR-023 HV-1 to HV-8): what an EN-1 run over
+//! an HP-2, HP-3 or HP-6 item returns, which FR-182 settles.
 //!
 //! It is FR-126's [`ModelCheckOutcome`](crate::ModelCheckOutcome) for a hyper
 //! item: `Violated` carries a [`HyperCounterexample`], and `Undecided` the two
@@ -13,7 +13,7 @@ use crate::model_check::limits::ReachedLimit;
 use crate::model_check::outcome::{RunStats, UndecidedCause};
 use crate::proof_result::IncompleteCause;
 
-/// One EN-1 run's outcome over an HP-2 or HP-3 item.
+/// One EN-1 run's outcome over an HP-2, HP-3 or HP-6 item.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HyperOutcome {
     /// Every reachable product state was examined and no fair accepting
@@ -27,6 +27,14 @@ pub enum HyperOutcome {
     Violated {
         /// The counterexample.
         counterexample: Box<HyperCounterexample>,
+        /// The run's counts.
+        stats: RunStats,
+    },
+    /// The run completed every move up to its search horizon with no
+    /// counterexample (V-5, ADR-023 HV-3). Only an HP-6 run sets a horizon.
+    BoundReached {
+        /// The horizon `max_depth`.
+        depth: u64,
         /// The run's counts.
         stats: RunStats,
     },
@@ -59,6 +67,7 @@ impl HyperOutcome {
         match self {
             Self::Holds { stats }
             | Self::Violated { stats, .. }
+            | Self::BoundReached { stats, .. }
             | Self::Undecided { stats, .. }
             | Self::Stopped { stats, .. } => *stats,
         }

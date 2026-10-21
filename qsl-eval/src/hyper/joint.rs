@@ -15,7 +15,7 @@ use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::automaton::{Atom, Letter};
 use crate::hyper::product::{ComponentStep, Halt, HyperTransition};
-use crate::hyper::seam::{HyperLetters, MatchReading, ParameterBinding, StepMatch};
+use crate::hyper::seam::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem};
 use crate::simulation::{EncodingRefusal, ExpansionStop, TransitionSystem};
 use crate::temporal::{AtomReading, UndefinedCause};
@@ -198,7 +198,7 @@ impl<'r, 's> Joint<'r, 's> {
             return Ok(Matched::Holds);
         };
         self.poll()?;
-        let labels = step.labels();
+        let labels = self.labels(step)?;
         let mut meter = Meter::new(self.meter);
         Ok(read(matcher.universal(self.instance, &labels, &mut meter)))
     }
@@ -212,13 +212,23 @@ impl<'r, 's> Joint<'r, 's> {
             return Ok(Matched::Holds);
         };
         self.poll()?;
-        let labels = step.labels();
+        let labels = self.labels(step)?;
         let mut meter = Meter::new(self.meter);
         Ok(read(matcher.existential(
             self.instance,
             &labels,
             &mut meter,
         )))
+    }
+
+    /// The labels `μ` reads for `step`, which moves every component.
+    fn labels<'a>(&self, step: &'a HyperTransition) -> Result<Vec<StepLabel<'a>>, ExpansionStop> {
+        step.labels().ok_or_else(|| {
+            self.record(Halt::Fault(InternalFault::new(
+                "hyper-product",
+                "a-matched-step-moves-every-component",
+            )))
+        })
     }
 
     /// The expansion of `component` at `model`, with the stutter step at a

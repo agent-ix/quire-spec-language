@@ -521,7 +521,10 @@ impl TransitionSystem for WitnessProduct<'_, '_> {
                 })
             }
             Property::Witnesses(members) => members,
-            Property::After(_) | Property::Dead => {
+            Property::After(_)
+            | Property::Dead
+            | Property::Rejected
+            | Property::MatchUndefined { .. } => {
                 return Err(self.joint.record(Halt::Fault(InternalFault::new(
                     "witness-product",
                     "a-witness-state-has-a-witness-set",
