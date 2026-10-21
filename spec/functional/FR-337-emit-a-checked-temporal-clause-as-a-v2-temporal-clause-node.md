@@ -67,8 +67,10 @@ reader returns.
   automaton-state context.
 - The clause's `over` node: the NodeId of the parameter node the first
   argument of the `quire.op.temporal.clause` application references. A
-  clause with no `over` parameter (a clause such as `eventually holds(true)` with no bound variable; today S1 requires `over`, STD-186) has no `over` node; that
-  absence is a valid result, not a refusal.
+  clause always has an `over` node: QSpec FR-370 admits no temporal clause
+  without an `over` parameter (FR-370-AC-13), and S1 refuses one with
+  `invalid_syntax`/`unexpected-token` at the token that stands where `over` is
+  required.
 - From the I2 reader: the checked clause's v2 view, or FR-370's refusal
   with its locus.
 
@@ -103,8 +105,7 @@ reader returns.
   it takes neither a clause the package does not hold nor an `over` node
   from its caller.
 - The I2 reader SHALL return, for each `claim` occurrence, its identity
-  triple and its `over` node, or no `over` node for a clause without an
-  `over` parameter.
+  triple and its `over` node.
 - If a looked-up clause root names a NodeId the package does not hold, a
   node that is not a `temporal`/`temporal_clause` node, or an occurrence
   whose role or ordinal differs, then the I2 reader SHALL return the lookup
@@ -129,7 +130,7 @@ reader returns.
 | FR-337-AC-2 | The clause written with `fair weak attemptUpdate` and with `fair weak whole attemptUpdate` emits byte-identical fairness applications and equal node keys; changing `each` to `whole`, or the formula's `eventually` to `eventually[0,5]`, changes the node key and the `package_id`. | Test (TC-524) |
 | FR-337-AC-3 | `eventually[0,5] holds(c.versionNumber = 2)` under event-position false-extension emits `quire.op.temporal.eventually` with member `temporal_interval` `{lower: "0", upper: "5"}` and an empty fairness argument; strong previous emits `quire.op.temporal.once` with `{lower: "1", upper: "1"}`; under infinite-trace `eventually[3,*] holds(c.versionNumber = 2)` emits `{lower: "3", upper: null}`. | Test (TC-524) |
 | FR-337-AC-4 | Fed to QSL's I2 reader, AC-1's node with its arguments reordered fails the schema; with a `null` interval under a bounded profile it refuses `invalid_package`/`operation-member-mismatch`; with a fairness member naming an absent operation it refuses `missing_declaration`/`missing-name`; with a `quire.op.temporal.fair` application inside the formula it refuses `ill_typed`/`operator-ineligible`, each at FR-370's locus. | Test (TC-524) |
-| FR-337-AC-5 | Compiling ADR-018 §6's example unit, the I2 reader returns for `ReachesTwo` the triple `[node, "claim", ordinal]` with `node` equal to the emitted node's NodeId and the `over` node equal to `c`'s parameter node; resolving that triple in the recompiled package finds the clause. Two structurally identical clause declarations share one node and the reader returns two triples with distinct ordinals, each resolving to its own declaration. A clause with no `over` parameter (FR-153-AC-3's `eventually holds(forall x in toggles: x.fired)` shape) returns its triple and no `over` node, not a refusal; this half waits on QSpec (Remaining work: STD-186 lets FR-370 hold a clause without an `over` parameter). A triple with an unknown NodeId, a non-temporal node's NodeId, role `invariant` or another ordinal returns `clause-root-unresolved` at that triple. | Test (TC-1079) |
+| FR-337-AC-5 | Compiling ADR-018 §6's example unit, the I2 reader returns for `ReachesTwo` the triple `[node, "claim", ordinal]` with `node` equal to the emitted node's NodeId and the `over` node equal to `c`'s parameter node; resolving that triple in the recompiled package finds the clause. Two structurally identical clause declarations share one node and the reader returns two triples with distinct ordinals, each resolving to its own declaration. A temporal clause written with no `over` parameter refuses `invalid_syntax`/`unexpected-token` at the token that stands where `over` is required, with no node. A triple with an unknown NodeId, a non-temporal node's NodeId, role `invariant` or another ordinal returns `clause-root-unresolved` at that triple. | Test (TC-1079) |
 
 ## Dependencies
 
@@ -138,10 +139,16 @@ reader returns.
   (the checked clause), [FR-093](FR-093-lower-checked-value-expressions-to-fr-322-terms.md)
   (lowering a Boolean operand), FR-092 (node keys),
   [FR-125](FR-125-read-a-model-subject-s-behaviours-as-temporal-traces.md)
-  (the `over` binding and parameter-free clauses),
+  (the `over` binding and the instances of a clause),
   [FR-338](FR-338-check-an-en-1-closure-certificate.md) (the clause root
   that consumes the triple), ADR-013 O-07 (occurrence ordinals), QSpec
   FR-322 (NodeId).
+
+## Remaining work
+
+- QSpec FR-370-AC-13 (a temporal clause always names an `over` parameter) lands
+  with quire-specification#314; the `over` statements in this requirement and
+  in TC-1079 follow it.
 
 ## References
 

@@ -87,14 +87,12 @@ abbreviation or extra member.
 The QSL composed linker SHALL report every label refusal and carrier refusal
 with code `invalid_capability` and exactly one cause from the closed set
 `absent-kind`, `unknown-kind` and `unsupported-version`. Registration refusals
-carry the registry causes below, including the QSL-proposed
-`unknown-fairness-kind`, `duplicate-fairness-kind` and `absent-fairness-kinds`
+carry the registry causes below, including `invalid-fairness-kinds`
 (FR-134), and family-checker refusals carry their own catalog codes.
 
 `invalid_capability` and its causes are catalogued in
 `quire.native.diagnostics/v1` (quire-specification FR-271
-and FR-272), except the three QSL-proposed fairness-kind causes, which QSpec
-does not yet catalog (FR-134 Remaining work). It is a refusal of the request, not an unsupported backend
+and FR-272), `invalid-fairness-kinds` included. It is a refusal of the request, not an unsupported backend
 result, so `unsupported_projection` and `unimplemented_capability` are never
 produced at admission.
 

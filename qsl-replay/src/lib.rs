@@ -115,8 +115,9 @@ pub use identity::{
 };
 pub use limits::{AccountingLimits, CallerLimits};
 pub use model_check::counterexample::{
-    deadlock_freedom_clause, undefined_finding, CounterexampleKind, Lasso, MappingSite, ModelStep,
-    TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    deadlock_freedom_clause, undefined_finding, ClaimPredicate, CounterexampleKind, Lasso,
+    MappingSite, ModelStep, TemporalCounterexample, UndefinedEvaluation, UndefinedLocus,
+    UndefinedSite,
 };
 pub use model_check::graph_settle::{
     settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,

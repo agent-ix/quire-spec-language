@@ -4,7 +4,7 @@
 //! parameters; and the reduction of a quantile claim to a probability bound
 //! over an event (ADR-024 PF-4).
 
-use qsl_replay::statistical::{ClaimForm, Confidence, StatisticalRefusal};
+use qsl_replay::statistical::{ClaimForm, Confidence, MeasureValue, StatisticalRefusal};
 use qsl_semantics::check::{CheckedProbabilisticClaim, ProbScheduler};
 use quire_exact::Rational;
 
@@ -119,16 +119,6 @@ pub enum QuantileComparison {
     AtLeast,
 }
 
-/// One activated sample's measure: a value, or censored, with no end
-/// within the window (FR-189 "Per sample").
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MeasureValue {
-    /// The measure's value.
-    Value(Rational),
-    /// Activated with no end position: exceeds every finite threshold.
-    Censored,
-}
-
 /// The event a quantile claim reduces to: `M <= c`, or `M < c` when
 /// `strict` (ADR-024 PF-4).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -185,10 +175,9 @@ pub fn reduce_quantile(
 
 /// Whether statistical evidence can decide `claim` at all (ADR-024 SV-5,
 /// ADR-028 XF-7): the refusal EN-4 gives at negotiation, before it draws a
-/// sample, for a claim only exact evidence decides. A caller runs it on the
-/// checked claim before it builds a [`StatisticalClaim`] for
-/// [`check_statistical`](super::check_statistical); that function takes the
-/// reduced claim and cannot see the scheduler or the form.
+/// sample, for a claim only exact evidence decides.
+/// [`check_statistical`](super::check_statistical) runs it first, before it
+/// reads the subject.
 ///
 /// It refuses exactly the claims [`CheckedProbabilisticClaim::exact_only`]
 /// marks. The cause is the first that applies: a claim under every scheduler,

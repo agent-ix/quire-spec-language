@@ -32,18 +32,18 @@ Scope: FR-134-AC-1, FR-134-AC-2, FR-134-AC-3, FR-134-AC-4, FR-134-AC-5, FR-134-A
    | V1 | `["weak"]` | admitted, `{Weak}` |
    | V2 | `["weak","strong"]` | admitted, `{Weak, Strong}` |
    | V3 | `[]` | admitted, no kind |
-   | V4 | `["Weak"]` | refused `invalid_capability`/`unknown-fairness-kind`, names `Weak` |
-   | V5 | `["weak","eventual"]` | refused `unknown-fairness-kind`, names `eventual` |
-   | V6 | `[""]` | refused `unknown-fairness-kind`, names the empty label |
-   | V7 | `["weak","weak"]` | refused `duplicate-fairness-kind`, names `weak` |
-   | V8 | `["weak","strong","weak"]` | refused `duplicate-fairness-kind`, names `weak` |
-   | V9 | member absent | refused `absent-fairness-kinds` |
-   | V10 | `["weak","weak","eventual"]` | refused `unknown-fairness-kind` (unknown before repeat) |
-   | V11 | `["weak",1]` | refused `unknown-fairness-kind`, names `1` |
-   | V12 | `null` | refused `unknown-fairness-kind`, names `null` |
-   | V13 | `"weak"` (a string, not a list) | refused `unknown-fairness-kind`, names `"weak"` |
-   | V14 | `["x","y"]` | refused `unknown-fairness-kind`, names `x` (first in member order) |
-   | V15 | `["strong","weak","weak","strong"]` | refused `duplicate-fairness-kind`, names `weak` (the first element that repeats an earlier element) |
+   | V4 | `["Weak"]` | refused `invalid_capability`/`invalid-fairness-kinds`, `unknown-label`, names `Weak` |
+   | V5 | `["weak","eventual"]` | refused `invalid-fairness-kinds`, `unknown-label`, names `eventual` |
+   | V6 | `[""]` | refused `invalid-fairness-kinds`, `unknown-label`, names the empty label |
+   | V7 | `["weak","weak"]` | refused `invalid-fairness-kinds`, `duplicate-label`, names `weak` |
+   | V8 | `["weak","strong","weak"]` | refused `invalid-fairness-kinds`, `duplicate-label`, names `weak` |
+   | V9 | member absent | refused `invalid-fairness-kinds`, `absent` |
+   | V10 | `["weak","weak","eventual"]` | refused `invalid-fairness-kinds`, `unknown-label` (unknown before repeat) |
+   | V11 | `["weak",1]` | refused `invalid-fairness-kinds`, `unknown-label`, names `1` |
+   | V12 | `null` | refused `invalid-fairness-kinds`, `not-a-list`, names `null` |
+   | V13 | `"weak"` (a string, not a list) | refused `invalid-fairness-kinds`, `not-a-list`, names `"weak"` |
+   | V14 | `["x","y"]` | refused `invalid-fairness-kinds`, `unknown-label`, names `x` (first in member order) |
+   | V15 | `["strong","weak","weak","strong"]` | refused `invalid-fairness-kinds`, `duplicate-label`, names `weak` (the first element that repeats an earlier element) |
    | V16 | `["Weak"]`, advertising (`temporal-satisfaction`, `unbounded`) and (`Foo`, `unbounded`) | refused `invalid_capability`/`unknown-kind` (the pair cause wins) |
    | V17 | member absent, with a (`temporal-satisfaction`, `bounded`) pair and no `domains` | refused `invalid-domains` (the `domains` cause wins) |
 

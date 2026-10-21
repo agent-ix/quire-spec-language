@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-126
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: references
 ---
 # FR-338: Check an EN-1 closure certificate
 
@@ -60,7 +62,7 @@ pub enum CertificateLocus {
     Query { part: QueryPart },
     ProofStep { part: QueryPart, index: u64 },
 }
-pub enum QueryPart { Unrolling, Base, Step }   // FR-314
+pub enum QueryPart { Unrolling, Base, Step { row: Option<u64> } }   // FR-314
 
 pub enum TemporalCertificateCheck {
     Accepted,
@@ -79,6 +81,20 @@ pub fn check_closure(
 `AutomatonStateKey` is the property-automaton translation's canonical
 encoding of an automaton state (`qsl-eval`, ADR-018 LA-2), the same for
 every order in which the states are materialized.
+
+QSpec FR-331 carries `certificate-rejected{rule, at}` with `rule` and `at` as
+non-empty texts and catalogues no finer spelling. Of the loci in this family
+only FR-314's `QueryPart` has a text spelling (below); FR-149 writes
+`SimulationStep` as a JSON object, and `ProductState`, FR-314's `ProofStep`
+index form, FR-163's `HyperProductState` and FR-169's `ModelState` have no
+catalogued `at` spelling, which STD-238 asks QSpec FR-331 to catalog. This
+requirement carries an `AutomatonStateKey` as the bytes of its canonical
+encoding.
+
+FR-163 additionally owns the labelled-transition-tuple and missing-member
+loci of its hyper checker; those failures are not all product-state failures.
+
+A `QueryPart` is spelled on the wire as the text `unrolling`, `base` or `step`; a `Step` that carries a row (FR-314's refinement certificate, zero-based) is spelled `step/<row>` with the row in decimal, so `step/3` names the fourth step row and `step` alone names the step query of an `Inductive` proof. FR-331's `certificate-rejected` `at` is a non-empty text and defines no finer spelling, so this is QSL's convention for the part. QSpec Linear STD-238 asks FR-331 to catalog the `rule` and `at` spellings, `step/<row>` and the command-number form of `ProofStep` included.
 
 ### Canonical translation state
 
