@@ -18,7 +18,7 @@ recomputed `package_id`, types an imported function call from the
 library's checked graph and emits it as a `dependency_reference`, and
 refuses each ADR-015 D-1 and D-2 case with no package.
 
-Scope: FR-099-AC-1 to FR-099-AC-7, FR-027-AC-10.
+Scope: FR-099-AC-1 to FR-099-AC-7, FR-099-AC-9, FR-027-AC-10.
 
 ## Test Procedure
 
@@ -67,6 +67,14 @@ authority `a`, identity `geometry`, revision (`git`, `1`), declaring
    one byte below the three libraries' summed source bytes. Then compile a
    unit importing the first of a chain of 200 libraries, each importing the
    next, at the default limits.
+9. Compile a unit declaring refinement `CasTwice` with `refinement_internals`
+   `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` for
+   the unit and none for the library; then with the unit's value `null`, `{}`
+   and `7`; then a malformed value on a supplied library the unit imports and
+   on one it does not; then a well-formed value naming a refinement the
+   library does not declare, on a library the unit does not import. Request
+   the `1-draft` export with the member at the top level and on a library
+   object, and a `0-draft` request with the member.
 
 Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
 
@@ -110,3 +118,11 @@ Tag the tests `#[trace("FR-099-AC-n", "TC-446")]` with the AC each backs.
   no package; at 3 the compile succeeds; edge count, bound 2, actual 3,
   setting `dependency.import_edges`; input bytes, setting
   `dependency.source_bytes`. The 200-library chain compiles.
+- Step 9: S3 receives the unit's value unchanged and the empty list for the
+  library's refinements; `null`, `{}` and `7` are not refused by the input
+  builder and S3 reports `invalid_model_binding`/`malformed-declaration` at
+  the root pointer; the library's malformed value refuses the compilation
+  located at (that library's value, pointer) whether or not the unit imports
+  it; the well-formed value for the unimported library refuses nothing; the
+  `1-draft` request carries both members and the `0-draft` request refuses
+  with `invalid-request`.

@@ -62,6 +62,9 @@ compiled package.
    reaches; then swap two entries; then repeat the entry; then add an entry
    whose source has `test/units`'s authority and identity; then remove the
    entry; then give the entry a second source.
+8. Replay a package whose refinement has a non-empty internal list with the
+   list carried at `/package/refinement_internals`; with the member removed;
+   with the value `{}`; and with a list on a `dependencies` entry.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -113,3 +116,8 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   removed entry refuses `Recompile` carrying
   `missing_import`/`missing-selection` at the import; the second source
   refuses `SourceCount(2)`. None yields a verdict.
+- Step 8: the first replay recompiles to the proved `package_id`; the second
+  refuses `PackageIdMismatch` naming both identities; the third refuses
+  `Recompile` carrying `invalid_model_binding`/`malformed-declaration` at the
+  root pointer of the package's value; the dependency entry's list applies to
+  that dependency's refinements only (FR-098-AC-20).

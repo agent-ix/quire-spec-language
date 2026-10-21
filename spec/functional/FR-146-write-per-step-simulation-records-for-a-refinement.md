@@ -124,10 +124,11 @@ since the compiler writes them and CG reads them (ADR-018 LA-5).
   model subject's row names its concrete operation), then by member name as
   UTF-8 bytes.
 - Reordering the `step` rows in source SHALL change no record's `StepRowRef`.
-- QSpec FR-375's order is specified for model subjects only. A protocol
-  subject's rows (`MemoryStep` rows name no declaration, and rows such as
-  `duplicate` and `lose` of one channel share one) have no specified order,
-  so their `StepRowRef` is pending a QSpec FR-375/FR-432 ruling.
+- A protocol subject's rows are ordered by FR-136's protocol sort key: the
+  node-key digest of the declaration the row names (the selected clause for
+  `activate` and `memory` rows), then the row's step keyword, then the memory
+  step kind name, as UTF-8 bytes. The `StepRowRef` is the zero-based position
+  in that order, and reordering the rows in source changes none.
 
 ### Record identity, pending
 
@@ -171,7 +172,7 @@ wording.
 | FR-146-AC-2 | `RegisterHistory` (FR-138) and `Coin` with `side` hidden (FR-141-AC-4) write no `StepSimulationRecord`; each still writes its refinement record. | Test (TC-551) |
 | FR-146-AC-3 | With an invariant `CasInv` (`self.busyA or self.tmpA <= self.value`) added to `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` in `hypotheses`, the request also holds `CasInv`'s own `operation-contract` record. | Test (TC-551) |
 | FR-146-AC-4 | Settlement: a backend outcome "holds" for `CasRefinesCounter`'s `commitA` record settles `proved`, `decisive-witness`, `Proved{Inductive{depth: 1}, Uncertified}` with no certificate and `Proved{Inductive{depth: 1}, Certified}` when the settlement map is given the checker's `Verified` result directly (a certificate FR-314 verifies on an RE-2 query is pending FR-315 encoding that query, FR-146-AC-7); for the lost-update model, a backend counterexample for the `commitB` record from `(1, 0, f, 0, t)` settles `inconclusive`, `Inconclusive(InductionNotClosed{depth: 1})`; with no SMT candidate registered, each record settles `unsupported`. | Test (TC-551) |
-| FR-146-AC-5 | Over a model subject, `StepRowRef` is the zero-based position in the digest-sorted `steps` order. For `CasRefinesCounter`, the seven `Step` records name the positions 0 to 6, each once, and the row at position i has a first named declaration whose node-key digest is not greater than the row at position i + 1's; writing the seven `step` rows in reverse source order gives each `Step` record the same `StepRowRef`. | Test (TC-551) |
+| FR-146-AC-5 | Over a model subject, `StepRowRef` is the zero-based position in the digest-sorted `steps` order. For `CasRefinesCounter`, the seven `Step` records name the positions 0 to 6, each once, and the row at position i has a first named declaration whose node-key digest is not greater than the row at position i + 1's; writing the seven `step` rows in reverse source order gives each `Step` record the same `StepRowRef`. Over FR-136-AC-7's protocol subject the `Step` records name the positions of that requirement's sort key, and reversing the source order of the rows changes none. | Test (TC-551) |
 | FR-146-AC-6 | With a package that holds `Spec::Counter` and `Impl::Counter` and an invariant `AbsInv` on `Spec::Counter` beside `CasInv` on `Impl::Counter`, every `StepSimulationRecord` of `CasRefinesCounter` lists `CasInv` and not `AbsInv` in `hypotheses`, and writing the clauses in the opposite source order leaves each record's `hypotheses` unchanged. | Test (TC-551) |
 | FR-146-AC-7 | The settlement map treats a certificate by what FR-314 finds: a backend outcome "holds" for a `Step` record whose certificate FR-314 shows wrong settles `inconclusive`, `unsettled`, `Inconclusive(CertificateRejected{rule, at})` with FR-314's rule and locus, never `proved`; the same outcome with a certificate that FR-314 cannot verify and does not show wrong settles `Proved{Inductive{depth: 1}, Uncertified}`; a `Certified` settlement is not exercised until FR-315 encodes the RE-2 query. The vector feeds the settlement map the checker's `Rejected` and `Unverifiable` results directly. | Test (TC-551) |
 

@@ -54,7 +54,8 @@ rows at compile time and requests one protocol refinement claim.
   FR-432). The declaration carries no `internal` or `visible` row; the
   internal list is not source (ADR-020 RM-9, MC-1).
 - The compilation's optional `refinement_internals` input: one value for the
-  unit and one for each supplied library (QSpec FR-375). Its shape and
+  unit and one for each supplied library (QSpec FR-375), carried by the
+  compile input as supplied and unchecked (FR-099). Its shape and
   spellings are described in "The refinement's internal list". An absent
   value is the empty list.
 - The abstract model's checked protocol clause and its step classes
@@ -80,6 +81,10 @@ rows at compile time and requests one protocol refinement claim.
 - When the abstract side names `<A>::<protocol>`, the checker SHALL resolve
   it to a checked protocol clause of the abstract model, refusing
   `missing_declaration`/`missing-name` when none matches.
+- The checker SHALL resolve the clause against the checked clause: an
+  abstract protocol declared in the declaring package is checked before the
+  refinement that names it is resolved, the order FR-136 states for a
+  concrete protocol; a dependency's clause is already checked.
 - Population and object rows SHALL be checked by FR-135 against the
   abstract model's state; the protocol's state SHALL take no row, and a row
   naming a protocol binder, queue or node as a field SHALL refuse

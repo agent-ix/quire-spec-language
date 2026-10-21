@@ -64,9 +64,14 @@ declarations select from it by `sha256-jcs` digest, and the v2 lock's
 digest, with no version. A `1-draft` request may carry `libraries`: one
 `{identity, source}` object per supplied library, where `source` is
 the same source selection a model or the program uses (file and the FR-001
-labels). The command hands
-them to spine `compile` as its dependency input (FR-099, ADR-015 D-1). A
-request with no `libraries` supplies none. Each library source counts toward
+labels), and each library object may carry `refinement_internals`, a JSON
+value. A `1-draft` request may also carry `refinement_internals` at its top
+level for the program's own refinements. The command hands the libraries
+to spine `compile` as its dependency input and the values as its refinement
+internals input, unchanged (FR-099, ADR-015 D-1). A
+request with no `libraries` supplies none, and one with no
+`refinement_internals` supplies the empty list. A `0-draft` request that
+carries `refinement_internals` refuses with `invalid-request`. Each library source counts toward
 FR-026's `dependent_bytes` limit. A `0-draft` request that
 carries a library refuses with `invalid-request`; so does a `1-draft` request
 with a library of an empty identity, or with a library object that has any

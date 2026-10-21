@@ -86,6 +86,12 @@ sources:
   (file, `sha256:` source digest and the two labels) (FR-027);
 - `replay` builds it from the request's package reference (D-4).
 
+A compile also takes the optional **refinement internals** input, a JSON
+value for the unit and one for each supplied library, which QSpec FR-375 names
+(FR-099). It is carried unchanged to S3, which owns every refusal of its
+content (FR-147); it is part of the refinement node's identity, so replay
+carries it in the package reference beside `dependencies`.
+
 The **S4 source resolution** is the spine step between S2 and E3 that turns
 the unit's imports into what E3 and E4 admit. It runs beside I1 and its own
 refusals report stage `intake`. It visits each `import` of the unit, in
