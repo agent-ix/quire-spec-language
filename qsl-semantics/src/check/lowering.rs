@@ -4032,6 +4032,20 @@ impl<'a> Lowering<'a> {
         if let Some(operand) = frame.operands.get(frame.next) {
             frame.next += 1;
             let operand = frame.node.at(operand);
+            // FR-358, ADR-013 O-09: an integer literal operand of an FR-357
+            // scalar operator is a literal term in the application's
+            // argument, never a node of its own.
+            if let (
+                Keyed::Application(_, operation),
+                NodeKind::Literal(CheckedLiteral(Value::Integer(value))),
+            ) = (&frame.keyed, operand.kind())
+            {
+                if is_scalar_operator(&operation.identity) {
+                    let term = self.integer_literal(value.clone(), operand.location())?;
+                    frame.terms.push(term);
+                    return self.next_operand(frame, frames);
+                }
+            }
             frames.push(LowerFrame::Operands(frame));
             return Ok(LowerStep::Descend(operand));
         }
@@ -4808,3 +4822,15 @@ pub(crate) fn generated_location() -> Location {
 
 #[cfg(test)]
 mod tests;
+
+/// Whether `identity` is one of the integer operators whose parity claims
+/// FR-357 settles: `add`, `sub`, `mul` and `negate`.
+fn is_scalar_operator(identity: &str) -> bool {
+    matches!(
+        identity,
+        "quire.op.integer.add"
+            | "quire.op.integer.sub"
+            | "quire.op.integer.mul"
+            | "quire.op.integer.negate"
+    )
+}

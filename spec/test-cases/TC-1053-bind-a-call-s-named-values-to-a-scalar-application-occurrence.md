@@ -79,10 +79,10 @@ once with `read_checked_package` under `admission_evidence`, then call
 - Step 1: `[7, 2]` for both listings, provenance argument indices `1, 0` and
   `0, 1`, parameters `a` then `b`, each with its parameter node and level;
   `b - a` gives `[2, 7]`.
-- Step 2: `[4, 1]` with a `value`/`literal` graph-node `InlineLiteral`
-  second operand of range `(1, 1)`; `[1, 4]`; `[4, 4]` from one argument
-  index at two ordinals; `[4]`; the inline literal term binds
-  `InlineLiteral { node: None }`.
+- Step 2: `[4, 1]` with an `InlineLiteral` second operand of range `(1, 1)`
+  and no graph node for the literal; `[1, 4]`; `[4, 4]` from one argument
+  index at two ordinals; `[4]`; an inline literal term of a hand-built
+  operand list binds `InlineLiteral`.
 - Step 3: `Err` with `UnboundParameter`, `UnknownParameter`,
   `DuplicateArgument`, `WrongValueKind`, `WrongValueKind`, and for the
   combined case FR-100's first refusal; `foreign_reference` with

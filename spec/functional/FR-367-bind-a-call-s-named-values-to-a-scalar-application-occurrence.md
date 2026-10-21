@@ -111,11 +111,10 @@ the internal failure `RunRefusal::Fault`.
   name; `node` is the parameter node (`WireNodeId`) the operand references;
   `level` is that node's declared level as Contract IR's
   `parameter_declaration(node)` returns it (decimal text).
-- `InlineLiteral { node }`: the operand is an integer literal and no argument
-  fed it. `node` is `Some(WireNodeId)` of the `value`/`literal` graph node the
-  operand references (QSL lowers every integer literal to such a node, so this
-  is the form a source-compiled package yields) and `None` for an inline
-  literal term of the application. Its value is the literal's own value, which
+- `InlineLiteral`: the operand is an integer literal term of the application's
+  arguments and no argument fed it. QSL lowers an integer literal operand of
+  `add`, `sub`, `mul` and `negate` to such a term, so this is the form a
+  source-compiled package yields. Its value is the literal's own value, which
   equals the singleton of its range.
 
 `BindRefusal` has exactly these variants, each carrying the data named:
@@ -173,13 +172,9 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
    `CallArgument`, and `b - a` binds `b` first. Any error of that accessor
    returns `Refused(Operands)` with the error unchanged, and no operand list.
 4. For each operand the entry SHALL decide its source in this order.
-   - An `InlineLiteral` operand of Contract IR binds as `InlineLiteral { node:
-     None }` with the singleton of its range as its value.
-   - A `GraphChild` whose node the compiled package holds as a `value`/`literal`
-     node of an integer binds as `InlineLiteral { node: Some(..) }` with that
-     node's integer value, which the entry reads from the checked package; no
-     Contract IR accessor is added for it.
-   - Any other `GraphChild`: the entry SHALL call Contract IR's
+   - An `InlineLiteral` operand of Contract IR binds as `InlineLiteral` with
+     the singleton of its range as its value.
+   - A `GraphChild`: the entry SHALL call Contract IR's
      `parameter_declaration(&node)`. If it refuses `NotParameter` (the operand
      is a nested application or another non-literal node), the entry SHALL
      return `Refused(OperandNotParameter)` with the operand's `ordinal`: this
@@ -193,11 +188,9 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
      binder to a `value`/`parameter` node at the next level), has no supplied
      value; the entry SHALL return `Refused(OperandNotArgument)` with the
      `ordinal`, the declared name and the level.
-   This source maps to FR-357's `OperandIdentity` as follows: an `Argument` and
-   an `InlineLiteral { node: Some(n) }` are each `GraphChild(n)` (the node is a
-   reference in the application), and only `InlineLiteral { node: None }` is
-   FR-357's `InlineLiteral`. The entry SHALL NOT map `Some(n)` to FR-357's
-   `InlineLiteral`, which FR-357 refuses `NotInlineLiteral` for a reference.
+   This source maps to FR-357's `OperandIdentity` as follows: an `Argument` is
+   `GraphChild(node)` (the node is a reference in the application) and an
+   `InlineLiteral` is FR-357's `InlineLiteral`.
    Two operands that reference one parameter node bind the same argument
    twice, at their own ordinals. The `level` is carried in the `source`; it is
    not used to choose the argument.
@@ -228,7 +221,7 @@ the joined node, are internal failures (`RunRefusal::Fault`), never a
 | ID | Criteria | Verification |
 |----|----------|--------------|
 | FR-367-AC-1 | Over `function sub using v(a: Int[0, 9], b: Int[0, 9]): Int[-9, 9] pure { a - b }`, a `Call` with arguments listed `b = 2`, `a = 7` and the occurrence of the `-` application bind `values()` to `[7, 2]`; the same call with the arguments listed `a`, `b` gives `[7, 2]`. The provenance of ordinal 0 is `Argument` with index 1, then 0, parameter `a`, and of ordinal 1 the reverse, parameter `b`, each with its parameter node and level. A swapped `b - a` in a separately compiled package gives `[2, 7]`. | Test (TC-1053) |
-| FR-367-AC-2 | Over `a + 1` with `a = 4`, `values()` is `[4, 1]`; the second operand is a graph child `value`/`literal` node and has `source` `InlineLiteral { node: Some(..) }` naming that node, and range `(1, 1)`; over `1 + a` it is `[1, 4]`. Over `a - a` two operands bind, `[4, 4]`, with `Argument` sources of the one argument index at ordinals 0 and 1. Over `-a` one operand binds. A Contract IR `InlineLiteral` operand, in a package that holds a literal term in the application's arguments, binds as `InlineLiteral { node: None }`. | Test (TC-1053) |
+| FR-367-AC-2 | Over `a + 1` with `a = 4`, `values()` is `[4, 1]`; the second operand is an inline integer literal term of the application, has `source` `InlineLiteral` and range `(1, 1)`, and no graph node holds the literal; over `1 + a` it is `[1, 4]`. Over `a - a` two operands bind, `[4, 4]`, with `Argument` sources of the one argument index at ordinals 0 and 1. Over `-a` one operand binds. | Test (TC-1053) |
 | FR-367-AC-3 | A missing argument (parameter `b` left unbound) returns `Err(UnboundParameter { parameter: b })`; an extra argument naming `c` returns `Err(UnknownParameter { parameter: c })`; `a` bound twice returns `Err(DuplicateArgument)`. Each is `invalid_runtime_input`, returns no operand, and equals the refusal `run` returns for the same call. | Test (TC-1053) |
 | FR-367-AC-4 | A mistyped argument, a Boolean value for the integer `a` and an integer `10` for `a: Int[0, 9]`, returns `Err(WrongValueKind)` at `a`'s declared position, `invalid_runtime_input`, and equals the refusal `run` returns. A reference argument whose model selection, type or universe is foreign returns `Err(Admission)` with `foreign_reference` and its cause (`foreign-model-selection`, `foreign-type` or `foreign-universe`), and a reference absent from the complete population returns `Err(DanglingReference)` with `dangling_reference`/`absent-target-in-complete-population`; each equals the refusal `run` returns. With an unbound `b` and a mistyped `a` the refusal is the one FR-100's order gives, and no occurrence refusal precedes any of them. `foreign-type` is not reachable from a source-compiled call, because a reference parameter's declared type always belongs to a selected model; its cause is verified on the shared admission function (TC-792) and not at this entry. | Test (TC-1053) |
 | FR-367-AC-5 | An occurrence key the application node does not have returns `Refused(ScalarIdentity(Occurrence))` (`stale_dependency`/`content-mismatch`) even when the node has another occurrence and the arguments are valid; an `application` node of another function, a node outside the called function's body and a node absent from the package each return `ScalarIdentity(Node)`; a `ScalarOccurrence.function` that differs from `Call.function` returns `ScalarIdentity(Function)` (the cause this requirement adds); an equality application returns `ScalarIdentity(Operator)`. Two functions of one package that share parameter nodes (FR-092-AC-5) bind each to its own body's application only. | Test (TC-1053) |

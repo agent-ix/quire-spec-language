@@ -136,7 +136,7 @@ both branches of an `if`.
 
 | Checked node | Node |
 |---|---|
-| `Literal` of a Boolean, integer or rational value (`true`, `false`, an integer literal, `rational(n, d)`) | `value` / `literal`; `semantic_type` its type node; body `literal{type, value_kind, value}` spelled as FR-092 fixes |
+| `Literal` of a Boolean, integer or rational value (`true`, `false`, an integer literal, `rational(n, d)`) | `value` / `literal`; `semantic_type` its type node; body `literal{type, value_kind, value}` spelled as FR-092 fixes. An integer literal that is an operand of `quire.op.integer.add`, `sub`, `mul` or `negate` is no node: it is the same `literal{type, value_kind, value}` term, typed at the builtin `Integer` node, in that application's `arguments` (FR-357, FR-358, ADR-013 O-09) |
 | `Literal` of a String, UUID or Timestamp value (`"abc"`, `UUID("...")`, `Timestamp(n)`, as check resolves the two calls) | `value` / `literal`; `semantic_type` the node of the native `string`, `uuid` or `timestamp` scalar type; body `literal{type, value_kind, value}` with `value_kind` `string`, `uuid` or `timestamp` and `value` spelled as FR-092 fixes |
 | `Literal` of an enum member (`E::m`) | the enum member's QSpec `value` / `enum_value` node (FR-092 rule 1) |
 | `Record{declaration, slots}` (`R { f: e, g: null }`) | `value` / `record_value`; `semantic_type` the record's node; body `aggregate` of one binding per slot in declaration order: `f` = `reference(e)` for a present slot, and `f` = `literal{type: the field's Option node, value_kind: "none", value: null}` for a `null` slot and for an omitted optional slot, which denote one value |

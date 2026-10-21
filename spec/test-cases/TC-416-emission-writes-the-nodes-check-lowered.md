@@ -124,8 +124,8 @@ itself (`qsl-package/src/emit/tests.rs`) instead of reading the node's
   `expression` occurrence per read; the scalar nodes typing P1's body
   literals have a `generated` occurrence.
 - Step 5: the three members carry the label
-  `0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50`, their
-  graph order is G5, G4, G6 (ordinals 0 to 2), and step 2's recomputation
+  `d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6`, their
+  graph order is G5, G6, G4 (ordinals 0 to 2), and step 2's recomputation
   from graph order gives G4 to G6.
 - Step 6: every emitted list equals its rebuilt list. In ascending digest
   order, E1 lists P2, P1; F2 lists P2, P1, E1; E2 lists L1, F2, P1; T4 lists
