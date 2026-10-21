@@ -66,8 +66,8 @@ Folded into quire-spec-language#1138; the review is of QSL #672's text.
 
 | FND | outcome | reason |
 | --- | --- | --- |
-| FND-001 | not-applicable | The sentence 'ProductState has no wire spelling' is not in the folded FR-338; FR-338 now states what FR-331 carries (`rule` and `at` as non-empty texts) and which requirement spells each locus. |
-| FND-002 | not-applicable | Same sentence; the folded FR-338 names every locus variant and its owner. |
+| FND-001 | rejected | The sentence 'ProductState has no wire spelling' is not in the folded FR-338, and QSpec main does not close `at`, so there is no spelling to withdraw. |
+| FND-002 | deferred | The unspelled loci are catalogued by QSpec once STD-238 lands; FR-338 states which loci have a spelling today. |
 | FND-003 | fixed | FR-314-AC-3 fixes the command numbering and an index vector. |
 | FND-004 | fixed | FR-314 uses 'command' throughout the numbering and rejection rules. |
 | FND-005 | fixed | The index meaning is a SHALL in FR-314 Behavior. |

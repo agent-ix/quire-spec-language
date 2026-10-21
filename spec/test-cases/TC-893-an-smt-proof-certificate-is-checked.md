@@ -61,5 +61,5 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   `step/6`; eight parts `ShapeMismatch` at `step/7`; the exchanged parts
   `QueryMismatch` at `base`; the swapped query `QueryMismatch` at `step/2`;
   the invalid command `ProofStepInvalid` at `ProofStep { Step { row: 4 }, 3 }`;
-  the `hole` `Unverifiable { Base, 3 }`; the `_` row `Unverifiable { Step { row: 2 }, 0 }`; each rejection `inconclusive`,
+  the `hole` `Unverifiable { Base, 3 }`; the `_` row `Unencodable { Step { row: 2 } }`; each rejection `inconclusive`,
   `CertificateRejected`.

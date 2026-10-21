@@ -106,6 +106,14 @@ Head 42732a378 (PR #1138 round 2).
 | --- | --- | --- | --- |
 | FND-008 | low | FR-315-AC-6 spells CasRefinesCounter's row differently from ADR-020. FR-315-AC-6 writes the abstract-operation row as 'step Impl::commitA -> Spec::inc(self)'. ADR-020 §8, which CasRefinesCounter comes from, writes 'step Impl::Counter::commitA -> Spec::Counter::inc(self);' (line 363), and that is the row the fixture holds. Use the ADR's spelling so the vector names a row that exists. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:156; spec/decisions/ADR-020-*.md:363 |
 
+## New findings (disposition pass 3)
+
+Head 627a11b2b (PR #1138 round 3).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | FR-338 says the requirement family spells every locus, but only two loci have a spelling. 'this family of requirements spells them: this requirement's ProductState, FR-314's Query and ProofStep, FR-149's SimulationStep, FR-163's HyperProductState and FR-169's ModelState'. Only QueryPart has a text spelling (FR-338:95), and FR-149:115 writes SimulationStep as a JSON object, which is not text. ProductState, the ProofStep{part, index} form, HyperProductState and ModelState have no spelling in any QSL requirement; STD-238 is where they get one. Say which loci are spelled and where, and that the rest wait on STD-238. | spec/functional/FR-338-check-an-en-1-closure-certificate.md:85-90; spec/functional/FR-338-check-an-en-1-closure-certificate.md:95; spec/functional/FR-149-check-a-refinement-s-simulation-certificate.md:115 |
+
 ## Dispositions
 
 Round 1, head 5e73cbeb1, checked against origin/main 5c4a96692 code, QSL FR-315/FR-338, QSpec main fd7a694 and QSpec #313 648d2d0 / #314 13bd4aa.
@@ -124,3 +132,9 @@ Round 2, head 42732a378, checked against origin/main 5c4a96692 code, QSpec main 
 | FND | outcome | reason |
 | --- | --- | --- |
 | FND-007 | fixed | Fixed in 42732a378: - A certificate FR-314 cannot verify without showing it wrong SHALL settle `Uncertified`, not `CertificateRejected`. QSL SHALL settle every RE-2 record of a refinement `Certified` exactly when `check_refinement_smt_proof` (FR-314 "Refinement certificates") returns `Verified` for the refinement's certificate, against the queries FR-315 encodes (FR-315 "Refinement queries"); `Uncertified` when it returns `Unverifiable` or no certificate came; and, when it rejects at a part, the record of that part (the `Initial` record for `Base`, row `r`'s `Step` record for `Step { row: Some(r) }`) `Inconclusiv |
+
+Round 3, head 627a11b2b, checked against origin/main 5c4a96692, QSpec main 9821787 (#313 and #316 merged) and QSpec #314 13bd4aa (open).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-008 | fixed | Fixed in 627a11b2b: codingRefusal`; a `Step` query for an abstract-operation row (`step Impl::Counter::commitA -> Spec:: |

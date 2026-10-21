@@ -173,9 +173,10 @@ wording.
   record for `Base`, row `r`'s `Step` record for `Step { row: Some(r) }`)
   `Inconclusive(CertificateRejected{rule, at})` and every other record
   `Uncertified`. A refinement with a row whose query FR-315 refuses to encode (a
-  `_` argument, an `any` row or a term outside `QF_LIA`) gets `Unverifiable`
-  from the checker (FR-314), so every record of it is `Uncertified` whatever
-  certificate arrives; a backend counterexample still settles
+  `_` argument, an `any` row or a term outside `QF_LIA`) gets `Unencodable`
+  from the checker (FR-314), so every record of it is `Uncertified` unless the
+  checker rejects a part (that part's record is then
+  `Inconclusive(CertificateRejected{rule, at})`); a backend counterexample still settles
   `Inconclusive(InductionNotClosed{depth: 1})`.
 - QSL SHALL settle the refinement's safety half from its records and the
   hypothesis items by QSpec FR-468 "Settlement", in its order: an initial

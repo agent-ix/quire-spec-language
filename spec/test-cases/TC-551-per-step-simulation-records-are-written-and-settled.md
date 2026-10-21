@@ -38,6 +38,8 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
 
 8. Settle the safety half of `CasRefinesCounter` from its eight records and hypothesis items: all proved and certified; one hypothesis item `Uncertified`; the invariant `self.value < 0` with every step record proved; a backend counterexample for one `Step` record; a counterexample for the `Initial` record.
 
+9. Settle the eight records of `CasRefinesCounter` when `check_refinement_smt_proof` returns `Verified`; then for a copy whose `commitA` row is written with a `_` argument (the checker returns `Unencodable` for its step part), and for a copy of that whose base query is also mismatched.
+
 Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 
 ## Expected Results
@@ -54,3 +56,4 @@ Tag the tests `#[trace("TC-551", "FR-146-AC-n")]`.
 - Step 7: `inconclusive`, `CertificateRejected{rule, at}` for `Rejected`;
   `proved`, `Uncertified` for `Unverifiable`.
 - Step 8: `proved`, `Certified`; `proved`, `Uncertified`; `inconclusive`, `hypotheses-not-established`; `Inconclusive(InductionNotClosed{depth: 1})`; `refuted` through replay (FR-146-AC-8).
+- Step 9: every record `Proved{Inductive{depth: 1}, Certified}`; with the `_` row every record `Uncertified`; with the base mismatch the `Initial` record `Inconclusive(CertificateRejected{rule, at})` at `base` and the others `Uncertified` (FR-146-AC-4).

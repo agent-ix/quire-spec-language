@@ -83,11 +83,13 @@ encoding of an automaton state (`qsl-eval`, ADR-018 LA-2), the same for
 every order in which the states are materialized.
 
 QSpec FR-331 carries `certificate-rejected{rule, at}` with `rule` and `at` as
-non-empty texts and catalogues no finer spelling; this family of requirements
-spells them: this requirement's `ProductState`, FR-314's `Query` and
-`ProofStep`, FR-149's `SimulationStep`, FR-163's `HyperProductState` and
-FR-169's `ModelState`. It carries an `AutomatonStateKey` as the bytes of its
-canonical encoding.
+non-empty texts and catalogues no finer spelling. Of the loci in this family
+only FR-314's `QueryPart` has a text spelling (below); FR-149 writes
+`SimulationStep` as a JSON object, and `ProductState`, FR-314's `ProofStep`
+index form, FR-163's `HyperProductState` and FR-169's `ModelState` have no
+catalogued `at` spelling, which STD-238 asks QSpec FR-331 to catalog. This
+requirement carries an `AutomatonStateKey` as the bytes of its canonical
+encoding.
 
 FR-163 additionally owns the labelled-transition-tuple and missing-member
 loci of its hyper checker; those failures are not all product-state failures.
