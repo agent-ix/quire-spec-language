@@ -78,3 +78,20 @@ Re-checked at head 99d30b1cc9a4c10138f6abbcc6520035e258687c.
 | FND-003 | fixed | 99d30b1cc: the Reserved intrinsics bullet and AC-7 refuse each of `sqrt`, `fma`, `numericEqual`, `totalOrder` and `bitIdentical` as `missing_declaration`/`missing-name` naming the identity. The probe confirms all five refuse `MissingName("quire::value::ieee::<name>")`, which maps to `MissingDeclaration`/`missing-name` (refusal.rs:736, 2228). |
 | FND-004 | still-open | AC-8 now says how its input is built, but the construction it names does not bypass the checker and cannot hold an IEEE node. FND-006 carries the fix; this finding closes with it. |
 | FND-005 | fixed | 99d30b1cc: FR-093:249-251 now wraps the sentence and links [FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md). |
+
+## New findings (disposition pass 2)
+
+Re-checked at head 7b9515e292481faae60a566a918bb9746142f24e.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The Strict admission bullet ends "... the arithmetic of a `Float32` or `Float64` function and the conversion above." The new "Conversion into a float" bullet now sits between it and the float-to-rational bullet, so "the conversion above" first reads as the refused conversion. Say "the float-to-rational conversion". | spec/functional/FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md:79-85 |
+
+## Dispositions (round 2)
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-004 | fixed | 7b9515e29: the evaluator-failure obligation is now FR-397-AC-9, a cross-reference to FR-090-AC-15 through TC-917's `CheckedBody::fixture` construction. |
+| FND-006 | fixed | 7b9515e29: AC-9 names the real construction. TC-917's test `both_ieee_profile_checks_and_conversion_operand_check_are_real_producers` (qsl-eval/src/value/expression/evaluate/invariants.rs:965-995) builds both an `Ieee` and an `IeeeToRational` fixture node and probes `ieee-profile-unresolved` for each. TC-1091 step 8 no longer builds a package. The TC-917 edit adds only a `verifies` edge to FR-397 and FR-397-AC-9 in its Scope; the existing steps and tags are unchanged, and the gates pass. The code lane still has to add `FR-397-AC-9` to that test's `trace` tag before the matrix counts AC-9 covered, as for AC-1..8. |
+| FND-007 | fixed | 7b9515e29: "are admitted in no call in complete-V1 source" now states QSL's admission rather than denying the QSpec grammar route. |
+| FND-008 | fixed | 7b9515e29: Inputs now states that a float comes only from a parameter or an IEEE arithmetic result. The new "Conversion into a float" SHALL and AC-8 refuse conversions into a float as `ill_typed`/`type-mismatch`. The probe gives `IllTyped(TypeMismatch)` for `Int[0, 10]`→`Float64`, `Float32`→`Float64` and `Float64`→`Float32`. |

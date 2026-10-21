@@ -82,7 +82,7 @@ comes only from a parameter or from an IEEE arithmetic result.
     `ill_typed`/`type-mismatch`.
 - **Strict admission.** The V2 reader (`quire.checked-package/v2`) SHALL admit the
   package emitted for a unit whose IEEE operations are the arithmetic of a
-  `Float32` or `Float64` function and the conversion above.
+  `Float32` or `Float64` function and the float-to-rational conversion.
 - **Comparison.** Numeric equality, total ordering and bitwise identity are three
   distinct selected operations (QSpec FR-148), and no operator spelling chooses
   among them.
