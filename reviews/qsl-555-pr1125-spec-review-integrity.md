@@ -74,3 +74,25 @@ Consistent: the FR-174 rows, ADR-023 §5 'What EN-1 admits', PH-4 and PH-5 and C
 ## Verdict
 
 Not mergeable as it stands. Two FRs still promise a `Holds{Reduced}` that FR-174 now rules out (FND-001, FND-002). ADR-023 HV-8 contradicts FR-177's new ranking and refusal (FND-003). The new FR-184 count bullet is broader than the code (FND-004). FR-178 does not cover contract findings (FND-005). All are text fixes in this PR.
+
+## New findings (disposition pass 1)
+
+Head f4b02702b (PR #1125 round 1).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The new no-count bullet ('A stopped record for `max_states`, `max_automaton_states` or the evaluation meter SHALL carry no count') leaves out `max_transitions`, which FR-184 also scopes for hyper items. The code carries no count for it either (hyper.rs explore: Limit::Transitions gives `Ending::Stopped(..., None)`). Add `max_transitions`, or say 'every other limit'. | spec/functional/FR-184-bound-hyper-runs-with-caller-budgets.md:77 |
+| FND-008 | low | 'SHALL return `Violated` with an `Undefined` counterexample naming that component alone, at the state's depth' can be read as putting the counterexample's position at the state's depth in moves. Two bullets earlier FR-178 says an `Undefined` counterexample's position is the projected position, the number of visible steps, and the code uses that for a contract finding too (undefined_counterexample: `stem = position_of(path)`). Depth is only its rank (first_phase offers `state.depth`). Say 'ranked at the state's depth, at the projected position of that state'. | spec/functional/FR-178-check-a-projection-aligned-hyperproperty.md:110 |
+
+## Dispositions
+
+Round 1, head f4b02702b, checked against origin/main 0799f31d8 and origin/qsl-555-copy-swap 63b4fd17c.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in f4b02702b: No such state SHALL return `Holds{Exhaustive}`; FR-174 names no reduction for an HP-3 item. |
+| FND-002 | fixed | Fixed in f4b02702b: Exploration that completes with no rejecting state SHALL return `Holds{Exhaustive}`; FR-174 names no reduction for an HP-6 item. |
+| FND-003 | fixed | Fixed in f4b02702b: **HP-3.** For HP-3 the engine ranks its findings by joint position and then by kind, not by discovery order alone: at the least position, an undefined evaluation comes before a refused or incomplete `μ` or contract conjunction, which comes before an empty `X` with a fair universal cycle; FR-177 stat |
+| FND-004 | fixed | Fixed in f4b02702b: A stopped record for `max_witness_set` or `max_relation_tuples` SHALL carry the count reached, one past the budget's value, since the run stops at the first member or tuple that would pass it and counts that one. - A stopped record for `max_states`, `max_automaton_states` or the evaluation meter SHA |
+| FND-005 | fixed | Fixed in f4b02702b: If a component's contract conjunction evaluates `Undefined` at a product state, then the engine SHALL return `Violated` with an `Undefined` counterexample naming that component alone, at the state's depth. - If a component's contract conjunction is refused or incomplete at a product state, and no re |
+| FND-006 | fixed | Fixed in f4b02702b: At one position an undefined evaluation SHALL come before a refused or incomplete `μ` or universal contract conjunction, or a contract conjunction that leaves a member's steps unknown, which SHALL come before an empty `X`, since a refused `μ_E` may have dropped members from the `X` |

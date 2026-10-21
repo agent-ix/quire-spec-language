@@ -64,3 +64,12 @@ Covered: an existential member's undefined, refused or incomplete contract (Unde
 ## Verdict
 
 Mergeable on this lens if FND-001 is either stated or explicitly deferred to the owner's QSpec FR-400 decision. FND-002 is a low wording fix.
+
+## Dispositions
+
+Round 1, head f4b02702b, checked against origin/main 0799f31d8 and origin/qsl-555-copy-swap 63b4fd17c.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in f4b02702b: The `NoPartnerPath` refusal is a request refusal returned to the caller. It has no terminal record, no V-x settlement and no catalog code or cause, and none is defined until QSpec FR-400 either admits an empty existential path for its `undefined` kind or accepts this refusal. |
+| FND-002 | fixed | Fixed in f4b02702b: EN-1 SHALL reduce only if every exchange of the copy group fixes the initial state of the body's automaton and maps each of its acceptance sets, one for each unbounded `eventually` or `until` the negated body holds, to itself. A swap that exchanges two acceptance sets, as the swap of `a` and `b` doe |

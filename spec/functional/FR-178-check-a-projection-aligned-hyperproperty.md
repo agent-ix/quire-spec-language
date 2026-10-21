@@ -109,7 +109,7 @@ clause is proved.
   `Undecided(MatchUndetermined)` (ADR-023 HV-4).
 - If a component's contract conjunction evaluates `Undefined` at a product
   state, then the engine SHALL return `Violated` with an `Undefined`
-  counterexample naming that component alone, at the state's depth.
+  counterexample naming that component alone, ending at the state's projected position.
 - If a component's contract conjunction is refused or incomplete at a
   product state, and no refuting evidence comes first, then the engine SHALL
   return `Undecided(UndecidedSuccessor)`.
@@ -127,7 +127,8 @@ clause is proved.
   depth of the state its move would have entered, after any refuting state
   at that depth.
 - An undefined contract conjunction is no product state: it SHALL rank as a
-  refuting finding at its state's depth, in that state's discovery order.
+  refuting finding by its state's depth in moves, in that state's discovery
+  order; the depth ranks it and is not its position.
 - A refused or incomplete contract conjunction SHALL rank at its state's
   depth, after any refuting finding at that depth.
 

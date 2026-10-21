@@ -141,3 +141,31 @@ The QSpec follow-up items FR-398, FR-400 x2 and FR-401 are accurate. FR-399's co
 ## Verdict
 
 Not mergeable as it stands. FND-001 is a false general claim in FR-178 Outputs and ADR-023 PA-6. FND-003 leaves a QSpec contradiction off the follow-up list. FND-002 is a scope decision the PR does not record as one. All three are text edits. The lows are wording, traceability and fixture gaps that can ride along. The positions, tie order, counts and refusals the PR states otherwise match the code on main and on #1123. The judgment calls: the FR-174 reconciliation is coherent, but it is a capability cut (FND-002). The 14->10 change is correct for this repo, and it also needs the QSpec TC-347 follow-up (FND-004).
+
+## New findings (disposition pass 1)
+
+Head f4b02702b (PR #1125 round 1).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-014 | low | The new FR-174-AC-6 sentence 'A clause with one class whose swap passes and one whose exchange fails is stored whole with no reduction named' has no test in #1123's hyper_swap.rs, and the PR body's code-lane list leaves it out. The code satisfies it: translate.rs drops every exchange when one fails. Add it to the code-lane list. | spec/functional/FR-174-reduce-hyper-products-and-check-copy-swap-symmetry.md:162 |
+
+## Dispositions
+
+Round 1, head f4b02702b, checked against origin/main 0799f31d8 and origin/qsl-555-copy-swap 63b4fd17c.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in f4b02702b: lengths free. The total lengths are equal when every trace takes the same number of skipped steps, and differ otherwise. |
+| FND-002 | deferred | Kept as written and now flagged in the PR body as an owner-level scope decision ('This removes those two capabilities for hyper items from the requirements. Reverting needs FR-174, ADR-023 section 5 and the run's group outputs restored.'). The owner rules on it; the spec is consistent either way. |
+| FND-003 | fixed | Fixed in f4b02702b: FR-395: an unsatisfiable non-empty mu_U is vacuous with no HP-6 exception (and FR-395-AC-6); contradicts HM-7 and FR-178-AC-7. |
+| FND-004 | fixed | Fixed in f4b02702b: TC-347 RD-01: 9 classes becomes 7. TC-347 RD-08: an admitted symmetry over one subject is now V-8. |
+| FND-005 | fixed | Fixed in f4b02702b: FR-177-AC-12 \| `Opaque` over the secure vault from the one initial state `(0, 0)`, where both variables share the secret so `X_0` is empty, with a `μ_U` conjunct that has no value on every joint step, is refused with `HyperRefusal::NoPartnerPath` and returns no outcome. With another instance whose e |
+| FND-006 | fixed | Fixed in f4b02702b: FR-177-AC-11 \| A clause with two instances `v` and `w` that both end at the undefined `μ_E` of AC-5 at position 1 returns the first instance's counterexample. With one initial state, instance `v` is violated at position 0 by an empty `X`; instance `w` is explored through the expansion of its initial |
+| FND-007 | fixed | Fixed in f4b02702b: FR-174-AC-6 \| The clause with the body `always holds(v.l @ a = 0) and always holds(v.l @ b = 0)` over the secure vault has the copy group `[[a, b]]` and is stored whole with no reduction named, since its swap exchanges two acceptance sets. The body `eventually holds(v.l @ a = 1) and eventually holds |
+| FND-008 | fixed | Fixed in f4b02702b: FR-174-AC-5 \| A clause with the body `always holds(v.l @ a = v.l @ b)`, the `match` conjunct `a.step.op = b.step.op` and `fair weak V::Vault::reset` on both `a` and `b`, over a vault whose `step` flips `l` and whose `reset` is enabled at `l = 1` and keeps it, from `a = (0, 0)` and `b = (0, 1)`, has  |
+| FND-009 | deferred | A missing test is the code lane's work, not a spec edit. The PR body hands it over: 'Code lane (tests missing or untagged): FR-178-AC-7 has no test'. |
+| FND-010 | deferred | Code-lane test. The PR body lists 'FR-174-AC-3's byte-equal half and FR-174-AC-7's several-selected rule have no test'. The rule now has AC-7 sentences, which the #1123 code (reduce.rs selected order, reductions.rs refusal) satisfies. |
+| FND-011 | fixed | Fixed in f4b02702b: projected position, and the clause holds. Its initial snapshots `(h, l, busy)` are `(0, 0, false)` and `(1, 0, false)`, idle; a variant starts the secret-1 run mid-operation at `(1, 0, true)`, so its first step is a `mix`. The projected product of this example over the idle snapshots stores 18 state |
+| FND-012 | fixed | Fixed in f4b02702b: two-state automaton whose guards partition the joint letters, so it is deterministic: `q0` stays on a joint position with `l_a = l_b` and |
+| FND-013 | fixed | Fixed in f4b02702b: EN-1 SHALL apply copy-swap to an HP-2 clause only. An HP-6 clause SHALL be stored whole as its projected product and name no `CopySwap`, though S3 records its copy group as for an HP-2 clause: EN-1 builds no exchange of the bad-prefix monitor's states for the projected product. |

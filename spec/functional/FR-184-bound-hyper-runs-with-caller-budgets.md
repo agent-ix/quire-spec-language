@@ -74,8 +74,8 @@ pub enum ModelCheckLimit {
 - A stopped record for `max_witness_set` or `max_relation_tuples` SHALL carry
   the count reached, one past the budget's value, since the run stops at the first member or tuple that would pass it
   and counts that one.
-- A stopped record for `max_states`, `max_automaton_states` or the
-  evaluation meter SHALL carry no count.
+- A stopped record for every other limit (`max_states`, `max_transitions`,
+  `max_automaton_states` and the evaluation meter) SHALL carry no count.
 - For hyper items, `max_states` SHALL count product states,
   `max_transitions` joint steps or moves, and `max_automaton_states`
   automaton states, as FR-176 and FR-178 state.

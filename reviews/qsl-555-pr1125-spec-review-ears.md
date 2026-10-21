@@ -75,3 +75,13 @@ Ticket: QSL-553, QSL-554, QSL-555. PR quire-spec-language#1125, head 14ab4727d. 
 ## Verdict
 
 Mergeable on this lens alone: three low findings, each a split or a missing response clause. None changes behaviour.
+
+## Dispositions
+
+Round 1, head f4b02702b, checked against origin/main 0799f31d8 and origin/qsl-555-copy-swap 63b4fd17c.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in f4b02702b: QSL SHALL settle a reduction a request selects for a hyper item by ADR-023 §5's row for the item's form (ADR-023 PH-1 to PH-6): a row that reads "no" settles it V-6 `ReductionNotPreserving`, and a row that reads "yes" settles it V-8 `unsupported-requested-capability`, since EN-1 builds no such reduc |
+| FND-002 | fixed | Fixed in f4b02702b: A selected reduction SHALL NOT be ignored. |
+| FND-003 | fixed | Fixed in f4b02702b: The engine SHALL return the finding at the least joint position. - At one position an undefined evaluation SHALL come before a refused or incomplete `μ` or universal contract conjunction, or a contract conjunction that leaves a member's steps unknown, which SHALL come before an empty `X`, since a re |
