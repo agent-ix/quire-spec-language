@@ -63,3 +63,26 @@ Rename `StepRowOverflow` to `StepRowRefusal`: this is justified, because the err
 | FND-006 | low | The step-keyword spelling is written twice. `spelled` maps `StepClassKeyword` to `fork`, `join`, `cend` and the rest by hand, beside qsl-forms' parse table (`b"duplicate" => StepClassKeyword::Duplicate`, …). A keyword added to one place can silently miss the other. Fix: one `StepClassKeyword::as_str` in qsl-forms, used by both. | qsl-semantics/src/check/refinement/protocol.rs:537-546, qsl-forms/src/refinement.rs:430-445 |
 | FND-007 | low | A doc comment opens with an AC id: `/// FR-214-AC-1's refinement of `A::Acc::add` by `Fill`, …` on the `refinement` helper. Fix: open with what the helper builds, and cite the AC later in the sentence. | qsl-semantics/src/check/refinement/protocol/tests.rs:272 |
 | FND-008 | low | The shared CAS fixture now selects the protocol profile (`profile pp = "quire.protocol.finite-global/v1"`) for every unit it builds, so every CAS-based model-subject test (qsl-semantics, qsl-replay, qsl-analyze and root) runs under a profile that only `refinement_protocol.rs` needs. Fix: add the profile in `protocol_refinement()`'s unit, or as a fixture option. | tests/support/refinement_cas.rs:371 |
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | medium | The fix for FND-005 types an application on an attempt-node or template row in pass 2, but builds both sides as `Side { alias: "", model }`. `Side::populations` names each population `format!("{}::{segment}", self.alias)`, so in pass 2 the concrete populations are `::nodes`, not `M::nodes`, and FR-139's population-valued forms do not resolve. Reproduced at 3d0c48058: `step M::Node::step -> A::Acc::addBy(self, count(x in M::nodes where x.total = 0));` checks, but the same argument on `step M::Fill::A -> …` refuses `missing_declaration`/`missing-name` 'M::nodes'. A `pre(self.total)` argument and a type mismatch behave the same on both rows, so only the population scope differs. FR-136 'Right sides' puts 'population-valued forms (FR-139)' in scope for every application. Fix: build the pass-2 sides with the real aliases (`checked.abstract_model` and `checked.concrete_model`), and add a population-valued argument to `an_application_on_an_attempt_or_template_row_is_typed_over_its_operation`. | qsl-semantics/src/check/refinement/protocol.rs:651-657, qsl-semantics/src/check/refinement.rs:716-731 |
+
+## Dispositions
+
+Round 1, head 3d0c48058 (fix commit 3d0c48058 over merge 59007c2e8).
+
+Gates at 3d0c48058: fmt, clippy `-D warnings`, root `cargo test --test it`, `make string-edge` and the three arch-lint targets pass. The seven-crate `cargo test` fails only on qsl-package's `conformance_c14_source_map_lookup_over_qspec_positive_fixtures` and `conformance_i2_read_over_qspec_checked_package_v2_fixtures`. Those two read the live QSpec checkout (`QSPEC_DIR`) and fail the same way on origin/main 8fae9fe55. They are environment-only, and this PR touches no qsl-package file. The 7,800-case oracle still agrees exactly. Mutation: 60 mutants (the 55 of the review pass, re-anchored, plus M52 to M56 for the new code), 58 killed. M06 (equivalent) and M28 (source sort, not required) survive, as before. The new FND-001 test fails on c63e977a4 and passes on 3d0c48058.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The pending refusals are appended on the refusal gate (mod.rs:1746), each model-conformance and type-admission stage failure, and the protocols-loop cancellation (mod.rs:2067). `a_protocol_subjects_refusals_survive_another_refinements_refusal` fails on c63e977a4 and passes here, and mutant M54 is killed. |
+| FND-002 | fixed | :920, :951, :1048, :1225 and :1260 are TC-541 only. `a_missing_or_doubled_row_refuses` and the attempt-precedence test carry FR-136-AC-4. |
+| FND-003 | fixed | M33, M34 and M47 are killed by `a_protocol_row_refuses_a_node_target_and_an_application_without_an_operation` and `a_refinement_is_covered_against_the_clause_it_selects`. |
+| FND-004 | fixed | A model subject refuses `step fork M::Node::step` at `M::Node::step` and `M::Nope::x` at `M::Nope::x`; a protocol subject still refuses at the segment. M55 and M56 are killed. |
+| FND-005 | fixed | Attempt-node and cattempt rows are typed over the applied operation (`applied_operation`, `Checker::application`), and M52 and M53 are killed. The fix introduced FND-009. |
+| FND-006 | fixed | One table: `StepClassKeyword::as_str` and `of_spelling` in qsl-forms, used by the parser and by `spelled`. |
+| FND-007 | fixed | The helper doc opens 'The refinement of `A::Acc` by `Fill` that ADR-027 §7 gives (FR-214's first example)'. |
+| FND-008 | fixed | The profile line moved into `protocol_refinement()`. `unit_text` hoists leading `profile ` lines into the header, and no other caller's refinement text starts with one, so the other fixtures are unchanged. |
