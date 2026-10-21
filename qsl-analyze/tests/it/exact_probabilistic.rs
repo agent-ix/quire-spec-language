@@ -106,7 +106,7 @@ fn is_decided(product: &ProbProduct, state: ProbStateId) -> bool {
 const NO_FAULT: &str = "probabilistic NoFault using ev on M over (n: M::Node) under Steady \
      on origin { probability >= 0.999 [ always[0,1000] holds(n.healthy) ] }";
 
-/// FR-196-AC-1 (TC-631 step 1): §15.1's `NoFault` product is a DTMC whose
+/// Checks FR-196-AC-1 (TC-631 step 1): §15.1's `NoFault` product is a DTMC whose
 /// undecided states hold the healthy model state at one position each, at
 /// most 1,001 of them, plus one accepting and one rejecting decided state.
 /// Every undecided state's outgoing probabilities sum to 1, and every path
@@ -187,7 +187,7 @@ const P95: &str = "probabilistic P95 using ev on M over (s: M::Server) under Ste
      { quantile 0.95 of (accumulate duration from holds(s.phase = 1) until holds(s.phase = 2) \
      within 10) <= 5 }";
 
-/// FR-196-AC-2 (TC-631 step 2): §15.2's product for `P95` at 5 carries the
+/// Checks FR-196-AC-2 (TC-631 step 2): §15.2's product for `P95` at 5 carries the
 /// `duration` accumulator, which takes the values 0, 1, 2, 3, 4 and the one
 /// value above the threshold; the activation flag is set from position 1.
 /// The edge for `attempt` with `d = 3`, `outcome = Ok` carries `343/5000`.
@@ -298,7 +298,7 @@ const THRESHOLDS: &str = "probabilistic Four using ev on M over (s: M::Server) u
      on origin { quantile 0.95 of (accumulate duration from holds(s.phase = 1) \
      until holds(s.phase = 2) within 10) >= 3 }";
 
-/// FR-196 "Behavior": an amount equal to the claim's threshold stays exact,
+/// Checks FR-196 "Behavior": an amount equal to the claim's threshold stays exact,
 /// and one above it is the one value above it, whichever way the comparison
 /// goes.
 #[trace("TC-631", "FR-196-AC-2")]
@@ -368,7 +368,7 @@ fn sends(edges: &[ProbEdge], operation: &str) -> BTreeMap<bool, Rational> {
         .collect()
 }
 
-/// FR-196-AC-3 (TC-631 step 3): §15.4's `Deliver` over every scheduler is an
+/// Checks FR-196-AC-3 (TC-631 step 3): §15.4's `Deliver` over every scheduler is an
 /// MDP with two actions at each live state, whose draws carry 9/10 and 1/10
 /// (`send_a`) and 4/5 and 1/5 (`send_b`); under `Even` it is a DTMC with
 /// FR-187-AC-2's probabilities.
@@ -439,7 +439,7 @@ const CLOSING: &str = "probabilistic Late using ev on M over (m: M::Msg) under e
      on origin { probability >= 0.5 \
      [ always[0,5] (holds(m.delivered) implies holds(m.attempts < 3)) ] }";
 
-/// FR-196 "Behavior": a terminal model state closes a bounded event under
+/// Checks FR-196 "Behavior": a terminal model state closes a bounded event under
 /// the profile's false extension (FR-126), into the decided state, with no
 /// model step; an event the false extension violates is rejected there and
 /// one it keeps is accepted.
@@ -498,7 +498,7 @@ fn blocked_health() -> World {
     ))
 }
 
-/// FR-196-AC-4 (TC-631 step 4): FR-187-AC-3's `Health` variant with two
+/// Checks FR-196-AC-4 (TC-631 step 4): FR-187-AC-3's `Health` variant with two
 /// post-states per draw builds, over every scheduler, an intermediate state
 /// per draw with two probability-1 actions, and the monitor does not advance
 /// on it; under a workload the build stops with `NotMarkov`; the variant with
@@ -586,7 +586,7 @@ fn a_draw_with_several_post_states_leads_to_an_intermediate_state() {
 const COIN: &str = "probabilistic Dropped using ev on M over (c: M::Coin) under Even on origin \
      { probability >= 0.5 [ always[0,3] holds(c.v = 0) ] }";
 
-/// FR-196-AC-5 (TC-641 step 1): when the claim reads a value that is
+/// Checks FR-196-AC-5 (TC-641 step 1): when the claim reads a value that is
 /// undefined at a product state of positive probability, the build stops at
 /// the first such state in breadth-first order and returns the path to it.
 /// The spec's `Coin` divides by `1 - c.v`; S3 types neither `/` in a model
@@ -631,7 +631,7 @@ fn an_undefined_state_stops_the_build_with_its_path() {
 const ARMED: &str = "probabilistic Armed using ev on M over (c: M::Coin) under Even on origin \
      { probability >= 0.5 [ always[0,3] holds(c.armed = c.armed) ] }";
 
-/// FR-196-AC-5 (TC-641 step 1): the path to an undefined state lists every
+/// Checks FR-196-AC-5 (TC-641 step 1): the path to an undefined state lists every
 /// model step from the initial state, in order, with the product of their
 /// probabilities and the position, the step count.
 #[trace("TC-641", "FR-196-AC-5")]
@@ -681,7 +681,7 @@ const GHOST: &str = "probabilistic Ghost using ev on M over (c: M::Coin) under E
      probabilistic GhostTarget using inf on M over (c: M::Coin) under Even on origin \
      { probability >= 0.5 [ eventually holds(c.v = 0) ] }";
 
-/// FR-196 "Behavior": the claim's `over` instances are the subject's
+/// Checks FR-196 "Behavior": the claim's `over` instances are the subject's
 /// universe, in order, and a state at which a predicate is undefined for an
 /// instance ends the build. The second instance has no object in the initial
 /// snapshot, so its predicate is undefined at position 0, with no step to
@@ -724,7 +724,7 @@ const STUTTER: &str = "probabilistic Steps using ev on M over (m: M::Msg) under 
      { probability >= 0.5 [ accumulate cost from holds(m.attempts = 0) \
      until holds(m.delivered and m.attempts = 0) within 4 >= 1 ] }";
 
-/// FR-196 "Behavior": a bounded measure continues on the terminal stutter
+/// Checks FR-196 "Behavior": a bounded measure continues on the terminal stutter
 /// steps through its window, each a step of zero reward, and the window's end
 /// decides it: here `B` never holds, so the measure ends censored.
 #[trace("TC-631")]
@@ -811,7 +811,7 @@ const SPREAD: &str = "probabilistic Merge using inf on M over (n: M::Node) under
 const REWARDS: &str = "probabilistic Spread using ev on M over (s: M::Server) \
      under every scheduler on origin { long_run_fraction holds(s.phase = 0) >= 0.5 }";
 
-/// FR-196 "Behavior": over every scheduler, draws of one action that reach
+/// Checks FR-196 "Behavior": over every scheduler, draws of one action that reach
 /// the same post-state with the same rewards are one edge with their summed
 /// probability and no draw; draws whose rewards differ stay apart, and under
 /// a workload every draw is its own edge.
@@ -875,7 +875,7 @@ const REACH: &str =
      probabilistic Unless using inf on M over (p: M::Proc) under Even on origin \
      { probability >= 0.9 [ holds(not p.done) until holds(p.done) ] }";
 
-/// FR-196 "Behavior", exact-only forms: an unbounded reachability claim uses
+/// Checks FR-196 "Behavior", exact-only forms: an unbounded reachability claim uses
 /// the MDP or DTMC itself as the product, with the claim's predicates as
 /// state labels and no monitor, accumulator or pending draw in any key. The
 /// fairness set belongs to the claim, not the product.
@@ -945,7 +945,7 @@ fn an_unbounded_form_labels_the_model_states() {
 const COST: &str = "probabilistic Cost using ev on M over (m: M::Msg) under Even on origin \
      { expected accumulate cost until holds(m.delivered or m.attempts = 2) <= rational(6, 5) }";
 
-/// FR-196 "Behavior", expected reward: the DTMC itself is the product, the
+/// Checks FR-196 "Behavior", expected reward: the DTMC itself is the product, the
 /// target is the one state label and each send carries its `cost` on its
 /// edge; the stutter step of a terminal state carries cost 0.
 #[trace("TC-631")]
@@ -987,7 +987,7 @@ const LONG_RUN: &str =
     "probabilistic LongRun using ev on M over (s: M::Server) under Steady on origin \
      { long_run_fraction holds(s.phase = 0) >= 0.5 }";
 
-/// FR-196 "Behavior", long-run fraction: the DTMC itself is the product with
+/// Checks FR-196 "Behavior", long-run fraction: the DTMC itself is the product with
 /// the predicate as the state label and no control in any key.
 #[trace("TC-631")]
 #[test]
@@ -1017,7 +1017,7 @@ const MEASURES: &str = "probabilistic Steps using ev on M over (s: M::Server) un
      probabilistic Short using ev on M over (s: M::Server) under Steady on origin \
      { probability >= 0.5 [ steps from holds(s.phase = 1) until holds(s.phase = 2) within 1 <= 5 ] }";
 
-/// FR-196 "Behavior", bounded measures: a `steps` measure counts one per
+/// Checks FR-196 "Behavior", bounded measures: a `steps` measure counts one per
 /// step and saturates above its threshold; a fraction counts the included
 /// positions, each decided at the step that leaves it, and a weighted
 /// fraction keeps both sums exactly; a measure whose window ends first is
@@ -1114,7 +1114,7 @@ fn steps_and_fractions_accumulate_exactly_through_their_windows() {
     }
 }
 
-/// FR-196 "Behavior": reaching `max_states`, `max_transitions` or
+/// Checks FR-196 "Behavior": reaching `max_states`, `max_transitions` or
 /// `max_automaton_states`, or a cancellation, stops the build and names it.
 #[trace("TC-631")]
 #[test]
@@ -1186,7 +1186,7 @@ const NEGOTIATED: &str = "probabilistic Seeded using ev on M over (p: M::Proc) u
      probabilistic Unseeded using ev on M over (p: M::Proc) under Even on origin \
      { probability >= 0.9 [ always[0,3] holds(not p.done) ] }";
 
-/// FR-195-AC-4, refusal half only (TC-630 step 4; the manifest and the
+/// Checks FR-195-AC-4, refusal half only (TC-630 step 4; the manifest and the
 /// FR-192 settlement are not built): a claim only exact evidence decides is
 /// refused at negotiation, before any sample, with the cause that names why:
 /// `EveryScheduler` for `FairTerminates`, `ExactOnlyForm` for an
@@ -1249,7 +1249,7 @@ const HORIZON: &str =
      probabilistic Source using ev on M over (s: M::Server) under Steady on origin \
      { probability >= 0.5 [ fraction holds(s.phase = 0) over [0, 2] >= rational(1, 2) ] }";
 
-/// FR-196 "Behavior": a measure whose `A` never holds is unactivated when the
+/// Checks FR-196 "Behavior": a measure whose `A` never holds is unactivated when the
 /// window ends, decided with amount zero; a fraction reads its predicate at
 /// the position the step leaves, not at the position it reaches.
 #[trace("TC-631")]
@@ -1304,7 +1304,7 @@ const LOOSE_COST: &str = "reward cost on Node::tick = 2;\n\
      { probability >= 0.5 [ accumulate cost from holds(n.healthy) \
      until holds(not n.healthy) within 3 >= 5 ] }";
 
-/// FR-196 "Behavior", SCH-2: a draw with several post-states advances the
+/// Checks FR-196 "Behavior", SCH-2: a draw with several post-states advances the
 /// accumulator once, at the resolution, with the draw's rewards; the edge
 /// that took the draw carries them, and the resolution edges carry every
 /// reward at 0.
@@ -1362,7 +1362,7 @@ const BINDINGS: &str = "probabilistic Terminates using inf on M over (p: M::Proc
      under every scheduler on origin \
      { probability >= 0.99 [ eventually holds(p.done) ] }";
 
-/// FR-196 "Behavior": the initial product states are each initial state per
+/// Checks FR-196 "Behavior": the initial product states are each initial state per
 /// `over` binding, and the binding is part of a state's identity: the same
 /// model state under two bindings has different futures and labels.
 #[trace("TC-631")]
@@ -1392,7 +1392,7 @@ fn each_over_binding_has_its_own_states() {
     assert!(differing);
 }
 
-/// FR-196 "Behavior": reaching `max_states` or `max_transitions` stops the
+/// Checks FR-196 "Behavior": reaching `max_states` or `max_transitions` stops the
 /// build, and a build of exactly that size completes.
 #[trace("TC-631")]
 #[test]
@@ -1432,7 +1432,7 @@ const TOSS: &str = "probabilistic Tossed using ev on M over (c: M::Coin) under e
      probabilistic Plain using ev on M under every scheduler on origin \
      { probability >= 0.5 [ always[0,2] holds(true) ] }";
 
-/// FR-196 "Behavior", SCH-2: an undefined path over every scheduler names
+/// Checks FR-196 "Behavior", SCH-2: an undefined path over every scheduler names
 /// the post-state the scheduler took at a draw with several post-states, so
 /// it replays to one state.
 #[trace("TC-641")]

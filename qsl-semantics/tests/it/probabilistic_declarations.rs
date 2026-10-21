@@ -1864,7 +1864,7 @@ fn done() -> String {
     phase("Done")
 }
 
-/// FR-195-AC-1 (TC-630 step 1): `probability >= 0.99 [eventually holds(..)]`
+/// Checks FR-195-AC-1 (TC-630 step 1): `probability >= 0.99 [eventually holds(..)]`
 /// under the infinite-trace profile and every scheduler checks as
 /// `Reach{AtLeast(99/100), Eventually}`, with `fair strong Server::attempt` it
 /// records the fairness set, and the two have distinct normal forms; a
@@ -1945,7 +1945,7 @@ fn an_unbounded_event_under_the_infinite_profile_is_a_reach_form() {
     assert!(matches!(target, ReachTarget::Always(_)));
 }
 
-/// FR-195-AC-1 (TC-630 step 1): a temporal operator, or a constant, where a
+/// Checks FR-195-AC-1 (TC-630 step 1): a temporal operator, or a constant, where a
 /// reachability event needs a `holds(P)` state predicate is refused
 /// `not-state-predicate` at the operand; other events under the
 /// infinite-trace profile stay unbounded, and the same `eventually` under a
@@ -2003,7 +2003,7 @@ fn a_reach_operand_must_be_a_state_predicate() {
     );
 }
 
-/// FR-195-AC-2 (TC-630 step 2): `expected accumulate R until holds(B) <= c`
+/// Checks FR-195-AC-2 (TC-630 step 2): `expected accumulate R until holds(B) <= c`
 /// checks as `ExpectedReward` with a threshold that is a rational for an
 /// integer reward and a quantity in the reward's unit for a quantity reward;
 /// a quantity of another dimension, a quantity for an integer reward and an
@@ -2084,7 +2084,7 @@ fn an_expected_reward_claim_is_typed_by_its_rewards_unit() {
     );
 }
 
-/// FR-195-AC-3 (TC-630 step 3): `exact_only` is true for a reachability form,
+/// Checks FR-195-AC-3 (TC-630 step 3): `exact_only` is true for a reachability form,
 /// an expected reward, a claim under every scheduler and a claim with no
 /// confidence parameters, each alone, and false for a bounded event under a
 /// workload with its confidence parameters.
@@ -2145,7 +2145,7 @@ fn exact_only_marks_the_claims_only_exact_evidence_decides() {
     }
 }
 
-/// FR-195-AC-1, AC-2 and FR-186 "Normal form": the obligation identity of an
+/// Checks FR-195-AC-1, AC-2 and FR-186 "Normal form": the obligation identity of an
 /// exact-only claim binds its form: `eventually`, `until` and `always` of
 /// one predicate, a different predicate, and two expected rewards that differ
 /// only in the reward are six different claims.

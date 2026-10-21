@@ -516,7 +516,7 @@ pub(crate) fn no_fault(extra: &str) -> Model {
     )
 }
 
-/// FR-196-AC-5's `Coin`, adapted to what S3 types today: one object `c` with
+/// Checks FR-196-AC-5's `Coin`, adapted to what S3 types today: one object `c` with
 /// `v: Int[0, 1]`, initially 0, and `drop(b: Int[0, 1])`, which draws `b`
 /// with equal weights and deletes the coin when `b = 0`. A claim bound to `c`
 /// reads `c.v` as undefined (`absent-key`) once the coin is gone.
