@@ -260,9 +260,10 @@ impl PackageDeclarations {
     /// What the bridge reads of the operations of `view`: each one's
     /// signature from the operation table, body from the unit's
     /// `operation-body` declaration and precondition from the unit's `pre`
-    /// clauses, keyed by its `DeclarationKey`. The bridge reads only the
-    /// entries of the family it walks, under `family_steps`. `None` when a
-    /// retained expression cannot be rewritten.
+    /// clauses conjoined in ascending clause name, keyed by its
+    /// `DeclarationKey`. The bridge reads only the entries of the family it
+    /// walks, under `family_steps`. `None` when a retained expression cannot
+    /// be rewritten.
     fn view_clauses(&self, view: &EffectiveView) -> Option<OperationClauses> {
         let mut clauses = OperationClauses::default();
         for record in &view.domain_package().records {
@@ -308,12 +309,17 @@ impl PackageDeclarations {
                     rename_names(&receiver_as_parameter(&body.body)?, &rename),
                 );
             }
-            let mut precondition: Option<Expression> = None;
-            for clause in self
+            // `own(m)`: the member's own clauses conjoined in ascending clause
+            // name (UTF-8 bytes) under FR-006's short-circuit, whatever their
+            // source position, unit or link order (FR-151-AC-19).
+            let mut own: Vec<_> = self
                 .unit_clauses_for(key)
                 .into_iter()
                 .filter(|clause| clause.kind == StateClauseKind::Precondition)
-            {
+                .collect();
+            own.sort_by(|left, right| left.name.cmp(&right.name));
+            let mut precondition: Option<Expression> = None;
+            for clause in own {
                 let term = receiver_as_parameter(&clause.body)?;
                 precondition = Some(match precondition {
                     None => term,
