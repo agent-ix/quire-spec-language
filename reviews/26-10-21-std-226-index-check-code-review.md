@@ -22,8 +22,8 @@ No findings in the changed files. The remaining `check-no-committed-binaries` fi
 
 ## Verification
 
-The targeted xtask test groups for spec validation, feature lane ordering, and conformance passed. `cargo fmt --all -- --check` and `git diff --check` passed. The first full `make ci` run stopped in unchanged `qsl-route/tests/it/route_registry.rs` because the local cargo-deny 0.20.2 rejected that test's `--config` argument position. CI pins cargo-deny 0.19.8; with that version installed locally, the specific test passed. The pinned-version full rerun reached `ci-docs`, where unchanged `qsl-eval/src/simulation/model/probabilistic.rs:145` links public documentation to the private `same_values` function. That link remains on `origin/main` at 800b8d28e. The aggregate gate has not passed.
+The targeted xtask test groups for spec validation, feature lane ordering, and conformance passed. `cargo fmt --all -- --check` and `git diff --check` passed. The first full `make ci` run stopped in `qsl-route/tests/it/route_registry.rs` because local cargo-deny 0.20.2 rejected its `--config` argument position; CI pins cargo-deny 0.19.8, and the specific test passed with that version. The pinned-version full rerun reached `ci-docs`, where the then-current branch linked public documentation to private `same_values` in `qsl-eval/src/simulation/model/probabilistic.rs:145`. QSL #1159 removed that link on main and is included in this rebased branch. The aggregate gate still requires a clean rerun.
 
 ## Verdict
 
-**PASS** for the scoped deletion review. The full gate remains red on the unchanged `ci-docs` error described above.
+**PASS** for the scoped deletion review. Full gate verification is pending on the rebased branch.
