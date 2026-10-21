@@ -15,9 +15,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{
-    AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelOverflow, CheckedActivation,
-    CheckedBody, CheckedJoinPolicy, CheckedOrdering, CheckedOutstanding, CheckedProtocol,
-    CheckedTerminalMember, ControlStep, EdgeKind, LossSelector, Port, ProtocolNodeId,
+    AccessOrdering, CaptureOwner, ChannelCapacity, ChannelDelivery, ChannelOverflow,
+    CheckedActivation, CheckedBody, CheckedCommit, CheckedJoinPolicy, CheckedOrdering,
+    CheckedOutstanding, CheckedProtocol, CheckedTerminalMember, ControlStep, EdgeKind,
+    LossSelector, Port, ProtocolNodeId,
 };
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 
@@ -126,6 +127,38 @@ pub(super) struct Finish<'a> {
     pub(super) binder: (usize, ValueType),
 }
 
+/// One `compensate` template (ADR-027 CP-1 to CP-5, FR-381): its qualified
+/// name, its forward effect, its operation, its trigger type and guard, its
+/// captures by stage, its authored attempt count, its retry relation, its
+/// commit node and its recovery predicate.
+///
+/// Each expression reads the slots FR-381's stage table binds, in its
+/// order, with no protocol capture and no activation binder (both refused
+/// before a template is read): a registration capture `[forward, over,
+/// earlier registration captures]`; the trigger guard `[trigger,
+/// registration captures, over]`; an activation capture `[trigger, over,
+/// registration captures, earlier activation captures]`; the retry relation
+/// `[earlier, later, registration captures, activation captures, over]`;
+/// the recovery predicate `[recovery, registration captures, activation
+/// captures, over]`.
+pub(super) struct Template<'a> {
+    /// `<protocol>::<template>`, as a channel is named (PS-7).
+    pub(super) name: String,
+    pub(super) effect: ProtocolNodeId,
+    pub(super) declaring: EffectiveId,
+    pub(super) operation: String,
+    pub(super) trigger: ValueType,
+    pub(super) guard: &'a CheckedBody,
+    /// The registration captures, then the activation captures, by name.
+    pub(super) registration: Vec<(String, &'a CheckedBody)>,
+    pub(super) activation: Vec<(String, &'a CheckedBody)>,
+    /// The authored `attempts n`, at least 1.
+    pub(super) attempts: u64,
+    pub(super) retry: &'a CheckedBody,
+    pub(super) commit: Option<ProtocolNodeId>,
+    pub(super) recover: &'a CheckedBody,
+}
+
 /// Where a thread rests (ADR-027 PS-3), by node identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) enum Rest {
@@ -142,6 +175,11 @@ pub(super) enum Rest {
     Join(ProtocolNodeId),
     /// The `finish` node (root threads only).
     Finish,
+    /// A compensation thread at its compensation attempt, by its template's
+    /// index (ADR-027 CP-3).
+    Compensate(usize),
+    /// A compensation thread at its retry point, by its template's index.
+    Retry(usize),
     /// The end of a branch body.
     End,
 }
@@ -180,7 +218,7 @@ pub(super) struct Program<'a> {
     pub(super) checks: BTreeMap<ProtocolNodeId, &'a CheckedBody>,
     /// Each `fence`'s ordering, by its label (ADR-027 TS-2).
     pub(super) fences: BTreeMap<ProtocolNodeId, AccessOrdering>,
-    /// Each domain `event` and `commit` node's record.
+    /// Each `effect`, domain `event` and `commit` node's record.
     pub(super) events: BTreeMap<ProtocolNodeId, Record<'a>>,
     pub(super) messages: BTreeMap<ProtocolNodeId, Message<'a>>,
     pub(super) channels: Vec<Channel<'a>>,
@@ -191,8 +229,14 @@ pub(super) struct Program<'a> {
     pub(super) readers: Vec<BTreeSet<ProtocolNodeId>>,
     /// The binder slot of each node that has one.
     pub(super) binder_of: BTreeMap<ProtocolNodeId, usize>,
+    /// Each binder slot's declared type.
+    binder_types: Vec<ValueType>,
     /// The protocol's `terminal` member.
     pub(super) terminal: &'a CheckedTerminalMember,
+    /// The `compensate` templates, in source order.
+    pub(super) templates: Vec<Template<'a>>,
+    /// Each `effect` node's attempt, from the `Effect` edges (ST-2).
+    pub(super) effects: BTreeMap<ProtocolNodeId, ProtocolNodeId>,
     /// Each control's place in the `run` tree.
     spans: BTreeMap<ProtocolNodeId, Span>,
     /// Each binder slot's readers by tree position.
@@ -227,10 +271,11 @@ fn unsupported(construct: Unsupported) -> ProtocolRefusal {
 
 /// The constructs this protocol system steps: `sequence`, `parallel` and its
 /// branches, `choice`, `repeat`, `check`, `await`, `attempt`, `send`,
-/// `receive`, domain `event`, `commit`, `fence` and `finish`, channels with a
-/// literal capacity, under `activation on origin` (ADR-027 §9 sequencing
-/// steps 3 and 4). Which memory model each `parallel` runs under is the
-/// subject's resolved model, read when the system is built.
+/// `receive`, `effect`, domain `event`, `commit`, `fence` and `finish`,
+/// channels with a literal capacity, and `compensate` templates with their
+/// captures, under `activation on origin` (ADR-027 §9 sequencing steps 3
+/// and 4). Which memory model each `parallel` runs under is the subject's
+/// resolved model, read when the system is built.
 fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal> {
     for control in &protocol.controls.controls {
         if let ControlStep::Unstepped(construct) = control.step() {
@@ -249,10 +294,12 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
             return Err(unsupported(Unsupported::UnorderedLossSelector));
         }
     }
-    if !protocol.obligations.compensations.is_empty() {
-        return Err(unsupported(Unsupported::Compensation));
-    }
-    if !protocol.obligations.captures.is_empty() {
+    if protocol
+        .obligations
+        .captures
+        .iter()
+        .any(|capture| capture.owner == CaptureOwner::Protocol)
+    {
         return Err(unsupported(Unsupported::Capture));
     }
     if matches!(
@@ -274,6 +321,55 @@ fn refuse_unsupported(protocol: &CheckedProtocol) -> Result<(), ProtocolRefusal>
         return Err(unsupported(Unsupported::UnenumerableRecord));
     }
     Ok(())
+}
+
+/// Each `compensate` template of `protocol` (FR-381), or the refusal of a
+/// template part this system cannot step: a retry relation that reads the
+/// attempt records of a template with more than one attempt, which no
+/// operation result binds here, and a recovery predicate that reads its
+/// recovery binder, whose recovery view no rule derives from a model state.
+fn templates(protocol: &CheckedProtocol) -> Result<Vec<Template<'_>>, ProtocolRefusal> {
+    let obligations = &protocol.obligations;
+    let captures = |indices: &[usize]| -> Result<Vec<(String, &CheckedBody)>, ProtocolRefusal> {
+        indices
+            .iter()
+            .map(|index| {
+                obligations
+                    .captures
+                    .get(*index)
+                    .map(|capture| (capture.name.clone(), &capture.initializer))
+                    .ok_or_else(|| ProtocolRefusal::fault("a-template-capture-is-a-capture"))
+            })
+            .collect()
+    };
+    let mut templates = Vec::with_capacity(obligations.compensations.len());
+    for template in &obligations.compensations {
+        let relation = &template.retry.relation;
+        if template.maximum_attempts > 1 && (relation.reads_local(0) || relation.reads_local(1)) {
+            return Err(unsupported(Unsupported::UnboundAttemptRecord));
+        }
+        if template.recover.predicate.reads_local(0) {
+            return Err(unsupported(Unsupported::RecoveryView));
+        }
+        templates.push(Template {
+            name: format!("{}::{}", protocol.name, template.name),
+            effect: template.effect,
+            declaring: template.operation.declaring,
+            operation: template.operation.declaration.name().to_owned(),
+            trigger: template.trigger.value_type.clone(),
+            guard: &template.guard,
+            registration: captures(&template.registration_captures)?,
+            activation: captures(&template.activation_captures)?,
+            attempts: template.maximum_attempts,
+            retry: relation,
+            commit: match template.commit {
+                CheckedCommit::Never => None,
+                CheckedCommit::Node(node) => Some(node),
+            },
+            recover: &template.recover.predicate,
+        });
+    }
+    Ok(templates)
 }
 
 impl<'a> Program<'a> {
@@ -573,6 +669,7 @@ impl<'a> Program<'a> {
             binder: (finish_slot, finish_type),
         };
 
+        let templates = templates(protocol)?;
         let mut program = Self {
             root,
             controls,
@@ -595,15 +692,37 @@ impl<'a> Program<'a> {
             slots,
             readers,
             binder_of,
+            binder_types: protocol
+                .slots
+                .binders
+                .iter()
+                .map(|binder| binder.value_type.clone())
+                .collect(),
             terminal: &protocol.slots.terminal,
+            templates,
+            effects: protocol
+                .edges
+                .iter()
+                .filter(|edge| edge.kind == EdgeKind::Effect)
+                .map(|edge| (edge.to.node, edge.from.node))
+                .collect(),
             spans: BTreeMap::new(),
             reader_positions: Vec::new(),
             loop_of: BTreeMap::new(),
         };
         program.spans = program.spans()?;
         program.loop_of = program.enclosing_loops()?;
-        program.reader_positions = program
-            .readers
+        // An effect keeps its attempt's binder as a reader does: its ST-2
+        // enabledness reads it.
+        let mut keepers = program.readers.clone();
+        for (effect, attempt) in &program.effects {
+            if let Some(slot) = program.binder_of.get(attempt) {
+                if let Some(readers) = keepers.get_mut(*slot) {
+                    readers.insert(*effect);
+                }
+            }
+        }
+        program.reader_positions = keepers
             .iter()
             .map(|readers| ReaderPositions {
                 controls: readers
@@ -637,6 +756,25 @@ impl<'a> Program<'a> {
         node: ProtocolNodeId,
     ) -> Result<Option<ProtocolNodeId>, ProtocolRefusal> {
         Ok(self.control(node)?.parent)
+    }
+
+    /// Whether some `effect` names the attempt `attempt` (ST-2).
+    pub(super) fn effected(&self, attempt: ProtocolNodeId) -> bool {
+        self.effects.values().any(|of| *of == attempt)
+    }
+
+    /// The declared type of `node`'s binder, when it has one.
+    pub(super) fn binder_type(&self, node: ProtocolNodeId) -> Option<&ValueType> {
+        self.binder_of
+            .get(&node)
+            .and_then(|slot| self.binder_types.get(*slot))
+    }
+
+    /// The template at index `template`.
+    pub(super) fn template(&self, template: usize) -> Result<&Template<'a>, ProtocolRefusal> {
+        self.templates
+            .get(template)
+            .ok_or_else(|| ProtocolRefusal::fault("a-template-index-is-a-template"))
     }
 
     /// The `repeat` `node`.
@@ -696,7 +834,7 @@ impl<'a> Program<'a> {
         };
         let (at, start) = match rest {
             Rest::Finish => return readers.finish,
-            Rest::End | Rest::Check(_) => return false,
+            Rest::End | Rest::Check(_) | Rest::Compensate(_) | Rest::Retry(_) => return false,
             Rest::Node(node) | Rest::Fork(node) | Rest::Await(node) => {
                 match self.spans.get(&node) {
                     Some(span) => (node, span.first),

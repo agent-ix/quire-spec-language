@@ -31,7 +31,7 @@ use super::{
     ProtocolState, ProtocolSystem, Thread,
 };
 use crate::simulation::expansion::{Expansion, ExpansionStop};
-use crate::simulation::model::encode::{reference_enc, value_enc};
+use crate::simulation::model::encode::{reference_enc, value_enc, Enc};
 use crate::simulation::model::{
     Applied, Budget, FirstApplication, ModelFinding, ModelSimState, OperationRef, Verdict,
 };
@@ -160,6 +160,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     )?;
                 }
                 Rest::Finish => self.finish(state, ordinal, path, &mut gathered)?,
+                Rest::Compensate(_) | Rest::Retry(_) => {
+                    self.compensation(state, ordinal, path, thread.rest, &mut gathered)?;
+                }
                 Rest::Check(_) | Rest::End => {}
             }
         }
@@ -343,6 +346,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .ok_or_else(|| ProtocolRefusal::fault("an-event-node-is-an-event"))?;
         let text = self.program.text(node)?.to_owned();
         let instance = Self::instance(state, ordinal)?;
+        // ST-2: an `effect` is enabled only while its attempt's binder is
+        // bound in its thread's environment.
+        if let Some(attempt) = self.program.effects.get(&node) {
+            if instance.entry(*attempt, path).is_none() {
+                return Ok(());
+            }
+        }
         let values = self
             .model
             .values_of(&record.record_type, &state.model, &mut gathered.budget)?
@@ -369,11 +379,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value,
+                    value: Some(value),
                     enc: enc.clone(),
                 },
             );
-            if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((
                     ProtocolTransition::record(StepKind::Event, path.clone(), text.clone(), enc),
@@ -409,7 +421,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(())
     }
 
-    fn gate(&self, state: &ProtocolState<M>, path: &ThreadPath, step: GatedStep) -> bool {
+    pub(super) fn gate(
+        &self,
+        state: &ProtocolState<M>,
+        path: &ThreadPath,
+        step: GatedStep,
+    ) -> bool {
         self.memory.gate(&state.memory, path, step)
     }
 
@@ -733,14 +750,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 .binds
                 .and(applied.result.as_ref())
                 .map(|result| Bound {
-                    value: result.clone(),
+                    value: Some(result.clone()),
                     enc: value_enc(result),
                 });
             if let Some(constraint) = attempt.constraint {
                 let mut frame = self.frame(instance, path, node);
                 if let (Some(slot), Some(bound)) = (self.program.binder_of.get(&node), &bound) {
                     if let Some(entry) = frame.get_mut(*slot) {
-                        *entry = Some(bound.value.clone());
+                        *entry = bound.value.clone();
                     }
                 }
                 match self.evaluate(constraint, frame, &observed)? {
@@ -752,6 +769,24 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }
             }
+            // ST-1 binds the record (receiver, arguments, result). With no
+            // result of the binder's type, the record is kept only for the
+            // attempt's effects, whose ST-2 enabledness reads it.
+            let bound = bound.or_else(|| {
+                self.program.effected(node).then(|| Bound {
+                    value: None,
+                    enc: Enc::tagged(
+                        "attempt-record",
+                        vec![
+                            ("receiver", reference_enc(&applied.receiver)),
+                            (
+                                "arguments",
+                                Enc::Array(applied.arguments.iter().map(value_enc).collect()),
+                            ),
+                        ],
+                    ),
+                })
+            });
             let access = self.access(node, &applied, &observed)?;
             let identity = ProtocolTransition::attempt(
                 path.clone(),
@@ -778,7 +813,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             if let Some(bound) = bound {
                 Self::bind(Self::instance_mut(&mut next, ordinal)?, node, path, bound);
             }
-            if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((identity, next));
             }
@@ -1137,6 +1174,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             Rest::Check(node) => WaitCause::CheckFalse {
                 node: self.program.text(node)?.to_owned(),
             },
+            Rest::Compensate(template) => {
+                self.compensation_cause(state, instance, path, template)?
+            }
+            // `cend` is always enabled at a retry point.
+            Rest::Retry(_) => return Ok(None),
             // `timeout` is always enabled.
             Rest::Await(_) => return Ok(None),
             Rest::Finish => {

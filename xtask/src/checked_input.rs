@@ -280,7 +280,7 @@ impl<'ast> Visit<'ast> for PreCheckCollector {
         let inherent = node
             .trait_
             .is_none()
-            .then(|| crate::impl_self_name(&node.self_ty));
+            .then(|| qsl_string_edge::impl_self_name(&node.self_ty));
         let previous = std::mem::replace(&mut self.inherent_self, inherent);
         syn::visit::visit_item_impl(self, node);
         self.inherent_self = previous;
@@ -708,7 +708,7 @@ impl<'ast> Visit<'ast> for StageScanner<'_, '_> {
         if has_cfg_test(&node.attrs) {
             return;
         }
-        let self_name = crate::impl_self_name(&node.self_ty);
+        let self_name = qsl_string_edge::impl_self_name(&node.self_ty);
         let previous = (
             self.inherent_self.replace(self_name),
             std::mem::replace(&mut self.in_trait_impl, node.trait_.is_some()),

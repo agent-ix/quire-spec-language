@@ -217,7 +217,7 @@ pub enum ControlStep {
     Send,
     /// A `receive`: ST-4.
     Receive,
-    /// A domain `event` or a `commit`: ST-2.
+    /// An `effect`, a domain `event` or a `commit`: ST-2.
     Event,
     /// A `fence`: its memory model's fence step (ADR-027 SE-5).
     Fence,
@@ -241,11 +241,9 @@ impl CheckedControl {
             K::Check => ControlStep::Check,
             K::Send => ControlStep::Send,
             K::Receive => ControlStep::Receive,
-            K::Event | K::Commit => ControlStep::Event,
+            K::Effect | K::Event | K::Commit => ControlStep::Event,
             K::Fence => ControlStep::Fence,
-            K::Effect | K::Finish | K::CompensateTemplate => {
-                ControlStep::Unstepped(self.kind.label())
-            }
+            K::Finish | K::CompensateTemplate => ControlStep::Unstepped(self.kind.label()),
         }
     }
 }
