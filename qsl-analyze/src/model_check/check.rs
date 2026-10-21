@@ -1798,17 +1798,20 @@ impl<S: SubjectSystem> Run<'_, S> {
             return Err(fault("an-unreduced-path-is-concrete").into());
         }
         let path = self.path(at);
-        let prefix = path
-            .iter()
-            .filter_map(|index| {
-                let node = &self.nodes[*index];
-                let (_, transition) = node.parent.as_ref()?;
-                Some(ModelStep {
-                    transition: transition.clone()?,
-                    post_state: node.digest,
-                })
-            })
-            .collect();
+        let mut prefix = Vec::with_capacity(path.len());
+        for index in &path {
+            let node = &self.nodes[*index];
+            let Some((_, Some(transition))) = node.parent.as_ref() else {
+                continue;
+            };
+            prefix.push(ModelStep {
+                transition: self
+                    .system
+                    .reported(transition.clone(), &node.state)
+                    .map_err(|stop| self.expansion_stop(stop))?,
+                post_state: node.digest,
+            });
+        }
         let initial_state = path
             .first()
             .map_or(0, |root| self.nodes[*root].initial_index);

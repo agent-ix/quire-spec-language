@@ -557,9 +557,10 @@ impl ProtocolTransition {
         self
     }
 
-    /// The post-state's memory component a step over a subject with a weak
-    /// `parallel` carries (ADR-025 MK-1); `None` over a subject whose every
-    /// `parallel` resolves to `sc`.
+    /// The post-state's memory component a counterexample or replay step
+    /// over a subject with a weak `parallel` carries (ADR-025 MK-1, set by
+    /// `SubjectSystem::reported`); `None` for an explored successor and over
+    /// a subject whose every `parallel` resolves to `sc`.
     pub fn memory_component(&self) -> Option<&CarriedComponent> {
         self.memory.as_ref()
     }

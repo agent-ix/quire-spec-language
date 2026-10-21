@@ -1042,6 +1042,9 @@ fn replay_prefix<S: SubjectSystem>(
                 reached: digests,
             })
         })?;
+        let replayed = system
+            .reported(replayed, &next.state)
+            .map_err(|_| fault("a-replayed-step-reports"))?;
         if let Some(refusal) = (rules.result)(index, &step.transition, &replayed) {
             return Err(refused(refusal));
         }
