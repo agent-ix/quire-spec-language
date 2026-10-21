@@ -13,6 +13,8 @@
 //! choice takes the step's next choice index, from 0. The step taken is the
 //! one FR-187 gives for the drawn identity and vector.
 
+use std::collections::BTreeMap;
+
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_semantics::check::Workload;
@@ -182,9 +184,12 @@ pub(crate) fn sample_counted(
     system: &ModelSystem<'_>,
     request: &Sampling<'_>,
 ) -> (Result<SampledBehaviour, SampleStop>, u64) {
-    let mut digests = 0;
-    let result = sample(system, request, &mut digests);
-    (result, digests)
+    let mut sampler = match ProbabilisticSampler::new(system, request.workload, request.sampler) {
+        Ok(sampler) => sampler,
+        Err(stop) => return (Err(stop), 0),
+    };
+    let result = sample(&mut sampler, request);
+    (result, sampler.digests)
 }
 
 #[allow(
@@ -192,56 +197,22 @@ pub(crate) fn sample_counted(
     reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
 )]
 fn sample(
-    system: &ModelSystem<'_>,
+    sampler: &mut ProbabilisticSampler<'_, '_>,
     request: &Sampling<'_>,
-    digests: &mut u64,
 ) -> Result<SampledBehaviour, SampleStop> {
-    if !is_pinned_sampler(request.sampler) {
-        return Err(SampleStop::GeneratorMismatch {
-            supplied: request.sampler.clone(),
-        });
-    }
-    let (_, start) = system.state_key(request.start).map_err(|_| broken())?;
-    let mut current = request.start.clone();
-    let mut current_digest = start;
+    let mut current = sampler.position(request.start.clone())?;
+    let start = current.digest;
     let mut steps = Vec::new();
     for step in 0..request.positions.saturating_sub(1) {
         if let Some(cause) = request.cancel.cause() {
             return Err(SampleStop::Cancelled(cause));
         }
-        let actions = system
-            .enabled_actions(&current)?
-            .map_err(|_| SampleStop::UndecidedSuccessor)?;
-        if actions.is_empty() {
-            steps.push(SampledStep {
-                transition: TransitionId::Stutter,
-                post_digest: current_digest,
-                choices: Vec::new(),
-                random: Vec::new(),
-                probability: Rational::from_integer(Integer::one()),
-                rewards: system.zero_rewards(),
-            });
-            continue;
-        }
-        let mut draws = StepDraws {
+        let at = StepAt {
             seed: request.seed,
             trace: request.trace,
             step,
-            choice: 0,
-            choices: Vec::new(),
-            digests: 0,
         };
-        let taken = take_step(
-            system,
-            request.workload,
-            &actions,
-            &current_digest,
-            &mut draws,
-        );
-        *digests = digests.saturating_add(draws.digests);
-        let (post, mut sampled) = taken?;
-        sampled.choices = draws.choices;
-        current_digest = sampled.post_digest;
+        let (post, sampled) = sampler.step(&current, at)?;
         current = post;
         steps.push(sampled);
     }
@@ -252,9 +223,185 @@ fn sample(
     })
 }
 
+/// Where a step of a sampled behaviour draws (FR-188): the run's seed, the
+/// behaviour's trace index and the step's 0-based index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StepAt {
+    /// The run's seed.
+    pub seed: u64,
+    /// The behaviour's trace index.
+    pub trace: u64,
+    /// The step's index: the step from position `step` to `step + 1`.
+    pub step: u64,
+}
+
+/// One position of a sampled behaviour: its state and that state's
+/// `quire.simulation.state-key/v1` key and digest.
+#[derive(Clone, Debug)]
+pub struct SampledPosition {
+    state: ModelSimState,
+    key: Vec<u8>,
+    digest: DigestRecord,
+}
+
+impl SampledPosition {
+    /// The position's state.
+    pub fn state(&self) -> &ModelSimState {
+        &self.state
+    }
+
+    /// The state's canonical state-key bytes: two positions hold the same
+    /// state exactly when their keys are equal.
+    pub fn key(&self) -> &[u8] {
+        &self.key
+    }
+
+    /// The state's state-key digest.
+    pub fn digest(&self) -> DigestRecord {
+        self.digest
+    }
+}
+
+/// FR-188's sampler over one system and workload, one step at a time
+/// (FR-189, FR-190: a caller that evaluates a claim position by position
+/// draws only the steps it reads). It keeps each state's enabled actions,
+/// keyed by state key, so a run that revisits a state expands it once; a
+/// step is a function of the system, the workload, the position and its
+/// [`StepAt`] alone, as [`sample_probabilistic`]'s are.
+pub struct ProbabilisticSampler<'s, 'a> {
+    system: &'s ModelSystem<'a>,
+    workload: &'s Workload,
+    /// Each state's enabled actions, or that a contract conjunction was
+    /// undecided there, by state key.
+    actions: BTreeMap<Vec<u8>, Option<Vec<Action>>>,
+    /// The draw digests computed.
+    digests: u64,
+}
+
+impl<'s, 'a> ProbabilisticSampler<'s, 'a> {
+    /// A sampler of `system` under `workload` with the generator `sampler`
+    /// names.
+    ///
+    /// # Errors
+    ///
+    /// [`SampleStop::GeneratorMismatch`] for a sampler other than
+    /// `quire.simulation.sampler/v1`, before any draw.
+    #[allow(
+        clippy::result_large_err,
+        reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
+    )]
+    pub fn new(
+        system: &'s ModelSystem<'a>,
+        workload: &'s Workload,
+        sampler: &DefinitionRef,
+    ) -> Result<Self, SampleStop> {
+        if !is_pinned_sampler(sampler) {
+            return Err(SampleStop::GeneratorMismatch {
+                supplied: sampler.clone(),
+            });
+        }
+        Ok(Self {
+            system,
+            workload,
+            actions: BTreeMap::new(),
+            digests: 0,
+        })
+    }
+
+    /// `state` as a position of a behaviour.
+    ///
+    /// # Errors
+    ///
+    /// `runtime_invariant`/`established-invariant-broken` when the state's
+    /// key does not encode.
+    #[allow(
+        clippy::result_large_err,
+        reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
+    )]
+    pub fn position(&self, state: ModelSimState) -> Result<SampledPosition, SampleStop> {
+        let (key, digest) = self.system.state_key(&state).map_err(|_| broken())?;
+        Ok(SampledPosition { state, key, digest })
+    }
+
+    /// The step from `from` that the draws at `at` select, and the position
+    /// it reaches. A terminal state takes the stutter step (ADR-018 SM-4).
+    ///
+    /// # Errors
+    ///
+    /// As [`sample_probabilistic`], but for `GeneratorMismatch` and
+    /// `Cancelled`.
+    #[allow(
+        clippy::result_large_err,
+        reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
+    )]
+    pub fn step(
+        &mut self,
+        from: &SampledPosition,
+        at: StepAt,
+    ) -> Result<(SampledPosition, SampledStep), SampleStop> {
+        let actions = match self.actions.get(&from.key) {
+            Some(known) => known.clone(),
+            None => {
+                let actions = self.system.enabled_actions(&from.state)?.ok();
+                self.actions.insert(from.key.clone(), actions.clone());
+                actions
+            }
+        };
+        let actions = actions.ok_or(SampleStop::UndecidedSuccessor)?;
+        if actions.is_empty() {
+            return Ok((
+                from.clone(),
+                SampledStep {
+                    transition: TransitionId::Stutter,
+                    post_digest: from.digest,
+                    choices: Vec::new(),
+                    random: Vec::new(),
+                    probability: Rational::from_integer(Integer::one()),
+                    rewards: self.system.zero_rewards(),
+                },
+            ));
+        }
+        let mut draws = StepDraws {
+            seed: at.seed,
+            trace: at.trace,
+            step: at.step,
+            choice: 0,
+            choices: Vec::new(),
+            digests: 0,
+        };
+        let taken = take_step(
+            self.system,
+            self.workload,
+            &actions,
+            &from.digest,
+            &mut draws,
+        );
+        self.digests = self.digests.saturating_add(draws.digests);
+        let taken = taken?;
+        let position = self.position(taken.post)?;
+        let sampled = SampledStep {
+            transition: taken.transition,
+            post_digest: position.digest,
+            choices: draws.choices,
+            random: taken.random,
+            probability: taken.probability,
+            rewards: taken.rewards,
+        };
+        Ok((position, sampled))
+    }
+}
+
+/// A step [`take_step`] selected, before its post-state is keyed.
+struct Taken {
+    post: ModelSimState,
+    transition: TransitionId,
+    random: Vec<Value>,
+    probability: Rational,
+    rewards: Vec<(Identifier, Value)>,
+}
+
 /// The step `draws` selects among `actions`, the enabled actions of the
-/// state whose digest is `state`: its post-state and its record, with no
-/// choices yet.
+/// state whose digest is `state`.
 #[allow(
     clippy::result_large_err,
     reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
@@ -265,7 +412,7 @@ fn take_step(
     actions: &[Action],
     state: &DigestRecord,
     draws: &mut StepDraws,
-) -> Result<(ModelSimState, SampledStep), SampleStop> {
+) -> Result<Taken, SampleStop> {
     // The enabled operations in canonical operation order (ascending
     // declaration identity text), each with its weight and its actions in
     // canonical transition order.
@@ -332,18 +479,13 @@ fn take_step(
         .and_then(|share| share.div(&identities))
         .ok_or_else(broken)?
         .mul(&draw.probability);
-    let (_, post_digest) = system.state_key(&post).map_err(|_| broken())?;
-    Ok((
+    Ok(Taken {
         post,
-        SampledStep {
-            transition: TransitionId::Operation(transition),
-            post_digest,
-            choices: Vec::new(),
-            random: draw.random.clone(),
-            probability,
-            rewards: draw.rewards.clone(),
-        },
-    ))
+        transition: TransitionId::Operation(transition),
+        random: draw.random.clone(),
+        probability,
+        rewards: draw.rewards.clone(),
+    })
 }
 
 /// FR-188: sample one behaviour of `system` under `workload` from `start`,

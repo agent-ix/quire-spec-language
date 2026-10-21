@@ -355,13 +355,18 @@ impl World {
             .unwrap_or_else(|| panic!("the claim {name} checks"))
     }
 
+    /// The model subject over the initial snapshot.
+    pub(crate) fn subject(&self) -> ModelSubject<'_> {
+        ModelSubject {
+            simulation: self.simulation(),
+            proof_bounds: Vec::new(),
+        }
+    }
+
     /// The product request of the claim `name` under `limits`.
     pub(crate) fn request(&self, name: &str, limits: ModelCheckLimits) -> ProductRequest<'_> {
         ProductRequest {
-            subject: ModelSubject {
-                simulation: self.simulation(),
-                proof_bounds: Vec::new(),
-            },
+            subject: self.subject(),
             claim: self.claim(name),
             limits,
         }
@@ -646,4 +651,65 @@ pub(crate) fn process(extra: &str) -> Model {
         ),
         initial: json!({"done": {"boolean": false}}),
     }
+}
+
+/// FR-189-AC-7's `Wide`: `spin(x: Boolean)` writes `v = x`, with `x` drawn
+/// by weights whose total, `2^256 + 1`, is above the draw range.
+pub(crate) fn wide(extra: &str) -> Model {
+    Model {
+        package: "test/wide",
+        object: "Wide",
+        population: "wides",
+        key: "w",
+        integers: vec![],
+        fields: vec![("v", BOOLEAN.to_owned())],
+        operations: vec![Operation {
+            name: "spin",
+            parameters: vec![("x", BOOLEAN.to_owned())],
+            modifies: vec!["v"],
+            deletes: false,
+        }],
+        body: format!(
+            "post Spun using v on M::Wide::spin {{ self.v = x }}\n\
+             random Wide::spin(x) ~ {{ true: 1, false: \
+             115792089237316195423570985008687907853269984665640564039457584007913129639936 }};\n\
+             workload Unit on M {{ weight Wide::spin = 1; }}\n{extra}"
+        ),
+        initial: json!({"v": {"boolean": false}}),
+    }
+}
+
+/// FR-189-AC-4's activation variant of `Service`: `request(go: Boolean)`
+/// starts the server (`phase = 1`) when `go` and leaves it `Idle`
+/// otherwise, with `go ~ {true: 1, false: 1}`.
+pub(crate) fn activated_service(extra: &str) -> Model {
+    let mut model = service("");
+    model.package = "test/activated";
+    for operation in &mut model.operations {
+        if operation.name == "request" {
+            operation.parameters = vec![("go", BOOLEAN.to_owned())];
+        }
+        for (_, type_ref) in &mut operation.parameters {
+            *type_ref = type_ref.replace("test/service", "test/activated");
+        }
+    }
+    model.integers = vec![("Phase", 0, 2), ("Attempts", 0, 2), ("Millis", 1, 12)];
+    model.fields = vec![
+        ("phase", int("test/activated", "Phase")),
+        ("attempts", int("test/activated", "Attempts")),
+    ];
+    model.body = model
+        .body
+        .replace(
+            "post Started using v on M::Server::request { self.phase = 1 and self.attempts = 0 }",
+            "post Started using v on M::Server::request { \
+                (go and self.phase = 1 and self.attempts = 0) or \
+                (not go and self.phase = 0 and self.attempts = pre(self.attempts)) }",
+        )
+        .replace(
+            "random Server::attempt(d)",
+            "random Server::request(go) ~ { true: 1, false: 1 };\nrandom Server::attempt(d)",
+        );
+    model.body.push_str(extra);
+    model
 }

@@ -26,7 +26,7 @@
 //! here.
 
 mod build;
-mod plan;
+pub(crate) mod plan;
 
 pub use build::build_product;
 

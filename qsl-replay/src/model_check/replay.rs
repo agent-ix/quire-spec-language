@@ -1482,7 +1482,8 @@ fn undefined<S: SubjectSystem>(
         | UndefinedLocus::Contract(_)
         | UndefinedLocus::Terminal(_)
         | UndefinedLocus::Protocol(_)
-        | UndefinedLocus::Mapping { .. } => None,
+        | UndefinedLocus::Mapping { .. }
+        | UndefinedLocus::ClaimPredicate(_) => None,
     };
     if constraint.is_some_and(|name| !constraints.has_constraint(name)) {
         return Ok(disagrees(Category::Success));

@@ -17,7 +17,7 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_replay::statistical::{
-    ClaimForm, Confidence, Coverage, Decision, StatisticalLimit, StatisticalLimits,
+    ClaimForm, Confidence, Coverage, Decision, MeasureValue, StatisticalLimit, StatisticalLimits,
     StatisticalMethod, StatisticalOutcome, StatisticalRefusal, StatisticalStop,
     StatisticalUnsupported, StatisticalVerdict, TestResult, UndecidedCause, WitnessValue,
 };
@@ -26,6 +26,24 @@ use quire_exact::{Cancel, CancelCause, Integer, Rational};
 
 use super::bounds::{int, normal_quantile_upper, quotient, sqrt};
 use super::*;
+
+/// A non-unique post-state of a `tick` with no argument.
+fn not_markov() -> NotMarkov {
+    NotMarkov {
+        state: DigestRecord::raw_artifact(b"healthy"),
+        transition: qsl_eval::simulation::model::ScheduledIdentity {
+            operation: "tick".to_owned(),
+            receiver: quire_exact::ObjectReference::new(
+                quire_exact::UniverseId::from_digest([1; 32]),
+                quire_exact::EffectiveId::from_digest([2; 32]),
+                quire_exact::ObjectId::new("n").expect("a key"),
+            ),
+            arguments: Vec::new(),
+        },
+        random: Vec::new(),
+        post_states: 2,
+    }
+}
 
 fn ratio(numerator: i64, denominator: i64) -> Rational {
     quotient(&int(numerator), &int(denominator)).expect("nonzero denominator")
@@ -92,8 +110,8 @@ fn request<'a>(
     tests: &'a [TestSubject],
     method: StatisticalMethod,
     sampler: &'a DefinitionRef,
-) -> StatisticalRequest<'a> {
-    StatisticalRequest {
+) -> SampledRequest<'a> {
+    SampledRequest {
         claim,
         tests,
         method,
@@ -104,11 +122,8 @@ fn request<'a>(
     }
 }
 
-fn run<S: BehaviourSampler>(
-    request: StatisticalRequest<'_>,
-    sampler: &mut S,
-) -> StatisticalOutcome {
-    check_statistical(request, sampler, &Cancel::new()).expect("a statistical outcome")
+fn run<S: BehaviourSampler>(request: SampledRequest<'_>, sampler: &mut S) -> StatisticalOutcome {
+    check_sampled(request, sampler, &Cancel::new()).expect("a statistical outcome")
 }
 
 fn completed(outcome: StatisticalOutcome) -> StatisticalVerdict {
@@ -152,7 +167,7 @@ struct NoWalk;
 
 impl RegenerationWalk for NoWalk {
     fn step(&mut self) -> Result<WalkStep, SampleHalt> {
-        Err(SampleHalt::NotMarkov)
+        Err(SampleHalt::NotMarkov(Box::new(not_markov())))
     }
 }
 
@@ -231,9 +246,11 @@ impl ClaimSampler for Service {
             QuantileComparison::AtMost,
             int(self.threshold),
         );
-        Ok(Sample::Event(
-            event.holds(&MeasureValue::Value(int(latency))),
-        ))
+        let value = MeasureValue::Value(int(latency));
+        Ok(Sample::Measured {
+            holds: event.holds(&value),
+            value,
+        })
     }
 
     fn walk(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> NoWalk {
@@ -433,12 +450,15 @@ fn not_markov_undecided_successor_and_sequential_mean_settle_as_stated() {
     let sampler = sampler_ref();
     let outcome = run(
         request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
-        &mut fixed(Err(SampleHalt::NotMarkov)),
+        &mut fixed(Err(SampleHalt::NotMarkov(Box::new(not_markov())))),
     );
     let StatisticalOutcome::Unsupported { cause, provenance } = outcome else {
         panic!("expected Unsupported, got {outcome:?}");
     };
-    assert_eq!(cause, StatisticalUnsupported::NotMarkov);
+    assert_eq!(
+        cause,
+        StatisticalUnsupported::NotMarkov(Box::new(not_markov()))
+    );
     assert_eq!(provenance.tests[0].traces.count, 1);
 
     let verdict = completed(run(
@@ -451,7 +471,7 @@ fn not_markov_undecided_successor_and_sequential_mean_settle_as_stated() {
 
     let mean = claim_of_mean();
     assert_eq!(
-        check_statistical(
+        check_sampled(
             request(&mean, &tests, StatisticalMethod::Sprt, &sampler),
             &mut fixed(Ok(Sample::Event(true))),
             &Cancel::new(),
@@ -708,7 +728,7 @@ impl ClaimSampler for Avail {
     type Walk = AvailWalk;
 
     fn read(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> Result<Sample, SampleHalt> {
-        Err(SampleHalt::NotMarkov)
+        Err(SampleHalt::NotMarkov(Box::new(not_markov())))
     }
 
     fn walk(&mut self, _test: &TestSubject, seed: u64, trace: u64) -> AvailWalk {
@@ -857,7 +877,7 @@ impl ClaimSampler for Identical {
     type Walk = IdenticalWalk;
 
     fn read(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> Result<Sample, SampleHalt> {
-        Err(SampleHalt::NotMarkov)
+        Err(SampleHalt::NotMarkov(Box::new(not_markov())))
     }
 
     fn walk(&mut self, _test: &TestSubject, _seed: u64, _trace: u64) -> IdenticalWalk {
@@ -958,7 +978,7 @@ fn a_weighted_long_run_reads_each_position_weight_from_its_leaving_step() {
 
     let p95 = p95();
     assert_eq!(
-        check_statistical(
+        check_sampled(
             request(&p95, &tests, method, &sampler),
             &mut Service::new(5),
             &Cancel::new()
@@ -969,7 +989,7 @@ fn a_weighted_long_run_reads_each_position_weight_from_its_leaving_step() {
         })
     );
     assert_eq!(
-        check_statistical(
+        check_sampled(
             request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
             &mut Avail::default(),
             &Cancel::new(),
@@ -1048,7 +1068,7 @@ fn max_draws_and_cancellation_stop_with_no_decision() {
 
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
-    let outcome = check_statistical(
+    let outcome = check_sampled(
         request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
         &mut Service::new(5),
         &cancel,
@@ -1172,7 +1192,7 @@ fn requests_and_claims_outside_the_method_are_refused() {
     let none: Vec<TestSubject> = Vec::new();
     let mut probe = fixed(Ok(Sample::Event(true)));
     assert_eq!(
-        check_statistical(
+        check_sampled(
             request(&claim, &none, StatisticalMethod::Okamoto, &sampler),
             &mut probe,
             &Cancel::new(),
@@ -1189,7 +1209,7 @@ fn requests_and_claims_outside_the_method_are_refused() {
     let mut overflowing = request(&claim, &tests, StatisticalMethod::Okamoto, &sampler);
     overflowing.limits.max_draws = u64::MAX;
     assert_eq!(
-        check_statistical(overflowing, &mut probe, &Cancel::new()),
+        check_sampled(overflowing, &mut probe, &Cancel::new()),
         Err(StatisticalRefusal::TraceIndexRange {
             max_draws: u64::MAX,
             tests: 2
@@ -1202,7 +1222,7 @@ fn requests_and_claims_outside_the_method_are_refused() {
         supplied: other.clone(),
     }));
     assert_eq!(
-        check_statistical(
+        check_sampled(
             request(&claim, &one_test(), StatisticalMethod::Okamoto, &sampler),
             &mut mismatch,
             &Cancel::new(),
@@ -1561,7 +1581,7 @@ fn max_samples_stops_before_the_next_draw_and_stops_carry_provenance() {
 
     let cancel = Cancel::new();
     cancel.cancel(CancelCause::Requested);
-    let outcome = check_statistical(
+    let outcome = check_sampled(
         request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
         &mut fixed(Ok(Sample::Event(true))),
         &cancel,
@@ -1584,7 +1604,7 @@ fn okamoto_refuses_a_fraction_for_a_probability_claim() {
     let sampler = sampler_ref();
     let fraction = UnitFraction::try_from(ratio(1, 2)).expect("a fraction");
     assert_eq!(
-        check_statistical(
+        check_sampled(
             request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
             &mut fixed(Ok(Sample::Fraction(fraction))),
             &Cancel::new(),
@@ -1860,7 +1880,7 @@ fn an_undefined_sample_settles_measured_rejected() {
 
 /// FR-193 "Keeping witnesses" over `Service` and the 2 ms claim with seed
 /// 7 and `max_witnesses` 3: the three violating samples first in trace
-/// order, each with latency above 2 ms, its event false and its path
+/// order, each with latency above 2 ms, its measure that latency and its path
 /// probability the product of its steps'; an attempt that drew `d = 3 ms`
 /// and `Ok` has probability `343/5000`.
 #[trace("TC-628")]
@@ -1873,7 +1893,7 @@ fn the_first_violating_samples_are_kept_in_trace_order() {
     let sampler = sampler_ref();
     let mut witnessed = ServiceSteps(Service::new(2));
     let verdict = completed(run(
-        StatisticalRequest {
+        SampledRequest {
             max_witnesses: 3,
             ..request(&two, &tests, StatisticalMethod::Sprt, &sampler)
         },
@@ -1894,7 +1914,11 @@ fn the_first_violating_samples_are_kept_in_trace_order() {
     assert_eq!(kept, expected);
     for witness in &verdict.witnesses {
         assert_eq!(witness.test, 0);
-        assert_eq!(witness.value, WitnessValue::Event(false));
+        let latency = latencies[&witness.trace];
+        assert_eq!(
+            witness.value,
+            WitnessValue::Measure(MeasureValue::Value(int(latency)))
+        );
         let product = witness
             .steps
             .iter()
@@ -1917,7 +1941,7 @@ fn witnesses_interleave_across_tests_by_trace_index() {
     let sampler = sampler_ref();
     let mut witnessed = ServiceSteps(Service::new(2));
     let verdict = completed(run(
-        StatisticalRequest {
+        SampledRequest {
             max_witnesses: 4,
             ..request(&two, &tests, StatisticalMethod::Sprt, &sampler)
         },
@@ -1970,7 +1994,7 @@ fn an_undefined_sample_is_kept_whatever_max_witnesses_is() {
     let tests = one_test();
     let sampler = sampler_ref();
     let verdict = completed(run(
-        StatisticalRequest {
+        SampledRequest {
             max_witnesses: 0,
             ..request(&claim, &tests, StatisticalMethod::Okamoto, &sampler)
         },

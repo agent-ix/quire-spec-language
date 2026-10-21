@@ -9,9 +9,11 @@
 //! verdict type the settlement map and CG read in `qsl-replay`.
 
 use qsl_eval::model_subject::ModelInstance;
-use qsl_eval::simulation::{ExpansionStop, SampledStep};
+use qsl_eval::simulation::model::NotMarkov;
+use qsl_eval::simulation::{ExpansionStop, RequiresBound, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::InternalFault;
+use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Integer, Rational};
 
 use crate::UndefinedEvaluation;
@@ -20,7 +22,7 @@ mod settle;
 
 pub use settle::{
     settle_statistical, settle_statistical_refusal, NotStatisticalRequest, StatisticalRecord,
-    SubjectLimits,
+    SubjectLimits, UnsettledRefusal,
 };
 
 /// How a request decides a claim from its samples (FR-189, FR-190;
@@ -374,8 +376,21 @@ pub enum WitnessValue {
     /// A mean-of-fraction sample's fraction, below `θ` against a `>= θ`
     /// bound or above it against a `<= θ` bound.
     Fraction(Rational),
+    /// A quantile claim's activated sample whose measure is on the violating
+    /// side of its PF-4 event: the measure's value, or censored.
+    Measure(MeasureValue),
     /// The claim evaluated undefined on the sample (ADR-024 SV-11).
     Undefined(UndefinedEvaluation),
+}
+
+/// One activated sample's bounded measure (FR-189 "Per sample"; ADR-024
+/// PF-2): its value, or censored, with no end within the window.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MeasureValue {
+    /// The measure's value, in the reward's own unit for an `accumulate`.
+    Value(Rational),
+    /// Activated with no end position: exceeds every finite threshold.
+    Censored,
 }
 
 /// One sampled witness (FR-193; ADR-024 SV-6): a sample on the violating
@@ -475,8 +490,9 @@ pub enum StatisticalStop {
 /// Why a run is unsupported once sampling began (FR-189).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StatisticalUnsupported {
-    /// A drawn step broke the Markov condition (ADR-024 PM-3).
-    NotMarkov,
+    /// A drawn step broke the Markov condition (ADR-024 PM-3): the state,
+    /// the scheduled identity, the drawn vector and its post-state count.
+    NotMarkov(Box<NotMarkov>),
     /// A choice's scaled weight total exceeds `2^256`, so no draw is
     /// accepted (QSpec FR-181-AC-14).
     TotalAboveDrawRange {
@@ -512,6 +528,13 @@ pub enum StatisticalOutcome {
 /// Why EN-4 refuses a request with no outcome (FR-189 `StatisticalRefusal`).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum StatisticalRefusal {
+    /// FR-120's admission of the subject's `ModelSystem` failed.
+    #[error("the subject's model system did not admit: {0:?}")]
+    Admission(Box<AdmissionFailure>),
+    /// The claim's `over` type has an admitting population with no universe
+    /// (FR-101), so the subject's tests are not finitely many.
+    #[error("the subject has an unbounded population and requires a bound")]
+    RequiresBound(RequiresBound),
     /// A claim `under every scheduler` has no sampling route (ADR-024 PM-8,
     /// ADR-028 XF-7); only exact evidence decides it.
     #[error("a claim under every scheduler is decided by exact evidence only")]
