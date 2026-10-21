@@ -596,6 +596,7 @@ fn type_head(cst: &LosslessCst, node: &CstNode) -> Result<TypeForm, FormsRefusal
         b"Text" => TypeFormHead::Builtin(BuiltinType::Text),
         b"Option" => TypeFormHead::Builtin(BuiltinType::Option),
         b"Reference" => TypeFormHead::Builtin(BuiltinType::Reference),
+        b"Quantity" => TypeFormHead::Builtin(BuiltinType::Quantity),
         b"Clock" => TypeFormHead::Builtin(BuiltinType::Clock),
         b"Population" => TypeFormHead::Population,
         b"Sequence" => TypeFormHead::Collection(CollectionKind::Sequence),

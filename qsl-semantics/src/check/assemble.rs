@@ -863,6 +863,8 @@ impl Unit {
 struct Names {
     types: BTreeMap<String, Vec<ValueType>>,
     object_types: BTreeMap<String, EffectiveId>,
+    /// The unit's declared units by name, for `Quantity<u>`.
+    units: BTreeMap<String, quire_exact::UnitId>,
 }
 
 impl TypeNames for Names {
@@ -872,6 +874,10 @@ impl TypeNames for Names {
 
     fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
         self.object_types.get(name).copied()
+    }
+
+    fn unit_named(&self, name: &str) -> Option<quire_exact::UnitId> {
+        self.units.get(name).copied()
     }
 }
 
@@ -1885,6 +1891,22 @@ fn check_names(
                 cause: AssemblyCause::TimedNotChecked(TimedConstruct::Clock),
                 span: form.span,
             }),
+            TypeFormHead::Builtin(BuiltinType::Quantity) => {
+                for target in &form.arguments {
+                    if let TypeFormHead::Name(name) = &target.head {
+                        if !unit
+                            .units
+                            .iter()
+                            .any(|declared| declared.name.name == *name)
+                        {
+                            errors.push(AssemblyError {
+                                cause: AssemblyCause::UnresolvedTypeName { name: name.clone() },
+                                span: target.span,
+                            });
+                        }
+                    }
+                }
+            }
             TypeFormHead::Builtin(BuiltinType::Reference) => {
                 for target in &form.arguments {
                     let name = match &target.head {
@@ -2843,6 +2865,10 @@ impl PackageDeclarations {
         // Each declared record and tuple's handle, over the unit's owner.
         let mut names = Names {
             object_types: object_names.clone(),
+            units: quantities
+                .as_ref()
+                .map(|assembled| super::check::declared_unit_ids(&assembled.graph))
+                .unwrap_or_default(),
             ..Names::default()
         };
         for composite in &model_composites {
@@ -2984,6 +3010,27 @@ impl PackageDeclarations {
             .iter()
             .map(|enumeration| (enumeration.name.name.clone(), enumeration.name.span))
             .collect();
+        // A dimension's and a unit's declaration occurrence is located at its
+        // name, under the namespace it is declared in (FR-094), so a record
+        // named like a unit does not share its position.
+        declared_type_spans.extend(unit.dimensions.iter().map(|dimension| {
+            (
+                super::lowering::quantity_origin(
+                    super::lowering::QuantityKind::Dimension,
+                    &dimension.name.name,
+                ),
+                dimension.name.span,
+            )
+        }));
+        declared_type_spans.extend(unit.units.iter().map(|declared| {
+            (
+                super::lowering::quantity_origin(
+                    super::lowering::QuantityKind::Unit,
+                    &declared.name.name,
+                ),
+                declared.name.span,
+            )
+        }));
         // The `[N]` of each `bound` is located under its label (FR-380), the
         // position its population node's `Type` occurrence resolves to.
         declared_type_spans.extend(unit.population_bounds.iter().map(|bound| {

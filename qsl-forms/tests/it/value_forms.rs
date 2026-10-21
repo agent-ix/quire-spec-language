@@ -782,6 +782,27 @@ fn record_and_tuple_forms_carry_their_names_and_members() {
     ));
 }
 
+/// FR-091-AC-44: S1 parses `d: Quantity<ms>` and S2 builds a `Quantity`
+/// type form over the qualified name `ms`.
+#[trace("FR-091-AC-44", "TC-483")]
+#[test]
+fn a_quantity_type_form_names_its_unit() {
+    let (text, unit) = build("function f using v(d: Quantity<ms>): Boolean pure { true }");
+    let DeclarationForm::Function(function) = unit.forms()[0].form() else {
+        panic!("a function");
+    };
+    let form = &function.parameters[0].1;
+    assert!(matches!(
+        form.head,
+        TypeFormHead::Builtin(BuiltinType::Quantity)
+    ));
+    let [unit_name] = form.arguments.as_slice() else {
+        panic!("one argument")
+    };
+    assert!(matches!(&unit_name.head, TypeFormHead::Name(name) if name == "ms"));
+    assert_eq!(&text[unit_name.span.start..unit_name.span.end], "ms");
+}
+
 #[trace("FR-091-AC-23", "TC-405")]
 #[test]
 fn a_bare_float_type_is_admitted_and_builds_with_no_rounding_mode() {

@@ -875,6 +875,37 @@ struct ScopeIndex {
     units: BTreeMap<String, quire_exact::UnitId>,
 }
 
+/// The units `graph` declares by their declared name, read from `declared`,
+/// the table built over the same graph.
+fn unit_ids_by_name(
+    graph: &quire_semantic_value::unit::UnitGraph,
+    declared: &quire_semantic_value::quantity::UnitTable,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    graph
+        .units()
+        .filter_map(|unit| {
+            let name = declared
+                .nominal_node(unit.key().as_bytes())
+                .map(|node| node.declaration.qualified_declaration.as_slice());
+            match name {
+                Some([name]) => Some((name.clone(), unit.id())),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// The units `graph` declares by their declared name (QSpec FR-142
+/// "Quantity type reference": the unit namespace `Quantity<u>` looks up).
+pub(crate) fn declared_unit_ids(
+    graph: &quire_semantic_value::unit::UnitGraph,
+) -> BTreeMap<String, quire_exact::UnitId> {
+    unit_ids_by_name(
+        graph,
+        &quire_semantic_value::quantity::UnitTable::declared(graph),
+    )
+}
+
 impl ScopeIndex {
     fn new(
         types: &TypeEnvironment,
@@ -1107,14 +1138,7 @@ impl Scope {
             return self;
         }
         let declared = quire_semantic_value::quantity::UnitTable::declared(graph);
-        for unit in graph.units() {
-            let name = declared
-                .nominal_node(unit.key().as_bytes())
-                .map(|node| node.declaration.qualified_declaration.as_slice());
-            if let Some([name]) = name {
-                self.index.units.insert(name.clone(), unit.id());
-            }
-        }
+        self.index.units.extend(unit_ids_by_name(graph, &declared));
         let mut units = self.types.units().clone();
         units.append(declared);
         self.types = std::mem::take(&mut self.types).with_units(units);

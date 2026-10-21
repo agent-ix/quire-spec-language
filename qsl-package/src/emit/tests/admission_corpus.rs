@@ -776,3 +776,91 @@ fn every_emitted_body_of_the_corpus_is_in_the_stratified_grammar() {
     }
     assert!(bodies > 0, "the corpus emits nodes");
 }
+
+/// QSL-946: the dimension and units the quantity-typed operand functions
+/// below are written over.
+const QUANTITY_UNITS: &str = "dimension Length;\n\
+     unit m : Length = rational(1, 1);\n\
+     unit km : Length = rational(1000, 1) * m;\n";
+
+/// One operation over quantity-typed operands, written in genuine source
+/// through the `Quantity<u>` type form, and the operation identity its
+/// application lowers to.
+const QUANTITY_OPERATIONS: &[(&str, &str, Option<&str>)] = &[
+    (
+        "eq",
+        "function op using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a = b }",
+        Some("quire.op.quantity.eq"),
+    ),
+    (
+        "ne",
+        "function op using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a != b }",
+        Some("quire.op.quantity.ne"),
+    ),
+    (
+        "lt",
+        "function op using v(a: Quantity<m>, b: Quantity<m>): Boolean pure { a < b }",
+        Some("quire.op.quantity.lt"),
+    ),
+    (
+        "add",
+        "function op using v(a: Quantity<m>, b: Quantity<m>): Quantity<m> pure { a + b }",
+        Some("quire.op.quantity.add"),
+    ),
+    (
+        "convert to the same unit",
+        "function op using v(q: Quantity<m>): Quantity<m> pure { convert<Quantity<m>>(q) }",
+        // A conversion to the operand's own unit is the identity: it lowers
+        // to its operand, so no application is written.
+        None,
+    ),
+    (
+        "convert to another unit",
+        "function op using v(q: Quantity<m>): Quantity<km> pure { convert<Quantity<km>>(q) }",
+        Some("quire.op.quantity.convert"),
+    ),
+];
+
+/// FR-091-AC-44, FR-093 (QSL-946, IR-263): each operation over operands
+/// typed `Quantity<u>` in genuine source emits a package IR's strict
+/// checked-package/v2 reader admits at its `package_id`, and the package
+/// applies the operation's `quire.op.quantity.*` identity.
+#[trace("FR-091-AC-44", "FR-093-AC-19", "TC-483", "TC-416")]
+#[test]
+fn quantity_typed_source_operations_are_admitted_by_the_strict_reader() {
+    let mut failures = Vec::new();
+    for (name, function, identity) in QUANTITY_OPERATIONS {
+        let (_, package) = package_from_text(&format!("{QUANTITY_UNITS}{function}\n"));
+        let emitted = Emitted::placed(package, Vec::new());
+        let outcome = Outcome {
+            families: families(&emitted.package),
+            read: read(&emitted),
+            emitted,
+        };
+        let applied = identity.is_none_or(|identity| {
+            outcome
+                .families
+                .values()
+                .flatten()
+                .any(|node| outcome.applies(node, identity))
+        });
+        // The identity conversion writes no node: the body is the parameter.
+        if identity.is_none()
+            && outcome
+                .families
+                .keys()
+                .any(|kind| matches!(kind, CheckedNodeKind::Expression(_)))
+        {
+            failures.push(format!("{name}: wrote an expression node"));
+        }
+        if !applied {
+            failures.push(format!("{name}: no application of {identity:?}"));
+        }
+        match &outcome.read {
+            Ok(read)
+                if read.package.package_id() == outcome.emitted.emission.package.package_id() => {}
+            other => failures.push(format!("{name}: not admitted: {other:?}")),
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
