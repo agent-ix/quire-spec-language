@@ -463,7 +463,7 @@ fn a_safety_verdict_is_the_same_with_and_without_the_scheduler() {
 }
 
 /// The S3 refusal of the unit `body`, which must not check.
-fn check_refusal(body: &str) -> CheckRefusal {
+pub(crate) fn check_refusal(body: &str) -> CheckRefusal {
     let document = document();
     let text = unit_text(body);
     let packages = package_input([document.as_slice()]);
@@ -500,7 +500,7 @@ fn check_refusal(body: &str) -> CheckRefusal {
 }
 
 /// The temporal cause of `refusal`.
-fn temporal(refusal: &CheckRefusal) -> &TemporalCause {
+pub(crate) fn temporal(refusal: &CheckRefusal) -> &TemporalCause {
     match &refusal.cause {
         CheckCause::Temporal(cause) => cause,
         other => panic!("{other:?}"),

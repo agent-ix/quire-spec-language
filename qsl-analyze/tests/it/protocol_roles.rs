@@ -11,7 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest};
+use qsl_analyze::model_check::{check_protocol, ModelCheckRefusal, ProtocolCheckRequest};
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState, TerminalClass};
 use qsl_eval::simulation::protocol::{
@@ -1211,4 +1211,58 @@ fn an_instance_limited_state_with_no_successor_is_not_closed_as_terminal() {
     };
     assert_eq!(bound.value, 3);
     assert!(*states >= 1);
+}
+
+/// FR-212 (TC-657): a liveness clause over an `activation on each` protocol
+/// refuses `unsupported_construct`/`not-yet-implemented`, since the liveness
+/// engine does not read `max_live_instances` (FR-209) yet.
+#[test]
+fn a_liveness_clause_over_an_on_each_protocol_refuses() {
+    let eventually = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
+                      on origin { eventually holds(k.v = 1) }\n";
+    let run = format!("sequence Main {{ {} }}", touch("T"));
+    let world = World::new(&(unit(EACH, "", "", &run) + eventually), &["c"], &[0]);
+    let letters = CellV { holds: |v| v == 1 };
+    let refusal = check_protocol(
+        ProtocolCheckRequest {
+            subject: world.subject(),
+            item: world.claim(&letters),
+            max_depth: None,
+            max_store_buffer: None,
+            max_live_instances: None,
+            limits: ModelCheckLimits::default(),
+        },
+        &Cancel::new(),
+    )
+    .expect_err("the liveness engine does not read the instance bound");
+    assert!(
+        matches!(refusal, ModelCheckRefusal::InstanceLiveness),
+        "{refusal:?}"
+    );
+    assert_eq!(
+        refusal.to_string(),
+        "unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause \
+         over an `activation on each` protocol yet"
+    );
+}
+
+/// FR-212 (TC-657): an authored `each` fairness member over a node a
+/// replicated role owns resolves to its attempt node and refuses
+/// `ProtocolFairnessNotEmitted` at S4, as over a node of a static role; it
+/// neither panics nor drops the member.
+#[test]
+fn an_each_fairness_member_over_a_role_owned_node_refuses_as_over_any_node() {
+    let run = "sequence Main { attempt Work by r on M::Cell::inc contracts [IncPre, IncPost] \
+               as (worked: Boolean) { true }; }";
+    let claim = "temporal Live using t0 over (k: M::Cell) clock \"model-steps\" \
+                 on origin { fair weak each R::Work; eventually holds(k.v = 1) }\n";
+    let body = unit(ORIGIN, &role(1, "workflow"), "", run) + claim;
+    let refusal = crate::scheduler_fairness::check_refusal(&body);
+    assert!(
+        matches!(
+            crate::scheduler_fairness::temporal(&refusal),
+            qsl_semantics::check::TemporalCause::ProtocolFairnessNotEmitted { .. }
+        ),
+        "{refusal:?}"
+    );
 }
