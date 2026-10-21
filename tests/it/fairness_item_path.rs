@@ -15,7 +15,7 @@ use qsl_semantics::check::{Capability, PackageDeclarations};
 use quire_semantic_value::checking::CheckingLimits;
 
 /// The ConfigVersion unit with one infinite-trace clause whose body is `body`.
-fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
+pub(crate) fn graph_of(body: &str) -> qsl_semantics::check::CheckedGraph {
     let document = crate::support::config_version_spine::spine::DOMAIN_PACKAGE.as_bytes();
     let packages = qsl_semantics::model::intake::package_input([document]);
     let digest = packages.keys().next().expect("one package");

@@ -167,6 +167,7 @@ fn check_with(
         SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
             fault("the-subjects-of-a-refinement-open")
         }
+        SubjectRefusal::ProtocolAbstractSide => ModelCheckRefusal::ProtocolAbstractSide,
     })?;
     let simulation = &request.concrete.simulation;
     check_model_bounds(&concrete, BOUND_POSITIONS).map_err(not_simulated)?;
