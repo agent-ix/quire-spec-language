@@ -303,7 +303,7 @@ fn a_bounded_key_is_admitted_against_its_own_context_only() {
 
 /// Only `eventually[0,u]` and `always[0,u]` over one `holds(A)`, on origin
 /// under a step-measured bounded profile, have a bounded translation.
-#[trace("TC-525", "FR-338-AC-7")]
+#[trace("TC-525")]
 #[test]
 fn another_shape_has_no_bounded_translation() {
     for (profile, activation, body) in [

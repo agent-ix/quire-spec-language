@@ -316,10 +316,15 @@ fn agree(subject: &Subject, longest: usize) -> usize {
             AutomatonKind::Safety | AutomatonKind::Liveness => {
                 for prefix in 0..word.len() {
                     // A bad-prefix or finitely-accepting automaton cannot see
-                    // that a loop with no counted step never meets an
-                    // interval: EN-1 decides those loops by the non-progress
-                    // check, and the evaluator reads them directly.
-                    if let Some(uncounted) = property.uncounted() {
+                    // that a loop with no counted step never meets a future
+                    // interval eventuality: EN-1 decides those loops by the
+                    // non-progress check, and the evaluator reads them
+                    // directly. A body without one (past operators, `always`,
+                    // `release`) is decided by the automaton on those loops
+                    // too.
+                    let owes =
+                        subject.body.contains("eventually") || subject.body.contains("until");
+                    if let Some(uncounted) = property.uncounted().filter(|_| owes) {
                         // The loop's steps are those into its positions after
                         // the entry, and its closing step is the entry's own.
                         let progress = word
@@ -446,7 +451,7 @@ fn a_counted_clause_translates_to_a_monitor_that_answers_to_counted_distance() {
 /// The automaton answers to the closed-trace evaluation over every word of
 /// up to four positions, `once`, `historically`, `since` and `triggered`
 /// included.
-#[trace("TC-658", "FR-338-AC-6")]
+#[trace("TC-658")]
 #[test]
 fn a_past_interval_over_counted_steps_answers_to_counted_distance() {
     for body in [
@@ -475,7 +480,7 @@ fn a_past_interval_over_counted_steps_answers_to_counted_distance() {
 /// constant, so an interval that needs a counted step after the loop is
 /// entered is not met on it; the loop's closing step counts as its entry's
 /// letter says.
-#[trace("TC-658", "FR-338-AC-6")]
+#[trace("TC-658")]
 #[test]
 fn a_counted_lasso_answers_to_counted_distance() {
     for (body, kind) in [

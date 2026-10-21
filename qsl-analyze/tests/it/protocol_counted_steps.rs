@@ -27,9 +27,10 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     check_protocol_closure, replay_protocol_trace, settle_protocol_check, CertificateLocus,
-    CertificateRejection, CertificateRule, ModelCheckItem, ModelCheckLimits, ModelCheckOutcome,
-    ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits, ResultLabel,
-    TemporalCertificateCheck, TemporalCounterexample,
+    CertificateRejection, CertificateRule, ClosureCertificate, ModelCheckItem, ModelCheckLimits,
+    ModelCheckOutcome, ModelTraceSubject, ProductStateRef, ProtocolCertificateRequest,
+    ProtocolTraceSubject, ReplayLimits, ResultLabel, TemporalCertificateCheck,
+    TemporalCounterexample,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::observation::DocumentRef;
@@ -552,7 +553,7 @@ fn an_uncounted_cend_and_finish_end_the_window_after_the_refund() {
 /// position, where `k.v = 3`, and the claim fails. EN-1 decides the claim on
 /// the counted monitor over every interleaving, and refutes the claim with
 /// `not` removed on a prefix that replays.
-#[trace("TC-658", "FR-338-AC-6")]
+#[trace("TC-658")]
 #[test]
 fn a_past_window_is_measured_in_counted_steps() {
     let case = repaired_fill("always[0,5] (holds(k.v = 3) implies not once[1,1] holds(k.v = 3))");
@@ -660,12 +661,42 @@ fn an_uncounted_cycle_that_keeps_an_interval_open_refutes_it_under_adversarial_s
     assert_eq!(case.label("P", &letters, &outcome), ResultLabel::Refuted);
 }
 
+/// Offer `certificate` to the core checker as the proof of `case`'s claim.
+fn closure_check(
+    case: &Case,
+    letters: &dyn ModelLetters,
+    certificate: &ClosureCertificate,
+) -> TemporalCertificateCheck {
+    check_protocol_closure(
+        &ProtocolCertificateRequest {
+            subject: case.subject("P"),
+            item: ModelCheckItem::Clause {
+                clause: case.clause(),
+                letters,
+            },
+            max_store_buffer: None,
+            max_live_instances: None,
+        },
+        certificate,
+        &ModelCheckLimits::default(),
+        &Cancel::new(),
+    )
+    .expect("the request is checked")
+}
+
+/// Whether `state` is a bounded monitor state that still owes its interval.
+fn owes_interval(state: &ProductStateRef) -> bool {
+    String::from_utf8_lossy(state.automaton_state.as_bytes()).contains("\"bounded\"")
+}
+
 /// FR-338 "Protocol non-progress acceptance": a closure that reaches the same
 /// product states is no proof when the cycle of uncounted steps is a fair
 /// behaviour. The certificate the default package's proof carries, offered
 /// for the adversarial package's claim over the same states, is rejected
-/// `WitnessFails` at the least product state of the cycle; offered for the
-/// default package it is accepted, the thread at `A` excluding the cycle.
+/// `WitnessFails` at the first product state of the cycle in product-state
+/// order, not at an earlier state that owes the interval but is not on the
+/// cycle; offered for the default package it is accepted, the thread at `A`
+/// excluding the cycle.
 #[trace("TC-658", "FR-338-AC-6")]
 #[test]
 fn a_closure_with_a_fair_uncounted_cycle_is_rejected_as_a_proof() {
@@ -674,33 +705,119 @@ fn a_closure_with_a_fair_uncounted_cycle_is_rejected_as_a_proof() {
     let ModelCheckOutcome::Holds { certificate, .. } = fair.check("P", &letters) else {
         panic!("the default scheduler excludes the cycle");
     };
-    let check = |case: &Case| {
-        check_protocol_closure(
-            &ProtocolCertificateRequest {
-                subject: case.subject("P"),
-                item: ModelCheckItem::Clause {
-                    clause: case.clause(),
-                    letters: &letters,
-                },
-                max_store_buffer: None,
-                max_live_instances: None,
-            },
-            &certificate,
-            &ModelCheckLimits::default(),
-            &Cancel::new(),
-        )
-        .expect("the request is checked")
-    };
-    assert_eq!(check(&fair), TemporalCertificateCheck::Accepted);
+    assert_eq!(
+        closure_check(&fair, &letters, &certificate),
+        TemporalCertificateCheck::Accepted
+    );
     let adversarial = lossy_channel("scheduling adversarial;");
     let TemporalCertificateCheck::Rejected(CertificateRejection {
         rule: CertificateRule::WitnessFails,
         at: CertificateLocus::ProductState(at),
-    }) = check(&adversarial)
+    }) = closure_check(&adversarial, &letters, &certificate)
     else {
         panic!("the fair cycle is a witness");
     };
-    assert!(certificate.states.contains(&at));
+    // The refutation's lasso names the cycle: its stem is the `send` and its
+    // loop the `duplicate` and `lose` that return to the state after it.
+    let ModelCheckOutcome::Violated { counterexample, .. } = adversarial.check("P", &letters)
+    else {
+        panic!("the adversarial scheduler admits the cycle");
+    };
+    let cycle: Vec<_> = counterexample
+        .prefix
+        .iter()
+        .map(|step| step.post_state)
+        .collect();
+    let owing: Vec<&ProductStateRef> = certificate
+        .states
+        .iter()
+        .filter(|s| owes_interval(s))
+        .collect();
+    // The initial product state owes the interval too, and is off the cycle.
+    assert!(owing
+        .iter()
+        .any(|state| !cycle.contains(&state.model_state)));
+    let expected = owing
+        .iter()
+        .filter(|state| cycle.contains(&state.model_state))
+        .min()
+        .copied()
+        .expect("a state of the cycle");
+    assert_eq!(&at, expected);
+}
+
+/// A protocol `P` over `k` whose `run` is `run`, with `members` before it
+/// and the claim `eventually[0,2] holds(k.v = 1)`.
+fn counted_case(members: &str, run: &str) -> Case {
+    let unit = contracts("self.v <= 1") + &protocol("P", members, run, "d");
+    Case::new(&(unit + &claim("eventually[0,2] holds(k.v = 1)")))
+}
+
+/// Settle `case`'s claim `proved` and have the core accept its certificate.
+fn assert_proved_and_accepted(case: &Case) {
+    let letters = CellV(|value| value == 1);
+    let outcome = case.check("P", &letters);
+    let ModelCheckOutcome::Holds { certificate, .. } = &outcome else {
+        panic!("{:?}", outcome.stats());
+    };
+    assert_eq!(
+        closure_check(case, &letters, certificate),
+        TemporalCertificateCheck::Accepted
+    );
+    assert_eq!(case.label("P", &letters, &outcome), ResultLabel::Proved);
+}
+
+/// FR-338-AC-6, the paired oracle that "prevents rejecting every pending
+/// clock indiscriminately": under `scheduling adversarial` a zero-counted
+/// cycle reached after the debt is met is no non-progress, since the
+/// monitor has accepted. `A` runs first, then a `send` whose `duplicate` and
+/// `lose` cycle is fair and never ends.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn an_uncounted_cycle_after_the_debt_is_met_is_not_a_refutation() {
+    let members = "channel ch from w to w carries Boolean ordering fifo by (m: Boolean) \
+                   { true } delivery unknown capacity 2 overflow block; scheduling adversarial;";
+    let run = format!(
+        "sequence Main {{ {} send S1 via ch as (s1: Boolean) {{ s1 }}; }}",
+        attempt("A", "inc", "IncPre, IncPost", "a", "true")
+    );
+    assert_proved_and_accepted(&counted_case(members, &run));
+}
+
+/// FR-338-AC-6, the other paired oracle: a cycle that takes a counted step
+/// passes no non-progress check. A `repeat` of `touch` attempts never ends
+/// and each pass counts, so after `A` met the debt the claim is proved under
+/// `scheduling adversarial`; with `A` absent the same cycle exhausts the
+/// interval in counted steps, and the refutation is the finite bad prefix of
+/// that expiry, not a zero-progress lasso.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn a_cycle_that_takes_a_counted_step_is_not_a_zero_progress_refutation() {
+    let looping = format!(
+        "repeat Loop by w visible () while {{ true }} {}",
+        attempt("T", "touch", "TouchPre", "t", "true")
+    );
+    let met = format!(
+        "sequence Main {{ {} {looping} }}",
+        attempt("A", "inc", "IncPre, IncPost", "a", "true")
+    );
+    assert_proved_and_accepted(&counted_case("scheduling adversarial;", &met));
+
+    let case = counted_case(
+        "scheduling adversarial;",
+        &format!("sequence Main {{ {looping} }}"),
+    );
+    let letters = CellV(|value| value == 1);
+    let outcome = case.check("P", &letters);
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("{:?}", outcome.stats());
+    };
+    assert!(counterexample.lasso.is_none(), "{counterexample:?}");
+    assert!(counterexample
+        .prefix
+        .iter()
+        .all(|step| step.transition.counts()));
+    assert_eq!(case.label("P", &letters, &outcome), ResultLabel::Refuted);
 }
 
 /// ADR-027 PB-3: an operation, an event (an `activate` included), a `send`

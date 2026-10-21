@@ -159,7 +159,8 @@ impl Shape {
     /// The shape of `trace` under `profile`. `no_progress` says a lasso's
     /// loop has no counted step (ADR-027 PB-3): its positions stay inside
     /// every bounded horizon, which the false extension never reaches, so a
-    /// bounded profile reads it as the infinite trace it is.
+    /// bounded profile reads it as the infinite trace it is. Remaining work:
+    /// STD-254 settles that exception against FR-329's refusal.
     fn new(
         profile: TemporalProfile,
         trace: TemporalTrace,

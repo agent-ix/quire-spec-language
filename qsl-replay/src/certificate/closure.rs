@@ -50,9 +50,12 @@
 //! steps that do not count are recorded between the product states that hold
 //! its debt open, and a component of them with a cycle fair under the
 //! subject's scheduler constraints and the clause's own rejects the
-//! certificate `WitnessFails` at the least of its product states, since that
-//! cycle is a behaviour that never meets the interval. Remaining work:
-//! QSL-878 charges that search to the state, edge and automaton budgets.
+//! certificate `WitnessFails` at the least product state of any fair
+//! component, since that cycle is a behaviour that never meets the interval.
+//! The search reads each state's enabled steps from the expansion the run
+//! already charged and adds no state or edge of its own; the fairness
+//! kernels poll `cancel`. Remaining work: QSL-878 gives that search its own
+//! typed auxiliary-exhaustion limit (FR-338-AC-6).
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -543,7 +546,9 @@ type Keyed<S> = (
 /// instance that hold an `eventually` debt open (FR-338 "Protocol
 /// non-progress acceptance"), with the model state of each end.
 struct ZeroEdges<S: SubjectSystem> {
-    states: BTreeMap<BoundedKey, S::State>,
+    /// The transitions each such state enables, from the expansion the run
+    /// already charged.
+    enabled: BTreeMap<BoundedKey, Vec<S::TransitionId>>,
     edges: Vec<(BoundedKey, BoundedKey, S::TransitionId)>,
 }
 
@@ -690,7 +695,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         };
         let mut queue = VecDeque::new();
         let mut zero = ZeroEdges::<S> {
-            states: BTreeMap::new(),
+            enabled: BTreeMap::new(),
             edges: Vec::new(),
         };
         for (_, _, digest, state) in initial {
@@ -710,6 +715,15 @@ impl<S: SubjectSystem> Check<'_, S> {
         while let Some(pending) = queue.pop_front() {
             self.poll()?;
             let (expansion, cut) = self.expand(&pending.state, &pending.at)?;
+            if owes && matches!(pending.automaton, BoundedState::Open { .. }) {
+                let key = (pending.at.model_state, pending.automaton, pending.distance);
+                let enabled = expansion
+                    .successors
+                    .iter()
+                    .map(|(transition, _)| transition.clone())
+                    .collect();
+                zero.enabled.insert(key, enabled);
+            }
             if expansion.successors.is_empty() {
                 // A state whose every step the memory or instance bound cut
                 // is a boundary state, never closed (ADR-025 MB-3, ADR-027
@@ -728,7 +742,6 @@ impl<S: SubjectSystem> Check<'_, S> {
                 let counted = self.system.counts_step(&transition);
                 let holds_open =
                     owes && !counted && matches!(pending.automaton, BoundedState::Open { .. });
-                let target = holds_open.then(|| state.clone());
                 let (next, after, distance) = self.reach_bounded(
                     &mut run,
                     state,
@@ -737,14 +750,10 @@ impl<S: SubjectSystem> Check<'_, S> {
                     CertificateRule::SuccessorMissing,
                 )?;
                 queue.extend(next);
-                if let (Some(target), BoundedState::Open { .. }) = (target, after) {
+                if holds_open && matches!(after, BoundedState::Open { .. }) {
                     let from = (pending.at.model_state, pending.automaton, pending.distance);
-                    zero.states
-                        .entry(from)
-                        .or_insert_with(|| pending.state.clone());
-                    let to = (digest, after, distance);
-                    zero.states.entry(to).or_insert(target);
-                    zero.edges.push((from, to, transition));
+                    zero.edges
+                        .push((from, (digest, after, distance), transition));
                 }
             }
         }
@@ -773,15 +782,8 @@ impl<S: SubjectSystem> Check<'_, S> {
         };
         let mut graph = ZeroProgress::<S>::new();
         let mut vertex_of = BTreeMap::new();
-        let mut keys = Vec::with_capacity(zero.states.len());
-        for (key, state) in &zero.states {
-            self.poll()?;
-            let at = self.bounded_ref(run, key)?;
-            let (expansion, _) = self.expand(state, &at)?;
-            let enabled = expansion
-                .successors
-                .iter()
-                .map(|(transition, _)| transition);
+        let mut keys = Vec::with_capacity(zero.enabled.len());
+        for (key, enabled) in &zero.enabled {
             vertex_of.insert(*key, graph.vertex(self.system, enabled)?);
             keys.push(*key);
         }
@@ -808,8 +810,10 @@ impl<S: SubjectSystem> Check<'_, S> {
         let Some(found) = found else {
             return Ok(None);
         };
+        // FR-338: the first fair component by product-state order, which is
+        // the least product state of any fair component.
         let mut least: Option<ProductStateRef> = None;
-        for vertex in &found.component {
+        for vertex in &found.fair_vertices {
             let key = keys
                 .get(vertex.index())
                 .ok_or_else(|| fault("a-vertex-is-a-state"))?;

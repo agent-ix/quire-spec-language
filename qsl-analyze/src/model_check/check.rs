@@ -487,6 +487,7 @@ pub fn check_model(
         canonical: Vec::new(),
         known: BTreeMap::new(),
         uncounted_edges: Vec::new(),
+        enabled: BTreeMap::new(),
         queue: VecDeque::new(),
         edges: 0,
         horizon_cut: false,
@@ -784,6 +785,7 @@ impl ProtocolRun<'_> {
             canonical: Vec::new(),
             known: BTreeMap::new(),
             uncounted_edges: Vec::new(),
+            enabled: BTreeMap::new(),
             queue: VecDeque::new(),
             edges: 0,
             horizon_cut: false,
@@ -942,6 +944,7 @@ fn check_reduced(
             canonical: Vec::new(),
             known: BTreeMap::new(),
             uncounted_edges: Vec::new(),
+            enabled: BTreeMap::new(),
             queue: VecDeque::new(),
             edges: 0,
             horizon_cut: false,
@@ -1323,6 +1326,11 @@ struct Run<'r, S: SubjectSystem> {
     /// distance (ADR-027 PB-3), by node, kept only for a claim that reads
     /// the distinction.
     uncounted_edges: Vec<(usize, usize, S::TransitionId)>,
+    /// The transitions each expanded node enables, kept for a claim that
+    /// reads uncounted steps so the zero-progress search reads them from the
+    /// charged expansion (FR-212). A reduced run (`chooser`) keeps none: its
+    /// expansion is a subset, and the search expands those nodes in full.
+    enabled: BTreeMap<usize, Vec<S::TransitionId>>,
     queue: VecDeque<usize>,
     edges: usize,
     horizon_cut: bool,
@@ -1592,6 +1600,22 @@ impl<S: SubjectSystem> Run<'_, S> {
             if matches!(self.item, Item::Deadlock) {
                 let after = self.deadlock_letter(at, &expansion, cut)?;
                 self.nodes[at].monitor = vec![after];
+            }
+            if self.chooser.is_none()
+                && matches!(
+                    self.item,
+                    Item::Clause {
+                        uncounted: Some(_),
+                        ..
+                    }
+                )
+            {
+                let enabled = expansion
+                    .successors
+                    .iter()
+                    .map(|(transition, _)| transition.clone())
+                    .collect();
+                self.enabled.insert(at, enabled);
             }
             let terminal = expansion.successors.is_empty();
             if terminal {
@@ -1874,14 +1898,22 @@ impl<S: SubjectSystem> Run<'_, S> {
                     .get(*node)
                     .ok_or_else(|| fault("an-edge-names-a-node"))?
                     .state;
-                let (expansion, _) = self
-                    .system
-                    .successors_bounded(state)
-                    .map_err(|stop| self.expansion_stop(stop))?;
-                let enabled = expansion
-                    .successors
-                    .iter()
-                    .map(|(transition, _)| transition);
+                let reexpanded;
+                let enabled: Vec<&S::TransitionId> = match self.enabled.get(node) {
+                    Some(enabled) => enabled.iter().collect(),
+                    None => {
+                        reexpanded = self
+                            .system
+                            .successors_bounded(state)
+                            .map_err(|stop| self.expansion_stop(stop))?
+                            .0;
+                        reexpanded
+                            .successors
+                            .iter()
+                            .map(|(transition, _)| transition)
+                            .collect()
+                    }
+                };
                 vertex_of.insert(*node, graph.vertex(self.system, enabled)?);
             }
             for (from, to, transition) in &edges {
@@ -1951,6 +1983,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             graph,
             constraints,
             component,
+            fair_vertices: _,
             removed,
             entry,
             transitions,

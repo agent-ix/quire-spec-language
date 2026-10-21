@@ -54,8 +54,10 @@ pub struct FairLoop<T> {
     pub graph: Graph,
     /// The kernels' constraints the component satisfies.
     pub constraints: Vec<Constraint>,
-    /// The component's vertices.
+    /// The first fair component's vertices.
     pub component: BTreeSet<Vertex>,
+    /// The vertices of every fair component, the first included.
+    pub fair_vertices: BTreeSet<Vertex>,
     /// The edge identities a visibility refinement removed from the
     /// component.
     pub removed: BTreeSet<Identity>,
@@ -218,10 +220,14 @@ impl<S: SubjectSystem> ZeroProgress<S> {
             .copied()
             .ok_or(ZeroProgressError::Graph)?;
         let removed = passing.removed().clone();
+        let fair_vertices = Analysis::fair_in(&analyses)
+            .flat_map(|fair| fair.vertices().iter().copied())
+            .collect();
         Ok(Some(FairLoop {
             graph,
             constraints,
             component,
+            fair_vertices,
             removed,
             entry,
             transitions: self.transitions,
