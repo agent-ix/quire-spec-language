@@ -286,6 +286,7 @@ fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
         TemporalRefusal::NotProjectionAligned => TemporalTraceRefusal::NotProjectionAligned,
         TemporalRefusal::EmptyLoop => TemporalTraceRefusal::EmptyLoop,
         TemporalRefusal::TraceTooLong => TemporalTraceRefusal::TraceTooLong,
+        TemporalRefusal::UncountedLasso => TemporalTraceRefusal::UncountedLasso,
         TemporalRefusal::LassoUnderBoundedProfile { profile } => {
             TemporalTraceRefusal::LassoUnderBoundedProfile { profile }
         }

@@ -49,6 +49,12 @@ pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> 
         has_successor: bool,
     ) -> Result<TerminalClass, ExpansionStop>;
 
+    /// Whether `transition` counts for interval distance (ADR-027 PB-3):
+    /// every step of a model subject does, ADR-018's reading.
+    fn counts_step(&self, _transition: &Self::TransitionId) -> bool {
+        true
+    }
+
     /// The model state a temporal atom reads at `state` (ADR-027 PB-2, SE-1
     /// g): the state itself for a model subject.
     fn atom_state<'s>(&self, state: &'s Self::State) -> Cow<'s, ModelSimState>;

@@ -51,6 +51,11 @@ pub enum AutomatonError {
     /// cannot track it as state (ADR-018 SM-6).
     #[error("a past operator's operand holds a future operator")]
     PastOverFuture,
+    /// A past operator with an interval, over a subject whose steps count
+    /// by kind: the memory of a past operator keeps its ages in positions,
+    /// and is not read in counted steps yet (ADR-027 PB-3).
+    #[error("a past operator with an interval is not read in counted steps yet")]
+    PastIntervalInCountedSteps,
     /// The clause's profile has no property automaton.
     #[error("the {profile:?} profile has no property automaton")]
     ProfileNotTranslated {

@@ -57,8 +57,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use qsl_eval::automaton::{
-    translate, Atom, AutomatonError, AutomatonKind, Gba, GbaBuilder, Guard, KeyRefusal, Letter,
-    Monitor, SafetyAutomaton, SafetyState, StateId,
+    translate, translate_counted, Atom, AutomatonError, AutomatonKind, Gba, GbaBuilder, Guard,
+    KeyRefusal, Letter, Monitor, SafetyAutomaton, SafetyState, StateId,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{
@@ -200,6 +200,11 @@ enum Item<'a> {
         /// The atom true at every represented position of a bounded `on
         /// each` clause.
         live: Option<Atom>,
+        /// The atom true where the step into a position does not count for
+        /// interval distance (ADR-027 PB-3).
+        uncounted: Option<Atom>,
+        /// How the subject's steps count.
+        counting: Counting,
         /// Whether a terminal state closes the monitor by the bounded
         /// profile's closed-boundary rule (TP-2) rather than stuttering.
         bounded: bool,
@@ -228,6 +233,9 @@ struct Node<State, Transition> {
     state: State,
     digest: DigestRecord,
     depth: usize,
+    /// The counted steps from the initial state (ADR-027 PB-3): the depth
+    /// when every step counts.
+    distance: usize,
     parent: Option<(usize, Option<Transition>)>,
     initial_index: usize,
     monitor: Vec<StateId>,
@@ -240,6 +248,11 @@ struct Node<State, Transition> {
     /// boundary state is stored and read, never expanded.
     boundary: bool,
 }
+
+/// A product state's key: the model state's key bytes, the monitor state of
+/// each instance and, where it decides which later positions the claim
+/// reads, the counted distance (see [`Run::product`]).
+type ProductKey = (Vec<u8>, Vec<StateId>, usize);
 
 /// Why the run ended before its frontier emptied.
 enum Finish {
@@ -320,6 +333,15 @@ pub(super) fn widen(value: usize) -> u64 {
 /// has a canonical closure certificate.
 type Prepared<'a> = (Item<'a>, Box<dyn SafetyAutomaton>, bool);
 
+/// How a subject's steps count for interval distance.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Counting {
+    /// Every step counts: a model subject (ADR-018).
+    Every,
+    /// A step counts by its kind: a protocol subject (ADR-027 PB-3).
+    ByKind,
+}
+
 /// FR-126: decide `request`'s item over every behaviour of its subject,
 /// polling `cancel` before every expansion and every atom evaluation.
 ///
@@ -357,7 +379,8 @@ pub fn check_model(
     }
     let max_automaton_states = request.limits.max_automaton_states;
     // The form is refused before admission reads any snapshot.
-    let (mut item, automaton, certified) = prepare(request.item, max_automaton_states)?;
+    let (mut item, automaton, certified) =
+        prepare(request.item, max_automaton_states, Counting::Every)?;
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
@@ -476,7 +499,8 @@ pub fn check_protocol(
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
     let max_automaton_states = request.limits.max_automaton_states;
-    let (mut item, automaton, certified) = prepare(request.item, max_automaton_states)?;
+    let (mut item, automaton, certified) =
+        prepare(request.item, max_automaton_states, Counting::ByKind)?;
     let subject = &request.subject;
     let simulation = subject.model.simulation.clone();
     let meter = simulation.meter;
@@ -668,7 +692,7 @@ fn check_reduced(
     let reductions = &request.reductions;
     let max_automaton_states = request.limits.max_automaton_states;
     // The form is refused before admission reads any snapshot.
-    prepare(request.item, max_automaton_states)?;
+    prepare(request.item, max_automaton_states, Counting::Every)?;
     let meter = request.subject.simulation.meter;
     let max_candidates = request.subject.simulation.expansion.max_candidates;
     let no_initial = request.subject.simulation.initial.is_empty();
@@ -723,7 +747,8 @@ fn check_reduced(
     let mut horizon = false;
     let mut applied = Vec::new();
     for plan in plans {
-        let (mut item, automaton, _) = prepare(request.item, max_automaton_states)?;
+        let (mut item, automaton, _) =
+            prepare(request.item, max_automaton_states, Counting::Every)?;
         if let Item::Clause { bindings, .. } = &mut item {
             *bindings = plan.bindings;
         }
@@ -996,6 +1021,7 @@ pub(super) fn not_simulated(refusal: NotSimulated) -> ModelCheckRefusal {
 fn prepare(
     item: ModelCheckItem<'_>,
     max_automaton_states: u64,
+    counting: Counting,
 ) -> Result<Prepared<'_>, ModelCheckRefusal> {
     let ModelCheckItem::Clause { clause, letters } = item else {
         return Ok((Item::Deadlock, Box::new(deadlock_automaton()?), true));
@@ -1011,8 +1037,11 @@ fn prepare(
     if matches!(clause.activation(), Activation::Each { guarded: true }) {
         return Err(ModelCheckRefusal::GuardedActivation);
     }
-    let automaton =
-        translate(clause, max_automaton_states).map_err(ModelCheckRefusal::Translation)?;
+    let automaton = match counting {
+        Counting::Every => translate(clause, max_automaton_states),
+        Counting::ByKind => translate_counted(clause, max_automaton_states),
+    }
+    .map_err(ModelCheckRefusal::Translation)?;
     if automaton.kind() == AutomatonKind::Liveness {
         return Err(fault("a-safety-form-translates-to-a-safety-automaton"));
     }
@@ -1028,6 +1057,8 @@ fn prepare(
         fairness: clause.fairness().to_vec(),
         atoms: automaton.atoms().to_vec(),
         live: automaton.live(),
+        uncounted: automaton.uncounted(),
+        counting,
         bounded,
         last_read,
     };
@@ -1091,7 +1122,7 @@ struct Run<'r, S: SubjectSystem> {
     nodes: Vec<Node<S::State, S::TransitionId>>,
     /// Each product state's index by its key: the model state's key bytes
     /// and the monitor state of each instance.
-    known: BTreeMap<(Vec<u8>, Vec<StateId>), usize>,
+    known: BTreeMap<ProductKey, usize>,
     queue: VecDeque<usize>,
     edges: usize,
     horizon_cut: bool,
@@ -1173,6 +1204,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             | AutomatonError::NotSafetyAutomaton { .. }
             | AutomatonError::InvertedInterval { .. }
             | AutomatonError::PastOverFuture
+            | AutomatonError::PastIntervalInCountedSteps
             | AutomatonError::ProfileNotTranslated { .. }
             | AutomatonError::Invariant { .. } => fault("monitor-steps").into(),
         }
@@ -1266,6 +1298,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 state,
                 digest,
                 depth: 0,
+                distance: 0,
                 parent: None,
                 initial_index: index,
                 monitor: Vec::new(),
@@ -1347,6 +1380,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                             state,
                             digest,
                             depth: depth.saturating_add(1),
+                            distance: self.distance_after(at, None),
                             parent: Some((at, None)),
                             initial_index: self.nodes[at].initial_index,
                             monitor: Vec::new(),
@@ -1354,7 +1388,10 @@ impl<S: SubjectSystem> Run<'_, S> {
                             boundary: false,
                         };
                         let (after, bad) = self.advance(&node, &before)?;
-                        bad.is_some() || !self.known.contains_key(&(key, after))
+                        bad.is_some()
+                            || !self
+                                .known
+                                .contains_key(&self.product(key, after, node.distance))
                     }
                     Some(_) => true,
                     None => false,
@@ -1376,6 +1413,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                     state,
                     digest,
                     depth: depth.saturating_add(1),
+                    distance: self.distance_after(at, transition.as_ref()),
                     parent: Some((at, transition)),
                     initial_index: self.nodes[at].initial_index,
                     monitor: Vec::new(),
@@ -1422,19 +1460,27 @@ impl<S: SubjectSystem> Run<'_, S> {
         let depth = self.nodes[at].depth;
         let mut fresh: Vec<bool> = Vec::with_capacity(steps.len());
         let mut readings: Vec<Reading> = Vec::with_capacity(steps.len());
-        for (_, key, digest, _, state, permutation) in steps.iter() {
+        for (_, key, digest, transition, state, permutation) in steps.iter() {
             let node = Node {
                 state: state.clone(),
                 digest: *digest,
                 depth: depth.saturating_add(1),
-                parent: Some((at, None)),
+                distance: self.distance_after(at, transition.as_ref()),
+                parent: Some((at, transition.clone())),
                 initial_index: self.nodes[at].initial_index,
                 monitor: Vec::new(),
                 permutation: permutation.clone(),
                 boundary: false,
             };
             let (after, bad) = self.advance(&node, before)?;
-            fresh.push(bad.is_some() || !self.known.contains_key(&(key.clone(), after.clone())));
+            fresh.push(
+                bad.is_some()
+                    || !self.known.contains_key(&self.product(
+                        key.clone(),
+                        after.clone(),
+                        node.distance,
+                    )),
+            );
             readings.push((after, bad));
         }
         let reaches_known = |transition: &S::TransitionId| {
@@ -1486,6 +1532,32 @@ impl<S: SubjectSystem> Run<'_, S> {
         matches!(self.item, Item::Clause { bounded: false, .. })
     }
 
+    /// The counted distance of the node reached from node `at` by
+    /// `transition`, `None` for the terminal stutter step, which counts
+    /// (ADR-027 PB-3).
+    fn distance_after(&self, at: usize, transition: Option<&S::TransitionId>) -> usize {
+        let counted = transition.is_none_or(|transition| self.system.counts_step(transition));
+        self.nodes[at].distance.saturating_add(usize::from(counted))
+    }
+
+    /// The product key of a model state's `key` read to the monitor states
+    /// `monitor` at counted distance `distance`. When the subject's steps
+    /// count by kind and the claim reads positions up to a horizon, the
+    /// distance decides which later positions it reads, so a state reached
+    /// at two distances up to the horizon is two product states; otherwise
+    /// the distance is not part of the key.
+    fn product(&self, key: Vec<u8>, monitor: Vec<StateId>, distance: usize) -> ProductKey {
+        let reach = match self.item {
+            Item::Clause {
+                counting: Counting::ByKind,
+                last_read: Some(last),
+                ..
+            } => usize::try_from(*last).map_or(usize::MAX, |last| last.saturating_add(1)),
+            Item::Clause { .. } | Item::Deadlock => 0,
+        };
+        (key, monitor, distance.min(reach))
+    }
+
     /// Create the product state of `node`'s model state reached with the
     /// monitor states `before`: read its letter for each instance and step
     /// the monitor, then coalesce it with an existing state of the same key
@@ -1503,7 +1575,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             None => self.advance(&node, before)?,
         };
         node.monitor = after;
-        let product = (key, node.monitor.clone());
+        let product = self.product(key, node.monitor.clone(), node.distance);
         if bad.is_none() && self.known.contains_key(&product) {
             return Ok(());
         }
@@ -1569,10 +1641,16 @@ impl<S: SubjectSystem> Run<'_, S> {
         if matches!(self.item, Item::Deadlock) {
             return Ok((before.to_vec(), None));
         }
+        let counted = match &node.parent {
+            Some((_, Some(transition))) => self.system.counts_step(transition),
+            // An initial state has no step into it, and the terminal stutter
+            // step counts (ADR-027 PB-3).
+            Some((_, None)) | None => true,
+        };
         let mut after = Vec::with_capacity(before.len());
         let mut bad = None;
         for (instance, from) in before.iter().enumerate() {
-            let (state, finding) = self.read(node, instance, *from)?;
+            let (state, finding) = self.read(node, instance, *from, counted)?;
             after.push(state);
             match finding {
                 Some(undefined @ CounterexampleKind::UndefinedEvaluation(_)) => {
@@ -1598,12 +1676,14 @@ impl<S: SubjectSystem> Run<'_, S> {
         node: &Node<S::State, S::TransitionId>,
         instance: usize,
         from: StateId,
+        counted: bool,
     ) -> Step<(StateId, Option<CounterexampleKind>)> {
         let Item::Clause {
             bindings,
             letters,
             atoms,
             live,
+            uncounted,
             last_read,
             ..
         } = self.item
@@ -1614,7 +1694,10 @@ impl<S: SubjectSystem> Run<'_, S> {
             .get(instance)
             .ok_or_else(|| fault("instance-has-a-binding"))?;
         let mut letter = live.map_or_else(Letter::default, |live| Letter::default().with(live));
-        let reads_position = last_read.is_none_or(|last| widen(node.depth) <= last);
+        if let Some(uncounted) = uncounted.filter(|_| !counted) {
+            letter = letter.with(uncounted);
+        }
+        let reads_position = last_read.is_none_or(|last| widen(node.distance) <= last);
         let read: &[FormulaNodeId] = if reads_position { atoms } else { &[] };
         for (index, formula_atom) in read.iter().enumerate() {
             let atom = Atom::new(index).map_err(|_| fault("clause-atom-in-range"))?;

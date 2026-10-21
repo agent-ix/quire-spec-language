@@ -87,4 +87,12 @@ pub trait TemporalLetters {
         position: TemporalPosition,
         meter: &mut Meter,
     ) -> Result<AtomReading, LetterStop>;
+
+    /// Whether the step into the represented `position` counts for interval
+    /// distance (ADR-027 PB-3, QSpec FR-431). Every step of a model subject
+    /// does, which is ADR-018's reading, so a letter of a protocol subject
+    /// alone answers otherwise.
+    fn counts_step(&self, _position: TemporalPosition) -> bool {
+        true
+    }
 }

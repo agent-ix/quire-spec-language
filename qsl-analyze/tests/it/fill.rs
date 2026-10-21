@@ -210,13 +210,21 @@ pub(crate) fn contracts(two_pre: &str) -> String {
     )
 }
 
+/// The infinite-trace temporal profile, which `t0` names by default.
+pub(crate) const INFINITE_TRACE: &str = "quire.temporal.infinite-trace/v1";
+
 /// The unit selecting the domain package as `M`, with `body` after the
 /// header.
 pub(crate) fn unit_text(body: &str) -> String {
+    unit_text_under(INFINITE_TRACE, body)
+}
+
+/// [`unit_text`] with `t0` naming the temporal profile `profile`.
+pub(crate) fn unit_text_under(profile: &str, body: &str) -> String {
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
+         profile t0 = \"{profile}\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
         hex(&document_digest(&document()))
     )
@@ -224,8 +232,14 @@ pub(crate) fn unit_text(body: &str) -> String {
 
 /// The checked package of `body`.
 pub(crate) fn package(body: &str) -> CheckedPackage {
+    package_under(INFINITE_TRACE, body)
+}
+
+/// The checked package of `body` with `t0` naming the temporal profile
+/// `profile`.
+pub(crate) fn package_under(profile: &str, body: &str) -> CheckedPackage {
     let document = document();
-    let text = unit_text(body);
+    let text = unit_text_under(profile, body);
     let packages = package_input([document.as_slice()]);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
@@ -459,18 +473,33 @@ pub(crate) fn v(state: &ModelSimState, object: &str) -> i64 {
 /// The compiled `package_id` of the unit with `body`, through FR-098's
 /// compile.
 pub(crate) fn package_id(body: &str) -> qsl_replay::DigestRecord {
-    compiled(body).expect("the unit compiles").package_id()
+    package_id_under(INFINITE_TRACE, body)
+}
+
+/// [`package_id`] with `t0` naming the temporal profile `profile`.
+pub(crate) fn package_id_under(profile: &str, body: &str) -> qsl_replay::DigestRecord {
+    compiled_under(profile, body)
+        .expect("the unit compiles")
+        .package_id()
 }
 
 /// FR-098's compile of the unit with `body`.
 pub(crate) fn compiled(
     body: &str,
 ) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {
+    compiled_under(INFINITE_TRACE, body)
+}
+
+/// [`compiled`] with `t0` naming the temporal profile `profile`.
+pub(crate) fn compiled_under(
+    profile: &str,
+    body: &str,
+) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {
     let document = document();
     qsl_replay::compile_package(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
         "counter.native",
-        unit_text(body).as_bytes(),
+        unit_text_under(profile, body).as_bytes(),
         [document.as_slice()],
         &qsl_replay::DependencyInput::default(),
         qsl_replay::StageLimits::default(),

@@ -7,6 +7,8 @@
 
 use std::collections::BTreeSet;
 
+use ix_trace_rs::trace;
+
 use qsl_eval::automaton::{
     AlwaysOffsets, Atom, AutomatonError, DeadlineCounter, EventuallyWindows, Expired,
     ExtentCounter, Gba, GbaBuilder, Guard, Monitor, Numbering, PastAgeCounter, ShiftCounter,
@@ -480,6 +482,133 @@ fn an_extent_counter_matches_the_expansion_of_always_on_every_short_trace() {
                         .max()
                         .unwrap_or(0);
                     assert_eq!(counter.remaining(), wide(furthest));
+                }
+            }
+        }
+    }
+}
+
+/// The longest trace the counted-step counters are checked on, which also
+/// varies which steps count.
+const LONGEST_COUNTED: usize = 5;
+
+/// The counted steps from position 0 to each position, where `counted[i]`
+/// says whether the step into position `i` counts.
+fn distances(counted: &[bool]) -> Vec<usize> {
+    let mut total = 0;
+    counted
+        .iter()
+        .enumerate()
+        .map(|(position, counts)| {
+            total += usize::from(position > 0 && *counts);
+            total
+        })
+        .collect()
+}
+
+/// Every `(opens, holds, counted)` of `len` positions.
+fn counted_traces(len: usize) -> impl Iterator<Item = (Vec<bool>, Vec<bool>, Vec<bool>)> {
+    traces(len).flat_map(move |(opens, holds)| {
+        (0u32..(1u32 << len)).map(move |bits| {
+            let counted: Vec<bool> = (0..len).map(|i| ((bits >> i) & 1) == 1).collect();
+            (opens.clone(), holds.clone(), counted)
+        })
+    })
+}
+
+/// ADR-027 PB-3: `eventually[0,b]` opened at `open` needs the operand at
+/// some position at counted distance `b` or less. The first position that
+/// is the counted step past the window of an obligation the operand has not
+/// discharged.
+fn first_expiry_counted(
+    upper: usize,
+    (opens, holds, counted): (&[bool], &[bool], &[bool]),
+) -> Option<usize> {
+    let distance = distances(counted);
+    (0..opens.len()).find(|&at| {
+        counted[at]
+            && at > 0
+            && (0..at).any(|open| {
+                opens[open]
+                    && distance[at] == distance[open] + upper + 1
+                    && !holds[open..at].iter().any(|held| *held)
+            })
+    })
+}
+
+/// FR-213-AC-1: the deadline counter, read with the steps that count and
+/// the steps that do not, matches the counted-distance definition of
+/// `eventually[0,b]` on every short trace.
+#[trace("TC-658", "FR-213-AC-1")]
+#[test]
+fn a_deadline_counter_measures_counted_distance_on_every_short_trace() {
+    for upper in 0..=2usize {
+        for len in 1..=LONGEST_COUNTED {
+            for (opens, holds, counted) in counted_traces(len) {
+                let mut counter = DeadlineCounter::new(wide(upper));
+                let mut expired_at = None;
+                for position in 0..len {
+                    let counts = position == 0 || counted[position];
+                    match counter.step_counted(opens[position], holds[position], counts) {
+                        Ok(next) => counter = next,
+                        Err(Expired) => {
+                            expired_at = Some(position);
+                            break;
+                        }
+                    }
+                }
+                let trace = (&opens[..], &holds[..], &counted[..]);
+                assert_eq!(expired_at, first_expiry_counted(upper, trace), "{trace:?}");
+                if expired_at.is_none() {
+                    let distance = distances(&counted);
+                    let last = len - 1;
+                    let open = (0..=last).any(|open| {
+                        opens[open]
+                            && distance[last] <= distance[open] + upper
+                            && !holds[open..=last].iter().any(|held| *held)
+                    });
+                    assert_eq!(counter.is_pending(), open, "{trace:?}");
+                }
+            }
+        }
+    }
+}
+
+/// FR-213-AC-1: the extent counter, read with the steps that count and the
+/// steps that do not, requires the operand at every position at counted
+/// distance `b` or less of an obligation, uncounted successors of the
+/// last such position included.
+#[trace("TC-658", "FR-213-AC-1")]
+#[test]
+fn an_extent_counter_measures_counted_distance_on_every_short_trace() {
+    for upper in 0..=2usize {
+        for len in 1..=LONGEST_COUNTED {
+            for (opens, holds, counted) in counted_traces(len) {
+                let distance = distances(&counted);
+                let mut counter = ExtentCounter::new(wide(upper));
+                let mut violated_at = None;
+                for position in 0..len {
+                    let counts = position == 0 || counted[position];
+                    match counter.step_counted(opens[position], holds[position], counts) {
+                        Ok(next) => counter = next,
+                        Err(Violated) => {
+                            violated_at = Some(position);
+                            break;
+                        }
+                    }
+                }
+                let expected = (0..len).find(|&at| {
+                    !holds[at]
+                        && (0..=at)
+                            .any(|open| opens[open] && distance[at] <= distance[open] + upper)
+                });
+                let trace = (&opens[..], &holds[..], &counted[..]);
+                assert_eq!(violated_at, expected, "{trace:?}");
+                if violated_at.is_none() {
+                    let last = len - 1;
+                    let pending = (0..=last)
+                        .any(|open| opens[open] && distance[last] <= distance[open] + upper);
+                    assert_eq!(counter.is_pending(), pending, "{trace:?}");
                 }
             }
         }

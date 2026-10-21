@@ -12,9 +12,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use ix_trace_rs::trace;
 use qsl_eval::automaton::{
-    translate, Atom, AutomatonError, AutomatonKind, Gba, Letter, Monitor, PropertyAutomaton,
-    StateId,
+    translate, translate_counted, Atom, AutomatonError, AutomatonKind, Gba, Letter, Monitor,
+    PropertyAutomaton, StateId,
 };
 use qsl_eval::temporal::{
     evaluate, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
@@ -63,6 +64,23 @@ fn bounded(body: &str) -> Subject {
     subject_with(EVENT, ORIGIN, body)
 }
 
+/// A bounded `on origin` clause translated for a subject whose steps count
+/// by kind (ADR-027 PB-3).
+fn counted(body: &str) -> Subject {
+    let fixture = fixture(EVENT, "c: Counter", ORIGIN, body);
+    let mut property =
+        translate_counted(&fixture.clause, LIMIT).unwrap_or_else(|why| panic!("{body}: {why}"));
+    let gba = property
+        .explore()
+        .unwrap_or_else(|why| panic!("{body}: {why}"));
+    Subject {
+        body: body.to_owned(),
+        fixture,
+        property,
+        gba,
+    }
+}
+
 fn translation_of(body: &str) -> Result<PropertyAutomaton, AutomatonError> {
     translate(&fixture(INFINITE, "c: Counter", ORIGIN, body).clause, LIMIT)
 }
@@ -107,6 +125,12 @@ impl TemporalLetters for WordLetters<'_> {
     ) -> Result<AtomReading, LetterStop> {
         let when = self.property.when().expect("the clause has a `when`");
         Ok(reading(self.letter(position).holds(when)))
+    }
+
+    fn counts_step(&self, position: TemporalPosition) -> bool {
+        self.property
+            .uncounted()
+            .is_none_or(|uncounted| !self.letter(position).holds(uncounted))
     }
 }
 
@@ -220,10 +244,12 @@ fn words(width: usize, longest: usize) -> Vec<Vec<Letter>> {
     all
 }
 
-/// The number of letter atoms the evaluator supplies: the clause's atoms
-/// and its `when`.
+/// The number of letter atoms the evaluator supplies: the clause's atoms,
+/// its `when` and the atom that marks a step that does not count.
 fn width(subject: &Subject) -> usize {
-    subject.property.atoms().len() + usize::from(subject.property.when().is_some())
+    subject.property.atoms().len()
+        + usize::from(subject.property.when().is_some())
+        + usize::from(subject.property.uncounted().is_some())
 }
 
 /// Compare the automaton of `subject` with the evaluator on every word of up
@@ -343,6 +369,46 @@ fn a_bounded_clause_translates_to_a_finite_monitor_that_answers_to_the_closed_tr
     ] {
         bounded_agrees(body, if body.contains("holds(r)") { 4 } else { 6 });
     }
+}
+
+/// ADR-027 PB-3 (FR-213-AC-3): for a subject whose steps count by kind, a
+/// bounded clause's finite monitor answers to the closed trace evaluation
+/// over a letter that also says which steps do not count, whatever the
+/// interval shape. A clause without an interval operator reads no such atom,
+/// and a past operator with an interval is refused.
+#[trace("TC-658", "FR-213-AC-3")]
+#[test]
+fn a_counted_clause_translates_to_a_monitor_that_answers_to_counted_distance() {
+    for body in [
+        "eventually[0,2] holds(p)",
+        "eventually[1,2] holds(p)",
+        "always[0,2] holds(p)",
+        "always[1,2] holds(p)",
+        "eventually[0,1] (holds(p) and eventually[0,1] holds(q))",
+        "always[0,2] (holds(p) implies eventually[1,2] holds(q))",
+        "holds(p) until[0,2] holds(q)",
+        "holds(p) until[1,3] holds(q)",
+        "holds(p) release[0,2] holds(q)",
+        "holds(p) release[1,2] holds(q)",
+        "eventually[1,2] always[0,1] holds(p)",
+    ] {
+        let subject = counted(body);
+        assert_eq!(subject.property.kind(), AutomatonKind::Bounded, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, if body.contains("holds(q)") { 4 } else { 5 }) > 0);
+    }
+    let plain = counted("holds(p) and not holds(q)");
+    assert_eq!(plain.property.uncounted(), None);
+    let past = fixture(
+        EVENT,
+        "c: Counter",
+        ORIGIN,
+        "always[0,3] (holds(p) implies once[0,1] holds(q))",
+    );
+    assert_eq!(
+        translate_counted(&past.clause, LIMIT).err(),
+        Some(AutomatonError::PastIntervalInCountedSteps)
+    );
 }
 
 /// SM-6: a bounded `on each` clause activates at every position of the

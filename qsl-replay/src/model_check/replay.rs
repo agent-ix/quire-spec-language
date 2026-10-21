@@ -1101,9 +1101,19 @@ struct ReplayedLetters<'a, S: SubjectSystem> {
     letters: &'a dyn ModelLetters,
     instance: &'a ModelInstance,
     positions: &'a [Position<S::State>],
+    /// The steps into the positions after the first.
+    prefix: &'a [crate::ModelStep<S::TransitionId>],
 }
 
 impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
+    fn counts_step(&self, position: TemporalPosition) -> bool {
+        usize::try_from(position.index())
+            .ok()
+            .and_then(|index| index.checked_sub(1))
+            .and_then(|index| self.prefix.get(index))
+            .is_none_or(|step| self.system.counts_step(&step.transition))
+    }
+
     fn atom(
         &mut self,
         atom: FormulaNodeId,
@@ -1165,6 +1175,7 @@ fn check_formula<S: SubjectSystem>(
         letters: formula.letters,
         instance,
         positions,
+        prefix: &payload.prefix,
     };
     let mut meter = Meter::new(formula.meter);
     let mut loop_states = Vec::new();

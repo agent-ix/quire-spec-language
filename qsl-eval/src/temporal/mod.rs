@@ -21,6 +21,11 @@
 //! [`evaluate_projected_prefix`] evaluates it three-valued over a tuple of
 //! projected prefixes (FR-178).
 //!
+//! An interval measures distance in positions, unless the letter says a step
+//! does not count ([`TemporalLetters::counts_step`], ADR-027 PB-3): then it
+//! measures counted steps, several positions share a distance, and a lasso
+//! with such a step is refused.
+//!
 //! The trace's observations and the `holds` conditions are the caller's:
 //! the evaluator reaches them only through [`TemporalLetters`], the seam to
 //! the one clause evaluator (FR-107).
@@ -32,6 +37,7 @@ mod observed;
 mod outcome;
 mod plan;
 mod position;
+mod steps;
 mod tuple;
 mod window;
 
