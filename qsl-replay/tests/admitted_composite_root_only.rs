@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! TC-1090 (FR-396-AC-1): a downstream generator compiles authentic QSL
-//! source with a record and a tuple through `compile_admitted`, looks both
+//! TC-1090 (FR-396-AC-1, FR-396-AC-6): a downstream generator compiles
+//! authentic QSL source with a record, a tuple and a union through `compile_admitted`, looks both
 //! declarations' keys up through the `qsl_replay` root, and builds the
 //! kernel composite declarations, `ValueType::Composite` types and values
 //! from those keys alone. This file names no `qsl_replay::spine` or
@@ -14,13 +14,14 @@ use qsl_replay::{
 };
 use quire_exact::{FieldValue, Presence, Value, ValueType};
 use quire_semantic_value::declaration::{
-    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment,
+    CompositeDeclaration, CompositeShape, FieldDeclaration, TypeEnvironment, UnionMemberDeclaration,
 };
 
 const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      profile v = \"quire.value.complete/v1\";\n\
      tuple Pair(Boolean, Boolean);\n\
-     record Holder { flag: Boolean; pair: Pair; }\n";
+     record Holder { flag: Boolean; pair: Pair; }\n\
+     union Shape { Empty, Circle(Integer), Rect(Pair, Boolean) }\n";
 
 fn context() -> AdmittedContext {
     compile_admitted(
@@ -104,4 +105,49 @@ fn a_consumer_builds_composite_declarations_from_admitted_keys() {
     assert!(types
         .admits(&ValueType::Composite(holder.key()), &holder_value)
         .expect("admission runs"));
+}
+
+/// FR-396-AC-6: a union's key, member identifiers, `VariantId`s and payload
+/// types come from the `compile_admitted` result through the replay root
+/// alone, and declare a closed `TypeEnvironment` with the record, tuple and
+/// union under the admitted keys.
+#[trace("TC-1090", "FR-396-AC-6")]
+#[test]
+fn a_consumer_gets_a_unions_key_and_member_ids_from_the_context() {
+    let context = context();
+    let pair = context
+        .composite_declaration(wire_id_of(&context, "Pair"))
+        .expect("the tuple is found");
+    let shape = context
+        .composite_declaration(wire_id_of(&context, "Shape"))
+        .expect("the union is found");
+    assert_eq!(shape.form(), AdmittedCompositeForm::Union);
+    let members = shape.union_members().expect("a union has members");
+    let names: Vec<_> = members.iter().map(|m| m.identifier().as_str()).collect();
+    assert_eq!(names, ["Empty", "Circle", "Rect"]);
+    let variants: std::collections::BTreeSet<_> = members.iter().map(|m| m.variant()).collect();
+    assert_eq!(variants.len(), 3, "each member has its own id");
+    assert_eq!(
+        members[2].payload(),
+        [ValueType::Composite(pair.key()), ValueType::Boolean]
+    );
+
+    let declared = members
+        .iter()
+        .map(|member| {
+            UnionMemberDeclaration::resolved(member.identifier().clone(), member.payload().to_vec())
+        })
+        .collect();
+    TypeEnvironment::new(
+        [
+            CompositeDeclaration::new(
+                pair.key(),
+                "Pair",
+                CompositeShape::Tuple(vec![ValueType::Boolean, ValueType::Boolean]),
+            ),
+            CompositeDeclaration::new(shape.key(), "Shape", CompositeShape::Union(declared)),
+        ],
+        [],
+    )
+    .expect("the admitted keys form one closed environment");
 }
