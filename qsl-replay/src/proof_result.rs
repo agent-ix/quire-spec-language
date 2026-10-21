@@ -110,6 +110,13 @@ pub enum AppliedReduction {
         /// The cycle proviso.
         proviso: Proviso,
     },
+    /// FR-174 (ADR-023 CS-5): a hyper item run over the quotient by the
+    /// swaps of its copies of one model, which the compiler found the clause
+    /// to be symmetric under and no request selected.
+    CopySwap {
+        /// The classes of swappable trace variables, in quantifier order.
+        classes: Vec<Vec<String>>,
+    },
 }
 
 /// The cycle proviso of a partial-order reduction (ADR-021 POR-8).
@@ -369,6 +376,13 @@ pub enum StatisticalRequestRefusal {
     TraceIndexRange,
     /// The sampler returned a fraction for a Bernoulli test.
     FractionForEvent,
+    /// The claim is under every scheduler: only exact evidence decides it.
+    EveryScheduler,
+    /// The claim's form is one only exact evidence decides.
+    ExactOnlyForm,
+    /// The claim states no confidence parameters: only exact evidence
+    /// decides it.
+    MissingConfidence,
 }
 
 impl StatisticalRequestRefusal {
@@ -379,6 +393,9 @@ impl StatisticalRequestRefusal {
             Self::TooManyTests => "too-many-tests",
             Self::TraceIndexRange => "trace-index-range",
             Self::FractionForEvent => "fraction-for-event",
+            Self::EveryScheduler => "every-scheduler",
+            Self::ExactOnlyForm => "exact-only-form",
+            Self::MissingConfidence => "missing-confidence",
         }
     }
 }

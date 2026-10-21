@@ -86,6 +86,17 @@ pub struct PropertyAutomaton {
     atoms: Vec<FormulaNodeId>,
     when: Option<Atom>,
     live: Option<Atom>,
+    /// For each generator of the body's atom symmetry, where it takes each
+    /// node the translation uses.
+    exchanges: Vec<BTreeMap<NodeId, NodeId>>,
+}
+
+/// A symmetry of the body's atoms (ADR-023 CS-2), by which the automaton is
+/// built in normal form and its states are permuted.
+pub struct AtomSymmetry<'a> {
+    /// The generators: for each, the atom each atom becomes, in the order of
+    /// [`PropertyAutomaton::atoms`], an involution.
+    pub generators: &'a [Vec<usize>],
 }
 
 impl PropertyAutomaton {
@@ -120,6 +131,27 @@ impl PropertyAutomaton {
         Ok(self.reached.intern(self.initial.clone())?.state)
     }
 
+    /// Whether `state` has nothing left to check: no formula the next
+    /// position must satisfy, no running counter and no pending shift. No
+    /// letter sequence read from a settled state is a bad prefix, so a
+    /// bounded formula's monitor accepts for good there.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::UnknownState`] when `state` has not been reached.
+    pub fn is_settled(&self, state: StateId) -> Result<bool, AutomatonError> {
+        let config = self
+            .reached
+            .key(state)
+            .ok_or(AutomatonError::UnknownState { state })?;
+        Ok(config.must.is_empty()
+            && config.shifts.is_empty()
+            && config
+                .counters
+                .values()
+                .all(|counter| !counter.is_pending()))
+    }
+
     /// The states reached from `from` by reading `letter`, ascending and
     /// without repeats. Each one is numbered the first time it is reached.
     ///
@@ -150,6 +182,36 @@ impl PropertyAutomaton {
         states.sort_unstable();
         states.dedup();
         Ok(states)
+    }
+
+    /// Whether the automaton offers the generators of the atom symmetry it was
+    /// translated with: it has one, and each generator maps the automaton onto
+    /// itself, fixing the initial state and every acceptance set.
+    pub fn is_symmetric(&self) -> bool {
+        !self.exchanges.is_empty()
+    }
+
+    /// The state `from` becomes under generator `generator` of the atom
+    /// symmetry the automaton was translated with: the state that obliges the
+    /// word read with the generator's atoms exchanged. It is numbered when it
+    /// is new.
+    ///
+    /// # Errors
+    ///
+    /// [`AutomatonError::UnknownState`] when `from` has not been reached;
+    /// [`AutomatonError::StateLimit`] when numbering the state would exceed
+    /// the limit.
+    pub fn exchange(&mut self, from: StateId, generator: usize) -> Result<StateId, AutomatonError> {
+        let config = self
+            .reached
+            .key(from)
+            .ok_or(AutomatonError::UnknownState { state: from })?;
+        let map = self
+            .exchanges
+            .get(generator)
+            .ok_or_else(|| invariant("generator-exists"))?;
+        let exchanged = config.exchanged(map)?;
+        Ok(self.reached.intern(exchanged)?.state)
     }
 
     /// Every guarded transition out of `from`, each target numbered the first
@@ -286,6 +348,7 @@ pub fn translate(
         clause.activation(),
         Selection::Clause,
         max_states,
+        None,
     )
 }
 
@@ -303,6 +366,7 @@ pub fn translate_negation(
     body: &CheckedFormula,
     profile: TemporalProfile,
     max_states: u64,
+    symmetry: Option<&AtomSymmetry<'_>>,
 ) -> Result<PropertyAutomaton, AutomatonError> {
     translate_formula(
         body,
@@ -310,6 +374,7 @@ pub fn translate_negation(
         Activation::Origin,
         Selection::Negation,
         max_states,
+        symmetry,
     )
 }
 
@@ -334,6 +399,7 @@ pub fn translate_body(
         Activation::Origin,
         Selection::Clause,
         max_states,
+        None,
     )
 }
 
@@ -352,6 +418,7 @@ fn translate_formula(
     activation: Activation,
     selection: Selection,
     max_states: u64,
+    symmetry: Option<&AtomSymmetry<'_>>,
 ) -> Result<PropertyAutomaton, AutomatonError> {
     if matches!(profile, TemporalProfile::TimestampedEventFiniteWindow) {
         return Err(AutomatonError::ProfileNotTranslated { profile });
@@ -362,7 +429,7 @@ fn translate_formula(
         atoms,
         positive,
         negative,
-    } = lower(formula)?;
+    } = lower(formula, symmetry.is_some())?;
     let mut next_atom = atoms.len();
     let mut take_atom = || {
         let atom = Atom::new(next_atom);
@@ -405,9 +472,30 @@ fn translate_formula(
         (AutomatonKind::Liveness, negation)
     };
     let order = ir.reachable(target)?;
+    let exchanges = symmetry
+        .map(|symmetry| {
+            symmetry
+                .generators
+                .iter()
+                .map(|exchange| ir.exchanged(&order, exchange))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
     let translator = Translator { ir, order };
-    let eventualities = translator.eventualities()?.into_iter().collect();
+    let eventualities: Vec<NodeId> = translator.eventualities()?.into_iter().collect();
     let initial = translator.initial(target)?;
+    // The exchanges are offered only when each is an automorphism: it fixes
+    // the initial state and each acceptance set, so a cycle that is accepting
+    // stays so. An exchange that moves one acceptance set to another is not
+    // an automorphism of the acceptance condition, and the automaton then
+    // offers none.
+    let mut automorphic = true;
+    for map in &exchanges {
+        automorphic &= initial.exchanged(map)? == initial
+            && eventualities.iter().all(|core| map.get(core) == Some(core));
+    }
+    let exchanges = if automorphic { exchanges } else { Vec::new() };
     Ok(PropertyAutomaton {
         kind,
         translator,
@@ -418,6 +506,7 @@ fn translate_formula(
         atoms,
         when,
         live,
+        exchanges,
     })
 }
 
@@ -470,6 +559,31 @@ struct Config {
     shifts: BTreeMap<NodeId, BTreeSet<u64>>,
     /// The memory of every past operator.
     memory: BTreeMap<NodeId, Memory>,
+}
+
+impl Config {
+    /// This state with each node replaced by its image under `map`.
+    fn exchanged(&self, map: &BTreeMap<NodeId, NodeId>) -> Result<Self, AutomatonError> {
+        let image = |id: &NodeId| {
+            map.get(id)
+                .copied()
+                .ok_or_else(|| invariant("state-nodes-are-in-the-arena"))
+        };
+        fn rekey<V: Clone>(
+            held: &BTreeMap<NodeId, V>,
+            image: &impl Fn(&NodeId) -> Result<NodeId, AutomatonError>,
+        ) -> Result<BTreeMap<NodeId, V>, AutomatonError> {
+            held.iter()
+                .map(|(id, value)| Ok((image(id)?, value.clone())))
+                .collect()
+        }
+        Ok(Self {
+            must: self.must.iter().map(image).collect::<Result<_, _>>()?,
+            counters: rekey(&self.counters, &image)?,
+            shifts: rekey(&self.shifts, &image)?,
+            memory: rekey(&self.memory, &image)?,
+        })
+    }
 }
 
 /// What the next position inherits from the branch that read this one.

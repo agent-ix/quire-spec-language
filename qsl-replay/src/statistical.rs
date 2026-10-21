@@ -512,6 +512,18 @@ pub enum StatisticalOutcome {
 /// Why EN-4 refuses a request with no outcome (FR-189 `StatisticalRefusal`).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum StatisticalRefusal {
+    /// A claim `under every scheduler` has no sampling route (ADR-024 PM-8,
+    /// ADR-028 XF-7); only exact evidence decides it.
+    #[error("a claim under every scheduler is decided by exact evidence only")]
+    EveryScheduler,
+    /// A claim form only EN-5 decides: an unbounded reachability or an
+    /// expected-reward form (ADR-028 XF-4, XF-5, XF-7).
+    #[error("this claim form is decided by exact evidence only")]
+    ExactOnlyForm,
+    /// A claim that states no confidence parameters is decided by exact
+    /// evidence only (ADR-024 PF-10).
+    #[error("a claim with no confidence parameters is decided by exact evidence only")]
+    MissingConfidence,
     /// The method does not decide the claim's form (FR-189, FR-190).
     #[error("{method:?} does not decide a {form:?} claim")]
     NotStatistical {

@@ -484,7 +484,10 @@ fn a_holds_outcome_settles_no_record_until_the_product_closure_checker_exists() 
         &non_interference(EQUAL_INPUTS),
     );
     let outcome = run(&secure, ModelCheckLimits::default());
-    assert!(matches!(outcome, HyperOutcome::Holds { .. }));
+    assert!(matches!(
+        outcome,
+        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. }
+    ));
     let result = settle_hyper_check(&outcome, &ModelCheckLimits::default(), &[], |_| {
         panic!("a holds outcome replays nothing")
     });

@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_analyze::model_check::{
-    check_hyper, retain, HyperCheckRequest, ModelCheckRefusal, RetainedGraph,
+    check_hyper, retain, HyperCheckRequest, ModelCheckRefusal, Reductions, RetainedGraph,
 };
 use qsl_eval::fairness::{analyze, EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex};
 use qsl_eval::hyper::{
@@ -52,6 +52,10 @@ use serde_json::{json, Value as Json};
 use crate::counter::UNLIMITED;
 
 const PACKAGE: &str = "test/vault";
+/// The package of the second model of a two-alias world, under alias
+/// [`OTHER_ALIAS`].
+const OTHER: &str = "test/vault-other";
+const OTHER_ALIAS: &str = "N";
 const PLACEHOLDER: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// The key of the vault in `vaults`.
@@ -266,21 +270,43 @@ fn document(busy: bool, reset: bool) -> Vec<u8> {
 
 /// The unit text: the header selecting the domain package as `V`, the `step`
 /// contract of `vault`, and `body`.
-fn unit_text(document: &[u8], vault: Vault, reset: bool, body: &str) -> String {
+fn unit_text(
+    document: &[u8],
+    other: Option<&[u8]>,
+    vault: Vault,
+    reset: bool,
+    body: &str,
+) -> String {
     let digest = *package_input([document]).keys().next().expect("one model");
+    let second = other.map_or_else(String::new, |other| {
+        let digest = *package_input([other]).keys().next().expect("one model");
+        format!(
+            "model {OTHER_ALIAS} = \"{OTHER}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n",
+            hex(&digest)
+        )
+    });
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
          profile inf = \"quire.temporal.infinite-trace/v1\";\n\
          model V = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n\
-         function Noop using v(): Boolean pure {{ true }}\n{}{body}",
+         {second}function Noop using v(): Boolean pure {{ true }}\n{}{body}",
         hex(&digest),
         vault.contracts(reset),
     )
 }
 
-fn declarations(document: &[u8], text: &str) -> PackageDeclarations {
-    let packages = package_input([document]);
+/// The vault again under another package identity: the second model of a
+/// clause over two aliases.
+fn other_document(document: &[u8]) -> Vec<u8> {
+    String::from_utf8(document.to_vec())
+        .expect("the document is UTF-8")
+        .replace(PACKAGE, OTHER)
+        .into_bytes()
+}
+
+fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
+    let packages = package_input(documents.iter().copied());
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "hyper", "git", "1"),
         "hyper.native",
@@ -429,7 +455,14 @@ impl World {
             .iter()
             .map(|start| start.map(|start| (KEY, start)).into_iter().collect())
             .collect();
-        Self::build(vault, reset, snapshots, vec![KEY.to_owned()], declaration)
+        Self::build(
+            vault,
+            reset,
+            snapshots,
+            vec![KEY.to_owned()],
+            false,
+            declaration,
+        )
     }
 
     /// One initial state holding the vaults `objects`, `(key, (h, l))`, which
@@ -440,7 +473,14 @@ impl World {
         declaration: &str,
     ) -> Self {
         let universe = objects.iter().map(|(key, _)| (*key).to_owned()).collect();
-        Self::build(vault, false, vec![objects.to_vec()], universe, declaration)
+        Self::build(
+            vault,
+            false,
+            vec![objects.to_vec()],
+            universe,
+            false,
+            declaration,
+        )
     }
 
     /// One initial state for each of `snapshots`, each holding its vaults
@@ -453,7 +493,25 @@ impl World {
         declaration: &str,
     ) -> Self {
         let universe = universe.iter().map(|key| (*key).to_owned()).collect();
-        Self::build(vault, false, snapshots, universe, declaration)
+        Self::build(vault, false, snapshots, universe, false, declaration)
+    }
+
+    /// The vault, started from `starts`, with the vault again as a second
+    /// model under alias `N`: the world of a clause over two aliases.
+    pub(crate) fn with_second_model(
+        vault: Vault,
+        starts: &[(i64, i64)],
+        declaration: &str,
+    ) -> Self {
+        let snapshots = starts.iter().map(|start| vec![(KEY, *start)]).collect();
+        Self::build(
+            vault,
+            false,
+            snapshots,
+            vec![KEY.to_owned()],
+            true,
+            declaration,
+        )
     }
 
     /// A busy vault (ADR-023 section 13) started from each of `starts`, a
@@ -470,6 +528,7 @@ impl World {
             snapshots,
             flags,
             vec![KEY.to_owned()],
+            false,
             declaration,
         )
     }
@@ -479,30 +538,44 @@ impl World {
         reset: bool,
         starts: Vec<Vec<(&str, (i64, i64))>>,
         universe: Vec<String>,
+        second: bool,
         declaration: &str,
     ) -> Self {
-        Self::assemble(vault, reset, starts, Vec::new(), universe, declaration)
+        Self::assemble(
+            vault,
+            reset,
+            starts,
+            Vec::new(),
+            universe,
+            second,
+            declaration,
+        )
     }
 
     /// The world over `starts`, whose snapshot `index` has the flag
-    /// `flags[index]` (0 when `flags` holds none) in a busy vault.
+    /// `flags[index]` (0 when `flags` holds none) in a busy vault, with the
+    /// vault again as a second model under alias `N` when `second`.
     fn assemble(
         vault: Vault,
         reset: bool,
         starts: Vec<Vec<(&str, (i64, i64))>>,
         flags: Vec<i64>,
         universe: Vec<String>,
+        second: bool,
         declaration: &str,
     ) -> Self {
         let document = document(vault.busy(), reset);
-        let base = unit_text(&document, vault, reset, "");
-        let graph = declarations(&document, &base)
+        let other = second.then(|| other_document(&document));
+        let other = other.as_deref();
+        let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
+        let base = unit_text(&document, other, vault, reset, "");
+        let graph = declarations(&documents, &base)
             .with_unwritten_terminals()
             .check(CheckingLimits::default())
             .unwrap_or_else(|refusals| panic!("{base}: the unit checks: {refusals:?}"));
         let package = CheckedPackage::link(graph);
-        let text = unit_text(&document, vault, reset, &format!("{declaration}\n"));
-        let mut checked = check_hyper_clauses(&declarations(&document, &text));
+        let text = unit_text(&document, other, vault, reset, &format!("{declaration}\n"));
+        let mut checked = check_hyper_clauses(&declarations(&documents, &text));
         let clause = match checked.pop() {
             Some(Ok(CheckedHyper::Behaviours(clause))) if checked.is_empty() => *clause,
             other => panic!("{declaration}: one checked hyper clause, not {other:?}"),
@@ -520,7 +593,7 @@ impl World {
             text,
             package,
             clause,
-            packages: package_input([document.as_slice()]),
+            packages: package_input(documents.iter().copied()),
             snapshots,
             initial,
             max_candidates: 1_000_000,
@@ -567,6 +640,30 @@ impl World {
         self.run_through(&seams, &seams, limits, cancel)
     }
 
+    /// The run of the clause when the request selects `reductions`, with one
+    /// subject for each alias of the clause.
+    pub(crate) fn run_selecting(
+        &self,
+        reductions: Reductions,
+    ) -> Result<HyperOutcome, ModelCheckRefusal> {
+        let seams = self.seams();
+        check_hyper(
+            HyperCheckRequest {
+                clause: &self.clause,
+                subjects: (0..self.clause.aliases().len())
+                    .map(|_| self.subject())
+                    .collect(),
+                letters: &seams,
+                matcher: &seams,
+                limits: ModelCheckLimits::default(),
+                meter: UNLIMITED,
+                reductions,
+                max_depth: self.max_depth,
+            },
+            &Cancel::new(),
+        )
+    }
+
     /// The run of the clause reading its atoms through `letters` and its
     /// `match` through `matcher`.
     pub(crate) fn run_through(
@@ -585,13 +682,14 @@ impl World {
                 limits,
                 max_depth: self.max_depth,
                 meter: UNLIMITED,
+                reductions: Reductions::default(),
             },
             cancel,
         )
     }
 
     /// The source text of the body atom `atom`.
-    fn atom_text(&self, atom: FormulaNodeId) -> &str {
+    pub(crate) fn atom_text(&self, atom: FormulaNodeId) -> &str {
         let Some(FormulaNode::Holds { span }) = self.clause.body().nodes().get(atom.index()) else {
             panic!("the letter reads only holds atoms");
         };
@@ -712,6 +810,11 @@ impl Seams<'_> {
                     if x.ends_with(".step.Vault::step.i") && y.ends_with(".step.Vault::step.i") =>
                 {
                     input_of(label(x)) == input_of(label(y))
+                }
+                [x, "!=", y]
+                    if x.ends_with(".step.Vault::step.i") && y.ends_with(".step.Vault::step.i") =>
+                {
+                    input_of(label(x)) != input_of(label(y))
                 }
                 [x, "=", "V::Vault::step"] if x.ends_with(".step.op") => {
                     operation_of(label(x)).is_some_and(is_step)
@@ -904,6 +1007,7 @@ impl World {
             max_automaton_states: u64::MAX,
             meter: UNLIMITED,
             cancel: &cancel,
+            copy_swap: None,
         })
         .expect("the negated body translates");
         product.start().expect("the initial states read");

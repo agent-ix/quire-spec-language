@@ -54,7 +54,8 @@ rows at compile time and requests one protocol refinement claim.
   FR-432). The declaration carries no `internal` or `visible` row; the
   internal list is not source (ADR-020 RM-9, MC-1).
 - The compilation's optional `refinement_internals` input: one value for the
-  unit and one for each supplied library (QSpec FR-375). Its shape and
+  unit and one for each supplied library (QSpec FR-375), carried by the
+  compile input as supplied and unchecked (FR-099). Its shape and
   spellings are described in "The refinement's internal list". An absent
   value is the empty list.
 - The abstract model's checked protocol clause and its step classes
@@ -80,6 +81,13 @@ rows at compile time and requests one protocol refinement claim.
 - When the abstract side names `<A>::<protocol>`, the checker SHALL resolve
   it to a checked protocol clause of the abstract model, refusing
   `missing_declaration`/`missing-name` when none matches.
+- S3 SHALL resolve `<A>::<protocol>` against the checked clause: it SHALL
+  check an abstract protocol declared in the declaring package before it
+  resolves the header of the refinement that names it, the order FR-136
+  "Order of the checks" states. A dependency's clause is already checked.
+- When the abstract clause was refused, S3 SHALL report the clause's own
+  refusals and SHALL give no `CheckedRefinement` and no
+  `missing_declaration`/`missing-name` for the clause name.
 - Population and object rows SHALL be checked by FR-135 against the
   abstract model's state; the protocol's state SHALL take no row, and a row
   naming a protocol binder, queue or node as a field SHALL refuse
@@ -264,6 +272,7 @@ selects it.
 | FR-147-AC-10 | In any build, the locus of a list defect is the pair (input, pointer): a defect in the unit's value is located at (the unit's value, its pointer); the same defect in a supplied library's value is located at (that library's value, its pointer) and refuses the whole compilation, the unit included, whether or not the unit imports that library (a unit with no import of it is refused all the same). No refusal names a compile-request member. | Test (TC-552) |
 | FR-147-AC-11 | Precedence, in a build whose support set omits `refinement-internal-list`: a list on `CasTwice` (protocol subject) with an unresolved entry (`Spec::Twice::zz`) reports `missing_declaration`/`missing-name` and no `not-yet-implemented` naming `refinement-internal-list`, and, because the build also omits `protocol-abstract-side`, the independent `not-yet-implemented` refusal for that feature at `Twice`; a value attributable to no refinement (`{}`, `"refinement": 7`) reports its defect alone; a non-empty resolved list on `CasRefinesCounter` reports only AC-7's refusal, and a malformed entry, a repeated spelling or a `refinement` naming no refinement on it is still reported while an entry such as `Other::Twice::finish` or `Spec::Twice::zz` is not resolved and gives no `missing-name`. | Test (TC-552) |
 | FR-147-AC-12 | In a build that holds `refinement-internal-list`, a non-empty list for `CasRefinesCounter` (model side) refuses `invalid_model_binding`/`malformed-declaration` at (the unit's value, `/0`), with no `CheckedRefinement` and no `not-yet-implemented`; an empty list does not refuse. | Test (TC-552) |
+| FR-147-AC-13 | In a build that holds `protocol-abstract-side`, `CasTwice` checks to the same `CheckedRefinement` whether `protocol Twice` is declared before or after the refinement in the unit's source. With `Twice` refused by its own checks, the unit reports `Twice`'s refusals and no `missing-name` for the clause name and no `CheckedRefinement` for `CasTwice`. | Test (TC-552) |
 
 ## Dependencies
 

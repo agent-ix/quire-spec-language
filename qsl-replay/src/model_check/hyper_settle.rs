@@ -9,18 +9,20 @@
 //! fault, and carries no counterexample. Every other row is built by FR-127's
 //! own row builders, so the two maps settle each shared row alike.
 //!
-//! A `Holds` outcome settles `proved` only after FR-163's product-closure
+//! A `Holds` or `HoldsReduced` outcome settles `proved` only after FR-163's product-closure
 //! certificate checker accepts its certificate. Neither the certificate nor
-//! the checker is built, so the map refuses a `Holds` rather than settle a
+//! the checker is built, so the map refuses them rather than settle a
 //! `proved` no checker stands behind.
 
 use crate::execute::ReplayRefusal;
 use crate::model_check::hyper_counterexample::HyperCounterexample;
-use crate::model_check::hyper_outcome::{BoundCovers, HyperOutcome};
+use crate::model_check::hyper_outcome::{BoundCovers, HyperOutcome, HyperReductionCause};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::replay::ModelTraceSettlement;
 use crate::model_check::settle::{Execution, ResultLabel, Row, Truth, EXPLICIT_STATE};
-use crate::proof_result::{IncompleteCause, InconclusiveCause, SettlementBasis, TerminalValue};
+use crate::proof_result::{
+    IncompleteCause, InconclusiveCause, SettlementBasis, TerminalValue, UnavailabilityCause,
+};
 
 /// Whether a limit's value came from the request or from its published
 /// default (FR-184, FR-182).
@@ -80,6 +82,11 @@ pub enum HyperSettleRefusal {
     /// the checker are not built.
     #[error("a hyper `Holds` settles only after FR-163's product-closure checker accepts its certificate, which is not built")]
     ProductClosureCheckerNotBuilt,
+    /// A reduction whose preservation row reads "no" for a hyper form settles
+    /// `ReductionNotPreserving` naming that form (ADR-023 section 5), and the
+    /// cause's `form` member is a `PropertyForm`, which has no hyper member.
+    #[error("a hyper `ReductionNotPreserving` names a hyper form, which the cause's `PropertyForm` member cannot hold")]
+    ReductionFormNotRepresentable,
 }
 
 /// FR-182: settle `outcome`, a run under `limits`, as one terminal record.
@@ -92,7 +99,8 @@ pub enum HyperSettleRefusal {
 ///
 /// # Errors
 ///
-/// [`HyperSettleRefusal`] for a `Holds` outcome.
+/// [`HyperSettleRefusal`] for a `Holds` or `HoldsReduced` outcome, or a
+/// reduction a hyper form's row refuses.
 pub fn settle_hyper_check(
     outcome: &HyperOutcome,
     limits: &ModelCheckLimits,
@@ -104,9 +112,19 @@ pub fn settle_hyper_check(
     let mut covers = None;
     let mut count = None;
     let row = match outcome {
-        HyperOutcome::Holds { .. } => {
+        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. } => {
             return Err(HyperSettleRefusal::ProductClosureCheckerNotBuilt)
         }
+        HyperOutcome::Reduction { cause, .. } => match cause {
+            HyperReductionCause::NotPreserving { .. } => {
+                return Err(HyperSettleRefusal::ReductionFormNotRepresentable)
+            }
+            HyperReductionCause::Unsupported { reduction } => {
+                Row::unsupported(UnavailabilityCause::UnsupportedReduction {
+                    reduction: *reduction,
+                })
+            }
+        },
         HyperOutcome::Violated {
             counterexample: payload,
             ..

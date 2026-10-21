@@ -14,10 +14,10 @@ Verify the abstract protocol side: resolution of the protocol, node targets,
 the refinement's internal list (its shape, spellings, resolution, locus and refusal), the
 `refinement` requirement record and the unsupported liveness half.
 
-Scope: FR-147-AC-1 to FR-147-AC-12. Builds: **built** is a build whose
+Scope: FR-147-AC-1 to FR-147-AC-13. Builds: **built** is a build whose
 support set holds `protocol-abstract-side` and `refinement-internal-list`;
 **unbuilt** omits them; **any** is either. Steps 1 to 4 and 9 run against
-built, steps 7 and 11 against unbuilt, steps 5, 6, 8 and 10 against any, and
+built, step 13 against built, steps 7 and 11 against unbuilt, steps 5, 6, 8 and 10 against any, and
 step 12 against a build that holds `refinement-internal-list`. A producer that
 has built a feature is checked by that feature's own criteria. The
 `CasRefinesCounter` node-row vector of step 2 runs against any.
@@ -53,6 +53,8 @@ Fixtures: `Twice`, `CasTwice` and `Full` (FR-147); `CasRefinesCounter`
     and on `CasRefinesCounter` an entry `Other::Twice::finish`.
 12. Give the refinement check a non-empty and an empty list for
     `CasRefinesCounter`.
+13. Check `CasTwice` with `Twice` declared before and after the refinement,
+    and with `Twice` refused by its own checks.
 
 Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 
@@ -98,3 +100,6 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 - Step 12: the non-empty list refuses `invalid_model_binding`/
   `malformed-declaration` at the unit's value `/0`; the empty list does not
   refuse.
+- Step 13: the same `CheckedRefinement` in both orders; with `Twice` refused,
+  `Twice`'s refusals alone for the clause, no `missing-name` for its name and
+  no `CheckedRefinement`.

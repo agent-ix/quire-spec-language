@@ -206,6 +206,11 @@ pub fn settle_statistical_refusal(
         StatisticalRefusal::FractionForEvent => {
             request(StatisticalRequestRefusal::FractionForEvent)
         }
+        StatisticalRefusal::EveryScheduler => request(StatisticalRequestRefusal::EveryScheduler),
+        StatisticalRefusal::ExactOnlyForm => request(StatisticalRequestRefusal::ExactOnlyForm),
+        StatisticalRefusal::MissingConfidence => {
+            request(StatisticalRequestRefusal::MissingConfidence)
+        }
         StatisticalRefusal::ConfidenceBeyondPrecision => StatisticalRecord::of(
             TerminalValue::Unsupported(UnavailabilityCause::ConfidenceBeyondPrecision),
         ),
@@ -476,6 +481,18 @@ mod tests {
                 StatisticalRefusal::FractionForEvent,
                 StatisticalRequestRefusal::FractionForEvent,
             ),
+            (
+                StatisticalRefusal::EveryScheduler,
+                StatisticalRequestRefusal::EveryScheduler,
+            ),
+            (
+                StatisticalRefusal::ExactOnlyForm,
+                StatisticalRequestRefusal::ExactOnlyForm,
+            ),
+            (
+                StatisticalRefusal::MissingConfidence,
+                StatisticalRequestRefusal::MissingConfidence,
+            ),
         ] {
             let record = settled(refusal);
             let TerminalValue::Unsupported(cause) = &record.value else {
@@ -486,6 +503,15 @@ mod tests {
             assert_eq!(cause.as_str(), "unsupported-requested-capability");
             let json = wire(record);
             assert_eq!(json["cause"]["refusal"], named.as_str());
+            if let Some(literal) = match named {
+                StatisticalRequestRefusal::EveryScheduler => Some("every-scheduler"),
+                StatisticalRequestRefusal::ExactOnlyForm => Some("exact-only-form"),
+                StatisticalRequestRefusal::MissingConfidence => Some("missing-confidence"),
+                _ => None,
+            } {
+                // FR-192's spellings, not the function under test's.
+                assert_eq!(json["cause"]["refusal"], literal);
+            }
             assert_eq!(json["cause"]["code"], "unsupported_projection");
         }
 
