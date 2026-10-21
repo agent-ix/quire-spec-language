@@ -145,7 +145,8 @@ impl Run<'_, '_> {
     ) -> Result<HyperCounterexample, ModelCheckRefusal> {
         let (root, path) = tree_path(&run.graph, at);
         let trace_position = self.position_of(run, &path);
-        let traces = self.traces(run, root, &path, None, None, true)?;
+        let lifted = self.lift(run, root, &path)?;
+        let traces = self.traces(run, &lifted, None, None, true)?;
         Ok(HyperCounterexample {
             kind: HyperCounterexampleKind::Projected,
             instance: Self::instance_of(run.instance),

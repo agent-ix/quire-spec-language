@@ -110,6 +110,13 @@ pub enum AppliedReduction {
         /// The cycle proviso.
         proviso: Proviso,
     },
+    /// FR-174 (ADR-023 CS-5): a hyper item run over the quotient by the
+    /// swaps of its copies of one model, which the compiler found the clause
+    /// to be symmetric under and no request selected.
+    CopySwap {
+        /// The classes of swappable trace variables, in quantifier order.
+        classes: Vec<Vec<String>>,
+    },
 }
 
 /// The cycle proviso of a partial-order reduction (ADR-021 POR-8).
