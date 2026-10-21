@@ -5,10 +5,9 @@
 //! of `(E, N)`, and one without links to nothing. Every expected value is the
 //! TC row's, over TC-1046's fixture R.
 //!
-//! IR's v2 reader does not admit the `population` member key yet (IR-852), so
-//! the rows' "the reader admits the package and selects the population"
-//! clause is the one ignored test at the end; every other check reads the
-//! emitted wire.
+//! The rows' "the reader admits the package and selects the population"
+//! clause is the last test, which reads each package through IR's v2 reader;
+//! every other check reads the emitted wire.
 
 use super::reachability::{
     applications, lower_over, model_node, node_of, reachability_document, relationship, Lowered,
@@ -153,7 +152,7 @@ fn assert_population_node(wire: &Value, population: &Value, maximum: &str) {
 /// TC-1054 row 5: the member holds `population`,
 /// the id of the one anonymous `model_population` node, which holds the one
 /// `type` occurrence of the `[3]`.
-#[trace("TC-1054", "FR-365-AC-13")]
+#[trace("TC-1054", "FR-380-AC-4", "FR-365-AC-13")]
 #[test]
 fn a_bounded_walked_population_is_linked_as_one_anonymous_node() {
     let lowered = lower(&format!("{BOUND}\n{NO_LOOP}"));
@@ -187,7 +186,7 @@ fn a_bounded_walked_population_is_linked_as_one_anonymous_node() {
 }
 
 /// TC-1054 row 6: `[0]` is a valid maximum.
-#[trace("TC-1054")]
+#[trace("TC-1054", "FR-380-AC-4")]
 #[test]
 fn a_zero_bound_emits_the_node_with_max_zero() {
     let lowered = lower(&format!("bound OrdersBound on M::orders [0]\n{NO_LOOP}"));
@@ -402,7 +401,7 @@ fn selections(
 /// TC-1054 rows 5, 6, 8, 9 and 11, read through IR: the reader admits each
 /// package and its `reaches_population` selector names the node the member
 /// holds and that node's `Type` occurrence of least ordinal.
-#[trace("TC-1054")]
+#[trace("TC-1054", "FR-380-AC-4")]
 #[test]
 fn ir_reads_each_bounded_package_and_selects_its_population() {
     let function = "function f using v(p: Population<M::Order>[3]): Integer pure { 0 }";
