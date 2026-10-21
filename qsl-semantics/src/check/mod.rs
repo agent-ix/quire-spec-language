@@ -278,9 +278,9 @@ pub use field_refinement::RefinementObligation;
 pub use hyper_clause::check_hyper_clauses;
 pub use hyper_clause::{
     ArgumentRead, CheckedHyper, CheckedHyperClause, CheckedModelRelation, CheckedQuantifier,
-    CheckedStepPredicate, CopyGroup, HyperCause, HyperDeclaration, HyperDeclarations, HyperForm,
-    HyperIdentity, HyperTraceFamily, HyperUnsupported, ModelAlias, ObjectParameter,
-    OperationContractClaim, StepRead,
+    CheckedStepPredicate, CopyGenerator, CopyGroup, HyperCause, HyperDeclaration,
+    HyperDeclarations, HyperForm, HyperIdentity, HyperTraceFamily, HyperUnsupported, ModelAlias,
+    ObjectParameter, OperationContractClaim, StepRead,
 };
 pub use identity::{
     to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,

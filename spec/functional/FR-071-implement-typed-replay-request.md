@@ -79,6 +79,11 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
   another domain, refuses at decode. Every source reference of every entry
   is a `RawSourceRef` the byte provision SHALL cover, as the proved
   package's are.
+- The package reference and each `dependencies` entry SHALL carry an
+  optional `refinement_internals` member (QSpec FR-323), a JSON value kept
+  exactly as decoded. The decoder SHALL NOT validate it; an absent member is
+  the empty list, and its defects surface from the recompile (FR-098,
+  FR-147).
 - Each package-reference source entry SHALL carry FR-001's two source labels
   (authority and identity) and its digest (QSpec STD-150), so the executor
   (FR-098) recompiles a source under exactly the labels the proving run
@@ -162,6 +167,7 @@ call. The executor is [FR-098](FR-098-execute-a-replay-request.md).
 | FR-071-AC-10 | A request whose semantic profile selection names a profile outside the closed known set refuses at decode with `unknown_profile`/`unsupported-selection`, keeping the supplied selection and its role, and refuses so even when a byte-provision entry's bytes do not match its digest: the byte provision is not read first. | Test (TC-186) |
 | FR-071-AC-11 | A `sha256-jcs` byte-provision entry holding a repeated member name refuses `invalid_model_binding`/`malformed-declaration`; an entry intake refuses at one of its limits refuses `resource_exhausted`/`intake-limit-exceeded`, naming that limit and its bound; an allocation failure of 4096 requested bytes while reading or digesting an entry refuses `resource_exhausted`/`allocation-failed` carrying 4096; and an entry holding `18446744073709551616` at `/package/count` refuses `noncanonical_wire`/`inexact-integer` with `document_pointer` `/package/count`, and one holding `0.1000000000000000000001` at `/a~1b/0` refuses `noncanonical_wire`/`inexact-number` with `document_pointer` `/a~1b/0`. | Test (TC-186) |
 | FR-071-AC-12 | A request whose `object_environment` is `{"digest": <sha256-jcs digest>, "identity": {...}}` round-trips it exactly. Each of these refuses at decode with `invalid_runtime_input`, naming the member: a string for `object_environment` (`wrong-value-kind`); an object without `digest` (`missing-member` naming `object_environment.digest`); a third member (`unknown-member`); a `digest` in the `quire.source.bytes/v1` domain, and a `sha256-jcs` digest of 63 hex digits (each `invalid-value`). A request whose `object_environment` digest has no byte-provision entry constructs: the entry is read at admission, not at decode. | Test (TC-1042) |
+| FR-071-AC-13 | A request whose package reference carries `refinement_internals` `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` and whose `dependencies` entry carries its own value round-trips both exactly; a request with the member absent round-trips with it absent; the values `{}`, `null` and `7` decode and round-trip unchanged. | Test (TC-186) |
 
 ## Dependencies
 
