@@ -38,3 +38,16 @@ for FR-150's forms out of step. FND-002 is a definitional nit.
 FR-150 and TC-565 agree with each other: TC-565 step 2 and its expected
 results match AC-2 clause by clause. No AC id collides. TC-565's scope line
 (AC-1 to AC-2) is unchanged and correct.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-003 | low | The rewritten SYM-3 breaking-form clause says, in parentheses, that "a catalog step does not follow the identity order". That is wrong: FR-145 visits every set and bag in canonical-key order, whatever the step. What holds is that a catalog step's result does not depend on that order. The clause also still ends "since the traversal follows the identity-sorted encoding", which the parenthesis then contradicts. And "whose element type contains a reference" now comes after "or another order-sensitive traversal", so it reads as if it qualified only that branch. Suggested restatement: "a `fold` or `reduce` of a `Set` or `Bag` whose element type contains a reference into the population and whose step is outside FR-145's catalog, or another traversal of such a collection whose result depends on its identity-sorted visit order; a catalog step's result does not depend on that order". | spec/decisions/ADR-021-state-space-reduction.md:131 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c5e49e738: SYM-3 limits the breaking fold or reduce to a step outside FR-145's catalog, and says a catalog step is not a breaking form. The new wording has one defect, recorded as FND-003. |
+| FND-002 | fixed | c5e49e738: form 1 is now defined by catalog membership. A step outside the catalog is refused conservatively even when it is constant. The probe: `fold<Tally>(acc, p in self.peers: 1, identity: 0)` refuses `identity-observing-form` when annotated and `operator-ineligible` when not. |

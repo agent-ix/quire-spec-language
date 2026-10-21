@@ -103,3 +103,14 @@ The consumer test
 is still tagged `TC-565` without `FR-150-AC-2` and does not yet exercise the
 counting fold. That is a follow-up for the code lane and not a finding on
 this spec diff.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c5e49e738: FR-150-AC-2 and TC-565 step 2 use `type Tally = Integer;` and `fold<Tally>(acc, p in self.peers: acc + 1, identity: 0)`. A probe at the head checks it in an invariant and in a post clause, in both units. |
+| FND-002 | fixed | c5e49e738: ADR-021 §7.1 now says S3 refuses the unannotated fold `operator-ineligible` (FR-145), and that a counting fold with a catalog step checks in both units. |
+| FND-003 | fixed | c5e49e738: FR-150-AC-4 and TC-566 step 2 name `fold<Tally>(acc, x in s: acc + 1, identity: 0)` over `s`. The catalog needs `t` of type `A`, and the literal `1` is `Integer` = `Tally`; the source's element type does not enter it. The probe checks it over a bounded-integer field and over a `Set<Int[0, 3]>` parameter, in both units. The `acc + x` control refuses `operator-ineligible`. |
+| FND-004 | deferred | STD-244 (QSpec FR-381 vs FR-145, owner-level). FR-150 cites it under Remaining work and says FR-150's precedence holds until STD-244 settles it. |
+| FND-005 | fixed | c5e49e738: the FR-150 Use case, US-019-EX-2, FR-150-AC-3, TC-565's title and Description and TC-566 step 1 each say the refused fold has a step outside FR-145's catalog. |
+| FND-006 | fixed | c5e49e738: the statement now reads "SHALL be checked by the rules that apply without the annotation". |

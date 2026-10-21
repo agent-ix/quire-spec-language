@@ -32,3 +32,9 @@ has a clear agent, trigger and response. FR-150-AC-2 states three direct
 outcomes, each of which a test can fail: the annotated refusal, the
 unannotated refusal, and the counting fold that checks. Examined: the
 precedence bullet (lines 74-82) and FR-150-AC-2.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c5e49e738: the bullet is now a context sentence about FR-145, a When/otherwise statement with one SHALL per outcome, a separate SHALL for the catalog case, and a separate rationale sentence. |

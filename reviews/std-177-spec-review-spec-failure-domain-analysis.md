@@ -40,3 +40,9 @@ failure mode is missing. Code and FR-150 agree in each case below.
 - A Sequence source is outside form 1 and checks.
 - FR-145's typing-first order means a mistyped step is `type-mismatch`
   before either cause.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | c5e49e738: the precedence is now decided per fold from its source type ("When the source of such a fold or reduce contains a reference into an annotated population ... otherwise ... `operator-ineligible`"), and the reason is stated: a unit may read an annotated and an unannotated population. This matches `symmetric_population_in(source)`. |
