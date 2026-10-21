@@ -15,6 +15,7 @@ use std::collections::BTreeSet;
 
 use super::footprint::ProtocolLocation;
 use super::identity::ThreadPath;
+use super::ra::CarriedView;
 use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::encode::Enc;
 use crate::simulation::model::{Cell, ModelSimState};
@@ -139,6 +140,73 @@ pub(crate) fn buffer_location(thread: &ThreadPath) -> Location {
     Location::Protocol(ProtocolLocation::Buffer(thread.clone()))
 }
 
+/// The message a load or read-modify-write reads, named by its depth from
+/// the mo-last message (ADR-025 RA-2, FR-222): 0 for the mo-last message.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReadChoice {
+    /// The depth.
+    pub depth: u64,
+}
+
+/// One message a load or read-modify-write may read, and the observation its
+/// contracts evaluate over when it reads it (FR-229 "State and
+/// observation").
+#[derive(Clone, Debug)]
+pub struct Read<'s> {
+    /// The message read.
+    pub choice: ReadChoice,
+    /// The model state with the shared location holding that message's
+    /// value.
+    pub observed: Cow<'s, ModelSimState>,
+}
+
+/// A carried memory view as the state key writes it.
+#[derive(Clone, Debug)]
+pub struct CarriedKey(pub(crate) Enc);
+
+/// The message or slot an access chose (QSpec FR-426 `memory_choice`):
+/// `{"read_depth":"<decimal>"}`, `{"slot_depth":"<decimal>"}` or both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MemoryChoice {
+    /// The depth of the message read.
+    pub read_depth: Option<u64>,
+    /// The depth of the slot a message was inserted at.
+    pub slot_depth: Option<u64>,
+}
+
+impl MemoryChoice {
+    pub(crate) fn enc(&self) -> Enc {
+        let mut members = Vec::new();
+        if let Some(depth) = self.read_depth {
+            members.push(("read_depth", Enc::text(depth.to_string())));
+        }
+        if let Some(depth) = self.slot_depth {
+            members.push(("slot_depth", Enc::text(depth.to_string())));
+        }
+        Enc::Object(members)
+    }
+}
+
+/// One way a memory model writes an attempt's delta (SE-1 c): the choice
+/// that names it, and where the delta went.
+#[derive(Clone, Debug)]
+pub struct Chosen<C> {
+    /// The message or slot chosen; `None` when the model chooses none.
+    pub choice: Option<MemoryChoice>,
+    /// Where the delta went.
+    pub written: Written<C>,
+}
+
+impl<C> Chosen<C> {
+    /// The one way a model that chooses nothing writes `written`.
+    pub fn only(written: Written<C>) -> Vec<Self> {
+        vec![Self {
+            choice: None,
+            written,
+        }]
+    }
+}
+
 /// Where an attempt's delta went (SE-1 c).
 #[derive(Clone, Debug)]
 pub enum Written<C> {
@@ -175,17 +243,66 @@ pub trait MemoryModel {
         model: &'s ModelSimState,
     ) -> Cow<'s, ModelSimState>;
 
-    /// (c) and (e) Where `thread`'s attempt `access` from `pre` to `post`
-    /// writes its delta, `post` computed over the thread's observation; or
-    /// that the gate disables it, or a memory bound cuts it.
+    /// (b) The messages `thread` may read at `shared`, each with the
+    /// observation a load or read-modify-write of `shared` evaluates over;
+    /// empty when the model gives the thread one observation of every
+    /// location ([`MemoryModel::observe`]).
+    fn reads<'s>(
+        &self,
+        _component: &Self::Component,
+        _thread: &ThreadPath,
+        _model: &'s ModelSimState,
+        _shared: &SharedCell<'_>,
+    ) -> Vec<Read<'s>> {
+        Vec::new()
+    }
+
+    /// (c) and (e) Each way `thread`'s attempt `access`, having read `read`,
+    /// from `pre` to `post` writes its delta, `post` computed over the
+    /// thread's observation; or that the gate disables it, or a memory bound
+    /// cuts it. A choice the model prunes has no entry.
     fn write(
         &self,
         component: &Self::Component,
         thread: &ThreadPath,
         access: &Access<'_>,
+        read: Option<ReadChoice>,
         pre: &ModelSimState,
         post: ModelSimState,
-    ) -> Written<Self::Component>;
+    ) -> Vec<Chosen<Self::Component>>;
+
+    /// (e) The component after `thread`'s fence of `ordering` (SE-5); `None`
+    /// when the model disables it.
+    fn fence(
+        &self,
+        component: &Self::Component,
+        _thread: &ThreadPath,
+        _ordering: AccessOrdering,
+    ) -> Option<Self::Component> {
+        Some(component.clone())
+    }
+
+    /// The memory view a `send` by `thread` carries with its entry (SE-1
+    /// channel effect).
+    fn send(&self, _component: &Self::Component, _thread: &ThreadPath) -> Option<CarriedView> {
+        None
+    }
+
+    /// The component after `thread`'s `receive` of an entry that carried
+    /// `carried`.
+    fn receive(
+        &self,
+        component: &Self::Component,
+        _thread: &ThreadPath,
+        _carried: &CarriedView,
+    ) -> Self::Component {
+        component.clone()
+    }
+
+    /// `carried` in the state key, read against `component`.
+    fn carried_key(&self, _component: &Self::Component, _carried: &CarriedView) -> CarriedKey {
+        CarriedKey(Enc::Null)
+    }
 
     /// (d) The internal steps enabled at (`component`, `model`), each with
     /// its identity and effect.
@@ -199,13 +316,16 @@ pub trait MemoryModel {
     fn gate(&self, component: &Self::Component, thread: &ThreadPath, step: GatedStep) -> bool;
 
     /// (f) The component after `parent` forks `branches` of a `parallel`
-    /// whose resolved model is `model`.
+    /// whose resolved model is `model`, over the shared locations `shared`
+    /// at the model state `state`.
     fn split(
         &self,
         component: &Self::Component,
         parent: &ThreadPath,
         branches: &[ThreadPath],
         model: MemoryModelName,
+        shared: &[SharedCell<'_>],
+        state: &ModelSimState,
     ) -> Self::Component;
 
     /// (f) The component after `parent` joins `branches`.
@@ -237,6 +357,7 @@ pub trait MemoryModel {
         component: &Self::Component,
         thread: &ThreadPath,
         step: FootprintStep<'_>,
+        shared: &BTreeSet<Location>,
         footprint: &mut Footprint,
     ) -> bool;
 }
@@ -285,10 +406,11 @@ impl MemoryModel for Sc {
         _component: &ScComponent,
         _thread: &ThreadPath,
         _access: &Access<'_>,
+        _read: Option<ReadChoice>,
         _pre: &ModelSimState,
         post: ModelSimState,
-    ) -> Written<ScComponent> {
-        Written::Applied(post, ScComponent)
+    ) -> Vec<Chosen<ScComponent>> {
+        Chosen::only(Written::Applied(post, ScComponent))
     }
 
     /// None.
@@ -312,6 +434,8 @@ impl MemoryModel for Sc {
         _parent: &ThreadPath,
         _branches: &[ThreadPath],
         _model: MemoryModelName,
+        _shared: &[SharedCell<'_>],
+        _state: &ModelSimState,
     ) -> ScComponent {
         ScComponent
     }
@@ -346,6 +470,7 @@ impl MemoryModel for Sc {
         _component: &ScComponent,
         _thread: &ThreadPath,
         step: FootprintStep<'_>,
+        _shared: &BTreeSet<Location>,
         _footprint: &mut Footprint,
     ) -> bool {
         !matches!(step, FootprintStep::Memory { .. })

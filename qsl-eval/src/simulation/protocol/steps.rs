@@ -14,7 +14,8 @@
 //! counter of a thread that is no longer running leaves it (PS-6). The key
 //! is then a function of what the protocol can still do (PS-8).
 
-use std::collections::BTreeSet;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{
     AccessClass, CheckedBody, CheckedJoinPolicy, CheckedOutstanding, ControlStep, ProtocolNodeId,
@@ -23,7 +24,7 @@ use quire_exact::Value;
 
 use super::access::InstanceAccess;
 use super::identity::{BlockedThread, ProtocolTransition, StepKind, ThreadPath, WaitCause};
-use super::memory::{Access, GatedStep, MemoryModel, SharedCell, Written};
+use super::memory::{Access, GatedStep, MemoryModel, Read, ReadChoice, SharedCell, Written};
 use super::program::{Cursor, Join, Rest};
 use super::settle::Settled;
 use super::{
@@ -31,10 +32,19 @@ use super::{
     ProtocolState, ProtocolSystem, Thread,
 };
 use crate::simulation::expansion::{Expansion, ExpansionStop};
+use crate::simulation::footprint::Location;
 use crate::simulation::model::encode::{reference_enc, value_enc, Enc};
 use crate::simulation::model::{
     Applied, Budget, FirstApplication, ModelFinding, ModelSimState, OperationRef, Verdict,
 };
+
+/// One application of an attempt, the observation it was applied over and
+/// the message it read there (FR-229).
+struct Observation<'s> {
+    applied: Applied,
+    observed: Cow<'s, ModelSimState>,
+    read: Option<ReadChoice>,
+}
 
 /// One successor of a protocol state.
 pub(super) type Successor<M> = (ProtocolTransition, ProtocolState<M>);
@@ -411,6 +421,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let text = self.program.text(node)?.to_owned();
         let ordering = self.program.fence_ordering(node)?;
         let mut next = state.clone();
+        // SE-5: the memory model's fence rule; a fence it disables is no
+        // step.
+        let Some(memory) = self.memory.fence(&state.memory, path, ordering) else {
+            return Ok(());
+        };
+        next.memory = memory;
         if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
             self.normalize(&mut next, ordinal)?;
             gathered.successors.push((
@@ -533,7 +549,20 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .get(&node)
             .copied()
             .ok_or_else(|| ProtocolRefusal::fault("a-forked-parallel-has-a-model"))?;
-        next.memory = self.memory.split(&next.memory, path, &children, model);
+        let cells: Vec<SharedCell<'_>> = self
+            .weak
+            .shared()
+            .iter()
+            .filter_map(|location| {
+                Some(SharedCell {
+                    location,
+                    cell: self.weak.cell(location)?,
+                })
+            })
+            .collect();
+        next.memory = self
+            .memory
+            .split(&next.memory, path, &children, model, &cells, &next.model);
         self.normalize(&mut next, ordinal)?;
         gathered
             .successors
@@ -733,19 +762,61 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .ok_or_else(|| ProtocolRefusal::fault("an-attempt-node-is-an-attempt"))?;
         let text = self.program.text(node)?.to_owned();
         let operation = self.operation(node)?;
-        let observed = self.memory.observe(&state.memory, path, &state.model);
-        let applications = self.model.apply_operation(
-            &observed,
-            &operation,
-            &|clause| attempt.contracts.contains(&clause),
-            &mut gathered.budget,
-        )?;
+        let select = |clause| attempt.contracts.contains(&clause);
+        let reading = self.reading(state, path, node);
+        let probe = self.memory.observe(&state.memory, path, &state.model);
+        let applications =
+            self.model
+                .apply_operation(&probe, &operation, &select, &mut gathered.budget)?;
         gathered.findings.extend(applications.findings);
+        let mut observations: Vec<Observation<'_>> = applications
+            .successors
+            .into_iter()
+            .filter(|applied| {
+                self.loaded(node, applied)
+                    .is_none_or(|at| !reading.contains_key(at))
+            })
+            .map(|applied| Observation {
+                applied,
+                observed: probe.clone(),
+                read: None,
+            })
+            .collect();
+        // FR-229: a load or read-modify-write of a location the memory
+        // model gives several messages is enabled by its precondition over
+        // each message separately.
+        for (location, reads) in &reading {
+            for read in reads {
+                let applications = self.model.apply_operation(
+                    &read.observed,
+                    &operation,
+                    &select,
+                    &mut gathered.budget,
+                )?;
+                gathered.findings.extend(applications.findings);
+                observations.extend(
+                    applications
+                        .successors
+                        .into_iter()
+                        .filter(|applied| self.loaded(node, applied) == Some(location))
+                        .map(|applied| Observation {
+                            applied,
+                            observed: read.observed.clone(),
+                            read: Some(read.choice),
+                        }),
+                );
+            }
+        }
         let instance = state
             .instances
             .get(&ordinal)
             .ok_or_else(|| ProtocolRefusal::fault("a-stepped-instance-is-live"))?;
-        for applied in applications.successors {
+        for Observation {
+            applied,
+            observed,
+            read,
+        } in observations
+        {
             let bound = attempt
                 .binds
                 .and(applied.result.as_ref())
@@ -788,18 +859,24 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 })
             });
             let access = self.access(node, &applied, &observed)?;
-            let identity = ProtocolTransition::attempt(
-                path.clone(),
-                text.clone(),
-                applied.transition,
-                reference_enc(&applied.receiver),
-                applied.arguments.iter().map(value_enc).collect(),
+            let written = self.memory.write(
+                &state.memory,
+                path,
+                &access,
+                read,
+                &state.model,
+                applied.state.clone(),
             );
-            let (model, memory) =
-                match self
-                    .memory
-                    .write(&state.memory, path, &access, &state.model, applied.state)
-                {
+            for chosen in written {
+                let identity = ProtocolTransition::attempt(
+                    path.clone(),
+                    text.clone(),
+                    applied.transition.clone(),
+                    reference_enc(&applied.receiver),
+                    applied.arguments.iter().map(value_enc).collect(),
+                )
+                .choosing(chosen.choice);
+                let (model, memory) = match chosen.written {
                     Written::Applied(model, memory) => (model, memory),
                     Written::Disabled => continue,
                     Written::Cut => {
@@ -807,20 +884,74 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         continue;
                     }
                 };
-            let mut next = state.clone();
-            next.model = model;
-            next.memory = memory;
-            if let Some(bound) = bound {
-                Self::bind(Self::instance_mut(&mut next, ordinal)?, node, path, bound);
-            }
-            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
-                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
-            {
-                self.normalize(&mut next, ordinal)?;
-                gathered.successors.push((identity, next));
+                let mut next = state.clone();
+                next.model = model;
+                next.memory = memory;
+                if let Some(bound) = bound.clone() {
+                    Self::bind(Self::instance_mut(&mut next, ordinal)?, node, path, bound);
+                }
+                if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                    && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+                {
+                    self.normalize(&mut next, ordinal)?;
+                    gathered.successors.push((identity, next));
+                }
             }
         }
         Ok(())
+    }
+
+    /// The shared locations the attempt `node` loads or reads-modifies-writes
+    /// in a weak `parallel`, each with the messages the memory model lets
+    /// `path` read there (FR-229); empty for a location the model gives one
+    /// observation of.
+    fn reading<'s>(
+        &self,
+        state: &'s ProtocolState<M>,
+        path: &ThreadPath,
+        node: ProtocolNodeId,
+    ) -> BTreeMap<&Location, Vec<Read<'s>>> {
+        let mut reading = BTreeMap::new();
+        let Some(weak) = self.weak.of(node) else {
+            return reading;
+        };
+        for instance in &weak.instances {
+            let InstanceAccess::Access {
+                class: AccessClass::Load | AccessClass::Rmw,
+                location: Some(location),
+            } = &instance.access
+            else {
+                continue;
+            };
+            let Some(cell) = self.weak.cell(location) else {
+                continue;
+            };
+            if reading.contains_key(location) {
+                continue;
+            }
+            let reads = self.memory.reads(
+                &state.memory,
+                path,
+                &state.model,
+                &SharedCell { location, cell },
+            );
+            if !reads.is_empty() {
+                reading.insert(location, reads);
+            }
+        }
+        reading
+    }
+
+    /// The shared location the application `applied` of the attempt `node`
+    /// loads or reads-modifies-writes (FR-220).
+    fn loaded(&self, node: ProtocolNodeId, applied: &Applied) -> Option<&Location> {
+        match self.weak.of(node)?.instance(&applied.transition)? {
+            InstanceAccess::Access {
+                class: AccessClass::Load | AccessClass::Rmw,
+                location: Some(location),
+            } => Some(location),
+            InstanceAccess::Access { .. } | InstanceAccess::Shape { .. } => None,
+        }
     }
 
     /// FR-220: what the application `applied` of the attempt `node` is, as

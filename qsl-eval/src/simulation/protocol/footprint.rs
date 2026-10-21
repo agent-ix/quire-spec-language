@@ -60,7 +60,7 @@
 //! [`MemoryModel::footprint`]: `sc` names none and has no memory step;
 //! `tso` names each thread's store buffer, `buf(b)`
 //! ([`ProtocolLocation::Buffer`]), beside the model locations that stand for
-//! `mem(ℓ)`. An attempt's class is EN-1's static one (FR-220): a
+//! `mem(ℓ)`; `ra` names `msgs(ℓ)`, `view(b)`, `S` and the SC event graph. An attempt's class is EN-1's static one (FR-220): a
 //! read-modify-write that applies as a load keeps the read-modify-write's
 //! larger footprint.
 
@@ -98,7 +98,7 @@ pub struct ParallelInstance {
 }
 
 /// A location of a protocol state (ADR-027 §5).
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ProtocolLocation {
     /// `ctl(t)`: thread `t`'s rest point and disposition.
     Control(ThreadPath),
@@ -127,6 +127,16 @@ pub enum ProtocolLocation {
     /// `buf(b)`: thread `b`'s store buffer in the memory component
     /// (ADR-025 MR-1).
     Buffer(ThreadPath),
+    /// `msgs(ℓ)`: the message sequence of shared location `ℓ` in the memory
+    /// component (ADR-025 MR-1, `ra`).
+    Messages(Box<Location>),
+    /// `view(b)`: thread `b`'s three views in the memory component
+    /// (ADR-025 MR-1, `ra`).
+    View(ThreadPath),
+    /// `S`: the global `seq_cst` fence view (ADR-025 RA-1).
+    ScView,
+    /// The SC event graph (ADR-025 PSC-1).
+    ScGraph,
     /// `queue(h)`: every queue of channel `h` of one protocol instance.
     Queue {
         /// The protocol instance's ordinal.
@@ -196,6 +206,10 @@ impl ProtocolLocation {
             | (Self::Branch { .. }, Self::Branch { .. })
             | (Self::Binder { .. }, Self::Binder { .. })
             | (Self::Buffer(_), Self::Buffer(_))
+            | (Self::Messages(_), Self::Messages(_))
+            | (Self::View(_), Self::View(_))
+            | (Self::ScView, Self::ScView)
+            | (Self::ScGraph, Self::ScGraph)
             | (Self::Queue { .. }, Self::Queue { .. })
             | (Self::Registrations { .. }, Self::Registrations { .. })
             | (Self::Registration { .. }, Self::Registration { .. }) => self == other,
@@ -206,6 +220,10 @@ impl ProtocolLocation {
                 | Self::Branch { .. }
                 | Self::Binder { .. }
                 | Self::Buffer(_)
+                | Self::Messages(_)
+                | Self::View(_)
+                | Self::ScView
+                | Self::ScGraph
                 | Self::Queue { .. }
                 | Self::Registrations { .. }
                 | Self::Registration { .. },
@@ -415,6 +433,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 &state.memory,
                 &identity.thread,
                 memory,
+                self.weak.shared(),
                 &mut built.footprint,
             ) {
                 return Err(unknown());
@@ -465,8 +484,13 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         .into())
                     }
                 };
-                self.memory
-                    .footprint(&state.memory, path, access, &mut built.footprint);
+                self.memory.footprint(
+                    &state.memory,
+                    path,
+                    access,
+                    self.weak.shared(),
+                    &mut built.footprint,
+                );
                 self.binders_read(&mut built, path, node, Read::Enabling)?;
                 if attempt.binds.is_some() {
                     built.write(self.binder(node, path)?);
@@ -515,11 +539,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 }
                 built.write(self.binder(node, path)?);
                 self.folded(&mut built, instance, path, node)?;
-                if step.kind() == StepKind::Send {
+                if matches!(step.kind(), StepKind::Send | StepKind::Receive) {
+                    let gated = if step.kind() == StepKind::Send {
+                        GatedStep::Send
+                    } else {
+                        GatedStep::Receive
+                    };
                     self.memory.footprint(
                         &state.memory,
                         path,
-                        FootprintStep::Gated(GatedStep::Send),
+                        FootprintStep::Gated(gated),
+                        self.weak.shared(),
                         &mut built.footprint,
                     );
                 }
@@ -544,6 +574,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Fork),
+                    self.weak.shared(),
                     &mut built.footprint,
                 );
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
@@ -582,6 +613,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Join),
+                    self.weak.shared(),
                     &mut built.footprint,
                 );
                 let join = self.program.joins.get(&node).ok_or_else(unknown)?;
@@ -619,6 +651,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     &state.memory,
                     path,
                     FootprintStep::Gated(GatedStep::Fence(ordering)),
+                    self.weak.shared(),
                     &mut built.footprint,
                 );
             }
@@ -785,6 +818,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         ordering: None,
                         shared: None,
                     },
+                    self.weak.shared(),
                     &mut built.footprint,
                 );
                 built.enabling(protocol(ProtocolLocation::Registrations {

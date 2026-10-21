@@ -14,12 +14,13 @@ use qsl_eval::simulation::model::{
     ExpansionLimits, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    binder_root, explore_protocol, Access, BlockedThread, Disposition, FootprintStep, GatedStep,
-    MemoryModel, MemoryStep, ProtocolRefusal, ProtocolState, ProtocolSystem, ProtocolTransition,
-    RestKind, RestPoint, Sc, ScComponent, SendOutcome, StepKind, ThreadPath, WaitCause, Written,
+    binder_root, explore_protocol, Access, BlockedThread, Chosen, Disposition, FootprintStep,
+    GatedStep, MemoryModel, MemoryStep, ProtocolRefusal, ProtocolState, ProtocolSystem,
+    ProtocolTransition, ReadChoice, RestKind, RestPoint, Sc, ScComponent, SendOutcome, SharedCell,
+    StepKind, ThreadPath, WaitCause, Written,
 };
 use qsl_eval::simulation::{
-    Footprint, Limits, NotSimulated, Outcome, SubjectSystem, TransitionSystem,
+    Footprint, Limits, Location, NotSimulated, Outcome, SubjectSystem, TransitionSystem,
 };
 use qsl_foundation::bound::DomainKey;
 use qsl_foundation::diagnostic::Code;
@@ -1330,10 +1331,11 @@ impl MemoryModel for Interleaving {
         _: &Nothing,
         _: &ThreadPath,
         _: &Access<'_>,
+        _: Option<ReadChoice>,
         _: &ModelSimState,
         post: ModelSimState,
-    ) -> Written<Nothing> {
-        Written::Applied(post, Nothing)
+    ) -> Vec<Chosen<Nothing>> {
+        Chosen::only(Written::Applied(post, Nothing))
     }
 
     fn internal_steps(&self, _: &Nothing, _: &ModelSimState) -> Vec<MemoryStep<Nothing>> {
@@ -1344,7 +1346,15 @@ impl MemoryModel for Interleaving {
         true
     }
 
-    fn split(&self, _: &Nothing, _: &ThreadPath, _: &[ThreadPath], _: MemoryModelName) -> Nothing {
+    fn split(
+        &self,
+        _: &Nothing,
+        _: &ThreadPath,
+        _: &[ThreadPath],
+        _: MemoryModelName,
+        _: &[SharedCell<'_>],
+        _: &ModelSimState,
+    ) -> Nothing {
         Nothing
     }
 
@@ -1365,6 +1375,7 @@ impl MemoryModel for Interleaving {
         _: &Nothing,
         _: &ThreadPath,
         step: FootprintStep<'_>,
+        _: &BTreeSet<Location>,
         _: &mut Footprint,
     ) -> bool {
         !matches!(step, FootprintStep::Memory { .. })

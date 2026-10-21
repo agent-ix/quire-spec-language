@@ -603,6 +603,8 @@ pub fn replay_protocol_trace(
                     .settle(&ProtocolSystem::new(model, &protocol_subject, Sc).map_err(built)?)?,
                 SubjectMemory::Tso(tso) => replayed
                     .settle(&ProtocolSystem::new(model, &protocol_subject, tso).map_err(built)?)?,
+                SubjectMemory::Ra(ra) => replayed
+                    .settle(&ProtocolSystem::new(model, &protocol_subject, ra).map_err(built)?)?,
             };
             Ok((settlement, Vec::new()))
         },

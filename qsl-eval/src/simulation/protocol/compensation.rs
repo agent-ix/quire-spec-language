@@ -405,32 +405,35 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             // so no resolved memory model governs it (ADR-025 MM-3): its
             // attempt is local, as an attempt outside every weak `parallel`
             // is (FR-220).
-            let (model, memory) = match self.memory.write(
+            for chosen in self.memory.write(
                 &state.memory,
                 path,
                 &Access::local(),
+                None,
                 &state.model,
-                applied.state,
+                applied.state.clone(),
             ) {
-                Written::Applied(model, memory) => (model, memory),
-                Written::Disabled => continue,
-                Written::Cut => {
-                    gathered.cut = true;
-                    continue;
+                let (model, memory) = match chosen.written {
+                    Written::Applied(model, memory) => (model, memory),
+                    Written::Disabled => continue,
+                    Written::Cut => {
+                        gathered.cut = true;
+                        continue;
+                    }
+                };
+                let mut next = state.clone();
+                next.model = model;
+                next.memory = memory;
+                let target = Self::instance_mut(&mut next, ordinal)?;
+                if let Some(thread) = target.threads.get_mut(path) {
+                    thread.rest = Rest::Retry(index);
                 }
-            };
-            let mut next = state.clone();
-            next.model = model;
-            next.memory = memory;
-            let target = Self::instance_mut(&mut next, ordinal)?;
-            if let Some(thread) = target.threads.get_mut(path) {
-                thread.rest = Rest::Retry(index);
+                if let Some(entry) = target.compensating.get_mut(path) {
+                    entry.count = entry.count.saturating_add(1);
+                }
+                self.normalize(&mut next, ordinal)?;
+                gathered.successors.push((identity.clone(), next));
             }
-            if let Some(entry) = target.compensating.get_mut(path) {
-                entry.count = entry.count.saturating_add(1);
-            }
-            self.normalize(&mut next, ordinal)?;
-            gathered.successors.push((identity, next));
         }
         Ok(())
     }

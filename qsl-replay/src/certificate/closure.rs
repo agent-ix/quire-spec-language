@@ -299,6 +299,24 @@ pub fn check_protocol_closure(
                 cancel,
             )
         }
+        SubjectMemory::Ra(ra) => {
+            let bound = MemoryBound {
+                member: MemoryBoundMember::MaxMessages,
+                value: ra.max_messages(),
+            };
+            let system =
+                ProtocolSystem::new(model, subject, ra).map_err(ClosureRefusal::Protocol)?;
+            check_system(
+                &system,
+                system.model(),
+                Some(bound),
+                &subject.model,
+                item,
+                certificate,
+                limits,
+                cancel,
+            )
+        }
     }
 }
 
