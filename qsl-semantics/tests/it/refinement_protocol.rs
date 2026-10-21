@@ -8,8 +8,7 @@
 //! Not covered here, for want of the checker they need: the engine's
 //! decision of the steps and the liveness settlement (FR-148, FR-147-AC-3),
 //! the requirement record and the node identity (S4, FR-147-AC-1 and AC-9),
-//! the supplied-library value (FR-147-AC-10), and the `timeout`, `cattempt`,
-//! `cend` and `activate` classes of AC-8.
+//! and the supplied-library value (FR-147-AC-10).
 
 use ix_trace_rs::trace;
 use qsl_foundation::Code;
@@ -825,11 +824,11 @@ fn full() -> String {
     .to_owned()
 }
 
-/// Part of FR-147-AC-8 (TC-552 step 8; tagged TC-only while `cattempt` and
-/// `cend` have no fixture): each class spells and resolves over `Full`
-/// and makes exactly its own class internal, in the byte order of the
-/// alias-free spellings.
-#[trace("TC-552")]
+/// FR-147-AC-8 (TC-552 step 8; the `timeout`, `cattempt`, `cend` and
+/// `activate` classes are `the_timeout_cattempt_cend_and_activate_classes_resolve`):
+/// each class spells and resolves over `Full` and makes exactly its own class
+/// internal, in the byte order of the alias-free spellings.
+#[trace("TC-552", "FR-147-AC-8")]
 #[test]
 fn each_class_spells_and_resolves_over_a_protocol_that_has_it() {
     let unit = format!("{}{}", full(), refinement("Spec", "Full"));
@@ -874,15 +873,23 @@ fn each_class_spells_and_resolves_over_a_protocol_that_has_it() {
     }
 }
 
-/// The protocol `Rich`: an `await` (the `timeout` class) and an `on each`
-/// trigger (the `activate` class), over the counter model. A compensation
-/// template needs a record type for its attempts, which the counter models
-/// do not declare, so `cattempt` and `cend` have no fixture here.
+/// The protocol `Rich`: an `await` (the `timeout` class), an `on each`
+/// trigger (the `activate` class) and a compensation template `Undo` (the
+/// `cattempt` and `cend` classes) over the counter model, whose record
+/// `Try` is the template's attempt type.
 fn rich() -> String {
     "protocol Rich using v over (c: Spec::Counter) on each (trg0: Boolean) {\n\
      role w on Spec::Counter;\n\
+     compensate Undo for Main::Applied as (failure: Boolean) by w \
+     on Spec::Counter::inc using v clock \"ticks\" {\n\
+     activate first (trigger: Boolean) when { true } { }\n\
+     within [0,10]; attempts 2 of Spec::Try;\n\
+     retry (current_attempt: Spec::Try, prior: Spec::Try) { true };\n\
+     commit Main::Committed; recover (recovery: Boolean) { true }; }\n\
      run sequence Main {\n\
      attempt Tried by w on Spec::Counter::inc contracts [] as (tried: Boolean) { true };\n\
+     effect Applied of Tried as (applied: Boolean) { true };\n\
+     commit Committed by w as (committed: Boolean) { true };\n\
      await Wait after Tried using v clock \"wall\" within [0,1] \
      match event Seen by w as (seen: Boolean) { true }; \
      then sequence Then { } timeout sequence Late { }\n\
@@ -892,17 +899,36 @@ fn rich() -> String {
     .to_owned()
 }
 
-/// Part of FR-147-AC-8 (TC-552 step 8): the `timeout` class of an `await`
-/// node and the `activate` class of an `on each` trigger spell and resolve;
-/// an `on origin` protocol has no trigger.
-#[trace("TC-552")]
+/// FR-147-AC-8 (TC-552 step 8): the `timeout` class of an `await` node, the
+/// `cattempt` and `cend` classes of a compensation template and the
+/// `activate` class of an `on each` trigger spell and resolve; an `on origin`
+/// protocol has no trigger. With `Full`'s test, every class of the criterion.
+#[trace("TC-552", "FR-147-AC-8")]
 #[test]
-fn the_timeout_and_activate_classes_resolve() {
+fn the_timeout_cattempt_cend_and_activate_classes_resolve() {
     let unit = format!("{}{}", rich(), refinement("Spec", "Rich"));
-    let entries = ["Spec::Rich::Wait", "activate Spec::Rich"];
+    let entries = [
+        "Spec::Rich::Wait",
+        "activate Spec::Rich",
+        "Spec::Rich::Undo",
+        "cend Spec::Rich::Undo",
+    ];
     let graph = checked(&unit, internal(&entries));
     let resolved: Vec<&str> = spellings(the_refinement(&graph));
-    assert_eq!(resolved, ["Rich::Wait", "activate Rich"]);
+    assert_eq!(
+        resolved,
+        [
+            "Rich::Undo",
+            "Rich::Wait",
+            "activate Rich",
+            "cend Rich::Undo"
+        ]
+    );
+    // `cend` names a compensation template only.
+    for entry in ["cend Spec::Rich::Wait", "cend Spec::Rich::Tried"] {
+        let found = refused(&unit, internal(&[entry]), RefinementSupport::BUILD);
+        assert_eq!(only(&found).code_and_cause(), MISSING, "{entry}");
+    }
     // An `on origin` protocol has no trigger to activate.
     let found = refused(
         &format!("{}{}", twice("Spec"), refinement("Spec", "Twice")),
