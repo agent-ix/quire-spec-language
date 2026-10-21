@@ -21,9 +21,7 @@ Use ADR-018 §6's ConfigVersion example unit.
 1. Compile the unit and read `ReachesTwo` back through the I2 reader.
 2. Resolve the returned triple in the recompiled package.
 3. Compile two structurally identical clause declarations and read both
-   triples; compile a clause with no `over` parameter (a clause such as
-   `eventually holds(true)` with no bound variable; waits on STD-186, since
-   S1 requires `over` today) and read it.
+   triples; compile `temporal T using inf clock "c" on origin { eventually holds(true) }`, a clause with no `over` parameter.
 4. Resolve a triple with an unknown NodeId, with a non-temporal node's
    NodeId, with role `invariant`, and with another ordinal.
 
@@ -34,6 +32,7 @@ Tag the tests `#[trace("TC-1079", "FR-337-AC-5")]`.
 - Step 1: the triple `[node, "claim", ordinal]` with `node` the emitted NodeId, and the `over` node equal to `c`'s parameter node.
 - Step 2: the clause is found.
 - Step 3: one node, two triples with distinct ordinals, each resolving to
-  its own declaration; the parameter-free clause returns its triple and no
-  `over` node, with no refusal.
+  its own declaration; the clause with no `over` parameter refuses
+  `invalid_syntax`/`unexpected-token` at the `clock` token and produces no node
+  (QSpec FR-370-AC-13).
 - Step 4: each lookup returns `clause-root-unresolved` at that triple.
