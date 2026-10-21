@@ -58,6 +58,7 @@ use super::super::refusal::{CheckCause, CheckRefusal, KeyFault, TemporalCause};
 use super::super::state_graph_claim::StatePredicate;
 use super::super::temporal_clause::{
     build_formula, checked_constraint, checked_operators, horizon, CheckedFormula, HorizonFault,
+    IntervalReading,
 };
 use super::model::{literal, site_location, Pass, Site};
 use super::{exact, exact_refusal, refusal, ProbabilisticCause};
@@ -738,11 +739,17 @@ impl Pass<'_, '_> {
             })?;
         let profile = TemporalProfile::from_identity(&selection.identity).ok_or_else(|| {
             refusal(ProbabilisticCause::NotTemporalProfile {
-                claim,
+                claim: claim.clone(),
                 profile: selection.identity.clone(),
                 span,
             })
         })?;
+        if profile == TemporalProfile::Timed {
+            return Err(refusal(ProbabilisticCause::TimedEventProfile {
+                claim,
+                span,
+            }));
+        }
         DefinitionRef::new(CLAUSE_PROFILE_AUTHORITY, profile.identity())
             .map_err(|_| broken("profile-identity-valid"))
     }
@@ -1084,8 +1091,12 @@ impl Pass<'_, '_> {
         refusals: &mut Vec<CheckRefusal>,
     ) -> Option<(CheckedTemporalFormula, u64)> {
         let mut causes: Vec<TemporalCause> = Vec::new();
-        let operators = match checked_operators(formula, true, &mut causes) {
-            Ok(operators) => operators,
+        let operators = match checked_operators(
+            formula,
+            &IntervalReading::Steps { bounded: true },
+            &mut causes,
+        ) {
+            Ok((operators, _)) => operators,
             Err(_) => {
                 refusals.push(broken("event-operators-checked"));
                 return None;
@@ -1130,7 +1141,7 @@ impl Pass<'_, '_> {
         }
         let intervals = operators
             .iter()
-            .map(|operator| (operator.node, operator.interval))
+            .map(|operator| (operator.node, operator.interval.clone()))
             .collect();
         let checked = match build_formula(formula, &intervals) {
             Ok(checked) => checked,

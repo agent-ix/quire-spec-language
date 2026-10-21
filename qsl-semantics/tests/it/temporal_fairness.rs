@@ -13,8 +13,8 @@ use qsl_foundation::diagnostic::{Code, StageFailure};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::Span;
 use qsl_semantics::check::{
-    check_clauses, Capability, CheckCause, CheckRefusal, CheckedTemporalClause, TemporalCause,
-    TemporalProfile, TemporalTraceFamily,
+    check_clauses, Capability, CheckCause, CheckRefusal, CheckedInterval, CheckedTemporalClause,
+    TemporalCause, TemporalProfile, TemporalTraceFamily,
 };
 use qsl_semantics::family::{ClaimExtent, FamilyContract};
 use quire_semantic_value::fairness::{
@@ -118,8 +118,10 @@ fn first(text: &str, needle: &str) -> Span {
     }
 }
 
-fn closed(lower: u64, upper: u64) -> Option<TemporalInterval> {
-    Some(TemporalInterval::new(lower, TemporalUpper::Finite(upper)).expect("a <= b"))
+fn closed(lower: u64, upper: u64) -> Option<CheckedInterval> {
+    Some(CheckedInterval::Steps(
+        TemporalInterval::new(lower, TemporalUpper::Finite(upper)).expect("a <= b"),
+    ))
 }
 
 fn only_constraint(clause: &CheckedTemporalClause) -> &FairnessConstraint {
@@ -294,7 +296,7 @@ fn intervals_nest_under_unbounded_operators_and_key_by_profile() {
     let intervals: Vec<_> = recovery
         .operators()
         .iter()
-        .map(|operator| operator.interval)
+        .map(|operator| operator.interval.clone())
         .collect();
     assert_eq!(intervals, [None, None, None, closed(0, 2)]);
 
@@ -302,11 +304,11 @@ fn intervals_nest_under_unbounded_operators_and_key_by_profile() {
     assert_eq!(
         open.operators()
             .iter()
-            .map(|op| op.interval)
+            .map(|op| op.interval.clone())
             .collect::<Vec<_>>(),
-        [Some(
+        [Some(CheckedInterval::Steps(
             TemporalInterval::new(3, TemporalUpper::Open).expect("a <= b")
-        )]
+        ))]
     );
 
     let (text, cause) = refused(EVENT, "eventually[3,*] holds(c.versionNumber = 2)");
