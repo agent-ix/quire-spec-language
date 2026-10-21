@@ -116,7 +116,7 @@ impl<'ast> Visit<'ast> for DefScanner {
         }
         let previous = self
             .current_impl_self
-            .replace(crate::impl_self_name(&node.self_ty));
+            .replace(qsl_string_edge::impl_self_name(&node.self_ty));
         syn::visit::visit_item_impl(self, node);
         self.current_impl_self = previous;
     }
