@@ -105,6 +105,7 @@ impl Case {
                 item: ModelCheckItem::DeadlockFreedom,
                 max_depth: None,
                 max_store_buffer: None,
+                max_live_instances: None,
                 limits: ModelCheckLimits::default(),
             },
             &Cancel::new(),
@@ -152,6 +153,7 @@ impl Case {
                 roles: self.subject(protocol).roles,
                 memory: self.subject(protocol).memory,
                 max_store_buffer: None,
+                max_live_instances: None,
             },
             &envelope_at(&unit, recorded_id, payload, node, occurrence),
             &NO_ATOMS,
@@ -174,6 +176,7 @@ impl Case {
                 subject: self.subject(protocol),
                 item: ModelCheckItem::DeadlockFreedom,
                 max_store_buffer: None,
+                max_live_instances: None,
             },
             &Cancel::new(),
             |payload| self.replay(protocol, payload.clone()),
@@ -993,11 +996,7 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
     let subject = case.subject("Fill");
     let system = sc_system(&subject);
     let reached = reachable(&system);
-    let class = |at: usize| {
-        system
-            .terminal_class(&reached[at].state, !reached[at].steps.is_empty())
-            .expect("classifies")
-    };
+    let class = |at: usize| crate::fill::class_of(&system, &reached[at].state);
     assert_eq!(class(6), TerminalClass::Intended);
     assert_eq!(class(2), TerminalClass::Deadlocked);
     let outcome = case.deadlock("Fill");
@@ -1259,6 +1258,7 @@ fn a_protocol_model_check_is_deterministic() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             max_store_buffer: None,
+            max_live_instances: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),
@@ -1678,6 +1678,7 @@ fn check_protocol_refuses_an_unstepped_construct() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             max_store_buffer: None,
+            max_live_instances: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),
@@ -1896,6 +1897,7 @@ fn a_replay_over_an_unbounded_protocol_subject_refuses_requires_bound() {
             item: ModelCheckItem::DeadlockFreedom,
             max_depth: None,
             max_store_buffer: None,
+            max_live_instances: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),

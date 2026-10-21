@@ -385,6 +385,7 @@ impl Exploration<'_, '_, '_> {
             automaton_states: 0,
             depth: graph.stats.depth,
             bound_limited: 0,
+            instance_limited: 0,
         };
         Ok(match &walk.deadlock {
             Some(DeadlockEvent::Violated(kind, at)) => ModelCheckOutcome::Violated {

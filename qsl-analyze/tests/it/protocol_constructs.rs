@@ -418,9 +418,7 @@ fn a_fence_moves_its_thread_and_changes_nothing_under_sc() {
             .iter()
             .filter(|state| {
                 state.steps.is_empty()
-                    && system
-                        .terminal_class(&state.state, false)
-                        .expect("classifies")
+                    && crate::fill::class_of(&system, &state.state)
                         == qsl_eval::simulation::model::TerminalClass::Deadlocked
             })
             .count();
