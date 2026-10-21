@@ -55,7 +55,8 @@ pub enum ModelCheckLimit {
 
 - `Stopped(ResourceExhausted, MaxWitnessSet)` or
   `Stopped(ResourceExhausted, MaxRelationTuples)`, each with the limit's
-  value and the count reached.
+  value and the count reached: the figure the budget counts with the member
+  or tuple that would pass it included, so the count is the value plus 1.
 
 ## Behavior
 
@@ -70,6 +71,9 @@ pub enum ModelCheckLimit {
   stop the run.
 - The engine SHALL count each budget with checked arithmetic.
 - The engine SHALL never continue a run past a reached budget.
+- A stopped record SHALL carry the count reached, one past the budget's
+  value, since the run stops at the first member or tuple that would pass it
+  and counts that one.
 - For hyper items, `max_states` SHALL count product states,
   `max_transitions` joint steps or moves, and `max_automaton_states`
   automaton states, as FR-176 and FR-178 state.
@@ -86,7 +90,7 @@ pub enum ModelCheckLimit {
 |----|----------|--------------|
 | FR-184-AC-1 | A request that sets neither member runs with `max_witness_set` 65,536 and `max_relation_tuples` 16,777,216, and its terminal record reports those values, marked as published defaults, for every run: a proved run, a refuted run and a stopped run alike. | Test (TC-609) |
 | FR-184-AC-2 | ADR-023 §8.2's leaky `Opaque` with `max_witness_set` 0 stops `Stopped(ResourceExhausted, MaxWitnessSet)` with value 0, count 1 and no counterexample; with `max_witness_set` 1 it completes with FR-177-AC-1's outcome. | Test (TC-609) |
-| FR-184-AC-3 | FR-179-AC-1's `Det` with `max_relation_tuples` 63 stops `Stopped(ResourceExhausted, MaxRelationTuples)` with value 63 and count 63; with 64 it completes `Holds`. | Test (TC-609) |
+| FR-184-AC-3 | FR-179-AC-1's `Det` with `max_relation_tuples` 63 stops `Stopped(ResourceExhausted, MaxRelationTuples)` with value 63 and count 64; with 64 it completes `Holds`. | Test (TC-609) |
 
 ## Dependencies
 

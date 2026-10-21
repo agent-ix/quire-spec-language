@@ -167,6 +167,13 @@ pub struct HyperTrace {
   (FR-178). `false` SHALL settle `reproduced-with-evaluated-witness`; any
   other value SHALL settle `inconclusive`, `Verdicts`.
 
+- An `Undefined` counterexample of an `align skip` clause holds its skipped
+  steps, unmarked, so its paths differ in total length, and its position
+  counts visible steps. The executor SHALL refuse it with
+  `unsupported_construct`/`not-yet-implemented` and SHALL NOT read it in
+  lockstep, which would pair a skipped step of one path with a visible step
+  of another.
+
 ### StepTuple (HP-1)
 
 - Each trace SHALL be a finite prefix from an initial state to the
@@ -196,6 +203,7 @@ pub struct HyperTrace {
 | FR-183-AC-4 | A hand-built `Lockstep` envelope over the leaky vault with `a` and `b` both from `(0, 0)` taking `step(0)`, loop entry 1, on which `l` stays equal, settles `inconclusive`, `Verdicts`; a hand-built `WitnessExhausted{position: 1}` envelope for `Opaque` over the secure vault, with `a`'s lasso `(0, 0) -step(0)-> (0, 0)`, recomputes a non-empty `X_1` and settles `inconclusive`, `Verdicts`; §8.2's leaky counterexample replayed with `max_witness_set` 0 returns the replay result stopped with `max_witness_set` and value 0. Replaying one envelope twice gives equal results. | Test (TC-608) |
 | FR-183-AC-5 | FR-179-AC-4's `Undefined` counterexample, with one path per execution variable, replays to `reproduced-with-evaluated-witness` with its `UndefinedEvaluation` as the value; the same payload with its cause changed to `precondition-false` settles `inconclusive`, `Verdicts`. | Test (TC-610) |
 | FR-183-AC-6 | FR-177-AC-5's `Undefined` counterexample, whose traces include the existential variable's path to the state where `μ_E` has no value, replays to `reproduced-with-evaluated-witness`; with the existential trace removed the reader refuses it as `invalid_runtime_input`/`invalid-value` before replay. | Test (TC-602) |
+| FR-183-AC-7 | FR-178-AC-9's `Undefined` counterexample, whose paths each hold a skipped `mix` and a visible `step(0)`, is refused with `unsupported_construct`/`not-yet-implemented` and settles no result; it is not replayed as a lockstep counterexample. | Test (TC-608) |
 
 ## Dependencies
 
