@@ -73,7 +73,7 @@ refusals is not tested.
 
 ## Dispositions
 
-| ID | Disposition |
-| --- | --- |
-| FND-001 | Fixed. `with_subject_proof_bounds` takes `&BTreeMap<DomainKey, FiniteBound>`, accepts only `DomainKey::Population` with a cardinality bound, writes `DomainKind::Population` itself, and refuses the rest (`NotAPopulation`, `KindMismatch`). `DuplicateSubjectDomain` is deleted. |
-| FND-002 | Fixed. The test asserts `invalid_runtime_input`/`invalid-value` for every new refusal. |
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 951a2d989 | `with_subject_proof_bounds` takes `&BTreeMap<DomainKey, FiniteBound>`. It accepts only `DomainKey::Population` with a cardinality bound, writes `DomainKind::Population` itself, and refuses the rest (`NotAPopulation`, `KindMismatch`). A bound with no kind and a `Variants` bound cannot be supplied. `DuplicateSubjectDomain` is deleted. The test covers both refusals. Verified by the reviewer in round 1 at 951a2d989. |
+| FND-002 | fixed 951a2d989 | The test asserts `invalid_runtime_input`/`invalid-value` for all four refusals (`NoModelSubject` twice, `NotAPopulation`, `KindMismatch`). Verified by the reviewer in round 1 at 951a2d989. |

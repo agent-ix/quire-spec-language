@@ -59,7 +59,7 @@ that do not state them.
 
 ## Dispositions
 
-| ID | Disposition |
-| --- | --- |
-| FND-001 | Fixed. `Requirements` carries `model_subject`, set from the checked temporal clause (`over` binding is a model reference), and true for hyper and state-graph claims. `temporal_proof_bounds()` is `Some` only for a model-subject temporal item and `with_subject_proof_bounds` refuses any other (`NoModelSubject`). The test uses a real model reference and a supplied-trace refusal. |
-| FND-002 | Fixed. FR-097-AC-10 and TC-438 step 5 own the API and its refusals; the test is tagged to them. |
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed 951a2d989 | `Requirements` now carries `model_subject`. The checked temporal clause sets it when its `over` binding is a model reference, and hyper, relation and state-graph claims always set it. `RequirementItem` copies it. `temporal_proof_bounds()` is `Some` only for a temporal item over a model subject, and `with_subject_proof_bounds` refuses any other item with `NoModelSubject`. The test now uses a model-reference clause (`fairness_item_path::graph_of`), and the record-subject item is a refusal case. This closes part (b) of SR-12200 FND-001, so that finding can be closed. Verified by the reviewer in round 1 at 951a2d989. |
+| FND-002 | fixed 951a2d989 | FR-097-AC-10 states the API, that QSL writes the population kind, that the bounds are independent of the extent, that they apply only over a model subject, and the refusals. TC-438 step 5 covers it, and the test is retagged `#[trace("TC-438", "FR-097-AC-10")]`. Verified by the reviewer in round 1 at 951a2d989. |
