@@ -42,11 +42,14 @@ How the tests bind to the criteria:
 | FND-003 | low | FR-193-AC-2's seed clause says "with the seed changed so a recomputed draw selects `1 ms`". The test accepts the first seed in 8..264 that gives any `SampledDisagreement::Step`. Assert that the disagreement is on the attempt step's `d` draw, recomputing `1 ms`, or a reordered-step disagreement passes. | qsl-analyze/tests/it/statistical_witness_replay.rs:136-153 |
 | FND-004 | low | FR-193-AC-3's first clause converts a `2 ms` measure witness ("`M <= 2 ms` on every activated behaviour"). The conversion is not blocked (only the FR-128 settlement is, STD-250), but only the event and undefined witnesses are converted in the test. Convert a `WitnessValue::Measure` witness of the `Two` claim and assert its prefix and `Formula` kind. Note on QSL-570 that FR-193-AC-3 and FR-189-AC-3 stay open (STD-250, STD-252) although tags bind to them, so the matrix count does not close them. | qsl-analyze/tests/it/statistical_witness_replay.rs:253-313 |
 
+
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+Round 1, by the reviewer, at 99cab573f (fix commit f4025397a). This replaces the rows the coder added in 99cab573f: each row below was checked against the fix commit.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | f4025397a: mirrored_initial_states_merge_into_two_orbits (m = 2, m = 4 without) |
-| FND-002 | fixed | f4025397a: Tally unit tests (exact rank, rounding up, censored rank, n = 0) |
-| FND-003 | fixed | f4025397a: seed test asserts the recomputed attempt draw is 1 ms |
-| FND-004 | fixed | f4025397a: Measure witness conversion test; QSL-570 comment states FR-193-AC-3 and FR-189-AC-3 stay open |
+| FND-001 | fixed | f4025397a. `mirrored_initial_states_merge_into_two_orbits` uses initial states `a` busy/`b` idle and the reverse, with an over binding. Under the declaration it runs `m = 2` at `α' = 1/20`, both tests on the same (least) initial state with bindings `a` and `b`. Without the declaration it runs `m = 4`. This exercises the `canonicalise` carry branch. |
+| FND-002 | fixed | f4025397a. `the_quantile_is_the_nearest_rank_with_censored_samples_last` covers: an exact rank (`q = 1/2`, `n = 4`, the 2nd value), rounding up (`0.3 · 4`), repeated values (the 19th of 20), the rank among censored samples (`Censored`), all censored, and `n = 0` giving `None`. I checked each oracle by hand. |
+| FND-003 | fixed | f4025397a. The seed search now requires the disagreeing step to be an attempt step whose recomputed `d` is 1 ms and whose recorded `d` is not. |
+| FND-004 | fixed | f4025397a. `a_measure_witness_converts_to_a_formula_counterexample` checks the `Measure` witness, the `Formula` kind, the prefix and the post digests. QSL-570 comment 84e413bd records that FR-193-AC-3 and FR-189-AC-3 stay open. |

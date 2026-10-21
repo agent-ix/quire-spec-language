@@ -46,12 +46,21 @@ What is sound:
 | FND-004 | low | `invariant()`'s reference branch cannot be reached. A support value must check as `NodeKind::Literal` or an integer `Coerce` (`probabilistic/model.rs` `literal`), and lowering refuses a `Value::Reference` literal (`UnbuiltLiteral`), so no support holds a reference and `invariant` always returns true. It also tests only a top-level `Value::Reference`, not a reference nested in an `Option` or `Composite`. STD-252's proposed AC replacement ("a random parameter of reference type with unequal weights") therefore cannot be built either. Correct STD-252 to say that RX-1's distribution condition cannot currently be distinguished, and keep or delete the branch by that ruling. | qsl-analyze/src/statistical/model.rs:211-226; qsl-semantics/src/check/probabilistic/model.rs:658-670; qsl-semantics/src/check/lowering.rs:4446-4453 |
 | FND-005 | low | FR-192's map is stated as exhaustive by row, and it has no row for the new `StatisticalRefusal::Symmetry`, which settles no record (`UnsettledRefusal::Symmetry`). This is the same gap SR-12245 FND-008(a) closed for `Admission` and `RequiresBound`. Add the row to STD-252 (or to the FR-192 amendment), so the spec states that a malformed symmetry declaration is the caller's `invalid_runtime_input` refusal. | qsl-replay/src/statistical/settle.rs:133-139, 232 |
 
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | The total `catalog_code` that fixes FND-001 sends `SampleStop::Cancelled`, `GeneratorMismatch` and `NotMarkov` to `runtime_invariant`/`established-invariant-broken`, which is an internal-failure code. A caller who cancels a replay, or a witness whose provenance names another sampler, is reported as a tool bug. The repo has `cancelled`/`caller-cancelled` (`qsl-eval/src/simulation/explore.rs:237`). FR-192 settles a generator mismatch as `unsupported_projection`/`unsupported-requested-capability` and `NotMarkov` as unsupported. `AutomatonStates` maps to `resource_exhausted`/`insufficient-next-charge`, the meter's cause, where FR-126 names the `max_automaton_states` limit. Map each stop to its own code and keep `runtime_invariant` for true invariant breaks. Add one assertion (a cancelled replay). | qsl-replay/src/statistical/witness.rs:160-185 |
+
 ## Dispositions
 
-| FND | Outcome | sha/reason |
+Round 1, by the reviewer, at 99cab573f (fix commit f4025397a). This replaces the rows the coder added in 99cab573f: each row below was checked against the fix commit.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | f4025397a: `catalog_code` is total; unknown test/initial and TotalAboveDrawRange are invalid-value, expansion stops keep their code; test added |
-| FND-002 | fixed | f4025397a: deviation recorded (SYM-2 form only; closure not needed for soundness) in `StatisticalRequest.symmetry` docs and FR-189 |
-| FND-003 | fixed | f4025397a: measures kept only for quantile claims |
-| FND-004 | fixed | f4025397a: `invariant` removed with its unreachable branch; STD-252 corrected |
-| FND-005 | fixed | f4025397a: FR-192 map row for Symmetry; FR-189 lists SymmetryRefusal |
+| FND-001 | fixed | f4025397a. `catalog_code` is total. `UnknownTest` and `UnknownInitial` give `invalid_runtime_input`/`invalid-value`, and `a_witness_the_subject_does_not_place_is_refused_with_a_catalog_code` asserts both. The mapping of the other stops is FND-006. |
+| FND-002 | fixed | f4025397a. FR-189 "Symmetry" now says EN-4 admits the declaration's SYM-2 form and does not check SYM-4's closure, because it merges only the pairs it was given. `StatisticalRequest.symmetry` docs match. |
+| FND-003 | fixed | f4025397a. `tally.measured` now runs only for `ClaimForm::Quantile`. |
+| FND-004 | fixed | f4025397a. `invariant()` was deleted, and the doc says invariance always holds today (per-operation weights, no reference literal in a support). The STD-252 correction comment is posted. |
+| FND-005 | fixed | f4025397a. FR-192 has a `Symmetry` refusal row (the caller's `invalid_runtime_input`/`invalid-value`, no terminal result). FR-189 lists `SymmetryRefusal`. |
