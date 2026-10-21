@@ -1412,7 +1412,11 @@ impl PackageDeclarations {
                     let checked = staged.into_value();
                     // ADR-012 §13.5: read this declaration's claims before
                     // `checked` is unpacked below.
-                    claims.extend(family::ValueFunctionFamily::requirements(&checked));
+                    claims.extend(
+                        family::ValueFunctionFamily::requirements(&checked)
+                            .into_iter()
+                            .map(|claim| claim.owned_by(&function.name)),
+                    );
                     // PR #303 review round 3, finding F1: advance the
                     // package's running node total from this admitted
                     // declaration's own final count, so the next
@@ -3763,6 +3767,13 @@ impl CheckedGraph {
     /// The first function named `name`, with its signature.
     fn function(&self, name: &str) -> Option<(&Signature, &CheckedFunction)> {
         self.functions.named(name)
+    }
+
+    /// Whether the package declares a function named `name`, including a
+    /// function `check` synthesized from an operation `body` or a `pre`
+    /// clause, which no plain call can name (FR-395 "Broken ownership").
+    pub fn declares_function(&self, name: &str) -> bool {
+        self.function(name).is_some()
     }
 
     /// The `deref(r).f` locations of a function body, or `None` for an
