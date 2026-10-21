@@ -10,7 +10,7 @@ review_set: subset
 
 ## Summary
 
-Reviewed the branch diff after rebasing onto `origin/main` at a370d66c1 using the code-review and rust-review checklists. The change removes the specified shell script, its Make and CI calls, and the test fixtures that named those calls. No production Rust behavior changes.
+Reviewed the branch diff after rebasing onto `origin/main` at c16d4be02 using the code-review and rust-review checklists. The change removes the specified shell script, its Make and CI calls, and the test fixtures that named those calls. No production Rust behavior changes.
 
 ## Findings
 
