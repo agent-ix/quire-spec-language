@@ -73,3 +73,23 @@ Soundness first:
 ## Coverage
 
 Focused run `cargo test -p qsl-analyze --test it scheduler_fairness` through `locked-build.sh`: 5 passed, 0 failed. Unit tests in `fairness.rs` (2) were read, not run. `target/` deleted after.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | FND-001's fix (`Item::Deadlock => Vec::new()`) has no test. No test asserts that a protocol deadlock counterexample carries an empty fairness set, so the regression FND-001 found could come back unseen. One assertion in an existing protocol deadlock test would cover it. | qsl-analyze/src/model_check/check.rs:657-660 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e7bcfdc6e: `ProtocolRun::decide` gives `Item::Deadlock` an empty set and builds `fairness_set` only for a clause. Correct on reading. It has no test (FND-008). |
+| FND-002 | fixed | e7bcfdc6e: `liveness_over_a_weak_parallel_refuses` resolves `Both` under `tso` and asserts `ModelCheckRefusal::WeakLiveness`. |
+| FND-003 | fixed | e7bcfdc6e: replay maps `UnknownOperation` to `ModelTraceRefusal::UnknownFairnessOperation` (`invalid_runtime_input`/`invalid-value`). Only `Encoding` remains a fault. |
+| FND-004 | fixed | e7bcfdc6e: `impl From<ProtocolFairnessError> for ModelCheckRefusal`. Both call sites use `?`. |
+| FND-005 | still-open | e7bcfdc6e adds a note that an attempt node "needs the node's path on the transition, which `ProtocolTransition` does not carry". That is not true. `ProtocolTransition::attempt` sets `node: Some(node)`, and `node()` exposes it; the AC-3 test reads `Main/Both/left/A` from an attempt step. The class (attempt steps whose node equals the path, `each` keyed by thread and application) is buildable now. Either build it or correct the note to the real reason (S4 has no member to emit it). Low, unreachable while S4 refuses, and non-blocking. |
+| FND-006 | fixed | e7bcfdc6e: `resolve_item` takes a `check_fairness` callback and runs it before the `AuthoredUndefined`/`GuardedActivation` refusals, which restores the model refusal precedence. Protocol replay passes a no-op and compares in `settle`. |
+| FND-007 | fixed | e7bcfdc6e: the `Exploration<S>` and `LoopStates<T>` aliases. All four `type_complexity` allows are removed. |
+
+Disposition pass 1 at e7bcfdc6e: focused run `scheduler_fairness` through `locked-build.sh`: 7 passed, 0 failed. `target/` deleted after.

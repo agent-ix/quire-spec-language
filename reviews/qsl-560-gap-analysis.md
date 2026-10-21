@@ -64,3 +64,11 @@ Nothing unblocked was skipped beyond FND-005 (eval attempt-node class) and FND-0
 | FR-212-AC-4 | FR-212-AC-4 | full |
 | FR-217-AC-1 | none | blocked on FR-433 wire |
 | FR-217-AC-4 | FR-217-AC-4 | full |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | e7bcfdc6e: FR-212-AC-3 now reads `fair weak whole Chatter::Both::s` and `fair weak each Chatter::Done` (QSpec FR-430's spelling). TC-657 step 3 matches. |
+| FND-002 | fixed | e7bcfdc6e: the test asserts `ProtocolAnchorCause::Ambiguous` with two loci. The first locus is the first `scheduling` member and the second is the refusal span. |
+| FND-003 | fixed | e7bcfdc6e: `an_authored_operation_constraint_joins_the_scheduler_constraints` asserts 4 members, one `authored` strong/each operation member, and ascending JCS bytes. |
