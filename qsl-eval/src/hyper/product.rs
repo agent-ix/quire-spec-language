@@ -41,12 +41,18 @@ use quire_canonical::{Encode, Sink, Writer};
 use quire_exact::{Cancel, CancelCause, ScalarLimits};
 use quire_semantic_value::model_transition::ModelTransition;
 
-use crate::automaton::{translate_negation, AutomatonError, PropertyAutomaton, StateId};
+use crate::automaton::{
+    translate_negation, AtomSymmetry, AutomatonError, PropertyAutomaton, StateId,
+};
+use crate::hyper::copy_swap::{CopySwap, CopySwapInputs};
 use crate::hyper::joint::{cartesian, Joint, Matched, Options, Reading, Seams};
 use crate::hyper::seam::{HyperLetters, ParameterBinding, StepLabel, StepMatch};
 use crate::hyper::witness::{Partner, WitnessSet};
 use crate::simulation::model::{ModelFinding, ModelKey, ModelSimState, ModelSystem};
-use crate::simulation::{EncodingRefusal, Expansion, ExpansionStop, TransitionSystem};
+use crate::simulation::{
+    EncodingRefusal, Expansion, ExpansionStop, OfferedReductions, Permutation, SymmetryGroup,
+    TransitionSystem,
+};
 use crate::temporal::UndefinedCause;
 
 /// The property component of a product state.
@@ -349,6 +355,9 @@ pub struct HyperInputs<'r, 's> {
     pub meter: ScalarLimits,
     /// The run's cancellation handle.
     pub cancel: &'r Cancel,
+    /// The clause's copy group when the product canonicalises under it
+    /// (FR-174): the body's automaton is then built in normal form.
+    pub copy_swap: Option<CopySwapInputs<'r>>,
 }
 
 /// Where the automaton is before a joint position is read.
@@ -362,8 +371,9 @@ enum Before {
 /// The self-composition of a hyper clause's subjects as a
 /// [`TransitionSystem`] (ADR-023 HC-1).
 pub struct HyperProduct<'r, 's> {
-    joint: Joint<'r, 's>,
-    automaton: RefCell<PropertyAutomaton>,
+    pub(super) joint: Joint<'r, 's>,
+    pub(super) automaton: RefCell<PropertyAutomaton>,
+    pub(super) copy_swap: Option<CopySwap>,
     start: StateId,
     initial: Vec<HyperState>,
 }
@@ -377,9 +387,22 @@ impl<'r, 's> HyperProduct<'r, 's> {
     /// [`AutomatonError`] when the body has no property automaton, or
     /// `max_automaton_states` admits no state.
     pub fn new(inputs: HyperInputs<'r, 's>) -> Result<Self, AutomatonError> {
-        let mut automaton =
-            translate_negation(inputs.body, inputs.profile, inputs.max_automaton_states)?;
+        let generators: Vec<Vec<usize>> = inputs
+            .copy_swap
+            .iter()
+            .flat_map(|swap| swap.group.generators.iter().map(|g| g.atoms.clone()))
+            .collect();
+        let symmetry = inputs.copy_swap.as_ref().map(|_| AtomSymmetry {
+            generators: &generators,
+        });
+        let mut automaton = translate_negation(
+            inputs.body,
+            inputs.profile,
+            inputs.max_automaton_states,
+            symmetry.as_ref(),
+        )?;
         let start = automaton.initial()?;
+        let symmetric = automaton.is_symmetric();
         Ok(Self {
             joint: Joint::new(
                 inputs.systems,
@@ -394,6 +417,11 @@ impl<'r, 's> HyperProduct<'r, 's> {
                 inputs.cancel,
             ),
             automaton: RefCell::new(automaton),
+            copy_swap: inputs
+                .copy_swap
+                .as_ref()
+                .filter(|_| symmetric)
+                .map(CopySwap::new),
             start,
             initial: Vec::new(),
         })
@@ -491,6 +519,22 @@ impl TransitionSystem for HyperProduct<'_, '_> {
 
     fn key(&self, state: &HyperState) -> HyperKey {
         HyperKey::of(&self.joint.systems, state)
+    }
+
+    fn offered_reductions(&self) -> OfferedReductions {
+        OfferedReductions {
+            symmetry: self.copy_swap.is_some(),
+            ..OfferedReductions::NONE
+        }
+    }
+
+    fn canonical(
+        &self,
+        state: &HyperState,
+        _group: &SymmetryGroup,
+    ) -> Option<Result<(HyperState, Permutation), ExpansionStop>> {
+        let swap = self.copy_swap.as_ref()?;
+        Some(self.canonicalise(swap, state))
     }
 
     fn successors(

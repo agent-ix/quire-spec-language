@@ -53,6 +53,15 @@
 //! universal and existential variable, an existential variable's path being
 //! its member's [`Partner`].
 //!
+//! A clause whose copies of one model can be swapped without changing it (the
+//! clause's copy group, FR-174) is explored as the quotient by that group, with
+//! no request selecting it: every initial state and successor is replaced by
+//! the least member of its orbit, so each unordered pair of runs is stored
+//! once. A counterexample found on the quotient is lifted back to the concrete
+//! tuple of behaviours it stands for before it is returned (`lift`). A class
+//! of copies that carry fairness is not swapped (`unfair_classes`). A request
+//! that selects a reduction is settled against ADR-023 §5's rows before any
+//! state is expanded (`reductions`).
 //! An HP-6 clause is explored as a [`ProjectedProduct`]: a state is the tuple
 //! of component states with the body's safety monitor, a skipped step moves one
 //! component alone and a visible step moves them all together on a matched
@@ -65,13 +74,16 @@
 //! rejecting state, split into its components' steps, each marked skipped or
 //! visible. Its search horizon `max_depth` counts moves of either kind (PA-5,
 //! HV-3) and is the only form that has one.
-//!
 //! Not built here, and refused or absent rather than approximated: the
 //! product-closure certificate (FR-163), so a `Holds` carries none and settles
 //! no `proved`; a search horizon `max_depth` for an HP-2 or HP-3 item (HV-3);
-//! the copy-swap reduction (FR-174); and the facade entry that replays a counterexample from a
-//! recompiled package, which waits for S4 to emit a hyper clause. The core of
-//! that replay is `qsl_replay::replay_hyper_trace_tuple`.
+//! copy-swap and the reductions a request selects for an HP-6 item; and the
+//! facade entry that replays a counterexample from a recompiled package, which
+//! waits for S4 to emit a hyper clause. The core of that replay is
+//! `qsl_replay::replay_hyper_trace_tuple`.
+
+mod lift;
+mod reductions;
 
 use std::cell::{Cell, Ref};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -82,16 +94,18 @@ use qsl_eval::fairness::{
     analyze, Analysis, Constraint, EdgeLabel, FairnessError, Graph, Identity, Strength, Vertex,
 };
 use qsl_eval::hyper::{
-    cartesian, ComponentStep, Halt, HyperFinding, HyperInputs, HyperLetters, HyperProduct,
-    HyperState, HyperTransition, ParameterBinding, Partner, PartnerStep, ProjectedInputs,
-    ProjectedProduct, Property, StepMatch, WitnessInputs, WitnessProduct,
+    cartesian, copy_symmetry, ComponentStep, CopySwapInputs, Halt, HyperFinding, HyperInputs,
+    HyperLetters, HyperProduct, HyperState, HyperTransition, ParameterBinding, Partner,
+    PartnerStep, ProjectedInputs, ProjectedProduct, Property, StepMatch, WitnessInputs,
+    WitnessProduct,
 };
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelKey, ModelSimState, ModelSystem,
 };
 use qsl_eval::simulation::{
-    Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, Outcome, TransitionSystem,
+    Expansion, ExpansionLimit, ExpansionStop, Limit, Limits, Outcome, SymmetryGroup,
+    TransitionSystem,
 };
 use qsl_eval::temporal::{
     evaluate_tuple, AtomReading, ComponentPosition, ComponentTrace, LetterStop, TemporalOutcome,
@@ -100,18 +114,22 @@ use qsl_eval::temporal::{
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{IdentityLimits, InternalFault};
 use qsl_replay::{
-    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep, HyperTrace,
-    HyperUndefined, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelStep, ReachedLimit,
-    RunStats, UndecidedCause,
+    AppliedReduction, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome,
+    HyperStep, HyperTrace, HyperUndefined, IncompleteCause, ModelCheckLimit, ModelCheckLimits,
+    ModelStep, ReachedLimit, RunStats, UndecidedCause,
 };
-use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId, HyperForm};
+use qsl_semantics::check::{CheckedHyperClause, CopyGroup, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits, ValueType};
 use quire_semantic_value::fairness::FairnessGranularity;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use super::check::{fault, not_simulated, widen, ModelCheckRefusal, BOUND_POSITIONS};
 use super::fair_walk::{tree_path, FairModel};
-use super::graph::{retain, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph};
+use super::graph::{
+    retain, retain_reduced, GraphExploration, ProductStateId, RetainedEdge, RetainedGraph,
+};
+use super::reduce::Reductions;
+use lift::{through, Lifted};
 
 mod projected;
 
@@ -139,6 +157,9 @@ pub struct HyperCheckRequest<'a> {
     pub max_depth: Option<usize>,
     /// The evaluation meter budget of each atom and each `μ_U` evaluation.
     pub meter: ScalarLimits,
+    /// The reductions the request selects. Copy-swap is not among them: the
+    /// compiler applies it when the clause has the symmetry (FR-174).
+    pub reductions: Reductions,
 }
 
 /// Why [`check_hyper`] explored nothing, or built no counterexample
@@ -222,6 +243,12 @@ pub fn check_hyper(
         }
         .into());
     }
+    if let Some(cause) = reductions::refusal(&request.reductions, clause) {
+        return Ok(HyperOutcome::Reduction {
+            cause,
+            stats: Totals::default().stats(),
+        });
+    }
     let systems = request
         .subjects
         .iter()
@@ -246,15 +273,56 @@ pub fn check_hyper(
         .map(|quantifier| slot_of(quantifier.alias.as_str()))
         .collect::<Result<Vec<_>, _>>()?;
     let instances = instances(clause, &systems, &slot_of)?;
+    let copy = unfair_classes(clause);
     let run = Run {
         request: &request,
         systems,
+        group: copy_symmetry(&copy),
+        copy,
         slots,
         witness: matches!(clause.form(), Some(HyperForm::ForallExistsSafety)),
         projected,
         cancel,
     };
     run.decide(&instances)
+}
+
+/// The classes of `clause`'s copy group that EN-1 reduces by: those whose
+/// variables have an empty fairness set. A fairness constraint is read on the
+/// stored state's slot of its variable, but the quotient moves a concrete copy
+/// between slots wherever an edge swaps them, so a slot's enabled and taken
+/// steps are not one behaviour's and the quotient would decide fair cycles
+/// wrongly. A class with fairness is stored whole and named no reduction.
+fn unfair_classes(clause: &CheckedHyperClause) -> CopyGroup {
+    let group = clause.copy_group();
+    let quantifiers = clause.quantifiers();
+    let fair = |name: &str| {
+        quantifiers
+            .iter()
+            .any(|quantifier| quantifier.variable == name && !quantifier.fairness.is_empty())
+    };
+    let classes: Vec<Vec<String>> = group
+        .classes
+        .iter()
+        .filter(|class| !class.iter().any(|name| fair(name)))
+        .cloned()
+        .collect();
+    let kept = |position: usize| {
+        quantifiers.get(position).is_some_and(|quantifier| {
+            classes
+                .iter()
+                .any(|class| class.contains(&quantifier.variable))
+        })
+    };
+    CopyGroup {
+        generators: group
+            .generators
+            .iter()
+            .filter(|generator| kept(generator.first))
+            .cloned()
+            .collect(),
+        classes,
+    }
 }
 
 /// The instances of the clause's object parameters: one binding of each
@@ -423,6 +491,18 @@ impl Built<'_, '_> {
             Self::Universal(_) | Self::Witness(_) => false,
         }
     }
+
+    /// Whether the product canonicalises under the clause's copy group. It
+    /// does not when the clause has none, and not when the swap moves one of
+    /// the body's acceptance sets to another: the quotient would not keep
+    /// acceptance, so that product is stored whole. A projected (HP-6)
+    /// product offers none: its states are not tuples the swap acts on.
+    fn offers_symmetry(&self) -> bool {
+        match self {
+            Self::Universal(product) => product.offered_reductions().symmetry,
+            Self::Witness(_) | Self::Projected(_) => false,
+        }
+    }
 }
 
 /// One explored instance.
@@ -430,6 +510,8 @@ struct Explored<'r, 's> {
     instance: &'r [ParameterBinding],
     product: Built<'r, 's>,
     graph: HyperGraph,
+    /// Whether the graph is the quotient by the clause's copy group.
+    reduced: bool,
     /// Whether the search horizon cut the exploration short.
     bounded: bool,
 }
@@ -548,6 +630,12 @@ struct PartnerPath<'p> {
 struct Run<'r, 'a> {
     request: &'r HyperCheckRequest<'a>,
     systems: Vec<ModelSystem<'a>>,
+    /// The group the products are reduced by: the clause's copy group
+    /// (FR-174), trivial when it has none.
+    group: SymmetryGroup,
+    /// The classes of the clause's copy group the run reduces by (FR-174):
+    /// those whose variables carry no fairness.
+    copy: CopyGroup,
     /// The index in `systems` of each trace variable's subject.
     slots: Vec<usize>,
     /// Whether the clause is HP-3: its leading `universals` variables are
@@ -949,7 +1037,8 @@ impl<'a> Run<'_, 'a> {
             entry_at -= 1;
             length -= 1;
         }
-        let traces = self.traces(run, root, &path[..length], None, None, false)?;
+        let lifted = self.lift(run, root, &path[..length])?;
+        let traces = self.traces(run, &lifted, None, None, false)?;
         let counterexample = HyperCounterexample {
             kind: HyperCounterexampleKind::WitnessExhausted {
                 loop_entry: widen(entry_at),
@@ -989,8 +1078,20 @@ impl<'a> Run<'_, 'a> {
                 });
             }
         }
-        Ok(HyperOutcome::Holds {
-            stats: totals.stats(),
+        let swapped = if explored.iter().any(|run| run.reduced) {
+            self.copy.classes.clone()
+        } else {
+            Vec::new()
+        };
+        Ok(if swapped.is_empty() {
+            HyperOutcome::Holds {
+                stats: totals.stats(),
+            }
+        } else {
+            HyperOutcome::HoldsReduced {
+                reductions: vec![AppliedReduction::CopySwap { classes: swapped }],
+                stats: totals.stats(),
+            }
         })
     }
 
@@ -1183,6 +1284,14 @@ impl<'a> Run<'_, 'a> {
                 max_automaton_states: limits.max_automaton_states,
                 meter: self.request.meter,
                 cancel: self.cancel,
+                copy_swap: (!self.group.is_trivial()).then(|| CopySwapInputs {
+                    variables: clause
+                        .quantifiers()
+                        .iter()
+                        .map(|quantifier| quantifier.variable.as_str())
+                        .collect(),
+                    group: &self.copy,
+                }),
             })
             .map(Built::Universal)
         };
@@ -1212,6 +1321,7 @@ impl<'a> Run<'_, 'a> {
     fn retained<P>(
         &self,
         product: &P,
+        group: &SymmetryGroup,
         cap: Option<usize>,
         totals: &Totals,
     ) -> Result<GraphExploration<HyperState, HyperTransition, HyperFinding>, ModelCheckRefusal>
@@ -1222,8 +1332,10 @@ impl<'a> Run<'_, 'a> {
             Finding = HyperFinding,
         >,
     {
-        retain(
+        retain_reduced(
             product,
+            group,
+            None,
             totals.remaining(self.request.limits.limits),
             IdentityLimits::default(),
             cap,
@@ -1250,10 +1362,16 @@ impl<'a> Run<'_, 'a> {
             Err(outcome) => return Ok(Err(outcome)),
         };
         let spent = self.request.limits.limits;
+        let reduced = product.offers_symmetry() && !self.group.is_trivial();
+        let group = if reduced {
+            self.group.clone()
+        } else {
+            SymmetryGroup::default()
+        };
         let exploration = match &product {
-            Built::Universal(product) => self.retained(product, cap, totals)?,
-            Built::Witness(product) => self.retained(product, cap, totals)?,
-            Built::Projected(product) => self.retained(product, cap, totals)?,
+            Built::Universal(product) => self.retained(product, &group, cap, totals)?,
+            Built::Witness(product) => self.retained(product, &group, cap, totals)?,
+            Built::Projected(product) => self.retained(product, &group, cap, totals)?,
         };
         let transitions = match &exploration.outcome {
             Outcome::Exhaustive(stats) => stats.transitions,
@@ -1305,6 +1423,7 @@ impl<'a> Run<'_, 'a> {
             instance,
             product,
             graph: exploration.graph,
+            reduced,
             bounded: matches!(exploration.outcome, Outcome::BoundReached { .. }),
         }))
     }
@@ -1526,25 +1645,24 @@ impl<'a> Run<'_, 'a> {
             .collect()
     }
 
-    /// One trace per variable: the path from the root through `edges`, then
-    /// the joint step `last` when there is one. An HP-3 clause's existential
-    /// variables take theirs from `partner`; without one the traces are the
-    /// universal variables' alone. A component that does not move in a step
-    /// has no step in it, and a `marked` trace (HP-6) marks each of its steps
-    /// skipped or visible.
+    /// One trace per variable: the lifted path from its root, then the joint
+    /// step `last` when there is one. An HP-3 clause's existential variables
+    /// take theirs from `partner`; without one the traces are the universal
+    /// variables' alone. A component that does not move in a step has no step
+    /// in it, and a `marked` trace (HP-6) marks each of its steps skipped or
+    /// visible.
     fn traces(
         &self,
         run: &Explored<'_, '_>,
-        root: ProductStateId,
-        edges: &[&RetainedEdge<HyperTransition>],
+        lifted: &Lifted,
         last: Option<(&HyperTransition, &[DigestRecord])>,
         partner: Option<&PartnerPath<'_>>,
         marked: bool,
     ) -> Result<Vec<HyperTrace>, ModelCheckRefusal> {
-        let root_state = run
-            .graph
-            .state(root)
-            .ok_or_else(|| fault("a-path-starts-at-a-retained-state"))?;
+        let root_state = lifted
+            .states
+            .first()
+            .ok_or_else(|| fault("a-lifted-path-starts-at-a-state"))?;
         let universals = self.request.clause.universals();
         let count = if partner.is_some() {
             self.slots.len()
@@ -1556,7 +1674,7 @@ impl<'a> Run<'_, 'a> {
             let (initial, steps, marks) = if component < universals {
                 let system = &self.systems[self.slots[component]];
                 let start = system
-                    .state_key(&root_state.state.components[component])
+                    .state_key(&root_state.components[component])
                     .map_err(ModelCheckRefusal::Encoding)?
                     .1;
                 let initial = system
@@ -1569,18 +1687,13 @@ impl<'a> Run<'_, 'a> {
                     })
                     .and_then(|index| u32::try_from(index).ok())
                     .ok_or_else(|| fault("a-root-component-is-an-initial-state"))?;
-                let mut steps = Vec::with_capacity(edges.len() + 1);
+                let mut steps = Vec::with_capacity(lifted.steps.len() + 1);
                 let mut marks = Vec::new();
-                for edge in edges {
-                    let target = run
-                        .graph
-                        .state(edge.target)
-                        .ok_or_else(|| fault("an-edge-names-a-retained-state"))?;
-                    let post = self.digests(&target.state)?;
-                    if let Some(step) = hyper_step(&edge.transition, &post, component)? {
+                for (transition, posts) in &lifted.steps {
+                    if let Some(step) = hyper_step(transition, posts, component)? {
                         steps.push(step);
                         if marked {
-                            marks.push(Self::mark(run, component, &edge.transition));
+                            marks.push(Self::mark(run, component, transition));
                         }
                     }
                 }
@@ -1664,10 +1777,15 @@ impl<'a> Run<'_, 'a> {
         found: Found,
     ) -> Result<HyperCounterexample, ModelCheckRefusal> {
         let (root, path) = tree_path(&run.graph, at);
-        let state = run
-            .graph
-            .state(at)
-            .ok_or_else(|| fault("a-finding-is-at-a-retained-state"))?;
+        let lifted = self.lift(run, root, &path)?;
+        // The stored state the finding was made at, as the concrete tuple of
+        // the lifted path (FR-174): its components, and what the finding says
+        // of them, are read through the positions the path composes to.
+        let state = lifted
+            .states
+            .last()
+            .ok_or_else(|| fault("a-finding-is-at-a-lifted-state"))?;
+        let positions = lifted.positions.as_slice();
         let stem = self.position_of(run, &path);
         let variables = self.variables();
         let universals = self.request.clause.universals();
@@ -1679,7 +1797,12 @@ impl<'a> Run<'_, 'a> {
                 cause,
                 partner: read,
             } => {
-                let mut keys = self.digests(&state.state)?;
+                let atom = match &run.product {
+                    Built::Universal(product) => product.concrete_atom(atom, positions),
+                    Built::Witness(_) | Built::Projected(_) => Some(atom),
+                }
+                .ok_or_else(|| fault("a-copy-permutation-is-an-element-of-the-copy-group"))?;
+                let mut keys = self.digests(state)?;
                 if let Some(read) = &read {
                     keys.extend_from_slice(read.digests());
                 }
@@ -1700,12 +1823,14 @@ impl<'a> Run<'_, 'a> {
                 conjunct,
                 cause,
             } => {
+                let step = HyperTransition(through(&step.0, positions));
+                let posts = through(&posts, positions);
                 // An HP-3 clause's existential paths end at the pre-state, the
                 // first member's, and the evaluation names every variable
                 // with its state there (QSpec FR-400's reader rule).
                 let mut keys = posts.clone();
                 if self.witness {
-                    let first = Self::first_partner(&state.state)?;
+                    let first = Self::first_partner(state)?;
                     keys.extend_from_slice(first.digests());
                     partner = Some(first);
                 }
@@ -1747,7 +1872,7 @@ impl<'a> Run<'_, 'a> {
             }
             Found::MatchAt { conjunct, cause } => (
                 stem,
-                self.digests(&state.state)?,
+                self.digests(state)?,
                 variables,
                 HyperLocus::Match { conjunct },
                 None,
@@ -1761,9 +1886,15 @@ impl<'a> Run<'_, 'a> {
                 cause,
             } => {
                 if self.witness {
-                    partner = Some(Self::first_partner(&state.state)?);
+                    partner = Some(Self::first_partner(state)?);
                 }
-                let digests = self.digests(&state.state)?;
+                // The component the finding was made at, as the concrete
+                // tuple's variable.
+                let component = positions
+                    .iter()
+                    .position(|stored| *stored == component)
+                    .ok_or_else(|| fault("a-lifted-path-holds-every-component"))?;
+                let digests = self.digests(state)?;
                 let digest = digests
                     .get(component)
                     .copied()
@@ -1793,8 +1924,7 @@ impl<'a> Run<'_, 'a> {
         });
         let traces = self.traces(
             run,
-            root,
-            &path,
+            &lifted,
             last.as_ref().map(|(step, posts)| (step, posts.as_slice())),
             path_of.as_ref(),
             false,
@@ -2027,20 +2157,28 @@ impl<'a> Run<'_, 'a> {
         };
         let loop_path = Self::loop_path(&model, &run.graph, passing, entry)?;
         let (root, stem) = tree_path(&run.graph, ProductStateId(entry.index()));
+        // Under the copy group the loop may close on a permuted state, and is
+        // then traversed until the concrete tuple closes (FR-174).
+        let components = run
+            .graph
+            .state(root)
+            .map_or(0, |state| state.state.components.len());
+        let repeats = self.repeats(&loop_path, components)?;
+        let loop_len = loop_path.len().saturating_mul(repeats);
         let mut path = stem.clone();
-        path.extend(loop_path.iter().copied());
-        let traces = self.traces(run, root, &path, None, None, false)?;
+        for _ in 0..repeats {
+            path.extend(loop_path.iter().copied());
+        }
+        let lifted = self.lift(run, root, &path)?;
+        let traces = self.traces(run, &lifted, None, None, false)?;
         // The positions of the lasso: the stem's states, then the loop's but
         // the last, which is the entry again.
-        let mut positions = vec![root];
-        positions.extend(stem.iter().map(|edge| edge.target));
-        positions.extend(
-            loop_path
-                .iter()
-                .take(loop_path.len().saturating_sub(1))
-                .map(|edge| edge.target),
-        );
-        let at = match self.false_position(run, &positions, stem.len(), loop_path.len(), totals)? {
+        let sequence: Vec<&HyperState> = lifted
+            .states
+            .iter()
+            .take(stem.len().saturating_add(loop_len))
+            .collect();
+        let at = match self.false_position(run, &sequence, stem.len(), loop_len, totals)? {
             Ok(at) => at,
             Err(outcome) => return Ok(Second::Stopped(outcome)),
         };
@@ -2054,7 +2192,7 @@ impl<'a> Run<'_, 'a> {
         };
         Ok(Second::Lasso(
             Box::new(counterexample),
-            stem.len().saturating_add(loop_path.len()),
+            stem.len().saturating_add(loop_len),
         ))
     }
 
@@ -2065,16 +2203,11 @@ impl<'a> Run<'_, 'a> {
     fn false_position(
         &self,
         run: &Explored<'_, '_>,
-        positions: &[ProductStateId],
+        sequence: &[&HyperState],
         prefix: usize,
         loop_len: usize,
         totals: &Totals,
     ) -> Result<Result<u64, HyperOutcome>, ModelCheckRefusal> {
-        let sequence = positions
-            .iter()
-            .map(|id| run.graph.state(*id).map(|state| &state.state))
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| fault("a-lasso-position-is-a-retained-state"))?;
         let component = ComponentTrace::Lasso {
             prefix: widen(prefix),
             loop_len: widen(loop_len),
@@ -2083,7 +2216,7 @@ impl<'a> Run<'_, 'a> {
         let mut letters = Positions {
             letters: self.request.letters,
             instance: run.instance,
-            sequence,
+            sequence: sequence.to_vec(),
         };
         let mut meter = Meter::new(self.request.meter).with_cancel(self.cancel.clone());
         let outcome = evaluate_tuple(
