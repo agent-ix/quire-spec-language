@@ -50,3 +50,12 @@ Alethe. Both are inputs an untrusted solver can send.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-314 rejects "with `NotRefutation` at the last step of a proof that does not conclude the empty clause". A carried `proof` with zero commands, such as empty bytes, does not conclude the empty clause and has no last step, so no `ProofStep{part, index}` exists for it. The new definition ("the zero-based position of its command") cannot produce one, and QSpec's closed `at` admits nothing else but `Query{part}`. Implementations will diverge: one invents index 0 for a command that does not exist, one uses `Query{part}`, and one panics or refuses. Fix: state the locus for an empty proof, for example "`NotRefutation` at `Query{part}` when the proof has no command", and add the vector to FR-314-AC-2 and TC-893. | spec/functional/FR-314-check-an-smt-proof-certificate.md:76-77; spec/functional/FR-314-check-an-smt-proof-certificate.md:106-107; spec/functional/FR-314-check-an-smt-proof-certificate.md:139 |
 | FND-002 | medium | Indexing by "its command in that part's proof, in text order" assumes that the proof bytes parse into commands. FR-314 defines no rule and no locus for a `proof` that is not well-formed Alethe: unbalanced parentheses, an unknown command, invalid UTF-8, or a premise naming an `:id` defined twice. `CertificateRule` has no `Malformed` for SMT (FR-163 adds one only for hyper certificates), and the `Unverifiable`/`ProofStepInvalid` split needs a parsed step. The gap predates this commit, but the commit makes the locus depend on command structure, so the locus is undefined exactly where an untrusted solver's bytes are worst. Fix: say which rule and locus a non-Alethe proof rejects with (for example `ProofStepInvalid` at the first command that fails to parse, or `NotRefutation` at `Query{part}`), and add one vector. | spec/functional/FR-314-check-an-smt-proof-certificate.md:47-50; spec/functional/FR-314-check-an-smt-proof-certificate.md:76-77; spec/functional/FR-314-check-an-smt-proof-certificate.md:102-107; spec/functional/FR-338-check-an-en-1-closure-certificate.md:51-55 |
+
+## Dispositions
+
+Folded into quire-spec-language#1138; the review is of QSL #672's text.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-314 rejects a proof with no command with NotRefutation at the part (folded text). |
+| FND-002 | fixed | Commands are numbered over the flattened text order including subproofs (folded text, FR-314-AC-3). |

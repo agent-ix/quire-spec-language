@@ -37,7 +37,7 @@ Scope: FR-314-AC-1 to FR-314-AC-4.
    six step parts, with eight, with the base part and a step part exchanged,
    with the third step part's query replaced by the fourth's, with the fifth step part's proof (at least four commands) having its
    command 3 not follow from its premises, and with command 3 of the base
-   proof using `hole`.
+   proof using `hole`, and with the third row written with a `_` argument.
 
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
@@ -61,5 +61,5 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   `step/6`; eight parts `ShapeMismatch` at `step/7`; the exchanged parts
   `QueryMismatch` at `base`; the swapped query `QueryMismatch` at `step/2`;
   the invalid command `ProofStepInvalid` at `ProofStep { Step { row: 4 }, 3 }`;
-  the `hole` `Unverifiable { Base, 3 }`; each rejection `inconclusive`,
+  the `hole` `Unverifiable { Base, 3 }`; the `_` row `Unverifiable { Step { row: 2 }, 0 }`; each rejection `inconclusive`,
   `CertificateRejected`.

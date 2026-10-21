@@ -98,6 +98,14 @@ Head 5e73cbeb1 (PR #1138 round 1).
 | --- | --- | --- | --- |
 | FND-007 | medium | How a single RE-2 record becomes Certified is unstated. FR-146 says 'A Certified RE-2 settlement rests on a certificate FR-314 verifies against the query FR-315 encodes for the record', and FR-146-AC-4 settles the commitA record `Proved{Inductive{depth: 1}, Certified}`. FR-314 now has two entries. check_smt_proof needs an Inductive basis with base and step queries, which a Step record does not have (STD-217 item 5). check_refinement_smt_proof checks the whole RefinementSmtCertificate and returns one result, whose Unverifiable names only the first unchecked part. Nothing says which entry certifies one record, or whether a record is Certified exactly when the refinement certificate is Verified. FR-146-AC-8's 'all eight records proved with verified certificates' can mean eight certificates or one. State the rule, for example 'each record is Certified exactly when check_refinement_smt_proof returns Verified, and Uncertified when it returns Unverifiable', and word AC-4 and AC-8 to match. | spec/functional/FR-146-write-per-step-simulation-records-for-a-refinement.md:166-169; spec/functional/FR-146-write-per-step-simulation-records-for-a-refinement.md:188; spec/functional/FR-146-write-per-step-simulation-records-for-a-refinement.md:192; spec/functional/FR-314-check-an-smt-proof-certificate.md:133-158 |
 
+## New findings (disposition pass 2)
+
+Head 42732a378 (PR #1138 round 2).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | FR-315-AC-6 spells CasRefinesCounter's row differently from ADR-020. FR-315-AC-6 writes the abstract-operation row as 'step Impl::commitA -> Spec::inc(self)'. ADR-020 §8, which CasRefinesCounter comes from, writes 'step Impl::Counter::commitA -> Spec::Counter::inc(self);' (line 363), and that is the row the fixture holds. Use the ADR's spelling so the vector names a row that exists. | spec/functional/FR-315-encode-the-smt-lib-transition-relation.md:156; spec/decisions/ADR-020-*.md:363 |
+
 ## Dispositions
 
 Round 1, head 5e73cbeb1, checked against origin/main 5c4a96692 code, QSL FR-315/FR-338, QSpec main fd7a694 and QSpec #313 648d2d0 / #314 13bd4aa.
@@ -110,3 +118,9 @@ Round 1, head 5e73cbeb1, checked against origin/main 5c4a96692 code, QSL FR-315/
 | FND-004 | fixed | Fixed in 5e73cbeb1: - Over a protocol subject, S4 SHALL emit the rows in QSpec FR-375's order: ascending by (1) the node-key digest of the declaration the row's left side names: the operation, or the attempt, event, send, receive, timeout, finish or fence node, the `parallel` node, the template, the channel or the role, or, for an `activate` row, the selected protocol clause; a row that names no declaration (every `memory` row) sorts after every row that names one; (2) among rows that tie on (1), the UTF-8 bytes of the row's alias-free class spelling, the concrete alias `<C>::` removed (`duplicate P::ch` before ` |
 | FND-005 | fixed | Fixed in 5e73cbeb1: - QSL SHALL give a state-graph or probabilistic clause or claim with no `over` parameter one instance, with no bound object. A `temporal` clause always names an `over` parameter (QSpec FR-370-AC-13): S1 SHALL refuse one written without it, `invalid_syntax`/`unexpected-token` at the token that stands where `over` is required, and QSL produces no node. |
 | FND-006 | rejected | QSpec #313 at its new head 648d2d0 now retains 'the member as supplied for not-a-list and the offending element for unknown-label and duplicate-label' in the FR-272 row and native-diagnostics, so FR-134's 'for the last three' matches QSpec. The finding was against the earlier #313 text ('for the last two'). |
+
+Round 2, head 42732a378, checked against origin/main 5c4a96692 code, QSpec main e751736 (#313 merged) and QSpec #314 (open).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-007 | fixed | Fixed in 42732a378: - A certificate FR-314 cannot verify without showing it wrong SHALL settle `Uncertified`, not `CertificateRejected`. QSL SHALL settle every RE-2 record of a refinement `Certified` exactly when `check_refinement_smt_proof` (FR-314 "Refinement certificates") returns `Verified` for the refinement's certificate, against the queries FR-315 encodes (FR-315 "Refinement queries"); `Uncertified` when it returns `Unverifiable` or no certificate came; and, when it rejects at a part, the record of that part (the `Initial` record for `Base`, row `r`'s `Step` record for `Step { row: Some(r) }`) `Inconclusiv |

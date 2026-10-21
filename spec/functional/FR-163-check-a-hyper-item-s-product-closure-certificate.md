@@ -115,8 +115,8 @@ An HP-1 edge retains its pre-state key, transition identity (operation,
 receiver and arguments), post-state key and observed result as FR-179
 retains them. The tuple is in execution-variable binding order. It is not
 the tuple of source states: two edges from the same source state can have
-different arguments, post-states or results. QSpec FR-331 owns their wire
-spelling.
+different arguments, post-states or results. FR-331 carries them as the
+non-empty text of `at`.
 
 ## Behavior
 

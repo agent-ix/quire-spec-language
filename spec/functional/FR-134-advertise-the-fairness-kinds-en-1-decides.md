@@ -139,9 +139,7 @@ refusal carries a replacement kind.
 
 ## Remaining work
 
-- QSpec ratifies the cause `invalid-fairness-kinds` and FR-368-AC-8 to AC-10
-  in quire-specification#313; the refusals here follow that text. The code
-  that emits the three earlier causes (`qsl-route/src/lib.rs`,
+- The code that emits the three earlier causes (`qsl-route/src/lib.rs`,
   `qsl-route/tests/it/fairness_kinds.rs`) is Linear QSL-925.
 
 ## References

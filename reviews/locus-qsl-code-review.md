@@ -40,3 +40,11 @@ SR-2452 and SR-2453.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No findings (placeholder) | - |
+
+## Dispositions
+
+Folded into quire-spec-language#1138; the review is of QSL #672's text.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Placeholder; no finding. |
