@@ -39,7 +39,7 @@ pub enum GatedStep {
 
 /// One internal step's typed canonical identity (SE-1 d, QSpec FR-436):
 /// `{"type":"memory-step","model":<model>,"step":<step>,"thread":<path>}`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MemoryStepId {
     /// The memory model that owns the step.
     pub model: MemoryModelName,

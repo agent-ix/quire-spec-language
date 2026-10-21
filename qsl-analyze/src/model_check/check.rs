@@ -65,12 +65,12 @@ use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, MemoryModel, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc,
-    SubjectMemory,
+    check_protocol_bounds, MemoryModel, ProtocolFairnessError, ProtocolRefusal, ProtocolSystem,
+    ProtocolTransition, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
     ConstraintValue, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, NotSimulated,
-    Permutation, RequiresBound, SubjectSystem, SymmetryGroup, TransitionSystem,
+    Permutation, RequiresBound, SubjectSystem, SubjectTransition, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_foundation::digest::DigestRecord;
@@ -173,6 +173,11 @@ pub enum ModelCheckRefusal {
         /// The request's constraint name.
         name: String,
     },
+    /// A liveness clause over a protocol subject with a weak `parallel`,
+    /// whose memory constraints (FR-228) the liveness engine does not read
+    /// yet (`unsupported_construct`/`not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over a weak `parallel` yet")]
+    WeakLiveness,
     /// A liveness clause with a state constraint selected: the liveness
     /// engine runs reduced under symmetry and partial-order reduction only.
     #[error("EN-1 does not decide a liveness clause under a state constraint yet")]
@@ -211,6 +216,15 @@ enum Item<'a> {
 }
 
 impl Item<'_> {
+    /// The item's authored fairness set: empty for the deadlock-freedom
+    /// item.
+    fn fairness(&self) -> &[FairnessConstraint] {
+        match self {
+            Self::Clause { fairness, .. } => fairness,
+            Self::Deadlock => &[],
+        }
+    }
+
     /// The number of instances, each with its own monitor state.
     fn instance_count(&self) -> usize {
         match self {
@@ -308,6 +322,17 @@ impl From<EncodingRefusal> for Halt {
     }
 }
 
+impl From<ProtocolFairnessError> for ModelCheckRefusal {
+    fn from(error: ProtocolFairnessError) -> Self {
+        match error {
+            ProtocolFairnessError::UnknownOperation { name } => {
+                super::liveness::LivenessRefusal::UnknownOperation { name }.into()
+            }
+            ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
+        }
+    }
+}
+
 pub(super) fn fault(invariant: &'static str) -> ModelCheckRefusal {
     ModelCheckRefusal::Fault(InternalFault::new("model-check", invariant))
 }
@@ -392,6 +417,7 @@ pub fn check_model(
     }
     let mut run = Run {
         system: &system,
+        fairness: item.fairness(),
         reducer: Some(&system),
         item: &item,
         limits: request.limits,
@@ -463,18 +489,26 @@ pub struct ProtocolCheckRequest<'a> {
 /// `WeakAccessShape` before any state is explored (FR-220). A run that left
 /// a store unexpanded under the bound and found no counterexample settles
 /// `MemoryBoundReached` (ADR-025 MB-4). A deadlock counterexample names the
-/// waiting threads of its last state (ADR-027 PD-4).
+/// waiting threads of its last state (ADR-027 PD-4). A liveness clause is
+/// decided by the liveness engine's two phases, its fairness filter reading
+/// the clause's fairness set over the subject, scheduler constraints
+/// included (FR-212).
 ///
 /// # Errors
 ///
 /// [`ModelCheckRefusal`] as [`check_model`] returns it,
-/// [`ModelCheckRefusal::FormNotDecided`] for a liveness clause, whose
-/// scheduler fairness (FR-212) this engine does not read yet, and
-/// [`ModelCheckRefusal::Protocol`] when the protocol system does not build.
+/// [`ModelCheckRefusal::WeakLiveness`] for a liveness clause over a weak
+/// `parallel`, and [`ModelCheckRefusal::Protocol`] when the protocol system
+/// does not build.
 pub fn check_protocol(
     request: ProtocolCheckRequest<'_>,
     cancel: &Cancel,
 ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+    if let ModelCheckItem::Clause { clause, .. } = request.item {
+        if clause.property_form() == Some(PropertyForm::Liveness) {
+            return check_protocol_liveness(request, cancel);
+        }
+    }
     let max_automaton_states = request.limits.max_automaton_states;
     let (mut item, automaton, certified) = prepare(request.item, max_automaton_states)?;
     let subject = &request.subject;
@@ -557,6 +591,44 @@ pub fn check_protocol(
     }
 }
 
+/// FR-126 and FR-212 for a liveness clause over a protocol subject under
+/// `sc` ([`super::liveness::check_protocol`]). A subject with a weak
+/// `parallel` is refused before any state is explored: its memory
+/// constraints (FR-228) and its memory bound are not read by the liveness
+/// engine yet.
+fn check_protocol_liveness(
+    request: ProtocolCheckRequest<'_>,
+    cancel: &Cancel,
+) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+    let subject = &request.subject;
+    let model = ModelSystem::new(subject.model.simulation.clone())
+        .map_err(|failure| ModelCheckRefusal::Admission(Box::new(failure)))?;
+    let protocol = subject
+        .model
+        .simulation
+        .package
+        .graph()
+        .protocol(&subject.protocol)
+        .ok_or_else(|| {
+            ModelCheckRefusal::Protocol(ProtocolRefusal::UnknownProtocol {
+                protocol: subject.protocol.clone(),
+            })
+        })?;
+    check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
+    let SubjectMemory::Sc = SubjectMemory::of(&subject.memory, request.max_store_buffer) else {
+        return Err(ModelCheckRefusal::WeakLiveness);
+    };
+    let system = ProtocolSystem::new(model, subject, Sc).map_err(ModelCheckRefusal::Protocol)?;
+    super::liveness::check_protocol(
+        subject,
+        &system,
+        request.item,
+        request.max_depth,
+        request.limits,
+        cancel,
+    )
+}
+
 /// What [`check_protocol`] runs over its protocol system, whichever memory
 /// model the subject's resolved models need.
 struct ProtocolRun<'r> {
@@ -581,8 +653,15 @@ impl ProtocolRun<'_> {
         automaton: Box<dyn SafetyAutomaton>,
         bound: Option<MemoryBound>,
     ) -> Result<ModelCheckOutcome<ProtocolTransition>, ModelCheckRefusal> {
+        // FR-430 adds scheduler constraints to infinite-trace clauses, not
+        // to the derived deadlock-freedom item.
+        let fairness = match self.item {
+            Item::Deadlock => Vec::new(),
+            Item::Clause { .. } => system.fairness_set(self.item.fairness())?,
+        };
         let mut run = Run {
             system,
+            fairness: &fairness,
             reducer: None,
             item: self.item,
             limits: self.limits,
@@ -734,6 +813,7 @@ fn check_reduced(
         };
         let mut run = Run {
             system: &system,
+            fairness: item.fairness(),
             reducer: Some(&system),
             item: &item,
             limits: request.limits,
@@ -1080,6 +1160,9 @@ impl Reducer<ModelSimState> for ModelSystem<'_> {
 
 struct Run<'r, S: SubjectSystem> {
     system: &'r S,
+    /// The item's fairness set over the subject, which every counterexample
+    /// carries: empty for the deadlock-freedom item (FR-123, FR-212).
+    fairness: &'r [<S::TransitionId as SubjectTransition>::Fairness],
     /// The system's reductions; `None` for a subject that offers none.
     reducer: Option<&'r dyn Reducer<S::State>>,
     item: &'r Item<'r>,
@@ -1826,10 +1909,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         initial_state: usize,
         prefix: Vec<ModelStep<S::TransitionId>>,
     ) -> Step<TemporalCounterexample<S::TransitionId>> {
-        let fairness = match self.item {
-            Item::Clause { fairness, .. } => fairness.clone(),
-            Item::Deadlock => Vec::new(),
-        };
+        let fairness = self.fairness.to_vec();
         let blocked = if matches!(kind, CounterexampleKind::Deadlock) {
             let steps: Vec<&S::TransitionId> = prefix.iter().map(|step| &step.transition).collect();
             self.system
@@ -1885,7 +1965,13 @@ impl Run<'_, ModelSystem<'_>> {
             .max_transitions
             .saturating_sub(self.edges);
         let lifted = (|| {
-            let (initial, mut lift) = Lift::start(self.system, &self.group, &first.state, budget)?;
+            let (initial, mut lift) = Lift::start(
+                self.system,
+                Some(self.system),
+                &self.group,
+                &first.state,
+                budget,
+            )?;
             for index in path.iter().skip(1) {
                 let node = &self.nodes[*index];
                 // The terminal stutter edge is no model step.

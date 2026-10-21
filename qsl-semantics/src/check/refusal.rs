@@ -1060,6 +1060,16 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+    /// FR-212 "Targets at S3": a fairness constraint resolved to a
+    /// protocol target, which no S4 emission writes yet: refused rather
+    /// than compiled into a clause whose identity does not bind it.
+    /// Located at the constraint's name.
+    ProtocolFairnessNotEmitted {
+        /// The resolved constraint.
+        constraint: Box<super::temporal_clause::CheckedProtocolFairness>,
+        /// The constraint name's span.
+        span: Span,
+    },
     /// FR-234: a timed interval with a negative lower bound, `a > b`, or an
     /// open end with `a = b`. Located at the interval.
     InvalidTimedInterval {
@@ -1159,6 +1169,7 @@ impl TemporalCause {
             | Self::FairnessUnderBoundedProfile { span }
             | Self::TimedIntervalNotChecked { span }
             | Self::NotEmitted { span, .. }
+            | Self::ProtocolFairnessNotEmitted { span, .. }
             | Self::InvalidTimedInterval { span, .. }
             | Self::ModelTimeOnUntimedModel { span, .. }
             | Self::UnitlessTimedBound { span }
@@ -1178,6 +1189,7 @@ impl TemporalCause {
             | Self::FairnessUnderBoundedProfile { .. }
             | Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
+            | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
             | Self::TimedTraceSubject { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
@@ -1216,6 +1228,7 @@ impl TemporalCause {
             Self::InvertedInterval { .. } => "type-mismatch",
             Self::TimedIntervalNotChecked { .. }
             | Self::NotEmitted { .. }
+            | Self::ProtocolFairnessNotEmitted { .. }
             | Self::TimedProfileWithoutModelTime { .. }
             | Self::TimedTraceSubject { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,

@@ -2402,6 +2402,7 @@ pub fn check_hyper_clauses(
             embedding: None,
             position_limit: 10_000,
             models: &package.models,
+            protocols: &[],
             // A hyper body reads step intervals only.
             timed: super::temporal_clause::TimedContext {
                 units: &super::time_units::TimeUnits::default(),

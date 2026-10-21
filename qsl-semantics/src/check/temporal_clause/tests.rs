@@ -81,6 +81,7 @@ fn check(package: &PackageDeclarations) -> Outcome {
         embedding: None,
         position_limit: 10_000,
         models: &package.models,
+        protocols: &[],
         timed: TimedContext {
             units: &units,
             time_sources: &package.time_sources,
