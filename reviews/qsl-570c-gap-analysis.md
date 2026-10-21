@@ -41,3 +41,12 @@ How the tests bind to the criteria:
 | FND-002 | medium | `Tally::quantile`'s censored handling is not tested. Nothing exercises the rank landing among censored samples (`Some(Censored)`), censored samples counting in `n`, an exact-integer `q·n` boundary (for example `q = 1/2`, `n = 4`, which should give the 2nd value and not the 3rd), or `n = 0` giving `None`. These are the parts of the FR-192 field the coder introduced. Add unit tests on `Tally` in `statistical/tests.rs`. | qsl-analyze/src/statistical.rs:322-340 |
 | FND-003 | low | FR-193-AC-2's seed clause says "with the seed changed so a recomputed draw selects `1 ms`". The test accepts the first seed in 8..264 that gives any `SampledDisagreement::Step`. Assert that the disagreement is on the attempt step's `d` draw, recomputing `1 ms`, or a reordered-step disagreement passes. | qsl-analyze/tests/it/statistical_witness_replay.rs:136-153 |
 | FND-004 | low | FR-193-AC-3's first clause converts a `2 ms` measure witness ("`M <= 2 ms` on every activated behaviour"). The conversion is not blocked (only the FR-128 settlement is, STD-250), but only the event and undefined witnesses are converted in the test. Convert a `WitnessValue::Measure` witness of the `Two` claim and assert its prefix and `Formula` kind. Note on QSL-570 that FR-193-AC-3 and FR-189-AC-3 stay open (STD-250, STD-252) although tags bind to them, so the matrix count does not close them. | qsl-analyze/tests/it/statistical_witness_replay.rs:253-313 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f4025397a: mirrored_initial_states_merge_into_two_orbits (m = 2, m = 4 without) |
+| FND-002 | fixed | f4025397a: Tally unit tests (exact rank, rounding up, censored rank, n = 0) |
+| FND-003 | fixed | f4025397a: seed test asserts the recomputed attempt draw is 1 ms |
+| FND-004 | fixed | f4025397a: Measure witness conversion test; QSL-570 comment states FR-193-AC-3 and FR-189-AC-3 stay open |

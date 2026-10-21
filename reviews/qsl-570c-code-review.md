@@ -45,3 +45,13 @@ What is sound:
 | FND-003 | low | `Tally::measured` fills the per-value `BTreeMap` for every counted `Sample::Measured` of every form, for example `probability >= θ [accumulate ... <= c]`, but only a quantile claim reads it. For a non-quantile measure claim that is an unbounded map that is never read. Gate `measured` on `q.is_some()`, or pass the form into the tally. | qsl-analyze/src/statistical.rs:309-318, 590-595 |
 | FND-004 | low | `invariant()`'s reference branch cannot be reached. A support value must check as `NodeKind::Literal` or an integer `Coerce` (`probabilistic/model.rs` `literal`), and lowering refuses a `Value::Reference` literal (`UnbuiltLiteral`), so no support holds a reference and `invariant` always returns true. It also tests only a top-level `Value::Reference`, not a reference nested in an `Option` or `Composite`. STD-252's proposed AC replacement ("a random parameter of reference type with unequal weights") therefore cannot be built either. Correct STD-252 to say that RX-1's distribution condition cannot currently be distinguished, and keep or delete the branch by that ruling. | qsl-analyze/src/statistical/model.rs:211-226; qsl-semantics/src/check/probabilistic/model.rs:658-670; qsl-semantics/src/check/lowering.rs:4446-4453 |
 | FND-005 | low | FR-192's map is stated as exhaustive by row, and it has no row for the new `StatisticalRefusal::Symmetry`, which settles no record (`UnsettledRefusal::Symmetry`). This is the same gap SR-12245 FND-008(a) closed for `Admission` and `RequiresBound`. Add the row to STD-252 (or to the FR-192 amendment), so the spec states that a malformed symmetry declaration is the caller's `invalid_runtime_input` refusal. | qsl-replay/src/statistical/settle.rs:133-139, 232 |
+
+## Dispositions
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | f4025397a: `catalog_code` is total; unknown test/initial and TotalAboveDrawRange are invalid-value, expansion stops keep their code; test added |
+| FND-002 | fixed | f4025397a: deviation recorded (SYM-2 form only; closure not needed for soundness) in `StatisticalRequest.symmetry` docs and FR-189 |
+| FND-003 | fixed | f4025397a: measures kept only for quantile claims |
+| FND-004 | fixed | f4025397a: `invariant` removed with its unreachable branch; STD-252 corrected |
+| FND-005 | fixed | f4025397a: FR-192 map row for Symmetry; FR-189 lists SymmetryRefusal |
