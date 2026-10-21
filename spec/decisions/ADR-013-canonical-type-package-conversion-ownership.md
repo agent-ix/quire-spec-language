@@ -251,6 +251,24 @@ In the code, `model` builds one universe per model over every root type
 | Validation and diagnostics | IR refuses a source-map entry naming an unknown node. |
 | Equality | lexical over (node id, role, ordinal). |
 
+For a QSV `StepSimulationRecord`, the occurrence key names the owning checked
+`relation`/`refinement` node, with role `generated`; the record does not mint a
+second checked node id. The initial record has ordinal 0. A step record for
+zero-based row `i` has ordinal `i + 1`, where `i` is the row's position in the
+refinement's FR-375 `steps` total order (FR-375-AC-19), not its source order.
+When rows tie on node-key digest and member name, their alias-free step-class
+spellings in UTF-8 byte order determine their positions and therefore their
+ordinals. A source permutation cannot change either record's key.
+This uses FR-322's `generated` role while specifying an owner-key mapping for
+the derived record; FR-322-AC-87's generated-node example mints a node per
+row. The O-07 occurrence key is assigned and carried as a locator, but is not
+a member of the per-step record content digest in O-09. The `source_map`
+region remains location evidence and is also excluded from that digest. QSL
+refuses an occurrence
+whose refinement is unknown, whose step row is outside that refinement's
+`steps` array, or whose role or ordinal disagrees with this mapping; it does
+not silently reassign an ordinal.
+
 #### O-08 Frame identity
 
 | Field | Decision |
@@ -274,6 +292,31 @@ In the code, `model` builds one universe per model over every root type
 | Conversions | clause node id → obligation identity (CG, C-19: adds kind and arguments; no re-mint of the clause id). Function node id and its `declaration` occurrence key, both from `call_site`'s `FunctionSite` (FR-121) → function-contract obligation identity (CG, the same rule; no re-mint of either). |
 | Validation and diagnostics | CG negotiation settles one disposition per `request_index` (AD-016 terminal-disposition rule). |
 | Equality | normalized for both. |
+
+For a per-step protocol subject, the subject is the checked
+`relation`/`refinement` node. The record content identity preimage consists
+only of an RFC 8785 object with exactly two members: `subject_kind` is the
+string `protocol-refinement-step`, and `record` is QSV's canonical
+`StepSimulationRecord` object with all three members `refinement`,
+`obligation`, and `hypotheses`. CG hashes these canonical bytes under O-09.
+The O-07 occurrence key is carried separately
+and excluded from this digest. Neither a CG proof-kind nor a CG
+obligation-kind field is a member; those are CG packet concerns. The
+`refinement` member
+must equal the owning node key. `obligation` is `Initial` for ordinal 0, or
+`Step { row: i }` for ordinal `i + 1`; `i` is a zero-based index in the
+FR-375 `steps` total order; for an eligible refinement FR-468 assigns one
+step query and one certificate step part to each such row. `hypotheses` remain
+in their supplied order, with
+no sorting or deduplication. Changing any of these members, including only
+the hypothesis list, changes the obligation identity; source regions and
+`source_span` do not. A package refuses an out-of-range step row or a repeated
+`(refinement, obligation)` pair, even if the repeated records differ in
+`hypotheses`. The refusal uses the existing O-07/O-09 typed refusal vocabulary
+and yields no proof-credit identity. CG mints the obligation digest through
+§2's one encoder; QSL supplies the checked owner, occurrence, and QSV record
+without inventing another record type or node id. The CG acceptance and
+refusal obligations are specified in CG's own spec under IR-942.
 
 ##### O-09 parity preimage
 
