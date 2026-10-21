@@ -12,7 +12,7 @@ relationships:
 
 Verify `qsl_replay::compile_admitted`'s context lists the admitted record, tuple
 and union keys and a union's member ids, finds them by wire node id, and
-refuses as typed. Scope: FR-396-AC-1 to FR-396-AC-6.
+refuses as typed. Scope: FR-396-AC-1 to FR-396-AC-9.
 
 ## Test Procedure
 
@@ -31,12 +31,16 @@ refuses as typed. Scope: FR-396-AC-1 to FR-396-AC-6.
    context.
 5. Replay a predicate over a record holding a tuple from a witness built
    from the admitted keys, then from one built from the node ids.
-6. Compile a unit with two same-shaped unions and a union with a record
-   payload; compare each union's members with the producer's minted
-   `VariantId`s, the sealed `TypeEnvironment` bindings and the declared
-   payload types; from the root-only consumer, declare a `TypeEnvironment`
-   from a union's admitted key, identifiers and payloads; replay a union
-   witness naming the node id, then the kernel key.
+6. Compile a unit with two same-shaped unions, a union with a record payload
+   and a union with a union payload; compare each union's members with the
+   producer's minted `VariantId`s, the sealed `TypeEnvironment` bindings and
+   literal payload types (FR-396-AC-6, AC-8).
+7. From the root-only consumer, declare a union from its admitted key and
+   payloads, seal it with the admitted bindings, and construct and admit a
+   value of every member, including a member holding another union
+   (FR-396-AC-7).
+8. Replay a union witness naming the node id, then the kernel key
+   (FR-396-AC-9).
 
 ## Expected Results
 
@@ -49,8 +53,11 @@ refuses as typed. Scope: FR-396-AC-1 to FR-396-AC-6.
    declaration still found, unions included.
 4. TC-1088's expected results, unchanged.
 5. Reproduced on both arms from the keys; refused on both from the node ids.
-6. Members equal the producer's in declared order; the two same-shaped unions
-   have distinct keys and no shared member id; the record position is
-   `ValueType::Composite` of the record's key; the environment is closed; the
-   node-id witness reproduces on both arms and the kernel-key witness
+6. Members equal the producer's in declared order; the payload positions are
+   the literal types, a union position `ValueType::Composite` of that union's
+   key; the same-shaped unions have distinct keys and no shared member id; a
+   recompile returns the same.
+7. The sealed environment constructs and admits a value of each member and of
+   the union holding a union; a member id of another union is refused.
+8. The node-id witness reproduces on both arms and the kernel-key witness
    refuses.

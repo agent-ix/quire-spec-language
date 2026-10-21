@@ -21,7 +21,7 @@ use qsl_semantics::check::{
     CheckedGraph, CheckedTypeNode, CompositeForm, NominalNode, SemanticGraph,
 };
 use qsl_semantics::library::PackageId;
-use quire_exact::{Identifier, NodeKey, ValueType, VariantId};
+use quire_exact::{Identifier, NodeKey, UnionMember, ValueType, VariantId};
 use quire_semantic_value::declaration::{CompositeDeclaration, CompositeShape};
 
 use crate::bounds::ReplayLimits;
@@ -102,22 +102,30 @@ pub enum AdmittedCompositeForm {
 /// union value of it carries, and its payload position types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedUnionMember {
-    identifier: Identifier,
-    variant: VariantId,
+    binding: UnionMember,
     payload: Vec<ValueType>,
 }
 
 impl AdmittedUnionMember {
     /// The member identifier.
     pub fn identifier(&self) -> &Identifier {
-        &self.identifier
+        self.binding.identifier()
     }
 
     /// The member's `VariantId`: the one the check bound to the member
     /// (QSpec FR-441), which a `UnionMember` of a replayed union value of it
     /// carries and a QSV union declaration names the member by.
     pub fn variant(&self) -> VariantId {
-        self.variant
+        self.binding.variant()
+    }
+
+    /// The sealed binding the check minted for the member: its declaration
+    /// is the union's [`AdmittedComposite::node`], and it is what
+    /// `TypeEnvironment::seal_union_verified(key, node, bindings)` takes and
+    /// what `UnionValue::from_admitted` carries. A consumer clones these in
+    /// declared order and builds no key.
+    pub fn member(&self) -> &UnionMember {
+        &self.binding
     }
 
     /// The member's payload position types in declared order; empty for a
@@ -131,29 +139,46 @@ impl AdmittedUnionMember {
 /// One admitted record, tuple or union declaration: the id of its `composite_type`
 /// node, which a lookup takes, and its kernel key, the key the package's
 /// checked `TypeEnvironment` gives the declaration and which every
-/// `ValueType::Composite` of it, `CompositeDeclaration` of it and replayed
-/// value of it carries; with its qualified name and its form, and for a union
-/// its members in declared order.
+/// `ValueType::Composite` of it and `CompositeDeclaration` of it carries;
+/// with its qualified name and its form, and for a union its members in
+/// declared order.
+///
+/// For a record or tuple the replayed values carry `key()` too. A union
+/// differs: its types use `key()`, but the checked environment settles it
+/// under `node()` (`union_key(key()) == node()`), and every `UnionMember` of
+/// its values and every seal of it use `node()`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedComposite {
     node: NodeKey,
     key: NodeKey,
     qualified_name: Vec<Identifier>,
-    form: AdmittedCompositeForm,
-    /// `Some` exactly when `form` is `Union`.
-    members: Option<Vec<AdmittedUnionMember>>,
+    shape: AdmittedShape,
+}
+
+/// The form of an [`AdmittedComposite`], carrying a union's members so they
+/// exist exactly for a union.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum AdmittedShape {
+    Record,
+    Tuple,
+    Union(Vec<AdmittedUnionMember>),
 }
 
 impl AdmittedComposite {
     /// The id of the declaration's `composite_type` node: the wire node id
-    /// [`AdmittedContext::composite_declaration`] finds it by.
+    /// [`AdmittedContext::composite_declaration`] finds it by. For a union it
+    /// is also the settled key: the `final_key` of `seal_union_verified`, the
+    /// declaration of every [`AdmittedUnionMember::member`] and the id a
+    /// replay witness names the union by.
     pub fn node(&self) -> NodeKey {
         self.node
     }
 
     /// The declaration's kernel key: the key `CompositeDeclaration::new` and
     /// `ValueType::Composite` take for it, equal to the one QSL's checked
-    /// `TypeEnvironment` and replay use.
+    /// `TypeEnvironment` and replay use. For a union this is the handle of its
+    /// types (the `handle` of `seal_union_verified`); its values and members
+    /// carry [`Self::node`].
     pub fn key(&self) -> NodeKey {
         self.key
     }
@@ -165,15 +190,23 @@ impl AdmittedComposite {
 
     /// Whether the declaration is a record, a tuple or a union.
     pub fn form(&self) -> AdmittedCompositeForm {
-        self.form
+        match self.shape {
+            AdmittedShape::Record => AdmittedCompositeForm::Record,
+            AdmittedShape::Tuple => AdmittedCompositeForm::Tuple,
+            AdmittedShape::Union(_) => AdmittedCompositeForm::Union,
+        }
     }
 
-    /// A union's members in declared order, each with its `VariantId` and
-    /// payload; `None` for a record or tuple. A replay witness names a union
-    /// by [`Self::node`] (the declaration id of its `Union` value) and a
+    /// A union's members in declared order, each with its sealed binding,
+    /// `VariantId` and payload; `None` for a record or tuple. A consumer
+    /// seals the union with `seal_union_verified(key(), node(), bindings)` over
+    /// these bindings. A replay witness names a union by [`Self::node`] and a
     /// member by its identifier.
     pub fn union_members(&self) -> Option<&[AdmittedUnionMember]> {
-        self.members.as_deref()
+        match &self.shape {
+            AdmittedShape::Union(members) => Some(members),
+            AdmittedShape::Record | AdmittedShape::Tuple => None,
+        }
     }
 }
 
@@ -538,15 +571,19 @@ fn composite_table(
 ) -> Result<BTreeMap<[u8; 32], AdmittedComposite>, InternalFault> {
     let mut composites = BTreeMap::new();
     for type_node in graph.checked_type_nodes() {
-        let (node, key, form) = match type_node {
+        let (node, key, shape) = match type_node {
             CheckedTypeNode::Composite {
                 node,
                 declaration,
                 form,
             } => match form {
-                CompositeForm::Record => (*node, *declaration, AdmittedCompositeForm::Record),
-                CompositeForm::Tuple => (*node, *declaration, AdmittedCompositeForm::Tuple),
-                CompositeForm::Union => (*node, *declaration, AdmittedCompositeForm::Union),
+                CompositeForm::Record => (*node, *declaration, AdmittedShape::Record),
+                CompositeForm::Tuple => (*node, *declaration, AdmittedShape::Tuple),
+                CompositeForm::Union => (
+                    *node,
+                    *declaration,
+                    AdmittedShape::Union(union_members(graph, *declaration)?),
+                ),
             },
             CheckedTypeNode::Scalar { .. }
             | CheckedTypeNode::BoundedDomain { .. }
@@ -560,18 +597,13 @@ fn composite_table(
                 InternalFault::new("replay", "every-admitted-composite-has-a-declared-node")
             })?
             .to_vec();
-        let members = match form {
-            AdmittedCompositeForm::Union => Some(union_members(graph, key)?),
-            AdmittedCompositeForm::Record | AdmittedCompositeForm::Tuple => None,
-        };
         composites.insert(
             *node.as_bytes(),
             AdmittedComposite {
                 node,
                 key,
                 qualified_name,
-                form,
-                members,
+                shape,
             },
         );
     }
@@ -602,8 +634,7 @@ fn union_members(
                 .member()
                 .ok_or_else(|| InternalFault::new("replay", "every-admitted-union-is-sealed"))?;
             Ok(AdmittedUnionMember {
-                identifier: member.identifier().clone(),
-                variant: binding.variant(),
+                binding: binding.clone(),
                 payload: member.positions().to_vec(),
             })
         })

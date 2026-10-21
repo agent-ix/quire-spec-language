@@ -52,3 +52,12 @@ Gates run at f3eb22fe0 via locked-build: `admitted_composite_facade` (4 pass), `
 ## Verdict
 
 Not mergeable on FND-001. The keys themselves are right, measured: `key()` is the `scope().types()` handle that the checked signature carries, `node()` is the settled union key that replay decodes against, and the `VariantId`s and payloads equal the sealed bindings in declared order. The independent FR-441 minting oracle (`mint_union_variant_id(mint_union_member_key(node, name))`) is sound. The refusal changes (union `Foreign`, no union `WrongKind`) are correct and tested. The gap is the last step: a consumer still has to build a `NodeKey` to seal and use the union, and the docs point it at the wrong key.
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: AdmittedUnionMember::member() exposes the sealed binding; root-only test seals and admits every member | HEAD |
+| FND-002 | fixed: AdmittedComposite, node(), key() and FR-396 Description/Behavior state the union asymmetry | HEAD |
+| FND-003 | fixed: members live in a private AdmittedShape::Union, so they exist exactly for a union | HEAD |
+| FND-004 | rejected: no non_exhaustive anywhere in the facade (AdmittedLookupRefusal likewise); prerelease, break stated in the PR body | HEAD |

@@ -1129,7 +1129,7 @@ fn admitted_composite_keys_are_the_keys_replay_converts_against() {
 /// FR-396-AC-6 (TC-1090): a union witness that names the admitted union's
 /// `composite_type` node id and a member by its admitted identifier replays on
 /// both arms; the same witness naming the kernel key refuses.
-#[trace("TC-1090", "FR-396-AC-6")]
+#[trace("TC-1090", "FR-396-AC-9")]
 #[test]
 fn admitted_union_node_is_what_replay_converts_a_union_witness_against() {
     let fixture = fixture(

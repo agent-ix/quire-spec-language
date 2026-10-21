@@ -34,6 +34,7 @@ const UNIT: &str = "record Left { a: Boolean; b: Boolean; }\n\
      union Shape { Empty, Circle(Integer) }\n\
      union Twin { Empty, Circle(Integer) }\n\
      union Holder { Nothing, Has(Left, Boolean) }\n\
+     union Nest { Flat, Deep(Shape, Holder) }\n\
      function is_blue using v(c: Color): Boolean pure { false }\n\
      function uses_left using v(x: Left): Boolean pure { x.a }\n";
 const POINTS: &str = "record Point { x: Boolean; }\nunion Pick { A, B(Point) }\n";
@@ -165,7 +166,7 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["First", "Holder", "Left", "Right", "Second", "Shape", "Twin"]
+        ["First", "Holder", "Left", "Nest", "Right", "Second", "Shape", "Twin"]
     );
 
     let admitted = admit(&text, &DependencyInput::default());
@@ -198,7 +199,7 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
     assert_ne!(left.key(), left.node());
 
     let keys: BTreeSet<_> = expected.iter().map(|(_, key, ..)| *key).collect();
-    assert_eq!(keys.len(), 7, "each declaration has its own key");
+    assert_eq!(keys.len(), 8, "each declaration has its own key");
 
     for (node, key, ..) in &expected {
         let first = context.composite_declaration(wire(*node)).expect("found");
@@ -283,7 +284,7 @@ fn spine_members(graph: &CheckedGraph, name: &str) -> (NodeKey, Vec<ExpectedMemb
 /// every member's `VariantId` and payload in declared order; two same-shaped
 /// unions have distinct keys and member ids; a record payload position is
 /// `ValueType::Composite` of the record's admitted key.
-#[trace("TC-1090", "FR-396-AC-6")]
+#[trace("TC-1090", "FR-396-AC-6", "FR-396-AC-8")]
 #[test]
 fn union_members_are_the_producers_minted_variants_in_declared_order() {
     let text = format!("{HEADER}{UNIT}");
@@ -296,6 +297,7 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
             .expect("admitted")
     };
 
+    let shape_of = |name: &str| by_name(name).union_members().expect("members");
     let mut seen = BTreeSet::new();
     for name in ["Shape", "Twin", "Holder"] {
         let (node, expected) = with_spine_graph(&text, |graph| spine_members(graph, name));
@@ -333,6 +335,12 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
         twin.union_members().map(<[_]>::len)
     );
 
+    // Literal payloads, independent of the environment the oracle reads.
+    for union in [shape_of("Shape"), shape_of("Twin")] {
+        let payloads: Vec<_> = union.iter().map(|m| m.payload().to_vec()).collect();
+        assert_eq!(payloads, [vec![], vec![ValueType::Integer]]);
+    }
+
     // A record payload position carries the record's kernel key.
     let left = by_name("Left");
     let has = &by_name("Holder").union_members().expect("members")[1];
@@ -341,6 +349,29 @@ fn union_members_are_the_producers_minted_variants_in_declared_order() {
         [ValueType::Composite(left.key()), ValueType::Boolean]
     );
     assert!(by_name("Left").union_members().is_none());
+
+    // A union position is `ValueType::Composite` of that union's kernel key
+    // (its type handle), not of its node id; the checked signature of a
+    // parameter of the union's type says the same.
+    let (shape, holder) = (by_name("Shape"), by_name("Holder"));
+    let deep = &by_name("Nest").union_members().expect("members")[1];
+    assert_eq!(
+        deep.payload(),
+        [
+            ValueType::Composite(shape.key()),
+            ValueType::Composite(holder.key())
+        ]
+    );
+    assert_ne!(shape.key(), shape.node());
+    let parameter = with_spine_graph(
+        &format!("{HEADER}{UNIT}function takes using v(s: Shape): Boolean pure {{ false }}\n"),
+        |graph| {
+            graph.callable("takes").expect("function").parameters[0]
+                .1
+                .clone()
+        },
+    );
+    assert_eq!(parameter, ValueType::Composite(shape.key()));
 
     // Recompiling returns the same union declarations.
     let again = admit(&text, &DependencyInput::default());
@@ -406,7 +437,7 @@ fn a_dependencys_composite_is_foreign() {
                 })
             );
         }
-        assert_eq!(context.composites().count(), 7);
+        assert_eq!(context.composites().count(), 8);
         for own in context.composites() {
             assert_eq!(context.composite_declaration(wire(own.node())), Ok(own));
         }

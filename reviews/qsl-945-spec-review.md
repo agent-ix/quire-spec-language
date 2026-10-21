@@ -38,3 +38,11 @@ Ticket: QSL-945. Spec review of the in-place FR-396 amendment (title, Descriptio
 ## Verdict
 
 FND-001 and FND-002 are mediums and do not block on their own. They are the spec side of SR-12288 FND-001/FND-002 and should be fixed in the same round. The AC-2/AC-3 amendments and the removal of union `WrongKind` are consistent with the code and the tests.
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: FR-396 Description and Behavior state node() is the settled key | HEAD |
+| FND-002 | fixed: AC-7 requires sealing and admitting a value of each member | HEAD |
+| FND-003 | fixed: AC-6 split into AC-6 to AC-9 | HEAD |
