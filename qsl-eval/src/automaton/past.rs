@@ -3,11 +3,18 @@
 //! keeps so a past operator needs no unrolling.
 //!
 //! An operator with lower bound `a` is the operator with lower bound 0 read
-//! `a` positions earlier (IV-3). The lower-bound-0 part keeps a
-//! [`PastAgeCounter`] for a closed interval and one flag for an open one; the
-//! shift keeps the ages, among `1..=a`, at which the lower-bound-0 part held.
-//! Ages are kept as inclusive ranges, so a lower bound as large as `u64::MAX`
-//! costs one range.
+//! `a` steps earlier (IV-3): at the last position whose distance back is
+//! exactly `a`. The lower-bound-0 part keeps a [`PastAgeCounter`] for a closed
+//! interval and one flag for an open one; the shift keeps the distances,
+//! among `1..=a`, at which the lower-bound-0 part held at the last position
+//! of the run of positions that distance back. Distances are measured from
+//! the last position read and are kept as inclusive ranges, so a lower bound
+//! as large as `u64::MAX` costs one range.
+//!
+//! A step that does not count (ADR-027 PB-3) leaves every distance where it
+//! was: the new position joins the run of the position before it, the age
+//! counter holds unless the operand is read, and the shift does not move.
+//! When every step counts this is ADR-018's reading.
 
 use crate::automaton::counters::PastAgeCounter;
 use crate::automaton::dnf::Dnf;
@@ -26,8 +33,9 @@ pub(super) enum Base {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct Memory {
     base: Base,
-    /// The ages in `1..=lower` at which the lower-bound-0 part held, as
-    /// disjoint inclusive ranges in ascending order.
+    /// The distances back from the last position read, in `1..=lower`, at
+    /// which the lower-bound-0 part held at the last position of the run
+    /// that far back, as disjoint inclusive ranges in ascending order.
     ages: Vec<(u64, u64)>,
 }
 
@@ -85,16 +93,22 @@ impl Past {
     }
 
     /// The memory after one position at which the guard (the left operand of
-    /// `since`) and the witness hold or not, and whether the operator holds
-    /// at that position.
-    fn step(self, memory: &Memory, guard: bool, witness: bool) -> (bool, Memory) {
+    /// `since`) and the witness hold or not, reached by a step that
+    /// `counted` or not, and whether the operator holds at that position.
+    fn step(self, memory: &Memory, guard: bool, witness: bool, counted: bool) -> (bool, Memory) {
+        let previous = match memory.base {
+            Base::Flag(held) => held,
+            Base::Age(counter) => counter.within_bound(),
+        };
         let base = match (self.kind, memory.base) {
-            (PastKind::Once, Base::Age(counter)) => Base::Age(counter.step(witness)),
+            (PastKind::Once, Base::Age(counter)) => {
+                Base::Age(counter.step_counted(witness, counted))
+            }
             (PastKind::Once, Base::Flag(held)) => Base::Flag(held || witness),
             (PastKind::Since, Base::Age(counter)) => Base::Age(if witness {
-                counter.step(true)
+                counter.step_counted(true, counted)
             } else if guard {
-                counter.step(false)
+                counter.step_counted(false, counted)
             } else {
                 // The guard broke every witness the counter was counting.
                 self.bound.map_or(counter, PastAgeCounter::new)
@@ -114,28 +128,27 @@ impl Past {
                 },
             );
         }
-        let holds = memory
-            .ages
+        let ages = if counted {
+            // The run the last position ended is now one step back.
+            let mut ages: Vec<(u64, u64)> = memory
+                .ages
+                .iter()
+                .filter_map(|&(first, last)| {
+                    let first = first.checked_add(1)?;
+                    (first <= self.lower).then(|| (first, last.saturating_add(1).min(self.lower)))
+                })
+                .collect();
+            if previous {
+                ages.insert(0, (1, 1));
+            }
+            merged(ages)
+        } else {
+            memory.ages.clone()
+        };
+        let holds = ages
             .iter()
             .any(|&(first, last)| first <= self.lower && self.lower <= last);
-        let mut ages: Vec<(u64, u64)> = memory
-            .ages
-            .iter()
-            .filter_map(|&(first, last)| {
-                let first = first.checked_add(1)?;
-                (first <= self.lower).then(|| (first, last.saturating_add(1).min(self.lower)))
-            })
-            .collect();
-        if part {
-            ages.insert(0, (1, 1));
-        }
-        (
-            holds,
-            Memory {
-                base,
-                ages: merged(ages),
-            },
-        )
+        (holds, Memory { base, ages })
     }
 
     /// Every case of the step from `memory`, given the conditions under
@@ -145,6 +158,7 @@ impl Past {
         memory: &Memory,
         guard: Option<&Dnf>,
         witness: &Dnf,
+        counted: bool,
     ) -> Vec<Outcome> {
         let guards = match guard {
             Some(guard) => vec![(true, guard.clone()), (false, guard.negate())],
@@ -158,7 +172,7 @@ impl Past {
                 if condition.is_never() {
                     continue;
                 }
-                let (holds, next) = self.step(memory, *guard_holds, *witness_holds);
+                let (holds, next) = self.step(memory, *guard_holds, *witness_holds, counted);
                 match outcomes
                     .iter_mut()
                     .find(|seen| seen.holds == holds && seen.next == next)

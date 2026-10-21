@@ -220,8 +220,9 @@ subject once the feature is built.
   conflicts and the type form); the rest of the declaration is
   checked as usual and its own refusals are reported beside it.
 - This build's support set SHALL hold `history-row` for the history types its
-  history key can encode, which FR-138 checks, and SHALL omit the other three
-  names.
+  history key can encode, which FR-138 checks, and `protocol-abstract-side`
+  and `refinement-internal-list`, which FR-147 checks, and SHALL omit
+  `nested-reference-row`.
 - S3 SHALL refuse a `history` row whose declared type is an enum type or a
   decimal type, or an option of one, with
   `unsupported_construct`/`not-yet-implemented` naming `history-row`, at the

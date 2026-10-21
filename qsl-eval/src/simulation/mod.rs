@@ -28,6 +28,7 @@ mod key;
 pub mod model;
 mod not_simulated;
 mod order;
+mod progress;
 pub mod protocol;
 mod reduction;
 mod sample;
@@ -42,6 +43,7 @@ pub use footprint::{any_affects, independent, Footprint, Location};
 pub use frontier::{Frontier, Limit};
 pub use key::EncodingRefusal;
 pub use not_simulated::{NotSimulated, RequiresBound, BOUND_POSITIONS};
+pub use progress::{FairLoop, ZeroProgress, ZeroProgressError};
 pub use reduction::{
     ConstraintValue, OfferedReductions, Permutation, SymmetryClass, SymmetryGroup,
 };
@@ -51,5 +53,5 @@ pub use sampled::{
     SampledDisagreement, SampledPosition, SampledRecord, SampledReplay, SampledReplayRefusal,
     SampledStep, StepAt,
 };
-pub use subject::{Bounded, SubjectSystem, SubjectTransition};
+pub use subject::{Bounded, Cut, SubjectSystem, SubjectTransition};
 pub use trace::{replay, ReplayError, SampleProvenance, Step, StopReason, Trace};

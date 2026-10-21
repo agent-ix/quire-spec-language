@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Public API tests for the unreduced graph core and the model checker.
 
+mod bounded_closure;
 mod closure_certificate;
 mod counter;
 mod deadlock_item;
@@ -30,7 +31,9 @@ mod por_world;
 mod prob_world;
 mod protocol_compensation;
 mod protocol_constructs;
+mod protocol_counted_steps;
 mod protocol_footprints;
+mod protocol_roles;
 mod protocol_system;
 mod quotient;
 mod reduction;
@@ -47,6 +50,7 @@ mod refinement_liveness;
 mod refinement_reads;
 mod refinement_replay;
 mod refinement_safety;
+mod release_acquire;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod schedulability;
@@ -55,6 +59,7 @@ mod state_graph;
 mod state_graph_certificate;
 mod state_graph_settle;
 mod statistical_model;
+mod statistical_witness_replay;
 mod strong_fairness;
 mod strong_hint;
 mod units;

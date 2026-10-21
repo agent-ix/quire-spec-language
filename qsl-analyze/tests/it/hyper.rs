@@ -719,6 +719,173 @@ fn a_co_safety_body_is_decided_and_its_counterexample_replays() {
     }
 }
 
+/// The verdict of `body` over the secure vault from `(0, 0)`, whose behaviours
+/// start with `l = 0` and then take any `l` at each step.
+fn secure_verdict(quantifiers: &str, body: &str) -> Result<(), Box<HyperCounterexample>> {
+    let clause =
+        format!("hyper H using inf over behaviours (v: V::Vault) {quantifiers} {{ {body} }}");
+    let world = World::new(Vault::Secure, false, &STARTS[..1], &clause);
+    match run(&world) {
+        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. } => Ok(()),
+        HyperOutcome::Violated { counterexample, .. } => {
+            assert!(
+                matches!(
+                    world.replay(&counterexample),
+                    Ok(qsl_replay::ModelTraceSettlement::Reproduced { .. })
+                ),
+                "{body}: the counterexample replays"
+            );
+            Err(counterexample)
+        }
+        other => panic!("{body}: expected Holds or a violation, got {other:?}"),
+    }
+}
+
+/// QSL-923: the disjunction of a state test and a temporal formula keeps
+/// both disjuncts. Over the secure vault from `(0, 0)` the behaviours are
+/// `l = 0` and then any bit, so each verdict is read off the disjuncts: the
+/// first disjunct of `l = 1 or always l = 0` is false at position 0 and the
+/// second fails on the behaviour that takes `step(1)`; `l = 0 or always l = 1`
+/// holds at position 0; `l = 1 or eventually l = 1` fails on the behaviour
+/// that takes `step(0)` forever; `not l = 0 or eventually l = 0` holds at
+/// position 0 by its second disjunct; and `l = 1 or always l = 0 or
+/// eventually l = 1` holds on every behaviour because `l` is a bit. The
+/// conjunctions at the end have a negation that is a disjunction of a state
+/// test and a temporal formula, with the state test on either side of the
+/// operator's operands, which is the shape the translation of a negated body
+/// must keep both disjuncts of.
+#[trace("TC-601")]
+#[test]
+fn a_universal_body_with_a_state_test_disjunct_is_decided_by_both_disjuncts() {
+    const ONE: &str = "holds(v.l @ a = 1)";
+    const ZERO_L: &str = "holds(v.l @ a = 0)";
+    let cases = [
+        (format!("{ONE} or always {ZERO_L}"), false),
+        (format!("{ZERO_L} or always {ONE}"), true),
+        (format!("{ONE} or eventually {ONE}"), false),
+        (format!("not {ZERO_L} or eventually {ZERO_L}"), true),
+        (
+            format!("{ONE} or (always {ZERO_L} or eventually {ONE})"),
+            true,
+        ),
+        (
+            format!("(not {ONE}) or (({ONE} until {ONE}) or ({ONE} or {ONE}))"),
+            true,
+        ),
+        (format!("always ({ONE} or eventually {ZERO_L})"), true),
+        (format!("always ({ONE} or always {ONE})"), false),
+        (format!("(not {ONE}) and always {ZERO_L}"), false),
+        (format!("always {ZERO_L} and (not {ONE})"), false),
+        (format!("(not {ONE}) and eventually {ONE}"), false),
+        (format!("eventually {ONE} and (not {ONE})"), false),
+        (
+            format!("(not {ONE}) and (always {ZERO_L} or eventually {ONE})"),
+            true,
+        ),
+        (format!("(not {ONE}) and ({ONE} or always {ZERO_L})"), false),
+        (
+            format!("(not {ONE}) and (eventually {ONE} or {ONE})"),
+            false,
+        ),
+        (
+            format!("(not {ONE}) and ({ZERO_L} or eventually {ONE})"),
+            true,
+        ),
+    ];
+    for (body, holds) in &cases {
+        assert_eq!(
+            secure_verdict("forall trace a of V", body).is_ok(),
+            *holds,
+            "{body}"
+        );
+    }
+}
+
+/// QSL-923, HP-2: `(not l = 1) and eventually l = 1` is violated by every
+/// behaviour, because `l = 1` would have to be false and later true, so the
+/// negated body `l = 1 or always l = 0` is satisfied by `step(0)` forever and
+/// the product has an accepting cycle. The lockstep counterexample's loop
+/// replays.
+#[trace("TC-601")]
+#[test]
+fn a_negated_body_is_violated_by_the_behaviour_that_never_sets_the_output() {
+    let body = "(not holds(v.l @ a = 1)) and eventually holds(v.l @ a = 1)";
+    for quantifiers in [
+        "forall trace a of V forall trace b of V",
+        "forall trace a of V",
+    ] {
+        let counterexample =
+            secure_verdict(quantifiers, body).expect_err("a violated body is not held");
+        assert!(
+            matches!(
+                counterexample.kind,
+                HyperCounterexampleKind::Lockstep { .. }
+            ),
+            "{quantifiers}"
+        );
+    }
+    // The negated body on its own: the secure vault has the behaviour that
+    // never sets the output, which falsifies `l = 1 or always l = 0`.
+    assert!(secure_verdict(
+        "forall trace a of V",
+        "holds(v.l @ a = 1) or always holds(v.l @ a = 0)"
+    )
+    .is_err());
+}
+
+/// QSL-923, HP-2 on a swap-symmetric clause (normal form): over the terminal
+/// vault from `(0, 0)` with `fair weak step` on both traces, the body
+/// `l @ a = 0 and l @ b = 0 and (eventually l @ a = 1 or eventually l @ b = 1)`
+/// is violated by the pair whose traces both loop `(0, 0) -step(0)-> (0, 0)`,
+/// where `l` is 0 forever. Its negation holds a disjunction with
+/// the state formula `l @ a = 1 or l @ b = 1`, whose negation lowering
+/// never builds, so the translation refused it with a fault in the
+/// self-composition product. The held clause after it is stored as the
+/// quotient by the swap and explores the whole automaton.
+#[trace("TC-601")]
+#[test]
+fn a_swap_symmetric_body_with_a_nested_disjunction_is_decided() {
+    let body = "holds(v.l @ a = 0) and holds(v.l @ b = 0) and \
+                (eventually holds(v.l @ a = 1) or eventually holds(v.l @ b = 1))";
+    let world = World::new(
+        Vault::Terminal,
+        false,
+        &STARTS[..1],
+        &format!(
+            "hyper S using inf over behaviours (v: V::Vault) \
+             forall trace a of V fair weak V::Vault::step; \
+             forall trace b of V fair weak V::Vault::step; {{ {body} }}"
+        ),
+    );
+    assert!(
+        matches!(run(&world), HyperOutcome::Violated { .. }),
+        "the terminal pair falsifies the body"
+    );
+
+    // A held clause explores the whole quotient automaton, so a lost
+    // negation is reached: both outputs are 0 at position 0 and equal after
+    // it under equal inputs. In normal form the operands of an `or` are
+    // flattened, so the state operand whose negation is needed is a
+    // conjunction: the body's negation is `(l @ a = 1 and l @ b = 1) or
+    // eventually` a difference.
+    let held = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &format!(
+            "hyper S using inf over behaviours (v: V::Vault) \
+             forall trace a of V forall trace b of V {EQUAL_INPUTS} \
+             {{ ((not holds(v.l @ a = 1)) or (not holds(v.l @ b = 1))) and \
+             always holds(v.l @ a = v.l @ b) }}"
+        ),
+    );
+    assert!(!held.clause.copy_group().classes.is_empty());
+    assert!(
+        matches!(run(&held), HyperOutcome::HoldsReduced { .. }),
+        "the pair agrees"
+    );
+}
+
 /// The lassos of several instances (second phase): the instance that has a
 /// violation is the answer when the others hold, and at equal length the
 /// earlier instance wins. These violations are lassos, not first-phase

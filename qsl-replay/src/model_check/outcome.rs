@@ -6,8 +6,8 @@ use crate::certificate::closure::ClosureCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::{
-    AppliedReduction, IncompleteCause, InconclusiveCause, MemoryBound, ReductionKind,
-    SymmetryBrokenCause,
+    AppliedReduction, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
+    ReductionKind, SymmetryBrokenCause,
 };
 use qsl_eval::simulation::protocol::WeakAccessShape;
 use qsl_eval::simulation::SubjectTransition;
@@ -29,6 +29,10 @@ pub struct RunStats {
     /// The distinct model states whose expansion cut a store at the memory
     /// bound (ADR-025 MB-3); 0 for a subject with no memory bound.
     pub bound_limited: u64,
+    /// The distinct model states left with an `activate` step unexpanded at
+    /// `max_live_instances` (ADR-027 AE-4); 0 for a subject with no instance
+    /// bound.
+    pub instance_limited: u64,
 }
 
 /// Why a run decided nothing (ADR-018 V-6).
@@ -48,6 +52,14 @@ pub enum UndecidedCause {
     /// ADR-023 HM-7: a hyper item's non-empty `μ_U` is matched by no fair
     /// tuple of universal behaviours (FR-176).
     VacuousMatch,
+    /// ADR-027 AE-4: the run completed with no counterexample and at least
+    /// one instance-limited state.
+    InstanceBoundReached {
+        /// The bound, by the request member that raises it, and its value.
+        bound: InstanceBound,
+        /// The instance-limited states.
+        states: u64,
+    },
 }
 
 impl UndecidedCause {
@@ -59,6 +71,9 @@ impl UndecidedCause {
             Self::NoInstance => InconclusiveCause::NoInstance,
             Self::MatchUndetermined => InconclusiveCause::MatchUndetermined,
             Self::VacuousMatch => InconclusiveCause::VacuousMatch,
+            Self::InstanceBoundReached { bound, states } => {
+                InconclusiveCause::InstanceBoundReached { bound, states }
+            }
         }
     }
 }

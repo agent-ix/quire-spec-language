@@ -1257,15 +1257,35 @@ enum LiteralJson<'a> {
     Null(()),
 }
 
-// Test-only: QSpec's operation vectors carry no literal term, so the
-// conformance decoder never needs one; a literal in a decoded vector refuses
-// rather than guessing a kind.
+// Test-only: the conformance decoder reads the literal kinds QSpec's vectors
+// carry in an application's arguments (`boolean`, `integer`, `text`,
+// `string` and `none`); any other kind refuses rather than guessing.
 #[cfg(test)]
 impl<'de> serde::Deserialize<'de> for LiteralValue {
-    fn deserialize<D: serde::Deserializer<'de>>(_: D) -> Result<Self, D::Error> {
-        Err(serde::de::Error::custom(
-            "literal terms are not decoded from vectors",
-        ))
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        // The literal kind is the serde tag, so an unlisted kind is refused
+        // by the decoder rather than matched by name here.
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "value_kind", content = "value", rename_all = "snake_case")]
+        enum Wire {
+            Boolean(bool),
+            Integer(String),
+            Text(String),
+            String(String),
+            None(()),
+        }
+        Ok(match Wire::deserialize(deserializer)? {
+            Wire::Boolean(value) => Self::Boolean(value),
+            Wire::Integer(value) => {
+                Self::Integer(value.parse().map_err(|_| {
+                    D::Error::custom("an integer literal's value is a decimal string")
+                })?)
+            }
+            Wire::Text(value) => Self::Text(value),
+            Wire::String(value) => Self::String(value),
+            Wire::None(()) => Self::None,
+        })
     }
 }
 

@@ -193,8 +193,7 @@ fn a_set_reports_both_results_when_the_precondition_holds_and_one_when_it_does_n
 /// TC-1039 steps 2 and 3.
 #[trace("TC-1039", "FR-107-AC-14")]
 #[test]
-fn a_set_orders_its_entries_by_kind_then_name_and_skips_postconditions_after_a_false_precondition()
-{
+fn a_set_orders_its_entries_by_kind_then_name_and_stops_at_the_first_false_precondition() {
     let unit = unit();
     let mut docs = documents();
     let (up12, up34) = (docs.invocation("up12", 1, 2), docs.invocation("up34", 3, 4));
@@ -214,7 +213,7 @@ fn a_set_orders_its_entries_by_kind_then_name_and_skips_postconditions_after_a_f
     let refused = evaluate(&unit, &over(&unit, &docs, &up34, &names), UNLIMITED).unwrap();
     assert_eq!(
         entries(&refused),
-        expected(&[("UpdateAllowed", Some(false)), ("UpdateNotMax", Some(true))])
+        expected(&[("UpdateAllowed", Some(false))])
     );
     assert_eq!(refused.outcome, ClauseSetOutcome::False);
 

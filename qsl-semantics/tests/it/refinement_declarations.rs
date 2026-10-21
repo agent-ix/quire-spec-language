@@ -11,12 +11,13 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_forms::{AbstractSideForm, DeclaredName, RefinementRowForm, StepSourceForm};
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    step_row_refs, step_simulation_records, AssemblyRefusal, CheckCause, CheckRefusal,
+    step_row_refs, step_simulation_records, AssemblyRefusal, Capability, CheckCause, CheckRefusal,
     CheckedGraph, CheckedRefinement, PackageDeclarations, RefinementCause, RowClass, StepClass,
-    StepTarget,
+    StepSimulationEntry, StepTarget,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -30,8 +31,8 @@ use serde_json::{json, Value};
 const INTEGER: &str = "ix://quire/native/Integer";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
-const SPEC: &str = "example/counter-spec";
-const CAS: &str = "example/counter-cas";
+pub(crate) const SPEC: &str = "example/counter-spec";
+pub(crate) const CAS: &str = "example/counter-cas";
 const QUEUE: &str = "example/queue-spec";
 const RING: &str = "example/ring-buffer";
 
@@ -419,7 +420,7 @@ fn unit_text(
     (text, packages)
 }
 
-fn assemble(
+pub(crate) fn assemble(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -523,7 +524,7 @@ fn only(found: &[Refused]) -> &Refused {
     only
 }
 
-fn counters() -> (Vec<u8>, Vec<u8>) {
+pub(crate) fn counters() -> (Vec<u8>, Vec<u8>) {
     (counter_spec(), counter_cas())
 }
 
@@ -566,7 +567,7 @@ fn cas_refines_counter() -> String {
 }
 
 /// `body` with the one occurrence of `from` replaced by `to`.
-fn mutated(body: &str, from: &str, to: &str) -> String {
+pub(crate) fn mutated(body: &str, from: &str, to: &str) -> String {
     assert_eq!(body.matches(from).count(), 1, "{from} occurs once");
     body.replace(from, to)
 }
@@ -847,6 +848,7 @@ fn every_concrete_operation_has_a_checked_step_row() {
             }
             StepTarget::Stutter => stuttered += 1,
             StepTarget::Any => panic!("no row maps to any"),
+            StepTarget::Node { .. } => panic!("no row names a protocol node"),
         }
     }
     applied.sort();
@@ -1266,67 +1268,6 @@ fn protocol_step_rows_refuse_over_a_model_subject() {
     );
 }
 
-/// FR-147: an abstract protocol side is a form QSpec has no production for
-/// (STD-182), so S2 never builds it from source; built by hand, S3 refuses it
-/// `unsupported_construct`/`not-yet-implemented` at the clause name and still
-/// checks, and reports, the rest of the declaration.
-#[trace("TC-540", "FR-135-AC-5")]
-#[test]
-fn a_protocol_abstract_side_refuses_and_the_rest_is_still_checked() {
-    let (spec, cas) = counters();
-    let (text, declarations) = assemble(
-        "",
-        &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)],
-        &cas_refines_counter(),
-    );
-    let mut declarations = declarations.expect("the unit assembles");
-    let [declaration] = &mut declarations.refinements[..] else {
-        panic!("one refinement");
-    };
-    let AbstractSideForm::Model(alias) = declaration.form.abstract_side.clone() else {
-        panic!("a model side as written");
-    };
-    // Rows that would otherwise refuse against the protocol side stay.
-    let clause = DeclaredName {
-        name: "Twice".to_owned(),
-        span: alias.span,
-    };
-    declaration.form.abstract_side = AbstractSideForm::Protocol { alias, clause };
-    // A step row the concrete model needs is missing.
-    declaration.form.rows.retain(|row| {
-        !matches!(row, RefinementRowForm::Step(step)
-            if matches!(&step.source, StepSourceForm::Named { name, .. }
-                if name.name == "Impl::Counter::peek"))
-    });
-    let found = check_declarations(&text, declarations).expect_err("the protocol side refuses");
-    let [protocol, missing] = &found[..] else {
-        panic!(
-            "two refusals: {:?}",
-            found.iter().map(|r| &r.refusal).collect::<Vec<_>>()
-        );
-    };
-    assert_eq!(
-        protocol.code_and_cause(),
-        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
-    );
-    assert_eq!(protocol.at, "Spec");
-    let RefinementCause::Unsupported {
-        feature, profile, ..
-    } = protocol.refinement()
-    else {
-        panic!("an unsupported feature: {:?}", protocol.refinement());
-    };
-    assert_eq!(feature.name(), "protocol-abstract-side");
-    assert_eq!(profile, "quire.temporal.infinite-trace/v1");
-    assert!(matches!(
-        missing.refinement(),
-        RefinementCause::MissingRow {
-            class: RowClass::Step,
-            ..
-        }
-    ));
-}
-
 /// FR-361-AC-4 (TC-1015), the refinement half: the same refinement unit that
 /// checks under the value profile checks with the model profile selected, so
 /// a refinement is not refused by the model-profile gate.
@@ -1565,7 +1506,7 @@ fn operation_key(operation: &DeclarationKey) -> quire_exact::NodeKey {
     quire_exact::NodeKey::from_digest(Sha256::digest(operation.node.as_bytes()).into())
 }
 
-fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
+fn simulation_entries(graph: &CheckedGraph) -> Vec<StepSimulationEntry> {
     step_simulation_records(
         refinement_key(),
         only_refinement(graph),
@@ -1574,8 +1515,39 @@ fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
     .expect("the rows fit a step row reference")
 }
 
-/// TC-551 step 1, record values only (the `operation-contract` requirement
-/// records are not built): `CasRefinesCounter` writes one `Initial` and one
+fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
+    simulation_entries(graph)
+        .iter()
+        .map(|entry| entry.record().clone())
+        .collect()
+}
+
+/// TC-551 step 10: each record carries the occurrence key ADR-013 O-07 gives
+/// it: the refinement node, role `generated`, ordinal 0 for `Initial` and the
+/// row's position + 1 for a `Step`. The key is a locator, so it is distinct
+/// per record and is not part of the record.
+#[trace("TC-551", "FR-146-AC-9")]
+#[test]
+fn each_record_has_its_generated_occurrence_key() {
+    let entries = simulation_entries(&checked_counter(&cas_refines_counter()));
+    assert_eq!(entries.len(), 8);
+    let node = WireNodeId::from_digest(*refinement_key().as_bytes());
+    for (ordinal, entry) in entries.iter().enumerate() {
+        let origin = entry.occurrence().origin();
+        assert_eq!(entry.occurrence().node(), node);
+        assert_eq!(origin.role().as_str(), "generated");
+        assert_eq!(origin.ordinal(), ordinal as u64);
+        let expected = match ordinal {
+            0 => StepObligation::Initial,
+            row => StepObligation::Step {
+                row: StepRowRef::new(u32::try_from(row - 1).expect("small")),
+            },
+        };
+        assert_eq!(entry.record().obligation, expected);
+    }
+}
+
+/// TC-551 step 1: `CasRefinesCounter` writes one `Initial` and one
 /// `Step` record for each of its seven rows, with no hypotheses.
 #[trace("TC-551")]
 #[test]
@@ -1622,8 +1594,7 @@ fn a_hidden_field_writes_no_simulation_record() {
 const CAS_INV: &str = "invariant CasInv using inf on Impl::Counter at current { \
      self.busyA or self.tmpA <= self.value }\n";
 
-/// TC-551 step 3, record values only (`CasInv`'s own `operation-contract`
-/// record and the obligation identity are not built): an invariant of
+/// TC-551 step 3: an invariant of
 /// `Impl::Counter` is a hypothesis of every record, and the `Initial`
 /// record differs from the one without it.
 #[trace("TC-551")]
@@ -1641,6 +1612,29 @@ fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
         assert_eq!(record.hypotheses, [invariant.identity()]);
     }
     assert_ne!(with[0], without[0]);
+}
+
+/// TC-551 step 3: every hypothesis is its own `operation-contract` record in
+/// the checked package, keyed by the clause's `claim` occurrence.
+#[trace("TC-551")]
+#[test]
+fn a_hypothesis_is_its_own_operation_contract_record() {
+    let graph = checked_counter(&format!("{}\n{CAS_INV}", cas_refines_counter()));
+    let [invariant] = graph.state_clauses() else {
+        panic!("one invariant clause");
+    };
+    let key = OccurrenceKey::new(
+        WireNodeId::from_digest(*invariant.identity().as_bytes()),
+        invariant.claim().clone(),
+    );
+    let record = graph
+        .requirements()
+        .get(&key)
+        .expect("the invariant has a requirement record");
+    assert_eq!(record.requirements().kind(), Capability::OperationContract);
+    for entry in simulation_entries(&graph) {
+        assert_eq!(entry.record().hypotheses, [invariant.identity()]);
+    }
 }
 
 /// TC-551 step 3: an invariant of the abstract model is not a hypothesis

@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{
     admit, generators, instance_groups, not_preserving, preserves, unoffered, ModelCheckRefusal,
-    Reductions, SymmetryDeclaration, SymmetryRefusal, TableForm,
+    Reductions, SymmetryDeclaration, TableForm,
 };
 use qsl_eval::simulation::model::{explore_model, ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
@@ -29,7 +29,8 @@ use qsl_replay::{
     DigestDomain, DigestRecord, IncompleteCause, InconclusiveCause, ModelCheckItem,
     ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelTraceSettlement, ModelTraceValue,
     ProofBasis, ReachedLimit, ReductionCause, ReductionKind, ResultLabel, RunStats,
-    SettlementBasis, SymmetryBrokenCause, TerminalValue, UnavailabilityCause, UndefinedLocus,
+    SettlementBasis, SymmetryBrokenCause, SymmetryRefusal, TerminalValue, UnavailabilityCause,
+    UndefinedLocus,
 };
 use quire_exact::Cancel;
 use quire_semantic_value::fairness::PropertyForm;

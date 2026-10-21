@@ -207,7 +207,7 @@ productions! {
     FenceOrder,
     #[doc = "`fence <identifier> ordering <fence-order> ;`: a memory fence control."]
     Fence,
-    #[doc = "`refinement <identifier> using <identifier> abstract <identifier> concrete <identifier> { <refinement-row>* }`: a refinement declaration and its population, object, step, history and fairness rows."]
+    #[doc = "`refinement <identifier> using <identifier> abstract <identifier> [:: <member-name>] concrete <identifier> { <refinement-row>* }`: a refinement declaration and its population, object, step, history and fairness rows."]
     Refinement,
     #[doc = "`population <model-name> from <model-name> ;`: maps one abstract population from a concrete one."]
     PopulationRow,

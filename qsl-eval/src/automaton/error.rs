@@ -48,7 +48,7 @@ pub enum AutomatonError {
     },
     /// A past operator's operand holds a future operator: its truth at the
     /// previous position is not a function of the history, so the automaton
-    /// cannot track it as state (ADR-018 SM-6).
+    /// cannot track it as state (ADR-018 SM-6). Remaining work: QSL-878.
     #[error("a past operator's operand holds a future operator")]
     PastOverFuture,
     /// The clause's profile has no property automaton.

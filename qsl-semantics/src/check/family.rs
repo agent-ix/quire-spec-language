@@ -1330,7 +1330,9 @@ pub(crate) enum OccurrenceRole {
     Declaration,
     /// An expression node.
     Expression,
-    /// A node no source region denotes.
+    /// An occurrence of a node that no source form of its own denotes: a
+    /// generated occurrence of an owner node, which may still carry a
+    /// `source_map` region (ADR-013 O-07's per-step records).
     Generated,
     /// A type node.
     Type,
@@ -1338,7 +1340,7 @@ pub(crate) enum OccurrenceRole {
 
 impl OccurrenceRole {
     /// The kernel role this role is carried as.
-    fn kernel_role(self) -> Role {
+    pub(crate) fn kernel_role(self) -> Role {
         Role::new(match self {
             Self::Anchor => "anchor",
             Self::Claim => "claim",

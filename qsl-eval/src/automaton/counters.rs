@@ -15,7 +15,8 @@
 //!   (`always`, `release`: the furthest required position subsumes the
 //!   nearer ones).
 //! - A past operator with lower bound 0: [`PastAgeCounter`], the positions
-//!   since the operand last held, saturating past `b`.
+//!   (or, over a protocol subject, the counted steps) since the operand last
+//!   held, saturating past `b`.
 //! - An `[a,*]` occurrence: [`ShiftCounter`] with `a + 1` values, then the
 //!   unbounded operator's own states.
 //! - Any other occurrence keeps its open obligations as a set:
@@ -42,120 +43,191 @@ pub struct Violated;
 /// `eventually[0,b]` and `until[0,b]` over an operand with no interval
 /// operator: the earliest open deadline. An obligation opened at position
 /// `i` needs the operand at some position in `[i, i + b]`.
+///
+/// The counter reads a position's step in one of two ways. [`step`](Self::step)
+/// takes every step to count (a model subject, ADR-018), so the obligation is
+/// lost as soon as the operand is false at the last position of its window.
+/// [`step_counted`](Self::step_counted) takes a step that is not counted
+/// (ADR-027 PB-3) to stay at the distance of the position before it, so the
+/// window outlives that position and the obligation is lost only on the
+/// counted step past it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeadlineCounter {
     bound: u64,
-    /// The positions after the current one that may still discharge the
-    /// earliest open obligation; 0 when none is open.
-    remaining: u64,
+    /// The counted steps after the current position that may still
+    /// discharge the earliest open obligation; `None` when none is open.
+    slack: Option<u64>,
 }
 
 impl DeadlineCounter {
     /// A counter with nothing open, for upper bound `bound`.
     pub const fn new(bound: u64) -> Self {
-        Self {
-            bound,
-            remaining: 0,
-        }
+        Self { bound, slack: None }
     }
 
     /// Whether an obligation is open.
     pub const fn is_pending(self) -> bool {
-        self.remaining != 0
+        self.slack.is_some()
     }
 
-    /// The positions after the current one that may still discharge the
-    /// earliest open obligation; 0 when none is open.
-    pub const fn remaining(self) -> u64 {
-        self.remaining
+    /// The counted steps after the current position that may still
+    /// discharge the earliest open obligation; 0 when none is open.
+    pub fn remaining(self) -> u64 {
+        self.slack.unwrap_or(0)
     }
 
-    /// The number of values the counter takes: `b + 1`.
+    /// The number of values the counter takes when every step counts:
+    /// `b + 1`.
     pub fn value_count(self) -> u128 {
         u128::from(self.bound) + 1
     }
 
-    /// The counter after one position.
+    /// The counter after one position whose step counts.
     ///
     /// # Errors
     ///
     /// [`Expired`] when an open obligation's window closes at this position
     /// with the operand false.
     pub fn step(self, opens: bool, operand_holds: bool) -> Result<Self, Expired> {
+        let next = self.step_counted(opens, operand_holds, true)?;
+        if next.slack == Some(0) {
+            Err(Expired)
+        } else {
+            Ok(next)
+        }
+    }
+
+    /// The counter after one position whose step `counted` or not.
+    ///
+    /// # Errors
+    ///
+    /// [`Expired`] when a counted step passes the window of an open
+    /// obligation.
+    pub fn step_counted(
+        self,
+        opens: bool,
+        operand_holds: bool,
+        counted: bool,
+    ) -> Result<Self, Expired> {
+        if counted && self.slack == Some(0) {
+            return Err(Expired);
+        }
         if operand_holds {
             return Ok(Self {
-                remaining: 0,
+                slack: None,
                 ..self
             });
         }
-        let aged = self.remaining.checked_sub(1);
+        let aged = self.slack.map(|slack| {
+            if counted {
+                slack.saturating_sub(1)
+            } else {
+                slack
+            }
+        });
         let fresh = opens.then_some(self.bound);
         let next = match (aged, fresh) {
-            (Some(aged), Some(fresh)) => aged.min(fresh),
-            (Some(only), None) | (None, Some(only)) => only,
-            (None, None) => return Ok(self),
+            (Some(aged), Some(fresh)) => Some(aged.min(fresh)),
+            (aged, None) => aged,
+            (None, fresh) => fresh,
         };
-        if next == 0 {
-            Err(Expired)
-        } else {
-            Ok(Self {
-                remaining: next,
-                ..self
-            })
-        }
+        Ok(Self {
+            slack: next,
+            ..self
+        })
     }
 }
 
 /// `always[0,b]` and `release[0,b]` over an operand with no interval
 /// operator: the furthest required position. An obligation opened at
 /// position `i` needs the operand at every position in `[i, i + b]`.
+///
+/// [`step`](Self::step) takes every step to count, and
+/// [`step_counted`](Self::step_counted) reads a step that is not counted
+/// (ADR-027 PB-3) as staying at the distance of the position before it, so
+/// the operand is still required there.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ExtentCounter {
     bound: u64,
-    /// The positions after the current one that still need the operand; 0
-    /// when none does.
-    remaining: u64,
+    /// The counted steps after the current position that still need the
+    /// operand; `None` when none does.
+    slack: Option<u64>,
 }
 
 impl ExtentCounter {
     /// A counter with nothing required, for upper bound `bound`.
     pub const fn new(bound: u64) -> Self {
-        Self {
-            bound,
-            remaining: 0,
-        }
+        Self { bound, slack: None }
     }
 
     /// Whether some later position still needs the operand.
     pub const fn is_pending(self) -> bool {
-        self.remaining != 0
+        self.slack.is_some()
     }
 
-    /// The positions after the current one that still need the operand.
-    pub const fn remaining(self) -> u64 {
-        self.remaining
+    /// The counted steps after the current position that still need the
+    /// operand; 0 when none does.
+    pub fn remaining(self) -> u64 {
+        self.slack.unwrap_or(0)
     }
 
-    /// The number of values the counter takes: `b + 1`.
+    /// The number of values the counter takes when every step counts:
+    /// `b + 1`.
     pub fn value_count(self) -> u128 {
         u128::from(self.bound) + 1
     }
 
-    /// The counter after one position.
+    /// Whether an obligation opened here or open already needs the operand
+    /// at the position after a step that `counted` or not.
+    pub const fn requires(self, opens: bool, counted: bool) -> bool {
+        opens
+            || match self.slack {
+                None => false,
+                Some(slack) => !counted || slack != 0,
+            }
+    }
+
+    /// The counter after one position whose step counts.
     ///
     /// # Errors
     ///
     /// [`Violated`] when the operand is false at a position an open
     /// obligation requires.
     pub fn step(self, opens: bool, operand_holds: bool) -> Result<Self, Violated> {
-        let required_here = opens || self.remaining != 0;
-        if required_here && !operand_holds {
+        let next = self.step_counted(opens, operand_holds, true)?;
+        Ok(if next.slack == Some(0) {
+            Self {
+                slack: None,
+                ..next
+            }
+        } else {
+            next
+        })
+    }
+
+    /// The counter after one position whose step `counted` or not.
+    ///
+    /// # Errors
+    ///
+    /// [`Violated`] when the operand is false at a position an open
+    /// obligation requires.
+    pub fn step_counted(
+        self,
+        opens: bool,
+        operand_holds: bool,
+        counted: bool,
+    ) -> Result<Self, Violated> {
+        if self.requires(opens, counted) && !operand_holds {
             return Err(Violated);
         }
-        let carried = self.remaining.saturating_sub(1);
-        let fresh = if opens { self.bound } else { 0 };
+        let carried = match self.slack {
+            Some(slack) if !counted => Some(slack),
+            Some(slack) => slack.checked_sub(1),
+            None => None,
+        };
+        let fresh = opens.then_some(self.bound);
         Ok(Self {
-            remaining: carried.max(fresh),
+            slack: carried.max(fresh),
             ..self
         })
     }
@@ -199,12 +271,23 @@ impl PastAgeCounter {
     /// The counter after one position.
     #[must_use]
     pub fn step(self, operand_holds: bool) -> Self {
+        self.step_counted(operand_holds, true)
+    }
+
+    /// The counter after one position reached by a step that `counted` or
+    /// not (ADR-027 PB-3). An operand that holds resets the age; otherwise
+    /// the age grows by the counted distance of the step, which is nothing
+    /// for a step that does not count.
+    #[must_use]
+    pub fn step_counted(self, operand_holds: bool, counted: bool) -> Self {
         let age = if operand_holds {
             Some(0)
-        } else {
+        } else if counted {
             self.age
                 .and_then(|age| age.checked_add(1))
                 .filter(|age| *age <= self.bound)
+        } else {
+            self.age
         };
         Self { age, ..self }
     }

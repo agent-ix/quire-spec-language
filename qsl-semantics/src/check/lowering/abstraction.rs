@@ -8,13 +8,11 @@
 //! the emitter places them.
 
 use qsl_foundation::IdentityLimits;
-use quire_exact::NodeKey;
 
 use super::model::model_node_content;
 use super::{NodeContent, SemanticNode};
 use crate::check::node_key::{
-    abstraction_node_key, node_key, AbstractionTerm, BodyTerm, LeafTerm, LiteralValue, MemberTerm,
-    ModelOwner, NodeKeyRefusal, NodeTag,
+    abstraction_node_key, node_key, AbstractionTerm, BodyTerm, ModelOwner, NodeKeyRefusal, NodeTag,
 };
 use crate::model::key::DeclarationKey;
 
@@ -31,22 +29,6 @@ fn detached(
         content,
         nominal: None,
     })
-}
-
-/// The builtin `scalar_type`/`text` node: its own semantic type, empty body
-/// (FR-092 T3). A population node's identity literal is typed at it.
-pub(crate) fn text_scalar_node(identity: IdentityLimits) -> Result<SemanticNode, NodeKeyRefusal> {
-    detached(
-        NodeContent {
-            node_tag: NodeTag::ScalarType,
-            semantic_form: "text",
-            semantic_type: None,
-            declaration: None,
-            owner: None,
-            body: BodyTerm::aggregate(Vec::new()),
-        },
-        identity,
-    )
 }
 
 /// The `model`/`object_type` node of `declaration`, as lowering keys it: its
@@ -66,27 +48,22 @@ pub(crate) fn object_type_node(
     .map(Some)
 }
 
-/// The `relation`/`population` node of `declaration`: no owner (the IR reader
-/// admits none on a population), and a body that binds `identity` to the
-/// population's IR node identity as a text literal typed at `text`, so each
-/// population has a key of its own.
+/// The `relation`/`population` node of `declaration`, as lowering keys a
+/// model declaration node (QSpec FR-094, FR-322): its `ModelOwner`, a `null`
+/// `declaration` and an empty body. `None` when the declaration's package
+/// identity or node is empty.
 pub(crate) fn population_node(
     declaration: &DeclarationKey,
-    text: NodeKey,
     identity: IdentityLimits,
-) -> Result<SemanticNode, NodeKeyRefusal> {
-    let literal = LeafTerm::literal(text, LiteralValue::Text(declaration.node.clone()));
+) -> Result<Option<SemanticNode>, NodeKeyRefusal> {
+    let Ok(owner) = ModelOwner::new(declaration.package.clone(), declaration.node.clone()) else {
+        return Ok(None);
+    };
     detached(
-        NodeContent {
-            node_tag: NodeTag::Relation,
-            semantic_form: "population",
-            semantic_type: None,
-            declaration: None,
-            owner: None,
-            body: BodyTerm::aggregate(vec![MemberTerm::bound("identity", literal)]),
-        },
+        model_node_content(owner, NodeTag::Relation, "population"),
         identity,
     )
+    .map(Some)
 }
 
 /// The `correspondence`/`abstraction_relation` node holding `term`, keyed by
