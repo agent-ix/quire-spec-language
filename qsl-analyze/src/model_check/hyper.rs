@@ -77,9 +77,13 @@
 //!
 //! An HP-2 or HP-3 item's search horizon `max_depth` is read as FR-126 reads a
 //! liveness item's (ADR-018 UE-4, ADR-023 HV-3): every product state through
-//! depth `max_depth` is created and those shallower are expanded, so a lasso of
-//! at most `max_depth` joint steps is in the retained graph, and a run that
-//! finds none in it returns `BoundReached` rather than `Holds`.
+//! depth `max_depth` is created and those shallower are expanded, and a run
+//! that finds no counterexample in the retained graph returns `BoundReached`
+//! rather than `Holds`. For an HP-2 item the bound covers every lasso of at
+//! most `max_depth` joint steps. For an HP-3 item it covers the product depth
+//! explored and no more: a counterexample's universal lasso is rotated to its
+//! canonical form (FR-177) and can be shorter than the depth it was found at,
+//! so a joint-step coverage would claim more than the run reached.
 //!
 //! Not built here, and refused or absent rather than approximated: the
 //! product-closure certificate (FR-163), so a `Holds` carries none and settles
@@ -855,7 +859,7 @@ impl<'a> Run<'_, 'a> {
             None => match (bounded, horizon) {
                 (true, Some(depth)) => Ok(HyperOutcome::BoundReached {
                     depth: widen(depth),
-                    covers: BoundCovers::JointSteps,
+                    covers: BoundCovers::ProductDepth,
                     stats: totals.stats(),
                 }),
                 _ => self.clean(&explored, &totals),

@@ -17,9 +17,10 @@ use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::Category;
 use qsl_replay::{
     settle_hyper_check, BoundCovers, Code, DisagreementCause, Execution, HyperCounterexample,
-    HyperCounterexampleKind, HyperOutcome, HyperRecord, IncompleteCause, InconclusiveCause,
-    InternalFault, LimitOrigin, ModelCheckLimit, ModelCheckLimits, ModelTraceSettlement,
-    ReachedLimit, ReplayRefusal, ResultLabel, RunStats, SettlementBasis, TerminalValue, Truth,
+    HyperCounterexampleKind, HyperOutcome, HyperRecord, HyperReductionCause, HyperSettleRefusal,
+    IncompleteCause, InconclusiveCause, InternalFault, LimitOrigin, ModelCheckLimit,
+    ModelCheckLimits, ModelTraceSettlement, ReachedLimit, ReductionKind, ReplayRefusal,
+    ResultLabel, RunStats, SettlementBasis, TerminalValue, Truth, UnavailabilityCause,
     UndecidedCause, EXPLICIT_STATE,
 };
 use quire_exact::{Cancel, Undefined};
@@ -156,6 +157,8 @@ fn a_refutation_that_does_not_replay_settles_with_no_counterexample() {
         })
     );
     assert_eq!(stopped.limit_reached, Some(reached));
+    // The replay's set would have held one member past the budget (FR-184).
+    assert_eq!(stopped.count, Some(1));
     assert_eq!(stopped.execution, Execution::ResourceIncomplete);
     assert_eq!(stopped.counterexample, None);
 
@@ -196,10 +199,12 @@ fn a_refutation_that_does_not_replay_settles_with_no_counterexample() {
     assert_eq!(failed.counterexample, None);
 }
 
-/// FR-177-AC-5's outcome settles `refuted`, `decisive-counterexample`, with
-/// the `Undefined` counterexample that names `a` and `b` and the
-/// division-by-zero cause, after its replay reproduces it; FR-177-AC-6's and
-/// FR-178-AC-6's outcomes settle `inconclusive`, `MatchUndetermined`.
+/// The outcome of an HP-3 clause whose existential `match` divides by zero
+/// (FR-177-AC-5) settles `refuted`, `decisive-counterexample`, with the
+/// `Undefined` counterexample that names `a` and `b` and the division-by-zero
+/// cause, after its replay reproduces it; the outcomes of a `match` whose
+/// reading is incomplete (FR-177-AC-6, FR-178-AC-6) settle `inconclusive`,
+/// `MatchUndetermined`.
 #[trace("TC-607", "FR-182-AC-8")]
 #[test]
 fn an_undefined_tuple_refutes_and_an_undetermined_match_is_inconclusive() {
@@ -379,7 +384,9 @@ fn a_stopped_run_names_its_limit_its_value_and_its_count() {
 
 /// A search horizon settles `inconclusive`, `BoundReached{depth}`, completed
 /// and pending, and the record states what the bound covers: lasso joint steps
-/// for an HP-2 and an HP-3 item, moves for an HP-6 item.
+/// for an HP-2 item, the product depth explored for an HP-3 item (its rotated
+/// lasso can be shorter than the depth it was found at), moves for an HP-6
+/// item.
 #[trace("TC-607")]
 #[test]
 fn a_horizon_settles_inconclusive_and_the_record_states_what_it_covers() {
@@ -391,7 +398,7 @@ fn a_horizon_settles_inconclusive_and_the_record_states_what_it_covers() {
     projected.max_depth = Some(1);
     for (world, covers) in [
         (&lockstep, BoundCovers::JointSteps),
-        (&witness, BoundCovers::JointSteps),
+        (&witness, BoundCovers::ProductDepth),
         (&projected, BoundCovers::Moves),
     ] {
         let record = settle(world, &run(world, ModelCheckLimits::default()));
@@ -494,5 +501,56 @@ fn a_holds_outcome_settles_no_record_until_the_product_closure_checker_exists() 
     assert_eq!(
         result,
         Err(qsl_replay::HyperSettleRefusal::ProductClosureCheckerNotBuilt)
+    );
+}
+
+/// A reduction a hyper item's run settled before expanding a state: one the
+/// engine does not offer settles `unsupported` naming it, and one whose
+/// preservation row reads "no" names a hyper form that the cause's
+/// `PropertyForm` member cannot hold, so it settles no record. A run that
+/// proved its claim on the copy-swap quotient is a `Holds` and waits for the
+/// same certificate checker.
+#[trace("TC-607")]
+#[test]
+fn a_reduction_outcome_settles_by_its_cause_and_a_reduced_hold_waits_for_the_checker() {
+    let settle = |outcome: &HyperOutcome| {
+        settle_hyper_check(outcome, &ModelCheckLimits::default(), &[], |_| {
+            panic!("a reduction outcome replays nothing")
+        })
+    };
+    let record = settle(&HyperOutcome::Reduction {
+        cause: HyperReductionCause::Unsupported {
+            reduction: ReductionKind::StateConstraint,
+        },
+        stats: RunStats::default(),
+    })
+    .expect("settles");
+    assert_eq!(
+        record.value,
+        TerminalValue::Unsupported(UnavailabilityCause::UnsupportedReduction {
+            reduction: ReductionKind::StateConstraint
+        })
+    );
+    assert_eq!(record.counterexample, None);
+
+    let refused = settle(&HyperOutcome::Reduction {
+        cause: HyperReductionCause::NotPreserving {
+            reduction: ReductionKind::PartialOrder,
+            form: qsl_semantics::check::HyperForm::ProjectionAligned,
+        },
+        stats: RunStats::default(),
+    });
+    assert_eq!(
+        refused,
+        Err(HyperSettleRefusal::ReductionFormNotRepresentable)
+    );
+
+    let reduced = settle(&HyperOutcome::HoldsReduced {
+        reductions: Vec::new(),
+        stats: RunStats::default(),
+    });
+    assert_eq!(
+        reduced,
+        Err(HyperSettleRefusal::ProductClosureCheckerNotBuilt)
     );
 }

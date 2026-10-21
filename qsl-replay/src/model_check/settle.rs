@@ -340,7 +340,7 @@ fn settle<T: Clone>(
                 ..
             }) => Row::inconclusive(InconclusiveCause::ReplayParity(cause)),
             Ok(ModelTraceReplayResult {
-                settlement: ModelTraceSettlement::Stopped(reached),
+                settlement: ModelTraceSettlement::Stopped { reached, .. },
                 ..
             }) => Row::stopped_run(IncompleteCause::ResourceExhausted, Some(reached)),
             // EN-1 builds only fair lassos (ADR-019 FS-7), so replay's refusal

@@ -405,7 +405,12 @@ pub enum ModelTraceSettlement {
     Inconclusive(DisagreementCause),
     /// A limit stopped the replay before it settled (FR-183 "WitnessExhausted"
     /// names `max_witness_set`): no result, which FR-182 settles V-7.
-    Stopped(ReachedLimit),
+    Stopped {
+        /// The limit and its value.
+        reached: ReachedLimit,
+        /// The count a counted budget reached, one past its value (FR-184).
+        count: Option<u64>,
+    },
 }
 
 /// FR-133 (ADR-019 SV-6): a strong constraint that would exclude a

@@ -429,7 +429,7 @@ pub(crate) struct World {
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     initial: Vec<DocumentRef>,
     pub(crate) max_candidates: u64,
-    /// The search horizon of an HP-6 run (`max_depth`).
+    /// The search horizon of an HP-2, HP-3 or HP-6 run (`max_depth`).
     pub(crate) max_depth: Option<usize>,
     /// The keys of the universe of `vaults`.
     pub(crate) universe: Vec<String>,
@@ -972,16 +972,29 @@ impl World {
         counterexample: &HyperCounterexample,
         max_witness_set: u64,
     ) -> Result<ModelTraceSettlement, ReplayRefusal> {
-        let system = ModelSystem::new(self.subject().simulation).expect("the subject admits");
         let seams = self.seams();
+        self.replay_through(counterexample, &seams, &seams, max_witness_set)
+    }
+
+    /// Replay `counterexample` reading the atoms through `letters` and
+    /// `match` through `matcher`, with witness sets of at most
+    /// `max_witness_set` members.
+    pub(crate) fn replay_through(
+        &self,
+        counterexample: &HyperCounterexample,
+        letters: &dyn HyperLetters,
+        matcher: &dyn StepMatch,
+        max_witness_set: u64,
+    ) -> Result<ModelTraceSettlement, ReplayRefusal> {
+        let system = ModelSystem::new(self.subject().simulation).expect("the subject admits");
         let instance = instance();
         replay_hyper_trace_tuple(
             &HyperReplay {
                 clause: &self.clause,
                 systems: vec![&system; self.clause.quantifiers().len()],
                 instance: &instance,
-                letters: &seams,
-                matcher: &seams,
+                letters,
+                matcher,
                 meter: UNLIMITED,
                 max_witness_set,
                 cancel: &Cancel::new(),

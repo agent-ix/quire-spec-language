@@ -64,7 +64,7 @@ fn run(world: &World, limits: ModelCheckLimits) -> HyperOutcome {
 }
 
 /// The `(h, l)` of each existential member of the witness set of `state`.
-fn members(state: &qsl_eval::hyper::HyperState) -> Vec<(i64, i64)> {
+pub(crate) fn members(state: &qsl_eval::hyper::HyperState) -> Vec<(i64, i64)> {
     let Property::Witnesses(set) = &state.property else {
         panic!("an HP-3 state holds a witness set");
     };
@@ -945,6 +945,29 @@ fn a_violation_at_position_zero_bounds_the_later_instances() {
     assert!(matches!(run(&world, limits), HyperOutcome::Stopped { .. }));
 }
 
+/// The same bound under a search horizon: instance `w` is explored through the
+/// depth that expands its initial states and no deeper, whatever the horizon,
+/// so a horizon of 5 leaves the 7 to 9 states that suffice without one enough,
+/// and 6 still stop it.
+#[trace("TC-602")]
+#[test]
+fn a_horizon_deeper_than_the_ranking_depth_does_not_widen_a_later_instance() {
+    let mut world = two_instances(Vault::Secure, &[(0, 0)], "");
+    world.max_depth = Some(5);
+    for max_states in 7..=9 {
+        let mut limits = ModelCheckLimits::default();
+        limits.limits.max_states = max_states;
+        let outcome = run(&world, limits);
+        assert!(
+            matches!(outcome, HyperOutcome::Violated { .. }),
+            "max_states {max_states}: {outcome:?}"
+        );
+    }
+    let mut limits = ModelCheckLimits::default();
+    limits.limits.max_states = 6;
+    assert!(matches!(run(&world, limits), HyperOutcome::Stopped { .. }));
+}
+
 /// A clause with two universal variables: the counterexample holds a trace for
 /// each of them and none for the existential one, and the universal tuple is
 /// two components of every product state.
@@ -1005,10 +1028,17 @@ fn the_safety_automaton_stops_at_max_automaton_states() {
 /// The leaky `step`, with a precondition that has no value in the state
 /// `(0, 1)`, which `a` never reaches under the `match` below but a partner
 /// does.
-const GUARDED: Vault = Vault::Custom(
+pub(crate) const GUARDED: Vault = Vault::Custom(
     "pre Guard using v on V::Vault::step { 1 div (1 - self.l + self.h) >= 0 }\n\
      post Step using v on V::Vault::step { (i = self.h and self.l = 0) or (i != self.h and self.l = 1) }\n",
 );
+
+/// `Opaque` over [`GUARDED`] with a `match` that confines `a` to `step(0)`.
+pub(crate) const GUARDED_CLAUSE: &str = "hyper Opaque using inf over behaviours (v: V::Vault) \
+     forall trace a of V exists trace b of V \
+     match { (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) else 0) = 0 \
+     and b.step.op != stutter } \
+     { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
 
 /// FR-177 states no verdict for an existential member whose contract has no
 /// value (the spec follow-up), so the engine does not claim one: the
@@ -1018,12 +1048,7 @@ const GUARDED: Vault = Vault::Custom(
 #[trace("TC-602")]
 #[test]
 fn an_existential_member_with_an_undefined_contract_leaves_the_item_undecided() {
-    let clause = "hyper Opaque using inf over behaviours (v: V::Vault) \
-         forall trace a of V exists trace b of V \
-         match { (if present(a.step.Vault::step.i) then value(a.step.Vault::step.i) else 0) = 0 \
-         and b.step.op != stutter } \
-         { holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }";
-    let world = World::new(GUARDED, false, &STARTS, clause);
+    let world = World::new(GUARDED, false, &STARTS, GUARDED_CLAUSE);
     let outcome = run(&world, ModelCheckLimits::default());
     let HyperOutcome::Undecided { cause, .. } = outcome else {
         panic!("expected no decision, got {outcome:?}");
@@ -1240,8 +1265,9 @@ fn refusal(result: Result<ModelTraceSettlement, ReplayRefusal>) -> ModelTraceRef
     }
 }
 
-/// FR-177-AC-5's `Undefined` counterexample, whose traces include the
-/// existential variable's path to the state where `μ_E` has no value, replays
+/// The `Undefined` counterexample of an HP-3 clause (FR-177-AC-5), whose
+/// traces include the existential variable's path to the state where `μ_E`
+/// has no value, replays
 /// to the `UndefinedEvaluation` it carries; with the existential trace removed
 /// the reader refuses it as `invalid_runtime_input`/`invalid-value` before any
 /// replay.
@@ -1298,7 +1324,7 @@ fn a_horizon_cuts_the_witness_set_search_before_its_lasso() {
         };
         assert_eq!(
             (reached, covers),
-            (depth as u64, qsl_replay::BoundCovers::JointSteps)
+            (depth as u64, qsl_replay::BoundCovers::ProductDepth)
         );
     }
     world.max_depth = Some(2);

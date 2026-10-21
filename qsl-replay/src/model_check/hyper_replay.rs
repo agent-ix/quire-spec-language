@@ -21,7 +21,11 @@
 //!   with `qsl-eval`'s witness product, the code the engine runs, under
 //!   `max_witness_set`: an empty `X_position` after non-empty earlier sets
 //!   reproduces, any other sets are `Inconclusive`, and a set that would pass
-//!   the budget stops the replay at it.
+//!   the budget stops the replay at it, stating the count it reached. The
+//!   engine rotates the lasso to its canonical form, so `position` can be past
+//!   the last step; positions past it read around the loop. An expansion whose
+//!   findings say a member was dropped, or could not be told to be kept (an
+//!   undefined or refused `μ` or contract), completes no value.
 //! - `Undefined`: the traces are paths to the joint position the payload
 //!   names. The replay reads `μ_U`, `μ_E`, the body's atoms and each component's
 //!   contract conjunctions at the joint positions up to it, in the order EN-1
@@ -38,8 +42,8 @@
 
 use qsl_eval::automaton::translate_negation;
 use qsl_eval::hyper::{
-    ComponentStep, Halt, HyperLetters, HyperState, HyperTransition, MatchReading, ParameterBinding,
-    Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
+    ComponentStep, Halt, HyperFinding, HyperLetters, HyperState, HyperTransition, MatchReading,
+    ParameterBinding, Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
 };
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
@@ -215,11 +219,9 @@ fn shape(
             if usize::try_from(*loop_entry).map_or(true, |entry| entry >= steps) {
                 return Err(shape_error("re-enters its loop outside its steps"));
             }
-            if *position != counterexample.trace_position
-                || usize::try_from(*position).map_or(true, |at| at > steps)
-            {
+            if *position != counterexample.trace_position {
                 return Err(shape_error(
-                    "names a joint position other than its trace position, or past its lasso",
+                    "names a joint position other than its trace position",
                 ));
             }
         }
@@ -552,10 +554,17 @@ fn witness_exhausted(
     }
     // The product's state at joint position 0 is the one whose components are
     // the traces' initial states.
+    let steps = counterexample.steps();
+    let entry = usize::try_from(loop_entry).map_err(|_| fault("a-loop-entry-fits-usize"))?;
+    let lasso = Unrolled {
+        entry,
+        loop_len: steps - entry,
+        steps,
+    };
     let at = |state: &HyperState, joint: usize| -> Result<bool, ReplayRefusal> {
         for (component, model) in state.components.iter().enumerate() {
             let digest = digest_of(replay.systems[component], model)?;
-            if executed[component][joint].digest != digest {
+            if executed[component][lasso.state(joint)].digest != digest {
                 return Ok(false);
             }
         }
@@ -576,7 +585,7 @@ fn witness_exhausted(
                 counterexample
                     .traces
                     .iter()
-                    .map(|trace| match &trace.steps[joint - 1] {
+                    .map(|trace| match &trace.steps[lasso.step(joint)] {
                         HyperStep::Model(step) => ComponentStep::Model(step.transition.clone()),
                         HyperStep::TerminalStutter => ComponentStep::Stutter,
                     })
@@ -585,6 +594,12 @@ fn witness_exhausted(
             let Ok(expansion) = product.successors(&current) else {
                 return halted(replay, &product);
             };
+            // A finding says the expansion dropped a member, or could not tell
+            // whether it did: the set that follows is not the one the engine
+            // computed, so nothing is reproduced (FR-177).
+            if expansion.findings.iter().any(drops_a_member) {
+                return Ok(no_value());
+            }
             let mut next = None;
             for (taken, state) in expansion.successors {
                 if taken == step
@@ -618,18 +633,68 @@ fn witness_exhausted(
     )))
 }
 
+/// A lasso of `steps` steps re-entering at `entry`, read past its last step
+/// by going around the loop: the engine's canonical rotation can leave a
+/// counterexample fewer steps than its joint position (FR-177).
+struct Unrolled {
+    entry: usize,
+    loop_len: usize,
+    steps: usize,
+}
+
+impl Unrolled {
+    /// The state index of joint position `joint`.
+    fn state(&self, joint: usize) -> usize {
+        if joint <= self.steps {
+            joint
+        } else {
+            self.entry + (joint - self.entry) % self.loop_len
+        }
+    }
+
+    /// The index in a trace's steps of the step into joint position `joint`,
+    /// which is `1` or more.
+    fn step(&self, joint: usize) -> usize {
+        let from = joint - 1;
+        if from < self.steps {
+            from
+        } else {
+            self.entry + (from - self.entry) % self.loop_len
+        }
+    }
+}
+
+/// Whether `finding` of a witness-product expansion says a member of a
+/// witness set was dropped or could not be told to be kept: an undefined or
+/// refused contract, an undefined or refused `μ`.
+fn drops_a_member(finding: &HyperFinding) -> bool {
+    match finding {
+        HyperFinding::Contract { finding, .. } => {
+            finding.undefined_contract().is_some() || finding.is_refused_contract()
+        }
+        HyperFinding::Enabled { .. } => false,
+        HyperFinding::MatchUndefined { .. }
+        | HyperFinding::MatchRefused
+        | HyperFinding::ExistentialMatchUndefined { .. }
+        | HyperFinding::MemberContract => true,
+    }
+}
+
 /// The replay of a witness product that halted: a set that would pass
-/// `max_witness_set` stops it at that limit (FR-183), any other halt completes
-/// no value.
+/// `max_witness_set` stops it at that limit and states the count it reached
+/// (FR-183, FR-184), any other halt completes no value.
 fn halted(
     replay: &HyperReplay<'_, '_>,
     product: &WitnessProduct<'_, '_>,
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     match product.take_halt() {
-        Some(Halt::WitnessSet(_)) => Ok(ModelTraceSettlement::Stopped(ReachedLimit {
-            limit: ModelCheckLimit::MaxWitnessSet,
-            value: replay.max_witness_set,
-        })),
+        Some(Halt::WitnessSet(count)) => Ok(ModelTraceSettlement::Stopped {
+            reached: ReachedLimit {
+                limit: ModelCheckLimit::MaxWitnessSet,
+                value: replay.max_witness_set,
+            },
+            count: Some(count),
+        }),
         Some(Halt::Fault(_) | Halt::Encoding(_)) => Err(fault("the-witness-product-expands")),
         Some(_) => Ok(no_value()),
         None => Err(fault("a-halted-product-recorded-its-halt")),

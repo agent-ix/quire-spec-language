@@ -528,6 +528,47 @@ fn an_undefined_guard_counterexample_reproduces_only_where_it_is_undefined() {
     assert!(disagrees(truncated), "truncated to value 1");
 }
 
+/// A replay that a limit stopped settles `failed`, execution
+/// `resource-incomplete`, `Incomplete(LimitReached{limit, value})` naming the
+/// limit it reached, and carries no counterexample (FR-127). No liveness replay
+/// stops on a limit today; the map reads the stop of one that will, so the
+/// result is injected.
+#[trace("TC-522", "FR-127-AC-1")]
+#[test]
+fn a_replay_a_limit_stopped_settles_incomplete_naming_the_limit() {
+    let case = case(CONTRACT, &[0]);
+    let record = settle_model_check(
+        &ModelCheckOutcome::Violated {
+            counterexample: Box::new(counterexample(&case)),
+            stats: RunStats::default(),
+        },
+        &ModelCheckLimits::default(),
+        &case.package_id,
+        &case.request(),
+        &Cancel::new(),
+        |payload| {
+            let mut result = replay(&case, payload.clone())?;
+            result.settlement = ModelTraceSettlement::Stopped {
+                reached: ReachedLimit {
+                    limit: ModelCheckLimit::MaxStates,
+                    value: 2,
+                },
+                count: None,
+            };
+            Ok(result)
+        },
+    );
+    assert_eq!(
+        record.value,
+        TerminalValue::Incomplete(IncompleteCause::LimitReached {
+            limit: ModelCheckLimit::MaxStates,
+            value: 2
+        })
+    );
+    assert_eq!(record.execution, Execution::ResourceIncomplete);
+    assert_eq!(record.counterexample, None);
+}
+
 /// A package identity for a settlement that replays nothing.
 fn unchecked() -> DigestRecord {
     DigestRecord::mint(DigestDomain::PackageSemanticV2, [0; 32])

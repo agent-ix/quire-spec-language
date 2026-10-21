@@ -136,7 +136,11 @@ pub fn settle_hyper_check(
             Ok(ModelTraceSettlement::Inconclusive(cause)) => {
                 Row::inconclusive(InconclusiveCause::ReplayParity(cause))
             }
-            Ok(ModelTraceSettlement::Stopped(reached)) => {
+            Ok(ModelTraceSettlement::Stopped {
+                reached,
+                count: held,
+            }) => {
+                count = held;
                 Row::stopped_run(IncompleteCause::ResourceExhausted, Some(reached))
             }
             Err(refusal) => Row::refused(&refusal),

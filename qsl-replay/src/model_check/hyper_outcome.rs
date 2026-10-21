@@ -39,9 +39,15 @@ pub enum HyperReductionCause {
 /// What a V-5 bound covers (FR-182: a V-5 record states it).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BoundCovers {
-    /// HP-2 and HP-3: no counterexample whose universal lasso has at most
-    /// `depth` joint steps (ADR-023 HV-3).
+    /// HP-2: no counterexample whose lasso has at most `depth` joint steps
+    /// (ADR-023 HV-3).
     JointSteps,
+    /// HP-3: every product state through depth `depth` was created and those
+    /// shallower were expanded, and none of them settles a counterexample.
+    /// It is not a bound on joint steps: the universal lasso of a
+    /// `WitnessExhausted` counterexample is rotated to its canonical form
+    /// (FR-177) and can be shorter than the product depth it was found at.
+    ProductDepth,
     /// HP-6: no counterexample of at most `depth` moves, a skip move counting
     /// as one (ADR-023 PA-5).
     Moves,
