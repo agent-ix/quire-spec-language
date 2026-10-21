@@ -33,7 +33,10 @@
 //! SC accesses, and `po` and `hb` between fences. RC11's `po|≠loc ; hb ;
 //! po|≠loc` clause and its fence clause through `eco` are not built: PSC-2's
 //! frontier does not decide them, and a `seq_cst` fence's happens-before
-//! reach is carried by `S` (RA-5); STD-239. Garbage collection pins a message
+//! reach is carried by `S` (RA-5); STD-239. A collected SC event leaves its
+//! predecessors to its thread's later events (STD-246), and a thread's older
+//! fence leaves when it fences again, which `S` makes sound while fences
+//! take only fence-to-fence edges (STD-247). Garbage collection pins a message
 //! by the running threads' current views alone, and a store or local access
 //! observes its thread's current view (STD-240). The typed form of a view's
 //! frontier and of the SC event graph in the key is this module's (STD-241).
@@ -173,6 +176,10 @@ pub struct RaComponent {
     /// `F(ℓ)`: the live SC events that precede every SC write to `ℓ` still
     /// to come.
     fronts: BTreeMap<Location, BTreeSet<Id>>,
+    /// The live SC events that precede every later SC event of a thread,
+    /// whatever its location: what a removed event of that thread owed its
+    /// thread's later events (PSC-4; STD-246).
+    owed: BTreeMap<ThreadPath, BTreeSet<Id>>,
     next: Id,
 }
 
@@ -194,18 +201,17 @@ impl Encode for RaComponent {
     }
 }
 
-/// `values` as an array in ascending canonical bytes.
+/// `values` as an array in ascending canonical bytes; one that does not
+/// encode makes the array unencodable, so the key refuses.
 fn sorted(values: Vec<Enc>) -> Enc {
     let limits = Limits::new(u64::MAX);
-    let mut keyed: Vec<(Vec<u8>, Enc)> = values
-        .into_iter()
-        .map(|value| {
-            (
-                quire_canonical::to_vec(&value, limits).unwrap_or_default(),
-                value,
-            )
-        })
-        .collect();
+    let mut keyed = Vec::with_capacity(values.len());
+    for value in values {
+        match quire_canonical::to_vec(&value, limits) {
+            Ok(bytes) => keyed.push((bytes, value)),
+            Err(_) => return Enc::Unencodable("an SC event or edge"),
+        }
+    }
     keyed.sort_by(|left, right| left.0.cmp(&right.0));
     Enc::Array(keyed.into_iter().map(|(_, value)| value).collect())
 }
@@ -626,6 +632,9 @@ impl RaComponent {
                 before.extend(summary.iter().copied());
             }
         }
+        if let Some(owed) = self.owed.get(thread) {
+            before.extend(owed.iter().copied());
+        }
         let cycle = before.iter().any(|e| {
             after
                 .iter()
@@ -660,6 +669,9 @@ impl RaComponent {
                 }
             }
         }
+        // A fence another fence of its thread follows leaves; `S` carried its
+        // frontier into every later fence, which takes its edge from the newer
+        // one (STD-247).
         let superseded: BTreeSet<Id> = self
             .events
             .iter()
@@ -694,7 +706,9 @@ impl RaComponent {
 
     /// PSC-4: the events `ids` leave `P`, which keeps its transitive
     /// closure. With `summarise`, a removed read or write's predecessors
-    /// join `F(ℓ)`, as every later write to `ℓ` is mo-after or fr-after it;
+    /// join `F(ℓ)`, as every later write to `ℓ` is mo-after or fr-after it,
+    /// and its thread's `owed` set, as every later event of the thread is
+    /// after it in `po`;
     /// an event of some `F(ℓ)` is replaced there by its predecessors.
     fn drop_events(&mut self, ids: &BTreeSet<Id>, summarise: bool) {
         for id in ids {
@@ -714,8 +728,12 @@ impl RaComponent {
                         .or_default()
                         .extend(predecessors.iter().copied());
                 }
+                self.owed
+                    .entry(event.thread.clone())
+                    .or_default()
+                    .extend(predecessors.iter().copied());
             }
-            for summary in self.fronts.values_mut() {
+            for summary in self.fronts.values_mut().chain(self.owed.values_mut()) {
                 if summary.remove(id) {
                     summary.extend(predecessors.iter().copied());
                 }
@@ -727,6 +745,7 @@ impl RaComponent {
         self.order
             .retain(|(a, b)| !ids.contains(a) && !ids.contains(b));
         self.fronts.retain(|_, summary| !summary.is_empty());
+        self.owed.retain(|_, summary| !summary.is_empty());
     }
 
     /// The views of the threads that can still step: a thread waiting at a
@@ -915,6 +934,20 @@ impl RaComponent {
                 ),
             ),
             (
+                "owed",
+                map_enc(
+                    self.owed
+                        .iter()
+                        .map(|(thread, events)| {
+                            (
+                                thread.enc(),
+                                sorted(events.iter().map(|id| self.event_enc(*id)).collect()),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
+            (
                 "summaries",
                 map_enc(
                     self.fronts
@@ -1005,6 +1038,16 @@ struct Delta<'a> {
 }
 
 impl Ra {
+    /// Whether `location` holds more live messages than the bound allows
+    /// once `component` has collected (MB-2, MB-3).
+    fn exceeds(&self, component: &RaComponent, location: &Location) -> bool {
+        let live = component
+            .shared
+            .get(location)
+            .map_or(0, |held| held.messages.len());
+        u64::try_from(live).map_or(true, |live| live > self.max_messages)
+    }
+
     /// RA-2: a load by `delta`'s thread reading the message at `read`.
     fn load(
         &self,
@@ -1068,9 +1111,6 @@ impl Ra {
             return Vec::new();
         };
         let len = held.messages.len();
-        if u64::try_from(len).map_or(true, |live| live >= self.max_messages) {
-            return Chosen::only(Written::Cut);
-        }
         let first = views
             .cur
             .at
@@ -1079,6 +1119,7 @@ impl Ra {
             .map_or(0, |at| at + 1);
         let value = post.cell(shared.cell).cloned();
         let mut chosen = Vec::new();
+        let mut cut = false;
         for slot in first..=len {
             if held
                 .messages
@@ -1096,6 +1137,10 @@ impl Ra {
             }
             next.publish(thread, location, id, releases(*ordering), None);
             next.collect();
+            if self.exceeds(&next, location) {
+                cut = true;
+                continue;
+            }
             let kept = (slot == len).then_some(shared.cell);
             chosen.push(Chosen {
                 choice: Some(MemoryChoice {
@@ -1106,6 +1151,12 @@ impl Ra {
                     component.restored(pre, ModelSimState::clone(post), kept),
                     next,
                 ),
+            });
+        }
+        if cut {
+            chosen.push(Chosen {
+                choice: None,
+                written: Written::Cut,
             });
         }
         chosen
@@ -1131,9 +1182,6 @@ impl Ra {
             return Vec::new();
         };
         let len = held.messages.len();
-        if u64::try_from(len).map_or(true, |live| live >= self.max_messages) {
-            return Chosen::only(Written::Cut);
-        }
         let Some(at) = component.depth_position(location, read.depth) else {
             return Vec::new();
         };
@@ -1171,6 +1219,9 @@ impl Ra {
             Some(&read_view),
         );
         next.collect();
+        if self.exceeds(&next, location) {
+            return Chosen::only(Written::Cut);
+        }
         let kept = (slot == len).then_some(shared.cell);
         vec![Chosen {
             choice: Some(MemoryChoice {
@@ -1391,6 +1442,8 @@ impl MemoryModel for Ra {
         }
         next.threads
             .retain(|path, _| !branches.iter().any(|branch| branch.is_prefix_of(path)));
+        next.owed
+            .retain(|path, _| !branches.iter().any(|branch| branch.is_prefix_of(path)));
         if let Some(views) = joined {
             next.threads.insert(parent.clone(), views);
         }
@@ -1424,7 +1477,8 @@ impl MemoryModel for Ra {
     ///   store or RMW reads and writes both;
     /// - a fence reads and writes `view(b)`, and a `seq_cst` fence also `S`;
     /// - every `seq_cst` access and fence reads and writes the SC event
-    ///   graph;
+    ///   graph, and while an SC event is live so does every step that moves
+    ///   views, which can collect it;
     /// - `fork` reads and writes `view(b)`, and entering an outermost
     ///   `parallel` writes `msgs(ℓ)`, `S` and the graph; `join` reads and
     ///   writes the views of the threads below `b`, and an outermost one
@@ -1432,7 +1486,9 @@ impl MemoryModel for Ra {
     /// - `send` reads `view(b)` and `receive` reads and writes it.
     ///
     /// Garbage collection (RA-7) removes only what no view can read, in a
-    /// way every order of two steps reaches, so it adds no location.
+    /// way every order of two steps reaches, so it adds no message location;
+    /// the SC events on a collected message leave the graph, which is why a
+    /// view-moving step meets the graph while one is live.
     fn footprint(
         &self,
         component: &RaComponent,
@@ -1442,6 +1498,10 @@ impl MemoryModel for Ra {
         footprint: &mut Footprint,
     ) -> bool {
         let viewed = component.threads.contains_key(thread);
+        // A step that moves a view can collect messages, and with them SC
+        // events, so while any is live it meets the graph (SR-12255
+        // FND-005).
+        let collects = !component.events.is_empty();
         let view = Location::Protocol(ProtocolLocation::View(thread.clone()));
         let graph = Location::Protocol(ProtocolLocation::ScGraph);
         let fence_view = Location::Protocol(ProtocolLocation::ScView);
@@ -1471,8 +1531,8 @@ impl MemoryModel for Ra {
                                 footprint.enabling.insert(messages(location));
                             }
                         }
-                        if ordering == Some(AccessOrdering::SeqCst) {
-                            touch(footprint, graph);
+                        if ordering == Some(AccessOrdering::SeqCst) || collects {
+                            touch(footprint, graph.clone());
                         }
                     }
                 }
@@ -1513,6 +1573,8 @@ impl MemoryModel for Ra {
                             footprint.writes.insert(messages(location));
                         }
                         footprint.writes.insert(fence_view);
+                    }
+                    if outermost || collects {
                         footprint.writes.insert(graph);
                     }
                 }
@@ -1527,6 +1589,9 @@ impl MemoryModel for Ra {
             FootprintStep::Gated(GatedStep::Receive) => {
                 if viewed {
                     touch(footprint, view);
+                    if collects {
+                        touch(footprint, graph);
+                    }
                 }
                 true
             }
@@ -1535,6 +1600,8 @@ impl MemoryModel for Ra {
                     touch(footprint, view);
                     if ordering == AccessOrdering::SeqCst {
                         touch(footprint, fence_view);
+                    }
+                    if ordering == AccessOrdering::SeqCst || collects {
                         touch(footprint, graph);
                     }
                 }

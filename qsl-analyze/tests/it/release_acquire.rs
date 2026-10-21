@@ -13,8 +13,8 @@ use ix_trace_rs::trace;
 use qsl_eval::model_subject::ModelLetters;
 use qsl_eval::simulation::model::Cell;
 use qsl_eval::simulation::protocol::{
-    visible, ClaimReads, MemoryChoice, MemorySelection, ProtocolState, ProtocolSystem,
-    ProtocolTransition, Ra, RestKind, StepKind,
+    visible, CarriedComponent, ClaimReads, MemoryChoice, MemorySelection, ProtocolState,
+    ProtocolSystem, ProtocolTransition, Ra, RestKind, StepKind,
 };
 use qsl_eval::simulation::{independent, SubjectSystem, TransitionSystem};
 use qsl_foundation::MemoryModelName;
@@ -135,6 +135,12 @@ fn put(node: &str, cell: &str, ordering: &str) -> String {
     )
 }
 
+/// The store `node` of `value` (`StoreOne` to `StoreThree`) to `cell` with
+/// `ordering`.
+fn put_value(node: &str, cell: &str, value: &str, ordering: &str) -> String {
+    put(node, cell, ordering).replace("StoreOne", value)
+}
+
 /// A `parallel Both` inside `sequence Main` over the branches `branches`
 /// (label, attempts).
 fn run(branches: &[(&str, Vec<String>)], after: &str) -> String {
@@ -210,10 +216,11 @@ fn forbids(case: &Case, selection: &[MemorySelection]) -> bool {
 
 /// ADR-025 §10's `SB` under `ra` with `release` stores and `acquire` loads:
 /// 14 states in the `parallel` and 4 joined, 18 in all; the claim settles
-/// `refuted`. Every load of the counterexample reads the old message, depth
-/// 1, and every store inserts at the end, slot depth 0. §10's own order, `Sx`,
-/// `Ly` at depth 0 (`y0`), `Sy`, `Lx` at depth 1 (`x0`), is a path of the
-/// system with the messages and views its table gives at each position.
+/// `refuted`. The reported counterexample is FR-181's first violation in
+/// canonical order, `Sx`, `Sy`, `Lx` and `Ly` each at depth 1 (stores at slot
+/// depth 0); it is not §10's `Sx`, `Ly` at depth 0, `Sy`, `Lx` at depth 1,
+/// which FR-222-AC-1 names (STD-248). §10's order is checked here as a path of
+/// the system with the messages and views its table gives at each position.
 #[trace("TC-667", "FR-222-AC-1")]
 #[trace("TC-674", "FR-229-AC-1")]
 #[test]
@@ -898,8 +905,8 @@ fn ra_steps_carry_message_and_view_footprints() {
 }
 
 /// ADR-027 FT-4 over `ProtocolSystem<Ra>` (ADR-025 MR-1): over `SB`, MP,
-/// the fenced `SB`, the `seq_cst` `SB`, the `send` fixture and the RMW
-/// pair under `ra`, every pair of steps the footprints report independent
+/// the fenced `SB`, the `seq_cst` `SB`, the `send` fixture, the RMW pair and
+/// the two programs of SR-12255 FND-001 and FND-002 under `ra`, every pair of steps the footprints report independent
 /// commutes.
 #[trace("TC-661", "TC-674")]
 #[test]
@@ -937,6 +944,16 @@ fn every_independent_pair_of_ra_steps_commutes() {
                 + NO_BOTH_ZERO,
             "SB::Main::Both",
         ),
+        // SR-12255 FND-001 and FND-002: a non-SC load whose collection
+        // removes SC events, and a thread that fences twice.
+        (
+            contracts() + &protocol("SB", &removed_event_fixture()) + NO_BOTH_ZERO,
+            "SB::Main::Both",
+        ),
+        (
+            contracts() + &protocol("SB", &superseded_fence_fixture()) + NO_BOTH_ZERO,
+            "SB::Main::Both",
+        ),
     ];
     let mut independent_pairs = 0;
     for (body, parallel) in &units {
@@ -949,6 +966,145 @@ fn every_independent_pair_of_ra_steps_commutes() {
             crate::protocol_footprints::assert_independent_steps_commute(&system, &reached);
     }
     assert!(independent_pairs > 0);
+}
+
+/// SR-12255 FND-001: thread `u` stores `X := 1`, stores `L := 1`, then loads
+/// `L` twice; thread `t` stores `L := 2` and `L := 3` then `X := 2`, the
+/// first and last `seq_cst`. Reading `a = 2`, `b = 3` and ending at `X = 1`
+/// closes the psc cycle `y -po-> r -mo-> e -po-> x -mo-> y`, which RC11
+/// forbids. When the loads move every running `cur(L)` past `r` and `e`,
+/// their messages and so the events leave `P`; the predecessors of `y` must
+/// still precede `x`. Locations: `X` is `x.v`, `L` is `y.v`.
+fn removed_event_fixture() -> String {
+    run(
+        &[
+            (
+                "u",
+                vec![
+                    put_value("Y", "x", "StoreOne", "seq_cst"),
+                    put_value("R", "y", "StoreOne", "seq_cst"),
+                    load_ordered("A", "y", 1, "relaxed"),
+                    load_ordered("B", "y", 2, "relaxed"),
+                ],
+            ),
+            (
+                "t",
+                vec![
+                    put_value("E", "y", "StoreTwo", "seq_cst"),
+                    put_value("L3", "y", "StoreThree", "relaxed"),
+                    put_value("X2", "x", "StoreTwo", "seq_cst"),
+                ],
+            ),
+        ],
+        &load_ordered("Fx", "x", 3, ""),
+    )
+}
+
+/// The weak outcome of [`removed_event_fixture`]: `a = 2`, `b = 3`, `X = 1`.
+static REMOVED_EVENT: Forbid = Forbid(|state, key| {
+    register(state, key, "r1") == 2
+        && register(state, key, "r2") == 3
+        && register(state, key, "r3") == 1
+});
+
+/// SR-12255 FND-002: thread `b` stores `X := 1`, fences, releases `flag`,
+/// fences again; `c` acquires `flag` (reads 1), fences, stores `Y := 1`; `d`
+/// stores `Y := 2` then loads `X`. Reading `flag = 1` and `X = 0` and ending
+/// at `Y = 2` closes `a -po-> f1 -hb-> x -po-> z -mo-> w -po-> v -rb-> a`.
+/// `b`'s second fence must not make `c`'s fence forget the first one.
+/// Locations: `X` is `x.v`, `Y` is `y.v`, `flag` is `x.w`.
+fn superseded_fence_fixture() -> String {
+    let flag_store = attempt("Flag", "w", "Cell::setw", "release", "IsXw, FlagOne");
+    let flag_load = attempt("Acq", "c", "Core::read1", "acquire", "ReadsX1, ReadFlag1");
+    run(
+        &[
+            (
+                "b",
+                vec![
+                    put_value("A", "x", "StoreOne", "seq_cst"),
+                    "fence F1 ordering seq_cst;".to_owned(),
+                    flag_store,
+                    "fence F2 ordering seq_cst;".to_owned(),
+                ],
+            ),
+            (
+                "c",
+                vec![
+                    flag_load,
+                    "fence Fx ordering seq_cst;".to_owned(),
+                    put_value("Z", "y", "StoreOne", "seq_cst"),
+                ],
+            ),
+            (
+                "d",
+                vec![
+                    put_value("W", "y", "StoreTwo", "seq_cst"),
+                    load_ordered("V", "x", 2, "seq_cst"),
+                ],
+            ),
+        ],
+        &load_ordered("Fy", "y", 3, ""),
+    )
+}
+
+/// The weak outcome of [`superseded_fence_fixture`]: `flag = 1`, `X = 0`,
+/// `Y = 2`.
+static SUPERSEDED_FENCE: Forbid = Forbid(|state, key| {
+    register(state, key, "r1") == 1
+        && register(state, key, "r2") == 0
+        && register(state, key, "r3") == 2
+});
+
+/// SR-12255 FND-001 (PSC-4): an SC event that leaves `P` with its message
+/// keeps its predecessors for its thread's later events on other locations.
+#[trace("TC-668", "FR-223-AC-3")]
+#[test]
+fn a_removed_sc_event_still_precedes_its_threads_later_events() {
+    let case = unit(&removed_event_fixture(), &REMOVED_EVENT);
+    assert!(forbids(&case, &ra_main()));
+}
+
+/// SR-12255 FND-002 (PSC-4, PSC-6): `c`'s frontier names `b`'s first fence
+/// when `b` fences again. The weak outcome stays forbidden: `c`'s fence
+/// joins `S`, which holds `b`'s second fence, so the second fence precedes it
+/// and the first one's edges follow through `po` (STD-247). This test passes
+/// without a retention rule for the first fence; it pins that the outcome
+/// is not admitted.
+#[trace("TC-668", "FR-223-AC-2")]
+#[test]
+fn a_fence_stays_while_a_view_covers_it_and_not_its_successor() {
+    let case = unit(&superseded_fence_fixture(), &SUPERSEDED_FENCE);
+    assert!(forbids(&case, &ra_main()));
+}
+
+/// SR-12255 FND-003 (MB-2): `max_messages` bounds the live messages after
+/// garbage collection. `c` leaves four live messages of `x` while `a`'s
+/// view is at the first; `a`'s store moves its view and collects, so no
+/// choice of it exceeds the bound and nothing is cut.
+#[trace("TC-670")]
+#[test]
+fn a_store_that_collection_brings_under_the_bound_is_not_cut() {
+    let case = no_both_zero_unit(&run(
+        &[
+            ("a", vec![put_value("Sa", "x", "StoreOne", "relaxed")]),
+            (
+                "c",
+                vec![
+                    put_value("S1", "x", "StoreOne", "relaxed"),
+                    put_value("S2", "x", "StoreTwo", "relaxed"),
+                    put_value("S3", "x", "StoreThree", "relaxed"),
+                ],
+            ),
+        ],
+        "",
+    ));
+    let outcome = case.claim(&ra_main(), None);
+    let ModelCheckOutcome::Holds { stats, .. } = &outcome else {
+        panic!("{outcome:?}");
+    };
+    assert_eq!(stats.bound_limited, 0, "{stats:?}");
+    let record = case.settle(&ra_main(), &outcome, false, None);
+    assert_eq!(record.label, ResultLabel::Proved, "{record:?}");
 }
 
 /// FR-227-AC-2 (TC-672): `SB`'s `ra` counterexample names `Lx`'s message by
@@ -1027,10 +1183,33 @@ fn an_ra_counterexample_replays_by_its_message_depths() {
         "{refusal:?}"
     );
 
-    // A carried component that is not the recomputed one is refused.
+    // A carried component whose one message view differs from the
+    // recomputed one is refused.
     let mut forged = counterexample.as_ref().clone();
-    let first = forged.prefix[0].transition.memory_component().cloned();
-    forged.prefix[2].transition = forged.prefix[2].transition.clone().carrying_memory(first);
+    let carried = forged.prefix[2]
+        .transition
+        .memory_component()
+        .expect("a carried component");
+    let mut text: Json = serde_json::from_str(carried.as_str()).expect("JSON");
+    let view = text["entries"]
+        .as_array_mut()
+        .expect("entries")
+        .iter_mut()
+        .find(|entry| entry["key"]["type"] == "messages")
+        .expect("a messages entry")["value"]["elements"][1]["view"]["at"]["entries"][0]["value"]
+        .take();
+    let flipped = if view == "0" { "1" } else { "0" };
+    text["entries"]
+        .as_array_mut()
+        .expect("entries")
+        .iter_mut()
+        .find(|entry| entry["key"]["type"] == "messages")
+        .expect("a messages entry")["value"]["elements"][1]["view"]["at"]["entries"][0]["value"] =
+        Json::String(flipped.to_owned());
+    forged.prefix[2].transition = forged.prefix[2]
+        .transition
+        .clone()
+        .carrying_memory(Some(CarriedComponent::from_text(text.to_string())));
     let Err(ReplayRefusal::ModelTrace(refusal)) = case.replay(&ra, forged) else {
         panic!("a forged memory component refuses");
     };
