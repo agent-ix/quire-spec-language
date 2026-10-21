@@ -67,3 +67,14 @@ Reverse gap: every new module (`time_units.rs`, `temporal_clause/timed.rs`, `qsl
 | FND-002 | medium | A timed interval's FR-255 key carries `clock_binding(&form.clock.text)`, the digest of the text `model-time`, not FR-233's binding (model, source kind, unit, period). In one package, `[0, 3]` in `ms` over model A and `[0, 3]` in `s` over model B therefore get equal `TimedIntervalKey`s, although they denote different intervals. FR-233 "Identity" and ADR-026 CB-3/CB-4 require the key to carry the binding. This is the coder's item 5 and belongs to FR-233's ticket. It does not falsify FR-234-AC-2, which compares intervals over one binding. | qsl-semantics/src/check/temporal_clause.rs:886; qsl-foundation/src/bound.rs (TimedInterval::key) |
 | FND-003 | low | FR-326 "Profile identity" still lists four temporal profiles, but the code now admits `quire.temporal.timed/v1` in the TemporalTrace catalog, as FR-234 requires. Add the timed profile to FR-326's list in the same spec round as FND-001. | spec/functional/FR-326-admit-temporal-operators-by-the-unit-s-temporal-profile.md:76-81 |
 | FND-004 | low | `UnsupportedItem::PunctualInterval` reaches `RequestItem`/`RequirementItem::unsupported()`, but no consumer turns it into a V-8 `Unsupported(PunctualInterval)` settlement (FR-235). Until one does, the item settles as an ordinary empty candidate set and the cause is lost. This is the coder's item 11. Track it on FR-235's ticket. | qsl-route/src/request.rs:466-475, 525-534 |
+
+## Dispositions
+
+Round 1, reviewed at 9aad942740990ce57f4cac1236d4ad1771abbb04 (fix commit 9aad94274 over 8f4f7bf3f).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9aad94274. after: FR-234-AC-1 "...; `always eventually holds(c.phase = Idle)` as `TimedLiveness`." TC-689 step 1's expected list (TimedSafety, TimedInvariant, BoundedWindow{3}, TimedLiveness) now agrees. The classification test adds `always eventually holds(...)` as TimedLiveness. AC-1 stays untagged because its `Rpc` vectors wait on FR-230's facet gate and STD-192. |
+| FND-002 | deferred | Blocked on QSpec FR-252's model-time binding node (model, source kind, unit, period, step-order authority). Recorded on QSL-580 (comment 2026-10-21T04:42Z) for FR-233's binding work. FR-234-AC-2 is unaffected. |
+| FND-003 | fixed | 9aad94274. after: FR-326 "... `quire.temporal.infinite-trace/v1` and `quire.temporal.timed/v1` (QSpec FR-250, FR-234)." |
+| FND-004 | deferred | Settlement of `Unsupported(PunctualInterval)` as a verdict record belongs to FR-235. It is tracked there per the coordinator and the QSL-580 comment. The writer-level disposition FR-234-AC-3 asks for is in place. |

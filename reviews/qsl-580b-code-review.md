@@ -46,3 +46,15 @@ No gates and no full build, as briefed (the machine is overloaded). The review i
 | FND-003 | low | A probabilistic temporal event under timed/v1 refuses `UnboundedEvent`, because `is_bounded` is false for `Timed`. The cause says the event is unbounded when the actual problem is that a timed profile is not a probabilistic event profile. Nothing leaks. A profile-specific refusal would name it correctly. | qsl-semantics/src/check/probabilistic/claim.rs:1046-1052, 1106-1117 |
 | FND-004 | low | `rational(n, 0)` in a timed bound returns `IntervalFailure::Stop` with a `ProbabilisticCause::ZeroDenominator` refusal. It skips the clause's earliest-span selection (`min_by_key(span.start)`), so a zero denominator in a later interval wins over an earlier `invalid-interval`. The cause is also filed under the probabilistic family in a temporal clause. Push it as a temporal cause into `refusals` (code `undefined_expression`/`unproved-nonzero` is fine). | qsl-semantics/src/check/temporal_clause/timed.rs:168-179 |
 | FND-005 | low | `TimedPropertyForm::BoundedWindow` is assigned to an `on origin` formula with no temporal operator (for example `holds(p)`), because `all` over an empty iterator is true. The horizon is then 0. This matches FR-234's literal wording and is semantically harmless, but it is untested. Pin it in a test or exclude it. | qsl-semantics/src/check/temporal_clause/timed.rs:247-259 |
+
+## Dispositions
+
+Round 1, reviewed at 9aad942740990ce57f4cac1236d4ad1771abbb04 (fix commit 9aad94274 over 8f4f7bf3f).
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 9aad94274. after: `let outcome = registry.candidates_for_fairness(...); match outcome { CandidateOutcome::Candidates(_) if requirements.unsupported().is_some() => CandidateOutcome::Candidates(CandidateSet::none(...)), other => other }`. The test now asserts `candidates_of(&punctual, &registry, Some(&missing)) == UnknownBackend(missing)`. |
+| FND-002 | fixed | 9aad94274. after: `let reading = if profile == TemporalProfile::Timed { IntervalReading::TimedUnread } else { IntervalReading::Steps { bounded: false } };`. `TimedUnread` shares the timed-profile arms of `checked_operators` (step interval refuses `UnitlessTimedBound`/`OpenInterval`). No hyper-specific test. Accepted: it is a wrong-diagnostic low behind `not_emitted`, and the arms it reaches are tested through the temporal clause. |
+| FND-003 | fixed | 9aad94274. after: `if profile == TemporalProfile::Timed { return Err(refusal(ProbabilisticCause::TimedEventProfile { claim, span })); }`. The test `an_unbounded_event_is_refused_and_a_windowed_one_has_its_horizon` asserts `TimedEventProfile`. |
+| FND-004 | fixed | 9aad94274. after: `ExactFault::ZeroDenominator => IntervalFailure::Cause(TemporalCause::ZeroDenominator { span: quantity.magnitude.span })`. The cause is `undefined_expression`/`unproved-nonzero`. A test shows the earlier `[3 ms, 2 ms]` refusal wins. |
+| FND-005 | fixed | 9aad94274. after: the classification test pins `("holds(c.healthy)", TimedPropertyForm::BoundedWindow { horizon: whole(0) })`. |
