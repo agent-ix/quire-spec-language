@@ -27,7 +27,8 @@ use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits, ReachedLimit};
 use crate::model_check::outcome::{MemoryCause, ModelCheckOutcome, ReductionCause, UndecidedCause};
 use crate::model_check::replay::{
-    no_value_cause, ModelTraceReplayResult, ModelTraceSettlement, StrongFairnessHint,
+    no_value_cause, ModelTraceRefusal, ModelTraceReplayResult, ModelTraceSettlement,
+    StrongFairnessHint,
 };
 use crate::proof_result::{
     Certification, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
@@ -37,6 +38,7 @@ use crate::proof_result::{
 use qsl_eval::simulation::protocol::{
     activates_on_each, live_instance_bound, ProtocolTransition, SubjectMemory, WeakAccessShape,
 };
+use qsl_eval::simulation::SubjectTransition;
 use quire_semantic_value::model_transition::ModelTransition;
 
 /// The settlement method every EN-1 record states (FR-127).
@@ -101,7 +103,7 @@ pub enum Truth {
 
 /// One EN-1 item's terminal record (FR-127 Outputs).
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ModelCheckRecord<T = ModelTransition> {
+pub struct ModelCheckRecord<T: SubjectTransition = ModelTransition> {
     /// The terminal value.
     pub value: TerminalValue,
     /// Its QSpec FR-360 label.
@@ -262,7 +264,7 @@ fn weak_access_shape(shape: &WeakAccessShape) -> Option<UnavailabilityCause> {
     })
 }
 
-fn settle<T: Clone>(
+fn settle<T: SubjectTransition>(
     outcome: &ModelCheckOutcome<T>,
     limits: &ModelCheckLimits,
     package_id: &DigestRecord,
@@ -387,6 +389,11 @@ fn settle<T: Clone>(
             // EN-1 builds only fair lassos (ADR-019 FS-7), so replay's refusal
             // of one as unfair is a disagreement between the two (SV-4).
             Err(ReplayRefusal::UnfairLasso { .. }) => {
+                Row::inconclusive(InconclusiveCause::ReplayParity(no_value_cause()))
+            }
+            Err(ReplayRefusal::ModelTrace(refusal))
+                if matches!(*refusal, ModelTraceRefusal::UnfairProtocolLasso { .. }) =>
+            {
                 Row::inconclusive(InconclusiveCause::ReplayParity(no_value_cause()))
             }
             Err(refusal) => Row::refused(&refusal),

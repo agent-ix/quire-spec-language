@@ -13,7 +13,9 @@ use crate::simulation::expansion::{Expansion, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::EncodingRefusal;
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
-use crate::simulation::protocol::BlockedThread;
+use crate::simulation::protocol::{BlockedThread, ProtocolFairness, ProtocolTransition};
+use quire_semantic_value::fairness::FairnessConstraint;
+use quire_semantic_value::model_transition::ModelTransition;
 
 /// What a method bound left of a state unexpanded: a store the memory bound
 /// cut (ADR-025 MB-3), or an `activate` step the instance bound did not
@@ -30,8 +32,27 @@ pub struct Cut {
 /// An expansion, and what a method bound left of its state unexpanded.
 pub type Bounded<T, S> = (Expansion<T, S, ModelFinding>, Cut);
 
+/// A subject's transition identity, and the fairness set member a clause
+/// over the subject carries: an operation constraint for a model subject
+/// (FR-123), a protocol member with its target and origin for a protocol
+/// subject (FR-212).
+pub trait SubjectTransition: Clone + Eq + std::fmt::Debug {
+    /// One member of a fairness set over the subject.
+    type Fairness: Clone + Eq + std::fmt::Debug;
+}
+
+impl SubjectTransition for ModelTransition {
+    type Fairness = FairnessConstraint;
+}
+
+impl SubjectTransition for ProtocolTransition {
+    type Fairness = ProtocolFairness;
+}
+
 /// A subject's transition system as EN-1 and replay read it.
-pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> {
+pub trait SubjectSystem:
+    TransitionSystem<Finding = ModelFinding, State: Clone, TransitionId: SubjectTransition>
+{
     /// FR-101's `quire.simulation.state-key/v1` digest of `state`, and its
     /// full key bytes.
     ///

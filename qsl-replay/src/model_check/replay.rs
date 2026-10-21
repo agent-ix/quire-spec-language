@@ -46,12 +46,13 @@ use qsl_eval::simulation::model::{
     TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, live_instance_bound, CarriedComponent, MemoryModel, ProtocolRefusal,
-    ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, SendRecord, StepKind, SubjectMemory,
+    check_protocol_bounds, live_instance_bound, protocol_constraints, CarriedComponent,
+    MemoryModel, ProtocolFairness, ProtocolFairnessError, ProtocolRefusal, ProtocolSystem,
+    ProtocolTransition, ResolvedMemory, Sc, SendRecord, StepKind, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    ConstraintValue, Cut, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
-    BOUND_POSITIONS,
+    ConstraintValue, Cut, Expansion, ExpansionStop, NotSimulated, SubjectSystem, SubjectTransition,
+    TransitionSystem, BOUND_POSITIONS,
 };
 use qsl_eval::temporal::AtomReading;
 use qsl_eval::temporal::{
@@ -290,10 +291,32 @@ pub enum ModelTraceRefusal {
         /// The step's zero-based index in the prefix.
         step: usize,
     },
-    /// A protocol counterexample with a loop, whose replay against FR-212's
-    /// fairness classes is not built.
-    #[error("unsupported_construct/not-yet-implemented: replay of a protocol lasso")]
-    ProtocolLasso,
+    /// A protocol counterexample's fairness set is not the one the
+    /// recompiled clause and protocol give, scheduler constraints included
+    /// (FR-217).
+    #[error("stale_dependency/content-mismatch: the payload's fairness set {payload:?} is not the recompiled protocol clause's {recompiled:?}")]
+    ProtocolFairnessSet {
+        /// The payload's fairness set.
+        payload: Vec<ProtocolFairness>,
+        /// The recompiled fairness set over the protocol subject.
+        recompiled: Vec<ProtocolFairness>,
+    },
+    /// A protocol lasso's loop is unfair under a member of its fairness set
+    /// over FR-212's classes, the first that fails (FR-217).
+    #[error(
+        "invalid_runtime_input/invalid-value: the protocol lasso is unfair under {constraint:?}"
+    )]
+    UnfairProtocolLasso {
+        /// The first member of the fairness set the loop fails.
+        constraint: Box<ProtocolFairness>,
+    },
+    /// The recompiled clause's fairness constraint names an operation the
+    /// subject's model does not apply (FR-212).
+    #[error("invalid_runtime_input/invalid-value: the fairness constraint on `{name}` names an operation the subject does not apply")]
+    UnknownFairnessOperation {
+        /// The operation's resolved name.
+        name: String,
+    },
     /// The subject's protocol system does not build (FR-205).
     #[error("{0}")]
     Protocol(ProtocolRefusal),
@@ -330,12 +353,11 @@ impl ModelTraceRefusal {
             | Self::PostState { .. }
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => Code::StaleDependency,
-            Self::FairnessSet { .. } => Code::StaleDependency,
+            Self::FairnessSet { .. } | Self::ProtocolFairnessSet { .. } => Code::StaleDependency,
             Self::AuthoredUndefined
             | Self::GuardedActivation
             | Self::HyperWitnessExhausted
-            | Self::HyperProjected
-            | Self::ProtocolLasso => Code::UnsupportedConstruct,
+            | Self::HyperProjected => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
             Self::NotSimulated(refusal) => not_simulated_code(refusal),
             Self::InitialState { .. }
@@ -350,7 +372,9 @@ impl ModelTraceRefusal {
             | Self::StutterNotTerminal { .. }
             | Self::HyperShape { .. }
             | Self::HyperUnmatched { .. }
-            | Self::HyperUnfair { .. } => Code::InvalidRuntimeInput,
+            | Self::HyperUnfair { .. }
+            | Self::UnfairProtocolLasso { .. }
+            | Self::UnknownFairnessOperation { .. } => Code::InvalidRuntimeInput,
         }
     }
 
@@ -360,14 +384,14 @@ impl ModelTraceRefusal {
             Self::UnknownTemporalClause { .. }
             | Self::ItemIdentity { .. }
             | Self::FairnessSet { .. }
+            | Self::ProtocolFairnessSet { .. }
             | Self::PostState { .. }
             | Self::SendRecord { .. }
             | Self::MemoryComponent { .. } => "content-mismatch",
             Self::AuthoredUndefined
             | Self::GuardedActivation
             | Self::HyperWitnessExhausted
-            | Self::HyperProjected
-            | Self::ProtocolLasso => "not-yet-implemented",
+            | Self::HyperProjected => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
             Self::NotSimulated(refusal) => match refusal.catalog_code() {
                 Some(code) => code.cause(),
@@ -385,7 +409,9 @@ impl ModelTraceRefusal {
             | Self::StutterNotTerminal { .. }
             | Self::HyperShape { .. }
             | Self::HyperUnmatched { .. }
-            | Self::HyperUnfair { .. } => "invalid-value",
+            | Self::HyperUnfair { .. }
+            | Self::UnfairProtocolLasso { .. }
+            | Self::UnknownFairnessOperation { .. } => "invalid-value",
         }
     }
 }
@@ -524,7 +550,16 @@ pub fn replay_model_trace(
         envelope,
         replay_limits,
         |package, simulation, meter| {
-            let clause = resolve_item(envelope, package.0, &package.1)?;
+            let clause = resolve_item(envelope, package.0, &package.1, |clause| {
+                let payload = envelope.family_payload();
+                if payload.fairness == clause.fairness() {
+                    return Ok(());
+                }
+                Err(refused(ModelTraceRefusal::FairnessSet {
+                    payload: payload.fairness.clone(),
+                    recompiled: clause.fairness().to_vec(),
+                }))
+            })?;
             let system = ModelSystem::new(simulation(subject)).map_err(ReplayRefusal::Admission)?;
             let formula = clause.map(|clause| FormulaReplay {
                 clause,
@@ -542,16 +577,22 @@ pub fn replay_model_trace(
 /// and store buffer bound (FR-227): a step whose recomputed post-state
 /// differs under them refuses on its digest, and one whose recomputed
 /// memory component differs from the one it carries refuses
-/// [`ModelTraceRefusal::MemoryComponent`] (ADR-025 MK-2). For a deadlock it checks
-/// that no protocol step is enabled at the last state, that some protocol
-/// instance is live there, and that the blocked threads recompute equal
-/// to the payload's.
+/// [`ModelTraceRefusal::MemoryComponent`] (ADR-025 MK-2). An authored
+/// clause's payload carries the fairness set the recompiled clause and
+/// protocol give, scheduler constraints included (FR-212), and a lasso's
+/// loop must be fair under it over FR-212's classes, enabledness read from
+/// the protocol system at every loop state. For a deadlock it checks that
+/// no protocol step is enabled at the last state, that some protocol
+/// instance is live there, and that the blocked threads recompute equal to
+/// the payload's.
 ///
 /// # Errors
 ///
 /// [`ReplayRefusal`] as [`replay_model_trace`] returns it; a protocol that
-/// does not build refuses with its own code, and a protocol lasso refuses
-/// `unsupported_construct`/`not-yet-implemented`.
+/// does not build refuses with its own code, a payload fairness set that
+/// differs from the recompiled one refuses `stale_dependency`/
+/// `content-mismatch`, and an unfair lasso `invalid_runtime_input`/
+/// `invalid-value`.
 pub fn replay_protocol_trace(
     wire: ReplayRequestWire,
     subject: &ProtocolTraceSubject,
@@ -564,11 +605,10 @@ pub fn replay_protocol_trace(
         envelope,
         replay_limits,
         |package, simulation, meter| {
-            let clause = resolve_item(envelope, package.0, &package.1)?;
+            // The fairness set depends on the protocol system, so it is
+            // compared in `ProtocolReplay::settle`.
+            let clause = resolve_item(envelope, package.0, &package.1, |_| Ok(()))?;
             let payload = envelope.family_payload();
-            if payload.lasso.is_some() {
-                return Err(refused(ModelTraceRefusal::ProtocolLasso));
-            }
             let simulation = simulation(&subject.model);
             let protocol = package
                 .0
@@ -635,10 +675,32 @@ impl ProtocolReplay<'_> {
         system: &ProtocolSystem<'_, M>,
     ) -> Result<ModelTraceSettlement, ReplayRefusal> {
         let payload = self.payload;
+        let fairness = match self.clause {
+            Some(clause) => {
+                system
+                    .fairness_set(clause.fairness())
+                    .map_err(|error| match error {
+                        ProtocolFairnessError::UnknownOperation { name } => {
+                            refused(ModelTraceRefusal::UnknownFairnessOperation { name })
+                        }
+                        ProtocolFairnessError::Encoding(_) => fault("a-fairness-member-encodes"),
+                    })?
+            }
+            None => Vec::new(),
+        };
+        if self.clause.is_some() && payload.fairness != fairness {
+            return Err(refused(ModelTraceRefusal::ProtocolFairnessSet {
+                payload: payload.fairness.clone(),
+                recompiled: fairness,
+            }));
+        }
         send_records_in_place(payload)?;
         let Some((positions, steps)) = replay_prefix(system, payload, &PROTOCOL_STEPS)? else {
             return Ok(no_value());
         };
+        if let Some(lasso) = payload.lasso {
+            close_loop(system, &positions, lasso)?;
+        }
         Ok(match (&payload.kind, self.clause) {
             (CounterexampleKind::Deadlock, _) => deadlock(system, payload, &positions, &steps)?,
             (CounterexampleKind::UndefinedEvaluation(claimed), _) => {
@@ -650,8 +712,16 @@ impl ProtocolReplay<'_> {
                     letters: self.letters,
                     meter: self.meter,
                 };
-                check_formula(system, payload, &positions, &formula, |_| {
-                    Err(fault("a-protocol-lasso-is-refused-before-replay"))
+                check_formula(system, payload, &positions, &formula, |lasso| {
+                    let Some(states) = loop_states_of(system, payload, &positions, lasso)? else {
+                        return Ok(Err(no_value()));
+                    };
+                    if let Some(constraint) = unfair_member(&states, lasso, &fairness)? {
+                        return Err(refused(ModelTraceRefusal::UnfairProtocolLasso {
+                            constraint: Box::new(constraint),
+                        }));
+                    }
+                    Ok(Ok(states))
                 })?
                 .0
             }
@@ -733,13 +803,16 @@ pub(super) fn refused(refusal: ModelTraceRefusal) -> ReplayRefusal {
 /// under any other identity, or an authored payload under the derived
 /// identity, refuses [`ModelTraceRefusal::ItemIdentity`]. Any other identity
 /// names an authored clause: the package's temporal clause node of that
-/// `clause_node`, whose `claim` occurrence the envelope must carry and whose
-/// fairness set the payload must equal. A package with no such node refuses
+/// `clause_node`, whose `claim` occurrence the envelope must carry; the
+/// caller's `check_fairness` compares the payload's fairness set with the
+/// subject's before the clause's own refusals. A package with no such node
+/// refuses
 /// [`ModelTraceRefusal::UnknownTemporalClause`].
-fn resolve_item<'p, T: Clone + std::fmt::Debug + Eq>(
+fn resolve_item<'p, T: SubjectTransition>(
     envelope: &WitnessEnvelope<TemporalCounterexample<T>>,
     package: &'p CheckedPackage,
     package_id: &DigestRecord,
+    check_fairness: impl FnOnce(&CheckedTemporalClause) -> Result<(), ReplayRefusal>,
 ) -> Result<Option<&'p CheckedTemporalClause>, ReplayRefusal> {
     let (node, occurrence) = deadlock_freedom_clause(package_id);
     let derived = envelope.clause_node() == node && *envelope.occurrence_key() == occurrence;
@@ -777,13 +850,8 @@ fn resolve_item<'p, T: Clone + std::fmt::Debug + Eq>(
         return Err(identity_mismatch(envelope.clause_node(), expected));
     }
     let clause = found.clause();
+    check_fairness(clause)?;
     let payload = envelope.family_payload();
-    if payload.fairness != clause.fairness() {
-        return Err(refused(ModelTraceRefusal::FairnessSet {
-            payload: payload.fairness.clone(),
-            recompiled: clause.fairness().to_vec(),
-        }));
-    }
     if matches!(payload.kind, CounterexampleKind::UndefinedEvaluation(_)) {
         return Err(refused(ModelTraceRefusal::AuthoredUndefined));
     }
@@ -795,7 +863,7 @@ fn resolve_item<'p, T: Clone + std::fmt::Debug + Eq>(
 
 /// Whether the payload's shape is one only the deadlock-freedom item has: a
 /// deadlock, or an undefined model-side expression with no `over` binding.
-fn names_deadlock_item<T>(payload: &TemporalCounterexample<T>) -> bool {
+fn names_deadlock_item<T: SubjectTransition>(payload: &TemporalCounterexample<T>) -> bool {
     match &payload.kind {
         CounterexampleKind::Deadlock => true,
         CounterexampleKind::UndefinedEvaluation(evaluation) => {
@@ -1083,10 +1151,10 @@ fn replay_prefix<S: SubjectSystem>(
 
 /// FR-128: the lasso's loop must end at its entry state; a
 /// `terminal-stutter` loop must stand at a state that enables no transition
-/// identity (FR-124, ADR-018 SM-4), and a loop of model steps must hold one.
-pub(super) fn close_loop(
-    system: &ModelSystem<'_>,
-    positions: &[Position],
+/// identity (FR-124, ADR-018 SM-4), and a loop of steps must hold one.
+pub(super) fn close_loop<S: SubjectSystem>(
+    system: &S,
+    positions: &[Position<S::State>],
     lasso: Lasso,
 ) -> Result<(), ReplayRefusal> {
     let steps = positions.len() - 1;
@@ -1181,8 +1249,13 @@ fn check_formula<S: SubjectSystem>(
     payload: &TemporalCounterexample<S::TransitionId>,
     positions: &[Position<S::State>],
     formula: &FormulaReplay<'_>,
-    fair_loop: impl FnOnce(Lasso) -> Result<Result<Vec<LoopState>, ModelTraceSettlement>, ReplayRefusal>,
-) -> Result<(ModelTraceSettlement, Vec<LoopState>), ReplayRefusal> {
+    fair_loop: impl FnOnce(
+        Lasso,
+    ) -> Result<
+        Result<Vec<LoopState<S::TransitionId>>, ModelTraceSettlement>,
+        ReplayRefusal,
+    >,
+) -> Result<(ModelTraceSettlement, Vec<LoopState<S::TransitionId>>), ReplayRefusal> {
     let instance = payload
         .over_binding
         .as_ref()
@@ -1284,25 +1357,28 @@ fn ends_terminal<S: SubjectSystem>(
     })
 }
 
-/// One model step of a lasso's loop: where it starts, the transition
-/// identities enabled there (FA-2) and the one it takes.
-pub(super) struct LoopState {
+/// One step of a lasso's loop: where it starts, the transition identities
+/// enabled there (FA-2) and the one it takes.
+pub(super) struct LoopState<T = ModelTransition> {
     /// The step's position in the loop, from its entry.
     pub(super) position: usize,
-    pub(super) enabled: Vec<ModelTransition>,
-    pub(super) taken: ModelTransition,
+    pub(super) enabled: Vec<T>,
+    pub(super) taken: T,
 }
 
-/// The model steps of the lasso's loop with the identities enabled at each
-/// state they leave, read from the model's own successor relation. The
+/// A lasso's loop steps with their enabled identities.
+pub(super) type LoopStates<T> = Vec<LoopState<T>>;
+
+/// The steps of the lasso's loop with the identities enabled at each state
+/// they leave, read from the subject's own successor relation. The
 /// terminal stutter step is outside every constraint and enables none
 /// (SM-4), so a stutter loop has none. `None` when an expansion stops.
-pub(super) fn loop_states_of(
-    system: &ModelSystem<'_>,
-    payload: &TemporalCounterexample,
-    positions: &[Position],
+pub(super) fn loop_states_of<S: SubjectSystem>(
+    system: &S,
+    payload: &TemporalCounterexample<S::TransitionId>,
+    positions: &[Position<S::State>],
     lasso: Lasso,
-) -> Result<Option<Vec<LoopState>>, ReplayRefusal> {
+) -> Result<Option<LoopStates<S::TransitionId>>, ReplayRefusal> {
     let mut states = Vec::new();
     if lasso.terminal_stutter {
         return Ok(Some(states));
@@ -1389,6 +1465,57 @@ pub(super) fn unfair_constraint(
         Ok(LassoFairness::Unfair { constraint }) => authored
             .get(constraint)
             .map(|constraint| Some((*constraint).clone()))
+            .ok_or_else(|| fault("an-unfair-constraint-is-one-of-the-set")),
+        Err(_) => Err(fault("a-lasso-loop-has-a-step")),
+    }
+}
+
+/// FR-217: the first member of a protocol fairness set that the lasso's
+/// loop is unfair under, over FR-212's classes (ADR-027 PA-1, PA-2).
+fn unfair_member(
+    states: &[LoopState<ProtocolTransition>],
+    lasso: Lasso,
+    fairness: &[ProtocolFairness],
+) -> Result<Option<ProtocolFairness>, ReplayRefusal> {
+    let mut numbered: BTreeMap<&ProtocolTransition, Identity> = BTreeMap::new();
+    for state in states {
+        for transition in state.enabled.iter().chain(std::iter::once(&state.taken)) {
+            let next = Identity::new(u64::try_from(numbered.len()).unwrap_or(u64::MAX));
+            numbered.entry(transition).or_insert(next);
+        }
+    }
+    let identity = |transition: &ProtocolTransition| {
+        numbered
+            .get(transition)
+            .copied()
+            .ok_or_else(|| fault("every-loop-transition-is-numbered"))
+    };
+    let mut steps = Vec::new();
+    if lasso.terminal_stutter {
+        steps.push(LoopStep::new([], EdgeLabel::Stutter));
+    }
+    for state in states {
+        let enabled = state
+            .enabled
+            .iter()
+            .map(identity)
+            .collect::<Result<Vec<_>, _>>()?;
+        steps.push(LoopStep::new(
+            enabled,
+            EdgeLabel::Transition(identity(&state.taken)?),
+        ));
+    }
+    let transitions: Vec<ProtocolTransition> = numbered.keys().map(|t| (*t).clone()).collect();
+    let (members, constraints): (Vec<usize>, Vec<Constraint>) =
+        protocol_constraints(fairness, &transitions, identity)?
+            .into_iter()
+            .unzip();
+    match check_loop(&steps, &constraints) {
+        Ok(LassoFairness::Fair) => Ok(None),
+        Ok(LassoFairness::Unfair { constraint }) => members
+            .get(constraint)
+            .and_then(|member| fairness.get(*member))
+            .map(|member| Some(member.clone()))
             .ok_or_else(|| fault("an-unfair-constraint-is-one-of-the-set")),
         Err(_) => Err(fault("a-lasso-loop-has-a-step")),
     }
@@ -1533,7 +1660,8 @@ fn undefined<S: SubjectSystem>(
         | UndefinedLocus::Contract(_)
         | UndefinedLocus::Terminal(_)
         | UndefinedLocus::Protocol(_)
-        | UndefinedLocus::Mapping { .. } => None,
+        | UndefinedLocus::Mapping { .. }
+        | UndefinedLocus::ClaimPredicate(_) => None,
     };
     if constraint.is_some_and(|name| !constraints.has_constraint(name)) {
         return Ok(disagrees(Category::Success));
