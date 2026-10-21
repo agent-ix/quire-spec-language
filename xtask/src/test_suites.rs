@@ -201,6 +201,11 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
         reason: "no unit tests in src/; the crate's tests are its tests/it target",
     },
     EmptySuite {
+        source: "qsl-string-edge/src/main.rs",
+        kind: SuiteKind::Tests,
+        reason: "the command entry point; its tests are the tests/it target that runs the binary",
+    },
+    EmptySuite {
         source: "qsl-walk-grow/src/lib.rs",
         kind: SuiteKind::Tests,
         reason: "no unit tests in src/; the crate's tests are in its tests/ directory",
@@ -252,6 +257,11 @@ const WORKSPACE_EMPTY: &[EmptySuite] = &[
     },
     EmptySuite {
         source: "qsl-source/src/lib.rs",
+        kind: SuiteKind::Doctests,
+        reason: NO_DOC_EXAMPLE,
+    },
+    EmptySuite {
+        source: "qsl-string-edge/src/lib.rs",
         kind: SuiteKind::Doctests,
         reason: NO_DOC_EXAMPLE,
     },

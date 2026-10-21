@@ -329,6 +329,7 @@ layers below it; `make arch-lint` enforces this.
 | `qsl-analyze` | In-process model checking, timed zones and schedulability. |
 | `qsl-replay` | Recompiles and re-runs counterexamples; codegen calls it. |
 | `qsl-source` | Reads rules from Quire Markdown (feature `quire-extraction`). |
+| `qsl-string-edge` | The FR-064 string-edge scanner (library and `qsl-string-edge` command) that QSL's `xtask string-edge` and consumer repositories run; see [`qsl-string-edge/README.md`](qsl-string-edge/README.md). |
 | `qsl-attrs`, `qsl-walk-grow`, `qsl-bench` | A lint marker attribute, deep-recursion stack growth, benchmarks. |
 | root crate | The `quire-spec` binary and the library facade. |
 | `xtask`, `tools/arch-lint` | Repository checks: dependency direction, API surface, conformance. |
