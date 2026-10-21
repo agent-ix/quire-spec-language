@@ -79,6 +79,23 @@ pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> 
     ) -> Result<Bounded<Self::TransitionId, Self::State>, ExpansionStop> {
         Ok((self.successors(state)?, false))
     }
+
+    /// `transition` as a counterexample step reports it, `post` its
+    /// post-state: a protocol step over a weak `parallel` carries the
+    /// post-state's memory component (ADR-025 MK-1); every other step is
+    /// its identity. Called only for the steps a counterexample or a replay
+    /// reports, never for every explored successor.
+    ///
+    /// # Errors
+    ///
+    /// An [`ExpansionStop`] when the component has no canonical form.
+    fn reported(
+        &self,
+        transition: Self::TransitionId,
+        _post: &Self::State,
+    ) -> Result<Self::TransitionId, ExpansionStop> {
+        Ok(transition)
+    }
 }
 
 impl SubjectSystem for ModelSystem<'_> {
