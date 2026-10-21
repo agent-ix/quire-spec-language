@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::{UndefinedReason, UndefinedRecord};
-use qsl_semantics::check::CheckedPredicateBody;
+use qsl_semantics::check::StatePredicate;
 use quire_exact::{Meter, ObjectReference};
 use quire_semantic_value::location::Location;
 
@@ -55,10 +55,10 @@ impl ModelSystem<'_> {
     /// meter when an evaluation exhausts it;
     /// `runtime_invariant`/`established-invariant-broken` when the state
     /// cannot be observed or the evaluator faults.
-    pub fn state_predicates(
+    pub fn state_predicates<P: StatePredicate>(
         &self,
         state: &ModelSimState,
-        predicates: &[(&CheckedPredicateBody, Option<&ObjectReference>)],
+        predicates: &[(&P, Option<&ObjectReference>)],
     ) -> Result<Vec<PredicateReading>, ExpansionStop> {
         let walk = walk_of(self, state, None)?;
         let mut readings = Vec::with_capacity(predicates.len());
@@ -84,7 +84,7 @@ impl ModelSystem<'_> {
             };
             let evaluation = evaluate_state_predicate(
                 self.package,
-                predicate,
+                *predicate,
                 &walk.observation.environment,
                 bound,
                 &mut Meter::new(self.meter),
