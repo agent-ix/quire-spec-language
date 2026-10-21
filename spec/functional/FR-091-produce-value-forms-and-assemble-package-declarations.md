@@ -595,7 +595,7 @@ refuses with a duplicate-alias error naming the alias and both selection
 spans.
 Resolving a selection's definition reference against the library lock is an E3
 step outside this requirement; the `ieee_profile` selection and its build are
-[FR-397](FR-397-select-the-ieee-profile-of-a-package-that-holds-an-ieee-operation.md)'s.
+[FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md)'s.
 
 **Node key owner.** `check` mints the node keys of record, tuple and
 function declarations over the unit's `SourceOwner{authority, identity}`
