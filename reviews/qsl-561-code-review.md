@@ -61,3 +61,5 @@ The fix round's own notes (bullets in commit bb89ffbc9) are reconciled here into
 | FND-002 | deferred | QSL-878: the refusal docs and the PR body say `Remaining work: QSL-878`, QSL-878 now blocks QSL-561, and its scope was widened to cover counted past windows and the zero-counted lasso. |
 | FND-003 | fixed | bb89ffbc9: `Steps::read` scans without allocating when every step counts. It builds the table only after it finds an uncounted step, and then charges the meter one unit per position. |
 | FND-004 | fixed | bb89ffbc9: a new `TemporalLetters::counts_loop_edge` (default `true`) is asked of every lasso. Replay answers it from the closing prefix step, or counts it for a terminal stutter. The refusal test now covers an uncounted back edge. |
+
+| FND-005 | fixed | `uncounted_loop` builds its adjacency list once and polls `cancel` in the peel loop; a cancelled scan settles `Stopped`. |

@@ -1244,14 +1244,8 @@ impl<S: SubjectSystem> Run<'_, S> {
                         depth: widen(self.max_depth.unwrap_or(0)),
                         stats: self.stats(),
                     }
-                } else if self.uncounted_loop().map_err(|halt| match halt {
-                    Halt::Refusal(refusal) => refusal,
-                    Halt::Finish(_) => fault("an-uncounted-loop-scan-finishes"),
-                })? {
-                    ModelCheckOutcome::Undecided {
-                        cause: UndecidedCause::UncountedLoop,
-                        stats: self.stats(),
-                    }
+                } else if let Some(outcome) = self.uncounted_loop_outcome()? {
+                    outcome
                 } else {
                     ModelCheckOutcome::Holds {
                         certificate: self.certificate(instances)?,
@@ -1574,6 +1568,27 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
     }
 
+    /// The outcome that replaces `Holds` when an uncounted cycle keeps an
+    /// interval eventuality open, or when the scan is cancelled.
+    fn uncounted_loop_outcome(
+        &self,
+    ) -> Result<Option<ModelCheckOutcome<S::TransitionId>>, ModelCheckRefusal> {
+        Ok(match self.uncounted_loop() {
+            Ok(false) => None,
+            Ok(true) => Some(ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::UncountedLoop,
+                stats: self.stats(),
+            }),
+            Err(Halt::Refusal(refusal)) => return Err(refusal),
+            Err(Halt::Finish(Finish::Stopped(cause, limit))) => Some(ModelCheckOutcome::Stopped {
+                cause,
+                limit,
+                stats: self.stats(),
+            }),
+            Err(Halt::Finish(_)) => return Err(fault("an-uncounted-loop-scan-stops-or-finds")),
+        })
+    }
+
     /// Whether a cycle of uncounted steps keeps an interval eventuality
     /// open (ADR-027 PB-3: such an interval is not met on that lasso).
     /// Every node of the cycle owes the eventuality, since an uncounted step
@@ -1603,14 +1618,17 @@ impl<S: SubjectSystem> Run<'_, S> {
         // Peel the nodes that no edge enters: what is left lies on, or
         // leads from, a cycle.
         let mut entered = vec![0_usize; self.nodes.len()];
-        for (_, to) in &edges {
+        let mut leaving: Vec<Vec<usize>> = vec![Vec::new(); self.nodes.len()];
+        for (from, to) in &edges {
             entered[*to] += 1;
+            leaving[*from].push(*to);
         }
         let mut ready: Vec<usize> = (0..entered.len()).filter(|n| entered[*n] == 0).collect();
         let mut peeled = 0_usize;
         while let Some(node) = ready.pop() {
+            self.poll()?;
             peeled += 1;
-            for (_, to) in edges.iter().filter(|(from, _)| *from == node) {
+            for to in &leaving[node] {
                 entered[*to] -= 1;
                 if entered[*to] == 0 {
                     ready.push(*to);
