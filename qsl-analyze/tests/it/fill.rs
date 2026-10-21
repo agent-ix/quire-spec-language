@@ -564,7 +564,10 @@ pub(crate) fn projections(reached: &[Reached]) -> std::collections::BTreeSet<Vec
                 | StepKind::Fence
                 | StepKind::Memory
                 | StepKind::CAttempt
-                | StepKind::CEnd => None,
+                | StepKind::CEnd
+                | StepKind::Activate
+                | StepKind::Spawn
+                | StepKind::Retire => None,
             };
             if let Some(name) = &named {
                 prefix.push(name.clone());

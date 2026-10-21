@@ -252,6 +252,7 @@ fn blocked_bytes(thread: &BlockedThread) -> usize {
         | WaitCause::Displaced { channel } => channel.len(),
         WaitCause::CheckFalse { node } => node.len(),
         WaitCause::CommitClosed { template } => template.len(),
+        WaitCause::NoRoleInstance { role } => role.len(),
         WaitCause::NoPostState | WaitCause::Constraint | WaitCause::Gate => 0,
     };
     std::mem::size_of::<BlockedThread>()

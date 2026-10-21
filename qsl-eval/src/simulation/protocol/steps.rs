@@ -124,13 +124,21 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }
                 Rest::Node(node) => {
-                    self.event_node(
-                        state,
-                        ordinal,
-                        path,
-                        node,
-                        Cursor::Exit(node),
+                    self.by_owner(
+                        instance,
+                        self.program.acting.get(&node).copied(),
+                        None,
                         &mut gathered,
+                        |gathered| {
+                            self.event_node(
+                                state,
+                                ordinal,
+                                path,
+                                node,
+                                Cursor::Exit(node),
+                                gathered,
+                            )
+                        },
                     )?;
                 }
                 Rest::Await(node) => {
@@ -150,22 +158,40 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                             next,
                         ));
                     }
-                    self.event_node(
-                        state,
-                        ordinal,
-                        path,
-                        awaited.event,
-                        Cursor::Enter(awaited.then),
+                    self.by_owner(
+                        instance,
+                        self.program.acting.get(&awaited.event).copied(),
+                        None,
                         &mut gathered,
+                        |gathered| {
+                            self.event_node(
+                                state,
+                                ordinal,
+                                path,
+                                awaited.event,
+                                Cursor::Enter(awaited.then),
+                                gathered,
+                            )
+                        },
                     )?;
                 }
                 Rest::Finish => self.finish(state, ordinal, path, &mut gathered)?,
-                Rest::Compensate(_) | Rest::Retry(_) => {
-                    self.compensation(state, ordinal, path, thread.rest, &mut gathered)?;
+                Rest::Compensate(index) | Rest::Retry(index) => {
+                    self.by_owner(
+                        instance,
+                        self.program.template(index)?.role,
+                        Some(StepKind::CAttempt),
+                        &mut gathered,
+                        |gathered| self.compensation(state, ordinal, path, thread.rest, gathered),
+                    )?;
                 }
                 Rest::Check(_) | Rest::End => {}
             }
         }
+        for (ordinal, instance) in &state.instances {
+            self.role_steps(state, *ordinal, instance, &mut gathered)?;
+        }
+        self.activate_steps(state, &mut gathered)?;
         self.channel_steps(state, &mut gathered)?;
         for step in self.memory.internal_steps(&state.memory, &state.model) {
             let mut next = state.clone();
@@ -991,6 +1017,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         instance
             .counters
             .retain(|(_, thread), _| counting.contains(thread));
+        self.retire_scoped(instance);
         Ok(())
     }
 
@@ -1113,6 +1140,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         rest: Rest,
         prefix: &[&ProtocolTransition],
     ) -> Result<Option<WaitCause>, ExpansionStop> {
+        // ADR-027 PD-4: a node a replicated role owns is `NoRoleInstance`
+        // first, before the memory model's gate.
+        if let Rest::Node(node) = rest {
+            let owner = self.program.acting.get(&node).copied();
+            if let Some(cause) = self.no_role_instance(instance, owner) {
+                return Ok(Some(cause));
+            }
+        }
         Ok(Some(match rest {
             Rest::Fork(_) => WaitCause::Gate,
             Rest::Join(node) => {

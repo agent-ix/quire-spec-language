@@ -26,6 +26,7 @@ use crate::fill::{
     sc_system, source_memory, Documents, Reached, PACKAGE,
 };
 use crate::protocol_compensation as compensation;
+use crate::protocol_roles as roles;
 use crate::protocol_system::touch;
 
 /// A unit checked over cells `keys`, each from `v = 0` and `w = 0`.
@@ -648,7 +649,9 @@ fn commuting_pairs<M: MemoryModel>(
 }
 
 /// FR-216 and ADR-027 FT-4: over every protocol fixture of TC-661, every
-/// pair of steps the footprints report independent commutes. Among them, a
+/// pair of steps the footprints report independent commutes. Replicated
+/// roles (an event `by` a role beside a branch that writes what an `until`
+/// reads, and a `scope` role) and `activation on each` run beside them. Among them, a
 /// `repeat` re-forks `parallel Both` while a branch of the earlier instance
 /// still runs under `outstanding continue`: the fork's ordinal depends on
 /// whether that branch has ended, so the fork reads the earlier instance.
@@ -725,6 +728,11 @@ fn every_independent_pair_of_steps_commutes() {
         touch("TA"),
         touch("TB"),
     );
+    let role_run = format!(
+        "parallel Both {{ branch a event E by r as (e: Boolean) {{ e }}; \
+         branch b {} }} join all [a, b];",
+        attempt("I", "inc", "IncPre, IncPost", "i", "true"),
+    );
     let units: Vec<(String, &str, Vec<&'static str>)> = vec![
         (fill_unit("self.v = 0", ""), "Fill", vec!["c"]),
         (fill_unit("self.v = 0", ""), "Fill", vec!["c", "d"]),
@@ -795,6 +803,35 @@ fn every_independent_pair_of_steps_commutes() {
         (compensation::twice(), "Pay", vec!["c"]),
         (compensation::settled(&touch("TS")), "Pay", vec!["c"]),
         (compensation::crosswise(), "Pay", vec!["c"]),
+        // Replicated roles: `E` is taken `by` an instance of `r` beside a
+        // branch that writes what `until(p)` reads, under `until` and
+        // `scope` lifetimes; and `activation on each`, whose `activate`
+        // steps race the finish of the instances they leave room for.
+        (
+            roles::unit(
+                roles::ORIGIN,
+                &roles::role(2, "until(r.v >= 1)"),
+                "",
+                &role_run,
+            ),
+            "R",
+            vec!["c", "d"],
+        ),
+        (
+            roles::unit(roles::ORIGIN, &roles::role(2, "scope"), "", &role_run),
+            "R",
+            vec!["c", "d"],
+        ),
+        (
+            roles::unit(
+                roles::EACH,
+                "",
+                "",
+                &format!("sequence Main {{ {} }}", touch("T")),
+            ),
+            "R",
+            vec!["c"],
+        ),
     ];
     let mut total = 0;
     for (index, (body, name, keys)) in units.iter().enumerate() {
@@ -816,10 +853,33 @@ fn every_independent_pair_of_steps_commutes() {
                 );
             }
         }
+        // Replicated roles and activation have independent pairs of their
+        // own: a step `by` a role beside the other branch, and an
+        // `activate` beside the steps of a live instance.
+        if index == 16 || index == 17 {
+            assert!(
+                pairs.iter().any(|(first, second)| {
+                    [StepKind::Spawn, StepKind::Retire].contains(first)
+                        || [StepKind::Spawn, StepKind::Retire].contains(second)
+                        || *first == StepKind::Event
+                        || *second == StepKind::Event
+                }),
+                "{pairs:?}"
+            );
+        }
+        if index == 18 {
+            assert!(
+                pairs
+                    .iter()
+                    .any(|(first, second)| *first == StepKind::Activate
+                        || *second == StepKind::Activate),
+                "{pairs:?}"
+            );
+        }
         // The re-forking `repeat`, the environment fixtures and the
         // settled `Pay` have independent pairs of their own.
         assert!(
-            ![6, 9, 10, 11, 14].contains(&index) || checked > 0,
+            ![6, 9, 10, 11, 14, 16, 17, 18].contains(&index) || checked > 0,
             "{body}"
         );
         total += checked;

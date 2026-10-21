@@ -16,10 +16,11 @@
 //! This system steps `sequence`, `parallel` with its join policies `all`,
 //! `any` and `quorum`, `choice`, `repeat`, `check`, `await` with its
 //! `timeout`, `attempt`, `send`, `receive`, domain `event`, `commit`,
-//! `fence` (SE-5), channel `duplicate` and `lose`, `effect`, `finish`, and
-//! compensation templates with their `cattempt` and `cend` steps, under
-//! `activation on origin` (ADR-027 §9 steps 3 and 4). A protocol that holds any other construct is
-//! refused, before any state is built, with
+//! `fence` (SE-5), channel `duplicate` and `lose`, `effect`, `finish`,
+//! compensation templates with their `cattempt` and `cend` steps,
+//! replicated roles with their `spawn` and `retire` steps, and `activation
+//! on each` with its `activate` step and instance bound (ADR-027 §9 steps 3
+//! to 5). A protocol that holds any other construct is refused, before any state is built, with
 //! `unsupported_construct`/`not-yet-implemented` naming it.
 
 mod access;
@@ -29,6 +30,7 @@ mod footprint;
 mod identity;
 mod memory;
 mod program;
+mod roles;
 mod selection;
 mod settle;
 mod steps;
@@ -42,13 +44,13 @@ use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_package::CheckedPackage;
 use qsl_semantics::check::{CheckedProtocol, CheckedTerminalMember};
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
-use quire_exact::{Meter, Value, ValueType};
+use quire_exact::{Meter, ObjectReference, Value, ValueType};
 
 use crate::model_subject::{ModelInstance, ProtocolSubject};
 use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
 use crate::simulation::key::{self, EncodingRefusal};
-use crate::simulation::model::encode::{map_enc, Enc};
+use crate::simulation::model::encode::{map_enc, reference_enc, Enc};
 use crate::simulation::model::{
     verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
 };
@@ -63,8 +65,8 @@ pub use footprint::{
     visible, AnchorName, ClaimReads, ParallelInstance, ProtocolFootprintError, ProtocolLocation,
 };
 pub use identity::{
-    BlockedThread, CarriedComponent, PathStep, PositionAnchor, ProtocolTransition, RegistrationKey,
-    RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
+    Actor, BlockedThread, CarriedComponent, PathStep, PositionAnchor, ProtocolTransition,
+    RegistrationKey, RestKind, RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
 };
 pub use memory::{
     Access, FootprintStep, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Sc, ScComponent,
@@ -103,10 +105,10 @@ pub enum Unsupported {
     RecoveryView,
     /// A capture of the protocol clause.
     Capture,
-    /// `activation on each`.
-    ActivationOnEach,
-    /// A replicated role.
-    ReplicatedRole,
+    /// `activation on each` in a protocol with a compensation template,
+    /// whose expressions read the activation binder at a slot this system
+    /// does not fill.
+    ActivationOnEachTemplate,
     /// `join predicate(...)`.
     JoinPredicate,
     /// A join whose policy may leave branches running, with no
@@ -137,8 +139,7 @@ impl Unsupported {
             Self::UnboundAttemptRecord => "retry relation over unbound attempt records",
             Self::RecoveryView => "recovery predicate over the recovery view",
             Self::Capture => "protocol capture",
-            Self::ActivationOnEach => "activation on each",
-            Self::ReplicatedRole => "replicated role",
+            Self::ActivationOnEachTemplate => "activation on each with a compensation template",
             Self::JoinPredicate => "join predicate",
             Self::UnruledOutstanding => "join with no outstanding rule",
             Self::OverNotAnObject => "over input of no object type",
@@ -175,6 +176,13 @@ pub enum ProtocolRefusal {
         /// The object, by its universe key.
         object: String,
     },
+    /// A replicated role's population has no finite universe
+    /// (`invalid_runtime_input`/`invalid-value`).
+    #[error("invalid_runtime_input/invalid-value: role {role} has no population universe")]
+    RolePopulation {
+        /// The replicated role.
+        role: String,
+    },
     /// The subject's resolved memory models do not resolve the protocol's
     /// outermost `parallel` controls (`invalid_runtime_input`/
     /// `invalid-value`).
@@ -209,6 +217,7 @@ impl ProtocolRefusal {
             Self::UnknownProtocol { .. }
             | Self::RoleMapping { .. }
             | Self::OverBinding { .. }
+            | Self::RolePopulation { .. }
             | Self::Memory(_) => Code::InvalidRuntimeInput,
             Self::Unsupported(_) | Self::WeakAccessShape(_) => Code::UnsupportedConstruct,
             Self::InitialStop(stop) => {
@@ -221,9 +230,10 @@ impl ProtocolRefusal {
     /// The refusal's catalog cause.
     pub fn cause(&self) -> &'static str {
         match self {
-            Self::UnknownProtocol { .. } | Self::OverBinding { .. } | Self::Memory(_) => {
-                "invalid-value"
-            }
+            Self::UnknownProtocol { .. }
+            | Self::OverBinding { .. }
+            | Self::RolePopulation { .. }
+            | Self::Memory(_) => "invalid-value",
             Self::RoleMapping { .. } => "wrong-role-mapping",
             Self::Unsupported(_) => "not-yet-implemented",
             Self::WeakAccessShape(_) => "weak-access-shape",
@@ -388,9 +398,32 @@ struct Compensating {
     count: u64,
 }
 
+/// A role instance's status (ADR-027 RR-3).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RoleStatus {
+    Live,
+    Retired,
+}
+
+impl RoleStatus {
+    fn text(self) -> &'static str {
+        match self {
+            Self::Live => "live",
+            Self::Retired => "retired",
+        }
+    }
+}
+
 /// One live protocol instance (ADR-027 AE-2).
 #[derive(Clone, Debug, Default)]
 struct Instance {
+    /// The trigger record that started the instance under `activation on
+    /// each`, which the activation binder reads (ADR-027 AE-1).
+    trigger: Option<Bound>,
+    /// The instances of each replicated role (an index into
+    /// [`Program::replicated`]), by object, with their status (RR-3). A
+    /// retired instance stays, so it is never spawned again.
+    roles: BTreeMap<usize, BTreeMap<ObjectReference, RoleStatus>>,
     threads: BTreeMap<ThreadPath, Thread>,
     parallels: BTreeMap<ParallelKey, Parallel>,
     /// Every live thread's binder environment (ADR-027 PS-5), by the thread
@@ -647,8 +680,16 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
     over: Value,
     /// Each static role's binding: role name, then model identity.
     roles: Vec<(String, String)>,
+    /// The objects of each replicated role's population in the subject's
+    /// universe (ADR-027 RR-1), by the role's index in the program.
+    universes: Vec<Vec<ObjectReference>>,
+    /// The instance bound of `activation on each` (ADR-027 AE-4).
+    max_live_instances: u64,
     initial: Vec<ProtocolState<M>>,
 }
+
+/// ADR-027 AE-4: the published default of `max_live_instances`.
+pub const DEFAULT_MAX_LIVE_INSTANCES: u64 = 3;
 
 impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// FR-205 "Subject": build the protocol subject's system over the
@@ -741,10 +782,50 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             weak,
             over,
             roles,
+            universes: Vec::new(),
+            max_live_instances: DEFAULT_MAX_LIVE_INSTANCES,
             initial: Vec::new(),
         };
+        system.universes = system.role_universes()?;
         system.initial = system.initial_states()?;
         Ok(system)
+    }
+
+    /// This system with `bound` as `max_live_instances` (ADR-027 AE-4), a
+    /// bound on the explored state space and no part of the subject. An
+    /// `activate` step is not expanded at a state with that many live
+    /// instances.
+    #[must_use]
+    pub fn with_max_live_instances(mut self, bound: u64) -> Self {
+        self.max_live_instances = bound;
+        self
+    }
+
+    /// The objects of each replicated role's population (ADR-027 RR-1): the
+    /// objects of its object type in the subject's universe, in reference
+    /// order.
+    fn role_universes(&self) -> Result<Vec<Vec<ObjectReference>>, ProtocolRefusal> {
+        self.program
+            .replicated
+            .iter()
+            .map(|role| {
+                let refused = || ProtocolRefusal::RolePopulation {
+                    role: role.name.clone(),
+                };
+                let instances = self
+                    .model
+                    .instances(&ValueType::Reference(role.object))
+                    .map_err(|_| refused())?;
+                let mut objects = instances
+                    .iter()
+                    .map(|instance| self.model.bound_reference(role.object, instance))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| refused())?;
+                objects.sort();
+                objects.dedup();
+                Ok(objects)
+            })
+            .collect()
     }
 
     /// The `over` parameter's value: the reference to `over`'s key in its
@@ -778,41 +859,30 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     }
 
     /// FO-3: for each initial model state, instance 0 with its root thread
-    /// settled from the start of `run`.
+    /// settled from the start of `run`; under `activation on each`, no
+    /// instance (ADR-027 AE-1).
     fn initial_states(&self) -> Result<Vec<ProtocolState<M>>, ProtocolRefusal> {
         let mut states = Vec::new();
-        let root = ThreadPath::root(0);
         for model in self.model.initial() {
-            let mut instance = Instance::default();
-            let rest = match self
-                .settle(
-                    &mut instance,
-                    &root,
-                    program::Cursor::Enter(self.program.root),
-                    &model,
-                )
-                .map_err(|error| match error {
+            let instances = if self.program.activation.is_some() {
+                BTreeMap::new()
+            } else {
+                let started = self.start(0, None, &model).map_err(|error| match error {
                     settle::SettleError::Refused(refusal) => refusal,
                     settle::SettleError::Stopped(stop) => ProtocolRefusal::InitialStop(stop),
-                })? {
-                settle::Settled::Rest(rest) => rest,
-                settle::Settled::Undecided(_) => {
-                    return Err(ProtocolRefusal::Unsupported(
-                        Unsupported::UndecidedInitialGuard,
-                    ))
+                })?;
+                match started {
+                    roles::Started::Instance(instance) => BTreeMap::from([(0, *instance)]),
+                    roles::Started::Undecided(_) => {
+                        return Err(ProtocolRefusal::Unsupported(
+                            Unsupported::UndecidedInitialGuard,
+                        ))
+                    }
                 }
             };
-            instance.threads.insert(
-                root.clone(),
-                Thread {
-                    rest,
-                    disposition: Disposition::Running,
-                    owner: None,
-                },
-            );
             states.push(ProtocolState {
                 model,
-                instances: BTreeMap::from([(0, instance)]),
+                instances,
                 memory: self.memory.initial(),
             });
         }
@@ -1029,6 +1099,15 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     Enc::tagged("integer", vec![("value", Enc::text(counter.to_string()))]),
                 ));
             }
+            if let (true, Some(trigger)) = (self.program.trigger_read, &instance.trigger) {
+                observations.push((
+                    Enc::tagged(
+                        "activation",
+                        vec![("instance", Enc::text(ordinal.to_string()))],
+                    ),
+                    trigger.enc.clone(),
+                ));
+            }
             for (key, registration) in &instance.registrations {
                 let entry = self
                     .registration_key(key)
@@ -1106,6 +1185,30 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                     ),
                 ));
             }
+            for (index, replicated) in self.program.replicated.iter().enumerate() {
+                let instances = instance
+                    .roles
+                    .get(&index)
+                    .into_iter()
+                    .flatten()
+                    .map(|(object, status)| {
+                        (
+                            reference_enc(object),
+                            Enc::tagged("text", vec![("value", Enc::text(status.text()))]),
+                        )
+                    })
+                    .collect();
+                roles.push((
+                    Enc::tagged(
+                        "role",
+                        vec![
+                            ("instance", Enc::text(ordinal.to_string())),
+                            ("role", Enc::text(replicated.name.clone())),
+                        ],
+                    ),
+                    map_enc(instances),
+                ));
+            }
             for (role, model) in &self.roles {
                 roles.push((
                     Enc::tagged(
@@ -1144,6 +1247,11 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         for (slot, node) in self.program.slots.iter().enumerate() {
             let value = match node {
                 None if slot == 0 => Some(self.over.clone()),
+                None if Some(slot) == self.program.activation_slot => instance
+                    .trigger
+                    .as_ref()
+                    .filter(|_| self.program.reads(slot, reader))
+                    .and_then(|bound| bound.value.clone()),
                 // Refused in `Program::new` when any slot reads one.
                 None => None,
                 Some(_) if !self.program.reads(slot, reader) => None,
@@ -1175,6 +1283,15 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         Ok(verdict(&evaluation.outcome))
     }
 
+    /// Whether every step enabled at `state` is an `activate` (ADR-027 PD-2).
+    fn only_activations(&self, state: &ProtocolState<M>) -> Result<bool, ExpansionStop> {
+        let (expansion, _) = self.expand_bounded(state)?;
+        Ok(expansion
+            .successors
+            .iter()
+            .all(|(transition, _)| transition.kind() == StepKind::Activate))
+    }
+
     /// FR-211 and ADR-027 PD-1: the class of `state`. A state with no live
     /// instance is intended; otherwise the protocol's `terminal` member
     /// decides, read through the one clause evaluator.
@@ -1183,7 +1300,18 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         state: &ProtocolState<M>,
         has_successor: bool,
     ) -> Result<TerminalClass, ExpansionStop> {
-        if has_successor {
+        if self.program.activation.is_some() {
+            // ADR-027 PB-4, PD-2, PD-5: under `on each`, a state at the
+            // instance bound is never terminal; a state with a live instance
+            // whose every enabled step is an `activate` is terminal, since no
+            // instance can move until a trigger arrives.
+            if self.instance_limited(state)? {
+                return Ok(TerminalClass::NotTerminal);
+            }
+            if has_successor && (state.instances.is_empty() || !self.only_activations(state)?) {
+                return Ok(TerminalClass::NotTerminal);
+            }
+        } else if has_successor {
             return Ok(TerminalClass::NotTerminal);
         }
         if state.instances.is_empty() {

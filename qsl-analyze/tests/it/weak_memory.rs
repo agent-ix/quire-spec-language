@@ -2083,6 +2083,21 @@ fn every_independent_pair_of_tso_steps_commutes() {
         (contracts() + &protocol("SB", &mp), "SB::Main::Both"),
         (send_unit(), "SB::Both"),
         (sb_unit(&fenced_sb("seq_cst", "acquire")), "SB::Both"),
+        // A replicated role's event, `spawn` and `finish` beside the
+        // `parallel`'s stores and flushes (ADR-027 RR-2, FT-1).
+        (
+            contracts()
+                + &protocol_with(
+                    "SB",
+                    "role r each M::Core from cores max 1 lifetime workflow;",
+                    &format!(
+                        "sequence Main {{ event E by r as (e: Boolean) {{ e }}; {} }}",
+                        sb_run("", "release", "acquire")
+                    ),
+                )
+                + NO_BOTH_ZERO,
+            "SB::Main::Both",
+        ),
     ];
     let mut flushes = 0;
     for (body, parallel) in &units {
