@@ -81,11 +81,10 @@ pub enum Coverage { FiniteSample, Asymptotic }
   `statistical`) only. Routing an item by its evidence kind, and never
   substituting one kind for the other, is QSpec FR-290's negotiation rule,
   which QSL does not restate.
-- When EN-4's negotiation gate (FR-195) receives a checked claim `under every
-  scheduler`, one with no confidence parameters, or a mean-time or
-  expected-reward form, it SHALL refuse it `EveryScheduler`,
-  `MissingConfidence` or `ExactOnlyForm` (FR-189) with no sample drawn, and
-  the map SHALL settle the refusal `unsupported` with that cause.
+- When EN-4's negotiation gate refuses a claim (FR-195, which owns the
+  claims it refuses and the order of the causes `EveryScheduler`,
+  `ExactOnlyForm`, `MissingConfidence`), the map SHALL settle the refusal
+  `unsupported` with that cause.
 
 ### The map
 

@@ -85,8 +85,13 @@ pub enum ProductStop { Limit { limit: ModelCheckLimit, value: u64 }, Cancelled(C
 ```
 
 `ProductRefusal` is the build's refusal type; its `Admission` and `NotMarkov`
-members are the `ExactProbRefusal` members of the same names. A build that finds an undefined read is no refusal but a result:
-`ProbBuild::Undefined` is the refutation's evidence (see "Behavior").
+members are the `ExactProbRefusal` members of the same names, and FR-203
+"Build refusals and stops" settles the others. A build that finds an
+undefined read is no refusal but a result: `ProbBuild::Undefined` is the
+refutation's evidence (see "Behavior").
+
+The names `ProductStateId` and `Binding`, which FR-199, FR-200, FR-202 and
+FR-203 cite, are `ProbStateId` and `ModelInstance` below.
 
 ## Outputs
 
@@ -97,7 +102,7 @@ pub struct ProbProduct {
     pub edges: Vec<ProbEdge>,                     // grouped by source in discovery order; FR-187's order within a source
     pub initial: Vec<(u32, Option<ModelInstance>, ProbStateId)>, // per subject initial state and `over` binding
     pub decided: Vec<(ProbStateId, MonitorVerdict)>, // MonitorVerdict { Accept, Reject }: a bounded event's decided states
-    pub labels: Vec<Vec<bool>>,                   // unbounded forms: per state, the claim's predicates' truths in claim order (P; A then B; B); empty for a bounded form
+    pub labels: Vec<Vec<bool>>,                   // unbounded forms: per state, the claim's predicates' truths in claim order (P; A then B; B; P of a long-run fraction); empty for a bounded form
 }
 // The builder's in-memory key. `ProductKey`, in `qsl-replay` with the
 // certificate types so the checker reads it, is this key's canonical encoding
@@ -122,10 +127,13 @@ Evidence of an undefined read:
 
 ```rust
 pub struct UndefinedPath {
+    pub initial: u32,                    // the index of the initial state in the subject (ADR-028 WS-2)
+    pub binding: Option<ModelInstance>,  // the `over` binding the undefined read is evaluated for (ADR-028 WS-2)
     pub steps: Vec<PathStep>,            // the model steps from the initial state, in order
     pub probability: Rational,           // the product of the steps' probabilities
     pub position: u64,                   // the trace position of the state: the number of steps
     pub state_key: DigestRecord,         // the quire.simulation.state-key/v1 digest of the model state
+    pub key: ProbKey,                    // the complete product key of the undefined state (ADR-028 WS-1)
     pub read: UndefinedRead,             // the event atom or the state predicate (From, Until, Target) that has no value
     pub cause: UndefinedCause,
 }
@@ -133,23 +141,30 @@ pub struct PathStep {
     pub action: Option<ScheduledIdentity>, // none for the terminal stutter step
     pub draw: Option<Vec<Value>>,          // none for the terminal stutter step, and for a step merged from several draws
     pub probability: Rational,
-    pub resolved: Option<Vec<u8>>,         // see below
+    pub resolved: Option<ProbKey>,         // see below
 }
 ```
 
 EN-5 forms FR-202's `UndefinedEvaluation{where, cause}` from `position` and
-`cause`. Over every scheduler, when a step's draw has several post-states,
-`resolved` SHALL be the complete state-key bytes of the post-state the
-scheduler took at the intermediate state, because the scheduled identity and
-the drawn vector name no single model state; a path through such a draw
-that dropped it could be replayed to several model states. Every other step
-has `resolved: None`.
+`cause`, and `ProbabilisticCounterexample`'s `initial_state` and `binding`
+from `initial` and `binding` (ADR-028 WS-2). It forms each `WitnessPath` step
+from the step's `action`, as `ProductAction::Identity`, or
+`TerminalStutter` when `action` is none, followed by
+`ProductAction::PostState(resolved)` when `resolved` is set.
+
+Over every scheduler, when a step's draw has several post-states,
+`resolved` SHALL be the complete product key of the post-state the scheduler
+took at the intermediate state (ADR-028 WS-1). The scheduled identity and the
+drawn vector name no single model state, so a path through such a draw
+without it replays to several model states. Every other step has
+`resolved: None`.
 
 `ProductAction` is the following new closed semantic action type, owned with
 ProductKey in qsl-replay. The untimed build uses its first three members,
-`Identity`, `PostState` and `TerminalStutter`, and `PostState` holds the
-builder's complete `ProbKey` of the target; the four delay and observation
-members exist in a timed product only (FR-204). An edge's `action` is its operation projection;
+`Identity`, `PostState` and `TerminalStutter`; the four delay and observation
+members exist in a timed product only (FR-204). The enum below is the
+`qsl-replay` form, whose `PostState` holds the canonical `ProductKey`; the
+builder's `ProductAction` holds the in-memory `ProbKey` in the same member. An edge's `action` is its operation projection;
 None alone SHALL NOT identify a delay or observation choice.
 
 ```rust
@@ -190,7 +205,7 @@ certificate policy entries, and FR-204 enumerates these actual digital actions.
 
 ### Canonical probability product key
 
-The `monitor: Option<u32>` above describes graph-local storage only.
+A formula monitor's local state index (`MonitorState::Formula(Running(index))` above) describes graph-local storage only.
 The following is a new normative representation decision. The producer
 and checker SHALL use the complete canonical representation below for
 product identity in certificate values, ranking, policy, component bias,
@@ -376,8 +391,9 @@ activates contributes nothing. The first activation is retained, not
 restarted by a later A. At the horizon, an active measure without B is
 censored and an inactive measure is unactivated. Censored means greater
 than every finite threshold, not an arbitrarily large finite reward.
-Unactivated is a decided, absorbing control phase of its own, with
-`activated` false and amount zero: it differs from a measure completed at
+At the horizon, EN-5 SHALL decide a measure that never activated as
+`Unactivated`: a decided, absorbing control phase of its own, with
+`activated` false and amount zero, which differs from a measure completed at
 magnitude zero and from an active one at zero. A quantile claim is
 conditioned on activation (ADR-024 PF-4), so an unactivated behaviour lies
 outside the distribution the quantile is taken over, and its decided state
@@ -385,10 +401,10 @@ takes XF-2's terminal reward `[activated] · (…)`, which is 0.
 These rules are QSpec FR-407's measure semantics, not a new activation
 convention. At a terminal model state the bounded measure continues on
 the specified zero-reward stutter steps through its horizon; a bounded
-formula instead uses FR-126's profile closure. A stutter step is a model
-step like any other: an active `steps` measure adds 1 on it, an active
-`accumulate` adds 0 (every reward is 0 on it), and a fraction reads the
-position it leaves, so a `steps` measure that is active at a terminal state
+formula instead uses FR-126's profile closure. On a terminal stutter step,
+EN-5 SHALL advance an active `steps` measure by 1, an active `accumulate` by
+0 (every reward is 0 on it) and a fraction by the position it leaves, as on
+any model step, so a `steps` measure that is active at a terminal state
 keeps counting to its horizon.
 
 For a weighted fraction, each included position's weight is the reward
@@ -547,6 +563,7 @@ JSON values, not an additional JSON/base64 string layer.
 | Case | Canonical body / outcome |
 | --- | --- |
 | unbounded Reach, ordinary state | monitor `null`, accumulator `null`, pending `null`; a supplied zero steps accumulator refuses. |
+| measure never activated at the horizon | `["steps",false,"0"]` with `["measure","0","unactivated"]`, decided; it differs from `["steps",true,"0"]` with `["measure","0","complete"]`. |
 | steps before activation versus active zero | `["steps",false,"0"]` differs from `["steps",true,"0"]`; matching monitor phases are inactive versus active. |
 | threshold 5, active amounts 5, 6, 7 | `["steps",true,"5"]` differs from `["steps",true,["above-bound"]]`; 6 and 7 produce that same overflow body. |
 | horizon expires active without B | `["steps",true,["censored"]]` with `["measure","0","censored"]`; this differs from finite overflow at a completed B. |
@@ -701,10 +718,10 @@ rejection loci, with no model-only shortcut.
   (ADR-028 XV-8, ADR-018 UE-1). The state may be an initial state, whose
   path has no step and position 0. A read that is refused, with no value
   undefined, is a `ProductRefusal::PredicateRefused`, not a refutation.
-  Over every scheduler the path SHALL carry `resolved` at each step whose draw
-  has several post-states.
-- A resolution edge SHALL carry every reward of the model at 0, and the
-  intermediate state's resolution SHALL advance the monitor and the
+- Over every scheduler, the `UndefinedPath` SHALL carry `resolved` at each
+  step whose draw has several post-states.
+- A resolution edge SHALL carry every reward of the model at 0.
+- The resolution of an intermediate state SHALL advance the monitor and the
   accumulator once, with the draw's rewards.
 - The initial product states SHALL be each subject initial state, per `over`
   binding, paired with the monitor's successor on position 0.
@@ -722,14 +739,14 @@ rejection loci, with no model-only shortcut.
 | FR-196-AC-2 | §15.2's product for `P95` at `5 ms` carries the `duration` accumulator, which takes the values `0`, `1 ms`, `2 ms`, `3 ms`, `4 ms` and the saturated value `6 ms`; the activation flag is set from position 1. The edge for `attempt` with `d = 3 ms`, `outcome = Ok` carries `343/5000`. | Test (TC-631) |
 | FR-196-AC-3 | §15.4's `Deliver` over every scheduler is an MDP with two actions at each live state, whose draws carry `9/10` and `1/10` (`send_a`) and `4/5` and `1/5` (`send_b`); under `Even` it is a DTMC with FR-187-AC-2's probabilities. | Test (TC-631) |
 | FR-196-AC-4 | FR-187-AC-3's `Health` variant with two post-states per draw builds, over every scheduler, an intermediate state per draw with two probability-1 actions, and the monitor does not advance on it; under a workload the build stops with `Unsupported(NotMarkov)`; the variant with no post-state stops with `Unsupported(NotMarkov)` under both. Two builds of one request are equal. | Test (TC-631) |
-| FR-196-AC-5 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0, in a population `coins` bounded to 1; operation `drop(b: Int[0, 1])` with `random Coin::drop(b) ~ { 0: 1, 1: 1 };` and postcondition `count(o in M::coins where true) = b`, so that `drop` with `b = 0` deletes the coin and with `b = 1` keeps it; workload `Even` with weight `drop` 1) and the claim `probability >= 0.5 [ always[0,3] holds(c.v = 0) ]` over `(c: M::Coin)` under `Even`, evidence `exact`, the build stops at the product state reached by `drop` with `b = 0` at position 1, where `c.v` is undefined with cause `absent-key`, and returns a refutation whose evidence is the `Undefined` path `drop` with `b = 0`, probability `1/2`, with `UndefinedEvaluation{where: 1, cause: absent-key}`. A division by zero is not the example: S3 admits neither `/` in a model unit's profile nor a name that no `over` binds. | Test (TC-641) |
+| FR-196-AC-5 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0, in a population `coins` bounded to 1; operation `drop(b: Int[0, 1])` with `random Coin::drop(b) ~ { 0: 1, 1: 1 };` and postcondition `count(o in M::coins where true) = b`, so that `drop` with `b = 0` deletes the coin and with `b = 1` keeps it; workload `Even` with weight `drop` 1) and the claim `probability >= 0.5 [ always[0,3] holds(c.v = 0) ]` over `(c: M::Coin)` under `Even`, evidence `exact`, the build stops at the product state reached by `drop` with `b = 0` at position 1, where `c.v` is undefined with cause `absent-key`, and returns a refutation whose evidence is the `Undefined` path `drop` with `b = 0`, probability `1/2`, with `UndefinedEvaluation{where: 1, cause: absent-key}`. | Test (TC-641) |
 | FR-196-AC-6 | Every worked vector produces the specified canonical component and full P octets; changing any present component changes identity where specified, and reversing discovery order changes none. Certificate values, ranks, policy, bias and rejection retain the same complete representation. | Test |
 | FR-196-AC-7 | Steps/reward above-bound values normalize uniquely while equality, unactivation, active zero, completion and censoring remain distinct; both exact weighted sums remain distinct for pairs (1,2)/(2,4) and their subsequent ratios are 2/3 and 3/5. | Test |
 | FR-196-AC-8 | Pending identity retains the actual operation node, receiver, non-random arguments and drawn vector in declared order; the empty drawn vector differs from None, and no monitor/accumulator advance occurs at the intermediate. | Test |
 | FR-196-AC-9 | Every listed admission negative refuses before certificate membership; exact-only forms retain actual None, timed model keys retain all digital clocks and deadline facts, and a budget stop produces no default/truncated product key. | Test |
 | FR-196-AC-10 | Over a population with two live objects, a claim `over` the object type builds a product with two initial states per subject initial state, one per binding; the same model state and the same monitor state under the two bindings are two product states, and their keys differ in `binding`. | Test (TC-631) |
-| FR-196-AC-11 | A `steps from holds(A) until holds(B) within 3` measure whose `A` never holds ends every path at control `["measure","0","unactivated"]` with `activated` false and amount zero, decided and not expanded. A `steps` measure activated at a terminal model state counts each stutter step up to its horizon. A fraction reads its predicate at the position the step leaves. | Test (TC-631) |
-| FR-196-AC-12 | Over every scheduler, a draw with several post-states followed by an accumulating step adds the draw's reward to the accumulator once, at the resolution; each resolution edge carries every reward at 0 and the draw edge carries the draw's. An `Undefined` path through such a draw names the post-state taken (`resolved`) and replays to one model state; every other step has `resolved: None`. A path to an instance that is undefined at an initial state has no step and position 0. | Test (TC-631, TC-641) |
+| FR-196-AC-11 | A `steps from holds(A) until holds(B) within 3` measure whose `A` never holds ends every path at control `Measure{remaining: 0, phase: Unactivated}` with accumulator `Steps{activated: false, amount: 0}`, decided and not expanded (its canonical bodies are the worked vector of AC-7). A `steps` measure activated at a terminal model state counts each stutter step up to its horizon. A fraction reads its predicate at the position the step leaves. | Test (TC-631) |
+| FR-196-AC-12 | Over every scheduler, a draw with several post-states followed by an accumulating step adds the draw's reward to the accumulator once, at the resolution; each resolution edge carries every reward at 0 and the draw edge carries the draw's. An `Undefined` path through such a draw names the complete product key of the post-state taken (`resolved`) and replays to one model state; every other step has `resolved: None`. An `Undefined` path over a claim `over` two objects carries the initial-state index and the binding of the undefined read, and its `key` is the complete product key of the undefined state. A path to an instance that is undefined at an initial state has no step and position 0. | Test (TC-631, TC-641) |
 
 ## Dependencies
 

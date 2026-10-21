@@ -108,6 +108,22 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 | Certificate rejected; replay disagrees or refuses | `inconclusive` | `unsettled` | `Inconclusive(CertificateRejected{rule, at})`, `Inconclusive(ReplayParity)`, `Inconclusive(ReplayRefused)` | inconclusive |
 | `NotMarkov`, `ZeroWeightComponent`, a timed cause (FR-204) | `unsupported` | `unavailable` | `Unsupported(cause)` | unsupported |
 
+### Build refusals and stops
+
+- EN-5 SHALL settle a stop or refusal of FR-196's product build as the
+  following table states, by the existing rules for the same kinds
+  (FR-127, FR-192):
+
+| Build result | FR-331 value | `TerminalValue` | Rule |
+| --- | --- | --- | --- |
+| `Stopped(Limit{limit, value})` for `MaxStates`, `MaxTransitions` or `MaxAutomatonStates` | `incomplete`, execution `resource-incomplete` | `Incomplete(LimitReached{limit, value, setting})` with FR-126's setting name | FR-127 V-7 |
+| `Stopped(Cancelled(cause))` | `incomplete`, `cancelled{source}` | `Incomplete(Cancelled{source})` | FR-127 V-7 |
+| `UndecidedSuccessor` | `inconclusive` | `Inconclusive(UndecidedSuccessor)` | FR-127 V-6 |
+| `Expansion(stop)` naming no limit, an internal failure | `failed`, diagnostic `runtime_invariant`/`established-invariant-broken` | `Failed` | FR-192 |
+| `Expansion(stop)` naming no limit, not an internal failure | `failed`, the stop's own `ExpansionStop.cause` as the one diagnostic | `Failed` carrying that diagnostic | FR-192 |
+| `Internal(fault)` | `failed`, diagnostic `runtime_invariant`/`established-invariant-broken` | `Failed` | FR-127 |
+| `NotMarkov` | `unsupported` | `Unsupported(NotMarkov)` | the `NotMarkov` row above |
+
 - `TerminalValue::category` SHALL map both new `ProofBasis` members to
   success, and proof accounting SHALL count them as proof.
 - The record SHALL carry FR-242 truth and an FR-243 basis, and no `measured`
@@ -128,6 +144,7 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 | FR-203-AC-3 | FR-201-AC-1's rejected certificate settles `inconclusive`, `CertificateRejected`; FR-202-AC-2's prefix-duplicated path set settles `inconclusive`, `ReplayParity`; FR-199-AC-3's zero-weight variant settles `unsupported`, `ZeroWeightComponent`. None of these records carries a `measured` value. | Test (TC-638) |
 | FR-203-AC-4 | A request whose proof summary holds AC-1's two proofs counts 2 proved items. `P95` with and without stated confidence parameters have different obligation identities, and the same claim requested with `exact` and with a changed `precision_bits` has one obligation identity. | Test (TC-638) |
 | FR-203-AC-5 | FR-196-AC-5's refutation settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, with cause `UndefinedEvaluation{where: 1, cause: absent-key}`, after FR-202's replay; the claim's threshold plays no part. | Test (TC-641) |
+| FR-203-AC-6 | A build stopped at `max_automaton_states` settles `incomplete`, `Incomplete(LimitReached{MaxAutomatonStates, value, max_automaton_states})`; a cancelled build settles `Incomplete(Cancelled{source})`; a build that meets an undecided successor settles `inconclusive`, `Inconclusive(UndecidedSuccessor)`; an expansion stop naming no limit settles `failed`, as an internal fault `runtime_invariant`/`established-invariant-broken` and otherwise with the stop's own cause; an `Internal` refusal settles `failed`. | Test (TC-638) |
 
 ## Dependencies
 
