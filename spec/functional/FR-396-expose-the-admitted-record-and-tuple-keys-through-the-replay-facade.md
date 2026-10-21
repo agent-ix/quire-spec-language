@@ -29,7 +29,7 @@ every `ValueType::Composite` of it in QSL's own checked signatures carries,
 and which every replayed record or tuple value carries. A union is settled
 under a second key: the environment's `union_key(key)` is the union's
 `composite_type` node id, and the `UnionMember` of every union value, and the
-`final_key` of `seal_union_verified`, are that node id. That key is not the id of the
+`final_key` of `seal_union_verified`, are that node id. The kernel key of a record or tuple is not the id of the
 declaration's `composite_type` node (FR-092-AC-12), which is what the
 emitted package and a contract IR document name. This requirement extends
 the `AdmittedContext` that `compile_admitted` returns (FR-394) with the
