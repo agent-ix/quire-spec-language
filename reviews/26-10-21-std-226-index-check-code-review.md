@@ -22,7 +22,7 @@ No findings in the changed files. The remaining `check-no-committed-binaries` fi
 
 ## Verification
 
-The targeted xtask test groups for spec validation, feature lane ordering, and conformance passed. `cargo fmt --all -- --check` and `git diff --check` passed. The first full `make ci` run stopped in `qsl-route/tests/it/route_registry.rs` because local cargo-deny 0.20.2 rejected its `--config` argument position; CI pins cargo-deny 0.19.8, and the specific test passed with that version. The pinned-version full rerun reached `ci-docs`, where the then-current branch linked public documentation to private `same_values` in `qsl-eval/src/simulation/model/probabilistic.rs:145`. QSL #1159 removed that link on main and is included in this rebased branch. The aggregate gate still requires a clean rerun.
+The targeted xtask test groups for spec validation, feature lane ordering, and conformance passed. `cargo fmt --all -- --check` and `git diff --check` passed. An early full run used local cargo-deny 0.20.2, which rejected a test's `--config` argument position; CI pins 0.19.8, and that test passed with the pinned version. A later run reached `ci-docs`, where the then-current branch linked public documentation to private `same_values`; QSL #1159 removed that link and is included here. The final-head run stopped in the C-14 conformance test because `QSPEC_DIR` pointed to the shared QSpec checkout at a286b81, 38 commits behind main. The same targeted test passed against a separate QSpec origin/main worktree at 014f0ce. The aggregate gate still requires a clean rerun with that current QSpec checkout.
 
 ## Verdict
 
