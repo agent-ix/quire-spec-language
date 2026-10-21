@@ -824,11 +824,11 @@ fn full() -> String {
     .to_owned()
 }
 
-/// Part of FR-147-AC-8 (TC-552 step 8; the `timeout`, `cattempt`, `cend` and
+/// FR-147-AC-8 (TC-552 step 8; the `timeout`, `cattempt`, `cend` and
 /// `activate` classes are `the_timeout_cattempt_cend_and_activate_classes_resolve`):
 /// each class spells and resolves over `Full` and makes exactly its own class
 /// internal, in the byte order of the alias-free spellings.
-#[trace("TC-552")]
+#[trace("TC-552", "FR-147-AC-8")]
 #[test]
 fn each_class_spells_and_resolves_over_a_protocol_that_has_it() {
     let unit = format!("{}{}", full(), refinement("Spec", "Full"));
@@ -924,6 +924,11 @@ fn the_timeout_cattempt_cend_and_activate_classes_resolve() {
             "cend Rich::Undo"
         ]
     );
+    // `cend` names a compensation template only.
+    for entry in ["cend Spec::Rich::Wait", "cend Spec::Rich::Tried"] {
+        let found = refused(&unit, internal(&[entry]), RefinementSupport::BUILD);
+        assert_eq!(only(&found).code_and_cause(), MISSING, "{entry}");
+    }
     // An `on origin` protocol has no trigger to activate.
     let found = refused(
         &format!("{}{}", twice("Spec"), refinement("Spec", "Twice")),

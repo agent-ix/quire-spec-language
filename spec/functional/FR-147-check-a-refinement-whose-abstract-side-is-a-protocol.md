@@ -264,11 +264,11 @@ refinement `CasRefinesCounter` (ADR-020 §8, model abstract side) is declared
 in the unit where a vector names it. Fixture `Full`: a protocol clause that
 declares an attempt, event, send, receive and finish node, a fence, a
 `parallel` node, a channel, a static role, a replicated role and a memory
-model with a step kind `flush`; a refinement `CasFull` selects it. Fixture
+model with a step kind `flush`; the refinement `CasTwice`, with its abstract side set to `Full`, selects it. Fixture
 `Rich`: a protocol clause with an `on each` trigger (so `activate` is a class) that
 declares an `await` node (the `timeout` class) and a compensation template
 `Undo` whose attempt type is the abstract model's record `Try`
-(the `cattempt` and `cend` classes).
+(the `cattempt` and `cend` classes); `CasTwice` with its abstract side set to `Rich` selects it.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
