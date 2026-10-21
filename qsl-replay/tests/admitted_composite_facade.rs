@@ -13,8 +13,12 @@ use qsl_replay::{
     DependencyInput, NodeKey, ReplayLimits, SourceIdentity, StageLimits, SuppliedLibrary,
     WireNodeId,
 };
-use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm};
+use std::collections::BTreeSet;
+
+use qsl_semantics::check::{CheckedGraph, CheckedTypeNode, CompositeForm, NodeTag};
 use quire_exact::Cancel;
+use quire_exact::ValueType;
+use quire_semantic_value::declaration::CompositeShape;
 
 const HEADER: &str =
     "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.value.complete/v1\";\n";
@@ -26,7 +30,8 @@ const UNIT: &str = "record Left { a: Boolean; b: Boolean; }\n\
      tuple Second(Boolean, Boolean);\n\
      enum Color { BLUE, RED }\n\
      union Shape { Empty, Circle(Integer) }\n\
-     function is_blue using v(c: Color): Boolean pure { false }\n";
+     function is_blue using v(c: Color): Boolean pure { false }\n\
+     function uses_left using v(x: Left): Boolean pure { x.a }\n";
 const POINTS: &str = "record Point { x: Boolean; }\n";
 
 fn unit_identity() -> SourceIdentity {
@@ -95,30 +100,39 @@ fn with_spine_graph<T>(text: &str, read: impl FnOnce(&CheckedGraph) -> T) -> T {
     read(checked.package().graph())
 }
 
-/// Every record and tuple checked type node, with its declared name and
-/// form, ascending by key.
-fn spine_composites(graph: &CheckedGraph) -> Vec<(NodeKey, String, AdmittedCompositeForm)> {
+/// One record or tuple declaration as the spine's own checked package holds
+/// it: the id of its `composite_type` semantic node, the key its checked
+/// `TypeEnvironment` gives it (the key replay converts arguments against),
+/// its name and form. Read from the type environment and the semantic graph,
+/// not from the checked type nodes the facade reads.
+type Expected = (NodeKey, NodeKey, String, AdmittedCompositeForm);
+
+/// Every record and tuple declaration of `graph`, ascending by node id.
+fn spine_composites(graph: &CheckedGraph) -> Vec<Expected> {
     let mut composites = Vec::new();
-    for type_node in graph.checked_type_nodes() {
-        let CheckedTypeNode::Composite { node, form } = type_node else {
-            continue;
+    for declaration in graph.scope().types().composites() {
+        let form = match declaration.shape() {
+            CompositeShape::Record(_) => AdmittedCompositeForm::Record,
+            CompositeShape::Tuple(_) => AdmittedCompositeForm::Tuple,
+            CompositeShape::Union(_) => continue,
         };
-        let form = match form {
-            CompositeForm::Record => AdmittedCompositeForm::Record,
-            CompositeForm::Tuple => AdmittedCompositeForm::Tuple,
-            CompositeForm::Union => continue,
-        };
-        let name = graph
+        let name = declaration.name().to_owned();
+        let node = graph
             .semantic_graph()
-            .node(*node)
-            .and_then(|declared| declared.declaration())
-            .and_then(|name| name.last())
-            .expect("a declared name")
-            .as_str()
-            .to_owned();
-        composites.push((*node, name, form));
+            .nodes()
+            .find(|node| {
+                node.node_tag() == NodeTag::CompositeType
+                    && node
+                        .declaration()
+                        .and_then(|declared| declared.last())
+                        .map(|last| last.as_str())
+                        == Some(name.as_str())
+            })
+            .expect("the declaration's composite_type node")
+            .key();
+        composites.push((node, declaration.key(), name, form));
     }
-    composites.sort_by_key(|(key, ..)| *key);
+    composites.sort_by_key(|(node, ..)| *node);
     composites
 }
 
@@ -128,18 +142,26 @@ fn spine_composites(graph: &CheckedGraph) -> Vec<(NodeKey, String, AdmittedCompo
 #[test]
 fn composite_keys_are_the_spines_distinct_and_stable() {
     let text = format!("{HEADER}{UNIT}");
-    let expected = with_spine_graph(&text, spine_composites);
-    let names: Vec<_> = expected.iter().map(|(_, name, _)| name.as_str()).collect();
-    let mut sorted = names.clone();
-    sorted.sort_unstable();
-    assert_eq!(sorted, ["First", "Left", "Right", "Second"]);
+    let (expected, parameter) = with_spine_graph(&text, |graph| {
+        let parameter = graph
+            .callable("uses_left")
+            .expect("the function")
+            .parameters[0]
+            .1
+            .clone();
+        (spine_composites(graph), parameter)
+    });
+    let mut names: Vec<_> = expected.iter().map(|(.., name, _)| name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["First", "Left", "Right", "Second"]);
 
     let admitted = admit(&text, &DependencyInput::default());
     let context = admitted.context();
-    let table: Vec<_> = context
+    let table: Vec<Expected> = context
         .composites()
         .map(|composite| {
             (
+                composite.node(),
                 composite.key(),
                 composite
                     .qualified_name()
@@ -153,19 +175,28 @@ fn composite_keys_are_the_spines_distinct_and_stable() {
         .collect();
     assert_eq!(table, expected);
 
-    let mut keys: Vec<_> = expected.iter().map(|(key, ..)| *key).collect();
-    keys.dedup();
+    // The kernel key is the one the checked function signature carries for
+    // a parameter of the record's type, and not the node id.
+    let left = context
+        .composites()
+        .find(|composite| composite.qualified_name().last().map(|n| n.as_str()) == Some("Left"))
+        .expect("Left");
+    assert_eq!(parameter, ValueType::Composite(left.key()));
+    assert_ne!(left.key(), left.node());
+
+    let keys: BTreeSet<_> = expected.iter().map(|(_, key, ..)| *key).collect();
     assert_eq!(keys.len(), 4, "each declaration has its own key");
 
-    for (key, ..) in &expected {
-        let first = context.composite_declaration(wire(*key)).expect("found");
-        let again = context.composite_declaration(wire(*key)).expect("found");
+    for (node, key, ..) in &expected {
+        let first = context.composite_declaration(wire(*node)).expect("found");
+        let again = context.composite_declaration(wire(*node)).expect("found");
         assert_eq!(first.key(), *key);
         assert_eq!(first, again);
     }
     let recompiled = admit(&text, &DependencyInput::default());
-    let again: Vec<_> = recompiled.context().composites().map(|c| c.key()).collect();
-    assert_eq!(again, keys);
+    let again: Vec<_> = recompiled.context().composites().cloned().collect();
+    let first: Vec<_> = context.composites().cloned().collect();
+    assert_eq!(again, first);
 }
 
 /// An id nobody admitted is `Unknown`; an enum, a union and a function of
@@ -200,6 +231,7 @@ fn composite_lookups_refuse_unknown_and_wrong_kind_ids() {
                 CheckedTypeNode::Composite {
                     node,
                     form: CompositeForm::Union,
+                    ..
                 } => Some(*node),
                 _ => None,
             })
@@ -233,7 +265,7 @@ fn a_dependencys_composite_is_foreign() {
     )
     .expect("the library compiles");
     let point = alone.context().composites().next().expect("the record");
-    let point_id = wire(point.key());
+    let point_id = wire(point.node());
     let package = alone.context().package_id();
     let mid = library(
         "test/mid",
@@ -260,7 +292,7 @@ fn a_dependencys_composite_is_foreign() {
         );
         assert_eq!(context.composites().count(), 4);
         for own in context.composites() {
-            assert_eq!(context.composite_declaration(wire(own.key())), Ok(own));
+            assert_eq!(context.composite_declaration(wire(own.node())), Ok(own));
         }
     }
 }

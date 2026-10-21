@@ -8,7 +8,6 @@
 //! nothing and calls no `NodeKey` constructor.
 
 use ix_trace_rs::trace;
-use qsl_foundation::Setting;
 use qsl_replay::{
     compile_admitted, AdmittedCompositeForm, AdmittedContext, DependencyInput, Identifier,
     ReplayLimits, SourceIdentity, StageLimits, WireNodeId,
@@ -24,14 +23,13 @@ const SOURCE: &str = "language \"ix:native\" edition \"1-draft\";\n\
      record Holder { flag: Boolean; pair: Pair; }\n";
 
 fn context() -> AdmittedContext {
-    let stages: StageLimits = [(Setting::S1InputBytes, 1 << 20)].into_iter().collect();
     compile_admitted(
         SourceIdentity::new("a", "u", "git", "1"),
         "unit.native",
         SOURCE.as_bytes(),
         [],
         &DependencyInput::default(),
-        stages,
+        StageLimits::default(),
         ReplayLimits::default(),
     )
     .expect("the unit compiles")
@@ -47,7 +45,7 @@ fn wire_id_of(context: &AdmittedContext, name: &str) -> WireNodeId {
         .composites()
         .find(|composite| composite.qualified_name().last() == Some(&name))
         .expect("the declaration is admitted");
-    WireNodeId::from_digest(*found.key().as_bytes())
+    WireNodeId::from_digest(*found.node().as_bytes())
 }
 
 #[trace("TC-1090", "FR-396-AC-1")]

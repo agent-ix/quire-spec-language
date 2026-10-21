@@ -1240,7 +1240,8 @@ impl PackageDeclarations {
         // and every admitted composite (below, once lowering has keyed it)
         // a `CheckedTypeNode::Composite` identified by its FR-092 key.
         // FR-092-AC-12: a declared composite's checked type node takes its
-        // FR-092 key, which `check` mints below, not the caller's handle.
+        // FR-092 key, which `check` mints below, and carries the caller's
+        // handle as the declaration's kernel key.
         let mut type_nodes = BTreeMap::new();
         for enum_binding in scope.enums() {
             let node = enum_binding.declaration.key();
@@ -2728,6 +2729,7 @@ impl PackageDeclarations {
                         node,
                         identity::CheckedTypeNode::Composite {
                             node,
+                            declaration: composite.key(),
                             form: composite.shape().into(),
                         },
                     );
@@ -4096,7 +4098,7 @@ mod tests {
         assert!(graph.checked_type_node(key).is_none());
         assert_eq!(
             to_kernel_value_type(nodes[0]),
-            quire_exact::ValueType::Composite(node)
+            quire_exact::ValueType::Composite(key)
         );
     }
 

@@ -95,18 +95,29 @@ pub enum AdmittedCompositeForm {
     Tuple,
 }
 
-/// One admitted record or tuple declaration: the key the checker minted for
-/// its `composite_type` node, which is the key a `ValueType::Composite` and a
-/// `CompositeDeclaration` of it carry, its qualified name and its form.
+/// One admitted record or tuple declaration: the id of its `composite_type`
+/// node, which a lookup takes, and its kernel key, the key the package's
+/// checked `TypeEnvironment` gives the declaration and which every
+/// `ValueType::Composite` of it, `CompositeDeclaration` of it and replayed
+/// value of it carries; with its qualified name and its form.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdmittedComposite {
+    node: NodeKey,
     key: NodeKey,
     qualified_name: Vec<Identifier>,
     form: AdmittedCompositeForm,
 }
 
 impl AdmittedComposite {
-    /// The admitted key of the declaration's `composite_type` node.
+    /// The id of the declaration's `composite_type` node: the wire node id
+    /// [`AdmittedContext::composite_declaration`] finds it by.
+    pub fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    /// The declaration's kernel key: the key `CompositeDeclaration::new` and
+    /// `ValueType::Composite` take for it, equal to the one QSL's checked
+    /// `TypeEnvironment` and replay use.
     pub fn key(&self) -> NodeKey {
         self.key
     }
@@ -125,8 +136,10 @@ impl AdmittedComposite {
 /// Why an [`AdmittedContext`] lookup found no key.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum AdmittedLookupRefusal {
-    /// The declaration id names no enum declaration of this package or of
-    /// any package it depends on, or the declaration has no such case.
+    /// The declaration id names no declaration of the looked-up kind (an
+    /// enum for the enum lookups, a record or tuple for
+    /// [`AdmittedContext::composite_declaration`]) of this package or of any
+    /// package it depends on, or the enum declaration has no such case.
     #[error("unknown_declaration: {}", unknown_what(.declaration, .case))]
     Unknown {
         /// The declaration id looked up.
@@ -135,9 +148,10 @@ pub enum AdmittedLookupRefusal {
         /// declaration exists.
         case: Option<Identifier>,
     },
-    /// The declaration id names an enum that a dependency of this package
-    /// admitted, not this package. Its keys are that package's.
-    #[error("foreign_declaration: enum declaration {declaration} is admitted by dependency package {}", .package.hex())]
+    /// The declaration id names a declaration of the looked-up kind that a
+    /// dependency of this package admitted, not this package. Its keys are
+    /// that package's.
+    #[error("foreign_declaration: declaration {declaration} is admitted by dependency package {}", .package.hex())]
     Foreign {
         /// The declaration id looked up.
         declaration: WireNodeId,
@@ -157,7 +171,7 @@ pub enum AdmittedLookupRefusal {
 
 fn unknown_what(declaration: &WireNodeId, case: &Option<Identifier>) -> String {
     match case {
-        None => format!("no admitted enum declaration {declaration}"),
+        None => format!("no admitted declaration {declaration} of the looked-up kind"),
         Some(case) => format!(
             "admitted enum declaration {declaration} has no case {}",
             case.as_str()
@@ -176,7 +190,8 @@ pub struct AdmittedContext {
     composites: BTreeMap<[u8; 32], AdmittedComposite>,
     foreign_composites: BTreeMap<[u8; 32], PackageId>,
     /// Every other node of this package's checked graph: the ids a
-    /// composite lookup refuses as the wrong kind.
+    /// composite lookup refuses as the wrong kind. One 32-byte id per node,
+    /// so the context grows with the package's graph (FR-396).
     other_nodes: BTreeSet<[u8; 32]>,
 }
 
@@ -237,7 +252,7 @@ impl AdmittedContext {
     }
 
     /// Every record and tuple declaration this package admitted, ascending
-    /// by key.
+    /// by `composite_type` node id.
     pub fn composites(&self) -> impl Iterator<Item = &AdmittedComposite> {
         self.composites.values()
     }
@@ -476,10 +491,14 @@ fn composite_table(
 ) -> Result<BTreeMap<[u8; 32], AdmittedComposite>, InternalFault> {
     let mut composites = BTreeMap::new();
     for type_node in graph.checked_type_nodes() {
-        let (key, form) = match type_node {
-            CheckedTypeNode::Composite { node, form } => match form {
-                CompositeForm::Record => (*node, AdmittedCompositeForm::Record),
-                CompositeForm::Tuple => (*node, AdmittedCompositeForm::Tuple),
+        let (node, key, form) = match type_node {
+            CheckedTypeNode::Composite {
+                node,
+                declaration,
+                form,
+            } => match form {
+                CompositeForm::Record => (*node, *declaration, AdmittedCompositeForm::Record),
+                CompositeForm::Tuple => (*node, *declaration, AdmittedCompositeForm::Tuple),
                 CompositeForm::Union => continue,
             },
             CheckedTypeNode::Scalar { .. }
@@ -488,15 +507,16 @@ fn composite_table(
         };
         let qualified_name = graph
             .semantic_graph()
-            .node(key)
-            .and_then(|node| node.declaration())
+            .node(node)
+            .and_then(|declared| declared.declaration())
             .ok_or_else(|| {
                 InternalFault::new("replay", "every-admitted-composite-has-a-declared-node")
             })?
             .to_vec();
         composites.insert(
-            *key.as_bytes(),
+            *node.as_bytes(),
             AdmittedComposite {
+                node,
                 key,
                 qualified_name,
                 form,
