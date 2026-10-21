@@ -10,7 +10,7 @@ review_set: subset
 
 ## Summary
 
-Reviewed the branch diff against `origin/main` using the code-review and rust-review checklists. The change removes the specified shell script, its Make and CI calls, and the test fixtures that named those calls. No production Rust behavior changes.
+Reviewed the rebased branch diff against `origin/main` using the code-review and rust-review checklists. The change removes the specified shell script, its Make and CI calls, and the test fixtures that named those calls. No production Rust behavior changes.
 
 ## Findings
 
@@ -18,12 +18,12 @@ No findings in the changed files. The remaining `check-no-committed-binaries` fi
 
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
-| FND-001 | low | The standalone FR index assertion is removed with the requested ceremony script; this is the explicit STD-226 scope. No replacement is proposed. | tools/check-index-completeness.sh, Makefile |
+| FND-001 | low | No findings (placeholder) | - |
 
 ## Verification
 
-The targeted xtask test groups for spec validation, feature lane ordering, and conformance passed. `cargo fmt --all -- --check` and `git diff --check` passed. The full `make ci` run passed spec validation, conformance vectors, default Clippy and most default-feature tests, then failed in unchanged `qsl-route/tests/it/route_registry.rs`: the installed cargo-deny 0.20.2 rejects that test's `--config` argument position. This failure is outside the changed files; the aggregate gate did not complete.
+The targeted xtask test groups for spec validation, feature lane ordering, and conformance passed. `cargo fmt --all -- --check` and `git diff --check` passed. The first full `make ci` run stopped in unchanged `qsl-route/tests/it/route_registry.rs` because the local cargo-deny 0.20.2 rejected that test's `--config` argument position. CI pins cargo-deny 0.19.8; with that version installed locally, the specific test passed. The pinned-version full rerun reached `ci-docs`, where unchanged `qsl-eval/src/simulation/model/probabilistic.rs:145` links public documentation to the private `same_values` function. That link remains on `origin/main` at 800b8d28e. The aggregate gate has not passed.
 
 ## Verdict
 
-The scoped deletion is ready for review. Full-gate completion remains blocked by the recorded cargo-deny CLI mismatch.
+**PASS** for the scoped deletion review. The full gate remains red on the unchanged `ci-docs` error described above.
