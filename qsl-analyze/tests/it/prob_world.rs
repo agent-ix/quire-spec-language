@@ -214,7 +214,7 @@ pub(crate) struct World {
 }
 
 /// The evaluation budget: ample for every fixture.
-const UNLIMITED: ScalarLimits = ScalarLimits {
+pub(crate) const UNLIMITED: ScalarLimits = ScalarLimits {
     integer_bits: 1 << 20,
     decimal_digits: 1 << 20,
     scale_expansion: 1 << 20,

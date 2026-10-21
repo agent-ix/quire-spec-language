@@ -6,16 +6,18 @@
 
 use ix_trace_rs::trace;
 use qsl_analyze::statistical::{check_statistical, StatisticalRequest, DEFAULT_MAX_WITNESSES};
+use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::model::TransitionId;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_foundation::selection::DefinitionRef;
+use qsl_replay::statistical::{settle_statistical, SubjectLimits};
 use qsl_replay::statistical::{
     Decision, MeasureValue, StatisticalLimit, StatisticalLimits, StatisticalMethod,
     StatisticalOutcome, StatisticalRefusal, StatisticalStop, StatisticalUnsupported,
     StatisticalVerdict, WitnessValue,
 };
-use qsl_replay::UndefinedLocus;
+use qsl_replay::{TerminalValue, UndefinedLocus};
 use quire_exact::{Cancel, Integer, Rational, Value};
 
 use crate::prob_world::{self, World};
@@ -190,10 +192,11 @@ fn a_quantile_counts_only_activated_samples() {
     assert!(verdict.tests[0].draws > verdict.tests[0].samples);
 }
 
-/// Checks FR-189-AC-12 (TC-624 step 9): the activation variant whose
-/// activation never holds, with `max_draws` 1,000, stops `MaxDraws` with no
+/// FR-189-AC-12's stop (TC-624 step 9), with an activation predicate that
+/// never holds in place of an activation of probability 0, which a weight
+/// cannot state: with `max_draws` 1,000, stops `MaxDraws` with no
 /// sample counted.
-#[trace("TC-624", "FR-189-AC-12")]
+#[trace("TC-624")]
 #[test]
 fn a_quantile_with_no_activation_stops_on_max_draws() {
     let never = "probabilistic Never using ev on M over (s: M::Server) under Steady on origin \
@@ -317,7 +320,8 @@ fn a_dropped_coin_rejects_its_test_at_the_undefined_position() {
 
 /// Checks FR-189-AC-7 (TC-624 step 7): over `Wide`, whose `spin` draws from
 /// weights totalling `2^256 + 1`, the first sample stops the run
-/// `Unsupported` with `TotalAboveDrawRange{total}`.
+/// `Unsupported` with `TotalAboveDrawRange{total}`, `total` `2^256 + 1`, and
+/// settles `unsupported`, `total-above-draw-range`.
 #[trace("TC-624", "FR-189-AC-7")]
 #[test]
 fn a_draw_above_the_range_is_unsupported() {
@@ -332,12 +336,28 @@ fn a_draw_above_the_range_is_unsupported() {
         StatisticalLimits::default(),
         DEFAULT_MAX_WITNESSES,
     );
-    let Ok(StatisticalOutcome::Unsupported {
+    let Ok(unsupported) = outcome else {
+        panic!("an outcome: {outcome:?}");
+    };
+    let record = settle_statistical(
+        &unsupported,
+        SubjectLimits {
+            expansion: ExpansionLimits {
+                max_candidates: 1_000_000,
+            },
+            meter: &prob_world::UNLIMITED,
+        },
+    );
+    let TerminalValue::Unsupported(cause) = &record.value else {
+        panic!("settles unsupported: {record:?}");
+    };
+    assert_eq!(cause.as_str(), "total-above-draw-range");
+    let StatisticalOutcome::Unsupported {
         cause: StatisticalUnsupported::TotalAboveDrawRange { total },
         provenance,
-    }) = outcome
+    } = unsupported
     else {
-        panic!("an unsupported run: {outcome:?}");
+        panic!("an unsupported run: {unsupported:?}");
     };
     assert_eq!(
         total.to_string(),
