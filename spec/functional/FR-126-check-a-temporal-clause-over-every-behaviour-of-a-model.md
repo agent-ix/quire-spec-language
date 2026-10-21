@@ -404,7 +404,9 @@ automaton states and the depth reached.
   `quire.simulation.state-key/v1` digest, which selects the step's
   successor among the post-states of its transition identity; the loop
   entry, when there is a loop; the terminal stutter marker, when the loop
-  is the stutter step; the `over` binding; the fairness set; and `kind`:
+  is the stutter step, and on a safety or undefined-evaluation
+  counterexample whose last position is the terminal stutter step, which the
+  prefix does not list and the length counts; the `over` binding; the fairness set; and `kind`:
   `Formula`, `Deadlock` for a deadlock-freedom violation, or
   `UndefinedEvaluation{where, cause}`.
 - Its length SHALL be its number of transitions, stem and loop together.
@@ -445,6 +447,7 @@ automaton states and the depth reached.
 | FR-126-AC-14 | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2. | Test (TC-1085) |
 | FR-126-AC-15 | With initial versions `a` 0 and `b` 1 and the AC-12 claim, whose first phase ends in `a` with a finding at depth 2, `max_states` 6 returns `Stopped{ResourceExhausted, {MaxStates, 6}}`, since binding `b` stops before it completes depth 1; `max_states` 1,000 returns the AC-14 finding for `b`; with both versions 0, `max_states` 1,000 returns the AC-12 finding for `a`, the tie going to the earlier binding. | Test (TC-1085) |
 | FR-126-AC-16 | Over the `Counter` subject, `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with a `when` condition returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` when the condition is `c.value = 1`, and `Holds{Exhaustive}` when it is `c.value >= 2`; `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value >= 3` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, and with the condition `c.value = 7` returns `Holds` with an empty closure certificate; `eventually[0,3] holds(c.value = 3)` `on each` with a condition undefined at value 2 returns `Violated` with `kind: UndefinedEvaluation` at position 2 and the prefix `0 -inc-> 1 -inc-> 2`, its site naming the activation. | Test (TC-521) |
+| FR-126-AC-17 | Over the `Counter` subject under infinite-trace, `always (holds(c.value = 3) implies eventually[1,1] not holds(c.value = 3))` `on origin`, violated only at the stutter position after value 3, returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, a loop at position 3 with the terminal stutter marker set, and length 4; the counterexample replays to `reproduced-with-evaluated-witness`. | Test (TC-521) |
 
 ## Dependencies
 

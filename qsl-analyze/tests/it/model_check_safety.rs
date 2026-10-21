@@ -555,8 +555,8 @@ fn guarded_run(
 /// positions where its `when` condition is true. Over the Counter subject,
 /// `eventually[0,1] holds(c.value = 3)` is violated unguarded by the prefix
 /// `0 -inc-> 1`; guarded by `c.value = 1` it activates at position 1 alone
-/// and is violated by the prefix `0 -inc-> 1 -inc-> 2`; guarded by `c.value
-/// >= 2` it activates at values 2 and 3, each of which reaches value 3 within
+/// and is violated by the prefix `0 -inc-> 1 -inc-> 2`; guarded by
+/// `c.value >= 2` it activates at values 2 and 3, each of which reaches value 3 within
 /// its window, and holds.
 #[trace("TC-521", "FR-126-AC-16")]
 #[test]
