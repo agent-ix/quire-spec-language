@@ -80,3 +80,9 @@ Round 1 at ad8df47db (fix commit ad8df47db on top of a merge of origin/main). Ch
 | FND-006 | deferred | Spec fix routed by the coordinator to /specify (PR #1122 'Spec follow-ups and deviations'); no ticket id is named yet. It is not a code change in this PR. The `not-state-predicate` cause and the constant rule (STD-188). |
 | FND-007 | deferred | Spec fix routed by the coordinator to /specify (PR #1122 'Spec follow-ups and deviations'); no ticket id is named yet. It is not a code change in this PR. The unactivated-measure verdict and `steps` over the stutter. |
 | FND-008 | deferred | Spec fix routed by the coordinator to /specify (PR #1122 'Spec follow-ups and deviations'); no ticket id is named yet. It is not a code change in this PR. The RewardRef/API drift. |
+
+Round 2 (804ef1819): 6da7b4d0d (doc comments that opened with an AC id reworded, review records copied), two merges of origin/main (9a7b85081, and 95b1521d2 bringing in QSL-571 #1118), and the fix commit 804ef1819. Gates, matrix and oracle as recorded in the code review's round 2 (SR-13605).
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-004 | deferred | Resolved as far as this PR can take it. 6da7b4d0d reworded the doc comment, and `quire matrix` at 804ef1819 now reports FR-195-AC-4 untagged. 804ef1819 builds the FR-192 'settles `unsupported` with its cause' half (the three map rows). The EN-5 manifest's (`probabilistic-satisfaction`, `exact`) is still unbuilt, because `BackendDescriptor` has no evidence kinds. It needs a follow-up ticket from the coordinator; none is named yet. |
