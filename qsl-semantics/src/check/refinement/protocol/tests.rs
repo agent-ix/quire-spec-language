@@ -1481,6 +1481,13 @@ fn an_application_on_an_attempt_or_template_row_is_typed_over_its_operation() {
         observation(attempt),
         RowObservation::Visible { label } if label.open_arguments == [0]
     ));
+    // A population-valued argument is in scope on the node row, as on an
+    // operation row.
+    let counted = rows.replace(
+        "addBy(self, _)",
+        "addBy(self, count(x in M::nodes where x.total = 0))",
+    );
+    checks(&unit(&fill(""), &counted));
     // One argument too many is the operation row's refusal.
     let wrong = rows.replace("addBy(self, _)", "add(self, 1)");
     let found = refused(&unit(&fill(""), &wrong));

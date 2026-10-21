@@ -649,15 +649,14 @@ impl ProtocolRefinement<'_> {
             return (Err(findings.refusals), nodes);
         };
         let models = declarations.models;
-        let side = |alias: &str| {
-            models
-                .iter()
-                .find(|model| model.alias() == Some(alias))
-                .map(|model| Side { alias: "", model })
-        };
-        let (Some(abstract_side), Some(concrete_side)) =
-            (side(&checked.abstract_model), side(&checked.concrete_model))
-        else {
+        let (abstract_alias, concrete_alias) = (
+            checked.abstract_model.clone(),
+            checked.concrete_model.clone(),
+        );
+        let (Some(abstract_side), Some(concrete_side)) = (
+            side_of(models, &abstract_alias),
+            side_of(models, &concrete_alias),
+        ) else {
             let mut findings = findings;
             findings.fault("the-models-of-a-refinement-are-admitted");
             return (Err(findings.refusals), nodes);
@@ -695,6 +694,14 @@ impl ProtocolRefinement<'_> {
         };
         (result, nodes)
     }
+}
+
+/// The model the unit gives `alias`, with that alias.
+fn side_of<'s>(models: &'s [AdmittedModel], alias: &'s str) -> Option<Side<'s>> {
+    models
+        .iter()
+        .find(|model| model.alias() == Some(alias))
+        .map(|model| Side { alias, model })
 }
 
 /// What `complete` hands the row checks.
