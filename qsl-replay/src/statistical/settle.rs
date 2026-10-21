@@ -540,6 +540,15 @@ mod tests {
             assert_eq!(cause.as_str(), "unsupported-requested-capability");
             let json = wire(record);
             assert_eq!(json["cause"]["refusal"], named.as_str());
+            if let Some(literal) = match named {
+                StatisticalRequestRefusal::EveryScheduler => Some("every-scheduler"),
+                StatisticalRequestRefusal::ExactOnlyForm => Some("exact-only-form"),
+                StatisticalRequestRefusal::MissingConfidence => Some("missing-confidence"),
+                _ => None,
+            } {
+                // FR-192's spellings, not the function under test's.
+                assert_eq!(json["cause"]["refusal"], literal);
+            }
             assert_eq!(json["cause"]["code"], "unsupported_projection");
         }
 

@@ -105,3 +105,21 @@ Round 1 at ad8df47db (fix commit ad8df47db on top of a merge of origin/main). Ch
 | FND-006 | accepted-no-change | The refusal of a constant operand is now documented on `Pass::reach` as a judgement call open for the spec. It is routed with gap SR-13606 FND-006, which asks FR-195 to name the cause and the constant rule. |
 | FND-007 | fixed | fn exact_only_forms_have_distinct_normal_forms() — eventually, until and always of one predicate, a different predicate, and two expected rewards differing only in the reward are six distinct normal forms (kills M30, M31). |
 | FND-008 | fixed | an_unactivated_measure_ends_decided_and_a_fraction_reads_the_source (M07, M09); a_resolution_advances_the_accumulator_with_the_draws_rewards (M35); a_budget_equal_to_the_product_size_completes (exact 1002 states / 2000 edges, minus one stops: M18, M36); each_over_binding_has_its_own_states with World::with_objects(p, q) (M21). |
+
+## New findings (disposition pass 2)
+
+Round 2 at 804ef1819, the delta since ad8df47db: 6da7b4d0d (doc comments that opened with an AC id reworded, review records copied), two merges of origin/main (9a7b85081, and 95b1521d2 bringing in QSL-571 #1118), and the fix commit 804ef1819.
+
+- **Merges:** `git show --remerge-diff` is empty for both, so there were no conflict resolutions and no hand edits. The only change to the PR's own code is 804ef1819.
+- **804ef1819:**
+  - **Map arms:** `settle_statistical_refusal` gains arms for `EveryScheduler`, `ExactOnlyForm` and `MissingConfidence`. Each settles `unsupported` through `UnavailabilityCause::StatisticalRequest`, the same path as the sibling request refusals (`too-many-tests`, `trace-index-range`, `fraction-for-event`), with code `unsupported_projection`/`unsupported-requested-capability`.
+  - **Wire names:** `every-scheduler`, `exact-only-form` and `missing-confidence` are exactly the cause spellings of the merged FR-192 row ('`EveryScheduler`, `MissingConfidence` or `ExactOnlyForm` refusal | `unsupported` | the cause `every-scheduler`, `missing-confidence` or `exact-only-form`'). FR-192 states no catalog code, so taking the siblings' code is the consistent choice.
+- **Gates:** all pass: fmt, clippy -D warnings, the four crates' tests, root `it`, string-edge and the three arch-lints. 4,972 tests passed, 0 failed, 7 ignored.
+- **Oracle, re-run quickly (10 seeds):** 192 products, 0 mismatches; 32 undefined paths, 0 mismatches.
+- **Matrix (`quire matrix` 0.36.2, exit 0):** FR-195-AC-4 is now untagged. FR-192-AC-1 binds settle.rs:334 and :449. FR-195-AC-1..3 and FR-196-AC-1..5 are unchanged.
+- **Mutant:** respelling `every-scheduler` and `exact-only-form` in `StatisticalRequestRefusal::as_str` survives all 872 qsl-replay tests (FND-009).
+- **reviews/:** the committed `reviews/qsl-573-*.md` equal the round-1 files. They need re-copying for this round.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-009 | low | The extended refusal-row test checks the wire spelling against `named.as_str()`, the function under test, so it cannot fail on a wrong spelling. Reproduced: changing `every-scheduler` to `every-schedulr` and `exact-only-form` to `exact-only` in `StatisticalRequestRefusal::as_str` (qsl-replay/src/proof_result.rs:389-390) leaves all 872 qsl-replay tests green. The merged FR-192 row now fixes these three spellings literally. Fix: in each_refusal_row_settles_as_the_map_states, pair each new refusal with its literal (`"every-scheduler"`, `"exact-only-form"`, `"missing-confidence"`) and assert `json["cause"]["refusal"]` against the literal. The siblings have the same tautology, but only these three are new here. | qsl-replay/src/statistical/settle.rs:505 |
