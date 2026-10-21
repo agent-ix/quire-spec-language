@@ -417,7 +417,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     Written::Applied(model, memory) => (model, memory),
                     Written::Disabled => continue,
                     Written::Cut => {
-                        gathered.cut = true;
+                        gathered.cut.memory = true;
                         continue;
                     }
                 };
@@ -498,6 +498,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         index: usize,
     ) -> Result<WaitCause, ExpansionStop> {
         let template = self.program.template(index)?;
+        if let Some(cause) = self.no_role_instance(instance, template.role) {
+            return Ok(cause);
+        }
         if Self::closed(instance, template) {
             return Ok(WaitCause::CommitClosed {
                 template: template.name.clone(),

@@ -33,6 +33,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-089
     type: depends_on
+  - target: ix://agent-ix/quire-spec-language/FR-395
+    type: references
   - target: ix://agent-ix/quire-spec-language/FR-301
     type: depends_on
   - target: ix://agent-ix/quire-specification/interface_005
@@ -61,6 +63,11 @@ the FR-278 composition, selects the function by name lookup in the
 compiled package, binds the arguments, calls the function and returns the
 call's outcome. The root crate reaches it through `qsl_replay` and names
 `qsl-eval` in none of its dependency tables (TC-390).
+
+A driver that needs the requirement items of the function it ran uses
+FR-395's `run_with_requirements`, which runs the call as this entry does and
+returns the same package id and outcome with the identities of the selected
+function's items. `run` keeps the signature and result stated here.
 
 The request handling is the QSL library operation `command`, which the
 driver's `quire run` reaches (FR-287). A `1-draft` native-run/1 request is

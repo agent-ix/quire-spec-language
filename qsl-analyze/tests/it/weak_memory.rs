@@ -33,7 +33,7 @@ use qsl_replay::{
     ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceRefusal,
     ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ProtocolCertificateRequest,
     ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel, StatedMemoryBound,
-    TemporalCounterexample, TerminalValue, UnavailabilityCause,
+    TemporalCounterexample, TerminalValue, UnavailabilityCause, UndecidedCause,
 };
 use qsl_semantics::check::{AccessClass, FormulaNodeId};
 use quire_exact::{Cancel, Incomplete, Meter};
@@ -108,12 +108,24 @@ impl Case {
         item: ModelCheckItem<'_>,
         max_store_buffer: Option<u64>,
     ) -> ModelCheckOutcome<ProtocolTransition> {
+        self.check_bounded(selection, item, max_store_buffer, None)
+    }
+
+    /// [`Self::check`] under the instance bound `max_live_instances` too.
+    fn check_bounded(
+        &self,
+        selection: &[MemorySelection],
+        item: ModelCheckItem<'_>,
+        max_store_buffer: Option<u64>,
+        max_live_instances: Option<u64>,
+    ) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
             ProtocolCheckRequest {
                 subject: self.subject(selection),
                 item,
                 max_depth: None,
                 max_store_buffer,
+                max_live_instances,
                 limits: ModelCheckLimits::default(),
             },
             &Cancel::new(),
@@ -163,6 +175,7 @@ impl Case {
                 subject: self.subject(selection),
                 item,
                 max_store_buffer,
+                max_live_instances: None,
             },
             &Cancel::new(),
             |payload| self.replay(selection, payload.clone()),
@@ -199,6 +212,7 @@ impl Case {
             roles: subject.roles.clone(),
             memory: subject.memory.clone(),
             max_store_buffer: None,
+            max_live_instances: None,
         }
     }
 
@@ -2086,6 +2100,21 @@ fn every_independent_pair_of_tso_steps_commutes() {
         (contracts() + &protocol("SB", &mp), "SB::Main::Both"),
         (send_unit(), "SB::Both"),
         (sb_unit(&fenced_sb("seq_cst", "acquire")), "SB::Both"),
+        // A replicated role's event, `spawn` and `finish` beside the
+        // `parallel`'s stores and flushes (ADR-027 RR-2, FT-1).
+        (
+            contracts()
+                + &protocol_with(
+                    "SB",
+                    "role r each M::Core from cores max 1 lifetime workflow;",
+                    &format!(
+                        "sequence Main {{ event E by r as (e: Boolean) {{ e }}; {} }}",
+                        sb_run("", "release", "acquire")
+                    ),
+                )
+                + NO_BOTH_ZERO,
+            "SB::Main::Both",
+        ),
     ];
     let mut flushes = 0;
     for (body, parallel) in &units {
@@ -2174,5 +2203,53 @@ fn a_closure_certificate_closed_only_under_a_cutting_bound_is_not_proved() {
             bound: bound(4),
             reached: false,
         })
+    );
+}
+
+/// Part of FR-209-AC-4 (TC-654, ADR-025 MB-4): a run over an `on each`
+/// protocol under `tso` where both the store buffer bound and the instance
+/// bound limited a state, with no counterexample, settles
+/// `MemoryBoundReached`; with the store buffer bound out of reach, the
+/// same run settles `InstanceBoundReached`.
+#[test]
+fn the_memory_bound_settles_before_the_instance_bound() {
+    let run = format!(
+        "parallel Both {{ branch left sequence L {{ {} {} }} \
+         branch right sequence R {{ {} {} }} }} join all [left, right];",
+        attempt("S1", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
+        attempt("S2", "w", "Cell::set", "relaxed", "IsY, StoreOne"),
+        attempt("Lx", "c", "Core::read2", "relaxed", "ReadsX2, Read2"),
+        attempt("Ly", "c", "Core::read1", "relaxed", "ReadsY1, Read1"),
+    );
+    let origin = contracts() + &protocol("SB", &run) + NO_BOTH_ZERO;
+    let each = origin.replacen(
+        " on origin {\n",
+        " on each (x: M::Level) when (true) {\n",
+        1,
+    );
+    assert_ne!(each, origin);
+    let two = Case::new(&each);
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let both = two.check_bounded(&tso, ModelCheckItem::DeadlockFreedom, Some(1), Some(1));
+    assert!(
+        matches!(
+            both,
+            ModelCheckOutcome::Memory {
+                cause: MemoryCause::BoundReached { .. },
+                ..
+            }
+        ),
+        "{both:?}"
+    );
+    let instances = two.check_bounded(&tso, ModelCheckItem::DeadlockFreedom, None, Some(1));
+    assert!(
+        matches!(
+            instances,
+            ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::InstanceBoundReached { .. },
+                ..
+            }
+        ),
+        "{instances:?}"
     );
 }

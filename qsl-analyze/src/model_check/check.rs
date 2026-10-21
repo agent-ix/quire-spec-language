@@ -65,11 +65,11 @@ use qsl_eval::simulation::model::{
     check_model_bounds, ModelFinding, ModelSimState, ModelSystem, TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, MemoryModel, ProtocolFairnessError, ProtocolRefusal, ProtocolSystem,
-    ProtocolTransition, Sc, SubjectMemory,
+    activates_on_each, check_protocol_bounds, live_instance_bound, MemoryModel,
+    ProtocolFairnessError, ProtocolRefusal, ProtocolSystem, ProtocolTransition, Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    ConstraintValue, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, NotSimulated,
+    ConstraintValue, Cut, EncodingRefusal, Expansion, ExpansionLimit, ExpansionStop, NotSimulated,
     Permutation, RequiresBound, SubjectSystem, SubjectTransition, SymmetryGroup, TransitionSystem,
 };
 use qsl_eval::temporal::AtomReading;
@@ -78,10 +78,10 @@ use qsl_foundation::InternalFault;
 use qsl_replay::undefined_finding;
 use qsl_replay::{
     AppliedReduction, ClauseRootRefusal, ClosureCertificate, CounterexampleKind, IncompleteCause,
-    Instance, ItemRefusal, MemoryBound, MemoryBoundMember, MemoryCause, ModelCheckItem,
-    ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep, ProductStateRef, Proviso,
-    ReachedLimit, ReductionCause, RunStats, TemporalCounterexample, UndecidedCause,
-    UndefinedEvaluation, UndefinedLocus, UndefinedSite,
+    Instance, InstanceBound, ItemRefusal, MemoryBound, MemoryBoundMember, MemoryCause,
+    ModelCheckItem, ModelCheckLimit, ModelCheckLimits, ModelCheckOutcome, ModelStep,
+    ProductStateRef, Proviso, ReachedLimit, ReductionCause, RunStats, TemporalCounterexample,
+    UndecidedCause, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use qsl_semantics::check::{Activation, FormulaNodeId, TemporalProfile};
 use qsl_semantics::family::ClassifyFailure;
@@ -178,6 +178,12 @@ pub enum ModelCheckRefusal {
     /// yet (`unsupported_construct`/`not-yet-implemented`).
     #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over a weak `parallel` yet")]
     WeakLiveness,
+    /// A liveness clause over an `activation on each` protocol: the liveness
+    /// engine does not read the instance bound (FR-209) yet, so a run could
+    /// pass over instance-limited states
+    /// (`unsupported_construct`/`not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause over an `activation on each` protocol yet")]
+    InstanceLiveness,
     /// A liveness clause with a state constraint selected: the liveness
     /// engine runs reduced under symmetry and partial-order reduction only.
     #[error("EN-1 does not decide a liveness clause under a state constraint yet")]
@@ -439,6 +445,8 @@ pub fn check_model(
         chooser: None,
         memory_bound: None,
         bound_limited: BTreeSet::new(),
+        instance_bound: None,
+        instance_limited: BTreeSet::new(),
     };
     if let Some(source) = root_cancelled {
         return Ok(ModelCheckOutcome::Stopped {
@@ -475,6 +483,10 @@ pub struct ProtocolCheckRequest<'a> {
     /// The method bound `max_store_buffer` (FR-225, ADR-025 MB-2): the
     /// entries per thread's buffer under `tso`; `None` runs with 4.
     pub max_store_buffer: Option<u64>,
+    /// The method bound `max_live_instances` (FR-209, ADR-027 AE-4): the live
+    /// instances of an `activation on each` protocol; `None` runs with 3. It
+    /// is outside the subject and its obligation identity.
+    pub max_live_instances: Option<u64>,
     /// The run's caller-raisable budgets.
     pub limits: ModelCheckLimits,
 }
@@ -532,6 +544,10 @@ pub fn check_protocol(
             })
         })?;
     check_protocol_bounds(&model, protocol, BOUND_POSITIONS).map_err(not_simulated)?;
+    let live_instances = live_instance_bound(request.max_live_instances);
+    let instance_bound = activates_on_each(protocol).then_some(InstanceBound {
+        value: live_instances,
+    });
     let (instances, root_cancelled) = if certified {
         match request.item.instances(&subject.model, &model, cancel) {
             Ok(instances) => (instances, None),
@@ -567,26 +583,42 @@ pub fn check_protocol(
         max_candidates,
         cancel,
         max_automaton_states,
+        instance_bound,
     };
     let memory = SubjectMemory::of(&subject.memory, request.max_store_buffer);
     let built = match memory {
-        SubjectMemory::Sc => ProtocolSystem::new(model, subject, Sc)
-            .map(|system| protocol_run.decide(&system, automaton, None)),
+        SubjectMemory::Sc => ProtocolSystem::new(model, subject, Sc).map(|system| {
+            protocol_run.decide(
+                &system.with_max_live_instances(live_instances),
+                automaton,
+                None,
+            )
+        }),
         SubjectMemory::Tso(tso) => {
             let bound = MemoryBound {
                 member: MemoryBoundMember::MaxStoreBuffer,
                 value: tso.max_store_buffer(),
             };
-            ProtocolSystem::new(model, subject, tso)
-                .map(|system| protocol_run.decide(&system, automaton, Some(bound)))
+            ProtocolSystem::new(model, subject, tso).map(|system| {
+                protocol_run.decide(
+                    &system.with_max_live_instances(live_instances),
+                    automaton,
+                    Some(bound),
+                )
+            })
         }
         SubjectMemory::Ra(ra) => {
             let bound = MemoryBound {
                 member: MemoryBoundMember::MaxMessages,
                 value: ra.max_messages(),
             };
-            ProtocolSystem::new(model, subject, ra)
-                .map(|system| protocol_run.decide(&system, automaton, Some(bound)))
+            ProtocolSystem::new(model, subject, ra).map(|system| {
+                protocol_run.decide(
+                    &system.with_max_live_instances(live_instances),
+                    automaton,
+                    Some(bound),
+                )
+            })
         }
     };
     match built {
@@ -628,6 +660,9 @@ fn check_protocol_liveness(
     let SubjectMemory::Sc = SubjectMemory::of(&subject.memory, request.max_store_buffer) else {
         return Err(ModelCheckRefusal::WeakLiveness);
     };
+    if activates_on_each(protocol) {
+        return Err(ModelCheckRefusal::InstanceLiveness);
+    }
     let system = ProtocolSystem::new(model, subject, Sc).map_err(ModelCheckRefusal::Protocol)?;
     super::liveness::check_protocol(
         subject,
@@ -652,6 +687,8 @@ struct ProtocolRun<'r> {
     max_candidates: u64,
     cancel: &'r Cancel,
     max_automaton_states: u64,
+    /// The instance bound of an `activation on each` protocol.
+    instance_bound: Option<InstanceBound>,
 }
 
 impl ProtocolRun<'_> {
@@ -693,6 +730,8 @@ impl ProtocolRun<'_> {
             chooser: None,
             memory_bound: bound,
             bound_limited: BTreeSet::new(),
+            instance_bound: self.instance_bound,
+            instance_limited: BTreeSet::new(),
         };
         if let Some(source) = self.root_cancelled {
             return Ok(ModelCheckOutcome::Stopped {
@@ -741,6 +780,7 @@ fn sum(left: RunStats, right: RunStats) -> RunStats {
         automaton_states: left.automaton_states.saturating_add(right.automaton_states),
         depth: left.depth.max(right.depth),
         bound_limited: left.bound_limited.saturating_add(right.bound_limited),
+        instance_limited: left.instance_limited.saturating_add(right.instance_limited),
     }
 }
 
@@ -845,6 +885,8 @@ fn check_reduced(
             chooser: ample.as_ref().map(|ample| ample as &dyn Chooser<_, _>),
             memory_bound: None,
             bound_limited: BTreeSet::new(),
+            instance_bound: None,
+            instance_limited: BTreeSet::new(),
         };
         let explored = run.explore();
         total = sum(total, run.stats());
@@ -1209,6 +1251,13 @@ struct Run<'r, S: SubjectSystem> {
     /// the memory bound (ADR-025 MB-3); a model state read under several
     /// monitor states counts once.
     bound_limited: BTreeSet<DigestRecord>,
+    /// The instance bound the subject's `activation on each` runs under
+    /// (ADR-027 AE-4); `None` for a subject with none.
+    instance_bound: Option<InstanceBound>,
+    /// The distinct model states, by digest, left with an `activate` step
+    /// unexpanded at the instance bound (ADR-027 AE-4); a model state read
+    /// under several monitor states counts once.
+    instance_limited: BTreeSet<DigestRecord>,
 }
 
 impl<S: SubjectSystem> Run<'_, S> {
@@ -1219,6 +1268,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             automaton_states: widen(self.monitor.automaton().state_count()),
             depth: widen(self.nodes.iter().map(|node| node.depth).max().unwrap_or(0)),
             bound_limited: widen(self.bound_limited.len()),
+            instance_limited: widen(self.instance_limited.len()),
         }
     }
 
@@ -1283,13 +1333,25 @@ impl<S: SubjectSystem> Run<'_, S> {
         instances: &[Instance],
     ) -> Result<ModelCheckOutcome<S::TransitionId>, ModelCheckRefusal> {
         match self.explore() {
-            // ADR-025 MB-4: a bound-limited state settles before the horizon.
+            // ADR-025 MB-4: a bound-limited state settles first.
             Ok(()) => Ok(
                 if let (Some(bound), true) = (self.memory_bound, !self.bound_limited.is_empty()) {
                     ModelCheckOutcome::Memory {
                         cause: MemoryCause::BoundReached {
                             bound,
                             states: widen(self.bound_limited.len()),
+                        },
+                        stats: self.stats(),
+                    }
+                } else if let (Some(bound), true) =
+                    (self.instance_bound, !self.instance_limited.is_empty())
+                {
+                    // ADR-027 AE-4: an instance-limited state settles before
+                    // the horizon, after a bound-limited one.
+                    ModelCheckOutcome::Undecided {
+                        cause: UndecidedCause::InstanceBoundReached {
+                            bound,
+                            states: widen(self.instance_limited.len()),
                         },
                         stats: self.stats(),
                     }
@@ -1382,7 +1444,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             let expanded = match self.chooser {
                 Some(chooser) => chooser
                     .expand(&self.nodes[at].state)
-                    .map(|expansion| (expansion, false)),
+                    .map(|expansion| (expansion, Cut::default())),
                 None => self.system.successors_bounded(&self.nodes[at].state),
             };
             let (expansion, cut) = match expanded {
@@ -1390,7 +1452,7 @@ impl<S: SubjectSystem> Run<'_, S> {
                 Err(stop) => return Err(self.expansion_stop(stop)),
             };
             self.contracts(at, &expansion.findings)?;
-            if cut {
+            if cut.memory {
                 self.bound_limited.insert(self.nodes[at].digest);
                 // ADR-025 MB-3: a state whose only enabled steps are cut
                 // stores is a boundary state: never stutter-extended and
@@ -1399,8 +1461,17 @@ impl<S: SubjectSystem> Run<'_, S> {
                     continue;
                 }
             }
+            // ADR-027 AE-4: an instance-limited state is never terminal. With
+            // no expanded successor it is a boundary state, as MB-3's is:
+            // never closed, stutter-extended or a deadlock.
+            if cut.instances {
+                self.instance_limited.insert(self.nodes[at].digest);
+                if expansion.successors.is_empty() {
+                    continue;
+                }
+            }
             if matches!(self.item, Item::Deadlock) {
-                let after = self.deadlock_letter(at, !expansion.successors.is_empty())?;
+                let after = self.deadlock_letter(at, &expansion, cut)?;
                 self.nodes[at].monitor = vec![after];
             }
             let terminal = expansion.successors.is_empty();
@@ -1807,10 +1878,15 @@ impl<S: SubjectSystem> Run<'_, S> {
     /// deadlock. An undefined `terminal when` ends it with an undefined
     /// evaluation, before the monitor steps; a refused one leaves it
     /// undecided.
-    fn deadlock_letter(&mut self, at: usize, has_successor: bool) -> Step<StateId> {
+    fn deadlock_letter(
+        &mut self,
+        at: usize,
+        expansion: &Expansion<S::TransitionId, S::State, ModelFinding>,
+        cut: Cut,
+    ) -> Step<StateId> {
         let class = match self
             .system
-            .terminal_class(&self.nodes[at].state, has_successor)
+            .terminal_class(&self.nodes[at].state, expansion, cut)
         {
             Ok(class) => class,
             Err(stop) => return Err(self.expansion_stop(stop)),

@@ -36,6 +36,13 @@
 //! an acceptance (MB-4), and a state whose only steps were cut is a
 //! boundary state, never a deadlock.
 //!
+//! Over an `activation on each` protocol the checker expands under the
+//! request's `max_live_instances` (ADR-027 AE-4) alike: a reached state that
+//! left an `activate` step unexpanded makes the reached set closed only
+//! under the instance bound, and a check that otherwise passes returns
+//! `InstanceBoundReached` with the distinct instance-limited model states
+//! (after `MemoryBoundReached`), never an acceptance.
+//!
 //! Both items EN-1 decides here, TP-1 and deadlock freedom, have no future
 //! interval, so FR-338's non-progress acceptance check does not apply: they
 //! keep pure bad-prefix closure.
@@ -46,10 +53,11 @@ use qsl_eval::automaton::{AutomatonStateKey, SafetyItem, SafetyState};
 use qsl_eval::model_subject::{ModelLetters, ModelSubject, ProtocolSubject};
 use qsl_eval::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, ProtocolRefusal, ProtocolSystem, Sc, SubjectMemory,
+    activates_on_each, check_protocol_bounds, live_instance_bound, ProtocolRefusal, ProtocolSystem,
+    Sc, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
+    Cut, EncodingRefusal, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
     BOUND_POSITIONS,
 };
 use qsl_eval::temporal::AtomReading;
@@ -66,7 +74,7 @@ use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::identity::ClauseRootRefusal;
 use crate::model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 use crate::model_check::limits::{ModelCheckLimit, ModelCheckLimits};
-use crate::proof_result::{IncompleteCause, MemoryBound, MemoryBoundMember};
+use crate::proof_result::{IncompleteCause, InstanceBound, MemoryBound, MemoryBoundMember};
 
 /// One product state of a certificate: its model state's
 /// `quire.simulation.state-key/v1` digest and its automaton state's
@@ -145,6 +153,16 @@ pub enum TemporalCertificateCheck {
         /// The distinct bound-limited model states the check reached.
         states: u64,
     },
+    /// The check closed, but at `states` distinct reached model states an
+    /// `activate` step stayed unexpanded at `bound` (ADR-027 AE-4): the
+    /// reached set is closed only under the instance bound, so it is never
+    /// an acceptance.
+    InstanceBoundReached {
+        /// The instance bound the subject ran under.
+        bound: InstanceBound,
+        /// The distinct instance-limited model states the check reached.
+        states: u64,
+    },
 }
 
 /// FR-338's certificate request: the model subject, re-admitted by the
@@ -213,7 +231,7 @@ pub fn check_closure(
     check_system(
         &system,
         &system,
-        None,
+        Bounds::default(),
         &request.subject,
         &request.item,
         certificate,
@@ -233,6 +251,9 @@ pub struct ProtocolCertificateRequest<'a> {
     /// The `max_store_buffer` the run used; `None` for the default 4
     /// (FR-225).
     pub max_store_buffer: Option<u64>,
+    /// The `max_live_instances` the run used; `None` for the default 3
+    /// (ADR-027 AE-4).
+    pub max_live_instances: Option<u64>,
 }
 
 /// FR-338 over a protocol subject: [`check_closure`]'s check, with the
@@ -266,14 +287,22 @@ pub fn check_protocol_closure(
         .map_err(|refusal| ClosureRefusal::NotSimulated(Box::new(refusal)))?;
     let subject = &request.subject;
     let item = &request.item;
+    let live_instances = live_instance_bound(request.max_live_instances);
+    let instance = activates_on_each(protocol).then_some(InstanceBound {
+        value: live_instances,
+    });
     match SubjectMemory::of(&subject.memory, request.max_store_buffer) {
         SubjectMemory::Sc => {
-            let system =
-                ProtocolSystem::new(model, subject, Sc).map_err(ClosureRefusal::Protocol)?;
+            let system = ProtocolSystem::new(model, subject, Sc)
+                .map_err(ClosureRefusal::Protocol)?
+                .with_max_live_instances(live_instances);
             check_system(
                 &system,
                 system.model(),
-                None,
+                Bounds {
+                    memory: None,
+                    instance,
+                },
                 &subject.model,
                 item,
                 certificate,
@@ -286,12 +315,16 @@ pub fn check_protocol_closure(
                 member: MemoryBoundMember::MaxStoreBuffer,
                 value: tso.max_store_buffer(),
             };
-            let system =
-                ProtocolSystem::new(model, subject, tso).map_err(ClosureRefusal::Protocol)?;
+            let system = ProtocolSystem::new(model, subject, tso)
+                .map_err(ClosureRefusal::Protocol)?
+                .with_max_live_instances(live_instances);
             check_system(
                 &system,
                 system.model(),
-                Some(bound),
+                Bounds {
+                    memory: Some(bound),
+                    instance,
+                },
                 &subject.model,
                 item,
                 certificate,
@@ -304,12 +337,16 @@ pub fn check_protocol_closure(
                 member: MemoryBoundMember::MaxMessages,
                 value: ra.max_messages(),
             };
-            let system =
-                ProtocolSystem::new(model, subject, ra).map_err(ClosureRefusal::Protocol)?;
+            let system = ProtocolSystem::new(model, subject, ra)
+                .map_err(ClosureRefusal::Protocol)?
+                .with_max_live_instances(live_instances);
             check_system(
                 &system,
                 system.model(),
-                Some(bound),
+                Bounds {
+                    memory: Some(bound),
+                    instance,
+                },
                 &subject.model,
                 item,
                 certificate,
@@ -320,13 +357,21 @@ pub fn check_protocol_closure(
     }
 }
 
+/// The method bounds a checked subject runs under (ADR-025 MB-2, ADR-027
+/// AE-4); `None` for a bound the subject has none of.
+#[derive(Clone, Copy, Default)]
+struct Bounds {
+    memory: Option<MemoryBound>,
+    instance: Option<InstanceBound>,
+}
+
 /// [`check_closure`] over `system`, whose model is `model` and whose memory
-/// model runs under `bound` (`None` for one with no bound).
+/// and instance bounds are `bounds`.
 #[allow(clippy::too_many_arguments)]
 fn check_system<S: SubjectSystem>(
     system: &S,
     model: &ModelSystem<'_>,
-    bound: Option<MemoryBound>,
+    bounds: Bounds,
     subject: &ModelSubject<'_>,
     item: &ModelCheckItem<'_>,
     certificate: &ClosureCertificate,
@@ -415,17 +460,29 @@ fn check_system<S: SubjectSystem>(
         edges: 0,
         keys: BTreeSet::new(),
         limited: BTreeSet::new(),
+        instance_limited: BTreeSet::new(),
     };
     let run = check.run(&instances);
     // ADR-025 MB-4: a reached set closed only because the memory bound cut
     // steps is never accepted, so the item never settles `proved` over it.
     if run.is_ok() && !check.limited.is_empty() {
-        return match bound {
+        return match bounds.memory {
             Some(bound) => Ok(TemporalCertificateCheck::MemoryBoundReached {
                 bound,
                 states: widen(check.limited.len()),
             }),
             None => Err(fault("memory-bound-cut-without-bound")),
+        };
+    }
+    // ADR-027 AE-4, after the memory bound's: likewise for the instance
+    // bound.
+    if run.is_ok() && !check.instance_limited.is_empty() {
+        return match bounds.instance {
+            Some(bound) => Ok(TemporalCertificateCheck::InstanceBoundReached {
+                bound,
+                states: widen(check.instance_limited.len()),
+            }),
+            None => Err(fault("instance-bound-cut-without-bound")),
         };
     }
     finish(run)
@@ -445,9 +502,12 @@ struct Pending<S: SubjectSystem> {
     expansion: Option<SubjectExpansion<S>>,
 }
 
-/// One expansion of a subject's state.
-type SubjectExpansion<S> =
-    Expansion<<S as TransitionSystem>::TransitionId, <S as TransitionSystem>::State, ModelFinding>;
+/// One expansion of a subject's state, and what a method bound left of it
+/// unexpanded.
+type SubjectExpansion<S> = (
+    Expansion<<S as TransitionSystem>::TransitionId, <S as TransitionSystem>::State, ModelFinding>,
+    Cut,
+);
 
 struct Check<'c, S: SubjectSystem> {
     system: &'c S,
@@ -464,6 +524,9 @@ struct Check<'c, S: SubjectSystem> {
     /// The reached model states whose expansion cut a step at the memory
     /// bound (ADR-025 MB-3).
     limited: BTreeSet<DigestRecord>,
+    /// The reached model states whose expansion left an `activate` step
+    /// unexpanded at the instance bound (ADR-027 AE-4).
+    instance_limited: BTreeSet<DigestRecord>,
 }
 
 impl<S: SubjectSystem> Check<'_, S> {
@@ -502,7 +565,7 @@ impl<S: SubjectSystem> Check<'_, S> {
             }
             while let Some(pending) = queue.pop_front() {
                 self.poll()?;
-                let expansion = match pending.expansion {
+                let (expansion, _) = match pending.expansion {
                     Some(expansion) => expansion,
                     None => self.expand(&pending.state, &pending.at)?,
                 };
@@ -578,7 +641,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     return Err(Self::reject(missing, at));
                 }
                 let carried = self.product(instance, digest, SafetyState::Carried)?;
-                let expansion = self.expand(&state, &carried)?;
+                let (expansion, cut) = self.expand(&state, &carried)?;
                 // ADR-025 MB-3: a state whose only enabled steps were cut at
                 // the memory bound is a boundary state, never a deadlock; the
                 // check then settles `MemoryBoundReached`.
@@ -587,7 +650,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                     TerminalClass::NotTerminal
                 } else {
                     self.system
-                        .terminal_class(&state, !expansion.successors.is_empty())
+                        .terminal_class(&state, &expansion, cut)
                         .map_err(|stop| self.expansion_stop(stop))?
                 };
                 let holds = match class {
@@ -598,7 +661,7 @@ impl<S: SubjectSystem> Check<'_, S> {
                         return Err(Self::reject(CertificateRule::BadState, at));
                     }
                 };
-                (translation.read(before, holds), Some(expansion))
+                (translation.read(before, holds), Some((expansion, cut)))
             }
         };
         let at = self.product(instance, digest, after)?;
@@ -626,15 +689,19 @@ impl<S: SubjectSystem> Check<'_, S> {
     /// Expand the reached product state `at`: a contract conjunction the
     /// expansion could not determine makes it bad (ADR-018 UE-6, V-6). A
     /// step the memory model cut at its bound records `at`'s model state as
-    /// bound-limited (ADR-025 MB-3).
+    /// bound-limited (ADR-025 MB-3), and one the instance bound left an
+    /// `activate` step of unexpanded as instance-limited (ADR-027 AE-4).
     fn expand(&mut self, state: &S::State, at: &ProductStateRef) -> Step<SubjectExpansion<S>> {
         self.poll()?;
         let (expansion, cut) = self
             .system
             .successors_bounded(state)
             .map_err(|stop| self.expansion_stop(stop))?;
-        if cut {
+        if cut.memory {
             self.limited.insert(at.model_state);
+        }
+        if cut.instances {
+            self.instance_limited.insert(at.model_state);
         }
         if expansion.findings.iter().any(|finding| {
             matches!(
@@ -645,7 +712,7 @@ impl<S: SubjectSystem> Check<'_, S> {
         }) {
             return Err(Self::reject(CertificateRule::BadState, at.clone()));
         }
-        Ok(expansion)
+        Ok((expansion, cut))
     }
 
     /// The product state of `digest` and `state` under `instance`'s
