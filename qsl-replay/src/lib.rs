@@ -28,7 +28,9 @@
 
 #![forbid(unsafe_code)]
 
+mod admitted;
 mod bounds;
+mod call_requirements;
 mod call_site;
 mod compile;
 // The facade exports the rejection vocabulary. Zone arithmetic stays
@@ -57,7 +59,14 @@ pub mod statistical;
 mod supplied_limits;
 mod witness;
 
+pub use admitted::{
+    compile_admitted, AdmittedCompilation, AdmittedContext, AdmittedEnum, AdmittedEnumCase,
+    AdmittedLookupRefusal, AdmittedRefusal, AdmittedResource,
+};
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
+pub use call_requirements::{
+    run_with_requirements, CallRequirement, CallRequirements, RunWithRequirements,
+};
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
@@ -125,7 +134,7 @@ pub use model_check::hyper_counterexample::{
 pub use model_check::hyper_outcome::{HyperOutcome, HyperReductionCause};
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
-pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
+pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
     DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,
@@ -175,11 +184,11 @@ pub use outcome::{
 };
 pub use proof_result::{
     read_backend_provider_envelope, AppliedReduction, BackendProviderSource, Certification,
-    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, MemoryBound,
+    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedMemoryBound,
-    StatisticalRequestRefusal, SymmetryBrokenCause, TerminalRecord, TerminalRecordRefusal,
-    TerminalValue, UnavailabilityCause,
+    Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
+    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
@@ -216,7 +225,18 @@ pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNod
 // so CG names `Category::Success` and `Category::Violation` through this crate.
 pub use qsl_foundation::diagnostic::Category;
 pub use qsl_foundation::SourceIdentity;
-pub use quire_exact::{Identifier, Origin, Role, ScalarLimits, Value};
+pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
+// FR-395: the types of `run`'s signature and result that the root did not
+// export, so a consumer calls `run_with_requirements` and reads its result
+// without naming `qsl_replay::spine` or `qsl_semantics`.
+pub use qsl_semantics::library::PackageId;
+pub use qsl_semantics::model::object_environment::ObjectEnvironment;
+pub use qsl_semantics::value::supplied::SuppliedLimits;
+pub use quire_exact::{Cancel, CancelCause};
+pub use spine::{
+    Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,
+    CompileRefusal, RunRefusal, SpineLimits,
+};
 // The input refusal a `ReplayRefusal::Input` and a value-parity
 // `ValueParityResult::RefusedInput` carry.
 pub use quire_semantic_value::call::InputRefusal;

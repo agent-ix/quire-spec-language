@@ -10,9 +10,11 @@
 //! same scan over negated operands with a negated result. Every walk here
 //! runs over the arena in index order, forward or reverse, so none recurses.
 
-use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
+use qsl_foundation::bound::TemporalUpper;
 use qsl_foundation::InternalFault;
-use qsl_semantics::check::{BinaryTemporal, CheckedFormula, FormulaNode, UnaryTemporal};
+use qsl_semantics::check::{
+    BinaryTemporal, CheckedFormula, CheckedInterval, FormulaNode, UnaryTemporal,
+};
 
 pub(super) const STAGE: &str = "eval.temporal";
 
@@ -69,10 +71,14 @@ pub(super) enum Window {
 }
 
 impl Window {
-    fn of(interval: Option<TemporalInterval>) -> Self {
-        match interval {
+    /// The offsets of a step interval. A timed interval counts time, not
+    /// positions, and has no offsets: the timed evaluator reads it
+    /// (`temporal::timed`), and a clause holding one is refused before a
+    /// step reader sees it.
+    fn of(interval: Option<&CheckedInterval>) -> Result<Self, InternalFault> {
+        Ok(match interval {
             None => Self::From { lower: 0 },
-            Some(interval) => match interval.upper() {
+            Some(CheckedInterval::Steps(interval)) => match interval.upper() {
                 TemporalUpper::Finite(upper) => Self::Closed {
                     lower: interval.lower(),
                     upper,
@@ -81,7 +87,8 @@ impl Window {
                     lower: interval.lower(),
                 },
             },
-        }
+            Some(CheckedInterval::Timed(_)) => return Err(fault("step-interval-has-offsets")),
+        })
     }
 }
 
@@ -125,6 +132,21 @@ pub(super) struct Plan {
 }
 
 impl Plan {
+    /// Whether some operator has an interval, so that the truth of the
+    /// formula depends on how distance is counted (ADR-027 PB-3). A formula
+    /// without one reads the same whether a step counts or not.
+    pub(super) fn measures_distance(&self) -> bool {
+        self.nodes.iter().any(|node| match node {
+            Node::Scan(scan) => scan.window != Window::From { lower: 0 },
+            Node::Constant(_)
+            | Node::Atom
+            | Node::Not(_)
+            | Node::And(..)
+            | Node::Or(..)
+            | Node::Implies(..) => false,
+        })
+    }
+
     pub(super) fn new(formula: &CheckedFormula) -> Result<Self, InternalFault> {
         let mut nodes = Vec::with_capacity(formula.nodes().len());
         let mut atoms = Vec::new();
@@ -153,7 +175,7 @@ impl Plan {
                     Node::Scan(Scan {
                         base,
                         dual,
-                        window: Window::of(*interval),
+                        window: Window::of(interval.as_ref())?,
                         guard: None,
                         witness: operand.index(),
                     })
@@ -173,7 +195,7 @@ impl Plan {
                     Node::Scan(Scan {
                         base,
                         dual,
-                        window: Window::of(*interval),
+                        window: Window::of(interval.as_ref())?,
                         guard: Some(left.index()),
                         witness: right.index(),
                     })
@@ -241,19 +263,35 @@ impl Plan {
         })
     }
 
-    /// ADR-018 SM-8: each node's past reach on a lasso whose loop holds
-    /// `loop_len` positions.
-    pub(super) fn past_reach(&self, loop_len: u128) -> Result<Vec<u128>, InternalFault> {
+    /// ADR-018 SM-8: each node's past reach, in positions, on a lasso whose
+    /// loop holds `loop_len` positions. `per_pass` is the counted steps of
+    /// one pass of the loop when some step does not count (ADR-027 PB-3):
+    /// a window of `b` counted steps then reaches back over `ceil(b /
+    /// per_pass) + 1` passes, and over every earlier pass of a loop that has
+    /// none, as an open window does.
+    pub(super) fn past_reach(
+        &self,
+        loop_len: u128,
+        per_pass: Option<u128>,
+    ) -> Result<Vec<u128>, InternalFault> {
+        let positions = |steps: u64| match per_pass {
+            None => u128::from(steps),
+            Some(0) => loop_len,
+            Some(counted) => u128::from(steps)
+                .div_ceil(counted)
+                .saturating_add(1)
+                .saturating_mul(loop_len),
+        };
         self.fold_up(|node, operands| match node {
             Node::Constant(_) | Node::Atom => 0,
             Node::Not(_) | Node::And(..) | Node::Or(..) | Node::Implies(..) => operands,
             Node::Scan(scan) => match (scan.base.direction(), scan.window) {
                 (Direction::Future, _) => operands,
                 (Direction::Past, Window::Closed { upper, .. }) => {
-                    operands.saturating_add(u128::from(upper))
+                    operands.saturating_add(positions(upper))
                 }
                 (Direction::Past, Window::From { lower }) => operands
-                    .saturating_add(u128::from(lower))
+                    .saturating_add(positions(lower))
                     .saturating_add(loop_len),
             },
         })

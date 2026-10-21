@@ -1988,6 +1988,7 @@ fn protocol(g: &mut Grammar) {
             ident(),
             literal("abstract"),
             ident(),
+            opt(s(vec![x("::"), member()])),
             literal("concrete"),
             ident(),
             x("{"),

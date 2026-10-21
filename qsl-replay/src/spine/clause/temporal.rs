@@ -308,5 +308,14 @@ fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
             WindowRefusal::TimestampsDecrease => TemporalWindowRefusal::TimestampsDecrease,
         }),
         TemporalRefusal::Fault(fault) => TemporalTraceRefusal::Fault(fault),
+        // The timed evaluator's refusals: the spine reads a clause through
+        // the step evaluator only, which never returns them.
+        TemporalRefusal::NotTimedProfile { .. }
+        | TemporalRefusal::NegativeStamp { .. }
+        | TemporalRefusal::DecreasingStamp { .. }
+        | TemporalRefusal::NonPositiveLoopDelay
+        | TemporalRefusal::LoopReentersBeforeLastStamp => TemporalTraceRefusal::Fault(
+            qsl_foundation::diagnostic::InternalFault::new("temporal", "step-evaluator-refusal"),
+        ),
     }
 }

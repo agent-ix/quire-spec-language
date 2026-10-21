@@ -33,7 +33,7 @@ use qsl_replay::{
     ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceRefusal,
     ModelTraceReplayResult, ModelTraceSettlement, ModelTraceSubject, ProtocolCertificateRequest,
     ProtocolTraceSubject, ReplayLimits, ReplayRefusal, ResultLabel, StatedMemoryBound,
-    TemporalCounterexample, TerminalValue, UnavailabilityCause,
+    TemporalCounterexample, TerminalValue, UnavailabilityCause, UndecidedCause,
 };
 use qsl_semantics::check::{AccessClass, FormulaNodeId};
 use quire_exact::{Cancel, Incomplete, Meter};
@@ -47,7 +47,7 @@ use crate::litmus::{
 use crate::model_settle::{envelope_at, request};
 
 /// The request entry selecting `model` for `parallel`.
-fn select(parallel: &str, model: MemoryModelName) -> MemorySelection {
+pub(crate) fn select(parallel: &str, model: MemoryModelName) -> MemorySelection {
     MemorySelection {
         parallel: parallel.to_owned(),
         model,
@@ -55,7 +55,7 @@ fn select(parallel: &str, model: MemoryModelName) -> MemorySelection {
 }
 
 /// One unit, its documents and its checked package.
-struct Case {
+pub(crate) struct Case {
     body: String,
     documents: Documents,
     checked: CheckedPackage,
@@ -64,12 +64,12 @@ struct Case {
 }
 
 impl Case {
-    fn new(body: &str) -> Self {
+    pub(crate) fn new(body: &str) -> Self {
         Self::with_letters(body, &NoBothZero)
     }
 
     /// The unit with `body`, its claim's atom read by `letters`.
-    fn with_letters(body: &str, letters: &'static dyn ModelLetters) -> Self {
+    pub(crate) fn with_letters(body: &str, letters: &'static dyn ModelLetters) -> Self {
         Self {
             body: body.to_owned(),
             documents: Documents::new(),
@@ -78,12 +78,12 @@ impl Case {
         }
     }
 
-    fn subject(&self, selection: &[MemorySelection]) -> ProtocolSubject<'_> {
+    pub(crate) fn subject(&self, selection: &[MemorySelection]) -> ProtocolSubject<'_> {
         self.documents.subject(&self.checked, "SB", selection)
     }
 
     /// EN-1's classification of `SB` under `selection`.
-    fn accesses(&self, selection: &[MemorySelection]) -> WeakAccesses {
+    pub(crate) fn accesses(&self, selection: &[MemorySelection]) -> WeakAccesses {
         let subject = self.subject(selection);
         let model = ModelSystem::new(subject.model.simulation.clone()).expect("admits");
         let protocol = self.checked.graph().protocol("SB").expect("SB");
@@ -91,7 +91,7 @@ impl Case {
     }
 
     /// The protocol system of `SB` under `memory`.
-    fn system<M: MemoryModel>(
+    pub(crate) fn system<M: MemoryModel>(
         &self,
         selection: &[MemorySelection],
         memory: M,
@@ -102,11 +102,22 @@ impl Case {
     }
 
     /// EN-1 over `SB` with `item`, the selection and the store buffer bound.
-    fn check(
+    pub(crate) fn check(
         &self,
         selection: &[MemorySelection],
         item: ModelCheckItem<'_>,
         max_store_buffer: Option<u64>,
+    ) -> ModelCheckOutcome<ProtocolTransition> {
+        self.check_bounded(selection, item, max_store_buffer, None)
+    }
+
+    /// [`Self::check`] under the instance bound `max_live_instances` too.
+    fn check_bounded(
+        &self,
+        selection: &[MemorySelection],
+        item: ModelCheckItem<'_>,
+        max_store_buffer: Option<u64>,
+        max_live_instances: Option<u64>,
     ) -> ModelCheckOutcome<ProtocolTransition> {
         check_protocol(
             ProtocolCheckRequest {
@@ -114,6 +125,7 @@ impl Case {
                 item,
                 max_depth: None,
                 max_store_buffer,
+                max_live_instances,
                 limits: ModelCheckLimits::default(),
             },
             &Cancel::new(),
@@ -122,7 +134,7 @@ impl Case {
     }
 
     /// EN-1 over `SB`'s claim.
-    fn claim(
+    pub(crate) fn claim(
         &self,
         selection: &[MemorySelection],
         max_store_buffer: Option<u64>,
@@ -140,7 +152,7 @@ impl Case {
 
     /// FR-127's record of `outcome` over the claim (the deadlock-freedom
     /// item when `deadlock`), its counterexample replayed by FR-217.
-    fn settle(
+    pub(crate) fn settle(
         &self,
         selection: &[MemorySelection],
         outcome: &ModelCheckOutcome<ProtocolTransition>,
@@ -163,6 +175,7 @@ impl Case {
                 subject: self.subject(selection),
                 item,
                 max_store_buffer,
+                max_live_instances: None,
             },
             &Cancel::new(),
             |payload| self.replay(selection, payload.clone()),
@@ -170,7 +183,7 @@ impl Case {
     }
 
     /// FR-098's `package_id` of the unit.
-    fn package_id(&self) -> DigestRecord {
+    pub(crate) fn package_id(&self) -> DigestRecord {
         compile_package(
             SourceIdentity::new("agent-ix", "litmus", "git", "1"),
             "litmus.native",
@@ -186,7 +199,7 @@ impl Case {
 
     /// The subject FR-217's replay reads, its resolved models `selection`'s
     /// (FR-227 Inputs).
-    fn trace_subject(&self, selection: &[MemorySelection]) -> ProtocolTraceSubject {
+    pub(crate) fn trace_subject(&self, selection: &[MemorySelection]) -> ProtocolTraceSubject {
         let subject = self.subject(selection);
         ProtocolTraceSubject {
             model: ModelTraceSubject {
@@ -199,12 +212,13 @@ impl Case {
             roles: subject.roles.clone(),
             memory: subject.memory.clone(),
             max_store_buffer: None,
+            max_live_instances: None,
         }
     }
 
     /// FR-217's replay of `payload`, a counterexample to the claim, with
     /// the subject's resolved models replaced by `selection`'s.
-    fn replay(
+    pub(crate) fn replay(
         &self,
         selection: &[MemorySelection],
         payload: TemporalCounterexample<ProtocolTransition>,
@@ -226,7 +240,7 @@ impl Case {
 
 /// The claim's one atom, `not (k.r1 = 0 and k.r2 = 0)`, read from the
 /// bound core's registers.
-struct NoBothZero;
+pub(crate) struct NoBothZero;
 
 impl ModelLetters for NoBothZero {
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
@@ -251,13 +265,13 @@ impl ModelLetters for NoBothZero {
 }
 
 /// The branch thread `label` of `Both`'s first instance.
-fn branch(label: &str) -> ThreadPath {
+pub(crate) fn branch(label: &str) -> ThreadPath {
     ThreadPath::root(0).child("Both", label, 0)
 }
 
 /// ADR-025 §10's counts: states with a live branch thread, and states
 /// whose root rests at `finish`.
-fn counts<M: MemoryModel>(
+pub(crate) fn counts<M: MemoryModel>(
     system: &ProtocolSystem<'_, M>,
     reached: &[Reached<M>],
 ) -> (usize, usize) {
@@ -690,7 +704,10 @@ fn orderings_change_nothing_under_sc() {
 }
 
 /// The memory member of `state`'s key.
-fn memory_member<M: MemoryModel>(system: &ProtocolSystem<'_, M>, state: &ProtocolState<M>) -> Json {
+pub(crate) fn memory_member<M: MemoryModel>(
+    system: &ProtocolSystem<'_, M>,
+    state: &ProtocolState<M>,
+) -> Json {
     let (key, _) = system.state_key(state).expect("a key");
     serde_json::from_slice::<Json>(&key).expect("JSON")["memory"].clone()
 }
@@ -808,7 +825,7 @@ fn store_buffering_under_tso_reaches_38_states_and_is_refuted() {
 
 /// `SB` with a `fence` of `left` and of `right` between each store and its
 /// load.
-fn fenced_sb(left: &str, right: &str) -> String {
+pub(crate) fn fenced_sb(left: &str, right: &str) -> String {
     format!(
         "parallel Both {{ \
          branch left sequence L {{ {} fence Fl ordering {left}; {} }} \
@@ -1611,8 +1628,8 @@ fn a_refuted_run_that_cut_a_store_states_its_bound_reached() {
 }
 
 /// A protocol system under `Sc` refuses a subject that resolves a
-/// `parallel` to `tso`, and every system refuses `ra`, which is not
-/// stepped: `unsupported_construct`/`not-yet-implemented`.
+/// `parallel` to `tso`, and one under `Tso` refuses `ra`:
+/// `unsupported_construct`/`not-yet-implemented`.
 #[trace("TC-666")]
 #[test]
 fn a_memory_model_refuses_a_resolved_model_it_does_not_implement() {
@@ -1639,7 +1656,7 @@ fn a_memory_model_refuses_a_resolved_model_it_does_not_implement() {
 
 /// A claim's one atom over the bound core's registers: the weak outcome
 /// `0` of a litmus test does not hold.
-struct Forbid(fn(&ModelSimState, &str) -> bool);
+pub(crate) struct Forbid(pub(crate) fn(&ModelSimState, &str) -> bool);
 
 impl ModelLetters for Forbid {
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
@@ -1662,7 +1679,7 @@ impl ModelLetters for Forbid {
 }
 
 /// Register `name` of the core `key`.
-fn register(state: &ModelSimState, key: &str, name: &str) -> i64 {
+pub(crate) fn register(state: &ModelSimState, key: &str, name: &str) -> i64 {
     field(state, "cores", key, name)
 }
 
@@ -1694,15 +1711,15 @@ fn coherent_reads(state: &ModelSimState, key: &str) -> bool {
     register(state, key, "r1") == 1 && register(state, key, "r2") == 0
 }
 
-static MP: Forbid = Forbid(message_passing);
-static LB: Forbid = Forbid(load_buffering);
-static IRIW: Forbid = Forbid(independent_reads);
-static TWO_PLUS_TWO_W: Forbid = Forbid(two_plus_two_writes);
-static CORR: Forbid = Forbid(coherent_reads);
+pub(crate) static MP: Forbid = Forbid(message_passing);
+pub(crate) static LB: Forbid = Forbid(load_buffering);
+pub(crate) static IRIW: Forbid = Forbid(independent_reads);
+pub(crate) static TWO_PLUS_TWO_W: Forbid = Forbid(two_plus_two_writes);
+pub(crate) static CORR: Forbid = Forbid(coherent_reads);
 
 /// A litmus `parallel Both` with `branches` (label, control), inside
 /// `sequence Main` and followed by `after`.
-fn litmus_run(branches: &[(&str, String)], after: &str) -> String {
+pub(crate) fn litmus_run(branches: &[(&str, String)], after: &str) -> String {
     let labels: Vec<&str> = branches.iter().map(|(label, _)| *label).collect();
     let bodies: String = branches
         .iter()
@@ -1715,12 +1732,12 @@ fn litmus_run(branches: &[(&str, String)], after: &str) -> String {
 }
 
 /// A branch body of the attempts `attempts`, in a sequence `name`.
-fn steps(name: &str, attempts: &[String]) -> String {
+pub(crate) fn steps(name: &str, attempts: &[String]) -> String {
     format!("sequence {name} {{ {} }}", attempts.concat())
 }
 
 /// The store `node` of `value` (`StoreOne` or `StoreTwo`) to `cell`.
-fn store(node: &str, cell: &str, value: &str) -> String {
+pub(crate) fn store(node: &str, cell: &str, value: &str) -> String {
     let select = if cell == "x" { "IsX" } else { "IsY" };
     attempt(
         node,
@@ -1732,13 +1749,13 @@ fn store(node: &str, cell: &str, value: &str) -> String {
 }
 
 /// The `relaxed` load `node` of `cell` into register `n`.
-fn load(node: &str, cell: &str, n: u8) -> String {
+pub(crate) fn load(node: &str, cell: &str, n: u8) -> String {
     load_ordered(node, cell, n, "relaxed")
 }
 
 /// The load `node` of `cell` into register `n` with `ordering` (empty for
 /// none, as a local access must be).
-fn load_ordered(node: &str, cell: &str, n: u8, ordering: &str) -> String {
+pub(crate) fn load_ordered(node: &str, cell: &str, n: u8, ordering: &str) -> String {
     let select = if cell == "x" { "ReadsX" } else { "ReadsY" };
     attempt(
         node,
@@ -1838,7 +1855,7 @@ fn forbidden_litmus() -> Vec<(&'static str, String, &'static Forbid)> {
 }
 
 /// The core's registers at every terminal state of `system`.
-fn outcomes<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> BTreeSet<Vec<i64>> {
+pub(crate) fn outcomes<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> BTreeSet<Vec<i64>> {
     reachable(system)
         .iter()
         .filter(|state| state.steps.is_empty())
@@ -2083,6 +2100,21 @@ fn every_independent_pair_of_tso_steps_commutes() {
         (contracts() + &protocol("SB", &mp), "SB::Main::Both"),
         (send_unit(), "SB::Both"),
         (sb_unit(&fenced_sb("seq_cst", "acquire")), "SB::Both"),
+        // A replicated role's event, `spawn` and `finish` beside the
+        // `parallel`'s stores and flushes (ADR-027 RR-2, FT-1).
+        (
+            contracts()
+                + &protocol_with(
+                    "SB",
+                    "role r each M::Core from cores max 1 lifetime workflow;",
+                    &format!(
+                        "sequence Main {{ event E by r as (e: Boolean) {{ e }}; {} }}",
+                        sb_run("", "release", "acquire")
+                    ),
+                )
+                + NO_BOTH_ZERO,
+            "SB::Main::Both",
+        ),
     ];
     let mut flushes = 0;
     for (body, parallel) in &units {
@@ -2171,5 +2203,53 @@ fn a_closure_certificate_closed_only_under_a_cutting_bound_is_not_proved() {
             bound: bound(4),
             reached: false,
         })
+    );
+}
+
+/// Part of FR-209-AC-4 (TC-654, ADR-025 MB-4): a run over an `on each`
+/// protocol under `tso` where both the store buffer bound and the instance
+/// bound limited a state, with no counterexample, settles
+/// `MemoryBoundReached`; with the store buffer bound out of reach, the
+/// same run settles `InstanceBoundReached`.
+#[test]
+fn the_memory_bound_settles_before_the_instance_bound() {
+    let run = format!(
+        "parallel Both {{ branch left sequence L {{ {} {} }} \
+         branch right sequence R {{ {} {} }} }} join all [left, right];",
+        attempt("S1", "w", "Cell::set", "relaxed", "IsX, StoreOne"),
+        attempt("S2", "w", "Cell::set", "relaxed", "IsY, StoreOne"),
+        attempt("Lx", "c", "Core::read2", "relaxed", "ReadsX2, Read2"),
+        attempt("Ly", "c", "Core::read1", "relaxed", "ReadsY1, Read1"),
+    );
+    let origin = contracts() + &protocol("SB", &run) + NO_BOTH_ZERO;
+    let each = origin.replacen(
+        " on origin {\n",
+        " on each (x: M::Level) when (true) {\n",
+        1,
+    );
+    assert_ne!(each, origin);
+    let two = Case::new(&each);
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let both = two.check_bounded(&tso, ModelCheckItem::DeadlockFreedom, Some(1), Some(1));
+    assert!(
+        matches!(
+            both,
+            ModelCheckOutcome::Memory {
+                cause: MemoryCause::BoundReached { .. },
+                ..
+            }
+        ),
+        "{both:?}"
+    );
+    let instances = two.check_bounded(&tso, ModelCheckItem::DeadlockFreedom, None, Some(1));
+    assert!(
+        matches!(
+            instances,
+            ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::InstanceBoundReached { .. },
+                ..
+            }
+        ),
+        "{instances:?}"
     );
 }

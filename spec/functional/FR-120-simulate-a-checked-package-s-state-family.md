@@ -363,17 +363,18 @@ application's operation (FR-104) and `r`'s most-specific type conforms to
 the clause's context type.
 
 The effective precondition is `true` when no `pre` clause applies, and
-otherwise is the conjunction of the applicable clauses. QSpec FR-151:88-90
-defines the effective precondition as "the disjunction of its own
-precondition clauses with the effective preconditions of the members it
-redefines", which joins a member's own precondition to the inherited ones,
-and makes an absent precondition `true`. How several own clauses of one
-member combine is QSL's inference where FR-151 is silent: they are
-conjoined, as own postcondition clauses are, which is the reading TC-196
-D06 ("its absent (true) clause disjoined with PA") and `effective_terms`
-(`qsl-semantics/src/check/checked_dispatch.rs:477`) take. On the spine every
-operation record's `redefines` is `None` (`qsl-semantics/src/model/
-intake.rs:1444`), so the applicable clauses are the selected member's own.
+otherwise is formed as QSpec FR-151's rule `quire.model.conformance.refinement/v1`
+defines it (QSpec FR-151-AC-17 to AC-19, TC-196 D09 to D11): `own(m)` and
+`eff(m)` are QSpec's, and a member's own clauses are conjoined in
+ascending clause name (UTF-8 bytes) under FR-006's short-circuit, so an
+undefined clause that sorts before a false one makes the precondition
+undefined and the reverse order makes it `false`. The order does not depend on
+source position, source unit or link order (verified for a package of one unit, FR-120-AC-15; see Remaining work). The dispatch path conjoins the own
+clauses through `view_clauses` (`dispatch_link.rs`) and disjoins the result
+with the redefined member's through `effective_terms`
+(`checked_dispatch.rs`). On the spine every operation record's `redefines` is
+`None` (`qsl-semantics/src/model/intake.rs:1444`), so the applicable clauses
+are the selected member's own.
 The effective postcondition is the conjunction of the applicable `post`
 clauses, and `true` when none applies.
 
@@ -390,14 +391,28 @@ clause in ascending name order (UTF-8 bytes):
   `established-invariant-broken` at once: the simulator built the
   observations itself, so a refused selection is a broken internal
   invariant.
-- Otherwise, the conjunction is `true` when every clause is
+- Otherwise, for a postcondition, the conjunction is `true` when every clause is
   `Completed(true)` and `false` when any clause is `Completed(false)`. When
   no clause is `Completed(false)` and one or more are `Undefined` or
   `Refused`, the conjunction is undecided, and the expanded state gains one
   `ModelFinding::ContractUndetermined { transition, candidate, clause,
   evaluation }` per such clause, in name order; `candidate` is the
-  candidate's state-key digest for a postcondition and none for a
-  precondition. The result depends only on the set of clause outcomes.
+  candidate's state-key digest. The result depends only on the set of clause
+  outcomes.
+
+For the effective precondition the conjunction over one member's own
+clauses is QSpec FR-151's: clauses in ascending name order, each evaluated
+under FR-006's short-circuit, and evaluation stops at the first clause that is
+not `Completed(true)`; the clauses after it are not evaluated or charged. A
+`Completed(false)` clause makes the precondition `false`: the application is
+not enabled and no finding is recorded. A clause that is `Undefined` or
+`Refused` makes the precondition undecided: the application is not enabled
+and the expanded state gains one `ModelFinding::ContractUndetermined
+{ transition, candidate, clause, evaluation }` for that stopping clause, with
+`candidate` none. An undefined clause that sorts before a false one therefore
+gives the undecided outcome, and the reverse order gives `false`. For the
+effective postcondition the conjunction keeps the outcome rule above and
+depends only on the set of clause outcomes.
 
 An application is enabled when its effective precondition is `true`.
 
@@ -554,12 +569,13 @@ identity text of operation `op`.
 | FR-120-AC-6 | With `increment`, `Small`, no `pre` or `post` clause and a meter budget of zero, exploration is `Exhaustive` with 3 states, and each state has `InvariantUndetermined` for `Small` and `c1`, its evaluation `Incomplete` with `resource_exhausted`/`insufficient-next-charge`. With budget zero and `CanInc`, the run is `Outcome::Stopped` with cause `resource_exhausted`/`insufficient-next-charge`, frontier `[<s0>]`, category incomplete. With `max_candidates` 2 and `increment` with no clause, the run is `Stopped` with the same cause. | Test (TC-472) |
 | FR-120-AC-7 | `ModelSystem::new` refuses an initial snapshot with `observation` `pre` (`wrong_snapshot`/`wrong-observation`), one anchored `{handler, validate}` (`wrong_snapshot`/`wrong-anchor`), one whose anchor kind is `other` (`invalid_runtime_input`/`wrong-value-kind` with field `anchor`, refused by FR-106's document reader, `qsl-semantics/src/model/observation/document.rs:525-528`, before check 3), and one holding `c3` (`invalid_runtime_input`/`invalid-value`); a universe listing `c1` twice refuses `invalid_runtime_input`/`conflicting-identity`; a universe for a population the package does not declare refuses `invalid_runtime_input`/`wrong-role-mapping`; a universe population absent from the snapshot returns `Incomplete` with `incomplete_population`/`incomplete-scope`. With no universe for `counters`, or with an operation parameter typed `Integer`, `explore_model` returns `NotSimulated::RequiresBound`, and `sample_model` `ModelSampleError::NotSimulated(RequiresBound)`, naming that root's `WireNodeId` and expand no state. | Test (TC-472) |
 | FR-120-AC-8 | A `sample_model` trace (seed `424242`, trace `0`, `max_steps` 4) over the AC-5 package ends `NoSuccessors` at `v2`, records `Small`'s finding at step 2, and replays; the same trace with that finding removed refuses `ReplayError::FindingMismatch` at step 2. With budget zero and `CanInc`, the trace ends `StopReason::Stopped(resource_exhausted/insufficient-next-charge)` at step 0 and replays; replayed against the same package with the default budget it refuses `ReplayError::Stopped { step: 0, recorded: Some(…), replayed: None }`. Two runs with equal inputs give equal `Exploration`s and equal `ModelTrace`s. | Test (TC-472) |
-| FR-120-AC-9 | Over the `test/orders` dispatch fixture (object type `A`, population `pop`, a query operation `ready(): Boolean` of `A` whose effective precondition is `false`, `guard` false): from `t1`, `pre Low { self.ready() }` on `ready` makes `ready` not enabled and records `ContractUndetermined { <ready identity>, none, Low, the family result Undefined with reason precondition-false }`; adding `pre Never { false }` records no finding; `post LowPost { self.ready() }` on `ready` records the finding with `candidate` = `t1`'s state-key digest and gives no successor. Not covered: the `test/tallies` package with `Tally`, its `Sequence<Int[0, 2]>[1, 1]` field and an empty-frame `touch()` (the `touch` operation and the post-`LowPost` case on it), and the `pre Aaa { false }` name-order case. | Test (TC-472) |
+| FR-120-AC-9 | Over the `test/orders` dispatch fixture (object type `A`, population `pop`, a query operation `ready(): Boolean` of `A` whose effective precondition is `false`, `guard` false): from `t1`, `pre Low { self.ready() }` on `ready` makes `ready` not enabled and records `ContractUndetermined { <ready identity>, none, Low, the family result Undefined with reason precondition-false }`; adding `pre Aaa { false }`, which sorts before `Low`, records no finding; `post LowPost { self.ready() }` on `ready` records the finding with `candidate` = `t1`'s state-key digest and gives no successor. Not covered: the `test/tallies` package with `Tally`, its `Sequence<Int[0, 2]>[1, 1]` field and an empty-frame `touch()` (the `touch` operation and the post-`LowPost` case on it). | Test (TC-472) |
 | FR-120-AC-10 | With `isZero(): Boolean` (empty frame, `post Z { result = (self.value = 0) }`), `v0` has one `isZero` successor, `v0`, whose step effect has result `{"type":"boolean","value":true}`, and `v1` has one, `v1`, with result `false`; the `isZero` result root is in `domains()`. | Test (TC-473) |
 | FR-120-AC-11 | For `increment` (post `Inc`), `spawn` and `remove` over `s0` and state `w` = {`c1` (`value` 0), `c2` (`value` 0)}: the step `increment` from `v0` has effect `created: []`, `deleted: []`, `changed: [{object: c1, field: value, pre: {"type":"integer","value":"0"}, post: {"type":"integer","value":"1"}}]`, result none; `spawn` from `s0` to `s0` plus `c2` (`value` 1, `label` 0, `next` absent) has `created: [<c2>]` and `changed: []`; `remove` with receiver `c1` from `w` to {`c2`} has `deleted: [<c1>]`. Exploring the AC-5 package twice, the second time in a child process started in an empty temporary directory, gives equal `Exploration`s, and `s0`'s key bytes are equal before and after exploring. | Test (TC-473) |
 | FR-120-AC-12 | A unit whose function body reads `self`, whose invariant reads `result`, whose invariant reads `pre(self.value)`, or whose function calls `reaches`, refuses at S3 with `missing_declaration`/`missing-name`, `wrong_snapshot`/`wrong-anchor`, `wrong_snapshot`/`forbidden-pre-read` or `ill_typed`/`operator-ineligible`, each at the source span of that form, and yields no `CheckedPackage` to simulate. | Test (TC-473) |
 | FR-120-AC-13 | With `spawn()` over a population whose universe has 30 unused keys and each created object's fields ranging over `Int[0, 2]`, `Int[0, 1]` and `Option<Reference<Counter>>`, so the candidate product exceeds 10^9, and `max_candidates` 10, exploration returns `Outcome::Stopped` with `resource_exhausted`/`insufficient-next-charge` after generating at most 11 candidates, and does not allocate the product. | Test (TC-472) |
 | FR-120-AC-14 | `ModelSystem::over_model` over a model identity that the refinement unit does not select (`example/not-selected`) refuses `invalid_runtime_input`/`wrong-role-mapping`; over each of the unit's two selected models it returns a system that reports that model. | Test (TC-1086) |
+| FR-120-AC-15 | Over the `test/orders` fixture of AC-9 with two `pre` clauses on `ready`, one `false` and one undefined (`self.ready()`), the clauses are conjoined in ascending name under short-circuit whatever their source order: with the undefined clause sorting first (`Aaa` undefined, `Zzz` false, in either source order) the application is not enabled and exactly one `ContractUndetermined` is recorded for `Aaa`, the false clause not being reached; with the false clause sorting first (`Aaa` false, `Zzz` undefined) none is recorded. On the dispatch path (`view_clauses`), over `ConfigVersion::size` with the same two clauses, a call of `size` gives the result of the clause that sorts first (undefined for `other`'s precondition when the undefined clause sorts first, undefined for `size`'s own precondition when the false clause does), with equal outcome and charges in both source orders. | Test (TC-472) |
 
 ## Dependencies
 
@@ -588,3 +604,8 @@ identity text of operation `op`.
   semantics FR-120 uses, through `population::decide_frame`.
 - The S4 `CheckedPackage` and FR-056's package input, which are the
   simulator's whole input.
+
+## Remaining work
+
+- Remaining work: QSL-939. Split-unit case: QSpec TC-196 D10's variant with a member's own `pre` clauses declared in two linked source units, in both link orders, has no QSL form today. A checked package is one unit (`CheckedPackage::link`), and `view_clauses` reads that unit's clauses only. The order rule is verified for the one-unit case. Build the variant when a package can link more than one unit.
+- Remaining work: QSL-939. `absent-key` form: AC-15 uses a nested call whose own precondition is `false` (reason `precondition-false`) as the undefined clause. D10's `lookup` of an absent key (reason `absent-key`) is not built; the ordering and short-circuit it checks do not depend on the reason.

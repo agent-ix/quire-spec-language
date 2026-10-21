@@ -488,7 +488,9 @@ pub enum TemporalTraceRefusal {
     #[error("a lasso's prefix and loop exceed u64 positions")]
     TraceTooLong,
     /// A lasso under a bounded profile: only the infinite-trace profile
-    /// reads one (FR-329).
+    /// reads one (FR-329), but for a lasso whose loop has no counted step
+    /// (ADR-027 PB-3, FR-338), which never leaves a bounded horizon. Remaining
+    /// work: STD-254 settles that exception against FR-329.
     #[error("a lasso is read under the infinite-trace profile only, not {profile:?}")]
     LassoUnderBoundedProfile {
         /// The clause's profile.

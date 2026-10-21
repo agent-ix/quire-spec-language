@@ -332,6 +332,16 @@ impl DeclarationRegions {
                 }
                 _ => self.region(&refusal.location),
             },
+            // A defect of the `refinement_internals` value is located inside
+            // that value (FR-147), not in the source.
+            CheckCause::Refinement(cause)
+                if matches!(
+                    cause.cause,
+                    super::refinement::RefinementCause::InternalList(_)
+                ) =>
+            {
+                None
+            }
             CheckCause::Refinement(cause) => {
                 region(&self.source, self.embedding.as_deref(), cause.span)
             }

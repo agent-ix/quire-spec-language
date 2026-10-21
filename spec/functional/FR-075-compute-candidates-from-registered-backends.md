@@ -148,6 +148,10 @@ written like any other and settles at negotiation (`unsupported` or
 application) are two items with their own request indices and occurrence
 keys.
 
+An item's request index is its position in the package order. FR-395's call
+association names an item by the package's `package_id` and this request
+index (FR-395, "Pairing key"), and the item written at that index carries the member's key.
+
 The path condition is the record's guard sequence, outermost first. Each
 guard is the canonical `PathGuard` value: the guard expression's
 `OccurrenceKey` and the required Boolean outcome (`holds`).
@@ -299,6 +303,7 @@ were added.
 | FR-075-AC-14 | Two registrations identical in every descriptor member except that their evidence-kind sets differ are conflicting descriptors: the registry refuses the identity with `invalid_capability`/`duplicate-backend`, withdraws its registration, and reports no candidate for it; equal complete descriptors remain idempotent under FR-075-AC-7. A request naming a registered backend with the nonmatching evidence kind has an empty candidate set. | Test (TC-981, TC-983) |
 | FR-075-AC-15 | For every request item, `conversion_context()` returns the record's direct conversion context as `Option<&OccurrenceKey>`, separate from `result_bound()`. In FR-062 RR-16, the two requirement records share the `+` node but have distinct occurrence keys and directly wrapping narrow occurrence keys; the builder returns two items in occurrence-key order, and each item's `conversion_context()` equals its own record's narrow occurrence key while its `result_bound()` is respectively `Int[0, 10]` or `Int[0, 20]`. A record with no directly wrapping narrow returns `None`; when the same application node occurs multiple times, each item retains its own site's context and no context is selected by the shared expression node key. The two narrow contexts add no `RequirementItem`, routed item or claim. | Test (TC-449) |
 | FR-075-AC-16 | For `function f using v(a: Int[0, 9]): Int[0, 10] pure { a + 1 }`, the driver's IR call includes roots `[item.node(), conversion_context.node()]` (or the equivalent contextual entry point), with context paired to the item by request index and occurrence key. For RR-16, the driver makes this mapping independently for both items, which share the `+` node but have different request indices and conversion contexts: each item passes its own narrow context root, and neither context is swapped or selected by node key. In both vectors, the narrow is context only; it creates no additional requirement item, routed item or claim, and the routed claim remains the scalar application occurrence. A bare `lower([add])` call still returns the behavior specified by Contract IR and is not changed by this criterion. | Test (TC-449) |
+| FR-075-AC-17 | For every `CallRequirement` of FR-395 over fixture K, `items_from_requirements` over the package's records yields at the member's request index an item whose `occurrence()` equals the member's key. | Test (TC-1089) |
 
 ## Dependencies
 

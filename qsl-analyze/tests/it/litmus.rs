@@ -169,6 +169,7 @@ pub(crate) fn document() -> Vec<u8> {
                     operation("Cell", "set", &[], &["v"]),
                     operation("Cell", "add", &[], &["v"]),
                     operation("Cell", "both", &[], &["v", "w"]),
+                    operation("Cell", "setw", &[], &["w"]),
                 ],
                 "relationships": [],
             })),
@@ -196,7 +197,8 @@ fn document_digest(document: &[u8]) -> [u8; 32] {
 }
 
 /// The contracts: `IsX`/`IsY` select a cell, `StoreOne` stores 1,
-/// `StoreTwo` stores 2, `AddOne` adds 1,
+/// `StoreTwo` stores 2, `StoreThree` stores 3, `AddOne` adds 1,
+/// `IsXw` and `FlagOne` store 1 to the `w` of `x`, `ReadFlag<n>` loads it,
 /// `BothOne` stores 1 to `v` and `w`; `ReadsX<n>`/`ReadsY<n>` select the cell
 /// register `n` loads, `Read<n>` loads its `v` and `ReadW` loads `w`.
 pub(crate) fn contracts() -> String {
@@ -205,6 +207,9 @@ pub(crate) fn contracts() -> String {
          pre IsY using v on M::Cell::set { self.id = 1 }\n\
          post StoreOne using v on M::Cell::set { self.v = 1 }\n\
          post StoreTwo using v on M::Cell::set { self.v = 2 }\n\
+         post StoreThree using v on M::Cell::set { self.v = 3 }\n\
+         pre IsXw using v on M::Cell::setw { self.id = 0 }\n\
+         post FlagOne using v on M::Cell::setw { self.w = 1 }\n\
          pre AddX using v on M::Cell::add { self.id = 0 and self.v < 3 }\n\
          post AddOne using v on M::Cell::add { self.v - pre(self.v) = 1 }\n\
          pre BothX using v on M::Cell::both { self.id = 0 }\n\
@@ -214,7 +219,8 @@ pub(crate) fn contracts() -> String {
         text.push_str(&format!(
             "pre ReadsX{register} using v on M::Core::read{register} {{ c.id = 0 }}\n\
              pre ReadsY{register} using v on M::Core::read{register} {{ c.id = 1 }}\n\
-             post Read{register} using v on M::Core::read{register} {{ self.r{register} = pre(c.v) }}\n"
+             post Read{register} using v on M::Core::read{register} {{ self.r{register} = pre(c.v) }}\n\
+             post ReadFlag{register} using v on M::Core::read{register} {{ self.r{register} = pre(c.w) }}\n"
         ));
     }
     text.push_str(

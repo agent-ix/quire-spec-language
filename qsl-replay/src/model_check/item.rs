@@ -16,7 +16,8 @@
 //! (FR-337-AC-5), so no caller names an occurrence or an `over` node.
 
 use qsl_eval::automaton::{
-    ContextBinding, SafetyTranslation, StateContext, TranslationRefusal, MAX_ATOMS,
+    bounded_shape, BoundedTranslation, ContextBinding, SafetyTranslation, StateContext,
+    TranslationRefusal, MAX_ATOMS,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelLetters, ModelSubject};
 use qsl_eval::simulation::model::ModelSystem;
@@ -49,14 +50,36 @@ pub enum ModelCheckItem<'a> {
 pub struct Instance {
     /// The population key the instance binds.
     pub binding: Option<ModelInstance>,
-    /// The instance's canonical safety translation.
-    pub translation: SafetyTranslation,
+    /// The instance's canonical translation.
+    pub translation: Translation,
+}
+
+/// The canonical translation of one instance (FR-338): a safety item's, or a
+/// bounded clause's.
+#[derive(Clone, Debug)]
+pub enum Translation {
+    /// A TP-1 clause or the deadlock-freedom item.
+    Safety(SafetyTranslation),
+    /// A bounded `eventually[0,u]` or `always[0,u]` clause on origin (TP-2).
+    Bounded(BoundedTranslation),
+}
+
+impl Translation {
+    /// Whether `octets` are a key of this translation's context, admitted
+    /// before the key is used for membership.
+    pub fn admits(&self, octets: &[u8]) -> bool {
+        match self {
+            Self::Safety(translation) => translation.admit(octets).is_ok(),
+            Self::Bounded(translation) => translation.admit(octets).is_ok(),
+        }
+    }
 }
 
 /// Why an item has no canonical translation.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ItemRefusal {
-    /// The clause is not a TP-1 `always holds(A)` under infinite-trace.
+    /// The clause is neither a TP-1 `always holds(A)` under infinite-trace
+    /// nor a bounded single-interval clause with a canonical translation.
     #[error(transparent)]
     Translation(#[from] TranslationRefusal),
     /// The clause binds more instances than one letter holds atoms.
@@ -102,8 +125,10 @@ impl ModelCheckItem<'_> {
         match self {
             Self::DeadlockFreedom => Ok(vec![Instance {
                 binding: None,
-                translation: SafetyTranslation::deadlock_freedom()
-                    .map_err(|_| ItemRefusal::DeadlockContext)?,
+                translation: Translation::Safety(
+                    SafetyTranslation::deadlock_freedom()
+                        .map_err(|_| ItemRefusal::DeadlockContext)?,
+                ),
             }]),
             Self::Clause { clause, .. } => {
                 let identity = ClauseIdentity::resolve(
@@ -137,7 +162,13 @@ impl ModelCheckItem<'_> {
                         };
                         let context =
                             StateContext::clause(clause, identity.occurrence().clone(), binding);
-                        let translation = SafetyTranslation::reachable_invariant(clause, &context)?;
+                        let translation = if bounded_shape(clause).is_some() {
+                            Translation::Bounded(BoundedTranslation::clause(clause, &context)?)
+                        } else {
+                            Translation::Safety(SafetyTranslation::reachable_invariant(
+                                clause, &context,
+                            )?)
+                        };
                         Ok(Instance {
                             binding: Some(instance),
                             translation,

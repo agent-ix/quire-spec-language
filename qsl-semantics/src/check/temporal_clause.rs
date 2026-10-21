@@ -31,8 +31,17 @@
 //! constraint is checked into one shared `FairnessConstraint` (kind,
 //! resolved operation, granularity); a constraint under a bounded profile
 //! refuses `unsupported_construct`/`expression-form`, and one naming no
-//! operation of an admitted model refuses `missing_declaration`/`missing-name`.
-//! A clause over a model subject is classified into one `PropertyForm`.
+//! operation of an admitted model, and no protocol target in QSpec FR-430's
+//! spelling (FR-212 "Targets at S3": a protocol's root, attempt node or
+//! `parallel` branch), refuses `missing_declaration`/`missing-name`. A
+//! constraint that names a protocol target is kept apart from the shared
+//! operation set; S4 has no member to emit it with yet, so its clause is
+//! [`not_emitted`]. A clause over a model subject is classified into one
+//! `PropertyForm`.
+//!
+//! FR-234 adds the timed profile (`timed`): a clause under it binds
+//! `model-time`, its timed intervals are checked in exact rational time,
+//! and it is classified into one `TimedPropertyForm`.
 //!
 //! A `holds` condition is typed by [`condition::check_conditions`] once the
 //! package's signatures are known, and the clause is emitted as FR-337's
@@ -48,7 +57,10 @@ use qsl_forms::{
     FairnessKind as FormKind, IntervalForm, IntervalUpper, OperatorInterval, ParameterForm,
     TemporalClauseForm, TemporalFormulaForm, TemporalNodeForm, TemporalNodeId, TemporalOperator,
 };
-use qsl_foundation::bound::{DomainKey, DomainKind, IntervalKey, TemporalInterval, TemporalUpper};
+use qsl_foundation::bound::{
+    DomainKey, DomainKind, IntervalKey, TemporalInterval, TemporalUpper, TimedInterval,
+    TimedIntervalKey,
+};
 use qsl_foundation::diagnostic::{LimitExceeded, Locus, StageFailure, Staged};
 use qsl_foundation::digest::{ByteDigest, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
@@ -68,11 +80,14 @@ use super::state_clause::{population_of, PopulationDomain};
 use super::Scope;
 use crate::check::Capability;
 use crate::family::requirements::{classify_domains, ClassifyFailure};
-use crate::family::requirements::{ClaimExtent, Requirements};
+use crate::family::requirements::{ClaimExtent, Requirements, UnsupportedItem};
 use crate::family::{CheckContext, CheckOutcome, FamilyContract};
 use crate::model::operation::OperationLookup;
 
 pub(crate) mod condition;
+mod timed;
+
+pub use timed::{ModelTimeBinding, ModelTimeSource, TimeSourceKind, TimedPropertyForm};
 
 /// The stage name this module's faults report.
 const STAGE: &str = "check.temporal";
@@ -109,23 +124,48 @@ pub struct TemporalDeclarations<'a> {
     /// The admitted models whose populations the `over` object type's
     /// population is found in (FR-336-AC-1).
     pub(crate) models: &'a [AdmittedModel],
+    /// The unit's checked protocol clauses, whose attempt nodes, branches
+    /// and roots a fairness constraint may name (FR-212 "Targets at S3").
+    pub(crate) protocols: &'a [super::CheckedProtocol],
+    /// What a clause under the timed profile reads (FR-234).
+    pub(crate) timed: TimedContext<'a>,
+}
+
+/// What a clause under the timed profile reads of its package (FR-233,
+/// FR-234): the package's time units, the timed models' time sources and
+/// the `s3.rational_bits` ceiling an interval bound is reduced under.
+pub(crate) struct TimedContext<'a> {
+    pub(crate) units: &'a super::time_units::TimeUnits,
+    pub(crate) time_sources: &'a [ModelTimeSource],
+    pub(crate) rational_bits: u64,
 }
 
 /// The `TemporalTrace` family's `temporal` clause production (ADR-012
 /// §15.2, FR-326).
 pub struct TemporalTraceFamily;
 
+/// A checked operator's interval: a step interval (FR-326, ADR-014 TR-3)
+/// or, under the timed profile, a timed interval (FR-234). The two never
+/// share a representation, and a clause holds only one kind.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CheckedInterval {
+    /// A step interval `[a, b]` or `[a, *]`.
+    Steps(TemporalInterval),
+    /// A timed interval in the clause binding's time unit.
+    Timed(TimedInterval),
+}
+
 /// One temporal operator of a checked formula.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedOperator {
     /// The operator's node in the clause's formula.
     pub node: TemporalNodeId,
     /// Which operator.
     pub operator: TemporalOperator,
     /// Its interval: `Some` under a bounded profile and on an interval
-    /// operator under infinite-trace, `None` on an unbounded operator and on
-    /// a connective (ADR-014 TR-3).
-    pub interval: Option<TemporalInterval>,
+    /// operator under infinite-trace or the timed profile, `None` on an
+    /// unbounded operator and on a connective (ADR-014 TR-3, FR-234).
+    pub interval: Option<CheckedInterval>,
 }
 
 /// A node of a [`CheckedFormula`], by its index in the formula's arena.
@@ -189,7 +229,7 @@ pub enum FormulaNode {
         /// Which operator.
         operator: UnaryTemporal,
         /// Its interval; `None` on an unbounded operator.
-        interval: Option<TemporalInterval>,
+        interval: Option<CheckedInterval>,
         /// Its operand.
         operand: FormulaNodeId,
     },
@@ -198,7 +238,7 @@ pub enum FormulaNode {
         /// Which operator.
         operator: BinaryTemporal,
         /// Its interval; `None` on an unbounded operator.
-        interval: Option<TemporalInterval>,
+        interval: Option<CheckedInterval>,
         /// Its left operand.
         left: FormulaNodeId,
         /// Its right operand.
@@ -274,6 +314,13 @@ pub struct TemporalClaim {
     /// The fairness kinds the clause's fairness set uses (FR-134): the
     /// backend must decide each of them.
     fairness: BTreeSet<FairnessKind>,
+    /// The span of the punctual interval of a timed clause DF-5 does not
+    /// admit over a timed subject (FR-234 "Punctuality"): the request writer
+    /// disposes its item `Unsupported`, `PunctualInterval`.
+    punctual: Option<Span>,
+    /// Whether the clause is over a model subject: its `over` binding is a
+    /// model reference (FR-331, FR-368).
+    model_subject: bool,
 }
 
 impl TemporalClaim {
@@ -283,6 +330,7 @@ impl TemporalClaim {
     pub(crate) fn new(
         parameter_domains: BTreeMap<(usize, Vec<u32>), DomainKind>,
         infinite_trace: bool,
+        model_subject: bool,
     ) -> Self {
         Self {
             kind: Capability::TemporalSatisfaction,
@@ -290,6 +338,8 @@ impl TemporalClaim {
             infinite_trace,
             population: None,
             fairness: BTreeSet::new(),
+            punctual: None,
+            model_subject,
         }
     }
 
@@ -350,10 +400,17 @@ impl TemporalClaim {
         for key in named {
             domains.insert(key.clone(), DomainKind::Population);
         }
-        Ok(
-            Requirements::new(self.kind, ClaimExtent::from_domains(domains))
-                .with_fairness(self.fairness.iter().copied()),
-        )
+        let requirements = Requirements::new(self.kind, ClaimExtent::from_domains(domains))
+            .with_fairness(self.fairness.iter().copied());
+        let requirements = if self.model_subject {
+            requirements.over_model_subject()
+        } else {
+            requirements
+        };
+        Ok(match self.punctual {
+            Some(span) => requirements.with_unsupported(UnsupportedItem::PunctualInterval { span }),
+            None => requirements,
+        })
     }
 }
 
@@ -379,7 +436,52 @@ pub struct CheckedTemporalClause {
     /// The index among the written constraints of each fairness set
     /// member's first occurrence, in set order.
     fairness_sources: Vec<usize>,
+    /// The constraints that name a protocol target, each once, in source
+    /// order of first occurrence (FR-212 "Targets at S3"), each with the
+    /// span of its first occurrence's name.
+    protocol_fairness: Vec<(CheckedProtocolFairness, Span)>,
     property_form: Option<PropertyForm>,
+    /// Under the timed profile: the clause's `model-time` binding.
+    time_binding: Option<ModelTimeBinding>,
+    /// Under the timed profile: the clause's timed property form.
+    timed_form: Option<TimedPropertyForm>,
+}
+
+/// What a fairness constraint over a protocol names beside an operation
+/// (FR-212 "Targets at S3", ADR-027 PA-1), in QSpec FR-430's spelling:
+/// `<protocol>::<node>` an attempt node, `<protocol>::<parallel>::<branch>`
+/// a branch, and `<protocol>` the root.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedProtocolTarget {
+    /// An attempt node, by its static declaration path. S4 has no member
+    /// that can emit an attempt-node target yet, so `qsl_eval` has no class
+    /// for it; the class is unreachable until S4 emits one.
+    AttemptNode {
+        /// The node's static declaration path.
+        node: String,
+    },
+    /// The protocol's root thread.
+    Root,
+    /// A branch of a `parallel`.
+    Branch {
+        /// The `parallel` node's static declaration path.
+        parallel: String,
+        /// The branch label.
+        branch: String,
+    },
+}
+
+/// A checked fairness constraint whose target is a protocol's (FR-212).
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedProtocolFairness {
+    /// The constraint's strength.
+    pub kind: FairnessKind,
+    /// The protocol whose target it names.
+    pub protocol: String,
+    /// The target.
+    pub target: CheckedProtocolTarget,
+    /// The constraint's granularity.
+    pub granularity: FairnessGranularity,
 }
 
 impl CheckedTemporalClause {
@@ -443,6 +545,14 @@ impl CheckedTemporalClause {
         &self.fairness
     }
 
+    /// The clause's constraints whose targets are a protocol's (FR-212),
+    /// each once, in source order of first occurrence.
+    pub fn protocol_fairness(&self) -> impl Iterator<Item = &CheckedProtocolFairness> {
+        self.protocol_fairness
+            .iter()
+            .map(|(constraint, _)| constraint)
+    }
+
     /// The clause's property form (FR-123 "Property form"); `None` for a
     /// clause that is not over a model subject, or that selects the
     /// fixed-sample or timestamped-event profile.
@@ -450,17 +560,56 @@ impl CheckedTemporalClause {
         self.property_form
     }
 
-    /// The QSpec FR-255 key of the interval `node` carries, under the
+    /// The QSpec FR-255 key of the step interval `node` carries, under the
     /// clause's profile and clock binding; `None` when `node` carries no
-    /// finite interval.
+    /// finite step interval.
     pub fn interval_key(&self, node: TemporalNodeId) -> Option<IntervalKey> {
-        let operator = self
-            .operators
+        match self.interval_of(node)? {
+            CheckedInterval::Steps(interval) => {
+                interval.key(self.profile_ref.clone(), self.clock_binding)
+            }
+            CheckedInterval::Timed(_) => None,
+        }
+    }
+
+    /// The QSpec FR-255 key of the timed interval `node` carries, under the
+    /// clause's profile and clock binding, with each end's openness
+    /// (FR-234-AC-2); `None` when `node` carries no timed interval.
+    pub fn timed_interval_key(&self, node: TemporalNodeId) -> Option<TimedIntervalKey> {
+        match self.interval_of(node)? {
+            CheckedInterval::Timed(interval) => {
+                Some(interval.key(self.profile_ref.clone(), self.clock_binding))
+            }
+            CheckedInterval::Steps(_) => None,
+        }
+    }
+
+    fn interval_of(&self, node: TemporalNodeId) -> Option<&CheckedInterval> {
+        self.operators
             .iter()
-            .find(|operator| operator.node == node)?;
-        operator
-            .interval?
-            .key(self.profile_ref.clone(), self.clock_binding)
+            .find(|operator| operator.node == node)?
+            .interval
+            .as_ref()
+    }
+
+    /// The clause's `model-time` binding (FR-233), under the timed profile
+    /// only.
+    pub fn time_binding(&self) -> Option<&ModelTimeBinding> {
+        self.time_binding.as_ref()
+    }
+
+    /// The clause's timed property form (FR-234 "Forms"), under the timed
+    /// profile only.
+    pub fn timed_form(&self) -> Option<&TimedPropertyForm> {
+        self.timed_form.as_ref()
+    }
+
+    /// The span of the punctual interval for which the request writer
+    /// disposes the clause's item `Unsupported`, `PunctualInterval`
+    /// (FR-234 "Punctuality"); `None` when the clause holds none, or is a
+    /// `BoundedWindow`, which admits punctual intervals.
+    pub fn unsupported_punctual(&self) -> Option<Span> {
+        self.claim.punctual
     }
 }
 
@@ -549,45 +698,104 @@ fn build_interval(interval: &IntervalForm) -> Result<TemporalInterval, TemporalC
     })
 }
 
+/// How a clause's operators read their intervals: by step count under the
+/// untimed profiles, `bounded` or not, or in the `model-time` binding's unit
+/// under the timed profile (FR-234).
+pub(crate) enum IntervalReading<'r> {
+    /// Step intervals; `bounded` under a bounded profile.
+    Steps {
+        /// Whether the profile is bounded.
+        bounded: bool,
+    },
+    /// Timed intervals in the binding's unit.
+    Timed(&'r timed::TimedReader<'r>),
+    /// The timed profile in a clause that has no timed reading, a hyper
+    /// clause: a step interval refuses as under [`Self::Timed`] and a timed
+    /// interval is not checked.
+    TimedUnread,
+}
+
 /// The checked operators of `formula`, connectives included, in arena
-/// order. Under a `bounded` profile every temporal operator needs a closed
-/// interval; under every profile an interval with `a > b` refuses. Each
-/// refusal goes onto `refusals` and the operator keeps no interval.
+/// order, and the span of each punctual timed interval in arena order.
+/// Under a bounded profile every temporal operator needs a closed interval;
+/// under every step profile an interval with `a > b` refuses; under the
+/// timed profile a step interval refuses and a timed interval is checked
+/// (FR-234). Each refusal goes onto `refusals` and the operator keeps no
+/// interval.
 pub(crate) fn checked_operators(
     formula: &TemporalFormulaForm,
-    bounded: bool,
+    reading: &IntervalReading<'_>,
     refusals: &mut Vec<TemporalCause>,
-) -> Result<Vec<CheckedOperator>, StageFailure<CheckRefusal>> {
+) -> Result<(Vec<CheckedOperator>, Vec<Span>), StageFailure<CheckRefusal>> {
+    let bounded = matches!(reading, IntervalReading::Steps { bounded: true });
     let mut operators = Vec::new();
+    let mut punctual = Vec::new();
     for (id, node) in formula.iter() {
         let TemporalNodeForm::Operator(operator) = node else {
             continue;
         };
-        let interval = match (&operator.interval, is_temporal(operator.operator)) {
-            (Some(_), false) => return Err(fault("connective-carries-no-interval")),
-            (None, true) if bounded => {
+        let interval = match (&operator.interval, is_temporal(operator.operator), reading) {
+            (Some(_), false, _) => return Err(fault("connective-carries-no-interval")),
+            (None, true, _) if bounded => {
                 refusals.push(TemporalCause::MissingInterval {
                     span: operator.operator_span,
                 });
                 None
             }
-            (None, _) => None,
-            (Some(OperatorInterval::Timed(timed)), true) => {
+            (None, _, _) => None,
+            (Some(OperatorInterval::Timed(written)), true, IntervalReading::Timed(reader)) => {
+                match reader.interval(written) {
+                    Ok(interval) => {
+                        if interval.is_punctual() {
+                            punctual.push(written.span);
+                        }
+                        Some(CheckedInterval::Timed(interval))
+                    }
+                    Err(timed::IntervalFailure::Cause(cause)) => {
+                        refusals.push(cause);
+                        None
+                    }
+                    Err(timed::IntervalFailure::Stop(failure)) => return Err(failure),
+                }
+            }
+            (
+                Some(OperatorInterval::Timed(timed)),
+                true,
+                IntervalReading::Steps { .. } | IntervalReading::TimedUnread,
+            ) => {
                 refusals.push(TemporalCause::TimedIntervalNotChecked { span: timed.span });
                 None
             }
-            (Some(OperatorInterval::Steps(written)), true) => match build_interval(written) {
-                Err(cause) => {
-                    refusals.push(cause);
-                    None
-                }
-                Ok(interval) => {
-                    if bounded && interval.upper() == TemporalUpper::Open {
-                        refusals.push(TemporalCause::OpenInterval { span: written.span });
+            (
+                Some(OperatorInterval::Steps(written)),
+                true,
+                IntervalReading::Timed(_) | IntervalReading::TimedUnread,
+            ) => {
+                // ADR-014 TR-3 refuses `[a, *]` where every interval needs a
+                // finite upper bound; a closed step interval's bounds have no
+                // unit (FR-233 "Intervals").
+                refusals.push(match written.upper {
+                    IntervalUpper::Open => TemporalCause::OpenInterval { span: written.span },
+                    IntervalUpper::Finite(_) => {
+                        TemporalCause::UnitlessTimedBound { span: written.span }
                     }
-                    Some(interval)
+                });
+                None
+            }
+            (Some(OperatorInterval::Steps(written)), true, IntervalReading::Steps { .. }) => {
+                match build_interval(written) {
+                    Err(cause) => {
+                        refusals.push(cause);
+                        None
+                    }
+                    Ok(interval) => {
+                        if bounded && interval.upper() == TemporalUpper::Open {
+                            refusals.push(TemporalCause::OpenInterval { span: written.span });
+                        }
+                        Some(CheckedInterval::Steps(interval))
+                    }
                 }
-            },
+            }
         };
         operators.push(CheckedOperator {
             node: id,
@@ -595,7 +803,7 @@ pub(crate) fn checked_operators(
             interval,
         });
     }
-    Ok(operators)
+    Ok((operators, punctual))
 }
 
 /// The parameters whose types the clause's extent ranges over: `over`, the
@@ -654,9 +862,40 @@ fn check_clause(
     }
 
     let bounded = profile.is_bounded();
+    // FR-234: the timed profile reads its intervals in the clause's
+    // `model-time` binding's unit, so the binding comes first.
+    let time_binding = match profile {
+        TemporalProfile::Timed => {
+            let over = types.first().ok_or_else(|| fault("over-type-resolved"))?;
+            Some(
+                timed::binding(&form.clock, over, declarations, declaration.span)
+                    .map_err(refuse)?,
+            )
+        }
+        TemporalProfile::EventPositionFalseExtension
+        | TemporalProfile::FixedSampleFalseExtension
+        | TemporalProfile::TimestampedEventFiniteWindow
+        | TemporalProfile::InfiniteTrace => None,
+    };
+    let reader = match &time_binding {
+        Some(binding) => Some(timed::TimedReader {
+            declarations,
+            target: declarations
+                .timed
+                .units
+                .target(&binding.unit)
+                .map_err(|_| fault("time-source-unit-is-a-time-unit"))?
+                .ok_or_else(|| fault("time-unit-scale-nonzero"))?,
+        }),
+        None => None,
+    };
+    let reading = match &reader {
+        Some(reader) => IntervalReading::Timed(reader),
+        None => IntervalReading::Steps { bounded },
+    };
     let mut refusals: Vec<TemporalCause> = Vec::new();
-    let operators = checked_operators(&form.formula, bounded, &mut refusals)?;
-    let (fairness, fairness_sources) =
+    let (operators, punctual) = checked_operators(&form.formula, &reading, &mut refusals)?;
+    let (fairness, fairness_sources, protocol_fairness) =
         checked_fairness(form, bounded, declarations, types.first(), &mut refusals);
     if let Some(first) = refusals.into_iter().min_by_key(|cause| cause.span().start) {
         return Err(refuse(first));
@@ -679,9 +918,9 @@ fn check_clause(
         ClassifyFailure::Fault(fault) => StageFailure::Fault(fault),
     })?;
 
-    let intervals: BTreeMap<TemporalNodeId, Option<TemporalInterval>> = operators
+    let intervals: BTreeMap<TemporalNodeId, Option<CheckedInterval>> = operators
         .iter()
-        .map(|operator| (operator.node, operator.interval))
+        .map(|operator| (operator.node, operator.interval.clone()))
         .collect();
     let formula = build_formula(&form.formula, &intervals)?;
     let model_subject = matches!(types.first(), Some(ValueType::Reference(_)));
@@ -699,6 +938,18 @@ fn check_clause(
         _ => None,
     };
     let property_form = property_form(profile, model_subject, &formula);
+    let activation = match &form.activation {
+        ActivationForm::Origin => Activation::Origin,
+        ActivationForm::Each { when, .. } => Activation::Each {
+            guarded: when.is_some(),
+        },
+    };
+    let timed_form = time_binding
+        .as_ref()
+        .map(|_| timed::property_form(&formula, activation));
+    let unsupported_punctual = timed_form
+        .as_ref()
+        .and_then(|form| timed::unsupported_punctual(form, &punctual));
     let over_type = types
         .into_iter()
         .next()
@@ -720,35 +971,42 @@ fn check_clause(
             infinite_trace: !bounded,
             population,
             fairness: fairness.iter().map(FairnessConstraint::kind).collect(),
+            punctual: unsupported_punctual,
+            model_subject,
         },
         formula,
-        activation: match &form.activation {
-            ActivationForm::Origin => Activation::Origin,
-            ActivationForm::Each { when, .. } => Activation::Each {
-                guarded: when.is_some(),
-            },
-        },
+        activation,
         fairness,
         fairness_sources,
+        protocol_fairness,
         property_form,
+        time_binding,
+        timed_form,
     })
 }
 
-/// The checked fairness set (FR-123, FR-129): each constraint once, in
-/// source order of first occurrence. An unmarked kind is `weak` and an
-/// unmarked granularity is `whole` (ADR-018 FA-6). A constraint under a
-/// bounded profile, or naming no operation of an admitted model, pushes its
-/// refusal onto `refusals` and joins no set. Each member comes with the
-/// index of the written constraint it was first read from.
+/// The checked fairness set (FR-123, FR-129, FR-212): each constraint
+/// once, in source order of first occurrence. An unmarked kind is `weak`
+/// and an unmarked granularity is `whole` (ADR-018 FA-6). A name that is no
+/// operation of an admitted model is read as a protocol target (FR-212
+/// "Targets at S3"); one that is neither, or a constraint under a bounded
+/// profile, pushes its refusal onto `refusals` and joins no set. Each
+/// operation member comes with the index of the written constraint it was
+/// first read from.
 fn checked_fairness(
     form: &TemporalClauseForm,
     bounded: bool,
     declarations: &TemporalDeclarations<'_>,
     over: Option<&ValueType>,
     refusals: &mut Vec<TemporalCause>,
-) -> (Vec<FairnessConstraint>, Vec<usize>) {
+) -> (
+    Vec<FairnessConstraint>,
+    Vec<usize>,
+    Vec<(CheckedProtocolFairness, Span)>,
+) {
     let mut set: Vec<FairnessConstraint> = Vec::new();
     let mut sources = Vec::new();
+    let mut protocol_set: Vec<(CheckedProtocolFairness, Span)> = Vec::new();
     for (index, written) in form.fairness.iter().enumerate() {
         if bounded {
             refusals.push(TemporalCause::FairnessUnderBoundedProfile { span: written.span });
@@ -756,6 +1014,28 @@ fn checked_fairness(
         }
         let operation = match resolve_fairness_operation(written, declarations.scope, over) {
             Ok(operation) => operation,
+            Err(TemporalCause::UnresolvedFairnessOperation { name, span }) => {
+                match resolve_protocol_target(&name, declarations.protocols) {
+                    TargetLookup::Found(protocol, target) => {
+                        let constraint = CheckedProtocolFairness {
+                            kind: checked_kind(written),
+                            protocol,
+                            target,
+                            granularity: checked_granularity(written),
+                        };
+                        if !protocol_set.iter().any(|(known, _)| *known == constraint) {
+                            protocol_set.push((constraint, span));
+                        }
+                    }
+                    TargetLookup::Missing => {
+                        refusals.push(TemporalCause::UnresolvedFairnessOperation { name, span });
+                    }
+                    TargetLookup::Ambiguous => {
+                        refusals.push(TemporalCause::AmbiguousFairnessOperation { name, span });
+                    }
+                }
+                continue;
+            }
             Err(cause) => {
                 refusals.push(cause);
                 continue;
@@ -767,7 +1047,72 @@ fn checked_fairness(
             sources.push(index);
         }
     }
-    (set, sources)
+    (set, sources, protocol_set)
+}
+
+/// What a fairness constraint's name resolves to among the unit's
+/// protocols.
+enum TargetLookup {
+    /// One target, of the named protocol.
+    Found(String, CheckedProtocolTarget),
+    /// No protocol target.
+    Missing,
+    /// Two or more attempt nodes or branches.
+    Ambiguous,
+}
+
+/// FR-212 "Targets at S3": the protocol target `name` spells in QSpec
+/// FR-430's form, with the protocol it names: `<protocol>` the root,
+/// `<protocol>::<node>` an attempt node and
+/// `<protocol>::<parallel>::<branch>` a branch.
+fn resolve_protocol_target(name: &str, protocols: &[super::CheckedProtocol]) -> TargetLookup {
+    let segments: Vec<&str> = name.split("::").collect();
+    let Some((first, rest)) = segments.split_first() else {
+        return TargetLookup::Missing;
+    };
+    let Some(protocol) = protocols.iter().find(|protocol| protocol.name == *first) else {
+        return TargetLookup::Missing;
+    };
+    let tree = &protocol.controls;
+    let found: Vec<CheckedProtocolTarget> = match rest {
+        [] => vec![CheckedProtocolTarget::Root],
+        [node] => tree
+            .controls
+            .iter()
+            .filter(|control| {
+                control.step() == super::ControlStep::Attempt && control.name == *node
+            })
+            .map(|control| CheckedProtocolTarget::AttemptNode {
+                node: control.path.join("/"),
+            })
+            .collect(),
+        [parallel, branch] => tree
+            .controls
+            .iter()
+            .filter(|control| {
+                control.step() == super::ControlStep::Parallel && control.name == *parallel
+            })
+            .flat_map(|control| {
+                control
+                    .children
+                    .iter()
+                    .filter_map(|child| tree.control(*child))
+                    .filter(|child| {
+                        child.step() == super::ControlStep::Branch && child.name == *branch
+                    })
+                    .map(|_| CheckedProtocolTarget::Branch {
+                        parallel: control.path.join("/"),
+                        branch: (*branch).to_owned(),
+                    })
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    match found.as_slice() {
+        [] => TargetLookup::Missing,
+        [target] => TargetLookup::Found(protocol.name.clone(), target.clone()),
+        _ => TargetLookup::Ambiguous,
+    }
 }
 
 /// `written` with its resolved `operation`: an unmarked kind is `weak` and an
@@ -777,16 +1122,26 @@ pub(crate) fn checked_constraint(
     operation: FairnessOperation,
 ) -> FairnessConstraint {
     FairnessConstraint::new(
-        match written.kind {
-            None | Some(FormKind::Weak) => FairnessKind::Weak,
-            Some(FormKind::Strong) => FairnessKind::Strong,
-        },
+        checked_kind(written),
         operation,
-        match written.granularity {
-            None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
-            Some(FormGranularity::Each) => FairnessGranularity::Each,
-        },
+        checked_granularity(written),
     )
+}
+
+/// `written`'s kind: an unmarked kind is `weak` (ADR-018 FA-6).
+fn checked_kind(written: &FairnessConstraintForm) -> FairnessKind {
+    match written.kind {
+        None | Some(FormKind::Weak) => FairnessKind::Weak,
+        Some(FormKind::Strong) => FairnessKind::Strong,
+    }
+}
+
+/// `written`'s granularity: an unmarked granularity is `whole` (FA-6).
+fn checked_granularity(written: &FairnessConstraintForm) -> FairnessGranularity {
+    match written.granularity {
+        None | Some(FormGranularity::Whole) => FairnessGranularity::Whole,
+        Some(FormGranularity::Each) => FairnessGranularity::Each,
+    }
 }
 
 /// The operation a fairness constraint names, resolved in an admitted
@@ -844,8 +1199,10 @@ fn property_form(
         return None;
     }
     match profile {
+        // The timed profile's forms are FR-234's `TimedPropertyForm`.
         TemporalProfile::FixedSampleFalseExtension
-        | TemporalProfile::TimestampedEventFiniteWindow => return None,
+        | TemporalProfile::TimestampedEventFiniteWindow
+        | TemporalProfile::Timed => return None,
         TemporalProfile::EventPositionFalseExtension | TemporalProfile::InfiniteTrace => {}
     }
     if is_reachable_invariant(formula) {
@@ -875,12 +1232,29 @@ fn is_reachable_invariant(formula: &CheckedFormula) -> bool {
 
 /// Whether the interval is closed: the one an interval operator needs to
 /// stay within the safety fragment when its operator is `eventually` or
-/// `until` (ADR-018 IV-4).
-fn is_closed(interval: Option<TemporalInterval>) -> bool {
-    matches!(
-        interval.map(|interval| interval.upper()),
-        Some(TemporalUpper::Finite(_))
-    )
+/// `until` (ADR-018 IV-4). A timed interval always has a finite upper bound
+/// (ADR-026 DF-2).
+fn is_closed(interval: Option<&CheckedInterval>) -> bool {
+    match interval {
+        Some(CheckedInterval::Steps(interval)) => {
+            matches!(interval.upper(), TemporalUpper::Finite(_))
+        }
+        Some(CheckedInterval::Timed(_)) => true,
+        None => false,
+    }
+}
+
+/// Whether `node` is a temporal operator rather than a connective or atom.
+fn is_temporal_node(node: &FormulaNode) -> bool {
+    match node {
+        FormulaNode::Unary { .. } | FormulaNode::Binary { .. } => true,
+        FormulaNode::Constant(_)
+        | FormulaNode::Holds { .. }
+        | FormulaNode::Not(_)
+        | FormulaNode::And(..)
+        | FormulaNode::Or(..)
+        | FormulaNode::Implies(..) => false,
+    }
 }
 
 /// Whether the formula, in negation normal form, is in ADR-014 A-4's safety
@@ -907,8 +1281,8 @@ pub(crate) fn in_safety_fragment(formula: &CheckedFormula) -> bool {
             } => {
                 let admitted = match operator {
                     UnaryTemporal::Once | UnaryTemporal::Historically => true,
-                    UnaryTemporal::Always => !here || is_closed(*interval),
-                    UnaryTemporal::Eventually => here || is_closed(*interval),
+                    UnaryTemporal::Always => !here || is_closed(interval.as_ref()),
+                    UnaryTemporal::Eventually => here || is_closed(interval.as_ref()),
                 };
                 (admitted, here, here)
             }
@@ -917,8 +1291,8 @@ pub(crate) fn in_safety_fragment(formula: &CheckedFormula) -> bool {
             } => {
                 let admitted = match operator {
                     BinaryTemporal::Since | BinaryTemporal::Triggered => true,
-                    BinaryTemporal::Release => !here || is_closed(*interval),
-                    BinaryTemporal::Until => here || is_closed(*interval),
+                    BinaryTemporal::Release => !here || is_closed(interval.as_ref()),
+                    BinaryTemporal::Until => here || is_closed(interval.as_ref()),
                 };
                 (admitted, here, here)
             }
@@ -939,7 +1313,7 @@ pub(crate) fn in_safety_fragment(formula: &CheckedFormula) -> bool {
 /// still precedes its operands.
 pub(crate) fn build_formula(
     form: &TemporalFormulaForm,
-    intervals: &BTreeMap<TemporalNodeId, Option<TemporalInterval>>,
+    intervals: &BTreeMap<TemporalNodeId, Option<CheckedInterval>>,
 ) -> Result<CheckedFormula, StageFailure<CheckRefusal>> {
     let node = |id: &TemporalNodeId| FormulaNodeId(id.index());
     let mut nodes = Vec::with_capacity(form.nodes().len());
@@ -948,8 +1322,9 @@ pub(crate) fn build_formula(
             TemporalNodeForm::Constant { value, .. } => FormulaNode::Constant(*value),
             TemporalNodeForm::Holds { span, .. } => FormulaNode::Holds { span: *span },
             TemporalNodeForm::Operator(operator) => {
-                let interval = *intervals
+                let interval = intervals
                     .get(&id)
+                    .cloned()
                     .ok_or_else(|| fault("operator-has-checked-interval"))?;
                 match (operator.operator, operator.operands.as_slice()) {
                     (TemporalOperator::Not, [only]) => FormulaNode::Not(node(only)),
@@ -1023,7 +1398,7 @@ pub(crate) fn build_formula(
 
 fn unary(
     operator: UnaryTemporal,
-    interval: Option<TemporalInterval>,
+    interval: Option<CheckedInterval>,
     operand: FormulaNodeId,
 ) -> FormulaNode {
     FormulaNode::Unary {
@@ -1035,7 +1410,7 @@ fn unary(
 
 fn binary(
     operator: BinaryTemporal,
-    interval: Option<TemporalInterval>,
+    interval: Option<CheckedInterval>,
     left: FormulaNodeId,
     right: FormulaNodeId,
 ) -> FormulaNode {
@@ -1129,17 +1504,30 @@ fn formula_horizon(
     })
 }
 
-/// Whether S4 emits `form`'s clause (FR-337): one that activates `on
-/// origin` and declares no capture. The `on each` activation and the
-/// captures are not checked, so a clause with either is [`not_emitted`].
-pub(crate) fn is_emitted(form: &TemporalClauseForm) -> bool {
-    matches!(form.activation, ActivationForm::Origin) && form.captures.is_empty()
+/// Whether S4 emits `checked`, the clause of `form` (FR-337, FR-212): one
+/// that activates `on origin`, declares no capture, names no protocol
+/// target and is not under the timed profile. The `on each` activation and
+/// the captures are not checked, no emitted member names a protocol target,
+/// and S4 writes no timed interval (QSpec FR-370's timed form), so a clause
+/// with any of them is [`not_emitted`].
+pub(crate) fn is_emitted(form: &TemporalClauseForm, checked: &CheckedTemporalClause) -> bool {
+    matches!(form.activation, ActivationForm::Origin)
+        && form.captures.is_empty()
+        && checked.protocol_fairness.is_empty()
+        && checked.time_binding.is_none()
 }
 
 /// The refusal for a clause that checked but that no S4 emission writes
-/// (an `on each` activation or a capture, [`is_emitted`]): refused rather
-/// than compiled and silently missing from the package.
+/// ([`is_emitted`]): refused rather than compiled and silently missing from
+/// the package. A clause naming a protocol target refuses at that
+/// constraint, with the target it resolved to.
 pub fn not_emitted(checked: &CheckedTemporalClause) -> CheckRefusal {
+    if let Some((constraint, span)) = checked.protocol_fairness.first() {
+        return refusal(TemporalCause::ProtocolFairnessNotEmitted {
+            constraint: Box::new(constraint.clone()),
+            span: *span,
+        });
+    }
     refusal(TemporalCause::NotEmitted {
         name: checked.name.clone(),
         span: checked.span,
@@ -1162,6 +1550,8 @@ pub fn check_clauses(
         None,
         Vec::new(),
     );
+    let units =
+        super::time_units::TimeUnits::new(&package.units, package.nominal_spans.keys().copied());
     let declarations = TemporalDeclarations {
         scope: &scope,
         selections: &package.temporal_selections,
@@ -1169,6 +1559,13 @@ pub fn check_clauses(
         embedding: None,
         position_limit: 10_000,
         models: &package.models,
+        protocols: &[],
+        timed: TimedContext {
+            units: &units,
+            time_sources: &package.time_sources,
+            rational_bits: quire_semantic_value::checking::CheckingLimits::default()
+                .rational_bits(),
+        },
     };
     package
         .temporal_clauses

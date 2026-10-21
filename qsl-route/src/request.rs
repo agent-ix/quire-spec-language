@@ -29,9 +29,10 @@
 //! follow-up as a new request of one item, carrying the original item's
 //! occurrence key: [`RequirementItem::bounded`] substitutes the caller's
 //! bounds by the same rule as [`RequestWriter::bounded_item`], and the
-//! follow-up's [`RequirementItem::proof_bounds`] (and, for a temporal item,
-//! [`RequirementItem::temporal_proof_bounds`]) carry them with QSL's domain
-//! kinds.
+//! follow-up's [`RequirementItem::proof_bounds`] carries them with QSL's
+//! domain kinds. A temporal item's subject proof bounds are a separate,
+//! caller-supplied substitution ([`RequirementItem::with_subject_proof_bounds`],
+//! read by [`RequirementItem::temporal_proof_bounds`]).
 //!
 //! **Refusals.** Before any item is written, the writer refuses a bound for
 //! a key that names no unbounded domain of the item, a bound on a domain no
@@ -49,9 +50,9 @@ use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
 use qsl_foundation::{CatalogCode, CatalogCoded};
 use qsl_semantics::check::{Capability, PathGuard, RequirementRecord};
-use qsl_semantics::family::{ClaimExtent, Requirements};
+use qsl_semantics::family::{ClaimExtent, Requirements, UnsupportedItem};
 
-use crate::{CandidateOutcome, Registry};
+use crate::{CandidateOutcome, CandidateSet, Registry};
 use qsl_foundation::BackendId;
 
 /// An item's QSpec FR-331 extent classification (QSpec FR-290 `bounded`/
@@ -99,6 +100,7 @@ pub struct RequestItem {
     kind: Capability,
     extent: ExtentClassification,
     domains: Vec<ProofBound>,
+    unsupported: Option<UnsupportedItem>,
 }
 
 impl RequestItem {
@@ -133,6 +135,13 @@ impl RequestItem {
     /// item requested without bounds.
     pub fn domains(&self) -> &[ProofBound] {
         &self.domains
+    }
+
+    /// The cause the writer disposed the item `Unsupported` for, routing it
+    /// to no engine (FR-234 "Punctuality"); `None` for an item negotiation
+    /// settles.
+    pub fn unsupported(&self) -> Option<&UnsupportedItem> {
+        self.unsupported.as_ref()
     }
 }
 
@@ -172,6 +181,18 @@ pub enum BoundRefusal {
     /// The item is bounded, so no bounded request exists for it.
     #[error("the item has no unbounded domain")]
     NoUnboundedDomain,
+    /// Subject proof bounds were supplied for an item that is not a
+    /// `temporal-satisfaction` item over a model subject, so it has no
+    /// subject (QSpec FR-331, FR-368).
+    #[error("the item is not a temporal item over a model subject")]
+    NoModelSubject,
+    /// A subject proof bound's key is not a population: a subject's proof
+    /// bounds substitute its own populations (QSpec FR-331).
+    #[error("subject proof bound domain {domain} is not a population")]
+    NotAPopulation {
+        /// The supplied key.
+        domain: DomainKey,
+    },
 }
 
 impl CatalogCoded for BoundRefusal {
@@ -182,6 +203,8 @@ impl CatalogCoded for BoundRefusal {
             | Self::UnboundableDomain { .. }
             | Self::KindMismatch { .. }
             | Self::MissingDomain { .. }
+            | Self::NoModelSubject
+            | Self::NotAPopulation { .. }
             | Self::NoUnboundedDomain => CatalogCode::new("invalid_runtime_input", "invalid-value"),
         }
     }
@@ -210,7 +233,7 @@ impl RequestWriter {
     /// the checked extent alone.
     pub fn item(&mut self, occurrence: OccurrenceKey, requirements: &Requirements) -> RequestIndex {
         let extent = ExtentClassification::of(requirements.extent());
-        self.push(occurrence, requirements.kind(), extent, Vec::new())
+        self.push(occurrence, requirements, extent, Vec::new())
     }
 
     /// Write the bounded item for the claim at `occurrence` with
@@ -240,7 +263,7 @@ impl RequestWriter {
         let domains = substitute(&unbounded, &bounds)?;
         Ok(self.push(
             occurrence,
-            requirements.kind(),
+            requirements,
             ExtentClassification::Bounded,
             domains,
         ))
@@ -259,7 +282,7 @@ impl RequestWriter {
     fn push(
         &mut self,
         occurrence: OccurrenceKey,
-        kind: Capability,
+        requirements: &Requirements,
         extent: ExtentClassification,
         domains: Vec<ProofBound>,
     ) -> RequestIndex {
@@ -267,9 +290,10 @@ impl RequestWriter {
         self.items.push(RequestItem {
             index,
             occurrence,
-            kind,
+            kind: requirements.kind(),
             extent,
             domains,
+            unsupported: requirements.unsupported().cloned(),
         });
         index
     }
@@ -340,10 +364,13 @@ pub struct RequirementItem {
     extent: ExtentClassification,
     unbounded: Vec<(DomainKey, DomainKind)>,
     proof_bounds: Vec<ProofBound>,
+    subject_proof_bounds: Vec<ProofBound>,
+    model_subject: bool,
     result_bound: WireNodeId,
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
     candidates: CandidateOutcome,
+    unsupported: Option<UnsupportedItem>,
 }
 
 impl RequirementItem {
@@ -394,22 +421,62 @@ impl RequirementItem {
     }
 
     /// The temporal subject's proof bounds for this occurrence (QSpec FR-331
-    /// `temporal.subject.proof_bounds`, FR-361): `None` for an item that is
-    /// not `temporal-satisfaction`; for a temporal item, the same
-    /// substitution as [`RequirementItem::proof_bounds`], since the request
-    /// substitutes one set of proof bounds per item. `Some(&[])` is a
-    /// temporal item with no substitution.
-    ///
-    /// Interim (STD-213): QSpec FR-331 also shows a temporal subject bounded
-    /// apart from its extent, an item whose extent stays `unbounded` while
-    /// its subject carries a population bound, and FR-368 gives a subject
-    /// only to an item over a model subject. QSL defines neither a
-    /// subject-only substitution nor which temporal record is over a model
-    /// subject, so this reads the extent substitution for every
-    /// `temporal-satisfaction` item until STD-213 settles both.
+    /// `temporal.subject.proof_bounds`): `None` unless the item is
+    /// `temporal-satisfaction` over a model subject, which alone has a
+    /// `subject` (FR-331, FR-368); otherwise the substitutions
+    /// [`RequirementItem::with_subject_proof_bounds`] supplied, in domain-key
+    /// order. They are independent of [`RequirementItem::proof_bounds`] (the
+    /// extent's): neither moves into the other. `Some(&[])` is such an item
+    /// with no subject substitution.
     pub fn temporal_proof_bounds(&self) -> Option<&[ProofBound]> {
-        matches!(self.kind, Capability::TemporalSatisfaction)
-            .then_some(self.proof_bounds.as_slice())
+        (matches!(self.kind, Capability::TemporalSatisfaction) && self.model_subject)
+            .then_some(self.subject_proof_bounds.as_slice())
+    }
+
+    /// This item with `bounds` as its temporal subject's proof bounds
+    /// (QSpec FR-331: the subject-only substitution, supplied by the caller
+    /// and independent of the extent; ADR-014 B-4). A subject's proof bounds
+    /// substitute its own populations, so each key is a
+    /// [`DomainKey::Population`] with a cardinality bound, and QSL writes
+    /// the `population` kind (FR-097-AC-9). The index, occurrence, extent
+    /// and extent bounds are unchanged. Refuses an item with no model
+    /// subject, a key that is not a population and a bound that is not a
+    /// cardinality, returning nothing.
+    pub fn with_subject_proof_bounds(
+        &self,
+        bounds: &BTreeMap<DomainKey, FiniteBound>,
+    ) -> Result<Self, BoundRefusal> {
+        if self.temporal_proof_bounds().is_none() {
+            return Err(BoundRefusal::NoModelSubject);
+        }
+        let subject_proof_bounds = bounds
+            .iter()
+            .map(|(domain, bound)| {
+                if !matches!(domain, DomainKey::Population { .. }) {
+                    return Err(BoundRefusal::NotAPopulation {
+                        domain: domain.clone(),
+                    });
+                }
+                let supplied = bound.kind();
+                if supplied != FiniteBoundKind::Cardinality {
+                    return Err(BoundRefusal::KindMismatch {
+                        domain: domain.clone(),
+                        expected: FiniteBoundKind::Cardinality,
+                        supplied,
+                    });
+                }
+                ProofBound::new(domain.clone(), Some(DomainKind::Population), bound.clone())
+                    .map_err(|_| BoundRefusal::KindMismatch {
+                        domain: domain.clone(),
+                        expected: FiniteBoundKind::Cardinality,
+                        supplied,
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            subject_proof_bounds,
+            ..self.clone()
+        })
     }
 
     /// The bounded follow-up of this item (ADR-014 §4 "Bounded request"):
@@ -456,6 +523,13 @@ impl RequirementItem {
     pub fn candidates(&self) -> &CandidateOutcome {
         &self.candidates
     }
+
+    /// The cause the writer disposed the item `Unsupported` for (FR-234
+    /// "Punctuality"); such an item has no candidate, so it is routed to no
+    /// engine.
+    pub fn unsupported(&self) -> Option<&UnsupportedItem> {
+        self.unsupported.as_ref()
+    }
 }
 
 /// The requested items of a checked package's requirement `records`
@@ -492,23 +566,35 @@ pub fn items_from_requirements(
                 extent,
                 unbounded,
                 proof_bounds: Vec::new(),
+                subject_proof_bounds: Vec::new(),
+                model_subject: requirements.model_subject(),
                 result_bound: record.result_bound().node(),
                 conversion_context: record.conversion_context().cloned(),
                 path_condition: record.path_condition().to_vec(),
                 candidates: candidates_of(requirements, registry, named),
+                unsupported: requirements.unsupported().cloned(),
             }
         })
         .collect()
 }
 
 /// The candidate outcome of one item's `requirements`: backends of its
-/// capability kind that advertise every fairness kind it uses (FR-134).
+/// capability kind that advertise every fairness kind it uses (FR-134). An
+/// item the writer disposes `Unsupported` has no candidate (FR-234).
 fn candidates_of(
     requirements: &Requirements,
     registry: &Registry,
     named: Option<&BackendId>,
 ) -> CandidateOutcome {
-    registry.candidates_for_fairness(requirements.kind(), named, requirements.fairness())
+    let outcome =
+        registry.candidates_for_fairness(requirements.kind(), named, requirements.fairness());
+    match outcome {
+        // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).
+        CandidateOutcome::Candidates(_) if requirements.unsupported().is_some() => {
+            CandidateOutcome::Candidates(CandidateSet::none(requirements.kind(), named))
+        }
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -879,5 +965,59 @@ mod tests {
             panic!("a candidate outcome");
         };
         assert_eq!(plain.candidates().len(), 2);
+    }
+
+    /// FR-234 "Punctuality": the writer disposes an item whose requirements
+    /// carry `PunctualInterval` `Unsupported`, naming the interval's span,
+    /// and gives it no candidate though a backend advertises its kind; the
+    /// same item without the cause keeps that backend.
+    #[trace("TC-689", "FR-234-AC-3")]
+    #[test]
+    fn a_punctual_item_is_disposed_unsupported_and_routed_to_no_engine() {
+        use crate::{BackendDescriptor, Candidate, ManifestDigest, Mode, ProviderOrigin};
+        use qsl_semantics::family::UnsupportedItem;
+
+        let mut registry = Registry::new();
+        registry
+            .register(
+                BackendDescriptor::new(
+                    Candidate::new(BackendId::new("zones")),
+                    ProviderOrigin::Linked,
+                    ManifestDigest::from_digest([3; 32]),
+                    [(Capability::TemporalSatisfaction, Mode::Unbounded)],
+                    None,
+                )
+                .expect("a well-formed descriptor"),
+            )
+            .expect("admitted");
+        let cause = UnsupportedItem::PunctualInterval {
+            span: qsl_foundation::Span { start: 4, end: 16 },
+        };
+        let plain = Requirements::new(Capability::TemporalSatisfaction, ClaimExtent::Bounded);
+        let punctual = plain.clone().with_unsupported(cause.clone());
+
+        let mut writer = RequestWriter::new();
+        writer.item(occurrence(), &punctual);
+        writer.item(occurrence(), &plain);
+        let [disposed, negotiated] = writer.items() else {
+            panic!("two items");
+        };
+        assert_eq!(disposed.unsupported(), Some(&cause));
+        assert_eq!(negotiated.unsupported(), None);
+
+        let CandidateOutcome::Candidates(none) = candidates_of(&punctual, &registry, None) else {
+            panic!("a candidate outcome");
+        };
+        assert!(none.candidates().is_empty());
+        let CandidateOutcome::Candidates(some) = candidates_of(&plain, &registry, None) else {
+            panic!("a candidate outcome");
+        };
+        assert_eq!(some.candidates(), [Candidate::new(BackendId::new("zones"))]);
+
+        let missing = BackendId::new("missing");
+        assert_eq!(
+            candidates_of(&punctual, &registry, Some(&missing)),
+            CandidateOutcome::UnknownBackend(missing)
+        );
     }
 }

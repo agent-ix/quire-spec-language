@@ -117,14 +117,30 @@ impl ClaimExtent {
     }
 }
 
+/// Why the request writer disposes an item `Unsupported` before any engine
+/// sees it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum UnsupportedItem {
+    /// FR-234 "Punctuality" (ADR-026 DF-5): a timed invariant, timed safety
+    /// or timed liveness claim over a timed subject holding a punctual
+    /// interval, at the interval's span.
+    PunctualInterval {
+        /// The punctual interval's span.
+        span: qsl_foundation::Span,
+    },
+}
+
 /// One item's requirements (ADR-012 §2, FR-062-AC-4; ADR-014 §4, §6 step
-/// 1): the FR-057 capability kind it requests, its extent, and the fairness
-/// kinds its fairness set uses (FR-134; empty for an item with none).
+/// 1): the FR-057 capability kind it requests, its extent, the fairness
+/// kinds its fairness set uses (FR-134; empty for an item with none), and
+/// the cause the request writer disposes it `Unsupported` for, if any.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Requirements {
     kind: Capability,
     extent: ClaimExtent,
     fairness: BTreeSet<FairnessKind>,
+    unsupported: Option<UnsupportedItem>,
+    model_subject: bool,
 }
 
 impl Requirements {
@@ -134,7 +150,35 @@ impl Requirements {
             kind,
             extent,
             fairness: BTreeSet::new(),
+            unsupported: None,
+            model_subject: false,
         }
+    }
+
+    /// The requirements of an item over a model subject (FR-331, FR-368:
+    /// only such a temporal item has a `subject`).
+    #[must_use]
+    pub fn over_model_subject(mut self) -> Self {
+        self.model_subject = true;
+        self
+    }
+
+    /// Whether the item is over a model subject.
+    pub fn model_subject(&self) -> bool {
+        self.model_subject
+    }
+
+    /// The requirements of an item the request writer disposes
+    /// `Unsupported` for `cause`, routing it to no engine (FR-234).
+    #[must_use]
+    pub fn with_unsupported(mut self, cause: UnsupportedItem) -> Self {
+        self.unsupported = Some(cause);
+        self
+    }
+
+    /// Why the request writer disposes the item `Unsupported`, if it does.
+    pub fn unsupported(&self) -> Option<&UnsupportedItem> {
+        self.unsupported.as_ref()
     }
 
     /// The requirements with the fairness kinds the item's fairness set

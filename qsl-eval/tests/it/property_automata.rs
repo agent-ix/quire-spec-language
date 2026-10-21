@@ -12,9 +12,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use ix_trace_rs::trace;
 use qsl_eval::automaton::{
-    translate, translate_negation, Atom, AtomSymmetry, AutomatonError, AutomatonKind, Gba, Letter,
-    Monitor, PropertyAutomaton, StateId,
+    translate, translate_counted, translate_negation, Atom, AtomSymmetry, AutomatonError,
+    AutomatonKind, Gba, Letter, Monitor, PropertyAutomaton, StateId,
 };
 use qsl_eval::temporal::{
     evaluate, AtomReading, LetterStop, TemporalLetters, TemporalOutcome, TemporalPosition,
@@ -63,6 +64,23 @@ fn bounded(body: &str) -> Subject {
     subject_with(EVENT, ORIGIN, body)
 }
 
+/// A bounded `on origin` clause translated for a subject whose steps count
+/// by kind (ADR-027 PB-3).
+fn counted(body: &str) -> Subject {
+    let fixture = fixture(EVENT, "c: Counter", ORIGIN, body);
+    let mut property =
+        translate_counted(&fixture.clause, LIMIT).unwrap_or_else(|why| panic!("{body}: {why}"));
+    let gba = property
+        .explore()
+        .unwrap_or_else(|why| panic!("{body}: {why}"));
+    Subject {
+        body: body.to_owned(),
+        fixture,
+        property,
+        gba,
+    }
+}
+
 fn translation_of(body: &str) -> Result<PropertyAutomaton, AutomatonError> {
     translate(&fixture(INFINITE, "c: Counter", ORIGIN, body).clause, LIMIT)
 }
@@ -75,6 +93,9 @@ fn atom(index: usize) -> Atom {
 struct WordLetters<'a> {
     property: &'a PropertyAutomaton,
     word: &'a [Letter],
+    /// Whether the step that closes a lasso's loop counts: the step into
+    /// the loop's entry, which its letter says.
+    loop_edge_counts: bool,
 }
 
 impl WordLetters<'_> {
@@ -108,6 +129,16 @@ impl TemporalLetters for WordLetters<'_> {
         let when = self.property.when().expect("the clause has a `when`");
         Ok(reading(self.letter(position).holds(when)))
     }
+
+    fn counts_step(&self, position: TemporalPosition) -> bool {
+        self.property
+            .uncounted()
+            .is_none_or(|uncounted| !self.letter(position).holds(uncounted))
+    }
+
+    fn counts_loop_edge(&self) -> bool {
+        self.loop_edge_counts
+    }
 }
 
 fn reading(holds: bool) -> AtomReading {
@@ -120,9 +151,17 @@ fn reading(holds: bool) -> AtomReading {
 
 /// Whether the clause holds on `trace` over `word`, by the evaluator.
 fn evaluator_holds(subject: &Subject, word: &[Letter], trace: TemporalTrace) -> bool {
+    let loop_edge_counts = match (trace, subject.property.uncounted()) {
+        (TemporalTrace::Lasso { prefix, .. }, Some(uncounted)) => usize::try_from(prefix)
+            .ok()
+            .and_then(|entry| word.get(entry))
+            .is_none_or(|letter| !letter.holds(uncounted)),
+        _ => true,
+    };
     let mut letters = WordLetters {
         property: &subject.property,
         word,
+        loop_edge_counts,
     };
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     match evaluate(&subject.fixture.clause, trace, &mut letters, &mut meter) {
@@ -220,10 +259,12 @@ fn words(width: usize, longest: usize) -> Vec<Vec<Letter>> {
     all
 }
 
-/// The number of letter atoms the evaluator supplies: the clause's atoms
-/// and its `when`.
+/// The number of letter atoms the evaluator supplies: the clause's atoms,
+/// its `when` and the atom that marks a step that does not count.
 fn width(subject: &Subject) -> usize {
-    subject.property.atoms().len() + usize::from(subject.property.when().is_some())
+    subject.property.atoms().len()
+        + usize::from(subject.property.when().is_some())
+        + usize::from(subject.property.uncounted().is_some())
 }
 
 /// Compare the automaton of `subject` with the evaluator on every word of up
@@ -239,6 +280,13 @@ fn agree_on(subject: &Subject, longest: usize, both: bool) -> usize {
     let mut compared = 0;
     let mut verdicts = BTreeSet::new();
     for word in words(width(subject), longest) {
+        // No step leads into position 0, which the evaluator reads as one
+        // counted step from before the trace.
+        if let (Some(uncounted), Some(first)) = (property.uncounted(), word.first()) {
+            if first.holds(uncounted) {
+                continue;
+            }
+        }
         match property.kind() {
             AutomatonKind::Bounded => {
                 let expected = evaluator_holds(
@@ -271,6 +319,27 @@ fn agree_on(subject: &Subject, longest: usize, both: bool) -> usize {
             }
             AutomatonKind::Safety | AutomatonKind::Liveness => {
                 for prefix in 0..word.len() {
+                    // A bad-prefix or finitely-accepting automaton cannot see
+                    // that a loop with no counted step never meets a future
+                    // interval eventuality: EN-1 decides those loops by the
+                    // non-progress check, and the evaluator reads them
+                    // directly. A body without one (past operators, `always`,
+                    // `release`) is decided by the automaton on those loops
+                    // too.
+                    let owes =
+                        subject.body.contains("eventually") || subject.body.contains("until");
+                    if let Some(uncounted) = property.uncounted().filter(|_| owes) {
+                        // The loop's steps are those into its positions after
+                        // the entry, and its closing step is the entry's own.
+                        let progress = word
+                            .get(prefix..)
+                            .into_iter()
+                            .flatten()
+                            .any(|letter| !letter.holds(uncounted));
+                        if !progress {
+                            continue;
+                        }
+                    }
                     let expected = evaluator_holds(
                         subject,
                         &word,
@@ -345,6 +414,135 @@ fn a_bounded_clause_translates_to_a_finite_monitor_that_answers_to_the_closed_tr
         "holds(p) and not eventually[0,1] holds(q)",
     ] {
         bounded_agrees(body, if body.contains("holds(r)") { 4 } else { 6 });
+    }
+}
+
+/// ADR-027 PB-3 (FR-213-AC-3): for a subject whose steps count by kind, a
+/// bounded clause's finite monitor answers to the closed trace evaluation
+/// over a letter that also says which steps do not count, whatever the
+/// interval shape. A clause without an interval operator reads no such atom.
+#[trace("TC-658")]
+#[test]
+fn a_counted_clause_translates_to_a_monitor_that_answers_to_counted_distance() {
+    for body in [
+        "eventually[0,2] holds(p)",
+        "eventually[1,2] holds(p)",
+        "always[0,2] holds(p)",
+        "always[1,2] holds(p)",
+        "eventually[0,1] (holds(p) and eventually[0,1] holds(q))",
+        "always[0,2] (holds(p) implies eventually[1,2] holds(q))",
+        "holds(p) until[0,2] holds(q)",
+        "holds(p) until[1,3] holds(q)",
+        "holds(p) release[0,2] holds(q)",
+        "holds(p) release[1,2] holds(q)",
+        "eventually[1,2] always[0,1] holds(p)",
+    ] {
+        let subject = counted(body);
+        assert_eq!(subject.property.kind(), AutomatonKind::Bounded, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, if body.contains("holds(q)") { 4 } else { 5 }) > 0);
+    }
+    let plain = counted("holds(p) and not holds(q)");
+    assert_eq!(plain.property.uncounted(), None);
+}
+
+/// ADR-027 PB-3 (FR-338, FR-092): a past operator with an interval over a
+/// subject whose steps count by kind measures its window backwards in counted
+/// steps, as the evaluator does: the age of a lower-bound-0 operator and the
+/// shift of a lower bound move only on a counted step, several positions
+/// share a distance, and an operand read at an uncounted step is still read.
+/// The automaton answers to the closed-trace evaluation over every word of
+/// up to four positions, `once`, `historically`, `since` and `triggered`
+/// included.
+#[trace("TC-658")]
+#[test]
+fn a_past_interval_over_counted_steps_answers_to_counted_distance() {
+    for body in [
+        "always[0,3] (holds(p) implies once[0,1] holds(q))",
+        "always[0,3] (holds(p) implies once[1,2] holds(q))",
+        "always[0,3] (holds(p) implies once[2,3] holds(q))",
+        "always[0,3] (holds(p) implies historically[0,1] holds(q))",
+        "always[0,3] (holds(p) implies historically[1,2] holds(q))",
+        "always[0,3] (holds(p) implies (holds(p) since[0,1] holds(q)))",
+        "always[0,3] (holds(p) implies (holds(q) since[1,2] holds(p)))",
+        "always[0,3] (holds(p) implies (holds(q) triggered[0,1] holds(p)))",
+        "always[0,3] (holds(p) implies (holds(p) triggered[1,2] holds(q)))",
+        "eventually[1,3] (holds(p) and once[1,1] holds(q))",
+    ] {
+        let subject = counted(body);
+        assert_eq!(subject.property.kind(), AutomatonKind::Bounded, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, 4) > 0, "{body}");
+    }
+}
+
+/// ADR-027 PB-3 (FR-338): an infinite-trace clause with an interval over a
+/// subject whose steps count by kind answers to the lasso evaluation in
+/// counted steps, over every lasso of up to four positions and every split
+/// into prefix and loop. A loop with no counted step keeps every distance
+/// constant, so an interval that needs a counted step after the loop is
+/// entered is not met on it; the loop's closing step counts as its entry's
+/// letter says.
+#[trace("TC-658")]
+#[test]
+fn a_counted_lasso_answers_to_counted_distance() {
+    for (body, kind) in [
+        ("eventually[1,2] holds(p)", AutomatonKind::Safety),
+        (
+            "always (holds(p) implies eventually[0,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies eventually[1,2] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies always[1,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies (holds(q) until[0,2] holds(p)))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies once[1,2] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies eventually[2,3] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies once[2,3] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        (
+            "always (holds(p) implies historically[0,1] holds(q))",
+            AutomatonKind::Safety,
+        ),
+        ("always eventually[0,1] holds(p)", AutomatonKind::Safety),
+        ("eventually[0,1] always holds(p)", AutomatonKind::Safety),
+        (
+            "always (holds(p) implies eventually[1,*] holds(q))",
+            AutomatonKind::Liveness,
+        ),
+        ("eventually always[0,1] holds(p)", AutomatonKind::Liveness),
+    ] {
+        let fixture = fixture(INFINITE, "c: Counter", ORIGIN, body);
+        let mut property =
+            translate_counted(&fixture.clause, LIMIT).unwrap_or_else(|why| panic!("{body}: {why}"));
+        let gba = property
+            .explore()
+            .unwrap_or_else(|why| panic!("{body}: {why}"));
+        let subject = Subject {
+            body: body.to_owned(),
+            fixture,
+            property,
+            gba,
+        };
+        assert_eq!(subject.property.kind(), kind, "{body}");
+        assert!(subject.property.uncounted().is_some(), "{body}");
+        assert!(agree(&subject, 4) > 0, "{body}");
     }
 }
 

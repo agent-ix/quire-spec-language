@@ -178,6 +178,9 @@ pub enum Code {
     /// QSpec FR-405, FR-407: a random parameter, reward, workload or
     /// `probabilistic` claim that breaks the rule its cause names.
     InvalidProbabilisticModel,
+    /// QSpec FR-415, FR-416: a timed model, clock binding or timed interval
+    /// that breaks the rule its cause names.
+    InvalidTimedModel,
 }
 
 impl Code {
@@ -234,6 +237,7 @@ impl Code {
             Self::NoncanonicalWire => "noncanonical_wire",
             Self::UnimplementedCapability => "unimplemented_capability",
             Self::InvalidProbabilisticModel => "invalid_probabilistic_model",
+            Self::InvalidTimedModel => "invalid_timed_model",
         }
     }
 
@@ -290,6 +294,7 @@ impl Code {
             Self::NoncanonicalWire,
             Self::UnimplementedCapability,
             Self::InvalidProbabilisticModel,
+            Self::InvalidTimedModel,
         ]
     }
 

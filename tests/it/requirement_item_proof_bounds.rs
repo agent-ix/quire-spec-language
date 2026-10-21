@@ -3,13 +3,14 @@
 //! read from a checked package carries no proof bound, and its bounded
 //! follow-up is the single item of its own request, at the original
 //! occurrence, carrying the substituted proof bounds with QSL's domain
-//! kinds; a temporal item carries them as its subject's proof bounds too
-//! (QSpec FR-331 `extent.bounds`, `temporal.subject.proof_bounds`).
+//! kinds (QSpec FR-331 `extent.bounds`); a temporal item's subject proof
+//! bounds are separate (`temporal.subject.proof_bounds`).
 
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
+use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, FiniteBoundKind, ProofBound};
+use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{CatalogCode, CatalogCoded, RequestIndex};
 use qsl_route::request::{
     items_from_requirements, BoundRefusal, ExtentClassification, RequirementItem,
@@ -135,11 +136,11 @@ fn a_follow_up_from_a_later_record_has_its_own_index_and_the_original_occurrence
 
 /// A `temporal-satisfaction` item over a record with an unranged `Integer`
 /// field is temporal with no subject proof bound; its bounded follow-up
-/// carries the integer-range bound with the `integer` kind both as its
-/// extent's bounds and as its subject's, at the same occurrence.
+/// carries the integer-range bound with the `integer` kind as its extent's
+/// bounds, at the same occurrence; its subject's bounds stay empty.
 #[trace("TC-438", "FR-097-AC-9")]
 #[test]
-fn a_temporal_follow_up_carries_its_subject_proof_bounds_at_its_occurrence() {
+fn a_temporal_follow_up_carries_its_extent_bounds_at_its_occurrence() {
     let item = item(
         "profile t = \"quire.temporal.event-position.false-extension/v1\";\n\
          record Loose { n: Integer; }\n\
@@ -153,20 +154,117 @@ fn a_temporal_follow_up_carries_its_subject_proof_bounds_at_its_occurrence() {
             finite_bound_available: true
         }
     );
-    assert_eq!(item.temporal_proof_bounds(), Some(&[][..]));
+    assert_eq!(
+        item.temporal_proof_bounds(),
+        None,
+        "over a record, no subject"
+    );
 
     let (follow_up, expected) = bounded(&item, range(0, 3));
     assert_eq!(expected.kind(), Some(DomainKind::Integer));
     assert_eq!(follow_up.occurrence(), item.occurrence());
     assert_eq!(follow_up.extent(), ExtentClassification::Bounded);
     assert_eq!(follow_up.proof_bounds(), std::slice::from_ref(&expected));
-    assert_eq!(follow_up.temporal_proof_bounds(), Some(&[expected][..]));
+    assert_eq!(
+        follow_up.temporal_proof_bounds(),
+        None,
+        "over a record, no subject; the extent's bounds are not the subject's"
+    );
+}
+
+/// FR-097-AC-10: a model-subject temporal item's subject proof bounds are
+/// supplied by the caller as population cardinalities, written with QSL's
+/// `population` kind in key order, and independent of the extent. A
+/// supplied-trace item and a non-temporal item have none and refuse; so do a
+/// non-population key and a non-cardinality bound, each with the
+/// `invalid_runtime_input`/`invalid-value` code.
+#[trace("TC-438", "FR-097-AC-10")]
+#[test]
+fn subject_proof_bounds_are_independent_of_the_extent() {
+    let graph = super::fairness_item_path::graph_of("always eventually holds(c.versionNumber = 2)");
+    let items = items_from_requirements(graph.requirements(), &Registry::new(), None);
+    let [model] = items.as_slice() else {
+        panic!("one temporal item: {items:#?}");
+    };
+    assert_eq!(model.temporal_proof_bounds(), Some(&[][..]));
+
+    let key = |ordinal: u32| DomainKey::Population {
+        member_type: WireNodeId::from_digest([1; 32]),
+        ordinal,
+    };
+    let bounds = BTreeMap::from([
+        (key(1), FiniteBound::cardinality(3)),
+        (key(0), FiniteBound::cardinality(2)),
+    ]);
+    let with = model
+        .with_subject_proof_bounds(&bounds)
+        .expect("populations");
+    let expected: Vec<_> = bounds
+        .iter()
+        .map(|(domain, bound)| {
+            ProofBound::new(domain.clone(), Some(DomainKind::Population), bound.clone())
+                .expect("a paired bound")
+        })
+        .collect();
+    assert_eq!(with.temporal_proof_bounds(), Some(expected.as_slice()));
+    assert_eq!(with.occurrence(), model.occurrence());
+    assert_eq!(with.index(), model.index());
+    assert_eq!(with.extent(), model.extent());
+    assert_eq!(with.unbounded(), model.unbounded());
+    assert!(with.proof_bounds().is_empty());
+
+    let trace = item(
+        "profile t = \"quire.temporal.infinite-trace/v1\";\n\
+         record Counter { level: Int[0, 9]; }\n\
+         temporal C using t over (c: Counter) clock \"model-steps\" on origin \
+         { eventually holds(c.level = 2) }",
+    );
+    assert_eq!(trace.kind(), Capability::TemporalSatisfaction);
+    assert_eq!(trace.temporal_proof_bounds(), None);
+    let set = item("function f using v(s: Set<Int[0, 9999]>): Integer pure { size(s) + 1 }");
+    let node = DomainKey::Node {
+        node: WireNodeId::from_digest([2; 32]),
+        path: Vec::new(),
+    };
+    let refusals = [
+        trace
+            .with_subject_proof_bounds(&bounds)
+            .expect_err("a supplied trace has no subject"),
+        set.with_subject_proof_bounds(&bounds)
+            .expect_err("not temporal"),
+        model
+            .with_subject_proof_bounds(&BTreeMap::from([(
+                node.clone(),
+                FiniteBound::cardinality(3),
+            )]))
+            .expect_err("not a population"),
+        model
+            .with_subject_proof_bounds(&BTreeMap::from([(key(0), range(0, 3))]))
+            .expect_err("not a cardinality"),
+    ];
+    assert_eq!(refusals[0], BoundRefusal::NoModelSubject);
+    assert_eq!(refusals[1], BoundRefusal::NoModelSubject);
+    assert_eq!(refusals[2], BoundRefusal::NotAPopulation { domain: node });
+    assert!(matches!(
+        refusals[3],
+        BoundRefusal::KindMismatch {
+            expected: FiniteBoundKind::Cardinality,
+            supplied: FiniteBoundKind::IntegerRange,
+            ..
+        }
+    ));
+    for refusal in refusals {
+        assert_eq!(
+            refusal.catalog_code(),
+            CatalogCode::new("invalid_runtime_input", "invalid-value")
+        );
+    }
 }
 
 /// `bounded` refuses `invalid_runtime_input`/`invalid-value` for an item
 /// that is already bounded (a follow-up) and for an infinite-trace temporal
-/// item, whose formula domain no finite bound stands for, so that item's
-/// subject proof bounds stay empty.
+/// item, whose formula domain no finite bound stands for, and it is over a record,
+/// so it has no subject.
 #[trace("TC-438", "FR-097-AC-4")]
 #[test]
 fn bounded_refuses_a_bounded_item_and_an_infinite_trace_item() {
@@ -211,5 +309,5 @@ fn bounded_refuses_a_bounded_item_and_an_infinite_trace_item() {
             CatalogCode::new("invalid_runtime_input", "invalid-value")
         );
     }
-    assert_eq!(temporal.temporal_proof_bounds(), Some(&[][..]));
+    assert_eq!(temporal.temporal_proof_bounds(), None);
 }
