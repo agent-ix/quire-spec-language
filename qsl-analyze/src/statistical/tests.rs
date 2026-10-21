@@ -1469,6 +1469,7 @@ fn finished(index: u32, decision: Decision, estimate: Option<Rational>) -> TestR
         decision,
         estimate,
         interval: None,
+        quantile: None,
         samples: 1,
         draws: 1,
         undefined: None,

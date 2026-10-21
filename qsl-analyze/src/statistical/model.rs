@@ -17,6 +17,7 @@
 //! behaviour at each return to its initial state's key.
 
 use std::cell::RefCell;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -24,15 +25,17 @@ use qsl_eval::automaton::{translate_body, AutomatonError, Monitor, PropertyAutom
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PredicateReading};
 use qsl_eval::simulation::{
-    NotSimulated, ProbabilisticSampler, SampleStop, SampledPosition, SampledStep, StepAt,
-    TransitionSystem,
+    NotSimulated, Permutation, ProbabilisticSampler, SampleStop, SampledPosition, SampledStep,
+    StepAt, SymmetryGroup, TotalAboveDrawRange, TransitionSystem,
 };
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::{CatalogCode, InternalFault};
+use qsl_package::CheckedPackage;
 use qsl_replay::statistical::{
     ClaimForm, Confidence, MeasureValue, StatisticalLimits, StatisticalMethod, StatisticalOutcome,
-    StatisticalRefusal,
+    StatisticalRefusal, TestProvenance, WitnessReadStop, WitnessReader, WitnessReading,
+    WitnessValue,
 };
 use qsl_replay::{
     ClaimPredicate, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
@@ -42,16 +45,19 @@ use qsl_semantics::check::{
     Bound as CheckedBound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim,
     CheckedTemporalFormula, Event, FractionMeasure, ProbForm, ProbScheduler, TemporalProfile,
 };
+use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
 
 use super::claim::{reduce_quantile, Bound, Comparison, MeasureEvent, QuantileComparison};
 use super::{
-    check_sampled, require_statistical, BehaviourSampler, Drawn, RegenerationWalk, Sample,
-    SampleHalt, SampledRequest, StatisticalClaim, TestSubject, UnitFraction, WalkStep, Weight,
+    check_sampled, require_statistical, violating, BehaviourSampler, Drawn, RegenerationWalk,
+    Sample, SampleHalt, SampledRequest, StatisticalClaim, TestSubject, UnitFraction, WalkStep,
+    Weight,
 };
 use crate::exact_probabilistic::plan::{read_letter, PlanFault};
 use crate::exact_probabilistic::{FormulaState, MonitorVerdict};
 use crate::model_check::false_extension::false_extension_rejects;
+use crate::model_check::{admit, SymmetryDeclaration};
 
 /// FR-189's statistical request over a model subject.
 pub struct StatisticalRequest<'a> {
@@ -69,6 +75,11 @@ pub struct StatisticalRequest<'a> {
     pub limits: StatisticalLimits,
     /// The most sampled witnesses kept beside an undefined one (FR-193).
     pub max_witnesses: u32,
+    /// The symmetry declarations (ADR-021 SYM-5); empty selects none. Under
+    /// an admitted declaration, when the workload and every random
+    /// distribution are invariant under its group, one test runs per orbit
+    /// of (initial state, binding) pairs (FR-189 "Tests", ADR-024 RX-1).
+    pub symmetry: Vec<SymmetryDeclaration>,
 }
 
 fn fault(invariant: &'static str) -> StatisticalRefusal {
@@ -104,6 +115,7 @@ pub fn check_statistical(
         sampler,
         limits,
         max_witnesses,
+        symmetry,
     } = request;
     require_statistical(claim)?;
     let (statistical, reading) = reduce(claim)?;
@@ -114,43 +126,17 @@ pub fn check_statistical(
     let package = subject.simulation.package;
     let system = ModelSystem::new(subject.simulation)
         .map_err(|failure| StatisticalRefusal::Admission(Box::new(failure)))?;
-    let ProbScheduler::Workload(name) = &claim.scheduler else {
-        return Err(fault("a-statistical-claim-is-under-a-workload"));
+    let group = if symmetry.is_empty() {
+        None
+    } else {
+        Some(admit(&system, &symmetry).map_err(StatisticalRefusal::Symmetry)?)
     };
-    let workload = package
-        .graph()
-        .probabilistic_model()
-        .workload(name)
-        .ok_or_else(|| fault("claim-workload-is-declared"))?;
-    let bindings = bindings(&system, claim)?;
-    let initial = system.initial();
-    let mut tests = Vec::with_capacity(initial.len().saturating_mul(bindings.len()));
-    for index in 0..initial.len() {
-        let index = u32::try_from(index).map_err(|_| StatisticalRefusal::TooManyTests {
-            count: initial.len().saturating_mul(bindings.len()),
-        })?;
-        tests.extend(bindings.iter().map(|(binding, _)| TestSubject {
-            initial: index,
-            binding: binding.clone(),
-        }));
+    let (shared, mut tests) = open(&system, package, claim, reading, &sampler, cancel)?;
+    if let Some(group) = group.filter(|_| invariant(package)) {
+        tests = orbit_representatives(&system, &group, &shared.initial, tests)?;
     }
-    let generator =
-        ProbabilisticSampler::new(&system, workload, &sampler).map_err(|stop| match stop {
-            SampleStop::GeneratorMismatch { supplied } => {
-                StatisticalRefusal::GeneratorMismatch { supplied }
-            }
-            _ => fault("a-sampler-refuses-only-its-generator"),
-        })?;
     let mut model = ModelSampler {
-        shared: Rc::new(RefCell::new(Shared {
-            generator,
-            system: &system,
-            reading,
-            initial,
-            bindings,
-            truths: BTreeMap::new(),
-            cancel,
-        })),
+        shared: Rc::new(RefCell::new(shared)),
     };
     check_sampled(
         SampledRequest {
@@ -165,6 +151,179 @@ pub fn check_statistical(
         &mut model,
         cancel,
     )
+}
+
+/// The sampler state over an admitted `system`, and the claim's tests in
+/// subject order: one per (initial state, `over` binding) pair.
+fn open<'s, 'a, 'c>(
+    system: &'s ModelSystem<'a>,
+    package: &'s CheckedPackage,
+    claim: &'c CheckedProbabilisticClaim,
+    reading: Reading<'c>,
+    sampler: &DefinitionRef,
+    cancel: &'s Cancel,
+) -> Result<(Shared<'s, 'a, 'c>, Vec<TestSubject>), StatisticalRefusal> {
+    let ProbScheduler::Workload(name) = &claim.scheduler else {
+        return Err(fault("a-statistical-claim-is-under-a-workload"));
+    };
+    let workload = package
+        .graph()
+        .probabilistic_model()
+        .workload(name)
+        .ok_or_else(|| fault("claim-workload-is-declared"))?;
+    let bindings = bindings(system, claim)?;
+    let initial = system.initial();
+    let mut tests = Vec::with_capacity(initial.len().saturating_mul(bindings.len()));
+    for index in 0..initial.len() {
+        let index = u32::try_from(index).map_err(|_| StatisticalRefusal::TooManyTests {
+            count: initial.len().saturating_mul(bindings.len()),
+        })?;
+        tests.extend(bindings.iter().map(|(binding, _)| TestSubject {
+            initial: index,
+            binding: binding.clone(),
+        }));
+    }
+    let generator =
+        ProbabilisticSampler::new(system, workload, sampler).map_err(|stop| match stop {
+            SampleStop::GeneratorMismatch { supplied } => {
+                StatisticalRefusal::GeneratorMismatch { supplied }
+            }
+            _ => fault("a-sampler-refuses-only-its-generator"),
+        })?;
+    let shared = Shared {
+        generator,
+        system,
+        reading,
+        initial,
+        bindings,
+        truths: BTreeMap::new(),
+        cancel,
+    };
+    Ok((shared, tests))
+}
+
+/// ADR-024 RX-1: whether the workload and every random distribution are
+/// invariant under a permutation of a symmetry class's keys. Workload weights
+/// are per operation, so they are invariant. A random parameter into a
+/// population is invariant when its weights are equal; this takes the
+/// conservative reading that every weight of a support with a reference is
+/// equal, so a run never merges tests that RX-1 would keep apart.
+fn invariant(package: &CheckedPackage) -> bool {
+    package
+        .graph()
+        .probabilistic_model()
+        .random_parameters()
+        .iter()
+        .all(|parameter| {
+            let support = parameter.support();
+            !support
+                .iter()
+                .any(|item| matches!(item.value.0, Value::Reference(_)))
+                || support
+                    .windows(2)
+                    .all(|pair| pair[0].weight == pair[1].weight)
+        })
+}
+
+/// The least key that exchanges with `key` under a transposition fixing the
+/// state `canonical`, `key` itself when none does: the key's block among the
+/// keys the state cannot tell apart (FR-152).
+fn block_key(
+    system: &ModelSystem<'_>,
+    group: &SymmetryGroup,
+    canonical: (&ModelSimState, &[u8]),
+    binding: &ModelInstance,
+) -> Result<String, StatisticalRefusal> {
+    let Some(class) = group.class_of(&binding.population, &binding.key) else {
+        return Ok(binding.key.clone());
+    };
+    for member in &class.keys {
+        if *member == binding.key {
+            break;
+        }
+        let swap = Permutation::of(
+            &binding.population,
+            [
+                (member.clone(), binding.key.clone()),
+                (binding.key.clone(), member.clone()),
+            ],
+        );
+        let swapped = system
+            .permute(canonical.0, &swap)
+            .map_err(|_| fault("a-canonical-state-permutes"))?;
+        let swapped = system
+            .state_key(&swapped)
+            .map_err(|_| fault("a-permuted-state-has-a-key"))?;
+        if swapped.0 == canonical.1 {
+            return Ok(member.clone());
+        }
+    }
+    Ok(binding.key.clone())
+}
+
+/// FR-189 "Symmetry": one test per orbit of (initial state, binding) pairs
+/// under `group`, on the orbit's least pair in key order, the tests in
+/// subject order. Two pairs share an orbit when their initial states reach
+/// the same canonical state (FR-152) and their bindings, carried to it, are
+/// the same key or keys that a transposition fixing that state exchanges, so
+/// the orbits found are never larger than the true ones: a pair whose orbit
+/// is missed only adds a test, which `m` counts, so no verdict is wrong.
+fn orbit_representatives(
+    system: &ModelSystem<'_>,
+    group: &SymmetryGroup,
+    initial: &[ModelSimState],
+    tests: Vec<TestSubject>,
+) -> Result<Vec<TestSubject>, StatisticalRefusal> {
+    // An orbit: its canonical state's key and its binding's block. Its
+    // least member so far: the initial state's key and the binding.
+    type Orbit = (Vec<u8>, Option<(DeclarationKey, String)>);
+    type Member = (Vec<u8>, Option<ModelInstance>);
+    let mut least: BTreeMap<Orbit, (Member, usize)> = BTreeMap::new();
+    for (position, test) in tests.iter().enumerate() {
+        let start = usize::try_from(test.initial)
+            .ok()
+            .and_then(|index| initial.get(index))
+            .ok_or_else(|| fault("a-test-starts-at-an-initial-state"))?;
+        let key_of = |state: &ModelSimState| {
+            system
+                .state_key(state)
+                .map(|(key, _)| key)
+                .map_err(|_| fault("an-initial-state-has-a-key"))
+        };
+        let own = key_of(start)?;
+        let (canonical, carry) = system
+            .canonicalise(start, group)
+            .map_err(|_| fault("an-initial-state-canonicalises"))?;
+        let canonical_key = key_of(&canonical)?;
+        let block = match &test.binding {
+            None => None,
+            Some(binding) => {
+                let carried = ModelInstance {
+                    population: binding.population.clone(),
+                    key: carry.image(&binding.population, &binding.key).to_owned(),
+                };
+                let key = block_key(system, group, (&canonical, &canonical_key), &carried)?;
+                Some((binding.population.clone(), key))
+            }
+        };
+        let member = (own, test.binding.clone());
+        match least.entry((canonical_key, block)) {
+            Entry::Vacant(slot) => {
+                slot.insert((member, position));
+            }
+            Entry::Occupied(mut slot) => {
+                if member < slot.get().0 {
+                    slot.insert((member, position));
+                }
+            }
+        }
+    }
+    let mut kept: Vec<usize> = least.values().map(|(_, position)| *position).collect();
+    kept.sort_unstable();
+    Ok(kept
+        .into_iter()
+        .filter_map(|position| tests.get(position).cloned())
+        .collect())
 }
 
 /// A test's `over` binding, and the reference its predicates read.
@@ -970,5 +1129,113 @@ impl RegenerationWalk for ModelWalk<'_, '_, '_> {
             Err(Ended::Undecided) => Ok(WalkStep::UndecidedSuccessor),
             Err(Ended::Halt(halt)) => Err(halt),
         }
+    }
+}
+
+/// FR-193's reader over a model subject: the sampler and claim of a
+/// statistical run, kept to read the claim again on a recomputed sample.
+pub struct ModelWitnessReader<'s, 'a, 'c> {
+    shared: Rc<RefCell<Shared<'s, 'a, 'c>>>,
+    bound: Bound,
+}
+
+/// The reader of `claim` over the admitted `system` of `package`, drawing
+/// with `sampler` (FR-193 "Replay").
+///
+/// # Errors
+///
+/// The refusals of [`check_statistical`] that depend on the claim and the
+/// sampler alone: [`StatisticalRefusal::EveryScheduler`],
+/// [`StatisticalRefusal::ExactOnlyForm`],
+/// [`StatisticalRefusal::MissingConfidence`],
+/// [`StatisticalRefusal::RequiresBound`] and
+/// [`StatisticalRefusal::GeneratorMismatch`].
+pub fn witness_reader<'s, 'a, 'c>(
+    system: &'s ModelSystem<'a>,
+    package: &'s CheckedPackage,
+    claim: &'c CheckedProbabilisticClaim,
+    sampler: &DefinitionRef,
+    cancel: &'s Cancel,
+) -> Result<ModelWitnessReader<'s, 'a, 'c>, StatisticalRefusal> {
+    require_statistical(claim)?;
+    let (statistical, reading) = reduce(claim)?;
+    let bound = statistical.bound().clone();
+    let (shared, _) = open(system, package, claim, reading, sampler, cancel)?;
+    Ok(ModelWitnessReader {
+        shared: Rc::new(RefCell::new(shared)),
+        bound,
+    })
+}
+
+impl From<SampleHalt> for WitnessReadStop {
+    fn from(halt: SampleHalt) -> Self {
+        let stop = match halt {
+            SampleHalt::NotMarkov(cause) => SampleStop::NotMarkov(*cause),
+            SampleHalt::TotalAboveDrawRange { total } => {
+                SampleStop::TotalAboveDrawRange(TotalAboveDrawRange { total })
+            }
+            SampleHalt::Expansion(stop) => SampleStop::Expansion(stop),
+            SampleHalt::GeneratorMismatch { supplied } => {
+                SampleStop::GeneratorMismatch { supplied }
+            }
+            SampleHalt::Cancelled(cause) => SampleStop::Cancelled(cause),
+            SampleHalt::AutomatonStates { value } => {
+                return Self::AutomatonStates { value };
+            }
+            SampleHalt::PredicateRefused(outcome) => {
+                return Self::PredicateRefused(Box::new(outcome));
+            }
+        };
+        Self::Sample(Box::new(stop))
+    }
+}
+
+impl WitnessReader for ModelWitnessReader<'_, '_, '_> {
+    fn read(
+        &mut self,
+        test: &TestProvenance,
+        seed: u64,
+        trace: u64,
+        steps: u64,
+    ) -> Result<WitnessReading, WitnessReadStop> {
+        let subject = TestSubject {
+            initial: test.initial,
+            binding: test.binding.clone(),
+        };
+        let long_run = matches!(self.shared.borrow().reading, Reading::LongRun { .. });
+        if long_run {
+            // A long-run fraction keeps only an undefined witness: walk to
+            // the recorded position.
+            let mut walk = ModelWalk {
+                shared: Rc::clone(&self.shared),
+                test: subject,
+                seed,
+                trace,
+                walk: None,
+            };
+            for _ in 0..=steps {
+                match walk.step_or_end() {
+                    Ok(WalkStep::Undefined { evaluation, steps }) => {
+                        return Ok(WitnessReading {
+                            value: Some(WitnessValue::Undefined(evaluation)),
+                            steps,
+                        })
+                    }
+                    Ok(WalkStep::Position { .. }) => {}
+                    Ok(WalkStep::UndecidedSuccessor) | Err(Ended::Undecided) => break,
+                    Err(Ended::Halt(halt)) => return Err(halt.into()),
+                }
+            }
+            return Ok(WitnessReading {
+                value: None,
+                steps: Vec::new(),
+            });
+        }
+        let Drawn { sample, steps } = self.shared.borrow_mut().sample(&subject, seed, trace)?;
+        let value = match sample {
+            Sample::Undefined(evaluation) => Some(WitnessValue::Undefined(evaluation)),
+            other => violating(&self.bound, &other),
+        };
+        Ok(WitnessReading { value, steps })
     }
 }

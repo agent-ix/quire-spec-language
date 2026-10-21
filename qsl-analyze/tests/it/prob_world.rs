@@ -114,7 +114,7 @@ impl Model {
         })
     }
 
-    fn operation(&self, operation: &Operation) -> Json {
+    fn operation(&self, operation: &Operation, receiver_scoped: bool) -> Json {
         let identity = self.ident(&format!("{}/{}", self.object, operation.name));
         let parameters: Vec<Json> = operation
             .parameters
@@ -126,18 +126,30 @@ impl Model {
             .iter()
             .map(|field| self.ident(&format!("{}/{field}", self.object)))
             .collect();
+        let deletes = if operation.deletes {
+            vec![self.ident(self.object)]
+        } else {
+            vec![]
+        };
+        // A receiver-scoped frame lets the operation write its receiver's
+        // fields only, so a population of several objects keeps the others.
+        let frame = if receiver_scoped {
+            json!({"modifies": [], "modifies_receiver": modifies, "creates": [],
+                "deletes": deletes})
+        } else {
+            json!({"modifies": modifies, "creates": [], "deletes": deletes})
+        };
         json!({
             "identity": identity, "name": operation.name, "params": parameters,
             "pre": [], "post": [],
             "origin": {"source": {"sourceIdentity": self.ident("spec"), "path": "spec.qspec",
                 "startLine": 1, "startColumn": 1}},
-            "frame": {"modifies": modifies, "creates": [],
-                "deletes": if operation.deletes { vec![self.ident(self.object)] } else { vec![] }},
+            "frame": frame,
         })
     }
 
     /// The domain package document.
-    fn document(&self) -> Vec<u8> {
+    fn document(&self, symmetric: bool) -> Vec<u8> {
         let mut kinds = vec![
             ("object_type", meaning::OBJECT_TYPE),
             ("population", meaning::POPULATION),
@@ -175,7 +187,7 @@ impl Model {
             "object_type",
             json!({
                 "supertypes": [], "fields": fields,
-                "operations": self.operations.iter().map(|operation| self.operation(operation))
+                "operations": self.operations.iter().map(|operation| self.operation(operation, symmetric))
                     .collect::<Vec<_>>(),
                 "relationships": [],
             }),
@@ -196,6 +208,7 @@ impl Model {
                 "identity": population, "displayName": population,
                 "kind": {"module": self.package, "name": "population"},
                 "members": [self.ident(self.object)], "extent": "closed",
+                "symmetric": symmetric,
                 "origin": Self::origin(&population),
             }],
         })
@@ -230,37 +243,76 @@ pub(crate) const UNLIMITED: ScalarLimits = ScalarLimits {
 impl World {
     /// `model`, checked.
     pub(crate) fn new(model: &Model) -> Self {
-        Self::build(model, &[model.key], &[model.key], &[&model.initial])
+        Self::build(
+            model,
+            &[model.key],
+            &[model.key],
+            &[&model.initial],
+            false,
+            false,
+        )
     }
 
     /// `model`, checked, over a universe of `keys`, every one of them live in
     /// the initial snapshot.
     pub(crate) fn with_objects(model: &Model, keys: &[&str]) -> Self {
-        Self::build(model, keys, keys, &[&model.initial])
+        Self::build(model, keys, keys, &[&model.initial], false, false)
     }
 
     /// `model`, checked, over a universe of `keys`; only the object under
     /// `model.key` is in the initial snapshot.
     pub(crate) fn with_universe(model: &Model, keys: &[&str]) -> Self {
-        Self::build(model, keys, &[model.key], &[&model.initial])
+        Self::build(model, keys, &[model.key], &[&model.initial], false, false)
     }
 
     /// `model`, checked, with one initial snapshot per field set of
     /// `initials`, in order.
     pub(crate) fn with_initials(model: &Model, initials: &[Json]) -> Self {
         let initials: Vec<&Json> = initials.iter().collect();
-        Self::build(model, &[model.key], &[model.key], &initials)
+        Self::build(model, &[model.key], &[model.key], &initials, false, false)
     }
 
-    fn build(model: &Model, keys: &[&str], live: &[&str], initials: &[&Json]) -> Self {
-        let document = model.document();
+    /// `model`, checked, with the integer operators of
+    /// `quire.value.complete/v1` available as the profile `vc`.
+    pub(crate) fn with_value_profile(model: &Model) -> Self {
+        Self::build(
+            model,
+            &[model.key],
+            &[model.key],
+            &[&model.initial],
+            false,
+            true,
+        )
+    }
+
+    /// `model`, checked, with its population declared `symmetric` and its
+    /// operations scoped to their receivers, over a universe of `keys`,
+    /// every one of them live in the initial snapshot.
+    pub(crate) fn symmetric_objects(model: &Model, keys: &[&str]) -> Self {
+        Self::build(model, keys, keys, &[&model.initial], true, false)
+    }
+
+    fn build(
+        model: &Model,
+        keys: &[&str],
+        live: &[&str],
+        initials: &[&Json],
+        symmetric: bool,
+        value_profile: bool,
+    ) -> Self {
+        let document = model.document(symmetric);
         let packages = package_input([document.as_slice()]);
         let digest = *packages.keys().next().expect("one model");
         let unit = format!(
             "language \"ix:native\" edition \"1-draft\";\nprofile v = \"quire.model.complete/v1\";\n\
              profile ev = \"quire.temporal.event-position.false-extension/v1\";\n\
-             profile inf = \"quire.temporal.infinite-trace/v1\";\n\
+             profile inf = \"quire.temporal.infinite-trace/v1\";\n{}\
              model M = \"{}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{}\n",
+            if value_profile {
+                "profile vc = \"quire.value.complete/v1\";\n"
+            } else {
+                ""
+            },
             model.package,
             hex(&digest),
             model.body
@@ -521,6 +573,33 @@ pub(crate) fn health(post: &str, weights: &str, spare: bool, extra: &str) -> Mod
              workload Steady on M {{ weight Node::tick = 1; }}\n{extra}"
         ),
         initial,
+    }
+}
+
+/// A cell whose `inc` postcondition divides by zero at a candidate post-state
+/// (`v = 2`), so the contract conjunction is undecided at every state
+/// (FR-189-AC-5's undecided successor, FR-120's `ContractUndetermined`).
+pub(crate) fn undetermined(extra: &str) -> Model {
+    const PACKAGE: &str = "test/undetermined";
+    Model {
+        package: PACKAGE,
+        object: "Cell",
+        population: "cells",
+        key: "c",
+        integers: vec![("Level", 0, 2)],
+        fields: vec![("v", int(PACKAGE, "Level"))],
+        operations: vec![Operation {
+            name: "inc",
+            parameters: vec![],
+            modifies: vec!["v"],
+            deletes: false,
+        }],
+        body: format!(
+            "post Inc using vc on M::Cell::inc {{ \
+                self.v - pre(self.v) = 1 and 6 mod (2 - self.v) >= 0 }}\n\
+             workload Even on M {{ weight Cell::inc = 1; }}\n{extra}"
+        ),
+        initial: json!({"v": {"integer": "0"}}),
     }
 }
 
