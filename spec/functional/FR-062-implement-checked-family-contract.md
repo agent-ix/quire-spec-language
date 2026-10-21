@@ -238,6 +238,13 @@ chooses the Rust spelling) holds:
   `and` and `implies` and false for `or`. Each guard is recorded as its
   own node's `expression` occurrence key and the required outcome.
 
+**Owner.** A `value-validity` record has exactly one **owner**: the `Value`
+function declaration whose body holds its claim site. The check stage records
+the owner with the record, from the function it was checking when it found the
+site, so a consumer never recovers it from the occurrence key. An
+`operation-contract` record (FR-104) has no owner. FR-395 reads the owner to
+associate a selected call with its requirement items.
+
 Two occurrences of one application node have two regions, so they are two
 claim sites, whatever their extents, result bounds or path conditions.
 
@@ -355,6 +362,7 @@ condition.
 | FR-062-AC-11 | The package-wide `CheckingLimits` node budget counts the nodes of every declaration together, and exceeding it is a `Limit` outcome with kind node count, reported as `stage_limit_exceeded`/`node-count-exceeded`. Given declarations `a() -> Integer = 1 + 1` and `b() -> Integer = 1 + 1`: package checking with `CheckingLimits::new(4)` admits a package holding `a` alone; with `CheckingLimits::new(100)` it admits a package holding both; with `CheckingLimits::new(4)` it stops on the package holding both with `StageFailure::Limit` of kind node count, bound 4. | Test (TC-381) |
 | FR-062-AC-12 | A family `check` that reaches one of its two stage-entry limits returns `StageFailure::Limit` naming the limit kind, the configured bound and the actual counter: the measured preimage byte length for input bytes and the cumulative spend the denied charge would reach for work budget. Configured one below that counter, or at 0 for a declaration whose counter exceeds 1, `check` returns that same counter; configured at it, that limit does not stop `check`. A family `check` compares no measured node count before typing: its node limit is `CheckingLimits::nodes`, charged at the node (FR-062-AC-7). With a work budget of exactly one declaration's charge `w`, the first check passes and the second returns counter `2w`. | Test (TC-432) |
 | FR-062-AC-13 | `CheckedGraph::requirements` is the S3 stage output's requirement records (ADR-012 §13.5, ADR-011 E7), one per claim site, not dropped after `check`, and `qsl_package::CheckedPackage::graph().requirements()` reaches the same records from S4 (ADR-012 §2's package row). For each fixture RR-1 to RR-17 of this requirement's "Requirement records of a value function", the map holds exactly the records the fixture lists and no other: each `value-validity`, keyed by its application node's `expression` occurrence at its own site, with the listed extent, result bound, direct conversion context and path condition. Where a fixture has two records at one node (RR-5, RR-15, RR-16), the keys differ only in ordinal, in source order, and each record's extent, result bound, direct conversion context and guards are those of its own occurrence. RR-16's two records retain their own narrow occurrence identities along with bounds `Int[0, 10]` and `Int[0, 20]`; no conversion identity is recovered by looking up the shared application node alone. A record whose result bound is the application's own result type has no conversion context. For a narrowed bound, zero or multiple matching direct narrow occurrences cause `KeyFault::UnkeyableRequirements` and no checked package. Checking the same unit twice gives equal maps. ADR-012 §13.5's authored bound (#222) is not yet a `Requirements` member; #222 owns adding it. | Test (TC-160, TC-449) |
+| FR-062-AC-14 | For each fixture RR-1 to RR-17, every record has exactly one owner, equal to the function that holds its claim site; for RR-5's three records the owner is `sq`. A state clause's or an operation frame's `operation-contract` record has no owner. | Test (TC-1089) |
 
 The state scan for FR-062-AC-3 covers the non-test items of every `.rs` file
 under `qsl-semantics/src/check` and `qsl-semantics/src/family`
