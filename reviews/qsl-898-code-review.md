@@ -78,3 +78,10 @@ marker matches the lasso shape and replays. Two low findings below.
 | --- | --- | --- | --- |
 | FND-001 | low | `ReplayedLetters::activation` (the replay half of "replay reads the condition") has no test, and it cannot be reached end to end: replay recompiles the unit, S4 refuses every `on each` clause (`NotEmitted`), so `resolve_item` never resolves a guarded clause. The removal of `ModelTraceRefusal::GuardedActivation` is fine, but the PR body's "Replay reads it through the same seam" is unverified. Add a test once S4 emits `on each`, or note it in the ticket's remaining work. | qsl-replay/src/model_check/replay.rs:1244-1253 |
 | FND-002 | low | The guarded tests spell `when (true)` in source while the letters compute `c.value = 1`, `>= 2`, `>= 3`, `= 7` or an undefined reading. The module header says each atom is read "by a predicate that computes the condition its source text spells", which the guard readings now contradict. Say in the header (as TC-521 step 9 does) that the guard reading is the test's own and the source condition is a placeholder until S3 types the `when` guard. | qsl-analyze/tests/it/model_check_safety.rs:5-10; qsl-analyze/tests/it/model_check_safety.rs:531-541 |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | accepted-no-change: recorded as untested and unreachable (S4 emits no `on each` clause) in the test header and the PR body; Remaining work: QSL-898 | a0c3085b0 |
+| FND-002 | fixed: module header states the guard reading is the test's own and `when (true)` is a placeholder | a0c3085b0 |

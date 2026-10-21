@@ -79,3 +79,12 @@ ticket owns that. Three low wording findings.
 | FND-002 | low | The sentence the PR edits still names `LivenessRefusal::GuardedActivation`. The code has no such variant: the refusal is `ModelCheckRefusal::GuardedActivation`. Fix the name while the line is being edited. | spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md:364-367 |
 | FND-003 | low | FR-126-AC-16 can be met only by giving the engine a checked clause directly, and its conditions (`c.value = 1`, `>= 2`, ...) are the letters' readings, not source text (the tests write `when (true)`). AC-13 says "given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337)"; AC-16 does not. Add the same parenthetical, and say the condition is the reading the letter seam returns, as TC-521 step 9 does. | spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md:449 |
 | FND-004 | low | The Outputs addition sets the stutter marker "on a safety or undefined-evaluation counterexample whose last position is the terminal stutter step". An undefined evaluation cannot first occur on the stutter step: it re-reads the terminal state, whose letter was already read, and its contracts were already expanded. If it could occur, its `site.position` (stutter depth) would differ from `trace_position` (prefix length). Drop "or undefined-evaluation", or say that the case does not arise. | spec/functional/FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md:404-409 |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed: FR-126 states a guarded Holds never settles proved (failed today, inconclusive once S4 emits the clause) and names Remaining work: QSL-898 | a0c3085b0 |
+| FND-002 | fixed: names `ModelCheckRefusal::GuardedActivation` | a0c3085b0 |
+| FND-003 | fixed: AC-16 carries the given-directly note and the reading-not-source note | a0c3085b0 |
+| FND-004 | fixed: Outputs text and engine limit the marker to formula counterexamples | a0c3085b0 |
