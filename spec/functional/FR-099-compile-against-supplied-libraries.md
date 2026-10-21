@@ -46,6 +46,12 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   where `identity` is a non-empty library identity string and `source` a
   source unit with its four FR-001 labels, path and bytes. At most one
   library per identity.
+- The optional **refinement internals** input (QSpec FR-375, FR-432): one JSON
+  value for the unit, and one optional JSON value on each supplied library
+  (`{identity, source, refinement_internals}`). Each value is the array of
+  `{"refinement", "internal"}` objects that FR-147 describes, naming only
+  refinements declared in the source it is supplied with. An absent value is
+  the empty list.
 
 ## Outputs
 
@@ -68,6 +74,49 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   and identity of the unit's or another library's source, with
   `invalid_package`/`conflicting-definition` naming both, and an empty
   identity with `invalid_identifier`.
+- The compile input SHALL carry each `refinement_internals` value to S3 as
+  supplied, a JSON value that the input builder neither parses nor checks:
+  a `null`, an object or an array of the wrong shape is carried as it is,
+  because every defect of the value, including its shape, is S3's (FR-147)
+  and is located by an RFC 6901 pointer into the value.
+- The input builder SHALL NOT refuse a refinement internals value.
+- The compile SHALL refuse a defect in a supplied library's value for the
+  whole compilation, the unit included, whether or not the unit imports the
+  library (QSpec FR-375, FR-375-AC-12; FR-147-AC-10). This holds for every
+  defect, including a `refinement` that names no refinement of the library.
+- The S4 source resolution owns the refusal for a library no import reaches.
+  For each supplied library that no import reaches and for which a
+  refinement internals value was supplied, it SHALL compile the library's
+  source through S1 to S3, charged as a library compile to
+  `DependencyLimits`, solely to resolve that value by FR-147; it SHALL
+  discard the result and record neither the library nor a selection. Only
+  the refusals of the supplied value refuse the compilation here; the
+  library's other source defects do not. The library's own imports resolve
+  through the same supplied-libraries set as for a reached library. The
+  value's refusals are reported as for any library: `CompileRefusal::Dependency`
+  with the library's `LibraryName` as the path, located by (that library's
+  value, pointer). A library compiled for an import resolves its own value in
+  its own S3, the same way.
+- The emitter SHALL write the lock member `refinement_internals` that QSpec
+  FR-322 defines (FR-322-AC-77) from the resolved list of the package being
+  emitted alone, in FR-322's canonical order: the unit's lock holds only the
+  unit's own list, and each library's lock holds that library's own list,
+  since entries are keyed by refinement name and QSpec FR-323 and FR-307 give
+  each package its own value. The emitter SHALL omit
+  the member when every list is empty, never writing `[]` or `null`. The
+  member is in no identity preimage; a non-empty list changes the
+  `package_id` through the refinement node's `abstract_internal`. The replay
+  request copies the member from the lock (QSpec FR-323).
+- Each library's value SHALL be the value of that library's own refinements
+  only; the unit's value SHALL NOT be applied to a library's refinements nor
+  a library's to the unit's.
+- A replay SHALL build the same input from the request's package reference:
+  the value at `/package/refinement_internals` for the proved package and at
+  `/package/dependencies/<n>/refinement_internals` for the `n`th dependency
+  entry (zero-based), as QSpec FR-375 locates them. A replay request that
+  omits a non-empty value recompiles with the empty list and so fails the
+  package identity check, because the list is part of the refinement node
+  (QSpec FR-375).
 - The S4 source resolution, which runs between S2 and E3, SHALL report its
   own refusals at stage `intake`.
 - The resolution SHALL apply ADR-015 D-1's steps to each import, depth
@@ -131,7 +180,8 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   its own nodes reference, and no other node of an imported signature.
 - E4 SHALL link each import's checked library package through
   `CheckedPackage::link_with` (FR-087-AC-14). A supplied library no import
-  reaches SHALL be neither compiled nor recorded.
+  reaches and for which no refinement internals value was supplied SHALL be
+  neither compiled nor recorded.
 - The lowering SHALL write a reference to an imported declaration as the
   FR-322 `dependency_reference` term `{package, node}` (the view's
   `package_id` and the declaration's `WireNodeId`) in the node body and in
@@ -151,6 +201,7 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
 
 | FR-099-AC-7 | A unit importing `test/a`, which imports `test/b`, which imports `test/c`, compiled with `dependency.libraries` at 2, refuses `stage_limit_exceeded` at stage `intake` at `test/b`'s import of `test/c`, with limit kind node count, bound 2, actual 3 and setting `dependency.libraries`, and no package; with `dependency.libraries` at 3 it compiles. The same unit with `dependency.import_edges` at 2 refuses naming edge count, bound 2, actual 3 and setting `dependency.import_edges`; with `dependency.source_bytes` one byte below the three libraries' summed source bytes it refuses naming input bytes and setting `dependency.source_bytes`. A chain of 200 libraries, each importing the next, compiles at the default limits. | Test (TC-446) |
 | FR-099-AC-8 | With `test/geometry` exporting `function f using v(x: Int[0, 9]): Boolean pure { x < 5 }` and the importing unit also declaring a local `function f2 using v(x: Int[0, 9]): Boolean pure { x < 5 }`, each call `g::f(e)` receives the same verdict, refusal code, cause and locus as `f2(e)` in the same body, for `e` each of `y` with `y: Int[0, 9]`, `3`, `12`, `y` with `y: Int[0, 20]`, and `y` with `y: Int[0, 20]` under `if y <= 9`. With `f`'s body changed to `(10 div x) < 5`, whose divisor `x` may be zero, the compile refuses `CompileRefusal::Dependency` with path `[test/geometry]` carrying `undefined_expression`/`unproved-nonzero` in the library's source, and raises no refusal at the call site. | Test (TC-894) |
+| FR-099-AC-9 | A compile given `refinement_internals` `[{"refinement": "CasTwice", "internal": ["Spec::Twice::finish"]}]` for the unit and none for any library hands S3 that value unchanged and the empty list for every library refinement, and writes the lock member `refinement_internals` with that list; the same compile with no value writes no lock member, and a value `[]` writes none either. With the value `null`, `{}` or `7` the input builder does not refuse it and S3 reports `invalid_model_binding`/`malformed-declaration` at the root pointer (the empty string) of the unit's value (FR-147-AC-6). A defect in the value of a supplied library, a shape defect or a `refinement` naming a refinement the library does not declare, refuses the compilation, the unit included, located at (that library's value, pointer) whether or not the unit imports the library, and for a library no import reaches the refusal is the resolution's, wrapped as `CompileRefusal::Dependency` with that library's identity as the path. A library no import reaches with no value is neither compiled nor recorded. | Test (TC-446) |
 
 ## Dependencies
 

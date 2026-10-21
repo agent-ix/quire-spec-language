@@ -59,6 +59,7 @@ pub struct CheckedRefinement {
     pub profile: ProfileSelection,              // infinite-trace
     pub abstract_side: AbstractSide,
     pub concrete_model: ModelAlias,             // the declaring package
+    pub concrete_protocol: Option<NodeKey>,     // the clause the step rows select (FR-136); None for a model subject
     pub populations: Vec<PopulationRow>,        // abstract pop <- concrete pop
     pub objects: Vec<ObjectRow>,
     pub steps: Vec<StepRow>,                    // FR-136
@@ -99,6 +100,15 @@ A typed `CheckRefusal` with a span, and no `CheckedRefinement`, on refusal.
 - The abstract subject's contract clauses SHALL be read from the declaring
   package when the abstract alias is local, and from the dependency's
   checked package otherwise.
+- The header's abstract side is QSpec FR-375's `abstract-subject` production,
+  `ident [ '::' member-name ]`: an alias alone selects a model subject and
+  `abstract <A>::<protocol>` a protocol subject, which FR-147 resolves. The
+  header's concrete side is one model alias and never names a protocol: the
+  concrete protocol, when there is one, is selected by the step rows, one
+  protocol per refinement (FR-136 "Selecting the concrete protocol").
+- A concrete protocol's step-row coverage SHALL be checked after the
+  protocol clause is checked, not with the rest of the declaration (FR-136
+  "Order of the checks").
 
 ### Population map
 
@@ -181,6 +191,18 @@ list for the refinement, which is located at the first token of the name after
 field row whose type nests a reference (below), at the row's expression. The list is resolved first and only a
 non-empty resolved list reaches this refusal (FR-147).
 
+The internal list is the compilation's optional `refinement_internals`
+input, which QSpec FR-375 names and QSL's compile input carries (FR-099): one
+JSON value for the unit and one for each supplied library, each naming only
+refinements declared in its own source. Its feature is
+`refinement-internal-list`. The input is handed to S3 as supplied, and S3
+resolves it per refinement (FR-147): shape, spelling, resolution and
+repetition defects are located by the pair (input, RFC 6901 JSON Pointer)
+and refuse the compilation whatever the support set holds; a non-empty
+resolved list then refuses for the feature when the support set omits it,
+and refuses `invalid_model_binding`/`malformed-declaration` for a model
+subject once the feature is built.
+
 - A declaration that uses a feature outside the support set SHALL refuse
   `unsupported_construct`/`not-yet-implemented`, once for each row or refinement that uses
   the feature, and SHALL produce no `CheckedRefinement`. This is the refusal
@@ -240,9 +262,12 @@ standing.
 | FR-135-AC-7 | `RingIsQueue` with the abstract `Queue` declaring a relationship refuses `unsupported_construct`/`declaration-form` at the abstract alias `Q` of the declaration header, once, whatever the support set holds, and no `CheckedRefinement`. | Test (TC-540) |
 | FR-135-AC-8 | In a unit whose own declarations select no layer, `RingIsQueue`'s rows `s.ring = self` and `(self.head + i) mod 2` check, because they are admitted under the layers the governing infinite-trace profile requires; a Boolean field row naming a protocol declared in the unit refuses `unsupported_construct`/`expression-form` at the `protocol` token, naming the layer that admits it (`quire.protocol.complete/v1`). | Test (TC-540) |
 | FR-135-AC-9 | A refinement given a non-empty resolved internal list refuses `unsupported_construct`/`not-yet-implemented` naming `refinement-internal-list` at the first token of the name after `abstract`, once for the refinement, with no `subject` member, no `CheckedRefinement` and the classification `unsupported` (FR-341-AC-5); a list with a resolution defect reports the defect and not this pair (FR-147-AC-7, AC-11). | Test (TC-540) |
+| FR-135-AC-10 | The header `abstract Spec::Twice concrete Impl` is read as QSpec FR-375's `abstract-subject` (model alias `Spec`, protocol `Twice`), and `abstract Spec concrete Impl` as a model subject; the concrete side never names a protocol, and a refinement whose step rows name one protocol clause of `Impl` records it as `concrete_protocol`, one whose rows name none records `None` (FR-136-AC-6). | Test (TC-540) |
 
 ## Dependencies
 
+- [FR-099](FR-099-compile-against-supplied-libraries.md) (the compile input
+  that carries `refinement_internals`).
 - ADR-020 §1 RM-1 to RM-4 and §4 AX-2; ADR-012 §3; ADR-017 AR-1; ADR-016
   SC-2 and FE-4; ADR-013 O-02 and O-09; ADR-015.
 - [FR-103](FR-103-admit-model-operations-and-frames-on-the-spine.md) (admitted models),
