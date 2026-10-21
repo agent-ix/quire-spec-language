@@ -154,6 +154,24 @@ fn a_projected_body_with_a_state_test_disjunct_keeps_the_other_disjunct() {
     assert_eq!(counterexample.trace_position, 1);
 }
 
+/// QSL-923: a body whose first disjunct is itself a disjunction of two state
+/// tests. At position 0 both runs have `l = 0`, so that disjunct is false and
+/// the clause is section 13's. The translation refused it, because the
+/// negation of `l @ a = 1 or l @ b = 1` was never built.
+#[trace("TC-603")]
+#[test]
+fn a_projected_body_with_a_nested_state_disjunction_is_decided() {
+    let body = "(holds(v.l @ a = 1) or holds(v.l @ b = 1)) or \
+                always holds(v.l @ a = v.l @ b)";
+    let held = World::busy(Vault::Busy, &IDLE, &aligned_over(body, &[]));
+    assert!(matches!(run(&held), HyperOutcome::Holds { .. }));
+
+    let leaky = World::busy(Vault::BusyLeaky, &MID_OPERATION, &aligned_over(body, &[]));
+    let counterexample = refuted(run(&leaky));
+    assert_eq!(counterexample.kind, HyperCounterexampleKind::Projected);
+    assert_eq!(counterexample.trace_position, 1);
+}
+
 /// FR-178-AC-2: the leaky `l = (i + h) mod 2` over a secret-1 run that starts
 /// mid-operation. The first path to a rejecting monitor state takes that
 /// run's `mix` as a skip move, then both runs' `step(0)` together: the

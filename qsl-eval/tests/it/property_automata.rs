@@ -12,7 +12,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use ix_trace_rs::trace;
 use qsl_eval::automaton::{
     translate, translate_negation, Atom, AtomSymmetry, AutomatonError, AutomatonKind, Gba, Letter,
     Monitor, PropertyAutomaton, StateId,
@@ -937,7 +936,6 @@ fn words_of(width: usize, length: usize) -> Vec<Vec<Letter>> {
 /// The shape of QSL-923's first effect: the negation of a plain state test is
 /// the other branch of the disjunction, so `p or always q` holds on a word
 /// that falsifies `p` and keeps `q`, and is not decided by `p` alone.
-#[trace("TC-601")]
 #[test]
 fn a_disjunct_of_a_plain_state_test_is_not_dropped() {
     for form in [
@@ -965,7 +963,6 @@ fn a_disjunct_of_a_plain_state_test_is_not_dropped() {
 
 /// The shape of QSL-923's second effect: a disjunction of a negation, an
 /// `until` and a nested `or`, which the translation refused as a fault.
-#[trace("TC-601")]
 #[test]
 fn a_disjunction_of_a_negation_an_until_and_a_nested_or_translates() {
     for form in [
@@ -1018,7 +1015,6 @@ fn random_form(rng: &mut Rng, leaves: usize) -> Form {
 /// `release`, `always`, `eventually` and `next` of up to 3 atoms accepts
 /// exactly the lassos the formula's semantics accepts, for every stem and
 /// loop up to 3 positions (2 positions for the 3-atom bodies' stem).
-#[trace("TC-601")]
 #[test]
 fn the_automaton_of_a_random_body_accepts_exactly_the_lassos_of_its_semantics() {
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
@@ -1045,7 +1041,6 @@ fn the_automaton_of_a_random_body_accepts_exactly_the_lassos_of_its_semantics() 
 /// `or` bodies over bounded intervals and past operators answer to the
 /// evaluator on the closed traces and lassos, in the bounded and the
 /// infinite-trace profile.
-#[trace("TC-601")]
 #[test]
 fn an_or_body_over_intervals_and_past_operators_answers_to_the_evaluator() {
     for body in [

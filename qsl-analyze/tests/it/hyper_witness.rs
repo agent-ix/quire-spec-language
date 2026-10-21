@@ -180,6 +180,22 @@ fn a_witness_body_with_a_state_test_disjunct_keeps_the_other_disjunct() {
     );
 }
 
+/// QSL-923: the body `always l @ b = 0 or (l @ b = 1 or l @ a = 1)` has a
+/// disjunction of two state tests as an operand of the `or` with a temporal
+/// formula. The secure vault has the partner behaviour `step(0)` forever, so
+/// the body holds for every `a`; the translation refused it with a fault
+/// because the negation of `l @ b = 1 or l @ a = 1` was never built.
+#[trace("TC-602")]
+#[test]
+fn a_witness_body_with_a_nested_state_disjunction_is_decided() {
+    let clause = "hyper Possible using inf over behaviours (v: V::Vault) \
+         forall trace a of V exists trace b of V \
+         { (always holds(v.l @ b = 0)) or (holds(v.l @ b = 1) or holds(v.l @ a = 1)) }";
+    let world = World::new(Vault::Secure, false, &STARTS, clause);
+    let outcome = run(&world, ModelCheckLimits::default());
+    assert!(matches!(outcome, HyperOutcome::Holds { .. }), "{outcome:?}");
+}
+
 /// FR-177-AC-2: `Opaque` over the secure vault. Every reachable universal
 /// state `(h, l)` has `X = {((1 - h, l), g)}`, the product has 4 states, and
 /// the item returns `Holds`.

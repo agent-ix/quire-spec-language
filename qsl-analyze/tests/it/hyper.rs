@@ -750,8 +750,10 @@ fn secure_verdict(quantifiers: &str, body: &str) -> Result<(), Box<HyperCountere
 /// that takes `step(0)` forever; `not l = 0 or eventually l = 0` holds at
 /// position 0 by its second disjunct; and `l = 1 or always l = 0 or
 /// eventually l = 1` holds on every behaviour because `l` is a bit. The
-/// negated body of the first and third is `p or always q` in the automaton,
-/// the shape whose state-test disjunct the translation lost.
+/// conjunctions at the end have a negation that is a disjunction of a state
+/// test and a temporal formula, with the state test on either side of the
+/// operator's operands, which is the shape the translation of a negated body
+/// must keep both disjuncts of.
 #[trace("TC-601")]
 #[test]
 fn a_universal_body_with_a_state_test_disjunct_is_decided_by_both_disjuncts() {
@@ -772,6 +774,23 @@ fn a_universal_body_with_a_state_test_disjunct_is_decided_by_both_disjuncts() {
         ),
         (format!("always ({ONE} or eventually {ZERO_L})"), true),
         (format!("always ({ONE} or always {ONE})"), false),
+        (format!("(not {ONE}) and always {ZERO_L}"), false),
+        (format!("always {ZERO_L} and (not {ONE})"), false),
+        (format!("(not {ONE}) and eventually {ONE}"), false),
+        (format!("eventually {ONE} and (not {ONE})"), false),
+        (
+            format!("(not {ONE}) and (always {ZERO_L} or eventually {ONE})"),
+            true,
+        ),
+        (format!("(not {ONE}) and ({ONE} or always {ZERO_L})"), false),
+        (
+            format!("(not {ONE}) and (eventually {ONE} or {ONE})"),
+            false,
+        ),
+        (
+            format!("(not {ONE}) and ({ZERO_L} or eventually {ONE})"),
+            true,
+        ),
     ];
     for (body, holds) in &cases {
         assert_eq!(
@@ -814,67 +833,57 @@ fn a_negated_body_is_violated_by_the_behaviour_that_never_sets_the_output() {
     .is_err());
 }
 
-/// QSL-923: a body of a swap-symmetric clause is translated in normal form,
-/// where the operands of an `or` are a flattened set, and the disjunction of
-/// a negated test, an `until` and a nested `or` is decided rather than
-/// refused with a fault. Every occurrence of `holds(v.l @ a = v.l @ b)` reads
-/// the same letter in the product, so `not E or ((E until E) or (E or E))`
-/// is valid there and holds, and `E or always not E` is violated by the pair
-/// whose outputs differ at position 0 and agree after it.
+/// QSL-923, HP-2 on a swap-symmetric clause (normal form): over the terminal
+/// vault from `(0, 0)` with `fair weak step` on both traces, the body
+/// `l @ a = 0 and l @ b = 0 and (eventually l @ a = 1 or eventually l @ b = 1)`
+/// is violated by the pair that takes `step(0)` once and then stays at the
+/// terminal state, where `l` is 0 forever. Its negation holds a disjunction
+/// the state formula `l @ a = 1 or l @ b = 1`, whose negation lowering
+/// never builds, so the translation refused it with a fault in the
+/// self-composition product. The held clause after it is stored as the
+/// quotient by the swap and explores the whole automaton.
 #[trace("TC-601")]
 #[test]
 fn a_swap_symmetric_body_with_a_nested_disjunction_is_decided() {
-    let e = "holds(v.l @ a = v.l @ b)";
-    let valid = format!("(not {e}) or (({e} until {e}) or ({e} or {e}))");
-    for starts in [&STARTS[..1], &STARTS[..]] {
-        let world = World::new(
-            Vault::Secure,
-            false,
-            starts,
-            &format!(
-                "hyper S using inf over behaviours (v: V::Vault) \
-                 forall trace a of V forall trace b of V {{ {valid} }}"
-            ),
-        );
-        assert!(
-            matches!(
-                run(&world),
-                HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. }
-            ),
-            "{valid} holds"
-        );
-    }
+    let body = "holds(v.l @ a = 0) and holds(v.l @ b = 0) and \
+                (eventually holds(v.l @ a = 1) or eventually holds(v.l @ b = 1))";
     let world = World::new(
-        Vault::Secure,
+        Vault::Terminal,
         false,
         &STARTS[..1],
         &format!(
             "hyper S using inf over behaviours (v: V::Vault) \
-             forall trace a of V forall trace b of V {{ {e} or always (not {e}) }}"
+             forall trace a of V fair weak V::Vault::step; \
+             forall trace b of V fair weak V::Vault::step; {{ {body} }}"
         ),
     );
-    // Both traces start with `l = 0`, so `E` holds at position 0, and the
-    // disjunction is true there.
-    assert!(matches!(
-        run(&world),
-        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. }
-    ));
-    let world = World::new(
+    assert!(
+        matches!(run(&world), HyperOutcome::Violated { .. }),
+        "the terminal pair falsifies the body"
+    );
+
+    // A held clause explores the whole quotient automaton, so a lost
+    // negation is reached: both outputs are 0 at position 0 and equal after
+    // it under equal inputs. In normal form the operands of an `or` are
+    // flattened, so the state operand whose negation is needed is a
+    // conjunction: the body's negation is `(l @ a = 1 and l @ b = 1) or
+    // eventually` a difference.
+    let held = World::new(
         Vault::Secure,
         false,
-        &STARTS[..1],
+        &STARTS,
         &format!(
             "hyper S using inf over behaviours (v: V::Vault) \
-             forall trace a of V forall trace b of V {{ (not {e}) or eventually (not {e}) \
-             or always {e} }}"
+             forall trace a of V forall trace b of V {EQUAL_INPUTS} \
+             {{ ((not holds(v.l @ a = 1)) or (not holds(v.l @ b = 1))) and \
+             always holds(v.l @ a = v.l @ b) }}"
         ),
     );
-    // `eventually not E or always E` is valid, and `not E` adds a third
-    // disjunct that is a plain state test.
-    assert!(matches!(
-        run(&world),
-        HyperOutcome::Holds { .. } | HyperOutcome::HoldsReduced { .. }
-    ));
+    assert!(!held.clause.copy_group().classes.is_empty());
+    assert!(
+        matches!(run(&held), HyperOutcome::HoldsReduced { .. }),
+        "the pair agrees"
+    );
 }
 
 /// The lassos of several instances (second phase): the instance that has a
