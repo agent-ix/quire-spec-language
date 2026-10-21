@@ -164,9 +164,9 @@ fn check_with(
     )
     .map_err(|refusal| match refusal {
         SubjectRefusal::Admission(failure) => ModelCheckRefusal::Admission(failure),
-        SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
-            fault("the-subjects-of-a-refinement-open")
-        }
+        SubjectRefusal::NoModels
+        | SubjectRefusal::NoUniverse
+        | SubjectRefusal::ProtocolAbstractSide => fault("the-subjects-of-a-refinement-open"),
     })?;
     let simulation = &request.concrete.simulation;
     check_model_bounds(&concrete, BOUND_POSITIONS).map_err(not_simulated)?;

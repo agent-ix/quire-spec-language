@@ -157,8 +157,9 @@ pub use sum_case::{mint_union_member_key, ExhaustivenessObligation, SumCaseCause
 pub mod stratum;
 mod termination;
 pub use refinement::{
-    CheckedRefinement, CheckedRow, FieldRow, HistoryRow, HistoryUpdate, ObjectRow, PopulationRow,
-    PopulationUse, PopulationValue, RefinementCause, RefinementDeclaration, RefinementRefusal,
+    AbstractSide, AbstractStepClass, AbstractStepKind, CheckedRefinement, CheckedRow, FieldRow,
+    HistoryRow, HistoryUpdate, ListDefect, ListDefectKind, ObjectRow, PopulationRow, PopulationUse,
+    PopulationValue, RefinementCause, RefinementDeclaration, RefinementRefusal, RefinementSupport,
     RowClass, StepClass, StepRow, StepTarget, UnsupportedFeature,
 };
 pub use terminal::{
@@ -1664,43 +1665,81 @@ impl PackageDeclarations {
         }
         terminals.sort_by(|left, right| left.model.cmp(&right.model));
         // FR-135 to FR-137: each `refinement` declaration, its rows typed as
-        // state-clause bodies over the concrete object.
-        let mut refinements = Vec::new();
-        for refinement in &self.refinements {
-            let location = Location::root(Origin::Expression);
-            let declarations = state_clause::ClauseDeclarations {
-                scope: &scope,
-                signatures: &signatures,
-                dispatch_tables: &dispatch_tables,
-                models: &models,
-                checking_limits: limits,
-                location: &location,
-                nodes_used,
-                cancel: Some(cancel),
-                staged: None,
-            };
-            let mut contract_cx = crate::family::CheckContext::new(
-                &declarations,
-                contract_limits,
-                &mut contract_meter,
-                &mut contract_diagnostics,
-                &mut contract_scopes,
-            );
-            match refinement::check_refinement(refinement, &declarations, &mut contract_cx) {
-                Ok((checked, used)) => {
-                    nodes_used = used;
-                    refinements.push(checked);
-                }
-                Err((found, used)) => {
-                    nodes_used = used;
-                    let exhausted = found.iter().any(|refusal| {
-                        matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_))
-                    });
-                    refusals.extend(found);
-                    if exhausted || cancel.tripped().is_some() {
-                        return Err(refusals);
+        // state-clause bodies over the concrete object. FR-147: the
+        // `refinement_internals` value is parsed once; a refinement whose
+        // abstract side is a protocol subject waits for the checked
+        // protocol clauses (FR-136 "Order of the checks"), and one over a
+        // model does not.
+        let declared_refinements: std::collections::BTreeSet<&str> = self
+            .refinements
+            .iter()
+            .map(|refinement| refinement.form.name.name.as_str())
+            .collect();
+        let internal_lists = refinement::ParsedLists::parse(
+            self.refinement_internals.as_ref(),
+            &declared_refinements,
+        );
+        // One refinement checked over the protocol clauses given: none
+        // before the clauses are checked.
+        macro_rules! check_one_refinement {
+            ($index:expr, $refinement:expr, $protocols:expr, $into:expr) => {{
+                let location = Location::root(Origin::Expression);
+                let declarations = state_clause::ClauseDeclarations {
+                    scope: &scope,
+                    signatures: &signatures,
+                    dispatch_tables: &dispatch_tables,
+                    models: &models,
+                    checking_limits: limits,
+                    location: &location,
+                    nodes_used,
+                    cancel: Some(cancel),
+                    staged: None,
+                };
+                let mut contract_cx = crate::family::CheckContext::new(
+                    &declarations,
+                    contract_limits,
+                    &mut contract_meter,
+                    &mut contract_diagnostics,
+                    &mut contract_scopes,
+                );
+                let env = refinement::RefinementEnv {
+                    support: self.refinement_support,
+                    lists: &internal_lists,
+                    protocols: $protocols,
+                };
+                match refinement::check_refinement(
+                    $refinement,
+                    &declarations,
+                    &mut contract_cx,
+                    &env,
+                ) {
+                    Ok((checked, used)) => {
+                        nodes_used = used;
+                        $into.push(($index, checked));
+                    }
+                    Err((found, used)) => {
+                        nodes_used = used;
+                        let exhausted = found.iter().any(|refusal| {
+                            matches!(refusal.cause.unwrapped(), CheckCause::ResourceExhausted(_))
+                        });
+                        refusals.extend(found);
+                        if exhausted || cancel.tripped().is_some() {
+                            return Err(refusals);
+                        }
                     }
                 }
+            }};
+        }
+        let is_protocol_subject = |refinement: &RefinementDeclaration| {
+            matches!(
+                refinement.form.abstract_side,
+                qsl_forms::AbstractSideForm::Protocol { .. }
+            )
+        };
+        let mut checked_refinements: Vec<(usize, CheckedRefinement)> = Vec::new();
+        for (index, refinement) in self.refinements.iter().enumerate() {
+            if !is_protocol_subject(refinement) {
+                check_one_refinement!(index, refinement, &[], checked_refinements);
             }
         }
         // FR-218: a second reference to one protocol in the unit refuses at
@@ -2013,6 +2052,43 @@ impl PackageDeclarations {
                 return Err(refusals);
             }
         }
+        // FR-147: the refinements whose abstract side is a protocol subject,
+        // now that every protocol clause of the unit is checked (FR-136
+        // "Order of the checks"). A clause refused by its own checks
+        // reported its refusals; the refinement that names it reports none
+        // for it and gives no `CheckedRefinement`.
+        let protocol_views: Vec<refinement::ProtocolView<'_>> = self
+            .protocols
+            .iter()
+            .map(|form| refinement::ProtocolView {
+                form,
+                checked: checked_protocols
+                    .iter()
+                    .find(|checked| checked.name == form.name.name.as_str()),
+            })
+            .collect();
+        for (index, refinement) in self.refinements.iter().enumerate() {
+            if is_protocol_subject(refinement) {
+                check_one_refinement!(index, refinement, &protocol_views, checked_refinements);
+            }
+        }
+        // The defects of the `refinement_internals` value are reported
+        // beside the refinements', whatever the support set says.
+        for (owner, defect) in &internal_lists.defects {
+            refusals.push(CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause: CheckCause::Refinement(Box::new(RefinementRefusal {
+                    refinement: owner.clone().unwrap_or_default(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                    cause: RefinementCause::InternalList(defect.clone()),
+                })),
+            });
+        }
+        checked_refinements.sort_by_key(|(index, _)| *index);
+        let refinements: Vec<CheckedRefinement> = checked_refinements
+            .into_iter()
+            .map(|(_, checked)| checked)
+            .collect();
         // FR-326: each `temporal` clause, checked through the `TemporalTrace`
         // family's contract under the unit's one temporal profile, then
         // FR-337: its `holds` conditions typed over its `over` parameter,

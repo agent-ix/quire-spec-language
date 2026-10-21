@@ -481,3 +481,41 @@ fn a_malformed_population_object_or_field_row_is_refused_at_its_token() {
         assert_eq!(refused_at(&refinement(row)), offending, "{row}");
     }
 }
+
+/// QSpec FR-375's `abstract-subject`: `abstract A` is a model alias and
+/// `abstract A::protocol` a model alias and a protocol clause name. The
+/// parser tells them apart by the `::` and resolves neither.
+#[test]
+fn a_refinement_header_parses_a_model_or_a_protocol_abstract_subject() {
+    for header in [
+        "abstract Spec concrete Impl",
+        "abstract Spec::Twice concrete Impl",
+        // `member-name` admits reserved words, so the protocol may be one.
+        "abstract Spec::concrete concrete Impl",
+    ] {
+        let declaration = format!("refinement R using Complete {header} {{\n}}");
+        let (text, parsed) = parse_admitted(&declaration);
+        assert_eq!(
+            texts(&text, &parsed, Production::Refinement),
+            [declaration.as_str()]
+        );
+    }
+}
+
+/// A third segment, a leading or trailing `::` and a protocol name that is
+/// no `member-name` are refused at the offending token. The token after `::`
+/// is always the protocol name, so `abstract Spec:: concrete Impl {` reads
+/// `concrete` as the name and refuses at `Impl`.
+#[test]
+fn a_malformed_abstract_subject_is_refused_at_its_token() {
+    for (header, offending) in [
+        ("abstract Spec::Twice::Extra concrete Impl", "::"),
+        ("abstract ::Twice concrete Impl", "::"),
+        ("abstract Spec:: concrete Impl", "Impl"),
+        ("abstract Spec:: {", "{"),
+        ("abstract Spec::1 concrete Impl", "1"),
+    ] {
+        let declaration = format!("refinement R using Complete {header} {{\n}}");
+        assert_eq!(refused_at(&declaration), offending, "{header}");
+    }
+}

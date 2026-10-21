@@ -11,7 +11,6 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
-use qsl_forms::{AbstractSideForm, DeclaredName, RefinementRowForm, StepSourceForm};
 use qsl_foundation::Code;
 use qsl_semantics::check::{
     step_row_refs, step_simulation_records, AssemblyRefusal, CheckCause, CheckRefusal,
@@ -30,8 +29,8 @@ use serde_json::{json, Value};
 const INTEGER: &str = "ix://quire/native/Integer";
 const BOOLEAN: &str = "ix://quire/native/Boolean";
 
-const SPEC: &str = "example/counter-spec";
-const CAS: &str = "example/counter-cas";
+pub(crate) const SPEC: &str = "example/counter-spec";
+pub(crate) const CAS: &str = "example/counter-cas";
 const QUEUE: &str = "example/queue-spec";
 const RING: &str = "example/ring-buffer";
 
@@ -392,7 +391,7 @@ fn ring_buffer() -> Vec<u8> {
 
 /// The unit selecting each of `models` (alias, package identity, document)
 /// and holding `body`, with the header `profiles`.
-fn unit_text(
+pub(crate) fn unit_text(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -419,7 +418,7 @@ fn unit_text(
     (text, packages)
 }
 
-fn assemble(
+pub(crate) fn assemble(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -446,26 +445,26 @@ fn assemble(
 }
 
 /// A refusal with the text of the unit it is located at.
-struct Refused {
-    refusal: CheckRefusal,
-    at: String,
-    unit: String,
+pub(crate) struct Refused {
+    pub(crate) refusal: CheckRefusal,
+    pub(crate) at: String,
+    pub(crate) unit: String,
 }
 
 impl Refused {
-    fn refinement(&self) -> &RefinementCause {
+    pub(crate) fn refinement(&self) -> &RefinementCause {
         let CheckCause::Refinement(refusal) = &self.refusal.cause else {
             panic!("a refinement refusal: {:?}", self.refusal);
         };
         &refusal.cause
     }
 
-    fn code_and_cause(&self) -> (Code, Option<&'static str>) {
+    pub(crate) fn code_and_cause(&self) -> (Code, Option<&'static str>) {
         (self.refusal.cause.code(), self.refusal.cause.cause())
     }
 }
 
-fn check_with(
+pub(crate) fn check_with(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -476,7 +475,7 @@ fn check_with(
     check_declarations(&text, declarations)
 }
 
-fn check_declarations(
+pub(crate) fn check_declarations(
     text: &str,
     declarations: PackageDeclarations,
 ) -> Result<CheckedGraph, Vec<Refused>> {
@@ -505,7 +504,7 @@ fn check_declarations(
         })
 }
 
-fn refused(models: &[(&str, &str, &[u8])], body: &str) -> Vec<Refused> {
+pub(crate) fn refused(models: &[(&str, &str, &[u8])], body: &str) -> Vec<Refused> {
     match check_with("", models, body) {
         Ok(_) => panic!("{body}: expected a refusal"),
         Err(refusals) => refusals,
@@ -513,7 +512,7 @@ fn refused(models: &[(&str, &str, &[u8])], body: &str) -> Vec<Refused> {
 }
 
 /// The one refusal of `found`.
-fn only(found: &[Refused]) -> &Refused {
+pub(crate) fn only(found: &[Refused]) -> &Refused {
     let [only] = found else {
         panic!(
             "one refusal: {:?}",
@@ -523,7 +522,7 @@ fn only(found: &[Refused]) -> &Refused {
     only
 }
 
-fn counters() -> (Vec<u8>, Vec<u8>) {
+pub(crate) fn counters() -> (Vec<u8>, Vec<u8>) {
     (counter_spec(), counter_cas())
 }
 
@@ -543,7 +542,7 @@ fn refused_counter(body: &str) -> Vec<Refused> {
 }
 
 /// ADR-020 §8's `CasRefinesCounter`.
-fn cas_refines_counter() -> String {
+pub(crate) fn cas_refines_counter() -> String {
     "refinement CasRefinesCounter using inf abstract Spec concrete Impl {\n\
      population Spec::counters from Impl::counters;\n\
      object Spec::Counter from Impl::Counter { value = self.value; }\n\
@@ -566,12 +565,12 @@ fn cas_refines_counter() -> String {
 }
 
 /// `body` with the one occurrence of `from` replaced by `to`.
-fn mutated(body: &str, from: &str, to: &str) -> String {
+pub(crate) fn mutated(body: &str, from: &str, to: &str) -> String {
     assert_eq!(body.matches(from).count(), 1, "{from} occurs once");
     body.replace(from, to)
 }
 
-fn only_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
+pub(crate) fn only_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
     let [refinement] = graph.refinements() else {
         panic!("one refinement: {:?}", graph.refinements());
     };
@@ -847,6 +846,7 @@ fn every_concrete_operation_has_a_checked_step_row() {
             }
             StepTarget::Stutter => stuttered += 1,
             StepTarget::Any => panic!("no row maps to any"),
+            StepTarget::Node { .. } => panic!("no row names a protocol node"),
         }
     }
     applied.sort();
@@ -1264,67 +1264,6 @@ fn protocol_step_rows_refuse_over_a_model_subject() {
             name: "Spec::Twice::a1".to_owned()
         }
     );
-}
-
-/// FR-147: an abstract protocol side is a form QSpec has no production for
-/// (STD-182), so S2 never builds it from source; built by hand, S3 refuses it
-/// `unsupported_construct`/`not-yet-implemented` at the clause name and still
-/// checks, and reports, the rest of the declaration.
-#[trace("TC-540", "FR-135-AC-5")]
-#[test]
-fn a_protocol_abstract_side_refuses_and_the_rest_is_still_checked() {
-    let (spec, cas) = counters();
-    let (text, declarations) = assemble(
-        "",
-        &[("Spec", SPEC, &spec), ("Impl", CAS, &cas)],
-        &cas_refines_counter(),
-    );
-    let mut declarations = declarations.expect("the unit assembles");
-    let [declaration] = &mut declarations.refinements[..] else {
-        panic!("one refinement");
-    };
-    let AbstractSideForm::Model(alias) = declaration.form.abstract_side.clone() else {
-        panic!("a model side as written");
-    };
-    // Rows that would otherwise refuse against the protocol side stay.
-    let clause = DeclaredName {
-        name: "Twice".to_owned(),
-        span: alias.span,
-    };
-    declaration.form.abstract_side = AbstractSideForm::Protocol { alias, clause };
-    // A step row the concrete model needs is missing.
-    declaration.form.rows.retain(|row| {
-        !matches!(row, RefinementRowForm::Step(step)
-            if matches!(&step.source, StepSourceForm::Named { name, .. }
-                if name.name == "Impl::Counter::peek"))
-    });
-    let found = check_declarations(&text, declarations).expect_err("the protocol side refuses");
-    let [protocol, missing] = &found[..] else {
-        panic!(
-            "two refusals: {:?}",
-            found.iter().map(|r| &r.refusal).collect::<Vec<_>>()
-        );
-    };
-    assert_eq!(
-        protocol.code_and_cause(),
-        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
-    );
-    assert_eq!(protocol.at, "Spec");
-    let RefinementCause::Unsupported {
-        feature, profile, ..
-    } = protocol.refinement()
-    else {
-        panic!("an unsupported feature: {:?}", protocol.refinement());
-    };
-    assert_eq!(feature.name(), "protocol-abstract-side");
-    assert_eq!(profile, "quire.temporal.infinite-trace/v1");
-    assert!(matches!(
-        missing.refinement(),
-        RefinementCause::MissingRow {
-            class: RowClass::Step,
-            ..
-        }
-    ));
 }
 
 /// FR-361-AC-4 (TC-1015), the refinement half: the same refinement unit that

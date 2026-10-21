@@ -290,6 +290,8 @@ fn check_limit(cause: &CheckCause) -> Option<ReachedLimit> {
             | RefinementCause::Ambiguous { .. }
             | RefinementCause::MissingRow { .. }
             | RefinementCause::Conflicting { .. }
+            | RefinementCause::InternalList(_)
+            | RefinementCause::ListEntryConflict { .. }
             | RefinementCause::Malformed { .. }
             | RefinementCause::Unsupported { .. }
             | RefinementCause::PopulationBound { .. } => None,
