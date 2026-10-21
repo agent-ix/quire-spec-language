@@ -178,11 +178,11 @@ pub struct BackendDescriptor {
 /// as supplied, `None` when the manifest has none (FR-134 "Manifest
 /// `fairness_kinds` admission"). It is judged after every advertised pair and
 /// `domains`, and only for a backend that advertises `temporal-satisfaction`:
-/// a member of any other backend is ignored. For a temporal backend a member
-/// that is not a list or holds an element other than `weak` or `strong`
-/// refuses `unknown-fairness-kind` (the first in member order); a repeated
-/// label refuses `duplicate-fairness-kind`; an absent member refuses
-/// `absent-fairness-kinds`. An empty list is admitted and advertises none.
+/// a member of any other backend is ignored. For a temporal backend a
+/// defective member refuses `invalid-fairness-kinds` retaining the
+/// [`FairnessKindsDefect`]: `absent`, `not-a-list`, `unknown-label` (the first
+/// in member order) or `duplicate-label`. An empty list is admitted and
+/// advertises none.
 pub fn descriptor_from_manifest<'a>(
     backend: Candidate,
     origin: ProviderOrigin,
@@ -263,9 +263,15 @@ fn admit_fairness_kinds(
     member: Option<FairnessKindsMember<'_>>,
 ) -> Result<BTreeSet<FairnessKind>, RegistrationCause> {
     let labels = match member {
-        None => return Err(RegistrationCause::AbsentFairnessKinds),
+        None => {
+            return Err(RegistrationCause::InvalidFairnessKinds(
+                FairnessKindsDefect::Absent,
+            ))
+        }
         Some(FairnessKindsMember::NotAList(value)) => {
-            return Err(RegistrationCause::UnknownFairnessKind(value.to_owned()))
+            return Err(RegistrationCause::InvalidFairnessKinds(
+                FairnessKindsDefect::NotAList(value.to_owned()),
+            ))
         }
         Some(FairnessKindsMember::List(labels)) => labels,
     };
@@ -275,15 +281,17 @@ fn admit_fairness_kinds(
             FairnessLabel::Text("weak") => Ok((FairnessKind::Weak, "weak")),
             FairnessLabel::Text("strong") => Ok((FairnessKind::Strong, "strong")),
             FairnessLabel::Text(other) | FairnessLabel::Other(other) => {
-                Err(RegistrationCause::UnknownFairnessKind(other.to_owned()))
+                Err(RegistrationCause::InvalidFairnessKinds(
+                    FairnessKindsDefect::UnknownLabel(other.to_owned()),
+                ))
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut seen = BTreeSet::new();
     for (kind, label) in &kinds {
         if !seen.insert(*kind) {
-            return Err(RegistrationCause::DuplicateFairnessKind(
-                (*label).to_owned(),
+            return Err(RegistrationCause::InvalidFairnessKinds(
+                FairnessKindsDefect::DuplicateLabel((*label).to_owned()),
             ));
         }
     }
@@ -505,6 +513,22 @@ pub enum DomainsDefect {
     Repeated(DomainKind),
 }
 
+/// What is wrong with a manifest's `fairness_kinds` (QSpec FR-272): the
+/// detail of [`RegistrationCause::InvalidFairnessKinds`].
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum FairnessKindsDefect {
+    /// A temporal backend's manifest has no `fairness_kinds` member.
+    Absent,
+    /// The member is not a list; carries it as supplied.
+    NotAList(String),
+    /// An element is not byte-equal to `weak` or `strong`; carries the first
+    /// such element in member order.
+    UnknownLabel(String),
+    /// A label repeats; carries the first element that repeats an earlier
+    /// one.
+    DuplicateLabel(String),
+}
+
 /// Why a registration is refused: the FR-290 registration causes, all
 /// under code `invalid_capability` (FR-057-AC-8).
 ///
@@ -519,24 +543,16 @@ pub enum RegistrationCause {
     AbsentKind,
     /// An advertised capability kind is not byte-equal to an FR-290 label;
     /// carries the exact received bytes. A fairness label is never this
-    /// cause (see [`Self::UnknownFairnessKind`]).
+    /// cause (see [`Self::InvalidFairnessKinds`]).
     UnknownKind(String),
     /// An advertised mode is absent, or neither `bounded` nor `unbounded`;
     /// carries the exact received bytes, `None` when there were none.
     UnknownMode(Option<String>),
     /// The manifest's `domains` is defective (FR-290 "Advertised mode").
     InvalidDomains(DomainsDefect),
-    /// A `temporal-satisfaction` backend's `fairness_kinds` is not a list or
-    /// holds an element other than `weak` or `strong`; carries the first
-    /// such value as supplied (FR-134-AC-3). QSL-proposed cause.
-    UnknownFairnessKind(String),
-    /// A `temporal-satisfaction` backend's `fairness_kinds` repeats a label;
-    /// carries the first element that repeats an earlier one (FR-134-AC-4).
-    /// QSL-proposed cause.
-    DuplicateFairnessKind(String),
-    /// A `temporal-satisfaction` backend's manifest has no `fairness_kinds`
-    /// member (FR-134-AC-5). QSL-proposed cause.
-    AbsentFairnessKinds,
+    /// A `temporal-satisfaction` backend's `fairness_kinds` is defective
+    /// (FR-134-AC-3 to AC-5; QSpec FR-368-AC-8).
+    InvalidFairnessKinds(FairnessKindsDefect),
 }
 
 impl RegistrationCause {
@@ -548,9 +564,7 @@ impl RegistrationCause {
             Self::UnknownKind(_) => "unknown-kind",
             Self::UnknownMode(_) => "unknown-mode",
             Self::InvalidDomains(_) => "invalid-domains",
-            Self::UnknownFairnessKind(_) => "unknown-fairness-kind",
-            Self::DuplicateFairnessKind(_) => "duplicate-fairness-kind",
-            Self::AbsentFairnessKinds => "absent-fairness-kinds",
+            Self::InvalidFairnessKinds(_) => "invalid-fairness-kinds",
         }
     }
 }

@@ -9,8 +9,8 @@ use qsl_foundation::BackendId;
 use qsl_foundation::CatalogCode;
 use qsl_route::{
     descriptor_from_manifest, BackendDescriptor, Candidate, CandidateOutcome, CandidateSet,
-    FairnessKindsMember, FairnessLabel, ManifestDigest, Mode, ProviderOrigin, RegistrationCause,
-    Registry,
+    FairnessKindsDefect, FairnessKindsMember, FairnessLabel, ManifestDigest, Mode, ProviderOrigin,
+    RegistrationCause, Registry,
 };
 use qsl_semantics::check::Capability;
 use quire_semantic_value::fairness::FairnessKind;
@@ -185,16 +185,23 @@ fn manifest(id: &str, seed: u8, labels: &[FairnessLabel<'_>]) -> BackendDescript
     .expect("a valid manifest")
 }
 
-/// The refusal's catalog cause and the value it names.
-fn refused(admission: Admission) -> (CatalogCode, String) {
+/// The refusal's catalog code.
+fn refused_code(admission: Admission) -> CatalogCode {
     let refusal = admission.expect_err("the manifest is refused");
     assert_eq!(refusal.identity(), &BackendId::new("b"));
-    let named = match refusal.cause() {
-        RegistrationCause::UnknownFairnessKind(value)
-        | RegistrationCause::DuplicateFairnessKind(value) => value.clone(),
-        _ => String::new(),
-    };
-    (refusal.catalog_code(), named)
+    refusal.catalog_code()
+}
+
+/// The defect of a refusal that must be `invalid_capability`/
+/// `invalid-fairness-kinds`.
+fn refused(admission: Admission) -> FairnessKindsDefect {
+    let refusal = admission.expect_err("the manifest is refused");
+    assert_eq!(refusal.identity(), &BackendId::new("b"));
+    assert_eq!(refusal.catalog_code(), code("invalid-fairness-kinds"));
+    match refusal.cause() {
+        RegistrationCause::InvalidFairnessKinds(defect) => defect.clone(),
+        other => panic!("not a fairness refusal: {other:?}"),
+    }
 }
 
 fn code(cause: &'static str) -> CatalogCode {
@@ -224,11 +231,10 @@ fn v1_to_v3_admitted_lists_advertise_their_kinds() {
 }
 
 /// TC-535 V4 to V6, V11, V14: an element not byte-equal to `weak` or `strong`
-/// is refused `unknown-fairness-kind`, naming the first such element.
+/// is refused `invalid-fairness-kinds`/`unknown-label`, naming the first such element.
 #[test]
 #[trace("TC-535", "FR-134-AC-3")]
 fn v4_v5_v6_v11_v14_an_unknown_element_is_refused_naming_the_first() {
-    let unknown = code("unknown-fairness-kind");
     for (labels, named) in [
         (vec![Text("Weak")], "Weak"),
         (vec![Text("weak"), Text("eventual")], "eventual"),
@@ -236,12 +242,15 @@ fn v4_v5_v6_v11_v14_an_unknown_element_is_refused_naming_the_first() {
         (vec![Text("weak"), Other("1")], "1"),
         (vec![Text("x"), Text("y")], "x"),
     ] {
-        assert_eq!(refused(listed(&labels)), (unknown, named.to_owned()));
+        assert_eq!(
+            refused(listed(&labels)),
+            FairnessKindsDefect::UnknownLabel(named.to_owned())
+        );
     }
 }
 
 /// TC-535 V12 and V13: a member that is not a list is refused
-/// `unknown-fairness-kind`, naming the member as supplied.
+/// `invalid-fairness-kinds`/`not-a-list`, naming the member as supplied.
 #[test]
 #[trace("TC-535", "FR-134-AC-3")]
 fn v12_v13_a_member_that_is_not_a_list_is_refused() {
@@ -254,39 +263,41 @@ fn v12_v13_a_member_that_is_not_a_list_is_refused() {
         );
         assert_eq!(
             refused(admission),
-            (code("unknown-fairness-kind"), value.to_owned())
+            FairnessKindsDefect::NotAList(value.to_owned())
         );
     }
 }
 
-/// TC-535 V7, V8, V10, V15: a repeat is refused `duplicate-fairness-kind`
+/// TC-535 V7, V8, V10, V15: a repeat is refused `invalid-fairness-kinds`/`duplicate-label`
 /// naming the first element that repeats an earlier one, and is never
 /// collapsed; an unknown element wins over a repeat.
 #[test]
 #[trace("TC-535", "FR-134-AC-4")]
 fn v7_v8_v10_v15_a_repeat_is_refused_and_an_unknown_element_wins() {
-    let duplicate = code("duplicate-fairness-kind");
     for labels in [
         vec![Text("weak"), Text("weak")],
         vec![Text("weak"), Text("strong"), Text("weak")],
         vec![Text("strong"), Text("weak"), Text("weak"), Text("strong")],
     ] {
-        assert_eq!(refused(listed(&labels)), (duplicate, "weak".to_owned()));
+        assert_eq!(
+            refused(listed(&labels)),
+            FairnessKindsDefect::DuplicateLabel("weak".to_owned())
+        );
     }
     assert_eq!(
-        refused(listed(&[Text("weak"), Text("weak"), Text("eventual")])).0,
-        code("unknown-fairness-kind")
+        refused(listed(&[Text("weak"), Text("weak"), Text("eventual")])),
+        FairnessKindsDefect::UnknownLabel("eventual".to_owned())
     );
 }
 
 /// TC-535 V9: a temporal manifest with no `fairness_kinds` is refused
-/// `absent-fairness-kinds`.
+/// `invalid-fairness-kinds`/`absent`.
 #[test]
 #[trace("TC-535", "FR-134-AC-5")]
 fn v9_an_absent_member_of_a_temporal_backend_is_refused() {
     assert_eq!(
-        refused(admit("b", TEMPORAL, None, None)).0,
-        code("absent-fairness-kinds")
+        refused(admit("b", TEMPORAL, None, None)),
+        FairnessKindsDefect::Absent
     );
 }
 
@@ -297,17 +308,16 @@ fn v16_v17_a_pair_or_domains_defect_wins_over_a_fairness_defect() {
     let both = [("temporal-satisfaction", "unbounded"), ("Foo", "unbounded")];
     let bad_member = Some(FairnessKindsMember::List(&[Text("Weak")]));
     assert_eq!(
-        refused(admit("b", &both, None, bad_member)).0,
+        refused_code(admit("b", &both, None, bad_member)),
         code("unknown-kind")
     );
     assert_eq!(
-        refused(admit(
+        refused_code(admit(
             "b",
             &[("temporal-satisfaction", "bounded")],
             None,
             None
-        ))
-        .0,
+        )),
         code("invalid-domains")
     );
 }
