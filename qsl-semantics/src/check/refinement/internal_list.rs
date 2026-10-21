@@ -11,6 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use qsl_attrs::string_edge;
 use qsl_forms::{ActivationForm, ChannelDelivery, ProtocolDeclarationForm, ProtocolNodeKind};
 use qsl_foundation::MemoryModelName;
 use serde_json::Value;
@@ -62,6 +63,9 @@ impl AbstractStepKind {
         }
     }
 
+    /// The kind a leading keyword spells. `#[string_edge]`: the keyword is
+    /// the wire spelling of a class in the `refinement_internals` value.
+    #[string_edge]
     fn of_keyword(word: &str) -> Option<Self> {
         Some(match word {
             "fork" => Self::Fork,
@@ -179,6 +183,13 @@ pub(crate) struct ParsedLists {
     /// (`None` for a value attributable to no refinement), in the order
     /// found.
     pub defects: Vec<(Option<String>, ListDefect)>,
+}
+
+/// Whether `key` is one of the two members of a `refinement_internals`
+/// object. `#[string_edge]`: the keys are the value's wire names.
+#[string_edge]
+fn is_object_key(key: &str) -> bool {
+    key == "refinement" || key == "internal"
 }
 
 fn is_identifier(text: &str) -> bool {
@@ -309,9 +320,7 @@ impl ParsedLists {
         }
         // An object is closed to its two keys, which it must both hold; the
         // defect is the named refinement's when `refinement` names one.
-        let closed = members
-            .keys()
-            .all(|key| key == "refinement" || key == "internal");
+        let closed = members.keys().all(|key| is_object_key(key));
         if !closed || members.len() < 2 {
             self.defect(refinement, ListDefectKind::Malformed, pointer.clone(), None);
         }
