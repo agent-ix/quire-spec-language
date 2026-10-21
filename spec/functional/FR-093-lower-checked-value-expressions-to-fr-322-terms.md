@@ -246,7 +246,7 @@ the outer binding names the accumulator and the inner binding the element.
 A law's `definition` is the `DefinitionRef` the package's lock evidence
 selects for its role (ADR-011 §2.4): for `text_profile` and `ieee_profile`,
 the `DefinitionLock` catalog row of that role, exactly `{authority,
-identity}`, with no revision and no digest. A node whose operation or
+identity}`, with no revision and no digest. The lock evidence for `ieee_profile` is the package selection FR-397 states. A node whose operation or
 leaf needs a law that the lock evidence does not supply refuses with
 `missing_declaration`/`missing-selection` naming the law role and the node's
 region, and yields no node. `check` writes no law from a constant.
