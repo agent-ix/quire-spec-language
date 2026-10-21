@@ -537,6 +537,59 @@ fn tc_160_each_fixture_unit_holds_exactly_its_requirement_records() {
     }
 }
 
+impl Checked {
+    /// The function whose declaration text holds `key`'s site: the last
+    /// `function NAME` declaration that starts at or before the site's
+    /// region. Read from the unit text, not from the record.
+    fn declaring_function(&self, key: &OccurrenceKey) -> String {
+        let node = NodeKey::from_digest(*key.node().as_bytes());
+        let location = self
+            .graph
+            .occurrences()
+            .find(|(candidate, origin, _)| *candidate == node && origin == key.origin())
+            .map(|(_, _, location)| location.clone())
+            .expect("the record's occurrence is recorded");
+        let site = self.graph.region(&location).expect("the site has a region");
+        let mut owner = None;
+        for (start, _) in self.text.match_indices("function ") {
+            if u64::try_from(start).unwrap() > site.start() {
+                break;
+            }
+            owner = self.text[start + "function ".len()..]
+                .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .next()
+                .map(str::to_owned);
+        }
+        owner.expect("a declaration holds the site")
+    }
+}
+
+/// FR-062-AC-14 (TC-1089 step 6): every record of RR-1 to RR-17 has exactly
+/// one owner, the function that holds its claim site; RR-5's three records
+/// are owned by `sq`.
+#[trace("TC-1089", "FR-062-AC-14")]
+#[test]
+fn tc_1089_every_value_validity_record_has_the_declaring_function_as_owner() {
+    for (unit, _) in fixtures() {
+        let checked = check(unit);
+        for (key, record) in checked.graph.requirements() {
+            assert_eq!(
+                record.owner(),
+                Some(checked.declaring_function(key).as_str()),
+                "{unit}"
+            );
+        }
+    }
+    let sq = check("function sq using v(x: Int[0, 9]): Integer pure { (x + 1) * (x + 1) }");
+    let owners: Vec<_> = sq
+        .graph
+        .requirements()
+        .values()
+        .map(|r| r.owner())
+        .collect();
+    assert_eq!(owners, [Some("sq"); 3]);
+}
+
 /// FR-062 RR-16: the two requirements share the canonical `+` node but each
 /// occurrence retains the directly enclosing narrow that supplies its own
 /// result bound. An application with its own result type has no such context.
@@ -590,6 +643,7 @@ fn narrowed_claim(location: Location, bound: IntegerInterval) -> ValueClaim {
         },
         domains: BTreeMap::new(),
         objects: std::collections::BTreeSet::new(),
+        owner: Some("f".to_owned()),
     }
 }
 
@@ -741,6 +795,7 @@ fn claim_at(location: Location) -> ValueClaim {
         },
         domains: BTreeMap::new(),
         objects: std::collections::BTreeSet::new(),
+        owner: Some("f".to_owned()),
     }
 }
 
