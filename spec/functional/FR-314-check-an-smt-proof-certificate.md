@@ -108,22 +108,10 @@ row, `Step { row: Some(r) }` (FR-338 states the wire spelling).
   `BoundedComplete`, `Base` for `Inductive`), a certificate whose variant
   differs from the basis: `BoundedComplete` carries one unrolling query and
   `Inductive` carries a base query and a step query.
-- For the per-step simulation obligations of a refinement (QSpec FR-468,
-  FR-146), the certificate SHALL be `RefinementInductive`: a base part, the
-  refutation of the initial query, and one step part per step row, in the
-  refinement's `steps` order, each the refutation of that row's step query. The
-  checker SHALL reject with `ShapeMismatch` at `Base` a certificate with no
-  base part or whose first part is a step part, and at `Step { row }` a
-  certificate whose step parts are fewer or more than the step rows, `row`
-  being the first missing or extra row. A step part is never accepted in the
-  base position. `QueryPart::Step` (FR-338) carries the row index for this
-  variant and none for `Inductive`.
 - The checker SHALL encode each expected query with FR-315 from the
   recompiled package and the re-admitted subject at the basis's depth: the
   unrolling for `BoundedComplete{depth}`, and the base case and the step
-  case for `Inductive{depth}` (ADR-018 V-2, V-3), and for
-  `RefinementInductive` the initial query for the base and each row's step
-  query for its step part (QSpec FR-377 Engines negated).
+  case for `Inductive{depth}` (ADR-018 V-2, V-3).
 - The checker SHALL reject with `QueryMismatch` at that part when a
   carried query differs, byte for byte, from FR-315's canonical printing of
   the expected query.
