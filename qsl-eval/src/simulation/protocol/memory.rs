@@ -166,7 +166,7 @@ pub struct CarriedKey(pub(crate) Enc);
 
 /// The message or slot an access chose (QSpec FR-426 `memory_choice`):
 /// `{"read_depth":"<decimal>"}`, `{"slot_depth":"<decimal>"}` or both.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct MemoryChoice {
     /// The depth of the message read.
     pub read_depth: Option<u64>,
