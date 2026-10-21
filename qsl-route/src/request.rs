@@ -181,14 +181,16 @@ pub enum BoundRefusal {
     /// The item is bounded, so no bounded request exists for it.
     #[error("the item has no unbounded domain")]
     NoUnboundedDomain,
-    /// A subject proof bound was supplied for an item that is not
-    /// `temporal-satisfaction`.
-    #[error("the item is not a temporal item, so it has no subject")]
-    NotTemporal,
-    /// Two subject proof bounds name one domain.
-    #[error("two subject proof bounds for domain {domain}")]
-    DuplicateSubjectDomain {
-        /// The repeated domain.
+    /// Subject proof bounds were supplied for an item that is not a
+    /// `temporal-satisfaction` item over a model subject, so it has no
+    /// subject (QSpec FR-331, FR-368).
+    #[error("the item is not a temporal item over a model subject")]
+    NoModelSubject,
+    /// A subject proof bound's key is not a population: a subject's proof
+    /// bounds substitute its own populations (QSpec FR-331).
+    #[error("subject proof bound domain {domain} is not a population")]
+    NotAPopulation {
+        /// The supplied key.
         domain: DomainKey,
     },
 }
@@ -201,8 +203,8 @@ impl CatalogCoded for BoundRefusal {
             | Self::UnboundableDomain { .. }
             | Self::KindMismatch { .. }
             | Self::MissingDomain { .. }
-            | Self::NotTemporal
-            | Self::DuplicateSubjectDomain { .. }
+            | Self::NoModelSubject
+            | Self::NotAPopulation { .. }
             | Self::NoUnboundedDomain => CatalogCode::new("invalid_runtime_input", "invalid-value"),
         }
     }
@@ -363,6 +365,7 @@ pub struct RequirementItem {
     unbounded: Vec<(DomainKey, DomainKind)>,
     proof_bounds: Vec<ProofBound>,
     subject_proof_bounds: Vec<ProofBound>,
+    model_subject: bool,
     result_bound: WireNodeId,
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
@@ -418,41 +421,58 @@ impl RequirementItem {
     }
 
     /// The temporal subject's proof bounds for this occurrence (QSpec FR-331
-    /// `temporal.subject.proof_bounds`): `None` for an item that is not
-    /// `temporal-satisfaction`; for a temporal item, the substitutions
+    /// `temporal.subject.proof_bounds`): `None` unless the item is
+    /// `temporal-satisfaction` over a model subject, which alone has a
+    /// `subject` (FR-331, FR-368); otherwise the substitutions
     /// [`RequirementItem::with_subject_proof_bounds`] supplied, in domain-key
     /// order. They are independent of [`RequirementItem::proof_bounds`] (the
-    /// extent's): neither moves into the other. `Some(&[])` is a temporal
-    /// item with no subject substitution.
+    /// extent's): neither moves into the other. `Some(&[])` is such an item
+    /// with no subject substitution.
     pub fn temporal_proof_bounds(&self) -> Option<&[ProofBound]> {
-        matches!(self.kind, Capability::TemporalSatisfaction)
+        (matches!(self.kind, Capability::TemporalSatisfaction) && self.model_subject)
             .then_some(self.subject_proof_bounds.as_slice())
     }
 
     /// This item with `bounds` as its temporal subject's proof bounds
     /// (QSpec FR-331: the subject-only substitution, supplied by the caller
-    /// and independent of the extent; ADR-014 B-4). Each carries the kind
-    /// its [`ProofBound`] was built with; the result holds them in
-    /// domain-key order. The index, occurrence, extent and extent bounds
-    /// are unchanged. Refuses an item that is not `temporal-satisfaction`
-    /// and two bounds for one domain.
+    /// and independent of the extent; ADR-014 B-4). A subject's proof bounds
+    /// substitute its own populations, so each key is a
+    /// [`DomainKey::Population`] with a cardinality bound, and QSL writes
+    /// the `population` kind (FR-097-AC-9). The index, occurrence, extent
+    /// and extent bounds are unchanged. Refuses an item with no model
+    /// subject, a key that is not a population and a bound that is not a
+    /// cardinality, returning nothing.
     pub fn with_subject_proof_bounds(
         &self,
-        bounds: impl IntoIterator<Item = ProofBound>,
+        bounds: &BTreeMap<DomainKey, FiniteBound>,
     ) -> Result<Self, BoundRefusal> {
-        if !matches!(self.kind, Capability::TemporalSatisfaction) {
-            return Err(BoundRefusal::NotTemporal);
+        if self.temporal_proof_bounds().is_none() {
+            return Err(BoundRefusal::NoModelSubject);
         }
-        let mut subject_proof_bounds: Vec<ProofBound> = bounds.into_iter().collect();
-        subject_proof_bounds.sort_by(|a, b| a.domain().cmp(b.domain()));
-        if let Some(pair) = subject_proof_bounds
-            .windows(2)
-            .find(|pair| pair[0].domain() == pair[1].domain())
-        {
-            return Err(BoundRefusal::DuplicateSubjectDomain {
-                domain: pair[0].domain().clone(),
-            });
-        }
+        let subject_proof_bounds = bounds
+            .iter()
+            .map(|(domain, bound)| {
+                if !matches!(domain, DomainKey::Population { .. }) {
+                    return Err(BoundRefusal::NotAPopulation {
+                        domain: domain.clone(),
+                    });
+                }
+                let supplied = bound.kind();
+                if supplied != FiniteBoundKind::Cardinality {
+                    return Err(BoundRefusal::KindMismatch {
+                        domain: domain.clone(),
+                        expected: FiniteBoundKind::Cardinality,
+                        supplied,
+                    });
+                }
+                ProofBound::new(domain.clone(), Some(DomainKind::Population), bound.clone())
+                    .map_err(|_| BoundRefusal::KindMismatch {
+                        domain: domain.clone(),
+                        expected: FiniteBoundKind::Cardinality,
+                        supplied,
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             subject_proof_bounds,
             ..self.clone()
@@ -547,6 +567,7 @@ pub fn items_from_requirements(
                 unbounded,
                 proof_bounds: Vec::new(),
                 subject_proof_bounds: Vec::new(),
+                model_subject: requirements.model_subject(),
                 result_bound: record.result_bound().node(),
                 conversion_context: record.conversion_context().cloned(),
                 path_condition: record.path_condition().to_vec(),
