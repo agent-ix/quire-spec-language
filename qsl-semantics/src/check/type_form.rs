@@ -28,7 +28,7 @@ use qsl_foundation::Span;
 use quire_exact::{
     CardinalityBound, CollectionKind, CollectionType, DecimalType, EffectiveId, FloatType,
     IeeeWidth, IllTypedCause, Integer, IntegerInterval, RationalDomain, RoundingMode, TextProfile,
-    TextType, ValueType,
+    TextType, UnitId, ValueType,
 };
 use quire_semantic_value::location::Location;
 
@@ -40,6 +40,10 @@ pub(crate) trait TypeNames {
 
     /// The object type named `name`, by its effective identity.
     fn object_type_named(&self, name: &str) -> Option<EffectiveId>;
+
+    /// The unit declared under `name`, in the unit namespace (QSpec FR-142
+    /// "Quantity type reference"): only `Quantity<u>` looks here.
+    fn unit_named(&self, name: &str) -> Option<UnitId>;
 }
 
 impl TypeNames for Scope {
@@ -49,6 +53,10 @@ impl TypeNames for Scope {
 
     fn object_type_named(&self, name: &str) -> Option<EffectiveId> {
         Scope::object_type_named(self, name)
+    }
+
+    fn unit_named(&self, name: &str) -> Option<UnitId> {
+        Scope::unit_named(self, name)
     }
 }
 
@@ -390,6 +398,16 @@ fn resolve_builtin<'f>(
             names
                 .object_type_named(name)
                 .map(ValueType::Reference)
+                .ok_or_else(|| fault(target, TypeFormFault::MissingName(name.clone())))
+        }
+        BuiltinType::Quantity => {
+            let target = only_argument(form)?;
+            let TypeFormHead::Name(name) = &target.head else {
+                return Err(malformed(form));
+            };
+            names
+                .unit_named(name)
+                .map(ValueType::Quantity)
                 .ok_or_else(|| fault(target, TypeFormFault::MissingName(name.clone())))
         }
     };
