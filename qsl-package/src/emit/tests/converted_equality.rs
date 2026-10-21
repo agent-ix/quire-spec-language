@@ -415,8 +415,9 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
     }
 }
 
-/// FR-093-AC-32: a guard over a value-keeping integer conversion bounds its
-/// operand as the guard over the operand itself does.
+/// FR-093-AC-32: a guard (`=`, `!=` or an ordering) over a value-keeping
+/// integer conversion, a chain of them included, bounds its operand as the
+/// guard over the operand itself does.
 #[trace("FR-093-AC-32", "TC-415")]
 #[test]
 fn a_guard_over_an_integer_conversion_bounds_the_converted_operand() {
@@ -426,6 +427,10 @@ fn a_guard_over_an_integer_conversion_bounds_the_converted_operand() {
         "if convert<Int[-10,10]>(x) = 2 then x else 0",
         "if 2 = convert<Integer>(x) then x else 0",
         "if convert<Integer>(x) != 2 then 0 else x",
+        "if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0",
+        "if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0",
+        "if convert<Integer>(x) >= 0 then (if convert<Int[-10,10]>(x) <= 3 then x else 0) else 0",
+        "if 4 > convert<Integer>(x) then (if -1 < convert<Integer>(x) then x else 0) else 0",
     ] {
         let emission = emitted(&format!(
             "function g using v(x: Int[-5,5]): Int[0,3] pure {{ {body} }}"
@@ -445,6 +450,8 @@ fn a_guard_over_an_integer_conversion_bounds_only_what_it_states() {
     for body in [
         "if convert<Integer>(x) = 4 then x else 0",
         "if convert<Integer>(x) != 2 then x else 0",
+        "if convert<Integer>(x) < 4 then x else 0",
+        "if convert<Integer>(x) > -1 then x else 0",
         "x",
     ] {
         let text =

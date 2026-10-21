@@ -46,3 +46,10 @@ QSL-944 acceptance, judged against the head:
 ## Verdict
 
 Not clean. The code satisfies QSL-944 AC 1 to 3, and AC 4 is external. The tests evidence AC 1 and 2 in full and AC 3 only in part (FND-002). The spec has no sentence that owns the behaviour (FND-001). It needs the proposed FR-093 paragraph and an AC naming converted equality, with the six tests retagged to that AC. The facts regression and the untested runtime half are recorded in SR-13702.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-093 gains the "Converted equality operand." paragraph, FR-093-AC-31 (lowering, families, Quantity, strict read, evaluation) and FR-093-AC-32 (guard facts), and TC-415 gains step 13. They are numbered after #1161's AC-30. All twelve new tests and the qsl-eval test trace to AC-31 or AC-32, and no test or spec reference keeps the old meaning. |
+| FND-002 | fixed | `a_converted_equality_between_decimal_rational_and_int_converts_its_operand` covers Decimal to Int, Rational to Int, Rational to Decimal and Decimal to Rational, each as Eq, Ne and reversed order. `an_equality_with_both_operands_converted_converts_each` and `a_converted_quantity_equality_converts_the_quantity_operand` (four forms, mode `exact`) cover the rest. M1 fails all of them. |

@@ -634,19 +634,25 @@ impl<'a> Definedness<'a> {
         Some(Rc::new(facts))
     }
 
-    /// `node` read through the integer-to-integer `convert<..>` forms that
-    /// keep the value (`Integer` or `Int[..]` to `Integer` or `Int[..]`). A
-    /// conversion to any other type may round, so it is not read through.
+    /// `node` read through a chain of `convert<..>` forms down to an
+    /// integer-typed operand, when `node` is itself integer-typed. A
+    /// `ConvertScalar` is exact wherever it is defined (a rounding
+    /// conversion is a `ConvertDecimal`), so such a chain denotes the same
+    /// integer as its innermost operand. A chain whose end is not an
+    /// integer has no integer subject and is left as it is.
     fn through_conversion(node: CheckedNode<'_>) -> CheckedNode<'_> {
-        let mut node = node;
-        while let NodeKind::ConvertScalar(_, operand) = node.kind() {
-            let operand = node.at(*operand);
-            if !(is_integer(node) && is_integer(operand)) {
-                break;
-            }
-            node = operand;
+        if !is_integer(node) {
+            return node;
         }
-        node
+        let mut inner = node;
+        while let NodeKind::ConvertScalar(_, operand) = inner.kind() {
+            inner = inner.at(*operand);
+        }
+        if is_integer(inner) {
+            inner
+        } else {
+            node
+        }
     }
 
     fn comparison(

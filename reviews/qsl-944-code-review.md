@@ -53,3 +53,37 @@ Evidence. Probes ran in scratch copies of the head and of the merge base 4cd371d
 ## Verdict
 
 Not mergeable yet. The approach is sound. Building a real `ConvertScalar` node in the checker fixes every converted-equality family the checker records, because `equality_typed` is the only place that records one. A probe through `PackageDeclarations` shows that Decimal to Int, both operands converted, and Quantity to Quantity (now `quantity.convert` with mode `exact`, then `quantity.eq` over the convert node) are all fixed as well. Refusals, runtime results and meter charges are unchanged. The new tests assert node identity by digest reference, the argument position and the convert's type, and M1 shows they can fail. FND-001 is a real regression: previously admitted guarded code is now refused. It must be fixed before merge. FND-002 leaves the runtime half of the change untested. FND-003 and FND-004 are small.
+
+## New findings (disposition pass 1)
+
+Head 402df736e (fix commit 193a6b530, then a merge of origin/main af16a844a). Evidence for this round:
+
+- All five crates' tests pass at head: qsl-semantics lib 695 and it 1160; qsl-package lib 225; qsl-eval 115 + 652; qsl-replay 752 plus its integration targets; qsl-analyze 65 + 615. The two conformance tests now pass, since #1161 has landed. `make check-spec-validation` passes, with no warning in FR-093 or TC-415.
+- Mutants, each run on `converted_equality` (11 tests), `a_converted_equality_operand_is_converted_once_and_compared` and a guard probe:
+  - M1 (no `ConvertScalar` node): 8 tests fail.
+  - M2 (no second check): the qsl-eval test fails.
+  - M3 (store the right operand as checked): the qsl-eval test fails.
+  - M4 (no `through_conversion`): the guard test fails.
+  - M6 (unwrap only the left operand): the guard test fails, through `2 = convert<Integer>(x)`.
+  - M5 (unwrap every `ConvertScalar`): survives.
+- Guard probes at head, with Rational or Decimal in the guard position:
+  - `if convert<Integer>(r) = 2 then convert<Int[-5,5]>(r) else 0` over `r: Rational[-5,5;1,1]` refuses `Unproved(Range)`, as does the same over `d: Decimal[-5,5;0,0]`.
+  - `if convert<Decimal[..]>(x) = d then x else 0` refuses as well.
+  - `if convert<Integer>(x) = 5 then x else 0` refuses with proved `[5,5]`.
+  - So no non-integer conversion is read through, and nothing unsound is admitted.
+  - `convert<Integer>(convert<Int[-10,10]>(x)) = 2` is read through and admitted.
+- M5 is not behaviourally equivalent. `if convert<Int[-5,5]>(convert<Decimal[-5,5;0,0;nearest-even]>(x)) = 2 then x else 0` refuses at head and is admitted and read Verified under M5. The coder's argument holds only for a single conversion. There, unwrapping into a non-integer node changes nothing, because `subject` needs an integer type and `literal` an integer literal. A chain through Decimal back to Int is different, and M5 reads through it. M5 is still sound, because every `ConvertScalar` is an exact FR-149 row; rounding conversions are `ConvertDecimal`. So the survivor is a stricter-than-needed choice at head, not a defect.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | `through_conversion` sits in `comparison`, so ordering guards over an integer conversion also gain facts. `if convert<Integer>(x) < 4 then (if convert<Integer>(x) > -1 then x else 0) else 0` is refused under M4 (the pre-fix facts) and admitted at head. The FR-093 prose ("a guard comparing it with an integer literal") covers this, but FR-093-AC-32 and its tests name only `=`/`!=`. No test pins the ordering half. | qsl-semantics/src/check/facts.rs:659-662; spec/functional/FR-093-lower-checked-value-expressions-to-fr-322-terms.md:844 |
+| FND-006 | low | The `through_conversion` doc gives the wrong reason: "A conversion to any other type may round". A `ConvertScalar` never rounds, since it is built only for exact FR-149 rows and rounding is `ConvertDecimal`. The real reason to stop is that facts bound only integer subjects. The survivor M5 shows the stop is stricter than needed (an Int to Decimal to Int chain). Either reword the comment, or adopt M5 and pin the chain with a test. | qsl-semantics/src/check/facts.rs:637-650 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | `through_conversion` reads equality and ordering operands through value-keeping integer `ConvertScalar` nodes. The three regression forms, plus `2 = convert<Integer>(x)`, are pinned by `a_guard_over_an_integer_conversion_bounds_the_converted_operand`, and M4 and M6 are killed. |
+| FND-002 | fixed | `a_converted_equality_operand_is_converted_once_and_compared` evaluates `=`/`!=`, both orders, equal and unequal values, over Decimal, Rational and wider Int. M2 and M3 are killed. |
+| FND-003 | fixed | The `TypedOperand {node, checked, stored}` struct carries both operands from `equality_typed`, and the node-shape predicate is gone. |
+| FND-004 | fixed | The doc comments of `equality_typed`, `equality` and `TypedOperand` now state the checked-versus-stored contract. |
