@@ -31,6 +31,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-182
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: references
 ---
 # FR-163: Check a hyper item's product-closure certificate in the qualified core
 
@@ -82,6 +84,13 @@ A product state key is the tuple of each component's
 automaton's canonical state key (ADR-018 PC-3), and for HP-3 the witness
 set's members as sorted (existential tuple key, automaton key) pairs.
 
+For HP-3, `states` is the universal tuple and each witness pair's tuple is
+the existential tuple, each in its own quantifier order (ADR-023 HC-2).
+When there are no universal variables, the universal tuple is empty. An
+empty tuple and an absent tuple are different values. The witness set may
+also be empty; neither case introduces a component state or an automaton
+state that the product does not contain.
+
 ## Outputs
 
 ```rust
@@ -99,8 +108,15 @@ FR-338's `InitialMissing` (a missing initial product state),
 do not partition the members), `BackwardEdge` (an edge from a component to
 an earlier one) and `WitnessFails` (a component whose witness fails), and FR-338's `CertificateRule` gains
 `Malformed`, `UndefinedMember` and `ViolatingMember`. `CertificateLocus`
-gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
-`Malformed` carries the first offending member's key.
+gains `HyperProductState(ProductStateKey)`, the hyper product's state key,
+`HyperTransitionTuple`, the ordered tuple of labelled edges of an HP-1
+check, and `CertificateMember`, the name of a malformed certificate member.
+An HP-1 edge retains its pre-state key, transition identity (operation,
+receiver and arguments), post-state key and observed result as FR-179
+retains them. The tuple is in execution-variable binding order. It is not
+the tuple of source states: two edges from the same source state can have
+different arguments, post-states or results. QSpec FR-331 owns their wire
+spelling.
 
 ## Behavior
 
@@ -116,7 +132,11 @@ gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
   LA-2), using no `qsl-analyze` code.
 - **Malformed.** A certificate whose `closure` keys are unsorted or
   duplicated, or whose `components` are absent for HP-2 or HP-3, SHALL be
-  rejected with rule `Malformed` before any recomputation.
+  rejected with rule `Malformed` before any recomputation. Absent
+  `components` SHALL name `CertificateMember("components")`, also when
+  `closure` is empty. An unsorted or duplicate key SHALL name the first
+  offending key in the supplied closure sequence. The checker SHALL NOT
+  substitute a made-up member key for an absent structure.
 - **Initial.** Every recomputed initial product state SHALL be a member;
   otherwise the checker SHALL reject with rule `InitialMissing`.
 - **Closure.** Every recomputed successor of every member, canonicalised by
@@ -142,10 +162,16 @@ gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
   - HP-6: a member whose monitor state rejects (PC-3 (c));
   - HP-1: a tuple of member transitions, one per execution variable with
     its step label, on which the body evaluates false.
+  For HP-1, `ViolatingMember` SHALL name the complete
+  `HyperTransitionTuple`, in ADR-023 HC-3 / FR-179's canonical edge-tuple
+  order. An `UndefinedMember` caused by evaluating that tuple's body SHALL
+  name the same tuple. Other failures on an HP-1 subject's state SHALL name
+  the actual state member, without an invented automaton key.
   For HP-5 the closure, initial and undefined rules are the whole check,
   since its witnesses are checked by their own replay (FR-181).
 - **Order.** The checker SHALL apply the rules in the order listed and
-  report the first failing rule with its member.
+  report the first failing rule with the locus specified above: the absent
+  certificate member, offending state key or labelled transition tuple.
 - **Limits.** The checker SHALL count recomputed states and successors
   against the request's `ModelCheckLimits` with checked arithmetic.
 - **Stop.** When a count reaches its limit, the checker SHALL return
@@ -166,6 +192,9 @@ gains `HyperProductState(ProductStateKey)`, the hyper product's state key;
 | FR-163-AC-2 | Rejected vectors over the AC-1 `NonInterference` certificate: one member removed is `Rejected` with rule `SuccessorMissing` naming the member whose successor is missing; its keys unsorted is `Rejected` with rule `Malformed` before any recomputation; an added member whose `l` components differ, in a component marked `MissingAcceptance`, is `Rejected` with rule `WitnessFails`; one member listed in two components is `Rejected` with rule `NotPartition`; two components joined by an edge listed in the reverse order is `Rejected` with rule `BackwardEdge`; the initial product state removed is `Rejected` with rule `InitialMissing`. | Test (TC-646) |
 | FR-163-AC-3 | A certificate for the leaky vault's `NonInterference` built by listing its 14 product states with the components of the secure run, which do not cover the leaky states, is `Rejected` with rule `NotPartition`, so a false proof is never accepted; a certificate for FR-181-AC-5's body listing the reached product states is `Rejected` with rule `UndefinedMember` at the first state with `l = 1`. | Test (TC-646) |
 | FR-163-AC-4 | The AC-1 `NonInterference` certificate checked with `max_states` 1 returns `Stopped` with `{MaxStates, 1}` naming the limit and its value; checking it twice gives equal results. | Test (TC-646) |
+| FR-163-AC-5 | HP-2 and HP-3 certificates with absent `components`, including one with an empty closure, reject `Malformed` at `CertificateMember("components")` before any successor recomputation, without selecting a state key. | Test (TC-646) |
+| FR-163-AC-6 | An HP-1 certificate for FR-179-AC-2's nondeterministic `Det` subject rejects `ViolatingMember` at the first complete labelled edge tuple in canonical order; equal pre-state keys and arguments with different post-states remain distinct. FR-179-AC-4's undefined body rejects `UndefinedMember` at its complete edge tuple. | Test (TC-646) |
+| FR-163-AC-7 | For ADR-023 HC-2 with zero universal variables, a supplied key with an empty universal tuple and its actual witness set retains both on serialization and reading; the empty witness set remains distinct from an absent witness set. No component is added to satisfy a nonempty-array constraint. | Test (TC-646) |
 
 ## Dependencies
 

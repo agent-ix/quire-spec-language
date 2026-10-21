@@ -13,6 +13,8 @@ relationships:
     type: depends_on
   - target: ix://agent-ix/quire-spec-language/FR-126
     type: depends_on
+  - target: ix://agent-ix/quire-specification/FR-331
+    type: references
 ---
 # FR-338: Check an EN-1 closure certificate
 
@@ -80,10 +82,16 @@ pub fn check_closure(
 encoding of an automaton state (`qsl-eval`, ADR-018 LA-2), the same for
 every order in which the states are materialized.
 
-A `QueryPart` is spelled on the wire as the text `unrolling`, `base` or `step`.
-A `Step` that carries a row (FR-314's refinement certificate, zero-based) is
-spelled `step/<row>` with the row in decimal, so `step/3` names the fourth
-step row, and `step` alone names the step query of an `Inductive` proof.
+QSpec FR-331 owns the wire spelling of every `CertificateRule` and of every
+`CertificateLocus` variant: this requirement's `ProductState`, FR-314's
+`Query` and `ProofStep`, FR-149's `SimulationStep`, FR-163's
+`HyperProductState` and FR-169's `ModelState`. It carries an
+`AutomatonStateKey` as the bytes of its canonical encoding.
+
+FR-163 additionally owns the labelled-transition-tuple and missing-member
+loci of its hyper checker; those failures are not all product-state failures.
+
+A `QueryPart` is spelled on the wire as the text `unrolling`, `base` or `step`; a `Step` that carries a row (FR-314's refinement certificate, zero-based) is spelled `step/<row>` with the row in decimal, so `step/3` names the fourth step row and `step` alone names the step query of an `Inductive` proof. FR-331's `certificate-rejected` `at` is a non-empty text and defines no finer spelling, so this is QSL's convention for the part, and the row-bearing spelling is recorded for QSpec as a follow-up note.
 
 ### Canonical translation state
 

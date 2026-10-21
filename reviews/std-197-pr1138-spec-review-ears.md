@@ -71,3 +71,15 @@ Ticket: STD-197 (also STD-193, STD-194, STD-186, STD-217, QSL-877). PR quire-spe
 ## Verdict
 
 Mergeable on this lens once the five sentences carry a SHALL or become pointers; each is low. The other new and edited Behavior bullets (FR-134 rule and precedence, FR-218 binding, FR-314 encoding) have one SHALL per rule and name their subject.
+
+## Dispositions
+
+Round 1, head 5e73cbeb1, checked against origin/main 5c4a96692 code, QSL FR-315/FR-338, QSpec main fd7a694 and QSpec #313 648d2d0 / #314 13bd4aa.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in 5e73cbeb1: - QSL SHALL settle the refinement's safety half from its records and the hypothesis items by QSpec FR-468 "Settlement", in its order: an initial counterexample, a hypothesis item not `proved` (`hypotheses-not-established`), a step counterexample, a certificate FR-314 shows wrong (`certificate-rejected{rule, at}`), then the verified or unverified proofs, the half being `certified` only when every part and every |
+| FND-002 | fixed | Fixed in 5e73cbeb1: - S3 SHALL bind a requirement by position for every temporal clause, whatever its activation or captures, and SHALL decide the refusals below at S3 before S4 emits any node, so a unit with a requirement refusal reports it whatever its other clauses hold. FR-337 specifies the emission of every checked clause, from which S4 mints the target key. |
+| FND-003 | fixed | Fixed in 5e73cbeb1: - QSL SHALL give a state-graph or probabilistic clause or claim with no `over` parameter one instance, with no bound object. A `temporal` clause always names an `over` parameter (QSpec FR-370-AC-13): S1 SHALL refuse one written without it, `invalid_syntax`/`unexpected-token` at the token that stands where `over` is required, and QSL produces no node. |
+| FND-004 | fixed | Fixed in 5e73cbeb1: - The registry SHALL admit a present empty list, which advertises no fairness kind, so the backend is a candidate only for an item whose fairness set is empty. |
+| FND-005 | fixed | Fixed in 5e73cbeb1: The RefinementInductive bullet is removed; the refinement rules are under FR-314 'Refinement certificates', each with its SHALL: - The checker SHALL first reject with `ShapeMismatch` a certificate whose `steps` holds fewer or more than `N` parts: at `Step { row: Some(len) }` for fewer, `len` being the number of parts present, and at `Step { row: Some(N) }` for more. |

@@ -445,6 +445,11 @@ one protocol declared in the same unit. It carries no package selector.
   The protocol reference's resolution rules follow QSpec FR-322-AC-66, and
   its production and meaning are QSpec FR-463's.
 
+## Remaining work
+
+- AC-16's binding of a clause with an `on each` activation or a capture (TC-1056
+  row 23a) is exercised once S4 emits those clauses: Linear QSL-926.
+
 ## References
 
 - Owning ticket: Linear QSL-396. QSpec half: QSpec FR-052, including its loop rule
