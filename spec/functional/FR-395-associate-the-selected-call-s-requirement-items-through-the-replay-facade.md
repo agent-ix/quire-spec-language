@@ -120,7 +120,9 @@ package the call ran against; nothing is recomputed.
 - **Broken ownership is a fault.** The facade SHALL refuse with `Fault` (code
   `runtime_invariant`, stage `spine-run`, invariant `requirement-owner-known`,
   exit 30), and return no partial member list, when a `value-validity` record
-  has no owner or an owner that names no function of the checked package. The
+  has no owner or an owner that names no function of the checked package. A
+  function the checker synthesizes from an operation `body` or a `pre` clause
+  is a function of the package. The
   owner is a single field, so two owners cannot arise and the facade never
   picks one.
 - **Facade boundary.** The facade SHALL expose the entry and its result
@@ -174,6 +176,7 @@ functions have none.
 | FR-395-AC-9 | A consumer reaches the entry, its result types and FR-100's call types through the `qsl_replay` root alone, without naming `qsl_replay::spine`; FR-060's T12-A rule reports no call site outside its allowed callers for them. | Test (TC-1089) |
 | FR-395-AC-10 | The association step, run directly on a checked package whose record map has a `value-validity` record with no owner, refuses `Fault` with stage `spine-run` and invariant `requirement-owner-known`; the same for a record whose owner names no function of the package; neither returns a partial member list. | Test (TC-1089) |
 | FR-395-AC-11 | Two `Call`s of `add` of FR-062 RR-3 (`function add using v(x: Int[0, 9], y: Int[0, 9]): Int[0, 18] pure { x + y }`) whose arguments arrive as `x`, `y` and as `y`, `x` are equal calls and return equal members. | Test (TC-1089) |
+| FR-395-AC-12 | Over a unit that holds an operation `body` doing arithmetic over the ConfigVersion domain package (`body renamed using v on Config::ConfigVersion::add(n) { n + deref(self).versionNumber }` with the `add` operation of `dispatch_link_compile.rs`) and `function inc using v(x: Int[0, 9]): Int[0, 10] pure { x + 1 }`, `inc` with `x = 3` completes with one member, the owner of the `body`'s record is that synthesized function, and no call faults. | Test (TC-1089) |
 
 ## Dependencies
 
