@@ -64,14 +64,20 @@
 //! the item undecided as before. The counterexample is the first path to a
 //! rejecting state, split into its components' steps, each marked skipped or
 //! visible. Its search horizon `max_depth` counts moves of either kind (PA-5,
-//! HV-3) and is the only form that has one.
+//! HV-3).
+//!
+//! An HP-2 or HP-3 item's search horizon `max_depth` is read as FR-126 reads a
+//! liveness item's (ADR-018 UE-4, ADR-023 HV-3): every product state through
+//! depth `max_depth` is created and those shallower are expanded, so a lasso of
+//! at most `max_depth` joint steps is in the retained graph, and a run that
+//! finds none in it returns `BoundReached` rather than `Holds`.
 //!
 //! Not built here, and refused or absent rather than approximated: the
 //! product-closure certificate (FR-163), so a `Holds` carries none and settles
-//! no `proved`; a search horizon `max_depth` for an HP-2 or HP-3 item (HV-3);
-//! the copy-swap reduction (FR-174); and the facade entry that replays a counterexample from a
-//! recompiled package, which waits for S4 to emit a hyper clause. The core of
-//! that replay is `qsl_replay::replay_hyper_trace_tuple`.
+//! no `proved`; the copy-swap reduction (FR-174); and the facade entry that
+//! replays a counterexample from a recompiled package, which waits for S4 to
+//! emit a hyper clause. The core of that replay is
+//! `qsl_replay::replay_hyper_trace_tuple`.
 
 use std::cell::{Cell, Ref};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -100,9 +106,9 @@ use qsl_eval::temporal::{
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::{IdentityLimits, InternalFault};
 use qsl_replay::{
-    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep, HyperTrace,
-    HyperUndefined, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelStep, ReachedLimit,
-    RunStats, UndecidedCause,
+    BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep,
+    HyperTrace, HyperUndefined, IncompleteCause, ModelCheckLimit, ModelCheckLimits, ModelStep,
+    ReachedLimit, RunStats, UndecidedCause,
 };
 use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits, ValueType};
@@ -134,8 +140,9 @@ pub struct HyperCheckRequest<'a> {
     pub matcher: &'a dyn StepMatch,
     /// The run's caller-raisable budgets (FR-184).
     pub limits: ModelCheckLimits,
-    /// The search horizon: no counterexample of more moves than this is looked
-    /// for (ADR-023 HV-3). Only an HP-6 item has one.
+    /// The search horizon: no counterexample longer than this is looked for
+    /// (ADR-023 HV-3): a lasso of more joint steps for an HP-2 or HP-3 item,
+    /// more moves for an HP-6 item.
     pub max_depth: Option<usize>,
     /// The evaluation meter budget of each atom and each `μ_U` evaluation.
     pub meter: ScalarLimits,
@@ -148,14 +155,6 @@ pub enum HyperRefusal {
     /// The clause is not an HP-2, HP-3 or HP-6 clause.
     #[error("EN-1 decides a universal (HP-2), forall-exists safety (HP-3) or projection-aligned (HP-6) hyperproperty here, not {form:?}")]
     FormNotDecided {
-        /// The clause's form.
-        form: Option<HyperForm>,
-    },
-    /// The request sets a search horizon on a clause that is not HP-6: the
-    /// horizon of an HP-2 or HP-3 item is a bound on a lasso's length and is
-    /// not built.
-    #[error("a search horizon is built for a projection-aligned (HP-6) item, not {form:?}")]
-    HorizonNotDecided {
         /// The clause's form.
         form: Option<HyperForm>,
     },
@@ -209,12 +208,6 @@ pub fn check_hyper(
         .into());
     }
     let projected = matches!(clause.form(), Some(HyperForm::ProjectionAligned));
-    if request.max_depth.is_some() && !projected {
-        return Err(HyperRefusal::HorizonNotDecided {
-            form: clause.form().cloned(),
-        }
-        .into());
-    }
     if request.subjects.len() != clause.aliases().len() {
         return Err(HyperRefusal::SubjectCount {
             expected: clause.aliases().len(),
@@ -600,14 +593,15 @@ impl<'a> Run<'_, 'a> {
         if self.projected {
             return self.decide_projected(instances, totals);
         }
-        let ranked = match self.rank_instances(instances, None, &mut totals)? {
+        let horizon = self.request.max_depth;
+        let ranked = match self.rank_instances(instances, horizon, &mut totals)? {
             Ok(ranked) => ranked,
             Err(outcome) => return Ok(outcome),
         };
         if let Some((_, hit)) = ranked.best {
             return Self::finding(hit, &totals);
         }
-        let explored = ranked.explored;
+        let (explored, bounded) = (ranked.explored, ranked.bounded);
         let mut shortest: Option<(Box<HyperCounterexample>, usize)> = None;
         for run in &explored {
             match self.second_phase(run, &totals)? {
@@ -626,7 +620,14 @@ impl<'a> Run<'_, 'a> {
                 stats: totals.stats(),
             });
         }
-        self.clean(&explored, &totals)
+        match (bounded, horizon) {
+            (true, Some(depth)) => Ok(HyperOutcome::BoundReached {
+                depth: widen(depth),
+                covers: BoundCovers::JointSteps,
+                stats: totals.stats(),
+            }),
+            _ => self.clean(&explored, &totals),
+        }
     }
 
     /// Explore each instance and rank their first-phase findings as FR-126
@@ -706,17 +707,23 @@ impl<'a> Run<'_, 'a> {
         // before a refused `match` at one position, and a refused `match`
         // before an empty witness set, which it may have dropped a member of.
         let mut best: Option<(usize, u8, Verdict)> = None;
+        let horizon = self.request.max_depth;
+        let mut bounded = false;
         for instance in instances {
             // Only a finding at position 0 can bound a later instance: an
             // empty witness set at a later position needs the fair cycle
             // beyond it. A later instance is explored to its first phase
             // alone; no later finding of rank 2 can precede one of rank 2.
-            let cap = match best {
+            let ranking = match best {
                 Some((0, 0, _)) => break,
                 // Horizon 1 expands the initial states, where a position-0
                 // finding of a later instance is made.
                 Some((0, _, _)) => Some(1),
                 _ => None,
+            };
+            let cap = match (ranking, horizon) {
+                (Some(ranking), Some(horizon)) => Some(ranking.min(horizon)),
+                (ranking, horizon) => ranking.or(horizon),
             };
             let run = match self.explore(instance, cap, &mut totals)? {
                 Ok(run) => run,
@@ -735,7 +742,8 @@ impl<'a> Run<'_, 'a> {
                 }
                 None => {}
             }
-            if cap.is_none() {
+            if ranking.is_none() {
+                bounded |= best.is_none() && run.bounded;
                 match self.exhaustion(&run, &totals)? {
                     Exhausted::Lasso(counterexample, position) => {
                         Self::offer(&mut best, position, 2, Verdict::Violated(counterexample));
@@ -756,7 +764,14 @@ impl<'a> Run<'_, 'a> {
                 stats: totals.stats(),
             }),
             Some((_, _, Verdict::Unstated)) => Err(HyperRefusal::NoPartnerPath.into()),
-            None => self.clean(&explored, &totals),
+            None => match (bounded, horizon) {
+                (true, Some(depth)) => Ok(HyperOutcome::BoundReached {
+                    depth: widen(depth),
+                    covers: BoundCovers::JointSteps,
+                    stats: totals.stats(),
+                }),
+                _ => self.clean(&explored, &totals),
+            },
         }
     }
 

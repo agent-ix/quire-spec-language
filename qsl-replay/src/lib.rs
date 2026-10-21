@@ -121,8 +121,11 @@ pub use model_check::hyper_counterexample::{
     HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace,
     HyperUndefined, StepMark,
 };
-pub use model_check::hyper_outcome::HyperOutcome;
+pub use model_check::hyper_outcome::{BoundCovers, HyperOutcome};
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
+pub use model_check::hyper_settle::{
+    settle_hyper_check, HyperRecord, HyperSettleRefusal, LimitOrigin, UsedLimit,
+};
 pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
 pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
 pub use model_check::limits::{

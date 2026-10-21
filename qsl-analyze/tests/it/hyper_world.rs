@@ -34,7 +34,7 @@ use qsl_foundation::SourceIdentity;
 use qsl_package::CheckedPackage;
 use qsl_replay::{
     replay_hyper_trace_tuple, HyperCounterexample, HyperOutcome, HyperReplay, ModelCheckLimits,
-    ModelTraceSettlement, ReplayRefusal,
+    ModelTraceSettlement, ReplayRefusal, DEFAULT_MAX_WITNESS_SET,
 };
 use qsl_semantics::check::{
     check_hyper_clauses, CheckedHyper, CheckedHyperClause, FormulaNode, FormulaNodeId,
@@ -817,6 +817,16 @@ pub(crate) fn non_interference(matched: &str) -> String {
     )
 }
 
+/// ADR-023 section 8.2's `Opaque`, with `conjuncts` added to its `match`.
+pub(crate) fn opaque(conjuncts: &str) -> String {
+    format!(
+        "hyper Opaque using inf over behaviours (v: V::Vault) \
+         forall trace a of V exists trace b of V \
+         match {{ a.step.Vault::step.i = b.step.Vault::step.i{conjuncts} }} \
+         {{ holds(v.h @ a != v.h @ b) and always holds(v.l @ a = v.l @ b) }}"
+    )
+}
+
 /// The `match` of `NonInterference`: equal operations with equal inputs.
 pub(crate) const EQUAL_INPUTS: &str =
     "match { a.step.op = b.step.op and a.step.Vault::step.i = b.step.Vault::step.i }";
@@ -849,6 +859,16 @@ impl World {
         &self,
         counterexample: &HyperCounterexample,
     ) -> Result<ModelTraceSettlement, ReplayRefusal> {
+        self.replay_under(counterexample, DEFAULT_MAX_WITNESS_SET)
+    }
+
+    /// Replay `counterexample` with witness sets of at most `max_witness_set`
+    /// members (FR-184).
+    pub(crate) fn replay_under(
+        &self,
+        counterexample: &HyperCounterexample,
+        max_witness_set: u64,
+    ) -> Result<ModelTraceSettlement, ReplayRefusal> {
         let system = ModelSystem::new(self.subject().simulation).expect("the subject admits");
         let seams = self.seams();
         let instance = instance();
@@ -860,6 +880,7 @@ impl World {
                 letters: &seams,
                 matcher: &seams,
                 meter: UNLIMITED,
+                max_witness_set,
                 cancel: &Cancel::new(),
             },
             counterexample,

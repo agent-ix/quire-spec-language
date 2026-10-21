@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! FR-183 (ADR-023 HX-2, HX-5): [`replay_hyper_trace_tuple`], the replay of a
-//! hyper counterexample's `Lockstep` and `Undefined` arms through each trace
-//! variable's `ModelSystem`.
+//! hyper counterexample's `Lockstep`, `WitnessExhausted` and `Undefined` arms
+//! through each trace variable's `ModelSystem`.
 //!
 //! It re-executes every trace from its initial snapshot, a step's post-state
 //! digest selecting its successor among the post-states of its transition
@@ -15,8 +15,15 @@
 //!   fairness set on its own loop. It then evaluates the body over the tuple
 //!   of lassos by FR-175: `false` settles `Reproduced` at the position that
 //!   fixes it, anything else `Inconclusive`.
+//! - `WitnessExhausted` (HP-3): its traces are the universal variables' alone.
+//!   They are checked as a `Lockstep` lasso is, with no body evaluation. The
+//!   replay then recomputes the witness sets `X_0` to `X_position` along them
+//!   with `qsl-eval`'s witness product, the code the engine runs, under
+//!   `max_witness_set`: an empty `X_position` after non-empty earlier sets
+//!   reproduces, any other sets are `Inconclusive`, and a set that would pass
+//!   the budget stops the replay at it.
 //! - `Undefined`: the traces are paths to the joint position the payload
-//!   names. The replay reads `μ_U`, the body's atoms and each component's
+//!   names. The replay reads `μ_U`, `μ_E`, the body's atoms and each component's
 //!   contract conjunctions at the joint positions up to it, in the order EN-1
 //!   reads them, and settles `Reproduced` exactly when the first expression
 //!   with no value is the payload's, at its position, with its cause.
@@ -25,12 +32,15 @@
 //! resolves the clause, which the S4 emission of a hyper clause will supply;
 //! this function takes the recompiled clause and the admitted systems it
 //! would hand over. A counterexample that breaks QSpec FR-400's reader rules
-//! is refused here as the shape it breaks. The other arms (`witness-exhausted`,
-//! `projected`, `step-tuple`) join with their replays: the first two are
-//! refused as not yet implemented.
+//! is refused here as the shape it breaks. The other arms (`projected`,
+//! `step-tuple`) join with their replays: `projected` is refused as not yet
+//! implemented.
 
 use qsl_eval::automaton::translate_negation;
-use qsl_eval::hyper::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
+use qsl_eval::hyper::{
+    ComponentStep, Halt, HyperLetters, HyperState, HyperTransition, MatchReading, ParameterBinding,
+    Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
+};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{
@@ -39,7 +49,7 @@ use qsl_eval::temporal::{
 };
 use qsl_foundation::diagnostic::Category;
 use qsl_foundation::digest::DigestRecord;
-use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId};
+use qsl_semantics::check::{CheckedHyperClause, FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Meter, ScalarLimits};
 use quire_semantic_value::model_transition::ModelTransition;
 
@@ -48,6 +58,7 @@ use crate::model_check::counterexample::{Lasso, ModelStep};
 use crate::model_check::hyper_counterexample::{
     HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace, HyperUndefined,
 };
+use crate::model_check::limits::{ModelCheckLimit, ReachedLimit};
 use crate::model_check::replay::{
     digest_of, disagreement, expand, fault, no_value_cause, refused, unfair_constraint, LoopState,
     ModelTraceRefusal, ModelTraceSettlement, ModelTraceValue, Position,
@@ -72,6 +83,9 @@ pub struct HyperReplay<'a, 's> {
     pub matcher: &'a dyn StepMatch,
     /// The budget of each atom or `μ_U` evaluation.
     pub meter: ScalarLimits,
+    /// The most members one witness set may reach (FR-184) when a
+    /// `WitnessExhausted` counterexample recomputes its sets.
+    pub max_witness_set: u64,
     /// The replay's cancellation handle.
     pub cancel: &'a Cancel,
 }
@@ -85,7 +99,8 @@ pub struct HyperReplay<'a, 's> {
 /// not close and a stutter step at a state that is not terminal, as FR-128
 /// does; a counterexample of an `align skip` clause, `HyperProjected`; a joint step at which `μ_U` is false (`HyperUnmatched`); and a trace
 /// that is unfair on its own loop (`HyperUnfair`). An expansion that stops, a
-/// meter that runs out or a cancellation completes no value.
+/// meter that runs out or a cancellation completes no value; a witness set
+/// that would pass `max_witness_set` stops the replay at that limit.
 ///
 /// # Errors
 ///
@@ -100,13 +115,12 @@ pub fn replay_hyper_trace_tuple(
         ));
     }
     match counterexample.kind {
-        HyperCounterexampleKind::WitnessExhausted { .. } => {
-            return Err(refused(ModelTraceRefusal::HyperWitnessExhausted));
-        }
         HyperCounterexampleKind::Projected => {
             return Err(refused(ModelTraceRefusal::HyperProjected));
         }
-        HyperCounterexampleKind::Lockstep { .. } | HyperCounterexampleKind::Undefined(_) => {}
+        HyperCounterexampleKind::Lockstep { .. }
+        | HyperCounterexampleKind::WitnessExhausted { .. }
+        | HyperCounterexampleKind::Undefined(_) => {}
     }
     // A clause with `align skip` is read over projected prefixes, so even an
     // `Undefined` counterexample of one has paths of unequal length and
@@ -122,10 +136,14 @@ pub fn replay_hyper_trace_tuple(
         HyperCounterexampleKind::Lockstep { loop_entry } => {
             lockstep(replay, counterexample, &executed, *loop_entry)
         }
+        HyperCounterexampleKind::WitnessExhausted {
+            loop_entry,
+            position,
+        } => witness_exhausted(replay, counterexample, &executed, *loop_entry, *position),
         HyperCounterexampleKind::Undefined(claimed) => {
             undefined(replay, counterexample, &executed, claimed)
         }
-        HyperCounterexampleKind::WitnessExhausted { .. } | HyperCounterexampleKind::Projected => {
+        HyperCounterexampleKind::Projected => {
             Err(fault("an-unreplayed-counterexample-is-refused-first"))
         }
     }
@@ -140,16 +158,20 @@ fn shape_error(reason: &'static str) -> ReplayRefusal {
 }
 
 /// The counterexample must be about this clause: one trace per variable in
-/// quantifier order, each with its variable and alias, equal step counts, a
-/// loop entry that is a step of a `Lockstep` counterexample, the instance of
-/// the request, and for an `Undefined` one the paths' length as its position.
+/// quantifier order (the universal variables alone for a `WitnessExhausted`
+/// one), each with its variable and alias, equal step counts, a loop entry
+/// that is a step of a lasso counterexample, the instance of the request, and
+/// for an `Undefined` one the paths' length as its position.
 fn shape(
     replay: &HyperReplay<'_, '_>,
     counterexample: &HyperCounterexample,
 ) -> Result<(), ReplayRefusal> {
     let quantifiers = replay.clause.quantifiers();
-    if counterexample.traces.len() != quantifiers.len() || replay.systems.len() != quantifiers.len()
-    {
+    let traced = match counterexample.kind {
+        HyperCounterexampleKind::WitnessExhausted { .. } => replay.clause.universals(),
+        _ => quantifiers.len(),
+    };
+    if counterexample.traces.len() != traced || replay.systems.len() != quantifiers.len() {
         return Err(shape_error("does not hold one trace per trace variable"));
     }
     for (trace, quantifier) in counterexample.traces.iter().zip(quantifiers) {
@@ -181,7 +203,27 @@ fn shape(
                 return Err(shape_error("re-enters its loop outside its steps"));
             }
         }
-        HyperCounterexampleKind::WitnessExhausted { .. } | HyperCounterexampleKind::Projected => {
+        HyperCounterexampleKind::WitnessExhausted {
+            loop_entry,
+            position,
+        } => {
+            if replay.clause.form() != Some(&HyperForm::ForallExistsSafety) {
+                return Err(shape_error(
+                    "is of a clause that is not a forall-exists safety hyperproperty",
+                ));
+            }
+            if usize::try_from(*loop_entry).map_or(true, |entry| entry >= steps) {
+                return Err(shape_error("re-enters its loop outside its steps"));
+            }
+            if *position != counterexample.trace_position
+                || usize::try_from(*position).map_or(true, |at| at > steps)
+            {
+                return Err(shape_error(
+                    "names a joint position other than its trace position, or past its lasso",
+                ));
+            }
+        }
+        HyperCounterexampleKind::Projected => {
             return Err(fault("an-unreplayed-counterexample-is-refused-first"));
         }
         HyperCounterexampleKind::Undefined(claimed) => {
@@ -297,7 +339,8 @@ fn label<'a>(
     }
 }
 
-/// `μ_U` over joint step `joint`.
+/// `μ_U` over joint step `joint`, which reads the universal components'
+/// steps alone.
 fn matched(
     replay: &HyperReplay<'_, '_>,
     counterexample: &HyperCounterexample,
@@ -306,7 +349,7 @@ fn matched(
     if replay.clause.mu_universal().is_empty() {
         return Ok(Some(MatchReading::Holds));
     }
-    let labels: Vec<StepLabel<'_>> = (0..counterexample.traces.len())
+    let labels: Vec<StepLabel<'_>> = (0..replay.clause.universals())
         .map(|component| label(counterexample, component, joint))
         .collect();
     let mut meter = Meter::new(replay.meter);
@@ -314,6 +357,25 @@ fn matched(
         .matcher
         .universal(replay.instance, &labels, &mut meter)
         .ok())
+}
+
+/// `μ_E` over joint step `joint`, which reads every component's step.
+fn matched_existentially(
+    replay: &HyperReplay<'_, '_>,
+    counterexample: &HyperCounterexample,
+    joint: usize,
+) -> Option<MatchReading> {
+    if replay.clause.mu_existential().is_empty() {
+        return Some(MatchReading::Holds);
+    }
+    let labels: Vec<StepLabel<'_>> = (0..counterexample.traces.len())
+        .map(|component| label(counterexample, component, joint))
+        .collect();
+    let mut meter = Meter::new(replay.meter);
+    replay
+        .matcher
+        .existential(replay.instance, &labels, &mut meter)
+        .ok()
 }
 
 /// The states of joint position `joint`, one per trace variable.
@@ -366,15 +428,16 @@ fn fault_of(invariant: &'static str) -> qsl_foundation::InternalFault {
     qsl_foundation::InternalFault::new("replay-hyper-trace-tuple", invariant)
 }
 
-/// HP-2 (FR-183 "Lockstep"): the traces close at `loop_entry`, `μ_U` holds at
-/// every joint step, each trace is fair on its own loop, and the body is
-/// false on the tuple.
-fn lockstep(
+/// The checks `Lockstep` and `WitnessExhausted` share (FR-183 "Common"): the
+/// universal traces close at `loop_entry`, `μ_U` holds at every joint step, the
+/// loop's closing step included, and each trace is fair on its own loop.
+/// `None` when an evaluation or an expansion completes no value.
+fn universal_lasso(
     replay: &HyperReplay<'_, '_>,
     counterexample: &HyperCounterexample,
     executed: &[Vec<Position>],
     loop_entry: u64,
-) -> Result<ModelTraceSettlement, ReplayRefusal> {
+) -> Result<Option<()>, ReplayRefusal> {
     let steps = counterexample.steps();
     let entry = usize::try_from(loop_entry).map_err(|_| fault("a-loop-entry-fits-usize"))?;
     for positions in executed {
@@ -393,13 +456,13 @@ fn lockstep(
                     joint: u64::try_from(joint).unwrap_or(u64::MAX),
                 }))
             }
-            None => return Ok(no_value()),
+            None => return Ok(None),
         }
     }
     for (component, trace) in counterexample.traces.iter().enumerate() {
         let Some(unfair) = unfair_trace(replay, component, trace, &executed[component], entry)?
         else {
-            return Ok(no_value());
+            return Ok(None);
         };
         if unfair {
             return Err(refused(ModelTraceRefusal::HyperUnfair {
@@ -407,6 +470,23 @@ fn lockstep(
             }));
         }
     }
+    Ok(Some(()))
+}
+
+/// HP-2 (FR-183 "Lockstep"): the traces close at `loop_entry`, `μ_U` holds at
+/// every joint step, each trace is fair on its own loop, and the body is
+/// false on the tuple.
+fn lockstep(
+    replay: &HyperReplay<'_, '_>,
+    counterexample: &HyperCounterexample,
+    executed: &[Vec<Position>],
+    loop_entry: u64,
+) -> Result<ModelTraceSettlement, ReplayRefusal> {
+    if universal_lasso(replay, counterexample, executed, loop_entry)?.is_none() {
+        return Ok(no_value());
+    }
+    let steps = counterexample.steps();
+    let entry = usize::try_from(loop_entry).map_err(|_| fault("a-loop-entry-fits-usize"))?;
     let shape = ComponentTrace::Lasso {
         prefix: u64::try_from(entry).unwrap_or(u64::MAX),
         loop_len: u64::try_from(steps - entry).unwrap_or(u64::MAX),
@@ -434,6 +514,126 @@ fn lockstep(
         TemporalOutcome::Incomplete(_) | TemporalOutcome::WindowLimitReached(_) => no_value(),
         other => ModelTraceSettlement::Inconclusive(disagreement(other.category())),
     })
+}
+
+/// HP-3 (FR-183 "WitnessExhausted"): the universal traces are checked as a
+/// lasso, then the witness sets `X_0` to `X_position` are recomputed along
+/// them by the witness product (FR-177's rule, under `max_witness_set`). The
+/// counterexample reproduces when `X_position` is empty and every earlier set
+/// is not.
+fn witness_exhausted(
+    replay: &HyperReplay<'_, '_>,
+    counterexample: &HyperCounterexample,
+    executed: &[Vec<Position>],
+    loop_entry: u64,
+    position: u64,
+) -> Result<ModelTraceSettlement, ReplayRefusal> {
+    if universal_lasso(replay, counterexample, executed, loop_entry)?.is_none() {
+        return Ok(no_value());
+    }
+    let clause = replay.clause;
+    let mut product = WitnessProduct::new(WitnessInputs {
+        systems: replay.systems.clone(),
+        universal: clause.universals(),
+        instance: replay.instance,
+        body: clause.body(),
+        profile: clause.profile(),
+        letters: replay.letters,
+        universal_match: (!clause.mu_universal().is_empty()).then_some(replay.matcher),
+        existential_match: (!clause.mu_existential().is_empty()).then_some(replay.matcher),
+        max_automaton_states: u64::MAX,
+        max_witness_set: replay.max_witness_set,
+        meter: replay.meter,
+        cancel: replay.cancel,
+    })
+    .map_err(|_| fault("the-recompiled-body-translates"))?;
+    if product.start().is_err() {
+        return halted(replay, &product);
+    }
+    // The product's state at joint position 0 is the one whose components are
+    // the traces' initial states.
+    let at = |state: &HyperState, joint: usize| -> Result<bool, ReplayRefusal> {
+        for (component, model) in state.components.iter().enumerate() {
+            let digest = digest_of(replay.systems[component], model)?;
+            if executed[component][joint].digest != digest {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    };
+    let mut current = None;
+    for state in product.initial() {
+        if at(&state, 0)? {
+            current = Some(state);
+            break;
+        }
+    }
+    let mut current = current.ok_or_else(|| fault("a-trace-starts-at-an-initial-product-state"))?;
+    let position = usize::try_from(position).map_err(|_| fault("a-position-fits-usize"))?;
+    for joint in 0..=position {
+        if joint > 0 {
+            let step = HyperTransition(
+                counterexample
+                    .traces
+                    .iter()
+                    .map(|trace| match &trace.steps[joint - 1] {
+                        HyperStep::Model(step) => ComponentStep::Model(step.transition.clone()),
+                        HyperStep::TerminalStutter => ComponentStep::Stutter,
+                    })
+                    .collect(),
+            );
+            let Ok(expansion) = product.successors(&current) else {
+                return halted(replay, &product);
+            };
+            let mut next = None;
+            for (taken, state) in expansion.successors {
+                if taken == step
+                    && matches!(state.property, Property::Witnesses(_))
+                    && at(&state, joint)?
+                {
+                    next = Some(state);
+                    break;
+                }
+            }
+            current = next.ok_or_else(|| fault("a-matched-step-is-a-product-successor"))?;
+        }
+        let Property::Witnesses(set) = &current.property else {
+            return Ok(ModelTraceSettlement::Inconclusive(disagreement(
+                Category::Violation,
+            )));
+        };
+        if set.is_empty() {
+            return Ok(if joint == position {
+                ModelTraceSettlement::Reproduced {
+                    value: ModelTraceValue::Truth(false),
+                    trace_position: Some(counterexample.trace_position),
+                }
+            } else {
+                ModelTraceSettlement::Inconclusive(disagreement(Category::Success))
+            });
+        }
+    }
+    Ok(ModelTraceSettlement::Inconclusive(disagreement(
+        Category::Success,
+    )))
+}
+
+/// The replay of a witness product that halted: a set that would pass
+/// `max_witness_set` stops it at that limit (FR-183), any other halt completes
+/// no value.
+fn halted(
+    replay: &HyperReplay<'_, '_>,
+    product: &WitnessProduct<'_, '_>,
+) -> Result<ModelTraceSettlement, ReplayRefusal> {
+    match product.take_halt() {
+        Some(Halt::WitnessSet(_)) => Ok(ModelTraceSettlement::Stopped(ReachedLimit {
+            limit: ModelCheckLimit::MaxWitnessSet,
+            value: replay.max_witness_set,
+        })),
+        Some(Halt::Fault(_) | Halt::Encoding(_)) => Err(fault("the-witness-product-expands")),
+        Some(_) => Ok(no_value()),
+        None => Err(fault("a-halted-product-recorded-its-halt")),
+    }
 }
 
 /// Whether trace `component` is unfair under its variable's own fairness set
@@ -524,6 +724,27 @@ fn undefined(
                     return Err(refused(ModelTraceRefusal::HyperUnmatched {
                         joint: u64::try_from(joint).unwrap_or(u64::MAX),
                     }))
+                }
+                Some(MatchReading::Refused) | None => return Ok(no_value()),
+            }
+            match matched_existentially(replay, counterexample, joint) {
+                Some(MatchReading::Holds) => {}
+                Some(MatchReading::Undefined { conjunct, cause }) => {
+                    found = Some(Found {
+                        position: joint,
+                        locus: HyperLocus::ExistentialMatch { conjunct },
+                        components: (0..executed.len()).collect(),
+                        transition: None,
+                        cause,
+                    });
+                    break 'positions;
+                }
+                // The path is one member's: a step `μ_E` rejects is not one
+                // it took.
+                Some(MatchReading::Fails) => {
+                    return Ok(ModelTraceSettlement::Inconclusive(disagreement(
+                        Category::Success,
+                    )))
                 }
                 Some(MatchReading::Refused) | None => return Ok(no_value()),
             }

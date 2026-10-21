@@ -24,7 +24,7 @@ use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::TransitionSystem;
 use qsl_eval::temporal::{AtomReading, UndefinedCause};
 use qsl_replay::{
-    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep,
+    BoundCovers, HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperOutcome, HyperStep,
     IncompleteCause, ModelCheckLimit, ModelCheckLimits, ReachedLimit, UndecidedCause,
 };
 use qsl_semantics::check::FormulaNodeId;
@@ -1032,4 +1032,84 @@ fn a_stutter_loop_at_a_terminal_state_is_a_matched_fair_cycle() {
     assert_eq!(cause, UndecidedCause::VacuousMatch);
     let terminal = World::new(Vault::Terminal, false, &[(0, 1)], clause);
     assert!(matches!(run(&terminal), HyperOutcome::Holds { .. }));
+}
+
+/// A search horizon on an HP-2 item (ADR-023 HV-3, ADR-018 UE-4): the leaky
+/// vault's counterexample is a two-step lasso whose loop is a self-loop at
+/// product depth 1, so a horizon of 1 creates that state and expands nothing
+/// past it and returns `BoundReached` covering joint steps, while a horizon of
+/// 2 finds the counterexample an unbounded run finds. A horizon of 0 expands
+/// nothing at all.
+#[trace("TC-601")]
+#[test]
+fn a_horizon_cuts_the_lockstep_search_before_its_lasso() {
+    let mut world = World::new(
+        Vault::Leaky,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    let unbounded = refuted(run(&world));
+    for depth in [0, 1] {
+        world.max_depth = Some(depth);
+        let HyperOutcome::BoundReached {
+            depth: reached,
+            covers,
+            ..
+        } = run(&world)
+        else {
+            panic!("expected the horizon to be reached at {depth}");
+        };
+        assert_eq!((reached, covers), (depth as u64, BoundCovers::JointSteps));
+    }
+    world.max_depth = Some(2);
+    assert_eq!(refuted(run(&world)), unbounded);
+}
+
+/// A finding the first phase makes inside the horizon is returned and one
+/// beyond it is not: the undefined `match` conjunct of the secure vault is
+/// read on the joint steps out of the initial states, which a horizon of 0
+/// does not expand and a horizon of 1 does.
+#[trace("TC-601")]
+#[test]
+fn a_first_phase_finding_is_returned_only_inside_the_horizon() {
+    let divided = "match { a.step.op = b.step.op and \
+         a.step.Vault::step.i = b.step.Vault::step.i and \
+         (if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1 }";
+    let mut world = World::new(Vault::Secure, false, &STARTS, &non_interference(divided));
+    world.max_depth = Some(0);
+    assert!(matches!(
+        run(&world),
+        HyperOutcome::BoundReached { depth: 0, .. }
+    ));
+    world.max_depth = Some(1);
+    let counterexample = refuted(run(&world));
+    assert!(matches!(
+        counterexample.kind,
+        HyperCounterexampleKind::Undefined(_)
+    ));
+    world.max_depth = None;
+    assert_eq!(refuted(run(&world)), counterexample);
+}
+
+/// A run that completes inside its horizon holds, as it does with none; a
+/// horizon shorter than the product reaches `BoundReached` instead of
+/// `Holds`, and with a non-empty `μ_U` no vacuity verdict is read off the
+/// part of the product the horizon cut.
+#[trace("TC-601")]
+#[test]
+fn a_lockstep_run_that_completes_inside_its_horizon_holds() {
+    let mut world = World::new(
+        Vault::Secure,
+        false,
+        &STARTS,
+        &non_interference(EQUAL_INPUTS),
+    );
+    world.max_depth = Some(64);
+    assert!(matches!(run(&world), HyperOutcome::Holds { .. }));
+    world.max_depth = Some(1);
+    assert!(matches!(
+        run(&world),
+        HyperOutcome::BoundReached { depth: 1, .. }
+    ));
 }

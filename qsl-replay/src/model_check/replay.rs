@@ -76,6 +76,7 @@ use crate::model_check::counterexample::{
     UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
 use crate::model_check::hyper_counterexample::HyperUndefined;
+use crate::model_check::limits::ReachedLimit;
 use crate::request::{ReplayRequest, ReplayRequestWire};
 use crate::result::{DisagreementCause, Verdict};
 use crate::witness::WitnessEnvelope;
@@ -207,12 +208,6 @@ pub enum ModelTraceRefusal {
         /// The loop's entry position.
         entry: usize,
     },
-    /// A witness-exhausted hyper counterexample, which FR-183's HP-3 replay
-    /// recomputes and replay does not build yet.
-    #[error(
-        "unsupported_construct/not-yet-implemented: replay of a witness-exhausted counterexample"
-    )]
-    HyperWitnessExhausted,
     /// A hyper counterexample of an `align skip` clause (HP-6), `Projected`
     /// or `Undefined`, which FR-183's HP-6 replay (ADR-023 PA-7) checks and
     /// replay does not build yet.
@@ -317,7 +312,6 @@ impl ModelTraceRefusal {
             Self::FairnessSet { .. } => Code::StaleDependency,
             Self::AuthoredUndefined
             | Self::GuardedActivation
-            | Self::HyperWitnessExhausted
             | Self::HyperProjected
             | Self::ProtocolLasso => Code::UnsupportedConstruct,
             Self::Protocol(refusal) => refusal.code(),
@@ -348,7 +342,6 @@ impl ModelTraceRefusal {
             | Self::SendRecord { .. } => "content-mismatch",
             Self::AuthoredUndefined
             | Self::GuardedActivation
-            | Self::HyperWitnessExhausted
             | Self::HyperProjected
             | Self::ProtocolLasso => "not-yet-implemented",
             Self::Protocol(refusal) => refusal.cause(),
@@ -410,6 +403,9 @@ pub enum ModelTraceSettlement {
     /// `inconclusive`: the replay disagrees with the engine
     /// (`Verdicts`) or completed no value (`NoValue`).
     Inconclusive(DisagreementCause),
+    /// A limit stopped the replay before it settled (FR-183 "WitnessExhausted"
+    /// names `max_witness_set`): no result, which FR-182 settles V-7.
+    Stopped(ReachedLimit),
 }
 
 /// FR-133 (ADR-019 SV-6): a strong constraint that would exclude a

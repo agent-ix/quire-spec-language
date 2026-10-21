@@ -6,7 +6,8 @@ use crate::certificate::closure::ClosureCertificate;
 use crate::model_check::counterexample::TemporalCounterexample;
 use crate::model_check::limits::ReachedLimit;
 use crate::proof_result::{
-    AppliedReduction, IncompleteCause, MemoryBound, ReductionKind, SymmetryBrokenCause,
+    AppliedReduction, IncompleteCause, InconclusiveCause, MemoryBound, ReductionKind,
+    SymmetryBrokenCause,
 };
 use qsl_eval::simulation::protocol::WeakAccessShape;
 use qsl_semantics::model::key::DeclarationKey;
@@ -43,6 +44,19 @@ pub enum UndecidedCause {
     /// ADR-023 HM-7: a hyper item's non-empty `μ_U` is matched by no fair
     /// tuple of universal behaviours (FR-176).
     VacuousMatch,
+}
+
+impl UndecidedCause {
+    /// The V-6 cause the run's settlement states (FR-127, FR-182).
+    pub(super) fn inconclusive(self) -> InconclusiveCause {
+        match self {
+            Self::UndecidedSuccessor => InconclusiveCause::UndecidedSuccessor,
+            Self::NoInitialState => InconclusiveCause::NoInitialState,
+            Self::NoInstance => InconclusiveCause::NoInstance,
+            Self::MatchUndetermined => InconclusiveCause::MatchUndetermined,
+            Self::VacuousMatch => InconclusiveCause::VacuousMatch,
+        }
+    }
 }
 
 /// Why a run under reductions settles `inconclusive` (ADR-021 RV-2 to
