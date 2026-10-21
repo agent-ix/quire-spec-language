@@ -8,8 +8,9 @@
 //! instance's dispositions follow its branch threads; a thread that is
 //! neither `running` nor unread by its instance's join leaves the state; a
 //! parallel instance whose join has settled and none of whose branch threads
-//! is `running` leaves it (PS-3, PS-4); and a binder no running thread that
-//! reads it can still reach a reader of leaves it (PS-5); and a `repeat`
+//! is `running` leaves it (PS-3, PS-4); each live thread drops every entry
+//! of its binder environment through which it reaches no reader, and the
+//! environment of a thread that leaves goes with it (PS-5); and a `repeat`
 //! counter of a thread that is no longer running leaves it (PS-6). The key
 //! is then a function of what the protocol can still do (PS-8).
 
@@ -216,6 +217,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 }
             }
             ControlStep::Event => self.event(state, ordinal, path, node, after, gathered)?,
+            ControlStep::Fence => {
+                let ordering = self.program.fence_ordering(node)?;
+                if self.gate(state, path, GatedStep::Fence(ordering)) {
+                    self.fence(state, ordinal, path, node, after, gathered)?;
+                }
+            }
             ControlStep::Sequence
             | ControlStep::Branch
             | ControlStep::Parallel
@@ -266,49 +273,20 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         }
     }
 
-    /// Bind the binder of `node` of the thread `path` to `bound` (PS-5). A
-    /// binding `path` made before is immutable for the threads it forked
-    /// that still read it: each such thread's branch below `path` keeps a
-    /// copy, which it reads before `path`'s new binding.
+    /// Bind the binder of `node` of the thread `path` to `bound` (PS-5): the
+    /// entry joins `path`'s own environment, replacing an earlier entry for
+    /// the node. Every other thread keeps its own copy.
     pub(super) fn bind(
-        &self,
         instance: &mut Instance,
         node: ProtocolNodeId,
         path: &ThreadPath,
         bound: Bound,
-    ) -> Result<(), ProtocolRefusal> {
-        let key = (node, path.clone());
-        if let (Some(slot), Some(old)) = (
-            self.program.binder_of.get(&node).copied(),
-            instance.binders.get(&key).cloned(),
-        ) {
-            let mut heirs = Vec::new();
-            for (reader, thread) in &instance.threads {
-                if thread.disposition != Disposition::Running
-                    || reader == path
-                    || !path.is_prefix_of(reader)
-                    || !self.program.reads_from(thread.rest, slot)
-                {
-                    continue;
-                }
-                let reads_old = instance
-                    .binding(node, reader)?
-                    .is_some_and(|(by, _)| by == path);
-                if let (true, Some(step)) = (reads_old, reader.steps.get(path.steps.len())) {
-                    let mut heir = path.clone();
-                    heir.steps.push(step.clone());
-                    heirs.push(heir);
-                }
-            }
-            for heir in heirs {
-                instance
-                    .binders
-                    .entry((node, heir))
-                    .or_insert_with(|| old.clone());
-            }
-        }
-        instance.binders.insert(key, bound);
-        Ok(())
+    ) {
+        instance
+            .environments
+            .entry(path.clone())
+            .or_default()
+            .insert(node, bound);
     }
 
     /// Whether `constraint` holds for the binder of the reader's node bound
@@ -332,7 +310,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             path,
             node,
         } = reader;
-        let mut frame = self.frame(instance, path, node)?;
+        let mut frame = self.frame(instance, path, node);
         if let Some(entry) = frame.get_mut(slot) {
             *entry = Some(record.clone());
         }
@@ -386,7 +364,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             }
             let enc = value_enc(&value);
             let mut next = state.clone();
-            self.bind(
+            Self::bind(
                 Self::instance_mut(&mut next, ordinal)?,
                 node,
                 path,
@@ -394,7 +372,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     value,
                     enc: enc.clone(),
                 },
-            )?;
+            );
             if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((
@@ -402,6 +380,31 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     next,
                 ));
             }
+        }
+        Ok(())
+    }
+
+    /// SE-5: the `fence` at `node`, whose identity names its ordering (TS-2),
+    /// moves its thread past the node and changes no model state; its memory model's fence rule, the gate, is
+    /// its only enabling condition.
+    fn fence(
+        &self,
+        state: &ProtocolState<M>,
+        ordinal: u64,
+        path: &ThreadPath,
+        node: ProtocolNodeId,
+        after: Cursor,
+        gathered: &mut Gathered<M>,
+    ) -> Result<(), ExpansionStop> {
+        let text = self.program.text(node)?.to_owned();
+        let ordering = self.program.fence_ordering(node)?;
+        let mut next = state.clone();
+        if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            self.normalize(&mut next, ordinal)?;
+            gathered.successors.push((
+                ProtocolTransition::fence(path.clone(), text, ordering.label()),
+                next,
+            ));
         }
         Ok(())
     }
@@ -432,9 +435,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
 
     /// ST-6: `path` forks the parallel instance of `node` with the smallest
     /// ordinal no live sibling holds (PS-2), one `running` branch thread per
-    /// branch, each settled from its body's start; the owner rests at the
-    /// join. A reused ordinal reuses the paths of threads that have left the
-    /// state, so what they bound and counted is cleared first.
+    /// branch, each with a copy of `path`'s binder environment (PS-5) and
+    /// settled from its body's start; the owner rests at the join. A reused
+    /// ordinal reuses only paths no live thread extends, whose environments
+    /// and counters left the state with their threads.
     fn fork(
         &self,
         state: &ProtocolState<M>,
@@ -462,16 +466,16 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .iter()
             .map(|(label, body)| (path.child(&text, label, free), label, *body))
             .collect();
-        let stale = |thread: &ThreadPath| {
-            branches
-                .iter()
-                .any(|(child, _, _)| child.is_prefix_of(thread))
-        };
-        instance.binders.retain(|(_, thread), _| !stale(thread));
-        instance.counters.retain(|(_, thread), _| !stale(thread));
+        let inherited: Vec<(ProtocolNodeId, Bound)> = instance
+            .environment(path)
+            .map(|(bound_node, bound)| (bound_node, bound.clone()))
+            .collect();
         let mut dispositions = std::collections::BTreeMap::new();
         let mut children = Vec::with_capacity(branches.len());
         for (child, label, body) in &branches {
+            for (bound_node, bound) in &inherited {
+                Self::bind(instance, *bound_node, child, bound.clone());
+            }
             let rest = match self.settle(instance, child, Cursor::Enter(*body), &state.model)? {
                 Settled::Rest(rest) => rest,
                 Settled::Undecided(finding) => {
@@ -522,13 +526,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
 
     /// The ordinal of the parallel instance `path`'s fork of `node`, whose
     /// static declaration path is `text`, creates in `instance` (PS-2): the
-    /// smallest no live sibling holds.
-    ///
-    /// PS-2's "no live sibling holds" reads a sibling as live while its
-    /// instance is, or while any thread its branch threads forked still
-    /// runs: a reused path would otherwise become the nearest ancestor of
-    /// that running descendant, and the fork's clearing of the reused paths
-    /// would take bindings it still reads.
+    /// smallest no live sibling holds. A fork holds its ordinal while its
+    /// parallel instance is live and, after that, while any live thread's
+    /// path extends one of the instance's branch paths.
     pub(super) fn free_ordinal(
         instance: &Instance,
         path: &ThreadPath,
@@ -591,16 +591,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     }
 
     /// ST-7: the instance is settled; under `outstanding cancel` every
-    /// branch thread still `running` is `cancelled`, and so is every thread
-    /// it forked, at any depth, whose parallel instances are settled with
-    /// it; the owner settles past the join.
-    ///
-    /// QSpec FR-426's `join` row names "every branch thread still running"
-    /// and is silent on the threads such a branch forked. A cancelled
-    /// thread takes no further step, so nothing it started may either: an
-    /// inner branch that kept stepping would write the model after its
-    /// ancestor was cancelled, and the inner instance, whose owner leaves
-    /// the state, would never be joined.
+    /// branch thread still `running` is `cancelled`, together with every
+    /// thread at or below it, and every parallel instance those threads
+    /// forked is settled with it; under policy `all` the owner's binder
+    /// environment gains the entries in each joined branch's `Out` (PS-5);
+    /// the owner settles past the join.
     fn join(
         &self,
         state: &ProtocolState<M>,
@@ -650,6 +645,25 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         }
         if let Some(parallel) = instance.parallels.get_mut(&key) {
             parallel.settled = true;
+        }
+        if join.policy == CheckedJoinPolicy::All {
+            let mut joined = Vec::new();
+            for (label, body) in &join.branches {
+                if !join.joined.contains(label) {
+                    continue;
+                }
+                let branch = path.child(&text, label, key.ordinal);
+                for (bound_node, bound) in instance.environment(&branch) {
+                    // The entries of the branch's `Out`: bound by the branch
+                    // or below it after the fork, and escaping it.
+                    if self.program.escapes(*body, bound_node)? {
+                        joined.push((bound_node, bound.clone()));
+                    }
+                }
+            }
+            for (bound_node, bound) in joined {
+                Self::bind(instance, bound_node, path, bound);
+            }
         }
         next.memory = self.memory.merge(&next.memory, path, &branches);
         if self.place(
@@ -723,7 +737,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     enc: value_enc(result),
                 });
             if let Some(constraint) = attempt.constraint {
-                let mut frame = self.frame(instance, path, node)?;
+                let mut frame = self.frame(instance, path, node);
                 if let (Some(slot), Some(bound)) = (self.program.binder_of.get(&node), &bound) {
                     if let Some(entry) = frame.get_mut(*slot) {
                         *entry = Some(bound.value.clone());
@@ -762,7 +776,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             next.model = model;
             next.memory = memory;
             if let Some(bound) = bound {
-                self.bind(Self::instance_mut(&mut next, ordinal)?, node, path, bound)?;
+                Self::bind(Self::instance_mut(&mut next, ordinal)?, node, path, bound);
             }
             if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
                 self.normalize(&mut next, ordinal)?;
@@ -916,45 +930,89 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     .values()
                     .any(|disposition| *disposition == Disposition::Running)
         });
-        // A binding stays while some running thread that can still reach a
-        // node reading it would read that binding.
-        let running: Vec<(&ThreadPath, Rest)> = instance
-            .threads
-            .iter()
-            .filter(|(_, thread)| thread.disposition == Disposition::Running)
-            .map(|(path, thread)| (path, thread.rest))
-            .collect();
-        let nodes: BTreeSet<ProtocolNodeId> =
-            instance.binders.keys().map(|(node, _)| *node).collect();
-        let mut live: BTreeSet<(ProtocolNodeId, ThreadPath)> = BTreeSet::new();
-        for node in nodes {
-            let Some(slot) = self.program.binder_of.get(&node).copied() else {
-                continue;
-            };
-            for (reader, rest) in &running {
-                if !self.program.reads_from(*rest, slot) {
-                    continue;
-                }
-                for by in instance.read_by(node, reader) {
-                    live.insert((node, by));
+        // Each live thread keeps an entry of its environment while it
+        // reaches a reader of the entry's node.
+        let mut kept = BTreeSet::new();
+        for (holder, environment) in &instance.environments {
+            for node in environment.keys() {
+                if self.reaches(instance, *node, holder)? {
+                    kept.insert((holder.clone(), *node));
                 }
             }
         }
-        instance.binders.retain(|key, _| live.contains(key));
-        let counting: BTreeSet<ThreadPath> =
-            running.iter().map(|(path, _)| (*path).clone()).collect();
+        instance.environments.retain(|holder, environment| {
+            environment.retain(|node, _| kept.contains(&(holder.clone(), *node)));
+            !environment.is_empty()
+        });
+        let running: Vec<&ThreadPath> = instance
+            .threads
+            .iter()
+            .filter(|(_, thread)| thread.disposition == Disposition::Running)
+            .map(|(path, _)| path)
+            .collect();
+        let counting: BTreeSet<ThreadPath> = running.into_iter().cloned().collect();
         instance
             .counters
             .retain(|(_, thread), _| counting.contains(thread));
         Ok(())
     }
 
-    /// ADR-027 PD-4: every waiting thread of `state` with its rest point and
-    /// wait cause, in ascending JCS bytes of its path. A `running` thread
-    /// with no enabled step waits; a completed or cancelled one does not.
+    /// Whether the live thread `holder` reaches a reader of the binder of
+    /// `node` (ADR-027 PS-5): from its rest point to the end of its scope
+    /// ([`Program::reads_from`](super::program::Program::reads_from)), or,
+    /// for a branch thread of an `all` join and an entry in its branch's
+    /// `Out`, through everything its joiner reaches, up to the outermost
+    /// joiner. A cancelled thread takes no further step and reaches none.
+    fn reaches(
+        &self,
+        instance: &Instance,
+        node: ProtocolNodeId,
+        holder: &ThreadPath,
+    ) -> Result<bool, ProtocolRefusal> {
+        let Some(slot) = self.program.binder_of.get(&node).copied() else {
+            return Ok(false);
+        };
+        let mut at = holder;
+        loop {
+            let Some(thread) = instance.threads.get(at) else {
+                return Ok(false);
+            };
+            if thread.disposition == Disposition::Cancelled {
+                return Ok(false);
+            }
+            if self.program.reads_from(thread.rest, slot) {
+                return Ok(true);
+            }
+            let Some((key, label)) = &thread.owner else {
+                return Ok(false);
+            };
+            let join = self
+                .program
+                .joins
+                .get(&key.node)
+                .ok_or_else(|| ProtocolRefusal::fault("a-fork-has-a-join"))?;
+            let body = join
+                .branches
+                .iter()
+                .find(|(branch, _)| branch == label)
+                .map(|(_, body)| *body)
+                .ok_or_else(|| ProtocolRefusal::fault("a-branch-thread-runs-a-branch"))?;
+            let joined = join.policy == CheckedJoinPolicy::All && join.joined.contains(label);
+            if !joined || !self.program.escapes(body, node)? {
+                return Ok(false);
+            }
+            at = &key.parent;
+        }
+    }
+
+    /// ADR-027 PD-4: every waiting thread of `state`, reached by the steps
+    /// `prefix`, with its rest point and wait cause, in ascending JCS bytes
+    /// of its path. A `running` thread with no enabled step waits; a
+    /// completed or cancelled one does not.
     pub(super) fn blocked_threads(
         &self,
         state: &ProtocolState<M>,
+        prefix: &[&ProtocolTransition],
     ) -> Result<Vec<BlockedThread>, ExpansionStop> {
         let (expansion, _) = self.expand_bounded(state)?;
         let stepping: BTreeSet<&ThreadPath> = expansion
@@ -968,7 +1026,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 if thread.disposition != Disposition::Running || stepping.contains(path) {
                     continue;
                 }
-                let Some(cause) = self.wait_cause(state, instance, path, thread.rest)? else {
+                let Some(cause) = self.wait_cause(state, instance, path, thread.rest, prefix)?
+                else {
                     continue;
                 };
                 blocked.push(BlockedThread {
@@ -1007,13 +1066,15 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     }
 
     /// Why the running thread `path` resting at `rest`, which owns no
-    /// enabled step, waits; `None` at the end of its body.
+    /// enabled step, waits after the steps `prefix`; `None` at the end of
+    /// its body.
     fn wait_cause(
         &self,
         state: &ProtocolState<M>,
         instance: &Instance,
         path: &ThreadPath,
         rest: Rest,
+        prefix: &[&ProtocolTransition],
     ) -> Result<Option<WaitCause>, ExpansionStop> {
         Ok(Some(match rest {
             Rest::Fork(_) => WaitCause::Gate,
@@ -1055,10 +1116,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     if !self.gate(state, path, GatedStep::Receive) {
                         WaitCause::Gate
                     } else {
-                        self.receive_cause(instance, node)?
+                        self.receive_cause(instance, path.instance, node, prefix)?
                     }
                 }
                 ControlStep::Event => WaitCause::Constraint,
+                // A fence waits on nothing but its memory model (SE-5).
+                ControlStep::Fence => WaitCause::Gate,
                 ControlStep::Sequence
                 | ControlStep::Branch
                 | ControlStep::Parallel
@@ -1085,7 +1148,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         .keys()
                         .filter(|other| *other != path)
                         .cloned();
-                    WaitCause::JoinWaiting {
+                    WaitCause::FinishWaiting {
                         threads: Self::running_of(instance, others)?,
                     }
                 }

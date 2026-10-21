@@ -18,7 +18,8 @@ use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::protocol::{
     classify_accesses, visible, AccessShape, ClaimReads, InstanceAccess, MemoryModel,
     MemorySelection, MemorySelectionRefusal, ProtocolLocation, ProtocolRefusal, ProtocolState,
-    ProtocolSystem, ProtocolTransition, RestKind, Sc, StepKind, ThreadPath, Tso, WeakAccesses,
+    ProtocolSystem, ProtocolTransition, RestKind, Sc, StepKind, ThreadPath, Tso, WaitCause,
+    WeakAccesses,
 };
 use qsl_eval::simulation::{independent, Location, SubjectSystem, TransitionSystem};
 use qsl_eval::temporal::AtomReading;
@@ -798,21 +799,149 @@ fn store_buffering_under_tso_reaches_38_states_and_is_refuted() {
     );
 }
 
-/// TC-666 step 2 (FR-221-AC-2's `seq_cst` half; fences are not stepped):
-/// `SB` with every store and load `seq_cst` settles `proved` under `tso`.
-#[trace("TC-666")]
+/// `SB` with a `fence` of `left` and of `right` between each store and its
+/// load.
+fn fenced_sb(left: &str, right: &str) -> String {
+    format!(
+        "parallel Both {{ \
+         branch left sequence L {{ {} fence Fl ordering {left}; {} }} \
+         branch right sequence R {{ {} fence Fr ordering {right}; {} }} }} join all [left, right];",
+        attempt("Sx", "w", "Cell::set", "release", "IsX, StoreOne"),
+        attempt("Ly", "c", "Core::read1", "acquire", "ReadsY1, Read1"),
+        attempt("Sy", "w", "Cell::set", "release", "IsY, StoreOne"),
+        attempt("Lx", "c", "Core::read2", "acquire", "ReadsX2, Read2"),
+    )
+}
+
+/// FR-221-AC-2 (TC-666): `SB` with `fence F ordering seq_cst;` between each
+/// store and load settles `proved` under `tso`, and so does `SB` with every
+/// store and load `seq_cst` and no fence.
+#[trace("TC-666", "FR-221-AC-2")]
 #[test]
-fn seq_cst_stores_are_locked_under_tso() {
-    let case = Case::new(&sb_unit(&sb_run("", "seq_cst", "seq_cst")));
+fn seq_cst_fences_or_accesses_forbid_store_buffering_under_tso() {
     let tso = [select("SB::Both", MemoryModelName::Tso)];
-    let outcome = case.claim(&tso, None);
-    assert!(
-        matches!(outcome, ModelCheckOutcome::Holds { .. }),
-        "{outcome:?}"
-    );
-    // The closure certificate is checked over the `tso` system.
-    let record = case.settle(&tso, &outcome, false, None);
-    assert_eq!(record.label, ResultLabel::Proved, "{record:?}");
+    for run in [
+        fenced_sb("seq_cst", "seq_cst"),
+        sb_run("", "seq_cst", "seq_cst"),
+    ] {
+        let case = Case::new(&sb_unit(&run));
+        let outcome = case.claim(&tso, None);
+        assert!(
+            matches!(outcome, ModelCheckOutcome::Holds { .. }),
+            "{run}: {outcome:?}"
+        );
+        let record = case.settle(&tso, &outcome, false, None);
+        assert_eq!(record.label, ResultLabel::Proved, "{record:?}");
+    }
+}
+
+/// ADR-025 TSO-6 and MR-1 (ADR-027 SE-5): under `tso` a `seq_cst` fence is
+/// enabled only once its thread's buffer is empty, so after `left`'s store
+/// its fence waits, with cause `Gate`, until `flush(left)`; an `acquire`
+/// fence is enabled with a store buffered. The `seq_cst` fence's footprint
+/// reads and is enabled by `buf(left)`; the `acquire` fence's names no
+/// buffer. This is FR-206-AC-8's `tso` half.
+#[trace("TC-666", "TC-651", "FR-206-AC-8")]
+#[test]
+fn a_seq_cst_fence_waits_for_its_store_buffer_under_tso() {
+    let case = Case::new(&sb_unit(&fenced_sb("seq_cst", "acquire")));
+    let tso = [select("SB::Both", MemoryModelName::Tso)];
+    let system = case.system(&tso, Tso::default()).expect("builds");
+    let reached = reachable(&system);
+    let at_fence = |state: &Reached<Tso>, label: &str, node: &str| {
+        system
+            .threads(&state.state)
+            .expect("threads")
+            .into_iter()
+            .find(|thread| {
+                thread
+                    .path
+                    .steps
+                    .first()
+                    .is_some_and(|step| step.branch == label)
+                    && thread
+                        .rest_point
+                        .node
+                        .as_deref()
+                        .is_some_and(|at| at.ends_with(node))
+            })
+            .map(|thread| thread.path)
+    };
+    let fence_step = |state: &Reached<Tso>, path: &ThreadPath| -> Option<ProtocolTransition> {
+        state
+            .steps
+            .iter()
+            .find(|(transition, _)| {
+                transition.kind() == StepKind::Fence && transition.thread() == Some(path)
+            })
+            .map(|(transition, _)| transition.clone())
+    };
+    let (mut waited, mut passed, mut buffered_acquire) = (0, 0, 0);
+    for state in &reached {
+        if let Some(left) = at_fence(state, "left", "/Fl") {
+            let buffered = !state
+                .state
+                .memory()
+                .buffer(&left)
+                .unwrap_or_default()
+                .is_empty();
+            match fence_step(state, &left) {
+                Some(fence) => {
+                    assert!(!buffered, "a seq_cst fence waits for its buffer");
+                    let footprint = system.footprint(&state.state, &fence).expect("a footprint");
+                    let own = Location::Protocol(ProtocolLocation::Buffer(left.clone()));
+                    assert!(footprint.reads.contains(&own) && footprint.enabling.contains(&own));
+                    passed += 1;
+                }
+                None => {
+                    assert!(buffered, "an unbuffered seq_cst fence is enabled");
+                    let blocked = system.blocked(&state.state, &[]).expect("blocked");
+                    assert!(blocked
+                        .iter()
+                        .filter(|thread| thread.path == left)
+                        .all(|thread| thread.cause == WaitCause::Gate));
+                    // `flush(left)` drains the one store, and the fence is
+                    // then enabled.
+                    let (_, flushed) = state
+                        .steps
+                        .iter()
+                        .find(|(transition, _)| {
+                            transition
+                                .memory_step()
+                                .is_some_and(|step| step.thread == left)
+                        })
+                        .expect("a flush of left's buffer");
+                    let after = &reached[*flushed];
+                    assert!(after
+                        .state
+                        .memory()
+                        .buffer(&left)
+                        .unwrap_or_default()
+                        .is_empty());
+                    assert!(fence_step(after, &left).is_some());
+                    waited += 1;
+                }
+            }
+        }
+        if let Some(right) = at_fence(state, "right", "/Fr") {
+            let fence = fence_step(state, &right).expect("an acquire fence passes");
+            let footprint = system.footprint(&state.state, &fence).expect("a footprint");
+            assert!(!footprint.reads.iter().any(|location| matches!(
+                location,
+                Location::Protocol(ProtocolLocation::Buffer(_))
+            )));
+            if !state
+                .state
+                .memory()
+                .buffer(&right)
+                .unwrap_or_default()
+                .is_empty()
+            {
+                buffered_acquire += 1;
+            }
+        }
+    }
+    assert!(waited > 0 && passed > 0 && buffered_acquire > 0);
 }
 
 /// FR-221-AC-3 (TC-666): a branch storing `x := 1` then `y := 1`, beside a
@@ -1586,6 +1715,7 @@ fn every_independent_pair_of_tso_steps_commutes() {
         (contracts() + &protocol("SB", &fifo), "SB::Both"),
         (contracts() + &protocol("SB", &mp), "SB::Main::Both"),
         (send_unit(), "SB::Both"),
+        (sb_unit(&fenced_sb("seq_cst", "acquire")), "SB::Both"),
     ];
     let mut flushes = 0;
     for (body, parallel) in &units {

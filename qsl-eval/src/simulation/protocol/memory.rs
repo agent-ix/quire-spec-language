@@ -32,6 +32,9 @@ pub enum GatedStep {
     Receive,
     /// ST-1.
     Attempt,
+    /// A `fence` with its ordering (SE-5): the gate is the model's fence
+    /// rule.
+    Fence(AccessOrdering),
 }
 
 /// One internal step's typed canonical identity (SE-1 d, QSpec FR-436):

@@ -283,7 +283,10 @@ impl MemoryModel for Tso {
                 .iter()
                 .filter(|(path, _)| *path != thread && thread.is_prefix_of(path))
                 .all(|(_, buffer)| buffer.is_empty()),
-            GatedStep::Receive | GatedStep::Attempt => true,
+            // TSO-6: a `seq_cst` fence is `MFENCE`, enabled once the
+            // thread's buffer has drained; any other fence emits nothing.
+            GatedStep::Fence(AccessOrdering::SeqCst) => empty(thread),
+            GatedStep::Receive | GatedStep::Attempt | GatedStep::Fence(_) => true,
         }
     }
 
@@ -342,7 +345,8 @@ impl MemoryModel for Tso {
     ///   store writes `buf(b)` in place of its shared location's `mem(ℓ)`;
     ///   a load and a locked access keep their model reads and writes of
     ///   `mem(ℓ)`;
-    /// - `fork` and `send` are enabled by `buf(b)`;
+    /// - `fork`, `send` and a `seq_cst` fence are enabled by `buf(b)`
+    ///   (TSO-6);
     /// - `join` is enabled by, and removes, the buffer of every thread
     ///   below it;
     /// - `flush(b)` reads and writes `buf(b)` and writes `mem(ℓ)` of every
@@ -377,7 +381,9 @@ impl MemoryModel for Tso {
                 }
                 true
             }
-            FootprintStep::Gated(GatedStep::Fork | GatedStep::Send) => {
+            FootprintStep::Gated(
+                GatedStep::Fork | GatedStep::Send | GatedStep::Fence(AccessOrdering::SeqCst),
+            ) => {
                 if buffered {
                     footprint.reads.insert(own.clone());
                     footprint.enabling.insert(own);
@@ -397,7 +403,9 @@ impl MemoryModel for Tso {
                 }
                 true
             }
-            FootprintStep::Gated(GatedStep::Receive | GatedStep::Attempt) => true,
+            FootprintStep::Gated(GatedStep::Receive | GatedStep::Attempt | GatedStep::Fence(_)) => {
+                true
+            }
             // `flush` is the one internal step `tso` takes (TSO-4), so its
             // model and thread identify it.
             FootprintStep::Memory { identity, stored } => {
