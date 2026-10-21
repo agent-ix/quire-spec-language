@@ -53,7 +53,8 @@ pub enum AutomatonError {
     PastOverFuture,
     /// A past operator with an interval, over a subject whose steps count
     /// by kind: the memory of a past operator keeps its ages in positions,
-    /// and is not read in counted steps yet (ADR-027 PB-3).
+    /// and is not read in counted steps yet (ADR-027 PB-3). Remaining work:
+    /// QSL-878.
     #[error("a past operator with an interval is not read in counted steps yet")]
     PastIntervalInCountedSteps,
     /// The clause's profile has no property automaton.

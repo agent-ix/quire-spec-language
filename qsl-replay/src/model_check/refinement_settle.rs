@@ -148,6 +148,7 @@ fn settle_liveness(
             UndecidedCause::NoInstance => InconclusiveCause::NoInstance,
             UndecidedCause::MatchUndetermined => InconclusiveCause::MatchUndetermined,
             UndecidedCause::VacuousMatch => InconclusiveCause::VacuousMatch,
+            UndecidedCause::UncountedLoop => InconclusiveCause::UncountedLoop,
         }),
         ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         // The second phase of a refinement returns no other outcome.

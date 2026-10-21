@@ -46,3 +46,8 @@ What is sound:
 | FND-004 | low | For a lasso, `Steps::read` queries the steps into positions `1..represented` but not the loop's back edge, the step from the last loop position back to the loop entry. A lasso whose only uncounted step is that back edge reads as "every step counts", so it slips past the `UncountedLasso` refusal and is evaluated in positions. No protocol lasso reaches the evaluator yet (protocol checks are safety-only, and `check.rs` emits `lasso: None`), so this is latent. Fix: for a lasso, also read the back edge, for example through a `TemporalLetters` query for the loop-closing step, or refuse when it cannot be read. | qsl-eval/src/temporal/steps.rs:36-45, qsl-replay/src/model_check/replay.rs:1110-1116 |
 
 ## Dispositions
+
+- FND-001: fixed. EN-1 records product edges taken on uncounted steps and, before `Holds`, looks for a cycle among states that owe an interval eventuality; it settles `Undecided` with the new `uncounted-loop` cause. Test `an_uncounted_cycle_that_keeps_an_interval_open_is_not_holds` (duplicate/lose channel) returned `Holds` before the fix. Refuting the fair lasso is left to QSL-878.
+- FND-002: remaining work recorded as QSL-878 (doc comments, PR body, scope widened by a Linear comment).
+- FND-003: fixed. `Steps::read` scans without allocating, builds the table only when a step is uncounted, and charges the meter per position then.
+- FND-004: fixed. `TemporalLetters::counts_loop_edge` is asked of a lasso; replay answers from the closing step.

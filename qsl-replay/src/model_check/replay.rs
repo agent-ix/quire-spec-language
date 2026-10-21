@@ -1103,6 +1103,10 @@ struct ReplayedLetters<'a, S: SubjectSystem> {
     positions: &'a [Position<S::State>],
     /// The steps into the positions after the first.
     prefix: &'a [crate::ModelStep<S::TransitionId>],
+    /// Whether the step that closes the lasso's loop counts: the last step
+    /// of the prefix, which returns to the loop entry, or the terminal
+    /// stutter step, which counts.
+    loop_edge_counts: bool,
 }
 
 impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
@@ -1112,6 +1116,10 @@ impl<S: SubjectSystem> TemporalLetters for ReplayedLetters<'_, S> {
             .and_then(|index| index.checked_sub(1))
             .and_then(|index| self.prefix.get(index))
             .is_none_or(|step| self.system.counts_step(&step.transition))
+    }
+
+    fn counts_loop_edge(&self) -> bool {
+        self.loop_edge_counts
     }
 
     fn atom(
@@ -1176,6 +1184,13 @@ fn check_formula<S: SubjectSystem>(
         instance,
         positions,
         prefix: &payload.prefix,
+        loop_edge_counts: match payload.lasso {
+            Some(lasso) if !lasso.terminal_stutter => payload
+                .prefix
+                .last()
+                .is_none_or(|step| system.counts_step(&step.transition)),
+            Some(_) | None => true,
+        },
     };
     let mut meter = Meter::new(formula.meter);
     let mut loop_states = Vec::new();

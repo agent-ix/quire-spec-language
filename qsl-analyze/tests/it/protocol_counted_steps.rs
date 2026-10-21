@@ -28,7 +28,7 @@ use qsl_package::CheckedPackage;
 use qsl_replay::{
     replay_protocol_trace, settle_protocol_check, ModelCheckItem, ModelCheckLimits,
     ModelCheckOutcome, ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject,
-    ReplayLimits, ResultLabel, TemporalCounterexample,
+    ReplayLimits, ResultLabel, TemporalCounterexample, UndecidedCause,
 };
 use qsl_semantics::check::{CheckedTemporalClause, FormulaNodeId};
 use qsl_semantics::model::observation::DocumentRef;
@@ -36,8 +36,9 @@ use quire_exact::{Cancel, Incomplete, Meter};
 
 use crate::counter::UNLIMITED;
 use crate::fill::{
-    document, fill_unit, instance, model_subject, package_id_under, package_under, reachable,
-    sc_system, subject, unit_text_under, universe, v, Documents, Reached,
+    attempt, contracts, document, fill_unit, instance, model_subject, package_id_under,
+    package_under, protocol, reachable, sc_system, subject, unit_text_under, universe, v,
+    Documents, Reached,
 };
 use crate::model_settle::{envelope_at, request};
 use crate::protocol_compensation::pay;
@@ -413,9 +414,12 @@ fn counted_steps_decide_the_interval_over_the_compensation_paths() {
 /// `eventually[0,2] holds(k.v >= 2)` under event-position false-extension
 /// holds on every behaviour; `eventually[0,1] holds(k.v = 3)` settles
 /// `refuted` with a prefix on which no position at counted distance 0 or 1
-/// from position 0 has `k.v = 3`, and that prefix replays. Not covered: the
-/// `proved` label of the first claim, which FR-127 gives a bounded clause
-/// only with a closure certificate, and FR-338 translates TP-1 items alone.
+/// from position 0 has `k.v = 3`, and that prefix replays. Not met: the
+/// first claim does not settle `proved` yet. FR-127 gives a bounded clause
+/// that label only with a closure certificate, FR-338's translation covers
+/// TP-1 items alone, and `settle_protocol_check` returns `Failed` for it.
+/// The test asserts that label, so it flips when the certificate lands.
+/// Remaining work: QSL-878.
 #[trace("TC-658", "FR-213-AC-3")]
 #[test]
 fn the_model_checker_counts_steps_over_the_repaired_fill() {
@@ -425,6 +429,10 @@ fn the_model_checker_counts_steps_over_the_repaired_fill() {
     assert!(
         matches!(outcome, ModelCheckOutcome::Holds { .. }),
         "{outcome:?}"
+    );
+    assert_eq!(
+        proved.label("Fill", &letters, &outcome),
+        ResultLabel::Failed
     );
 
     let refuted = repaired_fill("eventually[0,1] holds(k.v = 3)");
@@ -466,28 +474,106 @@ fn the_model_checker_counts_steps_over_the_repaired_fill() {
 /// FR-213-AC-3 (TC-658), the model-subject half: over the `Fill` model
 /// subject every step counts (ADR-018's reading), so
 /// `eventually[0,1] holds(k.v = 3)` is refuted by the one step that leaves
-/// the last position of its window, not by the protocol's second counted step.
+/// the last position of its window, and `eventually[0,2] holds(k.v >= 2)` by
+/// two steps (`touch` leaves `k.v` at 0), not by the protocol's counted steps.
 #[trace("TC-658", "FR-213-AC-3")]
 #[test]
 fn a_model_subject_counts_every_step() {
-    let case = repaired_fill("eventually[0,1] holds(k.v = 3)");
-    let letters = CellV(is_three);
-    let outcome = check_model(
-        ModelCheckRequest {
-            subject: model_subject(&case.checked, &case.documents, case.initial.clone(), &["c"]),
-            item: ModelCheckItem::Clause {
-                clause: case.clause(),
-                letters: &letters,
+    for (formula, holds, steps) in [
+        (
+            "eventually[0,1] holds(k.v = 3)",
+            is_three as fn(i64) -> bool,
+            1,
+        ),
+        ("eventually[0,2] holds(k.v >= 2)", at_least_two, 2),
+    ] {
+        let case = repaired_fill(formula);
+        let letters = CellV(holds);
+        let outcome = check_model(
+            ModelCheckRequest {
+                subject: model_subject(
+                    &case.checked,
+                    &case.documents,
+                    case.initial.clone(),
+                    &["c"],
+                ),
+                item: ModelCheckItem::Clause {
+                    clause: case.clause(),
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: Default::default(),
             },
-            max_depth: None,
-            limits: ModelCheckLimits::default(),
-            reductions: Default::default(),
-        },
-        &Cancel::new(),
-    )
-    .expect("the model subject checks");
-    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
-        panic!("{outcome:?}");
+            &Cancel::new(),
+        )
+        .expect("the model subject checks");
+        let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+            panic!("{formula}: {outcome:?}");
+        };
+        assert_eq!(counterexample.prefix.len(), steps, "{formula}");
+    }
+}
+
+/// FR-213-AC-2 (TC-658), a vector that tells counted steps from positions:
+/// on the failure path of `Pay`, `cend` and `finish` are uncounted and the
+/// false extension's stutter is the first counted step past them, so
+/// `always[0,1] holds(k.bal = 0)` is violated at position 4 (the refund's
+/// post-state), though it holds there if every step counts. The spec's own
+/// AC-2 vector gives the same verdicts either way (QSL-396).
+#[trace("TC-658", "FR-213-AC-2")]
+#[test]
+fn an_uncounted_cend_and_finish_end_the_window_after_the_refund() {
+    let case = Case::new(&(pay("true") + &claim("always[0,1] holds(k.v = 0)")));
+    let subject = case.subject("Pay");
+    let system = sc_system(&subject);
+    let protocol = &system;
+    let failed = |steps: &[(ProtocolTransition, usize)]| {
+        steps
+            .iter()
+            .position(|(step, _)| {
+                let key = protocol.transition_key(step).expect("an identity");
+                let identity: serde_json::Value = serde_json::from_slice(&key).expect("JSON");
+                step.kind() == StepKind::Event
+                    && step.node().is_some_and(|node| node.ends_with("Fail"))
+                    && identity["record"]["value"] == true
+            })
+            .unwrap_or(0)
     };
-    assert_eq!(counterexample.prefix.len(), 1, "{counterexample:?}");
+    let mut behaviour = Behaviour::follow(&system, is_zero, failed);
+    assert_eq!(behaviour.at(case.clause(), 4), violated(4));
+    behaviour.by_kind = false;
+    assert_eq!(behaviour.at(case.clause(), 4), TemporalOutcome::Holds);
+}
+
+/// ADR-027 PB-3: a cycle of uncounted steps keeps an interval that needs a
+/// counted step open, so it is not met on that lasso. On a channel whose
+/// delivery is `unknown`, `duplicate` then `lose` returns to the state it
+/// left, the product state coalesces and the monitor never rejects; EN-1
+/// must not answer `Holds` for `eventually[0,2] holds(k.v = 1)`, which every
+/// behaviour that takes its counted steps satisfies at the attempt. It
+/// settles `Undecided` with the uncounted-loop cause.
+#[test]
+fn an_uncounted_cycle_that_keeps_an_interval_open_is_not_holds() {
+    let members = "channel ch from w to w carries Boolean ordering fifo by (m: Boolean) \
+                   { true } delivery unknown capacity 2 overflow block;";
+    let run = format!(
+        "sequence Main {{ send S1 via ch as (s1: Boolean) {{ s1 }}; \
+         {} }}",
+        attempt("A", "inc", "IncPre, IncPost", "a", "true")
+    );
+    let unit = contracts("self.v <= 1") + &protocol("P", members, &run, "d");
+    let case = Case::new(&(unit + &claim("eventually[0,2] holds(k.v = 1)")));
+    let letters = CellV(|value| value == 1);
+    let outcome = case.check("P", &letters);
+    assert!(
+        matches!(
+            outcome,
+            ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::UncountedLoop,
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
 }

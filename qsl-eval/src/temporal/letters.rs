@@ -95,4 +95,10 @@ pub trait TemporalLetters {
     fn counts_step(&self, _position: TemporalPosition) -> bool {
         true
     }
+
+    /// Whether the step that closes a lasso's loop, from its last position
+    /// back to its entry, counts. Asked only of a lasso.
+    fn counts_loop_edge(&self) -> bool {
+        true
+    }
 }

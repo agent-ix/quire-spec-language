@@ -10,10 +10,31 @@
 //! distance in positions.
 
 use qsl_foundation::InternalFault;
+use quire_exact::{Charge, ChargePoint, Incomplete, Meter};
 
 use super::letters::TemporalLetters;
 use super::plan::fault;
 use super::position::TemporalPosition;
+
+/// Why the counted steps could not be read.
+pub(super) enum ReadStop {
+    /// The work budget ran out.
+    Incomplete(Incomplete),
+    /// An invariant broke.
+    Fault(InternalFault),
+}
+
+impl From<Incomplete> for ReadStop {
+    fn from(incomplete: Incomplete) -> Self {
+        Self::Incomplete(incomplete)
+    }
+}
+
+impl From<InternalFault> for ReadStop {
+    fn from(fault: InternalFault) -> Self {
+        Self::Fault(fault)
+    }
+}
 
 /// The counted steps of a finite trace with at least one uncounted step.
 #[derive(Debug)]
@@ -24,27 +45,27 @@ pub(super) struct Steps {
 
 impl Steps {
     /// The counted steps of the `len` positions `letters` reads, or `None`
-    /// when every step counts, which is the distance in positions.
+    /// when every step counts, which is the distance in positions. A trace
+    /// whose steps all count is scanned without allocating, and one with an
+    /// uncounted step pays `meter` one work unit per position.
     pub(super) fn read<L: TemporalLetters>(
         len: u64,
         letters: &L,
-    ) -> Result<Option<Self>, InternalFault> {
-        let len = usize::try_from(len).map_err(|_| fault("trace-length-in-usize"))?;
-        let mut counted = Vec::with_capacity(len);
-        let mut all = true;
+        meter: &mut Meter,
+    ) -> Result<Option<Self>, ReadStop> {
+        let counts = |index: u64| letters.counts_step(TemporalPosition::new(index));
+        if (1..len).all(counts) {
+            return Ok(None);
+        }
+        let size = usize::try_from(len).map_err(|_| fault("trace-length-in-usize"))?;
+        let mut counted = Vec::with_capacity(size);
         let mut total = 0_i128;
         for index in 0..len {
-            if index > 0 {
-                let position = u64::try_from(index).map_err(|_| fault("position-in-u64"))?;
-                if letters.counts_step(TemporalPosition::new(position)) {
-                    total += 1;
-                } else {
-                    all = false;
-                }
-            }
+            meter.charge(Charge::new(ChargePoint::GraphExpand))?;
+            total += i128::from(index > 0 && counts(index));
             counted.push(total);
         }
-        Ok((!all).then_some(Self { counted }))
+        Ok(Some(Self { counted }))
     }
 
     fn last(&self) -> Result<(i128, i128), InternalFault> {

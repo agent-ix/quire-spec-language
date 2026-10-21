@@ -102,7 +102,8 @@ pub enum TemporalRefusal {
     #[error("a lasso's prefix and loop exceed u64 positions")]
     TraceTooLong,
     /// A lasso with an uncounted step (ADR-027 PB-3): interval distance in
-    /// counted steps is read over a finite trace only.
+    /// counted steps is read over a finite trace only. Remaining work:
+    /// QSL-878.
     #[error("a lasso is read in counted steps only when every step counts")]
     UncountedLasso,
     /// A lasso under a bounded profile: only the infinite-trace profile

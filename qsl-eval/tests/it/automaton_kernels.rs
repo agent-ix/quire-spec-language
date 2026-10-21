@@ -539,7 +539,7 @@ fn first_expiry_counted(
 /// FR-213-AC-1: the deadline counter, read with the steps that count and
 /// the steps that do not, matches the counted-distance definition of
 /// `eventually[0,b]` on every short trace.
-#[trace("TC-658", "FR-213-AC-1")]
+#[trace("TC-658")]
 #[test]
 fn a_deadline_counter_measures_counted_distance_on_every_short_trace() {
     for upper in 0..=2usize {
@@ -578,7 +578,7 @@ fn a_deadline_counter_measures_counted_distance_on_every_short_trace() {
 /// steps that do not, requires the operand at every position at counted
 /// distance `b` or less of an obligation, uncounted successors of the
 /// last such position included.
-#[trace("TC-658", "FR-213-AC-1")]
+#[trace("TC-658")]
 #[test]
 fn an_extent_counter_measures_counted_distance_on_every_short_trace() {
     for upper in 0..=2usize {

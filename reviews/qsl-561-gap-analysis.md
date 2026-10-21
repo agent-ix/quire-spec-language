@@ -43,3 +43,8 @@ Bindings checked:
 | FND-004 | low | FR-213-AC-2's vector does not tell counted steps from positions. On the failure path the uncounted `cend` and `finish` come after the refund, so `[0,2]` holds at position 2 and fails at position 1 under either measure, and the success path fails everywhere under either. The test passes even if `counts_step` is ignored. This is a weakness of the spec vector, not of the test. Fix: a spec amendment (FR-213-AC-2 or TC-658) that adds a position whose verdict depends on an uncounted step, for example `eventually[0,1]` from a position just before `cend`. Route it to the FR-213 spec ticket (QSL-396). No code change is needed in this PR. | qsl-analyze/tests/it/protocol_counted_steps.rs:361-410 |
 
 ## Dispositions
+
+- FND-001: fixed. The AC-3 test asserts the label `settle_protocol_check` returns today (`Failed`), cites QSL-878, and QSL-878 now blocks QSL-561.
+- FND-002: fixed. The lasso test is untagged by AC; the mechanism tests carry `TC-658` only.
+- FND-003: fixed. The model-subject test also checks `eventually[0,2] holds(k.v >= 2)`.
+- FND-004: added `an_uncounted_cend_and_finish_end_the_window_after_the_refund`, and commented on QSL-396 for the spec amendment.

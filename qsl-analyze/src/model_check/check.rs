@@ -424,6 +424,7 @@ pub fn check_model(
         cancel,
         nodes: Vec::new(),
         known: BTreeMap::new(),
+        uncounted_edges: Vec::new(),
         queue: VecDeque::new(),
         edges: 0,
         horizon_cut: false,
@@ -616,6 +617,7 @@ impl ProtocolRun<'_> {
             cancel: self.cancel,
             nodes: Vec::new(),
             known: BTreeMap::new(),
+            uncounted_edges: Vec::new(),
             queue: VecDeque::new(),
             edges: 0,
             horizon_cut: false,
@@ -768,6 +770,7 @@ fn check_reduced(
             cancel,
             nodes: Vec::new(),
             known: BTreeMap::new(),
+            uncounted_edges: Vec::new(),
             queue: VecDeque::new(),
             edges: 0,
             horizon_cut: false,
@@ -1123,6 +1126,10 @@ struct Run<'r, S: SubjectSystem> {
     /// Each product state's index by its key: the model state's key bytes
     /// and the monitor state of each instance.
     known: BTreeMap<ProductKey, usize>,
+    /// The product edges taken on a step that does not count for interval
+    /// distance (ADR-027 PB-3), by node, kept only for a claim that reads
+    /// the distinction.
+    uncounted_edges: Vec<(usize, usize)>,
     queue: VecDeque<usize>,
     edges: usize,
     horizon_cut: bool,
@@ -1235,6 +1242,14 @@ impl<S: SubjectSystem> Run<'_, S> {
                 } else if self.horizon_cut {
                     ModelCheckOutcome::BoundReached {
                         depth: widen(self.max_depth.unwrap_or(0)),
+                        stats: self.stats(),
+                    }
+                } else if self.uncounted_loop().map_err(|halt| match halt {
+                    Halt::Refusal(refusal) => refusal,
+                    Halt::Finish(_) => fault("an-uncounted-loop-scan-finishes"),
+                })? {
+                    ModelCheckOutcome::Undecided {
+                        cause: UndecidedCause::UncountedLoop,
                         stats: self.stats(),
                     }
                 } else {
@@ -1540,6 +1555,71 @@ impl<S: SubjectSystem> Run<'_, S> {
         self.nodes[at].distance.saturating_add(usize::from(counted))
     }
 
+    /// Record the edge into `node`, which is product node `target`, when its
+    /// step does not count and the claim reads that distinction.
+    fn note_uncounted_edge(&mut self, node: &Node<S::State, S::TransitionId>, target: usize) {
+        if !matches!(
+            self.item,
+            Item::Clause {
+                uncounted: Some(_),
+                ..
+            }
+        ) {
+            return;
+        }
+        if let Some((parent, Some(transition))) = &node.parent {
+            if !self.system.counts_step(transition) {
+                self.uncounted_edges.push((*parent, target));
+            }
+        }
+    }
+
+    /// Whether a cycle of uncounted steps keeps an interval eventuality
+    /// open (ADR-027 PB-3: such an interval is not met on that lasso).
+    /// Every node of the cycle owes the eventuality, since an uncounted step
+    /// neither ages it nor, being on a cycle, discharges it for good.
+    fn uncounted_loop(&self) -> Step<bool> {
+        let mut owing = vec![false; self.nodes.len()];
+        for (index, node) in self.nodes.iter().enumerate() {
+            for state in &node.monitor {
+                let members = self
+                    .monitor
+                    .members(*state)
+                    .ok_or_else(|| fault("a-node-has-a-monitor-state"))?;
+                if members
+                    .iter()
+                    .any(|member| self.monitor.automaton().owes_eventuality(*member))
+                {
+                    owing[index] = true;
+                }
+            }
+        }
+        let edges: Vec<(usize, usize)> = self
+            .uncounted_edges
+            .iter()
+            .copied()
+            .filter(|(from, to)| owing[*from] && owing.get(*to).copied().unwrap_or(false))
+            .collect();
+        // Peel the nodes that no edge enters: what is left lies on, or
+        // leads from, a cycle.
+        let mut entered = vec![0_usize; self.nodes.len()];
+        for (_, to) in &edges {
+            entered[*to] += 1;
+        }
+        let mut ready: Vec<usize> = (0..entered.len()).filter(|n| entered[*n] == 0).collect();
+        let mut peeled = 0_usize;
+        while let Some(node) = ready.pop() {
+            peeled += 1;
+            for (_, to) in edges.iter().filter(|(from, _)| *from == node) {
+                entered[*to] -= 1;
+                if entered[*to] == 0 {
+                    ready.push(*to);
+                }
+            }
+        }
+        Ok(peeled < self.nodes.len())
+    }
+
     /// The product key of a model state's `key` read to the monitor states
     /// `monitor` at counted distance `distance`. When the subject's steps
     /// count by kind and the claim reads positions up to a horizon, the
@@ -1576,7 +1656,9 @@ impl<S: SubjectSystem> Run<'_, S> {
         };
         node.monitor = after;
         let product = self.product(key, node.monitor.clone(), node.distance);
-        if bad.is_none() && self.known.contains_key(&product) {
+        let target = self.known.get(&product).copied();
+        self.note_uncounted_edge(&node, target.unwrap_or(self.nodes.len()));
+        if bad.is_none() && target.is_some() {
             return Ok(());
         }
         if self.nodes.len() >= self.limits.limits.max_states {

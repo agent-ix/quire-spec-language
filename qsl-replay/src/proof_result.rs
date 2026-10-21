@@ -490,6 +490,10 @@ pub enum InconclusiveCause {
     /// `vacuous-match` (ADR-023 HM-7): a hyper item's non-empty universal
     /// `match` is satisfied by no fair tuple of universal behaviours.
     VacuousMatch,
+    /// `uncounted-loop` (ADR-027 PB-3): an interval obligation stays open on
+    /// a reachable cycle of uncounted protocol steps, which EN-1 over a
+    /// protocol subject does not settle.
+    UncountedLoop,
     /// `mapping-undetermined` (ADR-020 RE-4): a refinement's mapping row or
     /// step-row argument was refused or incomplete at a reachable state.
     MappingUndetermined,
@@ -619,6 +623,7 @@ impl InconclusiveCause {
             Self::NoInstance => "no-instance",
             Self::MatchUndetermined => "match-undetermined",
             Self::VacuousMatch => "vacuous-match",
+            Self::UncountedLoop => "uncounted-loop",
             Self::MappingUndetermined => "mapping-undetermined",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
@@ -646,6 +651,7 @@ impl InconclusiveCause {
             | Self::NoInstance
             | Self::MatchUndetermined
             | Self::VacuousMatch
+            | Self::UncountedLoop
             | Self::MappingUndetermined
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }

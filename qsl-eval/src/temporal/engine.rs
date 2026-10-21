@@ -38,7 +38,7 @@ use super::letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
 use super::outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 use super::plan::{fault, slot, Direction, Node, Plan, Scan, Window};
 use super::position::TemporalPosition;
-use super::steps::Steps;
+use super::steps::{ReadStop, Steps};
 use super::window::{WindowLimitReached, WindowRefusal};
 
 /// The named point every visit charges, one work unit each. `quire-exact`
@@ -340,8 +340,14 @@ pub(super) fn run<L: TemporalLetters>(
     let plan = Plan::new(clause.formula).map_err(TemporalRefusal::Fault)?;
     // ADR-027 PB-3: a loop with an uncounted step is not read in counted
     // steps.
-    let steps = Steps::read(shape.represented, &*source).map_err(TemporalRefusal::Fault)?;
-    if steps.is_some() && shape.mode == Mode::Lasso {
+    let steps = match Steps::read(shape.represented, &*source, meter) {
+        Ok(steps) => steps,
+        Err(ReadStop::Incomplete(incomplete)) => {
+            return Ok(TemporalOutcome::Incomplete(incomplete))
+        }
+        Err(ReadStop::Fault(internal)) => return Err(TemporalRefusal::Fault(internal)),
+    };
+    if shape.mode == Mode::Lasso && (steps.is_some() || !source.counts_loop_edge()) {
         return Err(TemporalRefusal::UncountedLasso);
     }
     let evaluation = Evaluator::new(clause, plan, shape, steps, meter)

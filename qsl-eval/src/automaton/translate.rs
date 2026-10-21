@@ -262,6 +262,27 @@ impl PropertyAutomaton {
             .collect()
     }
 
+    /// Whether the reached `state` owes an interval eventuality that only a
+    /// counted step can close (ADR-027 PB-3): a pending `eventually` or
+    /// `until` deadline, or one still waiting out its lower bound. A state
+    /// that owes one and repeats on uncounted steps never discharges it.
+    pub fn owes_eventuality(&self, state: StateId) -> bool {
+        let Some(config) = self.reached.key(state) else {
+            return false;
+        };
+        let deadline = config
+            .counters
+            .values()
+            .any(|counter| matches!(counter, Counter::Deadline(counter) if counter.is_pending()));
+        deadline
+            || config.shifts.keys().any(|core| {
+                matches!(
+                    self.translator.ir.node(*core),
+                    Ok(Node::Future { kind, .. }) if kind.is_eventuality()
+                )
+            })
+    }
+
     /// The number of acceptance sets: one for each unbounded `eventually`
     /// or `until` of the translated formula. A run accepts when it visits
     /// every set infinitely often; with none it is a safety automaton.

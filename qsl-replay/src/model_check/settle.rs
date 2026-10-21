@@ -326,6 +326,7 @@ fn settle<T: Clone>(
             UndecidedCause::NoInstance => InconclusiveCause::NoInstance,
             UndecidedCause::MatchUndetermined => InconclusiveCause::MatchUndetermined,
             UndecidedCause::VacuousMatch => InconclusiveCause::VacuousMatch,
+            UndecidedCause::UncountedLoop => InconclusiveCause::UncountedLoop,
         }),
         ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         ModelCheckOutcome::Violated {

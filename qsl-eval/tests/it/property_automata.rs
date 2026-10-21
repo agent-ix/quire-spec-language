@@ -376,7 +376,7 @@ fn a_bounded_clause_translates_to_a_finite_monitor_that_answers_to_the_closed_tr
 /// over a letter that also says which steps do not count, whatever the
 /// interval shape. A clause without an interval operator reads no such atom,
 /// and a past operator with an interval is refused.
-#[trace("TC-658", "FR-213-AC-3")]
+#[trace("TC-658")]
 #[test]
 fn a_counted_clause_translates_to_a_monitor_that_answers_to_counted_distance() {
     for body in [
