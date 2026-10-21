@@ -39,18 +39,22 @@ package the call ran against; nothing is recomputed.
 
 - **Selected call**: the function name and the argument list the entry
   received, as FR-100's `Call` carries them. The function is one identifier
-  (FR-100 Inputs).
-- **Owner of a record**: the `Value` function declaration whose body holds
-  the record's claim site (FR-062, "Claim sites"). A `value-validity`
-  record has exactly one owner; an `operation-contract` record (a state
-  clause's or an operation frame's, FR-104) has none.
+  (FR-100 Inputs). The facade stores the arguments as received. The identity
+  and equality of a call is its function name and its set of (parameter name,
+  value) pairs, so the order in which the arguments arrived (FR-100 lets them
+  arrive in any order) does not change it.
+- **Owner of a record**: the qualified name of the `Value` function
+  declaration whose body holds the record's claim site (FR-062, "Owner"), as
+  the checked graph holds that name. A `value-validity` record has exactly
+  one owner. Every other record (an `operation-contract` record, FR-104, and a
+  `temporal-satisfaction` record) has none.
 - **Item of the call**: the requirement item (FR-075) written from a record
   whose owner is the selected function. A function reached by a call inside
   the selected function's body is not the selected function, so its records
   are not items of the call.
-- **Package order**: the records' bytewise occurrence-key order (FR-075),
-  over every record of the package. An item's **request index** is its
-  position in the package order.
+- **Package order**: the bytewise occurrence-key order of every record of the
+  package (FR-075). An item's **request index** is its position in the package
+  order.
 
 ## Inputs
 
@@ -62,65 +66,75 @@ package the call ran against; nothing is recomputed.
 
 - `run_with_requirements` (design name; the implementing ticket chooses the
   Rust spelling) returns, on success, `RunWithRequirements`: the package's
-  `package_id`, the call's `CallOutcome` (both exactly as `run` returns them
-  for the same inputs) and `CallRequirements`.
-- `CallRequirements` holds the selected call as received (the function name
-  and the arguments, in the declared parameter order) and its members, in
-  ascending occurrence-key order. A member is a `CallRequirement`: the
-  record's `OccurrenceKey` and the item's request index. A member names its
-  item by identity; a consumer pairs it with the item `items_from_requirements`
-  writes at that request index, whose `occurrence()` equals the member's key.
+  `package_id`, the call's `CallOutcome` (both as `run` returns them for the
+  same inputs) and `CallRequirements`.
+- `CallRequirements` holds the `package_id` of the compile that produced the
+  members, the selected call as received, and its members in ascending
+  occurrence-key order. A member is a `CallRequirement`: the record's
+  `OccurrenceKey` and the item's request index.
 - The entry's refusal type is `RunRefusal` (FR-100), which this requirement
   extends by no variant.
 
 ## Behavior
 
-- **Association rule.** The members are exactly the package's records whose
-  owner is the selected function, one member per record. Two claim sites of
-  one application node are two records and two members (FR-062). A function
-  with no scalar operation application has no record and so no member: the
-  result carries an empty member list, which is not a refusal.
-- **Arguments do not select items.** The arguments identify the call and are
-  echoed; they neither add nor remove a member. Each member's path condition
-  is on its item (FR-075); the entry does not evaluate it against the
-  arguments.
-- **Outcome independence.** The members do not depend on the call's outcome.
-  A call whose outcome is `Refused`, `Undefined` or `Incomplete` (the call
-  ran) returns its members. A refusal before the call (below) returns no
-  `CallRequirements`.
-- **One checked graph.** The entry compiles the source once. The call, the
-  `package_id` and the members all come from that compile's checked package,
-  so the members' occurrence keys are keys of the package whose id is
-  returned, and the request indices are positions in that package's order.
-- **Typed refusals.** Each is an existing `RunRefusal` arm and FR-272 cause,
-  with FR-100's stage, code and category, and no `CallRequirements`:
+- **Association rule.** The facade SHALL return as members exactly the
+  package's records whose owner is the selected function, one member per
+  record. Two claim sites of one application node are two records and two
+  members (FR-062). A function with no scalar operation application has no
+  record, and the facade SHALL return an empty member list for it, not a
+  refusal.
+- **Arguments do not select items.** The facade SHALL NOT add or remove a
+  member because of an argument's value, and SHALL NOT evaluate a member's
+  path condition against the arguments. The path condition stays on the item
+  (FR-075).
+- **Outcome independence.** The facade SHALL return the members of a call
+  whose outcome is `Refused`, `Undefined` or `Incomplete`, so long as the call
+  ran. It SHALL return no `CallRequirements` for a refusal before the call
+  (below).
+- **One checked graph.** The facade SHALL compile the source once, and the
+  call, the `package_id` and the members SHALL all come from that compile's
+  checked package.
+- **Pairing with items.** A member names its item by (`package_id`, request
+  index). A consumer that writes items with `items_from_requirements` SHALL
+  pair a member only with an item written from a compile of the same
+  `package_id`, at the member's request index, whose `occurrence()` equals the
+  member's key; for any other `package_id` the consumer SHALL refuse the
+  pairing as `stale_dependency`/`content-mismatch` (QSpec FR-272) and SHALL
+  NOT pair by occurrence key alone.
+- **Typed refusals.** The facade SHALL refuse with an existing `RunRefusal`
+  arm, FR-100's stage, code and category and QSpec FR-272's cause, and SHALL
+  return no `CallRequirements`, in these cases:
   - the source, a model, a library or a dependency does not compile, so there
     is no checked graph: `Compile` (FR-100);
   - the function name is empty, is not an identifier, has more than one
-    segment, or names no function of the checked package:
-    `MissingDeclaration`, `missing_declaration`;
-  - the named function's declared result is not Boolean, integer or
-    Reference: `UnsupportedResult` (FR-100);
+    segment, or names no function of the checked package: `MissingDeclaration`,
+    `missing_declaration`;
+  - the named function's declared result is not Boolean, integer or Reference:
+    `UnsupportedResult` (FR-100);
   - an argument fails binding or admission before the call: the refusal
     FR-100 names for it (`UnknownParameter`, `DuplicateArgument`,
     `UnboundParameter`, `WrongValueKind`, `Admission`, `Storage`,
     `DanglingReference`, `Supplied`, `UnsupportedHelper`);
   - the cancel handle stops the run: `Cancelled`.
-- **Ambiguous association is a fault.** A `value-validity` record with no
-  owner or with two owners, or an owner that names no function of the checked
-  package, is a broken check-stage invariant: `Fault`, `runtime_invariant`,
-  stage `call`, exit 30. The entry never picks one owner and never returns a
-  partial member list.
-- **Facade boundary.** The entry and its types are reached through the
-  `qsl_replay` root alone. A consumer names neither `qsl_replay::spine` nor
-  `qsl_semantics`' checked graph to obtain them (FR-060, T12-A), as for
-  `compile_admitted` (FR-394). `run` keeps its signature and result (FR-100)
-  and is not changed by this requirement.
-- **Relation to settlement.** The association says which items belong to a
-  call; it settles nothing. Mapping a provider's result for an item to a
-  terminal (the settlement prerequisite QSL-655 owns) takes an item by the
-  identity this requirement fixes (the occurrence key and request index) and
-  does not depend on this requirement, nor this on it.
+- **Broken ownership is a fault.** The facade SHALL refuse with `Fault` (code
+  `runtime_invariant`, stage `spine-run`, invariant `requirement-owner-known`,
+  exit 30), and return no partial member list, when a `value-validity` record
+  has no owner or an owner that names no function of the checked package. The
+  owner is a single field, so two owners cannot arise and the facade never
+  picks one.
+- **Facade boundary.** The facade SHALL expose the entry and its types at the
+  `qsl_replay` root, where a consumer reaches them, and the root SHALL re-export FR-100's call types that
+  the entry takes or returns (`Call`, `CallArgument`, `CallOutcome`,
+  `CallValue`, `RunRefusal`, `PackageId`, `SpineLimits`) beside
+  `run_with_requirements`, `RunWithRequirements`, `CallRequirements` and
+  `CallRequirement`. `qsl_replay::spine` stays internal, a consumer names
+  neither it nor `qsl_semantics`' checked graph (FR-060, T12-A), as for
+  `compile_admitted` (FR-394), and `run` keeps its signature and result
+  (FR-100).
+- **Relation to settlement.** The association settles nothing. Mapping a
+  provider's result for an item to a terminal (QSL-655) takes an item by the
+  identity this requirement fixes and does not depend on this requirement,
+  nor this on it.
 
 ## Acceptance Criteria
 
@@ -132,24 +146,30 @@ functions (FR-062 RR-2, RR-5; TC-399):
 - `function id using v(x: Int[0, 9]): Int[0, 9] pure { x }`;
 - `function two using v(): Int[0, 10] pure { inc(1) }`.
 
-K has four records: one for `inc`, three for `sq`, and none for `id` and
-`two`.
+K has four records, in package order: the `integer.mul` of `sq` (request
+index 0); the `x + 1` node's ordinal 0, which is `inc`'s `integer.add` with
+result bound `Int[0, 10]` (index 1); and the same node's ordinals 1 and 2,
+which are `sq`'s two `integer.add` sites (indices 2 and 3). The `id` and `two`
+functions have none. Every one of these was observed on the unit by the
+review's probe, with package id `d181dfe3...a934`.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-395-AC-1 | Over K, `run_with_requirements` of `inc` with `x = 3` returns one member; of `sq` with `x = 3` returns three, in ascending occurrence-key order, the two `integer.add` sites at ordinal 0 and 1 of one node and the `integer.mul`; the member sets of `inc` and `sq` are disjoint, and each member's key is a key of K's `graph().requirements()`. | Test (TC-1089) |
-| FR-395-AC-2 | Over K, each member's request index is its record's position in the four-record package order, so `items_from_requirements` over K's records yields at that index an item whose `occurrence()` equals the member's key; the members of `inc` and `sq` together are exactly the four items and no item has two calls. | Test (TC-1089) |
-| FR-395-AC-3 | Over K, `id` and `two` return an empty member list and outcome `completed`; the `inc` records are not members of `two`, which calls `inc`. | Test (TC-1089) |
-| FR-395-AC-4 | Over K, `sq` with `x = 0` and with `x = 9` returns equal member lists; a call whose argument has the wrong kind refuses `WrongValueKind` and returns no members. | Test (TC-1089) |
+| FR-395-AC-1 | Over K, `inc` with `x = 3` returns one member, request index 1; `sq` with `x = 3` returns three members in ascending key order, request indices 0, 2 and 3, the `integer.mul` first and then the two `integer.add` sites at ordinals 1 and 2 of the shared `x + 1` node; the two member sets are disjoint and each key is a key of K's records. | Test (TC-1089) |
+| FR-395-AC-2 | Over K, each member's request index is the position of its key in the four-record package order, and the items `items_from_requirements` writes over K's records, at indices 0 to 3, have the members' keys; each of the four items is a member of exactly one of the calls of `inc` and `sq`. | Test (TC-1089) |
+| FR-395-AC-3 | Over K, `id` and `two` return an empty member list and outcome `completed`; the `inc` record is not a member of `two`, which calls `inc`. | Test (TC-1089) |
+| FR-395-AC-4 | Over K, `sq` with `x = 0` and with `x = 9` return equal member lists; `sq` with a Boolean `x` refuses `WrongValueKind` at position 0 with no `CallRequirements`. | Test (TC-1089) |
 | FR-395-AC-5 | Over K, `sq` with `x = 3` under accounting `work_units = 0` returns outcome `incomplete` on `work_units` and the same three members as the unlimited call. | Test (TC-1089) |
-| FR-395-AC-6 | `package_id` and `CallOutcome` equal those of `run` and of `compile_package` for the same inputs, for each of the calls of AC-1, AC-3 and AC-5. | Test (TC-1089) |
-| FR-395-AC-7 | The function `nope`, the empty name, the name `inc.x` and the name `1inc` refuse `MissingDeclaration` with code `missing_declaration`; a source that does not parse refuses `Compile`; neither returns a member. | Test (TC-1089) |
+| FR-395-AC-6 | For the calls of AC-1, AC-3 and AC-5 over K, the returned `package_id` equals the `package_id` of `run` and of `compile_package` over the same source, models, libraries and limits, and the returned outcome equals `run`'s outcome. | Test (TC-1089) |
+| FR-395-AC-7 | The function `nope`, the empty name, `inc.x` and `1inc` refuse `MissingDeclaration` with code `missing_declaration`; a source that does not parse refuses `Compile`; none returns a member. | Test (TC-1089) |
 | FR-395-AC-8 | A cancelled handle refuses `Cancelled` with no members. | Test (TC-1089) |
-| FR-395-AC-9 | A consumer reaches the entry and its types through the `qsl_replay` root alone, without naming `qsl_replay::spine`; FR-060's T12-A rule reports no call site outside its allowed callers for it. | Test (TC-1089) |
-| FR-395-AC-10 | The ambiguity fault is covered at the check stage: every `value-validity` record of FR-062's RR-1 to RR-17 has exactly one owner, equal to the function whose body holds the claim site, and an `operation-contract` record has none (FR-062-AC-14). | Test (TC-1089) |
+| FR-395-AC-9 | A consumer reaches the entry, its result types and FR-100's call types through the `qsl_replay` root alone, without naming `qsl_replay::spine`; FR-060's T12-A rule reports no call site outside its allowed callers for them. | Test (TC-1089) |
+| FR-395-AC-10 | The association step, run directly on a checked package whose record map has a `value-validity` record with no owner, refuses `Fault` with stage `spine-run` and invariant `requirement-owner-known`; the same for a record whose owner names no function of the package; neither returns a partial member list. | Test (TC-1089) |
+| FR-395-AC-11 | Two `Call`s of `sq` whose arguments arrive in different orders (for a two-parameter fixture, `add` of FR-062 RR-3 with `x`, `y` swapped) are equal calls, and return equal members. | Test (TC-1089) |
+| FR-395-AC-12 | A consumer that holds items written from a compile of a different `package_id` than the result's refuses the pairing as `stale_dependency`/`content-mismatch` and pairs nothing. | Test (TC-1089) |
 
 ## Dependencies
 
-- FR-062 (records and their claim sites), FR-075 (items and request
+- FR-062 (records, claim sites and owner), FR-075 (items and request
   indices), FR-100 (`run`, `Call`, `RunRefusal`), FR-394 (the facade
   pattern), FR-060 (the T12 boundary), ADR-011.

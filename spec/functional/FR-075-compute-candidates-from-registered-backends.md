@@ -148,10 +148,13 @@ written like any other and settles at negotiation (`unsupported` or
 application) are two items with their own request indices and occurrence
 keys.
 
-An item's request index is also its identity within the package for a
-consumer that selects items by owner: FR-395's call association names an item
-by its occurrence key and this request index, and the item written at that
-index carries that key.
+An item's request index is its position in the package order. FR-395's call
+association names an item by the package's `package_id` and this request
+index, and the item written at that index carries the member's key.
+
+For a consumer that pairs a call's member with an item, the item SHALL come
+from a package of the same `package_id` as the member's (FR-395,
+"Pairing with items").
 
 The path condition is the record's guard sequence, outermost first. Each
 guard is the canonical `PathGuard` value: the guard expression's
