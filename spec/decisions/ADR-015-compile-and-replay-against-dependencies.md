@@ -137,7 +137,7 @@ library's source. A refusal at one of the unit's own imports (step 3) is the uni
 E3 receives, per import, the `ImportView` and the library's `CheckedGraph`
 (D-5). E4 receives, per import, the library's `CheckedPackage` and links
 through `CheckedPackage::link_with`, which records the closure and applies
-FR-307's diamond rule. A supplied library that no import reaches is not
+FR-307's diamond rule. A supplied library that no import reaches and that has no refinement internals value is not
 compiled and is not recorded.
 
 With the dependency input in place, E3 refuses an `import` only by the

@@ -29,7 +29,7 @@ Fixtures: `CasRefinesCounter` and its lost-update model (ADR-020 §8);
    counterexample for the lost-update `commitB` record from `(1, 0, f, 0,
    t)`, and each record with no SMT candidate registered.
 5. Write the requests for `CasRefinesCounter` with its seven `step` rows in
-   reverse source order, and for FR-136-AC-7's protocol subject with its rows
+   reverse source order, and for FR-136-AC-7's protocol (with its channel `ch` and `tso` outermost `parallel`) with its rows
    in source order and in reverse.
 6. Add `AbsInv` on `Spec::Counter` beside `CasInv`, write the request, then
    write the clauses in the opposite source order.

@@ -64,7 +64,8 @@ compiled package.
    entry; then give the entry a second source.
 8. Replay a package whose refinement has a non-empty internal list with the
    list carried at `/package/refinement_internals`; with the member removed;
-   with the value `{}`; and with a list on a `dependencies` entry.
+   with the value `{}`; with the spelling `Spec::Twice::zz`; and with a list
+   on a `dependencies` entry, valid and defective.
 
 Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
 
@@ -118,6 +119,9 @@ Tag the tests `#[trace("TC-444", ...)]` with the ACs each step backs.
   refuses `SourceCount(2)`. None yields a verdict.
 - Step 8: the first replay recompiles to the proved `package_id`; the second
   refuses `PackageIdMismatch` naming both identities; the third refuses
-  `Recompile` carrying `invalid_model_binding`/`malformed-declaration` at the
-  root pointer of the package's value; the dependency entry's list applies to
-  that dependency's refinements only (FR-098-AC-20).
+  `Recompile` carrying `invalid_model_binding`/`malformed-declaration`
+  located at `/package/refinement_internals`; the `zz` spelling refuses
+  `missing_declaration`/`missing-name` at
+  `/package/refinement_internals/0/internal/0`; the dependency entry's list
+  applies to that dependency's refinements only, and its defect is located at
+  `/package/dependencies/<n>/refinement_internals/<pointer>` (FR-098-AC-20).
