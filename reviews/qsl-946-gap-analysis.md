@@ -62,3 +62,10 @@ fixed in this PR before merge. Both are cheap:
 | --- | --- | --- | --- |
 | FND-001 | medium | The quantity-literal gap is named but not ticketed. A quantity literal in a function body (`f(3 ms)`) still refuses `unsupported_construct`/`not-yet-implemented` (`ProbabilisticCause::QuantityLiteral`), and a test asserts that refusal. The PR body names the gap, but its only reference is `Remaining work: QSL-946`, the ticket this PR resolves. A Linear search finds no other ticket for it. Once QSL-946 closes, the gap has no owner, and the ticket's own acceptance requires each refusal to be "a named, ticketed gap". It also blocks any source-level quantity value, so it matters to IR-263. Fix: file the ticket (and the record/unit reader-collision ticket from SR-12294 FND-001), then change the PR body and the test comment to `Remaining work: <new id>`. | qsl-semantics/src/check/assemble/tests.rs:2310-2330; PR #1173 body |
 | FND-002 | medium | ADR-024 section 7.2 declares `operation Server::attempt(d: Quantity<Time>, outcome: Outcome)`. `Time` is a dimension, and FR-091-AC-44, which this PR now enforces, refuses that form with `missing-name`. The same example draws `d` from `1 ms`, `3 ms` and `12 ms` and rewards `d`, and the normative FR-185-AC-8 and TC-620 write this operation as `d: Quantity<ms>`. The ADR example is therefore source the language now refuses. Under the spec-in-same-PR rule, fix it in this PR: change line 257 to `d: Quantity<ms>`. The comment line can name the units the example assumes (`dimension Time; unit s; unit ms`). No FR or AC text changes. | spec/decisions/ADR-024-statistical-and-probabilistic-properties.md:257 |
+
+## Dispositions
+
+| FND | Outcome | Sha |
+| --- | --- | --- |
+| FND-001 | fixed: QSL-949 filed; cited in the test comment and the PR body | 214e61e3e |
+| FND-002 | fixed: ADR-024 line 257 writes Quantity<ms>; no FR or AC text changed | 214e61e3e |
