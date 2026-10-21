@@ -207,7 +207,8 @@ subject until the checked clause is available meets the same rule.
   - each replicated role SHALL have a role row for `spawn`, and, when its
     lifetime is `until`, for `retire`;
   - each `activation on each` trigger SHALL have a trigger row;
-  - each memory step kind the memory model has SHALL have a memory-step row.
+  - each memory step kind in the union over the outermost `parallel` nodes'
+    source-resolved memory models SHALL have a memory-step row.
 - The checker SHALL require an operation row only where an attempt or
   `cattempt` of that operation has no node row or template row. An operation
   row that no such step needs decides nothing and is admitted.

@@ -77,3 +77,22 @@ Covered: no row naming a protocol (model subject, `concrete_protocol` None); an 
 ## Verdict
 
 Not mergeable on this lens. FND-001 says S3 decides coverage from a memory model that the request can still change (ADR-027 SE-4), so a check can meet a memory step with no row. FND-002 leaves a required refusal with no owning stage. FND-003 and FND-004 are low wording fixes.
+
+## New findings (disposition pass 1)
+
+Head 3ca0af76e (PR #1126 round 1).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The new compile of an unreached library does not say which of its refusals count, or how its own imports are resolved. FR-099 compiles it 'through S1 to S3 ... solely to resolve that value by FR-147' and says 'Its refusals are reported as for any library: `CompileRefusal::Dependency`'. This can be read two ways. Only the value's refusals count. Or every S1 to S3 refusal of the library's source counts, so an ill-typed function in a library nobody imports would refuse the unit because a value was supplied for it. The library's S3 also needs its own imports, which S4 resolves (D-1). The bullet does not say whether those imports are resolved against the supplied set, charged, and refused when missing. Say which refusals of this compile refuse the compilation, and whether its imports resolve as an imported library's do. This is a precision gap inside the owner question the PR body raises, not the choice itself. | spec/functional/FR-099-compile-against-supplied-libraries.md:87 |
+
+## Dispositions
+
+Round 1, head 3ca0af76e (origin/main merged at 4f0c65d6e), checked against origin/main code and QSpec main 8736706.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in 3ca0af76e: S3 SHALL decide memory-step coverage against the memory models the selected clause declares: each outermost `parallel` has the model of its source memory clause, else the source default (ADR-027 SE-4; the weak-memory record's MM-2), which S3 resolves without request input. The protocol's memory step |
+| FND-002 | fixed | Fixed in 3ca0af76e: The S4 source resolution owns the refusal for a library no import reaches. For each supplied library that no import reaches and for which a refinement internals value was supplied, it SHALL compile the library's source through S1 to S3, charged as a library compile to `DependencyLimits`, solely to r |
+| FND-003 | fixed | Fixed in 3ca0af76e: When rows name more than one protocol clause, the clause named by the first such row in source order SHALL be the selected one, and the checker SHALL refuse each other protocol once, `invalid_model_binding`/`conflicting-binding`, at the first row, in source order, that names it, naming that row and  |
+| FND-004 | fixed | Fixed in 3ca0af76e: FR-136-AC-8 \| A protocol clause that fails its own checks, named by a refinement's rows, reports the clause's refusals and no coverage refusal for a class drawn from it, and gives no `CheckedRefinement` for the refinement; a refusal of a row not drawn from the clause is still reported. The same clau |

@@ -89,14 +89,20 @@ cross-package references (ADR-015 D-1, D-2, D-3, D-5; QSpec FR-307, FR-322).
   refinement internals value was supplied, it SHALL compile the library's
   source through S1 to S3, charged as a library compile to
   `DependencyLimits`, solely to resolve that value by FR-147; it SHALL
-  discard the result and record neither the library nor a selection. Its
-  refusals are reported as for any library: `CompileRefusal::Dependency`
+  discard the result and record neither the library nor a selection. Only
+  the refusals of the supplied value refuse the compilation here; the
+  library's other source defects do not. The library's own imports resolve
+  through the same supplied-libraries set as for a reached library. The
+  value's refusals are reported as for any library: `CompileRefusal::Dependency`
   with the library's `LibraryName` as the path, located by (that library's
   value, pointer). A library compiled for an import resolves its own value in
   its own S3, the same way.
 - The emitter SHALL write the lock member `refinement_internals` that QSpec
-  FR-322 defines (FR-322-AC-77) from the resolved lists of the unit and of
-  each library in the closure, in FR-322's canonical order, and SHALL omit
+  FR-322 defines (FR-322-AC-77) from the resolved list of the package being
+  emitted alone, in FR-322's canonical order: the unit's lock holds only the
+  unit's own list, and each library's lock holds that library's own list,
+  since entries are keyed by refinement name and QSpec FR-323 and FR-307 give
+  each package its own value. The emitter SHALL omit
   the member when every list is empty, never writing `[]` or `null`. The
   member is in no identity preimage; a non-empty list changes the
   `package_id` through the refinement node's `abstract_internal`. The replay

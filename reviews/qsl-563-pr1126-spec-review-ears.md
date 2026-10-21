@@ -89,3 +89,12 @@ Ticket: QSL-563. PR quire-spec-language#1126, head 74e87f43e. EARS lens over eve
 ## Verdict
 
 Mergeable on this lens alone. Two low findings: statements without SHALL, and bundled bullets. Neither changes behaviour.
+
+## Dispositions
+
+Round 1, head 3ca0af76e (origin/main merged at 4f0c65d6e), checked against origin/main code and QSpec main 8736706.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in 3ca0af76e: Over a protocol subject, S4 SHALL emit the rows ordered ascending by the tuple (1) the node-key digest of the declaration the row's left side |
+| FND-002 | fixed | Fixed in 3ca0af76e: Every protocol clause declares exactly one `finish` node (the shared grammar's `protocol-clause`), whose row coverage below requires, so a protocol subject always has at least one row that names its clause. A protocol is never selected by the absence of rows. |

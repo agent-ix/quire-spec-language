@@ -98,3 +98,24 @@ These agree: the protocol sort key in FR-136, FR-146 and FR-146-AC-5; the select
 ## Verdict
 
 Not mergeable as it stands. FND-001 is an AC whose fixture fails by the PR's own rules. FND-002 is an order rule two FRs state differently. FND-003 and FND-004 are differences from QSpec that the PR neither fixes nor lists for follow-up. FND-005 is a term two implementers would read differently. All are text fixes in this PR.
+
+## New findings (disposition pass 1)
+
+Head 3ca0af76e (PR #1126 round 1).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The coverage list still says 'each memory step kind the memory model has SHALL have a memory-step row', singular. The new memory bullet makes the required kinds 'the union of those models' kinds' over the outermost `parallel` nodes, and says one row covers a kind for all of them. Write 'each memory step kind of the protocol's memory models (above)', so the two bullets agree. | spec/functional/FR-136-check-a-refinement-s-step-rows.md:210 |
+
+## Dispositions
+
+Round 1, head 3ca0af76e (origin/main merged at 4f0c65d6e), checked against origin/main code and QSpec main 8736706.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in 3ca0af76e: FR-136-AC-7 \| Over FR-136-AC-4's protocol extended with a channel `ch` whose delivery is `unknown` (so `duplicate` and `lose` are both classes) and with its outermost `parallel` under `tso` (so `flush` is a memory step kind), with `fork`, `join` and `finish` rows, a `duplicate` and a `lose` row for  |
+| FND-002 | fixed | Fixed in 3ca0af76e: S3 SHALL check the protocol clauses of the unit before it checks the coverage of a refinement over one of them, and before it resolves the abstract protocol header of a refinement that names one declared in the unit. |
+| FND-003 | fixed | Fixed in 3ca0af76e: The executor SHALL report the locus of such a refusal as the request pointer, `/package/refinement_internals` for the proved package's value or `/package/dependencies/<n>/refinement_internals` for the `n`th dependency entry's, followed by the pointer into the value that FR-147 gives (QSpec FR-323-AC |
+| FND-004 | fixed | Fixed in 3ca0af76e: whole compilation, the unit included, whether or not the unit imports the library (QSpec FR-375, FR-375-AC-12; FR-147-AC-10). This holds for every defect, including a `refinement` that names no refinement of the library. |
+| FND-005 | fixed | Fixed in 3ca0af76e: <C>::<protocol>` (QSpec FR-432), names the protocol clause `<protocol>`, a protocol clause of the declaring package whose roles act on `<C>`. |
+| FND-006 | fixed | Fixed in 3ca0af76e: The checker SHALL require an operation row only where an attempt or `cattempt` of that operation has no node row or template row. An operation row that no such step needs decides nothing and is admitted. |

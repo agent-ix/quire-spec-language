@@ -129,3 +129,22 @@ Claims checked against the merged code and specs:
 ## Verdict
 
 Not mergeable as it stands. FND-001 is a contradiction inside FR-027 that the code enforces today. FND-003 adds a member to a request type that FR-071 does not allow. FND-002 and FND-004 are traceability and output-side gaps. All four are text fixes in this PR. The rest of the base checklist passes: IDs, TC scopes, index rows, the rulings in the PR body, and the claims about the code.
+
+## New findings (disposition pass 1)
+
+Head 3ca0af76e (PR #1126 round 1).
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | The new lock-member bullet builds the unit's lock member 'from the resolved lists of the unit and of each library in the closure'. QSpec gives each package its own value. FR-323 says a replay request carries `refinement_internals` 'on `package` and on each `dependencies` entry, when and only when the corresponding lock has one; it is that lock's value'. FR-307 says a library's value 'changes the library's refinement nodes and so its `package_id`', and the library compiles as its own package with its own lock. A unit lock that merges library lists would be copied onto `/package/refinement_internals` and applied to the unit's refinements alone (FR-098, and FR-099's own 'the unit's value SHALL NOT be applied to a library's refinements'). The objects are keyed by `refinement` name only, so a library refinement would either refuse as `missing-name` or collide with a unit refinement of the same name. Write the unit's own resolved list in the unit's lock. Each library's list goes in that library package's own lock. | spec/functional/FR-099-compile-against-supplied-libraries.md:97 |
+
+## Dispositions
+
+Round 1, head 3ca0af76e (origin/main merged at 4f0c65d6e), checked against origin/main code and QSpec main 8736706.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | Fixed in 3ca0af76e: member besides `identity`, `source` and `refinement_internals` (a `version`, for one). A `1-draft` compile validates the |
+| FND-002 | fixed | Fixed in 3ca0af76e: FR-027-AC-12 \| A `1-draft` request carrying `refinement_internals` at its top level and on a library object hands those values to spine `compile` unchanged, and writes exactly the bytes the FR-278 composition returns over the same source, dependency input and refinement internals input, exit 0; a re |
+| FND-003 | fixed | Fixed in 3ca0af76e: The package reference and each `dependencies` entry SHALL carry an optional `refinement_internals` member (QSpec FR-323), a JSON value kept exactly as decoded. The decoder SHALL NOT validate it; an absent member is the empty list, and its defects surface from the recompile (FR-098, FR-147). |
+| FND-004 | fixed | Fixed in 3ca0af76e: The emitter SHALL write the lock member `refinement_internals` that QSpec FR-322 defines (FR-322-AC-77) from the resolved lists of the unit and of each library in the closure, in FR-322's canonical order, and SHALL omit the member when every list is empty, never writing `[]` or `null`. The member is |
