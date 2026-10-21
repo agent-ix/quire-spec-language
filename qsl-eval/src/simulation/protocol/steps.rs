@@ -160,6 +160,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     )?;
                 }
                 Rest::Finish => self.finish(state, ordinal, path, &mut gathered)?,
+                Rest::Compensate(_) | Rest::Retry(_) => {
+                    self.compensation(state, ordinal, path, thread.rest, &mut gathered)?;
+                }
                 Rest::Check(_) | Rest::End => {}
             }
         }
@@ -373,7 +376,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     enc: enc.clone(),
                 },
             );
-            if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((
                     ProtocolTransition::record(StepKind::Event, path.clone(), text.clone(), enc),
@@ -409,7 +414,12 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         Ok(())
     }
 
-    fn gate(&self, state: &ProtocolState<M>, path: &ThreadPath, step: GatedStep) -> bool {
+    pub(super) fn gate(
+        &self,
+        state: &ProtocolState<M>,
+        path: &ThreadPath,
+        step: GatedStep,
+    ) -> bool {
         self.memory.gate(&state.memory, path, step)
     }
 
@@ -778,7 +788,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             if let Some(bound) = bound {
                 Self::bind(Self::instance_mut(&mut next, ordinal)?, node, path, bound);
             }
-            if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((identity, next));
             }
@@ -1137,6 +1149,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             Rest::Check(node) => WaitCause::CheckFalse {
                 node: self.program.text(node)?.to_owned(),
             },
+            Rest::Compensate(template) => {
+                self.compensation_cause(state, instance, path, template)?
+            }
+            // `cend` is always enabled at a retry point.
+            Rest::Retry(_) => return Ok(None),
             // `timeout` is always enabled.
             Rest::Await(_) => return Ok(None),
             Rest::Finish => {

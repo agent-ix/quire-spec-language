@@ -118,6 +118,7 @@ pub(crate) fn document() -> Vec<u8> {
         ("object_type", meaning::OBJECT_TYPE),
         ("population", meaning::POPULATION),
         ("value_type", meaning::VALUE_TYPE),
+        ("record_value_type", meaning::RECORD_VALUE_TYPE),
     ]
     .into_iter()
     .map(|(name, meaning)| {
@@ -130,6 +131,14 @@ pub(crate) fn document() -> Vec<u8> {
     let value = ident("Cell/v");
     let weight = ident("Cell/w");
     let population = ident("cells");
+    let attempt = ident("Attempt");
+    let attempt_tally = ident("Attempt/n");
+    let attempt_field = json!({
+        "identity": attempt_tally, "name": "n", "typeRef": ident("Level"),
+        "presence": "required", "nullable": false, "defaultKind": "none",
+        "multiplicity": {"lower": 1, "upper": 1, "ordered": false, "unique": true},
+        "origin": origin(&attempt_tally),
+    });
     let fields: Vec<Json> = [("v", &value), ("w", &weight)]
         .into_iter()
         .map(|(name, field)| {
@@ -162,8 +171,14 @@ pub(crate) fn document() -> Vec<u8> {
                     operation("flag", &[], true, true),
                     operation("touch", &[], false, false),
                     operation("nudge", &["peer"], true, false),
+                    operation("dec", &[], true, false),
                 ],
                 "relationships": [],
+            })),
+            wire_type(&attempt, "record_value_type", json!({
+                "supertypes": [],
+                "fields": [attempt_field],
+                "operations": [],
             })),
         ],
         "populations": [{
@@ -536,7 +551,9 @@ pub(crate) fn projections(reached: &[Reached]) -> std::collections::BTreeSet<Vec
                 | StepKind::Duplicate
                 | StepKind::Lose
                 | StepKind::Fence
-                | StepKind::Memory => None,
+                | StepKind::Memory
+                | StepKind::CAttempt
+                | StepKind::CEnd => None,
             };
             if let Some(name) = &named {
                 prefix.push(name.clone());

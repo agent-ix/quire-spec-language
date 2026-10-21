@@ -860,8 +860,8 @@ fn path_json(thread: &ThreadPath) -> Json {
         .steps
         .iter()
         .map(|step| {
-            json!({"node": step.node, "branch": step.branch,
-                "ordinal": step.ordinal.to_string()})
+            json!({"node": step.node(), "branch": step.branch(),
+                "ordinal": step.ordinal().to_string()})
         })
         .collect();
     json!({"type": "thread-path", "instance": thread.instance.to_string(), "steps": steps})
@@ -1044,11 +1044,9 @@ fn an_ordinal_stays_held_while_a_descendant_of_its_branch_runs() {
                 .expect("threads")
                 .iter()
                 .any(|thread| {
-                    thread
-                        .path
-                        .steps
-                        .first()
-                        .is_some_and(|step| step.node == "Main/Loop/Outer" && step.ordinal == 1)
+                    thread.path.steps.first().is_some_and(|step| {
+                        step.node() == Some("Main/Loop/Outer") && step.ordinal() == 1
+                    })
                 })
         });
         assert_eq!(

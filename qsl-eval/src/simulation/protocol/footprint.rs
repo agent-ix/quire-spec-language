@@ -43,9 +43,18 @@
 //!   below a branch that can fork ([`ProtocolLocation::Subtree`]): it
 //!   cancels those threads and settles their parallel instances.
 //!
-//! Compensation registrations, replicated roles and live protocol instances
-//! (`reg(c, ·)`, `role(r)`, `pinst`) belong to constructs this system
-//! refuses.
+//! - A template's registrations in one protocol instance, `reg(c, ·)`
+//!   ([`ProtocolLocation::Registrations`]), hold its registrations' statuses
+//!   and captures and whether a step of its commit node has occurred there,
+//!   which CP-1 and CP-4 read; one registration, `reg(c, r)`
+//!   ([`ProtocolLocation::Registration`]), meets them. A step that binds a
+//!   record of a template's trigger type reads and writes `reg(c, ·)` whether
+//!   or not it activates a registration, writes the control of each
+//!   compensation thread it can create, and reads the control of every
+//!   compensation thread of the template up to the last ordinal it can take.
+//!
+//! Replicated roles and live protocol instances (`role(r)`, `pinst`) belong
+//! to constructs this system refuses.
 //!
 //! The memory model adds its own locations (ADR-025 MR-1) through
 //! [`MemoryModel::footprint`]: `sc` names none and has no memory step;
@@ -66,10 +75,12 @@ use qsl_semantics::check::footprint::FootprintRefusal;
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 
 use super::access::InstanceAccess;
-use super::identity::{ProtocolTransition, StepKind, ThreadPath};
+use super::identity::{ProtocolTransition, RegistrationKey, StepKind, ThreadPath};
 use super::memory::{FootprintStep, GatedStep, MemoryModel};
 use super::program::{Cursor, Rest};
-use super::{Disposition, ProtocolRefusal, ProtocolState, ProtocolSystem, Thread};
+use super::{
+    Disposition, Instance, ProtocolRefusal, ProtocolState, ProtocolSystem, Status, Thread,
+};
 use crate::model_subject::ModelInstance;
 use crate::simulation::footprint::{Footprint, Location};
 use crate::simulation::model::FootprintError;
@@ -123,6 +134,22 @@ pub enum ProtocolLocation {
         /// The channel's qualified name.
         channel: String,
     },
+    /// `reg(c, ·)`: every registration of template `c` in one protocol
+    /// instance, with whether its commit node has occurred there (CP-1,
+    /// CP-4).
+    Registrations {
+        /// The protocol instance's ordinal.
+        instance: u64,
+        /// The template's qualified name.
+        template: String,
+    },
+    /// `reg(c, r)`: one registration's status and captures.
+    Registration {
+        /// The protocol instance's ordinal.
+        instance: u64,
+        /// The registration's key.
+        key: RegistrationKey,
+    },
 }
 
 impl ProtocolLocation {
@@ -150,12 +177,28 @@ impl ProtocolLocation {
             }
             (Self::Instance(whole), Self::Branch { instance, .. })
             | (Self::Branch { instance, .. }, Self::Instance(whole)) => whole == instance,
+            (
+                Self::Registrations { instance, template },
+                Self::Registration {
+                    instance: holder,
+                    key,
+                },
+            )
+            | (
+                Self::Registration {
+                    instance: holder,
+                    key,
+                },
+                Self::Registrations { instance, template },
+            ) => instance == holder && *template == key.template,
             (Self::Control(_), Self::Control(_))
             | (Self::Instance(_), Self::Instance(_))
             | (Self::Branch { .. }, Self::Branch { .. })
             | (Self::Binder { .. }, Self::Binder { .. })
             | (Self::Buffer(_), Self::Buffer(_))
-            | (Self::Queue { .. }, Self::Queue { .. }) => self == other,
+            | (Self::Queue { .. }, Self::Queue { .. })
+            | (Self::Registrations { .. }, Self::Registrations { .. })
+            | (Self::Registration { .. }, Self::Registration { .. }) => self == other,
             (
                 Self::Control(_)
                 | Self::Subtree(_)
@@ -163,7 +206,9 @@ impl ProtocolLocation {
                 | Self::Branch { .. }
                 | Self::Binder { .. }
                 | Self::Buffer(_)
-                | Self::Queue { .. },
+                | Self::Queue { .. }
+                | Self::Registrations { .. }
+                | Self::Registration { .. },
                 _,
             ) => false,
         }
@@ -198,6 +243,9 @@ pub enum AnchorName {
     /// A channel, by its qualified name: the `protocol` anchor of its
     /// `send`, `receive`, `duplicate` and `lose` steps (PB-2).
     Channel(String),
+    /// A compensation template, by its qualified name: the anchor of its
+    /// `cattempt` and `cend` steps (PB-2, FT-5).
+    Template(String),
 }
 
 /// What the atoms of a claim read: model locations, and the anchors they
@@ -214,15 +262,21 @@ pub struct ClaimReads {
 /// `footprint`, is visible to a claim whose atoms read `claim`: its write
 /// footprint affects a location an atom reads, or an atom reads its
 /// position's anchor and names its operation, its node, or, for a channel
-/// step, a `send` or a `receive`, its channel (PB-2).
+/// step, a `send` or a `receive`, its channel, or, for a `cattempt` or
+/// `cend`, its template (PB-2).
 pub fn visible(step: &ProtocolTransition, footprint: &Footprint, claim: &ClaimReads) -> bool {
     let writes = footprint
         .writes
         .iter()
         .any(|written| claim.locations.iter().any(|read| written.affects(read)));
     let named = |name: AnchorName| claim.anchors.contains(&name);
+    let by_template = step
+        .template()
+        .is_some_and(|template| named(AnchorName::Template(template.to_owned())));
     let anchored = if let Some(application) = step.application() {
-        named(AnchorName::Operation(application.operation().to_owned()))
+        named(AnchorName::Operation(application.operation().to_owned())) || by_template
+    } else if by_template {
+        true
     } else if let Some((channel, _)) = step.channel_queue() {
         named(AnchorName::Channel(channel.to_owned()))
     } else {
@@ -362,6 +416,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let path = step.thread().ok_or_else(unknown)?;
         let instance = state.instances.get(&path.instance).ok_or_else(unknown)?;
         let thread = instance.threads.get(path).ok_or_else(unknown)?;
+        if matches!(step.kind(), StepKind::CAttempt | StepKind::CEnd) {
+            return self.compensation_footprint(state, instance, path, thread, step);
+        }
         let (node, after) = self.stepped(thread, step)?;
         let own = control(path);
         built.enabling(own.clone());
@@ -405,6 +462,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 self.binders_read(&mut built, path, node, Read::Enabling)?;
                 if attempt.binds.is_some() {
                     built.write(self.binder(node, path)?);
+                    self.folded(&mut built, instance, path, node)?;
                 }
             }
             StepKind::Event | StepKind::Send | StepKind::Receive => {
@@ -431,7 +489,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     | StepKind::Timeout
                     | StepKind::Finish
                     | StepKind::Fence
-                    | StepKind::Memory => None,
+                    | StepKind::Memory
+                    | StepKind::CAttempt
+                    | StepKind::CEnd => None,
                 };
                 if let Some(record_type) = listed {
                     for location in self.model.record_reads(record_type) {
@@ -439,6 +499,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }
                 built.write(self.binder(node, path)?);
+                self.folded(&mut built, instance, path, node)?;
                 if step.kind() == StepKind::Send {
                     self.memory.footprint(
                         &state.memory,
@@ -561,8 +622,19 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         channel: channel.name.clone(),
                     }));
                 }
+                // AE-3 removes the instance's registrations with it.
+                for template in &self.program.templates {
+                    built.write(protocol(ProtocolLocation::Registrations {
+                        instance: path.instance,
+                        template: template.name.clone(),
+                    }));
+                }
             }
-            StepKind::Duplicate | StepKind::Lose | StepKind::Memory => return Err(unknown()),
+            StepKind::Duplicate
+            | StepKind::Lose
+            | StepKind::Memory
+            | StepKind::CAttempt
+            | StepKind::CEnd => return Err(unknown()),
         }
         if let Some(after) = after {
             let walk = self.program.settle_walk(after)?;
@@ -592,6 +664,140 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     }
                 }));
             }
+        }
+        Ok(built.footprint)
+    }
+
+    /// ADR-027 FT-1 and FT-3 for the folded compensation effects of a step
+    /// of the thread `path` at `node` that binds its binder (CP-1, CP-2,
+    /// CP-4): `reg(c, ·)` of each template whose forward effect or commit
+    /// node `node` is, or whose trigger type its record has; for a trigger,
+    /// the control of every compensation thread of the template up to the
+    /// last ordinal its waiting registrations can take, and the control of
+    /// each it can create.
+    fn folded(
+        &self,
+        built: &mut Builder,
+        instance: &Instance,
+        path: &ThreadPath,
+        node: ProtocolNodeId,
+    ) -> Result<(), ProtocolFootprintError> {
+        let record_type = self.program.binder_type(node);
+        for (index, template) in self.program.templates.iter().enumerate() {
+            let triggers = record_type == Some(&template.trigger);
+            if triggers || template.effect == node || template.commit == Some(node) {
+                let registrations = protocol(ProtocolLocation::Registrations {
+                    instance: path.instance,
+                    template: template.name.clone(),
+                });
+                built.read(registrations.clone());
+                built.write(registrations);
+            }
+            if !triggers {
+                continue;
+            }
+            let waiting = instance
+                .registrations
+                .iter()
+                .filter(|(key, registration)| {
+                    key.template == index && registration.status == Status::Registered
+                })
+                .count();
+            let mut created = 0;
+            let mut candidate = 0u64;
+            while created < waiting {
+                let thread = ThreadPath::compensation(path.instance, &template.name, candidate);
+                built.read(control(&thread));
+                if !instance.threads.contains_key(&thread) {
+                    built.write(control(&thread));
+                    created += 1;
+                }
+                candidate = candidate.saturating_add(1);
+            }
+        }
+        Ok(())
+    }
+
+    /// ADR-027 FT-1 and FT-3 for a `cattempt` or `cend` of the compensation
+    /// thread `path` resting as `thread` does: its own control, which holds
+    /// its attempt count; for a `cattempt`, its application's model
+    /// footprint with every clause of the operation, and `reg(c, ·)`, which
+    /// holds the commit's occurrence and the captures its retry relation
+    /// reads; for a `cend`, its registration `reg(c, r)`, whose status it
+    /// sets. Its recovery predicate reads no model state (FR-381).
+    fn compensation_footprint(
+        &self,
+        state: &ProtocolState<M>,
+        instance: &Instance,
+        path: &ThreadPath,
+        thread: &Thread,
+        step: &ProtocolTransition,
+    ) -> Result<Footprint, ProtocolFootprintError> {
+        let unknown = || ProtocolFootprintError::UnknownStep;
+        let (index, retry) = match thread.rest {
+            Rest::Compensate(index) => (index, false),
+            Rest::Retry(index) => (index, true),
+            Rest::Node(_)
+            | Rest::Await(_)
+            | Rest::Check(_)
+            | Rest::Fork(_)
+            | Rest::Join(_)
+            | Rest::Finish
+            | Rest::End => return Err(unknown()),
+        };
+        let template = self.program.template(index)?;
+        let compensating = instance.compensating.get(path).ok_or_else(unknown)?;
+        let key = self.registration_key(&compensating.registration)?;
+        if step.registration() != Some(&key) {
+            return Err(unknown());
+        }
+        let mut built = Builder::default();
+        let own = control(path);
+        built.enabling(own.clone());
+        built.write(own);
+        match step.kind() {
+            StepKind::CAttempt => {
+                let application = step.application().ok_or_else(unknown)?;
+                let model = self.model.footprint_selecting(application, None)?;
+                built.footprint.reads.extend(model.reads);
+                built.footprint.writes.extend(model.writes);
+                built.footprint.enabling.extend(model.enabling);
+                self.memory.footprint(
+                    &state.memory,
+                    path,
+                    FootprintStep::Attempt {
+                        class: AccessClass::Local,
+                        ordering: None,
+                        shared: None,
+                    },
+                    &mut built.footprint,
+                );
+                built.enabling(protocol(ProtocolLocation::Registrations {
+                    instance: path.instance,
+                    template: template.name.clone(),
+                }));
+            }
+            StepKind::CEnd if retry => {
+                let registration = protocol(ProtocolLocation::Registration {
+                    instance: path.instance,
+                    key,
+                });
+                built.read(registration.clone());
+                built.write(registration);
+            }
+            StepKind::Attempt
+            | StepKind::Event
+            | StepKind::Send
+            | StepKind::Receive
+            | StepKind::Duplicate
+            | StepKind::Lose
+            | StepKind::Fork
+            | StepKind::Join
+            | StepKind::Timeout
+            | StepKind::Finish
+            | StepKind::Memory
+            | StepKind::Fence
+            | StepKind::CEnd => return Err(unknown()),
         }
         Ok(built.footprint)
     }
@@ -645,7 +851,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             StepKind::Timeout => kind == Some(ControlStep::Await),
             StepKind::Finish => kind.is_none(),
             StepKind::Fence => kind == Some(ControlStep::Fence),
-            StepKind::Duplicate | StepKind::Lose | StepKind::Memory => false,
+            StepKind::Duplicate
+            | StepKind::Lose
+            | StepKind::Memory
+            | StepKind::CAttempt
+            | StepKind::CEnd => false,
         };
         if !matches {
             return Err(unknown());

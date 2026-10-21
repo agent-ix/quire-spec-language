@@ -24,6 +24,7 @@ mod model_settle;
 mod model_world;
 mod partial_order;
 mod por_world;
+mod protocol_compensation;
 mod protocol_constructs;
 mod protocol_footprints;
 mod protocol_system;

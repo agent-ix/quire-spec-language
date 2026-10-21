@@ -16,13 +16,15 @@
 //! This system steps `sequence`, `parallel` with its join policies `all`,
 //! `any` and `quorum`, `choice`, `repeat`, `check`, `await` with its
 //! `timeout`, `attempt`, `send`, `receive`, domain `event`, `commit`,
-//! `fence` (SE-5), channel `duplicate` and `lose`, and `finish`, under
+//! `fence` (SE-5), channel `duplicate` and `lose`, `effect`, `finish`, and
+//! compensation templates with their `cattempt` and `cend` steps, under
 //! `activation on origin` (ADR-027 §9 steps 3 and 4). A protocol that holds any other construct is
 //! refused, before any state is built, with
 //! `unsupported_construct`/`not-yet-implemented` naming it.
 
 mod access;
 mod channel;
+mod compensation;
 mod footprint;
 mod identity;
 mod memory;
@@ -61,8 +63,8 @@ pub use footprint::{
     visible, AnchorName, ClaimReads, ParallelInstance, ProtocolFootprintError, ProtocolLocation,
 };
 pub use identity::{
-    BlockedThread, PathStep, ProtocolTransition, RestKind, RestPoint, SendOutcome, SendRecord,
-    StepKind, ThreadPath, WaitCause,
+    BlockedThread, PathStep, ProtocolTransition, RegistrationKey, RestKind, RestPoint, SendOutcome,
+    SendRecord, StepKind, ThreadPath, WaitCause,
 };
 pub use memory::{
     Access, FootprintStep, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Sc, ScComponent,
@@ -93,9 +95,16 @@ pub enum Unsupported {
     /// A `choice` guard, `repeat` guard or `check` undecided at an initial
     /// state, before any position a finding can name.
     UndecidedInitialGuard,
-    /// A `compensate` obligation.
-    Compensation,
-    /// A protocol capture.
+    /// An `effect` whose own thread does not take its attempt on every path
+    /// to it, so its attempt's binder may be unbound (ADR-027 ST-2).
+    DetachedEffect,
+    /// A retry relation of a template with more than one attempt that reads
+    /// the attempt records, which no operation result binds here (ST-11).
+    UnboundAttemptRecord,
+    /// A recovery predicate that reads its recovery binder, whose recovery
+    /// view no rule derives from a model state (ST-12).
+    RecoveryView,
+    /// A capture of the protocol clause.
     Capture,
     /// `activation on each`.
     ActivationOnEach,
@@ -128,8 +137,10 @@ impl Unsupported {
             Self::SymbolicCapacity => "symbolic channel capacity",
             Self::UnorderedLossSelector => "ordered loss selector on an unordered channel",
             Self::UndecidedInitialGuard => "undecided guard at an initial state",
-            Self::Compensation => "compensation",
-            Self::Capture => "capture",
+            Self::DetachedEffect => "effect whose attempt does not precede it",
+            Self::UnboundAttemptRecord => "retry relation over unbound attempt records",
+            Self::RecoveryView => "recovery predicate over the recovery view",
+            Self::Capture => "protocol capture",
             Self::ActivationOnEach => "activation on each",
             Self::ReplicatedRole => "replicated role",
             Self::JoinPredicate => "join predicate",
@@ -323,6 +334,61 @@ struct Entry {
     bytes: Vec<u8>,
 }
 
+/// A compensation registration's status (ADR-027 CP-1 to CP-5, QSpec
+/// FR-427).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Status {
+    Registered,
+    Activated,
+    Closed,
+    Recovered,
+    Unrecovered,
+}
+
+impl Status {
+    fn text(self) -> &'static str {
+        match self {
+            Self::Registered => "registered",
+            Self::Activated => "activated",
+            Self::Closed => "closed",
+            Self::Recovered => "recovered",
+            Self::Unrecovered => "unrecovered",
+        }
+    }
+
+    /// Whether the registration holds its ordinal (CP-1): until it closes
+    /// or its compensation thread ends.
+    fn live(self) -> bool {
+        matches!(self, Self::Registered | Self::Activated)
+    }
+}
+
+/// A registration's key inside one instance: its template's index, the
+/// thread whose effect registered it, and its ordinal.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct Registered {
+    template: usize,
+    thread: ThreadPath,
+    ordinal: u64,
+}
+
+/// One compensation registration (ADR-027 CP-1): its status and its
+/// captures, the registration captures then, once activated, the
+/// activation captures.
+#[derive(Clone, Debug)]
+struct Registration {
+    status: Status,
+    captures: Vec<Bound>,
+}
+
+/// One compensation thread (ADR-027 CP-3): the registration it compensates
+/// and its attempt count.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Compensating {
+    registration: Registered,
+    count: u64,
+}
+
 /// One live protocol instance (ADR-027 AE-2).
 #[derive(Clone, Debug, Default)]
 struct Instance {
@@ -337,6 +403,12 @@ struct Instance {
     /// Each non-empty queue, a `fifo` one in delivery order and an
     /// `unordered` one in ascending JCS bytes of its entries (PS-7).
     queues: BTreeMap<QueueKey, Vec<Entry>>,
+    /// Each compensation registration (CP-1).
+    registrations: BTreeMap<Registered, Registration>,
+    /// Each compensation thread, by its path (CP-3).
+    compensating: BTreeMap<ThreadPath, Compensating>,
+    /// Each template commit node a step has occurred at (CP-4).
+    committed: std::collections::BTreeSet<qsl_semantics::check::ProtocolNodeId>,
 }
 
 impl Instance {
@@ -826,6 +898,14 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
             Rest::Fork(node) => named(RestKind::Fork, node),
             Rest::Join(node) => named(RestKind::Join, node),
             Rest::Finish => named(RestKind::Node, self.program.finish.node),
+            Rest::Compensate(template) => Ok(RestPoint {
+                kind: RestKind::Node,
+                node: Some(self.program.template(template)?.name.clone()),
+            }),
+            Rest::Retry(template) => Ok(RestPoint {
+                kind: RestKind::RetryPoint,
+                node: Some(self.program.template(template)?.name.clone()),
+            }),
             Rest::End => Ok(RestPoint {
                 kind: RestKind::End,
                 node: None,
@@ -833,8 +913,20 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         }
     }
 
+    /// The canonical key of the registration `key` (QSpec FR-425).
+    fn registration_key(&self, key: &Registered) -> Result<RegistrationKey, ProtocolRefusal> {
+        Ok(RegistrationKey {
+            template: self.program.template(key.template)?.name.clone(),
+            thread: key.thread.clone(),
+            ordinal: key.ordinal,
+        })
+    }
+
     /// ADR-027 PS-8: the key members of `state`, the memory component
-    /// apart.
+    /// apart. A template's commit node that a step has occurred at is a
+    /// `control` entry `{"type":"commit","instance","node"}`, with value
+    /// `{"type":"commit-state","occurred":true}`: CP-1 and CP-4 read it, and
+    /// PS-8 lists no member for it.
     fn key_members(&self, state: &ProtocolState<M>) -> Vec<(&'static str, Enc)> {
         let text = |value: &str| Enc::tagged("text", vec![("value", Enc::text(value))]);
         let mut control = Vec::new();
@@ -929,6 +1021,56 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                         vec![("node", node), ("thread", thread.enc())],
                     ),
                     Enc::tagged("integer", vec![("value", Enc::text(counter.to_string()))]),
+                ));
+            }
+            for (key, registration) in &instance.registrations {
+                let entry = self
+                    .registration_key(key)
+                    .and_then(|named| Ok((named, self.program.template(key.template)?)));
+                let Ok((named, template)) = entry else {
+                    control.push((Enc::Unencodable("a registration"), Enc::Null));
+                    continue;
+                };
+                let names = template
+                    .registration
+                    .iter()
+                    .chain(&template.activation)
+                    .map(|(name, _)| name);
+                let captures = names
+                    .zip(&registration.captures)
+                    .map(|(name, bound)| (text(name), bound.enc.clone()))
+                    .collect();
+                control.push((
+                    named.enc(),
+                    Enc::tagged(
+                        "registration-state",
+                        vec![
+                            ("status", Enc::text(registration.status.text())),
+                            ("captures", map_enc(captures)),
+                        ],
+                    ),
+                ));
+            }
+            for node in &instance.committed {
+                let node = self
+                    .program
+                    .text(*node)
+                    .map_or(Enc::Unencodable("a commit node"), Enc::text);
+                control.push((
+                    Enc::tagged(
+                        "commit",
+                        vec![("instance", Enc::text(ordinal.to_string())), ("node", node)],
+                    ),
+                    Enc::tagged("commit-state", vec![("occurred", Enc::Bool(true))]),
+                ));
+            }
+            for (thread, compensating) in &instance.compensating {
+                bounds.push((
+                    Enc::tagged("attempt-count", vec![("thread", thread.enc())]),
+                    Enc::tagged(
+                        "integer",
+                        vec![("value", Enc::text(compensating.count.to_string()))],
+                    ),
                 ));
             }
             for (key, entries) in &instance.queues {

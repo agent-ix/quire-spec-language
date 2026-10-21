@@ -233,7 +233,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     removal: Removal::Lost,
                 });
             }
-            if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((transition, next));
             }
@@ -300,7 +302,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         send: self.program.text(entry.send)?.to_owned(),
                         removal: Removal::Received,
                     });
-            if self.place(&mut next, ordinal, path, after, &mut gathered.findings)? {
+            if self.fold(&mut next, ordinal, path, node, &mut gathered.findings)?
+                && self.place(&mut next, ordinal, path, after, &mut gathered.findings)?
+            {
                 self.normalize(&mut next, ordinal)?;
                 gathered.successors.push((transition, next));
             }
