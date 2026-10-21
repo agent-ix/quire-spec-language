@@ -1264,34 +1264,28 @@ enum LiteralJson<'a> {
 impl<'de> serde::Deserialize<'de> for LiteralValue {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use serde::de::Error;
+        // The literal kind is the serde tag, so an unlisted kind is refused
+        // by the decoder rather than matched by name here.
         #[derive(serde::Deserialize)]
-        struct Wire {
-            value_kind: String,
-            value: serde_json::Value,
+        #[serde(tag = "value_kind", content = "value", rename_all = "snake_case")]
+        enum Wire {
+            Boolean(bool),
+            Integer(String),
+            Text(String),
+            String(String),
+            None(()),
         }
-        let Wire { value_kind, value } = Wire::deserialize(deserializer)?;
-        let text = || {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| D::Error::custom("a literal's value is a string"))
-        };
-        match value_kind.as_str() {
-            "boolean" => value
-                .as_bool()
-                .map(Self::Boolean)
-                .ok_or_else(|| D::Error::custom("a boolean literal's value is a boolean")),
-            "integer" => text()?
-                .parse()
-                .map(Self::Integer)
-                .map_err(|_| D::Error::custom("an integer literal's value is a decimal string")),
-            "text" => text().map(Self::Text),
-            "string" => text().map(Self::String),
-            "none" if value.is_null() => Ok(Self::None),
-            other => Err(D::Error::custom(format!(
-                "literal kind `{other}` is not decoded from vectors"
-            ))),
-        }
+        Ok(match Wire::deserialize(deserializer)? {
+            Wire::Boolean(value) => Self::Boolean(value),
+            Wire::Integer(value) => {
+                Self::Integer(value.parse().map_err(|_| {
+                    D::Error::custom("an integer literal's value is a decimal string")
+                })?)
+            }
+            Wire::Text(value) => Self::Text(value),
+            Wire::String(value) => Self::String(value),
+            Wire::None(()) => Self::None,
+        })
     }
 }
 
