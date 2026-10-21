@@ -1522,11 +1522,11 @@ fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
         .collect()
 }
 
-/// TC-551 step 1: each record carries the occurrence key ADR-013 O-07 gives
+/// TC-551 step 10: each record carries the occurrence key ADR-013 O-07 gives
 /// it: the refinement node, role `generated`, ordinal 0 for `Initial` and the
 /// row's position + 1 for a `Step`. The key is a locator, so it is distinct
 /// per record and is not part of the record.
-#[trace("TC-551")]
+#[trace("TC-551", "FR-146-AC-9")]
 #[test]
 fn each_record_has_its_generated_occurrence_key() {
     let entries = simulation_entries(&checked_counter(&cas_refines_counter()));

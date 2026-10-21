@@ -83,3 +83,9 @@ scope:
 ## Coverage
 
 Not applicable to this method; see SR-12279 (gap-analysis).
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed | HEADSHA |

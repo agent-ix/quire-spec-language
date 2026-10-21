@@ -71,3 +71,9 @@ bindings:
 Planless review over the PR diff; tags read from the diff's `#[trace]`
 attributes. Plan completion: not assessed. A `quoin matrix` run was not
 needed to judge the diff's own tags.
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed | HEADSHA |
