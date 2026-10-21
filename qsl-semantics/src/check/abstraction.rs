@@ -29,8 +29,8 @@ use quire_exact::{Identifier, NodeKey};
 use quire_semantic_value::location::{Location, Origin};
 
 use super::lowering::{
-    generated_location, object_type_node, population_node, relation_node, text_scalar_node,
-    AdmittedModel, SemanticNode,
+    generated_location, object_type_node, population_node, relation_node, AdmittedModel,
+    SemanticNode,
 };
 use super::node_key::{AbstractionTerm, FrameEntry, NodeKeyRefusal, ObjectEntry, PopulationEntry};
 use super::CheckedGraph;
@@ -911,8 +911,7 @@ impl CheckedGraph {
 
 /// The nodes the emitter writes for a checked relation (QSpec FR-451,
 /// FR-306): the one `correspondence`/`abstraction_relation` node, and the
-/// `model`/`object_type`, `relation`/`population` and `scalar_type`/`text`
-/// nodes it names that the checked graph does not hold.
+/// `model`/`object_type` and `relation`/`population` nodes it names that the checked graph does not hold.
 #[derive(Clone, Debug)]
 pub struct AbstractionNodes {
     relation: SemanticNode,
@@ -949,6 +948,13 @@ pub enum AbstractionNodeRefusal {
     /// systems interface, which QSpec FR-451 does not admit as a target.
     #[error("{key:?} is no `model`/`object_type` node of an admitted domain package")]
     NotAnObjectTypeNode {
+        /// The declaration.
+        key: DeclarationKey,
+    },
+    /// A population binding's declaration has an empty package identity or
+    /// node, so it names no `model`/`population` node.
+    #[error("{key:?} names no `relation`/`population` node")]
+    NotAPopulationNode {
         /// The declaration.
         key: DeclarationKey,
     },
@@ -990,7 +996,6 @@ fn receiver_spelling(receiver: &RustReceiver) -> String {
 #[derive(Default)]
 struct Support {
     nodes: BTreeMap<NodeKey, SemanticNode>,
-    text: Option<NodeKey>,
 }
 
 impl CheckedGraph {
@@ -1100,25 +1105,17 @@ impl CheckedGraph {
     }
 
     /// The key of the `relation`/`population` node of `declaration`, adding
-    /// it and the text scalar node it is typed at to `support`.
+    /// it to `support`.
     fn population_target(
         &self,
         declaration: &DeclarationKey,
         support: &mut Support,
     ) -> Result<NodeKey, AbstractionNodeRefusal> {
-        let text = match support.text {
-            Some(text) => text,
-            None => {
-                let node = text_scalar_node(self.identity)?;
-                let text = node.key();
-                if self.semantic_graph.node(text).is_none() {
-                    support.nodes.insert(text, node);
-                }
-                support.text = Some(text);
-                text
+        let node = population_node(declaration, self.identity)?.ok_or_else(|| {
+            AbstractionNodeRefusal::NotAPopulationNode {
+                key: declaration.clone(),
             }
-        };
-        let node = population_node(declaration, text, self.identity)?;
+        })?;
         let key = node.key();
         support.nodes.insert(key, node);
         Ok(key)
