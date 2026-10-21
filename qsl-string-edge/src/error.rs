@@ -63,7 +63,7 @@ pub enum Error {
     /// nothing about it.
     #[error("string-edge: crate source root {path} holds no production Rust file")]
     NoProductionSources {
-        /// The root as the caller named it.
+        /// The root, resolved against the base directory.
         path: PathBuf,
     },
     /// A directory or file could not be read.
@@ -93,6 +93,13 @@ pub enum Error {
     /// A directory link leads back into a directory the walk is inside.
     #[error("string-edge: directory link {path} forms a cycle")]
     LinkCycle {
+        /// The link.
+        path: PathBuf,
+    },
+    /// A link under a root leads into a selected root's tree (its own or
+    /// another's), so the same source would be scanned, and reported, twice.
+    #[error("string-edge: link {path} leads into a selected crate source root")]
+    LinkIntoRoot {
         /// The link.
         path: PathBuf,
     },
@@ -134,13 +141,15 @@ pub enum Error {
     /// FR-064-AC-5 refuses to admit such an entry, marked or not; the item
     /// must be an edge that converts the string once.
     #[error(
-        "string-edge: allow-list entry {file}:{item} gates a branch (feeds an if/while \
+        "string-edge: allow-list entry {file}:{line} ({item}) gates a branch (feeds an if/while \
          condition or a match scrutinee/guard); FR-064-AC-5 refuses to admit it, remove it \
          from the allow-list and mark the call site #[string_edge] instead"
     )]
     AllowListGatesABranch {
         /// The entry's file.
         file: String,
+        /// The line of the item's first branch-gating occurrence.
+        line: u32,
         /// The entry's item anchor.
         item: String,
     },

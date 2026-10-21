@@ -54,7 +54,7 @@ impl Report {
     }
 
     /// The human-facing summary: one line when clean, else a count and one
-    /// `file:line` line per occurrence.
+    /// `file:line in item` line per occurrence.
     pub fn render(&self) -> String {
         if self.is_clean() {
             return "string-edge: no unmarked, unlisted string comparison or string match found\n"
@@ -66,9 +66,10 @@ impl Report {
         );
         for occurrence in &self.occurrences {
             summary.push_str(&format!(
-                "  {}:{}{}\n",
+                "  {}:{} in {}{}\n",
                 occurrence.file,
                 occurrence.line,
+                occurrence.item,
                 if occurrence.branch_gating {
                     " (branch-gating)"
                 } else {
@@ -89,24 +90,26 @@ impl Report {
 /// [`Error`], never a clean report.
 pub fn scan(request: &ScanRequest) -> Result<Report> {
     let base = source::resolve_base(&request.base_dir)?;
-    let allow_list = rules::validated_keys(&request.rules, &base)?;
+    let allow_list = rules::validated_keys(&request.rules, &base, &request.base_dir)?;
     let roots = source::resolve_roots(&base, &request.crate_roots)?;
     let mut found = Vec::new();
     for root in &roots {
-        let files = source::load_root(&base, root)?;
+        let files = source::load_root(&base, root, &roots)?;
         found.extend(detector::scan_parsed(&files));
     }
-    if let Some((file, item)) = allow_list.iter().find(|(file, item)| {
-        found.iter().any(|found| {
+    for (file, item) in &allow_list {
+        let gating = found.iter().find(|found| {
             found.occurrence.branch_gating
                 && found.occurrence.file == *file
                 && found.occurrence.item == *item
-        })
-    }) {
-        return Err(Error::AllowListGatesABranch {
-            file: file.clone(),
-            item: item.clone(),
         });
+        if let Some(gating) = gating {
+            return Err(Error::AllowListGatesABranch {
+                file: file.clone(),
+                line: gating.occurrence.line,
+                item: item.clone(),
+            });
+        }
     }
     let allowed: BTreeSet<(&str, &str)> = allow_list
         .iter()

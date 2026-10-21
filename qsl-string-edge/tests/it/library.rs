@@ -48,7 +48,7 @@ fn a_marked_comparison_is_silent_and_an_unmarked_match_is_reported() {
     assert!(!report.is_clean());
     assert_eq!(
         report.render(),
-        "string-edge: 1 unmarked, unlisted occurrence(s):\n  src/lib.rs:5 (branch-gating)\n"
+        "string-edge: 1 unmarked, unlisted occurrence(s):\n  src/lib.rs:5 in dispatch (branch-gating)\n"
     );
 }
 
@@ -146,8 +146,6 @@ fn test_code_is_not_scanned() {
     tree.write("src/unit.rs", VIOLATION);
     tree.write("src/unit/deeper.rs", VIOLATION);
     tree.write("src/tests/it.rs", VIOLATION);
-    tree.write("src/target/generated.rs", VIOLATION);
-    tree.write("src/.git/hook.rs", VIOLATION);
     let report = scan(&request(tree.path(), &["src"])).expect("scan");
     assert!(report.is_clean(), "{:?}", report.occurrences);
 }
@@ -209,8 +207,8 @@ fn a_branch_gating_entry_is_refused_and_a_message_only_entry_accepted() {
     };
     let error = scan(&gating).expect_err("a refused entry");
     assert!(
-        matches!(&error, Error::AllowListGatesABranch { file, item }
-            if file == "src/lib.rs" && item == "dispatch"),
+        matches!(&error, Error::AllowListGatesABranch { file, line, item }
+            if file == "src/lib.rs" && *line == 2 && item == "dispatch"),
         "{error:?}"
     );
     let mut message_only = request(tree.path(), &["src"]);
@@ -334,8 +332,8 @@ fn a_marked_branch_gating_item_still_refuses_an_allow_list_entry() {
     };
     assert!(matches!(
         scan(&with_entry),
-        Err(Error::AllowListGatesABranch { file, item })
-            if file == "src/lib.rs" && item == "intake"
+        Err(Error::AllowListGatesABranch { file, line, item })
+            if file == "src/lib.rs" && line == 3 && item == "intake"
     ));
 }
 
@@ -476,4 +474,74 @@ fn a_file_without_read_permission_is_a_typed_error() {
         matches!(&error, Error::Read { path, .. } if *path == file),
         "{error:?}"
     );
+}
+
+/// FR-064-AC-3: only test code is out of scope, never a directory by name: a
+/// production `mod target;` or `mod .git`-named directory is scanned.
+#[trace("TC-162", "FR-064-AC-3")]
+#[test]
+fn directories_named_target_are_production_source() {
+    let tree = Tree::new();
+    tree.write("src/lib.rs", "mod target;\n");
+    tree.write("src/target/mod.rs", VIOLATION);
+    let report = scan(&request(tree.path(), &["src"])).expect("scan");
+    assert_eq!(
+        report.occurrences,
+        [occurrence("src/target/mod.rs", 1, "accepted", true)]
+    );
+}
+
+/// FR-064-AC-7 (library and command agree): the report names the enclosing
+/// item, `Type::method` inside an `impl`.
+#[trace("TC-162", "FR-064-AC-7")]
+#[test]
+fn the_report_names_the_enclosing_item() {
+    let tree = Tree::new();
+    tree.write(
+        "src/lib.rs",
+        "pub struct T;\nimpl T {\n    pub fn kind(v: &str) -> bool { v == \"a\" }\n}\n",
+    );
+    let report = scan(&request(tree.path(), &["src"])).expect("scan");
+    assert_eq!(
+        report.occurrences,
+        [occurrence("src/lib.rs", 3, "T::kind", false)]
+    );
+    assert_eq!(
+        report.render(),
+        "string-edge: 1 unmarked, unlisted occurrence(s):\n  src/lib.rs:3 in T::kind\n"
+    );
+}
+
+/// FR-064-AC-9: an allow-list entry may spell the base as given or as
+/// resolved (`/tmp` versus `/private/tmp`).
+#[cfg(unix)]
+#[trace("TC-162", "FR-064-AC-9")]
+#[test]
+fn an_absolute_entry_may_use_the_base_as_given() {
+    let tree = Tree::new();
+    tree.write(
+        "real/src/display.rs",
+        "pub fn shown(text: &str) { let same = text == \"shown\"; log(same); }\n",
+    );
+    std::os::unix::fs::symlink(tree.path().join("real"), tree.path().join("alias"))
+        .expect("symlink");
+    let given = tree.path().join("alias");
+    let mut request = request(&given, &["src"]);
+    request.rules = EdgeRules {
+        allow_list: vec![entry(
+            given.join("src/display.rs").to_str().expect("utf-8"),
+            "shown",
+        )],
+    };
+    assert!(scan(&request).expect("scan").is_clean());
+    request.rules = EdgeRules {
+        allow_list: vec![entry(
+            tree.path()
+                .join("real/src/display.rs")
+                .to_str()
+                .expect("utf-8"),
+            "shown",
+        )],
+    };
+    assert!(scan(&request).expect("scan").is_clean());
 }

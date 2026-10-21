@@ -74,8 +74,8 @@ fn exit_zero_when_clean_one_with_violations_naming_file_and_line() {
     );
     assert_eq!(violating.status.code(), Some(1));
     let expected = "string-edge: 2 unmarked, unlisted occurrence(s):\n  \
-                    emitter/src/lib.rs:1 (branch-gating)\n  \
-                    reader/src/lib.rs:3 (branch-gating)\n";
+                    emitter/src/lib.rs:1 in accepted (branch-gating)\n  \
+                    reader/src/lib.rs:3 in accepted (branch-gating)\n";
     assert_eq!(stdout(&violating), expected);
 
     let elsewhere = Tree::new();
@@ -122,7 +122,7 @@ fn a_relative_base_dir_resolves_against_the_working_directory() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         stdout(&output),
-        "string-edge: 1 unmarked, unlisted occurrence(s):\n  crate/src/lib.rs:1 (branch-gating)\n"
+        "string-edge: 1 unmarked, unlisted occurrence(s):\n  crate/src/lib.rs:1 in accepted (branch-gating)\n"
     );
 }
 
@@ -167,7 +167,7 @@ fn the_command_applies_allow_list_entries_and_refuses_branch_gating_ones() {
     assert_eq!(refused.status.code(), Some(2));
     assert_eq!(stdout(&refused), "");
     assert!(
-        stderr(&refused).contains("src/gate.rs:gate gates a branch"),
+        stderr(&refused).contains("src/gate.rs:2 (gate) gates a branch"),
         "{}",
         stderr(&refused)
     );
@@ -345,4 +345,72 @@ fn a_malformed_command_line_is_a_usage_failure() {
         );
         assert_eq!(stdout(&output), "");
     }
+}
+
+/// FR-064-AC-9: an existing root outside the base, overlapping roots and a
+/// non-directory root each exit 2 naming the root.
+#[trace("TC-162", "FR-064-AC-9")]
+#[test]
+fn outside_overlapping_and_non_directory_roots_exit_two() {
+    let tree = Tree::new();
+    let outside = Tree::new();
+    outside.write("src/lib.rs", CLEAN);
+    tree.write("ws/rules.json", RULES);
+    tree.write("ws/a/src/lib.rs", CLEAN);
+    tree.write("ws/a/src/inner/lib.rs", CLEAN);
+    tree.write("ws/a/Cargo.toml", "");
+    let outside_root = outside.path().join("src");
+    let outside_root = outside_root.to_str().expect("utf-8");
+    for (roots, needle) in [
+        (vec![outside_root], "is outside the base directory"),
+        (
+            vec!["a/src", "a/src/inner"],
+            "lies inside crate source root",
+        ),
+        (vec!["a/Cargo.toml"], "is not a directory"),
+    ] {
+        let mut arguments = vec!["--base-dir", "ws"];
+        for root in &roots {
+            arguments.extend(["--crate-root", root]);
+        }
+        arguments.extend(["--rules", "rules.json"]);
+        let output = run(tree.path(), &arguments);
+        assert_eq!(output.status.code(), Some(2), "{roots:?}");
+        assert_eq!(stdout(&output), "");
+        assert!(
+            stderr(&output).contains(needle),
+            "{roots:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+/// FR-064-AC-7: the binary and the library report the same file, line, item
+/// and branch classification, and the binary prints the library's report.
+#[trace("TC-162", "FR-064-AC-7")]
+#[test]
+fn the_binary_and_the_library_report_the_same_item() {
+    let tree = Tree::new();
+    tree.write("rules.json", RULES);
+    tree.write(
+        "src/lib.rs",
+        "pub struct T;\nimpl T {\n    pub fn kind(v: &str) -> bool { if v == \"a\" { true } else { false } }\n}\n",
+    );
+    let output = run(
+        tree.path(),
+        &[
+            "--base-dir",
+            ".",
+            "--crate-root",
+            "src",
+            "--rules",
+            "rules.json",
+        ],
+    );
+    let report = qsl_string_edge::scan(&crate::request(tree.path(), &["src"])).expect("scan");
+    assert_eq!(report.occurrences.len(), 1);
+    assert_eq!(report.occurrences[0].item, "T::kind");
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(stdout(&output), report.render());
+    assert!(stdout(&output).contains("src/lib.rs:3 in T::kind (branch-gating)"));
 }

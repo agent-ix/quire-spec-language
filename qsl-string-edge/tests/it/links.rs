@@ -55,6 +55,8 @@ fn a_directory_link_cycle_is_an_error_and_an_inside_link_is_followed() {
         "{error:?}"
     );
 
+    // A link to a directory outside every root but inside the base is followed
+    // and reported under the link's own path.
     let tree = Tree::new();
     tree.write("src/lib.rs", CLEAN);
     tree.write("shared/lib.rs", VIOLATION);
@@ -62,6 +64,45 @@ fn a_directory_link_cycle_is_an_error_and_an_inside_link_is_followed() {
     let report = scan(&request(tree.path(), &["src"])).expect("scan");
     let files: Vec<_> = report.occurrences.iter().map(|o| o.file.as_str()).collect();
     assert_eq!(files, ["src/shared/lib.rs"]);
+}
+
+/// A link into another selected root's tree (or its own) would scan and
+/// report the same source twice, so it is refused.
+#[trace("TC-162", "FR-064-AC-9")]
+#[test]
+fn a_link_into_a_selected_root_is_refused() {
+    let tree = Tree::new();
+    tree.write("a/src/lib.rs", CLEAN);
+    tree.write("b/src/lib.rs", VIOLATION);
+    let dir_link = tree.path().join("a/src/linked");
+    symlink(tree.path().join("b/src"), &dir_link).expect("symlink");
+    let error = scan(&request(tree.path(), &["a/src", "b/src"])).expect_err("dir link into root");
+    assert!(
+        matches!(&error, Error::LinkIntoRoot { path } if *path == dir_link),
+        "{error:?}"
+    );
+
+    let tree = Tree::new();
+    tree.write("a/src/lib.rs", CLEAN);
+    tree.write("b/src/lib.rs", VIOLATION);
+    let file_link = tree.path().join("a/src/twin.rs");
+    symlink(tree.path().join("b/src/lib.rs"), &file_link).expect("symlink");
+    let error = scan(&request(tree.path(), &["a/src", "b/src"])).expect_err("file link into root");
+    assert!(
+        matches!(&error, Error::LinkIntoRoot { path } if *path == file_link),
+        "{error:?}"
+    );
+
+    let tree = Tree::new();
+    tree.write("src/one/lib.rs", VIOLATION);
+    tree.write("src/two/lib.rs", CLEAN);
+    let sibling = tree.path().join("src/two/again");
+    symlink(tree.path().join("src/one"), &sibling).expect("symlink");
+    let error = scan(&request(tree.path(), &["src"])).expect_err("sibling link");
+    assert!(
+        matches!(&error, Error::LinkIntoRoot { path } if *path == sibling),
+        "{error:?}"
+    );
 }
 
 /// A dangling link named like a Rust file cannot be read, so the scan fails

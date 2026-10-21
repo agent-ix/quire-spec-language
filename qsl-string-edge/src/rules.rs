@@ -51,10 +51,15 @@ impl EdgeRules {
 }
 
 /// The rules checked against `base`: every entry's reason is non-empty and
-/// its file is a path inside `base`. Returns the `(file, item)` keys with
+/// its file is a path inside `base` (resolved) or `given_base` (as the
+/// caller spelled it). Returns the `(file, item)` keys with
 /// the file normalised to the base-relative `/` form reports use, in entry
 /// order.
-pub(crate) fn validated_keys(rules: &EdgeRules, base: &Path) -> Result<Vec<(String, String)>> {
+pub(crate) fn validated_keys(
+    rules: &EdgeRules,
+    base: &Path,
+    given_base: &Path,
+) -> Result<Vec<(String, String)>> {
     rules
         .allow_list
         .iter()
@@ -65,10 +70,11 @@ pub(crate) fn validated_keys(rules: &EdgeRules, base: &Path) -> Result<Vec<(Stri
                     item: entry.item.clone(),
                 });
             }
-            let file =
-                relative_to_base(base, &entry.file).ok_or_else(|| Error::RulePathOutsideBase {
+            let file = relative_to_base(base, given_base, &entry.file).ok_or_else(|| {
+                Error::RulePathOutsideBase {
                     file: entry.file.clone(),
-                })?;
+                }
+            })?;
             Ok((file, entry.item.clone()))
         })
         .collect()
@@ -76,10 +82,14 @@ pub(crate) fn validated_keys(rules: &EdgeRules, base: &Path) -> Result<Vec<(Stri
 
 /// `file` as a base-relative path in `/` form, lexically normalised, or
 /// `None` when it leaves `base` or names no file.
-fn relative_to_base(base: &Path, file: &str) -> Option<String> {
+fn relative_to_base(base: &Path, given_base: &Path, file: &str) -> Option<String> {
     let path = Path::new(file);
     let path = if path.is_absolute() {
-        path.strip_prefix(base).ok()?
+        // An absolute entry may spell the base as given or as resolved.
+        let given = std::path::absolute(given_base).ok();
+        path.strip_prefix(base)
+            .ok()
+            .or_else(|| path.strip_prefix(given?).ok())?
     } else {
         path
     };

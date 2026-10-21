@@ -73,10 +73,14 @@ pub(crate) fn resolve_roots(base: &Path, roots: &[PathBuf]) -> Result<Vec<PathBu
 /// The parsed production source of one resolved root: every `.rs` file under
 /// it that is not test code, as `(base-relative name in / form, syntax)`,
 /// sorted by name.
-pub(crate) fn load_root(base: &Path, root: &Path) -> Result<Vec<(String, syn::File)>> {
+pub(crate) fn load_root(
+    base: &Path,
+    root: &Path,
+    roots: &[PathBuf],
+) -> Result<Vec<(String, syn::File)>> {
     let mut relative_files = Vec::new();
     let mut ancestors = vec![root.to_path_buf()];
-    walk(base, root, root, &mut ancestors, &mut relative_files)?;
+    walk(base, roots, root, root, &mut ancestors, &mut relative_files)?;
     relative_files.sort();
     let mut parsed = Vec::with_capacity(relative_files.len());
     for relative in relative_files {
@@ -106,7 +110,7 @@ pub(crate) fn load_root(base: &Path, root: &Path) -> Result<Vec<(String, syn::Fi
 }
 
 /// Collects the `.rs` files below `dir` (skipping any directory named
-/// `tests`, `target` or `.git`) as base-relative names, spelled through any
+/// `tests`) as base-relative names, spelled through any
 /// directory link the walk followed. `resolved_dir` is `dir` with its links
 /// resolved, as is every `ancestors` entry; a link that leaves `base` or
 /// leads back into an ancestor is an error, so the walk never follows a
@@ -115,6 +119,7 @@ pub(crate) fn load_root(base: &Path, root: &Path) -> Result<Vec<(String, syn::Fi
 #[string_edge]
 fn walk(
     base: &Path,
+    roots: &[PathBuf],
     dir: &Path,
     resolved_dir: &Path,
     ancestors: &mut Vec<PathBuf>,
@@ -143,6 +148,13 @@ fn walk(
                     if !target.starts_with(base) {
                         return Err(Error::LinkEscapesBase { path });
                     }
+                    // The target's source is already scanned under its own
+                    // root; following the link would report it twice.
+                    if roots.iter().any(|root| target.starts_with(root))
+                        && !ancestors.contains(&target)
+                    {
+                        return Err(Error::LinkIntoRoot { path });
+                    }
                     (target.is_dir(), Some(target))
                 }
                 // A dangling link to a non-Rust name selects no source.
@@ -153,7 +165,7 @@ fn walk(
             (metadata.is_dir(), None)
         };
         if is_dir {
-            if name == "tests" || name == "target" || name == ".git" {
+            if name == "tests" {
                 continue;
             }
             let resolved_child = resolved.unwrap_or_else(|| resolved_dir.join(&*name));
@@ -161,7 +173,7 @@ fn walk(
                 return Err(Error::LinkCycle { path });
             }
             ancestors.push(resolved_child.clone());
-            walk(base, &path, &resolved_child, ancestors, files)?;
+            walk(base, roots, &path, &resolved_child, ancestors, files)?;
             ancestors.pop();
         } else if is_rust {
             files.push(relative_name(base, &path));

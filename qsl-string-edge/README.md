@@ -12,6 +12,8 @@ and the literal-taking string methods (`starts_with`, `ends_with`, `contains`,
 resolve variable-to-variable comparisons, external constants or indirect
 branch dataflow. Test code (`#[cfg(test)]` items, files declared by
 `#[cfg(test)] mod x;`, anything under a `tests/` directory) is not scanned.
+No other directory is skipped by name: a production `target/` or `.git`-named
+module directory under a crate root is scanned.
 
 ## Install
 
@@ -48,9 +50,13 @@ qsl-string-edge --base-dir <directory> --crate-root <source-directory> [--crate-
   taken as is, and every root must lie inside the base.
 - A crate root is the crate's source directory (`src`, `crates/consumer/src`),
   not its `Cargo.toml`. Each root is one crate's constant-resolution scope. Roots
-  may not repeat or nest.
+  may not repeat or nest. A link whose target leaves the base is an error, a
+  directory link back into its own ancestors is a cycle error, and a link into
+  any selected root's tree is an error (it would report the same source twice).
+  A link to a directory elsewhere in the base is followed and reported under the
+  link's path.
 - Files are reported relative to the base with `/` separators, one-based
-  lines, sorted by file, line and item.
+  lines, with the enclosing item, sorted by file, line and item.
 - Exit `0`: completed, nothing to report. Exit `1`: completed with violations,
   listed on stdout. Exit `2`: a request, rule, read or parse failure (message on
   stderr); a failed scan is never reported clean.
@@ -93,7 +99,7 @@ pub fn accepted(kind: &str) -> bool { match kind { "accepted" => true, _ => fals
 ```sh
 qsl-string-edge --base-dir . --crate-root src --rules edge-rules.json   # exit 1
 # string-edge: 1 unmarked, unlisted occurrence(s):
-#   src/lib.rs:1 (branch-gating)
+#   src/lib.rs:1 in accepted (branch-gating)
 ```
 
 ## Library

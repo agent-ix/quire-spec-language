@@ -53,7 +53,7 @@ fn the_worked_consumer_crate_passes_clean_and_fails_on_an_unmarked_dispatch() {
     assert_eq!(failing.status.code(), Some(1));
     assert_eq!(
         String::from_utf8(failing.stdout).expect("utf-8"),
-        "string-edge: 1 unmarked, unlisted occurrence(s):\n  src/lib.rs:1 (branch-gating)\n"
+        "string-edge: 1 unmarked, unlisted occurrence(s):\n  src/lib.rs:1 in accepted (branch-gating)\n"
     );
 }
 

@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "string-edge: 1 unmarked, unlisted occurrence(s):\n  \
-             src/string_edge_fixture.rs:1\n"
+             src/string_edge_fixture.rs:1 in dispatch\n"
         );
 
         fs::write(&fixture, "fn dispatch(kind: &str) -> bool { false }\n")
@@ -355,7 +355,7 @@ mod tests {
             assert!(
                 matches!(
                     &error,
-                    qsl_string_edge::Error::AllowListGatesABranch { file: f, item: i }
+                    qsl_string_edge::Error::AllowListGatesABranch { file: f, item: i, .. }
                         if f == file && i == item
                 ),
                 "{file}::{item} is not refused as an allow-list entry: {error:?}"
