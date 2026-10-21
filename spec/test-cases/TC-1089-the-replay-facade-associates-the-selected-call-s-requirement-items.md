@@ -16,7 +16,7 @@ relationships:
 
 Verify `run_with_requirements` returns, with the outcome of `run`, exactly the
 requirement items whose owner is the selected function, in occurrence-key
-order, and refuses as `run` does. Scope: FR-395-AC-1 to FR-395-AC-11, FR-062-AC-14 and FR-075-AC-17.
+order, and refuses as `run` does. Scope: FR-395-AC-1 to FR-395-AC-12, FR-062-AC-14 and FR-075-AC-17.
 
 ## Test Procedure
 
@@ -38,9 +38,10 @@ their owners, and the items `items_from_requirements` writes) is read through
 5. Call `nope`, the empty name, `inc.x` and `1inc`; call a source that does
    not parse; call with a cancelled handle.
 6. Read each record's owner (the temporal unit below runs in the root crate's integration tests, which hold the ConfigVersion domain package in their test support, `crate::support::config_version_spine::spine::DOMAIN_PACKAGE`, not in `qsl-replay/tests`) in the checked graph for FR-062's RR-1 to RR-17,
-   for QSpec TC-198 L07's `post Q` unit and for the unit `language "ix:native" edition "1-draft"; profile v = "quire.model.complete/v1"; profile t = "quire.temporal.infinite-trace/v1"; model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:<digest of DOMAIN_PACKAGE>"; temporal Reaches using t over (c: Config::ConfigVersion) clock "model-steps" on origin { eventually holds(c.versionNumber = 2) }` (the temporal clause `Reaches` of TC-842) (a `temporal-satisfaction` record in `graph().requirements()`, as `tests/it/temporal_negotiation.rs` reads it); the state-graph claim `possible P` is not used.
+   for the unit of the clause `post Q using v on Config::ConfigVersion::attemptUpdate { true }` over the ConfigVersion domain package and for the unit `language "ix:native" edition "1-draft"; profile v = "quire.model.complete/v1"; profile t = "quire.temporal.infinite-trace/v1"; model Config = "example/config-version" version "1.0.0" digest "sha256-jcs:<digest of DOMAIN_PACKAGE>"; temporal Reaches using t over (c: Config::ConfigVersion) clock "model-steps" on origin { eventually holds(c.versionNumber = 2) }` (the temporal clause `Reaches` of TC-842) (a `temporal-satisfaction` record in `graph().requirements()`, as `tests/it/temporal_negotiation.rs` reads it); the state-graph claim `possible P` is not used.
 7. Call `add` of FR-062 RR-3 with the arguments `x`, `y` and then `y`, `x`.
-8. Fault arm: in a `qsl-replay` unit test, build a checked package whose
+8. Call `inc` with `x = 3` over the FR-395-AC-12 unit (`qsl-replay/tests/dispatch_link_compile.rs`).
+9. Fault arm: in a `qsl-replay` unit test, build a checked package whose
    record map is altered through the crate-internal test support (the same
    access the checked-graph tests use) to hold a `value-validity` record
    with no owner, and then one with an owner `ghost` no function bears, and
@@ -62,5 +63,6 @@ their owners, and the items `items_from_requirements` writes) is read through
    `operation-contract` record and none for the `temporal-satisfaction`
    record.
 7. Equal calls and equal members for the `add` call in both argument orders.
-8. `Fault` with stage `spine-run` and invariant `requirement-owner-known`
+8. `completed` with one member, and no fault.
+9. `Fault` with stage `spine-run` and invariant `requirement-owner-known`
    each time, with no partial list.

@@ -3769,6 +3769,13 @@ impl CheckedGraph {
         self.functions.named(name)
     }
 
+    /// Whether the package declares a function named `name`, including a
+    /// function `check` synthesized from an operation `body` or a `pre`
+    /// clause, which no plain call can name (FR-395 "Broken ownership").
+    pub fn declares_function(&self, name: &str) -> bool {
+        self.function(name).is_some()
+    }
+
     /// The `deref(r).f` locations of a function body, or `None` for an
     /// undeclared name.
     pub fn dereferences(&self, function: &str) -> Option<Vec<Location>> {

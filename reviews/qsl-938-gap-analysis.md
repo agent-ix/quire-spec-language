@@ -46,3 +46,10 @@ that finding's fix, not repeated here.
 | --- | --- | --- | --- |
 | FND-001 | medium | FR-062-AC-14 requires "for each fixture RR-1 to RR-17, every record has exactly one owner". `tc_1089_every_value_validity_record_has_the_declaring_function_as_owner` iterates `fixtures()`, which holds RR-1 to RR-13 and RR-15 to RR-17 only (its own doc says so at line 227). So RR-14 (`function all_positive ... { forall(v in s: v + 1 > 0) }`, the only fixture whose claim sites sit inside a quantifier binder) is never owner-checked, yet the test's doc comment claims RR-1 to RR-17. Fix: add RR-14's unit (as the TC-160 step 10 RR-14 test at line 1279 builds it) to the owner loop. | qsl-semantics/src/check/claims/tests.rs:227; qsl-semantics/src/check/claims/tests.rs:567-591 |
 | FND-002 | low | FR-062-AC-14 and TC-1089 step 6 name the `operation-contract` vector as QSpec TC-198 L07's `post Q using V on M::A::remove` over its F1 domain package. `only_value_validity_records_have_an_owner` substitutes `post Q using v on Config::ConfigVersion::attemptUpdate { true }` over the ConfigVersion package. It asserts the same property, but the tagged test does not run the vector the criterion names. Fix: use the TC-198 L07 unit, or amend TC-1089 step 6 and FR-062-AC-14 to name the ConfigVersion `post` vector, in this PR. | tests/it/call_requirements_items.rs:108-143 |
+
+## Dispositions
+
+| Finding | Disposition |
+| --- | --- |
+| FND-001 | fixed: the FR-062-AC-14 owner test now also checks RR-14's unit. |
+| FND-002 | fixed by amending the spec: FR-062-AC-14 and TC-1089 step 6 now name the ConfigVersion `post Q using v on Config::ConfigVersion::attemptUpdate` vector the test runs. |

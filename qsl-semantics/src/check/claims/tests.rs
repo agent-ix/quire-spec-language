@@ -570,7 +570,10 @@ impl Checked {
 #[trace("TC-1089", "FR-062-AC-14")]
 #[test]
 fn tc_1089_every_value_validity_record_has_the_declaring_function_as_owner() {
-    for (unit, _) in fixtures() {
+    // RR-14 is a query-binder unit `fixtures()` does not list.
+    let rr14 = "function all_positive using v(s: Sequence<Integer>[0, 5]): Boolean pure { forall(v in s: v + 1 > 0) }";
+    let units = fixtures().into_iter().map(|(unit, _)| unit).chain([rr14]);
+    for unit in units {
         let checked = check(unit);
         for (key, record) in checked.graph.requirements() {
             assert_eq!(

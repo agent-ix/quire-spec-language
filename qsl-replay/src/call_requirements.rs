@@ -9,7 +9,6 @@
 //! reaches [`run_with_requirements`] and its result types through the
 //! `qsl_replay` root and never names [`crate::spine`] (FR-060 T12-A).
 
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use qsl_foundation::diagnostic::InternalFault;
@@ -18,10 +17,11 @@ use qsl_foundation::{RequestIndex, SourceIdentity};
 use qsl_semantics::check::{Capability, CheckedGraph, RequirementRecord};
 use qsl_semantics::library::PackageId;
 use qsl_semantics::model::object_environment::ObjectEnvironment;
-use quire_exact::{compare_keys, Cancel};
+use quire_exact::{planned_equality, Cancel, Meter, Outcome, Value};
 
 use crate::spine::{
-    run_reading, Call, CallArgument, CallOutcome, DependencyInput, RunRefusal, SpineLimits,
+    default_accounting, run_reading, Call, CallArgument, CallOutcome, DependencyInput, RunRefusal,
+    SpineLimits,
 };
 
 /// One requirement item of the selected call: the record's occurrence key and
@@ -81,9 +81,9 @@ impl CallRequirements {
 
     /// Whether `other` is the same call: the same function name and the same
     /// set of (parameter, value) pairs, whatever order the arguments arrived
-    /// in (FR-395 "Selected call"). Values compare by their canonical key; a
-    /// value with no key order (a float, a population) is never the same
-    /// call as another.
+    /// in (FR-395 "Selected call"). Values compare by the kernel's value
+    /// equality, and populations by their id, so a call is the same call as
+    /// itself whatever its argument kinds.
     pub fn same_call(&self, other: &Self) -> bool {
         if self.function != other.function || self.arguments.len() != other.arguments.len() {
             return false;
@@ -96,9 +96,22 @@ impl CallRequirements {
             matches!(
                 (named.next(), named.next()),
                 (Some(candidate), None)
-                    if compare_keys(&argument.value, &candidate.value) == Some(Ordering::Equal)
+                    if same_value(&argument.value, &candidate.value)
             )
         })
+    }
+}
+
+/// Whether two argument values are equal: a population by its id (the
+/// kernel's equality refuses a population pair), any other value by the
+/// kernel's planned equality under unlimited accounting.
+fn same_value(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Population(left), Value::Population(right)) => left == right,
+        _ => matches!(
+            planned_equality(left, right, &mut Meter::new(default_accounting(u64::MAX))),
+            Outcome::Completed(true)
+        ),
     }
 }
 
@@ -189,7 +202,7 @@ pub fn run_with_requirements(
 /// `function`, one per record it owns, in ascending key order with each
 /// record's position in `records` as its request index. Every
 /// `value-validity` record must have an owner that names a function of
-/// `graph`; otherwise no member list is returned.
+/// `graph`, a function synthesized from a clause included; otherwise no member list is returned.
 pub(crate) fn associate(
     records: &BTreeMap<OccurrenceKey, RequirementRecord>,
     graph: &CheckedGraph,
@@ -199,7 +212,7 @@ pub(crate) fn associate(
     for (position, (occurrence, record)) in records.iter().enumerate() {
         let owner = record.owner();
         if record.requirements().kind() == Capability::ValueValidity
-            && !owner.is_some_and(|name| graph.callable(name).is_some())
+            && !owner.is_some_and(|name| graph.declares_function(name))
         {
             return Err(InternalFault::new("spine-run", "requirement-owner-known"));
         }
@@ -277,5 +290,19 @@ mod tests {
                 assert_eq!(fault.invariant(), "requirement-owner-known", "{owner:?}");
             }
         });
+    }
+
+    /// FR-395-AC-11: argument values compare by kernel equality, and a
+    /// population by its id, so a call is the same call as itself.
+    #[trace("TC-1089", "FR-395-AC-11")]
+    #[test]
+    fn a_population_argument_is_equal_to_itself_and_not_to_another() {
+        use quire_exact::{Integer, PopulationId};
+        let population = |fill| Value::Population(PopulationId::from_digest([fill; 32]));
+        assert!(same_value(&population(1), &population(1)));
+        assert!(!same_value(&population(1), &population(2)));
+        let integer = |value: i64| Value::Integer(Integer::from(value));
+        assert!(same_value(&integer(3), &integer(3)));
+        assert!(!same_value(&integer(3), &integer(4)));
     }
 }
