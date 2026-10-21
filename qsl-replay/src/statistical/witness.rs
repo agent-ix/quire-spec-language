@@ -147,6 +147,23 @@ pub enum SampledWitnessRefusal {
 /// `invalid_runtime_input`/`invalid-value`: a witness no subject has.
 const INVALID_VALUE: CatalogCode = CatalogCode::new("invalid_runtime_input", "invalid-value");
 
+/// `cancelled`/`caller-cancelled`: the caller's `Cancel` handle fired.
+const CANCELLED: CatalogCode = CatalogCode::new("cancelled", "caller-cancelled");
+
+/// `unsupported_projection`/`unsupported-requested-capability`: the witness
+/// names a sampler this one is not (FR-192).
+const UNSUPPORTED: CatalogCode =
+    CatalogCode::new("unsupported_projection", "unsupported-requested-capability");
+
+/// `unsupported_projection`/`not-markov`: the sample took a step that is not
+/// Markov (ADR-024 PM-3).
+const NOT_MARKOV: CatalogCode = CatalogCode::new("unsupported_projection", "not-markov");
+
+/// `resource_exhausted`/`max-automaton-states`: FR-126's limit on the bounded
+/// event's automaton, not the evaluation meter's.
+const AUTOMATON_STATES: CatalogCode =
+    CatalogCode::new("resource_exhausted", "max-automaton-states");
+
 /// `runtime_invariant`/`established-invariant-broken`: a stop with no code
 /// of FR-193's own.
 const BROKEN: CatalogCode = CatalogCode::new("runtime_invariant", "established-invariant-broken");
@@ -155,8 +172,10 @@ impl SampledWitnessRefusal {
     /// The catalog code of the refusal. A witness the provenance or subject
     /// does not place, a value outside its support and a
     /// `TotalAboveDrawRange` are `invalid_runtime_input`/`invalid-value`
-    /// (FR-193 "Replay"); an expansion stop keeps its own code; any other
-    /// stop is a broken invariant.
+    /// (FR-193 "Replay"); an expansion stop keeps its own code; a cancelled
+    /// replay, another sampler, a non-Markov step and the automaton limit
+    /// each have their own; only an undecided successor or a refused
+    /// predicate is a broken invariant.
     pub fn catalog_code(&self) -> CatalogCode {
         match self {
             Self::UnknownTest { .. } | Self::UnknownInitial { .. } => INVALID_VALUE,
@@ -165,9 +184,7 @@ impl SampledWitnessRefusal {
                 SampledReplayRefusal::OutsideSupport { .. } => INVALID_VALUE,
             }),
             Self::Read(WitnessReadStop::Sample(stop)) => stop_code(stop),
-            Self::Read(WitnessReadStop::AutomatonStates { .. }) => {
-                CatalogCode::new("resource_exhausted", "insufficient-next-charge")
-            }
+            Self::Read(WitnessReadStop::AutomatonStates { .. }) => AUTOMATON_STATES,
             Self::Read(WitnessReadStop::PredicateRefused(_)) => BROKEN,
         }
     }
@@ -177,10 +194,12 @@ fn stop_code(stop: &SampleStop) -> CatalogCode {
     match stop {
         SampleStop::TotalAboveDrawRange(_) => INVALID_VALUE,
         SampleStop::Expansion(stop) => stop.cause,
-        SampleStop::GeneratorMismatch { .. }
-        | SampleStop::NotMarkov(_)
-        | SampleStop::UndecidedSuccessor
-        | SampleStop::Cancelled(_) => BROKEN,
+        SampleStop::GeneratorMismatch { .. } => UNSUPPORTED,
+        SampleStop::NotMarkov(_) => NOT_MARKOV,
+        SampleStop::Cancelled(_) => CANCELLED,
+        // A replayed step is one the sampler already took, so an undecided
+        // successor there is a broken invariant.
+        SampleStop::UndecidedSuccessor => BROKEN,
     }
 }
 
@@ -307,5 +326,54 @@ impl SampledWitness {
             blocked: Vec::new(),
             refinement: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use qsl_eval::simulation::model::{NotMarkov, ScheduledIdentity};
+    use qsl_foundation::selection::DefinitionRef;
+    use quire_exact::{CancelCause, EffectiveId, ObjectId, ObjectReference, UniverseId};
+
+    use super::*;
+
+    fn code(stop: SampleStop) -> CatalogCode {
+        SampledWitnessRefusal::Draw(SampledReplayRefusal::Sample(Box::new(stop))).catalog_code()
+    }
+
+    /// FR-193 "Replay": each stop of a replay settles under its own code,
+    /// and only a true invariant break is `runtime_invariant`.
+    #[test]
+    fn each_stop_has_its_own_catalog_code() {
+        assert_eq!(
+            code(SampleStop::Cancelled(CancelCause::Requested)),
+            CANCELLED
+        );
+        let other = DefinitionRef::new("agent-ix", "quire.simulation.other/v1").expect("valid");
+        assert_eq!(
+            code(SampleStop::GeneratorMismatch { supplied: other }),
+            UNSUPPORTED
+        );
+        let not_markov = NotMarkov {
+            state: qsl_foundation::digest::DigestRecord::raw_artifact(b"s"),
+            transition: ScheduledIdentity {
+                operation: "tick".to_owned(),
+                receiver: ObjectReference::new(
+                    UniverseId::from_digest([1; 32]),
+                    EffectiveId::from_digest([2; 32]),
+                    ObjectId::new("n").expect("a key"),
+                ),
+                arguments: Vec::new(),
+            },
+            random: Vec::new(),
+            post_states: 2,
+        };
+        assert_eq!(code(SampleStop::NotMarkov(not_markov)), NOT_MARKOV);
+        assert_eq!(code(SampleStop::UndecidedSuccessor), BROKEN);
+        assert_eq!(
+            SampledWitnessRefusal::Read(WitnessReadStop::AutomatonStates { value: 1 })
+                .catalog_code(),
+            AUTOMATON_STATES
+        );
     }
 }

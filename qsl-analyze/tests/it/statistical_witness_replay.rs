@@ -421,3 +421,42 @@ fn a_measure_witness_converts_to_a_formula_counterexample() {
         assert_eq!(step.post_state, taken.post_digest);
     }
 }
+
+/// FR-193 "Replay": a replay the caller cancels is refused
+/// `cancelled`/`caller-cancelled`, not reported as a broken invariant.
+#[trace("TC-628", "FR-193-AC-2")]
+#[test]
+fn a_cancelled_replay_is_refused_as_cancelled() {
+    let world = World::new(&prob_world::service(&p95("Two", 2)));
+    let verdict = decide(&world, "Two", StatisticalMethod::Okamoto, 1);
+    let system = ModelSystem::new(world.subject().simulation).expect("the subject admits");
+    let cancel = Cancel::new();
+    cancel.cancel(quire_exact::CancelCause::Requested);
+    let checked = world.claim("Two");
+    let ProbScheduler::Workload(name) = &checked.scheduler else {
+        panic!("a workload claim");
+    };
+    let workload = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .workload(name)
+        .expect("the workload is declared");
+    let mut reader = witness_reader(&system, &world.package, checked, &sampler(), &cancel)
+        .expect("the claim is read");
+    let refusal = replay_sampled_witness(
+        &WitnessReplay {
+            system: &system,
+            workload,
+            provenance: &verdict.provenance,
+            cancel: &cancel,
+        },
+        &verdict.witnesses[0],
+        &mut reader,
+    )
+    .expect_err("a cancelled replay is refused");
+    assert_eq!(
+        refusal.catalog_code(),
+        CatalogCode::new("cancelled", "caller-cancelled")
+    );
+}
