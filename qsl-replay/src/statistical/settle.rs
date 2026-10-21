@@ -206,6 +206,11 @@ pub fn settle_statistical_refusal(
         StatisticalRefusal::FractionForEvent => {
             request(StatisticalRequestRefusal::FractionForEvent)
         }
+        StatisticalRefusal::EveryScheduler => request(StatisticalRequestRefusal::EveryScheduler),
+        StatisticalRefusal::ExactOnlyForm => request(StatisticalRequestRefusal::ExactOnlyForm),
+        StatisticalRefusal::MissingConfidence => {
+            request(StatisticalRequestRefusal::MissingConfidence)
+        }
         StatisticalRefusal::ConfidenceBeyondPrecision => StatisticalRecord::of(
             TerminalValue::Unsupported(UnavailabilityCause::ConfidenceBeyondPrecision),
         ),
@@ -475,6 +480,18 @@ mod tests {
             (
                 StatisticalRefusal::FractionForEvent,
                 StatisticalRequestRefusal::FractionForEvent,
+            ),
+            (
+                StatisticalRefusal::EveryScheduler,
+                StatisticalRequestRefusal::EveryScheduler,
+            ),
+            (
+                StatisticalRefusal::ExactOnlyForm,
+                StatisticalRequestRefusal::ExactOnlyForm,
+            ),
+            (
+                StatisticalRefusal::MissingConfidence,
+                StatisticalRequestRefusal::MissingConfidence,
             ),
         ] {
             let record = settled(refusal);

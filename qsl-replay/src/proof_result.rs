@@ -369,6 +369,13 @@ pub enum StatisticalRequestRefusal {
     TraceIndexRange,
     /// The sampler returned a fraction for a Bernoulli test.
     FractionForEvent,
+    /// The claim is under every scheduler: only exact evidence decides it.
+    EveryScheduler,
+    /// The claim's form is one only exact evidence decides.
+    ExactOnlyForm,
+    /// The claim states no confidence parameters: only exact evidence
+    /// decides it.
+    MissingConfidence,
 }
 
 impl StatisticalRequestRefusal {
@@ -379,6 +386,9 @@ impl StatisticalRequestRefusal {
             Self::TooManyTests => "too-many-tests",
             Self::TraceIndexRange => "trace-index-range",
             Self::FractionForEvent => "fraction-for-event",
+            Self::EveryScheduler => "every-scheduler",
+            Self::ExactOnlyForm => "exact-only-form",
+            Self::MissingConfidence => "missing-confidence",
         }
     }
 }
