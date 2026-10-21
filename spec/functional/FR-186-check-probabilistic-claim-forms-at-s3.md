@@ -96,8 +96,8 @@ claim's locus and names the offending part. `qualitative-threshold`,
 `partial-confidence` and `foreign-workload` are
 in QSpec FR-272's closed set for that code (QSpec FR-407).
 `invalid-confidence`, `quantile-over-fraction`, `trace-subject`,
-`unbounded-event`, `not-temporal-profile` and `fraction-bound-out-of-range`
-are QSL-proposed causes
+`unbounded-event`, `not-temporal-profile`, `fraction-bound-out-of-range` and
+`over-not-object-type` are QSL-proposed causes
 that QSpec does not yet define; they are requested of QSpec in STD-188, and
 QSL emits them until QSpec adds them or names others.
 
@@ -123,6 +123,12 @@ FR-185 states (setting pending, QSL-883).
 - If a `probabilistic` claim has a trace subject, S3 SHALL refuse it
   [`trace-subject`] (QSL-proposed, STD-188) with a diagnostic that names
   window aggregates (FR-194) as the form for observed statistics.
+- An `over` parameter SHALL have an object type, because FR-125
+  "Instancing" binds `over` to the objects of the subject's universes and a
+  scalar type has no instance. If its type is not an object type, S3 SHALL
+  refuse the claim [`over-not-object-type`] (QSL-proposed, STD-188), located
+  at the parameter's name. The parameter's type is part of the claim's
+  normal form (see "Normal form").
 - A claim SHALL be checked under a temporal profile (FR-326). If the profile
   its `using` alias selects is not a temporal profile, S3 SHALL refuse the
   claim [`not-temporal-profile`] (QSL-proposed, STD-188), naming the profile.
@@ -152,7 +158,14 @@ FR-185 states (setting pending, QSL-883).
 - If a formula has an operator without a closed interval, or its profile is
   not a bounded profile, S3 SHALL refuse the claim [`unbounded-event`]
   (QSL-proposed, STD-188) with a diagnostic stating that a probabilistic event
-  needs a finite window.
+  needs a finite window. The one exception is the unbounded reachability
+  forms of FR-195: under the infinite-trace profile, an event that is
+  exactly one `eventually`, `until` or `always` written with no interval and
+  with `holds` operands is checked as a `Reach` form (FR-195), not as an
+  `Event::Formula`. Every other event under that profile, such as
+  `eventually[0, 5] holds(P)` or `holds(P) and eventually holds(Q)`, is still
+  refused `unbounded-event`, and so is the same unbounded operator under a
+  bounded profile.
 - If the sum of interval bounds that makes up the horizon exceeds the range
   of `u64`, S3 SHALL refuse the claim as a resource-exhausted checking limit
   (work budget), reporting the sum and located at the operator whose bound
@@ -246,9 +259,9 @@ FR-185 states (setting pending, QSL-883).
 |----|----------|--------------|
 | FR-186-AC-1 | ADR-024 §7's four claims check: `NoFault` as `Probability{AtLeast(999/1000), Formula{horizon: 1000}}`; `P95` as `Quantile{q: 19/20, Accumulate{duration, within: 10}, AtMost(5 ms)}`; `LongRun` as `LongRunFraction{AtLeast(999/1000)}`; `Monthly`, written with the threshold `rational(999, 1000)`, as `Probability` over `Compare{Fraction{window: 10000}, AtLeast(999/1000)}`; each with `Workload(Steady)` and its stated `Confidence`. | Test (TC-621) |
 | FR-186-AC-2 | `P95` with threshold `0.005 s` checks and records `5 ms`; with threshold `5 m` (length) it is refused `ill_typed`/`unit-mismatch` naming the dimension. `probability >= 1 [E]` and `probability >= 0 [E]` are refused `qualitative-threshold` naming the qualitative form. `quantile 0.95 of (fraction holds(v.up) over [0, 10]) <= rational(1, 2)` is refused `quantile-over-fraction` (QSL-proposed). | Test (TC-621) |
-| FR-186-AC-3 | `probability >= 0.99 [always holds(n.healthy)]` under event-position is refused as an unbounded event; `probability >= 0.99 [eventually[0,100] always[0,10] holds(n.healthy)]` checks with horizon 110. `NoFault` (on `Health`) with `under Throttle`, where `Throttle` is declared `on Service`, is refused `foreign-workload` naming `Throttle` and `Service`; `NoFault` with `under Steady`, `Steady` declared `on Health`, checks. A claim over a trace subject is refused `trace-subject`, its diagnostic naming window aggregates; a claim `using` a profile that is not temporal is refused `not-temporal-profile`; an event under an unbounded profile is refused `unbounded-event`. `under every scheduler fair weak Node::tick` checks and carries the fairness set. `under Steady fair weak Node::tick` is refused at S1 `invalid_syntax`, because `under ident` takes no fairness items. | Test (TC-621) |
+| FR-186-AC-3 | `probability >= 0.99 [always holds(n.healthy)]` under a bounded profile is refused `unbounded-event`; `probability >= 0.99 [eventually[0,100] always[0,10] holds(n.healthy)]` checks with horizon 110. `NoFault` (on `Health`) with `under Throttle`, where `Throttle` is declared `on Service`, is refused `foreign-workload` naming `Throttle` and `Service`; `NoFault` with `under Steady`, `Steady` declared `on Health`, checks. A claim over a trace subject is refused `trace-subject`, its diagnostic naming window aggregates; a claim `using` a profile that is not temporal is refused `not-temporal-profile`; an event under the infinite-trace profile that is not one of FR-195's three `Reach` shapes, such as `eventually[0, 5] holds(n.healthy)`, is refused `unbounded-event`, while the three shapes check as FR-195-AC-1 states. `under every scheduler fair weak Node::tick` checks and carries the fairness set. `under Steady fair weak Node::tick` is refused at S1 `invalid_syntax`, because `under ident` takes no fairness items. | Test (TC-621) |
 | FR-186-AC-4 | `NoFault` with `indifference 0.002` is refused `invalid-confidence` (`θ + ι = 1.001`); with only `alpha` stated it is refused `partial-confidence`; with `alpha 0.01, alpha 0.05, beta 0.01, indifference 0.0005` it is refused `partial-confidence` naming `alpha`; with `alpha decimal(1, 4294967295)` it is refused with the `rational-bits-exceeded` limit refusal (`LimitExceeded`, naming `s3.rational_bits`), as FR-185 states; with none stated it checks with `confidence: None`. `NoFault` at `alpha 0.01` and at `alpha 0.05` have different normal forms; `NoFault` under `Steady` and under a second workload `Burst` have different normal forms. The same workload with its weight lines reordered, a fairness set with its constraints reordered, a reward declared on its operations in another order, the same claim with its `over` binder renamed, and a predicate with a commuted equality each keep one normal form. A claim that differs only in its subject (another `model` alias), and one that differs only in its `over` type, each have another normal form. Two declarations of equal content have equal normal forms. | Test (TC-621) |
-| FR-186-AC-5 | `steps ... >= 3` checks with threshold 3; `steps ... >= rational(1, 2)` and `steps ... >= 5 ms` are each refused `ill_typed`/`type-mismatch`; a threshold that is no literal is refused `ill_typed`/`type-mismatch`; `fraction holds(P) over [0, 10] <= rational(1, 4)` checks, and `>= rational(1, 1)`, `>= rational(0, 1)` `>= rational(3, 2)` and a negative bound are each refused `fraction-bound-out-of-range` with a diagnostic that does not name the qualitative form. An event whose interval bounds sum beyond `u64` (two `[0, 2^63]` intervals) is refused as a resource-exhausted checking limit located at the operator whose bound overflows. A package holding a checked claim is refused by S4 with the feature name `probabilistic-claim`. | Test (TC-621) |
+| FR-186-AC-5 | `steps ... >= 3` checks with threshold 3; `steps ... >= rational(1, 2)` and `steps ... >= 5 ms` are each refused `ill_typed`/`type-mismatch`; a threshold that is no literal is refused `ill_typed`/`type-mismatch`; `fraction holds(P) over [0, 10] <= rational(1, 4)` checks, and `>= rational(1, 1)`, `>= rational(0, 1)` `>= rational(3, 2)` and a negative bound are each refused `fraction-bound-out-of-range` with a diagnostic that does not name the qualitative form. An event whose interval bounds sum beyond `u64` (two `[0, 2^63]` intervals) is refused as a resource-exhausted checking limit located at the operator whose bound overflows. A claim `over (n: Integer)` is refused `invalid_probabilistic_model`/`over-not-object-type` located at `n`; the same claim over an object type checks. A package holding a checked claim is refused by S4 with the feature name `probabilistic-claim`. | Test (TC-621) |
 | FR-186-AC-6 | A claim over `on Nowhere`, one `using zz`, one `under Nope`, one that accumulates a reward no operation declares, and one `under every scheduler fair weak Node::nope` are each refused `missing_declaration`/`missing-name` located at that name. A claim that accumulates a reward `R` that one operation of the model declares as `Millis` and another as an integer is refused `ambiguous_declaration`/`ambiguous-name` naming `R`; with `R` of one value type on both it checks. | Test (TC-621) |
 
 ## Dependencies

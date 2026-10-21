@@ -127,7 +127,7 @@ pub struct ExactEntry { pub initial: u32, pub binding: Option<Binding>, pub valu
 | FR-203-AC-2 | FR-197-AC-4's straddling run settles `Incomplete(PrecisionBudget{lower, upper})` with `lower < 99/100 < upper`. §15.3's per-window claim with `max_states` 1,000 stops before the product completes and no partial evidence settles it: `Incomplete(ResourceExhausted)` naming `limits.max_states` and 1,000. A request omitting every limit runs with the defaults above. | Test (TC-638) |
 | FR-203-AC-3 | FR-201-AC-1's rejected certificate settles `inconclusive`, `CertificateRejected`; FR-202-AC-2's prefix-duplicated path set settles `inconclusive`, `ReplayParity`; FR-199-AC-3's zero-weight variant settles `unsupported`, `ZeroWeightComponent`. None of these records carries a `measured` value. | Test (TC-638) |
 | FR-203-AC-4 | A request whose proof summary holds AC-1's two proofs counts 2 proved items. `P95` with and without stated confidence parameters have different obligation identities, and the same claim requested with `exact` and with a changed `precision_bits` has one obligation identity. | Test (TC-638) |
-| FR-203-AC-5 | FR-196-AC-5's refutation settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, with cause `UndefinedEvaluation{where: 1, cause: division-by-zero}`, after FR-202's replay; the claim's threshold plays no part. | Test (TC-641) |
+| FR-203-AC-5 | FR-196-AC-5's refutation settles `refuted`, `decisive-counterexample`, `Refuted`, category violation, with cause `UndefinedEvaluation{where: 1, cause: absent-key}`, after FR-202's replay; the claim's threshold plays no part. | Test (TC-641) |
 
 ## Dependencies
 

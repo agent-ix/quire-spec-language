@@ -63,23 +63,93 @@ pub enum ExactProbRefusal { Admission(AdmissionFailure), NotMarkov(NotMarkov), Z
 
 ```
 
+### The build entry
+
+The untimed product is built by the following entry in `qsl-analyze`. It is
+the part of `check_exact_probabilistic` that precedes the solver, and it
+takes the `model` member of `ExactProbLimits` (FR-203), FR-126's three
+budgets.
+
+```rust
+pub fn build_product(
+    request: ProductRequest<'_>,                  // { subject: ModelSubject, claim: &CheckedProbabilisticClaim, limits: ModelCheckLimits }
+    cancel: &Cancel,
+) -> Result<ProbBuild, ProductRefusal>;
+pub enum ProbBuild { Built(ProbProduct), Undefined(UndefinedPath) }
+pub enum ProductRefusal {
+    Admission(AdmissionFailure), NotSimulated(NotSimulated), Expansion(ExpansionStop),
+    NotMarkov(Box<NotMarkov>), UndecidedSuccessor(UndecidedSuccessor), PredicateRefused(ClauseOutcome),
+    Translation(AutomatonError), Stopped(ProductStop), Internal(InternalFault),
+}
+pub enum ProductStop { Limit { limit: ModelCheckLimit, value: u64 }, Cancelled(CancelCause) }
+```
+
+`ProductRefusal` is the build's refusal type; its `Admission` and `NotMarkov`
+members are the `ExactProbRefusal` members of the same names. A build that finds an undefined read is no refusal but a result:
+`ProbBuild::Undefined` is the refutation's evidence (see "Behavior").
+
 ## Outputs
 
 ```rust
 pub struct ProbProduct {
-    pub states: Vec<ProductKey>,                  // canonical discovery order
+    pub states: Vec<ProbKey>,                     // canonical discovery order
     pub kind: ProductKind,                        // Dtmc or Mdp
-    pub edges: Vec<ProbEdge>,
-    pub initial: Vec<(u32, Option<Binding>, ProductStateId)>,
-        pub decided: Vec<(ProductStateId, MonitorVerdict)>, // MonitorVerdict { Accept, Reject }: the monitor's decided states
+    pub edges: Vec<ProbEdge>,                     // grouped by source in discovery order; FR-187's order within a source
+    pub initial: Vec<(u32, Option<ModelInstance>, ProbStateId)>, // per subject initial state and `over` binding
+    pub decided: Vec<(ProbStateId, MonitorVerdict)>, // MonitorVerdict { Accept, Reject }: a bounded event's decided states
+    pub labels: Vec<Vec<bool>>,                   // unbounded forms: per state, the claim's predicates' truths in claim order (P; A then B; B); empty for a bounded form
 }
-// ProductKey lives in `qsl-replay` with the certificate types, so the checker reads it
-pub struct ProductKey { pub model: StateKey, pub monitor: Option<u32>, pub accumulator: Option<Accumulator>, pub pending: Option<(ScheduledIdentity, Vec<Value>)> }
-pub struct ProbEdge { pub from: ProductStateId, pub choice: ProductAction, pub action: Option<ScheduledIdentity>, pub draw: Option<Vec<Value>>, pub to: ProductStateId, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
+// The builder's in-memory key. `ProductKey`, in `qsl-replay` with the
+// certificate types so the checker reads it, is this key's canonical encoding
+// (see "Canonical probability product key"); the builder does not encode it.
+pub struct ProbKey {
+    pub binding: Option<ModelInstance>,           // the `over` binding the claim's predicates are read for
+    pub model: Vec<u8>,                           // FR-101's complete state-key bytes
+    pub monitor: Option<MonitorState>,            // Formula(Running(local index) | Decided(verdict)), Measure{remaining, phase}, Fraction{remaining}
+    pub accumulator: Option<Accumulator>,
+    pub pending: Option<Pending>,                 // { identity: ScheduledIdentity, random: Vec<Value> }
+}
+pub struct ProbEdge { pub from: ProbStateId, pub choice: ProductAction, pub action: Option<ScheduledIdentity>, pub draw: Option<Vec<Value>>, pub to: ProbStateId, pub probability: Rational, pub rewards: Vec<(Identifier, Value)> }
 ```
 
+`ProbEdge.rewards` holds every reward of the model for the step, in ascending
+name order, each a value of the reward's own type. A resolution edge, the edge
+out of an intermediate state to one post-state, carries each reward at 0: the
+draw's rewards sit once on the edge that took the draw, and the resolution
+advances the accumulator with them exactly once.
+
+Evidence of an undefined read:
+
+```rust
+pub struct UndefinedPath {
+    pub steps: Vec<PathStep>,            // the model steps from the initial state, in order
+    pub probability: Rational,           // the product of the steps' probabilities
+    pub position: u64,                   // the trace position of the state: the number of steps
+    pub state_key: DigestRecord,         // the quire.simulation.state-key/v1 digest of the model state
+    pub read: UndefinedRead,             // the event atom or the state predicate (From, Until, Target) that has no value
+    pub cause: UndefinedCause,
+}
+pub struct PathStep {
+    pub action: Option<ScheduledIdentity>, // none for the terminal stutter step
+    pub draw: Option<Vec<Value>>,          // none for the terminal stutter step, and for a step merged from several draws
+    pub probability: Rational,
+    pub resolved: Option<Vec<u8>>,         // see below
+}
+```
+
+EN-5 forms FR-202's `UndefinedEvaluation{where, cause}` from `position` and
+`cause`. Over every scheduler, when a step's draw has several post-states,
+`resolved` SHALL be the complete state-key bytes of the post-state the
+scheduler took at the intermediate state, because the scheduled identity and
+the drawn vector name no single model state; a path through such a draw
+that dropped it could be replayed to several model states. Every other step
+has `resolved: None`.
+
 `ProductAction` is the following new closed semantic action type, owned with
-ProductKey in qsl-replay. An edge's `action` is its operation projection;
+ProductKey in qsl-replay. The untimed build uses its first three members,
+`Identity`, `PostState` and `TerminalStutter`, and `PostState` holds the
+builder's complete `ProbKey` of the target; the four delay and observation
+members exist in a timed product only (FR-204). An edge's `action` is its operation projection;
 None alone SHALL NOT identify a delay or observation choice.
 
 ```rust
@@ -128,7 +198,7 @@ undefined-evaluation evidence and certificate rejection loci. A model
 state digest alone or a digest of a partial tuple SHALL NOT replace it.
 
 `probabilityProductKey` SHALL be the RFC 8785 UTF-8 JCS octets of
-`["quire.probability-product-key/v1",model,monitor,accumulator,pending]`,
+`["quire.probability-product-key/v1",binding,model,monitor,accumulator,pending]`,
 through ADR-013/FR-259's one encoder. These are complete octets, not a
 new digest domain. Equality SHALL compare complete canonical octets;
 ordering SHALL be ascending unsigned lexicographic octet order. All
@@ -136,6 +206,15 @@ array members are required. JSON null denotes actual None and SHALL NOT
 be replaced with an initial/default/zero value. This defines the semantic
 representation; FR-331 owns its transport and each certificate field's
 binding to it.
+
+`binding` is the claim's `over` binding: the FR-181 reference triple object
+of the one object the claim's predicates are read for, or null for a claim
+with no `over`. It is part of the key because the monitor's letters and the
+measure's predicates are read for one binding: two bindings that reach one
+model state with one monitor state and one accumulator have different
+futures, and a key without the binding would merge them. A product is built
+over every binding of the claim (`initial` is per binding), and the key of a
+state names the binding that state was reached under.
 
 `model` is `["quire.simulation.state-key/v1",model_form]`, with
 `model_form` the full FR-101/QSpec FR-181 typed simulation-state form,
@@ -297,10 +376,20 @@ activates contributes nothing. The first activation is retained, not
 restarted by a later A. At the horizon, an active measure without B is
 censored and an inactive measure is unactivated. Censored means greater
 than every finite threshold, not an arbitrarily large finite reward.
+Unactivated is a decided, absorbing control phase of its own, with
+`activated` false and amount zero: it differs from a measure completed at
+magnitude zero and from an active one at zero. A quantile claim is
+conditioned on activation (ADR-024 PF-4), so an unactivated behaviour lies
+outside the distribution the quantile is taken over, and its decided state
+takes XF-2's terminal reward `[activated] · (…)`, which is 0.
 These rules are QSpec FR-407's measure semantics, not a new activation
 convention. At a terminal model state the bounded measure continues on
 the specified zero-reward stutter steps through its horizon; a bounded
-formula instead uses FR-126's profile closure.
+formula instead uses FR-126's profile closure. A stutter step is a model
+step like any other: an active `steps` measure adds 1 on it, an active
+`accumulate` adds 0 (every reward is 0 on it), and a fraction reads the
+position it leaves, so a `steps` measure that is active at a terminal state
+keeps counting to its horizon.
 
 For a weighted fraction, each included position's weight is the reward
 of the step leaving it (FR-407). Its predicate is evaluated at that
@@ -448,8 +537,8 @@ default monitor, default accumulator or fabricated pending data.
 
 ### Worked canonical vectors
 
-Hold the actual rederived model form M, checked reward/model/unit identities
-and FR-338 formula context fixed for each pair. `P(M,N,A,D)` is exactly
+Hold the actual rederived binding B, model form M, checked reward/model/unit
+identities and FR-338 formula context fixed for each pair. `P(B,M,N,A,D)` is exactly
 the JCS UTF-8 array defined above; this parameterized notation specifies
 full key octets without guessing a semantic model digest. Component body
 strings below are exact ASCII octets; embedding them uses these same
@@ -466,7 +555,7 @@ JSON values, not an additional JSON/base64 string layer.
 | fraction horizon 1 | unweighted P true then false completes at `["count-fraction","1","2"]`; weighted positions with weights 2 then 1 complete at exact sums `["2","1"]` and `["3","1"]`. |
 | pending draw with no random parameters | `["drawn",schedule,[]]` differs from null when that real residual nondeterministic draw is admitted. |
 | two random Booleans | `[{"type":"boolean","value":true},{"type":"boolean","value":false}]` differs from the reversed vector; type and declared parameter positions are retained. |
-| repeated model key | Changing only formula remaining horizon, activation, exact sum, phase or pending receiver changes P's octets; reversing graph discovery order changes none. |
+| repeated model key | Changing only the `over` binding, formula remaining horizon, activation, exact sum, phase or pending receiver changes P's octets; reversing graph discovery order changes none. |
 | typed draw identity | Positive and negative IEEE zero bits differ; two NaN payloads differ; option None differs from a present value; a reference with another universe differs even with the same object identity bytes. |
 
 Timed vectors use ADR-028 §15.5's actual checked Retx/Deadline context.
@@ -574,7 +663,7 @@ acceptance justified only by a post-D predicate. Terminal closure and a
 resource stop must preserve the same complete digital form.
 
 These vectors prescribe prospective qualification, not implementation PASS.
-All four components must be round-tripped by each consumer, including
+All five components must be round-tripped by each consumer, including
 rejection loci, with no model-only shortcut.
 
 ## Behavior
@@ -607,9 +696,16 @@ rejection loci, with no model-only shortcut.
 - If an atom, a state predicate, a measure or a reward the claim reads
   evaluates `Undefined` at a product state the build creates, then
   EN-5 SHALL stop the build at the first such state in canonical breadth-first
-  order and return a refutation whose evidence is an `Undefined` path to
-  it, with `UndefinedEvaluation{where, cause}` (ADR-028 XV-8, ADR-018
-  UE-1).
+  order and return `ProbBuild::Undefined`, whose `UndefinedPath` is the
+  refutation's evidence, with `UndefinedEvaluation{where, cause}`
+  (ADR-028 XV-8, ADR-018 UE-1). The state may be an initial state, whose
+  path has no step and position 0. A read that is refused, with no value
+  undefined, is a `ProductRefusal::PredicateRefused`, not a refutation.
+  Over every scheduler the path SHALL carry `resolved` at each step whose draw
+  has several post-states.
+- A resolution edge SHALL carry every reward of the model at 0, and the
+  intermediate state's resolution SHALL advance the monitor and the
+  accumulator once, with the draw's rewards.
 - The initial product states SHALL be each subject initial state, per `over`
   binding, paired with the monitor's successor on position 0.
 - Exploration SHALL use FR-101's canonical breadth-first order, so the
@@ -626,11 +722,14 @@ rejection loci, with no model-only shortcut.
 | FR-196-AC-2 | §15.2's product for `P95` at `5 ms` carries the `duration` accumulator, which takes the values `0`, `1 ms`, `2 ms`, `3 ms`, `4 ms` and the saturated value `6 ms`; the activation flag is set from position 1. The edge for `attempt` with `d = 3 ms`, `outcome = Ok` carries `343/5000`. | Test (TC-631) |
 | FR-196-AC-3 | §15.4's `Deliver` over every scheduler is an MDP with two actions at each live state, whose draws carry `9/10` and `1/10` (`send_a`) and `4/5` and `1/5` (`send_b`); under `Even` it is a DTMC with FR-187-AC-2's probabilities. | Test (TC-631) |
 | FR-196-AC-4 | FR-187-AC-3's `Health` variant with two post-states per draw builds, over every scheduler, an intermediate state per draw with two probability-1 actions, and the monitor does not advance on it; under a workload the build stops with `Unsupported(NotMarkov)`; the variant with no post-state stops with `Unsupported(NotMarkov)` under both. Two builds of one request are equal. | Test (TC-631) |
-| FR-196-AC-5 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0; operation `flip(b: Int[0, 1])` with `random Coin::flip(b) ~ { 0: 1, 1: 1 };` and postcondition `self.v = b`; workload `Even` with weight `flip` 1) and the claim `probability >= 0.5 [ always[0,3] holds(1 / (1 - c.v) = 1) ]` under `Even`, evidence `exact`, the build stops at the product state with `v = 1` at position 1 and returns a refutation whose evidence is the `Undefined` path `flip` with `b = 1`, probability `1/2`, with `UndefinedEvaluation{where: 1, cause: division-by-zero}`. | Test (TC-641) |
+| FR-196-AC-5 | Over a `Coin` model (object `c` with `v: Int[0, 1]`, initially 0, in a population `coins` bounded to 1; operation `drop(b: Int[0, 1])` with `random Coin::drop(b) ~ { 0: 1, 1: 1 };` and postcondition `count(o in M::coins where true) = b`, so that `drop` with `b = 0` deletes the coin and with `b = 1` keeps it; workload `Even` with weight `drop` 1) and the claim `probability >= 0.5 [ always[0,3] holds(c.v = 0) ]` over `(c: M::Coin)` under `Even`, evidence `exact`, the build stops at the product state reached by `drop` with `b = 0` at position 1, where `c.v` is undefined with cause `absent-key`, and returns a refutation whose evidence is the `Undefined` path `drop` with `b = 0`, probability `1/2`, with `UndefinedEvaluation{where: 1, cause: absent-key}`. A division by zero is not the example: S3 admits neither `/` in a model unit's profile nor a name that no `over` binds. | Test (TC-641) |
 | FR-196-AC-6 | Every worked vector produces the specified canonical component and full P octets; changing any present component changes identity where specified, and reversing discovery order changes none. Certificate values, ranks, policy, bias and rejection retain the same complete representation. | Test |
 | FR-196-AC-7 | Steps/reward above-bound values normalize uniquely while equality, unactivation, active zero, completion and censoring remain distinct; both exact weighted sums remain distinct for pairs (1,2)/(2,4) and their subsequent ratios are 2/3 and 3/5. | Test |
 | FR-196-AC-8 | Pending identity retains the actual operation node, receiver, non-random arguments and drawn vector in declared order; the empty drawn vector differs from None, and no monitor/accumulator advance occurs at the intermediate. | Test |
 | FR-196-AC-9 | Every listed admission negative refuses before certificate membership; exact-only forms retain actual None, timed model keys retain all digital clocks and deadline facts, and a budget stop produces no default/truncated product key. | Test |
+| FR-196-AC-10 | Over a population with two live objects, a claim `over` the object type builds a product with two initial states per subject initial state, one per binding; the same model state and the same monitor state under the two bindings are two product states, and their keys differ in `binding`. | Test (TC-631) |
+| FR-196-AC-11 | A `steps from holds(A) until holds(B) within 3` measure whose `A` never holds ends every path at control `["measure","0","unactivated"]` with `activated` false and amount zero, decided and not expanded. A `steps` measure activated at a terminal model state counts each stutter step up to its horizon. A fraction reads its predicate at the position the step leaves. | Test (TC-631) |
+| FR-196-AC-12 | Over every scheduler, a draw with several post-states followed by an accumulating step adds the draw's reward to the accumulator once, at the resolution; each resolution edge carries every reward at 0 and the draw edge carries the draw's. An `Undefined` path through such a draw names the post-state taken (`resolved`) and replays to one model state; every other step has `resolved: None`. A path to an instance that is undefined at an initial state has no step and position 0. | Test (TC-631, TC-641) |
 
 ## Dependencies
 
