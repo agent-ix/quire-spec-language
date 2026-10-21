@@ -51,6 +51,6 @@ Not mergeable on FND-001, the same defect as SR-12288 FND-001, seen from the tes
 
 | FND | outcome | sha |
 | --- | --- | --- |
-| FND-001 | fixed: root-only test seals the union and admits a value of each member using the facade variants | HEAD |
-| FND-002 | fixed: literal payload assertions added for Shape and Twin | HEAD |
-| FND-003 | fixed: Nest union with union payloads pinned to key(), parameter signature compared | HEAD |
+| FND-001 | fixed: root-only test seals the union and admits a value of each member using the facade variants | f37c88d1b |
+| FND-002 | fixed: literal payload assertions added for Shape and Twin | f37c88d1b |
+| FND-003 | fixed: Nest union with union payloads pinned to key(), parameter signature compared | f37c88d1b |

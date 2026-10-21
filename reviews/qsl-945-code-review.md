@@ -57,7 +57,7 @@ Not mergeable on FND-001. The keys themselves are right, measured: `key()` is th
 
 | FND | outcome | sha |
 | --- | --- | --- |
-| FND-001 | fixed: AdmittedUnionMember::member() exposes the sealed binding; root-only test seals and admits every member | HEAD |
-| FND-002 | fixed: AdmittedComposite, node(), key() and FR-396 Description/Behavior state the union asymmetry | HEAD |
-| FND-003 | fixed: members live in a private AdmittedShape::Union, so they exist exactly for a union | HEAD |
-| FND-004 | rejected: no non_exhaustive anywhere in the facade (AdmittedLookupRefusal likewise); prerelease, break stated in the PR body | HEAD |
+| FND-001 | fixed: AdmittedUnionMember::member() exposes the sealed binding; root-only test seals and admits every member | f37c88d1b |
+| FND-002 | fixed: AdmittedComposite, node(), key() and FR-396 Description/Behavior state the union asymmetry | f37c88d1b |
+| FND-003 | fixed: members live in a private AdmittedShape::Union, so they exist exactly for a union | f37c88d1b |
+| FND-004 | rejected: no non_exhaustive anywhere in the facade (AdmittedLookupRefusal likewise); prerelease, break stated in the PR body | f37c88d1b |
