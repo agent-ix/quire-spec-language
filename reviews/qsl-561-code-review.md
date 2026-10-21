@@ -45,9 +45,19 @@ What is sound:
 | FND-003 | low | `Steps::read` runs on every evaluation, for every subject. It calls `counts_step` for every represented position and allocates a `Vec<i128>` of `len` entries before it knows any step is uncounted. It charges nothing to the meter. For a model subject every call returns `true`, so the walk and the allocation are wasted. For a bounded `on origin` clause, which reads only through its horizon, the walk now runs over the whole trace. The tuple bad-prefix bisection (`false_position`) does this on every probe, with `len` up to positions plus the formula's future reach. Fix: scan without allocating until the first uncounted step, or ask the letter source once whether it can report an uncounted step at all (default `false`). | qsl-eval/src/temporal/steps.rs:28-45, qsl-eval/src/temporal/engine.rs:343 |
 | FND-004 | low | For a lasso, `Steps::read` queries the steps into positions `1..represented` but not the loop's back edge, the step from the last loop position back to the loop entry. A lasso whose only uncounted step is that back edge reads as "every step counts", so it slips past the `UncountedLasso` refusal and is evaluated in positions. No protocol lasso reaches the evaluator yet (protocol checks are safety-only, and `check.rs` emits `lasso: None`), so this is latent. Fix: for a lasso, also read the back edge, for example through a `TemporalLetters` query for the loop-closing step, or refuse when it cannot be read. | qsl-eval/src/temporal/steps.rs:36-45, qsl-replay/src/model_check/replay.rs:1110-1116 |
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | `uncounted_loop` peels with Kahn's algorithm, but for each node it pops it scans the whole edge list (`edges.iter().filter(\|(from, _)\| *from == node)`). That makes the check O(nodes × uncounted edges) after a run that may have reached `max_states`, and it polls no cancel handle. A protocol where most steps are uncounted (fork/join, or memory steps under `tso`) makes the step that settles `Holds` quadratic. Fix: build an adjacency list once (`Vec<Vec<usize>>`, or sort the edges by source), and poll `cancel` in the peel loop. | qsl-analyze/src/model_check/check.rs:1581-1621 |
+
 ## Dispositions
 
-- FND-001: fixed. EN-1 records product edges taken on uncounted steps and, before `Holds`, looks for a cycle among states that owe an interval eventuality; it settles `Undecided` with the new `uncounted-loop` cause. Test `an_uncounted_cycle_that_keeps_an_interval_open_is_not_holds` (duplicate/lose channel) returned `Holds` before the fix. Refuting the fair lasso is left to QSL-878.
-- FND-002: remaining work recorded as QSL-878 (doc comments, PR body, scope widened by a Linear comment).
-- FND-003: fixed. `Steps::read` scans without allocating, builds the table only when a step is uncounted, and charges the meter per position then.
-- FND-004: fixed. `TemporalLetters::counts_loop_edge` is asked of a lasso; replay answers from the closing step.
+The fix round's own notes (bullets in commit bb89ffbc9) are reconciled here into one row per finding.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bb89ffbc9: EN-1 records the product edges taken on uncounted steps. Before returning `Holds`, `uncounted_loop` looks for a cycle among nodes that owe an interval eventuality (a pending deadline, or a shift waiting out an eventuality's lower bound) and settles `Undecided(UncountedLoop)`, which maps to inconclusive `uncounted-loop`. That is conservative and sound. The dup/lose test `an_uncounted_cycle_that_keeps_an_interval_open_is_not_holds` covers it. Refuting the fair lasso is QSL-878. |
+| FND-002 | deferred | QSL-878: the refusal docs and the PR body say `Remaining work: QSL-878`, QSL-878 now blocks QSL-561, and its scope was widened to cover counted past windows and the zero-counted lasso. |
+| FND-003 | fixed | bb89ffbc9: `Steps::read` scans without allocating when every step counts. It builds the table only after it finds an uncounted step, and then charges the meter one unit per position. |
+| FND-004 | fixed | bb89ffbc9: a new `TemporalLetters::counts_loop_edge` (default `true`) is asked of every lasso. Replay answers it from the closing prefix step, or counts it for a terminal stutter. The refusal test now covers an uncounted back edge. |

@@ -44,7 +44,11 @@ Bindings checked:
 
 ## Dispositions
 
-- FND-001: fixed. The AC-3 test asserts the label `settle_protocol_check` returns today (`Failed`), cites QSL-878, and QSL-878 now blocks QSL-561.
-- FND-002: fixed. The lasso test is untagged by AC; the mechanism tests carry `TC-658` only.
-- FND-003: fixed. The model-subject test also checks `eventually[0,2] holds(k.v >= 2)`.
-- FND-004: added `an_uncounted_cend_and_finish_end_the_window_after_the_refund`, and commented on QSL-396 for the spec amendment.
+The fix round's own notes (bullets in commit bb89ffbc9) are reconciled here into one row per finding.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | bb89ffbc9: the AC-3 test asserts today's label (`ResultLabel::Failed`) and says `Remaining work: QSL-878`, and QSL-878 blocks QSL-561. The `proved` clause stays unmet until QSL-878 lands, and the ticket graph now records that. |
+| FND-002 | fixed | bb89ffbc9: the lasso-refusal test has no AC tag. The evaluator, counter-kernel and property-automata tests carry `#[trace("TC-658")]` only. |
+| FND-003 | fixed | bb89ffbc9: `a_model_subject_counts_every_step` checks both claim forms: `[0,1]` is refuted with a 1-step prefix, and `eventually[0,2] holds(k.v >= 2)` with a 2-step prefix. |
+| FND-004 | deferred | QSL-396: the spec vector needs an amendment, and a comment on QSL-396 asks for it. Meanwhile bb89ffbc9 adds `an_uncounted_cend_and_finish_end_the_window_after_the_refund`, which separates counted steps from positions on the `Pay` failure path. |
