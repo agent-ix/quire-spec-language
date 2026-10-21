@@ -12,7 +12,7 @@ relationships:
 
 Verify that S3 checks a refinement step map over a protocol subject with one explicit row per step class and refuses missing and duplicate rows.
 
-Scope: FR-214-AC-1 to FR-214-AC-4.
+Scope: FR-214-AC-1 to FR-214-AC-5.
 
 ## Test Procedure
 
@@ -29,6 +29,8 @@ refuses cannot pass.
    `Chatter` without its `duplicate` row, then without its `lose` row.
 4. Check an `-> any` row, and an abstract protocol whose internal list names
    `fork` as internal.
+5. Check FR-214-AC-1's refinement with `Fill` declared before and after it;
+   then with `Fill` refused by its own checks.
 
 Tag the tests `#[trace("TC-659", "FR-214-AC-n")]`.
 
@@ -40,3 +42,5 @@ Tag the tests `#[trace("TC-659", "FR-214-AC-n")]`.
 - Step 3: `A` maps by its node row; refusals naming `Refund` and, for either omission, `ch`.
 - Step 4: `Either`; the abstract `fork` internal, other abstract steps
   visible.
+- Step 5: the same result in both orders; with `Fill` refused, `Fill`'s
+  refusals alone and no coverage refusal.
