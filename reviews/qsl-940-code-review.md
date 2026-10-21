@@ -53,3 +53,20 @@ Evidence run at the head:
 ## Verdict
 
 Not clean, but the producer change is correct for what it covers. The branch fires only for a bare checked `Literal(Integer)` operand of the four FR-357 identities. A `Coerce` or `narrow` wrapper is still a node, as it should be. The `Keyed::Application` arms are the only producers of those identities. The re-entry into `next_operand` is bounded by the operand count. Typing at T2 through `integer_literal` gives the same type the standalone path gives, because every checked integer literal has `ValueType::Integer` (typing.rs:910). L5 and L6 still carry T2. The deleted consumer fields have no users, and `InlineLiteral` maps one-to-one onto FR-357's `OperandIdentity::InlineLiteral`. The replay and package tests were adapted with care. The `[-150, 150]` range and `mul(100, 2)` keep the out-of-range branch (200 > 150). Re-pinned literal values (`add(41, 1)`, `sub(39, 1)`, `mul(21, 2)`) follow the compiled literals. The new AC-17 test exercises acceptance, `NotInlineLiteral` and `LiteralValue`. FND-001 is a scope question for the lead. FND-002 is a coverage regression the PR introduced, and a test over a two-parameter application would restore it.
+
+## New findings (disposition pass 1)
+
+Re-reviewed at head ca37b7138 (fix commit ca37b7138 over 59112ebf2). The fix widens the inline rule to `quire.op.integer.eq` and `ne`. Under the lead's ruling, a literal behind a `numeric.narrow` conversion stays a graph child.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | Over a bounded peer (`x: Int[0, 9]`, `x == 1`) the literal is a `Coerce` whose application is `numeric.narrow`. The composite arm classifies that operand as `Operand::Literal` with an integer value (composite_site.rs evaluates it closed), but the package argument is a reference, so `parity_preimage` keys it `graph_child` over the narrow node with the empty `bounds` domain. That is FR-358 step 6's composite-literal rule applied to an integer literal operand, which step 6 says is `inline_literal` with the singleton `range`. The add/sub/mul/negate precedent does not cover this: arithmetic operands are never coerced, so no FR-357 operand is ever a narrowed literal. Bounded parameters are the usual case, so integer `eq`/`ne` claims mostly land on this path. Either FR-358 step 6 must state the narrowed case, or the producer must inline it. | qsl-semantics/src/check/lowering.rs:4036-4048; qsl-replay/src/execute/composite_site.rs:140-162; qsl-replay/src/execute/composite_parity.rs:199-205; spec/functional/FR-358-settle-a-composite-bounded-shadow-item.md:266-273 |
+| FND-005 | low | No replay-side test drives FR-358 step 6's integer-literal branch, (`Operand::Literal` integer, `InlineLiteral`) giving the singleton `range` domain, from a source-compiled package. Producer emission is tested only in qsl-semantics. The composite-parity tests cover only the composite-literal `graph_child` arm (tests/composite_parity.rs:1725). | qsl-replay/src/execute/composite_parity.rs:192-198; qsl-replay/src/execute/tests/composite_parity.rs:1700-1730 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | `takes_inline_integer_literals` adds `quire.op.integer.eq` and `ne`; `integer_literals_are_inline_operands_of_integer_equality` covers both operators on both sides over `Integer`; dropping eq/ne, or ne alone, fails it (M7, M8). The narrowed-literal case is FND-004. |
+| FND-002 | fixed | `tc_904_a_second_operand_outside_its_range_is_refused_at_index_1` over a two-parameter `x + y` asserts `RefusedInput(OperandRefusal { index: 1 })`; the `.enumerate().take(1)` mutant of scalar.rs `compare` now fails it. |
+| FND-003 | fixed | `with_literal` and its dead `(7, 7)` range are removed; the test asserts `ScalarOperand::literal(7).range == (7, 7)` and an agreeing `add(2, 1)`. |

@@ -40,3 +40,9 @@ Ticket: QSL-940. PR: quire-spec-language#1161, head 59112ebf2. Method: quoin gap
 ## Verdict
 
 Not clean, with one medium gap. Each examined criterion has tests that assert it. FR-092-AC-11 is backed by `a_self_recursive_function_keys_to_g4_to_g6` and `a_standalone_integer_literal_is_a_node_l6`. FR-367-AC-2 is backed by `tc_1053_step_2_literals_repeats_and_unary_operands`. FR-357-AC-17 is backed by `tc_904_an_inline_literal_the_node_has_is_accepted_and_one_it_lacks_is_refused` and `tc_904_a_graph_child_that_is_not_the_nodes_child_is_refused`. Mutation results (SR-13696) show these tests detect a reverted scope, a dropped operator, a widened scope and a changed type node. The lowering rule itself needs an FR-093 acceptance criterion for its tests to trace to. The weakened FR-357-AC-9 coverage at operand index 1 is recorded as SR-13696 FND-002.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-093-AC-30 states the rule (add, sub, mul, negate, integer eq and ne inline, either side and nested; ordering, Boolean equality and the narrowed peer keep nodes; the body `1` gives L6). TC-415 scope and step 12 name it, and the five producer tests are retagged `FR-093-AC-30`/`TC-415`. |

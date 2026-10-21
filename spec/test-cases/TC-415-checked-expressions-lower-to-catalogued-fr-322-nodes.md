@@ -155,5 +155,6 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   typed at the builtin `Integer` node, with no node for the literal; in
   `2 * (x + 1)` each literal is inline in its own application; over
   `x: Int[0, 9]`, `x == 1` compares `x` with a `numeric.narrow`
-  application of the literal's node; `x > 0` and `a == true` reference
+  application of the literal's node, a `graph_child` operand under
+  FR-358 step 6; `x > 0` and `a == true` reference
   their literal nodes; the body `1` gives L6.

@@ -46,3 +46,12 @@ Ticket: QSL-940. PR: quire-spec-language#1161, head 59112ebf2. Method: spec-revi
 ## Verdict
 
 Not clean. The FR-092 vector re-keying is correct: every changed key, both group digests and both group orders recompute independently, and no unchanged vector moved. FR-092-AC-11, the FR-093 Literal row, FR-367 Behavior 4, FR-367-AC-2 and TC-1053 step 2 describe the new behaviour consistently and as behaviour, not status. No stale `InlineLiteral { node }` or "every integer literal is a node" claim remains under spec/ outside historical spec/reviews. FND-001 is a requirement claim the code now violates; FND-002 is a stated order that no longer holds. Both quote values this PR changed and need a text update in this PR. The FR-358 step 6 scope question (integer `Equal`/`NotEqual`) is recorded in the code-review artifact SR-13696.
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | FR-093-AC-7 now gives `d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6` and graph order G5, G6, G4, matching the recomputed group digest and order. |
+| FND-002 | fixed | FR-093-AC-12 and TC-416 step 6 now list G5 as L1, G6, E11 and G6 as E13, G4, which is ascending digest order under the new keys. |
+| FND-003 | fixed | FR-367-AC-6 now says the graph child "is not a parameter (an integer literal operand is an inline literal term, never a graph child)". |
+| FND-004 | fixed | TC-413 step 9 adds `function one using v(): Integer pure { 1 }`, and its expected result takes L6 from that unit. |
