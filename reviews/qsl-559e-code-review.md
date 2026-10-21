@@ -78,3 +78,13 @@ Round 1, head c83e872e8. The test run was not repeated, because the session's pe
 | FND-004 | fixed | c83e872e8 |
 | FND-005 | deferred | STD-243 gap 2 owns `from pop` resolution and the refusal of an unknown population name. While the state model has one population per object type, the result does not change. |
 | FND-006 | still-open | New in this round. An instance-limited state with no successor is closed or stutter-extended as terminal, which can give a false V-4. No fix yet. |
+
+Round 2 (majors only), head 59979b64d, judged by reading. The test run was not retried: the permission layer refused it earlier, and that refusal covers later turns.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-006 | fixed | 59979b64d |
+
+- **The fix.** `Run::explore` now records an instance-limited state that has no successor and `continue`s, as MB-3 does, so the state is never closed, stutter-extended or given a deadlock letter. Replay's `ends_terminal` reads the bounded expansion and refuses `cut.instances`.
+- **The new test is not vacuous.** `an_instance_limited_state_with_no_successor_is_not_closed_as_terminal` would get V-4 at 8782a2228; it now asserts V-6 with bound 3.
+- **No new major.** One low remainder, not blocking: replay's terminal-stutter check (`replay.rs:1105`, TP-1/TP-3 lassos) still uses the unbounded `expand`. With model-only atoms, a stutter there reads the same letters as a behaviour that keeps taking `activate`, so no verdict changes. Only a position-anchored atom could tell them apart, and the engine no longer emits such a lasso. The low can ride a later change.
