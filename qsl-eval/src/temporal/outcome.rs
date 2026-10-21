@@ -101,6 +101,11 @@ pub enum TemporalRefusal {
     /// A lasso's prefix and loop together exceed `u64` positions.
     #[error("a lasso's prefix and loop exceed u64 positions")]
     TraceTooLong,
+    /// A lasso with an uncounted step (ADR-027 PB-3): interval distance in
+    /// counted steps is read over a finite trace only. Remaining work:
+    /// QSL-878.
+    #[error("a lasso is read in counted steps only when every step counts")]
+    UncountedLasso,
     /// A lasso under a bounded profile: only the infinite-trace profile
     /// reads one (FR-329).
     #[error("a lasso is read under the infinite-trace profile only, not {profile:?}")]
@@ -122,6 +127,14 @@ pub enum TemporalRefusal {
         /// The clause's profile.
         profile: TemporalProfile,
     },
+    /// A timed lasso whose loop has no positive total delay: the behaviour
+    /// would not be time-divergent (ADR-026 CT-2).
+    #[error("a timed lasso's loop has no positive total delay")]
+    NonPositiveLoopDelay,
+    /// A timed lasso whose loop re-enters its start before the last
+    /// represented position's stamp.
+    #[error("a timed lasso's loop re-enters its start before the last represented stamp")]
+    LoopReentersBeforeLastStamp,
     /// A timed trace whose stamp is negative (FR-231: a stamp is a
     /// non-negative exact rational).
     #[error("the time stamp at {position:?} is negative")]
@@ -161,10 +174,13 @@ impl TemporalRefusal {
             | Self::TupleArity { .. }
             | Self::NegativeStamp { .. }
             | Self::DecreasingStamp { .. }
+            | Self::NonPositiveLoopDelay
+            | Self::LoopReentersBeforeLastStamp
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
             Self::AlignSkipNotLockstep
             | Self::NotProjectionAligned
             | Self::LassoUnderBoundedProfile { .. }
+            | Self::UncountedLasso
             | Self::ProfileNotEvaluated { .. }
             | Self::NotTimedProfile { .. } => {
                 CatalogCode::new("unsupported_construct", "expression-form")

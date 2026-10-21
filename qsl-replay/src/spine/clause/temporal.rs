@@ -286,6 +286,7 @@ fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
         TemporalRefusal::NotProjectionAligned => TemporalTraceRefusal::NotProjectionAligned,
         TemporalRefusal::EmptyLoop => TemporalTraceRefusal::EmptyLoop,
         TemporalRefusal::TraceTooLong => TemporalTraceRefusal::TraceTooLong,
+        TemporalRefusal::UncountedLasso => TemporalTraceRefusal::UncountedLasso,
         TemporalRefusal::LassoUnderBoundedProfile { profile } => {
             TemporalTraceRefusal::LassoUnderBoundedProfile { profile }
         }
@@ -312,7 +313,9 @@ fn trace_refusal(refusal: TemporalRefusal) -> TemporalTraceRefusal {
         // the step evaluator only, which never returns them.
         TemporalRefusal::NotTimedProfile { .. }
         | TemporalRefusal::NegativeStamp { .. }
-        | TemporalRefusal::DecreasingStamp { .. } => TemporalTraceRefusal::Fault(
+        | TemporalRefusal::DecreasingStamp { .. }
+        | TemporalRefusal::NonPositiveLoopDelay
+        | TemporalRefusal::LoopReentersBeforeLastStamp => TemporalTraceRefusal::Fault(
             qsl_foundation::diagnostic::InternalFault::new("temporal", "step-evaluator-refusal"),
         ),
     }

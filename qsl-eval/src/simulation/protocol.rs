@@ -1484,6 +1484,10 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
         self.classify(state, expansion, cut)
     }
 
+    fn counts_step(&self, transition: &ProtocolTransition) -> bool {
+        transition.counts()
+    }
+
     fn atom_state<'s>(&self, state: &'s Self::State) -> Cow<'s, ModelSimState> {
         self.memory.atom_values(&state.memory, &state.model)
     }

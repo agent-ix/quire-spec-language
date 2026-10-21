@@ -23,6 +23,7 @@ use qsl_eval::temporal::TemporalOutcome;
 use qsl_foundation::diagnostic::{CatalogCode, Category, Code};
 use qsl_foundation::BackendId;
 use qsl_foundation::RequestIndex;
+use qsl_semantics::family::UnsupportedItem;
 use qsl_semantics::model::key::DeclarationKey;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_contract_model::Std001Code;
@@ -414,6 +415,29 @@ pub enum UnavailabilityCause {
     /// `unsupported_projection`/`unsupported-requested-capability`, naming
     /// the refusal.
     StatisticalRequest(StatisticalRequestRefusal),
+    /// FR-235 (ADR-026 DF-5, TV-1): a timed invariant, safety or liveness
+    /// claim holds a punctual interval, so the request writer routed it to
+    /// no engine. Wire cause `punctual-interval`.
+    ///
+    /// Unwired: QSpec FR-331 spells the wire cause `punctual-interval{locus}`
+    /// with a checked-package `{node, occurrence}` locus, and S3 holds only
+    /// the interval's source span. The outcome wire therefore carries the
+    /// cause kind alone and no settlement path produces it yet; the locus is
+    /// remaining work on QSL-580.
+    PunctualInterval {
+        /// The punctual interval's span.
+        span: qsl_foundation::Span,
+    },
+}
+
+/// FR-235 V-8: an item the request writer disposed `Unsupported` settles
+/// with the cause it was disposed for.
+impl From<&UnsupportedItem> for UnavailabilityCause {
+    fn from(item: &UnsupportedItem) -> Self {
+        match item {
+            UnsupportedItem::PunctualInterval { span } => Self::PunctualInterval { span: *span },
+        }
+    }
 }
 
 /// The EN-4 refusal an [`UnavailabilityCause::StatisticalRequest`] names
@@ -467,6 +491,7 @@ impl UnavailabilityCause {
             Self::TotalAboveDrawRange { .. } => "total-above-draw-range",
             Self::ConfidenceBeyondPrecision => "confidence-beyond-precision",
             Self::WeakAccessShape { .. } => "weak-access-shape",
+            Self::PunctualInterval { .. } => "punctual-interval",
         }
     }
 
@@ -479,7 +504,8 @@ impl UnavailabilityCause {
             | Self::NotMarkov
             | Self::TotalAboveDrawRange { .. }
             | Self::ConfidenceBeyondPrecision
-            | Self::WeakAccessShape { .. } => None,
+            | Self::WeakAccessShape { .. }
+            | Self::PunctualInterval { .. } => None,
             Self::MissingFairnessPremise { .. }
             | Self::UnsupportedReduction { .. }
             | Self::HiddenFieldLiveness
@@ -542,6 +568,10 @@ pub enum InconclusiveCause {
     /// `vacuous-match` (ADR-023 HM-7): a hyper item's non-empty universal
     /// `match` is satisfied by no fair tuple of universal behaviours.
     VacuousMatch,
+    /// `uncounted-loop` (ADR-027 PB-3): an interval obligation stays open on
+    /// a reachable cycle of uncounted protocol steps, which EN-1 over a
+    /// protocol subject does not settle.
+    UncountedLoop,
     /// `mapping-undetermined` (ADR-020 RE-4): a refinement's mapping row or
     /// step-row argument was refused or incomplete at a reachable state.
     MappingUndetermined,
@@ -704,6 +734,7 @@ impl InconclusiveCause {
             Self::NoInstance => "no-instance",
             Self::MatchUndetermined => "match-undetermined",
             Self::VacuousMatch => "vacuous-match",
+            Self::UncountedLoop => "uncounted-loop",
             Self::MappingUndetermined => "mapping-undetermined",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
@@ -732,6 +763,7 @@ impl InconclusiveCause {
             | Self::NoInstance
             | Self::MatchUndetermined
             | Self::VacuousMatch
+            | Self::UncountedLoop
             | Self::MappingUndetermined
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }
@@ -1452,6 +1484,24 @@ mod tests {
             None
         );
     }
+    /// FR-235 V-8, cause only: an item the request writer disposed
+    /// `PunctualInterval` maps to the `punctual-interval` cause with basis
+    /// `unavailable` and category `unsupported`. No settlement path exists
+    /// yet, so this backs no acceptance criterion.
+    #[trace("TC-690", "FR-235")]
+    #[test]
+    fn a_punctual_item_settles_unsupported_naming_the_interval() {
+        let span = qsl_foundation::Span { start: 4, end: 16 };
+        let cause = UnavailabilityCause::from(&UnsupportedItem::PunctualInterval { span });
+        assert_eq!(cause, UnavailabilityCause::PunctualInterval { span });
+        assert_eq!(cause.as_str(), "punctual-interval");
+        assert_eq!(cause.basis().as_str(), "unavailable");
+        assert_eq!(
+            TerminalValue::Unsupported(cause).category(),
+            Category::Unsupported
+        );
+    }
+
     use super::*;
     use crate::bounds::DEFAULT_INPUT_BYTES;
     use crate::result::Verdict;

@@ -38,6 +38,7 @@ use super::letters::{AtomReading, LetterStop, TemporalLetters, UndefinedCause};
 use super::outcome::{TemporalOutcome, TemporalRefusal, UndefinedEvaluation};
 use super::plan::{fault, slot, Direction, Node, Plan, Scan, Window};
 use super::position::TemporalPosition;
+use super::steps::{ReadStop, Steps};
 use super::window::{WindowLimitReached, WindowRefusal};
 
 /// The named point every visit charges, one work unit each. `quire-exact`
@@ -339,7 +340,26 @@ pub(super) fn run<L: TemporalLetters>(
         }
     }
     let plan = Plan::new(clause.formula).map_err(TemporalRefusal::Fault)?;
-    let evaluation = Evaluator::new(clause, plan, shape, meter)
+    // ADR-027 PB-3: only an interval measures distance, and a loop with an
+    // uncounted step is not read in counted steps.
+    let steps = if plan.measures_distance() {
+        match Steps::read(shape.represented, &*source, meter) {
+            Ok(steps) => steps,
+            Err(ReadStop::Incomplete(incomplete)) => {
+                return Ok(TemporalOutcome::Incomplete(incomplete))
+            }
+            Err(ReadStop::Fault(internal)) => return Err(TemporalRefusal::Fault(internal)),
+        }
+    } else {
+        None
+    };
+    if shape.mode == Mode::Lasso
+        && plan.measures_distance()
+        && (steps.is_some() || !source.counts_loop_edge())
+    {
+        return Err(TemporalRefusal::UncountedLasso);
+    }
+    let evaluation = Evaluator::new(clause, plan, shape, steps, meter)
         .and_then(|mut evaluator| evaluator.execute(clause, goal, source));
     match evaluation {
         Ok(outcome) => Ok(outcome),
@@ -436,6 +456,9 @@ struct Evaluator<'a> {
     floors: Vec<i128>,
     /// The letter at the sentinel position.
     sentinel: Tri,
+    /// The counted steps of a trace with an uncounted step; `None` when
+    /// distance is the distance in positions.
+    steps: Option<Steps>,
     /// The atoms read, by (node, represented position).
     letters: HashMap<(usize, u64), bool>,
     /// The first represented position the letter does not supply.
@@ -448,6 +471,7 @@ impl<'a> Evaluator<'a> {
         clause: Subject<'a>,
         plan: Plan,
         shape: Shape,
+        steps: Option<Steps>,
         meter: &'a mut Meter,
     ) -> Result<Self, Stop> {
         let unrolled = unroll(&plan, shape.prefix, shape.period())?;
@@ -474,6 +498,7 @@ impl<'a> Evaluator<'a> {
                 Mode::Prefix => Tri::Unknown,
                 Mode::Closed | Mode::Lasso => Tri::False,
             },
+            steps,
             letters: HashMap::new(),
             unknown_from: None,
             memo: HashMap::new(),
@@ -552,9 +577,7 @@ impl<'a> Evaluator<'a> {
         // An `on origin` bounded clause reads positions 0 to its horizon;
         // every other clause reads every represented position (UE-1).
         let read = match (clause_goal, activation, clause.horizon) {
-            (true, Activation::Origin, Some(horizon)) => {
-                horizon.saturating_add(1).min(self.represented)
-            }
+            (true, Activation::Origin, Some(horizon)) => self.through_horizon(horizon)?,
             _ => self.represented,
         };
         let guarded = clause_goal && matches!(activation, Activation::Each { guarded: true });
@@ -750,17 +773,17 @@ impl<'a> Evaluator<'a> {
         };
         Ok(match (scan.base.direction(), scan.window) {
             (Direction::Future, Window::Closed { lower, upper }) => {
-                let start = p + i128::from(lower);
-                let last = (p + i128::from(upper)).min(start.max(n) + l - 1);
+                let start = self.ahead(p, lower)?;
+                let last = self.ahead_last(p, upper)?.min(start.max(n) + l - 1);
                 Run::linear(start, 1, span(start, last)?)
             }
             (Direction::Past, Window::Closed { lower, upper }) => {
-                let (a, b) = (i128::from(lower), i128::from(upper));
-                let farthest = b.min(a.max(p - floor));
-                Run::linear(p - a, -1, span(a, farthest)?)
+                let first = self.behind(p, lower)?;
+                let farthest = self.behind_far(p, upper)?.max(first.min(floor));
+                Run::linear(first, -1, span(farthest, first)?)
             }
             (Direction::Future, Window::From { lower }) => {
-                let s0 = p + i128::from(lower);
+                let s0 = self.ahead(p, lower)?;
                 if s0 < 0 {
                     let start = s0.max(floor);
                     Run::linear(start, 1, span(start, n - 1)?)
@@ -782,7 +805,7 @@ impl<'a> Evaluator<'a> {
                 }
             }
             (Direction::Past, Window::From { lower }) => {
-                let s0 = p - i128::from(lower);
+                let s0 = self.behind(p, lower)?;
                 if s0 < floor {
                     Run::linear(floor, -1, 1)
                 } else {
@@ -790,6 +813,52 @@ impl<'a> Evaluator<'a> {
                 }
             }
         })
+    }
+
+    /// The last position to read of a bounded `on origin` clause with
+    /// horizon `horizon` (ADR-018 TP-2), counted in steps (ADR-027 PB-3),
+    /// as a count of positions.
+    fn through_horizon(&self, horizon: u64) -> Result<u64, InternalFault> {
+        let Some(steps) = &self.steps else {
+            return Ok(horizon.saturating_add(1).min(self.represented));
+        };
+        let last = steps.last_within(i128::from(horizon))?;
+        let positions = u64::try_from(last + 1).map_err(|_| fault("horizon-position-in-u64"))?;
+        Ok(positions.min(self.represented))
+    }
+
+    /// The first position at distance `offset` or more at or after `p`.
+    fn ahead(&self, p: i128, offset: u64) -> Result<i128, InternalFault> {
+        match &self.steps {
+            None => Ok(p + i128::from(offset)),
+            Some(steps) => Ok(steps
+                .first_reaching(steps.to(p)? + i128::from(offset))?
+                .max(p)),
+        }
+    }
+
+    /// The last position at distance `offset` or less after `p`.
+    fn ahead_last(&self, p: i128, offset: u64) -> Result<i128, InternalFault> {
+        match &self.steps {
+            None => Ok(p + i128::from(offset)),
+            Some(steps) => steps.last_within(steps.to(p)? + i128::from(offset)),
+        }
+    }
+
+    /// The last position at distance `offset` or more at or before `p`.
+    fn behind(&self, p: i128, offset: u64) -> Result<i128, InternalFault> {
+        match &self.steps {
+            None => Ok(p - i128::from(offset)),
+            Some(steps) => Ok(steps.last_within(steps.to(p)? - i128::from(offset))?.min(p)),
+        }
+    }
+
+    /// The first position at distance `offset` or less before `p`.
+    fn behind_far(&self, p: i128, offset: u64) -> Result<i128, InternalFault> {
+        match &self.steps {
+            None => Ok(p - i128::from(offset)),
+            Some(steps) => steps.first_reaching(steps.to(p)? - i128::from(offset)),
+        }
     }
 
     /// Run `frame` as far as the visits already made allow: to its value,

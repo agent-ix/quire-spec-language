@@ -268,6 +268,34 @@ pub enum StepKind {
 }
 
 impl StepKind {
+    /// Whether a step of this kind counts for interval distance (ADR-027
+    /// PB-3, QSpec FR-431): an operation (`attempt`, `cattempt`), an event
+    /// (`event`, and `activate` for a trigger occurrence), a `send` or a
+    /// `receive`. Every other step, `spawn`, `retire`, a `fence` and a memory
+    /// step (a `flush` or a release/acquire choice) included, moves the
+    /// position and not the distance.
+    pub const fn counts(self) -> bool {
+        match self {
+            Self::Attempt
+            | Self::CAttempt
+            | Self::Event
+            | Self::Activate
+            | Self::Send
+            | Self::Receive => true,
+            Self::Duplicate
+            | Self::Lose
+            | Self::Fork
+            | Self::Join
+            | Self::Timeout
+            | Self::Finish
+            | Self::Memory
+            | Self::Fence
+            | Self::CEnd
+            | Self::Spawn
+            | Self::Retire => false,
+        }
+    }
+
     fn text(self) -> &'static str {
         match self {
             Self::Attempt => "attempt",
@@ -899,6 +927,11 @@ impl ProtocolTransition {
     /// The step's kind.
     pub fn kind(&self) -> StepKind {
         self.kind
+    }
+
+    /// Whether the step counts for interval distance (ADR-027 PB-3).
+    pub const fn counts(&self) -> bool {
+        self.kind.counts()
     }
 
     /// For a `cattempt` or `cend`, its template's qualified name.
