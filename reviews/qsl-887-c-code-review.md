@@ -63,3 +63,9 @@ records no defect.
 | ID | Severity | Summary | Refs |
 | --- | --- | --- | --- |
 | FND-001 | low | No findings (placeholder) | - |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | accepted-no-change (placeholder; no defect) | 10ee126e9 |

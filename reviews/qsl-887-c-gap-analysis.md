@@ -68,3 +68,12 @@ paragraph. Fix them in this PR. None blocks.
 | FND-002 | medium | TC-552 is stale against the edited AC-8. Its Fixtures line lists only `Twice`, `CasTwice` and `Full`. Step 8 says "Resolve a value naming one entry of every class over `Full`". But `Full` has no timeout, cattempt, cend or activate class, and AC-8 now says "over `Full` and `Rich`". Fix: add `Rich` to the Fixtures line and change step 8 to "over `Full` and `Rich`". | spec/test-cases/TC-552-s3-checks-a-refinement-whose-abstract-side-is-a-protocol.md:27; spec/test-cases/TC-552-s3-checks-a-refinement-whose-abstract-side-is-a-protocol.md:44 |
 | FND-003 | low | The `FR-147-AC-8` tag is only on the `Rich` test, which covers 4 of the criterion's 17 classes. The `Full` test, which covers the other 13 and the cross-class byte order, stays TC-552-only with a "Part of" doc. The matrix then binds AC-8 to the smaller half. Fix: tag both tests `#[trace("TC-552", "FR-147-AC-8")]`, and reword the `Full` doc so it is not "Part of". | qsl-semantics/tests/it/refinement_protocol.rs:827-831; qsl-semantics/tests/it/refinement_protocol.rs:902-906 |
 | FND-004 | low | The FR-147 fixture paragraph says "a refinement `CasFull` selects it", and names no refinement for `Rich`. The tests use the refinement `CasTwice` (from `refinement()`, keyed by `internal()`) over both `Full` and `Rich`. Fix: say that `CasTwice`, with its abstract side set to `Full` or `Rich`, selects each, or rename the test refinement to match. | spec/functional/FR-147-check-a-refinement-whose-abstract-side-is-a-protocol.md:264-271; qsl-semantics/tests/it/refinement_protocol.rs:48-50 |
+
+## Dispositions
+
+| FND | outcome | sha |
+| --- | --- | --- |
+| FND-001 | fixed | 10ee126e9 |
+| FND-002 | fixed | 10ee126e9 |
+| FND-003 | fixed | 10ee126e9 |
+| FND-004 | fixed | 10ee126e9 |
