@@ -137,11 +137,6 @@ refusal carries a replacement kind.
   [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (EN-1).
 
-## Remaining work
-
-- The code that emits the three earlier causes (`qsl-route/src/lib.rs`,
-  `qsl-route/tests/it/fairness_kinds.rs`) is Linear QSL-925.
-
 ## References
 
 - QSpec FR-368 (fairness kinds in negotiation): the QSpec half of ADR-019

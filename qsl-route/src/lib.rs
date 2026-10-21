@@ -178,11 +178,11 @@ pub struct BackendDescriptor {
 /// as supplied, `None` when the manifest has none (FR-134 "Manifest
 /// `fairness_kinds` admission"). It is judged after every advertised pair and
 /// `domains`, and only for a backend that advertises `temporal-satisfaction`:
-/// a member of any other backend is ignored. For a temporal backend a member
-/// that is not a list or holds an element other than `weak` or `strong`
-/// refuses `unknown-fairness-kind` (the first in member order); a repeated
-/// label refuses `duplicate-fairness-kind`; an absent member refuses
-/// `absent-fairness-kinds`. An empty list is admitted and advertises none.
+/// a member of any other backend is ignored. For a temporal backend a
+/// defective member refuses `invalid-fairness-kinds` retaining the
+/// [`FairnessKindsDefect`]: `absent`, `not-a-list`, `unknown-label` (the first
+/// in member order) or `duplicate-label`. An empty list is admitted and
+/// advertises none.
 pub fn descriptor_from_manifest<'a>(
     backend: Candidate,
     origin: ProviderOrigin,

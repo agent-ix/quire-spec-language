@@ -27,3 +27,9 @@ Bindings examined:
 ## Verdict
 
 PASS (no major). Every TC-535 vector V4-V17 asserts `invalid_capability/invalid-fairness-kinds` with the exact defect and value, or the earlier pair/domains cause. The precedence the spec states (`absent`, `not-a-list`, `unknown-label`, `duplicate-label`, unknown over repeat) is implemented and tested. QSpec FR-368-AC-8/AC-9 forms (`"weak"`, `null`, an unknown element, `["weak","weak"]`, unknown plus repeat) are covered by the same vectors. No stub, no tautology, no over-claimed tag in the diff.
+
+## Dispositions
+
+| Finding | Disposition |
+| --- | --- |
+| FND-001 | Fixed: the FR-134 "Remaining work" section is deleted. |

@@ -31,3 +31,9 @@ Checked and clean:
 - **Rust.** No new `unwrap`, `expect`, indexing or panic on a production path. The `panic!` in the test helper is test-only and reports the unexpected cause.
 - **Test oracles.** `refused` now asserts identity, the full catalog code and the exact defect with its value. V10 tightened from a code-only check to `UnknownLabel("eventual")`. V16/V17 use `refused_code` and assert the earlier pair/domains cause. Each oracle fails if the defect, value or code is wrong.
 - **Tags.** `TC-535` with FR-134-AC-3 (V4-V6, V11-V14), AC-4 (V7, V8, V10, V15), AC-5 (V9) and AC-6 (V16, V17). Each tag matches what its test asserts.
+
+## Dispositions
+
+| Finding | Disposition |
+| --- | --- |
+| FND-001 | Fixed: the `descriptor_from_manifest` doc comment now names `invalid-fairness-kinds` with its four defects. |
