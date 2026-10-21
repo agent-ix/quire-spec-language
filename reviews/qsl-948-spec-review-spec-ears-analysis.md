@@ -36,3 +36,12 @@ Two low findings. Examined and clean:
 - The declarative sentences on rounding mode and on float-to-rational lowering
   are definitions, each citing its owning FR.
 - The FR-091 and FR-093 edits state ownership, not a changelog.
+
+## Dispositions
+
+Re-checked at head 99d30b1cc9a4c10138f6abbcc6520035e258687c.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 99d30b1cc: "The checker SHALL refuse a header `profile` that names the row's identity as `unknown_profile`/`wrong-selection-role` (FR-110-AC-3), and no other unit declaration supplies the row." The checker is the subject and "still" is gone. The trailing clause stays as a statement of fact, not an obligation, which is acceptable. |
+| FND-002 | fixed | 99d30b1cc: AC-5 reads "... refuses `unknown_profile`/`wrong-selection-role` in a unit that holds a float function and in one that holds none." |

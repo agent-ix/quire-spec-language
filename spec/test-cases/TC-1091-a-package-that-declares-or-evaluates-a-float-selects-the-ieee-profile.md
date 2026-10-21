@@ -13,7 +13,7 @@ relationships:
 Verify that a package selects the `ieee_profile` row exactly when it declares or
 evaluates a float, that the IEEE nodes carry the selected row as their law, that
 the V2 reader admits the emitted packages, and that float comparison and the
-reserved intrinsics refuse. Scope: FR-397-AC-1 to FR-397-AC-8.
+reserved intrinsics refuse. Scope: FR-397-AC-1 to FR-397-AC-8 (FR-397-AC-9 is TC-917's).
 
 ## Test Procedure
 
@@ -29,8 +29,7 @@ reserved intrinsics refuse. Scope: FR-397-AC-1 to FR-397-AC-8.
    parameters, and `+` over a `Float32` and a `Float64`.
 7. Check `quire::value::ieee::numericEqual(a, b)` and a call of each other
    reserved intrinsic over `Float64[nearest-even]` parameters.
-8. Build a checked package for `add` through the crate-internal package
-   declarations with no `ieee_profile`, and evaluate it.
+8. Check `convert<Float64[nearest-even]>(i)` over an `Int[0, 10]` parameter, and the two width conversions between `Float32[nearest-even]` and `Float64[nearest-even]` parameters.
 
 ## Expected Results
 
@@ -44,4 +43,4 @@ reserved intrinsics refuse. Scope: FR-397-AC-1 to FR-397-AC-8.
 6. `ill_typed`/`operator-ineligible` six times; `ill_typed`/`type-mismatch` for
    the mixed widths.
 7. `missing_declaration`/`missing-name` naming each identity.
-8. The internal failure `ieee-profile-unresolved`.
+8. `ill_typed`/`type-mismatch` three times.

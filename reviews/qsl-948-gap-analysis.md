@@ -55,3 +55,12 @@ Examined and clean:
   AC-1 together with FR-093-AC-20.
 - Ticket acceptance 3 (comparison settled) is met for operators by AC-5. The
   reserved intrinsic calls are still open (SR-13720 FND-003).
+
+## Dispositions
+
+Re-checked at head 99d30b1cc9a4c10138f6abbcc6520035e258687c.
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 99d30b1cc: a Strict admission SHALL and FR-397-AC-4 ("The V2 reader admits the packages emitted for the `add` functions of FR-397-AC-1 over `Float64` and over `Float32` and for `to_r` of FR-397-AC-3"), with TC-1091 step 4 and expected result 4. The AC states a requirement on the build, not current behaviour, which is correct: today the sources stop at `IeeeProfileNotAdmitted`. |
+| FND-002 | fixed | 99d30b1cc: AC-6 and the Behavior bullet pin `ill_typed`/`type-mismatch`. The probe gives `IllTyped(TypeMismatch)` at the operator for either return type, so leaving the return type unstated is harmless. |

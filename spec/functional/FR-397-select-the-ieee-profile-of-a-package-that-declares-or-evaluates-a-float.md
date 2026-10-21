@@ -37,11 +37,11 @@ does, and what a comparison of floats does.
   `Float64[mode]` types (FR-092).
 - The `DefinitionLock` catalog row of the role `ieee_profile`.
 
-Complete-V1 source has no float value literal: the bit-level
-`float32(bits: ...)` and `float64(bits: ...)` constructors are not admitted
-(S2 refuses them as `UnrepresentedConstruct{FloatValue}`, FR-091), so a float
-value in a body comes from a parameter, an IEEE arithmetic result or a
-conversion.
+Complete-V1 source has no float constant, no conversion into a float and no
+float comparison: the bit-level `float32(bits: ...)` and `float64(bits: ...)`
+constructors are not admitted (S2 refuses them as
+`UnrepresentedConstruct{FloatValue}`, FR-091). A float value in a body therefore
+comes only from a parameter or from an IEEE arithmetic result.
 
 ## Outputs
 
@@ -76,6 +76,10 @@ conversion.
 - **Float-to-rational conversion.** The checker SHALL lower a
   `convert<Rational[...]>(e)` whose operand is a `Float32` or `Float64` to
   `quire.op.ieee.to_rational` (FR-093). Its value and loss are QSpec FR-148's.
+- **Conversion into a float.**
+  - The checker SHALL refuse a `convert` whose target is a `Float32` or `Float64`
+    (from an exact type, or between the two widths) as
+    `ill_typed`/`type-mismatch`.
 - **Strict admission.** The V2 reader (`quire.checked-package/v2`) SHALL admit the
   package emitted for a unit whose IEEE operations are the arithmetic of a
   `Float32` or `Float64` function and the conversion above.
@@ -88,7 +92,7 @@ conversion.
     exact type, as `ill_typed`/`type-mismatch`.
 - **Reserved intrinsics.** The reserved intrinsic identities
   `quire::value::ieee::sqrt`, `fma`, `numericEqual`, `totalOrder` and
-  `bitIdentical` (QSpec FR-148) have no source route in complete-V1.
+  `bitIdentical` (QSpec FR-148) are admitted in no call in complete-V1 source.
   - The checker SHALL refuse a call to one as `missing_declaration`/`missing-name`
     naming the identity.
 - **Absent profile at evaluation.** The evaluator SHALL end an IEEE node reached
@@ -106,7 +110,8 @@ conversion.
 | FR-397-AC-5 | A header `profile w = "quire.value.ieee754-2019-default/v1"` refuses `unknown_profile`/`wrong-selection-role` in a unit that holds a float function and in one that holds none. | Test (TC-1091) |
 | FR-397-AC-6 | `a = b`, `a != b`, `a < b`, `a <= b`, `a > b` and `a >= b` over two `Float64[nearest-even]` parameters each refuse `ill_typed`/`operator-ineligible` at the operator, and `a + b` over a `Float32` and a `Float64` parameter refuses `ill_typed`/`type-mismatch`. | Test (TC-1091) |
 | FR-397-AC-7 | A call `quire::value::ieee::numericEqual(a, b)` over two `Float64[nearest-even]` parameters, and one of each other reserved intrinsic, refuses `missing_declaration`/`missing-name` naming the identity. | Test (TC-1091) |
-| FR-397-AC-8 | An IEEE node of a checked package built through the crate-internal package declarations with no `ieee_profile` (the construction `qsl-eval`'s tests use), evaluated, ends in the internal failure `ieee-profile-unresolved`. | Test (TC-1091) |
+| FR-397-AC-8 | `convert<Float64[nearest-even]>(i)` over an `Int[0, 10]` parameter, `convert<Float64[nearest-even]>(f)` over a `Float32[nearest-even]` parameter and `convert<Float32[nearest-even]>(d)` over a `Float64[nearest-even]` parameter each refuse `ill_typed`/`type-mismatch`. | Test (TC-1091) |
+| FR-397-AC-9 | The evaluator's `ieee-profile-unresolved` failure for an IEEE node reached with no admitted `ieee_profile` is exercised by FR-090-AC-15, through TC-917's `CheckedBody::fixture` construction of an `Ieee` and an `IeeeToRational` node over `population_function_package()`. | Test (TC-917) |
 
 ## Dependencies
 

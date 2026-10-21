@@ -58,3 +58,23 @@ Examined and clean:
 Lead default 3 (ordering left to the code lane) adds no AC that depends on
 selection order, so it leaves nothing unbuildable. Lead defaults 1 and 2 are
 FND-003 and FND-001.
+
+## New findings (disposition pass 1)
+
+Re-checked at head 99d30b1cc9a4c10138f6abbcc6520035e258687c.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-006 | medium | AC-8 and TC-1091 step 8 name a construction that does not exist. They call for "a checked package built through the crate-internal package declarations with no `ieee_profile`". `PackageDeclarations::check` with no profile refuses every IEEE application as `IeeeProfileNotAdmitted` (qsl-semantics/src/check/check.rs:2731-2732, and :3370 for the conversion), so that package holds no IEEE node. Once FR-397 is built it selects the profile anyway. The construction qsl-eval's tests actually use is a fixture `CheckedBody::fixture` holding `NodeKind::Ieee` or `NodeKind::IeeeToRational`, applied by the `probe!` machine over `population_function_package()`, which has no IEEE profile (TC-917, `both_ieee_profile_checks_and_conversion_operand_check_are_real_producers`, FR-090-AC-15/16). Name that fixture construction, or replace AC-8 with a plain cross-reference to FR-090-AC-15 and TC-917. | spec/functional/FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md:109; spec/test-cases/TC-1091-a-package-that-declares-or-evaluates-a-float-selects-the-ieee-profile.md:32-33; qsl-eval/src/value/expression/evaluate/invariants.rs:64-70,966-995; qsl-semantics/src/check/check.rs:2731-2732 |
+| FND-007 | low | "The reserved intrinsic identities ... have no source route in complete-V1" misstates QSpec. QSpec shared-grammar.md:438-446 gives these intrinsics the ordinary qualified-call source route under `quire.value.complete/v1`. The behaviour, refusing them as `missing_declaration`/`missing-name`, is the lead's V1 choice and is fine, but the sentence should say QSL admits no call to them, not that complete-V1 has no route. | spec/functional/FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md:89-91 |
+| FND-008 | medium | Inputs says a float value comes from "a parameter, an IEEE arithmetic result or a conversion". FR-397 and FR-093 define only the float-to-`Rational` conversion, and that conversion yields a `Rational`, not a float. QSpec FR-148 defines explicit exact-to-IEEE conversion and width conversion, but no QSL row lowers either: `convert<Float64[nearest-even]>(r)` from a `Rational` or an `Int`, and `convert<Float64[nearest-even]>(f)` from a `Float32`, each refuse `IllTyped(TypeMismatch)` today (probe). State what QSL V1 does with these conversions (refuse `ill_typed`/`type-mismatch`, or lower them), and drop "or a conversion" from Inputs if no conversion yields a float. | spec/functional/FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md:40-44; quire-specification spec/functional/expressions/FR-148-evaluate-ieee-floating-profiles.md (explicit width and exact-to-IEEE conversion) |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 99d30b1cc: the trigger is now "A package raises `ieee_operation` when any unit of the package declares a `Float32[mode]` or `Float64[mode]` type (a parameter, a result or a field) or holds a checked IEEE arithmetic application ... or a checked conversion of a float to a `Rational`", matching QSpec value-complete.md. AC-2 now requires `keep` to select the row once. |
+| FND-002 | fixed | 99d30b1cc: the bit-constructor example is gone. Inputs states that complete-V1 source has no float value literal and that S2 refuses `float32/float64(bits: ...)` as `UnrepresentedConstruct{FloatValue}` (FR-091). AC-2's second example is `plain` over `Int`, which compiles today (probe). |
+| FND-003 | fixed | 99d30b1cc: the Reserved intrinsics bullet and AC-7 refuse each of `sqrt`, `fma`, `numericEqual`, `totalOrder` and `bitIdentical` as `missing_declaration`/`missing-name` naming the identity. The probe confirms all five refuse `MissingName("quire::value::ieee::<name>")`, which maps to `MissingDeclaration`/`missing-name` (refusal.rs:736, 2228). |
+| FND-004 | still-open | AC-8 now says how its input is built, but the construction it names does not bypass the checker and cannot hold an IEEE node. FND-006 carries the fix; this finding closes with it. |
+| FND-005 | fixed | 99d30b1cc: FR-093:249-251 now wraps the sentence and links [FR-397](FR-397-select-the-ieee-profile-of-a-package-that-declares-or-evaluates-a-float.md). |
