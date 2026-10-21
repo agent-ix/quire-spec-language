@@ -86,3 +86,11 @@ Gates at 3d0c48058: fmt, clippy `-D warnings`, root `cargo test --test it`, `mak
 | FND-006 | fixed | One table: `StepClassKeyword::as_str` and `of_spelling` in qsl-forms, used by the parser and by `spelled`. |
 | FND-007 | fixed | The helper doc opens 'The refinement of `A::Acc` by `Fill` that ADR-027 §7 gives (FR-214's first example)'. |
 | FND-008 | fixed | The profile line moved into `protocol_refinement()`. `unit_text` hoists leading `profile ` lines into the header, and no other caller's refinement text starts with one, so the other fixtures are unchanged. |
+
+Round 2, head f0a588a50 (fix commit f0a588a50; merge 3600ac7fd of origin/main 15e011cca, whose tree equals an automatic `git merge-tree` of its parents, so it carries no manual resolution; record commit f4fe3e7a7).
+
+Gates at f0a588a50: fmt, clippy `-D warnings`, root `cargo test --test it`, `make string-edge` and the three arch-lint targets pass. The seven-crate `cargo test`, run with `--no-fail-fast`, gives 4,602 passed and 2 failed. The two failures are the qsl-package `conformance_c14_source_map_lookup_over_qspec_positive_fixtures` and `conformance_i2_read_over_qspec_checked_package_v2_fixtures` tests. They read the live QSpec checkout and fail the same way on origin/main 8fae9fe55, so they come from the environment, not from this PR. (Round 1's crate run was fail-fast and stopped at qsl-package; this run covers every crate.) The 7,800-case oracle still agrees exactly. Mutation: 61 mutants (round 1's 60 plus M57, the empty pass-2 alias), 59 killed. M06 (equivalent) and M28 (source sort, not required) survive.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-009 | fixed | `side_of(models, alias)` builds each pass-2 side with its real alias. Probe: a population-valued argument `count(x in M::nodes where x.total = 0)` now checks on an attempt-node row as on an operation row. `an_application_on_an_attempt_or_template_row_is_typed_over_its_operation` asserts it, and mutant M57 is killed. |
