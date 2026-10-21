@@ -94,13 +94,14 @@ package the call ran against; nothing is recomputed.
 - **One checked graph.** The facade SHALL compile the source once, and the
   call, the `package_id` and the members SHALL all come from that compile's
   checked package.
-- **Pairing with items.** A member names its item by (`package_id`, request
-  index). A consumer that writes items with `items_from_requirements` SHALL
-  pair a member only with an item written from a compile of the same
-  `package_id`, at the member's request index, whose `occurrence()` equals the
-  member's key; for any other `package_id` the consumer SHALL refuse the
-  pairing as `stale_dependency`/`content-mismatch` (QSpec FR-272) and SHALL
-  NOT pair by occurrence key alone.
+- **Pairing key.** The facade SHALL return, with each member, the request
+  index of its item, and with the members the `package_id` of the compile
+  that produced them, so that the pairing key of a member and its item is
+  (`package_id`, request index). Consumers (informative): a consumer that
+  writes items with `items_from_requirements` pairs a member with the item at
+  its request index, written from a compile of the same `package_id`, whose
+  `occurrence()` equals the member's key; a different `package_id` is the
+  consumer's refusal, which the consumer's own specification states.
 - **Typed refusals.** The facade SHALL refuse with an existing `RunRefusal`
   arm, FR-100's stage, code and category and QSpec FR-272's cause, and SHALL
   return no `CallRequirements`, in these cases:
@@ -125,7 +126,8 @@ package the call ran against; nothing is recomputed.
 - **Facade boundary.** The facade SHALL expose the entry and its types at the
   `qsl_replay` root, where a consumer reaches them, and the root SHALL re-export FR-100's call types that
   the entry takes or returns (`Call`, `CallArgument`, `CallOutcome`,
-  `CallValue`, `RunRefusal`, `PackageId`, `SpineLimits`) beside
+  `CallValue`, `RunRefusal`, `PackageId`, `SpineLimits`, `ObjectEnvironment`
+  and `SuppliedLimits`) beside
   `run_with_requirements`, `RunWithRequirements`, `CallRequirements` and
   `CallRequirement`. `qsl_replay::spine` stays internal, a consumer names
   neither it nor `qsl_semantics`' checked graph (FR-060, T12-A), as for
@@ -150,8 +152,7 @@ K has four records, in package order: the `integer.mul` of `sq` (request
 index 0); the `x + 1` node's ordinal 0, which is `inc`'s `integer.add` with
 result bound `Int[0, 10]` (index 1); and the same node's ordinals 1 and 2,
 which are `sq`'s two `integer.add` sites (indices 2 and 3). The `id` and `two`
-functions have none. Every one of these was observed on the unit by the
-review's probe, with package id `d181dfe3...a934`.
+functions have none.
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
@@ -165,8 +166,7 @@ review's probe, with package id `d181dfe3...a934`.
 | FR-395-AC-8 | A cancelled handle refuses `Cancelled` with no members. | Test (TC-1089) |
 | FR-395-AC-9 | A consumer reaches the entry, its result types and FR-100's call types through the `qsl_replay` root alone, without naming `qsl_replay::spine`; FR-060's T12-A rule reports no call site outside its allowed callers for them. | Test (TC-1089) |
 | FR-395-AC-10 | The association step, run directly on a checked package whose record map has a `value-validity` record with no owner, refuses `Fault` with stage `spine-run` and invariant `requirement-owner-known`; the same for a record whose owner names no function of the package; neither returns a partial member list. | Test (TC-1089) |
-| FR-395-AC-11 | Two `Call`s of `sq` whose arguments arrive in different orders (for a two-parameter fixture, `add` of FR-062 RR-3 with `x`, `y` swapped) are equal calls, and return equal members. | Test (TC-1089) |
-| FR-395-AC-12 | A consumer that holds items written from a compile of a different `package_id` than the result's refuses the pairing as `stale_dependency`/`content-mismatch` and pairs nothing. | Test (TC-1089) |
+| FR-395-AC-11 | Two `Call`s of `add` of FR-062 RR-3 (`function add using v(x: Int[0, 9], y: Int[0, 9]): Int[0, 18] pure { x + y }`) whose arguments arrive as `x`, `y` and as `y`, `x` are equal calls and return equal members. | Test (TC-1089) |
 
 ## Dependencies
 

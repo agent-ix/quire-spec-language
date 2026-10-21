@@ -16,7 +16,7 @@ relationships:
 
 Verify `run_with_requirements` returns, with the outcome of `run`, exactly the
 requirement items whose owner is the selected function, in occurrence-key
-order, and refuses as `run` does. Scope: FR-395-AC-1 to FR-395-AC-12, FR-062-AC-14 and FR-075-AC-17.
+order, and refuses as `run` does. Scope: FR-395-AC-1 to FR-395-AC-11, FR-062-AC-14 and FR-075-AC-17.
 
 ## Test Procedure
 
@@ -38,11 +38,9 @@ their owners, and the items `items_from_requirements` writes) is read through
 5. Call `nope`, the empty name, `inc.x` and `1inc`; call a source that does
    not parse; call with a cancelled handle.
 6. Read each record's owner in the checked graph for FR-062's RR-1 to RR-17,
-   for TC-198 L07's `post Q` unit and for TC-590 step 4's `possible Q` unit.
+   for QSpec TC-198 L07's `post Q` unit and for TC-590 step 1's `possible P` unit over the ConfigVersion unit, which yields a `temporal-satisfaction` record.
 7. Call `add` of FR-062 RR-3 with the arguments `x`, `y` and then `y`, `x`.
-8. Write K's items from a second compile of a different source and pair
-   them with step 1's members.
-9. Fault arm: in a `qsl-replay` unit test, build a checked package whose
+8. Fault arm: in a `qsl-replay` unit test, build a checked package whose
    record map is altered through the crate-internal test support (the same
    access the checked-graph tests use) to hold a `value-validity` record
    with no owner, and then one with an owner `ghost` no function bears, and
@@ -54,7 +52,7 @@ their owners, and the items `items_from_requirements` writes) is read through
    the ordinals 1 and 2 of the shared `x + 1` node); `inc` has one, index 1;
    no key is in both; every member key is in the package's records; the items
    at those indices carry the members' keys.
-2. `id` and `two` have no members and complete; the two `sq` calls have equal
+2. `id` and `two` have no members and complete; the `sq` calls with `x = 0` and `x = 9` have equal
    members; the Boolean argument refuses `WrongValueKind` at position 0 with
    no members.
 3. `incomplete` on `work_units` with the same three members.
@@ -63,8 +61,6 @@ their owners, and the items `items_from_requirements` writes) is read through
 6. One owner per `value-validity` record, the function's name; none for the
    `operation-contract` record and none for the `temporal-satisfaction`
    record.
-7. Equal calls and equal members.
-8. The pairing refuses `stale_dependency`/`content-mismatch`; nothing is
-   paired.
-9. `Fault` with stage `spine-run` and invariant `requirement-owner-known`
+7. Equal calls and equal members for the `add` call in both argument orders.
+8. `Fault` with stage `spine-run` and invariant `requirement-owner-known`
    each time, with no partial list.

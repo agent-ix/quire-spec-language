@@ -3,7 +3,7 @@ id: SR-13675
 title: "integrity review of QSL-938 FR-395 and TC-1089 (PR #1147)"
 type: SpecReview
 analysis: integrity
-scope: "agent-ix/quire-spec-language@4e97aeaad6d855b125b7cbd4bbcc6870007a6db2; spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md, spec/test-cases/TC-1089-the-replay-facade-associates-the-selected-call-s-requirement-items.md, spec/functional/FR-062-implement-checked-family-contract.md, spec/functional/FR-075-compute-candidates-from-registered-backends.md, spec/functional/FR-100-run-a-named-function-through-the-spine.md, spec/spec.md"
+scope: "agent-ix/quire-spec-language@29f11fe9b396165cbfd7fe9c52f50aec5074cbdc; spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md, spec/test-cases/TC-1089-the-replay-facade-associates-the-selected-call-s-requirement-items.md, spec/functional/FR-062-implement-checked-family-contract.md, spec/functional/FR-075-compute-candidates-from-registered-backends.md, spec/functional/FR-100-run-a-named-function-through-the-spine.md, spec/spec.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-395
@@ -50,3 +50,12 @@ The verifying TC cites a fixture that does not exist, and two ACs trace to
 a TC that does not declare them. Cross-links otherwise resolve, the index
 is complete, and no open PR collides with FR-395, TC-1089, FR-062-AC-14 or
 FR-075-AC-17.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | Correction: the L07 fixture is real. It is QSpec TC-198 (quire-specification spec/test-cases/TC-198-closed-model-lookup.md line 65: F1 plus `A/remove`, `post Q using V on M::A::remove`), and qsl-semantics/qsl-eval tests cite it. My 'appears nowhere' searched only this repo and was wrong. What remains: FR-062-AC-14 and TC-1089 steps 6 write bare 'TC-198 L07', which in this repo resolves to the local TC-198 (registry backend absence, no L07). Write 'QSpec TC-198 L07', as other specs write 'QSpec FR-272'. |
+| FND-002 | fixed | 29f11fe9b: relationships: verifies FR-395; verifies FR-062; verifies FR-075. Scope: FR-395-AC-1 to FR-395-AC-12, FR-062-AC-14 and FR-075-AC-17. |
+| FND-003 | fixed | 29f11fe9b: - **Selected call**: the function name and the argument list the entry received, as FR-100's `Call` carries them. The function is one identifier (FR-100 Inputs). The facade stores the arguments as received. The identity and equality of a call is its function name and its set of (parameter name, value) pairs, so the order in which the arguments arrived (FR-100 lets them arrive in any order) does not change it. |
+| FND-004 | fixed | 29f11fe9b: - **Typed refusals.** The facade SHALL refuse with an existing `RunRefusal` arm, FR-100's stage, code and category and QSpec FR-272's cause, and SHALL return no `CallRequirements`, in these cases: - the source, a model, a library or a dependency does not compile, so there is no checked graph: `Compile` (FR-100); - the function name is empty, is not an identifier, has more than one segment, or names no function of the checked package: `MissingDeclaration`, `missing_declaration`; - the named function's declared result is not Boolean, integer or Reference: `UnsupportedResult` (FR-100); - an argum |

@@ -3,7 +3,7 @@ id: SR-13673
 title: "base review of QSL-938 FR-395 selected-call requirement-item association (PR #1147)"
 type: SpecReview
 analysis: base
-scope: "agent-ix/quire-spec-language@4e97aeaad6d855b125b7cbd4bbcc6870007a6db2; spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md, spec/test-cases/TC-1089-the-replay-facade-associates-the-selected-call-s-requirement-items.md, spec/functional/FR-062-implement-checked-family-contract.md, spec/functional/FR-075-compute-candidates-from-registered-backends.md, spec/functional/FR-100-run-a-named-function-through-the-spine.md, spec/spec.md"
+scope: "agent-ix/quire-spec-language@29f11fe9b396165cbfd7fe9c52f50aec5074cbdc; spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md, spec/test-cases/TC-1089-the-replay-facade-associates-the-selected-call-s-requirement-items.md, spec/functional/FR-062-implement-checked-family-contract.md, spec/functional/FR-075-compute-candidates-from-registered-backends.md, spec/functional/FR-100-run-a-named-function-through-the-spine.md, spec/spec.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-395
@@ -86,3 +86,22 @@ package order equals request index. The QSL-655 independence statement is
 consistent: settlement takes an item by key and index and needs nothing
 here. The member shape (key and index) is enough identity for the driver to
 settle an item once it holds that package's items (FND-003).
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | medium | AC-12 and the 'Pairing with items' SHALLs (and FR-075's new consumer SHALL) obligate a consumer outside QSL: no QSL function performs the pairing or raises the refusal. `RequirementItem` carries no `package_id`, qsl-replay does not depend on qsl-route, and the entry returns identities only. So TC-1089 step 8 would exercise code the test itself writes, a test that cannot fail on any QSL change. The cause is real (`Code::StaleDependency`, and `content-mismatch` is QSL's digest-recompute cause), so it suits a package-identity mismatch if QSL raises it. Owner-level choice: give QSL a pairing operation (for example a root `pair(&CallRequirements, package_id, &[RequirementItem])` returning the refusal, which needs a qsl-route edge or items carrying their package id), or make the rule consumer guidance and move AC-12 to the driver's spec. | spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md:97-103, 169 |
+| FND-008 | low | "Every one of these was observed on the unit by the review's probe, with package id `d181dfe3...a934`" is a build-log sentence, not system behavior. The package id also depends on the source identity, which the fixture does not state (the probe used `(a, u, git, 1)`). Drop the sentence, or state the source identity and make the id an expected value of the AC. | spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md:153-154 |
+| FND-009 | low | AC-11 says "Two `Call`s of `sq` whose arguments arrive in different orders", but `sq` has one parameter. The vector is `add` of RR-3, a separate unit. Write "Over FR-062 RR-3's unit, two `Call`s of `add` with arguments `x = 2, y = 5` and `y = 5, x = 2` are equal calls and return equal members". A probe gives both calls `Completed(7)` under one package id, with one record. | spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md:168 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 29f11fe9b: Over K, `inc` with `x = 3` returns one member, request index 1; `sq` with `x = 3` returns three members in ascending key order, request indices 0, 2 and 3, the `integer.mul` first and then the two `integer.add` sites at ordinals 1 and 2 of the shared `x + 1` node; the two member sets are disjoint and each key is a key of K's records. |
+| FND-002 | fixed | 29f11fe9b: Test layer: an integration test in `qsl-replay/tests`, like `admitted_context_facade.rs`. The facade calls under test reach only the `qsl_replay` root. The independent oracle (the checked graph's records and their owners, and the items `items_from_requirements` writes) is read through `qsl_replay::spine` and the checked package inside the test, as `admitted_context_facade.rs` reads the spine's graph; consumer code does not. |
+| FND-003 | fixed | 29f11fe9b: - **Pairing with items.** A member names its item by (`package_id`, request index). A consumer that writes items with `items_from_requirements` SHALL pair a member only with an item written from a compile of the same `package_id`, at the member's request index, whose `occurrence()` equals the member's key; for any other `package_id` the consumer SHALL refuse the pairing as `stale_dependency`/`content-mismatch` (QSpec FR-272) and SHALL NOT pair by occurrence key alone. |
+| FND-004 | still-open | The root re-export list names Call, CallArgument, CallOutcome, CallValue, RunRefusal, PackageId and SpineLimits (all real names in qsl-replay/src/spine/call.rs), but omits two carriers the entry takes: `ObjectEnvironment` (run's required `&qsl_semantics::model::object_environment::ObjectEnvironment` argument) and `SuppliedLimits` (`Call.supplied` is `qsl_semantics::value::supplied::SuppliedLimits`). Neither is re-exported at the qsl_replay root today (lib.rs re-exports only ObjectEnvironmentDocument/Ref/Refusal/WriteError and read_supplied_limits), so AC-9's 'through the qsl_replay root alone' cannot hold. Add both to the list (and `Cancel`/`CancelCause` if the root is meant to be self-sufficient), or say they are reached from their owning crates. |
+| FND-005 | fixed | 29f11fe9b: For the calls of AC-1, AC-3 and AC-5 over K, the returned `package_id` equals the `package_id` of `run` and of `compile_package` over the same source, models, libraries and limits, and the returned outcome equals `run`'s outcome. |
+| FND-006 | fixed | 29f11fe9b: Over K, each member's request index is the position of its key in the four-record package order, and the items `items_from_requirements` writes over K's records, at indices 0 to 3, have the members' keys; each of the four items is a member of exactly one of the calls of `inc` and `sq`. |

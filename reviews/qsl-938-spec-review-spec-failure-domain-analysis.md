@@ -3,7 +3,7 @@ id: SR-13676
 title: "failure-domain review of QSL-938 FR-395 owner rule and fault arm (PR #1147)"
 type: SpecReview
 analysis: failure-domain
-scope: "agent-ix/quire-spec-language@4e97aeaad6d855b125b7cbd4bbcc6870007a6db2; spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md, spec/test-cases/TC-1089-the-replay-facade-associates-the-selected-call-s-requirement-items.md, spec/functional/FR-062-implement-checked-family-contract.md, spec/functional/FR-075-compute-candidates-from-registered-backends.md, spec/functional/FR-100-run-a-named-function-through-the-spine.md, spec/spec.md"
+scope: "agent-ix/quire-spec-language@29f11fe9b396165cbfd7fe9c52f50aec5074cbdc; spec/functional/FR-395-associate-the-selected-call-s-requirement-items-through-the-replay-facade.md, spec/test-cases/TC-1089-the-replay-facade-associates-the-selected-call-s-requirement-items.md, spec/functional/FR-062-implement-checked-family-contract.md, spec/functional/FR-075-compute-candidates-from-registered-backends.md, spec/functional/FR-100-run-a-named-function-through-the-spine.md, spec/spec.md"
 review_set: subset
 relationships:
   - target: ix://agent-ix/quire-spec-language/FR-395
@@ -59,3 +59,17 @@ unverified with no stable invariant id. The rest of the failure domain is
 sound: outcome independence, arguments not filtering, one compile for
 key/index/package id, and no ownership question for clause bodies or
 called functions.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | high | The temporal-satisfaction fixture FR-062-AC-14 and TC-1089 step 6 name, "TC-590 step 4's `possible Q` claim over its `Config` domain package", is `possible Q using v over (c: Config::ConfigVersion) { c.versionNumber = newVersion }`. TC-590's Expected Results for step 4 say "the parameter claim refuses `missing-name` at the name; no checked claim for any refusal". So the unit has no checked package and no record, and the AC's "has no owner" cannot be observed. Use a claim that checks and writes a `temporal-satisfaction` record: TC-590 step 1's `possible P` (Expected: records `temporal-satisfaction`, `Unbounded`), or step 4's no-`over` `possible Anything using v { true }`. | spec/functional/FR-062-implement-checked-family-contract.md:369 |
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 29f11fe9b: **Owner.** The owner of a record is the qualified name of the `Value` function declaration whose body holds its claim site, as the checked graph holds that name. The checker SHALL record the owner as a single field of each `value-validity` record, from the function it was checking when it found the site, so a consumer never recovers it from the occurrence key. The checker SHALL record no owner for an `operation-contract` record (FR-104) and none for a `temporal-satisfaction` record: a temporal clause is not a function body, and a function it names through a predicate does not hold the clause's |
+| FND-002 | fixed | 29f11fe9b: - **Broken ownership is a fault.** The facade SHALL refuse with `Fault` (code `runtime_invariant`, stage `spine-run`, invariant `requirement-owner-known`, exit 30), and return no partial member list, when a `value-validity` record has no owner or an owner that names no function of the checked package. The owner is a single field, so two owners cannot arise and the facade never picks one. \| The association step, run directly on a checked package whose record map has a `value-validity` record with no owner, refuses `Fault` with stage `spine-run` and invariant `requirement-owner-known`; the same  |
+| FND-003 | fixed | 29f11fe9b: **Owner.** The owner of a record is the qualified name of the `Value` function declaration whose body holds its claim site, as the checked graph holds that name. The checker SHALL record the owner as a single field of each `value-validity` record, from the function it was checking when it found the site, so a consumer never recovers it from the occurrence key. The checker SHALL record no owner for an `operation-contract` record (FR-104) and none for a `temporal-satisfaction` record: a temporal clause is not a function body, and a function it names through a predicate does not hold the clause's |
