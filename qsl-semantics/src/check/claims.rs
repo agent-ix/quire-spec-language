@@ -202,9 +202,19 @@ pub struct ValueClaim {
     /// ADR-017 AR-4: the object types the claim's operands and guards read
     /// model members of.
     objects: BTreeSet<EffectiveId>,
+    /// FR-062 "Owner": the `Value` function declaration whose body holds the
+    /// site, set by `check` from the function it was checking.
+    owner: Option<String>,
 }
 
 impl ValueClaim {
+    /// The claim owned by the function `owner` (FR-062 "Owner").
+    #[must_use]
+    pub(crate) fn owned_by(mut self, owner: &str) -> Self {
+        self.owner = Some(owner.to_owned());
+        self
+    }
+
     /// The site the claim covers.
     pub fn site(&self) -> &ClaimSite {
         &self.site
@@ -271,9 +281,29 @@ pub struct RequirementRecord {
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
     references: ModelReferences,
+    /// FR-062 "Owner": the name of the `Value` function declaration whose
+    /// body holds the claim site; `None` for a record no function holds.
+    owner: Option<String>,
 }
 
 impl RequirementRecord {
+    /// The record with its owner replaced: the seam a test uses to build a
+    /// record map with a missing or unknown owner (FR-395-AC-10).
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn with_owner(mut self, owner: Option<String>) -> Self {
+        self.owner = owner;
+        self
+    }
+
+    /// FR-062 "Owner": the name of the `Value` function declaration whose
+    /// body holds this record's claim site, as the checked graph holds that
+    /// name. `None` for an `operation-contract` or `temporal-satisfaction`
+    /// record, which no function holds.
+    pub fn owner(&self) -> Option<&str> {
+        self.owner.as_deref()
+    }
+
     /// An unguarded record of an item whose result is a `value_type` typed
     /// at the type node `node`: a state clause's or an operation frame's
     /// `operation-contract` record (FR-104), which has no path condition.
@@ -289,6 +319,7 @@ impl RequirementRecord {
             conversion_context: None,
             path_condition: Vec::new(),
             references,
+            owner: None,
         }
     }
 
@@ -857,6 +888,7 @@ impl Classify<'_> {
             },
             domains,
             objects,
+            owner: None,
         })
     }
 }
@@ -941,6 +973,9 @@ pub(crate) fn key_claims(
     let mut records = BTreeMap::new();
     for claim in claims {
         let site = claim.site;
+        // FR-062 "Owner": a claim `check` found in a function body always
+        // carries that function; one without is an unkeyable requirement.
+        let owner = claim.owner.ok_or_else(unkeyable)?;
         let here = at.get(&site.location).map_or(&[][..], Vec::as_slice);
         let mut applications = here.iter().filter(|(key, _)| scalar(*key));
         let (Some((key, origin)), None) = (applications.next(), applications.next()) else {
@@ -996,6 +1031,7 @@ pub(crate) fn key_claims(
             conversion_context,
             path_condition,
             references: ModelReferences::new(claim.objects, [], None),
+            owner: Some(owner),
         };
         if records
             .insert(OccurrenceKey::new(wire(*key), origin.clone()), record)
