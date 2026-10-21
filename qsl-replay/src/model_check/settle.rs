@@ -201,24 +201,28 @@ pub fn settle_protocol_check(
         |closure| check_protocol_closure(certificate, closure, limits, cancel),
         replay,
     );
-    record.memory_bound =
-        match SubjectMemory::of(&certificate.subject.memory, certificate.max_store_buffer) {
-            SubjectMemory::Sc => None,
-            SubjectMemory::Tso(tso) => Some(StatedMemoryBound {
-                bound: MemoryBound {
-                    member: MemoryBoundMember::MaxStoreBuffer,
-                    value: tso.max_store_buffer(),
-                },
-                // Reached whenever a store was cut: by the engine's run,
-                // whatever it settled (a `refuted` run too), or by the
-                // closure checker's re-expansion.
-                reached: outcome.stats().bound_limited > 0
-                    || matches!(
-                        record.value,
-                        TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached { .. })
-                    ),
-            }),
-        };
+    let bound = match SubjectMemory::of(&certificate.subject.memory, certificate.max_store_buffer) {
+        SubjectMemory::Sc => None,
+        SubjectMemory::Tso(tso) => Some(MemoryBound {
+            member: MemoryBoundMember::MaxStoreBuffer,
+            value: tso.max_store_buffer(),
+        }),
+        SubjectMemory::Ra(ra) => Some(MemoryBound {
+            member: MemoryBoundMember::MaxMessages,
+            value: ra.max_messages(),
+        }),
+    };
+    record.memory_bound = bound.map(|bound| StatedMemoryBound {
+        bound,
+        // Reached whenever a store was cut: by the engine's run, whatever
+        // it settled (a `refuted` run too), or by the closure checker's
+        // re-expansion.
+        reached: outcome.stats().bound_limited > 0
+            || matches!(
+                record.value,
+                TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached { .. })
+            ),
+    });
     // ADR-027 AE-4: every verdict over an `on each` protocol states the
     // instance bound it ran under and whether a state of the run reached it,
     // by the engine's run, whatever it settled, or by the closure checker's

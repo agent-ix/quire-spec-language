@@ -495,7 +495,9 @@ pub struct ProtocolCheckRequest<'a> {
 /// behaviour of its protocol subject with [`check_model`]'s engine, over
 /// the subject's protocol system under its resolved memory models
 /// (FR-219): `ProtocolSystem<Sc>`, or `ProtocolSystem<Tso>` bounded by
-/// `max_store_buffer` when a `parallel` resolves to `tso` (FR-221, FR-225).
+/// `max_store_buffer` when a `parallel` resolves to `tso` (FR-221, FR-225),
+/// or `ProtocolSystem<Ra>` bounded by `max_messages` when one resolves to
+/// `ra` (FR-222).
 /// The requires-bound pre-check reads the model's roots and the protocol's
 /// before any state is explored, and EN-1's access-shape pre-check settles
 /// `WeakAccessShape` before any state is explored (FR-220). A run that left
@@ -598,6 +600,19 @@ pub fn check_protocol(
                 value: tso.max_store_buffer(),
             };
             ProtocolSystem::new(model, subject, tso).map(|system| {
+                protocol_run.decide(
+                    &system.with_max_live_instances(live_instances),
+                    automaton,
+                    Some(bound),
+                )
+            })
+        }
+        SubjectMemory::Ra(ra) => {
+            let bound = MemoryBound {
+                member: MemoryBoundMember::MaxMessages,
+                value: ra.max_messages(),
+            };
+            ProtocolSystem::new(model, subject, ra).map(|system| {
                 protocol_run.decide(
                     &system.with_max_live_instances(live_instances),
                     automaton,

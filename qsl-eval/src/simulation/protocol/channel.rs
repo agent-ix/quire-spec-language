@@ -165,6 +165,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 payload: payload.clone(),
                 bytes: jcs(&enc)?,
                 enc,
+                carried: self.memory.send(&state.memory, path),
             };
             let mut queue = instance.queues.get(&key).cloned().unwrap_or_default();
             let fifo = key.fifo.is_some();
@@ -294,6 +295,9 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     enc: enc.clone(),
                 },
             );
+            if let Some(carried) = &entry.carried {
+                next.memory = self.memory.receive(&next.memory, path, carried);
+            }
             let transition =
                 ProtocolTransition::record(StepKind::Receive, path.clone(), text.clone(), enc)
                     .removing(QueueEvent {
