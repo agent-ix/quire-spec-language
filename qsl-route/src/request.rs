@@ -29,9 +29,10 @@
 //! follow-up as a new request of one item, carrying the original item's
 //! occurrence key: [`RequirementItem::bounded`] substitutes the caller's
 //! bounds by the same rule as [`RequestWriter::bounded_item`], and the
-//! follow-up's [`RequirementItem::proof_bounds`] (and, for a temporal item,
-//! [`RequirementItem::temporal_proof_bounds`]) carry them with QSL's domain
-//! kinds.
+//! follow-up's [`RequirementItem::proof_bounds`] carries them with QSL's
+//! domain kinds. A temporal item's subject proof bounds are a separate,
+//! caller-supplied substitution ([`RequirementItem::with_subject_proof_bounds`],
+//! read by [`RequirementItem::temporal_proof_bounds`]).
 //!
 //! **Refusals.** Before any item is written, the writer refuses a bound for
 //! a key that names no unbounded domain of the item, a bound on a domain no
@@ -180,6 +181,16 @@ pub enum BoundRefusal {
     /// The item is bounded, so no bounded request exists for it.
     #[error("the item has no unbounded domain")]
     NoUnboundedDomain,
+    /// A subject proof bound was supplied for an item that is not
+    /// `temporal-satisfaction`.
+    #[error("the item is not a temporal item, so it has no subject")]
+    NotTemporal,
+    /// Two subject proof bounds name one domain.
+    #[error("two subject proof bounds for domain {domain}")]
+    DuplicateSubjectDomain {
+        /// The repeated domain.
+        domain: DomainKey,
+    },
 }
 
 impl CatalogCoded for BoundRefusal {
@@ -190,6 +201,8 @@ impl CatalogCoded for BoundRefusal {
             | Self::UnboundableDomain { .. }
             | Self::KindMismatch { .. }
             | Self::MissingDomain { .. }
+            | Self::NotTemporal
+            | Self::DuplicateSubjectDomain { .. }
             | Self::NoUnboundedDomain => CatalogCode::new("invalid_runtime_input", "invalid-value"),
         }
     }
@@ -349,6 +362,7 @@ pub struct RequirementItem {
     extent: ExtentClassification,
     unbounded: Vec<(DomainKey, DomainKind)>,
     proof_bounds: Vec<ProofBound>,
+    subject_proof_bounds: Vec<ProofBound>,
     result_bound: WireNodeId,
     conversion_context: Option<OccurrenceKey>,
     path_condition: Vec<PathGuard>,
@@ -404,22 +418,45 @@ impl RequirementItem {
     }
 
     /// The temporal subject's proof bounds for this occurrence (QSpec FR-331
-    /// `temporal.subject.proof_bounds`, FR-361): `None` for an item that is
-    /// not `temporal-satisfaction`; for a temporal item, the same
-    /// substitution as [`RequirementItem::proof_bounds`], since the request
-    /// substitutes one set of proof bounds per item. `Some(&[])` is a
-    /// temporal item with no substitution.
-    ///
-    /// Interim (STD-213): QSpec FR-331 also shows a temporal subject bounded
-    /// apart from its extent, an item whose extent stays `unbounded` while
-    /// its subject carries a population bound, and FR-368 gives a subject
-    /// only to an item over a model subject. QSL defines neither a
-    /// subject-only substitution nor which temporal record is over a model
-    /// subject, so this reads the extent substitution for every
-    /// `temporal-satisfaction` item until STD-213 settles both.
+    /// `temporal.subject.proof_bounds`): `None` for an item that is not
+    /// `temporal-satisfaction`; for a temporal item, the substitutions
+    /// [`RequirementItem::with_subject_proof_bounds`] supplied, in domain-key
+    /// order. They are independent of [`RequirementItem::proof_bounds`] (the
+    /// extent's): neither moves into the other. `Some(&[])` is a temporal
+    /// item with no subject substitution.
     pub fn temporal_proof_bounds(&self) -> Option<&[ProofBound]> {
         matches!(self.kind, Capability::TemporalSatisfaction)
-            .then_some(self.proof_bounds.as_slice())
+            .then_some(self.subject_proof_bounds.as_slice())
+    }
+
+    /// This item with `bounds` as its temporal subject's proof bounds
+    /// (QSpec FR-331: the subject-only substitution, supplied by the caller
+    /// and independent of the extent; ADR-014 B-4). Each carries the kind
+    /// its [`ProofBound`] was built with; the result holds them in
+    /// domain-key order. The index, occurrence, extent and extent bounds
+    /// are unchanged. Refuses an item that is not `temporal-satisfaction`
+    /// and two bounds for one domain.
+    pub fn with_subject_proof_bounds(
+        &self,
+        bounds: impl IntoIterator<Item = ProofBound>,
+    ) -> Result<Self, BoundRefusal> {
+        if !matches!(self.kind, Capability::TemporalSatisfaction) {
+            return Err(BoundRefusal::NotTemporal);
+        }
+        let mut subject_proof_bounds: Vec<ProofBound> = bounds.into_iter().collect();
+        subject_proof_bounds.sort_by(|a, b| a.domain().cmp(b.domain()));
+        if let Some(pair) = subject_proof_bounds
+            .windows(2)
+            .find(|pair| pair[0].domain() == pair[1].domain())
+        {
+            return Err(BoundRefusal::DuplicateSubjectDomain {
+                domain: pair[0].domain().clone(),
+            });
+        }
+        Ok(Self {
+            subject_proof_bounds,
+            ..self.clone()
+        })
     }
 
     /// The bounded follow-up of this item (ADR-014 §4 "Bounded request"):
@@ -509,6 +546,7 @@ pub fn items_from_requirements(
                 extent,
                 unbounded,
                 proof_bounds: Vec::new(),
+                subject_proof_bounds: Vec::new(),
                 result_bound: record.result_bound().node(),
                 conversion_context: record.conversion_context().cloned(),
                 path_condition: record.path_condition().to_vec(),
