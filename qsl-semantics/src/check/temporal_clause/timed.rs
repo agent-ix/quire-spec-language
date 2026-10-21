@@ -32,7 +32,7 @@ use super::{
     in_safety_fragment, is_temporal_node, located, Activation, CheckedFormula, CheckedInterval,
     FormulaNode, TemporalDeclarations, UnaryTemporal,
 };
-use crate::check::probabilistic::{exact_value, zero_denominator, ExactFault};
+use crate::check::probabilistic::{exact_value, ExactFault};
 use crate::check::refusal::{CheckRefusal, TemporalCause};
 use crate::check::time_units::TimeScale;
 
@@ -168,9 +168,9 @@ impl TimedReader<'_> {
     fn bound(&self, quantity: &QuantityForm) -> Result<Rational, IntervalFailure> {
         let ceiling = self.declarations.timed.rational_bits;
         let magnitude = exact_value(&quantity.magnitude, ceiling).map_err(|fault| match fault {
-            ExactFault::ZeroDenominator => IntervalFailure::Stop(StageFailure::Refused(
-                zero_denominator(quantity.magnitude.span),
-            )),
+            ExactFault::ZeroDenominator => IntervalFailure::Cause(TemporalCause::ZeroDenominator {
+                span: quantity.magnitude.span,
+            }),
             ExactFault::AboveCeiling { bits } => IntervalFailure::Stop(located(
                 LimitExceeded::new(Setting::S3RationalBits, ceiling, u128::from(bits)),
                 self.declarations,

@@ -140,10 +140,8 @@ fn only_interval(clause: &CheckedTemporalClause) -> &TimedInterval {
 /// `always holds(I)` a timed invariant and an `on origin` interval-only
 /// formula a bounded window whose horizon is the sum of its upper bounds.
 /// `always eventually[0 ms, 5 ms] holds(P)` is in ADR-014 A-4's safety
-/// fragment as ADR-018 IV-4 states it, so FR-234's rule order classifies
-/// it `TimedSafety`; FR-234-AC-1 lists it as `TimedLiveness`, which the
-/// rule does not give (remainder). An unbounded `eventually` over an
-/// interval operator is outside the fragment: `TimedLiveness`.
+/// fragment as ADR-018 IV-4 states it: `TimedSafety`. An unbounded
+/// `eventually` is outside the fragment: `TimedLiveness`.
 #[trace("TC-689", "FR-234")]
 #[test]
 fn timed_clauses_classify_in_fr234_order() {
@@ -169,8 +167,17 @@ fn timed_clauses_classify_in_fr234_order() {
             TimedPropertyForm::TimedSafety,
         ),
         (
+            "always eventually holds(c.versionNumber = 0)",
+            TimedPropertyForm::TimedLiveness,
+        ),
+        (
             "eventually always[0 ms, 5 ms] holds(c.healthy)",
             TimedPropertyForm::TimedLiveness,
+        ),
+        // A formula with no temporal operator: vacuously interval-only.
+        (
+            "holds(c.healthy)",
+            TimedPropertyForm::BoundedWindow { horizon: whole(0) },
         ),
     ] {
         let (_, clause) = checked(body);
@@ -382,6 +389,26 @@ fn timed_bounds_are_time_quantities_of_the_unit_graph() {
         TemporalCause::OpenInterval {
             span: first(&text, "[3, *]")
         }
+    );
+    // A zero denominator is a temporal refusal at the bound, and the
+    // clause's earliest refusal still wins over it.
+    let (text, cause) = refused("eventually[0 ms, rational(1, 0) ms] holds(c.healthy)");
+    assert_eq!(
+        cause,
+        TemporalCause::ZeroDenominator {
+            span: first(&text, "rational(1, 0)")
+        }
+    );
+    assert_eq!(
+        (cause.code(), cause.tag()),
+        (Code::UndefinedExpression, "unproved-nonzero")
+    );
+    let (text, cause) =
+        refused("always[3 ms, 2 ms] eventually[0 ms, rational(1, 0) ms] holds(c.healthy)");
+    assert!(
+        matches!(&cause, TemporalCause::InvalidTimedInterval { span, .. }
+            if *span == first(&text, "[3 ms, 2 ms]")),
+        "{cause:?}"
     );
 
     for (body, unit, expected) in [

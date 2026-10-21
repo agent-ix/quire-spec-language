@@ -642,6 +642,10 @@ pub(crate) enum IntervalReading<'r> {
     },
     /// Timed intervals in the binding's unit.
     Timed(&'r timed::TimedReader<'r>),
+    /// The timed profile in a clause that has no timed reading, a hyper
+    /// clause: a step interval refuses as under [`Self::Timed`] and a timed
+    /// interval is not checked.
+    TimedUnread,
 }
 
 /// The checked operators of `formula`, connectives included, in arena
@@ -687,11 +691,19 @@ pub(crate) fn checked_operators(
                     Err(timed::IntervalFailure::Stop(failure)) => return Err(failure),
                 }
             }
-            (Some(OperatorInterval::Timed(timed)), true, IntervalReading::Steps { .. }) => {
+            (
+                Some(OperatorInterval::Timed(timed)),
+                true,
+                IntervalReading::Steps { .. } | IntervalReading::TimedUnread,
+            ) => {
                 refusals.push(TemporalCause::TimedIntervalNotChecked { span: timed.span });
                 None
             }
-            (Some(OperatorInterval::Steps(written)), true, IntervalReading::Timed(_)) => {
+            (
+                Some(OperatorInterval::Steps(written)),
+                true,
+                IntervalReading::Timed(_) | IntervalReading::TimedUnread,
+            ) => {
                 // ADR-014 TR-3 refuses `[a, *]` where every interval needs a
                 // finite upper bound; a closed step interval's bounds have no
                 // unit (FR-233 "Intervals").

@@ -1082,6 +1082,11 @@ pub enum TemporalCause {
         /// The bound's span.
         span: Span,
     },
+    /// An interval bound written `rational(n, 0)`. Located at the bound.
+    ZeroDenominator {
+        /// The bound's span.
+        span: Span,
+    },
     /// FR-230 "The time dimension and its units", read by FR-233 for an
     /// interval bound: the bound's unit is not a time unit of the checked
     /// package's unit graph.
@@ -1157,6 +1162,7 @@ impl TemporalCause {
             | Self::InvalidTimedInterval { span, .. }
             | Self::ModelTimeOnUntimedModel { span, .. }
             | Self::UnitlessTimedBound { span }
+            | Self::ZeroDenominator { span }
             | Self::TimeQuantity { span, .. }
             | Self::TimedProfileWithoutModelTime { span, .. }
             | Self::TimedTraceSubject { span } => *span,
@@ -1179,6 +1185,7 @@ impl TemporalCause {
                 Code::InvalidTimedModel
             }
             Self::UnitlessTimedBound { .. } => Code::IllTyped,
+            Self::ZeroDenominator { .. } => Code::UndefinedExpression,
             Self::TimeQuantity { cause, .. } => match &**cause {
                 TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
                     Code::MissingDeclaration
@@ -1215,6 +1222,7 @@ impl TemporalCause {
             Self::InvalidTimedInterval { .. } => "invalid-interval",
             Self::ModelTimeOnUntimedModel { .. } => "model-time-on-untimed-model",
             Self::UnitlessTimedBound { .. } => "type-mismatch",
+            Self::ZeroDenominator { .. } => "unproved-nonzero",
             Self::TimeQuantity { cause, .. } => match &**cause {
                 TimeUnitCause::NoTimeDimension | TimeUnitCause::UnknownUnit { .. } => {
                     "missing-name"

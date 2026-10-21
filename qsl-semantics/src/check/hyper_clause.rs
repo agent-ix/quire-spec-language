@@ -923,11 +923,12 @@ fn check_behaviours(
     // them. A clause under another profile records its profile and no form,
     // so no bounded-profile rule applies to it here.
     let mut temporal_causes: Vec<TemporalCause> = Vec::new();
-    let (operators, _) = checked_operators(
-        &form.body,
-        &IntervalReading::Steps { bounded: false },
-        &mut temporal_causes,
-    )?;
+    let reading = if profile == TemporalProfile::Timed {
+        IntervalReading::TimedUnread
+    } else {
+        IntervalReading::Steps { bounded: false }
+    };
+    let (operators, _) = checked_operators(&form.body, &reading, &mut temporal_causes)?;
     found.extend(temporal_causes.into_iter().map(Found::Temporal));
     let atom_roots = || -> BTreeMap<&str, Root> {
         parameters

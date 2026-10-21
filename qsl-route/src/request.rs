@@ -527,10 +527,15 @@ fn candidates_of(
     registry: &Registry,
     named: Option<&BackendId>,
 ) -> CandidateOutcome {
-    if requirements.unsupported().is_some() {
-        return CandidateOutcome::Candidates(CandidateSet::none(requirements.kind(), named));
+    let outcome =
+        registry.candidates_for_fairness(requirements.kind(), named, requirements.fairness());
+    match outcome {
+        // An unknown named backend stays `UnknownBackend` (FR-075-AC-3).
+        CandidateOutcome::Candidates(_) if requirements.unsupported().is_some() => {
+            CandidateOutcome::Candidates(CandidateSet::none(requirements.kind(), named))
+        }
+        other => other,
     }
-    registry.candidates_for_fairness(requirements.kind(), named, requirements.fairness())
 }
 
 #[cfg(test)]
@@ -949,5 +954,11 @@ mod tests {
             panic!("a candidate outcome");
         };
         assert_eq!(some.candidates(), [Candidate::new(BackendId::new("zones"))]);
+
+        let missing = BackendId::new("missing");
+        assert_eq!(
+            candidates_of(&punctual, &registry, Some(&missing)),
+            CandidateOutcome::UnknownBackend(missing)
+        );
     }
 }

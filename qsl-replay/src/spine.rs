@@ -1059,6 +1059,10 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                      probabilistic claim has a model subject, and observed statistics of a trace \
                      are window aggregates (FR-194)"
                 ),
+                ProbabilisticCause::TimedEventProfile { claim, .. } => format!(
+                    "{message}: claim `{claim}` is checked under the timed profile, which has no \
+                     probabilistic event reading"
+                ),
                 ProbabilisticCause::UnresolvedProfile { claim, alias, .. } => {
                     format!("{message}: claim `{claim}` uses `{alias}`, which names no profile")
                 }
@@ -1176,6 +1180,9 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 }
                 TemporalCause::UnitlessTimedBound { .. } => {
                     format!("{message}: a `model-time` interval bound needs a time unit")
+                }
+                TemporalCause::ZeroDenominator { .. } => {
+                    format!("{message}: an interval bound has a zero denominator")
                 }
                 TemporalCause::TimeQuantity { cause, .. } => match &**cause {
                     TimeUnitCause::NoTimeDimension => {
