@@ -225,14 +225,6 @@ impl<'a> Window<'a> {
     fn reaches(self, offset: &Rational) -> bool {
         self.0.is_none_or(|interval| interval.reaches(offset))
     }
-
-    /// Whether `offset` lies a full `period` past the window's lower end,
-    /// so a periodic scan has met every position class of the loop.
-    fn covers_a_period(self, offset: &Rational, period: &Rational) -> bool {
-        let lower = self.0.map(TimedInterval::lower);
-        let end = lower.map_or_else(|| period.clone(), |lower| lower.add(period));
-        offset >= &end
-    }
 }
 
 /// The repetition of a timed lasso's last unrolled loop copy (FR-231
@@ -343,6 +335,7 @@ impl Evaluator<'_> {
             .ok_or_else(|| broken("loop-within-trace"))?;
         let mut shift = Integer::one();
         let mut copy = first;
+        let mut in_window = 0_usize;
         loop {
             self.charge()?;
             let stamp = self
@@ -359,8 +352,16 @@ impl Evaluator<'_> {
             if let Some(guard) = guard {
                 held = held.min(self.value(guard, copy)?.flip(dual));
             }
-            if acc == Tri::True || held == Tri::False || window.covers_a_period(&offset, tail.delay)
-            {
+            // Every position class of the loop has been read inside the
+            // window once `loop_len` consecutive positions were: positions
+            // that share a stamp are separate classes, so a stamp-based test
+            // would stop early.
+            in_window = if window.contains(&offset) {
+                in_window + 1
+            } else {
+                0
+            };
+            if acc == Tri::True || held == Tri::False || in_window >= tail.loop_len {
                 return Ok(acc.flip(dual));
             }
             copy += 1;
@@ -623,10 +624,20 @@ fn evaluate<L: TemporalLetters>(
 }
 
 /// The stamps of `trace`'s lasso with its loop repeated until every node's
-/// value is the same on every later repetition (ADR-026 CT-3): one
-/// repetition for each temporal node, for the window of each finite bound,
-/// and two more. Each repetition adds the loop's total delay to the stamps
-/// of the loop's positions.
+/// value is the same on every later repetition (ADR-026 CT-3): the loop
+/// repeats `floor(sum of finite upper bounds / D) + #temporal nodes + 3`
+/// times, each repetition adding the loop's total delay `D` to the stamps of
+/// the loop's positions.
+///
+/// Why that suffices: a future node reads its operands at later positions
+/// and is periodic wherever they are, so it moves the point from which a
+/// value repeats by no repetition. A past node with window upper bound `b`
+/// reads back at most `b` ms, that is `ceil(b / D)` repetitions, and one
+/// more for the repetition it sits in, so it moves the point from which its
+/// value repeats by at most `ceil(b / D) + 1` repetitions past its operands'.
+/// Along any nesting chain these add to at most `sum(b) / D + #temporal`
+/// plus one for the prefix, which `floor(..) + #temporal + 3` covers with
+/// two to spare, so every node, the root included, repeats in the last copy.
 fn unrolled(
     trace: &TimedTrace,
     looping: &TimedLoop,

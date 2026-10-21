@@ -124,7 +124,7 @@ pub enum TemporalRefusal {
     },
     /// A timed lasso whose loop has no positive total delay: the behaviour
     /// would not be time-divergent (ADR-026 CT-2).
-    #[error("a timed lasso's loop has a positive total delay")]
+    #[error("a timed lasso's loop has no positive total delay")]
     NonPositiveLoopDelay,
     /// A timed lasso whose loop re-enters its start before the last
     /// represented position's stamp.

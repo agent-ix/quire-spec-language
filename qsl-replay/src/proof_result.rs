@@ -366,6 +366,12 @@ pub enum UnavailabilityCause {
     /// FR-235 (ADR-026 DF-5, TV-1): a timed invariant, safety or liveness
     /// claim holds a punctual interval, so the request writer routed it to
     /// no engine. Wire cause `punctual-interval`.
+    ///
+    /// Unwired: QSpec FR-331 spells the wire cause `punctual-interval{locus}`
+    /// with a checked-package `{node, occurrence}` locus, and S3 holds only
+    /// the interval's source span. The outcome wire therefore carries the
+    /// cause kind alone and no settlement path produces it yet; the locus is
+    /// remaining work on QSL-580.
     PunctualInterval {
         /// The punctual interval's span.
         span: qsl_foundation::Span,
@@ -1420,10 +1426,11 @@ mod tests {
             None
         );
     }
-    /// FR-235-AC-4, V-8: FR-234-AC-3's punctual claim, disposed `Unsupported`
-    /// by the request writer with no candidate, settles `unsupported`,
-    /// `punctual-interval`, basis `unavailable`, naming the interval.
-    #[trace("TC-690", "FR-235-AC-4")]
+    /// FR-235 V-8, cause only: an item the request writer disposed
+    /// `PunctualInterval` maps to the `punctual-interval` cause with basis
+    /// `unavailable` and category `unsupported`. No settlement path exists
+    /// yet, so this backs no acceptance criterion.
+    #[trace("TC-690", "FR-235")]
     #[test]
     fn a_punctual_item_settles_unsupported_naming_the_interval() {
         let span = qsl_foundation::Span { start: 4, end: 16 };

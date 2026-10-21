@@ -13,7 +13,7 @@
 use ix_trace_rs::trace;
 use qsl_eval::temporal::{
     evaluate, evaluate_timed_at, AtomReading, LetterStop, PositionRefusal, TemporalLetters,
-    TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimedTrace,
+    TemporalOutcome, TemporalPosition, TemporalRefusal, TemporalTrace, TimedTrace, UndefinedCause,
 };
 use qsl_foundation::SourceIdentity;
 use qsl_semantics::check::{
@@ -23,7 +23,7 @@ use qsl_semantics::check::{
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, package_input};
 use qsl_semantics::model::key::hex;
-use quire_exact::{Integer, Meter, Rational};
+use quire_exact::{Integer, Meter, Rational, ScalarLimits, Undefined};
 
 use crate::model_simulation::{counters_document, increment, PACKAGE};
 
@@ -92,6 +92,8 @@ fn timed(body: &str) -> Fixture {
 struct Levels<'a> {
     fixture: &'a Fixture,
     levels: Vec<i64>,
+    /// The position whose atoms are undefined (division by zero), if any.
+    undefined_at: Option<usize>,
 }
 
 impl TemporalLetters for Levels<'_> {
@@ -113,6 +115,11 @@ impl TemporalLetters for Levels<'_> {
             .parse()
             .expect("an integer level");
         let at = usize::try_from(position.index()).expect("a small position");
+        if self.undefined_at == Some(at) {
+            return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
+                Undefined::DivisionByZero,
+            )));
+        }
         Ok(if self.levels[at] == level {
             AtomReading::True
         } else {
@@ -141,6 +148,7 @@ fn at(body: &str, stamps: &[u64], levels: &[i64], position: u64) -> TemporalOutc
     let mut letters = Levels {
         fixture: &fixture,
         levels: levels.to_vec(),
+        undefined_at: None,
     };
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     evaluate_timed_at(
@@ -273,6 +281,7 @@ fn timed_traces_and_timed_clauses_are_read_by_the_timed_evaluator_only() {
     let mut letters = Levels {
         fixture: &fixture,
         levels: vec![0],
+        undefined_at: None,
     };
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     assert_eq!(
@@ -321,6 +330,7 @@ fn lasso_at(
     let mut letters = Levels {
         fixture: &fixture,
         levels: levels.to_vec(),
+        undefined_at: None,
     };
     let mut meter = Meter::new(SCALAR_LIMITS_UNLIMITED);
     evaluate_timed_at(
@@ -422,4 +432,142 @@ fn a_timed_lasso_refuses_a_loop_that_is_not_time_divergent() {
     assert!(TimedTrace::lasso(stamps(), 0, ms(3))
         .expect("a loop that re-enters at the last stamp")
         .is_lasso());
+}
+
+/// One run of `body` on a timed lasso, with the stamps in `ms`, a loop
+/// delay of `delay`, the work budget `limits` and an optional undefined atom.
+fn lasso_run(
+    body: &str,
+    (stamps, levels): (&[u64], &[i64]),
+    (loop_start, delay): (u64, Rational),
+    position: u64,
+    limits: ScalarLimits,
+    undefined_at: Option<usize>,
+) -> Result<TemporalOutcome, TemporalRefusal> {
+    let fixture = timed(body);
+    let trace = TimedTrace::lasso(stamps.iter().copied().map(ms).collect(), loop_start, delay)
+        .expect("a timed lasso");
+    let mut letters = Levels {
+        fixture: &fixture,
+        levels: levels.to_vec(),
+        undefined_at,
+    };
+    let mut meter = Meter::new(limits);
+    evaluate_timed_at(
+        &fixture.clause,
+        &trace,
+        TemporalPosition::new(position),
+        &mut letters,
+        &mut meter,
+    )
+}
+
+/// SR-12265 FND-001: positions of one loop that share a stamp are separate
+/// classes of the tail scan. On stamps `0, 0, 0` (levels `0, 2, 0`) looping
+/// to 0 with delay 1 ms, the level occurs at every repetition, so
+/// `always eventually` of it holds at 0, `eventually` of it holds at 5, and
+/// `eventually (0 ms, 1 ms]` of it holds at 0 (the open lower end drops
+/// offset 0 and keeps the next repetition).
+#[trace("TC-686", "FR-231")]
+#[test]
+fn a_tail_scan_reads_every_position_that_shares_a_stamp() {
+    let run = |body, position| lasso_at(body, &[0, 0, 0], &[0, 2, 0], 0, 1, position);
+    assert_eq!(
+        run("always eventually holds(c.level = 2)", 0),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        run("eventually holds(c.level = 2)", 5),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        run("eventually(0 ms, 1 ms] holds(c.level = 2)", 0),
+        TemporalOutcome::Holds
+    );
+}
+
+/// A bounded `until` whose witness lies past the represented trace reads
+/// its witness and its guard through the tail: on stamps `0, 1, 2` (levels
+/// `2, 0, 0`) looping with delay 3, the level is at 0, 3, 6, ... ms, so from
+/// position 1 its first occurrence is 2 ms ahead, past the last position.
+#[trace("TC-686", "FR-231")]
+#[test]
+fn a_bounded_until_reads_its_window_in_the_tail() {
+    let until = |body| lasso_at(body, &[0, 1, 2], &[2, 0, 0], 0, 3, 1);
+    assert_eq!(
+        until("holds(c.level = 0) until[2 ms, 2 ms] holds(c.level = 2)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        until("holds(c.level = 0) until[3 ms, 3 ms] holds(c.level = 2)"),
+        violated(1)
+    );
+}
+
+/// A work budget that runs out while a lasso is unrolled or scanned is
+/// `Incomplete`, not a truth value.
+#[trace("TC-686", "FR-231")]
+#[test]
+fn a_timed_lasso_stops_when_the_meter_runs_out() {
+    let limits = ScalarLimits {
+        work_units: 3,
+        ..SCALAR_LIMITS_UNLIMITED
+    };
+    let outcome = lasso_run(
+        "always eventually holds(c.level = 2)",
+        (&[0, 1], &[0, 2]),
+        (0, ms(2)),
+        0,
+        limits,
+        None,
+    )
+    .expect("the lasso is readable");
+    assert!(
+        matches!(outcome, TemporalOutcome::Incomplete(_)),
+        "{outcome:?}"
+    );
+}
+
+/// A loop delay so small that the unrolling count overflows `u64` refuses
+/// `TraceTooLong` instead of allocating.
+#[trace("TC-686", "FR-231")]
+#[test]
+fn a_timed_lasso_refuses_an_unrolling_that_overflows() {
+    let tiny = Rational::new(
+        Integer::one(),
+        Integer::from(10_u64).pow(&Integer::from(30_u64)),
+    )
+    .expect("a non-zero denominator");
+    assert_eq!(
+        lasso_run(
+            "eventually[0 ms, 3 ms] holds(c.level = 2)",
+            (&[0], &[0]),
+            (0, tiny),
+            0,
+            SCALAR_LIMITS_UNLIMITED,
+            None,
+        ),
+        Err(TemporalRefusal::TraceTooLong)
+    );
+}
+
+/// An atom undefined at a represented position leaves that position and
+/// every later one, repetitions included, without a value: the claim is
+/// `Undefined` there, not decided by the repeated earlier positions.
+#[trace("TC-686", "FR-231")]
+#[test]
+fn an_undefined_atom_on_a_timed_lasso_is_reported_at_its_position() {
+    let outcome = lasso_run(
+        "always eventually holds(c.level = 2)",
+        (&[0, 1, 2], &[0, 2, 0]),
+        (0, ms(3)),
+        0,
+        SCALAR_LIMITS_UNLIMITED,
+        Some(1),
+    )
+    .expect("the lasso is readable");
+    assert!(
+        matches!(outcome, TemporalOutcome::Undefined(ref undefined) if undefined.at == TemporalPosition::new(1)),
+        "{outcome:?}"
+    );
 }
