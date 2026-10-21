@@ -49,8 +49,10 @@ Not mergeable on FND-001, the same defect as SR-12288 FND-001, seen from the tes
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewed at 84af1b5a0 (fix commit f37c88d1b). These rows replace the coder's proposed outcomes; the reviewer checked each against the code. Re-run for this round: `admitted_composite_facade` (4 pass), `admitted_composite_root_only` (2 pass), clippy for qsl-replay with all targets and features (clean), and `quire validate` on FR-396 and TC-1090 (exit 0). Mutation probe on `a_consumer_seals_a_union_and_admits_a_value_of_each_member`: (A) with the seal loop removed, the test fails at the first `union()`, line 199. (B) With another union's member id (`Wrap.Plain`) used for `Shape.Empty`, it fails at line 201. Both mutants were reverted.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: root-only test seals the union and admits a value of each member using the facade variants | f37c88d1b |
-| FND-002 | fixed: literal payload assertions added for Shape and Twin | f37c88d1b |
-| FND-003 | fixed: Nest union with union payloads pinned to key(), parameter signature compared | f37c88d1b |
+| FND-001 | fixed | f37c88d1b: the new FR-396-AC-7 test seals the union with the facade bindings and constructs and admits a value of each member through `TypeEnvironment::union(key(), variant(), …)`. It can now fail: mutants A (no seal) and B (a foreign member id) both fail it. |
+| FND-002 | fixed | f37c88d1b: literal payload assertions `[[], [Integer]]` for `Shape` and `Twin`, alongside the existing literal record-position asserts. |
+| FND-003 | fixed | f37c88d1b: `union Nest { Flat, Deep(Shape, Holder) }` pins union positions to `Composite(key())`, `!= node()`, and a checked parameter of `Shape` type is compared too. The root-only `Wrap { Plain, Boxed(Shape) }` admits a nested union value. |

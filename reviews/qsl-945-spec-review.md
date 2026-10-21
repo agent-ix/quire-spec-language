@@ -39,10 +39,18 @@ Ticket: QSL-945. Spec review of the in-place FR-396 amendment (title, Descriptio
 
 FND-001 and FND-002 are mediums and do not block on their own. They are the spec side of SR-12288 FND-001/FND-002 and should be fixed in the same round. The AC-2/AC-3 amendments and the removal of union `WrongKind` are consistent with the code and the tests.
 
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | low | In the FR-396 Description, the sentence after the new union clause begins "That key is not the id of the declaration's `composite_type` node". It now follows "…are that node id", so "That key" reads as the union's node id, which contradicts the clause just before it. Say "The kernel key is not…". This is wording only and does not block. | spec/functional/FR-396-*.md:32 |
+
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewed at 84af1b5a0 (fix commit f37c88d1b). These rows replace the coder's proposed outcomes; the reviewer checked each against the code. Re-run for this round: `admitted_composite_facade` (4 pass), `admitted_composite_root_only` (2 pass), clippy for qsl-replay with all targets and features (clean), and `quire validate` on FR-396 and TC-1090 (exit 0). Mutation probe on `a_consumer_seals_a_union_and_admits_a_value_of_each_member`: (A) with the seal loop removed, the test fails at the first `union()`, line 199. (B) With another union's member id (`Wrap.Plain`) used for `Shape.Empty`, it fails at line 201. Both mutants were reverted.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: FR-396 Description and Behavior state node() is the settled key | f37c88d1b |
-| FND-002 | fixed: AC-7 requires sealing and admitting a value of each member | f37c88d1b |
-| FND-003 | fixed: AC-6 split into AC-6 to AC-9 | f37c88d1b |
+| FND-001 | fixed | f37c88d1b: the FR-396 Description and Outputs now say a union is settled under its `composite_type` node id, which is `union_key(key)`, the `UnionMember` declaration and the seal `final_key`, and that an unsealed union admits no value. A new wording low on the next sentence is FND-004 below. |
+| FND-002 | fixed | f37c88d1b: the new FR-396-AC-7 requires sealing with `AdmittedUnionMember::member` and admitting a value of every member, including a nested union, without constructing a key. TC-1090 step 7 matches it. |
+| FND-003 | fixed | f37c88d1b: AC-6 is split into AC-6 (members), AC-7 (root-only seal and admit), AC-8 (distinct and stable) and AC-9 (witness). The tests' trace tags were moved to match. |

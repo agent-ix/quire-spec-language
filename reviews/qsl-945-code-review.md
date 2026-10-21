@@ -55,9 +55,11 @@ Not mergeable on FND-001. The keys themselves are right, measured: `key()` is th
 
 ## Dispositions
 
-| FND | outcome | sha |
+Round 1, reviewed at 84af1b5a0 (fix commit f37c88d1b). These rows replace the coder's proposed outcomes; the reviewer checked each against the code. Re-run for this round: `admitted_composite_facade` (4 pass), `admitted_composite_root_only` (2 pass), clippy for qsl-replay with all targets and features (clean), and `quire validate` on FR-396 and TC-1090 (exit 0). Mutation probe on `a_consumer_seals_a_union_and_admits_a_value_of_each_member`: (A) with the seal loop removed, the test fails at the first `union()`, line 199. (B) With another union's member id (`Wrap.Plain`) used for `Shape.Empty`, it fails at line 201. Both mutants were reverted.
+
+| FND | outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed: AdmittedUnionMember::member() exposes the sealed binding; root-only test seals and admits every member | f37c88d1b |
-| FND-002 | fixed: AdmittedComposite, node(), key() and FR-396 Description/Behavior state the union asymmetry | f37c88d1b |
-| FND-003 | fixed: members live in a private AdmittedShape::Union, so they exist exactly for a union | f37c88d1b |
-| FND-004 | rejected: no non_exhaustive anywhere in the facade (AdmittedLookupRefusal likewise); prerelease, break stated in the PR body | f37c88d1b |
+| FND-001 | fixed | f37c88d1b: `AdmittedUnionMember::member() -> &UnionMember` returns the sealed binding. The root-only test seals `Shape` and `Wrap` with `seal_union_verified(key(), node(), member().clone()…)` and admits a value of every member, including a `Wrap` holding a `Shape`. The consumer builds no `NodeKey` (its only `from_digest` is the pre-existing `WireNodeId` lookup id). Measured by mutation: the test fails if sealing is skipped or another union's id is used. |
+| FND-002 | fixed | f37c88d1b: the docs on `AdmittedComposite`, `node()`, `key()` and `union_members()` now say that a union's types use `key()` while its values, members and seal use `node()` (`union_key(key()) == node()`). |
+| FND-003 | fixed | f37c88d1b: members live in a private `AdmittedShape::Union(Vec<…>)`, and `form()` and `union_members()` are derived from it, so the invariant holds by construction. |
+| FND-004 | rejected | Agreed with the coder. This is prerelease, `AdmittedLookupRefusal` is not `#[non_exhaustive]` either, no exhaustive matcher exists in this repo or in quire-contract-codegen, and the PR body states the break. Marking the enum non-exhaustive would only force wildcard arms. |
