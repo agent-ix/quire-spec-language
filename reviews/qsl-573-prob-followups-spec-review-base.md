@@ -106,3 +106,20 @@ The FR-186/FR-195 threshold, gate and shape rules, the FR-192-AC-1 setting
 names, and FR-196's binding key, unactivated phase, stutter counting and
 resolution rewards each agree with the code. There is no changelog, status
 or owner wording other than FND-003.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | low | TC-638 now expects two spellings of the same setting. Step 2 (unchanged) expects `LimitReached` naming `model_check.max_states`. The new step 5 and FR-203-AC-6 use FR-126's bare setting name (`max_automaton_states`), as do FR-192-AC-1 and the code's ModelCheckLimit::setting ("max_states"). Fix: write step 2's setting as `max_states`. | spec/test-cases/TC-638-exact-limits-and-settlement.md:32-35 |
+
+## Dispositions
+
+Round 1, at d1bc9d71a.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | d1bc9d71a: FR-195-AC-2, FR-195 and TC-630 step 2 refuse MeanTime and every `expected elapsed` as `unsupported_construct`/`not-yet-implemented`, which is what claim.rs (ExpectedQuantity::Elapsed) does. |
+| FND-002 | fixed | d1bc9d71a: FR-189-AC-6 and TC-640 now use the `drop`/absent-key Coin over `(c: M::Coin)`. The synthetic test at qsl-analyze/src/statistical/tests.rs:493-560 still hard-codes DivisionByZero; that is for the code lane. |
+| FND-003 | fixed | d1bc9d71a: the build-log sentence is deleted from FR-196-AC-5. |
+| FND-004 | fixed | d1bc9d71a: AC-11 states the in-memory control and accumulator (the #1122 MonitorState/Accumulator types), and the canonical bodies are a new worked-vector row under AC-7. |

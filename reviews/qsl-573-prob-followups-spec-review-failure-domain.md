@@ -44,3 +44,20 @@ builder has the same gap, so the code lane should fix both together.
 FND-002 is the answer to the "object type" question. It is a real
 spec/code mismatch and needs a ruling: either refuse at S3, or specify the
 empty-binding verdict. FND-003 needs a mapping table.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-004 | medium | FR-196 now says FR-203 'Build refusals and stops' "settles the others", but that table has no row for `NotSimulated`, `PredicateRefused`, `Translation` or an `Expansion` that names a limit. `Admission` is mapped only by name onto ExactProbRefusal, and FR-203 gives that member no settlement either. These are the open questions the PR body lists, but the spec text claims they are covered. Leaving them open is acceptable in a spec PR only if the text says which members are settled and the rest are tracked on a Linear ticket: the PR body is not kept after merge. Fix: narrow the sentence to "FR-203 settles the members its table lists", and file the four open rows on the ticket. Existing rules that could close them: EN-1's request refusals with no terminal record (Admission, NotSimulated) and FR-192's limit row for EvaluationMeter/MaxCandidates, after adding MaxCandidates to ExactProbLimit. | spec/functional/FR-196-build-the-probabilistic-product.md:87-91 |
+| FND-005 | medium | The new forming rule builds each WitnessPath step from `action` (and `resolved`), but FR-202 requires every WitnessStep to name its complete canonical post-ProductKey and its drawn vector. UndefinedPath gives a product key only for the undefined state and at several-post-state draws. A merged step (several draws to one post-state) has `draw: None`, so it has no drawn vector to give. The path as specified cannot fill those WitnessStep fields, and the spec gives no rule for deriving them. Fix: add each step's target `ProbKey` to PathStep, and say what a merged step's WitnessStep carries (one representative draw, or the merged edge's probability with no draw, and state that FR-202 accepts this). | spec/functional/FR-196-build-the-probabilistic-product.md:148-153 |
+
+## Dispositions
+
+Round 1, at d1bc9d71a.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | d1bc9d71a: UndefinedPath gains `initial`, `binding` and the complete `key`, `resolved` is a ProbKey, and the WS-2 forming rule is stated. The #1122 code does not have these fields yet (remaining work on the ticket). The per-step post-key that FR-202 needs is raised separately as FND-005. |
+| FND-002 | fixed | d1bc9d71a: FR-186 and FR-186-AC-5/TC-621 step 5 require an object type that some population of the subject's model admits. #1122 claim.rs Pass::over still checks only ValueType::Reference (remaining work on the ticket). |
+| FND-003 | fixed | d1bc9d71a: FR-203 'Build refusals and stops' and AC-6/TC-638 step 5 map the stop, cancel, undecided-successor, unnamed-expansion, internal and NotMarkov members by the FR-127/FR-192 rules. The members it leaves out are raised as FND-004. |

@@ -35,7 +35,7 @@ never with ADR-024's `measured`.
 ## Use case
 
 An operator's exact check of a large model stops at `max_states`. The result
-names `max_states`, its value and `model_check.max_states`; the operator raises
+names `max_states`, its value and `max_states`; the operator raises
 it and reruns. A run that completes settles `proved` with `ExactValue` and
 the least favourable initial state, or `refuted` after its witness replays.
 

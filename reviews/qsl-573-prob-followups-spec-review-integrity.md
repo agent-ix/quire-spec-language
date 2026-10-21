@@ -56,3 +56,18 @@ with no new digest domain. FR-186-AC-3 agrees with FR-195-AC-1.
 Not mergeable as is. FND-001 to FND-003 are medium contradictions, each
 between an edited statement and another statement in the same spec set.
 Each one is a wording fix. FND-004 to FND-008 are low.
+
+## Dispositions
+
+Round 1, at d1bc9d71a.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | d1bc9d71a: the shape is defined by root operator and interval only, and FR-195 judges the operands. This matches reach_shape() and Pass::reach on #1122. |
+| FND-002 | fixed | d1bc9d71a: XF-5 now types `c` by the expectation. |
+| FND-003 | fixed | d1bc9d71a: the FR-192 bullet defers to FR-195 for the claims and the cause order. |
+| FND-004 | fixed | d1bc9d71a: the qsl-replay enum holds ProductKey and the builder's holds ProbKey, stated in one place. |
+| FND-005 | fixed | d1bc9d71a: the reference now points at MonitorState::Formula(Running(index)). |
+| FND-006 | fixed | d1bc9d71a: FR-196 states that the cited names are aliases (the second option offered). |
+| FND-007 | fixed | d1bc9d71a: PR-6 now says the product is built once per `over` binding. |
+| FND-008 | fixed | d1bc9d71a: the labels comment now includes the long-run fraction's P. |

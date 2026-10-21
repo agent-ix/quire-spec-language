@@ -68,7 +68,7 @@ pub fn replay_probabilistic_witness(
 ```
 
 Each WitnessStep SHALL retain ADR-018 CX-2's actual step content and drawn
-vector, and additionally name its exact `ProductAction`, complete canonical
+vector (a merged step, FR-196, and a terminal stutter step have none), and additionally name its exact `ProductAction`, complete canonical
 FR-196 post-ProductKey and exact nonnegative elapsed Rational in the model's
 time unit (zero on untimed/IdleObserve steps). The action is the actual
 resolved edge choice, not `action: None`, a local action number, a synthetic

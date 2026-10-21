@@ -86,7 +86,11 @@ pub enum ProductStop { Limit { limit: ModelCheckLimit, value: u64 }, Cancelled(C
 
 `ProductRefusal` is the build's refusal type; its `Admission` and `NotMarkov`
 members are the `ExactProbRefusal` members of the same names, and FR-203
-"Build refusals and stops" settles the others. A build that finds an
+"Build refusals and stops" settles the members its table lists. `Admission`
+and `NotSimulated` are request refusals that return no terminal record, as
+EN-1's `ModelCheckRefusal` does (FR-126). How `PredicateRefused`,
+`Translation` and an `Expansion` that names a limit settle is open: no rule
+of FR-126, FR-127 or FR-192 covers them. A build that finds an
 undefined read is no refusal but a result: `ProbBuild::Undefined` is the
 refutation's evidence (see "Behavior").
 
@@ -141,6 +145,7 @@ pub struct PathStep {
     pub action: Option<ScheduledIdentity>, // none for the terminal stutter step
     pub draw: Option<Vec<Value>>,          // none for the terminal stutter step, and for a step merged from several draws
     pub probability: Rational,
+    pub target: ProbKey,                   // the complete product key reached by the step (FR-202's post-ProductKey)
     pub resolved: Option<ProbKey>,         // see below
 }
 ```
@@ -150,7 +155,17 @@ EN-5 forms FR-202's `UndefinedEvaluation{where, cause}` from `position` and
 from `initial` and `binding` (ADR-028 WS-2). It forms each `WitnessPath` step
 from the step's `action`, as `ProductAction::Identity`, or
 `TerminalStutter` when `action` is none, followed by
-`ProductAction::PostState(resolved)` when `resolved` is set.
+`ProductAction::PostState(resolved)` when `resolved` is set, with `draw` as
+the drawn vector and `target` as the post-ProductKey.
+
+A step with `draw: None` that has an `action` is a merged step: over every
+scheduler, draws of one action that reach the same post-state with the same
+rewards are one edge (FR-187). It stands for all of those draws, so it
+carries no single drawn vector, and its `probability` is the sum of their
+probabilities. Its `WitnessStep` names the action and `target` and no drawn
+vector, which is FR-202's exception to its drawn-vector rule; replay
+recomputes the sum from the support. A terminal stutter step has no draw
+either.
 
 Over every scheduler, when a step's draw has several post-states,
 `resolved` SHALL be the complete product key of the post-state the scheduler

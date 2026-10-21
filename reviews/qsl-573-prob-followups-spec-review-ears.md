@@ -44,3 +44,14 @@ Mergeable as far as EARS goes. All four findings are wording fixes for the
 same fix round. The other edited statements conform: the `over-not-object-type`,
 `not-state-predicate` and gate refusals are well-formed unwanted-behaviour
 and event-driven statements.
+
+## Dispositions
+
+Round 1, at d1bc9d71a.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | d1bc9d71a: the threshold rules are split into one SHALL statement each, with the `/` and unary-minus rationale moved to prose. |
+| FND-002 | fixed | d1bc9d71a: the unactivated and stutter rules are now SHALL statements. |
+| FND-003 | fixed | d1bc9d71a: each of the two bullets is split into one statement per SHALL. |
+| FND-004 | fixed | d1bc9d71a: the FR-186 `over` bullet is one unwanted-behaviour SHALL with its rationale as separate sentences after it; the FR-195 operand bullet is the same. |
