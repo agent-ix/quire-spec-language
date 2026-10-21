@@ -16,11 +16,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_analyze::model_check::{
-    check_hyper, retain, HyperCheckRequest, ModelCheckRefusal, Reductions, RetainedGraph,
+    check_hyper, check_single_existential, retain, HyperCheckRequest, ModelCheckRefusal,
+    Reductions, RetainedGraph, SingleExistentialRequest, SingleExistentialRun,
 };
 use qsl_eval::fairness::{analyze, EdgeLabel, Graph, Identity, Outcome as FairnessOutcome, Vertex};
 use qsl_eval::hyper::{
-    HyperFinding, HyperInputs, HyperLetters, HyperProduct, HyperState, HyperTransition,
+    BodySense, HyperFinding, HyperInputs, HyperLetters, HyperProduct, HyperState, HyperTransition,
     MatchReading, ParameterBinding, Property, StepLabel, StepMatch, WitnessInputs, WitnessProduct,
 };
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
@@ -664,6 +665,28 @@ impl World {
         )
     }
 
+    /// The HP-5 run of the clause under `limits` and `seed` (FR-181).
+    pub(crate) fn run_single(
+        &self,
+        limits: ModelCheckLimits,
+        seed: Option<u64>,
+        cancel: &Cancel,
+    ) -> Result<SingleExistentialRun, ModelCheckRefusal> {
+        let seams = self.seams();
+        check_single_existential(
+            SingleExistentialRequest {
+                clause: &self.clause,
+                subject: self.subject(),
+                letters: &seams,
+                limits,
+                max_depth: self.max_depth,
+                seed,
+                meter: UNLIMITED,
+            },
+            cancel,
+        )
+    }
+
     /// The run of the clause reading its atoms through `letters` and its
     /// `match` through `matcher`.
     pub(crate) fn run_through(
@@ -747,6 +770,19 @@ impl HyperLetters for Seams<'_> {
                 read(x) == constant.parse::<i64>().expect("an integer")
             }
             ["v.h", "@", x, "!=", "v.h", "@", y] => secret(x) != secret(y),
+            // `1 / (1 - v.l @ x) = 1 and v.l @ x = k`: the division is
+            // evaluated first and has no value where `l = 1`.
+            ["1", "/", "(1", "-", "v.l", "@", paren, "=", "1", "and", "v.l", "@", y, "=", constant]
+                if paren.strip_suffix(')') == Some(*y) =>
+            {
+                let l = read(y);
+                if l == 1 {
+                    return Ok(AtomReading::Undefined(UndefinedCause::Kernel(
+                        Undefined::DivisionByZero,
+                    )));
+                }
+                l == constant.parse::<i64>().expect("an integer")
+            }
             other => panic!("unmodelled atom {other:?}"),
         };
         Ok(if holds {
@@ -981,6 +1017,7 @@ impl World {
             instance: &instance,
             body: self.clause.body(),
             profile: self.clause.profile(),
+            sense: BodySense::Negated,
             letters: &seams,
             matcher: (!self.clause.mu_universal().is_empty()).then_some(&seams as &dyn StepMatch),
             max_automaton_states: u64::MAX,

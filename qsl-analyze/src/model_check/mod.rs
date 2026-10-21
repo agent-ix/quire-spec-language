@@ -6,7 +6,8 @@
 //! first phase) and a liveness clause (TP-4) under weak fairness (its second
 //! phase, in `liveness`); `qsl-replay` settles its outcome (FR-127). A
 //! universal hyperproperty (HP-2, FR-176) is decided over the self-composition
-//! product by [`check_hyper`]. The retained graph, the generic product and
+//! product by [`check_hyper`], and a single-existential one (HP-5, FR-181)
+//! through the possible family by [`check_single_existential`]. The retained graph, the generic product and
 //! the SCC decomposition are the reusable machinery; a graph outcome alone is
 //! FR-101's exploration outcome, never a proof of a temporal property.
 
@@ -32,7 +33,10 @@ pub use graph::{
     retain, retain_reduced, Ample, Choice, GraphExploration, ProductStateId, RetainedEdge,
     RetainedGraph, RetainedState,
 };
-pub use hyper::{check_hyper, HyperCheckRequest, HyperRefusal};
+pub use hyper::{
+    check_hyper, check_single_existential, HyperCheckRequest, HyperRefusal,
+    SingleExistentialRequest, SingleExistentialRun,
+};
 pub use liveness::LivenessRefusal;
 pub use product::{
     Product, ProductFinding, ProductKey, ProductState, ProductTransition, PropertyComponent,

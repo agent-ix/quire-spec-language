@@ -113,6 +113,7 @@ pub use model_check::counterexample::{
     deadlock_freedom_clause, undefined_finding, CounterexampleKind, Lasso, MappingSite, ModelStep,
     TemporalCounterexample, UndefinedEvaluation, UndefinedLocus, UndefinedSite,
 };
+pub use model_check::existential_outcome::{ExistentialInstanceOutcome, ExistentialOutcome};
 pub use model_check::graph_settle::{
     settle_state_graph, GraphReplayResult, GraphReplaySettlement, StateGraphMethod,
     StateGraphRecord,
@@ -147,8 +148,8 @@ pub use model_check::settle::{
     EXPLICIT_STATE,
 };
 pub use model_check::state_graph::{
-    GraphUndefined, GraphWitness, ModelPath, OpenCause, RunEnd, StateGraphInstanceOutcome,
-    StateGraphOutcome, WitnessSource,
+    GraphUndefined, GraphWitness, LassoWitness, ModelLasso, ModelPath, OpenCause, RunEnd,
+    StateGraphInstanceOutcome, StateGraphOutcome, WitnessSource,
 };
 pub use model_check::step_settle::{
     settle_step_simulation, BackendCertificate, StepBackendOutcome, StepSimulationSettlement,

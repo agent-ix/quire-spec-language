@@ -31,7 +31,7 @@ mod witness;
 pub use copy_swap::{copy_population, copy_symmetry, CopySwapInputs};
 pub use joint::cartesian;
 pub use product::{
-    ComponentStep, Halt, HyperFinding, HyperInputs, HyperKey, HyperProduct, HyperState,
+    BodySense, ComponentStep, Halt, HyperFinding, HyperInputs, HyperKey, HyperProduct, HyperState,
     HyperTransition, Property,
 };
 pub use projected::{ProjectedInputs, ProjectedProduct};
