@@ -247,9 +247,33 @@ In the code, `model` builds one universe per model over every root type
 | Implementing ticket | #213 S-4. |
 | Public type | An occurrence is keyed by (checked node id, `role`, `ordinal`), exactly the FR-322 `source_map` key. It carries one or more regions; each region is (`RawSourceRef`, byte start, byte end), where `RawSourceRef` names the source document by authority and identity and binds it to its bytes by its `quire.source.bytes/v1` digest (QSpec STD-150). Every node has at least one occurrence (FR-322). |
 | Serialized authority | v2 `source_map` entries (`SourceMapEntry`: `node_id`, `role`, `ordinal`, `regions`; FR-322). |
-| Conversions | node id → occurrences through the package source map (O-12, C-14). Occurrences are excluded from the node-identity and package-identity preimages (FR-322 `identity_projection`). The O-09 obligation identity includes the clause occurrence key, never its regions. The occurrence key (node id, role, ordinal) of the failing node is carried in the counterexample packet (O-25, QC-8), and ADR-011 E9 resolves spans by it. Remaining work: agent-ix/quire-specification#141. |
-| Validation and diagnostics | IR refuses a source-map entry naming an unknown node. |
+| Conversions | node id → occurrences through the package source map (O-12, C-14). Occurrences are excluded from the node-identity and package-identity preimages (FR-322 `identity_projection`). The clause, application and function forms of O-09 include their subject occurrence key; the per-step record form excludes its occurrence key from content identity. No form includes regions. The occurrence key (node id, role, ordinal) of the failing node is carried in the counterexample packet (O-25, QC-8), and ADR-011 E9 resolves spans by it. Remaining work: agent-ix/quire-specification#141. |
+| Validation and diagnostics | IR refuses a source-map entry naming an unknown node. On a refinement owner, FR-322-AC-88 through AC-91 require the declaration occurrence, require generated occurrences only when the refinement is proof-eligible, and refuse invalid generated keys or regions as `invalid_package`/`invalid-value`. |
 | Equality | lexical over (node id, role, ordinal). |
+
+For a QSV `StepSimulationRecord`, the occurrence key names the owning checked
+`relation`/`refinement` node, with role `generated`; the record does not mint a
+second checked node id. Only a proof-eligible refinement carries these
+generated occurrences. FR-322 defines proof eligibility as no hidden field,
+history field, or `any` step target; an ineligible refinement carries only its
+`declaration` occurrence (FR-322-AC-91). The initial record has ordinal 0. A step record for
+zero-based row `i` has ordinal `i + 1`, where `i` is the row's position in the
+refinement's FR-375 `steps` total order (FR-375-AC-19), not its source order.
+For a protocol subject, QSpec FR-375-AC-19 places `memory` rows after rows
+that name a declaration, then breaks ties by the UTF-8 bytes of the alias-free
+step-class spelling. These positions, not source order, determine the row
+ordinals; a source permutation cannot change a record's key.
+QSpec FR-322-AC-88 through AC-91 authorize and validate these owner-node
+occurrences. FR-322-AC-87 separately covers a node derived from a step row;
+its ordinal counts derived nodes, so its row index differs from this proof
+obligation index. The O-07 occurrence key is assigned and carried as a locator, but is not
+a member of the per-step record content digest in O-09. Each generated
+occurrence has a `source_map` entry: `Initial` names the refinement declaration
+region, and `Step` names its corresponding authored step-row region. Those
+regions are location evidence and are excluded from that digest. CG refuses
+an unknown selected refinement, an out-of-range step row, or a role/ordinal
+that disagrees with this mapping as O-09 specifies; it does not silently
+reassign an ordinal. IR reads the `source_map` under FR-322's validation rule.
 
 #### O-08 Frame identity
 
@@ -269,11 +293,42 @@ In the code, `model` builds one universe per model over every root type
 | --- | --- |
 | Owner | Clause: QSL, check stage. Obligation: CG, backend-IR stage (AD-016 arrow 5). |
 | Implementing ticket | Clause: #213 S-3. Obligation: CG conformance work with no ticket (§7). #231 carries the obligation identity in its envelopes. The function-contract subject members (function node id and `declaration` occurrence key) reach CG through FR-121's `FunctionSite` (Linear QSL-352). |
-| Public type | Clause: the checked node id of the `claim`, `temporal`, `protocol` or `state`/`state_clause` node (the last added, FR-105; one node per distinct clause, one `claim` occurrence per declaration). Obligation: a digest over its content. One clause yields one obligation per CG `ObligationKind` it requests, so an obligation is identified by the digest of the RFC 8785 encoding, through §2's one encoder, of: the clause node id, the clause occurrence key (O-07, QC-8), the obligation kind and the `arguments` (each a parameter node id and its declared domain); the source span is excluded (QC-14). CG computes this digest; its identity includes the occurrence key, or two occurrences of one clause collide. The clause node id alone identifies the clause only. The occurrence key keeps two occurrences of structurally identical clauses apart (O-04). An operation-application item (FR-062 "Requirement records of a value function") is identified the same way with the application node id and the application's own occurrence key in place of the clause's, so two occurrences of one application node, with their own result bounds, are two obligations. A function contract (the function path: `call_site` over a `QualifiedName`, FR-121, and `replay`, FR-098) is identified the same way with the checked function declaration's node id (`node_tag` `function`, FR-092) and that node's one `declaration` occurrence key (function node id, `declaration`, 0) in place of the clause's; `arguments` are the function's parameters. The contract is the whole function: on every argument vector within the declared per-argument domains of `arguments`, a `Boolean`-result function returns `true`, and a counterexample is an argument vector on which it does not (FR-098 settles its replay against the verdict `violation`). A function therefore yields one obligation per CG `ObligationKind` it requests, not one per conjunct of its body, because the replay request selects the whole function by `QualifiedName` and settles one verdict for it (O-26). The three subject kinds need no separate tag: a function node is keyed over a preimage carrying `node_tag` `function` and its `declaration` (FR-092), so its id never equals a clause or application node id, and its occurrence role `declaration` differs from a clause's `claim` and an application's `expression`. Every member is content: node ids and occurrence keys carry no version, revision or tool identity, and an edit that leaves the function unchanged (its owner, name, parameters, result type and body, with every node they reference) leaves its node id, its `declaration` occurrence key and so its obligation identity unchanged; a source edit elsewhere in the unit, such as a comment, changes none of them. `arguments` are `Vec<ObligationBinding>` ascending by identifier (AD-016 arrow 5), each naming its parameter node id and declared per-argument domain. The harness argument order equals `arguments` order, so witness decode depends on this order (O-25); the join from decoded values to parameters is by node id. A parity claim is identified the same way, by one preimage that covers both an operator-parity claim (FR-357) and a composite equality claim (FR-358). The claim is an application of an operator (the integer operators of FR-357, or composite `Equal` or `NotEqual`); the subject is the application node id and that node's own occurrence key (the application's `expression` role) in place of the clause's, never the enclosing function, so two applications in one function are two obligations. `arguments` are one entry per operand position, in operand order, each `{operand, position, domain}`. The full preimage, its encoding and a worked example are under *O-09 parity preimage* below. |
-| Serialized authority | Clause: FR-322. Obligation (QC-14, landed by agent-ix/quire-specification#140; the clause occurrence key arrives with QC-8, Remaining work: agent-ix/quire-specification#141): the content digest above, which CG computes (`obligationIdentitySha256`, AD-016 seed vector). Its digest domain is not in FR-201 (QC-4). `source_span` stays outside the identity preimage; the obligation identity includes the clause occurrence key, never its regions (O-07). |
+| Public type | Clause: the checked node id of the `claim`, `temporal`, `protocol` or `state`/`state_clause` node (the last added, FR-105; one node per distinct clause, one `claim` occurrence per declaration). Obligation: a digest over its content. One clause yields one obligation per CG `ObligationKind` it requests, so an obligation is identified by the digest of the RFC 8785 encoding, through §2's one encoder, of: the clause node id, the clause occurrence key (O-07, QC-8), the obligation kind and the `arguments` (each a parameter node id and its declared domain); the source span is excluded (QC-14). CG computes this digest; its identity includes the occurrence key, or two occurrences of one clause collide. The clause node id alone identifies the clause only. The occurrence key keeps two occurrences of structurally identical clauses apart (O-04). An operation-application item (FR-062 "Requirement records of a value function") is identified the same way with the application node id and the application's own occurrence key in place of the clause's, so two occurrences of one application node, with their own result bounds, are two obligations. A function contract (the function path: `call_site` over a `QualifiedName`, FR-121, and `replay`, FR-098) is identified the same way with the checked function declaration's node id (`node_tag` `function`, FR-092) and that node's one `declaration` occurrence key (function node id, `declaration`, 0) in place of the clause's; `arguments` are the function's parameters. The contract is the whole function: on every argument vector within the declared per-argument domains of `arguments`, a `Boolean`-result function returns `true`, and a counterexample is an argument vector on which it does not (FR-098 settles its replay against the verdict `violation`). A function therefore yields one obligation per CG `ObligationKind` it requests, not one per conjunct of its body, because the replay request selects the whole function by `QualifiedName` and settles one verdict for it (O-26). These three subject kinds need no separate tag: a function node is keyed over a preimage carrying `node_tag` `function` and its `declaration` (FR-092), so its id never equals a clause or application node id, and its occurrence role `declaration` differs from a clause's `claim` and an application's `expression`. The per-step record form below is a fourth subject kind and has an explicit `subject_kind` tag. Every member is content: node ids and occurrence keys carry no version, revision or tool identity, and an edit that leaves the function unchanged (its owner, name, parameters, result type and body, with every node they reference) leaves its node id, its `declaration` occurrence key and so its obligation identity unchanged; a source edit elsewhere in the unit, such as a comment, changes none of them. `arguments` are `Vec<ObligationBinding>` ascending by identifier (AD-016 arrow 5), each naming its parameter node id and declared per-argument domain. The harness argument order equals `arguments` order, so witness decode depends on this order (O-25); the join from decoded values to parameters is by node id. A parity claim is identified the same way, by one preimage that covers both an operator-parity claim (FR-357) and a composite equality claim (FR-358). The claim is an application of an operator (the integer operators of FR-357, or composite `Equal` or `NotEqual`); the subject is the application node id and that node's own occurrence key (the application's `expression` role) in place of the clause's, never the enclosing function, so two applications in one function are two obligations. `arguments` are one entry per operand position, in operand order, each `{operand, position, domain}`. The full preimage, its encoding and a worked example are under *O-09 parity preimage* below. |
+| Serialized authority | Clause: FR-322. Obligation (QC-14, landed by agent-ix/quire-specification#140; the clause occurrence key arrives with QC-8, Remaining work: agent-ix/quire-specification#141): the content digest above, which CG computes (`obligationIdentitySha256`, AD-016 seed vector). Its digest domain is not in FR-201 (QC-4). `source_span` stays outside every identity preimage; clause, application and function identities include their subject occurrence key, never its regions (O-07), while per-step record content identity excludes both occurrence key and regions. |
 | Conversions | clause node id → obligation identity (CG, C-19: adds kind and arguments; no re-mint of the clause id). Function node id and its `declaration` occurrence key, both from `call_site`'s `FunctionSite` (FR-121) → function-contract obligation identity (CG, the same rule; no re-mint of either). |
 | Validation and diagnostics | CG negotiation settles one disposition per `request_index` (AD-016 terminal-disposition rule). |
 | Equality | normalized for both. |
+
+For a per-step protocol subject, the subject is the checked
+`relation`/`refinement` node. The record content identity preimage consists
+only of an RFC 8785 object with exactly two members: `subject_kind` is the
+string `protocol-refinement-step`, and `record` is QSV's canonical
+`StepSimulationRecord` object with all three members `refinement`,
+`obligation`, and `hypotheses`. CG hashes these canonical bytes under O-09.
+The O-07 occurrence key is carried separately
+and excluded from this digest. Neither a CG proof-kind nor a CG
+obligation-kind field is a member; those are CG packet concerns. The
+`refinement` member
+must equal the owning node key. `obligation` is `Initial` for ordinal 0, or
+`Step { row: i }` for ordinal `i + 1`; `i` is a zero-based index in the
+FR-375 `steps` total order; for an eligible refinement FR-468 assigns one
+step query and one certificate step part to each such row. `hypotheses` are
+supplied by QSL in FR-146's ascending node-key digest order without duplicates;
+CG preserves that order and does no sorting or deduplication. Changing any of
+these members, including only
+the hypothesis list, changes the obligation identity; source regions and
+`source_span` do not. A package refuses an out-of-range step row or a repeated
+`(refinement, obligation)` pair, even if the repeated records differ in
+`hypotheses`. CG refuses these at harness setup with `InvalidIdentity` and a
+typed cause naming the invalid row or duplicate pair; it yields no harness or
+proof-credit identity. The IR reader independently refuses a malformed
+refinement-owner occurrence or `source_map` pair with FR-322's
+`invalid_package`/`invalid-value` code and cause. CG
+also refuses a mismatched owner or role/ordinal with `InvalidIdentity` before
+minting the digest. CG mints the obligation digest through
+§2's one encoder; QSL supplies the checked owner, occurrence, and QSV record
+without inventing another record type or node id. CG FR-015-AC-120 through
+AC-122 specify its acceptance and refusal obligations.
 
 ##### O-09 parity preimage
 

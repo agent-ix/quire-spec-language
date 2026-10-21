@@ -1066,7 +1066,11 @@ fn check_behaviours(
         body,
         form: form_class,
         copy_group,
-        claim: TemporalClaim::new(parameter_domains, profile == TemporalProfile::InfiniteTrace),
+        claim: TemporalClaim::new(
+            parameter_domains,
+            profile == TemporalProfile::InfiniteTrace,
+            true,
+        ),
         identity,
     })
 }
@@ -2355,7 +2359,7 @@ fn check_relation(
         span: form.span,
         executions,
         body: form.body.expression.clone(),
-        claim: TemporalClaim::new(BTreeMap::new(), true),
+        claim: TemporalClaim::new(BTreeMap::new(), true, true),
         code_domains,
     })
 }
