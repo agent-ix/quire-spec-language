@@ -11,11 +11,13 @@
 use std::collections::BTreeMap;
 
 use ix_trace_rs::trace;
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::Code;
 use qsl_semantics::check::{
-    step_row_refs, step_simulation_records, AssemblyRefusal, CheckCause, CheckRefusal,
+    step_row_refs, step_simulation_records, AssemblyRefusal, Capability, CheckCause, CheckRefusal,
     CheckedGraph, CheckedRefinement, PackageDeclarations, RefinementCause, RowClass, StepClass,
-    StepTarget,
+    StepSimulationEntry, StepTarget,
 };
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::intake::{admit_unit, meaning, package_input};
@@ -1504,7 +1506,7 @@ fn operation_key(operation: &DeclarationKey) -> quire_exact::NodeKey {
     quire_exact::NodeKey::from_digest(Sha256::digest(operation.node.as_bytes()).into())
 }
 
-fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
+fn simulation_entries(graph: &CheckedGraph) -> Vec<StepSimulationEntry> {
     step_simulation_records(
         refinement_key(),
         only_refinement(graph),
@@ -1513,8 +1515,39 @@ fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
     .expect("the rows fit a step row reference")
 }
 
-/// TC-551 step 1, record values only (the `operation-contract` requirement
-/// records are not built): `CasRefinesCounter` writes one `Initial` and one
+fn simulation_records(graph: &CheckedGraph) -> Vec<StepSimulationRecord> {
+    simulation_entries(graph)
+        .iter()
+        .map(|entry| entry.record().clone())
+        .collect()
+}
+
+/// TC-551 step 1: each record carries the occurrence key ADR-013 O-07 gives
+/// it: the refinement node, role `generated`, ordinal 0 for `Initial` and the
+/// row's position + 1 for a `Step`. The key is a locator, so it is distinct
+/// per record and is not part of the record.
+#[trace("TC-551")]
+#[test]
+fn each_record_has_its_generated_occurrence_key() {
+    let entries = simulation_entries(&checked_counter(&cas_refines_counter()));
+    assert_eq!(entries.len(), 8);
+    let node = WireNodeId::from_digest(*refinement_key().as_bytes());
+    for (ordinal, entry) in entries.iter().enumerate() {
+        let origin = entry.occurrence().origin();
+        assert_eq!(entry.occurrence().node(), node);
+        assert_eq!(origin.role().as_str(), "generated");
+        assert_eq!(origin.ordinal(), ordinal as u64);
+        let expected = match ordinal {
+            0 => StepObligation::Initial,
+            row => StepObligation::Step {
+                row: StepRowRef::new(u32::try_from(row - 1).expect("small")),
+            },
+        };
+        assert_eq!(entry.record().obligation, expected);
+    }
+}
+
+/// TC-551 step 1: `CasRefinesCounter` writes one `Initial` and one
 /// `Step` record for each of its seven rows, with no hypotheses.
 #[trace("TC-551")]
 #[test]
@@ -1561,8 +1594,7 @@ fn a_hidden_field_writes_no_simulation_record() {
 const CAS_INV: &str = "invariant CasInv using inf on Impl::Counter at current { \
      self.busyA or self.tmpA <= self.value }\n";
 
-/// TC-551 step 3, record values only (`CasInv`'s own `operation-contract`
-/// record and the obligation identity are not built): an invariant of
+/// TC-551 step 3: an invariant of
 /// `Impl::Counter` is a hypothesis of every record, and the `Initial`
 /// record differs from the one without it.
 #[trace("TC-551")]
@@ -1580,6 +1612,29 @@ fn a_concrete_invariant_is_a_hypothesis_of_every_record() {
         assert_eq!(record.hypotheses, [invariant.identity()]);
     }
     assert_ne!(with[0], without[0]);
+}
+
+/// TC-551 step 3: every hypothesis is its own `operation-contract` record in
+/// the checked package, keyed by the clause's `claim` occurrence.
+#[trace("TC-551")]
+#[test]
+fn a_hypothesis_is_its_own_operation_contract_record() {
+    let graph = checked_counter(&format!("{}\n{CAS_INV}", cas_refines_counter()));
+    let [invariant] = graph.state_clauses() else {
+        panic!("one invariant clause");
+    };
+    let key = OccurrenceKey::new(
+        WireNodeId::from_digest(*invariant.identity().as_bytes()),
+        invariant.claim().clone(),
+    );
+    let record = graph
+        .requirements()
+        .get(&key)
+        .expect("the invariant has a requirement record");
+    assert_eq!(record.requirements().kind(), Capability::OperationContract);
+    for entry in simulation_entries(&graph) {
+        assert_eq!(entry.record().hypotheses, [invariant.identity()]);
+    }
 }
 
 /// TC-551 step 3: an invariant of the abstract model is not a hypothesis
