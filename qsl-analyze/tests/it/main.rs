@@ -30,6 +30,7 @@ mod prob_world;
 mod protocol_compensation;
 mod protocol_constructs;
 mod protocol_footprints;
+mod protocol_roles;
 mod protocol_system;
 mod quotient;
 mod reduction;

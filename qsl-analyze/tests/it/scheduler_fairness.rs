@@ -180,6 +180,7 @@ impl Chatter {
                 item: self.item(),
                 max_depth: None,
                 max_store_buffer: None,
+                max_live_instances: None,
                 limits: ModelCheckLimits::default(),
             },
             &Cancel::new(),
@@ -212,6 +213,7 @@ impl Chatter {
                 roles: subject.roles.clone(),
                 memory: subject.memory.clone(),
                 max_store_buffer: None,
+                max_live_instances: None,
             },
             &envelope_at(&unit, id, payload, clause_node, occurrence),
             self.letters,
@@ -232,6 +234,7 @@ impl Chatter {
                 subject: self.subject(),
                 item: self.item(),
                 max_store_buffer: None,
+                max_live_instances: None,
             },
             &Cancel::new(),
             |payload| self.replay(payload.clone()),
@@ -460,7 +463,7 @@ fn a_safety_verdict_is_the_same_with_and_without_the_scheduler() {
 }
 
 /// The S3 refusal of the unit `body`, which must not check.
-fn check_refusal(body: &str) -> CheckRefusal {
+pub(crate) fn check_refusal(body: &str) -> CheckRefusal {
     let document = document();
     let text = unit_text(body);
     let packages = package_input([document.as_slice()]);
@@ -497,7 +500,7 @@ fn check_refusal(body: &str) -> CheckRefusal {
 }
 
 /// The temporal cause of `refusal`.
-fn temporal(refusal: &CheckRefusal) -> &TemporalCause {
+pub(crate) fn temporal(refusal: &CheckRefusal) -> &TemporalCause {
     match &refusal.cause {
         CheckCause::Temporal(cause) => cause,
         other => panic!("{other:?}"),
@@ -702,6 +705,7 @@ fn liveness_over_a_weak_parallel_refuses() {
             item: chatter.item(),
             max_depth: None,
             max_store_buffer: None,
+            max_live_instances: None,
             limits: ModelCheckLimits::default(),
         },
         &Cancel::new(),

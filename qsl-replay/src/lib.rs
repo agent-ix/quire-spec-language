@@ -184,11 +184,11 @@ pub use outcome::{
 };
 pub use proof_result::{
     read_backend_provider_envelope, AppliedReduction, BackendProviderSource, Certification,
-    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, MemoryBound,
+    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedMemoryBound,
-    StatisticalRequestRefusal, SymmetryBrokenCause, TerminalRecord, TerminalRecordRefusal,
-    TerminalValue, UnavailabilityCause,
+    Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
+    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};

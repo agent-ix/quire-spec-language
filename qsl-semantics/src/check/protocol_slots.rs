@@ -1234,7 +1234,10 @@ pub(crate) fn check(
                         )
                     })
                 }
-                BinderOrigin::Input | BinderOrigin::Activation | BinderOrigin::Capture => false,
+                // The activation binder ranges over the trigger records an
+                // `activate` step enumerates (ADR-027 ST-13, TS-5).
+                BinderOrigin::Activation => true,
+                BinderOrigin::Input | BinderOrigin::Capture => false,
             },
         })
         .collect();

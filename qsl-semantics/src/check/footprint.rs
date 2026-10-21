@@ -304,6 +304,40 @@ pub fn derive_atom_reads(
         .collect())
 }
 
+/// ADR-027 FT-1, FT-3: the locations a protocol expression `body` reads,
+/// typed over the binders `parameters` in slot order, such as an `activation
+/// on each` guard or a replicated role's `until` predicate. A field read is
+/// a read on any object, since the binders it reads through hold different
+/// objects at different steps; membership reads are the body's own.
+///
+/// # Errors
+///
+/// As [`derive_atom_reads`].
+pub fn derive_slot_reads(
+    graph: &CheckedGraph,
+    model: &StateModel,
+    name: &str,
+    parameters: &[(String, ValueType)],
+    body: CheckedNode<'_>,
+) -> Result<BTreeSet<SymbolicLocation>, FootprintRefusal> {
+    let reader = Reader::new(graph.scope().types(), model)?;
+    let scope = BodyScope {
+        name,
+        binds_result: false,
+        parameters,
+        observations: None,
+        observation: Observation::Current,
+    };
+    Ok(reader
+        .body_reads(&scope, body)?
+        .into_iter()
+        .map(|(location, _)| match location {
+            SymbolicLocation::Field { field, .. } => SymbolicLocation::AnyField { field },
+            other => other,
+        })
+        .collect())
+}
+
 /// FR-156 "Visibility": the locations the state constraint `clause` reads.
 /// The constraint holds for every object of its context type, so the
 /// context's `self` reads are reads on any object, and the membership of

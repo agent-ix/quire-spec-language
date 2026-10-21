@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+    TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
     MemoryModel, ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
@@ -211,12 +212,18 @@ pub(crate) fn contracts(two_pre: &str) -> String {
 }
 
 /// The unit selecting the domain package as `M`, with `body` after the
-/// header.
+/// header. The temporal profile is `t0`, infinite-trace, or `tb`, the
+/// bounded false-extension profile, when `body` has a clause `using tb`.
 pub(crate) fn unit_text(body: &str) -> String {
+    let (name, profile) = if body.contains(" using tb ") {
+        ("tb", "quire.temporal.event-position.false-extension/v1")
+    } else {
+        ("t0", "quire.temporal.infinite-trace/v1")
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
+         profile {name} = \"{profile}\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
         hex(&document_digest(&document()))
     )
@@ -485,6 +492,16 @@ pub(crate) struct Reached<M: MemoryModel = Sc> {
     pub(crate) steps: Vec<(ProtocolTransition, usize)>,
 }
 
+/// The terminal class of `state` (FR-124, ADR-027 PD-1, PD-2, AE-4), read
+/// from its bounded expansion.
+pub(crate) fn class_of<M: MemoryModel>(
+    system: &ProtocolSystem<'_, M>,
+    state: &ProtocolState<M>,
+) -> TerminalClass {
+    let (expansion, cut) = system.successors_bounded(state).expect("the state expands");
+    SubjectSystem::terminal_class(system, state, &expansion, cut).expect("a class")
+}
+
 /// Every reachable state of `system`, breadth-first from its initial states,
 /// each once by its state key, successors in the engine's order.
 pub(crate) fn reachable<M: MemoryModel>(system: &ProtocolSystem<'_, M>) -> Vec<Reached<M>> {
@@ -564,7 +581,10 @@ pub(crate) fn projections(reached: &[Reached]) -> std::collections::BTreeSet<Vec
                 | StepKind::Fence
                 | StepKind::Memory
                 | StepKind::CAttempt
-                | StepKind::CEnd => None,
+                | StepKind::CEnd
+                | StepKind::Activate
+                | StepKind::Spawn
+                | StepKind::Retire => None,
             };
             if let Some(name) = &named {
                 prefix.push(name.clone());

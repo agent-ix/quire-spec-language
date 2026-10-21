@@ -293,8 +293,8 @@ pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relations
 pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
-    CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedParallel, CheckedProtocol,
-    CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedOwner, CheckedParallel,
+    CheckedProtocol, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_memory::{
@@ -308,8 +308,9 @@ pub use protocol_obligation::{
 pub use protocol_relationship::CheckedRelationship;
 pub use protocol_requirement::CheckedRequirement;
 pub use protocol_slots::{
-    CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRelated,
-    CheckedRepeat, CheckedScheduling, CheckedSlotBinder, CheckedSlots, CheckedTerminalMember,
+    CheckedCase, CheckedChoice, CheckedLifetime, CheckedLoopProof, CheckedNodeBody, CheckedReaders,
+    CheckedRelated, CheckedRepeat, CheckedReplicatedRole, CheckedScheduling, CheckedSlotBinder,
+    CheckedSlots, CheckedTerminalMember,
 };
 /// The premises a [`CheckedChannel`] records exactly as written (FR-218
 /// "Channels"), which its readers match on.
@@ -1997,6 +1998,7 @@ impl PackageDeclarations {
                     {
                         Ok((channels, used)) => {
                             checked.channels = channels;
+                            checked.owners = protocol_clause::owners(protocol, &checked);
                             nodes_used = used;
                         }
                         Err(control_refusals) => refusals.extend(control_refusals),
