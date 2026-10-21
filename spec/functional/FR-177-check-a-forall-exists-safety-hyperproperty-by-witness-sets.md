@@ -115,9 +115,12 @@ partner has failed.
   product state whose `X` is empty, then the engine SHALL refuse the item
   with `HyperRefusal::NoPartnerPath` and return no outcome, since the
   counterexample would have no existential path for QSpec FR-400's one path
-  per variable. The refusal carries no catalog code or cause. It ranks as the
-  undefined evaluation it is, so it ends the item only when no earlier finding
-  exists.
+  per variable. It ranks as the undefined evaluation it is, so it ends the
+  item only when no earlier finding exists.
+- The `NoPartnerPath` refusal is a request refusal returned to the caller. It
+  has no terminal record, no V-x settlement and no catalog code or cause,
+  and none is defined until QSpec FR-400 either admits an empty existential
+  path for its `undefined` kind or accepts this refusal.
 - An `Undefined` counterexample whose locus is a body letter or a `match`
   conjunct SHALL name every trace variable, universal and existential, in
   quantifier order, each with its state key at the position, so that
@@ -134,15 +137,16 @@ partner has failed.
   a contract conjunction, the position of its product state; an empty `X`
   with a fair universal cycle, the first joint position at which `X` is
   empty.
-- The engine SHALL return the finding at the least joint position. At one
-  position an undefined evaluation SHALL come before a refused or incomplete
-  `μ`, or a contract conjunction that leaves a member's steps unknown, which
-  SHALL come before an empty `X`, since a refused `μ_E` may have dropped
-  members from the `X` that then empties. At
-  one position and rank the first in FR-101's breadth-first discovery order
-  of product states SHALL win, within a state the first finding its
-  expansion recorded, and across instances the earlier in FR-125's canonical
-  order.
+- The engine SHALL return the finding at the least joint position.
+- At one position an undefined evaluation SHALL come before a refused or
+  incomplete `μ` or universal contract conjunction, or a contract
+  conjunction that leaves a member's steps unknown, which SHALL come before
+  an empty `X`, since a refused `μ_E` may have dropped members from the `X`
+  that then empties.
+- At one position and rank the first in FR-101's breadth-first discovery
+  order of product states SHALL win, and within a state the first finding its
+  expansion recorded.
+- Across instances the earlier in FR-125's canonical order SHALL win a tie.
 - A later finding SHALL NOT replace an earlier one: an undefined evaluation
   at a position after an empty `X` with a fair universal cycle returns the
   empty `X`'s `WitnessExhausted` counterexample.
@@ -182,9 +186,8 @@ partner has failed.
   while the lasso is unchanged, that is while the lasso's last step is the
   step before the entry and both leave universal states with equal
   state keys. The lasso with the least loop entry is the one reported.
-- No such state SHALL return `Holds{Exhaustive}`, or `Holds{Reduced{…}}`
-  under FR-174's diagonal symmetry, `X` renamed member by member and
-  re-sorted.
+- No such state SHALL return `Holds{Exhaustive}`; FR-174 names no reduction
+  for an HP-3 item.
 
 ## Acceptance Criteria
 
@@ -200,8 +203,8 @@ partner has failed.
 | FR-177-AC-8 | Over the leaky vault, a `μ_U` conjunct with no value on `step(1)` from joint position 1 on, a joint step that enters position 2, does not replace the empty `X` at position 1: the item returns `Violated` with `WitnessExhausted{position: 1}`. AC-6's refused `μ_E` returns `Undecided(MatchUndetermined)` although the members it drops would empty `X` at the same position. | Test (TC-602) |
 | FR-177-AC-9 | AC-1's lasso is the canonical one: the stem is `step(0)` into the empty `X`, the loop is `step(0)` from that state, and since the loop's step repeats the stem's step from an equal universal state the loop entry rotates back to 0. Over the leaky vault with `step` requiring `l = 0`, an added `reset` requiring `l = 0` with postcondition `l = 1`, and `fair { weak V::Vault::reset }` on `a`, the empty state after `step(0)` has only the unfair loop `step(0)`: the lasso goes on by one connecting step to `l = 1`, where nothing is enabled, and loops on the terminal stutter, with `position: 1` and loop entry 2. | Test (TC-602) |
 | FR-177-AC-10 | `Opaque` over the secure vault with the added `match` conjunct `(if present(a.step.Vault::step.i) then 1 / value(a.step.Vault::step.i) else 1) = 1` on the universal variable `a`: the item returns `Violated` with an `Undefined` counterexample at position 1 with cause `division-by-zero`, whose trace for `a` takes `step(0)` and whose trace for `b` is the first member's path, from the initial state `(1, 0)` with no step, one step short of `a`'s; `variables` and `state_keys` hold two entries. With a second universal variable `c` before `b` they hold three, in the order `a`, `c`, `b`. | Test (TC-602) |
-| FR-177-AC-11 | A clause with two instances `v` and `w` that both end at the undefined `μ_E` of AC-5 at position 1 returns the first instance's counterexample. With one initial state, instance `v` is violated at position 0 by an empty `X`; instance `w` is explored through the expansion of its initial states, which needs 7 product states, so `max_states` 7 still returns `Violated` and `max_states` 6 returns `Stopped`. If instance `w` has an atom with no value at position 0, the run returns `w`'s `Undefined` counterexample at position 0, which ranks before `v`'s empty `X` at the same position. | Test (TC-602) |
-| FR-177-AC-12 | `Opaque` over the secure vault from the one initial state `(0, 0)`, where both variables share the secret so `X_0` is empty, with a `μ_U` conjunct that has no value on every joint step, is refused with `HyperRefusal::NoPartnerPath` and returns no outcome. With another instance whose empty `X` is at a later position, the refusal at the earlier position still ends the item. | Test (TC-602) |
+| FR-177-AC-11 | A clause with two instances `v` and `w` that both end at the undefined `μ_E` of AC-5 at position 1 returns the first instance's counterexample. With one initial state, instance `v` is violated at position 0 by an empty `X`; instance `w` is explored through the expansion of its initial states, which needs 7 product states across both instances, so `max_states` 7 still returns `Violated` and `max_states` 6 returns `Stopped`. If instance `w` has an atom with no value at position 0, the run returns `w`'s `Undefined` counterexample at position 0, which ranks before `v`'s empty `X` at the same position. | Test (TC-602) |
+| FR-177-AC-12 | `Opaque` over the secure vault from the one initial state `(0, 0)`, where both variables share the secret so `X_0` is empty, with a `μ_U` conjunct that has no value on every joint step, is refused with `HyperRefusal::NoPartnerPath` and returns no outcome. With another instance whose empty `X` is at the same position as the refusal, the refusal ranks first and ends the item. | Test (TC-602) |
 
 ## Dependencies
 

@@ -71,9 +71,11 @@ pub enum ModelCheckLimit {
   stop the run.
 - The engine SHALL count each budget with checked arithmetic.
 - The engine SHALL never continue a run past a reached budget.
-- A stopped record SHALL carry the count reached, one past the budget's
-  value, since the run stops at the first member or tuple that would pass it
+- A stopped record for `max_witness_set` or `max_relation_tuples` SHALL carry
+  the count reached, one past the budget's value, since the run stops at the first member or tuple that would pass it
   and counts that one.
+- A stopped record for `max_states`, `max_automaton_states` or the
+  evaluation meter SHALL carry no count.
 - For hyper items, `max_states` SHALL count product states,
   `max_transitions` joint steps or moves, and `max_automaton_states`
   automaton states, as FR-176 and FR-178 state.

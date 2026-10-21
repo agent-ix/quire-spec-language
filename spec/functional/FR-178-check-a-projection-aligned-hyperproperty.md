@@ -53,8 +53,8 @@ clause is proved.
 - FR-126's `ModelCheckOutcome`, with `Violated` carrying a
   `HyperCounterexample` of kind `Projected` (FR-183): one finite trace per
   variable, every trace with the same number of visible steps and the total
-  lengths free. The total lengths are equal when no skipped step precedes the
-  rejecting state, and differ when one does.
+  lengths free. The total lengths are equal when every trace takes the same
+  number of skipped steps, and differ otherwise.
 - From the evaluator: the three-valued value of a body over a joint
   projected prefix.
 
@@ -86,7 +86,7 @@ clause is proved.
   counterexample being the first path in breadth-first order to it, split
   into its components' steps with each step marked skipped or visible.
 - Exploration that completes with no rejecting state SHALL return
-  `Holds{Exhaustive}`, or `Holds{Reduced{…}}` under FR-174.
+  `Holds{Exhaustive}`; FR-174 names no reduction for an HP-6 item.
 - `max_depth` SHALL count moves of either kind; `max_states` product states;
   `max_transitions` moves.
 
@@ -107,6 +107,12 @@ clause is proved.
 - If `μ_U` evaluates refused or incomplete at a reachable joint visible
   step, and no refuting evidence comes first, then the engine SHALL return
   `Undecided(MatchUndetermined)` (ADR-023 HV-4).
+- If a component's contract conjunction evaluates `Undefined` at a product
+  state, then the engine SHALL return `Violated` with an `Undefined`
+  counterexample naming that component alone, at the state's depth.
+- If a component's contract conjunction is refused or incomplete at a
+  product state, and no refuting evidence comes first, then the engine SHALL
+  return `Undecided(UndecidedSuccessor)`.
 
 ### Ranking
 
@@ -120,6 +126,10 @@ clause is proved.
 - A refused or incomplete `μ_U` is no product state: it SHALL rank at the
   depth of the state its move would have entered, after any refuting state
   at that depth.
+- An undefined contract conjunction is no product state: it SHALL rank as a
+  refuting finding at its state's depth, in that state's discovery order.
+- A refused or incomplete contract conjunction SHALL rank at its state's
+  depth, after any refuting finding at that depth.
 
 ### Vacuity
 
