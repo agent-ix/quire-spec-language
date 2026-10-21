@@ -176,6 +176,16 @@ automaton states and the depth reached.
 - For a `BoundedMltl` (TP-2) clause the engine SHALL build a deterministic
   finite monitor over positions, for activation `on origin` and for
   activation `on each` (ADR-018 TP-2).
+- For a TP-1, TP-2 or TP-3 clause whose `on each` activation has a `when`
+  condition, the engine SHALL read the condition through the letter seam for
+  the instance at every position the monitor reads, before it reads the
+  clause's atoms, and the clause SHALL activate at the positions where it is
+  true. A condition with no value at a position the monitor reads SHALL end
+  the run with `kind: UndefinedEvaluation` located at the activation, as an
+  undefined atom does (UE-1); it is never read as false. A partial-order run
+  SHALL include the condition's footprint in the atoms'. Such a clause's
+  `Holds` carries an empty closure certificate, since the certified
+  translation reads no `when` condition.
 - For a `ReachableInvariant` (TP-1) or `Safety` (TP-3) clause and for a
   `DeadlockFreedom` item, the engine SHALL build a deterministic bad-prefix
   monitor: the automaton of the formula itself, trimmed to the states from
@@ -351,7 +361,7 @@ automaton states and the depth reached.
 
 ### Unsupported liveness clauses
 
-- The engine SHALL refuse a clause with a guarded `on each` activation (a
+- The engine SHALL refuse a TP-4 clause with a guarded `on each` activation (a
   `when` condition) with `LivenessRefusal::GuardedActivation`, as
   `unsupported_construct`/`not-yet-implemented`, before it explores any
   state. A strong constraint is not refused: FR-130 decides it.
@@ -434,6 +444,7 @@ automaton states and the depth reached.
 | FR-126-AC-13 | The TP-4 claim of AC-1 as a checked clause with a guarded `on each ... when` activation, given to the engine directly (S3/S4 refuse such a clause `NotEmitted`, FR-337), returns the `GuardedActivation` refusal. AC-1's weak `each` claim, whose second phase finds no fair accepting cycle, returns `Holds{Exhaustive}` with a `ComponentCertificate` that FR-339's checker accepts, and returns `ComponentCertificateNotBuilt` with its statistics when no certificate is built, never `Holds` without one. | Test (TC-1085) |
 | FR-126-AC-14 | With initial versions `a` 0 and `b` 1, the AC-12 claim returns `Violated` bound to `b` with the prefix `(0,1) -upd(b)-> (0,2)` and `where: position 1`, since `b`'s product reaches the undefined letter at depth 1 and `a`'s model-only pass at depth 2. | Test (TC-1085) |
 | FR-126-AC-15 | With initial versions `a` 0 and `b` 1 and the AC-12 claim, whose first phase ends in `a` with a finding at depth 2, `max_states` 6 returns `Stopped{ResourceExhausted, {MaxStates, 6}}`, since binding `b` stops before it completes depth 1; `max_states` 1,000 returns the AC-14 finding for `b`; with both versions 0, `max_states` 1,000 returns the AC-12 finding for `a`, the tie going to the earlier binding. | Test (TC-1085) |
+| FR-126-AC-16 | Over the `Counter` subject, `eventually[0,1] holds(c.value = 3)` under event-position false-extension `on each` with a `when` condition returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2` when the condition is `c.value = 1`, and `Holds{Exhaustive}` when it is `c.value >= 2`; `always holds(c.value <= 1)` under infinite-trace `on each` with the condition `c.value >= 3` returns `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`, and with the condition `c.value = 7` returns `Holds` with an empty closure certificate; `eventually[0,3] holds(c.value = 3)` `on each` with a condition undefined at value 2 returns `Violated` with `kind: UndefinedEvaluation` at position 2 and the prefix `0 -inc-> 1 -inc-> 2`, its site naming the activation. | Test (TC-521) |
 
 ## Dependencies
 

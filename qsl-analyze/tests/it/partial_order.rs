@@ -178,6 +178,7 @@ fn counters_por<'r, 'a>(
         Some(Atoms {
             letters: &letters.0,
             nodes: &letters.1,
+            guarded: false,
         }),
         instances,
         world.clauses[0].fairness(),
@@ -415,6 +416,7 @@ impl<'f> GatePor<'f> {
             Some(Atoms {
                 letters: &self.letters.0,
                 nodes: &self.letters.1,
+                guarded: false,
             }),
             &self.instances,
             self.fixture.clause(clause).fairness(),
@@ -855,6 +857,7 @@ fn the_breadth_first_proviso_prevents_ignoring_a_visible_transition() {
         Some(Atoms {
             letters: &letters.0,
             nodes: &letters.1,
+            guarded: false,
         }),
         &instances,
         fixture.clause(0).fairness(),

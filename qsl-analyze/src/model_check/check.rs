@@ -153,9 +153,11 @@ pub enum ModelCheckRefusal {
         /// The clause's property form.
         form: Option<PropertyForm>,
     },
-    /// The clause's `on each` activation has a `when` condition, which the
-    /// letter seam does not read.
-    #[error("the `when` condition of an `on each` activation is not read yet")]
+    /// A liveness clause (TP-4) with a guarded `on each` activation: the
+    /// liveness engine does not read the `when` condition yet
+    /// (`unsupported_construct/not-yet-implemented`, FR-126 "Unsupported
+    /// liveness clauses").
+    #[error("unsupported_construct/not-yet-implemented: EN-1 does not decide a liveness clause with a guarded `on each` activation yet")]
     GuardedActivation,
     /// The clause has no property automaton: a past operator over a future
     /// one, or more atoms than a letter holds.
@@ -230,6 +232,9 @@ enum Item<'a> {
         fairness: Vec<FairnessConstraint>,
         /// The `holds` atom each letter atom reads: atom `i` is `atoms[i]`.
         atoms: Vec<FormulaNodeId>,
+        /// The atom true where a guarded `on each` clause's `when`
+        /// condition holds.
+        when: Option<Atom>,
         /// The atom true at every represented position of a bounded `on
         /// each` clause.
         live: Option<Atom>,
@@ -1117,12 +1122,14 @@ fn ample_of<'r, 'a>(
             letters,
             fairness,
             atoms,
+            when,
             ..
         } => Por::new(
             system,
             Some(Atoms {
                 letters: *letters,
                 nodes: atoms,
+                guarded: when.is_some(),
             }),
             bindings,
             fairness,
@@ -1219,9 +1226,6 @@ fn prepare(
             return Err(ModelCheckRefusal::FormNotDecided { form })
         }
     };
-    if matches!(clause.activation(), Activation::Each { guarded: true }) {
-        return Err(ModelCheckRefusal::GuardedActivation);
-    }
     let automaton = match counting {
         Counting::Every => translate(clause, max_automaton_states),
         Counting::ByKind => translate_counted(clause, max_automaton_states),
@@ -1230,9 +1234,13 @@ fn prepare(
     if automaton.kind() == AutomatonKind::Liveness {
         return Err(fault("a-safety-form-translates-to-a-safety-automaton"));
     }
-    let certified = (form == Some(PropertyForm::ReachableInvariant)
-        && clause.profile() == TemporalProfile::InfiniteTrace)
-        || (bounded && bounded_shape(clause).is_some());
+    // A closure certificate keys the unguarded translation, which reads no
+    // `when` condition, so a guarded clause's proof carries none.
+    let guarded = matches!(clause.activation(), Activation::Each { guarded: true });
+    let certified = !guarded
+        && ((form == Some(PropertyForm::ReachableInvariant)
+            && clause.profile() == TemporalProfile::InfiniteTrace)
+            || (bounded && bounded_shape(clause).is_some()));
     let last_read = match clause.activation() {
         Activation::Origin if bounded => clause.horizon(),
         Activation::Origin | Activation::Each { .. } => None,
@@ -1242,6 +1250,7 @@ fn prepare(
         letters,
         fairness: clause.fairness().to_vec(),
         atoms: automaton.atoms().to_vec(),
+        when: automaton.when(),
         live: automaton.live(),
         uncounted: automaton.uncounted(),
         counting,
@@ -2199,6 +2208,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             bindings,
             letters,
             atoms,
+            when,
             live,
             uncounted,
             last_read,
@@ -2216,6 +2226,28 @@ impl<S: SubjectSystem> Run<'_, S> {
         }
         let reads_position = last_read.is_none_or(|last| widen(node.distance) <= last);
         let read: &[FormulaNodeId] = if reads_position { atoms } else { &[] };
+        // UE-1: a guarded activation's condition is read before the atoms.
+        if let Some(when) = (*when).filter(|_| reads_position) {
+            self.poll()?;
+            let mut meter = Meter::new(self.meter);
+            let reading = letters
+                .activation(binding, &self.system.atom_state(&node.state), &mut meter)
+                .map_err(|_| {
+                    Self::stopped(ModelCheckLimit::EvaluationMeter, self.meter.work_units)
+                })?;
+            match reading {
+                AtomReading::True => letter = letter.with(when),
+                AtomReading::False => {}
+                AtomReading::Undefined(cause) => {
+                    let site = Self::site(node, UndefinedLocus::Activation, None);
+                    let kind = CounterexampleKind::UndefinedEvaluation(UndefinedEvaluation {
+                        site,
+                        cause,
+                    });
+                    return Ok((from, Some(kind), None));
+                }
+            }
+        }
         // The first atom's reading, the one atom a canonical bounded clause
         // has.
         let mut holds = None;

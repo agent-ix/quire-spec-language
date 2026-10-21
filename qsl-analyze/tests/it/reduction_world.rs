@@ -726,6 +726,8 @@ impl Letters {
 }
 
 impl ModelLetters for Letters {
+    crate::units::unguarded!();
+
     fn reads(&self, atom: FormulaNodeId) -> crate::units::Reads {
         let index = self
             .holds
@@ -761,6 +763,8 @@ impl ModelLetters for Letters {
 struct NoAtoms;
 
 impl ModelLetters for NoAtoms {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }

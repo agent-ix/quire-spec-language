@@ -984,6 +984,8 @@ struct CellV {
 }
 
 impl ModelLetters for CellV {
+    crate::units::unguarded!();
+
     fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
         crate::units::unread()
     }

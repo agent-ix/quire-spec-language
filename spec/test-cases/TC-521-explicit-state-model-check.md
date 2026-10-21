@@ -15,7 +15,7 @@ granularities, bounded clauses `on origin` and `on each`, an invariant,
 deadlock detection, a mixed formula, every limit with its value, the second
 phase at `max_depth`, `max_automaton_states`, and determinism.
 
-Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10 and FR-126-AC-11.
+Scope: FR-126-AC-1 to FR-126-AC-7, FR-126-AC-10, FR-126-AC-11 and FR-126-AC-16.
 
 ## Test Procedure
 
@@ -47,6 +47,8 @@ to 1,000,000 (TC-472's 1,000 would stop the example at its first expansion); the
    versions `a` 2 and `b` 0 (FR-126-AC-10); `always holds(6 mod (2 -
    c.versionNumber) >= 0)` over the example unit with both versions 0 and
    with `a` 0 and `b` 1 (FR-126-AC-11).
+9. The guarded `on each` clauses of FR-126-AC-16 over `Counter`: each with its
+   `when` condition read by the test's own letters.
 
 Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
 
@@ -81,3 +83,7 @@ Tag the tests `#[trace("TC-521", "FR-126-AC-n")]`.
   `(2,0)`, length 3; `Violated` bound to `a` with the prefix to position 2,
   `kind: UndefinedEvaluation`, cause division-by-zero; `Violated` bound to
   `b` with the prefix `(0,1) -upd(b)-> (0,2)` at position 1.
+- Step 9: `Violated` with the prefix `0 -inc-> 1 -inc-> 2`; `Holds{Exhaustive}`;
+  `Violated` with the prefix `0 -inc-> 1 -inc-> 2 -inc-> 3`; `Holds` with an
+  empty closure certificate; `Violated`, `kind: UndefinedEvaluation` naming
+  the activation at position 2.
