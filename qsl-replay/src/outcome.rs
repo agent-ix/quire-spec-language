@@ -564,7 +564,8 @@ impl OutcomeItem {
                     | UnavailabilityCause::HiddenFieldLiveness
                     | UnavailabilityCause::StrongAbstractFairness
                     | UnavailabilityCause::NotMarkov
-                    | UnavailabilityCause::ConfidenceBeyondPrecision => {}
+                    | UnavailabilityCause::ConfidenceBeyondPrecision
+                    | UnavailabilityCause::PunctualInterval { .. } => {}
                 }
                 (ItemLabel::Unsupported, Some(item))
             }
