@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+    TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
     MemoryModel, ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
@@ -210,21 +211,19 @@ pub(crate) fn contracts(two_pre: &str) -> String {
     )
 }
 
-/// The infinite-trace temporal profile, which `t0` names by default.
-pub(crate) const INFINITE_TRACE: &str = "quire.temporal.infinite-trace/v1";
-
 /// The unit selecting the domain package as `M`, with `body` after the
-/// header.
+/// header. The temporal profile is `t0`, infinite-trace, or `tb`, the
+/// bounded false-extension profile, when `body` has a clause `using tb`.
 pub(crate) fn unit_text(body: &str) -> String {
-    unit_text_under(INFINITE_TRACE, body)
-}
-
-/// [`unit_text`] with `t0` naming the temporal profile `profile`.
-pub(crate) fn unit_text_under(profile: &str, body: &str) -> String {
+    let (name, profile) = if body.contains(" using tb ") {
+        ("tb", "quire.temporal.event-position.false-extension/v1")
+    } else {
+        ("t0", "quire.temporal.infinite-trace/v1")
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         profile t0 = \"{profile}\";\n\
+         profile {name} = \"{profile}\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
         hex(&document_digest(&document()))
     )
@@ -232,14 +231,8 @@ pub(crate) fn unit_text_under(profile: &str, body: &str) -> String {
 
 /// The checked package of `body`.
 pub(crate) fn package(body: &str) -> CheckedPackage {
-    package_under(INFINITE_TRACE, body)
-}
-
-/// The checked package of `body` with `t0` naming the temporal profile
-/// `profile`.
-pub(crate) fn package_under(profile: &str, body: &str) -> CheckedPackage {
     let document = document();
-    let text = unit_text_under(profile, body);
+    let text = unit_text(body);
     let packages = package_input([document.as_slice()]);
     let parsed = qsl_cst::parse(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
@@ -473,33 +466,18 @@ pub(crate) fn v(state: &ModelSimState, object: &str) -> i64 {
 /// The compiled `package_id` of the unit with `body`, through FR-098's
 /// compile.
 pub(crate) fn package_id(body: &str) -> qsl_replay::DigestRecord {
-    package_id_under(INFINITE_TRACE, body)
-}
-
-/// [`package_id`] with `t0` naming the temporal profile `profile`.
-pub(crate) fn package_id_under(profile: &str, body: &str) -> qsl_replay::DigestRecord {
-    compiled_under(profile, body)
-        .expect("the unit compiles")
-        .package_id()
+    compiled(body).expect("the unit compiles").package_id()
 }
 
 /// FR-098's compile of the unit with `body`.
 pub(crate) fn compiled(
     body: &str,
 ) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {
-    compiled_under(INFINITE_TRACE, body)
-}
-
-/// [`compiled`] with `t0` naming the temporal profile `profile`.
-pub(crate) fn compiled_under(
-    profile: &str,
-    body: &str,
-) -> Result<qsl_replay::CompiledPackage, qsl_replay::ReplayRefusal> {
     let document = document();
     qsl_replay::compile_package(
         SourceIdentity::new("agent-ix", "counter", "git", "1"),
         "counter.native",
-        unit_text_under(profile, body).as_bytes(),
+        unit_text(body).as_bytes(),
         [document.as_slice()],
         &qsl_replay::DependencyInput::default(),
         qsl_replay::StageLimits::default(),
@@ -512,6 +490,16 @@ pub(crate) fn compiled_under(
 pub(crate) struct Reached<M: MemoryModel = Sc> {
     pub(crate) state: ProtocolState<M>,
     pub(crate) steps: Vec<(ProtocolTransition, usize)>,
+}
+
+/// The terminal class of `state` (FR-124, ADR-027 PD-1, PD-2, AE-4), read
+/// from its bounded expansion.
+pub(crate) fn class_of<M: MemoryModel>(
+    system: &ProtocolSystem<'_, M>,
+    state: &ProtocolState<M>,
+) -> TerminalClass {
+    let (expansion, cut) = system.successors_bounded(state).expect("the state expands");
+    SubjectSystem::terminal_class(system, state, &expansion, cut).expect("a class")
 }
 
 /// Every reachable state of `system`, breadth-first from its initial states,
@@ -593,7 +581,10 @@ pub(crate) fn projections(reached: &[Reached]) -> std::collections::BTreeSet<Vec
                 | StepKind::Fence
                 | StepKind::Memory
                 | StepKind::CAttempt
-                | StepKind::CEnd => None,
+                | StepKind::CEnd
+                | StepKind::Activate
+                | StepKind::Spawn
+                | StepKind::Retire => None,
             };
             if let Some(name) = &named {
                 prefix.push(name.clone());

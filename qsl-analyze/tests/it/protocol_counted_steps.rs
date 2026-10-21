@@ -36,21 +36,17 @@ use quire_exact::{Cancel, Incomplete, Meter};
 
 use crate::counter::UNLIMITED;
 use crate::fill::{
-    attempt, contracts, document, fill_unit, instance, model_subject, package_id_under,
-    package_under, protocol, reachable, sc_system, subject, unit_text_under, universe, v,
-    Documents, Reached,
+    attempt, contracts, document, fill_unit, instance, model_subject, package, package_id,
+    protocol, reachable, sc_system, subject, unit_text, universe, v, Documents, Reached,
 };
 use crate::model_settle::{envelope_at, request};
 use crate::protocol_compensation::pay;
-
-/// The bounded profile the claims are checked under, as `t0`.
-const BOUNDED: &str = "quire.temporal.event-position.false-extension/v1";
 
 /// A claim over `k: M::Cell`, `on origin`, under event-position
 /// false-extension.
 fn claim(formula: &str) -> String {
     format!(
-        "temporal Claim using t0 over (k: M::Cell) clock \"model-steps\" on origin \
+        "temporal Claim using tb over (k: M::Cell) clock \"model-steps\" on origin \
          {{ {formula} }}\n"
     )
 }
@@ -67,7 +63,7 @@ impl Case {
     fn new(body: &str) -> Self {
         let mut documents = Documents::new();
         let initial = vec![documents.start("s0", &[("c", 0)])];
-        let checked = package_under(BOUNDED, body);
+        let checked = package(body);
         Self {
             body: body.to_owned(),
             documents,
@@ -105,6 +101,7 @@ impl Case {
                 },
                 max_depth: None,
                 max_store_buffer: None,
+                max_live_instances: None,
                 limits: ModelCheckLimits::default(),
             },
             &Cancel::new(),
@@ -119,8 +116,8 @@ impl Case {
         letters: &dyn ModelLetters,
         outcome: &ModelCheckOutcome<ProtocolTransition>,
     ) -> ResultLabel {
-        let id = package_id_under(BOUNDED, &self.body);
-        let unit = unit_text_under(BOUNDED, &self.body).into_bytes();
+        let id = package_id(&self.body);
+        let unit = unit_text(&self.body).into_bytes();
         let node = &self.checked.graph().temporal_clauses()[0];
         let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
         let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
@@ -141,6 +138,7 @@ impl Case {
                     roles: subject.roles,
                     memory: subject.memory,
                     max_store_buffer: None,
+                    max_live_instances: None,
                 },
                 &envelope_at(&unit, id, payload.clone(), clause_node, occurrence.clone()),
                 letters,
@@ -158,6 +156,7 @@ impl Case {
                     letters,
                 },
                 max_store_buffer: None,
+                max_live_instances: None,
             },
             &Cancel::new(),
             replay,
@@ -576,4 +575,21 @@ fn an_uncounted_cycle_that_keeps_an_interval_open_is_not_holds() {
         ),
         "{outcome:?}"
     );
+}
+
+/// ADR-027 PB-3: an operation, an event (an `activate` included), a `send`
+/// and a `receive` count; every other step kind, `spawn`, `retire`, `fence`
+/// and a memory step included, moves the position and not the distance.
+#[trace("TC-658")]
+#[test]
+fn only_operations_events_sends_and_receives_count() {
+    use StepKind::*;
+    for kind in [Attempt, CAttempt, Event, Activate, Send, Receive] {
+        assert!(kind.counts(), "{kind:?}");
+    }
+    for kind in [
+        Duplicate, Lose, Fork, Join, Timeout, Finish, Memory, Fence, CEnd, Spawn, Retire,
+    ] {
+        assert!(!kind.counts(), "{kind:?}");
+    }
 }

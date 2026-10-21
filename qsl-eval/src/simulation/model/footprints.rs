@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use qsl_semantics::check::footprint::{
     derive_atom_reads, derive_constraint_reads, derive_footprint, derive_selected_footprint,
-    FootprintObject, FootprintRefusal, SymbolicFootprint, SymbolicLocation,
+    derive_slot_reads, FootprintObject, FootprintRefusal, SymbolicFootprint, SymbolicLocation,
 };
 use qsl_semantics::check::CheckedNode;
 use qsl_semantics::model::clause_observation::Observation;
@@ -557,6 +557,33 @@ impl<'a> ModelSystem<'a> {
             .find(|clause| clause.name() == name)
             .ok_or(FootprintError::UnknownConstraint)?;
         let symbolic = derive_constraint_reads(graph, &self.model, clause)?;
+        Ok(symbolic
+            .iter()
+            .filter_map(|location| lower(location, &|_| None))
+            .collect())
+    }
+
+    /// ADR-027 FT-3: the model locations a protocol expression `body`, typed
+    /// over the binders `parameters` in slot order, reads: its field reads on
+    /// any object and its membership reads.
+    ///
+    /// # Errors
+    ///
+    /// [`FootprintError::Refused`] when the expression reads through a form
+    /// QSpec FR-383 gives no footprint rule.
+    pub(crate) fn slot_reads(
+        &self,
+        name: &str,
+        parameters: &[(String, ValueType)],
+        body: &qsl_semantics::check::CheckedBody,
+    ) -> Result<BTreeSet<Location>, FootprintError> {
+        let symbolic = derive_slot_reads(
+            self.package.graph(),
+            &self.model,
+            name,
+            parameters,
+            body.root(),
+        )?;
         Ok(symbolic
             .iter()
             .filter_map(|location| lower(location, &|_| None))

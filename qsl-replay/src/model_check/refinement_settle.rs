@@ -149,6 +149,12 @@ fn settle_liveness(
             UndecidedCause::MatchUndetermined => InconclusiveCause::MatchUndetermined,
             UndecidedCause::VacuousMatch => InconclusiveCause::VacuousMatch,
             UndecidedCause::UncountedLoop => InconclusiveCause::UncountedLoop,
+            UndecidedCause::InstanceBoundReached { bound, states } => {
+                InconclusiveCause::InstanceBoundReached {
+                    bound: *bound,
+                    states: *states,
+                }
+            }
         }),
         ModelCheckOutcome::Stopped { cause, limit, .. } => Row::stopped_run(*cause, *limit),
         // The second phase of a refinement returns no other outcome.
@@ -180,6 +186,7 @@ fn record_of(
         counterexample,
         hints: Vec::new(),
         memory_bound: None,
+        instance_bound: None,
     }
 }
 

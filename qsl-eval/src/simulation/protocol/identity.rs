@@ -8,10 +8,11 @@
 //! `finish` node's own name.
 
 use quire_canonical::{Encode, Error, Sink, Writer};
+use quire_exact::ObjectReference;
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::memory::MemoryStepId;
-use crate::simulation::model::encode::Enc;
+use super::memory::{MemoryChoice, MemoryStepId};
+use crate::simulation::model::encode::{reference_enc, Enc};
 
 /// One step of a thread's path (QSpec FR-425): for a branch thread, the
 /// `parallel` that forked it, its branch label and the parallel instance's
@@ -258,18 +259,41 @@ pub enum StepKind {
     CAttempt,
     /// ST-12: the end of a compensation thread.
     CEnd,
+    /// ST-13: the start of a protocol instance by a trigger record.
+    Activate,
+    /// ST-14: an object becomes an instance of a replicated role.
+    Spawn,
+    /// ST-15: an instance of a replicated role retires.
+    Retire,
 }
 
 impl StepKind {
     /// Whether a step of this kind counts for interval distance (ADR-027
-    /// PB-3, QSpec FR-431): an operation, an event, a `send` or a
-    /// `receive`. Every other step, a `fence` and a memory step included,
-    /// moves the position and not the distance.
+    /// PB-3, QSpec FR-431): an operation (`attempt`, `cattempt`), an event
+    /// (`event`, and `activate` for a trigger occurrence), a `send` or a
+    /// `receive`. Every other step, `spawn`, `retire`, a `fence` and a memory
+    /// step (a `flush` or a release/acquire choice) included, moves the
+    /// position and not the distance.
     pub const fn counts(self) -> bool {
-        matches!(
-            self,
-            Self::Attempt | Self::CAttempt | Self::Event | Self::Send | Self::Receive
-        )
+        match self {
+            Self::Attempt
+            | Self::CAttempt
+            | Self::Event
+            | Self::Activate
+            | Self::Send
+            | Self::Receive => true,
+            Self::Duplicate
+            | Self::Lose
+            | Self::Fork
+            | Self::Join
+            | Self::Timeout
+            | Self::Finish
+            | Self::Memory
+            | Self::Fence
+            | Self::CEnd
+            | Self::Spawn
+            | Self::Retire => false,
+        }
     }
 
     fn text(self) -> &'static str {
@@ -288,6 +312,9 @@ impl StepKind {
             Self::Fence => "fence",
             Self::CAttempt => "cattempt",
             Self::CEnd => "cend",
+            Self::Activate => "activate",
+            Self::Spawn => "spawn",
+            Self::Retire => "retire",
         }
     }
 }
@@ -302,6 +329,8 @@ enum Members {
         operation: String,
         receiver: Enc,
         arguments: Vec<Enc>,
+        /// `memory_choice`: the message or slot the memory model chose.
+        choice: Option<MemoryChoice>,
     },
     /// No further member.
     Control,
@@ -334,6 +363,25 @@ enum Members {
         template: String,
         registration: RegistrationKey,
     },
+    /// A `spawn` or `retire`: the `role`, the `object`'s reference and the
+    /// `instance` ordinal of the protocol instance that owns the role
+    /// instance.
+    Role {
+        role: String,
+        object: ObjectReference,
+        instance: u64,
+    },
+}
+
+/// The instance of a replicated role that takes a step `by` the role
+/// (ADR-027 RR-2, TS-2): the role, which a claim names (FT-5), and the
+/// instance's object reference, which the identity's `actor` member is.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Actor {
+    /// The replicated role.
+    pub role: String,
+    /// The acting instance's object.
+    pub object: ObjectReference,
 }
 
 /// A compensation registration's key (ADR-027 CP-1, QSpec FR-425): its
@@ -542,6 +590,7 @@ pub struct ProtocolTransition {
     removed: Option<QueueEvent>,
     send_record: Option<SendRecord>,
     memory: Option<CarriedComponent>,
+    actor: Option<Actor>,
 }
 
 impl ProtocolTransition {
@@ -566,6 +615,7 @@ impl ProtocolTransition {
             removed: None,
             send_record: None,
             memory: None,
+            actor: None,
         }
     }
 
@@ -580,6 +630,7 @@ impl ProtocolTransition {
             removed: None,
             send_record: None,
             memory: None,
+            actor: None,
         }
     }
 
@@ -599,11 +650,21 @@ impl ProtocolTransition {
                 application,
                 receiver,
                 arguments,
+                choice: None,
             },
             removed: None,
             send_record: None,
             memory: None,
+            actor: None,
         }
+    }
+
+    /// This attempt, having chosen `choice` (QSpec FR-426 `memory_choice`).
+    pub(crate) fn choosing(mut self, choice: Option<MemoryChoice>) -> Self {
+        if let Members::Attempt { choice: held, .. } = &mut self.members {
+            *held = choice;
+        }
+        self
     }
 
     /// A step of `kind` by `thread` at `node` that binds `record`: an
@@ -617,6 +678,7 @@ impl ProtocolTransition {
             removed: None,
             send_record: None,
             memory: None,
+            actor: None,
         }
     }
 
@@ -636,6 +698,7 @@ impl ProtocolTransition {
             removed: None,
             send_record: None,
             memory: None,
+            actor: None,
         }
     }
 
@@ -663,6 +726,7 @@ impl ProtocolTransition {
             removed: None,
             send_record: None,
             memory: None,
+            actor: None,
         }
     }
 
@@ -680,6 +744,7 @@ impl ProtocolTransition {
             removed: None,
             send_record: None,
             memory: None,
+            actor: None,
         }
     }
 
@@ -692,6 +757,71 @@ impl ProtocolTransition {
             removed: None,
             send_record: None,
             memory: None,
+            actor: None,
+        }
+    }
+
+    /// `activate` by the environment of an `on each` clause with the trigger
+    /// `record` (ADR-027 ST-13).
+    pub(crate) fn activate(record: Enc) -> Self {
+        Self {
+            kind: StepKind::Activate,
+            thread: None,
+            node: None,
+            members: Members::Record { record },
+            removed: None,
+            send_record: None,
+            memory: None,
+            actor: None,
+        }
+    }
+
+    /// `spawn` or `retire` (`kind`) of `object` as an instance of `role` in
+    /// protocol instance `instance` (ADR-027 ST-14, ST-15).
+    pub(crate) fn role(
+        kind: StepKind,
+        instance: u64,
+        role: String,
+        object: ObjectReference,
+    ) -> Self {
+        Self {
+            kind,
+            thread: None,
+            node: None,
+            members: Members::Role {
+                role,
+                object,
+                instance,
+            },
+            removed: None,
+            send_record: None,
+            memory: None,
+            actor: None,
+        }
+    }
+
+    /// This step, taken `by` the instance `actor` of a replicated role
+    /// (ADR-027 RR-2).
+    pub(crate) fn acting(mut self, actor: Actor) -> Self {
+        self.actor = Some(actor);
+        self
+    }
+
+    /// The instance of a replicated role this step is taken by.
+    pub fn actor(&self) -> Option<&Actor> {
+        self.actor.as_ref()
+    }
+
+    /// For a `spawn` or `retire`, the replicated role, the object and the
+    /// protocol instance's ordinal.
+    pub fn role_instance(&self) -> Option<(&str, &ObjectReference, u64)> {
+        match &self.members {
+            Members::Role {
+                role,
+                object,
+                instance,
+            } => Some((role, object, *instance)),
+            _ => None,
         }
     }
 
@@ -746,6 +876,23 @@ impl ProtocolTransition {
         self.memory.as_ref()
     }
 
+    /// This attempt, naming `choice` as its message or slot, as a
+    /// counterexample from outside may: replay refuses a depth the state
+    /// has no message or slot at (FR-227).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn naming(self, choice: Option<MemoryChoice>) -> Self {
+        self.choosing(choice)
+    }
+
+    /// The message or slot an access chose (QSpec FR-426 `memory_choice`);
+    /// `None` for a step whose memory model chooses none.
+    pub fn memory_choice(&self) -> Option<&MemoryChoice> {
+        match &self.members {
+            Members::Attempt { choice, .. } => choice.as_ref(),
+            _ => None,
+        }
+    }
+
     /// The anchor the step's position is observed with (ADR-027 PB-2,
     /// ADR-025 MS-2): an attempt's operation anchor, a memory step's
     /// `memory` anchor naming it, and every other step's `protocol` anchor.
@@ -763,6 +910,7 @@ impl ProtocolTransition {
             Members::Control
             | Members::Record { .. }
             | Members::Fence { .. }
+            | Members::Role { .. }
             | Members::CEnd { .. } => PositionAnchor::Protocol {
                 step: self.kind,
                 node: self.node.as_deref(),
@@ -802,6 +950,7 @@ impl ProtocolTransition {
             | Members::Record { .. }
             | Members::Channel { .. }
             | Members::Memory { .. }
+            | Members::Role { .. }
             | Members::Fence { .. } => None,
         }
     }
@@ -829,6 +978,7 @@ impl ProtocolTransition {
             | Members::Channel { .. }
             | Members::Memory { .. }
             | Members::Fence { .. }
+            | Members::Role { .. }
             | Members::CEnd { .. } => None,
         }
     }
@@ -842,6 +992,7 @@ impl ProtocolTransition {
             | Members::Record { .. }
             | Members::Channel { .. }
             | Members::Fence { .. }
+            | Members::Role { .. }
             | Members::CAttempt { .. }
             | Members::CEnd { .. } => None,
         }
@@ -857,6 +1008,7 @@ impl ProtocolTransition {
             | Members::Record { .. }
             | Members::Memory { .. }
             | Members::Fence { .. }
+            | Members::Role { .. }
             | Members::CAttempt { .. }
             | Members::CEnd { .. } => None,
         }
@@ -870,16 +1022,23 @@ impl ProtocolTransition {
         if let Some(node) = &self.node {
             members.push(("node", Enc::text(node.clone())));
         }
+        if let Some(actor) = &self.actor {
+            members.push(("actor", reference_enc(&actor.object)));
+        }
         match &self.members {
             Members::Attempt {
                 operation,
                 receiver,
                 arguments,
+                choice,
                 ..
             } => {
                 members.push(("operation", Enc::text(operation.clone())));
                 members.push(("receiver", receiver.clone()));
                 members.push(("arguments", Enc::Array(arguments.clone())));
+                if let Some(choice) = choice {
+                    members.push(("memory_choice", choice.enc()));
+                }
             }
             Members::Control => {}
             Members::Record { record } => members.push(("record", record.clone())),
@@ -925,6 +1084,15 @@ impl ProtocolTransition {
                 members.push(("template", Enc::text(template.clone())));
                 members.push(("registration", registration.enc()));
             }
+            Members::Role {
+                role,
+                object,
+                instance,
+            } => {
+                members.push(("role", Enc::text(role.clone())));
+                members.push(("object", reference_enc(object)));
+                members.push(("instance", Enc::text(instance.to_string())));
+            }
         }
         Enc::tagged("protocol-transition", members)
     }
@@ -936,6 +1104,7 @@ impl PartialEq for ProtocolTransition {
             && self.thread == other.thread
             && self.node == other.node
             && self.members == other.members
+            && self.actor == other.actor
     }
 }
 
@@ -1029,6 +1198,13 @@ pub enum WaitCause {
     CommitClosed {
         /// The template's qualified name.
         template: String,
+    },
+    /// An event, attempt, send, receive or compensation attempt owned by a
+    /// replicated role that has no live instance and no enabled `spawn`,
+    /// naming the role.
+    NoRoleInstance {
+        /// The replicated role's name.
+        role: String,
     },
     /// A step disabled only by its memory model's gate.
     Gate,

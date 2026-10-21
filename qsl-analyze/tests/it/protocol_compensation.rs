@@ -26,7 +26,7 @@ use crate::fill::{contracts, json_of, protocol, reachable, sc_system, Reached};
 use crate::protocol_system::{violated, Case};
 
 /// `dec`'s contracts: the refund.
-const REFUND: &str = "pre DecPre using v on M::Cell::dec { self.v >= 1 }\n\
+pub(crate) const REFUND: &str = "pre DecPre using v on M::Cell::dec { self.v >= 1 }\n\
                       post DecPost using v on M::Cell::dec { pre(self.v) - self.v = 1 }\n";
 
 /// The template's qualified name.
@@ -35,7 +35,7 @@ const TEMPLATE: &str = "Pay::Refund";
 /// A `Refund` template for the effect `effect`, of operation `operation`,
 /// with `attempts`, retry relation `retry`, commit `commit` and recovery
 /// predicate `recover`.
-fn refund(
+pub(crate) fn refund(
     effect: &str,
     operation: &str,
     attempts: u64,
@@ -57,19 +57,19 @@ fn refund(
 }
 
 /// §7.1's charge, `inc` on the account.
-const CHARGE: &str =
+pub(crate) const CHARGE: &str =
     "attempt C by w on M::Cell::inc contracts [IncPre, IncPost] as (c: Boolean) { true };";
 
 /// §7.1's effect `Paid` of `of`.
-fn paid(of: &str) -> String {
+pub(crate) fn paid(of: &str) -> String {
     format!("effect Paid of {of} as (pd: M::Cell) {{ true }};")
 }
 
 /// §7.1's failure event.
-const FAIL: &str = "event Fail by w as (failed: Boolean) { true };";
+pub(crate) const FAIL: &str = "event Fail by w as (failed: Boolean) { true };";
 
 /// `Pay`'s `run` with `between` between `Paid` and `Fail`.
-fn pay_run(between: &str) -> String {
+pub(crate) fn pay_run(between: &str) -> String {
     format!(
         "sequence Main {{ {CHARGE} {} {between} {FAIL} }}",
         paid("Main::C")
