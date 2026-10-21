@@ -69,3 +69,43 @@ What is sound:
 - **Live registration = `registered` or `activated`.** This is consistent with CP-1 and FR-425's ordinal rule. An ended or closed registration stays in the key with its status, which FR-427's status list requires, until its ordinal is reused.
 - **Qualified template name `<protocol>::<template>`.** It matches PS-7's channel naming. It shares PR 2's FND-007 caveat (no package qualifier).
 - **`cattempt` selects every clause.** A template has no `contracts` list, so this is the only reading ST-11's "ST-1's conditions ... for an application of the template's operation" admits.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-007 | low | The root can now wait at an `effect` whose attempt's binder is unbound (on the `no` case of a `choice`, as `an_effect_waits_for_its_attempts_binder` shows). Its wait cause falls through to `ControlStep::Event`, so it reports `Constraint`, although no constraint was evaluated. ADR-027 PD-4 and QSpec FR-429 have no cause for this wait. It belongs with STD-233 item 3 (ST-2). | qsl-eval/src/simulation/protocol/steps.rs:1159, qsl-eval/src/simulation/protocol/steps.rs:349-355 |
+
+## Dispositions
+
+Round 1, head 0d4ac0c4b.
+
+The focused tests ran through `locked-build.sh` and passed: the `protocol_` and `weak_memory` filters, 77 tests.
+
+FND-001 was checked by reverting its fix locally, which made `a_compensation_thread_keys_its_registration` fail. The revert was then undone, and `target/` deleted.
+
+| FND | Outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 0d4ac0c4b |
+| FND-002 | accepted-no-change | The entry is necessary and kept. It is recorded in the doc comment and in the PR body as a spec-gap reading that needs an ADR-027 PS-8 sentence and a QSpec FR-425 row. STD-233 item 1(a) owns that amendment. |
+| FND-003 | fixed | 0d4ac0c4b |
+| FND-004 | fixed | 0d4ac0c4b |
+| FND-005 | fixed | 0d4ac0c4b |
+| FND-006 | fixed | 0d4ac0c4b |
+
+Notes:
+
+- **FND-001.** The key is now canonical, and it does not split states needlessly.
+  - Every compensation thread's `thread-state` gains `registration`, and only compensation threads carry it.
+  - The mapping decides the thread's `cattempt`/`cend` identities and their effects, so two states that differ in it differ in behaviour. Splitting them is required.
+  - `assert_keys_determine_successors` explores the crosswise fixture without expanding a known key twice and requires each repeat of a key to step alike. Key-merged exploration is therefore exact there.
+  - The test fails when the member is removed.
+- **FND-003.** The static `precedes` walk and `Unsupported::DetachedEffect` are deleted.
+  - `event_node` now enables an effect only while its attempt's entry is in the thread's environment.
+  - An effected attempt with no result binds an `attempt-record` (receiver, arguments). That is ST-1's record, so the extra `observations` entry is spec-conformant.
+  - The effect is added as a keeper of that binder.
+  - The footprint writes `bind(attempt, t)` for an effected attempt, and the effect's enabling set reads it.
+  - Tests cover an all-joined branch attempt with the effect after the join, which registers, and a `choice` with the attempt in one case: it steps on `yes` and waits on `no`.
+- **FND-004.** `a_retry_over_attempt_records_is_refused` asserts the refusal. The PR body lists the previous-attempt-record member as a spec-gap remainder, and STD-233 item 1(c) owns it.
+- **FND-005.** A doc comment and the PR body now give the reason: no resolved memory model governs a compensation thread (ADR-025 MM-3), so its attempt is local.
+- **FND-006.** The PR body records the rest-point reading.
