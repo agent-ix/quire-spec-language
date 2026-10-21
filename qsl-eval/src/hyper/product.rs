@@ -69,6 +69,18 @@ pub enum Property {
     },
     /// HP-3: the witness set `X` of the universal tuple (ADR-023 HC-2).
     Witnesses(WitnessSet),
+    /// HP-6: the body's safety monitor is in its rejecting state, so the
+    /// joint projected prefix is a bad prefix (ADR-023 PA-4). No move follows.
+    Rejected,
+    /// HP-6: a visible move led here, and `μ_U` has no value on it (ADR-023
+    /// HV-8); the state's components are the move's post-states. No move
+    /// follows.
+    MatchUndefined {
+        /// The index of the conjunct among the clause's universal conjuncts.
+        conjunct: usize,
+        /// Why it has no value.
+        cause: UndefinedCause,
+    },
 }
 
 /// A product state: the components' model states and the property state.
@@ -88,6 +100,8 @@ pub enum ComponentStep {
     /// The stutter step of a terminal component (ADR-018 SM-4), with no model
     /// operation.
     Stutter,
+    /// HP-6: the component does not move in a skip move (ADR-023 PA-4).
+    Stay,
 }
 
 impl Encode for ComponentStep {
@@ -102,6 +116,7 @@ impl Encode for ComponentStep {
                 identity.encode_into(writer)?;
             }
             Self::Stutter => writer.string("terminal-stutter")?,
+            Self::Stay => writer.string("stay")?,
         }
         writer.end_array()
     }
@@ -113,13 +128,16 @@ impl Encode for ComponentStep {
 pub struct HyperTransition(pub Vec<ComponentStep>);
 
 impl HyperTransition {
-    /// The labels `match` conjuncts read for this step.
-    pub fn labels(&self) -> Vec<StepLabel<'_>> {
+    /// The labels `match` conjuncts read for this step; `None` when a
+    /// component does not move, which `μ` never reads (a skip move of an
+    /// HP-6 product).
+    pub fn labels(&self) -> Option<Vec<StepLabel<'_>>> {
         self.0
             .iter()
             .map(|step| match step {
-                ComponentStep::Model(transition) => StepLabel::Operation(transition),
-                ComponentStep::Stutter => StepLabel::Stutter,
+                ComponentStep::Model(transition) => Some(StepLabel::Operation(transition)),
+                ComponentStep::Stutter => Some(StepLabel::Stutter),
+                ComponentStep::Stay => None,
             })
             .collect()
     }
@@ -149,6 +167,8 @@ enum PropertyKey {
     After(usize),
     Dead,
     Undefined,
+    Rejected,
+    MatchUndefined,
     Witnesses(Vec<(Vec<ModelKey>, usize)>),
 }
 
@@ -166,6 +186,8 @@ impl HyperKey {
                 Property::After(at) => PropertyKey::After(at.index()),
                 Property::Dead => PropertyKey::Dead,
                 Property::Undefined { .. } => PropertyKey::Undefined,
+                Property::Rejected => PropertyKey::Rejected,
+                Property::MatchUndefined { .. } => PropertyKey::MatchUndefined,
                 Property::Witnesses(set) => PropertyKey::Witnesses(
                     set.members()
                         .iter()
@@ -207,6 +229,8 @@ impl Encode for HyperKey {
             }
             PropertyKey::Dead => writer.string("dead")?,
             PropertyKey::Undefined => writer.string("undefined")?,
+            PropertyKey::Rejected => writer.string("rejected")?,
+            PropertyKey::MatchUndefined => writer.string("match-undefined")?,
             PropertyKey::Witnesses(members) => {
                 writer.string("witnesses")?;
                 for (components, automaton) in members {
@@ -484,7 +508,7 @@ impl TransitionSystem for HyperProduct<'_, '_> {
             }
             Property::Dead => Before::Dead,
             Property::After(at) => Before::At(*at),
-            Property::Witnesses(_) => {
+            Property::Witnesses(_) | Property::Rejected | Property::MatchUndefined { .. } => {
                 return Err(self.joint.record(Halt::Fault(InternalFault::new(
                     "hyper-product",
                     "a-self-composition-state-has-no-witness-set",

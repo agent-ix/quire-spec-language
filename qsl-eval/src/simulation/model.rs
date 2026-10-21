@@ -36,6 +36,7 @@ use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::{CatalogCode, IdentityLimits, InternalFault};
 use qsl_package::CheckedPackage;
+use qsl_semantics::check::OperationKey;
 use qsl_semantics::family::ClassifyFailure;
 use qsl_semantics::model::accounting::ModelNormalizationLimits;
 use qsl_semantics::model::clause_observation::Observation;
@@ -659,6 +660,22 @@ impl<'a> ModelSystem<'a> {
         state: &ModelSimState,
     ) -> Result<Vec<ModelTransition>, ExpansionStop> {
         walk::identities_of(self, state)
+    }
+
+    /// The operation text of the operation `key` names: the text
+    /// [`Self::operation_text`] gives for the operation its declaring type's
+    /// declaration key and its identifier select. `None` when this subject
+    /// declares no such operation, as for the operation of another alias's
+    /// model.
+    pub fn operation_text_of(&self, key: &OperationKey) -> Option<&str> {
+        self.applications
+            .values()
+            .flatten()
+            .find(|application| {
+                application.name == key.operation.as_str()
+                    && self.model.type_key(application.declaring) == Some(&key.declaring)
+            })
+            .map(|application| application.text.as_str())
     }
 
     /// The operations of the subject's types, each once: its declaring type,

@@ -85,10 +85,16 @@ pub enum TemporalRefusal {
         /// The components supplied.
         found: usize,
     },
-    /// A hyper clause with `align skip` (HP-6, FR-178), which is not
-    /// lockstep and is not built yet.
-    #[error("a clause with `align skip` is not evaluated in lockstep; FR-178 is not built")]
-    AlignSkipNotImplemented,
+    /// A hyper clause with `align skip` (HP-6, FR-178) handed to the lockstep
+    /// evaluator: such a clause is read over projected prefixes, never in
+    /// lockstep.
+    #[error("a clause with `align skip` is read over projected prefixes, not in lockstep")]
+    AlignSkipNotLockstep,
+    /// A clause that is not projection-aligned (HP-6) handed to the projected
+    /// prefix evaluator: a projected prefix is read for an `align skip`
+    /// clause only.
+    #[error("a projected prefix is read for a projection-aligned (HP-6) clause only")]
+    NotProjectionAligned,
     /// A lasso with an empty loop (FR-329 "Lasso shape").
     #[error("a lasso holds at least one loop position")]
     EmptyLoop,
@@ -133,10 +139,10 @@ impl TemporalRefusal {
             | Self::TraceTooLong
             | Self::TupleArity { .. }
             | Self::Window(_) => CatalogCode::new("invalid_runtime_input", "invalid-value"),
-            Self::AlignSkipNotImplemented => {
-                CatalogCode::new("unsupported_construct", "not-yet-implemented")
-            }
-            Self::LassoUnderBoundedProfile { .. } | Self::ProfileNotEvaluated { .. } => {
+            Self::AlignSkipNotLockstep
+            | Self::NotProjectionAligned
+            | Self::LassoUnderBoundedProfile { .. }
+            | Self::ProfileNotEvaluated { .. } => {
                 CatalogCode::new("unsupported_construct", "expression-form")
             }
             Self::Position(refusal) => refusal.catalog_code(),

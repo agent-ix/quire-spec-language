@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-176, FR-177 (ADR-023 HC-1, HC-2, HC-4; ADR-011 §6.1 layer 5): the
-//! self-composition product of a hyper clause's subjects and the witness-set
-//! product of a forall-exists safety clause, which `qsl-analyze`'s EN-1
+//! FR-176, FR-177, FR-178 (ADR-023 HC-1, HC-2, HC-4, PA-4; ADR-011 §6.1 layer
+//! 5): the self-composition product of a hyper clause's subjects, the
+//! witness-set product of a forall-exists safety clause and the projected
+//! product of a projection-aligned one, which `qsl-analyze`'s EN-1
 //! explores and the layer-6 checkers (FR-163, FR-183) expand with the same
 //! code (ADR-018 LA-2).
 //!
@@ -12,9 +13,13 @@
 //! [`StepMatch`], the callers' seam to the one clause evaluator (FR-107).
 //! [`WitnessProduct`] is the same for HP-3: its state is a tuple of universal
 //! component states with the set of existential tuples still matched.
+//! [`ProjectedProduct`] is the same for HP-6: its state is a tuple of component
+//! states with the state of the body's safety monitor, and a skipped step moves
+//! one component alone (FR-178).
 
 mod joint;
 mod product;
+mod projected;
 mod seam;
 mod witness;
 
@@ -23,5 +28,6 @@ pub use product::{
     ComponentStep, Halt, HyperFinding, HyperInputs, HyperKey, HyperProduct, HyperState,
     HyperTransition, Property,
 };
+pub use projected::{ProjectedInputs, ProjectedProduct};
 pub use seam::{HyperLetters, MatchReading, ParameterBinding, StepLabel, StepMatch};
 pub use witness::{Member, Partner, PartnerStep, WitnessInputs, WitnessProduct, WitnessSet};
