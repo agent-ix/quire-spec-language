@@ -535,6 +535,7 @@ pub(crate) fn projections(reached: &[Reached]) -> std::collections::BTreeSet<Vec
                 | StepKind::Timeout
                 | StepKind::Duplicate
                 | StepKind::Lose
+                | StepKind::Fence
                 | StepKind::Memory => None,
             };
             if let Some(name) = &named {

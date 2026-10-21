@@ -105,7 +105,8 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     ControlStep::Attempt
                     | ControlStep::Send
                     | ControlStep::Receive
-                    | ControlStep::Event => return Ok(Settled::Rest(Rest::Node(node))),
+                    | ControlStep::Event
+                    | ControlStep::Fence => return Ok(Settled::Rest(Rest::Node(node))),
                     ControlStep::Await => return Ok(Settled::Rest(Rest::Await(node))),
                     ControlStep::Check => {
                         let condition = self
@@ -226,6 +227,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                         | ControlStep::Send
                         | ControlStep::Receive
                         | ControlStep::Event
+                        | ControlStep::Fence
                         | ControlStep::Unstepped(_) => {
                             return Err(ProtocolRefusal::fault("a-parent-holds-controls").into())
                         }
@@ -246,7 +248,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         body: &CheckedBody,
         model: &ModelSimState,
     ) -> Result<Decision, ExpansionStop> {
-        let frame = self.frame(instance, path, node)?;
+        let frame = self.frame(instance, path, node);
         Ok(match self.evaluate(body, frame, model)? {
             Verdict::True => Decision::Value(true),
             Verdict::False => Decision::Value(false),

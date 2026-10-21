@@ -24,14 +24,14 @@ mod regenerative;
 mod tests;
 
 use qsl_eval::model_subject::ModelInstance;
-use qsl_eval::simulation::ExpansionStop;
+use qsl_eval::simulation::{ExpansionStop, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::InternalFault;
 use qsl_replay::statistical::{
-    ClaimForm, Decision, SampledUndefined, StatisticalBasis, StatisticalLimit, StatisticalLimits,
-    StatisticalMethod, StatisticalOutcome, StatisticalProvenance, StatisticalRefusal,
-    StatisticalStop, StatisticalUnsupported, StatisticalVerdict, TestProvenance, TestResult,
-    TraceRange, UndecidedCause,
+    ClaimForm, Decision, SampledUndefined, SampledWitness, StatisticalBasis, StatisticalLimit,
+    StatisticalLimits, StatisticalMethod, StatisticalOutcome, StatisticalProvenance,
+    StatisticalRefusal, StatisticalStop, StatisticalUnsupported, StatisticalVerdict,
+    TestProvenance, TestResult, TraceRange, UndecidedCause, WitnessValue,
 };
 use qsl_replay::UndefinedEvaluation;
 use quire_exact::{Cancel, CancelCause, Integer, Rational};
@@ -72,7 +72,13 @@ pub struct StatisticalRequest<'a> {
     pub sampler: &'a DefinitionRef,
     /// The budgets.
     pub limits: StatisticalLimits,
+    /// The most sampled witnesses kept beside an undefined one (FR-193);
+    /// [`DEFAULT_MAX_WITNESSES`] by default.
+    pub max_witnesses: u32,
 }
+
+/// FR-189's published default for `max_witnesses`: 8.
+pub const DEFAULT_MAX_WITNESSES: u32 = 8;
 
 /// A fraction in `[0, 1]`: one sample's value for a mean of a fraction.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -140,6 +146,16 @@ pub enum Sample {
     UndecidedSuccessor,
 }
 
+/// One drawn sample and the steps it took (FR-188), which EN-4 keeps when
+/// the sample is a witness (FR-193).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Drawn {
+    /// The sample, as the claim reads it.
+    pub sample: Sample,
+    /// The sample's steps, one per position after the first.
+    pub steps: Vec<SampledStep>,
+}
+
 /// One step of a regeneration walk (FR-190).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WalkStep {
@@ -154,7 +170,12 @@ pub enum WalkStep {
         returned: bool,
     },
     /// `P` evaluated undefined at the position.
-    Undefined(UndefinedEvaluation),
+    Undefined {
+        /// Where, and why.
+        evaluation: UndefinedEvaluation,
+        /// The walk's steps from its initial state to the position.
+        steps: Vec<SampledStep>,
+    },
     /// A contract conjunction evaluated undecided during the step.
     UndecidedSuccessor,
 }
@@ -187,12 +208,13 @@ pub trait BehaviourSampler {
     type Walk: RegenerationWalk;
 
     /// The sample at `trace` under `seed`, from `test`'s initial state,
-    /// evaluated against the claim's event, fraction or activation.
+    /// evaluated against the claim's event, fraction or activation, with
+    /// the steps it took.
     ///
     /// # Errors
     ///
     /// A [`SampleHalt`] when the sample cannot be drawn to its end.
-    fn sample(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Sample, SampleHalt>;
+    fn sample(&mut self, test: &TestSubject, seed: u64, trace: u64) -> Result<Drawn, SampleHalt>;
 
     /// A walk of one behaviour at `trace` under `seed` from `test`'s
     /// initial state, for the regenerative method.
@@ -252,6 +274,75 @@ impl Tally {
     }
 }
 
+/// The sampled witnesses of a run (FR-193): every undefined one, and the
+/// `max` others first in trace-index order across tests.
+struct Witnesses {
+    max: usize,
+    kept: Vec<SampledWitness>,
+    undefined: Option<SampledWitness>,
+}
+
+fn witness(test: u32, trace: u64, steps: Vec<SampledStep>, value: WitnessValue) -> SampledWitness {
+    let path_probability = steps
+        .iter()
+        .fold(int(1), |product, step| product.mul(&step.probability));
+    SampledWitness {
+        test,
+        trace,
+        steps,
+        path_probability,
+        value,
+    }
+}
+
+impl Witnesses {
+    fn new(max: u32) -> Self {
+        Self {
+            max: usize::try_from(max).unwrap_or(usize::MAX),
+            kept: Vec::new(),
+            undefined: None,
+        }
+    }
+
+    /// Keep `witness` when it is among the first `max` in trace-index order.
+    fn offer(&mut self, witness: SampledWitness) {
+        let at = self.kept.partition_point(|kept| kept.trace < witness.trace);
+        if at < self.max {
+            self.kept.insert(at, witness);
+            self.kept.truncate(self.max);
+        }
+    }
+
+    /// The undefined witness first (QSpec FR-408-AC-11), then the others in
+    /// trace-index order.
+    fn into_vec(self) -> Vec<SampledWitness> {
+        self.undefined.into_iter().chain(self.kept).collect()
+    }
+}
+
+/// What a sample on the violating side of `bound` evaluated to (FR-193): an
+/// event false against `>= θ` or true against `<= θ` (the reduced strict
+/// bound of a quantile among them), or a fraction below or above `θ`.
+fn violating(bound: &Bound, sample: &Sample) -> Option<WitnessValue> {
+    match sample {
+        Sample::Event(held) => {
+            let violates = match bound.comparison {
+                Cmp::AtLeast => !held,
+                Cmp::AtMost | Cmp::Below => *held,
+            };
+            violates.then_some(WitnessValue::Event(*held))
+        }
+        Sample::Fraction(UnitFraction(value)) => {
+            let violates = match bound.comparison {
+                Cmp::AtLeast => *value < bound.threshold,
+                Cmp::AtMost | Cmp::Below => *value > bound.threshold,
+            };
+            violates.then(|| WitnessValue::Fraction(value.clone()))
+        }
+        Sample::NotActivated | Sample::Undefined(_) | Sample::UndecidedSuccessor => None,
+    }
+}
+
 /// The regenerative method's per-run constants.
 struct Regeneration {
     /// The upper bound on `z_{1 − min(α', β')}`.
@@ -263,6 +354,8 @@ struct Regeneration {
 /// The per-test constants of one run (FR-189 "Tests").
 struct Plan<'r> {
     request: StatisticalRequest<'r>,
+    /// The run's cancellation handle, polled before each draw.
+    cancel: &'r Cancel,
     tests: u32,
     alpha: Rational,
     beta: Rational,
@@ -346,8 +439,8 @@ impl Plan<'_> {
         index: u32,
         subject: &TestSubject,
         sampler: &mut S,
-        cancel: &Cancel,
         tally: &mut Tally,
+        witnesses: &mut Witnesses,
     ) -> Result<TestEnd, StatisticalRefusal> {
         let claim = self.request.claim;
         let iota = claim.confidence().indifference();
@@ -384,7 +477,7 @@ impl Plan<'_> {
             if tally.draws == limits.max_draws {
                 return Ok(self.limit_stop(StatisticalLimit::MaxDraws));
             }
-            if let Some(cause) = cancelled(cancel) {
+            if let Some(cause) = cancelled(self.cancel) {
                 return Ok(TestEnd::Stopped(StatisticalStop::Cancelled(cause)));
             }
             let trace = tally
@@ -395,12 +488,21 @@ impl Plan<'_> {
                     max_draws: limits.max_draws,
                     tests: self.tests,
                 })?;
-            let sample = sampler.sample(subject, self.request.seed, trace);
+            let drawn = sampler.sample(subject, self.request.seed, trace);
             tally.draws += 1;
-            match sample {
+            let Drawn { sample, steps } = match drawn {
                 Err(halt) => return halted(halt),
-                Ok(Sample::NotActivated) => {}
-                Ok(Sample::Event(held)) => {
+                Ok(drawn) => drawn,
+            };
+            if let Some(value) = violating(claim.bound(), &sample) {
+                witnesses.offer(witness(index, trace, steps, value));
+            } else if let Sample::Undefined(evaluation) = &sample {
+                let value = WitnessValue::Undefined(evaluation.clone());
+                witnesses.undefined = Some(witness(index, trace, steps, value));
+            }
+            match sample {
+                Sample::NotActivated => {}
+                Sample::Event(held) => {
                     tally.counted += 1;
                     if held {
                         tally.sum = tally.sum.add(&int(1));
@@ -417,7 +519,7 @@ impl Plan<'_> {
                         }
                     }
                 }
-                Ok(Sample::Fraction(UnitFraction(value))) => {
+                Sample::Fraction(UnitFraction(value)) => {
                     // Only a mean of a fraction takes fractions; every other
                     // form's test is Bernoulli, under Okamoto as under SPRT.
                     if sequential.is_some() || claim.form() != ClaimForm::MeanOfFraction {
@@ -426,10 +528,10 @@ impl Plan<'_> {
                     tally.counted += 1;
                     tally.sum = tally.sum.add(&value);
                 }
-                Ok(Sample::Undefined(evaluation)) => {
+                Sample::Undefined(evaluation) => {
                     return Ok(undefined(index, trace, tally.estimate(), evaluation));
                 }
-                Ok(Sample::UndecidedSuccessor) => return Ok(undecided_successor(tally.estimate())),
+                Sample::UndecidedSuccessor => return Ok(undecided_successor(tally.estimate())),
             }
         }
     }
@@ -441,9 +543,9 @@ impl Plan<'_> {
         index: u32,
         subject: &TestSubject,
         sampler: &mut S,
-        cancel: &Cancel,
         regeneration: &Regeneration,
         tally: &mut Tally,
+        witnesses: &mut Witnesses,
     ) -> Result<TestEnd, StatisticalRefusal> {
         let claim = self.request.claim;
         let iota = claim.confidence().indifference();
@@ -465,14 +567,18 @@ impl Plan<'_> {
             if cycle_steps == limits.max_cycle_steps {
                 return Ok(self.limit_stop(StatisticalLimit::MaxCycleSteps));
             }
-            if let Some(cause) = cancelled(cancel) {
+            if let Some(cause) = cancelled(self.cancel) {
                 return Ok(TestEnd::Stopped(StatisticalStop::Cancelled(cause)));
             }
             let step = walk.step();
             tally.draws += 1;
             let (holds, Weight(step_weight), returned) = match step {
                 Err(halt) => return halted(halt),
-                Ok(WalkStep::Undefined(evaluation)) => {
+                // FR-193: a long-run fraction keeps no witness but an
+                // undefined one.
+                Ok(WalkStep::Undefined { evaluation, steps }) => {
+                    let value = WitnessValue::Undefined(evaluation.clone());
+                    witnesses.undefined = Some(witness(index, trace, steps, value));
                     return Ok(undefined(index, trace, cycles.estimate(), evaluation));
                 }
                 Ok(WalkStep::UndecidedSuccessor) => {
@@ -659,6 +765,7 @@ pub fn check_statistical<S: BehaviourSampler>(
     let confidence = request.claim.confidence();
     let plan = Plan {
         request,
+        cancel,
         tests,
         alpha: quotient(confidence.alpha(), &m).map_err(fault)?,
         beta: quotient(confidence.beta(), &m).map_err(fault)?,
@@ -684,13 +791,19 @@ pub fn check_statistical<S: BehaviourSampler>(
     let mut results = Vec::with_capacity(request.tests.len());
     let mut provenance = Vec::with_capacity(request.tests.len());
     let (mut samples, mut draws) = (0_u64, 0_u64);
+    let mut witnesses = Witnesses::new(request.max_witnesses);
     for (index, subject) in (0_u32..).zip(request.tests) {
         let mut tally = Tally::new();
         let end = match &regenerative {
-            Some(regeneration) => {
-                plan.regenerative_test(index, subject, sampler, cancel, regeneration, &mut tally)?
-            }
-            None => plan.sampled_test(index, subject, sampler, cancel, &mut tally)?,
+            Some(regeneration) => plan.regenerative_test(
+                index,
+                subject,
+                sampler,
+                regeneration,
+                &mut tally,
+                &mut witnesses,
+            )?,
+            None => plan.sampled_test(index, subject, sampler, &mut tally, &mut witnesses)?,
         };
         let used = match regenerative {
             Some(_) => u64::from(tally.draws > 0),
@@ -741,6 +854,7 @@ pub fn check_statistical<S: BehaviourSampler>(
             basis: plan.basis(samples, draws),
             provenance: plan.provenance(provenance),
             tests: results,
+            witnesses: witnesses.into_vec(),
         },
     )))
 }
