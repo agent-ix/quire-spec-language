@@ -696,6 +696,8 @@ pub(crate) struct Letters {
     atoms: Vec<Atom>,
     /// What each atom reads, derived from its checked condition (FR-156).
     reads: Vec<crate::units::Reads>,
+    /// The guard of a guarded `on each` clause, and what it reads.
+    guard: Option<(Atom, crate::units::Reads)>,
 }
 
 impl Letters {
@@ -721,12 +723,46 @@ impl Letters {
             holds,
             atoms,
             reads,
+            guard: None,
+        }
+    }
+
+    /// These letters with a guard `guard` that reads `reads`.
+    pub(crate) fn guarded(self, guard: Atom, reads: crate::units::Reads) -> Self {
+        Self {
+            guard: Some((guard, reads)),
+            ..self
         }
     }
 }
 
 impl ModelLetters for Letters {
-    crate::units::unguarded!();
+    fn activation(
+        &self,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        let (guard, _) = self
+            .guard
+            .as_ref()
+            .expect("the engine reads only a guarded clause's condition");
+        Ok(match guard(state, &instance.key) {
+            Some(true) => AtomReading::True,
+            Some(false) => AtomReading::False,
+            None => AtomReading::Undefined(UndefinedCause::Kernel(
+                quire_exact::Undefined::DivisionByZero,
+            )),
+        })
+    }
+
+    fn activation_reads(&self) -> crate::units::Reads {
+        let (_, reads) = self
+            .guard
+            .as_ref()
+            .expect("the engine reads only a guarded clause's footprint");
+        reads.clone()
+    }
 
     fn reads(&self, atom: FormulaNodeId) -> crate::units::Reads {
         let index = self

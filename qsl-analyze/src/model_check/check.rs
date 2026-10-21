@@ -2481,7 +2481,7 @@ impl<S: SubjectSystem> Run<'_, S> {
         // A claim read on the terminal stutter step is violated by the
         // behaviour that stutters at the prefix's last state forever, whose
         // stutter step the prefix does not list: the marker says so.
-        let stutter = !matches!(kind, CounterexampleKind::Deadlock)
+        let stutter = matches!(kind, CounterexampleKind::Formula)
             && matches!(self.nodes[at].parent, Some((_, None)));
         let lasso = stutter.then_some(Lasso {
             entry: prefix.len(),

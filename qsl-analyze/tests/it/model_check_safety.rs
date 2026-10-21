@@ -7,13 +7,21 @@
 //! read back by re-executing the counterexample's steps. A clause's `holds`
 //! atoms are read through the test's own letters (S3 checks no `holds`
 //! condition yet, as `crate::model_check` notes), each atom by a predicate
-//! that computes the condition its source text spells.
+//! that computes the condition its source text spells. A guarded `on each`
+//! clause is the exception: S3 does not type its `when` condition, so the
+//! source writes the placeholder `when (true)` and the guard's reading is the
+//! test's own (FR-126-AC-16), given to the engine directly.
 //!
 //! Not covered here: FR-126-AC-1, AC-3 to AC-5, AC-7 and AC-8 rest on TP-4
-//! claims (QSL-530); AC-9's TP-4 row has no fixture in this module; AC-6's
-//! refused-contract row has none either: every kernel refusal a contract can
-//! raise is proved away by S3, and a family refusal needs a population
-//! reference (`PopulationReferenceNotEmitted`) or a dispatch family.
+//! claims (QSL-530); AC-9's TP-4 row has no fixture in this module. AC-6's
+//! refused-contract row has none in this crate: every kernel refusal a
+//! contract can raise is proved away by S3, a family refusal needs a named
+//! population (`PopulationReferenceNotEmitted`) or a dispatch-family fixture
+//! whose `family_steps` or `ancestor_steps` ceiling refuses a dispatched
+//! call, and the dispatch fixtures live in `qsl-eval`'s tests (Remaining
+//! work: QSL-898). Replay's reading of a guarded condition
+//! (`ReplayedLetters::activation`) is untested too: replay recompiles the
+//! unit, and S4 emits no `on each` clause (Remaining work: QSL-898).
 
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRefusal, ModelCheckRequest};
@@ -547,7 +555,8 @@ fn guarded_run(
     atoms: Vec<Atom>,
     guard: fn(i64) -> Option<bool>,
 ) -> ModelCheckOutcome {
-    let letters = Letters::new(&world.clauses[0], atoms).guarded(value(guard));
+    let letters =
+        Letters::new(&world.clauses[0], atoms).guarded(value(guard), crate::units::unread());
     run_letters(world, 0, &["c"], &letters, ModelCheckLimits::default()).expect("checked")
 }
 
@@ -628,5 +637,66 @@ fn an_undefined_activation_condition_is_an_undefined_evaluation() {
     assert_eq!(
         values(&world, &["c"], counterexample, "c", "value"),
         [0, 1, 2]
+    );
+}
+
+/// FR-126-AC-16 under partial-order reduction (FR-156): a partial-order run
+/// of a guarded clause asks the letter seam for the guard's footprint, and a
+/// guard whose footprint has no rule refuses the run `Footprint` before any
+/// state is explored; the unreduced run reads no footprint. A guard that
+/// reads nothing leaves the reduced and the unreduced run both violating the
+/// clause. Which transitions the footprint makes visible is
+/// `crate::partial_order`'s test of the same name.
+#[trace("TC-521", "FR-126-AC-16")]
+#[test]
+fn a_partial_order_run_reads_the_guards_footprint() {
+    let activation = format!("{} when (true)", each("Counter"));
+    let world = counter_world(
+        INFINITE,
+        &[Clause {
+            activation: &activation,
+            formula: "always holds(c.value = 9)",
+        }],
+    );
+    let run = |partial_order: bool, reads: crate::units::Reads| {
+        let letters = Letters::new(&world.clauses[0], vec![Box::new(|_, _| Some(false))])
+            .guarded(value(|v| Some(v >= 1)), reads);
+        check_model(
+            ModelCheckRequest {
+                subject: world.subject(&["c"], UNLIMITED),
+                item: ModelCheckItem::Clause {
+                    clause: &world.clauses[0],
+                    letters: &letters,
+                },
+                max_depth: None,
+                limits: ModelCheckLimits::default(),
+                reductions: qsl_analyze::model_check::Reductions {
+                    partial_order,
+                    ..Default::default()
+                },
+            },
+            &Cancel::new(),
+        )
+    };
+    let no_rule = || {
+        Err(
+            qsl_semantics::check::footprint::FootprintRefusal::UnsupportedForm {
+                clause: "C0".to_owned(),
+                form: "when",
+            },
+        )
+    };
+    for (partial_order, reads) in [
+        (false, crate::units::unread()),
+        (true, crate::units::unread()),
+        (false, no_rule()),
+    ] {
+        let outcome = run(partial_order, reads).expect("checked");
+        assert_eq!(violated(&outcome).kind, CounterexampleKind::Formula);
+    }
+    let refusal = run(true, no_rule()).expect_err("the footprint has no rule");
+    assert!(
+        matches!(refusal, ModelCheckRefusal::Footprint(_)),
+        "{refusal:?}"
     );
 }

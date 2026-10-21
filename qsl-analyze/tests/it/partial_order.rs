@@ -1395,3 +1395,64 @@ fn a_probe_over_an_absent_object_keeps_the_verdicts() {
         assert_eq!(violated(Reductions::default()), violated(reduced()));
     }
 }
+
+/// FR-126-AC-16 with FR-156-AC-1's subject: a guarded clause's `Atoms`
+/// include the guard's footprint. The clause's one atom `holds(true)` reads
+/// nothing and the guard is declared to read `x.v`, so for `x = a` `bump(a)`
+/// is visible when the clause is guarded and invisible when it is not, and
+/// `bump(b)` and `bump(c)` are invisible either way.
+#[trace("TC-576", "FR-126-AC-16")]
+#[test]
+fn a_guards_footprint_makes_the_transitions_it_reads_visible() {
+    let world = bumps(&[Clause {
+        profile: INFINITE,
+        formula: "eventually holds(true)",
+    }]);
+    let system = world.system();
+    let (letters, nodes) = world.letters(0, vec![atom(|_| Some(true))]);
+    let letters = letters.guarded(
+        atom(|v| Some(v >= 1)),
+        Ok([SymbolicLocation::Field {
+            object: FootprintObject::Receiver,
+            field: counter_field(),
+        }]
+        .into()),
+    );
+    let instances = counter_instance("a");
+    let initial = system.initial()[0].clone();
+    let visible = |guarded: bool, key: &str| {
+        let por = Por::new(
+            &system,
+            Some(Atoms {
+                letters: &letters,
+                nodes: &nodes,
+                guarded,
+            }),
+            &instances,
+            world.clauses[0].fairness(),
+            None,
+        )
+        .expect("the footprints derive");
+        let transition = system
+            .successors(&initial)
+            .expect("expands")
+            .successors
+            .into_iter()
+            .find(|(_, state)| value(state, key) == 1)
+            .expect("each counter bumps")
+            .0;
+        por.visible(&initial, &transition).expect("visibility")
+    };
+    assert_eq!(
+        (visible(true, "a"), visible(true, "b"), visible(true, "c")),
+        (true, false, false)
+    );
+    assert_eq!(
+        (
+            visible(false, "a"),
+            visible(false, "b"),
+            visible(false, "c")
+        ),
+        (false, false, false)
+    );
+}

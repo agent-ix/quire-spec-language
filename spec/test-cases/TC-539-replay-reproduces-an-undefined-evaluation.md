@@ -31,6 +31,8 @@ source in the byte provision and universe `{c}` in the request.
 5. Replay that prefix with `kind: Deadlock`.
 6. Replay FR-126-AC-6's empty-prefix counterexample over the `Counter`
    subject with `pre CanInc { 6 mod (2 - self.value) >= 0 }` from value 2.
+   Not built: replay refuses it as `AuthoredUndefined`; its reproduction is
+   Remaining work: QSL-898.
 
 Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
 
@@ -43,5 +45,6 @@ Tag the tests `#[trace("TC-539", "FR-128-AC-n")]`.
   `UndefinedEvaluation{where: position 3, cause: division-by-zero}`.
 - Step 5: `reproduced-with-evaluated-witness`, value
   `Undefined(UndefinedEvaluation{where: position 3, cause: division-by-zero})`.
-- Step 6: `reproduced-with-evaluated-witness`, value `Undefined` with cause
-  `DivisionByZero` at position 0.
+- Step 6: refused `unsupported_construct`/`not-yet-implemented`; the
+  reproduction (`reproduced-with-evaluated-witness`, value `Undefined` with
+  cause `DivisionByZero` at position 0) is Remaining work: QSL-898.

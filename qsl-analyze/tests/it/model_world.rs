@@ -416,6 +416,8 @@ pub(crate) struct Letters {
     atoms: Vec<Atom>,
     /// The reading of a guarded `on each` activation's `when` condition.
     guard: Option<Atom>,
+    /// What the guard reads (FR-156), as the test declares it.
+    guard_reads: crate::units::Reads,
 }
 
 impl Letters {
@@ -432,14 +434,16 @@ impl Letters {
             holds,
             atoms,
             guard: None,
+            guard_reads: crate::units::unread(),
         }
     }
 
     /// These letters, with the `when` condition of the clause's guarded `on
-    /// each` activation read by `guard`.
-    pub(crate) fn guarded(self, guard: Atom) -> Self {
+    /// each` activation read by `guard`, which reads `reads`.
+    pub(crate) fn guarded(self, guard: Atom, reads: crate::units::Reads) -> Self {
         Self {
             guard: Some(guard),
+            guard_reads: reads,
             ..self
         }
     }
@@ -491,6 +495,6 @@ impl ModelLetters for Letters {
     }
 
     fn activation_reads(&self) -> crate::units::Reads {
-        crate::units::unread()
+        self.guard_reads.clone()
     }
 }
