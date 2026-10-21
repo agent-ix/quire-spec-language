@@ -130,6 +130,21 @@ pub struct CheckedProtocol {
     /// Each `send` and `receive` with the channel it is written `via`, in
     /// declaration order (ADR-027 ST-3, ST-4).
     pub vias: Vec<CheckedVia>,
+    /// The role that owns each node a role acts at, in node order: an
+    /// `attempt` or `event` written `by` it, a `send` (its channel's `from`
+    /// role), a `receive` (its channel's `to` role), and a `choice` or
+    /// `repeat` it decides (ADR-027 RR-2, RR-4; FR-218 "Scopes"), filled in
+    /// by `check::mod`'s own pipeline once the channels are checked.
+    pub owners: Vec<CheckedOwner>,
+}
+
+/// A node and the role that owns it (ADR-027 RR-2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CheckedOwner {
+    /// The owned node.
+    pub node: ProtocolNodeId,
+    /// The index of the owning role among the protocol's roles.
+    pub role: usize,
 }
 
 /// One `send` or `receive` and the channel it is written `via` (ADR-027

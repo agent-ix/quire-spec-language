@@ -1152,3 +1152,52 @@ fn evaluation_runs_the_body_the_linked_table_selects_for_the_receivers_type() {
     assert!(evaluate_pre(&checked, "onA", b));
     assert!(!evaluate_pre(&checked, "onA", a));
 }
+
+/// FR-395-AC-12 (TC-1089 step 8): a function the checker synthesizes from an
+/// operation `body` owns its arithmetic record though no call can name it,
+/// and that record is no fault for a call to an unrelated function.
+#[trace("TC-1089", "FR-395-AC-12")]
+#[test]
+fn a_clause_function_is_a_known_owner_and_no_fault() {
+    let declarations = format!(
+        "{}\nfunction inc using v(x: Int[0, 9]): Int[0, 10] pure {{ x + 1 }}",
+        add_unit(
+            "body renamed using v on Config::ConfigVersion::add(n) { n + deref(self).versionNumber }"
+        )
+    );
+    let document = add_package();
+    let checked = compiled(&document, &declarations, SpineLimits::default());
+    let graph = checked.package().graph();
+    let clause_owner = graph
+        .requirements()
+        .values()
+        .filter_map(|record| record.owner())
+        .find(|owner| *owner != "inc")
+        .expect("the body's record has a clause function as owner");
+    assert!(graph.declares_function(clause_owner));
+    assert!(graph.callable(clause_owner).is_none());
+
+    let (text, packages) = unit(&document, &declarations);
+    let call = qsl_replay::Call {
+        function: "inc".to_owned(),
+        arguments: vec![qsl_replay::CallArgument {
+            parameter: "x".to_owned(),
+            value: quire_exact::Value::Integer(Integer::from(3_i64)),
+        }],
+        accounting: spine::default_accounting(1_000_000),
+        supplied: qsl_replay::SuppliedLimits::default(),
+    };
+    let result = qsl_replay::run_with_requirements(
+        SourceIdentity::new("a", "u", "git", "1"),
+        "unit.native",
+        text.as_bytes(),
+        &packages,
+        &DependencyInput::default(),
+        SpineLimits::default(),
+        &call,
+        &qsl_replay::ObjectEnvironment::default(),
+        &Cancel::new(),
+    )
+    .expect("a clause function's record is no fault");
+    assert_eq!(result.requirements().members().len(), 1);
+}

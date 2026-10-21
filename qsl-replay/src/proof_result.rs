@@ -490,6 +490,10 @@ pub enum InconclusiveCause {
     /// `vacuous-match` (ADR-023 HM-7): a hyper item's non-empty universal
     /// `match` is satisfied by no fair tuple of universal behaviours.
     VacuousMatch,
+    /// `uncounted-loop` (ADR-027 PB-3): an interval obligation stays open on
+    /// a reachable cycle of uncounted protocol steps, which EN-1 over a
+    /// protocol subject does not settle.
+    UncountedLoop,
     /// `mapping-undetermined` (ADR-020 RE-4): a refinement's mapping row or
     /// step-row argument was refused or incomplete at a reachable state.
     MappingUndetermined,
@@ -568,6 +572,39 @@ pub enum InconclusiveCause {
         /// The bound-limited states.
         states: u64,
     },
+    /// ADR-027 AE-4 (QSpec FR-428): the run completed with no counterexample
+    /// and left an `activate` step of at least one state unexpanded at
+    /// `max_live_instances`.
+    InstanceBoundReached {
+        /// The bound, by the request member that raises it, and its value.
+        bound: InstanceBound,
+        /// The instance-limited states.
+        states: u64,
+    },
+}
+
+/// The instance bound a run used (ADR-027 AE-4): the value of the request
+/// member `max_live_instances`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InstanceBound {
+    /// The value of `max_live_instances`.
+    pub value: u64,
+}
+
+impl InstanceBound {
+    /// The request member that raises the bound.
+    pub const MEMBER: &'static str = "max_live_instances";
+}
+
+/// The instance bound a terminal record over an `on each` protocol states
+/// (ADR-027 AE-4): the bound its run used and whether a state of the run was
+/// instance-limited.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatedInstanceBound {
+    /// The bound.
+    pub bound: InstanceBound,
+    /// Whether a state of the run was instance-limited.
+    pub reached: bool,
 }
 
 /// A request's memory bound member (ADR-025 MB-2, FR-225).
@@ -619,6 +656,7 @@ impl InconclusiveCause {
             Self::NoInstance => "no-instance",
             Self::MatchUndetermined => "match-undetermined",
             Self::VacuousMatch => "vacuous-match",
+            Self::UncountedLoop => "uncounted-loop",
             Self::MappingUndetermined => "mapping-undetermined",
             Self::CertificateRejected { .. } => "certificate-rejected",
             Self::ReplayParity(_) => "replay-parity",
@@ -632,6 +670,7 @@ impl InconclusiveCause {
             Self::ConstraintReached { .. } => "constraint-reached",
             Self::ReductionHorizon { .. } => "reduction-horizon",
             Self::MemoryBoundReached { .. } => "memory-bound-reached",
+            Self::InstanceBoundReached { .. } => "instance-bound-reached",
         }
     }
 
@@ -646,6 +685,7 @@ impl InconclusiveCause {
             | Self::NoInstance
             | Self::MatchUndetermined
             | Self::VacuousMatch
+            | Self::UncountedLoop
             | Self::MappingUndetermined
             | Self::SufficientTestFailed
             | Self::CertificateRejected { .. }
@@ -653,7 +693,8 @@ impl InconclusiveCause {
             | Self::ReductionNotPreserving { .. }
             | Self::ConstraintReached { .. }
             | Self::ReductionHorizon { .. }
-            | Self::MemoryBoundReached { .. } => 0,
+            | Self::MemoryBoundReached { .. }
+            | Self::InstanceBoundReached { .. } => 0,
             Self::SymmetryBroken { population, cause } => {
                 let SymmetryBrokenCause::InitialStatesNotClosed { generator, .. } = cause;
                 let moved: usize = generator

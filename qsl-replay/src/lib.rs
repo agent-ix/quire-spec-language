@@ -30,6 +30,7 @@
 
 mod admitted;
 mod bounds;
+mod call_requirements;
 mod call_site;
 mod compile;
 // The facade exports the rejection vocabulary. Zone arithmetic stays
@@ -63,6 +64,9 @@ pub use admitted::{
     AdmittedLookupRefusal, AdmittedRefusal, AdmittedResource,
 };
 pub use bounds::{BoundExceeded, ReplayLimits, DEFAULT_REPLAY_INPUT_BYTES};
+pub use call_requirements::{
+    run_with_requirements, CallRequirement, CallRequirements, RunWithRequirements,
+};
 pub use call_site::{
     call_site, CallSite, CallSiteRefusal, CallSiteSelection, ClauseName, ClauseSite, FieldName,
     FieldSite, FunctionSite, OperationSite, PopulationName, PopulationSite,
@@ -180,11 +184,11 @@ pub use outcome::{
 };
 pub use proof_result::{
     read_backend_provider_envelope, AppliedReduction, BackendProviderSource, Certification,
-    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, MemoryBound,
+    DeclineCode, EmptyEnvelopeSet, IncompleteCause, InconclusiveCause, InstanceBound, MemoryBound,
     MemoryBoundMember, ProofBasis, ProofRefusalCause, ProofResultEnvelope, ProofResultRefusal,
-    Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedMemoryBound,
-    StatisticalRequestRefusal, SymmetryBrokenCause, TerminalRecord, TerminalRecordRefusal,
-    TerminalValue, UnavailabilityCause,
+    Proviso, ReductionKind, ReportedInconclusiveCause, SettlementBasis, StatedInstanceBound,
+    StatedMemoryBound, StatisticalRequestRefusal, SymmetryBrokenCause, TerminalRecord,
+    TerminalRecordRefusal, TerminalValue, UnavailabilityCause,
 };
 pub use qsl_foundation::{Code, InternalFault, RequestIndex};
 pub use quire_contract_model::{std001_code, Std001Code};
@@ -222,6 +226,17 @@ pub use qsl_foundation::digest::{ByteDigest, DigestDomain, DigestRecord, WireNod
 pub use qsl_foundation::diagnostic::Category;
 pub use qsl_foundation::SourceIdentity;
 pub use quire_exact::{Identifier, NodeKey, Origin, Role, ScalarLimits, Value};
+// FR-395: the types of `run`'s signature and result that the root did not
+// export, so a consumer calls `run_with_requirements` and reads its result
+// without naming `qsl_replay::spine` or `qsl_semantics`.
+pub use qsl_semantics::library::PackageId;
+pub use qsl_semantics::model::object_environment::ObjectEnvironment;
+pub use qsl_semantics::value::supplied::SuppliedLimits;
+pub use quire_exact::{Cancel, CancelCause};
+pub use spine::{
+    Call, CallArgument, CallIncomplete, CallLocus, CallOutcome, CallRefusal, CallValue,
+    CompileRefusal, RunRefusal, SpineLimits,
+};
 // The input refusal a `ReplayRefusal::Input` and a value-parity
 // `ValueParityResult::RefusedInput` carry.
 pub use quire_semantic_value::call::InputRefusal;

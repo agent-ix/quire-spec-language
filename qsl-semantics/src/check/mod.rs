@@ -293,8 +293,8 @@ pub use navigation::{EndDeclaration, EndSide, RelationshipDeclaration, Relations
 pub use profile::TemporalProfile;
 pub use protocol_clause::{
     CausalEdge, CheckedAttempt, CheckedAwait, CheckedControl, CheckedControlTree,
-    CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedParallel, CheckedProtocol,
-    CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
+    CheckedJoinPolicy, CheckedOperationNodes, CheckedOutstanding, CheckedOwner, CheckedParallel,
+    CheckedProtocol, CheckedRole, CheckedVia, ControlStep, EdgeKind, Port, PortRef, ProtocolNodeId,
 };
 pub use protocol_controls::{CheckedChannel, CheckedOrdering};
 pub use protocol_memory::{
@@ -308,8 +308,9 @@ pub use protocol_obligation::{
 pub use protocol_relationship::CheckedRelationship;
 pub use protocol_requirement::CheckedRequirement;
 pub use protocol_slots::{
-    CheckedCase, CheckedChoice, CheckedLoopProof, CheckedNodeBody, CheckedReaders, CheckedRelated,
-    CheckedRepeat, CheckedScheduling, CheckedSlotBinder, CheckedSlots, CheckedTerminalMember,
+    CheckedCase, CheckedChoice, CheckedLifetime, CheckedLoopProof, CheckedNodeBody, CheckedReaders,
+    CheckedRelated, CheckedRepeat, CheckedReplicatedRole, CheckedScheduling, CheckedSlotBinder,
+    CheckedSlots, CheckedTerminalMember,
 };
 /// The premises a [`CheckedChannel`] records exactly as written (FR-218
 /// "Channels"), which its readers match on.
@@ -1411,7 +1412,11 @@ impl PackageDeclarations {
                     let checked = staged.into_value();
                     // ADR-012 §13.5: read this declaration's claims before
                     // `checked` is unpacked below.
-                    claims.extend(family::ValueFunctionFamily::requirements(&checked));
+                    claims.extend(
+                        family::ValueFunctionFamily::requirements(&checked)
+                            .into_iter()
+                            .map(|claim| claim.owned_by(&function.name)),
+                    );
                     // PR #303 review round 3, finding F1: advance the
                     // package's running node total from this admitted
                     // declaration's own final count, so the next
@@ -1993,6 +1998,7 @@ impl PackageDeclarations {
                     {
                         Ok((channels, used)) => {
                             checked.channels = channels;
+                            checked.owners = protocol_clause::owners(protocol, &checked);
                             nodes_used = used;
                         }
                         Err(control_refusals) => refusals.extend(control_refusals),
@@ -3761,6 +3767,13 @@ impl CheckedGraph {
     /// The first function named `name`, with its signature.
     fn function(&self, name: &str) -> Option<(&Signature, &CheckedFunction)> {
         self.functions.named(name)
+    }
+
+    /// Whether the package declares a function named `name`, including a
+    /// function `check` synthesized from an operation `body` or a `pre`
+    /// clause, which no plain call can name (FR-395 "Broken ownership").
+    pub fn declares_function(&self, name: &str) -> bool {
+        self.function(name).is_some()
     }
 
     /// The `deref(r).f` locations of a function body, or `None` for an

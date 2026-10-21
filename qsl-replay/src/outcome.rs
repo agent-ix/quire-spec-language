@@ -36,7 +36,7 @@ use serde::{Serialize, Serializer};
 use crate::certificate::{CertificateLocus, CertificateRule};
 use crate::model_check::state_graph::WitnessSource;
 use crate::proof_result::{
-    Certification, DeclineCode, IncompleteCause, InconclusiveCause, ProofBasis,
+    Certification, DeclineCode, IncompleteCause, InconclusiveCause, InstanceBound, ProofBasis,
     ReportedInconclusiveCause, SymmetryBrokenCause, TerminalRecord, TerminalValue,
     UnavailabilityCause,
 };
@@ -252,10 +252,12 @@ pub struct ItemCause {
     /// (FR-189-AC-7).
     #[serde(skip_serializing_if = "Option::is_none")]
     total: Option<String>,
-    /// A `memory-bound-reached` cause's request member (QSpec FR-439).
+    /// A `memory-bound-reached` or `instance-bound-reached` cause's request
+    /// member (QSpec FR-439, FR-428).
     #[serde(skip_serializing_if = "Option::is_none")]
     bound: Option<&'static str>,
-    /// A `memory-bound-reached` cause's count of bound-limited states.
+    /// A `memory-bound-reached` or `instance-bound-reached` cause's count of
+    /// limited states.
     #[serde(skip_serializing_if = "Option::is_none")]
     states: Option<u64>,
     /// A `weak-access-shape` cause's site (QSpec FR-439).
@@ -368,6 +370,7 @@ impl ItemCause {
                 | InconclusiveCause::NoInstance
                 | InconclusiveCause::MatchUndetermined
                 | InconclusiveCause::VacuousMatch
+                | InconclusiveCause::UncountedLoop
                 | InconclusiveCause::MappingUndetermined
                 | InconclusiveCause::SufficientTestFailed
                 | InconclusiveCause::SolverInconclusive,
@@ -407,6 +410,14 @@ impl ItemCause {
                 states,
             }) => {
                 item.bound = Some(bound.member.as_str());
+                item.value = Some(bound.value);
+                item.states = Some(*states);
+            }
+            ReportedInconclusiveCause::Cause(InconclusiveCause::InstanceBoundReached {
+                bound,
+                states,
+            }) => {
+                item.bound = Some(InstanceBound::MEMBER);
                 item.value = Some(bound.value);
                 item.states = Some(*states);
             }
