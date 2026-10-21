@@ -520,23 +520,23 @@ builds; they are listed here because F2 and E2 depend on them.
 | L5 | literal `0` | `22fec75bfbe7f7c5d20d19818c4d7c41bf1ebaf9a94569374228ba9a13376779` |
 | L6 | literal `1` | `833ceccc8eed0661d0edc4b5f1ccb5e6df51da22a979423327b2aeba83bb8366` |
 | E11 | `x > 0` | `68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e` |
-| E12 | `x - 1` | `1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a` |
-| E13 | `x - 1` narrowed into `Int[0, 9]` | `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e` |
+| E12 | `x - 1` | `101e991caf696035ca3d473de8012601e56154645930af1441e649073ce35213` |
+| E13 | `x - 1` narrowed into `Int[0, 9]` | `9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693` |
 | G1 | an `option` node over itself, a one-member group, ordinal 0 | `7b2e6632de9e716f1f7b6a3155ea4e6a36129ea1e4473f539d52a75001ae5e31` |
 | G2 | `record List { next: List?; }`, ordinal 1 | `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b` |
 | G3 | `Option<List>`, ordinal 0 | `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b` |
-| G4 | function `f`, ordinal 1 | `23cdc2faddac19360e414395846f07003b83144a5da98cc50351485d4238570d` |
-| G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | `3d8af00b18a2c9f774c89ad6da55ae8ff8aa06ecd1f3d7216ae202ab822c34fc` |
-| G6 | `f(x - 1)`, ordinal 2 | `8cd0eadcbc67918d0ba72b19553898a4fa9693bb79db7dc76f266486fe07d840` |
+| G4 | function `f`, ordinal 2 | `9fd4b3fb06b5a727df74774798b7220d934eb598987c56622045ecfbbe4ba9a3` |
+| G5 | `if x > 0 then f(x - 1) else true`, ordinal 0 | `5691ee9ebe7780ad5287470deaaf302412aa13e87360e55c9145538c0d909617` |
+| G6 | `f(x - 1)`, ordinal 1 | `0e9afeddfe174f02196c9f5a7fc0c9b68b90aef15034f63701402b156ed1612c` |
 | G7 | `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0 | `5dd245d1f95885f7c628dfa8424f4b4ddb616a218369984e488731a5e3061c64` |
 | G8 | `Sequence<Tree>`, ordinal 1 | `5dab1d21b36212959d997c17b88ab44822bf4078e35ae1b993c17db591425756` |
 | G9 | `Sequence<Tree>[0, 3]`, ordinal 2 | `6bd6dd7f2b655affb65a4b49dfcff572129d960f9d45766bf954cfc8ce6a4028` |
-| G10 | function `ping`, ordinal 2 | `e491fbeae992168fef1e681476a9a20e4794eac40f377174e6700189450cf345` |
-| G11 | function `pong`, ordinal 3 | `7fd05a5af745fd388daa29067d9e7fc15ef4122bc6ffac7afde2dfdb11aaa399` |
-| G12 | `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 0 | `0c10a4780d09fec3b279bbbe1775d14af5dac2d3b3b61695d14b6d192d352830` |
-| G13 | `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 1 | `ac6436d7164016e2ab8ccb1926ae820ca7e6625b50909d289b479cf1835d49ea` |
-| G14 | `ping(x - 1)`, in `pong`, ordinal 4 | `2dc8b60b64805f36d8cb9d363ef4c090fc037251212f433153398cf15bdc638f` |
-| G15 | `pong(x - 1)`, in `ping`, ordinal 5 | `df9d5492f79e107bc06affbb920b96ff562d7b976580f0f831858e9c185d82ea` |
+| G10 | function `ping`, ordinal 4 | `4f29492069f3f08c3e52ce8f81479eff391c940ed829c8f8df899b5783273cdf` |
+| G11 | function `pong`, ordinal 5 | `46f5eb3b9bab9aa99b74a47052fa624359fedacf07520ad10178c7ee1791b2ce` |
+| G12 | `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1 | `0257162f337343fe6fcb2615ab1b0884c6750b873a8469de1674069037adb72d` |
+| G13 | `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0 | `b4f9738986a8bab7b0d8f3a825e8c9dc3fcb71e355690f442b35536179e447ec` |
+| G14 | `ping(x - 1)`, in `pong`, ordinal 2 | `6f93f5ae215036bb695a7c6789e14c5d904e262aa48cec79aee115be53912a3d` |
+| G15 | `pong(x - 1)`, in `ping`, ordinal 3 | `2bad40930170fade2eca0f863281ebe7427104e1b453e65943953dc04b04fa95` |
 
 **T1**: Boolean
 
@@ -820,8 +820,13 @@ Key: `e13010a50a476f31b5955ef7ac6e008d83a7af661b0ff1d52c9fd6b7c1966ed3`
 
 #### Recursion-group vectors
 
-L5, L6 and E11 to E13 are nodes outside any group that the recursive
-functions below name. G1 to G15 are members of recursion groups, and every
+L5 and E11 to E13 are nodes outside any group that the recursive
+functions below name. L6 is the standalone literal `1`, which no recursive
+function below names: the `1` in `x - 1` is not a node but a literal term in
+the argument list of the `quire.op.integer.sub` application (E12), as every
+integer literal operand of `quire.op.integer.add`, `sub`, `mul` and `negate`
+is (FR-358, ADR-013 O-09). A literal anywhere else, such as a function body
+or an operand of another operator, is a `value`/`literal` node like L6. G1 to G15 are members of recursion groups, and every
 declared member is under owner (`a`, `u`):
 
 - G1: a one-member group, a `composite_type`/`option` node whose body
@@ -877,18 +882,18 @@ Key: `68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e`
 **E12**: `x - 1`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"target":{"digest":"833ceccc8eed0661d0edc4b5f1ccb5e6df51da22a979423327b2aeba83bb8366","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"term":"literal","type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"value":"1","value_kind":"integer"}],"operation":{"identity":"quire.op.integer.sub","laws":[],"leaves":[],"member":null,"mode":null},"operator":"binary","result_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"binary","semantic_type":{"digest":"07f6dca966d22bde13d3bb198f12610e57d8e1e04d0476bbab03f405d2b04e32","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a`
+Key: `101e991caf696035ca3d473de8012601e56154645930af1441e649073ce35213`
 
 **E13**: `x - 1` narrowed into `Int[0, 9]`
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"1b6f75d7ed4c5b25ce7addecd26dfc9f93e3265f9218ad812d62c943955bf63a","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":null},"operator":"convert","result_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"101e991caf696035ca3d473de8012601e56154645930af1441e649073ce35213","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.numeric.narrow","laws":[],"leaves":[],"member":{"declaration":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"kind":"type_argument"},"mode":null},"operator":"convert","result_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":null,"semantic_form":"conversion","semantic_type":{"digest":"652cc5b63910aca98b8c91b1c1ba42a8da1f568517c70f37de083414cd192477","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e`
+Key: `9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693`
 
 **G1**: an `option` node over itself, a one-member group, ordinal 0
 
@@ -914,29 +919,29 @@ Key: `8a69ece82bb34c5857bb0b3386367af4003bca6480ca864e7b04a8697e61e79b`
 
 Key: `060cc5df3b74317489ef49b6d6fa5cd221667a2f2923910ac1f60855d581366b`
 
-**G4**: function `f`, ordinal 1
+**G4**: function `f`, ordinal 2
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50","ordinal":1,"size":3},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["f"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6","ordinal":2,"size":3},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `23cdc2faddac19360e414395846f07003b83144a5da98cc50351485d4238570d`
+Key: `9fd4b3fb06b5a727df74774798b7220d934eb598987c56622045ecfbbe4ba9a3`
 
 **G5**: `if x > 0 then f(x - 1) else true`, ordinal 0
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":1,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":3},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `3d8af00b18a2c9f774c89ad6da55ae8ff8aa06ecd1f3d7216ae202ab822c34fc`
+Key: `5691ee9ebe7780ad5287470deaaf302412aa13e87360e55c9145538c0d909617`
 
-**G6**: `f(x - 1)`, ordinal 2
+**G6**: `f(x - 1)`, ordinal 1
 
 ```json
-{"body":{"arguments":[{"ordinal":1,"term":"group_reference"},{"target":{"digest":"f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":3},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":{"digest":"9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":3},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `8cd0eadcbc67918d0ba72b19553898a4fa9693bb79db7dc76f266486fe07d840`
+Key: `0e9afeddfe174f02196c9f5a7fc0c9b68b90aef15034f63701402b156ed1612c`
 
 **G7**: `record Tree { kids: Sequence<Tree>[0, 3]; }`, ordinal 0
 
@@ -962,53 +967,53 @@ Key: `5dab1d21b36212959d997c17b88ab44822bf4078e35ae1b993c17db591425756`
 
 Key: `6bd6dd7f2b655affb65a4b49dfcff572129d960f9d45766bf954cfc8ce6a4028`
 
-**G10**: function `ping`, ordinal 2
+**G10**: function `ping`, ordinal 4
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cecd2597aa","ordinal":2,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["ping"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"59338cdf608eb52567484dcae012b7da83db75a86d56b8e88c57927b386b2aa8","ordinal":4,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `e491fbeae992168fef1e681476a9a20e4794eac40f377174e6700189450cf345`
+Key: `4f29492069f3f08c3e52ce8f81479eff391c940ed829c8f8df899b5783273cdf`
 
-**G11**: function `pong`, ordinal 3
+**G11**: function `pong`, ordinal 5
 
 ```json
-{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":1,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cecd2597aa","ordinal":3,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
+{"body":{"members":[{"name":"parameters","term":"binding","value":{"members":[{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"term":"aggregate"}},{"name":"body","term":"binding","value":{"ordinal":0,"term":"group_reference"}},{"name":"decreases","term":"binding","value":{"target":{"digest":"ebe64b4c3bc2cc5f3460a43480f8979f5df24c5e7665d9e89890f43517dd8eda","domain":"quire.checked-semantic-node/v1"},"term":"reference"}}],"term":"aggregate"},"declaration":{"qualified_name":["pong"]},"node_tag":"function","owner":{"authority":"a","identity":"u","kind":"source"},"recursion":{"group":"59338cdf608eb52567484dcae012b7da83db75a86d56b8e88c57927b386b2aa8","ordinal":5,"size":6},"semantic_form":"recursive_function","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.structural-node/v1"}
 ```
 
-Key: `7fd05a5af745fd388daa29067d9e7fc15ef4122bc6ffac7afde2dfdb11aaa399`
+Key: `46f5eb3b9bab9aa99b74a47052fa624359fedacf07520ad10178c7ee1791b2ce`
 
-**G12**: `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 0
+**G12**: `if x > 0 then pong(x - 1) else true`, in `ping`, ordinal 1
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":5,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":3,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `0c10a4780d09fec3b279bbbe1775d14af5dac2d3b3b61695d14b6d192d352830`
+Key: `0257162f337343fe6fcb2615ab1b0884c6750b873a8469de1674069037adb72d`
 
-**G13**: `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 1
+**G13**: `if x > 0 then ping(x - 1) else true`, in `pong`, ordinal 0
 
 ```json
-{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":4,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":1,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"target":{"digest":"68fb5483171f2b690b74efb9c20a9eee7d3b366d544ea201e402d77e59d9284e","domain":"quire.checked-semantic-node/v1"},"term":"reference"},{"ordinal":2,"term":"group_reference"},{"target":{"digest":"03a8898fec9612e8a5faac4927eef10568cd62179e71acc17c86eddb12a792e9","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.control.if","laws":[],"leaves":[],"member":null,"mode":null},"operator":"conditional","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":0,"size":6},"semantic_form":"conditional","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `ac6436d7164016e2ab8ccb1926ae820ca7e6625b50909d289b479cf1835d49ea`
+Key: `b4f9738986a8bab7b0d8f3a825e8c9dc3fcb71e355690f442b35536179e447ec`
 
-**G14**: `ping(x - 1)`, in `pong`, ordinal 4
+**G14**: `ping(x - 1)`, in `pong`, ordinal 2
 
 ```json
-{"body":{"arguments":[{"ordinal":2,"term":"group_reference"},{"target":{"digest":"f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":4,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":4,"term":"group_reference"},{"target":{"digest":"9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":2,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `2dc8b60b64805f36d8cb9d363ef4c090fc037251212f433153398cf15bdc638f`
+Key: `6f93f5ae215036bb695a7c6789e14c5d904e262aa48cec79aee115be53912a3d`
 
-**G15**: `pong(x - 1)`, in `ping`, ordinal 5
+**G15**: `pong(x - 1)`, in `ping`, ordinal 3
 
 ```json
-{"body":{"arguments":[{"ordinal":3,"term":"group_reference"},{"target":{"digest":"f1b8c8bc5d8f3487a5c39d09e5e8ab2da5e089ebb3bc3de1bdea3cd61e5b695e","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":5,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
+{"body":{"arguments":[{"ordinal":5,"term":"group_reference"},{"target":{"digest":"9b59de5f52520f1a3236112eb0e239f5a4e37809b279a9d51561c4806237b693","domain":"quire.checked-semantic-node/v1"},"term":"reference"}],"operation":{"identity":"quire.op.function.call","laws":[],"leaves":[],"member":null,"mode":null},"operator":"call","result_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"term":"application"},"declaration":null,"node_tag":"expression","recursion":{"ordinal":3,"size":6},"semantic_form":"call","semantic_type":{"digest":"9964390677844ad66b781babdbfa95933bc2b16ef1e86f67005966b77e6db3aa","domain":"quire.checked-semantic-node/v1"},"version":"quire.application-node/v1"}
 ```
 
-Key: `df9d5492f79e107bc06affbb920b96ff562d7b976580f0f831858e9c185d82ea`
+Key: `2bad40930170fade2eca0f863281ebe7427104e1b453e65943953dc04b04fa95`
 
 
 G1, group digest `4a005f58e201e284473264dd016bbcc0a1cfcd8a26031428f8dac6a969e9b14b`:
@@ -1024,13 +1029,13 @@ G2-G3, group digest `c4f49ce64b352b9d55a753e8ce21fa995ee78bd025587acbeba67223442
 | 0 | G3 `Option<List>` |
 | 1 | G2 `List` |
 
-G4-G6, group digest `0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50`:
+G4-G6, group digest `d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6`:
 
 | Ordinal | Member |
 |---|---|
 | 0 | G5 conditional |
-| 1 | G4 `f` |
-| 2 | G6 call |
+| 1 | G6 call |
+| 2 | G4 `f` |
 
 G7-G9, group digest `098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b98ca6b`:
 
@@ -1040,16 +1045,16 @@ G7-G9, group digest `098352bbb5f6c2dd2836b1dc59c7bbc6fdf93076c767bf4c358304da0b9
 | 1 | G8 `Sequence<Tree>` |
 | 2 | G9 `Sequence<Tree>[0, 3]` |
 
-G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cecd2597aa`:
+G10-G15, group digest `59338cdf608eb52567484dcae012b7da83db75a86d56b8e88c57927b386b2aa8`:
 
 | Ordinal | Member |
 |---|---|
-| 0 | G12 conditional in `ping` |
-| 1 | G13 conditional in `pong` |
-| 2 | G10 `ping` |
-| 3 | G11 `pong` |
-| 4 | G14 `ping(x - 1)` |
-| 5 | G15 `pong(x - 1)` |
+| 0 | G13 conditional in `pong` |
+| 1 | G12 conditional in `ping` |
+| 2 | G14 `ping(x - 1)` in `pong` |
+| 3 | G15 `pong(x - 1)` in `ping` |
+| 4 | G10 `ping` |
+| 5 | G11 `pong` |
 
 ## Constraints
 
@@ -1072,7 +1077,7 @@ G10-G15, group digest `8383f625c29862ff9fe9bc66d7a03140f76a54e39153e9158c4f40cec
 | FR-092-AC-8 | An enum declaration is keyed by `quire.enum-declaration-node/v1` and its member by `quire.enum-member-node/v1`, never by `quire.structural-node/v1`: for QSpec's `enum-status` and `enum-status-ready` preimages in `node-identity-vectors.json`, the minted keys equal the recorded `sha256`. | Test (TC-413) |
 | FR-092-AC-9 | `Rational[-9, 9; 1, 9]` and its base key to T10 and T9, `Decimal[-100000, 100000; 2, 2; nearest-even]` and its base to T12 and T11, and `tuple Pair(Int[0, 9], Int[0, 9]);` under (`a`, `u`) to D5. `record Opt { a: Int[0, 9]; b: Int[0, 9]?; }` keys to D3 and `record Opt { a: Int[0, 9]; b: Option<Int[0, 9]>; }` to D4, which differs. `rational(1, 2)` as a `Rational[-9, 9; 1, 9]` literal keys to L3, spelled `"1/2"`, and `rational(2, 4)` keys to L3 too. | Test (TC-413) |
 | FR-092-AC-10 | `function m using v(x: Int[0, 9]): Boolean pure decreases(x) { true }` keys `x`'s parameter node to P4 and `m` to F3, whose body binds `decreases` to a `reference` to P4. | Test (TC-414) |
-| FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5, L6 and E11 to E13; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
+| FR-092-AC-11 | Each recursion group of the Recursion-group vectors checks and keys to its vectors' preimage bytes and keys: `f` to G4, G5 and G6 over L5 and E11 to E13, whose E12 holds the literal `1` as an inline literal term; a function whose body is the literal `1` to a graph holding L6; `List` to G2 and G3; `Tree` to G7, G8 and G9, whose G9 preimage writes its `semantic_type` as `{term: "group_reference", ordinal: 1}`; and `ping` and `pong` to G10 to G15. The key function keys G1. Declaring `pong` before `ping` gives the same keys as declaring `ping` first. Each in-group application node's preimage has `recursion` `{size, ordinal}` and no `group` member, and each structural one's `recursion.group` equals its group's digest. In `function h using v(x: Int[0, 9]): Boolean pure decreases(x) { if x > 0 then h(x - 1) and h(x - 1) else true }`, the two calls are one node, and `h`'s group has `size` 4: `h`, the conditional, the conjunction and the call. | Test (TC-413) |
 | FR-092-AC-12 | `record Point { x: Int[0, 9]; y: Int[0, 9]; }` under (`a`, `u`), declared once through a `CompositeDeclaration` whose key is 32 bytes of `0x11` and once through one whose key is 32 bytes of `0x22`, keys to D1 both times, and its checked type node's id is D1 both times. No preimage, checked-graph node or checked type node holds either supplied key. | Test (TC-413) |
 | FR-092-AC-13 | Under (`a`, `u`), `predicate Positive using v(x: Int[0, 9]): Boolean { x > 0 }` gives a node with `node_tag` `function`, `semantic_form` `predicate`, `declaration.qualified_name` `["Positive"]` and the unit's `owner`. `function Positive using v(x: Int[0, 9]): Boolean pure { x > 0 }`, alone in another unit under (`a`, `u`), gives a node with `semantic_form` `pure_function` and a key different from the predicate's. For `ordered enum Status { READY, DONE }` from source, the checked graph holds the declaration node with key FR-091 vector N1 (`scalar_type`, `enum`, `declaration.qualified_name` `["Status"]`) and the member node with key N2 (`value`, `enum_value`). | Test (TC-481) |
 | FR-092-AC-14 | Parameters typed `Int[0, 18446744073709551615]`, `Int[0, 9223372036854775808]` and `Int[-170141183460469231731687303715884105728, 170141183460469231731687303715884105727]` and `Int[0, 18446744073709551616]` give type nodes with the preimage bytes and keys of vectors T13, T14, T15 and T16 exactly, each bound spelled as its decimal string. With those parameters in the same unit, T4's `Int[0, 9]` and every other vector of this requirement key unchanged. | Test (TC-910) |

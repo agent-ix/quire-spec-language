@@ -2808,11 +2808,11 @@ fn e26_let_bound_conversions_are_ordinary_conversions() {
     );
 }
 
-/// FR-093-AC-30: a converted equality operand is checked as its own typed
+/// FR-093-AC-31: a converted equality operand is checked as its own typed
 /// conversion node, so evaluation converts it once and compares the
 /// converted values: `=` and `!=`, the converted operand on either side,
 /// equal and unequal values, across the numeric families.
-#[trace("FR-093-AC-30", "TC-415")]
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn a_converted_equality_operand_is_converted_once_and_compared() {
     let package = plain_package();

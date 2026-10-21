@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-093-AC-30 and FR-093-AC-31 (TC-415): an equality operand the checker converts
+//! FR-093-AC-31 and FR-093-AC-32 (TC-415): an equality operand the checker converts
 //! (`convert<T>(e) = x`) lowers as a typed `numeric.convert` node, and the
 //! equality takes its operator family from the converted type, so IR's
 //! checked-package/v2 reader admits the package.
@@ -120,10 +120,10 @@ fn assert_converted(
     }
 }
 
-/// FR-093-AC-30: `convert<Decimal>(a) = b` over an Int `a` lowers a Decimal
+/// FR-093-AC-31: `convert<Decimal>(a) = b` over an Int `a` lowers a Decimal
 /// `numeric.convert` over `a` and `decimal.eq` over it, and strict IR admits
 /// the package.
-#[trace("FR-093-AC-30", "TC-415")]
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn a_converted_decimal_equality_converts_the_int_operand() {
     assert_converted(
@@ -136,8 +136,8 @@ fn a_converted_decimal_equality_converts_the_int_operand() {
     );
 }
 
-/// FR-093-AC-30: the same for `!=`.
-#[trace("FR-093-AC-30", "TC-415")]
+/// FR-093-AC-31: the same for `!=`.
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn a_converted_decimal_inequality_converts_the_int_operand() {
     assert_converted(
@@ -150,8 +150,8 @@ fn a_converted_decimal_inequality_converts_the_int_operand() {
     );
 }
 
-/// FR-093-AC-30: the converted operand on the right.
-#[trace("FR-093-AC-30", "TC-415")]
+/// FR-093-AC-31: the converted operand on the right.
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn a_converted_operand_on_the_right_is_the_second_argument() {
     assert_converted(
@@ -172,8 +172,8 @@ fn a_converted_operand_on_the_right_is_the_second_argument() {
     );
 }
 
-/// FR-093-AC-30: the Rational family takes the same treatment.
-#[trace("FR-093-AC-30", "TC-415")]
+/// FR-093-AC-31: the Rational family takes the same treatment.
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn a_converted_rational_equality_converts_the_int_operand() {
     assert_converted(
@@ -202,9 +202,9 @@ fn a_converted_rational_equality_converts_the_int_operand() {
     );
 }
 
-/// FR-093-AC-30: an equality with no conversion is unchanged: `integer.eq`
+/// FR-093-AC-31: an equality with no conversion is unchanged: `integer.eq`
 /// over the two parameters and no convert node.
-#[trace("FR-093-AC-30", "TC-415")]
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn an_unconverted_equality_builds_no_convert_node() {
     let wire = admitted("Int[-100,100]", "Int[-100,100]", "a = b");
@@ -218,9 +218,9 @@ fn an_unconverted_equality_builds_no_convert_node() {
     }
 }
 
-/// FR-093-AC-30: an Int converted to a wider Int and a Decimal converted to
+/// FR-093-AC-31: an Int converted to a wider Int and a Decimal converted to
 /// a Decimal of a larger scale are converted operands of their own family.
-#[trace("FR-093-AC-30", "TC-415")]
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn a_converted_integer_or_widened_decimal_equality_converts_its_operand() {
     assert_converted(
@@ -241,9 +241,9 @@ fn a_converted_integer_or_widened_decimal_equality_converts_its_operand() {
     );
 }
 
-/// FR-093-AC-30: the other numeric directions, each a converted operand of
+/// FR-093-AC-31: the other numeric directions, each a converted operand of
 /// the family of the converted type.
-#[trace("FR-093-AC-30", "TC-415")]
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn a_converted_equality_between_decimal_rational_and_int_converts_its_operand() {
     for (source, target, family) in [
@@ -262,9 +262,9 @@ fn a_converted_equality_between_decimal_rational_and_int_converts_its_operand() 
     }
 }
 
-/// FR-093-AC-30: both operands converted builds one convert per operand and
+/// FR-093-AC-31: both operands converted builds one convert per operand and
 /// an equality over the two.
-#[trace("FR-093-AC-30", "TC-415")]
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn an_equality_with_both_operands_converted_converts_each() {
     let emission = emitted(&format!(
@@ -351,9 +351,9 @@ fn length_units() -> (
     )
 }
 
-/// FR-093-AC-30: `convert<Km>(a) = b` over a metre quantity `a` lowers a
+/// FR-093-AC-31: `convert<Km>(a) = b` over a metre quantity `a` lowers a
 /// `quantity.convert` with mode `exact` and `quantity.eq`/`.ne` over it.
-#[trace("FR-093-AC-30", "TC-415")]
+#[trace("FR-093-AC-31", "TC-415")]
 #[test]
 fn a_converted_quantity_equality_converts_the_quantity_operand() {
     let (units, metre, kilometre) = length_units();
@@ -415,9 +415,9 @@ fn a_converted_quantity_equality_converts_the_quantity_operand() {
     }
 }
 
-/// FR-093-AC-31: a guard over a value-keeping integer conversion bounds its
+/// FR-093-AC-32: a guard over a value-keeping integer conversion bounds its
 /// operand as the guard over the operand itself does.
-#[trace("FR-093-AC-31", "TC-415")]
+#[trace("FR-093-AC-32", "TC-415")]
 #[test]
 fn a_guard_over_an_integer_conversion_bounds_the_converted_operand() {
     for body in [
@@ -437,9 +437,9 @@ fn a_guard_over_an_integer_conversion_bounds_the_converted_operand() {
     }
 }
 
-/// FR-093-AC-31: the bound is the guard's, so an unguarded or differently
+/// FR-093-AC-32: the bound is the guard's, so an unguarded or differently
 /// guarded body still refuses.
-#[trace("FR-093-AC-31", "TC-415")]
+#[trace("FR-093-AC-32", "TC-415")]
 #[test]
 fn a_guard_over_an_integer_conversion_bounds_only_what_it_states() {
     for body in [
