@@ -607,5 +607,5 @@ identity text of operation `op`.
 
 ## Remaining work
 
-- QSL-935, split-unit case: QSpec TC-196 D10's variant with a member's own `pre` clauses declared in two linked source units, in both link orders, has no QSL form today. A checked package is one unit (`CheckedPackage::link`), and `view_clauses` reads that unit's clauses only. The order rule is verified for the one-unit case. Remaining work: build the variant when a package can link more than one unit.
-- QSL-935, `absent-key` form: AC-15 uses a nested call whose own precondition is `false` (reason `precondition-false`) as the undefined clause. D10's `lookup` of an absent key (reason `absent-key`) is not built; the ordering and short-circuit it checks do not depend on the reason.
+- Remaining work: QSL-939. Split-unit case: QSpec TC-196 D10's variant with a member's own `pre` clauses declared in two linked source units, in both link orders, has no QSL form today. A checked package is one unit (`CheckedPackage::link`), and `view_clauses` reads that unit's clauses only. The order rule is verified for the one-unit case. Build the variant when a package can link more than one unit.
+- Remaining work: QSL-939. `absent-key` form: AC-15 uses a nested call whose own precondition is `false` (reason `precondition-false`) as the undefined clause. D10's `lookup` of an absent key (reason `absent-key`) is not built; the ordering and short-circuit it checks do not depend on the reason.
