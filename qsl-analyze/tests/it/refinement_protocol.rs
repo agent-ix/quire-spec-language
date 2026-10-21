@@ -18,7 +18,8 @@ use crate::refinement_fixture::{cas_refines_counter, World, UNLIMITED};
 /// `Run`, a protocol of one attempt of `peek` over the compare-and-set
 /// counter, and the refinement of the counter by it.
 fn protocol_refinement() -> String {
-    "protocol Run using v over (k: Impl::Counter) on origin {\n\
+    "profile pp = \"quire.protocol.finite-global/v1\";\n\
+     protocol Run using v over (k: Impl::Counter) on origin {\n\
      role w on Impl::Counter;\n\
      run sequence Main {\n\
      attempt P by w on Impl::Counter::peek contracts [] as (p: Boolean) { true };\n\

@@ -18,6 +18,7 @@ use crate::check::{
     observation, step_row_refs, step_simulation_records, CheckCause, CheckRefusal, CheckedGraph,
     CheckedRefinement, MemoryStepKind, PackageDeclarations, ProtocolStepKind, RefinementCause,
     RefinementRefusal, RowClass, RowObservation, StepClass, StepLabel, StepRowRefusal,
+    UnsupportedFeature,
 };
 use crate::model::accounting::ModelNormalizationLimits;
 use crate::model::domain_package::{
@@ -269,8 +270,8 @@ fn fill(memory: &str) -> String {
     )
 }
 
-/// FR-214-AC-1's refinement of `A::Acc::add` by `Fill`, with the rows
-/// `rows` in place of the step rows and `extra` after them.
+/// The refinement of `A::Acc` by `Fill` that ADR-027 §7 gives (FR-214's
+/// first example), with `rows` as its step rows.
 fn refinement(rows: &str) -> String {
     named_refinement("FillRefinesAcc", rows)
 }
@@ -389,11 +390,12 @@ fn a_protocol_refinement_has_one_row_per_step_class() {
     assert!(refinement.concrete_protocol().is_some());
 }
 
-/// The rows that name `Fill` select it, and the clause is recorded by its
+/// Selection half of FR-135-AC-10 (the header grammar is not built): the rows
+/// that name `Fill` select it, and the clause is recorded by its
 /// node whichever way the clause and the refinement are ordered; a unit that
 /// selects no protocol profile has no node to record, so it refuses at the
 /// first row that names the clause.
-#[trace("TC-541", "FR-136-AC-6")]
+#[trace("TC-541", "FR-136-AC-6", "TC-540", "FR-135-AC-10")]
 #[test]
 fn the_rows_select_the_concrete_protocol_and_the_clause_has_a_node() {
     let graph = checks(&unit(&fill(""), ROWS));
@@ -422,7 +424,7 @@ fn the_rows_select_the_concrete_protocol_and_the_clause_has_a_node() {
 
 /// A missing `join` or `finish` row refuses naming it, and a second row for
 /// one class conflicts with the first.
-#[trace("TC-659", "FR-214-AC-2")]
+#[trace("TC-659", "FR-214-AC-2", "FR-136-AC-4")]
 #[test]
 fn a_missing_or_doubled_row_refuses() {
     let protocol = fill("");
@@ -511,7 +513,7 @@ fn join_twice_first(text: &str) -> Span {
 /// A node row for an attempt maps it and takes precedence over its
 /// operation's row, which may remain beside it unused; an attempt with
 /// neither row refuses naming its node.
-#[trace("TC-659", "FR-214-AC-3")]
+#[trace("TC-659", "FR-214-AC-3", "FR-136-AC-4")]
 #[test]
 fn an_attempt_node_row_takes_precedence_over_its_operation_row() {
     let protocol = fill("");
@@ -549,8 +551,10 @@ fn an_attempt_node_row_takes_precedence_over_its_operation_row() {
     );
 }
 
-/// One protocol per refinement. Rows that name `P`, `Q` and `R` select `P` and refuse `Q` and `R` once
-/// each at their first row, naming `P`'s first row; a name that is no
+/// One protocol per refinement. Covers FR-136-AC-9's first sentence only: a
+/// clause declared in another package cannot be supplied by these fixtures,
+/// so its sentence is untested. Rows that name `P`, `Q` and `R` select `P` and
+/// refuse `Q` and `R` once each at their first row, naming `P`'s first row; a name that is no
 /// protocol refuses at its segment; a clause whose roles act on another model
 /// refuses `malformed-declaration` at the protocol name.
 #[trace("TC-541", "FR-136-AC-6", "FR-136-AC-9")]
@@ -632,7 +636,7 @@ fn a_refinement_checks_one_protocol_and_refuses_the_others_once() {
     );
 }
 
-/// A refinement whose rows name no protocol has a model subject and no
+/// Model-subject half of FR-136-AC-6: a refinement whose rows name no protocol has a model subject and no
 /// `concrete_protocol`; a `memory` row then refuses at its kind.
 #[trace("TC-541", "FR-136-AC-6")]
 #[test]
@@ -751,9 +755,10 @@ impl Refused {
     }
 }
 
-/// A row's target gives its observation: `-> any` gives `Either`, `stutter` `Internal`
-/// and an abstract application `Visible` with the operation and the
-/// arguments the row leaves open as its label.
+/// Row half of FR-214-AC-4; the abstract-protocol half (the internal list,
+/// FR-147) is not built. A row's target gives its observation: `-> any` gives
+/// `Either`, `stutter` `Internal` and an abstract application `Visible` with
+/// the operation and the arguments the row leaves open as its label.
 #[trace("TC-659", "FR-214-AC-4")]
 #[test]
 fn a_row_target_gives_its_observation() {
@@ -912,7 +917,7 @@ fn a_template_a_trigger_and_event_nodes_need_their_own_rows() {
 /// FR-136 "Coverage over a protocol subject": a `cattempt` is covered by the
 /// operation's row or by a row naming its template, and an attempt by its
 /// operation's row or its node row.
-#[trace("TC-541", "FR-136-AC-4")]
+#[trace("TC-541")]
 #[test]
 fn a_cattempt_is_covered_by_its_operations_row_or_its_templates() {
     // Neither `Tried` nor the template's `cattempt` has a row.
@@ -943,7 +948,7 @@ fn a_cattempt_is_covered_by_its_operations_row_or_its_templates() {
 
 /// A row that names a declaration the clause has no such step of refuses
 /// `missing-name` at the name: a `fork` of an attempt, an unknown node.
-#[trace("TC-541", "FR-136-AC-6")]
+#[trace("TC-541")]
 #[test]
 fn a_row_naming_no_class_of_the_clause_refuses_at_its_name() {
     for (extra, at) in [
@@ -1040,7 +1045,7 @@ fn workers(lifetime: &str) -> String {
 
 /// FR-136 "Coverage over a protocol subject": each replicated role needs a
 /// `spawn` row, and a role whose lifetime is `until` a `retire` row too.
-#[trace("TC-541", "FR-136-AC-4")]
+#[trace("TC-541")]
 #[test]
 fn a_replicated_role_needs_a_spawn_row_and_an_until_role_a_retire_row() {
     let base = "step M::Workers::Work -> stutter;\n\
@@ -1075,7 +1080,8 @@ fn a_replicated_role_needs_a_spawn_row_and_an_until_role_a_retire_row() {
     );
 }
 
-/// A `parallel` under `tso` has the
+/// S3 half of FR-136-AC-10; the check-request half (another memory model
+/// selected for a `parallel`) is not built. A `parallel` under `tso` has the
 /// memory step `flush`, which needs a `memory flush` row; under `sc`, a
 /// `memory flush` row names no kind; one row covers every outermost
 /// `parallel`.
@@ -1216,7 +1222,7 @@ const MESSAGE_ROWS: &str = "step fork M::Msg::P -> stutter;\n\
 
 /// A `send` and a `receive` each need a node row of the step kind the node
 /// has.
-#[trace("TC-541", "FR-136-AC-4")]
+#[trace("TC-541")]
 #[test]
 fn a_send_and_a_receive_need_node_rows() {
     let graph = checks(&unit(MESSAGES, MESSAGE_ROWS));
@@ -1251,7 +1257,7 @@ fn a_send_and_a_receive_need_node_rows() {
 
 /// An `await` is the node whose step is the `timeout`, and the event it
 /// matches has a step of its own.
-#[trace("TC-541", "FR-136-AC-4")]
+#[trace("TC-541")]
 #[test]
 fn an_await_needs_a_timeout_row_and_its_matched_event_a_row() {
     let waiting = REFUNDS.replace(
@@ -1384,5 +1390,157 @@ fn coverage_agrees_with_a_direct_statement_of_the_rule_over_every_subset() {
                 assert_eq!(named, expected, "{rows:?}");
             }
         }
+    }
+}
+
+/// A protocol subject's own refusals are reported with those of another
+/// refinement that stops the unit before the clauses are checked, in either
+/// order of the two refinements.
+#[trace("TC-541", "FR-136-AC-8")]
+#[test]
+fn a_protocol_subjects_refusals_survive_another_refinements_refusal() {
+    let over_fill = named_refinement(
+        "OverFill",
+        &ROWS.replace(
+            "step M::Node::step -> A::Acc::add(self);",
+            "step M::Node::step -> A::Acc::add(self, 1);",
+        ),
+    );
+    // A model subject missing its `undo` row.
+    let over_model = named_refinement("OverModel", "step M::Node::step -> A::Acc::add(self);");
+    for refinements in [
+        over_fill.clone() + &over_model,
+        over_model.clone() + &over_fill,
+    ] {
+        let found = refused(&(header(true) + &fill("") + &refinements));
+        let pairs: Vec<(Code, Option<&'static str>)> = found.iter().map(Refused::pair).collect();
+        assert!(
+            pairs.contains(&(Code::IllTyped, Some("operator-ineligible"))),
+            "the protocol subject's own refusal: {found:?}"
+        );
+        assert!(
+            found.iter().any(|refused| refused.refinement_or_none()
+                == Some(&missing(RowClass::Step, "M::Node::undo"))),
+            "the model subject's refusal: {found:?}"
+        );
+    }
+}
+
+/// A right side that names an abstract protocol node is malformed while the
+/// abstract side is a model, and an application on a row with no operation
+/// is unsupported.
+#[trace("TC-541")]
+#[test]
+fn a_protocol_row_refuses_a_node_target_and_an_application_without_an_operation() {
+    let finish = "step M::Fill::Done -> stutter;";
+    let node_target = ROWS.replace(finish, "step M::Fill::Done -> node A::P::x;");
+    let found = refused(&unit(&fill(""), &node_target));
+    assert_eq!(
+        only(&found).refinement(),
+        &RefinementCause::Malformed {
+            name: "A::P::x".to_owned()
+        }
+    );
+
+    let applied = ROWS.replace(finish, "step M::Fill::Done -> A::Acc::add(self);");
+    let found = refused(&unit(&fill(""), &applied));
+    let [unsupported] = &found[..] else {
+        panic!("one refusal: {found:?}");
+    };
+    assert_eq!(
+        unsupported.pair(),
+        (Code::UnsupportedConstruct, Some("not-yet-implemented"))
+    );
+    assert!(matches!(
+        unsupported.refinement(),
+        RefinementCause::Unsupported {
+            feature: UnsupportedFeature::ProtocolStepApplication,
+            ..
+        }
+    ));
+    assert_eq!(unsupported.at, "A::Acc::add(self)");
+}
+
+/// An application on an attempt-node row or a template's `cattempt` row is
+/// typed over the operation the step applies, as an operation row is.
+#[trace("TC-541")]
+#[test]
+fn an_application_on_an_attempt_or_template_row_is_typed_over_its_operation() {
+    let rows = "step M::Node::undo -> A::Acc::add(self);\n\
+                step M::Fill::A -> A::Acc::addBy(self, _);\n\
+                step fork M::Fill::Both -> stutter;\n\
+                step join M::Fill::Both -> stutter;\n\
+                step M::Fill::Done -> stutter;";
+    let graph = checks(&unit(&fill(""), rows));
+    let attempt = only_refinement(&graph)
+        .steps()
+        .iter()
+        .find(|row| matches!(row.class, StepClass::AttemptNode(_)))
+        .expect("the row of A");
+    assert!(matches!(
+        observation(attempt),
+        RowObservation::Visible { label } if label.open_arguments == [0]
+    ));
+    // One argument too many is the operation row's refusal.
+    let wrong = rows.replace("addBy(self, _)", "add(self, 1)");
+    let found = refused(&unit(&fill(""), &wrong));
+    assert_eq!(
+        only(&found).pair(),
+        (Code::IllTyped, Some("operator-ineligible"))
+    );
+
+    let template_rows = REFUND_ROWS.replace("step M::Node::step -> A::Acc::add(self);\n", "")
+        + "\nstep M::Refunds::Tried -> any;\nstep M::Refunds::Refund -> A::Acc::add(self);";
+    let graph = checks(&unit(REFUNDS, &template_rows));
+    let template = only_refinement(&graph)
+        .steps()
+        .iter()
+        .find(|row| matches!(row.class, StepClass::CompensationAttempt(_)))
+        .expect("the row of Refund");
+    assert!(matches!(
+        observation(template),
+        RowObservation::Visible { .. }
+    ));
+}
+
+/// A model subject keeps FR-136's refusal at the row's span: a keyworded row
+/// names no operation, and a name whose type is unknown is no operation's.
+#[trace("TC-541")]
+#[test]
+fn a_model_subject_refuses_a_protocol_shaped_row_at_its_name() {
+    let base = "step M::Node::step -> A::Acc::add(self);\n\
+                step M::Node::undo -> A::Acc::add(self);";
+    for (extra, at) in [
+        ("step fork M::Node::step -> stutter;", "M::Node::step"),
+        ("step M::Nope::x -> stutter;", "M::Nope::x"),
+    ] {
+        let found = refused(&(header(true) + &refinement(&format!("{base}\n{extra}"))));
+        let unresolved = only(&found);
+        assert_eq!(
+            unresolved.pair(),
+            (Code::MissingDeclaration, Some("missing-name")),
+            "{extra}"
+        );
+        assert_eq!(unresolved.at, at, "{extra}");
+    }
+}
+
+/// Two clauses of different shape: the refinement is checked against the
+/// clause its rows name, whichever the unit declares first.
+#[trace("TC-541", "FR-136-AC-6")]
+#[test]
+fn a_refinement_is_covered_against_the_clause_it_selects() {
+    let solo = "protocol Solo using v over (k: M::Node) on origin {\n\
+         role w on M::Node;\n\
+         run sequence Main {\n\
+         attempt A by w on M::Node::step contracts [] as (a: M::Flag) { true };\n\
+         }\n\
+         finish Done as (d: M::Receipt) { true };\n\
+         }\n";
+    let solo_rows = "step M::Node::step -> A::Acc::add(self);\n\
+                     step M::Solo::Done -> stutter;";
+    for protocols in [fill("") + solo, solo.to_owned() + &fill("")] {
+        checks(&(header(true) + &protocols + &named_refinement("OverSolo", solo_rows)));
+        checks(&(header(true) + &protocols + &named_refinement("OverFill", ROWS)));
     }
 }

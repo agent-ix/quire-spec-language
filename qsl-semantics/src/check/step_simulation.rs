@@ -40,9 +40,9 @@ pub enum StepRowRefusal {
     Overflow,
     /// A row of the refinement is not an operation row. FR-136 orders a
     /// protocol subject's rows by the node key of the declaration each names,
-    /// and a protocol node has no node key of its own (FR-113), so a
+    /// and FR-383's minting of the protocol nodes' keys is not built, so a
     /// protocol subject's rows have no position yet.
-    #[error("a protocol subject's step rows have no order yet: a protocol node has no node key")]
+    #[error("a protocol subject's step rows have no order yet: protocol node keys are not minted")]
     ProtocolSubject,
 }
 

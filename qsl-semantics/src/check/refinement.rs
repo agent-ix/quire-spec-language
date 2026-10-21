@@ -503,9 +503,10 @@ pub struct ObjectRow {
 
 /// The concrete step a `step` row maps (FR-136 Outputs).
 ///
-/// A protocol node has no node key of its own (FR-113), so a class names it
-/// by its identity in the clause, and a template, channel or role by its
-/// declared name.
+/// FR-383's minting of the protocol nodes' keys is not built, so a class
+/// names a node by its identity in the clause, and a template, channel or
+/// role by its declared name, where FR-136 has `NodeKey`s. They become
+/// `NodeKey`s with the sort key (FR-136-AC-7, FR-146-AC-5).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StepClass {
     /// A concrete operation.
@@ -983,7 +984,13 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
         .object_types()
         .map(|(_, id)| id)
         .collect();
-    let findings = checker.findings;
+    let Checker {
+        findings,
+        lifting,
+        maps_complete,
+        history: scoped_history,
+        ..
+    } = checker;
     let checked = CheckedRefinement {
         name: form.name.name.clone(),
         profile: declaration.selection.clone(),
@@ -1011,6 +1018,11 @@ pub(crate) fn check_refinement<'f: 'c, 'a, 'c>(
             profile: declaration.selection.identity.clone(),
             refusals: findings.refusals,
             name_span: form.name.span,
+            typing: protocol::Typing {
+                lifting,
+                maps_complete,
+                history: scoped_history,
+            },
         })),
         None if findings.refusals.is_empty() => {
             RefinementCheck::Checked(Box::new(CheckedRefinement {
@@ -1620,6 +1632,10 @@ impl<'c, 'a> Checker<'c, 'a> {
         for (index, row, sort) in rows {
             let source = match (&row.source, sort) {
                 (_, protocol::RowSort::Refused) => continue,
+                (_, protocol::RowSort::Unresolved) => {
+                    self.fault("an-unresolved-row-is-settled-by-classify");
+                    continue;
+                }
                 (_, protocol::RowSort::Protocol) => {
                     deferred.push((index, row));
                     continue;

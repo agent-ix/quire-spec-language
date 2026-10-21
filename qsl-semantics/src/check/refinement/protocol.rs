@@ -13,23 +13,28 @@
 //! every step class has exactly one row. A refused clause is reported by the
 //! clause's own checks alone.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_forms::{
     ChannelDelivery, ProtocolDeclarationForm, ProtocolNodeKind, RefinementForm, RefinementRowForm,
     RoleLifetime, StepClassKeyword, StepRowForm, StepSourceForm, StepTargetForm,
 };
 use qsl_foundation::{MemoryModelName, Span};
+use quire_exact::EffectiveId;
 
 use super::{
-    CheckedRefinement, Findings, NameSegments, ObjectType, RefinementCause, RefinementRefusal,
-    RowClass, StepClass, StepRow, StepTarget, UnsupportedFeature,
+    CheckedRefinement, Checker, Findings, NameSegments, ObjectType, RefinementCause,
+    RefinementRefusal, RowClass, Side, StepClass, StepRow, StepTarget, UnsupportedFeature,
 };
+use crate::check::check::ScopedHistory;
 use crate::check::lowering::AdmittedModel;
 use crate::check::protocol_clause::{BoundAttempt, CheckedProtocol, ProtocolNodeId};
 use crate::check::protocol_obligation::CheckedActivation;
 use crate::check::refusal::{CheckCause, CheckRefusal};
+use crate::check::state_clause::ClauseDeclarations;
+use crate::family::CheckContext;
 use crate::model::key::DeclarationKey;
+use crate::model::operation::OperationDeclaration;
 
 /// A step of a protocol node (ADR-027 ST-2 to ST-9) that has no operation
 /// and so needs a row of its own.
@@ -111,6 +116,9 @@ pub(super) enum RowSort {
     Protocol,
     /// A `memory <kind>` row.
     Memory,
+    /// A row whose middle segment is no type of the concrete model and no
+    /// protocol clause; `classify` settles it once it knows the subject.
+    Unresolved,
     /// A row already refused.
     Refused,
 }
@@ -154,6 +162,9 @@ pub(super) fn classify<'f>(
     // protocol, or one that does not act on `<C>`.
     let mut reported: BTreeSet<usize> = BTreeSet::new();
     let mut rows = Vec::new();
+    // The rows that name no protocol, by their position in `rows`, with the
+    // segment and its span.
+    let mut unresolved: Vec<(usize, &str, Span)> = Vec::new();
     for (index, row) in form.rows.iter().enumerate() {
         let RefinementRowForm::Step(row) = row else {
             continue;
@@ -191,8 +202,8 @@ pub(super) fn classify<'f>(
                             .position(|protocol| protocol.name.name == protocol_name);
                         match found {
                             None => {
-                                findings.unresolved(protocol_name, span, None);
-                                RowSort::Refused
+                                unresolved.push((rows.len(), protocol_name, span));
+                                RowSort::Unresolved
                             }
                             Some(protocol) if !acts_on(&protocols[protocol], concrete) => {
                                 if reported.insert(protocol) {
@@ -231,6 +242,26 @@ pub(super) fn classify<'f>(
         };
         rows.push((index, row, sort));
     }
+    // Under a protocol subject a name that is no clause refuses at that
+    // segment (FR-136 "Selecting the concrete protocol"). Under a model
+    // subject a row refuses at its span, as FR-136 "Coverage over a model
+    // subject" states: an unkeyworded name is read as an operation's, and a
+    // keyworded row names none.
+    for (position, segment, span) in unresolved {
+        let (_, row, sort) = &mut rows[position];
+        match (selection, &row.source) {
+            (Some(_), _) => {
+                findings.unresolved(segment, span, None);
+                *sort = RowSort::Refused;
+            }
+            (None, StepSourceForm::Named { kind: None, .. }) => *sort = RowSort::Operation,
+            (None, StepSourceForm::Named { name, .. }) => {
+                findings.unresolved(&name.name, name.span, None);
+                *sort = RowSort::Refused;
+            }
+            (None, StepSourceForm::Memory(_)) => *sort = RowSort::Memory,
+        }
+    }
     Classified { rows, selection }
 }
 
@@ -255,6 +286,16 @@ pub(crate) struct ProtocolRefinement<'f> {
     pub(super) refusals: Vec<CheckRefusal>,
     /// The span of the refinement's name, where a missing row is reported.
     pub(super) name_span: Span,
+    /// What the rows of the declaration were typed with, which an
+    /// application on an attempt or `cattempt` row is typed with too.
+    pub(super) typing: Typing,
+}
+
+/// The state of the first pass that typing a row reads.
+pub(super) struct Typing {
+    pub(super) lifting: BTreeMap<EffectiveId, EffectiveId>,
+    pub(super) maps_complete: bool,
+    pub(super) history: Vec<ScopedHistory>,
 }
 
 /// The concrete protocol clause of a refinement, as the unit checked it.
@@ -534,16 +575,7 @@ fn entries(clause: &ProtocolClause<'_>, concrete: &AdmittedModel) -> Vec<Entry> 
 
 /// The spelling of a row for `entry`, as a refusal names it.
 fn spelled(entry: &Entry, concrete: &str, protocol: &str) -> String {
-    let keyword = entry.keyword.map(|keyword| match keyword {
-        StepClassKeyword::Fork => "fork",
-        StepClassKeyword::Join => "join",
-        StepClassKeyword::Cend => "cend",
-        StepClassKeyword::Duplicate => "duplicate",
-        StepClassKeyword::Lose => "lose",
-        StepClassKeyword::Spawn => "spawn",
-        StepClassKeyword::Retire => "retire",
-        StepClassKeyword::Activate => "activate",
-    });
+    let keyword = entry.keyword.map(StepClassKeyword::as_str);
     let name = match entry.class {
         StepClass::MemoryStep(kind) => return format!("memory {}", kind.label()),
         StepClass::Trigger => format!("{concrete}::{protocol}"),
@@ -570,6 +602,11 @@ impl ProtocolRefinement<'_> {
     }
 
     /// The refusals found so far.
+    pub(crate) fn refusals(&self) -> &[CheckRefusal] {
+        &self.refusals
+    }
+
+    /// The refusals found so far, by value.
     pub(crate) fn into_refusals(self) -> Vec<CheckRefusal> {
         self.refusals
     }
@@ -583,11 +620,15 @@ impl ProtocolRefinement<'_> {
     /// # Errors
     ///
     /// Every refusal of the declaration, in the order found.
-    pub(crate) fn complete(
+    pub(crate) fn complete<'a>(
         self,
         clause: Option<&ProtocolClause<'_>>,
-        models: &[AdmittedModel],
-    ) -> Result<(CheckedRefinement, SelectedProtocol), Vec<CheckRefusal>> {
+        declarations: &ClauseDeclarations<'a>,
+        cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+    ) -> (
+        Result<(CheckedRefinement, SelectedProtocol), Vec<CheckRefusal>>,
+        u64,
+    ) {
         let Self {
             mut checked,
             operations,
@@ -597,20 +638,103 @@ impl ProtocolRefinement<'_> {
             profile,
             refusals,
             name_span,
+            typing,
         } = self;
-        let mut findings = Findings {
+        let mut nodes = declarations.nodes_used;
+        let findings = Findings {
             refinement: checked.name.clone(),
             refusals,
         };
         let Some(clause) = clause else {
-            return Err(findings.refusals);
+            return (Err(findings.refusals), nodes);
         };
-        let Some(concrete) = models
-            .iter()
-            .find(|model| model.alias() == Some(checked.concrete_model.as_str()))
+        let models = declarations.models;
+        let side = |alias: &str| {
+            models
+                .iter()
+                .find(|model| model.alias() == Some(alias))
+                .map(|model| Side { alias: "", model })
+        };
+        let (Some(abstract_side), Some(concrete_side)) =
+            (side(&checked.abstract_model), side(&checked.concrete_model))
         else {
-            findings.fault("the-concrete-model-is-admitted");
-            return Err(findings.refusals);
+            let mut findings = findings;
+            findings.fault("the-models-of-a-refinement-are-admitted");
+            return (Err(findings.refusals), nodes);
+        };
+        let mut checker = Checker {
+            declarations,
+            protocols: &[],
+            abstract_side,
+            concrete_side,
+            findings,
+            nodes: &mut nodes,
+            lifting: typing.lifting,
+            maps_complete: typing.maps_complete,
+            baseline: 0,
+            populations: None,
+            history: typing.history,
+        };
+        let outcome = checker.complete_rows(
+            clause,
+            ProtocolRows {
+                checked: &mut checked,
+                operations,
+                written,
+                selection,
+                rows,
+                profile,
+                name_span,
+            },
+            cx,
+        );
+        let refusals = checker.findings.refusals;
+        let result = match outcome {
+            Some(selected) if refusals.is_empty() => Ok((checked, selected)),
+            _ => Err(refusals),
+        };
+        (result, nodes)
+    }
+}
+
+/// What `complete` hands the row checks.
+struct ProtocolRows<'r, 'f> {
+    checked: &'r mut CheckedRefinement,
+    operations: Vec<(usize, StepRow)>,
+    written: Vec<DeclarationKey>,
+    selection: Selection,
+    rows: Vec<(usize, &'f StepRowForm)>,
+    profile: String,
+    name_span: Span,
+}
+
+impl<'a> Checker<'_, 'a> {
+    /// Resolves the rows that name the clause and requires one for every step
+    /// class of it. The refinement's steps are set when it checks; the result
+    /// is the selected protocol then, and the refusals are in `findings`.
+    fn complete_rows(
+        &mut self,
+        clause: &ProtocolClause<'_>,
+        input: ProtocolRows<'_, '_>,
+        cx: &mut CheckContext<'a, ClauseDeclarations<'a>>,
+    ) -> Option<SelectedProtocol> {
+        let ProtocolRows {
+            checked,
+            operations,
+            written,
+            selection,
+            rows,
+            profile,
+            name_span,
+        } = input;
+        let concrete = self.concrete_side.model;
+        let abstract_types = {
+            let found = self.abstract_side.object_types(self.types());
+            self.or_fault(found)
+        };
+        let concrete_types = {
+            let found = self.concrete_side.object_types(self.types());
+            self.or_fault(found)
         };
         let entries = entries(clause, concrete);
         let concrete_alias = checked.concrete_model.clone();
@@ -624,7 +748,7 @@ impl ProtocolRefinement<'_> {
                         matches!(entry.class, StepClass::MemoryStep(_)) && entry.name == kind.name
                     });
                     let Some(entry) = kinds.next() else {
-                        findings.unresolved(&kind.name, kind.span, None);
+                        self.findings.unresolved(&kind.name, kind.span, None);
                         continue;
                     };
                     entry
@@ -635,7 +759,7 @@ impl ProtocolRefinement<'_> {
                         (Some(StepClassKeyword::Activate), [_, _]) => (1, protocol.as_str()),
                         (_, [_, _, node]) => (2, *node),
                         _ => {
-                            findings.fault("a-protocol-row-has-a-classified-shape");
+                            self.findings.fault("a-protocol-row-has-a-classified-shape");
                             continue;
                         }
                     };
@@ -647,11 +771,12 @@ impl ProtocolRefinement<'_> {
                     match (named.next(), named.next()) {
                         (Some(entry), None) => entry,
                         (None, _) => {
-                            findings.unresolved(wanted, segments.span(position), None);
+                            self.findings
+                                .unresolved(wanted, segments.span(position), None);
                             continue;
                         }
                         (Some(_), Some(_)) => {
-                            findings.refuse(
+                            self.findings.refuse(
                                 name.span,
                                 RefinementCause::Ambiguous {
                                     name: name.name.clone(),
@@ -663,7 +788,7 @@ impl ProtocolRefinement<'_> {
                 }
             };
             if let Some((_, first)) = first_rows.iter().find(|(class, _)| *class == entry.class) {
-                findings.refuse(
+                self.findings.refuse(
                     row.span,
                     RefinementCause::Conflicting {
                         name: spelled(entry, &concrete_alias, &protocol),
@@ -679,21 +804,50 @@ impl ProtocolRefinement<'_> {
                 StepTargetForm::Node { node, .. } => {
                     // While the abstract side is a model subject, a right
                     // side naming a protocol node is malformed (FR-147).
-                    findings.malformed(&node.name, row.span);
+                    self.findings.malformed(&node.name, row.span);
                     continue;
                 }
-                StepTargetForm::Apply { span, .. } => {
-                    // FR-136 types an application with `self` bound to the
-                    // concrete receiver, and names none for a protocol step.
-                    findings.refuse(
-                        *span,
-                        RefinementCause::Unsupported {
-                            feature: UnsupportedFeature::ProtocolStepApplication,
-                            profile: profile.clone(),
-                            subject: None,
-                        },
-                    );
-                    continue;
+                StepTargetForm::Apply {
+                    span,
+                    operation,
+                    arguments,
+                } => {
+                    // FR-136 "Right sides": the receiver and arguments are
+                    // typed over the concrete step, which an attempt or a
+                    // `cattempt` has (it applies an operation). A step with no
+                    // operation has no receiver the requirement names.
+                    let applied = applied_operation(&entry.class, clause).and_then(|applied| {
+                        let object = concrete_types
+                            .iter()
+                            .find(|object| object.id == applied.0)?;
+                        Some((object, applied.1))
+                    });
+                    match applied {
+                        Some((object, concrete_operation)) => {
+                            match self.application(
+                                row.span,
+                                operation,
+                                arguments,
+                                (object, &concrete_operation),
+                                &abstract_types,
+                                cx,
+                            ) {
+                                Some(target) => target,
+                                None => continue,
+                            }
+                        }
+                        None => {
+                            self.findings.refuse(
+                                *span,
+                                RefinementCause::Unsupported {
+                                    feature: UnsupportedFeature::ProtocolStepApplication,
+                                    profile: profile.clone(),
+                                    subject: None,
+                                },
+                            );
+                            continue;
+                        }
+                    }
                 }
             };
             resolved.push((
@@ -713,7 +867,7 @@ impl ProtocolRefinement<'_> {
                     .is_some_and(|operation| written.contains(operation)),
             };
             if !covered && !by_operation {
-                findings.refuse(
+                self.findings.refuse(
                     name_span,
                     RefinementCause::MissingRow {
                         class: entry.row,
@@ -722,22 +876,50 @@ impl ProtocolRefinement<'_> {
                 );
             }
         }
-        if !findings.refusals.is_empty() {
-            return Err(findings.refusals);
+        if !self.findings.refusals.is_empty() {
+            return None;
         }
         let mut steps = operations;
         steps.extend(resolved);
         steps.sort_by_key(|(index, _)| *index);
         checked.steps = steps.into_iter().map(|(_, row)| row).collect();
         let refinement = checked.name.clone();
-        Ok((
-            checked,
-            SelectedProtocol {
-                protocol: selection.protocol,
-                first: selection.first,
-                refinement,
-            },
-        ))
+        Some(SelectedProtocol {
+            protocol: selection.protocol,
+            first: selection.first,
+            refinement,
+        })
+    }
+}
+
+/// The receiver's type and the operation the concrete step of an attempt
+/// node or a template's `cattempt` applies; `None` for a step with no
+/// operation.
+fn applied_operation(
+    class: &StepClass,
+    clause: &ProtocolClause<'_>,
+) -> Option<(EffectiveId, OperationDeclaration)> {
+    match class {
+        StepClass::AttemptNode(node) => {
+            let bound = clause
+                .attempts
+                .iter()
+                .find(|bound| bound.declaration == node.0)?;
+            Some((bound.receiver, bound.operation.declaration.clone()))
+        }
+        StepClass::CompensationAttempt(name) => {
+            let template = clause
+                .checked
+                .obligations
+                .compensations
+                .iter()
+                .find(|template| template.name == *name)?;
+            Some((
+                template.operation.declaring,
+                template.operation.declaration.clone(),
+            ))
+        }
+        _ => None,
     }
 }
 

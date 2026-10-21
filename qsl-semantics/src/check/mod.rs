@@ -1735,8 +1735,15 @@ impl PackageDeclarations {
                 .map(|(_, body, _)| &body.body)
                 .chain(typed_clauses.iter().map(|clause| &clause.body)),
         ));
+        // A protocol subject's own refusals are reported with the unit's
+        // other refusals, whichever stage stops the unit before its clause is
+        // checked (FR-136-AC-8).
+        let deferred: Vec<CheckRefusal> = protocol_refinements
+            .iter()
+            .flat_map(|(_, pending)| pending.refusals().iter().cloned())
+            .collect();
         if !refusals.is_empty() {
-            return Err(refusals);
+            return Err(with_deferred(refusals, &deferred));
         }
         // FR-220: the model's views, for the symbolic footprints the access
         // classification of a protocol's `parallel` attempts reads.
@@ -1763,33 +1770,45 @@ impl PackageDeclarations {
             ) {
                 Ok(()) => {}
                 Err(model_conformance::StageDenial::Pending(failure)) => {
-                    return Err(vec![CheckRefusal {
-                        location: root(Origin::Expression),
-                        cause: pending_refusal(failure),
-                    }])
+                    return Err(with_deferred(
+                        vec![CheckRefusal {
+                            location: root(Origin::Expression),
+                            cause: pending_refusal(failure),
+                        }],
+                        &deferred,
+                    ))
                 }
                 Err(model_conformance::StageDenial::MissingModel(identity)) => {
-                    return Err(vec![CheckRefusal {
-                        location: root(Origin::Expression),
-                        cause: CheckCause::InternalFault(Box::new(KeyFault::MissingAdmittedModel(
-                            identity,
-                        ))),
-                    }])
+                    return Err(with_deferred(
+                        vec![CheckRefusal {
+                            location: root(Origin::Expression),
+                            cause: CheckCause::InternalFault(Box::new(
+                                KeyFault::MissingAdmittedModel(identity),
+                            )),
+                        }],
+                        &deferred,
+                    ))
                 }
                 Err(model_conformance::StageDenial::Incomplete(incomplete)) => {
-                    return Err(vec![CheckRefusal {
-                        location: root(Origin::Expression),
-                        cause: CheckCause::ModelIncomplete(incomplete),
-                    }])
+                    return Err(with_deferred(
+                        vec![CheckRefusal {
+                            location: root(Origin::Expression),
+                            cause: CheckCause::ModelIncomplete(incomplete),
+                        }],
+                        &deferred,
+                    ))
                 }
                 Err(model_conformance::StageDenial::Refused(failures)) => {
-                    return Err(failures
-                        .into_iter()
-                        .map(|failure| CheckRefusal {
-                            location: root(Origin::Expression),
-                            cause: CheckCause::ModelConformance(Box::new(failure)),
-                        })
-                        .collect())
+                    return Err(with_deferred(
+                        failures
+                            .into_iter()
+                            .map(|failure| CheckRefusal {
+                                location: root(Origin::Expression),
+                                cause: CheckCause::ModelConformance(Box::new(failure)),
+                            })
+                            .collect(),
+                        &deferred,
+                    ))
                 }
             }
         }
@@ -1798,10 +1817,13 @@ impl PackageDeclarations {
         // before dispatch linking or sealing.
         if let Some(pending) = pending_types.take().map(std::cell::RefCell::into_inner) {
             if let Err(failure) = pending.complete() {
-                return Err(vec![CheckRefusal {
-                    location: root(Origin::Expression),
-                    cause: type_admission(failure),
-                }]);
+                return Err(with_deferred(
+                    vec![CheckRefusal {
+                        location: root(Origin::Expression),
+                        cause: type_admission(failure),
+                    }],
+                    &deferred,
+                ));
             }
         }
         // FR-113: each protocol declaration's scoped anchors, resolved
@@ -2042,7 +2064,7 @@ impl PackageDeclarations {
             }
             protocol_refused.push(refusals.len() > refusals_before);
             if cancel.tripped().is_some() {
-                return Err(refusals);
+                return Err(with_deferred(refusals, &deferred));
             }
         }
         // FR-136 "Order of the checks": a refinement over a concrete protocol
@@ -2075,7 +2097,29 @@ impl PackageDeclarations {
                 }
                 _ => None,
             };
-            match pending.complete(clause.as_ref(), &models) {
+            let location = Location::root(Origin::Expression);
+            let declarations = state_clause::ClauseDeclarations {
+                scope: &scope,
+                signatures: &signatures,
+                dispatch_tables: &dispatch_tables,
+                models: &models,
+                checking_limits: limits,
+                location: &location,
+                nodes_used,
+                cancel: Some(cancel),
+                staged: None,
+            };
+            let mut contract_cx = crate::family::CheckContext::new(
+                &declarations,
+                contract_limits,
+                &mut contract_meter,
+                &mut contract_diagnostics,
+                &mut contract_scopes,
+            );
+            let (completed, used) =
+                pending.complete(clause.as_ref(), &declarations, &mut contract_cx);
+            nodes_used = used;
+            match completed {
                 Ok((checked, selected)) => {
                     refinement_slots[slot] = Some(checked);
                     selected_protocols[slot] = Some(selected);
@@ -3234,6 +3278,12 @@ impl PackageDeclarations {
         }
         Ok(graph)
     }
+}
+
+/// `found` with the refusals a protocol subject kept for its clause's check.
+fn with_deferred(mut found: Vec<CheckRefusal>, deferred: &[CheckRefusal]) -> Vec<CheckRefusal> {
+    found.extend_from_slice(deferred);
+    found
 }
 
 /// FR-115: the tables [`CheckedGraph::resolve_operation`] and
