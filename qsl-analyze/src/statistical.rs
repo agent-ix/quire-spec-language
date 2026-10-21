@@ -31,7 +31,7 @@ mod regenerative;
 mod tests;
 
 use qsl_eval::model_subject::ModelInstance;
-use qsl_eval::simulation::model::NotMarkov;
+use qsl_eval::simulation::model::{ClauseOutcome, NotMarkov};
 use qsl_eval::simulation::{ExpansionStop, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::InternalFault;
@@ -218,6 +218,14 @@ pub enum SampleHalt {
     },
     /// The sampler observed the run's `Cancel` handle cancelled.
     Cancelled(CancelCause),
+    /// The bounded event's automaton would exceed its state limit, at the
+    /// value it was set to (FR-126 `ResourceExhausted`).
+    AutomatonStates {
+        /// The limit's value.
+        value: u64,
+    },
+    /// A claim predicate's read was refused with no value undefined.
+    PredicateRefused(ClauseOutcome),
 }
 
 /// The behaviours EN-4 decides from: FR-188's sampler and the layer-5
@@ -408,6 +416,12 @@ fn halted(halt: SampleHalt) -> Result<TestEnd, StatisticalRefusal> {
         }
         SampleHalt::Expansion(stop) => TestEnd::Stopped(StatisticalStop::Expansion(stop)),
         SampleHalt::Cancelled(cause) => TestEnd::Stopped(StatisticalStop::Cancelled(cause)),
+        SampleHalt::AutomatonStates { value } => {
+            TestEnd::Stopped(StatisticalStop::AutomatonStates { value })
+        }
+        SampleHalt::PredicateRefused(outcome) => {
+            return Err(StatisticalRefusal::PredicateRefused(outcome))
+        }
         SampleHalt::GeneratorMismatch { supplied } => {
             return Err(StatisticalRefusal::GeneratorMismatch { supplied })
         }

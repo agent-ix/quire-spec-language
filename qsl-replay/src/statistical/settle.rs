@@ -124,6 +124,10 @@ pub enum UnsettledRefusal {
     /// (ADR-016 EX-8).
     #[error("the subject requires a bound")]
     RequiresBound,
+    /// A claim predicate's read was refused (FR-196's `PredicateRefused`):
+    /// FR-192's map has no row for it.
+    #[error("a claim predicate's read was refused")]
+    PredicateRefused,
     /// The subject did not admit (FR-120): FR-192's map has no row for it,
     /// so the refusal is the caller's to report as FR-106's admission
     /// failure.
@@ -149,6 +153,12 @@ pub fn settle_statistical(
                 }))
             }
             StatisticalStop::Expansion(stop) => expansion_stop(stop, subject),
+            StatisticalStop::AutomatonStates { value } => {
+                StatisticalRecord::of(TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                    limit: ModelCheckLimit::MaxAutomatonStates,
+                    value: *value,
+                }))
+            }
             StatisticalStop::Cancelled(source) => {
                 StatisticalRecord::of(TerminalValue::Incomplete(IncompleteCause::Cancelled {
                     source: *source,
@@ -215,6 +225,7 @@ pub fn settle_statistical_refusal(
         }
         StatisticalRefusal::RequiresBound(_) => return Err(UnsettledRefusal::RequiresBound),
         StatisticalRefusal::Admission(_) => return Err(UnsettledRefusal::Admission),
+        StatisticalRefusal::PredicateRefused(_) => return Err(UnsettledRefusal::PredicateRefused),
         StatisticalRefusal::GeneratorMismatch { .. } => {
             request(StatisticalRequestRefusal::GeneratorMismatch)
         }
@@ -442,6 +453,16 @@ mod tests {
         assert_eq!(own.diagnostic, Some(refused));
 
         assert_eq!(
+            settle(&stopped(StatisticalStop::AutomatonStates {
+                value: 1 << 20
+            }))
+            .value,
+            TerminalValue::Incomplete(IncompleteCause::LimitReached {
+                limit: ModelCheckLimit::MaxAutomatonStates,
+                value: 1 << 20,
+            })
+        );
+        assert_eq!(
             settle(&stopped(StatisticalStop::Cancelled(CancelCause::Requested))).value,
             TerminalValue::Incomplete(IncompleteCause::Cancelled {
                 source: CancelCause::Requested
@@ -588,6 +609,12 @@ mod tests {
         assert_eq!(
             settle_statistical_refusal(&refused),
             Err(UnsettledRefusal::Admission)
+        );
+        assert_eq!(
+            settle_statistical_refusal(&StatisticalRefusal::PredicateRefused(
+                qsl_eval::simulation::model::ClauseOutcome::NotBoolean
+            )),
+            Err(UnsettledRefusal::PredicateRefused)
         );
     }
 

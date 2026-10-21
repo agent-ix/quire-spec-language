@@ -20,13 +20,14 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use qsl_eval::automaton::{translate_body, Monitor, PropertyAutomaton, StateId};
+use qsl_eval::automaton::{translate_body, AutomatonError, Monitor, PropertyAutomaton, StateId};
 use qsl_eval::model_subject::{ModelInstance, ModelSubject};
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem, PredicateReading};
 use qsl_eval::simulation::{
     NotSimulated, ProbabilisticSampler, SampleStop, SampledPosition, SampledStep, StepAt,
     TransitionSystem,
 };
+use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::{CatalogCode, InternalFault};
 use qsl_replay::statistical::{
@@ -38,8 +39,8 @@ use qsl_replay::{
     DEFAULT_MAX_AUTOMATON_STATES,
 };
 use qsl_semantics::check::{
-    Bound as CheckedBound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim, Event,
-    FractionMeasure, ProbForm, ProbScheduler, TemporalProfile,
+    Bound as CheckedBound, BoundedMeasure, CheckedPredicate, CheckedProbabilisticClaim,
+    CheckedTemporalFormula, Event, FractionMeasure, ProbForm, ProbScheduler, TemporalProfile,
 };
 use quire_exact::{Cancel, Identifier, Integer, ObjectReference, Rational, Value, ValueType};
 
@@ -48,7 +49,7 @@ use super::{
     check_sampled, require_statistical, BehaviourSampler, Drawn, RegenerationWalk, Sample,
     SampleHalt, SampledRequest, StatisticalClaim, TestSubject, UnitFraction, WalkStep, Weight,
 };
-use crate::exact_probabilistic::plan::read_letter;
+use crate::exact_probabilistic::plan::{read_letter, PlanFault};
 use crate::exact_probabilistic::{FormulaState, MonitorVerdict};
 use crate::model_check::false_extension::false_extension_rejects;
 
@@ -123,15 +124,16 @@ pub fn check_statistical(
         .ok_or_else(|| fault("claim-workload-is-declared"))?;
     let bindings = bindings(&system, claim)?;
     let initial = system.initial();
-    let tests: Vec<TestSubject> = (0_u32..)
-        .zip(&initial)
-        .flat_map(|(index, _)| {
-            bindings.iter().map(move |(binding, _)| TestSubject {
-                initial: index,
-                binding: binding.clone(),
-            })
-        })
-        .collect();
+    let mut tests = Vec::with_capacity(initial.len().saturating_mul(bindings.len()));
+    for index in 0..initial.len() {
+        let index = u32::try_from(index).map_err(|_| StatisticalRefusal::TooManyTests {
+            count: initial.len().saturating_mul(bindings.len()),
+        })?;
+        tests.extend(bindings.iter().map(|(binding, _)| TestSubject {
+            initial: index,
+            binding: binding.clone(),
+        }));
+    }
     let generator =
         ProbabilisticSampler::new(&system, workload, &sampler).map_err(|stop| match stop {
             SampleStop::GeneratorMismatch { supplied } => {
@@ -201,9 +203,12 @@ fn bindings(
 enum Reading<'c> {
     /// A bounded event: FR-126's monitor over `h + 1` positions.
     Formula {
-        monitor: Box<Monitor<PropertyAutomaton>>,
-        reads: Vec<(UndefinedLocus, &'c CheckedPredicate)>,
+        formula: &'c CheckedTemporalFormula,
+        profile: TemporalProfile,
         horizon: u64,
+        /// The monitor and the predicates of its atoms, built at the first
+        /// sample, so that a state limit stops the run (FR-126).
+        compiled: Option<Compiled<'c>>,
     },
     /// A bounded measure, and the event or reduced event it is judged by.
     Measure {
@@ -222,6 +227,57 @@ enum Reading<'c> {
     },
 }
 
+/// A bounded event's FR-126 monitor, and the predicate of each of its atoms
+/// in letter order.
+struct Compiled<'c> {
+    monitor: Box<Monitor<PropertyAutomaton>>,
+    reads: Vec<(UndefinedLocus, &'c CheckedPredicate)>,
+}
+
+/// The halt of an automaton refusal: a state limit is FR-126's
+/// `ResourceExhausted`; any other refusal of a checked event is a broken
+/// invariant.
+fn automaton_halt(error: AutomatonError) -> SampleHalt {
+    match error {
+        AutomatonError::StateLimit { limit } => SampleHalt::AutomatonStates { value: limit },
+        _ => broken(),
+    }
+}
+
+/// The halt of a monitor step that failed.
+fn plan_halt(fault: PlanFault) -> SampleHalt {
+    match fault {
+        PlanFault::Automaton(error) => automaton_halt(error),
+        PlanFault::Broken(_) => broken(),
+    }
+}
+
+/// Build the monitor of `formula` under `profile` within FR-126's default
+/// `max_automaton_states`.
+fn compile<'c>(
+    formula: &'c CheckedTemporalFormula,
+    profile: TemporalProfile,
+) -> Result<Compiled<'c>, SampleHalt> {
+    let automaton = translate_body(formula.formula(), profile, DEFAULT_MAX_AUTOMATON_STATES)
+        .map_err(automaton_halt)?;
+    let reads = automaton
+        .atoms()
+        .iter()
+        .map(|atom| {
+            formula
+                .condition(atom.index())
+                .map(|predicate| (UndefinedLocus::Atom(*atom), predicate))
+                .ok_or_else(broken)
+        })
+        .collect::<Result<_, _>>()?;
+    let monitor =
+        Monitor::bad_prefix(automaton, DEFAULT_MAX_AUTOMATON_STATES).map_err(automaton_halt)?;
+    Ok(Compiled {
+        monitor: Box::new(monitor),
+        reads,
+    })
+}
+
 /// An `accumulate` or `steps` measure over `[0, within]`.
 struct Measure<'c> {
     /// The reward summed; `None` for `steps`, 1 per step.
@@ -234,7 +290,12 @@ struct Measure<'c> {
 /// How a measured sample becomes the sample the statistics count.
 enum MeasureJudge {
     /// A probability bound over `M <= c` or `M >= c`.
-    Compare(CheckedBound),
+    Compare {
+        /// The measure's threshold `c`.
+        threshold: CheckedBound,
+        /// The probability bound's comparison.
+        claim: Comparison,
+    },
     /// A quantile claim's reduced event (ADR-024 PF-4).
     Quantile(MeasureEvent),
 }
@@ -297,25 +358,11 @@ fn reduce(
                 Event::Formula { formula, horizon } => {
                     let profile = TemporalProfile::from_identity(claim.profile.identity())
                         .ok_or_else(|| fault("claim-profile-is-temporal"))?;
-                    let automaton =
-                        translate_body(formula.formula(), profile, DEFAULT_MAX_AUTOMATON_STATES)
-                            .map_err(|_| fault("a-checked-event-translates"))?;
-                    let reads = automaton
-                        .atoms()
-                        .iter()
-                        .map(|atom| {
-                            formula
-                                .condition(atom.index())
-                                .map(|predicate| (UndefinedLocus::Atom(*atom), predicate))
-                                .ok_or_else(|| fault("every-atom-has-a-predicate"))
-                        })
-                        .collect::<Result<_, _>>()?;
-                    let monitor = Monitor::bad_prefix(automaton, DEFAULT_MAX_AUTOMATON_STATES)
-                        .map_err(|_| fault("a-bounded-event-is-a-safety-automaton"))?;
                     Reading::Formula {
-                        monitor: Box::new(monitor),
-                        reads,
+                        formula,
+                        profile,
                         horizon: *horizon,
+                        compiled: None,
                     }
                 }
                 Event::Compare {
@@ -325,9 +372,15 @@ fn reduce(
                     fraction,
                     event: Some(bound.clone()),
                 },
-                Event::Compare { measure, bound } => Reading::Measure {
+                Event::Compare {
+                    measure,
+                    bound: threshold,
+                } => Reading::Measure {
                     measure: measure_of(measure).ok_or_else(|| fault("a-measure-is-bounded"))?,
-                    judge: MeasureJudge::Compare(bound.clone()),
+                    judge: MeasureJudge::Compare {
+                        threshold: threshold.clone(),
+                        claim: bound_of(bound).comparison,
+                    },
                 },
             };
             (ClaimForm::Probability, bound_of(bound), reading)
@@ -389,7 +442,9 @@ struct Shared<'s, 'a, 'c> {
     reading: Reading<'c>,
     initial: Vec<ModelSimState>,
     bindings: Vec<Binding>,
-    /// The readings of the claim's predicates by binding and state key.
+    /// The readings of the claim's predicates by binding and state key. It
+    /// grows with the states a run visits; no FR-191 budget bounds it, a known
+    /// memory cost over a large reachable space.
     truths: BTreeMap<(usize, Vec<u8>), Vec<PredicateReading>>,
     cancel: &'s Cancel,
 }
@@ -552,9 +607,10 @@ impl Shared<'_, '_, '_> {
                         cause,
                     })))
                 }
-                // A checked Boolean predicate always has a truth value or
-                // none; a refused one is an evaluator fault.
-                PredicateReading::Refused(_) => return Err(broken()),
+                // As EN-5 returns it (FR-196 `PredicateRefused`).
+                PredicateReading::Refused(outcome) => {
+                    return Err(SampleHalt::PredicateRefused(outcome))
+                }
             }
         }
         Ok(Ok(truths))
@@ -605,13 +661,24 @@ impl<'c> Shared<'_, '_, 'c> {
     }
 
     /// A bounded event: the monitor reads one letter per position until it
-    /// decides, and the `h + 1`-th letter closes it under the profile's
-    /// false extension (FR-126).
+    /// decides. At a terminal model state (ADR-018 SM-4), and after the
+    /// `h + 1`-th letter, the profile's false extension closes it (FR-126),
+    /// as EN-5's product does.
     fn formula(&mut self, binding: usize, cursor: &mut Cursor) -> Result<Read, Ended> {
-        let Reading::Formula { reads, horizon, .. } = &self.reading else {
+        let Reading::Formula {
+            formula,
+            profile,
+            horizon,
+            compiled,
+        } = &mut self.reading
+        else {
             return Err(broken().into());
         };
-        let (reads, horizon) = (reads.clone(), *horizon);
+        let horizon = *horizon;
+        if compiled.is_none() {
+            *compiled = Some(compile(formula, *profile)?);
+        }
+        let reads = compiled.as_ref().ok_or_else(broken)?.reads.clone();
         let mut state: Option<StateId> = None;
         for at in 0..=horizon {
             if at > 0 {
@@ -621,28 +688,38 @@ impl<'c> Shared<'_, '_, 'c> {
                 Ok(truths) => truths,
                 Err(undefined) => return Ok(Read::Undefined(undefined)),
             };
-            let Reading::Formula { monitor, .. } = &mut self.reading else {
-                return Err(broken().into());
-            };
+            let monitor = self.monitor()?;
             let from = match state {
                 Some(state) => state,
-                None => monitor.initial().map_err(|_| broken())?,
+                None => monitor.initial().map_err(automaton_halt)?,
             };
-            match read_letter(monitor, from, &truths).map_err(|_| broken())? {
+            let next = match read_letter(monitor, from, &truths).map_err(plan_halt)? {
                 FormulaState::Decided(verdict) => {
                     return Ok(Read::Sample(Sample::Event(
                         verdict == MonitorVerdict::Accept,
                     )))
                 }
-                FormulaState::Running(next) => state = Some(next),
+                FormulaState::Running(next) => next,
+            };
+            state = Some(next);
+            if at < horizon && self.generator.is_terminal(&cursor.position)? {
+                break;
             }
         }
-        let Reading::Formula { monitor, .. } = &mut self.reading else {
-            return Err(broken().into());
-        };
         let running = state.ok_or_else(broken)?;
-        let rejects = false_extension_rejects(monitor, running).map_err(|_| broken())?;
+        let rejects = false_extension_rejects(self.monitor()?, running).map_err(automaton_halt)?;
         Ok(Read::Sample(Sample::Event(!rejects)))
+    }
+
+    /// The bounded event's monitor, once compiled.
+    fn monitor(&mut self) -> Result<&mut Monitor<PropertyAutomaton>, SampleHalt> {
+        match &mut self.reading {
+            Reading::Formula {
+                compiled: Some(compiled),
+                ..
+            } => Ok(&mut compiled.monitor),
+            _ => Err(broken()),
+        }
     }
 
     /// An `accumulate` or `steps` measure (ADR-024 PF-2): the first
@@ -691,16 +768,28 @@ impl<'c> Shared<'_, '_, 'c> {
                 break;
             }
         }
-        let value = match value {
-            Some(value) => value,
-            None if active => MeasureValue::Censored,
-            None => return Ok(Read::Sample(Sample::NotActivated)),
-        };
         let Reading::Measure { judge, .. } = &self.reading else {
             return Err(broken().into());
         };
+        let value = match (value, judge) {
+            (Some(value), _) => value,
+            (None, _) if active => MeasureValue::Censored,
+            // ADR-024 PF-4, ST-6: a quantile is conditioned on activation.
+            (None, MeasureJudge::Quantile(_)) => return Ok(Read::Sample(Sample::NotActivated)),
+            // PF-3's probability is over every behaviour, and FR-189 gives
+            // the comparison no value on one that never activates: it is
+            // counted on the side that violates the bound, so it never helps
+            // the claim be accepted.
+            (None, MeasureJudge::Compare { claim, .. }) => {
+                let violating = match claim {
+                    Comparison::AtLeast => false,
+                    Comparison::AtMost | Comparison::Below => true,
+                };
+                return Ok(Read::Sample(Sample::Event(violating)));
+            }
+        };
         Ok(Read::Sample(match judge {
-            MeasureJudge::Compare(bound) => Sample::Event(compares(bound, &value)),
+            MeasureJudge::Compare { threshold, .. } => Sample::Event(compares(threshold, &value)),
             MeasureJudge::Quantile(event) => Sample::Measured {
                 holds: event.holds(&value),
                 value,
@@ -722,6 +811,8 @@ impl<'c> Shared<'_, '_, 'c> {
         )];
         let zero = Rational::from_integer(Integer::zero());
         let (mut held, mut total) = (zero.clone(), zero);
+        // The state key at the window's last position.
+        let mut last = None;
         for at in 0..=fraction.window {
             if at > 0 && fraction.weight.is_none() {
                 self.advance(cursor)?;
@@ -731,6 +822,7 @@ impl<'c> Shared<'_, '_, 'c> {
                 Err(undefined) => return Ok(Read::Undefined(undefined)),
             };
             let holds = truths.first().copied().ok_or_else(broken)?;
+            last = Some(cursor.position.digest());
             let weight = match &fraction.weight {
                 None => Rational::from_integer(Integer::one()),
                 // The step that leaves the position weighs it.
@@ -744,18 +836,20 @@ impl<'c> Shared<'_, '_, 'c> {
             }
             total = total.add(&weight);
         }
-        // A weighted window whose every step has weight 0 has no fraction:
-        // ADR-024 PF-2 defines none, so the run stops on the unsupported
-        // reading rather than invent a value.
-        let value = held.div(&total).ok_or_else(|| {
-            Ended::Halt(SampleHalt::Expansion(qsl_eval::simulation::ExpansionStop {
-                cause: CatalogCode::new(
-                    "unsupported_projection",
-                    "unsupported-requested-capability",
-                ),
-                limit: None,
-            }))
-        })?;
+        // A weighted window whose every step has weight 0 divides 0 by 0:
+        // the fraction is undefined at the window's last position (ADR-018
+        // UE-1), which rejects the test (ADR-024 SV-11).
+        let Some(value) = held.div(&total) else {
+            return Ok(Read::Undefined(Box::new(UndefinedEvaluation {
+                site: UndefinedSite {
+                    position: fraction.window,
+                    state_key: last.ok_or_else(broken)?,
+                    locus: UndefinedLocus::ClaimPredicate(ClaimPredicate::Target),
+                    transition: None,
+                },
+                cause: UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero),
+            })));
+        };
         Ok(Read::Sample(match event {
             Some(bound) => Sample::Event(compares(&bound, &MeasureValue::Value(value))),
             None => Sample::Fraction(UnitFraction::try_from(value).map_err(|_| broken())?),

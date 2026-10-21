@@ -9,7 +9,7 @@
 //! verdict type the settlement map and CG read in `qsl-replay`.
 
 use qsl_eval::model_subject::ModelInstance;
-use qsl_eval::simulation::model::NotMarkov;
+use qsl_eval::simulation::model::{ClauseOutcome, NotMarkov};
 use qsl_eval::simulation::{ExpansionStop, RequiresBound, SampledStep};
 use qsl_foundation::selection::DefinitionRef;
 use qsl_foundation::InternalFault;
@@ -485,6 +485,14 @@ pub enum StatisticalStop {
     Expansion(ExpansionStop),
     /// The caller's `Cancel` handle was cancelled (FR-276).
     Cancelled(CancelCause),
+    /// The bounded event's automaton would exceed FR-126's
+    /// `max_automaton_states`, at the value it was set to: FR-126's
+    /// `ResourceExhausted`. EN-4 has no member of its own for the budget, so
+    /// the run reads FR-126's published default.
+    AutomatonStates {
+        /// The limit's value in the run.
+        value: u64,
+    },
 }
 
 /// Why a run is unsupported once sampling began (FR-189).
@@ -528,6 +536,11 @@ pub enum StatisticalOutcome {
 /// Why EN-4 refuses a request with no outcome (FR-189 `StatisticalRefusal`).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum StatisticalRefusal {
+    /// A claim predicate's read was refused with no value undefined: its
+    /// truth at the state is not known (FR-196's `PredicateRefused`, which
+    /// EN-5 returns for the same read).
+    #[error("a claim predicate's read was refused: {0:?}")]
+    PredicateRefused(ClauseOutcome),
     /// FR-120's admission of the subject's `ModelSystem` failed.
     #[error("the subject's model system did not admit: {0:?}")]
     Admission(Box<AdmissionFailure>),

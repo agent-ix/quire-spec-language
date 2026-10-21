@@ -209,7 +209,7 @@ pub(crate) struct World {
     pub(crate) package: CheckedPackage,
     packages: BTreeMap<[u8; 32], Vec<u8>>,
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
-    initial: DocumentRef,
+    initial: Vec<DocumentRef>,
     universe: PopulationUniverse,
 }
 
@@ -230,22 +230,29 @@ pub(crate) const UNLIMITED: ScalarLimits = ScalarLimits {
 impl World {
     /// `model`, checked.
     pub(crate) fn new(model: &Model) -> Self {
-        Self::build(model, &[model.key], &[model.key])
+        Self::build(model, &[model.key], &[model.key], &[&model.initial])
     }
 
     /// `model`, checked, over a universe of `keys`, every one of them live in
     /// the initial snapshot.
     pub(crate) fn with_objects(model: &Model, keys: &[&str]) -> Self {
-        Self::build(model, keys, keys)
+        Self::build(model, keys, keys, &[&model.initial])
     }
 
     /// `model`, checked, over a universe of `keys`; only the object under
     /// `model.key` is in the initial snapshot.
     pub(crate) fn with_universe(model: &Model, keys: &[&str]) -> Self {
-        Self::build(model, keys, &[model.key])
+        Self::build(model, keys, &[model.key], &[&model.initial])
     }
 
-    fn build(model: &Model, keys: &[&str], live: &[&str]) -> Self {
+    /// `model`, checked, with one initial snapshot per field set of
+    /// `initials`, in order.
+    pub(crate) fn with_initials(model: &Model, initials: &[Json]) -> Self {
+        let initials: Vec<&Json> = initials.iter().collect();
+        Self::build(model, &[model.key], &[model.key], &initials)
+    }
+
+    fn build(model: &Model, keys: &[&str], live: &[&str], initials: &[&Json]) -> Self {
         let document = model.document();
         let packages = package_input([document.as_slice()]);
         let digest = *packages.keys().next().expect("one model");
@@ -290,24 +297,36 @@ impl World {
 
         let header = json!({"identity": model.package, "version": "1.0.0",
             "digest": format!("sha256-jcs:{}", hex(&digest))});
-        let snapshot = json!({
-            "format": "quire.state.snapshot/v1",
-            "identity": {"authority": "test", "identity": "s0", "revision_namespace": "fixture",
-                "revision": "fixture:1"},
-            "observation": "current", "model": header,
-            "anchor": {"kind": "initialization", "name": "start"},
-            "populations": [{"population": model.ident(model.population), "complete": true,
-                "objects": live.iter().map(|key| json!({"key": key,
-                    "type": model.ident(model.object), "fields": model.initial}))
-                    .collect::<Vec<_>>()}],
-        })
-        .to_string()
-        .into_bytes();
-        let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
-        let snapshot_digest =
-            *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
+        let mut snapshots = BTreeMap::new();
+        let mut initial = Vec::new();
+        for (index, fields) in initials.iter().enumerate() {
+            let identity = format!("s{index}");
+            let snapshot = json!({
+                "format": "quire.state.snapshot/v1",
+                "identity": {"authority": "test", "identity": identity,
+                    "revision_namespace": "fixture", "revision": "fixture:1"},
+                "observation": "current", "model": header,
+                "anchor": {"kind": "initialization", "name": "start"},
+                "populations": [{"population": model.ident(model.population), "complete": true,
+                    "objects": live.iter().map(|key| json!({"key": key,
+                        "type": model.ident(model.object), "fields": fields}))
+                        .collect::<Vec<_>>()}],
+            })
+            .to_string()
+            .into_bytes();
+            let read = quire_canonical::read(&snapshot, u64::MAX).expect("JSON fixture");
+            let digest = *quire_canonical::sha256(&read, quire_canonical::Limits::new(u64::MAX))
                 .expect("canonical fixture")
                 .as_bytes();
+            snapshots.insert(digest, snapshot);
+            initial.push(DocumentRef {
+                authority: "test".to_owned(),
+                identity,
+                revision_namespace: "fixture".to_owned(),
+                revision: "fixture:1".to_owned(),
+                digest,
+            });
+        }
         let population = qsl_semantics::model::key::DeclarationKey {
             package: model.package.to_owned(),
             node: model.ident(model.population),
@@ -315,14 +334,8 @@ impl World {
         Self {
             package: CheckedPackage::link(graph),
             packages,
-            snapshots: BTreeMap::from([(snapshot_digest, snapshot)]),
-            initial: DocumentRef {
-                authority: "test".to_owned(),
-                identity: "s0".to_owned(),
-                revision_namespace: "fixture".to_owned(),
-                revision: "fixture:1".to_owned(),
-                digest: snapshot_digest,
-            },
+            snapshots,
+            initial,
             universe: PopulationUniverse {
                 population,
                 keys: keys.iter().map(|key| (*key).to_owned()).collect(),
@@ -336,7 +349,7 @@ impl World {
             packages: &self.packages,
             normalization: ModelNormalizationLimits::default(),
             snapshots: &self.snapshots,
-            initial: vec![self.initial.clone()],
+            initial: self.initial.clone(),
             universes: vec![self.universe.clone()],
             observation: ObservationLimits::default(),
             expansion: ExpansionLimits {

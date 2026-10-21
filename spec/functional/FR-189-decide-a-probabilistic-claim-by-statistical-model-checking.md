@@ -117,9 +117,20 @@ the claim's form does not admit (FR-190, SPRT below).
 
 ### Per sample
 
-- EN-4 SHALL sample `h + 1` positions for an event or bounded measure of
-  horizon or window `h` (FR-188), and evaluate the event, or the measure and
-  its comparison, with the layer-5 evaluator over those positions.
+- EN-4 SHALL sample at most `h + 1` positions for an event or bounded measure
+  of horizon or window `h` (FR-188), and evaluate the event, or the measure and
+  its comparison, with the layer-5 evaluator over those positions. A bounded
+  event stops when its monitor decides, and closes at a terminal model state
+  with the profile's false extension (ADR-018 SM-4, FR-126). A measure stops
+  at its end `b`. A weighted fraction draws `h + 1` steps, since the step that
+  leaves a position weighs it.
+- An `accumulate` or `steps` measure under a probability bound that never
+  activates on a sample SHALL count that sample on the side that violates the
+  bound, since ADR-024 PF-3's probability is over every behaviour.
+- A weighted fraction whose window has total weight 0 SHALL evaluate
+  `Undefined` by division by zero at the window's last position.
+- A claim predicate whose read is refused with no value undefined SHALL end
+  the run as the `PredicateRefused` refusal, as FR-196 does for EN-5.
 - An `accumulate` or `steps` measure SHALL find the first activation
   position `a <= h` and the first `b`, `a <= b <= h`, where the end
   predicate holds, and sum the reward of the steps into positions `a + 1` to

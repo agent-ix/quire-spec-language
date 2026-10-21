@@ -14,6 +14,7 @@
 //! one FR-187 gives for the drawn identity and vector.
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use qsl_foundation::digest::DigestRecord;
 use qsl_foundation::selection::DefinitionRef;
@@ -272,8 +273,10 @@ pub struct ProbabilisticSampler<'s, 'a> {
     system: &'s ModelSystem<'a>,
     workload: &'s Workload,
     /// Each state's enabled actions, or that a contract conjunction was
-    /// undecided there, by state key.
-    actions: BTreeMap<Vec<u8>, Option<Vec<Action>>>,
+    /// undecided there, by state key. It grows with the states a run visits;
+    /// no FR-191 budget bounds it, a known memory cost over a large
+    /// reachable space.
+    actions: BTreeMap<Vec<u8>, Option<Rc<[Action]>>>,
     /// The draw digests computed.
     digests: u64,
 }
@@ -323,6 +326,38 @@ impl<'s, 'a> ProbabilisticSampler<'s, 'a> {
         Ok(SampledPosition { state, key, digest })
     }
 
+    /// `from`'s enabled actions, expanded once per state key.
+    #[allow(
+        clippy::result_large_err,
+        reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
+    )]
+    fn actions(&mut self, from: &SampledPosition) -> Result<Rc<[Action]>, SampleStop> {
+        let actions = match self.actions.get(&from.key) {
+            Some(known) => known.clone(),
+            None => {
+                let actions = self.system.enabled_actions(&from.state)?.ok().map(Rc::from);
+                self.actions.insert(from.key.clone(), actions.clone());
+                actions
+            }
+        };
+        actions.ok_or(SampleStop::UndecidedSuccessor)
+    }
+
+    /// Whether `from` is terminal: no action is enabled there, so its step
+    /// is the stutter step (ADR-018 SM-4).
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::step`]: an expansion stop, or `UndecidedSuccessor` when a
+    /// contract conjunction is undecided at the state.
+    #[allow(
+        clippy::result_large_err,
+        reason = "FR-188 pins SampleStop::NotMarkov(NotMarkov), whose scheduled identity carries a receiver reference"
+    )]
+    pub fn is_terminal(&mut self, from: &SampledPosition) -> Result<bool, SampleStop> {
+        Ok(self.actions(from)?.is_empty())
+    }
+
     /// The step from `from` that the draws at `at` select, and the position
     /// it reaches. A terminal state takes the stutter step (ADR-018 SM-4).
     ///
@@ -339,15 +374,7 @@ impl<'s, 'a> ProbabilisticSampler<'s, 'a> {
         from: &SampledPosition,
         at: StepAt,
     ) -> Result<(SampledPosition, SampledStep), SampleStop> {
-        let actions = match self.actions.get(&from.key) {
-            Some(known) => known.clone(),
-            None => {
-                let actions = self.system.enabled_actions(&from.state)?.ok();
-                self.actions.insert(from.key.clone(), actions.clone());
-                actions
-            }
-        };
-        let actions = actions.ok_or(SampleStop::UndecidedSuccessor)?;
+        let actions = self.actions(from)?;
         if actions.is_empty() {
             return Ok((
                 from.clone(),

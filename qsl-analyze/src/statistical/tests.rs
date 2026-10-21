@@ -438,6 +438,34 @@ fn no_fault() -> StatisticalClaim {
     )
 }
 
+/// A bounded event's automaton over its state limit stops the run on that
+/// limit, as FR-126's `ResourceExhausted` (incomplete, not failed); a
+/// refused predicate read is EN-5's `PredicateRefused` refusal.
+#[trace("TC-626")]
+#[test]
+fn an_automaton_over_its_limit_stops_and_a_refused_read_refuses() {
+    let claim = no_fault();
+    let tests = one_test();
+    let sampler = sampler_ref();
+    let outcome = run(
+        request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+        &mut fixed(Err(SampleHalt::AutomatonStates { value: 1 << 20 })),
+    );
+    let StatisticalOutcome::Stopped { stop, .. } = outcome else {
+        panic!("expected Stopped, got {outcome:?}");
+    };
+    assert_eq!(stop, StatisticalStop::AutomatonStates { value: 1 << 20 });
+    let refused = qsl_eval::simulation::model::ClauseOutcome::NotBoolean;
+    assert_eq!(
+        check_sampled(
+            request(&claim, &tests, StatisticalMethod::Okamoto, &sampler),
+            &mut fixed(Err(SampleHalt::PredicateRefused(refused.clone()))),
+            &Cancel::new(),
+        ),
+        Err(StatisticalRefusal::PredicateRefused(refused))
+    );
+}
+
 /// FR-189-AC-5: a non-unique post-state is `Unsupported(NotMarkov)`; an
 /// undecided contract conjunction ends its test Undecided,
 /// `UndecidedSuccessor`; a `mean of` claim with SPRT is refused

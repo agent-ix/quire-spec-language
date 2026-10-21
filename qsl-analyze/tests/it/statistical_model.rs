@@ -17,7 +17,7 @@ use qsl_replay::statistical::{
     StatisticalOutcome, StatisticalRefusal, StatisticalStop, StatisticalUnsupported,
     StatisticalVerdict, WitnessValue,
 };
-use qsl_replay::{TerminalValue, UndefinedLocus};
+use qsl_replay::{ClaimPredicate, TerminalValue, UndefinedLocus};
 use quire_exact::{Cancel, Integer, Rational, Value};
 
 use crate::prob_world::{self, World};
@@ -88,9 +88,10 @@ fn p95(name: &str, threshold: u32) -> String {
 
 fn service() -> World {
     World::new(&prob_world::service(&format!(
-        "{}{}",
+        "{}{}{}",
         p95("P95", 5),
-        p95("Two", 2)
+        p95("Two", 2),
+        p95("Zero", 0)
     )))
 }
 
@@ -110,7 +111,18 @@ fn p95_over_service_is_decided_from_the_models_own_behaviours() {
     let (low, high) = accepted.interval.clone().expect("an Okamoto interval");
     assert_eq!(high.sub(&low), ratio(2, 100));
     assert!(low >= ratio(19, 20), "lower end {low:?}");
-    for witness in &accepted.witnesses {
+    // `Zero` reads the same behaviours (seed, trace indices, window), and
+    // every one of them violates it, so keeping every witness shows every
+    // sample's steps.
+    let every = completed(run(
+        &world,
+        "Zero",
+        StatisticalMethod::Okamoto,
+        StatisticalLimits::default(),
+        u32::MAX,
+    ));
+    assert_eq!(every.witnesses.len(), 23_026);
+    for witness in &every.witnesses {
         assert!(witness.steps.len() <= 10, "at most 11 positions");
     }
     let rejected = decided(&world, "Two", StatisticalMethod::Okamoto);
@@ -463,4 +475,132 @@ fn another_sampler_is_refused() {
         refusal,
         Err(StatisticalRefusal::GeneratorMismatch { supplied: other })
     );
+}
+
+/// FR-189 "Per sample" and FR-126's closure at a terminal state (ADR-018
+/// SM-4): over `Process`, terminal once `done`, `always[0,3]` of a
+/// tautology fails on every sample that reaches `done` before the window's
+/// last position, as EN-5's product closes it with the false extension, so its
+/// probability is `(3/4)^2 = 9/16`. A sample that reaches the terminal state
+/// stops there with no stutter step.
+#[trace("TC-624")]
+#[test]
+fn a_bounded_event_closes_at_a_terminal_state() {
+    let claim = "probabilistic Live using ev on M over (p: M::Proc) under Even on origin \
+         with alpha 0.1, beta 0.1, indifference 0.1 \
+         { probability >= 0.7 [ always[0,3] holds(p.done or not p.done) ] }";
+    let world = World::new(&prob_world::process(claim));
+    let verdict = completed(run(
+        &world,
+        "Live",
+        StatisticalMethod::Okamoto,
+        StatisticalLimits::default(),
+        u32::MAX,
+    ));
+    assert_eq!(verdict.decision, Decision::Rejected);
+    let estimate = verdict.estimate.clone().expect("an estimate");
+    let exact = ratio(9, 16);
+    assert!(
+        estimate.sub(&exact) <= ratio(1, 10) && exact.sub(&estimate) <= ratio(1, 10),
+        "{estimate:?}"
+    );
+    assert!(!verdict.witnesses.is_empty());
+    for witness in &verdict.witnesses {
+        assert_eq!(witness.value, WitnessValue::Event(false));
+        assert!(witness.steps.len() <= 2, "{:?}", witness.steps);
+        let last = witness.steps.last().expect("a step to the terminal state");
+        assert!(matches!(last.transition, TransitionId::Operation(_)));
+        assert!(
+            matches!(last.random[..], [Value::Boolean(true)]),
+            "the flip ends it"
+        );
+    }
+}
+
+/// A probability bound over an `accumulate` measure that never activates:
+/// PF-3's probability is over every behaviour, so each sample is counted, on
+/// the side that violates the bound: `>= 1/2` is Rejected with estimate 0 and
+/// `<= 1/2` Rejected with estimate 1.
+#[trace("TC-624")]
+#[test]
+fn an_unactivated_measure_under_a_probability_bound_counts_against_it() {
+    let never = |name: &str, op: &str| {
+        format!(
+            "probabilistic {name} using ev on M over (s: M::Server) under Steady on origin \
+             with alpha 0.1, beta 0.1, indifference 0.1 \
+             {{ probability {op} 0.5 [ accumulate duration from holds(s.phase = 1 and s.phase = 2) \
+             until holds(s.phase = 2) within 10 <= 5 ] }}\n"
+        )
+    };
+    let world = World::new(&prob_world::service(&format!(
+        "{}{}",
+        never("Least", ">="),
+        never("Most", "<=")
+    )));
+    for (claim, estimate) in [("Least", 0), ("Most", 1)] {
+        let verdict = decided(&world, claim, StatisticalMethod::Okamoto);
+        assert_eq!(verdict.decision, Decision::Rejected, "{claim}");
+        assert_eq!(verdict.tests[0].samples, 116, "{claim}");
+        assert_eq!(verdict.estimate, Some(ratio(estimate, 1)), "{claim}");
+    }
+}
+
+/// A weighted fraction whose window has total weight 0 divides 0 by 0: the
+/// sample is undefined at the window's last position (ADR-018 UE-1), which
+/// rejects its test and is kept as the undefined witness (ADR-024 SV-11).
+#[trace("TC-624")]
+#[test]
+fn a_weightless_fraction_is_an_undefined_sample() {
+    let claim = "probabilistic Weightless using ev on M over (s: M::Server) under Steady \
+         on origin with alpha 0.1, beta 0.1, indifference 0.1 \
+         { mean of (fraction holds(s.phase = 0) over [0, 0] weighted by duration) >= 0.5 }";
+    let world = World::new(&prob_world::service(claim));
+    let verdict = decided(&world, "Weightless", StatisticalMethod::Okamoto);
+    assert_eq!(verdict.decision, Decision::Rejected);
+    let undefined = verdict.tests[0].undefined.as_ref().expect("undefined");
+    assert_eq!(
+        (undefined.trace, undefined.evaluation.site.position),
+        (0, 0)
+    );
+    assert_eq!(
+        undefined.evaluation.cause,
+        UndefinedCause::Kernel(quire_exact::Undefined::DivisionByZero)
+    );
+    assert!(matches!(
+        undefined.evaluation.site.locus,
+        UndefinedLocus::ClaimPredicate(ClaimPredicate::Target)
+    ));
+    assert_eq!(
+        verdict.witnesses[0].value,
+        WitnessValue::Undefined(undefined.evaluation.clone())
+    );
+}
+
+/// Checks FR-189-AC-3's first clause (TC-624 step 3): a `Service` with two
+/// initial states runs `m = 2` tests, each with `α' = β' = 1/200`, sample
+/// `i` of test `j` at trace index `2i + j`.
+#[trace("TC-624")]
+#[test]
+fn two_initial_states_run_two_interleaved_tests() {
+    let model = prob_world::service(&p95("Two", 2));
+    let busy = serde_json::json!({"phase": {"integer": "1"}, "attempts": {"integer": "0"}});
+    let world = World::with_initials(&model, &[model.initial.clone(), busy]);
+    let verdict = completed(run(
+        &world,
+        "Two",
+        StatisticalMethod::Okamoto,
+        StatisticalLimits::default(),
+        u32::MAX,
+    ));
+    assert_eq!(verdict.basis.tests, 2);
+    assert_eq!(verdict.basis.alpha_per_test, ratio(1, 200));
+    assert_eq!(verdict.basis.beta_per_test, ratio(1, 200));
+    for (j, test) in (0_u64..).zip(&verdict.provenance.tests) {
+        assert_eq!(u64::from(test.initial), j);
+        assert_eq!((test.traces.first, test.traces.step), (j, 2));
+    }
+    assert!(verdict.witnesses.iter().any(|witness| witness.test == 1));
+    for witness in &verdict.witnesses {
+        assert_eq!(witness.trace % 2, u64::from(witness.test));
+    }
 }
