@@ -1354,10 +1354,14 @@ impl<S: SubjectSystem> Run<'_, S> {
                     continue;
                 }
             }
-            // ADR-027 AE-4: an instance-limited state is never terminal, so
-            // its `terminal_class` below reads `NotTerminal`.
+            // ADR-027 AE-4: an instance-limited state is never terminal. With
+            // no expanded successor it is a boundary state, as MB-3's is:
+            // never closed, stutter-extended or a deadlock.
             if cut.instances {
                 self.instance_limited.insert(self.nodes[at].digest);
+                if expansion.successors.is_empty() {
+                    continue;
+                }
             }
             if matches!(self.item, Item::Deadlock) {
                 let after = self.deadlock_letter(at, &expansion, cut)?;

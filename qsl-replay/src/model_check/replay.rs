@@ -1269,15 +1269,16 @@ fn check_formula<S: SubjectSystem>(
 }
 
 /// Whether the last replayed state is terminal: no transition identity is
-/// enabled at it (ADR-018 SM-4).
+/// enabled at it (ADR-018 SM-4) and the instance bound left no `activate`
+/// step of it unexpanded (ADR-027 AE-4).
 fn ends_terminal<S: SubjectSystem>(
     system: &S,
     positions: &[Position<S::State>],
 ) -> Result<bool, ReplayRefusal> {
     Ok(match positions.last() {
         Some(position) => matches!(
-            expand(system, &position.state)?,
-            Ok(expansion) if expansion.successors.is_empty()
+            expand_bounded(system, &position.state)?,
+            Ok((expansion, cut)) if expansion.successors.is_empty() && !cut.instances
         ),
         None => false,
     })

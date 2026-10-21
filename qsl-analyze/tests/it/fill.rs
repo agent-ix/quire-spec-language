@@ -212,12 +212,18 @@ pub(crate) fn contracts(two_pre: &str) -> String {
 }
 
 /// The unit selecting the domain package as `M`, with `body` after the
-/// header.
+/// header. The temporal profile is `t0`, infinite-trace, or `tb`, the
+/// bounded false-extension profile, when `body` has a clause `using tb`.
 pub(crate) fn unit_text(body: &str) -> String {
+    let (name, profile) = if body.contains(" using tb ") {
+        ("tb", "quire.temporal.event-position.false-extension/v1")
+    } else {
+        ("t0", "quire.temporal.infinite-trace/v1")
+    };
     format!(
         "language \"ix:native\" edition \"1-draft\";\n\
          profile v = \"quire.value.complete/v1\";\n\
-         profile t0 = \"quire.temporal.infinite-trace/v1\";\n\
+         profile {name} = \"{profile}\";\n\
          model M = \"{PACKAGE}\" version \"1.0.0\" digest \"sha256-jcs:{}\";\n{body}",
         hex(&document_digest(&document()))
     )

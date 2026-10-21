@@ -1187,3 +1187,28 @@ fn the_instance_bound_settles_before_the_horizon() {
         "{shallow:?}"
     );
 }
+
+/// ADR-027 AE-4 (TC-654): an instance-limited state with no expanded
+/// successor is no terminal state. FR-211-AC-4's stuck unit keeps `v` at 0,
+/// so the bounded claim `always[0, 5] holds(k.v = 0)` holds on every real
+/// behaviour; the default bound 3 leaves the state of three instances
+/// unexpanded, and the run settles V-6 `InstanceBoundReached` rather than
+/// closing that state with every atom false and refuting the claim.
+#[test]
+fn an_instance_limited_state_with_no_successor_is_not_closed_as_terminal() {
+    let bounded = "temporal Bound using tb over (k: M::Cell) clock \"model-steps\" on origin \
+                   { always[0, 5] holds(k.v = 0) }\n";
+    let world = World::new(&(stuck() + bounded), &["c"], &[0]);
+    let letters = CellV { holds: |v| v == 0 };
+    let item = world.claim(&letters);
+    let outcome = world.check(item, None, None);
+    let ModelCheckOutcome::Undecided {
+        cause: UndecidedCause::InstanceBoundReached { bound, states },
+        ..
+    } = &outcome
+    else {
+        panic!("{outcome:?}");
+    };
+    assert_eq!(bound.value, 3);
+    assert!(*states >= 1);
+}
