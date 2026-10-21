@@ -471,3 +471,49 @@ fn a_guard_over_an_integer_conversion_bounds_only_what_it_states() {
         assert!(refused.is_err(), "{body}: the body is not in [0, 3]");
     }
 }
+
+/// FR-093-AC-31: the IR-17 host conversion sources, each with its own scalar
+/// domains: `convert<T>(a) = b` lowers a convert node and the equality of
+/// `T`'s family, and strict IR admits the package.
+#[trace("FR-093-AC-31", "TC-415")]
+#[test]
+fn the_host_conversion_sources_lower_a_convert_and_read_back_verified() {
+    for (source, target, family) in [
+        ("Int[-100, 100]", "Integer", "integer"),
+        (
+            "Int[-100, 100]",
+            "Decimal[-100, 100; 0, 0; nearest-even]",
+            "decimal",
+        ),
+        (
+            "Rational[-10, 10; 1, 1]",
+            "Rational[-100, 100; 1, 5]",
+            "rational",
+        ),
+        ("Rational[-50, 50; 1, 1]", "Integer", "integer"),
+        (
+            "Decimal[-100, 100; 0, 0; nearest-even]",
+            "Rational[-100, 100; 1, 5]",
+            "rational",
+        ),
+        (
+            "Decimal[-100, 100; 0, 0; nearest-even]",
+            "Decimal[-1000, 1000; 0, 2; nearest-even]",
+            "decimal",
+        ),
+        (
+            "Decimal[-100, 100; 0, 0; nearest-even]",
+            "Integer",
+            "integer",
+        ),
+    ] {
+        assert_converted(
+            source,
+            target,
+            &format!("convert<{target}>(a) = b"),
+            family,
+            "eq",
+            0,
+        );
+    }
+}
