@@ -30,6 +30,8 @@ mod regenerative;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeMap;
+
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::{ClauseOutcome, NotMarkov};
 use qsl_eval::simulation::{ExpansionStop, SampledStep};
@@ -48,7 +50,7 @@ pub use claim::{
     reduce_quantile, require_statistical, Bound, ClaimRefusal, Comparison, MeasureEvent,
     QuantileComparison, StatisticalClaim,
 };
-pub use model::{check_statistical, StatisticalRequest};
+pub use model::{check_statistical, witness_reader, ModelWitnessReader, StatisticalRequest};
 
 use bounds::{int, normal_quantile_upper, quotient, QuantileFailure};
 use claim::Comparison as Cmp;
@@ -284,6 +286,12 @@ struct Tally {
     counted: u64,
     draws: u64,
     sum: Rational,
+    /// The counted measures of a quantile claim by value, ascending: the
+    /// distinct values are few, so the tally holds counts, not samples.
+    measures: BTreeMap<Rational, u64>,
+    /// The counted samples whose measure is censored, which exceeds every
+    /// value.
+    censored: u64,
 }
 
 impl Tally {
@@ -292,7 +300,42 @@ impl Tally {
             counted: 0,
             draws: 0,
             sum: int(0),
+            measures: BTreeMap::new(),
+            censored: 0,
         }
+    }
+
+    /// Keep one counted sample's `measure`.
+    fn measured(&mut self, measure: &MeasureValue) {
+        match measure {
+            MeasureValue::Value(value) => {
+                let count = self.measures.entry(value.clone()).or_insert(0);
+                *count = count.saturating_add(1);
+            }
+            MeasureValue::Censored => self.censored = self.censored.saturating_add(1),
+        }
+    }
+
+    /// The nearest-rank `q`-quantile of the measures kept (ADR-024 WA-3):
+    /// the `⌈q · n⌉`-th smallest of the `n` counted. `None` when none was
+    /// kept.
+    fn quantile(&self, q: &Rational) -> Option<MeasureValue> {
+        let kept = self
+            .measures
+            .values()
+            .fold(self.censored, |sum, count| sum.saturating_add(*count));
+        if kept == 0 {
+            return None;
+        }
+        let rank = q.mul(&Rational::from_integer(Integer::from(kept)));
+        let mut seen = 0_u64;
+        for (value, count) in &self.measures {
+            seen = seen.saturating_add(*count);
+            if Rational::from_integer(Integer::from(seen)) >= rank {
+                return Some(MeasureValue::Value(value.clone()));
+            }
+        }
+        Some(MeasureValue::Censored)
     }
 
     fn estimate(&self) -> Option<Rational> {
@@ -546,6 +589,11 @@ impl Plan<'_> {
                 Sample::NotActivated => {}
                 Sample::Event(held) | Sample::Measured { holds: held, .. } => {
                     tally.counted += 1;
+                    if let (Sample::Measured { value, .. }, ClaimForm::Quantile) =
+                        (&sample, claim.form())
+                    {
+                        tally.measured(value);
+                    }
                     if held {
                         tally.sum = tally.sum.add(&int(1));
                     }
@@ -686,7 +734,13 @@ impl Plan<'_> {
     }
 }
 
-fn test_result(index: u32, subject: &TestSubject, decided: Decided, tally: &Tally) -> TestResult {
+fn test_result(
+    index: u32,
+    subject: &TestSubject,
+    decided: Decided,
+    tally: &Tally,
+    quantile: Option<&Rational>,
+) -> TestResult {
     TestResult {
         index,
         initial: subject.initial,
@@ -694,6 +748,7 @@ fn test_result(index: u32, subject: &TestSubject, decided: Decided, tally: &Tall
         decision: decided.decision,
         estimate: decided.estimate,
         interval: decided.interval,
+        quantile: quantile.and_then(|q| tally.quantile(q)),
         samples: tally.counted,
         draws: tally.draws,
         undefined: decided.undefined,
@@ -834,6 +889,9 @@ pub fn check_sampled<S: BehaviourSampler>(
     let mut provenance = Vec::with_capacity(request.tests.len());
     let (mut samples, mut draws) = (0_u64, 0_u64);
     let mut witnesses = Witnesses::new(request.max_witnesses);
+    // A quantile claim's `q` is its reduced bound's threshold (ADR-024 PF-4).
+    let q = (request.claim.form() == ClaimForm::Quantile)
+        .then(|| request.claim.bound().threshold.clone());
     for (index, subject) in (0_u32..).zip(request.tests) {
         let mut tally = Tally::new();
         let end = match &regenerative {
@@ -866,9 +924,11 @@ pub fn check_sampled<S: BehaviourSampler>(
         samples = samples.saturating_add(tally.counted);
         draws = draws.saturating_add(tally.draws);
         match end {
-            TestEnd::Decided(decided) => results.push(test_result(index, subject, decided, &tally)),
+            TestEnd::Decided(decided) => {
+                results.push(test_result(index, subject, decided, &tally, q.as_ref()))
+            }
             TestEnd::Undefined(decided) => {
-                results.push(test_result(index, subject, decided, &tally));
+                results.push(test_result(index, subject, decided, &tally, q.as_ref()));
                 break;
             }
             TestEnd::Stopped(stop) => {
@@ -893,6 +953,7 @@ pub fn check_sampled<S: BehaviourSampler>(
             decision,
             estimate: chosen.and_then(|test| test.estimate.clone()),
             interval: chosen.and_then(|test| test.interval.clone()),
+            quantile: chosen.and_then(|test| test.quantile.clone()),
             basis: plan.basis(samples, draws),
             provenance: plan.provenance(provenance),
             tests: results,

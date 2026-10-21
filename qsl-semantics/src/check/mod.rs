@@ -265,7 +265,9 @@ pub use state_clause::{
     AttemptDeclaration, CheckedOperationFrame, CheckedStateClause, ClauseOperation,
     OperationSelection, PopulationDomain, ProtocolClauseFamily, StateClauseDeclaration,
 };
-pub use step_simulation::{step_row_refs, step_simulation_records, StepRowOverflow};
+pub use step_simulation::{
+    step_row_refs, step_simulation_records, StepRowOverflow, StepSimulationEntry,
+};
 pub use type_form::{I128Limit, IntegerOutsideI128, IntegerSite, TypeFormFault};
 // PR #300 review finding 4: `mint_type_declaration_identity` was `pub(super)`
 // in `identity` for the same reason: no consumer outside `check` minted an
@@ -285,8 +287,9 @@ pub use hyper_clause::{
     ObjectParameter, OperationContractClaim, StepRead,
 };
 pub use identity::{
-    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CorrespondenceConflict,
-    InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant, SumVariants,
+    to_kernel_value_type, CheckedClauseKind, CheckedTypeNode, CompositeForm,
+    CorrespondenceConflict, InvalidSumVariants, ModelCorrespondence, ScalarShape, SumVariant,
+    SumVariants,
 };
 pub use ir::{CollectionLoss, CollectionProperty, DispatchCandidate, DispatchTable};
 pub use model_conformance::ModelConformanceFailure;
@@ -1239,7 +1242,8 @@ impl PackageDeclarations {
         // and every admitted composite (below, once lowering has keyed it)
         // a `CheckedTypeNode::Composite` identified by its FR-092 key.
         // FR-092-AC-12: a declared composite's checked type node takes its
-        // FR-092 key, which `check` mints below, not the caller's handle.
+        // FR-092 key, which `check` mints below, and carries the caller's
+        // handle as the declaration's kernel key.
         let mut type_nodes = BTreeMap::new();
         for enum_binding in scope.enums() {
             let node = enum_binding.declaration.key();
@@ -2723,7 +2727,14 @@ impl PackageDeclarations {
         for composite in scope.types().composites() {
             match lowering.composite_node(composite.key()) {
                 Ok(node) => {
-                    type_nodes.insert(node, identity::CheckedTypeNode::Composite { node });
+                    type_nodes.insert(
+                        node,
+                        identity::CheckedTypeNode::Composite {
+                            node,
+                            declaration: composite.key(),
+                            form: composite.shape().into(),
+                        },
+                    );
                 }
                 Err(refusal) => refusals.push(refusal),
             }
@@ -4089,7 +4100,7 @@ mod tests {
         assert!(graph.checked_type_node(key).is_none());
         assert_eq!(
             to_kernel_value_type(nodes[0]),
-            quire_exact::ValueType::Composite(node)
+            quire_exact::ValueType::Composite(key)
         );
     }
 
