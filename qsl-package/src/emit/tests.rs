@@ -644,7 +644,7 @@ fn recursion_group_members_are_written_in_ordinal_order() {
     for (package, label) in [
         (
             recursive_f(),
-            Some("0b9e8d18320d0ce587699e40ac33a25fd41c4a640226bda4b8b1521edc5e4c50"),
+            Some("d5012d73e2202fec9a38f7a24993c89552d4594e9ffe665c03a167680c3f91d6"),
         ),
         (tree(), None),
     ] {

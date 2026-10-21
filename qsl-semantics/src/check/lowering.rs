@@ -4032,6 +4032,19 @@ impl<'a> Lowering<'a> {
         if let Some(operand) = frame.operands.get(frame.next) {
             frame.next += 1;
             let operand = frame.node.at(operand);
+            // FR-358, ADR-013 O-09: an integer literal operand of an FR-357
+            // scalar operator or of an integer `eq`/`ne` is a literal term in
+            // the application's argument, never a node of its own.
+            if let Keyed::Application(_, operation) = &frame.keyed {
+                if takes_inline_integer_literals(&operation.identity) {
+                    if let NodeKind::Literal(CheckedLiteral(Value::Integer(value))) = operand.kind()
+                    {
+                        let term = self.integer_literal(value.clone(), operand.location())?;
+                        frame.terms.push(term);
+                        return self.next_operand(frame, frames);
+                    }
+                }
+            }
             frames.push(LowerFrame::Operands(frame));
             return Ok(LowerStep::Descend(operand));
         }
@@ -4804,6 +4817,21 @@ fn relax(
 /// declaration reaches its node.
 pub(crate) fn generated_location() -> Location {
     Location::root(Origin::Expression)
+}
+
+/// Whether `identity` is an integer operator whose integer literal operands
+/// are inline literal terms: the FR-357 operators `add`, `sub`, `mul` and
+/// `negate`, and the integer `eq` and `ne` of FR-358 step 6.
+fn takes_inline_integer_literals(identity: &str) -> bool {
+    matches!(
+        identity,
+        "quire.op.integer.add"
+            | "quire.op.integer.sub"
+            | "quire.op.integer.mul"
+            | "quire.op.integer.negate"
+            | "quire.op.integer.eq"
+            | "quire.op.integer.ne"
+    )
 }
 
 #[cfg(test)]

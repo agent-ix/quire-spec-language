@@ -267,8 +267,13 @@ settlement row, including the vacuous row V-3.
      id and the empty `bounds` domain, `{"tag":"bounds","entries":[]}`: the
      content-addressed node id already binds its value, and it names no free
      position;
-   - an integer literal operand is `inline_literal` with the singleton
-     `range`, as FR-357;
+   - an integer literal operand that the checker leaves unwrapped (a peer of
+     type `Integer`) is `inline_literal` with the singleton `range`, as
+     FR-357;
+   - an integer literal operand that the checker wraps in a
+     `numeric.narrow` application (a bounded peer such as `x: Int[0, 9]` in
+     `x == 1`) is the application, so it is `graph_child` of the narrow
+     node with the empty `bounds` domain, as a composite literal operand is;
    - an inline literal of any other type refuses
      `ScalarIdentity::NotInlineLiteral`.
 

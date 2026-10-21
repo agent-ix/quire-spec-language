@@ -2644,8 +2644,9 @@ mod operator_arm {
         }
     }
 
-    /// The nodes `node`'s application takes as arguments, in order.
-    fn children_of(node: WireNodeId) -> Vec<WireNodeId> {
+    /// The graph node each of `node`'s application arguments references, in
+    /// order, `None` for an inline literal term.
+    fn children_of(node: WireNodeId) -> Vec<Option<WireNodeId>> {
         let compiled = spine(&parity_unit(), &BTreeMap::new());
         let graph = compiled.package.graph().semantic_graph();
         let key = graph.resolve_wire(node).expect("the node is in the unit");
@@ -2656,24 +2657,29 @@ mod operator_arm {
             .expect("an application")
             .iter()
             .map(|argument| {
-                WireNodeId::from_hex(argument["target"]["digest"].as_str().unwrap()).unwrap()
+                (argument["term"] == "reference").then(|| {
+                    WireNodeId::from_hex(argument["target"]["digest"].as_str().unwrap()).unwrap()
+                })
             })
             .collect()
     }
 
     /// `operation` with each operand still naming the placeholder node
-    /// renamed to the application's real child at its position.
+    /// renamed to the application's real argument at its position: its child
+    /// node, or an inline literal where the argument is a literal term.
     fn with_real_children(operation: ScalarOperation, node: WireNodeId) -> ScalarOperation {
         let children = children_of(node);
         let placeholder = operand(0).identity;
         let fix = |operand: ScalarOperand, position: usize| {
-            if operand.identity == placeholder {
-                ScalarOperand {
-                    identity: crate::OperandIdentity::GraphChild(children[position]),
+            if operand.identity != placeholder {
+                return operand;
+            }
+            match children[position] {
+                Some(child) => ScalarOperand {
+                    identity: crate::OperandIdentity::GraphChild(child),
                     ..operand
-                }
-            } else {
-                operand
+                },
+                None => ScalarOperand::literal(operand.value),
             }
         };
         match operation {
@@ -2696,7 +2702,7 @@ mod operator_arm {
     }
 
     /// A claim over `operation` at its own node, its placeholder operands
-    /// naming the node's real children, result range `[-200, 200]`.
+    /// naming the node's real arguments, result range `[-150, 150]`.
     fn claim(operation: ScalarOperation, generated: NativeOutcome) -> OperatorClaim {
         let (identity, _) = site(&operation);
         let node = node_of(identity);
@@ -2717,7 +2723,7 @@ mod operator_arm {
             operation,
             occurrence: quire_exact::Origin::new(quire_exact::Role::new("expression"), 0),
             obligation_kind: "bounded_shadow".to_owned(),
-            result_range: range(-200, 200),
+            result_range: range(-150, 150),
             limits: UNLIMITED,
             generated,
             identity: DigestRecord::mint(DigestDomain::Sha256Jcs, [9; 32]),
@@ -2817,9 +2823,9 @@ mod operator_arm {
     #[test]
     fn tc_904_a_completed_native_value_agrees_with_the_exact_result() {
         for (operation, value) in [
-            (add(40, 2), 42),
-            (sub(40, 2), 38),
-            (mul(6, 7), 42),
+            (add(41, 1), 42),
+            (sub(39, 1), 38),
+            (mul(21, 2), 42),
             (negate(7), -7),
         ] {
             let sent_claim = claim(operation.clone(), completed(value));
@@ -2857,9 +2863,9 @@ mod operator_arm {
     #[test]
     fn tc_904_a_completed_native_value_that_differs_diverges() {
         for (operation, generated, exact) in [
-            (add(40, 2), completed(43), exact_value(42)),
-            (mul(6, 7), completed(41), exact_value(42)),
-            (mul(100, 100), completed(10_000), ScalarOutcome::OutOfRange),
+            (add(41, 1), completed(43), exact_value(42)),
+            (mul(21, 2), completed(41), exact_value(42)),
+            (mul(100, 2), completed(200), ScalarOutcome::OutOfRange),
         ] {
             let report = replayed(claim(operation, generated));
             let OperatorParityResult::Diverged { exact: found, .. } = report.result() else {
@@ -2875,9 +2881,9 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-7")]
     #[test]
     fn tc_904_a_native_refusal_agrees_iff_the_exact_result_is_out_of_range() {
-        let report = replayed(claim(mul(100, 100), NativeOutcome::RefusedOutOfRange));
+        let report = replayed(claim(mul(100, 2), NativeOutcome::RefusedOutOfRange));
         assert!(agreed(&report).same_as(&ScalarOutcome::OutOfRange));
-        let report = replayed(claim(add(1, 2), NativeOutcome::RefusedOutOfRange));
+        let report = replayed(claim(add(2, 1), NativeOutcome::RefusedOutOfRange));
         assert!(matches!(
             report.result(),
             OperatorParityResult::Diverged { .. }
@@ -2889,7 +2895,7 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-7")]
     #[test]
     fn tc_904_a_native_undefined_diverges_from_a_defined_operator() {
-        let report = replayed(claim(add(1, 2), NativeOutcome::Undefined));
+        let report = replayed(claim(add(2, 1), NativeOutcome::Undefined));
         assert!(matches!(
             report.result(),
             OperatorParityResult::Diverged { .. }
@@ -2909,7 +2915,7 @@ mod operator_arm {
                 GeneratedFault::ExecutionFault,
             ),
         ] {
-            let mut starved = claim(add(1, 2), native);
+            let mut starved = claim(add(2, 1), native);
             starved.limits = ScalarLimits {
                 work_units: 0,
                 ..UNLIMITED
@@ -2928,11 +2934,11 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-9")]
     #[test]
     fn tc_904_an_operand_outside_its_range_is_refused() {
-        let report = replayed(claim(add(1, 101), completed(102)));
+        let report = replayed(claim(add(101, 1), completed(102)));
         assert!(
             matches!(
                 report.result(),
-                OperatorParityResult::RefusedInput(OperandRefusal { index: 1 })
+                OperatorParityResult::RefusedInput(OperandRefusal { index: 0 })
             ),
             "{:?}",
             report.result()
@@ -2943,24 +2949,73 @@ mod operator_arm {
                 Code::InvalidRuntimeInput
             ))
         );
-        let literal = ScalarOperand::literal(7);
-        assert_eq!(literal.range, range(7, 7));
-        let with_literal = |value: i64| ScalarOperation::Add {
-            left: operand(1),
-            right: ScalarOperand {
-                value,
-                range: literal.range.clone(),
-                identity: operand(0).identity,
-            },
-        };
+        // The compiled `x + 1` holds the literal `1`, so a singleton-range
+        // literal of that value agrees, and the constructor's range is the
+        // singleton.
+        assert_eq!(ScalarOperand::literal(7).range, range(7, 7));
         assert!(matches!(
-            replayed(claim(with_literal(7), completed(8))).result(),
+            replayed(claim(add(2, 1), completed(3))).result(),
             OperatorParityResult::Agrees { .. }
         ));
-        assert!(matches!(
-            replayed(claim(with_literal(8), completed(9))).result(),
-            OperatorParityResult::RefusedInput(OperandRefusal { index: 1 })
-        ));
+    }
+
+    /// FR-357-AC-9: a refusal names the second operand's index when only it
+    /// is outside its range. A two-parameter `x + y` has two graph-child
+    /// operands, so this reaches index 1.
+    #[trace("TC-904", "FR-357-AC-9")]
+    #[test]
+    fn tc_904_a_second_operand_outside_its_range_is_refused_at_index_1() {
+        let source = format!(
+            "language \"ix:native\" edition \"1-draft\";\n{PROFILE}\
+             function two using v(x: Int[0, 9], y: Int[0, 9]): Integer pure {{ x + y }}\n"
+        );
+        let compiled = spine(&source, &BTreeMap::new());
+        let graph = compiled.package.graph().semantic_graph();
+        let application = graph
+            .nodes()
+            .find(|node| {
+                serde_json::from_slice::<serde_json::Value>(node.preimage()).is_ok_and(|json| {
+                    json["body"]["operation"]["identity"] == "quire.op.integer.add"
+                })
+            })
+            .expect("the unit has the application");
+        let node = WireNodeId::from_digest(*application.key().as_bytes());
+        let children = (0..2)
+            .map(|index| parameter(&compiled, "two", index))
+            .collect::<Vec<_>>();
+        let claim = claim_raw(
+            node,
+            ScalarOperation::Add {
+                left: ScalarOperand::graph_child(1, range(0, 100), children[0]),
+                right: ScalarOperand::graph_child(101, range(0, 100), children[1]),
+            },
+            completed(102),
+        );
+        let mut wire = request(
+            source.as_bytes(),
+            compiled.emitted.package_id(),
+            name(&["two"]),
+            ReplaySource::Input(vec![
+                CanonicalAssignment {
+                    parameter: children[0],
+                    value: WitnessValue::Integer(1),
+                },
+                CanonicalAssignment {
+                    parameter: children[1],
+                    value: WitnessValue::Integer(2),
+                },
+            ]),
+        );
+        wire.obligation_identity = *minted(&claim).as_bytes();
+        let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
+        assert!(
+            matches!(
+                report.result(),
+                OperatorParityResult::RefusedInput(OperandRefusal { index: 1 })
+            ),
+            "{:?}",
+            report.result()
+        );
     }
 
     /// FR-357-AC-10: an agreement settles `Inconclusive(ScalarAgrees)` and a
@@ -2968,14 +3023,14 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-10")]
     #[test]
     fn tc_904_an_agreement_is_inconclusive_and_nothing_is_refuted() {
-        let agrees = replayed(claim(add(40, 2), completed(42)));
+        let agrees = replayed(claim(add(41, 1), completed(42)));
         let TerminalValue::Inconclusive(InconclusiveCause::ScalarAgrees(agreement)) =
             agrees.terminal_value()
         else {
             panic!("an agreement is inconclusive with ScalarAgrees");
         };
         assert!(agreement.outcome().same_as(&exact_value(42)));
-        let diverged = replayed(claim(add(40, 2), completed(43)));
+        let diverged = replayed(claim(add(41, 1), completed(43)));
         assert_eq!(diverged.terminal_value(), TerminalValue::Failed);
         assert_ne!(agrees.terminal_value(), TerminalValue::Refuted);
         assert_ne!(diverged.terminal_value(), TerminalValue::Refuted);
@@ -2985,7 +3040,7 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-10")]
     #[test]
     fn tc_904_a_starved_exact_evaluation_is_incomplete() {
-        let mut starved = claim(add(1, 2), completed(3));
+        let mut starved = claim(add(2, 1), completed(3));
         starved.limits = ScalarLimits {
             work_units: 0,
             ..UNLIMITED
@@ -3007,7 +3062,7 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-11")]
     #[test]
     fn tc_904_a_raised_replay_input_bound_admits_what_the_default_refuses() {
-        let claim = claim_raw(WireNodeId::from_digest([7; 32]), add(1, 2), completed(3));
+        let claim = claim_raw(WireNodeId::from_digest([7; 32]), add(2, 1), completed(3));
         let (_, function) = site(&claim.operation);
         let mut wire = wire_for(function, &claim);
         let above = crate::DEFAULT_REPLAY_INPUT_BYTES * 2;
@@ -3043,7 +3098,7 @@ mod operator_arm {
     #[test]
     fn tc_904_an_operator_claim_against_another_identity_is_refused() {
         use crate::ScalarIdentityMismatch as Mismatch;
-        let add_claim = || claim(add(1, 2), completed(3));
+        let add_claim = || claim(add(2, 1), completed(3));
         let refusal_of = |wire: ReplayRequestWire, claim: OperatorClaim| {
             let sent_id = crate::ObligationIdentity::from_digest(wire.obligation_identity);
             let report = crate::replay_operator_parity(wire, claim, ReplayLimits::default());
@@ -3141,12 +3196,12 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-13")]
     #[test]
     fn tc_904_an_operator_report_carries_the_sent_claim_on_every_outcome() {
-        let mut starved = claim(add(1, 2), completed(3));
+        let mut starved = claim(add(2, 1), completed(3));
         starved.limits = ScalarLimits {
             work_units: 0,
             ..UNLIMITED
         };
-        let mut missing_node = claim(add(1, 2), completed(3));
+        let mut missing_node = claim(add(2, 1), completed(3));
         missing_node.node = WireNodeId::from_digest([1; 32]);
         let mut stale = parity("inc", 3);
         stale.package_id = (
@@ -3156,26 +3211,26 @@ mod operator_arm {
         let mut undecodable = parity("inc", 3);
         undecodable.backend = String::new();
         let cases = [
-            (parity("inc", 3), claim(add(40, 2), completed(42)), "agrees"),
+            (parity("inc", 3), claim(add(41, 1), completed(42)), "agrees"),
             (
                 parity("inc", 3),
-                claim(add(40, 2), completed(43)),
+                claim(add(41, 1), completed(43)),
                 "diverged",
             ),
             (
                 parity("inc", 3),
-                claim(add(1, 2), NativeOutcome::Incomplete),
+                claim(add(2, 1), NativeOutcome::Incomplete),
                 "generated fault",
             ),
             (
                 parity("inc", 3),
-                claim(add(1, 101), completed(102)),
+                claim(add(101, 1), completed(102)),
                 "refused input",
             ),
             (parity("inc", 3), starved, "incomplete"),
             (parity("inc", 3), missing_node, "refused"),
-            (stale, claim(add(1, 2), completed(3)), "refused"),
-            (undecodable, claim(add(1, 2), completed(3)), "refused"),
+            (stale, claim(add(2, 1), completed(3)), "refused"),
+            (undecodable, claim(add(2, 1), completed(3)), "refused"),
         ];
         for (mut wire, claim, expected_kind) in cases {
             wire.obligation_identity = *minted(&claim).as_bytes();
@@ -3189,7 +3244,7 @@ mod operator_arm {
             );
             assert_eq!(report.claim(), &expected, "{expected_kind}");
         }
-        let base = claim(add(40, 2), completed(42));
+        let base = claim(add(41, 1), completed(42));
         let mut other_node = base.clone();
         other_node.node = node_of("quire.op.integer.mul");
         let mut other_range = base.clone();
@@ -3202,8 +3257,8 @@ mod operator_arm {
         let mut other_outcome = base.clone();
         other_outcome.generated = completed(43);
         for other in [
-            claim(add(40, 3), completed(42)),
-            claim(sub(40, 2), completed(42)),
+            claim(add(40, 1), completed(42)),
+            claim(sub(39, 1), completed(42)),
             other_node,
             other_range,
             other_limits,
@@ -3223,7 +3278,7 @@ mod operator_arm {
     fn tc_904_the_observation_digest_is_carried_unchanged_and_never_recomputed() {
         let digest = |byte: u8| DigestRecord::mint(DigestDomain::Sha256Jcs, [byte; 32]);
         let with = |byte: u8, generated: NativeOutcome| {
-            let mut claim = claim(add(40, 2), generated);
+            let mut claim = claim(add(41, 1), generated);
             claim.identity = digest(byte);
             claim
         };
@@ -3349,14 +3404,14 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-16")]
     #[test]
     fn tc_904_a_tampered_obligation_identity_is_refused() {
-        let base = claim(add(40, 2), completed(42));
+        let base = claim(add(41, 1), completed(42));
         let mut other_range = base.clone();
         if let ScalarOperation::Add { left, .. } = &mut other_range.operation {
             left.range = range(0, 99);
         }
         let mut other_identity = base.clone();
-        if let ScalarOperation::Add { right, .. } = &mut other_identity.operation {
-            right.identity = crate::OperandIdentity::InlineLiteral;
+        if let ScalarOperation::Add { left, .. } = &mut other_identity.operation {
+            left.identity = crate::OperandIdentity::GraphChild(WireNodeId::from_digest([0x33; 32]));
         }
         let mut other_key = base.clone();
         other_key.occurrence = quire_exact::Origin::new(quire_exact::Role::new("expression"), 1);
@@ -3416,13 +3471,13 @@ mod operator_arm {
     #[trace("TC-904", "FR-357-AC-17")]
     #[test]
     fn tc_904_a_claim_on_another_node_or_operator_is_refused_before_the_identity() {
-        let mut missing = claim(add(1, 2), completed(3));
+        let mut missing = claim(add(2, 1), completed(3));
         missing.node = WireNodeId::from_digest([1; 32]);
         assert!(matches!(
             mismatch_of(&refused_claim(missing)),
             crate::ScalarIdentityMismatch::Node { .. }
         ));
-        let mut other_operator = claim(add(1, 2), completed(3));
+        let mut other_operator = claim(add(2, 1), completed(3));
         other_operator.operation = mul(1, 2);
         assert!(matches!(
             mismatch_of(&refused_claim(other_operator)),
@@ -3438,7 +3493,7 @@ mod operator_arm {
             quire_exact::Origin::new(quire_exact::Role::new("expression"), 1),
             quire_exact::Origin::new(quire_exact::Role::new("claim"), 0),
         ] {
-            let mut claim = claim(add(1, 2), completed(3));
+            let mut claim = claim(add(2, 1), completed(3));
             claim.occurrence = occurrence.clone();
             let report = refused_claim(claim);
             assert!(
@@ -3450,52 +3505,75 @@ mod operator_arm {
     }
 
     /// FR-357-AC-17: a `GraphChild` operand must be the application's child
-    /// at its position.
+    /// at its position, and only where the argument is a reference.
     #[trace("TC-904", "FR-357-AC-17")]
     #[test]
     fn tc_904_a_graph_child_that_is_not_the_nodes_child_is_refused() {
         let node = node_of("quire.op.integer.add");
         let children = children_of(node);
-        let mut swapped = claim(add(1, 2), completed(3));
-        if let ScalarOperation::Add { left, right } = &mut swapped.operation {
-            left.identity = crate::OperandIdentity::GraphChild(children[1]);
-            right.identity = crate::OperandIdentity::GraphChild(children[0]);
+        let parameter = children[0].expect("`x` is a graph child");
+        assert_eq!(children[1], None, "the literal `1` is inline");
+        let invented = WireNodeId::from_digest([7; 32]);
+        let mut wrong_child = claim(add(2, 1), completed(3));
+        if let ScalarOperation::Add { left, .. } = &mut wrong_child.operation {
+            left.identity = crate::OperandIdentity::GraphChild(invented);
         }
-        let report = refused_claim(swapped);
+        let report = refused_claim(wrong_child);
         assert!(
-            matches!(mismatch_of(&report), crate::ScalarIdentityMismatch::OperandChild { position: 0, claimed, found: Some(found), .. } if *claimed == children[1] && *found == children[0]),
+            matches!(mismatch_of(&report), crate::ScalarIdentityMismatch::OperandChild { position: 0, claimed, found: Some(found), .. } if *claimed == invented && *found == parameter),
             "{:?}",
             report.result()
         );
-        let mut invented = claim(add(1, 2), completed(3));
-        if let ScalarOperation::Add { right, .. } = &mut invented.operation {
-            right.identity = crate::OperandIdentity::GraphChild(WireNodeId::from_digest([7; 32]));
+        // A graph child claimed where the argument is an inline literal.
+        let mut child_for_literal = claim(add(2, 1), completed(3));
+        if let ScalarOperation::Add { right, .. } = &mut child_for_literal.operation {
+            right.identity = crate::OperandIdentity::GraphChild(parameter);
         }
         assert!(matches!(
-            mismatch_of(&refused_claim(invented)),
-            crate::ScalarIdentityMismatch::OperandChild { position: 1, .. }
+            mismatch_of(&refused_claim(child_for_literal)),
+            crate::ScalarIdentityMismatch::OperandChild {
+                position: 1,
+                found: None,
+                ..
+            }
         ));
     }
 
-    /// FR-357-AC-17: an `InlineLiteral` operand must be an inline integer
-    /// literal of the node at its position, with the literal's value as its
-    /// value and its singleton range. This package lowers every operand as a
-    /// node, so a claim of an inline literal refuses; the application's JSON
-    /// is replaced by hand for the literal cases.
+    /// FR-357-AC-17, FR-358, ADR-013 O-09: the integer literal of `x + 1` is
+    /// an inline literal term of the compiled node, so a claim of an
+    /// `InlineLiteral` there is accepted and its identity agrees; an inline
+    /// literal claimed at the graph-child position, or with another value or
+    /// a non-singleton range, is refused with its own cause. The
+    /// application's JSON is replaced by hand for the mixed cases below.
     #[trace("TC-904", "FR-357-AC-17")]
     #[test]
-    fn tc_904_an_inline_literal_the_node_does_not_have_is_refused() {
-        let report = refused_claim(claim(
+    fn tc_904_an_inline_literal_the_node_has_is_accepted_and_one_it_lacks_is_refused() {
+        let accepted = replayed(claim(add(2, 1), completed(3)));
+        assert!(agreed(&accepted).same_as(&exact_value(3)));
+        let mut literal_for_child = claim(add(2, 1), completed(3));
+        if let ScalarOperation::Add { left, .. } = &mut literal_for_child.operation {
+            *left = ScalarOperand::literal(2);
+        }
+        assert!(matches!(
+            mismatch_of(&refused_claim(literal_for_child)),
+            crate::ScalarIdentityMismatch::NotInlineLiteral { position: 0, .. }
+        ));
+        let report = refused_claim(claim_raw(
+            node_of("quire.op.integer.add"),
             ScalarOperation::Add {
-                left: operand(1),
-                right: ScalarOperand::literal(1),
+                left: ScalarOperand::graph_child(
+                    2,
+                    range(0, 100),
+                    children_of(node_of("quire.op.integer.add"))[0].unwrap(),
+                ),
+                right: ScalarOperand::literal(2),
             },
-            completed(2),
+            completed(4),
         ));
         assert!(
             matches!(
                 mismatch_of(&report),
-                crate::ScalarIdentityMismatch::NotInlineLiteral { position: 1, .. }
+                crate::ScalarIdentityMismatch::LiteralValue { position: 1, found, .. } if found == "1"
             ),
             "{:?}",
             report.result()
@@ -3559,7 +3637,7 @@ mod operator_arm {
     fn tc_904_a_preimage_the_encoder_refuses_never_yields_an_identity() {
         let verify = super::super::operator_parity::verify_obligation;
         let zero = crate::ObligationIdentity::from_digest([0; 32]);
-        let mut huge = claim(add(1, 2), completed(3)).identity(zero);
+        let mut huge = claim(add(2, 1), completed(3)).identity(zero);
         huge.occurrence =
             quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60);
         assert!(matches!(
@@ -3568,14 +3646,14 @@ mod operator_arm {
                 crate::IdentityEncodeError::IntegerBeyondEncoder { magnitude }
             )) if magnitude == i128::from(1_u64 << 60)
         ));
-        let sane = claim(add(1, 2), completed(3)).identity(zero);
+        let sane = claim(add(2, 1), completed(3)).identity(zero);
         assert!(matches!(
             verify(&sane, zero),
             Err(crate::ScalarIdentityMismatch::Obligation { .. })
         ));
         // The same through the entry: a huge ordinal is no occurrence of the
         // node, so the membership check refuses first, and it still refuses.
-        let mut claim = claim(add(1, 2), completed(3));
+        let mut claim = claim(add(2, 1), completed(3));
         claim.occurrence =
             quire_exact::Origin::new(quire_exact::Role::new("expression"), 1_u64 << 60);
         let mut wire = parity("inc", 3);
