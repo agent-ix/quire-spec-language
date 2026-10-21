@@ -61,3 +61,23 @@ Thread `b`: `a: X := 1 sc`; `f1: fence sc`; `flag := 1 release`; `f2: fence sc`.
 | FND-005 | medium | `every_independent_pair_of_ra_steps_commutes` has no fixture in which a non-SC step's GC removes SC events. MR-1's claim that "garbage collection adds no location" is untested exactly where GC writes the SC graph, and under FND-001 such a pair (`b` and `x` in the litmus) is independent by footprint but does not commute. Add the FND-001 and FND-002 programs as fixtures | qsl-analyze/tests/it/release_acquire.rs:900-952, qsl-eval/src/simulation/protocol/ra.rs:1434-1435 |
 | FND-006 | low | `sorted` maps a canonical-encoding error to empty bytes (`unwrap_or_default`), so a failed encode silently changes the key order instead of surfacing | qsl-eval/src/simulation/protocol/ra.rs:198-211 |
 | FND-007 | low | FR-227-AC-2's "changing a carried message view" is tested by replacing step 2's whole component with step 0's. Changing only one message view in the carried JSON would pin the AC as written | qsl-analyze/tests/it/release_acquire.rs:1030-1044 |
+
+## New findings (disposition pass 1)
+
+Disposition pass 1 at head 053b1655e (fix commit 053b1655e). One focused run: `cargo test -p qsl-analyze --test it -- release_acquire`, 17 passed.
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-008 | low | The two regression tests are tagged with ACs they do not test: `a_removed_sc_event_still_precedes_its_threads_later_events` is tagged `FR-223-AC-3`, the graph-size bound, and `a_fence_stays_while_a_view_covers_it_and_not_its_successor` is tagged `FR-223-AC-2`, IRIW and fenced SB. The second test's name also describes a retention rule that does not exist; its own doc says it passes without one. Rename it, for example "a superseded fence's edges follow through `S` and `po`", and tag both tests `TC-668` alone or with the STD-246 / STD-247 vectors | qsl-analyze/tests/it/release_acquire.rs:1053-1075 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 053b1655e: `RaComponent.owed`. A collected SC event's live predecessors join its thread's `owed` set (`drop_events`), and a collected member of `owed` is replaced by its own predecessors. Every new SC event of the thread takes `owed` into `before` (`sc_event`). `owed` is in the key and is dropped for joined branches. The FND-001 litmus is pinned by `a_removed_sc_event_still_precedes_its_threads_later_events` and is a commute fixture. STD-246 names the residual cross-thread `hb\|loc` case, where only a view carries the happens-before. That case is narrower and only admits extra executions, so a `proved` verdict stays sound. It is the same class as the clauses STD-239 already discloses. Not blocking |
+| FND-002 | rejected | My trace was wrong. `fenced` joins `S` into `cur` before `sc_event` (ra.rs:818-823), and `S` carries the frontier of each thread's newest earlier fence. So `c`'s fence `x` takes an hb edge from `b`'s `f2`, `a →po f2` holds, and the cycle closes without `f1`. The fixture `superseded_fence_fixture` pins the forbidden outcome. STD-247 records why supersession is sound only while fences take fence-to-fence edges alone |
+| FND-003 | fixed | 053b1655e: the bound is checked after `collect` on each choice (`Ra::exceeds`, `live > max_messages`). A choice pruned by an attached successor or an SC cycle returns before the check, so it is never cut. `a_store_that_collection_brings_under_the_bound_is_not_cut` gives `bound_limited == 0` and `proved` where the old check cut |
+| FND-004 | deferred | STD-248: the spec should name the canonical counterexample (`Sx`, `Sy`, `Lx` at depth 1, `Ly` at depth 1), or state that §10's table is one violating path. The test doc now names both |
+| FND-005 | fixed | 053b1655e: while any SC event is live, every view-moving step (attempt, receive, fence, join) reads and writes the SC graph. Both review litmus programs are fixtures of `every_independent_pair_of_ra_steps_commutes` |
+| FND-006 | fixed | 053b1655e: `sorted` returns `Enc::Unencodable` on an encode error, so the key refuses |
+| FND-007 | fixed | 053b1655e: the forgery flips one message view's depth (`elements[1].view.at`) in step 2's carried JSON, and replay refuses `stale_dependency`/`content-mismatch` |

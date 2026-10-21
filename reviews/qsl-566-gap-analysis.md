@@ -51,3 +51,11 @@ The remainder is FR-224's race summary under `ra`, FR-227-AC-3, FR-228's `ra` vi
 | FND-001 | medium | The declared remainder has no open owner, because QSL-565 and QSL-567 are both Done. The remainder is: the FR-224 race summary under `ra` (DR-3) with FR-224-AC-1/2/4 `ra` halves and FR-227-AC-3; FR-228-AC-1's `ra` visibility member (`Ra::fairness` returns none); and FR-225-AC-1/AC-3 `ra` halves with the `max_messages` request and certificate member. Reopen the owning tickets, or record the remainder on QSL-566 and keep it open | qsl-eval/src/simulation/protocol/ra.rs:1415-1419, qsl-eval/src/simulation/protocol/selection.rs:309-325 |
 | FND-002 | medium | Two spec gaps the engine depends on are not filed. First, ADR-025 PSC-4 has no rule for a removed SC event's predecessors toward its thread's later events on other locations (SR-12255 FND-001). Second, PSC-4 and PSC-6 give SC fences no lifetime: fences are on no message, so only the engine's own supersession bounds them (SR-12255 FND-002). File both as STD tickets beside STD-239..241 | spec/decisions/ADR-025-weak-memory-models-for-parallel.md:590-592 |
 | FND-003 | low | The module doc says that for fences only `po` and fence-to-fence `hb` are built. STD-239 names only the `eco` part and accesses ordered before a fence through a non-SC event. It does not name the unbuilt `[Fsc]; hb; po; [Esc]` edge from a fence to a later SC access of a thread that synchronised with it, which is decidable from the frontier | qsl-eval/src/simulation/protocol/ra.rs:32-36, ra.rs:601-605 |
+
+## Dispositions
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | Tracker, not code (no sha). The remainder now has open owners related to QSL-566, verified Backlog in Linear: QSL-932 (FR-224 race summary under `ra`, FR-227-AC-3), QSL-933 (FR-228-AC-1 `ra` visibility), QSL-934 (FR-225 `max_messages` request member) |
+| FND-002 | fixed | Tracker, not code (no sha). Filed STD-246 (PSC-4 predecessors of a removed event, for its thread, with the residual `hb\|loc` case) and STD-247 (SC fence lifetime) |
+| FND-003 | fixed | Tracker, not code (no sha). STD-247 names the unbuilt `[Fsc]; hb; po; [Esc]` edge and the fence-lifetime rule that building it needs. The `ra.rs` module doc cites STD-246 and STD-247 |
