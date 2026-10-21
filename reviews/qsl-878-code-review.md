@@ -51,9 +51,11 @@ What is sound:
 
 ## Dispositions
 
-| FND | Outcome | Reason |
+Round 1, reviewed at 97679c154 by the reviewer. These rows replace the coder's notes, which the reviewer checked against the fix commit.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | The differential now skips a no-progress lasso only for bodies that owe a future eventuality (`eventually`, `until`); past, `always` and `release` bodies are compared on zero-counted loops too and agree. New hand vectors read a loop with no counted step for `once`/`historically`, `until`/`release`, an `on each` activation and a bounded-profile `eventually`/`always` lasso (temporal_trace.rs). |
-| FND-002 | fixed, remainder | Both searches now read each state's enabled steps from the expansion the run already charged (EN-1 keeps them per node, the checker per product state), so they add no expansion, state or edge outside `max_transitions`. A run under a partial-order reduction re-expands those nodes in full, since its charged expansion is a subset. Remaining work: QSL-878 gives the fairness analysis its own typed auxiliary-exhaustion limit. |
-| FND-003 | fixed | `Remaining work: STD-254` is in `Shape::new`, `LassoUnderBoundedProfile`'s doc and its spine mirror, and the PR body. |
-| FND-004 | fixed | The checker takes the least product state over the vertices of every fair component. `a_closure_with_a_fair_uncounted_cycle_is_rejected_as_a_proof` asserts the exact `ProductStateRef`, with an off-cycle owing state present that is not chosen. |
+| FND-001 | fixed 97679c154 | The differential now skips a no-progress lasso only for bodies that owe a future eventuality (`eventually`/`until`). New hand vectors over a fully uncounted loop `0 \| 1 2` cover `once[0,2]`/`once[1,2]`, `historically[0,1]`/`historically[1,2]`, `until[0,2]`/`until[1,2]`, `release[0,2]`/`release[1,2]`, an `on each` activation, and bounded-profile `eventually`/`always` lassos. Each expected verdict checks out by hand against PB-3 distances. |
+| FND-002 | deferred: QSL-878 | Partly fixed in 97679c154. Both searches now read each vertex's enabled steps from the expansion the run already charged. The checker keeps them per owing `Open` product state, and EN-1 keeps them per node, re-expanding only under a reduced run. So the search adds no uncharged expansion and no state clones. The typed auxiliary-exhaustion `Stopped` (FR-338-AC-6) is not built. It is recorded as `Remaining work: QSL-878` in closure.rs's module doc, and QSL-878 stays open for it. |
+| FND-003 | fixed 97679c154 | `Remaining work: STD-254` is in `Shape::new`, in the `LassoUnderBoundedProfile` doc and its spine mirror, and in the PR body. |
+| FND-004 | fixed 97679c154 | `zero_progress` takes the least `ProductStateRef` over `FairLoop::fair_vertices`, the vertices of every fair component. That is the first passing component in product-state order. The test asserts the exact locus, with an off-cycle owing state present that is not chosen. |

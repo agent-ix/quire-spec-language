@@ -53,7 +53,9 @@ Bindings checked:
 
 ## Dispositions
 
-| FND | Outcome | Reason |
+Round 1, reviewed at 97679c154 by the reviewer. These rows replace the coder's notes, which the reviewer checked against the fix commit.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | Under `scheduling adversarial`: `an_uncounted_cycle_after_the_debt_is_met_is_not_a_refutation` (a `duplicate`/`lose` cycle after `A` met the debt) and `a_cycle_that_takes_a_counted_step_is_not_a_zero_progress_refutation` (a `repeat` of counted `touch` attempts after `A` proves; without `A` it is refuted by counted expiry with a finite prefix and no lasso). Each asserts `proved` and the core's `Accepted`. |
-| FND-002 | fixed | `another_shape_has_no_bounded_translation` is tagged `TC-525` only; the past-window test and the two property_automata differentials are tagged `TC-658` only. The PR body no longer maps FR-338-AC-7 to past-window agreement. |
+| FND-001 | fixed 97679c154 | Both paired oracles run under `scheduling adversarial`. `an_uncounted_cycle_after_the_debt_is_met_is_not_a_refutation` has a dup/lose cycle after `A` meets the debt. `a_cycle_that_takes_a_counted_step_is_not_a_zero_progress_refutation` has a `repeat` of counted `touch` attempts; without `A` it is refuted by a finite all-counted prefix with no lasso. Each asserts `proved` and the core's `Accepted`. |
+| FND-002 | fixed 97679c154 | `another_shape_has_no_bounded_translation` is tagged `TC-525` only. The past-window test and both property_automata differentials are tagged `TC-658` only. The PR body maps FR-338-AC-7 only to the `u64::MAX` key vector. |
