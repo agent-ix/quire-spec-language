@@ -1645,11 +1645,20 @@ impl<'a> Typer<'a> {
                     return Err(mismatch(&location));
                 }
                 let source = typed.value_type.clone();
-                Ok((
-                    typed,
-                    EqualityOperand::converted(source, target.clone()),
-                    target,
-                ))
+                let operand = EqualityOperand::converted(source.clone(), target.clone());
+                // A conversion that changes the type is its own typed node,
+                // so FR-093 lowers it as a `numeric.convert` operand and
+                // the equality compares at the converted type.
+                let typed = if source == target {
+                    typed
+                } else {
+                    node(
+                        NodeKind::ConvertScalar(operand.clone(), self.push(typed)),
+                        target.clone(),
+                        &location,
+                    )
+                };
+                Ok((typed, operand, target))
             }
             None => {
                 let value_type = typed.value_type.clone();

@@ -35,6 +35,7 @@ use crate::checked_v2::{read_v2, Read, V2ReadLimits};
 mod abstraction;
 mod admission_corpus;
 mod child_composite;
+mod converted_equality;
 mod deep_bodies;
 mod envelope_adoption;
 mod golden;

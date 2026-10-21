@@ -2554,17 +2554,37 @@ impl<'a> Typer<'a> {
         {
             return Err(ineligible(location));
         }
-        let checked = self
-            .scope
-            .types
-            .check_equality_in(
-                &self.units,
-                operator,
-                left_operand,
-                right_operand,
-                &|shape: &EnumShape| self.scope.enum_members_of(shape),
-            )
-            .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))?;
+        let check = |left: EqualityOperand, right: EqualityOperand| {
+            self.scope
+                .types
+                .check_equality_in(&self.units, operator, left, right, &|shape: &EnumShape| {
+                    self.scope.enum_members_of(shape)
+                })
+                .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))
+        };
+        let mut checked = check(left_operand.clone(), right_operand.clone())?;
+        // A type-changing conversion is already a `ConvertScalar` operand
+        // node, so the stored equality compares the converted values as typed.
+        let converted = |operand: &EqualityOperand, node: &Node| {
+            operand
+                .target()
+                .is_some_and(|target| *target == node.value_type)
+                && matches!(node.kind, NodeKind::ConvertScalar(..))
+        };
+        let as_typed = |operand: EqualityOperand, node: &Node| {
+            if converted(&operand, node) {
+                EqualityOperand::typed(node.value_type.clone())
+            } else {
+                operand
+            }
+        };
+        let (left_typed, right_typed) = (
+            as_typed(left_operand.clone(), &left),
+            as_typed(right_operand.clone(), &right),
+        );
+        if (&left_typed, &right_typed) != (&left_operand, &right_operand) {
+            checked = check(left_typed, right_typed)?;
+        }
         Ok(node(
             NodeKind::Equality(
                 operator,
