@@ -95,9 +95,6 @@ pub enum Unsupported {
     /// A `choice` guard, `repeat` guard or `check` undecided at an initial
     /// state, before any position a finding can name.
     UndecidedInitialGuard,
-    /// An `effect` whose own thread does not take its attempt on every path
-    /// to it, so its attempt's binder may be unbound (ADR-027 ST-2).
-    DetachedEffect,
     /// A retry relation of a template with more than one attempt that reads
     /// the attempt records, which no operation result binds here (ST-11).
     UnboundAttemptRecord,
@@ -137,7 +134,6 @@ impl Unsupported {
             Self::SymbolicCapacity => "symbolic channel capacity",
             Self::UnorderedLossSelector => "ordered loss selector on an unordered channel",
             Self::UndecidedInitialGuard => "undecided guard at an initial state",
-            Self::DetachedEffect => "effect whose attempt does not precede it",
             Self::UnboundAttemptRecord => "retry relation over unbound attempt records",
             Self::RecoveryView => "recovery predicate over the recovery view",
             Self::Capture => "protocol capture",
@@ -282,10 +278,13 @@ struct Parallel {
     dispositions: BTreeMap<String, Disposition>,
 }
 
-/// One bound binder value (ADR-027 PS-5).
+/// One bound binder value (ADR-027 PS-5): its value, `None` for an
+/// attempt's record (receiver, arguments) when its operation returns no
+/// value of the binder's type, which only its effects' enabledness reads
+/// (ST-2); and its encoding.
 #[derive(Clone, Debug)]
 struct Bound {
-    value: Value,
+    value: Option<Value>,
     enc: Enc,
 }
 
@@ -926,7 +925,10 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// apart. A template's commit node that a step has occurred at is a
     /// `control` entry `{"type":"commit","instance","node"}`, with value
     /// `{"type":"commit-state","occurred":true}`: CP-1 and CP-4 read it, and
-    /// PS-8 lists no member for it.
+    /// PS-8 lists no member for it. A compensation thread's `thread-state`
+    /// also names the registration it compensates, as `registration`: which
+    /// registration each thread's `cattempt` and `cend` act on decides its
+    /// successors, and PS-8 lists no member for that mapping either.
     fn key_members(&self, state: &ProtocolState<M>) -> Vec<(&'static str, Enc)> {
         let text = |value: &str| Enc::tagged("text", vec![("value", Enc::text(value))]);
         let mut control = Vec::new();
@@ -946,16 +948,20 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 let rest = self
                     .rest_point(thread.rest)
                     .map_or(Enc::Unencodable("a rest point"), |rest| rest.enc());
-                control.push((
-                    path.enc(),
-                    Enc::tagged(
-                        "thread-state",
-                        vec![
-                            ("rest", rest),
-                            ("disposition", Enc::text(thread.disposition.text())),
-                        ],
-                    ),
-                ));
+                let mut members = vec![
+                    ("rest", rest),
+                    ("disposition", Enc::text(thread.disposition.text())),
+                ];
+                // A compensation thread's registration decides its steps,
+                // so its thread state names it (see `key_members`).
+                if let Some(compensating) = instance.compensating.get(path) {
+                    members.push((
+                        "registration",
+                        self.registration_key(&compensating.registration)
+                            .map_or(Enc::Unencodable("a registration"), |key| key.enc()),
+                    ));
+                }
+                control.push((path.enc(), Enc::tagged("thread-state", members)));
             }
             for (key, parallel) in &instance.parallels {
                 let node = self
@@ -1141,7 +1147,9 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
                 // Refused in `Program::new` when any slot reads one.
                 None => None,
                 Some(_) if !self.program.reads(slot, reader) => None,
-                Some(node) => instance.entry(*node, path).map(|bound| bound.value.clone()),
+                Some(node) => instance
+                    .entry(*node, path)
+                    .and_then(|bound| bound.value.clone()),
             };
             frame.push(value);
         }

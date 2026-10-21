@@ -322,11 +322,22 @@ impl Documents {
     /// An initialization snapshot named `name` of the cells `objects`, each
     /// `(key, v)` with `w = 0`, provisioned here.
     pub(crate) fn start(&mut self, name: &str, objects: &[(&str, i64)]) -> DocumentRef {
+        let cells: Vec<(&str, i64, i64)> = objects
+            .iter()
+            .map(|(key, value)| (*key, *value, 0))
+            .collect();
+        self.start_cells(name, &cells)
+    }
+
+    /// An initialization snapshot named `name` of the cells `objects`, each
+    /// `(key, v, w)`, provisioned here.
+    pub(crate) fn start_cells(&mut self, name: &str, objects: &[(&str, i64, i64)]) -> DocumentRef {
         let objects: Vec<Json> = objects
             .iter()
-            .map(|(key, value)| {
+            .map(|(key, value, weight)| {
                 json!({"key": key, "type": ident("Cell"),
-                    "fields": {"v": {"integer": value.to_string()}, "w": {"integer": "0"}}})
+                    "fields": {"v": {"integer": value.to_string()},
+                        "w": {"integer": weight.to_string()}}})
             })
             .collect();
         let header = json!({"identity": PACKAGE, "version": "1.0.0",

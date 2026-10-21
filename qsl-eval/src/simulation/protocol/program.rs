@@ -235,6 +235,8 @@ pub(super) struct Program<'a> {
     pub(super) terminal: &'a CheckedTerminalMember,
     /// The `compensate` templates, in source order.
     pub(super) templates: Vec<Template<'a>>,
+    /// Each `effect` node's attempt, from the `Effect` edges (ST-2).
+    pub(super) effects: BTreeMap<ProtocolNodeId, ProtocolNodeId>,
     /// Each control's place in the `run` tree.
     spans: BTreeMap<ProtocolNodeId, Span>,
     /// Each binder slot's readers by tree position.
@@ -698,22 +700,29 @@ impl<'a> Program<'a> {
                 .collect(),
             terminal: &protocol.slots.terminal,
             templates,
+            effects: protocol
+                .edges
+                .iter()
+                .filter(|edge| edge.kind == EdgeKind::Effect)
+                .map(|edge| (edge.to.node, edge.from.node))
+                .collect(),
             spans: BTreeMap::new(),
             reader_positions: Vec::new(),
             loop_of: BTreeMap::new(),
         };
         program.spans = program.spans()?;
-        // ST-2: an `effect` is enabled once its attempt's binder is bound.
-        // This system admits an effect only where its own thread has taken
-        // the attempt on every path to it.
-        for edge in &protocol.edges {
-            if edge.kind == EdgeKind::Effect && !program.precedes(edge.from.node, edge.to.node)? {
-                return Err(unsupported(Unsupported::DetachedEffect));
+        program.loop_of = program.enclosing_loops()?;
+        // An effect keeps its attempt's binder as a reader does: its ST-2
+        // enabledness reads it.
+        let mut keepers = program.readers.clone();
+        for (effect, attempt) in &program.effects {
+            if let Some(slot) = program.binder_of.get(attempt) {
+                if let Some(readers) = keepers.get_mut(*slot) {
+                    readers.insert(*effect);
+                }
             }
         }
-        program.loop_of = program.enclosing_loops()?;
-        program.reader_positions = program
-            .readers
+        program.reader_positions = keepers
             .iter()
             .map(|readers| ReaderPositions {
                 controls: readers
@@ -724,50 +733,6 @@ impl<'a> Program<'a> {
             })
             .collect();
         Ok(program)
-    }
-
-    /// Whether every path of one thread to `later` passes `earlier` first:
-    /// some enclosing `sequence`, inside `later`'s own branch, holds before
-    /// the child that contains `later` a child that passes `earlier` (is it,
-    /// or is a `sequence` with a child that passes it).
-    fn precedes(
-        &self,
-        earlier: ProtocolNodeId,
-        later: ProtocolNodeId,
-    ) -> Result<bool, ProtocolRefusal> {
-        let passes = |start: ProtocolNodeId| -> Result<bool, ProtocolRefusal> {
-            let mut pending = vec![start];
-            while let Some(node) = pending.pop() {
-                if node == earlier {
-                    return Ok(true);
-                }
-                let control = self.control(node)?;
-                if control.step == ControlStep::Sequence {
-                    pending.extend(control.children.iter().copied());
-                }
-            }
-            Ok(false)
-        };
-        let mut at = later;
-        while let Some(parent) = self.parent(at)? {
-            let holder = self.control(parent)?;
-            match holder.step {
-                ControlStep::Sequence => {
-                    for child in &holder.children {
-                        if *child == at {
-                            break;
-                        }
-                        if passes(*child)? {
-                            return Ok(true);
-                        }
-                    }
-                }
-                ControlStep::Branch => return Ok(false),
-                _ => {}
-            }
-            at = parent;
-        }
-        Ok(false)
     }
 
     /// The control `node`.
@@ -791,6 +756,11 @@ impl<'a> Program<'a> {
         node: ProtocolNodeId,
     ) -> Result<Option<ProtocolNodeId>, ProtocolRefusal> {
         Ok(self.control(node)?.parent)
+    }
+
+    /// Whether some `effect` names the attempt `attempt` (ST-2).
+    pub(super) fn effected(&self, attempt: ProtocolNodeId) -> bool {
+        self.effects.values().any(|of| *of == attempt)
     }
 
     /// The declared type of `node`'s binder, when it has one.

@@ -463,10 +463,17 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 if attempt.binds.is_some() {
                     built.write(self.binder(node, path)?);
                     self.folded(&mut built, instance, path, node)?;
+                } else if self.program.effected(node) {
+                    // The record its effects read (ST-2).
+                    built.write(self.binder(node, path)?);
                 }
             }
             StepKind::Event | StepKind::Send | StepKind::Receive => {
                 self.binders_read(&mut built, path, node, Read::Enabling)?;
+                // An effect is enabled by its attempt's binder (ST-2).
+                if let Some(attempt) = self.program.effects.get(&node) {
+                    built.enabling(self.binder(*attempt, path)?);
+                }
                 // An `event` and a `send` enumerate their records over the
                 // state's objects; a `receive` takes its record from the queue.
                 let listed = match step.kind() {

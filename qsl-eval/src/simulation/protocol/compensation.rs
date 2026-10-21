@@ -50,7 +50,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .captures
             .iter()
             .take(count)
-            .map(|bound| Some(bound.value.clone()))
+            .map(|bound| bound.value.clone())
             .collect()
     }
 
@@ -143,7 +143,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         }
         let record = Self::instance(next, ordinal)?
             .entry(node, path)
-            .map(|bound| bound.value.clone());
+            .and_then(|bound| bound.value.clone());
         if let (Some(record), Some(record_type)) = (&record, self.program.binder_type(node)) {
             for (index, template) in self.program.templates.iter().enumerate() {
                 if template.trigger == *record_type
@@ -183,11 +183,11 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         let mut captures: Vec<Bound> = Vec::with_capacity(template.registration.len());
         for (_, initializer) in &template.registration {
             let mut frame = vec![Some(forward.clone()), Some(self.over.clone())];
-            frame.extend(captures.iter().map(|bound| Some(bound.value.clone())));
+            frame.extend(captures.iter().map(|bound| bound.value.clone()));
             match self.decide_template(template, initializer, frame, next)? {
                 Decided::Value(value) => captures.push(Bound {
                     enc: value_enc(&value),
-                    value,
+                    value: Some(value),
                 }),
                 Decided::Undecided(finding) => {
                     findings.push(*finding);
@@ -261,7 +261,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 match self.decide_template(template, initializer, frame, next)? {
                     Decided::Value(value) => registration.captures.push(Bound {
                         enc: value_enc(&value),
-                        value,
+                        value: Some(value),
                     }),
                     Decided::Undecided(finding) => {
                         findings.push(*finding);
@@ -401,6 +401,10 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 reference_enc(&applied.receiver),
                 applied.arguments.iter().map(value_enc).collect(),
             );
+            // A compensation thread is no branch thread of any `parallel`,
+            // so no resolved memory model governs it (ADR-025 MM-3): its
+            // attempt is local, as an attempt outside every weak `parallel`
+            // is (FR-220).
             let (model, memory) = match self.memory.write(
                 &state.memory,
                 path,

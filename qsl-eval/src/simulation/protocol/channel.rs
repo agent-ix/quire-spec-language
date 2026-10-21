@@ -213,7 +213,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value: payload,
+                    value: Some(payload),
                     enc: enc.clone(),
                 },
             );
@@ -290,7 +290,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 node,
                 path,
                 Bound {
-                    value: payload,
+                    value: Some(payload),
                     enc: enc.clone(),
                 },
             );

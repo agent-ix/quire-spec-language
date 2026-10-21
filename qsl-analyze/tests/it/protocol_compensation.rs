@@ -910,3 +910,224 @@ fn captures_are_evaluated_at_registration_and_activation() {
         }
     });
 }
+
+/// SR-12241's fixture: two registrations of a Boolean-forward template,
+/// each capturing its forward record, activated by a trigger equal to it,
+/// in either order, so that two compensation threads compensate the two
+/// registrations crosswise depending on the order of activation.
+pub(crate) fn crosswise() -> String {
+    let template = "compensate Refund for Main::Loop::Body::Paid as (fwd: Boolean)\n\
+         by w on M::Cell::touch using v clock \"c\" {\n\
+         capture b: Boolean = fwd;\n\
+         activate first (f: Boolean) when { f = b } { }\n\
+         within [0, 10];\n\
+         attempts 1 of M::Attempt;\n\
+         retry (e: M::Attempt, l: M::Attempt) { false };\n\
+         commit never;\n\
+         recover (r: M::Attempt) { b };\n\
+         }";
+    let run = format!(
+        "sequence Main {{ {} repeat Loop by w visible () max 2 while {{ true }} \
+         sequence Body {{ effect Paid of Main::C as (pd: Boolean) {{ true }}; {FAIL} }} \
+         exhausted sequence Out {{ }} event Fail2 by w as (failed2: Boolean) {{ true }}; }}",
+        CHARGE.replace(
+            "M::Cell::inc contracts [IncPre, IncPost]",
+            "M::Cell::touch contracts [TouchPre]"
+        ),
+    );
+    unit(template, &run)
+}
+
+/// A state's successors, each as its identity's and post-state key's bytes.
+type Successors = BTreeSet<(Vec<u8>, Vec<u8>)>;
+
+/// One state's step identities and each step's change (see [`changes`]).
+type StateSteps = (Vec<Json>, Vec<(Vec<Location>, bool)>);
+
+/// ADR-027 PS-8: every state `system` reaches, explored without merging
+/// states by key, has the successors (identity and post-state key) that
+/// the first state of its key has: equal keys are one state. The number of
+/// states met again under a known key.
+fn assert_keys_determine_successors(system: &ProtocolSystem<'_, Sc>) -> usize {
+    use qsl_eval::simulation::TransitionSystem;
+    let key = |state: &qsl_eval::simulation::protocol::ProtocolState<Sc>| {
+        SubjectSystem::state_key(system, state).expect("a key").0
+    };
+    let mut known: std::collections::BTreeMap<Vec<u8>, Successors> =
+        std::collections::BTreeMap::new();
+    let mut pending = system.initial();
+    let mut again = 0;
+    while let Some(state) = pending.pop() {
+        let successors = system
+            .successors(&state)
+            .expect("the state expands")
+            .successors;
+        let set: Successors = successors
+            .iter()
+            .map(|(step, next)| (system.transition_key(step).expect("an identity"), key(next)))
+            .collect();
+        match known.get(&key(&state)) {
+            Some(earlier) => {
+                assert!(*earlier == set, "two states of one key step differently");
+                again += 1;
+            }
+            None => {
+                known.insert(key(&state), set);
+                pending.extend(successors.into_iter().map(|(_, next)| next));
+            }
+        }
+    }
+    again
+}
+
+/// ADR-027 PS-8 and QSpec FR-425-AC-1 (SR-12241 FND-001): which
+/// registration a compensation thread compensates is part of its
+/// `thread-state`, so two orders of activation that map the threads to the
+/// registrations crosswise reach different keys, and every state of a key
+/// steps alike. Without the member, twelve states share a key with a state
+/// whose successors differ.
+#[test]
+fn a_compensation_thread_keys_its_registration() {
+    explore(&crosswise(), |system, explored| {
+        assert!(assert_keys_determine_successors(system) > 0);
+        let reached = &explored.reached;
+        let named = reached.iter().any(|state| {
+            entries(&key_json(system, state), "control")
+                .into_iter()
+                .any(|(key, value)| {
+                    key["steps"][0].get("template").is_some()
+                        && value["registration"]["type"] == "registration"
+                })
+        });
+        assert!(named, "a compensation thread names its registration");
+    });
+}
+
+/// ADR-027 ST-2: an `effect` is enabled while its attempt's binder is bound
+/// in its thread's environment. An attempt in a branch of an `all`-joined
+/// `parallel` binds its record, which the join copies to the root, so an
+/// effect after the join registers; an attempt in one case of a `choice`
+/// enables the effect after the `choice` on that case only, and on the
+/// other case the root waits at the effect.
+#[test]
+fn an_effect_waits_for_its_attempts_binder() {
+    let joined = format!(
+        "sequence Main {{ parallel P {{ branch a {CHARGE} branch b {} }} join all [a, b]; {} {FAIL} }}",
+        crate::protocol_system::touch("TB"),
+        paid("Main::P::a::C"),
+    );
+    let body = unit(
+        &refund("Main::Paid", "dec", 1, "false", "never", "true"),
+        &joined,
+    );
+    explore(&body, |system, explored| {
+        let reached = &explored.reached;
+        let registered = reached
+            .iter()
+            .any(|state| statuses(&key_json(system, state)) == ["registered"]);
+        assert!(registered, "the effect after the join registers");
+    });
+
+    let chosen = format!(
+        "sequence Main {{ event X by w as (x: Boolean) {{ true }}; \
+         choice Pick by w visible (x) {{ case yes when {{ x }} {CHARGE} case no when {{ not x }} {} }} \
+         {} {FAIL} }}",
+        crate::protocol_system::touch("TN"),
+        paid("Main::Pick::yes::C"),
+    );
+    let body = unit(
+        &refund("Main::Paid", "dec", 1, "false", "never", "true"),
+        &chosen,
+    );
+    explore(&body, |system, explored| {
+        let reached = &explored.reached;
+        let mut stuck = false;
+        let mut registered = false;
+        for (at, state) in reached.iter().enumerate() {
+            registered |= statuses(&key_json(system, state)) == ["registered"];
+            let at_paid = system
+                .threads(&state.state)
+                .expect("the threads name")
+                .iter()
+                .any(|view| {
+                    view.rest_point
+                        .node
+                        .as_deref()
+                        .is_some_and(|node| node.ends_with("Paid"))
+                });
+            if at_paid && kinds(reached, at).is_empty() {
+                stuck = true;
+            }
+        }
+        assert!(
+            registered && stuck,
+            "the effect steps on `yes` and waits on `no`"
+        );
+    });
+}
+
+/// ADR-027 ST-11: a retry relation that reads the attempt records of a
+/// template with more than one attempt is refused, as no member of the key
+/// holds the previous attempt record.
+#[test]
+fn a_retry_over_attempt_records_is_refused() {
+    let body = unit(
+        &refund("Main::Paid", "dec", 2, "e.n = l.n", "never", "true"),
+        &pay_run(""),
+    );
+    let case = Case::new(&body, &[0]);
+    let subject = case.subject("Pay");
+    let model = qsl_eval::simulation::model::ModelSystem::new(subject.model.simulation.clone())
+        .expect("the subject admits");
+    assert_eq!(
+        ProtocolSystem::new(model, &subject, Sc).err(),
+        Some(ProtocolRefusal::Unsupported(
+            Unsupported::UnboundAttemptRecord
+        ))
+    );
+}
+
+/// FR-216-AC-4 (TC-661), the perturbation clause: §7.1 explored from
+/// `c.w = 0` and from `c.w = 1`, a location no step of `Pay` reads, takes
+/// the same steps from corresponding states, and each step's change is the
+/// same: perturbing a location outside every step's `R` changes no step's
+/// enabledness or effect.
+#[trace("TC-661", "FR-216-AC-4")]
+#[test]
+fn a_location_outside_the_reads_changes_no_step() {
+    let checked = crate::fill::package(&pay("true"));
+    let explored: Vec<Vec<StateSteps>> = [0, 1]
+        .into_iter()
+        .map(|weight| {
+            let mut documents = crate::fill::Documents::new();
+            let initial = vec![documents.start_cells("s0", &[("c", 0, weight)])];
+            let subject = crate::fill::subject(&checked, &documents, initial, "Pay", "c");
+            let system = sc_system(&subject);
+            let reached = reachable(&system);
+            reached
+                .iter()
+                .map(|state| {
+                    let pre = key_json(&system, state);
+                    let mut identities = Vec::new();
+                    let mut changed = Vec::new();
+                    for (step, next) in &state.steps {
+                        let footprint = system.footprint(&state.state, step).expect("a footprint");
+                        assert!(
+                            !footprint.reads.iter().any(|read| matches!(
+                                read,
+                                Location::Field { field, .. } | Location::AnyField { field }
+                                    if *field == crate::fill::key("Cell/w")
+                            )),
+                            "{step:?} reads c.w"
+                        );
+                        identities.push(identity(&system, step));
+                        changed.push(changes(&pre, &key_json(&system, &reached[*next])));
+                    }
+                    (identities, changed)
+                })
+                .collect()
+        })
+        .collect();
+    assert_eq!(explored[0].len(), 9);
+    assert_eq!(explored[0], explored[1]);
+}
