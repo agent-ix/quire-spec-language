@@ -60,7 +60,7 @@ pub enum CertificateLocus {
     Query { part: QueryPart },
     ProofStep { part: QueryPart, index: u64 },
 }
-pub enum QueryPart { Unrolling, Base, Step }   // FR-314
+pub enum QueryPart { Unrolling, Base, Step { row: Option<u64> } }   // FR-314
 
 pub enum TemporalCertificateCheck {
     Accepted,
@@ -79,6 +79,11 @@ pub fn check_closure(
 `AutomatonStateKey` is the property-automaton translation's canonical
 encoding of an automaton state (`qsl-eval`, ADR-018 LA-2), the same for
 every order in which the states are materialized.
+
+A `QueryPart` is spelled on the wire as the text `unrolling`, `base` or `step`.
+A `Step` that carries a row (FR-314's refinement certificate, zero-based) is
+spelled `step/<row>` with the row in decimal, so `step/3` names the fourth
+step row, and `step` alone names the step query of an `Inductive` proof.
 
 ### Canonical translation state
 

@@ -13,7 +13,7 @@ relationships:
 Verify that `encode_smt_query` prints the unrolling and induction queries
 in canonical order and bytes, and refuses a construct it cannot encode.
 
-Scope: FR-315-AC-1 to FR-315-AC-5.
+Scope: FR-315-AC-1 to FR-315-AC-6.
 
 ## Test Procedure
 
@@ -26,6 +26,8 @@ Scope: FR-315-AC-1 to FR-315-AC-5.
    FR-315-AC-4's `Slot` subject.
 5. Encode `InductionStep{depth: 2}` for `always holds(c.value <= 3)` and for
    a TP-3 item.
+
+6. Encode `Initial` and `Step { row }` for each row of `CasRefinesCounter`, twice, then for a refinement with one row changed to `any`, then with a mapping row outside `QF_LIA`.
 
 Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
 
@@ -42,3 +44,4 @@ Tag the tests `#[trace("TC-900", "FR-315-AC-n")]`.
   linear.
 - Step 5: pairwise distinctness of copies 0 to 2; for the TP-3 item, `m0`
   to `m2` with the monitor steps.
+- Step 6: the scripts FR-315-AC-6 lists, byte-equal across the two encodings; the `any` row `SmtEncodingRefusal`; the out-of-fragment row `SmtEncodingRefusal` naming it, no script.

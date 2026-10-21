@@ -70,6 +70,7 @@ checked clause or the refusal's code, cause, span text and retained members.
 | 21 | row 19 with the ends swapped, `(view, sent.peer)` | `ill_typed`/`type-mismatch` at each end; `end` `first` expected `Peer` actual `Node`, then `end` `second` expected `Node` actual `Peer` |
 | 22 | row 19 plus `related by Owns (sent.peer, view)` (with `relationship Owns = M::owns;`) and a repeat of `related by Pipe (sent.peer, view)` | checks; `Got` holds three checked clauses in source order |
 | 23 | `requires temporal Due;` | checks; the requirement is bound to `Due`'s position among the unit's temporal clauses, from which S4 mints its node key |
+| 23a | row 23 with `Due` declared with an `on each (x: ...)` activation and a `capture` | checks; the requirement is bound to `Due`'s position as in row 23 |
 | 24 | `requires temporal Nothing;`, and `requires temporal Due;` where `Due` is declared only in an imported unit | each `missing_declaration`/`missing-name` at the name; no package |
 | 25 | `requires temporal Accept;` | `ill_typed`/`operator-ineligible` at `Accept`; the resolved kind named |
 | 26 | `requires temporal Due;` written twice | checks; one requirement recorded, at the first position |

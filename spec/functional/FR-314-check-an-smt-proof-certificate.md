@@ -29,6 +29,12 @@ settles `inconclusive`, `CertificateRejected{rule, at}`; one it cannot
 verify because a step uses an unchecked rule settles `proved`,
 `Uncertified`, as an SMT proof that arrives with no certificate does.
 
+For a refinement's per-step simulation obligations (QSpec FR-468),
+`check_refinement_smt_proof` SHALL accept a `RefinementSmtCertificate` exactly
+when it holds one base part and one step part per step row, each the query
+FR-315 encodes for it, and every part refutes its query using only checked
+Alethe rules.
+
 ## Use case
 
 A verification operator relies on a bounded-complete or inductive proof
@@ -53,15 +59,26 @@ pub struct RefutedQuery {
 pub enum SmtProofCertificate {
     BoundedComplete { format: ProofFormat, unrolling: RefutedQuery },
     Inductive { format: ProofFormat, base: RefutedQuery, step: RefutedQuery },
-    /// A refinement's per-step simulation obligations (QSpec FR-468): one base
-    /// part and one step part per step row, in the refinement's `steps` order.
-    RefinementInductive { format: ProofFormat, base: RefutedQuery, steps: Vec<RefutedQuery> },
+}
+
+/// A refinement's per-step simulation obligations (QSpec FR-468): the refuted
+/// initial query and one refuted step query per step row, in the order of the
+/// refinement node's `steps` array (QSpec FR-375).
+pub struct RefinementSmtCertificate {
+    pub format: ProofFormat,
+    pub base: RefutedQuery,
+    pub steps: Vec<RefutedQuery>,
 }
 
 pub fn check_smt_proof(
     request: &CertificateRequest<'_>,
     basis: &ProofBasis,                       // BoundedComplete or Inductive, with depth
     certificate: &SmtProofCertificate,
+) -> Result<SmtProofCheck, CertificateRejection>;
+
+pub fn check_refinement_smt_proof(
+    request: &CertificateRequest<'_>,         // the refinement item's request
+    certificate: &RefinementSmtCertificate,
 ) -> Result<SmtProofCheck, CertificateRejection>;
 
 pub enum SmtProofCheck {
@@ -75,7 +92,8 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
 `CertificateRejection.at` is a `CertificateLocus`:
 `ProductState(ProductStateRef)` for FR-338 and FR-339, and
 `Query { part }` or `ProofStep { part, index: u64 }` here, `part` being
-`Unrolling`, `Base` or `Step`.
+`Unrolling`, `Base` or `Step`; for a refinement certificate `Step` carries its
+row, `Step { row: Some(r) }` (FR-338 states the wire spelling).
 
 ## Outputs
 
@@ -124,6 +142,33 @@ FR-338's `CertificateRule` gains `QueryMismatch`, `ShapeMismatch`,
   for `Inductive`.
 - The checker SHALL read nothing from the solver but the certificate.
 
+### Refinement certificates
+
+`check_refinement_smt_proof` is the entry for a refinement item whose safety
+half is settled from FR-146's records. It takes the item's
+`CertificateRequest` (the recompiled package and the refinement node) and no
+`ProofBasis`: each record still settles `Inductive{depth: 1}` (FR-146), and
+the basis variant rules above do not apply to this entry. Let `N` be the
+number of step rows of the recompiled refinement's `steps` array.
+
+- The checker SHALL first reject with `ShapeMismatch` a certificate whose
+  `steps` holds fewer or more than `N` parts: at `Step { row: Some(len) }`
+  for fewer, `len` being the number of parts present, and at
+  `Step { row: Some(N) }` for more.
+- The checker SHALL then encode the expected queries with FR-315's refinement
+  queries (the initial query for `base`, the step query of row `r` for
+  `steps[r]`) and SHALL reject with `QueryMismatch`, at `Base` or at
+  `Step { row: Some(r) }`, the first part in the order `base`, then rows
+  `0..N`, whose carried query differs byte for byte. A step part carried in
+  the `base` position therefore rejects `QueryMismatch` at `Base`.
+- The checker SHALL then check the proofs of `base` and of `steps[0..N]` in
+  that order by the proof rules above, naming `ProofStep { part, index }`
+  with `part` `Base` or `Step { row: Some(r) }`, and SHALL return
+  `Unverifiable` naming the first command with an unchecked rule in that
+  order.
+- The checker SHALL return `Verified` only when the base and every step part
+  refute their queries using checked rules alone.
+
 ### Checked Alethe rules
 
 The checker accepts these Alethe rules and checks each step against the
@@ -147,14 +192,15 @@ command. Every other rule is unchecked.
 |----|----------|--------------|
 | FR-314-AC-1 | Accepted vectors: over the `Counter` subject under event-position false-extension, the TP-2 `on origin` claim `always[0,3] holds(c.value <= 3)` proved `BoundedComplete{depth: 3}`, at its horizon 3 (ADR-018 V-2), with an Alethe certificate whose unrolling query is FR-315's encoding at depth 3 and whose proof refutes it with checked rules, is accepted; `always holds(c.value <= 3)` proved `Inductive{depth: 1}` with base and step queries FR-315 encodes at depth 1, each refuted with checked rules, is accepted. Each item settles `proved`, `Certified`, success. | Test (TC-893) |
 | FR-314-AC-2 | Rejected vectors: AC-1's bounded certificate with its query encoded at depth 2 is rejected `QueryMismatch` at `Unrolling`; with one step's premise replaced by a later step, `ProofStepInvalid` at that step; with its last step removed so the proof ends short of the empty clause, `NotRefutation`. AC-1's inductive certificate with an invalid step proof is rejected `ProofStepInvalid` at that `Step` step, and a `BoundedComplete` certificate offered for the `Inductive` basis is rejected `ShapeMismatch`. Each settles `inconclusive`, `CertificateRejected`. Unverifiable vector: AC-1's bounded certificate with one step's rule replaced by `hole`, or by `lia_generic`, and no other defect returns `Unverifiable` at that step and settles `proved`, `Uncertified`, the same as the bounded result with no certificate. | Test (TC-893) |
-| FR-314-AC-3 | `CasRefinesCounter`'s `RefinementInductive` certificate with a base part and seven step parts in `steps` order, each refuting its FR-315 query with checked rules, is `Verified`; the same with the fourth step part missing is rejected `ShapeMismatch` at `Step` row 3, with an eighth step part `ShapeMismatch` at `Step` row 7, with a step part first `ShapeMismatch` at `Base`, and with the third step part's query replaced by the fourth's `QueryMismatch` at `Step` row 2. | Test (TC-893) |
+| FR-314-AC-4 | Refinement certificates, over `CasRefinesCounter` (seven step rows): the certificate with a base part and seven step parts, each refuting its FR-315 refinement query with checked rules, is `Verified`; with six step parts it is rejected `ShapeMismatch` at `Step { row: Some(6) }`, with eight at `Step { row: Some(7) }`; with a step part in the `base` position and the base part in a step position it is rejected `QueryMismatch` at `Base`; with the third step part's query replaced by the fourth's it is rejected `QueryMismatch` at `Step { row: Some(2) }`; with the fifth step part's proof having an invalid step it is rejected `ProofStepInvalid` at `ProofStep { part: Step { row: Some(4) }, index }`; with the base proof using `hole` it returns `Unverifiable` naming `Base`. | Test (TC-893) |
 
 ## Dependencies
 
 - ADR-018 V-2, V-3, PC-1, PC-6, LA-2, LA-3, DS-2.
 - [FR-315](FR-315-encode-the-smt-lib-transition-relation.md) (the encoding
   and its canonical printing), [FR-338](FR-338-check-an-en-1-closure-certificate.md)
-  (the request, rule and rejection types),
+  (the request, rule and rejection types and the wire spelling of a
+  `QueryPart`), QSpec FR-468 (the refinement's queries and certificate),
   [FR-127](FR-127-settle-a-model-check-verdict-as-a-terminal-record.md)
   (the settlement map that runs the check).
 

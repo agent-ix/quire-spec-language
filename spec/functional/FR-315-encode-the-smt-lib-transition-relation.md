@@ -110,6 +110,37 @@ pub fn encode_smt_query(
   in a line feed.
 - Equal inputs SHALL give byte-equal scripts.
 
+### Refinement queries
+
+For a refinement's per-step simulation obligations (QSpec FR-468, FR-146) QSL
+SHALL expose `encode_refinement_query(concrete, abstract_, refinement, kind)
+-> Result<Vec<u8>, SmtEncodingRefusal>` with `kind` either `Initial` or
+`Step { row }`, `row` the zero-based position in the refinement node's `steps`
+array. Both use this requirement's state-copy declarations, sorts, canonical
+printing and refusals.
+
+- The `Initial` query SHALL declare one concrete state copy `s0`, assert the
+  concrete subject's initial-state predicate on it and every hypothesis (the
+  invariant clauses whose context is an object type of the concrete model,
+  FR-146) on it, and assert the negation of: `map(s0)` equals an abstract
+  initial state by state key. Every mapping row, receiver and argument the
+  query reads SHALL also carry its definedness condition, and the negation
+  SHALL hold when one fails (UE-1, UE-4, UE-6).
+- The `Step { row }` query SHALL declare concrete copies `s0` and `s1`, assert
+  every hypothesis on `s0`, the row's operation precondition on `s0`, its frame
+  and postcondition relating `s0` and `s1`, and the negation of the row's rule
+  over (`map(s0)`, `map(s1)`): for `stutter`, the mapped state is unchanged by
+  state key; for an abstract operation, that abstract transition's
+  precondition, frame and postcondition, encoded as this requirement encodes a
+  transition, hold over the mapped pair with the row's receiver and arguments
+  evaluated at `s0` (`_` arguments existentially quantified over their domains);
+  for `any`, no query is encoded and the call refuses
+  `SmtEncodingRefusal`, because a declaration with an `any` row has no per-step
+  query (FR-146).
+- A mapping row, receiver or argument outside the `QF_LIA` fragment this
+  requirement prints SHALL refuse `SmtEncodingRefusal` naming it, with its
+  locus, and write no script.
+
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
@@ -119,6 +150,7 @@ pub fn encode_smt_query(
 | FR-315-AC-3 | An item over a field whose sort the encoding has no form for refuses `SmtEncodingRefusal` naming the field, with its locus, and writes no script. | Test (TC-900) |
 | FR-315-AC-4 | Over a `Slot` subject (universe `{s}`, an optional `Int[0, 3]` field `held`, initially present with value 0; operation `drop` with frame `modifies [held]` that clears `held`, and operation `take` with precondition `pre Has { value(self.held) <= 3 }` that sets `held` to 1), `Unrolling{depth: 2}` for `always holds(value(s.held) <= 3)` makes the negated property hold when `(not s<i>.s.held.present)` holds at some position `i` in `0..=2`, since `value` of an absent field is undefined (`none-value`); the `take` disjunct's guard contributes the same definedness disjunct at the step that reads it. A solver therefore cannot refute the query once `drop` is reachable, and no `proved` follows for a claim UE-1 refutes. Every term of the script is linear. | Test (TC-900) |
 | FR-315-AC-5 | `InductionStep{depth: 2}` for `always holds(c.value <= 3)` asserts that copies 0, 1 and 2 are pairwise distinct; for a TP-3 item it declares `m0` to `m2` and asserts the monitor steps, the property at a position being the monitor state there not rejecting. | Test (TC-900) |
+| FR-315-AC-6 | Over `CasRefinesCounter`, the `Initial` query declares the concrete copy `s0`, asserts the initial-state predicate on it and the negation of `map(s0)` equalling an abstract initial state, and the `Step { row }` query for a `stutter` row declares `s0` and `s1`, asserts the operation's precondition on `s0` and its frame and postcondition over `s0`, `s1`, and the negation of the mapped state being unchanged; encoding either twice gives byte-equal scripts; an `any` row refuses `SmtEncodingRefusal`; a mapping row outside `QF_LIA` refuses naming the row. | Test (TC-900) |
 
 ## Dependencies
 

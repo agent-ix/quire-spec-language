@@ -99,8 +99,9 @@ to AC-10). The registry applies that rule:
   or `duplicate-label` the first offending element in member order (for
   `duplicate-label`, the first element that repeats an earlier element). A
   manifest with an unknown element and a repeat is refused `unknown-label`.
-- A present empty list is admitted and advertises no fairness kind, so the
-  backend is a candidate only for an item whose fairness set is empty.
+- The registry SHALL admit a present empty list, which advertises no fairness
+  kind, so the backend is a candidate only for an item whose fairness set is
+  empty.
 - The registry SHALL ignore, without validating, a `fairness_kinds` member of a
   backend that advertises no `temporal-satisfaction` pair, as QSpec FR-368
   states.
@@ -135,6 +136,13 @@ refusal carries a replacement kind.
   registry and candidate computation),
   [FR-126](FR-126-check-a-temporal-clause-over-every-behaviour-of-a-model.md)
   (EN-1).
+
+## Remaining work
+
+- QSpec ratifies the cause `invalid-fairness-kinds` and FR-368-AC-8 to AC-10
+  in quire-specification#313; the refusals here follow that text. The code
+  that emits the three earlier causes (`qsl-route/src/lib.rs`,
+  `qsl-route/tests/it/fairness_kinds.rs`) is Linear QSL-925.
 
 ## References
 

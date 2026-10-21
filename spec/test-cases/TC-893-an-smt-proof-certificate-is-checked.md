@@ -15,7 +15,7 @@ FR-315 encodes, both for an inductive proof, and rejects a query mismatch,
 an invalid proof step, a proof that does not refute and a
 certificate of the wrong shape.
 
-Scope: FR-314-AC-1, FR-314-AC-2 and FR-314-AC-3.
+Scope: FR-314-AC-1, FR-314-AC-2 and FR-314-AC-4.
 
 ## Test Procedure
 
@@ -29,11 +29,11 @@ Scope: FR-314-AC-1, FR-314-AC-2 and FR-314-AC-3.
 3. Settle the bounded result with no certificate; check and settle the
    bounded certificate with one step's rule replaced by `hole`, then by
    `lia_generic`.
-
-4. Check FR-314-AC-3's `RefinementInductive` certificate for
-   `CasRefinesCounter` (a base part and seven step parts), then with the
-   fourth step part missing, an eighth step part added, a step part first, and
-   the third step part's query replaced by the fourth's.
+5. Check FR-314-AC-4's `RefinementSmtCertificate` for `CasRefinesCounter` (a
+   base part and seven step parts) with `check_refinement_smt_proof`, then with
+   six step parts, with eight, with the base part and a step part exchanged,
+   with the third step part's query replaced by the fourth's, with an invalid
+   step in the fifth step part's proof, and with the base proof using `hole`.
 
 Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
 
@@ -46,8 +46,9 @@ Tag the tests `#[trace("TC-893", "FR-314-AC-n")]`.
   `CertificateRejected`.
 - Step 3: `proved`, `Uncertified`; `Unverifiable` at that step and
   `proved`, `Uncertified`, twice.
-- Step 4: the complete certificate `Verified`; the missing part
-  `ShapeMismatch` at `Step` row 3; the extra part `ShapeMismatch` at `Step`
-  row 7; the step part first `ShapeMismatch` at `Base`; the swapped query
-  `QueryMismatch` at `Step` row 2; each rejection `inconclusive`,
+- Step 5: the complete certificate `Verified`; six parts `ShapeMismatch` at
+  `step/6`; eight parts `ShapeMismatch` at `step/7`; the exchanged parts
+  `QueryMismatch` at `base`; the swapped query `QueryMismatch` at `step/2`;
+  the invalid step `ProofStepInvalid` at the fifth step part; the `hole`
+  `Unverifiable` naming `base`; each rejection `inconclusive`,
   `CertificateRejected`.
