@@ -175,6 +175,8 @@ pub enum StepKind {
     Finish,
     /// ST-10: a step of the memory model.
     Memory,
+    /// SE-5: a `fence`.
+    Fence,
 }
 
 impl StepKind {
@@ -191,6 +193,7 @@ impl StepKind {
             Self::Timeout => "timeout",
             Self::Finish => "finish",
             Self::Memory => "memory",
+            Self::Fence => "fence",
         }
     }
 }
@@ -219,17 +222,137 @@ enum Members {
     },
     /// `memory_step`, the typed identity its memory model gives.
     Memory { identity: MemoryStepId },
+    /// `ordering`: a `fence`'s ordering (QSpec FR-426).
+    Fence { ordering: &'static str },
+}
+
+/// What a `send` did with its entry (ADR-027 ST-3, QSpec FR-170).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SendOutcome {
+    /// Appended, displacing a queued entry or not.
+    Accepted,
+    /// Refused at capacity under `overflow reject`.
+    Rejected,
+    /// Dropped at capacity under `overflow loss new`.
+    Lost,
+}
+
+impl SendOutcome {
+    fn text(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::Lost => "lost",
+        }
+    }
+}
+
+/// A `send` step's send record (ADR-027 ST-3), the step's result: carried
+/// by the step (PX-1), and neither a binder value, nor part of the state
+/// key, nor part of the transition identity. Its canonical form is
+/// `{"type":"send-record","channel","payload","outcome","displaced"}`, with
+/// `displaced` the queued entry (PS-7) or `null`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SendRecord {
+    channel: String,
+    payload: Enc,
+    outcome: SendOutcome,
+    displaced: Option<Enc>,
+}
+
+impl SendRecord {
+    /// The record of a send on `channel` of `payload`, with its `outcome`
+    /// and the queued entry it `displaced`.
+    pub(crate) fn new(
+        channel: String,
+        payload: Enc,
+        outcome: SendOutcome,
+        displaced: Option<Enc>,
+    ) -> Self {
+        Self {
+            channel,
+            payload,
+            outcome,
+            displaced,
+        }
+    }
+
+    /// The channel's qualified name (PS-7).
+    pub fn channel(&self) -> &str {
+        &self.channel
+    }
+
+    /// What the send did with its entry.
+    pub fn outcome(&self) -> SendOutcome {
+        self.outcome
+    }
+
+    /// This record with `outcome` in place of its own, as a changed
+    /// counterexample may record it (FR-217-AC-5).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_outcome(mut self, outcome: SendOutcome) -> Self {
+        self.outcome = outcome;
+        self
+    }
+
+    fn enc(&self) -> Enc {
+        Enc::tagged(
+            "send-record",
+            vec![
+                ("channel", Enc::text(self.channel.clone())),
+                ("payload", self.payload.clone()),
+                ("outcome", Enc::text(self.outcome.text())),
+                ("displaced", self.displaced.clone().unwrap_or(Enc::Null)),
+            ],
+        )
+    }
+}
+
+impl Encode for SendRecord {
+    fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
+        self.enc().encode_into(writer)
+    }
+}
+
+/// How a step took an entry of one send node off a channel's queue, as
+/// ADR-027 PD-4's `Displaced` cause reads the reported prefix.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Removal {
+    /// A `receive` took it.
+    Received,
+    /// A loss dropped it: a `lose` step, an overflow loss selector that
+    /// displaced it, or a `lost` send of it.
+    Lost,
+}
+
+/// One entry a step removed from, or dropped on, a channel of a protocol
+/// instance (PD-4).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct QueueEvent {
+    /// The channel's qualified name.
+    pub(crate) channel: String,
+    /// The protocol instance's ordinal.
+    pub(crate) instance: u64,
+    /// The static declaration path of the entry's send node.
+    pub(crate) send: String,
+    /// How it was removed.
+    pub(crate) removal: Removal,
 }
 
 /// A protocol step's typed canonical transition identity (ADR-027 TS-2,
 /// QSpec FR-426): `{"type":"protocol-transition","step":<kind>,...}` with
-/// exactly the members its kind lists.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// exactly the members its kind lists. A `send` step also carries its send
+/// record (PX-1), and a step that took an entry off a queue the removal
+/// PD-4 reads; neither is part of the identity, so two transitions are
+/// equal when their identities are.
+#[derive(Clone, Debug)]
 pub struct ProtocolTransition {
     kind: StepKind,
     thread: Option<ThreadPath>,
     node: Option<String>,
     members: Members,
+    removed: Option<QueueEvent>,
+    send_record: Option<SendRecord>,
 }
 
 impl ProtocolTransition {
@@ -251,6 +374,21 @@ impl ProtocolTransition {
             thread: Some(thread),
             node: Some(node),
             members: Members::Control,
+            removed: None,
+            send_record: None,
+        }
+    }
+
+    /// The `fence` at `node` by `thread`, with its `ordering` (ADR-027
+    /// TS-2, SE-5).
+    pub(crate) fn fence(thread: ThreadPath, node: String, ordering: &'static str) -> Self {
+        Self {
+            kind: StepKind::Fence,
+            thread: Some(thread),
+            node: Some(node),
+            members: Members::Fence { ordering },
+            removed: None,
+            send_record: None,
         }
     }
 
@@ -271,6 +409,8 @@ impl ProtocolTransition {
                 receiver,
                 arguments,
             },
+            removed: None,
+            send_record: None,
         }
     }
 
@@ -282,6 +422,8 @@ impl ProtocolTransition {
             thread: Some(thread),
             node: Some(node),
             members: Members::Record { record },
+            removed: None,
+            send_record: None,
         }
     }
 
@@ -298,6 +440,8 @@ impl ProtocolTransition {
                 instance,
                 entry,
             },
+            removed: None,
+            send_record: None,
         }
     }
 
@@ -307,7 +451,41 @@ impl ProtocolTransition {
             thread: None,
             node: None,
             members: Members::Memory { identity },
+            removed: None,
+            send_record: None,
         }
+    }
+
+    /// This step, recording that it took `removed` off its queue.
+    pub(crate) fn removing(mut self, removed: QueueEvent) -> Self {
+        self.removed = Some(removed);
+        self
+    }
+
+    /// This `send` step, carrying its send record (PX-1).
+    pub(crate) fn recording(mut self, record: SendRecord) -> Self {
+        self.send_record = Some(record);
+        self
+    }
+
+    /// This step carrying `record` as its send record, or none, as a
+    /// counterexample from outside may: replay refuses a `send` without one
+    /// and any other step with one (PX-2).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn carrying(mut self, record: Option<SendRecord>) -> Self {
+        self.send_record = record;
+        self
+    }
+
+    /// A `send` step's send record (ADR-027 ST-3, PX-1); `None` for every
+    /// other step.
+    pub fn send_record(&self) -> Option<&SendRecord> {
+        self.send_record.as_ref()
+    }
+
+    /// The entry this step took off a channel's queue, if any.
+    pub(crate) fn removed(&self) -> Option<&QueueEvent> {
+        self.removed.as_ref()
     }
 
     /// The step's kind.
@@ -334,7 +512,8 @@ impl ProtocolTransition {
             Members::Control
             | Members::Record { .. }
             | Members::Channel { .. }
-            | Members::Memory { .. } => None,
+            | Members::Memory { .. }
+            | Members::Fence { .. } => None,
         }
     }
 
@@ -345,7 +524,8 @@ impl ProtocolTransition {
             Members::Attempt { .. }
             | Members::Control
             | Members::Record { .. }
-            | Members::Channel { .. } => None,
+            | Members::Channel { .. }
+            | Members::Fence { .. } => None,
         }
     }
 
@@ -357,7 +537,8 @@ impl ProtocolTransition {
             Members::Attempt { .. }
             | Members::Control
             | Members::Record { .. }
-            | Members::Memory { .. } => None,
+            | Members::Memory { .. }
+            | Members::Fence { .. } => None,
         }
     }
 
@@ -402,10 +583,22 @@ impl ProtocolTransition {
             Members::Memory { identity } => {
                 members.push(("memory_step", identity.enc()));
             }
+            Members::Fence { ordering } => members.push(("ordering", Enc::text(*ordering))),
         }
         Enc::tagged("protocol-transition", members)
     }
 }
+
+impl PartialEq for ProtocolTransition {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.thread == other.thread
+            && self.node == other.node
+            && self.members == other.members
+    }
+}
+
+impl Eq for ProtocolTransition {}
 
 impl Encode for ProtocolTransition {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
@@ -428,7 +621,8 @@ pub enum WaitCause {
     /// An event, attempt or `finish` whose constraint no record satisfies,
     /// or a `send` whose constraint no payload satisfies.
     Constraint,
-    /// A `receive` with no entry of its send queued.
+    /// A `receive` with no entry of its send queued, and none lost since
+    /// the last was received.
     EmptyQueue {
         /// The channel's qualified name.
         channel: String,
@@ -445,13 +639,25 @@ pub enum WaitCause {
         /// The channel's qualified name.
         channel: String,
     },
+    /// A `receive` with no entry of its send queued, whose last removal on
+    /// the reported prefix was a loss, not a `receive`.
+    Displaced {
+        /// The channel's qualified name.
+        channel: String,
+    },
     /// A false `check`.
     CheckFalse {
         /// The `check` node's static declaration path.
         node: String,
     },
-    /// A join, or a `finish`, naming the threads it still waits for.
+    /// A join, naming the branch threads it still waits for.
     JoinWaiting {
+        /// The threads, in ascending JCS bytes of their paths.
+        threads: Vec<ThreadPath>,
+    },
+    /// The root at `finish` while other threads of its instance are
+    /// `running`, naming them.
+    FinishWaiting {
         /// The threads, in ascending JCS bytes of their paths.
         threads: Vec<ThreadPath>,
     },

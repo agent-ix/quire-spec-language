@@ -1826,8 +1826,9 @@ impl<S: SubjectSystem> Run<'_, S> {
             Item::Deadlock => Vec::new(),
         };
         let blocked = if matches!(kind, CounterexampleKind::Deadlock) {
+            let steps: Vec<&S::TransitionId> = prefix.iter().map(|step| &step.transition).collect();
             self.system
-                .blocked(&self.nodes[at].state)
+                .blocked(&self.nodes[at].state, &steps)
                 .map_err(|stop| self.expansion_stop(stop))?
         } else {
             Vec::new()

@@ -41,11 +41,14 @@ use crate::proof_result::{
     UnavailabilityCause,
 };
 use crate::result::ReplayResult;
+use crate::spine::kernel_undefined_reason;
 use crate::spine::{
     CallIncomplete, CallOutcome, CallRefusal, CallValue, CheckedUnit, CompileRefusal, EmittedUnit,
     FrontEndFailure, ParsedSource, RunRefusal, SpineStage,
 };
+use crate::statistical::{self, Decision, StatisticalVerdict};
 use crate::ReplayRefusal;
+use qsl_eval::temporal::UndefinedCause;
 use quire_semantic_value::fairness::PropertyForm;
 
 /// The format refusal projection consumed by the replay outcome facade.
@@ -178,6 +181,9 @@ pub enum ItemLabel {
     Inconclusive,
     /// The tool failed.
     Failed,
+    /// A completed statistical run's measurement (FR-192), never proof
+    /// evidence.
+    Measured,
 }
 
 /// Why a replay settled inconclusive: its disagreement reason and the two
@@ -238,6 +244,14 @@ pub struct ItemCause {
     /// state, in initial-state order (QSpec FR-391).
     #[serde(skip_serializing_if = "Option::is_none")]
     sources: Option<Vec<WitnessSource>>,
+    /// The EN-4 refusal an `unsupported-requested-capability` cause names
+    /// (FR-192).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refusal: Option<&'static str>,
+    /// A `total-above-draw-range` cause's scaled total, as a decimal string
+    /// (FR-189-AC-7).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total: Option<String>,
     /// A `memory-bound-reached` cause's request member (QSpec FR-439).
     #[serde(skip_serializing_if = "Option::is_none")]
     bound: Option<&'static str>,
@@ -312,6 +326,8 @@ impl ItemCause {
             initial: None,
             generator: None,
             sources: None,
+            refusal: None,
+            total: None,
             bound: None,
             states: None,
             site: None,
@@ -429,8 +445,55 @@ pub struct OutcomeItem {
     basis: Option<ProofBasis>,
     #[serde(skip_serializing_if = "Option::is_none")]
     certification: Option<Certification>,
+    /// A `measured` item's QSpec FR-409 decision: `accepted`, `rejected` or
+    /// `undecided`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    measured: Option<&'static str>,
     #[serde(serialize_with = "category_str")]
     category: Category,
+}
+
+/// The catalogued reason of an undefined value: the kernel's own spelling,
+/// a family record's reason, or `insufficient-data` for a window.
+fn undefined_reason(cause: &UndefinedCause) -> &'static str {
+    match cause {
+        UndefinedCause::Kernel(reason) => kernel_undefined_reason(reason.clone()),
+        UndefinedCause::Family(record) => record.reason.as_str(),
+        UndefinedCause::InsufficientData(_) => "insufficient-data",
+    }
+}
+
+/// QSpec FR-409's `measured` label and FR-331 cause of a statistical
+/// verdict: `undefined-evaluation{where, cause}` for a rejection by an
+/// undefined sample, `where` naming its test, trace and position, the
+/// undecided cause for `undecided`, no cause otherwise.
+fn measured(verdict: &StatisticalVerdict) -> (&'static str, Option<ItemCause>) {
+    match verdict.decision {
+        Decision::Accepted => ("accepted", None),
+        Decision::Rejected => (
+            "rejected",
+            verdict
+                .tests
+                .iter()
+                .find_map(|test| test.undefined.as_ref())
+                .map(|undefined| {
+                    ItemCause::undefined_evaluation(
+                        format!(
+                            "test {}, trace {}, position {}",
+                            undefined.test, undefined.trace, undefined.evaluation.site.position
+                        ),
+                        undefined_reason(&undefined.evaluation.cause),
+                    )
+                }),
+        ),
+        Decision::Undecided(cause) => (
+            "undecided",
+            Some(ItemCause::kind(match cause {
+                statistical::UndecidedCause::IndifferenceRegion => "indifference-region",
+                statistical::UndecidedCause::UndecidedSuccessor => "undecided-successor",
+            })),
+        ),
+    }
 }
 
 impl OutcomeItem {
@@ -467,15 +530,30 @@ impl OutcomeItem {
                     code: cause.code().map(str::to_owned),
                     ..ItemCause::kind(cause.as_str())
                 };
-                if let UnavailabilityCause::WeakAccessShape {
-                    site,
-                    transition,
-                    shape,
-                } = cause
-                {
-                    item.site = Some(site.clone());
-                    item.transition.clone_from(transition);
-                    item.shape = Some(shape.clone());
+                match cause {
+                    UnavailabilityCause::StatisticalRequest(refusal) => {
+                        item.refusal = Some(refusal.as_str());
+                    }
+                    UnavailabilityCause::TotalAboveDrawRange { total } => {
+                        item.total = Some(total.to_string());
+                    }
+                    UnavailabilityCause::WeakAccessShape {
+                        site,
+                        transition,
+                        shape,
+                    } => {
+                        item.site = Some(site.clone());
+                        item.transition.clone_from(transition);
+                        item.shape = Some(shape.clone());
+                    }
+                    UnavailabilityCause::SolverAbsent
+                    | UnavailabilityCause::BackendAbsent
+                    | UnavailabilityCause::MissingFairnessPremise { .. }
+                    | UnavailabilityCause::UnsupportedReduction { .. }
+                    | UnavailabilityCause::HiddenFieldLiveness
+                    | UnavailabilityCause::StrongAbstractFairness
+                    | UnavailabilityCause::NotMarkov
+                    | UnavailabilityCause::ConfidenceBeyondPrecision => {}
                 }
                 (ItemLabel::Unsupported, Some(item))
             }
@@ -492,7 +570,14 @@ impl OutcomeItem {
                 }
                 (ItemLabel::Incomplete, Some(item))
             }
-            TerminalValue::Failed => (ItemLabel::Failed, None),
+            TerminalValue::Failed => (
+                ItemLabel::Failed,
+                record.diagnostic().map(|diagnostic| ItemCause {
+                    code: Some(diagnostic.code().to_owned()),
+                    ..ItemCause::kind(diagnostic.cause())
+                }),
+            ),
+            TerminalValue::Measured(verdict) => (ItemLabel::Measured, measured(verdict).1),
         };
         let (basis, certification) = match value {
             TerminalValue::Proved {
@@ -511,7 +596,19 @@ impl OutcomeItem {
             | TerminalValue::Unsupported(_)
             | TerminalValue::Incomplete(_)
             | TerminalValue::Inconclusive(_)
-            | TerminalValue::Failed => (None, None),
+            | TerminalValue::Failed
+            | TerminalValue::Measured(_) => (None, None),
+        };
+        let measured = match value {
+            TerminalValue::Measured(verdict) => Some(measured(verdict).0),
+            TerminalValue::Proved { .. }
+            | TerminalValue::Tested
+            | TerminalValue::Refuted
+            | TerminalValue::Declined { .. }
+            | TerminalValue::Unsupported(_)
+            | TerminalValue::Incomplete(_)
+            | TerminalValue::Inconclusive(_)
+            | TerminalValue::Failed => None,
         };
         Self {
             request_index: record.request_index().get(),
@@ -519,6 +616,7 @@ impl OutcomeItem {
             cause,
             basis,
             certification,
+            measured,
             category: value.category(),
         }
     }
@@ -536,6 +634,7 @@ impl OutcomeItem {
             cause: Some(ItemCause::undefined_evaluation(at, cause)),
             basis: None,
             certification: None,
+            measured: None,
             category: Category::Violation,
         }
     }

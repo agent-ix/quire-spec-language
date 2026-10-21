@@ -53,13 +53,18 @@ pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> 
     /// g): the state itself for a model subject.
     fn atom_state<'s>(&self, state: &'s Self::State) -> Cow<'s, ModelSimState>;
 
-    /// ADR-027 PD-4: the waiting threads of `state`, for a deadlock
-    /// counterexample's last state; none for a model subject.
+    /// ADR-027 PD-4: the waiting threads of `state`, a deadlock
+    /// counterexample's last state, reached by the steps `prefix`, from
+    /// which a `Displaced` cause is read; none for a model subject.
     ///
     /// # Errors
     ///
     /// An [`ExpansionStop`] when an evaluation stops.
-    fn blocked(&self, state: &Self::State) -> Result<Vec<BlockedThread>, ExpansionStop>;
+    fn blocked(
+        &self,
+        state: &Self::State,
+        prefix: &[&Self::TransitionId],
+    ) -> Result<Vec<BlockedThread>, ExpansionStop>;
 
     /// The expansion of `state`, and whether a memory bound left a store of
     /// it unexpanded, which makes it bound-limited (ADR-025 MB-3); never
@@ -97,7 +102,11 @@ impl SubjectSystem for ModelSystem<'_> {
         Cow::Borrowed(state)
     }
 
-    fn blocked(&self, _state: &ModelSimState) -> Result<Vec<BlockedThread>, ExpansionStop> {
+    fn blocked(
+        &self,
+        _state: &ModelSimState,
+        _prefix: &[&Self::TransitionId],
+    ) -> Result<Vec<BlockedThread>, ExpansionStop> {
         Ok(Vec::new())
     }
 }

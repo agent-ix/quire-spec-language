@@ -48,6 +48,9 @@ qsl-forms = { path = "../qsl-forms" }
 # subject's checked package.
 qsl-route = { path = "../qsl-route" }
 qsl-semantics = { path = "../qsl-semantics", features = ["test-support"] }
+# `ProtocolTransition::carrying` and `SendRecord::with_outcome`, which the
+# replay tests use to change or misplace a send record (FR-217-AC-5/AC-6).
+qsl-eval = { path = "../qsl-eval", features = ["test-support"] }
 serde_json = "1.0.151"
 
 [[test]]

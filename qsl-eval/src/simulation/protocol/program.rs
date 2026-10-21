@@ -15,9 +15,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use qsl_semantics::check::{
-    ChannelCapacity, ChannelDelivery, ChannelOverflow, CheckedActivation, CheckedBody,
-    CheckedJoinPolicy, CheckedOrdering, CheckedOutstanding, CheckedProtocol, CheckedTerminalMember,
-    ControlStep, EdgeKind, LossSelector, Port, ProtocolNodeId,
+    AccessOrdering, ChannelCapacity, ChannelDelivery, ChannelOverflow, CheckedActivation,
+    CheckedBody, CheckedJoinPolicy, CheckedOrdering, CheckedOutstanding, CheckedProtocol,
+    CheckedTerminalMember, ControlStep, EdgeKind, LossSelector, Port, ProtocolNodeId,
 };
 use quire_exact::{EffectiveId, NodeKey, ValueType};
 
@@ -178,6 +178,8 @@ pub(super) struct Program<'a> {
     pub(super) awaits: BTreeMap<ProtocolNodeId, Await>,
     /// Each `check`'s condition.
     pub(super) checks: BTreeMap<ProtocolNodeId, &'a CheckedBody>,
+    /// Each `fence`'s ordering, by its label (ADR-027 TS-2).
+    pub(super) fences: BTreeMap<ProtocolNodeId, AccessOrdering>,
     /// Each domain `event` and `commit` node's record.
     pub(super) events: BTreeMap<ProtocolNodeId, Record<'a>>,
     pub(super) messages: BTreeMap<ProtocolNodeId, Message<'a>>,
@@ -225,7 +227,7 @@ fn unsupported(construct: Unsupported) -> ProtocolRefusal {
 
 /// The constructs this protocol system steps: `sequence`, `parallel` and its
 /// branches, `choice`, `repeat`, `check`, `await`, `attempt`, `send`,
-/// `receive`, domain `event`, `commit` and `finish`, channels with a
+/// `receive`, domain `event`, `commit`, `fence` and `finish`, channels with a
 /// literal capacity, under `activation on origin` (ADR-027 §9 sequencing
 /// steps 3 and 4). Which memory model each `parallel` runs under is the
 /// subject's resolved model, read when the system is built.
@@ -580,6 +582,12 @@ impl<'a> Program<'a> {
             choices,
             awaits,
             checks,
+            fences: protocol
+                .memory
+                .fences
+                .iter()
+                .map(|fence| (fence.node, fence.ordering))
+                .collect(),
             events,
             messages,
             channels,
@@ -636,6 +644,17 @@ impl<'a> Program<'a> {
         self.loops
             .get(&node)
             .ok_or_else(|| ProtocolRefusal::fault("a-repeat-node-is-a-repeat"))
+    }
+
+    /// The ordering of the `fence` `node`.
+    pub(super) fn fence_ordering(
+        &self,
+        node: ProtocolNodeId,
+    ) -> Result<AccessOrdering, ProtocolRefusal> {
+        self.fences
+            .get(&node)
+            .copied()
+            .ok_or_else(|| ProtocolRefusal::fault("a-fence-has-an-ordering"))
     }
 
     /// The `await` `node`.
@@ -778,6 +797,7 @@ impl<'a> Program<'a> {
                         | ControlStep::Send
                         | ControlStep::Receive
                         | ControlStep::Event
+                        | ControlStep::Fence
                         | ControlStep::Await
                         | ControlStep::Unstepped(_) => {}
                     }
@@ -833,6 +853,7 @@ impl<'a> Program<'a> {
                         | ControlStep::Send
                         | ControlStep::Receive
                         | ControlStep::Event
+                        | ControlStep::Fence
                         | ControlStep::Unstepped(_) => {
                             return Err(ProtocolRefusal::fault("a-parent-holds-controls"))
                         }
@@ -841,6 +862,67 @@ impl<'a> Program<'a> {
             }
         }
         Ok(walk)
+    }
+
+    /// Whether the control `inner` lies in the subtree of the control
+    /// `outer`, `outer` itself included.
+    pub(super) fn encloses(
+        &self,
+        outer: ProtocolNodeId,
+        inner: ProtocolNodeId,
+    ) -> Result<bool, ProtocolRefusal> {
+        match (self.spans.get(&outer), self.spans.get(&inner)) {
+            (Some(outer), Some(inner)) => Ok((outer.first..=outer.last).contains(&inner.first)),
+            _ => Err(ProtocolRefusal::fault("a-control-is-in-the-run-tree")),
+        }
+    }
+
+    /// Whether the binder of `node` is in S3's `Out` of the branch whose body
+    /// is `body` (ADR-027 PS-5): `node` lies in `body`, and not below an
+    /// inner `parallel` joined by a policy other than `all`, in a `choice`
+    /// case, in a `repeat` body or in an `await`, whose binders do not
+    /// escape them.
+    pub(super) fn escapes(
+        &self,
+        body: ProtocolNodeId,
+        node: ProtocolNodeId,
+    ) -> Result<bool, ProtocolRefusal> {
+        if !self.encloses(body, node)? {
+            return Ok(false);
+        }
+        let mut at = node;
+        while at != body {
+            let Some(parent) = self.parent(at)? else {
+                return Err(ProtocolRefusal::fault("a-branch-body-encloses-its-nodes"));
+            };
+            let escapes = match self.control(parent)?.step {
+                ControlStep::Case | ControlStep::Await => false,
+                ControlStep::Repeat => self.repeat(parent)?.body != at,
+                ControlStep::Branch => {
+                    let parallel = self
+                        .parent(parent)?
+                        .ok_or_else(|| ProtocolRefusal::fault("a-branch-has-its-parallel"))?;
+                    self.joins
+                        .get(&parallel)
+                        .is_some_and(|join| join.policy == CheckedJoinPolicy::All)
+                }
+                ControlStep::Sequence
+                | ControlStep::Parallel
+                | ControlStep::Choice
+                | ControlStep::Attempt
+                | ControlStep::Check
+                | ControlStep::Send
+                | ControlStep::Receive
+                | ControlStep::Event
+                | ControlStep::Fence
+                | ControlStep::Unstepped(_) => true,
+            };
+            if !escapes {
+                return Ok(false);
+            }
+            at = parent;
+        }
+        Ok(true)
     }
 
     /// Whether the subtree of the control `node` holds a `parallel`, so a
