@@ -140,6 +140,7 @@ pub struct Requirements {
     extent: ClaimExtent,
     fairness: BTreeSet<FairnessKind>,
     unsupported: Option<UnsupportedItem>,
+    model_subject: bool,
 }
 
 impl Requirements {
@@ -150,7 +151,21 @@ impl Requirements {
             extent,
             fairness: BTreeSet::new(),
             unsupported: None,
+            model_subject: false,
         }
+    }
+
+    /// The requirements of an item over a model subject (FR-331, FR-368:
+    /// only such a temporal item has a `subject`).
+    #[must_use]
+    pub fn over_model_subject(mut self) -> Self {
+        self.model_subject = true;
+        self
+    }
+
+    /// Whether the item is over a model subject.
+    pub fn model_subject(&self) -> bool {
+        self.model_subject
     }
 
     /// The requirements of an item the request writer disposes
