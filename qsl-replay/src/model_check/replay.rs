@@ -46,11 +46,11 @@ use qsl_eval::simulation::model::{
     TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
-    check_protocol_bounds, CarriedComponent, MemoryModel, ProtocolRefusal, ProtocolSystem,
-    ProtocolTransition, ResolvedMemory, Sc, SendRecord, StepKind, SubjectMemory,
+    check_protocol_bounds, live_instance_bound, CarriedComponent, MemoryModel, ProtocolRefusal,
+    ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, SendRecord, StepKind, SubjectMemory,
 };
 use qsl_eval::simulation::{
-    ConstraintValue, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
+    ConstraintValue, Cut, Expansion, ExpansionStop, NotSimulated, SubjectSystem, TransitionSystem,
     BOUND_POSITIONS,
 };
 use qsl_eval::temporal::AtomReading;
@@ -111,6 +111,9 @@ pub struct ProtocolTraceSubject {
     /// The `max_store_buffer` the run used; `None` for the default 4
     /// (FR-225).
     pub max_store_buffer: Option<u64>,
+    /// The `max_live_instances` the run used; `None` for the default 3
+    /// (ADR-027 AE-4). A trace's `activate` steps replay under it.
+    pub max_live_instances: Option<u64>,
 }
 
 /// Why [`replay_model_trace`] settled no result (FR-128).
@@ -598,11 +601,18 @@ pub fn replay_protocol_trace(
                 letters,
                 meter,
             };
+            let live_instances = live_instance_bound(subject.max_live_instances);
             let settlement = match SubjectMemory::of(&subject.memory, subject.max_store_buffer) {
-                SubjectMemory::Sc => replayed
-                    .settle(&ProtocolSystem::new(model, &protocol_subject, Sc).map_err(built)?)?,
-                SubjectMemory::Tso(tso) => replayed
-                    .settle(&ProtocolSystem::new(model, &protocol_subject, tso).map_err(built)?)?,
+                SubjectMemory::Sc => replayed.settle(
+                    &ProtocolSystem::new(model, &protocol_subject, Sc)
+                        .map_err(built)?
+                        .with_max_live_instances(live_instances),
+                )?,
+                SubjectMemory::Tso(tso) => replayed.settle(
+                    &ProtocolSystem::new(model, &protocol_subject, tso)
+                        .map_err(built)?
+                        .with_max_live_instances(live_instances),
+                )?,
             };
             Ok((settlement, Vec::new()))
         },
@@ -824,6 +834,23 @@ pub(super) fn expand<S: SubjectSystem>(
 ) -> Result<Result<SubjectExpansion<S>, ExpansionStop>, ReplayRefusal> {
     match system.successors(state) {
         Ok(expansion) => Ok(Ok(expansion)),
+        Err(stop) if stop.is_internal_failure() => Err(fault("model-expansion")),
+        Err(stop) => Ok(Err(stop)),
+    }
+}
+
+/// [`expand`], beside what a method bound left of the state unexpanded
+/// (ADR-025 MB-3, ADR-027 AE-4), which its terminal class reads.
+#[allow(
+    clippy::type_complexity,
+    reason = "an expansion with its cut, or its stop, or a refusal"
+)]
+fn expand_bounded<S: SubjectSystem>(
+    system: &S,
+    state: &S::State,
+) -> Result<Result<(SubjectExpansion<S>, Cut), ExpansionStop>, ReplayRefusal> {
+    match system.successors_bounded(state) {
+        Ok(bounded) => Ok(Ok(bounded)),
         Err(stop) if stop.is_internal_failure() => Err(fault("model-expansion")),
         Err(stop) => Ok(Err(stop)),
     }
@@ -1439,15 +1466,11 @@ fn deadlock<S: SubjectSystem>(
     replayed: &[S::TransitionId],
 ) -> Result<ModelTraceSettlement, ReplayRefusal> {
     let last = positions.last().ok_or_else(|| fault("a-position-exists"))?;
-    let expansion = match expand(system, &last.state)? {
-        Ok(expansion) => expansion,
+    let (expansion, cut) = match expand_bounded(system, &last.state)? {
+        Ok(bounded) => bounded,
         Err(_) => return Ok(no_value()),
     };
-    let class = match SubjectSystem::terminal_class(
-        system,
-        &last.state,
-        !expansion.successors.is_empty(),
-    ) {
+    let class = match SubjectSystem::terminal_class(system, &last.state, &expansion, cut) {
         Ok(class) => class,
         Err(stop) if stop.is_internal_failure() => return Err(fault("terminal-predicate")),
         Err(_) => return Ok(no_value()),
@@ -1542,8 +1565,8 @@ fn undefined<S: SubjectSystem>(
                 Err(_) => return Ok(no_value()),
             }
         }
-        let expansion = match expand(system, &position.state)? {
-            Ok(expansion) => expansion,
+        let (expansion, cut) = match expand_bounded(system, &position.state)? {
+            Ok(bounded) => bounded,
             Err(_) => return Ok(no_value()),
         };
         let found = if let Some((locus, guard_of, cause)) = undefined_finding(&expansion.findings) {
@@ -1552,11 +1575,7 @@ fn undefined<S: SubjectSystem>(
                 cause,
             })
         } else {
-            match SubjectSystem::terminal_class(
-                system,
-                &position.state,
-                !expansion.successors.is_empty(),
-            ) {
+            match SubjectSystem::terminal_class(system, &position.state, &expansion, cut) {
                 Ok(TerminalClass::Undefined { model, cause }) => Some(UndefinedEvaluation {
                     site: site(UndefinedLocus::Terminal(model), None),
                     cause,

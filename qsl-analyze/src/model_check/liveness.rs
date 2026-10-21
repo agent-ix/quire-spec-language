@@ -336,6 +336,7 @@ impl Totals {
             automaton_states: self.automaton_states,
             depth: self.depth,
             bound_limited: 0,
+            instance_limited: 0,
         }
     }
 

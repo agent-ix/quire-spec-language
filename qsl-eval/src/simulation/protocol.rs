@@ -42,7 +42,7 @@ use std::collections::BTreeMap;
 use qsl_foundation::diagnostic::{Code, InternalFault};
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_package::CheckedPackage;
-use qsl_semantics::check::{CheckedProtocol, CheckedTerminalMember};
+use qsl_semantics::check::{CheckedActivation, CheckedProtocol, CheckedTerminalMember};
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
 use quire_exact::{Meter, ObjectReference, Value, ValueType};
 
@@ -55,8 +55,9 @@ use crate::simulation::model::{
     verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
-use crate::simulation::subject::{Bounded, SubjectSystem};
+use crate::simulation::subject::{Bounded, Cut, SubjectSystem};
 use crate::value::evaluate_protocol_slot;
+use steps::ProtocolExpansion;
 
 pub use access::{
     AccessShape, AttemptInstance, InstanceAccess, WeakAccessShape, WeakAccesses, WeakAttempt,
@@ -444,6 +445,17 @@ struct Instance {
 }
 
 impl Instance {
+    /// The live instances of the replicated role `index` (ADR-027 RR-3), in
+    /// object order.
+    fn live_of(&self, index: usize) -> impl Iterator<Item = &ObjectReference> {
+        self.roles
+            .get(&index)
+            .into_iter()
+            .flatten()
+            .filter(|(_, status)| **status == RoleStatus::Live)
+            .map(|(object, _)| object)
+    }
+
     /// The value the thread `reader` reads for the binder of `node`: its own
     /// environment's entry (ADR-027 PS-5).
     fn entry(
@@ -690,6 +702,24 @@ pub struct ProtocolSystem<'a, M: MemoryModel> {
 
 /// ADR-027 AE-4: the published default of `max_live_instances`.
 pub const DEFAULT_MAX_LIVE_INSTANCES: u64 = 3;
+
+/// Whether `protocol` activates `on each`, so that a run over it is bound by
+/// `max_live_instances` and every verdict states that bound (ADR-027 AE-4).
+pub fn activates_on_each(protocol: &CheckedProtocol) -> bool {
+    matches!(
+        protocol.obligations.activation,
+        CheckedActivation::OnEach { .. }
+    )
+}
+
+/// The `max_live_instances` a request that sets `requested` runs with
+/// (ADR-027 AE-4): the request's value, else the published default.
+pub const fn live_instance_bound(requested: Option<u64>) -> u64 {
+    match requested {
+        Some(bound) => bound,
+        None => DEFAULT_MAX_LIVE_INSTANCES,
+    }
+}
 
 impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// FR-205 "Subject": build the protocol subject's system over the
@@ -1283,32 +1313,29 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
         Ok(verdict(&evaluation.outcome))
     }
 
-    /// Whether every step enabled at `state` is an `activate` (ADR-027 PD-2).
-    fn only_activations(&self, state: &ProtocolState<M>) -> Result<bool, ExpansionStop> {
-        let (expansion, _) = self.expand_bounded(state)?;
-        Ok(expansion
-            .successors
-            .iter()
-            .all(|(transition, _)| transition.kind() == StepKind::Activate))
-    }
-
     /// FR-211 and ADR-027 PD-1: the class of `state`. A state with no live
     /// instance is intended; otherwise the protocol's `terminal` member
     /// decides, read through the one clause evaluator.
     fn classify(
         &self,
         state: &ProtocolState<M>,
-        has_successor: bool,
+        expansion: &ProtocolExpansion<M>,
+        cut: Cut,
     ) -> Result<TerminalClass, ExpansionStop> {
+        let has_successor = !expansion.successors.is_empty();
         if self.program.activation.is_some() {
             // ADR-027 PB-4, PD-2, PD-5: under `on each`, a state at the
             // instance bound is never terminal; a state with a live instance
             // whose every enabled step is an `activate` is terminal, since no
             // instance can move until a trigger arrives.
-            if self.instance_limited(state)? {
+            if cut.instances {
                 return Ok(TerminalClass::NotTerminal);
             }
-            if has_successor && (state.instances.is_empty() || !self.only_activations(state)?) {
+            let only_activations = expansion
+                .successors
+                .iter()
+                .all(|(transition, _)| transition.kind() == StepKind::Activate);
+            if has_successor && (state.instances.is_empty() || !only_activations) {
                 return Ok(TerminalClass::NotTerminal);
             }
         } else if has_successor {
@@ -1406,9 +1433,10 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
     fn terminal_class(
         &self,
         state: &Self::State,
-        has_successor: bool,
+        expansion: &ProtocolExpansion<M>,
+        cut: Cut,
     ) -> Result<TerminalClass, ExpansionStop> {
-        self.classify(state, has_successor)
+        self.classify(state, expansion, cut)
     }
 
     fn atom_state<'s>(&self, state: &'s Self::State) -> Cow<'s, ModelSimState> {

@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use qsl_eval::model_subject::{ModelInstance, ModelSubject, ProtocolSubject, RoleBinding};
 use qsl_eval::simulation::model::{
     ExpansionLimits, ModelSimState, ModelSimulationRequest, ModelSystem, PopulationUniverse,
+    TerminalClass,
 };
 use qsl_eval::simulation::protocol::{
     MemoryModel, ProtocolState, ProtocolSystem, ProtocolTransition, ResolvedMemory, Sc, StepKind,
@@ -483,6 +484,16 @@ pub(crate) fn compiled(
 pub(crate) struct Reached<M: MemoryModel = Sc> {
     pub(crate) state: ProtocolState<M>,
     pub(crate) steps: Vec<(ProtocolTransition, usize)>,
+}
+
+/// The terminal class of `state` (FR-124, ADR-027 PD-1, PD-2, AE-4), read
+/// from its bounded expansion.
+pub(crate) fn class_of<M: MemoryModel>(
+    system: &ProtocolSystem<'_, M>,
+    state: &ProtocolState<M>,
+) -> TerminalClass {
+    let (expansion, cut) = system.successors_bounded(state).expect("the state expands");
+    SubjectSystem::terminal_class(system, state, &expansion, cut).expect("a class")
 }
 
 /// Every reachable state of `system`, breadth-first from its initial states,

@@ -27,11 +27,12 @@ use super::settle::{SettleError, Settled};
 use super::steps::Gathered;
 use super::{
     undetermined, Bound, Disposition, Instance, ProtocolRefusal, ProtocolState, ProtocolSystem,
-    RoleStatus, Thread,
+    RoleStatus, Status, Thread,
 };
 use crate::simulation::expansion::ExpansionStop;
 use crate::simulation::model::encode::value_enc;
 use crate::simulation::model::{ModelFinding, ModelSimState, Verdict};
+use crate::simulation::subject::Cut;
 
 /// A protocol instance started, or the finding of a guard that stopped it.
 pub(super) enum Started {
@@ -97,14 +98,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             .replicated
             .get(index)
             .ok_or_else(|| ProtocolRefusal::fault("an-owner-is-a-replicated-role"))?;
-        let actors = instance
-            .roles
-            .get(&index)
-            .into_iter()
-            .flatten()
-            .filter(|(_, status)| **status == RoleStatus::Live)
-            .map(|(object, _)| object.clone())
-            .collect();
+        let actors = instance.live_of(index).cloned().collect();
         Ok(Acting::By {
             role: role.name.clone(),
             actors,
@@ -159,13 +153,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             return false;
         };
         let known = instance.roles.get(&index);
-        let live = known.map_or(0, |known| {
-            known
-                .values()
-                .filter(|status| **status == RoleStatus::Live)
-                .count()
-        });
-        u64::try_from(live).is_ok_and(|live| live < role.max)
+        u64::try_from(instance.live_of(index).count()).is_ok_and(|live| live < role.max)
             && self
                 .universes
                 .get(index)
@@ -184,10 +172,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     ) -> Option<WaitCause> {
         let index = owner?;
         let role = self.program.replicated.get(index)?;
-        let live = instance
-            .roles
-            .get(&index)
-            .is_some_and(|known| known.values().any(|status| *status == RoleStatus::Live));
+        let live = instance.live_of(index).next().is_some();
         (!live && !self.spawn_possible(instance, index)).then(|| WaitCause::NoRoleInstance {
             role: role.name.clone(),
         })
@@ -275,15 +260,34 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     }
 
     /// ADR-027 RR-4: each `scope` role retires its live instances once no
-    /// running thread of `instance` can reach a node the role owns.
+    /// live thread of `instance` can reach a node the role owns. A
+    /// compensation attempt of a template the role owns is such a node: a
+    /// thread that can still reach the template's `effect` can register it,
+    /// and a registration that has not closed has a compensation thread,
+    /// running or yet to be activated, that reaches the attempt.
     pub(super) fn retire_scoped(&self, instance: &mut Instance) {
         for (index, role) in self.program.replicated.iter().enumerate() {
             if !matches!(role.lifetime, Lifetime::Scope) {
                 continue;
             }
+            let owned: Vec<_> = self
+                .program
+                .templates
+                .iter()
+                .filter(|template| template.role == Some(index))
+                .collect();
             let reachable = instance.threads.values().any(|thread| {
                 thread.disposition == Disposition::Running
-                    && self.program.reaches_any(thread.rest, &role.owns)
+                    && (self.program.reaches_any(thread.rest, &role.owns)
+                        || owned.iter().any(|template| {
+                            self.program.reaches_any(thread.rest, &[template.effect])
+                        }))
+            }) || instance.registrations.iter().any(|(key, registration)| {
+                matches!(registration.status, Status::Registered | Status::Activated)
+                    && self
+                        .program
+                        .template(key.template)
+                        .is_ok_and(|template| template.role == Some(index))
             });
             if reachable {
                 continue;
@@ -292,6 +296,14 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 *status = RoleStatus::Retired;
             }
         }
+    }
+
+    /// ADR-027 AE-2: the smallest ordinal no live instance of `state` holds,
+    /// the ordinal an `activate` step starts its instance with.
+    pub(super) fn free_instance_ordinal(state: &ProtocolState<M>) -> Result<u64, ProtocolRefusal> {
+        (0u64..)
+            .find(|candidate| !state.instances.contains_key(candidate))
+            .ok_or_else(|| ProtocolRefusal::fault("an-instance-ordinal-is-free"))
     }
 
     /// ST-13: the `activate` steps of `state`, one per record of the trigger
@@ -309,9 +321,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         };
         let at_bound = u64::try_from(state.instances.len())
             .map_or(true, |live| live >= self.max_live_instances);
-        let ordinal = (0u64..)
-            .find(|candidate| !state.instances.contains_key(candidate))
-            .ok_or_else(|| ProtocolRefusal::fault("an-instance-ordinal-is-free"))?;
+        let ordinal = Self::free_instance_ordinal(state)?;
         let records = self
             .model
             .values_of(&activation.record_type, &state.model, &mut gathered.budget)?
@@ -366,7 +376,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
             budget: self.model.budget(),
             successors: Vec::new(),
             findings: Vec::new(),
-            cut: false,
+            cut: Cut::default(),
         };
         self.activate_steps(state, &mut scratch)
     }

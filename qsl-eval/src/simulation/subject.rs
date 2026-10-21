@@ -15,9 +15,20 @@ use crate::simulation::key::EncodingRefusal;
 use crate::simulation::model::{ModelFinding, ModelSimState, ModelSystem, TerminalClass};
 use crate::simulation::protocol::BlockedThread;
 
-/// An expansion, and whether a memory bound left a store of its state
-/// unexpanded (ADR-025 MB-3).
-pub type Bounded<T, S> = (Expansion<T, S, ModelFinding>, bool);
+/// What a method bound left of a state unexpanded: a store the memory bound
+/// cut (ADR-025 MB-3), or an `activate` step the instance bound did not
+/// expand (ADR-027 AE-4). Either makes the state limited.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Cut {
+    /// The memory bound left a store of the state unexpanded.
+    pub memory: bool,
+    /// The state has `max_live_instances` live instances and an `activate`
+    /// step enabled.
+    pub instances: bool,
+}
+
+/// An expansion, and what a method bound left of its state unexpanded.
+pub type Bounded<T, S> = (Expansion<T, S, ModelFinding>, Cut);
 
 /// A subject's transition system as EN-1 and replay read it.
 pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> {
@@ -36,8 +47,11 @@ pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> 
     /// [`EncodingRefusal`] when the identity has no RFC 8785 encoding.
     fn transition_key(&self, transition: &Self::TransitionId) -> Result<Vec<u8>, EncodingRefusal>;
 
-    /// FR-124 and ADR-027 PD-1, PD-2: the class of `state`, whose expansion
-    /// gave a successor exactly when `has_successor`.
+    /// FR-124 and ADR-027 PD-1, PD-2, AE-4: the class of `state`, whose
+    /// bounded expansion is `expansion` and `cut`. A state left with an
+    /// `activate` step unexpanded (`cut.instances`) is never terminal, and
+    /// under `activation on each` a state whose every step is an `activate`
+    /// is classed as one with no step.
     ///
     /// # Errors
     ///
@@ -46,7 +60,8 @@ pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> 
     fn terminal_class(
         &self,
         state: &Self::State,
-        has_successor: bool,
+        expansion: &Expansion<Self::TransitionId, Self::State, ModelFinding>,
+        cut: Cut,
     ) -> Result<TerminalClass, ExpansionStop>;
 
     /// The model state a temporal atom reads at `state` (ADR-027 PB-2, SE-1
@@ -66,9 +81,9 @@ pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> 
         prefix: &[&Self::TransitionId],
     ) -> Result<Vec<BlockedThread>, ExpansionStop>;
 
-    /// The expansion of `state`, and whether a memory bound left a store of
-    /// it unexpanded, which makes it bound-limited (ADR-025 MB-3); never
-    /// for a subject with no memory bound.
+    /// The expansion of `state`, and what a method bound left of it
+    /// unexpanded (ADR-025 MB-3, ADR-027 AE-4); never anything for a subject
+    /// with no method bound.
     ///
     /// # Errors
     ///
@@ -77,7 +92,7 @@ pub trait SubjectSystem: TransitionSystem<Finding = ModelFinding, State: Clone> 
         &self,
         state: &Self::State,
     ) -> Result<Bounded<Self::TransitionId, Self::State>, ExpansionStop> {
-        Ok((self.successors(state)?, false))
+        Ok((self.successors(state)?, Cut::default()))
     }
 
     /// `transition` as a counterexample step reports it, `post` its
@@ -110,9 +125,10 @@ impl SubjectSystem for ModelSystem<'_> {
     fn terminal_class(
         &self,
         state: &ModelSimState,
-        has_successor: bool,
+        expansion: &Expansion<Self::TransitionId, ModelSimState, ModelFinding>,
+        _cut: Cut,
     ) -> Result<TerminalClass, ExpansionStop> {
-        ModelSystem::terminal_class(self, state, has_successor)
+        ModelSystem::terminal_class(self, state, !expansion.successors.is_empty())
     }
 
     fn atom_state<'s>(&self, state: &'s ModelSimState) -> Cow<'s, ModelSimState> {

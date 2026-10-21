@@ -11,21 +11,37 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ix_trace_rs::trace;
-use qsl_eval::model_subject::{ProtocolSubject, RoleBinding};
-use qsl_eval::simulation::model::TerminalClass;
+use qsl_analyze::model_check::{check_protocol, ProtocolCheckRequest};
+use qsl_eval::model_subject::{ModelInstance, ModelLetters, ProtocolSubject, RoleBinding};
+use qsl_eval::simulation::model::{ExpansionLimits, ModelSimState, TerminalClass};
 use qsl_eval::simulation::protocol::{
     visible, AnchorName, BlockedThread, ClaimReads, ProtocolLocation, ProtocolSystem,
     ProtocolTransition, RestKind, RestPoint, Sc, StepKind, ThreadPath, WaitCause,
 };
 use qsl_eval::simulation::{Location, SubjectSystem, TransitionSystem};
+use qsl_eval::temporal::AtomReading;
+use qsl_foundation::digest::WireNodeId;
+use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_package::CheckedPackage;
+use qsl_replay::{
+    replay_protocol_trace, settle_protocol_check, InconclusiveCause, InstanceBound, ModelCheckItem,
+    ModelCheckLimits, ModelCheckOutcome, ModelCheckRecord, ModelTraceReplayResult,
+    ModelTraceSubject, ProtocolCertificateRequest, ProtocolTraceSubject, ReplayLimits,
+    ReplayRefusal, ResultLabel, StatedInstanceBound, TemporalCounterexample, TerminalValue,
+    UndecidedCause,
+};
+use qsl_semantics::check::FormulaNodeId;
 use qsl_semantics::model::observation::DocumentRef;
+use quire_exact::{Cancel, Incomplete, Meter};
 use serde_json::Value as Json;
 
 use crate::fill::{
-    contracts, json_of, model_subject, package, reachable, sc_system, source_memory, v, Documents,
-    Reached, PACKAGE,
+    class_of, contracts, document, instance, json_of, model_subject, package, package_id,
+    reachable, sc_system, source_memory, unit_text, universe, v, Documents, Reached, PACKAGE,
 };
+use crate::model_settle::{envelope_at, request};
+use crate::protocol_compensation::{pay_run, refund, REFUND};
+use crate::protocol_system::touch;
 
 /// `activation on origin`.
 pub(crate) const ORIGIN: &str = "on origin";
@@ -61,6 +77,7 @@ const WORK: &str = "event Work by r as (worked: Boolean) { worked };";
 /// The unit's world: cells `keys`, each starting at `v = start` for every
 /// `start`, one initial snapshot per start.
 pub(crate) struct World {
+    body: String,
     documents: Documents,
     initial: Vec<DocumentRef>,
     checked: CheckedPackage,
@@ -79,6 +96,7 @@ impl World {
             })
             .collect();
         Self {
+            body: body.to_owned(),
             documents,
             initial,
             checked: package(body),
@@ -103,6 +121,98 @@ impl World {
             }],
             memory: source_memory(&self.checked, "R"),
         }
+    }
+}
+
+impl World {
+    /// The unit's one claim as an item, its atom read by `letters`.
+    fn claim<'a>(&'a self, letters: &'a dyn ModelLetters) -> ModelCheckItem<'a> {
+        ModelCheckItem::Clause {
+            clause: self.checked.graph().temporal_clauses()[0].clause(),
+            letters,
+        }
+    }
+
+    /// EN-1 over `item` with the search horizon `max_depth` and the
+    /// instance bound `max_live_instances`.
+    fn check(
+        &self,
+        item: ModelCheckItem<'_>,
+        max_depth: Option<usize>,
+        max_live_instances: Option<u64>,
+    ) -> ModelCheckOutcome<ProtocolTransition> {
+        check_protocol(
+            ProtocolCheckRequest {
+                subject: self.subject(),
+                item,
+                max_depth,
+                max_store_buffer: None,
+                max_live_instances,
+                limits: ModelCheckLimits::default(),
+            },
+            &Cancel::new(),
+        )
+        .expect("the protocol subject checks")
+    }
+
+    /// FR-127's record of `outcome` over `item`, its counterexample
+    /// replayed by FR-217 under the same instance bound.
+    fn settle(
+        &self,
+        item: ModelCheckItem<'_>,
+        letters: &dyn ModelLetters,
+        outcome: &ModelCheckOutcome<ProtocolTransition>,
+        max_live_instances: Option<u64>,
+    ) -> ModelCheckRecord<ProtocolTransition> {
+        settle_protocol_check(
+            outcome,
+            &ModelCheckLimits::default(),
+            &package_id(&self.body),
+            &ProtocolCertificateRequest {
+                subject: self.subject(),
+                item,
+                max_store_buffer: None,
+                max_live_instances,
+            },
+            &Cancel::new(),
+            |payload| self.replay(payload.clone(), letters, max_live_instances),
+        )
+    }
+
+    /// FR-217's replay of `payload`, a counterexample to the claim.
+    fn replay(
+        &self,
+        payload: TemporalCounterexample<ProtocolTransition>,
+        letters: &dyn ModelLetters,
+        max_live_instances: Option<u64>,
+    ) -> Result<ModelTraceReplayResult, ReplayRefusal> {
+        let unit = unit_text(&self.body).into_bytes();
+        let id = package_id(&self.body);
+        let node = &self.checked.graph().temporal_clauses()[0];
+        let clause_node = WireNodeId::from_digest(*node.identity().as_bytes());
+        let occurrence = OccurrenceKey::new(clause_node, node.claim().clone());
+        let subject = self.subject();
+        replay_protocol_trace(
+            request(&document(), self.documents.snapshots.iter(), &unit, id),
+            &ProtocolTraceSubject {
+                model: ModelTraceSubject {
+                    initial: self.initial.clone(),
+                    universes: universe(&self.keys),
+                    expansion: ExpansionLimits {
+                        max_candidates: 1_000_000,
+                    },
+                },
+                protocol: "R".to_owned(),
+                over: instance("c"),
+                roles: subject.roles,
+                memory: subject.memory,
+                max_store_buffer: None,
+                max_live_instances,
+            },
+            &envelope_at(&unit, id, payload, clause_node, occurrence),
+            letters,
+            ReplayLimits::default(),
+        )
     }
 }
 
@@ -235,10 +345,27 @@ fn a_retired_role_instance_is_never_spawned_again() {
     );
 
     let mut respawned = false;
+    let mut followed = false;
     for (at, state) in reached.iter().enumerate() {
-        // `retire` is enabled exactly where `p` holds.
+        // `retire` is enabled exactly where `p` holds, and the state it
+        // reaches holds that instance retired with a `spawn` enabled for
+        // exactly the cells not spawned yet.
         for object in objects(&system, &reached, at, StepKind::Retire) {
             assert!(v(state.state.model(), &object) >= 1, "state {at}");
+            let next = after(&system, &reached, at, StepKind::Retire, &object);
+            let known = statuses(&system, &reached[next]);
+            assert_eq!(known.get(&object).map(String::as_str), Some("retired"));
+            let unspawned: BTreeSet<String> = ["c", "d"]
+                .into_iter()
+                .filter(|cell| !known.contains_key(*cell))
+                .map(str::to_owned)
+                .collect();
+            assert_eq!(
+                objects(&system, &reached, next, StepKind::Spawn),
+                unspawned,
+                "state {next} after retiring {object}"
+            );
+            followed |= !unspawned.is_empty();
         }
         for (object, status) in statuses(&system, state) {
             let live = status == "live";
@@ -259,7 +386,7 @@ fn a_retired_role_instance_is_never_spawned_again() {
         }
     }
     assert!(
-        respawned,
+        respawned && followed,
         "the other cell is spawned after the first retires"
     );
 }
@@ -365,12 +492,11 @@ fn root() -> ThreadPath {
     ThreadPath::root(0)
 }
 
-/// FR-211-AC-5 (TC-656), the role part: a node owned by a replicated role
-/// whose every object is retired, so that it has no live instance and no
-/// `spawn` is enabled, deadlocks with the thread `NoRoleInstance{r}`; where a
-/// `spawn` is enabled the thread has no such cause and the state is not
-/// terminal.
-#[trace("TC-656", "FR-211-AC-5")]
+/// Part of FR-211-AC-5 (TC-656), the role part at an `event`: a node owned
+/// by a replicated role whose every object is retired, so that it has no
+/// live instance and no `spawn` is enabled, deadlocks with the thread
+/// `NoRoleInstance{r}`; where a `spawn` is enabled the thread has no such
+/// cause and the state is not terminal.
 #[test]
 fn a_node_owned_by_a_role_with_no_instance_waits_with_no_role_instance() {
     let world = World::new(
@@ -407,8 +533,7 @@ fn a_node_owned_by_a_role_with_no_instance_waits_with_no_role_instance() {
         }]
     );
     assert_eq!(
-        SubjectSystem::terminal_class(&system, &reached[terminal[0]].state, false)
-            .expect("a class"),
+        class_of(&system, &reached[terminal[0]].state),
         TerminalClass::Deadlocked
     );
 
@@ -418,16 +543,15 @@ fn a_node_owned_by_a_role_with_no_instance_waits_with_no_role_instance() {
         .iter()
         .all(|thread| !matches!(thread.cause, WaitCause::NoRoleInstance { .. })));
     assert_eq!(
-        SubjectSystem::terminal_class(&system, &reached[0].state, true).expect("a class"),
+        class_of(&system, &reached[0].state),
         TerminalClass::NotTerminal
     );
 }
 
-/// FR-211-AC-5 (TC-656), the role part for a `receive`: a `receive` owned by
-/// a replicated role (its channel's `to` role) whose every object is retired
-/// gives `NoRoleInstance{r}` and not `Constraint`, `HeadBlocked` or
-/// `EmptyQueue`, although its send's entry is queued.
-#[trace("TC-656", "FR-211-AC-5")]
+/// Part of FR-211-AC-5 (TC-656), the role part for a `receive`: a `receive`
+/// owned by a replicated role (its channel's `to` role) whose every object
+/// is retired gives `NoRoleInstance{r}` and not `Constraint`, `HeadBlocked`
+/// or `EmptyQueue`, although its send's entry is queued.
 #[test]
 fn a_receive_owned_by_a_role_with_no_instance_gives_no_role_instance() {
     let channel = "channel ch from w to r carries Boolean ordering unordered \
@@ -442,21 +566,174 @@ fn a_receive_owned_by_a_role_with_no_instance_gives_no_role_instance() {
     let subject = world.subject();
     let system = sc_system(&subject);
     let reached = reachable(&system);
-    let causes: Vec<WaitCause> = reached
+    assert_eq!(
+        deadlocked_at(&system, &reached, "Both/q/Rx"),
+        [no_role_instance()]
+    );
+}
+
+/// `NoRoleInstance{r}`.
+fn no_role_instance() -> WaitCause {
+    WaitCause::NoRoleInstance {
+        role: "r".to_owned(),
+    }
+}
+
+/// The causes of the threads resting at the node `node` in the deadlocked
+/// states of `reached`, those with a live instance and no step.
+fn deadlocked_at(system: &System<'_>, reached: &[Reached], node: &str) -> Vec<WaitCause> {
+    reached
+        .iter()
+        .filter(|state| state.steps.is_empty() && state.state.has_live_instance())
+        .flat_map(|state| {
+            SubjectSystem::blocked(system, &state.state, &[]).expect("the blocked threads")
+        })
+        .filter(|thread| thread.rest_point.node.as_deref() == Some(node))
+        .map(|thread| thread.cause)
+        .collect()
+}
+
+/// A world whose role `r` retires its only instance at once, so that `run`
+/// finds `r` with no live instance and no `spawn` enabled.
+fn retired_role_world(members: &str, run: &str) -> World {
+    World::new(
+        &unit(ORIGIN, &role(1, "until(r.v >= 0)"), members, run),
+        &["c"],
+        &[0],
+    )
+}
+
+/// Part of FR-211-AC-5 (TC-656), the role part at an `attempt` and at a
+/// `send`: a node owned by a replicated role with every object retired
+/// deadlocks with `NoRoleInstance{r}`, a `send` owned by its channel's
+/// `from` role too.
+#[test]
+fn an_attempt_and_a_send_owned_by_a_role_with_no_instance_give_no_role_instance() {
+    let attempt = retired_role_world(
+        "",
+        "sequence Main { attempt Work by r on M::Cell::inc contracts [IncPre, IncPost] \
+         as (worked: Boolean) { true }; }",
+    );
+    let subject = attempt.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    assert_eq!(
+        deadlocked_at(&system, &reached, "Main/Work"),
+        [no_role_instance()]
+    );
+
+    let channel = "channel ch from r to w carries Boolean ordering unordered \
+                   delivery exactly-once-premise capacity 1 overflow block;";
+    let send = retired_role_world(
+        channel,
+        "sequence Main { send Tx via ch as (tx: Boolean) { tx }; }",
+    );
+    let subject = send.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    assert_eq!(
+        deadlocked_at(&system, &reached, "Main/Tx"),
+        [no_role_instance()]
+    );
+}
+
+/// Part of FR-211-AC-5 (TC-656), the role part for a `receive` of a send
+/// node with nothing queued: the send never happens (its branch is stuck at
+/// a `bump` whose precondition is false), and the `receive` owned by a role
+/// with every object retired gives `NoRoleInstance{r}` and not
+/// `EmptyQueue`.
+#[test]
+fn a_receive_with_nothing_queued_owned_by_a_role_with_no_instance_gives_no_role_instance() {
+    let channel = "channel ch from w to r carries Boolean ordering unordered \
+                   delivery exactly-once-premise capacity 1 overflow block;";
+    let run = "parallel Both { branch s sequence S { attempt Stuck by w on M::Cell::bump \
+               contracts [StuckPre] as (st: Boolean) { true }; \
+               send Tx via ch as (tx: Boolean) { tx }; } \
+               branch q receive Rx via ch of s::S::Tx as (rx: Boolean) { true }; } \
+               join all [s, q];";
+    let world = retired_role_world(channel, run);
+    let subject = world.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    assert!(reached.iter().all(|state| state
+        .steps
+        .iter()
+        .all(|(step, _)| step.kind() != StepKind::Send)));
+    assert_eq!(
+        deadlocked_at(&system, &reached, "Both/q/Rx"),
+        [no_role_instance()]
+    );
+}
+
+/// ADR-027 §7.1's `Pay` with its template `Refund` taken `by r` and the
+/// replicated role `r` of `lifetime`.
+fn pay_by_role(lifetime: &str) -> String {
+    contracts("self.v = 0")
+        + REFUND
+        + &format!(
+            "protocol R using v over (k: M::Cell) on origin {{\n\
+             role w on M::Cell;\n\
+             {}\n\
+             {}\n\
+             run {}\n\
+             finish Done as (d: Boolean) {{ d }};\n\
+             }}\n",
+            role(1, lifetime),
+            refund("Main::Paid", "dec", 1, "false", "never", "true").replace("by w on", "by r on"),
+            pay_run("")
+        )
+}
+
+/// The compensation thread of `R::Refund` with ordinal 0.
+fn refund_thread() -> ThreadPath {
+    ThreadPath::compensation(0, "R::Refund", 0)
+}
+
+/// Part of FR-211-AC-5 (TC-656), the role part at a compensation attempt: a
+/// template taken `by r`, whose compensation thread is created when `r` has
+/// no live instance and no `spawn` is enabled, deadlocks with the thread
+/// `NoRoleInstance{r}`.
+#[test]
+fn a_compensation_attempt_owned_by_a_role_with_no_instance_gives_no_role_instance() {
+    let world = World::new(&pay_by_role("until(r.v >= 0)"), &["c"], &[0]);
+    let subject = world.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let waits: Vec<WaitCause> = reached
         .iter()
         .filter(|state| state.steps.is_empty() && state.state.has_live_instance())
         .flat_map(|state| {
             SubjectSystem::blocked(&system, &state.state, &[]).expect("the blocked threads")
         })
-        .filter(|thread| thread.rest_point.node.as_deref() == Some("Both/q/Rx"))
+        .filter(|thread| thread.path == refund_thread())
         .map(|thread| thread.cause)
         .collect();
-    assert_eq!(
-        causes,
-        [WaitCause::NoRoleInstance {
-            role: "r".to_owned()
-        }]
-    );
+    assert_eq!(waits, [no_role_instance()]);
+}
+
+/// ADR-027 RR-4: a `scope` role owning only the template's compensation
+/// attempt stays live while the template can still compensate, so the
+/// compensation thread finds an instance and attempts, and no state waits
+/// with `NoRoleInstance`.
+#[test]
+fn a_scope_role_stays_live_for_the_compensation_attempt_it_owns() {
+    let world = World::new(&pay_by_role("scope"), &["c"], &[0]);
+    let subject = world.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    assert!(reached.iter().any(|state| state
+        .steps
+        .iter()
+        .any(|(step, _)| step.kind() == StepKind::CAttempt)));
+    for state in reached
+        .iter()
+        .filter(|state| state.steps.is_empty() && state.state.has_live_instance())
+    {
+        let blocked = SubjectSystem::blocked(&system, &state.state, &[]).expect("blocked");
+        assert!(blocked
+            .iter()
+            .all(|thread| thread.cause != no_role_instance()));
+    }
 }
 
 /// An `on each` unit whose body is one attempt of `bump`, never enabled.
@@ -521,10 +798,7 @@ fn an_on_each_state_that_can_only_activate_is_a_deadlock() {
     let system = sc_system(&subject).with_max_live_instances(2);
     let reached = reachable(&system);
     assert_eq!(reached.len(), 3);
-    let class = |at: usize| {
-        SubjectSystem::terminal_class(&system, &reached[at].state, !reached[at].steps.is_empty())
-            .expect("a class")
-    };
+    let class = |at: usize| class_of(&system, &reached[at].state);
 
     assert_eq!(class(0), TerminalClass::NotTerminal);
     let one = reached[0].steps[0].1;
@@ -622,9 +896,7 @@ fn an_instance_takes_the_smallest_free_ordinal_and_the_bound_is_no_deadlock() {
     assert_eq!(live(refilled), [0, 1]);
     assert!(reached.iter().all(|state| {
         !system.instance_limited(&state.state).expect("limited")
-            || SubjectSystem::terminal_class(&system, &state.state, !state.steps.is_empty())
-                .expect("a class")
-                == TerminalClass::NotTerminal
+            || class_of(&system, &state.state) == TerminalClass::NotTerminal
     }));
 }
 
@@ -696,4 +968,222 @@ fn role_and_activation_steps_have_role_and_instance_footprints() {
     assert!(activating
         .writes
         .contains(&Location::Protocol(ProtocolLocation::Control(root()))));
+}
+
+/// The claim `always holds(condition)` over `k: M::Cell`.
+fn claim(condition: &str) -> String {
+    format!(
+        "temporal Bound using t0 over (k: M::Cell) clock \"model-steps\" on origin \
+         {{ always holds({condition}) }}\n"
+    )
+}
+
+/// The one atom of a claim, as the predicate `holds` of the bound cell's `v`.
+struct CellV {
+    holds: fn(i64) -> bool,
+}
+
+impl ModelLetters for CellV {
+    fn reads(&self, _atom: FormulaNodeId) -> crate::units::Reads {
+        crate::units::unread()
+    }
+
+    fn atom(
+        &self,
+        _atom: FormulaNodeId,
+        instance: &ModelInstance,
+        state: &ModelSimState,
+        _meter: &mut Meter,
+    ) -> Result<AtomReading, Incomplete> {
+        Ok(if (self.holds)(v(state, &instance.key)) {
+            AtomReading::True
+        } else {
+            AtomReading::False
+        })
+    }
+}
+
+/// `activation on each` over the four trigger values of `M::Level`, with the
+/// guard `when`.
+fn each_when(when: &str) -> String {
+    format!("on each (x: M::Level) when ({when})")
+}
+
+/// FR-209-AC-1 (TC-654): an `on each` protocol whose body is one
+/// always-enabled attempt, with the claim `always holds(k.v <= 3)`: with
+/// `max_live_instances` 1 the run settles V-6 `InstanceBoundReached` with
+/// the bound 1 and at least one instance-limited state, with 2 it settles
+/// V-6 with the bound 2, and with the field unset the record states the
+/// default 3, reached. Every record states the bound used and that it was
+/// reached. The default is 3: no state of an unset run holds a fourth
+/// instance, and a state of three is instance-limited.
+#[trace("TC-654", "FR-209-AC-1")]
+#[test]
+fn the_instance_bound_settles_v6_naming_max_live_instances_and_defaults_to_three() {
+    let run = format!("sequence Main {{ {} }}", touch("T"));
+    let world = World::new(
+        &(unit(EACH, "", "", &run) + &claim("k.v <= 3")),
+        &["c"],
+        &[0],
+    );
+    let letters = CellV { holds: |v| v <= 3 };
+    let item = world.claim(&letters);
+    assert_eq!(InstanceBound::MEMBER, "max_live_instances");
+    for (requested, bound) in [(Some(1), 1), (Some(2), 2), (None, 3)] {
+        let outcome = world.check(item, None, requested);
+        let ModelCheckOutcome::Undecided {
+            cause:
+                UndecidedCause::InstanceBoundReached {
+                    bound: used,
+                    states,
+                },
+            stats,
+        } = &outcome
+        else {
+            panic!("{requested:?}: {outcome:?}");
+        };
+        assert_eq!(used.value, bound);
+        assert!(*states >= 1);
+        assert_eq!(stats.instance_limited, *states);
+        let record = world.settle(item, &letters, &outcome, requested);
+        assert_eq!(
+            record.value,
+            TerminalValue::Inconclusive(InconclusiveCause::InstanceBoundReached {
+                bound: *used,
+                states: *states,
+            })
+        );
+        assert_eq!(record.label, ResultLabel::Inconclusive);
+        assert_eq!(
+            record.instance_bound,
+            Some(StatedInstanceBound {
+                bound: *used,
+                reached: true,
+            })
+        );
+        assert_eq!(record.memory_bound, None);
+    }
+
+    let subject = world.subject();
+    let system = sc_system(&subject);
+    let reached = reachable(&system);
+    let live = |at: usize| -> usize {
+        system
+            .threads(&reached[at].state)
+            .expect("threads")
+            .iter()
+            .map(|view| view.path.instance)
+            .collect::<BTreeSet<_>>()
+            .len()
+    };
+    assert_eq!((0..reached.len()).map(live).max(), Some(3));
+    assert!((0..reached.len()).any(|at| live(at) == 3
+        && system
+            .instance_limited(&reached[at].state)
+            .expect("limited")));
+}
+
+/// FR-209-AC-2 (TC-654): the same protocol with the guard `false` has no
+/// `activate` step, settles V-1 `proved`, and its record states
+/// `max_live_instances` 3, not reached. With the guard back at `true`, the
+/// claim `always holds(k.v = 0)` and `max_live_instances` 1 the run settles
+/// V-4 `refuted`, with the counterexample `activate`, `attempt`.
+#[trace("TC-654", "FR-209-AC-2")]
+#[test]
+fn a_run_with_no_activation_proves_and_a_counterexample_is_real_under_any_bound() {
+    let run = format!("sequence Main {{ {} }}", touch("T"));
+    let never = World::new(
+        &(unit(&each_when("false"), "", "", &run) + &claim("k.v <= 3")),
+        &["c"],
+        &[0],
+    );
+    let letters = CellV { holds: |v| v <= 3 };
+    let item = never.claim(&letters);
+    let subject = never.subject();
+    let system = sc_system(&subject);
+    assert!(reachable(&system).iter().all(|state| state
+        .steps
+        .iter()
+        .all(|(step, _)| step.kind() != StepKind::Activate)));
+    let outcome = never.check(item, None, None);
+    assert!(
+        matches!(outcome, ModelCheckOutcome::Holds { .. }),
+        "{outcome:?}"
+    );
+    let record = never.settle(item, &letters, &outcome, None);
+    assert_eq!(record.label, ResultLabel::Proved);
+    assert_eq!(
+        record.instance_bound,
+        Some(StatedInstanceBound {
+            bound: InstanceBound { value: 3 },
+            reached: false,
+        })
+    );
+
+    let bump = "sequence Main { attempt A by w on M::Cell::inc contracts [IncPre, IncPost] \
+                as (a: Boolean) { true }; }";
+    let always = World::new(
+        &(unit(&each_when("true"), "", "", bump) + &claim("k.v = 0")),
+        &["c"],
+        &[0],
+    );
+    let letters = CellV { holds: |v| v == 0 };
+    let item = always.claim(&letters);
+    let outcome = always.check(item, None, Some(1));
+    let ModelCheckOutcome::Violated { counterexample, .. } = &outcome else {
+        panic!("{outcome:?}");
+    };
+    let kinds: Vec<StepKind> = counterexample
+        .prefix
+        .iter()
+        .map(|step| step.transition.kind())
+        .collect();
+    assert_eq!(kinds, [StepKind::Activate, StepKind::Attempt]);
+    let record = always.settle(item, &letters, &outcome, Some(1));
+    assert_eq!(record.label, ResultLabel::Refuted);
+    assert_eq!(
+        record.instance_bound,
+        Some(StatedInstanceBound {
+            bound: InstanceBound { value: 1 },
+            reached: true,
+        })
+    );
+}
+
+/// Part of FR-209-AC-4 (TC-654): a run where the instance bound limited a
+/// state and the `max_depth` horizon also applies settles
+/// `InstanceBoundReached` and not `BoundReached`, and a horizon that cuts
+/// before any state is instance-limited still settles `BoundReached`. The
+/// memory bound settles before the instance bound in `weak_memory.rs`.
+#[test]
+fn the_instance_bound_settles_before_the_horizon() {
+    let run = format!("sequence Main {{ {} }}", touch("T"));
+    let world = World::new(
+        &(unit(EACH, "", "", &run) + &claim("k.v <= 3")),
+        &["c"],
+        &[0],
+    );
+    let letters = CellV { holds: |v| v <= 3 };
+    let item = world.claim(&letters);
+    let horizon = world.check(item, Some(2), Some(1));
+    assert!(
+        matches!(
+            horizon,
+            ModelCheckOutcome::Undecided {
+                cause: UndecidedCause::InstanceBoundReached { .. },
+                ..
+            }
+        ),
+        "{horizon:?}"
+    );
+    let record = world.settle(item, &letters, &horizon, Some(1));
+    assert!(matches!(
+        record.value,
+        TerminalValue::Inconclusive(InconclusiveCause::InstanceBoundReached { .. })
+    ));
+    let shallow = world.check(item, Some(1), None);
+    assert!(
+        matches!(shallow, ModelCheckOutcome::BoundReached { .. }),
+        "{shallow:?}"
+    );
 }

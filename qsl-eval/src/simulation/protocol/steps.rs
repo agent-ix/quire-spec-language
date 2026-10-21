@@ -35,6 +35,7 @@ use crate::simulation::model::encode::{reference_enc, value_enc, Enc};
 use crate::simulation::model::{
     Applied, Budget, FirstApplication, ModelFinding, ModelSimState, OperationRef, Verdict,
 };
+use crate::simulation::subject::Cut;
 
 /// One successor of a protocol state.
 pub(super) type Successor<M> = (ProtocolTransition, ProtocolState<M>);
@@ -49,8 +50,8 @@ pub(super) struct Gathered<M: MemoryModel> {
     pub(super) budget: Budget,
     pub(super) successors: Vec<Successor<M>>,
     pub(super) findings: Vec<ModelFinding>,
-    /// Whether a memory bound left a store unexpanded (ADR-025 MB-3).
-    pub(super) cut: bool,
+    /// What a method bound left unexpanded (ADR-025 MB-3, ADR-027 AE-4).
+    pub(super) cut: Cut,
 }
 
 /// The thread that reads a node's slots, and the node.
@@ -88,17 +89,18 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     /// running thread's contract and protocol-expression findings, threads
     /// in ascending JCS bytes of their paths (ADR-027 TS-4).
     ///
-    /// Beside the expansion, whether a memory bound left a store of the
-    /// state unexpanded, which makes the state bound-limited (ADR-025 MB-3).
+    /// Beside the expansion, what a method bound left of the state
+    /// unexpanded: a store the memory bound cut (ADR-025 MB-3), or an
+    /// `activate` step the instance bound did not expand (ADR-027 AE-4).
     pub(super) fn expand_bounded(
         &self,
         state: &ProtocolState<M>,
-    ) -> Result<(ProtocolExpansion<M>, bool), ExpansionStop> {
+    ) -> Result<(ProtocolExpansion<M>, Cut), ExpansionStop> {
         let mut gathered = Gathered {
             budget: self.model.budget(),
             successors: Vec::new(),
             findings: self.model.invariant_findings(&state.model)?,
-            cut: false,
+            cut: Cut::default(),
         };
         let mut running = Vec::new();
         for (ordinal, instance) in &state.instances {
@@ -191,7 +193,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         for (ordinal, instance) in &state.instances {
             self.role_steps(state, *ordinal, instance, &mut gathered)?;
         }
-        self.activate_steps(state, &mut gathered)?;
+        gathered.cut.instances = self.activate_steps(state, &mut gathered)?;
         self.channel_steps(state, &mut gathered)?;
         for step in self.memory.internal_steps(&state.memory, &state.model) {
             let mut next = state.clone();
@@ -829,7 +831,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                     Written::Applied(model, memory) => (model, memory),
                     Written::Disabled => continue,
                     Written::Cut => {
-                        gathered.cut = true;
+                        gathered.cut.memory = true;
                         continue;
                     }
                 };

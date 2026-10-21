@@ -861,8 +861,6 @@ fn every_independent_pair_of_steps_commutes() {
                 pairs.iter().any(|(first, second)| {
                     [StepKind::Spawn, StepKind::Retire].contains(first)
                         || [StepKind::Spawn, StepKind::Retire].contains(second)
-                        || *first == StepKind::Event
-                        || *second == StepKind::Event
                 }),
                 "{pairs:?}"
             );

@@ -415,7 +415,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 Written::Applied(model, memory) => (model, memory),
                 Written::Disabled => continue,
                 Written::Cut => {
-                    gathered.cut = true;
+                    gathered.cut.memory = true;
                     continue;
                 }
             };

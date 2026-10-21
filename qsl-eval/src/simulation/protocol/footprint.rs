@@ -908,11 +908,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
         ordinal: u64,
     ) -> Result<(), ProtocolRefusal> {
         for (index, role) in self.program.replicated.iter().enumerate() {
-            let live = instance.roles.get(&index).is_some_and(|known| {
-                known
-                    .values()
-                    .any(|status| *status == super::RoleStatus::Live)
-            });
+            let live = instance.live_of(index).next().is_some();
             if live && matches!(role.lifetime, super::program::Lifetime::Scope) {
                 built.write(self.role_location(ordinal, index)?);
             }
@@ -930,9 +926,7 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
     ) -> Result<Footprint, ProtocolFootprintError> {
         let unknown = || ProtocolFootprintError::UnknownStep;
         let activation = self.program.activation.as_ref().ok_or_else(unknown)?;
-        let ordinal = (0u64..)
-            .find(|candidate| !state.instances.contains_key(candidate))
-            .ok_or_else(|| ProtocolRefusal::fault("an-instance-ordinal-is-free"))?;
+        let ordinal = Self::free_instance_ordinal(state)?;
         let mut built = Builder::default();
         let live = protocol(ProtocolLocation::LiveInstances);
         built.enabling(live.clone());
