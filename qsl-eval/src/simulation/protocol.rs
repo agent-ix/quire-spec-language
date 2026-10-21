@@ -25,6 +25,7 @@
 mod access;
 mod channel;
 mod compensation;
+mod fairness;
 mod footprint;
 mod identity;
 mod memory;
@@ -59,6 +60,10 @@ use crate::value::evaluate_protocol_slot;
 
 pub use access::{
     AccessShape, AttemptInstance, InstanceAccess, WeakAccessShape, WeakAccesses, WeakAttempt,
+};
+pub use fairness::{
+    protocol_constraints, FairnessOrigin, ProtocolClass, ProtocolFairness, ProtocolFairnessError,
+    ProtocolTarget,
 };
 pub use footprint::{
     visible, AnchorName, ClaimReads, ParallelInstance, ProtocolFootprintError, ProtocolLocation,
@@ -832,6 +837,27 @@ impl<'a, M: MemoryModel> ProtocolSystem<'a, M> {
     /// The checked protocol clause.
     pub fn protocol(&self) -> &'a CheckedProtocol {
         self.protocol
+    }
+
+    /// FR-212 (ADR-027 PA-3, QSpec FR-430): the fairness set of an
+    /// infinite-trace clause whose authored constraints are `authored`
+    /// over this subject: the authored members and, unless the protocol
+    /// declares `scheduling adversarial`, its scheduler constraints, in
+    /// ascending JCS bytes.
+    ///
+    /// # Errors
+    ///
+    /// [`ProtocolFairnessError`] when an authored constraint names an
+    /// operation the subject's model does not apply.
+    pub fn fairness_set(
+        &self,
+        authored: &[quire_semantic_value::fairness::FairnessConstraint],
+    ) -> Result<Vec<ProtocolFairness>, ProtocolFairnessError> {
+        fairness::fairness_set(self.protocol, authored, |constraint| {
+            let operation = constraint.operation();
+            self.model
+                .operation_text(operation.declaring_type(), operation.name())
+        })
     }
 
     /// The memory model it runs under.

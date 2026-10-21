@@ -50,9 +50,11 @@ mod release_acquire;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod schedulability;
+mod scheduler_fairness;
 mod state_graph;
 mod state_graph_certificate;
 mod state_graph_settle;
+mod statistical_model;
 mod strong_fairness;
 mod strong_hint;
 mod units;

@@ -10,9 +10,11 @@
 //! same scan over negated operands with a negated result. Every walk here
 //! runs over the arena in index order, forward or reverse, so none recurses.
 
-use qsl_foundation::bound::{TemporalInterval, TemporalUpper};
+use qsl_foundation::bound::TemporalUpper;
 use qsl_foundation::InternalFault;
-use qsl_semantics::check::{BinaryTemporal, CheckedFormula, FormulaNode, UnaryTemporal};
+use qsl_semantics::check::{
+    BinaryTemporal, CheckedFormula, CheckedInterval, FormulaNode, UnaryTemporal,
+};
 
 pub(super) const STAGE: &str = "eval.temporal";
 
@@ -69,10 +71,14 @@ pub(super) enum Window {
 }
 
 impl Window {
-    fn of(interval: Option<TemporalInterval>) -> Self {
-        match interval {
+    /// The offsets of a step interval. A timed interval counts time, not
+    /// positions, and has no offsets: the timed evaluator reads it
+    /// (`temporal::timed`), and a clause holding one is refused before a
+    /// step reader sees it.
+    fn of(interval: Option<&CheckedInterval>) -> Result<Self, InternalFault> {
+        Ok(match interval {
             None => Self::From { lower: 0 },
-            Some(interval) => match interval.upper() {
+            Some(CheckedInterval::Steps(interval)) => match interval.upper() {
                 TemporalUpper::Finite(upper) => Self::Closed {
                     lower: interval.lower(),
                     upper,
@@ -81,7 +87,8 @@ impl Window {
                     lower: interval.lower(),
                 },
             },
-        }
+            Some(CheckedInterval::Timed(_)) => return Err(fault("step-interval-has-offsets")),
+        })
     }
 }
 
@@ -153,7 +160,7 @@ impl Plan {
                     Node::Scan(Scan {
                         base,
                         dual,
-                        window: Window::of(*interval),
+                        window: Window::of(interval.as_ref())?,
                         guard: None,
                         witness: operand.index(),
                     })
@@ -173,7 +180,7 @@ impl Plan {
                     Node::Scan(Scan {
                         base,
                         dual,
-                        window: Window::of(*interval),
+                        window: Window::of(interval.as_ref())?,
                         guard: Some(left.index()),
                         witness: right.index(),
                     })

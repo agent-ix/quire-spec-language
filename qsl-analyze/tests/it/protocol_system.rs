@@ -1012,6 +1012,7 @@ fn a_protocol_deadlock_names_its_blocked_threads_and_settles_refuted() {
         ]
     );
     assert_eq!(counterexample.blocked, fill_blocked());
+    assert!(counterexample.fairness.is_empty());
     let record = case.settle("Fill", &outcome);
     assert_eq!(record.label, ResultLabel::Refuted, "{record:?}");
     assert_eq!(record.counterexample, Some(counterexample));

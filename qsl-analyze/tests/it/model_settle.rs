@@ -16,6 +16,7 @@
 use ix_trace_rs::trace;
 use qsl_analyze::model_check::{check_model, ModelCheckRequest};
 use qsl_eval::simulation::model::ExpansionLimits;
+use qsl_eval::simulation::SubjectTransition;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::{Category, Code};
 use qsl_foundation::source::provenance::OccurrenceKey;
@@ -213,7 +214,7 @@ fn envelope(
 
 /// The envelope carrying `payload` at `package_id`, from `unit`, naming the
 /// item by `node` and `occurrence`.
-pub(crate) fn envelope_at<T: Clone + std::fmt::Debug + Eq>(
+pub(crate) fn envelope_at<T: SubjectTransition>(
     unit: &[u8],
     package_id: DigestRecord,
     payload: TemporalCounterexample<T>,

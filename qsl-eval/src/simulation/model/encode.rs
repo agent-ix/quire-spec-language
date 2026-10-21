@@ -16,7 +16,7 @@ use qsl_semantics::model::key::{effective_id_from_digest, DeclarationKey};
 use qsl_semantics::model::state::{ModelState, StateModel};
 
 /// One JSON value in FR-181's typed canonical form, before it is written.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum Enc {
     Null,
     Bool(bool),

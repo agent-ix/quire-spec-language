@@ -14,11 +14,13 @@
 //!
 //! Under the trivial group the path is already concrete: each step is
 //! recorded as it is, with no expansion and no count, so an unreduced run's
-//! counterexample is unchanged.
+//! counterexample is unchanged. A subject that offers no symmetry (a
+//! protocol subject) is only ever lifted under the trivial group, so it
+//! supplies no [`Permuter`].
 
 use qsl_eval::simulation::model::{ModelSimState, ModelSystem};
 use qsl_eval::simulation::{
-    EncodingRefusal, ExpansionStop, Permutation, SymmetryGroup, TransitionSystem,
+    EncodingRefusal, ExpansionStop, Permutation, SubjectSystem, SymmetryGroup, TransitionSystem,
 };
 use qsl_foundation::digest::DigestRecord;
 use qsl_replay::{CounterexampleKind, ModelStep};
@@ -48,43 +50,113 @@ impl From<ModelCheckRefusal> for LiftStop {
     }
 }
 
+/// What lifting a reduced path reads of a subject's symmetry (ADR-021
+/// EI-6): the canonical form of a state, and the image of a state and of a
+/// transition identity under a permutation.
+pub(super) trait Permuter<State, Transition> {
+    fn canonicalise(
+        &self,
+        state: &State,
+        group: &SymmetryGroup,
+    ) -> Result<(State, Permutation), ExpansionStop>;
+
+    fn permute(&self, state: &State, permutation: &Permutation) -> Result<State, ExpansionStop>;
+
+    fn permute_transition(
+        &self,
+        transition: &Transition,
+        permutation: &Permutation,
+    ) -> Result<Transition, ExpansionStop>;
+
+    /// The image of the FR-120 identity an undefined guard names.
+    fn permute_model_transition(
+        &self,
+        transition: &ModelTransition,
+        permutation: &Permutation,
+    ) -> Result<ModelTransition, ExpansionStop>;
+}
+
+impl Permuter<ModelSimState, ModelTransition> for ModelSystem<'_> {
+    fn canonicalise(
+        &self,
+        state: &ModelSimState,
+        group: &SymmetryGroup,
+    ) -> Result<(ModelSimState, Permutation), ExpansionStop> {
+        ModelSystem::canonicalise(self, state, group)
+    }
+
+    fn permute(
+        &self,
+        state: &ModelSimState,
+        permutation: &Permutation,
+    ) -> Result<ModelSimState, ExpansionStop> {
+        ModelSystem::permute(self, state, permutation)
+    }
+
+    fn permute_transition(
+        &self,
+        transition: &ModelTransition,
+        permutation: &Permutation,
+    ) -> Result<ModelTransition, ExpansionStop> {
+        ModelSystem::permute_transition(self, transition, permutation)
+    }
+
+    fn permute_model_transition(
+        &self,
+        transition: &ModelTransition,
+        permutation: &Permutation,
+    ) -> Result<ModelTransition, ExpansionStop> {
+        ModelSystem::permute_transition(self, transition, permutation)
+    }
+}
+
+/// A subject's symmetry, as [`Lift`] reads it.
+pub(super) type PermuterOf<'s, S> =
+    &'s dyn Permuter<<S as TransitionSystem>::State, <S as TransitionSystem>::TransitionId>;
+
 /// A path being concretised: `σ`, the concrete state it has reached and the
 /// concrete steps so far.
-pub(super) struct Lift<'s, 'a> {
-    system: &'s ModelSystem<'a>,
-    reduced: bool,
+pub(super) struct Lift<'s, S: SubjectSystem> {
+    system: &'s S,
+    /// The subject's symmetry; `Some` on a reduced path.
+    permuter: Option<PermuterOf<'s, S>>,
     sigma: Permutation,
-    concrete: ModelSimState,
+    concrete: S::State,
     digest: DigestRecord,
-    steps: Vec<ModelStep>,
+    steps: Vec<ModelStep<S::TransitionId>>,
     /// The concrete steps still allowed (reduced paths only).
     budget: usize,
 }
 
-impl<'s, 'a> Lift<'s, 'a> {
+impl<'s, S: SubjectSystem> Lift<'s, S> {
     /// FR-161 "Start": the path from `root`, a state of the graph reduced by
     /// `group`, with the index of the subject's initial state it starts
-    /// from. At most `budget` concrete steps may follow.
+    /// from. At most `budget` concrete steps may follow. `permuter` is the
+    /// subject's symmetry, which a non-trivial `group` needs.
     ///
     /// # Errors
     ///
-    /// [`LiftStop`] when the canonicaliser stops, or no initial state has
-    /// `root`'s key.
+    /// [`LiftStop`] when the canonicaliser stops, `group` is not trivial and
+    /// the subject has no symmetry, or no initial state has `root`'s key.
     pub(super) fn start(
-        system: &'s ModelSystem<'a>,
+        system: &'s S,
+        permuter: Option<PermuterOf<'s, S>>,
         group: &SymmetryGroup,
-        root: &ModelSimState,
+        root: &S::State,
         budget: usize,
     ) -> Result<(usize, Self), LiftStop> {
-        let reduced = !group.is_trivial();
+        let permuter = if group.is_trivial() {
+            None
+        } else {
+            Some(permuter.ok_or_else(|| fault("a-reduced-path-has-a-symmetry"))?)
+        };
         let (wanted, _) = system.state_key(root)?;
         for (index, initial) in system.initial().into_iter().enumerate() {
-            let (canonical, permutation) = if reduced {
-                system
+            let (canonical, permutation) = match permuter {
+                Some(permuter) => permuter
                     .canonicalise(&initial, group)
-                    .map_err(LiftStop::Expansion)?
-            } else {
-                (initial.clone(), Permutation::identity())
+                    .map_err(LiftStop::Expansion)?,
+                None => (initial.clone(), Permutation::identity()),
             };
             if system.state_key(&canonical)?.0 != wanted {
                 continue;
@@ -94,7 +166,7 @@ impl<'s, 'a> Lift<'s, 'a> {
                 index,
                 Self {
                     system,
-                    reduced,
+                    permuter,
                     sigma: permutation.inverse(),
                     concrete: initial,
                     digest,
@@ -116,11 +188,11 @@ impl<'s, 'a> Lift<'s, 'a> {
     /// concrete step is not a step of the subject.
     pub(super) fn edge(
         &mut self,
-        transition: &ModelTransition,
-        target: &ModelSimState,
+        transition: &S::TransitionId,
+        target: &S::State,
         permutation: &Permutation,
     ) -> Result<(), LiftStop> {
-        if !self.reduced {
+        let Some(permuter) = self.permuter else {
             self.digest = self.system.state_key(target)?.1;
             self.concrete = target.clone();
             self.steps.push(ModelStep {
@@ -128,18 +200,16 @@ impl<'s, 'a> Lift<'s, 'a> {
                 post_state: self.digest,
             });
             return Ok(());
-        }
+        };
         if self.budget == 0 {
             return Err(LiftStop::Transitions);
         }
         self.budget -= 1;
-        let step = self
-            .system
+        let step = permuter
             .permute_transition(transition, &self.sigma)
             .map_err(|_| fault("a-concretised-step-encodes"))?;
         let sigma = self.sigma.compose(&permutation.inverse());
-        let next = self
-            .system
+        let next = permuter
             .permute(target, &sigma)
             .map_err(LiftStop::Expansion)?;
         let digest = self.system.state_key(&next)?.1;
@@ -185,7 +255,7 @@ impl<'s, 'a> Lift<'s, 'a> {
     /// The steps charged to the budget: every step of a reduced path, none
     /// of a concrete one.
     pub(super) fn charged(&self) -> usize {
-        if self.reduced {
+        if self.permuter.is_some() {
             self.steps.len()
         } else {
             0
@@ -193,7 +263,7 @@ impl<'s, 'a> Lift<'s, 'a> {
     }
 
     /// The concrete steps.
-    pub(super) fn into_steps(self) -> Vec<ModelStep> {
+    pub(super) fn into_steps(self) -> Vec<ModelStep<S::TransitionId>> {
         self.steps
     }
 
@@ -210,14 +280,13 @@ impl<'s, 'a> Lift<'s, 'a> {
         let CounterexampleKind::UndefinedEvaluation(evaluation) = kind else {
             return Ok(());
         };
-        if !self.reduced {
+        let Some(permuter) = self.permuter else {
             return Ok(());
-        }
+        };
         evaluation.site.state_key = self.digest;
         if let Some(guard) = &evaluation.site.transition {
-            let guard = self
-                .system
-                .permute_transition(guard, &self.sigma)
+            let guard = permuter
+                .permute_model_transition(guard, &self.sigma)
                 .map_err(|_| fault("a-concretised-guard-encodes"))?;
             let expansion = self
                 .system
