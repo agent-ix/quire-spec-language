@@ -1671,11 +1671,11 @@ fn an_undecided_precondition_is_a_contract_finding() {
     );
 
     let (_, findings, _) = run(
-        "pre Low using v on M::A::ready { self.ready() }\npre Never using v on M::A::ready { false }",
+        "pre Low using v on M::A::ready { self.ready() }\npre Aaa using v on M::A::ready { false }",
     );
     assert!(
         findings.is_empty(),
-        "a false clause hides the undecided one: {findings:?}"
+        "a false clause that sorts first hides the undecided one: {findings:?}"
     );
 
     // The postcondition half: the finding names the candidate by its
@@ -1702,6 +1702,54 @@ fn an_undecided_precondition_is_a_contract_finding() {
                 qsl_foundation::diagnostic::UndefinedReason::PreconditionFalse
             )
         );
+    }
+}
+
+/// FR-120 "Contract clauses", QSpec FR-151-AC-19 (TC-196 D10) on the
+/// simulator path (QSL-935): a member's own precondition clauses are
+/// conjoined in ascending clause name under FR-006's short-circuit, whatever
+/// their source order. A false clause that sorts first is not enabled and
+/// records no finding, the undefined clause after it being neither evaluated
+/// nor reported; an undefined clause that sorts first records its one finding
+/// and the false clause after it is not reached.
+#[trace("TC-472", "FR-120-AC-9")]
+#[test]
+fn precondition_clauses_stop_at_the_first_non_true_clause_in_name_order() {
+    let false_clause = |name: &str| format!("pre {name} using v on M::A::ready {{ false }}");
+    let undefined_clause =
+        |name: &str| format!("pre {name} using v on M::A::ready {{ self.ready() }}");
+    let findings_of = |first: String, second: String| {
+        let world = OrdersWorld::new(&format!("{first}\n{second}"));
+        let system = world.system();
+        let state = system.initial().remove(0);
+        let expansion = system.successors(&state).expect("expands");
+        assert!(expansion.successors.is_empty(), "nothing is enabled");
+        expansion
+            .findings
+            .iter()
+            .map(|finding| match finding {
+                ModelFinding::ContractUndetermined {
+                    candidate, clause, ..
+                } => (clause.clone(), *candidate),
+                other => panic!("a contract finding: {other:?}"),
+            })
+            .collect::<Vec<_>>()
+    };
+    // `Aaa` (false) sorts before `Zzz` (undefined): no finding, in both
+    // source orders.
+    for (first, second) in [
+        (false_clause("Aaa"), undefined_clause("Zzz")),
+        (undefined_clause("Zzz"), false_clause("Aaa")),
+    ] {
+        assert_eq!(findings_of(first, second), vec![]);
+    }
+    // `Aaa` (undefined) sorts before `Zzz` (false): the one finding, in both
+    // source orders.
+    for (first, second) in [
+        (undefined_clause("Aaa"), false_clause("Zzz")),
+        (false_clause("Zzz"), undefined_clause("Aaa")),
+    ] {
+        assert_eq!(findings_of(first, second), vec![("Aaa".to_owned(), None)]);
     }
 }
 

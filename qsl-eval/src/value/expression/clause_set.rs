@@ -74,12 +74,16 @@ fn verdict(evaluation: &ClauseEvaluation) -> Verdict {
     }
 }
 
-/// Evaluate `group` in order, each clause with a fresh meter; `false` when a
-/// clause was `Incomplete`, which ends the set.
+/// Evaluate `group` in order, each clause with a fresh meter; `false` when
+/// the group stopped before its last clause: on an `Incomplete` clause, or,
+/// with `short_circuit`, on the first clause that is not `Completed(true)`
+/// (FR-006's short-circuit, QSpec FR-151-AC-19). The clauses after the stop
+/// are neither evaluated nor charged.
 fn run_group(
     package: &CheckedPackage,
     group: &[(&QualifiedName, &AdmittedObservations)],
     limits: ScalarLimits,
+    short_circuit: bool,
     results: &mut Vec<ClauseSetEntry>,
     seen: &mut Vec<Verdict>,
 ) -> Result<bool, CallFailure> {
@@ -91,7 +95,7 @@ fn run_group(
             evaluation,
         });
         seen.push(verdict);
-        if verdict == Verdict::Incomplete {
+        if verdict == Verdict::Incomplete || (short_circuit && verdict != Verdict::True) {
             return Ok(false);
         }
     }
@@ -140,20 +144,22 @@ pub(super) fn evaluate(
 
     let mut results = Vec::new();
     let mut seen = Vec::new();
-    let mut run = |group: &[(&QualifiedName, &AdmittedObservations)]| {
-        run_group(package, group, limits, &mut results, &mut seen)
+    let mut run = |group: &[(&QualifiedName, &AdmittedObservations)], short_circuit: bool| {
+        run_group(
+            package,
+            group,
+            limits,
+            short_circuit,
+            &mut results,
+            &mut seen,
+        )
     };
-    let invariants_done = run(&invariants)?;
-    let preconditions_done = invariants_done && run(&preconditions)?;
-    // Postconditions follow only when every precondition was evaluated and
-    // is true; an invariant never skips them.
-    let preconditions_true = preconditions.iter().all(|(name, _)| {
-        results
-            .iter()
-            .any(|entry| &entry.name == *name && verdict(&entry.evaluation) == Verdict::True)
-    });
-    if preconditions_done && preconditions_true {
-        run_group(package, &postconditions, limits, &mut results, &mut seen)?;
+    // Invariants never skip the clauses after them. Preconditions are a
+    // conjunction under FR-006's short-circuit: the first one that is not
+    // true ends the set, and postconditions follow only when every
+    // precondition was evaluated and is true.
+    if run(&invariants, false)? && run(&preconditions, true)? {
+        run(&postconditions, false)?;
     }
     let outcome = combine(&seen);
     Ok(ClauseSetEvaluation { results, outcome })
