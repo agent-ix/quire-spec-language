@@ -5,20 +5,24 @@
 //! evaluator.
 
 use ix_trace_rs::trace;
+use qsl_analyze::model_check::SymmetryDeclaration;
 use qsl_analyze::statistical::{check_statistical, StatisticalRequest, DEFAULT_MAX_WITNESSES};
 use qsl_eval::simulation::model::ExpansionLimits;
 use qsl_eval::simulation::model::TransitionId;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::UndefinedReason;
 use qsl_foundation::selection::DefinitionRef;
-use qsl_replay::statistical::{settle_statistical, SubjectLimits};
+use qsl_replay::statistical::{settle_statistical, settle_statistical_refusal, SubjectLimits};
 use qsl_replay::statistical::{
     Decision, MeasureValue, StatisticalLimit, StatisticalLimits, StatisticalMethod,
     StatisticalOutcome, StatisticalRefusal, StatisticalStop, StatisticalUnsupported,
-    StatisticalVerdict, WitnessValue,
+    StatisticalVerdict, UndecidedCause, WitnessValue,
 };
+use qsl_replay::SymmetryRefusal;
 use qsl_replay::{ClaimPredicate, TerminalValue, UndefinedLocus};
+use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational, Value};
+use serde_json::json;
 
 use crate::prob_world::{self, World};
 
@@ -46,6 +50,7 @@ fn run(
             sampler: sampler(),
             limits,
             max_witnesses,
+            symmetry: Vec::new(),
         },
         &Cancel::new(),
     )
@@ -191,6 +196,28 @@ fn the_two_ms_claim_keeps_its_first_violating_behaviours() {
     assert!(three_ok > 0, "a witness whose attempt drew 3 ms and ok");
 }
 
+/// FR-192 "estimate": a quantile claim reports, beside `Pr(M <= c | activated)`,
+/// the empirical nearest-rank quantile of the counted measures. Over
+/// `Service` the exact distribution of the latency is `Pr(M <= 2) = 0.898`
+/// and `Pr(M <= 3) = 0.967`, so the `0.95`-quantile is 3 ms; a claim of
+/// another form reports none.
+#[trace("TC-624")]
+#[test]
+fn a_quantile_claim_reports_its_empirical_quantile() {
+    let world = service();
+    let verdict = decided(&world, "P95", StatisticalMethod::Okamoto);
+    let three = Some(MeasureValue::Value(ratio(3, 1)));
+    assert_eq!(verdict.tests[0].quantile, three);
+    assert_eq!(verdict.quantile, three);
+
+    let mean = "probabilistic Mean using ev on M over (s: M::Server) under Steady on origin \
+         with alpha 0.1, beta 0.1, indifference 0.1 \
+         { mean of (fraction holds(s.phase = 0) over [0, 10]) >= 0.2 }";
+    let world = World::new(&prob_world::service(mean));
+    let verdict = decided(&world, "Mean", StatisticalMethod::Okamoto);
+    assert_eq!(verdict.quantile, None);
+}
+
 /// Checks FR-189-AC-4 (TC-624 step 4), the activation clause: over a
 /// `Service` whose `request` starts the server with probability `1/2`, an
 /// Okamoto `P95` counts only activated samples, `23,026` of them, and draws
@@ -330,6 +357,29 @@ fn a_dropped_coin_rejects_its_test_at_the_undefined_position() {
     assert_eq!(record.reason, UndefinedReason::AbsentKey);
 }
 
+/// Checks FR-189-AC-5 (TC-624 step 5), the undecided-successor clause: over
+/// a cell whose `inc` postcondition divides by zero at a candidate
+/// post-state, the contract conjunction is undecided at the first state, so
+/// the test is Undecided, `UndecidedSuccessor`, with no interval and no
+/// counted sample, and the claim is Undecided.
+#[trace("TC-624", "FR-189-AC-5")]
+#[test]
+fn an_undecided_contract_conjunction_leaves_its_test_undecided() {
+    let claim = "probabilistic Safe using ev on M over (c: M::Cell) under Even on origin \
+         with alpha 0.01, beta 0.01, indifference 0.1 \
+         { probability >= 0.5 [ always[0,3] holds(c.v >= 0) ] }";
+    let world = World::with_value_profile(&prob_world::undetermined(claim));
+    let verdict = decided(&world, "Safe", StatisticalMethod::Okamoto);
+    let undecided = Decision::Undecided(UndecidedCause::UndecidedSuccessor);
+    assert_eq!(verdict.decision, undecided);
+    let [test] = &verdict.tests[..] else {
+        panic!("one test: {:?}", verdict.tests);
+    };
+    assert_eq!(test.decision, undecided);
+    assert_eq!((test.samples, test.interval.clone()), (0, None));
+    assert!(verdict.witnesses.is_empty());
+}
+
 /// Checks FR-189-AC-7 (TC-624 step 7): over `Wide`, whose `spin` draws from
 /// weights totalling `2^256 + 1`, the first sample stops the run
 /// `Unsupported` with `TotalAboveDrawRange{total}`, `total` `2^256 + 1`, and
@@ -453,6 +503,123 @@ fn fractions_are_decided_over_the_models_behaviours() {
     assert!(long_run.witnesses.is_empty());
 }
 
+/// A declaration that the servers `a` and `b` of `Service` are interchangeable.
+fn interchangeable() -> Vec<SymmetryDeclaration> {
+    vec![SymmetryDeclaration {
+        population: DeclarationKey {
+            package: "test/service".to_owned(),
+            node: "ix://test/service/servers".to_owned(),
+        },
+        classes: vec![vec!["a".to_owned(), "b".to_owned()]],
+    }]
+}
+
+fn busy_claim() -> String {
+    "probabilistic Busy using ev on M over (s: M::Server) under Steady on origin \
+     with alpha 0.1, beta 0.1, indifference 0.1 \
+     { probability >= 0.5 [ eventually[0,10] holds(s.phase = 1) ] }"
+        .to_owned()
+}
+
+/// Checks FR-189-AC-3 (TC-624 step 3), the symmetry clause: two servers
+/// that a declaration makes interchangeable, from one initial state, run
+/// one test, with `α' = α` where two pairs would run two; without the
+/// declaration, or over a population not declared `symmetric`, they run two,
+/// and a declaration the population does not admit is refused.
+#[trace("TC-624", "FR-189-AC-3")]
+#[test]
+fn two_symmetric_servers_run_one_test() {
+    let claim = busy_claim();
+    let symmetric = World::symmetric_objects(&prob_world::service(&claim), &["a", "b"]);
+    fn request(world: &World, symmetry: Vec<SymmetryDeclaration>) -> StatisticalRequest<'_> {
+        StatisticalRequest {
+            subject: world.subject(),
+            claim: world.claim("Busy"),
+            method: StatisticalMethod::Okamoto,
+            seed: 7,
+            sampler: sampler(),
+            limits: StatisticalLimits::default(),
+            max_witnesses: DEFAULT_MAX_WITNESSES,
+            symmetry,
+        }
+    }
+    let verdict = completed(check_statistical(
+        request(&symmetric, interchangeable()),
+        &Cancel::new(),
+    ));
+    assert_eq!(verdict.basis.tests, 1);
+    assert_eq!(verdict.tests.len(), 1);
+    assert_eq!(verdict.basis.alpha_per_test, ratio(1, 10));
+    // Okamoto at `m = 1`: `N = ⌈ln 10 / (2 · 1/100)⌉`.
+    assert_eq!(verdict.tests[0].samples, 116);
+
+    let plain = completed(check_statistical(
+        request(&symmetric, Vec::new()),
+        &Cancel::new(),
+    ));
+    assert_eq!(plain.basis.tests, 2);
+    assert_eq!(plain.basis.alpha_per_test, ratio(1, 20));
+
+    let ordinary = World::with_objects(&prob_world::service(&claim), &["a", "b"]);
+    let refusal = check_statistical(request(&ordinary, interchangeable()), &Cancel::new());
+    let Err(refusal) = refusal else {
+        panic!("a population not declared symmetric is refused: {refusal:?}");
+    };
+    assert!(matches!(
+        refusal,
+        StatisticalRefusal::Symmetry(SymmetryRefusal::NotSymmetric { declaration: 0, .. })
+    ));
+    assert!(settle_statistical_refusal(&refusal).is_err());
+}
+
+/// Checks FR-189-AC-3's symmetry clause across initial states: two initial
+/// states that are images of each other under the class (`a` busy and `b`
+/// idle, then the reverse), with an `over` binding, are four pairs in two
+/// orbits, `(s1, a) ~ (s2, b)` and `(s1, b) ~ (s2, a)`. EN-4 runs `m = 2`
+/// tests, each on the least pair of its orbit, so both start at the same
+/// initial state and differ by binding; without the declaration it runs four.
+#[trace("TC-624", "FR-189-AC-3")]
+#[test]
+fn mirrored_initial_states_merge_into_two_orbits() {
+    let state =
+        |phase: i64| json!({"phase": {"integer": phase.to_string()}, "attempts": {"integer": "0"}});
+    let mirrored = [
+        json!({"objects": {"a": state(1), "b": state(0)}}),
+        json!({"objects": {"a": state(0), "b": state(1)}}),
+    ];
+    let world =
+        World::symmetric_with_initials(&prob_world::service(&busy_claim()), &["a", "b"], &mirrored);
+    let run = |symmetry| {
+        completed(check_statistical(
+            StatisticalRequest {
+                subject: world.subject(),
+                claim: world.claim("Busy"),
+                method: StatisticalMethod::Okamoto,
+                seed: 7,
+                sampler: sampler(),
+                limits: StatisticalLimits::default(),
+                max_witnesses: DEFAULT_MAX_WITNESSES,
+                symmetry,
+            },
+            &Cancel::new(),
+        ))
+    };
+    let merged = run(interchangeable());
+    assert_eq!(merged.basis.tests, 2);
+    assert_eq!(merged.basis.alpha_per_test, ratio(1, 20));
+    let [first, second] = &merged.tests[..] else {
+        panic!("two tests: {:?}", merged.tests);
+    };
+    assert_eq!(first.initial, second.initial);
+    let keys: Vec<&str> = [first, second]
+        .iter()
+        .map(|test| test.binding.as_ref().expect("a binding").key.as_str())
+        .collect();
+    assert_eq!(keys, ["a", "b"]);
+    let plain = run(Vec::new());
+    assert_eq!(plain.basis.tests, 4);
+}
+
 /// FR-189 "Inputs": the sampler is checked by identity before any draw.
 #[trace("TC-624")]
 #[test]
@@ -468,6 +635,7 @@ fn another_sampler_is_refused() {
             sampler: other.clone(),
             limits: StatisticalLimits::default(),
             max_witnesses: DEFAULT_MAX_WITNESSES,
+            symmetry: Vec::new(),
         },
         &Cancel::new(),
     );
