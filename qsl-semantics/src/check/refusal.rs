@@ -1059,6 +1059,16 @@ pub enum TemporalCause {
         /// The clause's span.
         span: Span,
     },
+    /// FR-212 "Targets at S3": a fairness constraint resolved to a
+    /// protocol target, which no S4 emission writes yet: refused rather
+    /// than compiled into a clause whose identity does not bind it.
+    /// Located at the constraint's name.
+    ProtocolFairnessNotEmitted {
+        /// The resolved constraint.
+        constraint: Box<super::temporal_clause::CheckedProtocolFairness>,
+        /// The constraint name's span.
+        span: Span,
+    },
 }
 
 impl TemporalCause {
@@ -1076,7 +1086,8 @@ impl TemporalCause {
             | Self::AmbiguousPopulation { span, .. }
             | Self::FairnessUnderBoundedProfile { span }
             | Self::TimedIntervalNotChecked { span }
-            | Self::NotEmitted { span, .. } => *span,
+            | Self::NotEmitted { span, .. }
+            | Self::ProtocolFairnessNotEmitted { span, .. } => *span,
         }
     }
 
@@ -1088,7 +1099,8 @@ impl TemporalCause {
             | Self::OpenInterval { .. }
             | Self::FairnessUnderBoundedProfile { .. }
             | Self::TimedIntervalNotChecked { .. }
-            | Self::NotEmitted { .. } => Code::UnsupportedConstruct,
+            | Self::NotEmitted { .. }
+            | Self::ProtocolFairnessNotEmitted { .. } => Code::UnsupportedConstruct,
             Self::UnresolvedFairnessOperation { .. } => Code::MissingDeclaration,
             Self::AmbiguousFairnessOperation { .. } | Self::AmbiguousPopulation { .. } => {
                 Code::AmbiguousDeclaration
@@ -1110,7 +1122,9 @@ impl TemporalCause {
                 "ambiguous-name"
             }
             Self::InvertedInterval { .. } => "type-mismatch",
-            Self::TimedIntervalNotChecked { .. } | Self::NotEmitted { .. } => "not-yet-implemented",
+            Self::TimedIntervalNotChecked { .. }
+            | Self::NotEmitted { .. }
+            | Self::ProtocolFairnessNotEmitted { .. } => "not-yet-implemented",
             Self::ParameterType { fault, .. } => type_fault_class(fault).1,
         }
     }

@@ -332,9 +332,10 @@ pub use state_graph_claim::{
 pub use temporal_clause::check_clauses;
 
 pub use temporal_clause::{
-    Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedTemporalClause,
-    FormulaNode, FormulaNodeId, TemporalClaim, TemporalDeclaration, TemporalDeclarations,
-    TemporalSelection, TemporalTraceFamily, UnaryTemporal,
+    Activation, BinaryTemporal, CheckedFormula, CheckedOperator, CheckedProtocolFairness,
+    CheckedProtocolTarget, CheckedTemporalClause, FormulaNode, FormulaNodeId, TemporalClaim,
+    TemporalDeclaration, TemporalDeclarations, TemporalSelection, TemporalTraceFamily,
+    UnaryTemporal,
 };
 
 /// A checked function.
@@ -2023,6 +2024,7 @@ impl PackageDeclarations {
             embedding: embedding.as_deref(),
             position_limit: limits.nodes(),
             models: &models,
+            protocols: &checked_protocols,
         };
         let mut checked_temporal = Vec::with_capacity(self.temporal_clauses.len());
         for (index, clause) in self.temporal_clauses.iter().enumerate() {
@@ -2034,7 +2036,7 @@ impl PackageDeclarations {
                 &mut contract_scopes,
             );
             match temporal_clause::TemporalTraceFamily::check(clause, &mut contract_cx) {
-                Ok(staged) if !temporal_clause::is_emitted(&clause.form) => {
+                Ok(staged) if !temporal_clause::is_emitted(&clause.form, staged.value()) => {
                     refusals.push(temporal_clause::not_emitted(&staged.into_value()));
                 }
                 Ok(staged) => {
@@ -2196,6 +2198,7 @@ impl PackageDeclarations {
                 embedding: embedding.as_deref(),
                 position_limit: limits.nodes(),
                 models: &models,
+                protocols: &checked_protocols,
             },
             models: &models,
             signatures: &signatures,

@@ -77,6 +77,7 @@ fn check(package: &PackageDeclarations) -> Outcome {
         embedding: None,
         position_limit: 10_000,
         models: &package.models,
+        protocols: &[],
     };
     let mut meter = quire_exact::Meter::new(crate::check::family::SCALAR_LIMITS_UNLIMITED);
     let mut diagnostics = DiagnosticSink::default();

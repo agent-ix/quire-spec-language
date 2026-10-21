@@ -2318,6 +2318,7 @@ pub fn check_hyper_clauses(
             embedding: None,
             position_limit: 10_000,
             models: &package.models,
+            protocols: &[],
         },
         models: &package.models,
         // The helper checks clauses over no declared function.

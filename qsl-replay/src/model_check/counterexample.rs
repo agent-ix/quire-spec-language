@@ -12,12 +12,12 @@
 use qsl_eval::model_subject::ModelInstance;
 use qsl_eval::simulation::model::ModelFinding;
 use qsl_eval::simulation::protocol::{BlockedThread, ThreadPath, WaitCause};
+use qsl_eval::simulation::SubjectTransition;
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::digest::{DigestRecord, WireNodeId};
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_semantics::check::FormulaNodeId;
 use quire_exact::{Origin, Role};
-use quire_semantic_value::fairness::FairnessConstraint;
 use quire_semantic_value::model_transition::ModelTransition;
 
 use crate::refinement::{MappingRowRef, ObjectKey, RefinementFailure};
@@ -136,7 +136,7 @@ pub struct Lasso {
 /// protocol transition identities (ADR-027 PX-1): a finite prefix, or with
 /// a [`Lasso`] the stem and loop of a liveness refutation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TemporalCounterexample<T = ModelTransition> {
+pub struct TemporalCounterexample<T: SubjectTransition = ModelTransition> {
     /// The index of the behaviour's initial state in the subject's ordered
     /// list of initial states.
     pub initial_state: usize,
@@ -146,8 +146,9 @@ pub struct TemporalCounterexample<T = ModelTransition> {
     /// population and key (FR-125 Instancing); `None` for the
     /// deadlock-freedom item.
     pub over_binding: Option<ModelInstance>,
-    /// The item's fairness set; empty for the deadlock-freedom item.
-    pub fairness: Vec<FairnessConstraint>,
+    /// The item's fairness set; empty for the deadlock-freedom item. Over a
+    /// protocol subject each member carries its target and origin (FR-212).
+    pub fairness: Vec<T::Fairness>,
     /// What the counterexample refutes.
     pub kind: CounterexampleKind,
     /// The loop of a liveness refutation; `None` for a finite prefix.
@@ -181,7 +182,7 @@ pub fn undefined_finding(
     })
 }
 
-impl<T> TemporalCounterexample<T> {
+impl<T: SubjectTransition> TemporalCounterexample<T> {
     /// The counterexample's length: its number of transitions, stem and loop
     /// together (ADR-018 "Length"). A terminal stutter loop is one transition
     /// (ADR-018 SM-4) that [`Self::prefix`] does not list.
@@ -213,7 +214,7 @@ impl<T> TemporalCounterexample<T> {
     }
 }
 
-impl<T: Clone + std::fmt::Debug + Eq> FamilyPayload for TemporalCounterexample<T> {
+impl<T: SubjectTransition> FamilyPayload for TemporalCounterexample<T> {
     /// The inline size plus each step's, each constraint's and each blocked
     /// thread's, its paths and names included.
     fn measured_bytes(&self) -> usize {
@@ -226,7 +227,7 @@ impl<T: Clone + std::fmt::Debug + Eq> FamilyPayload for TemporalCounterexample<T
             .saturating_add(
                 self.fairness
                     .len()
-                    .saturating_mul(std::mem::size_of::<FairnessConstraint>()),
+                    .saturating_mul(std::mem::size_of::<T::Fairness>()),
             )
             .saturating_add(
                 self.blocked

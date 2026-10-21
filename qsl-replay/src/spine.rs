@@ -1164,6 +1164,11 @@ fn check_message(refusals: &[CheckRefusal]) -> String {
                 TemporalCause::TimedIntervalNotChecked { .. } => {
                     format!("{message}: a timed interval is not checked yet")
                 }
+                TemporalCause::ProtocolFairnessNotEmitted { constraint, .. } => format!(
+                    "{message}: the fairness constraint names a target of protocol `{}`, \
+                     which is not emitted yet",
+                    constraint.protocol
+                ),
             };
         }
         _ => {}

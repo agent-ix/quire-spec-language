@@ -199,7 +199,7 @@ impl StepKind {
 }
 
 /// The members a step's identity carries beside its kind.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Members {
     /// `operation`, `receiver` and `arguments`, with the FR-120 identity of
     /// the application they name.
@@ -599,6 +599,27 @@ impl PartialEq for ProtocolTransition {
 }
 
 impl Eq for ProtocolTransition {}
+
+/// A total order consistent with equality: by kind, thread, node and the
+/// identity's members, so a step's send record and queue removal, which are
+/// not part of its identity, do not order it. It is not the canonical order
+/// of FR-101, which is the order of the identities' JCS bytes.
+impl Ord for ProtocolTransition {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.kind, &self.thread, &self.node, &self.members).cmp(&(
+            other.kind,
+            &other.thread,
+            &other.node,
+            &other.members,
+        ))
+    }
+}
+
+impl PartialOrd for ProtocolTransition {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl Encode for ProtocolTransition {
     fn encode_into<S: Sink + ?Sized>(&self, writer: &mut Writer<'_, S>) -> Result<(), Error> {
