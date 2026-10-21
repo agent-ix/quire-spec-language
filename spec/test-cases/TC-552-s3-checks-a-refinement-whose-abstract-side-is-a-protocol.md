@@ -32,12 +32,12 @@ Fixtures: `Twice`, `CasTwice` and `Full` (FR-147); `CasRefinesCounter`
 3. Check and settle `CasTwice` with `ensure fair weak Spec::Counter::inc`.
 4. Check `CasTwice` with `finish` removed from the refinement's internal list,
    with the list naming `finish`, and with the list naming `finish` beside
-   a step row `-> node Spec::Twice::finish(self)`.
+   a step row `-> node Spec::Twice::Done(self)`.
 5. Resolve `CasTwice`'s list from the FR-147 value, with the value absent,
    `[]`, holding only `{"refinement": "CasRefinesCounter", "internal": []}`,
    and holding the two entries of FR-147-AC-5 in both orders and in two arrays
    swapped, and for a refinement with the lower-case alias `spec` the
-   permutations of `["spec::Twice::finish", "lose spec::Twice::ch"]`.
+   permutations of `["spec::Twice::Done", "lose spec::Twice::ch"]`.
 6. Resolve each defect variant of FR-147-AC-6, one value per variant.
 7. Give the refinement check a non-empty resolved list for `CasTwice` and for
    `CasRefinesCounter`, and an empty one.
@@ -50,7 +50,7 @@ Fixtures: `Twice`, `CasTwice` and `Full` (FR-147); `CasRefinesCounter`
 11. Give the refinement check, in a build omitting `refinement-internal-list`,
     `CasTwice`'s list with an unresolved entry, a value attributable to no refinement, a
     well-formed non-empty list and a malformed entry on `CasRefinesCounter`,
-    and on `CasRefinesCounter` an entry `Other::Twice::finish`.
+    and on `CasRefinesCounter` an entry `Other::Twice::Done`.
 12. Give the refinement check a non-empty and an empty list for
     `CasRefinesCounter`.
 13. Check `CasTwice` with `Twice` declared before and after the refinement,
@@ -61,17 +61,17 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
 ## Expected Results
 
 - Step 1: `AbstractSide::Protocol` naming `Twice`, `abstract_internal =
-  [Twice::finish]`, one `refinement` record and no `temporal-satisfaction` record;
+  [Twice::Done]`, one `refinement` record and no `temporal-satisfaction` record;
   the node row checks naming `a1`.
 - Step 2: each variant refuses with FR-147-AC-2's code and subcode.
 - Step 3: liveness half `unsupported`, `unsupported-requested-capability`,
   naming hidden abstract fields.
 - Step 4: checks with `finish` visible and `abstract_internal` empty; checks
   with `finish` internal; `invalid_model_binding`/`conflicting-binding`.
-- Step 5: the fixture value gives `abstract_internal = [Twice::finish]`; the
+- Step 5: the fixture value gives `abstract_internal = [Twice::Done]`; the
   other three give it empty; the two orders and the swapped arrays give the
   same list, ordered by the bytes of the alias-free spellings; the `spec`
-  vector gives `[Twice::finish, lose Twice::ch]` in both orders.
+  vector gives `[Twice::Done, lose Twice::ch]` in both orders.
 - Step 6: each variant, `"refinement": 7` at `/0/refinement` included, refuses
   with FR-147-AC-6's code and subcode at its (input, JSON Pointer) pair (both pairs for a conflict) and gives no list.
 - Step 7: the non-empty list for `CasRefinesCounter` refuses exactly once,
@@ -83,7 +83,7 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   for the list.
 - Step 8: each entry makes exactly its own class internal; the resolved list
   is in the byte order of the alias-free spellings.
-- Step 9: `abstract_internal = [Twice::finish]` before and after the rename,
+- Step 9: `abstract_internal = [Twice::Done]` before and after the rename,
   with the same node identity; the empty list gives a different identity.
 - Step 10: the unit's defect is located at (the unit's value, pointer), the
   library's at (that library's value, pointer) and the compilation is not
@@ -95,7 +95,7 @@ Tag the tests `#[trace("TC-552", "FR-147-AC-n")]`.
   too); the value attributable to no refinement gives its
   defect alone; the well-formed non-empty list gives only the
   `not-yet-implemented` refusal at the model alias; the malformed entry gives
-  `malformed-declaration`; `Other::Twice::finish` on `CasRefinesCounter`
+  `malformed-declaration`; `Other::Twice::Done` on `CasRefinesCounter`
   gives no `missing-name`.
 - Step 12: the non-empty list refuses `invalid_model_binding`/
   `malformed-declaration` at the unit's value `/0`; the empty list does not

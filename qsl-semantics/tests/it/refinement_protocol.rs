@@ -217,11 +217,12 @@ const MALFORMED: Catalog = (Code::InvalidModelBinding, Some("malformed-declarati
 const CONFLICTING: Catalog = (Code::InvalidModelBinding, Some("conflicting-binding"));
 const UNSUPPORTED: Catalog = (Code::UnsupportedConstruct, Some("not-yet-implemented"));
 
-/// FR-147-AC-1 (TC-552 step 1): `CasTwice` checks with the protocol side
+/// Part of FR-147-AC-1 (TC-552 step 1; tagged TC-only while the requirement
+/// record is unbuilt): `CasTwice` checks with the protocol side
 /// naming `Twice` and the alias-free `abstract_internal = [Twice::Done]`; a
 /// row `commitA -> node Spec::Twice::a1(self)` checks, naming node `a1`. The
 /// requirement record is S4's and not tested.
-#[trace("TC-552", "FR-147-AC-1")]
+#[trace("TC-552")]
 #[test]
 fn a_refinement_over_a_protocol_checks_with_its_internal_list() {
     let graph = checked(&cas_twice(), internal(&["Spec::Twice::Done"]));
@@ -326,7 +327,9 @@ fn each_refusal_of_the_protocol_side_is_located() {
     );
     for support in [RefinementSupport::BUILD, UNBUILT] {
         let found = refused(&format!("{}{model_row}", twice("Spec")), None, support);
-        assert_eq!(only(&found).code_and_cause(), MALFORMED);
+        let row = only(&found);
+        assert_eq!(row.code_and_cause(), MALFORMED);
+        assert_eq!(row.at.as_deref(), Some("Spec::Twice::a1"), "at the node");
     }
 
     // Only an attempt, event, send, receive or finish node is a right side.
@@ -757,28 +760,38 @@ fn the_protocol_is_checked_before_the_refinement_whatever_the_source_order() {
     let (before, after) = (the_refinement(&before), the_refinement(&after));
     assert_eq!(before.abstract_side(), after.abstract_side());
     assert_eq!(before.abstract_internal(), after.abstract_internal());
-    assert_eq!(before.steps().len(), after.steps().len());
+    assert_eq!(
+        format!("{:?}", before.steps()),
+        format!("{:?}", after.steps())
+    );
+    assert_eq!(
+        format!("{:?}", before.objects()),
+        format!("{:?}", after.objects())
+    );
+    assert_eq!(
+        format!("{:?}", before.populations()),
+        format!("{:?}", after.populations())
+    );
 
     // `Twice` refused by its own checks: a role on a type that is no object
-    // type of any model.
+    // type of any model. The refusals are those of the clause checked alone.
     let broken = mutated(
         &twice("Spec"),
         "role w on Spec::Counter;",
         "role w on Spec::Nope;",
     );
+    let alone = refused(&broken, None, RefinementSupport::BUILD);
+    assert!(!alone.is_empty());
     let found = refused(
         &format!("{broken}{}", refinement("Spec", "Twice")),
-        None,
+        internal(&["Spec::Twice::Done"]),
         RefinementSupport::BUILD,
     );
-    assert!(!found.is_empty());
-    assert!(
-        found.iter().all(|f| !matches!(
-            f.refinement_or_none(),
-            Some(RefinementCause::Unresolved { .. })
-        )),
-        "no missing-name for the clause name"
-    );
+    let debug = |found: &[Found]| -> Vec<String> {
+        found.iter().map(|f| format!("{:?}", f.refusal)).collect()
+    };
+    assert_eq!(debug(&found), debug(&alone));
+    assert!(found.iter().all(|f| f.refinement_or_none().is_none()));
 }
 
 impl Found {
@@ -812,10 +825,11 @@ fn full() -> String {
     .to_owned()
 }
 
-/// FR-147-AC-8 (TC-552 step 8): each class spells and resolves over `Full`
+/// Part of FR-147-AC-8 (TC-552 step 8; tagged TC-only while `cattempt` and
+/// `cend` have no fixture): each class spells and resolves over `Full`
 /// and makes exactly its own class internal, in the byte order of the
 /// alias-free spellings.
-#[trace("TC-552", "FR-147-AC-8")]
+#[trace("TC-552")]
 #[test]
 fn each_class_spells_and_resolves_over_a_protocol_that_has_it() {
     let unit = format!("{}{}", full(), refinement("Spec", "Full"));
@@ -858,4 +872,173 @@ fn each_class_spells_and_resolves_over_a_protocol_that_has_it() {
         let found = refused(&unit, internal(&[entry]), RefinementSupport::BUILD);
         assert_eq!(only(&found).code_and_cause(), MISSING, "{entry}");
     }
+}
+
+/// The protocol `Rich`: an `await` (the `timeout` class) and an `on each`
+/// trigger (the `activate` class), over the counter model. A compensation
+/// template needs a record type for its attempts, which the counter models
+/// do not declare, so `cattempt` and `cend` have no fixture here.
+fn rich() -> String {
+    "protocol Rich using v over (c: Spec::Counter) on each (trg0: Boolean) {\n\
+     role w on Spec::Counter;\n\
+     run sequence Main {\n\
+     attempt Tried by w on Spec::Counter::inc contracts [] as (tried: Boolean) { true };\n\
+     await Wait after Tried using v clock \"wall\" within [0,1] \
+     match event Seen by w as (seen: Boolean) { true }; \
+     then sequence Then { } timeout sequence Late { }\n\
+     }\n\
+     finish Done as (d: Boolean) { true };\n\
+     }\n"
+    .to_owned()
+}
+
+/// Part of FR-147-AC-8 (TC-552 step 8): the `timeout` class of an `await`
+/// node and the `activate` class of an `on each` trigger spell and resolve;
+/// an `on origin` protocol has no trigger.
+#[trace("TC-552")]
+#[test]
+fn the_timeout_and_activate_classes_resolve() {
+    let unit = format!("{}{}", rich(), refinement("Spec", "Rich"));
+    let entries = ["Spec::Rich::Wait", "activate Spec::Rich"];
+    let graph = checked(&unit, internal(&entries));
+    let resolved: Vec<&str> = spellings(the_refinement(&graph));
+    assert_eq!(resolved, ["Rich::Wait", "activate Rich"]);
+    // An `on origin` protocol has no trigger to activate.
+    let found = refused(
+        &format!("{}{}", twice("Spec"), refinement("Spec", "Twice")),
+        internal(&["activate Spec::Twice"]),
+        RefinementSupport::BUILD,
+    );
+    assert_eq!(only(&found).code_and_cause(), MISSING);
+}
+
+/// FR-135-AC-9 (TC-540): a non-empty resolved list refuses
+/// `unsupported_construct`/`not-yet-implemented` naming
+/// `refinement-internal-list`, once for the refinement, at the first token of
+/// the name after `abstract`, with no `subject` member and the profile
+/// identity; the pair is the one FR-341-AC-5 classifies `unsupported`
+/// (checked on the pair in qsl-replay). A list with a resolution defect
+/// reports the defect and not this pair.
+#[trace("TC-540", "FR-135-AC-9")]
+#[test]
+fn the_list_refusal_names_the_feature_the_refinement_and_no_subject() {
+    let support = RefinementSupport {
+        protocol_abstract_side: true,
+        refinement_internal_list: false,
+    };
+    let found = refused(&cas_twice(), internal(&["Spec::Twice::Done"]), support);
+    let list = only(&found);
+    assert_eq!(list.code_and_cause(), UNSUPPORTED);
+    assert_eq!(list.at.as_deref(), Some("Spec"));
+    let CheckCause::Refinement(refusal) = &list.refusal.cause else {
+        panic!("a refinement refusal");
+    };
+    assert_eq!(refusal.refinement, "CasTwice");
+    let RefinementCause::Unsupported {
+        feature,
+        profile,
+        subject,
+    } = &refusal.cause
+    else {
+        panic!("not yet implemented: {:?}", refusal.cause);
+    };
+    assert_eq!(feature.name(), "refinement-internal-list");
+    assert_eq!(profile, "quire.temporal.infinite-trace/v1");
+    assert_eq!(*subject, None);
+
+    let found = refused(&cas_twice(), internal(&["Spec::Twice::zz"]), support);
+    assert_eq!(only(&found).code_and_cause(), MISSING);
+}
+
+/// FR-147-AC-11 and FR-147 "Precedence": the defects of the value are
+/// reported beside the refusals of the rest of the stage, which would
+/// otherwise end it first.
+#[trace("TC-552", "FR-147-AC-11")]
+#[test]
+fn the_defects_of_the_value_are_reported_beside_another_refinements_refusal() {
+    let unit = format!(
+        "{}{}",
+        twice("Spec"),
+        mutated(
+            &cas_refines_counter(),
+            "step Impl::Counter::peek -> stutter;",
+            ""
+        )
+    );
+    let value = Some(json!([{"refinement": "CasRefinesCounter", "internal": [7]}]));
+    let found = refused(&unit, value, RefinementSupport::BUILD);
+    let mut kinds: Vec<_> = found
+        .iter()
+        .map(|f| match f.refinement() {
+            RefinementCause::MissingRow { .. } => "missing row",
+            RefinementCause::InternalList(_) => "list defect",
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    kinds.sort_unstable();
+    assert_eq!(kinds, ["list defect", "missing row"]);
+}
+
+/// A shape defect of an object that names a refinement is that refinement's
+/// alone: its entries are not resolved, so nothing else is reported for it.
+#[trace("TC-552", "FR-147-AC-6")]
+#[test]
+fn a_shape_defect_of_a_named_object_is_reported_once() {
+    let object = |name: &str, entries: Value| {
+        Some(json!([{"refinement": name, "internal": entries, "visible": []}]))
+    };
+    let found = refused(
+        &cas_twice(),
+        object("CasTwice", json!(["Spec::Twice::zz"])),
+        RefinementSupport::BUILD,
+    );
+    let defect = only(&found);
+    assert_eq!(defect.code_and_cause(), MALFORMED);
+    assert_eq!(defect.pointer(), ("/0", None));
+    let unit = format!("{}{}", twice("Spec"), cas_refines_counter());
+    let found = refused(
+        &unit,
+        object("CasRefinesCounter", json!(["Spec::Twice::Done"])),
+        RefinementSupport::BUILD,
+    );
+    assert_eq!(only(&found).pointer(), ("/0", None));
+}
+
+/// A clause refused by its controls check reports its own refusals alone:
+/// the refinement does not resolve a list entry against what the clause
+/// failed to check.
+#[trace("TC-552", "FR-147-AC-13")]
+#[test]
+fn a_clause_refused_by_its_controls_check_gives_no_name_error() {
+    let broken = mutated(&twice("Spec"), "from w to w", "from w to nobody");
+    let alone = refused(&broken, None, RefinementSupport::BUILD);
+    assert!(!alone.is_empty());
+    let found = refused(
+        &format!("{broken}{}", refinement("Spec", "Twice")),
+        internal(&["lose Spec::Twice::ch"]),
+        RefinementSupport::BUILD,
+    );
+    assert_eq!(found.len(), alone.len());
+    assert!(found.iter().all(|f| f.refinement_or_none().is_none()));
+}
+
+/// FR-147 "Abstract side": the protocol's state takes no row, so an object
+/// row's field row naming a protocol binder is refused
+/// `invalid_model_binding`/`malformed-declaration`.
+#[trace("TC-552")]
+#[test]
+fn a_field_row_naming_a_protocol_binder_is_refused() {
+    let row = mutated(
+        &cas_twice(),
+        "{ value = self.value; }",
+        "{ value = self.value; r1 = self.value; }",
+    );
+    let found = refused(&row, None, RefinementSupport::BUILD);
+    let field = only(&found);
+    assert_eq!(
+        field.code_and_cause(),
+        MALFORMED,
+        "{:?}",
+        field.refinement()
+    );
 }

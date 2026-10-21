@@ -89,3 +89,17 @@ suites were not re-run after the last edits, for the refinement filter.
 | FND-007 | low | Replay and analyze map `SubjectRefusal::ProtocolAbstractSide` to `InternalFault("the-subjects-of-a-refinement-open")`. That is the label for a broken invariant, but a protocol subject is a legitimate checked input that is not yet decided (FR-148). Fix: give it its own refusal (not-yet-implemented `protocol-abstract-side`), or at least its own invariant label, so it does not read as `NoModels`. | qsl-replay/src/certificate/simulation.rs:385-389; qsl-analyze/src/model_check/refine.rs:167-169 |
 | FND-008 | low | `PackageDeclarations::refinement_support` is a `pub` field. The doc says "only a test replaces it", and the setter is `cfg(test-support)`, but any crate can still assign the field. Fix: make the field `pub(crate)`. | qsl-semantics/src/check/check.rs:499-502 |
 | FND-009 | low | `refinement_declarations.rs` widens ten helpers and the `Refused` fields to `pub(crate)`. `refinement_protocol.rs` imports only `assemble`, `counters`, `mutated`, `SPEC` and `CAS`. Fix: revert the widenings that nothing uses. | qsl-semantics/tests/it/refinement_declarations.rs:32-575 |
+
+## Dispositions
+
+| FND | Outcome | Disposition |
+| --- | --- | --- |
+| FND-001 | fixed | The defects of the value are pushed right after `ParsedLists::parse`. Test: `the_defects_of_the_value_are_reported_beside_another_refinements_refusal`. |
+| FND-002 | fixed | A clause whose own checks added a refusal is built into its view with `checked: None`. Test: `a_clause_refused_by_its_controls_check_gives_no_name_error`. |
+| FND-003 | documented | The S3 inputs hold the unit's protocol clauses only; a dependency's checked clauses are not an input, and a model alias names a domain package that declares none, so the missing-name is the answer for every input this build can receive. FR-147 now records the dependency clause as Remaining work. |
+| FND-004 | documented | FR-147 "Step rows and observations" states `Remaining work: STD-249` and what this build checks. |
+| FND-005 | fixed | A shape defect is attributed to the refinement `refinement` names, which then has no list. Test: `a_shape_defect_of_a_named_object_is_reported_once`. |
+| FND-006 | fixed | Refused at `node.span`; the model-subject vector asserts the located text. |
+| FND-007 | fixed | `ModelCheckRefusal::ProtocolAbstractSide` and `ClosureRefusal::ProtocolAbstractSide`, both `unsupported_construct/not-yet-implemented`. |
+| FND-008 | rejected | Every field of `PackageDeclarations` is `pub` because other crates build it with `..PackageDeclarations::new(..)`, which needs every field visible (`qsl-eval` does); a private field fails to compile there. The field's doc says only a test replaces it. |
+| FND-009 | fixed | The unused widenings are reverted. |

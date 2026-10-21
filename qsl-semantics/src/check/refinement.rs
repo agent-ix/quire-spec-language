@@ -1537,6 +1537,16 @@ impl<'c, 'a> Checker<'c, 'a> {
         for field in &row.fields {
             let written = field.field.name.as_str();
             let Some(attribute) = types.attribute(target.id, written) else {
+                // The protocol's state takes no row (FR-147 "Abstract side").
+                if self
+                    .protocol
+                    .as_ref()
+                    .is_some_and(|classes| classes.has_state(written))
+                {
+                    self.findings.malformed(written, field.field.span);
+                    complete = false;
+                    continue;
+                }
                 self.findings.unresolved(
                     &format!("{}.{written}", target.name),
                     field.field.span,
@@ -1918,7 +1928,7 @@ impl<'c, 'a> Checker<'c, 'a> {
         if !self.protocol_subject {
             // While the abstract side is a model subject, a right side
             // naming a protocol node is malformed.
-            self.findings.malformed(&node.name, row_span);
+            self.findings.malformed(&node.name, node.span);
             return None;
         }
         // A protocol subject that did not resolve reported why.

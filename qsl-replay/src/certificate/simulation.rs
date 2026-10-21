@@ -382,11 +382,10 @@ pub fn check_simulation_certificate(
     )
     .map_err(|refusal| match refusal {
         SubjectRefusal::Admission(failure) => ClosureRefusal::Admission(failure),
-        SubjectRefusal::NoModels
-        | SubjectRefusal::NoUniverse
-        | SubjectRefusal::ProtocolAbstractSide => {
+        SubjectRefusal::NoModels | SubjectRefusal::NoUniverse => {
             Checker::Simulation.fault("the-subjects-of-a-refinement-open")
         }
+        SubjectRefusal::ProtocolAbstractSide => ClosureRefusal::ProtocolAbstractSide,
     })?;
     for system in [&concrete, &abstract_system] {
         check_model_bounds(system, BOUND_POSITIONS)

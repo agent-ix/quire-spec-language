@@ -283,13 +283,6 @@ impl ParsedLists {
             self.defect(None, ListDefectKind::Malformed, pointer, None);
             return;
         };
-        // An object is closed to its two keys, which it must both hold.
-        let closed = members
-            .keys()
-            .all(|key| key == "refinement" || key == "internal");
-        if !closed || members.len() < 2 {
-            self.defect(None, ListDefectKind::Malformed, pointer.clone(), None);
-        }
         // The refinement the object is attributable to, when `refinement`
         // is a string naming a declared one.
         let mut refinement: Option<&str> = None;
@@ -313,6 +306,14 @@ impl ParsedLists {
                 format!("{pointer}/refinement"),
                 None,
             ),
+        }
+        // An object is closed to its two keys, which it must both hold; the
+        // defect is the named refinement's when `refinement` names one.
+        let closed = members
+            .keys()
+            .all(|key| key == "refinement" || key == "internal");
+        if !closed || members.len() < 2 {
+            self.defect(refinement, ListDefectKind::Malformed, pointer.clone(), None);
         }
         let mut entries = Vec::new();
         let mut non_empty = false;
@@ -415,6 +416,9 @@ pub(crate) struct ProtocolClasses {
     roles: BTreeMap<String, bool>,
     activates: bool,
     memory: BTreeSet<&'static str>,
+    /// The names of the protocol's own state: its binders, nodes and
+    /// channels (queues), which no object row's field names.
+    state_names: BTreeSet<String>,
 }
 
 impl ProtocolClasses {
@@ -476,14 +480,27 @@ impl ProtocolClasses {
             .iter()
             .filter_map(|parallel| memory_step(parallel.memory))
             .collect();
+        let state_names = form
+            .binders
+            .iter()
+            .map(|binder| binder.name.name.clone())
+            .chain(form.declarations.iter().map(|node| node.name.name.clone()))
+            .chain(checked.channels.iter().map(|channel| channel.name.clone()))
+            .collect();
         Self {
             protocol: form.name.name.clone(),
+            state_names,
             nodes,
             channels,
             roles,
             activates: matches!(form.activation, ActivationForm::Each { .. }),
             memory,
         }
+    }
+
+    /// Whether `name` is a binder, node or queue of the protocol's state.
+    pub(crate) fn has_state(&self, name: &str) -> bool {
+        self.state_names.contains(name)
     }
 
     /// What the node `name` is, when it has a step class.

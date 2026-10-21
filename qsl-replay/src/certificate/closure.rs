@@ -200,6 +200,11 @@ pub enum ClosureRefusal {
     /// The subject's protocol system does not build (FR-205).
     #[error(transparent)]
     Protocol(ProtocolRefusal),
+    /// A refinement whose abstract side is a protocol clause: no abstract
+    /// protocol step is decided yet (FR-148)
+    /// (`unsupported_construct/not-yet-implemented`).
+    #[error("unsupported_construct/not-yet-implemented: a refinement over an abstract protocol subject is not decided yet")]
+    ProtocolAbstractSide,
     /// An invariant of the subject broke.
     #[error("the closure check broke invariant {0:?}")]
     Fault(InternalFault),

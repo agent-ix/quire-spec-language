@@ -1680,6 +1680,18 @@ impl PackageDeclarations {
             self.refinement_internals.as_ref(),
             &declared_refinements,
         );
+        // The defects of the `refinement_internals` value are reported
+        // whatever the support set says and whatever else the stage refuses.
+        for (owner, defect) in &internal_lists.defects {
+            refusals.push(CheckRefusal {
+                location: Location::root(Origin::Expression),
+                cause: CheckCause::Refinement(Box::new(RefinementRefusal {
+                    refinement: owner.clone().unwrap_or_default(),
+                    span: qsl_foundation::Span { start: 0, end: 0 },
+                    cause: RefinementCause::InternalList(defect.clone()),
+                })),
+            });
+        }
         // One refinement checked over the protocol clauses given: none
         // before the clauses are checked.
         macro_rules! check_one_refinement {
@@ -1889,7 +1901,12 @@ impl PackageDeclarations {
                 )
                 .chain(scope.type_names().map(|name| (name, "type"))),
         );
+        // The clauses whose own checks refused something, which a refinement
+        // does not resolve against (FR-147 "Abstract side").
+        let mut refused_protocols: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
         for (index, protocol) in self.protocols.iter().enumerate() {
+            let refused_before = refusals.len();
             let attempts = self
                 .protocol_attempts
                 .get(index)
@@ -2038,6 +2055,9 @@ impl PackageDeclarations {
                         }
                         Err(control_refusals) => refusals.extend(control_refusals),
                     }
+                    if refusals.len() > refused_before {
+                        refused_protocols.insert(protocol.name.name.as_str());
+                    }
                     protocol_bindings.push(bound);
                     checked_protocols.push(checked);
                 }
@@ -2066,25 +2086,14 @@ impl PackageDeclarations {
                 form,
                 checked: checked_protocols
                     .iter()
-                    .find(|checked| checked.name == form.name.name.as_str()),
+                    .find(|checked| checked.name == form.name.name.as_str())
+                    .filter(|_| !refused_protocols.contains(form.name.name.as_str())),
             })
             .collect();
         for (index, refinement) in self.refinements.iter().enumerate() {
             if is_protocol_subject(refinement) {
                 check_one_refinement!(index, refinement, &protocol_views, checked_refinements);
             }
-        }
-        // The defects of the `refinement_internals` value are reported
-        // beside the refinements', whatever the support set says.
-        for (owner, defect) in &internal_lists.defects {
-            refusals.push(CheckRefusal {
-                location: Location::root(Origin::Expression),
-                cause: CheckCause::Refinement(Box::new(RefinementRefusal {
-                    refinement: owner.clone().unwrap_or_default(),
-                    span: qsl_foundation::Span { start: 0, end: 0 },
-                    cause: RefinementCause::InternalList(defect.clone()),
-                })),
-            });
         }
         checked_refinements.sort_by_key(|(index, _)| *index);
         let refinements: Vec<CheckedRefinement> = checked_refinements

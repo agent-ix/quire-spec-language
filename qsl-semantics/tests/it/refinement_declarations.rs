@@ -391,7 +391,7 @@ fn ring_buffer() -> Vec<u8> {
 
 /// The unit selecting each of `models` (alias, package identity, document)
 /// and holding `body`, with the header `profiles`.
-pub(crate) fn unit_text(
+fn unit_text(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -445,26 +445,26 @@ pub(crate) fn assemble(
 }
 
 /// A refusal with the text of the unit it is located at.
-pub(crate) struct Refused {
-    pub(crate) refusal: CheckRefusal,
-    pub(crate) at: String,
-    pub(crate) unit: String,
+struct Refused {
+    refusal: CheckRefusal,
+    at: String,
+    unit: String,
 }
 
 impl Refused {
-    pub(crate) fn refinement(&self) -> &RefinementCause {
+    fn refinement(&self) -> &RefinementCause {
         let CheckCause::Refinement(refusal) = &self.refusal.cause else {
             panic!("a refinement refusal: {:?}", self.refusal);
         };
         &refusal.cause
     }
 
-    pub(crate) fn code_and_cause(&self) -> (Code, Option<&'static str>) {
+    fn code_and_cause(&self) -> (Code, Option<&'static str>) {
         (self.refusal.cause.code(), self.refusal.cause.cause())
     }
 }
 
-pub(crate) fn check_with(
+fn check_with(
     profiles: &str,
     models: &[(&str, &str, &[u8])],
     body: &str,
@@ -475,7 +475,7 @@ pub(crate) fn check_with(
     check_declarations(&text, declarations)
 }
 
-pub(crate) fn check_declarations(
+fn check_declarations(
     text: &str,
     declarations: PackageDeclarations,
 ) -> Result<CheckedGraph, Vec<Refused>> {
@@ -504,7 +504,7 @@ pub(crate) fn check_declarations(
         })
 }
 
-pub(crate) fn refused(models: &[(&str, &str, &[u8])], body: &str) -> Vec<Refused> {
+fn refused(models: &[(&str, &str, &[u8])], body: &str) -> Vec<Refused> {
     match check_with("", models, body) {
         Ok(_) => panic!("{body}: expected a refusal"),
         Err(refusals) => refusals,
@@ -512,7 +512,7 @@ pub(crate) fn refused(models: &[(&str, &str, &[u8])], body: &str) -> Vec<Refused
 }
 
 /// The one refusal of `found`.
-pub(crate) fn only(found: &[Refused]) -> &Refused {
+fn only(found: &[Refused]) -> &Refused {
     let [only] = found else {
         panic!(
             "one refusal: {:?}",
@@ -542,7 +542,7 @@ fn refused_counter(body: &str) -> Vec<Refused> {
 }
 
 /// ADR-020 §8's `CasRefinesCounter`.
-pub(crate) fn cas_refines_counter() -> String {
+fn cas_refines_counter() -> String {
     "refinement CasRefinesCounter using inf abstract Spec concrete Impl {\n\
      population Spec::counters from Impl::counters;\n\
      object Spec::Counter from Impl::Counter { value = self.value; }\n\
@@ -570,7 +570,7 @@ pub(crate) fn mutated(body: &str, from: &str, to: &str) -> String {
     body.replace(from, to)
 }
 
-pub(crate) fn only_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
+fn only_refinement(graph: &CheckedGraph) -> &CheckedRefinement {
     let [refinement] = graph.refinements() else {
         panic!("one refinement: {:?}", graph.refinements());
     };
