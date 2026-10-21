@@ -363,14 +363,15 @@ application's operation (FR-104) and `r`'s most-specific type conforms to
 the clause's context type.
 
 The effective precondition is `true` when no `pre` clause applies, and
-otherwise is the conjunction of the applicable clauses. QSpec FR-151:88-90
-defines the effective precondition as `(own) or (eff(r1)) or ...`, with
-`own` the conjunction of the member's own precondition clauses (`true` when it
-has none) and `eff(r)` the effective precondition of each member it redefines
-(QSpec FR-151-AC-17, TC-196 D09), which `effective_terms`
-(`qsl-semantics/src/check/checked_dispatch.rs:477`) takes. On the spine every
-operation record's `redefines` is `None` (`qsl-semantics/src/model/
-intake.rs:1444`), so the applicable clauses are the selected member's own.
+otherwise is formed as QSpec FR-151's rule `quire.model.conformance.refinement/v1`
+defines it (QSpec FR-151-AC-17 to AC-19, TC-196 D09 to D11): `own(m)` and
+`eff(m)` are QSpec's, and a member's own clauses are conjoined in
+source-declaration order under FR-006's short-circuit. The dispatch path takes
+that rule: `view_clauses` (`dispatch_link.rs`) conjoins the own clauses and
+`effective_terms` (`checked_dispatch.rs`) disjoins the result with the
+redefined member's. On the spine every operation record's `redefines` is
+`None` (`qsl-semantics/src/model/intake.rs:1444`), so the applicable clauses
+are the selected member's own.
 The effective postcondition is the conjunction of the applicable `post`
 clauses, and `true` when none applies.
 
@@ -395,6 +396,8 @@ clause in ascending name order (UTF-8 bytes):
   evaluation }` per such clause, in name order; `candidate` is the
   candidate's state-key digest for a postcondition and none for a
   precondition. The result depends only on the set of clause outcomes.
+
+The simulator's conjunction above evaluates each clause with a fresh meter in ascending name order and depends only on the set of outcomes, so with one clause undefined and another false it gives `false`, while QSpec's rule evaluates in source-declaration order and gives `undefined` when the undefined clause comes first. FR-120 prescribes QSpec's rule for the effective precondition; the simulator is aligned to it by QSL-935 (Remaining work).
 
 An application is enabled when its effective precondition is `true`.
 
@@ -585,3 +588,7 @@ identity text of operation `op`.
   semantics FR-120 uses, through `population::decide_frame`.
 - The S4 `CheckedPackage` and FR-056's package input, which are the
   simulator's whole input.
+
+## Remaining work
+
+- QSL-935: the simulator's precondition conjunction (above) conjoins in source-declaration order as QSpec FR-151-AC-19 states, and the module documentation of `checked_dispatch.rs` is reworded to match.

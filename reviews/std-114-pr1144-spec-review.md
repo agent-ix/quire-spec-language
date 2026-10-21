@@ -1,0 +1,50 @@
+---
+id: SR-13672
+title: 'Spec review of QSL PR #1144: FR-120 cites the FR-151 precondition combination (STD-114)'
+type: SpecReview
+analysis: base
+scope: 'agent-ix/quire-spec-language@8a553371f; spec/functional/FR-120-simulate-a-checked-package-s-state-family.md Contract clauses note; ticket STD-114'
+review_set: subset
+date: '2026-10-21'
+relationships:
+- target: ix://agent-ix/quire-spec-language/FR-120
+  type: reviews
+---
+
+## Summary
+
+Ticket: STD-114. PR quire-spec-language#1144, head 8a553371fbd6213192467da480b5dc722d458518. It merges after quire-specification#318. Review set: base checklist plus the EARS, integrity and failure-domain lenses, in this one document.
+
+The note is right that QSL implements reading (a). `view_clauses` (qsl-semantics/src/check/dispatch_link.rs:309-324) folds a member's `pre` clauses with `BinaryOperator::And`. `effective_terms` (checked_dispatch.rs:460-540) then puts that one own term first and disjoins it with the parent's terms (checked_dispatch.rs:1043-1054). FR-094's E10/C6 `false or true` agrees. The citations to FR-151-AC-17 and TC-196 D09 resolve once #318 merges. Removing the old "QSL's inference" sentence is correct.
+
+Out of scope (code outside this diff), noted for a follow-up: the module doc at qsl-semantics/src/check/checked_dispatch.rs:66-69 still quotes FR-151's old wording, "the disjunction of its own precondition clauses with ...".
+
+Gates at the PR head:
+
+- `make check-spec-validation`: exit 0, warnings only, none in FR-120.
+- `tools/check-index-completeness.sh`: exit 0.
+
+Other places in QSL that mention an effective precondition (FR-090, FR-094, FR-096, FR-107, FR-109, FR-146, FR-180, FR-187, FR-215, the ADRs and TC-407/415/418/472/792/1039/1072) use the term or describe the disjunction function. None of them restates the flat reading. No open QSL PR touches FR-120.
+
+## Scope
+
+| Unit | Path | Role |
+| --- | --- | --- |
+| FR-120 Contract clauses effective-precondition note | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md | examined |
+| FR-120 clause-set conjunction rule | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md | context_only |
+| effective_terms | qsl-semantics/src/check/checked_dispatch.rs | examined |
+| view_clauses | qsl-semantics/src/check/dispatch_link.rs | examined |
+| FR-094 effective-precondition function bullet | spec/functional/FR-094-key-model-owned-reference-population-and-quantity-nodes.md | context_only |
+
+## Findings
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-001 | medium | The cross-reference "QSpec FR-151:88-90" points to the wrong text. FR-151 lines 88-90 are the field rows of the variance table. The refinement rule is at FR-151:121-122 on QSpec main and at 121-127 after #318. A reader who follows the reference lands on `value type`/`multiplicity`/`refinement`, not on the definition. Fix: cite the rule by name, as QSpec FR-151 `quire.model.conformance.refinement/v1` (FR-151-AC-17), without line numbers. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:366 |
+| FND-002 | low | The note credits `effective_terms` (`checked_dispatch.rs:477`) with the whole combination. `effective_terms` starts at line 460, so line 477 is inside it. It only disjoins one own expression per member with the parent's terms. The conjunction of a member's own clauses happens earlier, in `view_clauses` (dispatch_link.rs:309-324). Fix: cite both, for example "`view_clauses` (`dispatch_link.rs`) conjoins the own clauses and `effective_terms` (`checked_dispatch.rs`) disjoins them with the redefined member's". | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:370-371; qsl-semantics/src/check/dispatch_link.rs:309-324; qsl-semantics/src/check/checked_dispatch.rs:460 |
+| FND-003 | low | The note writes its own copy of the formula, `(own) or (eff(r1)) or ...`, with `own` where QSpec has `own(m)` and the trailing `eff(rn)` left out. That is a second definition that can drift from the single one in QSpec. Fix: quote QSpec's formula verbatim, or cite it without restating it. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:367-369 |
+| FND-004 | low | The note says the dispatch path takes FR-151's conjunction. But FR-120's own conjunction, in the next paragraph, evaluates each clause with a fresh meter, in ascending name order, and depends only on the set of outcomes. The dispatch path folds the clauses with an `and` that skips its right operand, in source-declaration order. With one clause undefined and another false, FR-120 gives `false` (not enabled), and the dispatch fold can give undefined. The note does not say the two differ. This is the QSL side of the conjunct-order gap in QSpec PR #318 (SR-13671 FND-001). Fix: once QSpec fixes the order, say whether the two paths agree, or state the difference. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:365-397; qsl-semantics/src/check/dispatch_link.rs:313-321 |
+
+## Verdict
+
+Not mergeable as is, because of FND-001. It is a one-line fix to a reference that points to the wrong text. FND-002 to FND-004 are low. FND-004 depends on how QSpec resolves SR-13671 FND-001, and may be deferred with that. The substance of the change is correct: QSL's dispatch code implements reading (a), and the note now cites the normative AC and vector instead of calling the rule QSL's own inference.
