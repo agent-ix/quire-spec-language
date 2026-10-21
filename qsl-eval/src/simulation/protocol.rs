@@ -48,6 +48,7 @@ use qsl_semantics::check::{CheckedActivation, CheckedProtocol, CheckedTerminalMe
 use quire_canonical::{Encode, Error, Limits as CanonicalLimits, Sink, Writer};
 use quire_exact::{Meter, ObjectReference, Value, ValueType};
 
+use crate::fairness::{Constraint, Identity};
 use crate::model_subject::{ModelInstance, ProtocolSubject};
 use crate::simulation::expansion::{Expansion, ExpansionLimit, ExpansionStop};
 use crate::simulation::explore::TransitionSystem;
@@ -57,6 +58,7 @@ use crate::simulation::model::{
     verdict, ModelFinding, ModelSimState, ModelSystem, TerminalClass, Verdict, BROKEN,
 };
 use crate::simulation::not_simulated::{check_requires_bound, NotSimulated};
+use crate::simulation::progress::ZeroProgressError;
 use crate::simulation::subject::{Bounded, Cut, SubjectSystem};
 use crate::value::evaluate_protocol_slot;
 use steps::ProtocolExpansion;
@@ -1486,6 +1488,19 @@ impl<M: MemoryModel> SubjectSystem for ProtocolSystem<'_, M> {
 
     fn counts_step(&self, transition: &ProtocolTransition) -> bool {
         transition.counts()
+    }
+
+    fn progress_constraints(
+        &self,
+        authored: &[quire_semantic_value::fairness::FairnessConstraint],
+        transitions: &[ProtocolTransition],
+        identity: &dyn Fn(&ProtocolTransition) -> Result<Identity, ZeroProgressError>,
+    ) -> Result<Vec<Constraint>, ZeroProgressError> {
+        let members = self.fairness_set(authored)?;
+        Ok(protocol_constraints(&members, transitions, identity)?
+            .into_iter()
+            .map(|(_, constraint)| constraint)
+            .collect())
     }
 
     fn atom_state<'s>(&self, state: &'s Self::State) -> Cow<'s, ModelSimState> {

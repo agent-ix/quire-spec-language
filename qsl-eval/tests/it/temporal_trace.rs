@@ -390,36 +390,193 @@ fn an_uncounted_step_moves_the_position_and_not_the_distance() {
     assert_eq!(counted(&farther), violated(4));
 }
 
-/// ADR-027 PB-3: a lasso with an uncounted step, its loop-closing step
-/// included, is not
-/// read in counted steps.
+/// ADR-027 PB-3 (FR-338): a lasso with an uncounted step is read in counted
+/// steps, its loop-closing step included. On the lasso `0 | 1 2` of
+/// `c.level` with a counted loop, `eventually[0,1] holds(c.level = 2)` holds
+/// at position 0, because position 2 is one counted step from position 1's
+/// predecessor only when position 1 does not count: with the step into
+/// position 1 uncounted, positions 0 and 1 share distance 0 and position 2
+/// is at distance 1, so it holds; counting every step, position 2 is at
+/// distance 2 and it fails.
+#[trace("TC-658", "FR-338-AC-6")]
 #[test]
-fn a_lasso_with_an_uncounted_step_is_refused() {
+fn a_lasso_with_an_uncounted_step_is_read_in_counted_steps() {
     let fixture = counter(INFINITE, "eventually[0,1] holds(c.level = 2)");
-    let mut letters = Letters::new(&fixture, counters(&[0, 1, 2]));
-    letters.uncounted = vec![1];
-    let refusal = evaluate(
-        &fixture.clause,
-        TemporalTrace::Lasso {
-            prefix: 1,
-            loop_len: 2,
-        },
-        &mut letters,
-        &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+    let lasso = TemporalTrace::Lasso {
+        prefix: 1,
+        loop_len: 2,
+    };
+    let at = |uncounted: Vec<u64>, edge: bool| {
+        let mut letters = Letters::new(&fixture, counters(&[0, 1, 2]));
+        letters.uncounted = uncounted;
+        letters.uncounted_loop_edge = edge;
+        evaluate(
+            &fixture.clause,
+            lasso,
+            &mut letters,
+            &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+        )
+        .expect("the lasso is readable")
+    };
+    assert_eq!(at(vec![1], false), TemporalOutcome::Holds);
+    assert_eq!(at(vec![], false), violated(0));
+    // The loop-closing step counts or not as its letter says.
+    assert_eq!(at(vec![], true), violated(0));
+    assert_eq!(at(vec![1], true), TemporalOutcome::Holds);
+}
+
+/// ADR-027 PB-3 (FR-338): a loop with no counted step keeps every distance
+/// from a position before it constant. `eventually[1,1] holds(c.level = 2)`
+/// is not met on the lasso `0 | 1 2` when the loop's steps and its closing
+/// step are all uncounted: no position is one counted step from position 0.
+/// With one counted step in the loop it is met, and the same claim over
+/// `always[1,1]` is vacuously true on the first lasso.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn a_loop_without_a_counted_step_meets_no_interval_that_needs_one() {
+    let lasso = TemporalTrace::Lasso {
+        prefix: 1,
+        loop_len: 2,
+    };
+    let verdict = |formula: &str, uncounted: Vec<u64>, edge: bool| {
+        let fixture = counter(INFINITE, formula);
+        let mut letters = Letters::new(&fixture, counters(&[0, 1, 2]));
+        letters.uncounted = uncounted;
+        letters.uncounted_loop_edge = edge;
+        evaluate(
+            &fixture.clause,
+            lasso,
+            &mut letters,
+            &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+        )
+        .expect("the lasso is readable")
+    };
+    // Steps 1 and 2 are the prefix's step into the loop and the loop's own;
+    // the closing step is the third.
+    assert_eq!(
+        verdict("eventually[1,1] holds(c.level = 2)", vec![1, 2], true),
+        violated(0)
     );
-    assert_eq!(refusal, Err(TemporalRefusal::UncountedLasso));
-    let mut letters = Letters::new(&fixture, counters(&[0, 1, 2]));
+    assert_eq!(
+        verdict("eventually[1,1] holds(c.level = 2)", vec![1], true),
+        TemporalOutcome::Holds,
+        "position 2 is one counted step from position 0 once step 2 counts"
+    );
+    assert_eq!(
+        verdict("always[1,1] holds(c.level = 9)", vec![1, 2], true),
+        TemporalOutcome::Holds
+    );
+}
+
+/// The outcome of `fixture` on the lasso `0 | 1 2` of `c.level`, with every
+/// step uncounted, the closing step included: a loop with no counted step
+/// (ADR-027 PB-3), so positions 1 and 2 are at distance 0 from position 0 and
+/// from each other for ever.
+fn zero_loop(fixture: &Fixture) -> TemporalOutcome {
+    let mut letters = Letters::new(fixture, counters(&[0, 1, 2]));
+    letters.uncounted = vec![1, 2];
     letters.uncounted_loop_edge = true;
-    let refusal = evaluate(
+    evaluate(
         &fixture.clause,
-        TemporalTrace::Lasso {
-            prefix: 1,
-            loop_len: 2,
-        },
+        lasso(1, 2),
         &mut letters,
         &mut Meter::new(SCALAR_LIMITS_UNLIMITED),
+    )
+    .expect("the lasso is readable")
+}
+
+/// ADR-027 PB-3 (FR-338): past windows over a loop with no counted step.
+/// Every position is at distance 0 from every earlier one, across passes,
+/// so `once[0,2]` at position 2 reaches position 0 and `once[1,2]` reaches
+/// nothing; `historically[0,1]` includes position 0's level 0 and
+/// `historically[1,2]` reads only the virtual positions before the origin,
+/// where every atom is false.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn a_past_window_over_a_loop_without_a_counted_step_reads_distance_zero() {
+    let holds = |body: &str| zero_loop(&counter(INFINITE, body));
+    assert_eq!(
+        holds("always (holds(c.level = 2) implies once[0,2] holds(c.level = 0))"),
+        TemporalOutcome::Holds
     );
-    assert_eq!(refusal, Err(TemporalRefusal::UncountedLasso));
+    assert_eq!(
+        holds("always (holds(c.level = 2) implies once[1,2] holds(c.level = 0))"),
+        violated(0)
+    );
+    assert_eq!(
+        holds("always (holds(c.level = 2) implies historically[1,2] not holds(c.level = 9))"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        holds("always (holds(c.level = 2) implies historically[0,1] holds(c.level >= 1))"),
+        violated(0)
+    );
+}
+
+/// ADR-027 PB-3 (FR-338): `until` and `release` over a loop with no counted
+/// step. The witness at position 2 is at distance 0, so `until[0,2]` holds
+/// and `until[1,2]` has no witness; `release[1,2]` is vacuous and
+/// `release[0,2]` needs its right operand at position 0.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn until_and_release_over_a_loop_without_a_counted_step_read_distance_zero() {
+    let holds = |body: &str| zero_loop(&counter(INFINITE, body));
+    assert_eq!(
+        holds("holds(c.level <= 1) until[0,2] holds(c.level = 2)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        holds("holds(c.level <= 1) until[1,2] holds(c.level = 2)"),
+        violated(0)
+    );
+    assert_eq!(
+        holds("holds(c.level = 9) release[1,2] holds(c.level = 8)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(
+        holds("holds(c.level = 9) release[0,2] holds(c.level = 8)"),
+        violated(0)
+    );
+}
+
+/// ADR-027 PB-3 (FR-338): an `on each` activation reads its window over a
+/// loop with no counted step. From position 0 the window `[0,1]` holds
+/// positions 1 and 2 at distance 0, so level 2 falls inside it.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn an_each_activation_over_a_loop_without_a_counted_step_reads_distance_zero() {
+    let each = |body: &str| {
+        zero_loop(&fixture(
+            INFINITE,
+            "c: Counter",
+            "on each (q: Counter)",
+            body,
+        ))
+    };
+    assert_eq!(each("always[0,1] holds(c.level <= 1)"), violated(0));
+    assert_eq!(
+        each("always[1,1] holds(c.level <= 1)"),
+        TemporalOutcome::Holds
+    );
+}
+
+/// ADR-027 PB-3 (FR-338), STD-254: a bounded-profile `eventually` and
+/// `always` over a loop with no counted step are read as the infinite trace
+/// they are; an interval that needs a counted step is not met.
+#[trace("TC-658", "FR-338-AC-6")]
+#[test]
+fn a_bounded_profile_lasso_without_a_counted_step_is_read_in_distance_zero() {
+    let holds = |body: &str| zero_loop(&counter(EVENT, body));
+    assert_eq!(
+        holds("eventually[0,5] holds(c.level = 2)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(holds("eventually[1,5] holds(c.level = 2)"), violated(0));
+    assert_eq!(
+        holds("always[1,5] holds(c.level = 9)"),
+        TemporalOutcome::Holds
+    );
+    assert_eq!(holds("always[0,5] holds(c.level <= 1)"), violated(0));
 }
 
 /// FR-327-AC-2: `always[0,0] holds(c.level <= 1)` with activation `on each`
