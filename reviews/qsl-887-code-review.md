@@ -92,14 +92,16 @@ suites were not re-run after the last edits, for the refinement filter.
 
 ## Dispositions
 
-| FND | Outcome | Disposition |
+Round 1, reviewed at daf118414f4f3a8582f64a9434c218ee442e5241 (fix commit daf118414 on top of a merge of origin/main).  `cargo test -p qsl-semantics --all-features --test it refinement` at this sha: 64 passed, 0 failed. The reviewer verified each row against the fix commit; this table replaces the coder's draft rows.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | The defects of the value are pushed right after `ParsedLists::parse`. Test: `the_defects_of_the_value_are_reported_beside_another_refinements_refusal`. |
-| FND-002 | fixed | A clause whose own checks added a refusal is built into its view with `checked: None`. Test: `a_clause_refused_by_its_controls_check_gives_no_name_error`. |
-| FND-003 | documented | The S3 inputs hold the unit's protocol clauses only; a dependency's checked clauses are not an input, and a model alias names a domain package that declares none, so the missing-name is the answer for every input this build can receive. FR-147 now records the dependency clause as Remaining work. |
-| FND-004 | documented | FR-147 "Step rows and observations" states `Remaining work: STD-249` and what this build checks. |
-| FND-005 | fixed | A shape defect is attributed to the refinement `refinement` names, which then has no list. Test: `a_shape_defect_of_a_named_object_is_reported_once`. |
-| FND-006 | fixed | Refused at `node.span`; the model-subject vector asserts the located text. |
-| FND-007 | fixed | `ModelCheckRefusal::ProtocolAbstractSide` and `ClosureRefusal::ProtocolAbstractSide`, both `unsupported_construct/not-yet-implemented`. |
-| FND-008 | rejected | Every field of `PackageDeclarations` is `pub` because other crates build it with `..PackageDeclarations::new(..)`, which needs every field visible (`qsl-eval` does); a private field fails to compile there. The field's doc says only a test replaces it. |
-| FND-009 | fixed | The unused widenings are reverted. |
+| FND-001 | fixed | daf118414. The defects are pushed right after `ParsedLists::parse`, before the stage gate. Test: `the_defects_of_the_value_are_reported_beside_another_refinements_refusal`. |
+| FND-002 | fixed | daf118414. `refused_protocols` records a clause whose own checks added a refusal, and its view gets `checked: None`. Test: `a_clause_refused_by_its_controls_check_gives_no_name_error`. |
+| FND-003 | deferred | `PackageDeclarations` takes only the unit's protocol clauses and admitted models; no dependency clause reaches S3. So `missing-name` is the true answer for every input this build can receive, and BUILD's claim is honest for those inputs. FR-147 now records the dependency clause as Remaining work. |
+| FND-004 | deferred | STD-249. FR-147 "Step rows and observations" now states `Remaining work: STD-249` and what this build checks, so the support claim no longer over-states. |
+| FND-005 | fixed | daf118414. The shape defect is attributed to the named refinement, and `is_defective` stops resolution and the model-subject rule. Test: `a_shape_defect_of_a_named_object_is_reported_once`. |
+| FND-006 | fixed | daf118414. The refusal is at `node.span`, and the vector asserts `Spec::Twice::a1`. |
+| FND-007 | fixed | daf118414. `ModelCheckRefusal::ProtocolAbstractSide` and `ClosureRefusal::ProtocolAbstractSide` replace the internal fault. |
+| FND-008 | rejected | Functional record update (`..PackageDeclarations::new(..)`, used by qsl-eval) needs every field visible outside the crate, so `pub(crate)` would not compile there. The doc records the intent. |
+| FND-009 | fixed | daf118414. The unused `pub(crate)` widenings are reverted. |

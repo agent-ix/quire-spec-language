@@ -71,10 +71,12 @@ them in this PR.
 
 ## Dispositions
 
-| FND | Outcome | Disposition |
+Round 1, reviewed at daf118414f4f3a8582f64a9434c218ee442e5241. The reviewer verified each row against the fix commit; this table replaces the coder's draft rows.
+
+| FND | Outcome | sha/reason |
 | --- | --- | --- |
-| FND-001 | fixed | The FR-147-AC-1 and AC-8 tests are tagged TC-552 only with "Part of" docs. The `timeout` and `activate` positives are added (`the_timeout_and_activate_classes_resolve`); `cattempt` and `cend` need a record type the counter models do not declare and stay unfixtured. |
-| FND-002 | fixed | `the_list_refusal_names_the_feature_the_refinement_and_no_subject` carries FR-135-AC-9 and asserts the profile and no `subject`. The FR-341 classification is asserted in qsl-replay (`an_unbuilt_refinement_feature_is_unsupported_and_a_list_defect_is_refused`) for all three features. |
-| FND-003 | fixed | AC-13 compares the steps, objects and populations, and compares the refused clause's refusals with the clause checked alone. |
-| FND-004 | fixed | FR-147 and TC-552 name the finish node `Done` and describe the fixture as a unit clause over the imported models; the dependency-package fixture is Remaining work. |
-| FND-005 | fixed | A field row naming a protocol binder, node or queue is `malformed-declaration`. Test: `a_field_row_naming_a_protocol_binder_is_refused`. |
+| FND-001 | fixed | daf118414. The FR-147-AC-1 and AC-8 tests are TC-552-only with "Part of" docs. `timeout` and `activate` positives are added (`the_timeout_and_activate_classes_resolve`). `cattempt` and `cend` stay unfixtured (they need a record type) and AC-8 now carries no tag that claims them. |
+| FND-002 | fixed | daf118414. `the_list_refusal_names_the_feature_the_refinement_and_no_subject` carries FR-135-AC-9 and asserts the refinement, the profile and `subject == None`. The FR-341 `unsupported` classification is asserted in qsl-replay for all three features. |
+| FND-003 | fixed | daf118414. AC-13 compares steps, objects and populations. It asserts that the refused clause's refusals equal the clause checked alone, with no refinement refusal. |
+| FND-004 | fixed | daf118414. FR-147 and TC-552 name the finish node `Done` and describe a unit clause over the imported models; the dependency fixture is Remaining work. |
+| FND-005 | fixed | daf118414. `ProtocolClasses::has_state` makes a field row naming a binder, node or queue `malformed-declaration`. Test: `a_field_row_naming_a_protocol_binder_is_refused`. |
