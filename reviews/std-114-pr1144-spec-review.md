@@ -48,3 +48,20 @@ Other places in QSL that mention an effective precondition (FR-090, FR-094, FR-0
 ## Verdict
 
 Not mergeable as is, because of FND-001. It is a one-line fix to a reference that points to the wrong text. FND-002 to FND-004 are low. FND-004 depends on how QSpec resolves SR-13671 FND-001, and may be deferred with that. The substance of the change is correct: QSL's dispatch code implements reading (a), and the note now cites the normative AC and vector instead of calling the rule QSL's own inference.
+
+## New findings (disposition pass 1)
+
+| ID | Severity | Summary | Refs |
+| --- | --- | --- | --- |
+| FND-005 | medium | FR-120 now has two rules for the precondition conjunction. The `evaluate_clause_set` paragraph still covers "the applicable clauses of one kind" in ascending name order, with an outcome that depends only on the set, and its last bullet mentions preconditions ("none for a precondition"). The new paragraph at line 400 says FR-120 prescribes QSpec's source-order rule for the effective precondition. A reader cannot tell which rule governs preconditions. The implementation gap belongs in QSL-935, not in the spec text. Fix: limit the `evaluate_clause_set` paragraph to postconditions, or say that preconditions are conjoined as QSpec FR-151 defines. Keep the simulator's current behaviour only under Remaining work (QSL-935). | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:378-397; spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:400 |
+
+## Dispositions
+
+Round 1, head d689242f8.
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The line-number reference is gone. The note now cites QSpec FR-151's rule `quire.model.conformance.refinement/v1` by name (FR-151-AC-17 to AC-19, TC-196 D09 to D11). |
+| FND-002 | fixed | The note now says `view_clauses` (`dispatch_link.rs`) conjoins the own clauses and `effective_terms` (`checked_dispatch.rs`) disjoins the result with the redefined member's. That matches dispatch_link.rs:309-324 and checked_dispatch.rs:460-540. |
+| FND-003 | fixed | The local formula is gone. The note says "`own(m)` and `eff(m)` are QSpec's" and does not restate them. |
+| FND-004 | fixed | FR-120:400 now states the difference: name order and set-based gives `false`, while source order gives `undefined` when the undefined clause comes first. Checked against FR-120's bullets, the statement is correct. Alignment is tracked as QSL-935 (Backlog) under Remaining work, which also covers the stale module doc in checked_dispatch.rs. The resulting contradiction inside FR-120 is FND-005. |

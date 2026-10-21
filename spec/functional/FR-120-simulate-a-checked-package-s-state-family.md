@@ -366,10 +366,14 @@ The effective precondition is `true` when no `pre` clause applies, and
 otherwise is formed as QSpec FR-151's rule `quire.model.conformance.refinement/v1`
 defines it (QSpec FR-151-AC-17 to AC-19, TC-196 D09 to D11): `own(m)` and
 `eff(m)` are QSpec's, and a member's own clauses are conjoined in
-source-declaration order under FR-006's short-circuit. The dispatch path takes
-that rule: `view_clauses` (`dispatch_link.rs`) conjoins the own clauses and
-`effective_terms` (`checked_dispatch.rs`) disjoins the result with the
-redefined member's. On the spine every operation record's `redefines` is
+ascending clause name (UTF-8 bytes) under FR-006's short-circuit, so an
+undefined clause that sorts before a false one makes the precondition
+undefined and the reverse order makes it `false`. The order does not depend on
+source position, source unit or link order. The dispatch path conjoins the own
+clauses through `view_clauses` (`dispatch_link.rs`) and disjoins the result
+with the redefined member's through `effective_terms`
+(`checked_dispatch.rs`); the order of that conjunction is QSL-935 (Remaining
+work). On the spine every operation record's `redefines` is
 `None` (`qsl-semantics/src/model/intake.rs:1444`), so the applicable clauses
 are the selected member's own.
 The effective postcondition is the conjunction of the applicable `post`
@@ -388,7 +392,7 @@ clause in ascending name order (UTF-8 bytes):
   `established-invariant-broken` at once: the simulator built the
   observations itself, so a refused selection is a broken internal
   invariant.
-- Otherwise, the conjunction is `true` when every clause is
+- Otherwise, for a postcondition, the conjunction is `true` when every clause is
   `Completed(true)` and `false` when any clause is `Completed(false)`. When
   no clause is `Completed(false)` and one or more are `Undefined` or
   `Refused`, the conjunction is undecided, and the expanded state gains one
@@ -397,7 +401,12 @@ clause in ascending name order (UTF-8 bytes):
   candidate's state-key digest for a postcondition and none for a
   precondition. The result depends only on the set of clause outcomes.
 
-The simulator's conjunction above evaluates each clause with a fresh meter in ascending name order and depends only on the set of outcomes, so with one clause undefined and another false it gives `false`, while QSpec's rule evaluates in source-declaration order and gives `undefined` when the undefined clause comes first. FR-120 prescribes QSpec's rule for the effective precondition; the simulator is aligned to it by QSL-935 (Remaining work).
+For the effective precondition the conjunction over one member's own
+clauses is QSpec FR-151's: clauses in ascending name order, each evaluated
+under FR-006's short-circuit, so evaluation stops at the first `false` clause
+and the clauses after it are not evaluated or charged. For the effective
+postcondition the conjunction keeps the outcome rule above and depends only on
+the set of clause outcomes.
 
 An application is enabled when its effective precondition is `true`.
 
@@ -591,4 +600,4 @@ identity text of operation `op`.
 
 ## Remaining work
 
-- QSL-935: the simulator's precondition conjunction (above) conjoins in source-declaration order as QSpec FR-151-AC-19 states, and the module documentation of `checked_dispatch.rs` is reworded to match.
+- QSL-935: today the simulator's `evaluate_clause_set` evaluates every applicable precondition clause with a fresh meter in ascending name order and decides by the set of outcomes (one `false` makes the conjunction `false` even when an undefined clause sorts first), and `view_clauses` on the dispatch path conjoins in source-declaration order. Both conjoin in ascending clause name under short-circuit as QSpec FR-151-AC-19 states, and the module documentation of `checked_dispatch.rs` is reworded to match.
