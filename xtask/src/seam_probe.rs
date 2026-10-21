@@ -292,7 +292,7 @@ impl<'ast> Visit<'ast> for EnclosingItem {
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
         let previous = self
             .current_impl_self
-            .replace(crate::impl_self_name(&node.self_ty));
+            .replace(qsl_string_edge::impl_self_name(&node.self_ty));
         syn::visit::visit_item_impl(self, node);
         self.current_impl_self = previous;
     }
@@ -633,7 +633,7 @@ pub fn state_model_arm_report(workspace_root: &Path) -> Result<String> {
         };
         for item in parsed.items {
             if let syn::Item::Impl(item) = item {
-                if crate::impl_self_name(&item.self_ty) != owner {
+                if qsl_string_edge::impl_self_name(&item.self_ty) != owner {
                     continue;
                 }
                 for item in item.items {
@@ -1035,7 +1035,7 @@ mod tests {
         fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
             let previous = self
                 .current_impl_self
-                .replace(crate::impl_self_name(&node.self_ty));
+                .replace(qsl_string_edge::impl_self_name(&node.self_ty));
             syn::visit::visit_item_impl(self, node);
             self.current_impl_self = previous;
         }
@@ -1614,7 +1614,7 @@ mod tests {
         fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
             let previous = self
                 .current_impl_self
-                .replace(crate::impl_self_name(&node.self_ty));
+                .replace(qsl_string_edge::impl_self_name(&node.self_ty));
             syn::visit::visit_item_impl(self, node);
             self.current_impl_self = previous;
         }

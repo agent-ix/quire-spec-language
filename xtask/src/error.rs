@@ -13,9 +13,12 @@ pub enum Code {
     Io,
     /// The `cargo xtask seam-probe` build/comparison failed.
     SeamProbe,
-    /// The `cargo xtask string-edge` scan found an allow-list defect or an
-    /// unmarked, un-allow-listed occurrence.
+    /// The `cargo xtask string-edge` scan found an unmarked, un-allow-listed
+    /// occurrence.
     StringEdge,
+    /// The `cargo xtask string-edge` scan could not complete (FR-064-AC-9):
+    /// the scanner refused a root, rule or source.
+    StringEdgeScan,
     /// FR-068 TC-172/TC-176's resolved import-graph scan
     /// (`xtask::import_graph`) could not parse a source file.
     ImportGraph,
@@ -46,6 +49,7 @@ impl Code {
             Self::Io => "io",
             Self::SeamProbe => "seam-probe",
             Self::StringEdge => "string-edge",
+            Self::StringEdgeScan => "string-edge-scan",
             Self::ImportGraph => "import-graph",
             Self::RouteLint => "route-lint",
             Self::CheckedInput => "checked-input",
@@ -188,31 +192,6 @@ pub enum Error {
         /// not report.
         expected_but_missing: String,
     },
-    /// A source file could not be parsed as Rust source by `syn`.
-    #[error("string-edge: cannot parse {path} as Rust source: {source}")]
-    StringEdgeParse {
-        /// The file that failed to parse.
-        path: PathBuf,
-        /// The underlying parse failure.
-        #[source]
-        source: syn::Error,
-    },
-    /// An allow-list entry names a string comparison or match that gates a
-    /// branch (feeds an `if`/`while` condition or a `match` scrutinee/
-    /// guard). FR-064-AC-5 refuses to admit such an entry to the
-    /// allow-list; the call site must be marked `#[string_edge]` instead.
-    #[error(
-        "string-edge: allow-list entry {file}:{item} gates a branch (feeds an if/while \
-         condition or a match scrutinee/guard); FR-064-AC-5 refuses to admit it, remove it \
-         from the allow-list and mark the call site #[string_edge] instead"
-    )]
-    StringEdgeAllowListGatesABranch {
-        /// The file containing the offending allow-list entry.
-        file: String,
-        /// The enclosing item the offending allow-list entry names
-        /// (PR #262 review, finding F8: item-keyed, not line-keyed).
-        item: String,
-    },
     /// The `string-edge` scan found one or more un-marked, un-allow-listed
     /// string comparisons or matches; `summary` lists them.
     #[error("{summary}")]
@@ -220,15 +199,10 @@ pub enum Error {
         /// The findings, formatted for display.
         summary: String,
     },
-    /// A configured `string-edge` crate root does not exist. Every listed
-    /// root is required: a crate rename or move this
-    /// scan's own root list has not caught up with must fail loudly, not
-    /// silently drop that tree's coverage.
-    #[error("string-edge: configured crate root does not exist: {path}")]
-    StringEdgeMissingRoot {
-        /// The missing root.
-        path: PathBuf,
-    },
+    /// The `qsl-string-edge` scanner could not complete: a request, rule,
+    /// read or parse failure. Never a clean result.
+    #[error(transparent)]
+    StringEdgeScan(#[from] qsl_string_edge::Error),
     /// A source file could not be parsed as Rust source by
     /// `xtask::import_graph`'s resolver (TC-172/TC-176).
     #[error("import-graph: cannot parse {path} as Rust source: {source}")]
@@ -392,10 +366,8 @@ impl Error {
             | Self::SeamProbeNormalBuildHasE0004 { .. }
             | Self::SeamProbeBuildUnexpectedlySucceeded { .. }
             | Self::SeamProbeMismatch { .. } => Code::SeamProbe,
-            Self::StringEdgeParse { .. }
-            | Self::StringEdgeAllowListGatesABranch { .. }
-            | Self::StringEdgeFound { .. } => Code::StringEdge,
-            Self::StringEdgeMissingRoot { .. } => Code::Usage,
+            Self::StringEdgeFound { .. } => Code::StringEdge,
+            Self::StringEdgeScan(_) => Code::StringEdgeScan,
             Self::ImportGraphParse { .. } => Code::ImportGraph,
             Self::RouteLintParse { .. } | Self::RouteLintFound { .. } => Code::RouteLint,
             Self::CheckedInputFound { .. } => Code::CheckedInput,
@@ -439,7 +411,7 @@ impl Error {
             | Code::CanonicalTypes
             | Code::Conformance
             | Code::TestSuites => 1,
-            Code::Usage | Code::Io | Code::Metadata => 2,
+            Code::Usage | Code::Io | Code::Metadata | Code::StringEdgeScan => 2,
             // QSpec FR-301's tool-failure code: the gate could not report.
             Code::Refinement => Verdict::ToolFailure.exit_code(),
         }
