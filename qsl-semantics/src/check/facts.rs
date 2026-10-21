@@ -634,6 +634,21 @@ impl<'a> Definedness<'a> {
         Some(Rc::new(facts))
     }
 
+    /// `node` read through the integer-to-integer `convert<..>` forms that
+    /// keep the value (`Integer` or `Int[..]` to `Integer` or `Int[..]`). A
+    /// conversion to any other type may round, so it is not read through.
+    fn through_conversion(node: CheckedNode<'_>) -> CheckedNode<'_> {
+        let mut node = node;
+        while let NodeKind::ConvertScalar(_, operand) = node.kind() {
+            let operand = node.at(*operand);
+            if !(is_integer(node) && is_integer(operand)) {
+                break;
+            }
+            node = operand;
+        }
+        node
+    }
+
     fn comparison(
         &self,
         left: CheckedNode<'_>,
@@ -641,6 +656,10 @@ impl<'a> Definedness<'a> {
         relation: Relation,
         facts: &Rc<Facts>,
     ) -> Outcomes {
+        let (left, right) = (
+            Self::through_conversion(left),
+            Self::through_conversion(right),
+        );
         let (subject, relation, literal) = match (Self::literal(left), Self::literal(right)) {
             (None, Some(literal)) => (left, relation, literal),
             (Some(literal), None) => (right, relation.flipped(), literal),

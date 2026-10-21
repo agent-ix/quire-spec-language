@@ -50,6 +50,7 @@ use std::sync::Arc;
 
 mod native_literal;
 mod typing;
+use typing::TypedOperand;
 
 use super::ir::{
     Arithmetic, BodyBuilder, CheckedLiteral, Connective, DispatchTable, Node, NodeId, NodeKind,
@@ -2539,52 +2540,42 @@ impl<'a> Typer<'a> {
         Err(refuse(location, CheckCause::MissingName(name.to_owned())))
     }
 
-    /// `left = right` or `left != right` over its two typed operands, each
-    /// with the equality operand it compares as.
+    /// `left = right` or `left != right` over its two typed operands. The
+    /// pair is first checked with the operands as written, so a conversion
+    /// is admitted or refused as such; the stored equality then compares the
+    /// operands as they are typed, a converted operand being its own
+    /// `ConvertScalar` node.
     fn equality(
         &mut self,
         operator: EqualityOperator,
-        (left, left_operand): (Node, EqualityOperand),
-        (right, right_operand): (Node, EqualityOperand),
+        left: TypedOperand,
+        right: TypedOperand,
         location: &Location,
     ) -> Result<Node, CheckRefusal> {
         // FR-359 item 4: FR-208 gives an event type no equality, so an
         // operand holding one is ineligible, not compared.
-        if self.scope.reaches_event(&left.value_type) || self.scope.reaches_event(&right.value_type)
+        if self.scope.reaches_event(&left.node.value_type)
+            || self.scope.reaches_event(&right.node.value_type)
         {
             return Err(ineligible(location));
         }
-        let check = |left: EqualityOperand, right: EqualityOperand| {
+        let check = |left: &EqualityOperand, right: &EqualityOperand| {
             self.scope
                 .types
-                .check_equality_in(&self.units, operator, left, right, &|shape: &EnumShape| {
-                    self.scope.enum_members_of(shape)
-                })
+                .check_equality_in(
+                    &self.units,
+                    operator,
+                    left.clone(),
+                    right.clone(),
+                    &|shape: &EnumShape| self.scope.enum_members_of(shape),
+                )
                 .map_err(|refusal| CheckRefusal::from_ill_typed(location, refusal))
         };
-        let mut checked = check(left_operand.clone(), right_operand.clone())?;
-        // A type-changing conversion is already a `ConvertScalar` operand
-        // node, so the stored equality compares the converted values as typed.
-        let converted = |operand: &EqualityOperand, node: &Node| {
-            operand
-                .target()
-                .is_some_and(|target| *target == node.value_type)
-                && matches!(node.kind, NodeKind::ConvertScalar(..))
-        };
-        let as_typed = |operand: EqualityOperand, node: &Node| {
-            if converted(&operand, node) {
-                EqualityOperand::typed(node.value_type.clone())
-            } else {
-                operand
-            }
-        };
-        let (left_typed, right_typed) = (
-            as_typed(left_operand.clone(), &left),
-            as_typed(right_operand.clone(), &right),
-        );
-        if (&left_typed, &right_typed) != (&left_operand, &right_operand) {
-            checked = check(left_typed, right_typed)?;
+        let mut checked = check(&left.checked, &right.checked)?;
+        if (&left.stored, &right.stored) != (&left.checked, &right.checked) {
+            checked = check(&left.stored, &right.stored)?;
         }
+        let (left, right) = (left.node, right.node);
         Ok(node(
             NodeKind::Equality(
                 operator,

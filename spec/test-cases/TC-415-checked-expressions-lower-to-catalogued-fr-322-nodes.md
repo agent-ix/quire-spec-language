@@ -26,7 +26,8 @@ walk that runs a recursive composite past its first reentry, and an
 optional field's leaf path without `inner`.
 
 Scope: FR-093-AC-1 to FR-093-AC-6, FR-093-AC-8, FR-093-AC-10,
-FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-CON-1.
+FR-093-AC-11, FR-093-AC-14, FR-093-AC-15, FR-093-AC-30, FR-093-AC-31,
+FR-093-CON-1.
 
 ## Test Procedure
 
@@ -99,6 +100,10 @@ selection whose alias is `v`, and is checked under owner (`a`, `u`).
     `let v = x in ((let w = x in w) + (let u = x in v + u))`. Check
     `if a then value(o) else 0`, `if a then 0 else value(o)` and
     `if present(o) then value(o) else 0`.
+12. Lower the converted equalities of FR-093-AC-30, read the convert and
+    equality nodes and their argument positions, read each package back
+    through IR's v2 reader, and evaluate each equality. Check the guards of
+    FR-093-AC-31.
 
 Tag the tests `#[trace("FR-093-AC-n", "TC-415")]` with the AC each backs.
 
@@ -146,3 +151,7 @@ The node-limit step's test (`check/lowering/tests/leaves.rs`) asserts
   level 5, and `v + u` reads `v`'s and `u`'s parameter nodes. The two
   unguarded `value(o)` bodies each refuse with
   `undefined_expression`/`unproved-presence` alone; the guarded one checks.
+- Step 12: each converted equality lowers a convert node and the equality of
+  the converted type with the convert node at the converted operand's
+  position, each package reads back Verified, and each evaluation equals the
+  comparison of the converted values. The conversion guards check.

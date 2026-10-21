@@ -227,6 +227,16 @@ A `Coerce` exists only for a narrowing: an integer whose type an `Int[..]`
 contains is admitted with no node, and a `ConvertScalar` whose operand type
 equals its target builds no node; its parent references the operand's node.
 
+**Converted equality operand.** An `Equality` operand written `convert<T>(e)`,
+whose `e` has a type other than `T`, is checked as a `ConvertScalar(T, e)`
+node of type `T`. It lowers by the `ConvertScalar` rows:
+`quire.op.numeric.convert`, or `quire.op.quantity.convert` for a quantity.
+The equality's operand family `<f>` is that of the compared type `T`, and its
+argument at that operand's position references the convert node, never `e`'s
+node. A `convert<T>(e)` whose `e` already has type `T` builds no node. A
+conversion between integer types keeps the value, so a guard comparing it
+with an integer literal bounds `e` as the comparison of `e` itself does.
+
 The model nodes, the `Reference<T>` and `Population<T>[N]` type nodes and
 the model rows' vectors E4 to E9 are
 [FR-094](FR-094-key-model-owned-reference-population-and-quantity-nodes.md)'s.
@@ -827,6 +837,8 @@ G18-G21, group digest `75c10c9c57db076a7c4219a4b40f68769843d38e582a4dc67fb845b99
 | FR-093-AC-27 | For a selected model alias whose package declares an unreferenced relationship and has no function or frame naming it, `check` emits the `relation`/`relationship` node and records exactly one `generated` occurrence at that alias's declaration-site/source span. It never uses the fallback `generated_location` or emits an `UnlocatedOccurrence`. | Test (TC-417) |
 | FR-093-AC-28 | `function e1 using v(a: String, b: String): Boolean pure { a = b }`, the same over `UUID` and over `Timestamp`, and each with `!=`, lower to one `expression` node whose operation is `quire.op.string.eq`, `.ne`, `quire.op.uuid.eq`, `.ne`, `quire.op.timestamp.eq` or `.ne`, result type `boolean`, arguments `[ref(a's node), ref(b's node)]`, and no law, no mode, no member and no leaves, with no text-profile definition in the lock evidence and no `missing-selection` refusal. The same functions with a `Text[0, 8; nfc]` operand against a `String`, or `String` against `UUID`, refuse `ill_typed`/`type-mismatch` and build no node for the declaration. | Test (TC-1028) |
 | FR-093-AC-29 | `function s1 using v(): String pure { "a\u00e9" }`, `function u1 using v(): UUID pure { UUID("00112233-4455-6677-8899-aabbccddeeff") }` and `function t1 using v(): Timestamp pure { Timestamp(-5) }` each lower the body to one `value`/`literal` node whose `semantic_type` and body `type` are the `string`, `uuid` or `timestamp` type node, with `value_kind` `string`, `uuid` or `timestamp` and `value` `"a\u00e9"` as JSON, `"00112233-4455-6677-8899-aabbccddeeff"` and `"-5"`. `Timestamp(0)` and `Timestamp(-0)` lower to one shared node of value `"0"`; two `"abc"` in one unit lower to one shared node. In `function e2 using v(a: String): Boolean pure { a = "abc" }` the comparison is one `quire.op.string.eq` node with arguments `[ref(a's node), ref(the literal's node)]`, no law, mode, member or leaves, and no text-profile definition in the lock evidence; the `uuid` and `timestamp` counterparts use `quire.op.uuid.eq` and `quire.op.timestamp.eq`. | Test (TC-1052) |
+| FR-093-AC-30 | `function f using v(a: Int[-100,100], b: Decimal[-100,100;0,0;nearest-even]): Boolean pure { convert<Decimal[-100,100;0,0;nearest-even]>(a) = b }` lowers to one `quire.op.numeric.convert` node over `a`'s parameter node, whose `result_type` is `b`'s type node, and one `quire.op.decimal.eq` whose arguments are `[ref(convert), ref(b)]`. `!=` gives `quire.op.decimal.ne`, and `b = convert<..>(a)` puts the convert node second. `convert<Decimal[..]>(a) = convert<Decimal[..]>(c)` builds one convert per operand. A conversion between Rational, Decimal and Int types in either direction, and a Quantity conversion `convert<Km>(q) = r` (`quire.op.quantity.convert` with mode `rounding` = `exact`, then `quire.op.quantity.eq`), each lowers a convert node and the equality of the converted type. `a = b` over two `Int[-100,100]` parameters builds no convert node and gives `quire.op.integer.eq` over the two parameters. IR's v2 reader admits each package, and evaluating each equality gives the result of comparing the converted values. | Test (TC-415) |
+| FR-093-AC-31 | `function g using v(x: Int[-5,5]): Int[0,3] pure { if convert<Integer>(x) = 2 then x else 0 }`, the same with `convert<Int[-10,10]>(x)`, and `if convert<Integer>(x) != 2 then 0 else x`, each check, as the same guards over `x` itself do: the guarded branch reads `x` within `[2, 2]`. | Test (TC-415) |
 
 ## Dependencies
 

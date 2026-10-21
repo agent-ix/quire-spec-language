@@ -363,15 +363,33 @@ enum PeerForm<'e, 'r> {
     },
     Equality {
         operator: EqualityOperator,
-        pair: Pair<'e, (Node, EqualityOperand)>,
+        pair: Pair<'e, TypedOperand>,
         /// The target and location of the operand being typed, when it is
         /// a non-collection `convert<T>(e)` compared as converted.
         converted: Option<(ValueType, Location)>,
     },
 }
 
-/// A typed `=` operand and the equality operand it compares as.
-type TypedOperand = (Node, EqualityOperand);
+/// A typed `=` operand with the equality operand the pair is first checked
+/// with (`checked`, which names a conversion) and the one the stored equality
+/// compares (`stored`, which compares an already converted operand as typed).
+pub(super) struct TypedOperand {
+    pub(super) node: Node,
+    pub(super) checked: EqualityOperand,
+    pub(super) stored: EqualityOperand,
+}
+
+impl TypedOperand {
+    /// An operand compared as it is typed.
+    fn typed(node: Node) -> Self {
+        let operand = EqualityOperand::typed(node.value_type.clone());
+        Self {
+            node,
+            checked: operand.clone(),
+            stored: operand,
+        }
+    }
+}
 
 /// A form over one operand whose node it finishes once the operand is
 /// typed.
@@ -1621,14 +1639,16 @@ impl<'a> Typer<'a> {
         })
     }
 
-    /// A typed equality operand, the equality operand it compares as, and
-    /// the type its peer is hinted with. A converted operand's IEEE source
-    /// is refused.
+    /// A typed equality operand and the type its peer is hinted with. A
+    /// `convert<T>(e)` operand that changes the type is a `ConvertScalar`
+    /// node of type `T`, which the stored equality compares as typed; the
+    /// pair is first checked with the operand naming the conversion. A
+    /// converted operand's IEEE source is refused.
     fn equality_typed(
         &mut self,
         typed: Node,
         converted: Option<(ValueType, Location)>,
-    ) -> Result<(Node, EqualityOperand, ValueType), CheckRefusal> {
+    ) -> Result<(TypedOperand, ValueType), CheckRefusal> {
         match converted {
             Some((target, location)) => {
                 if typed.value_type != target {
@@ -1649,24 +1669,32 @@ impl<'a> Typer<'a> {
                 // A conversion that changes the type is its own typed node,
                 // so FR-093 lowers it as a `numeric.convert` operand and
                 // the equality compares at the converted type.
-                let typed = if source == target {
-                    typed
-                } else {
-                    node(
-                        NodeKind::ConvertScalar(operand.clone(), self.push(typed)),
-                        target.clone(),
-                        &location,
-                    )
-                };
-                Ok((typed, operand, target))
+                if source == target {
+                    let part = TypedOperand {
+                        node: typed,
+                        checked: operand.clone(),
+                        stored: operand,
+                    };
+                    return Ok((part, target));
+                }
+                let node = node(
+                    NodeKind::ConvertScalar(operand.clone(), self.push(typed)),
+                    target.clone(),
+                    &location,
+                );
+                let stored = EqualityOperand::typed(target.clone());
+                Ok((
+                    TypedOperand {
+                        node,
+                        checked: operand,
+                        stored,
+                    },
+                    target,
+                ))
             }
             None => {
                 let value_type = typed.value_type.clone();
-                Ok((
-                    typed,
-                    EqualityOperand::typed(value_type.clone()),
-                    value_type,
-                ))
+                Ok((TypedOperand::typed(typed), value_type))
             }
         }
     }
@@ -2352,7 +2380,7 @@ impl<'a> Typer<'a> {
                 pair,
                 converted,
             } => {
-                let (typed, compared, peer) = self.equality_typed(typed, converted)?;
+                let (typed, peer) = self.equality_typed(typed, converted)?;
                 match pair {
                     Pair::First(second, second_location) => {
                         let mut converted = None;
@@ -2365,7 +2393,7 @@ impl<'a> Typer<'a> {
                         frames.push(Frame::Peer(Box::new(PeerFrame {
                             form: PeerForm::Equality {
                                 operator,
-                                pair: Pair::Second((typed, compared)),
+                                pair: Pair::Second(typed),
                                 converted,
                             },
                             right_first,
@@ -2374,7 +2402,7 @@ impl<'a> Typer<'a> {
                         Ok(Step::Descend(goal))
                     }
                     Pair::Second(first) => {
-                        let (left, right) = ordered(right_first, first, (typed, compared));
+                        let (left, right) = ordered(right_first, first, typed);
                         let (left, right) = self.admit_sum_into_peer(left, right)?;
                         self.equality(operator, left, right, &location)
                             .map(Step::Typed)
@@ -2394,19 +2422,19 @@ impl<'a> Typer<'a> {
         left: TypedOperand,
         right: TypedOperand,
     ) -> Result<(TypedOperand, TypedOperand), CheckRefusal> {
-        let is_sum = |(node, operand): &TypedOperand| {
-            node.value_type == ValueType::Integer
-                && matches!(node.kind, NodeKind::Arithmetic(..))
-                && operand.target().is_none()
+        let is_sum = |part: &TypedOperand| {
+            part.node.value_type == ValueType::Integer
+                && matches!(part.node.kind, NodeKind::Arithmetic(..))
+                && part.checked.target().is_none()
         };
-        let interval = |(node, operand): &TypedOperand| match &node.value_type {
-            ValueType::Int(_) if operand.target().is_none() => Some(node.value_type.clone()),
+        let interval = |part: &TypedOperand| match &part.node.value_type {
+            ValueType::Int(_) if part.checked.target().is_none() => {
+                Some(part.node.value_type.clone())
+            }
             _ => None,
         };
         let admit = |typer: &mut Self, sum: TypedOperand, into: &ValueType| {
-            typer
-                .coerce(sum.0, into)
-                .map(|node| (node, EqualityOperand::typed(into.clone())))
+            typer.coerce(sum.node, into).map(TypedOperand::typed)
         };
         if let (true, Some(into)) = (is_sum(&right), interval(&left)) {
             let right = admit(self, right, &into)?;
