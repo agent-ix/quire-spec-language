@@ -61,8 +61,8 @@ pub use footprint::{
     visible, AnchorName, ClaimReads, ParallelInstance, ProtocolFootprintError, ProtocolLocation,
 };
 pub use identity::{
-    BlockedThread, PathStep, ProtocolTransition, RestKind, RestPoint, SendOutcome, SendRecord,
-    StepKind, ThreadPath, WaitCause,
+    BlockedThread, CarriedComponent, PathStep, PositionAnchor, ProtocolTransition, RestKind,
+    RestPoint, SendOutcome, SendRecord, StepKind, ThreadPath, WaitCause,
 };
 pub use memory::{
     Access, FootprintStep, GatedStep, MemoryModel, MemoryStep, MemoryStepId, Sc, ScComponent,

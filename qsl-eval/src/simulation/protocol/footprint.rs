@@ -66,7 +66,7 @@ use qsl_semantics::check::footprint::FootprintRefusal;
 use qsl_semantics::check::{FormulaNodeId, TemporalClauseNode};
 
 use super::access::InstanceAccess;
-use super::identity::{ProtocolTransition, StepKind, ThreadPath};
+use super::identity::{PositionAnchor, ProtocolTransition, StepKind, ThreadPath};
 use super::memory::{FootprintStep, GatedStep, MemoryModel};
 use super::program::{Cursor, Rest};
 use super::{Disposition, ProtocolRefusal, ProtocolState, ProtocolSystem, Thread};
@@ -221,24 +221,31 @@ pub fn visible(step: &ProtocolTransition, footprint: &Footprint, claim: &ClaimRe
         .iter()
         .any(|written| claim.locations.iter().any(|read| written.affects(read)));
     let named = |name: AnchorName| claim.anchors.contains(&name);
-    let anchored = if let Some(application) = step.application() {
-        named(AnchorName::Operation(application.operation().to_owned()))
-    } else if let Some((channel, _)) = step.channel_queue() {
-        named(AnchorName::Channel(channel.to_owned()))
-    } else {
-        let by_node = step
-            .node()
-            .is_some_and(|node| named(AnchorName::Node(node.to_owned())));
-        // A `send` or `receive` writes exactly its own channel's queue.
-        let by_channel = matches!(step.kind(), StepKind::Send | StepKind::Receive)
-            && footprint.writes.iter().any(|written| {
-                matches!(
-                    written,
-                    Location::Protocol(ProtocolLocation::Queue { channel, .. })
-                        if named(AnchorName::Channel(channel.clone()))
-                )
-            });
-        by_node || by_channel
+    let anchored = match step.anchor() {
+        PositionAnchor::Operation(operation) => named(AnchorName::Operation(operation.to_owned())),
+        PositionAnchor::Protocol {
+            channel: Some(channel),
+            ..
+        } => named(AnchorName::Channel(channel.to_owned())),
+        PositionAnchor::Protocol {
+            step: kind,
+            node,
+            channel: None,
+        } => {
+            let by_node = node.is_some_and(|node| named(AnchorName::Node(node.to_owned())));
+            // A `send` or `receive` writes exactly its own channel's queue.
+            let by_channel = matches!(kind, StepKind::Send | StepKind::Receive)
+                && footprint.writes.iter().any(|written| {
+                    matches!(
+                        written,
+                        Location::Protocol(ProtocolLocation::Queue { channel, .. })
+                            if named(AnchorName::Channel(channel.clone()))
+                    )
+                });
+            by_node || by_channel
+        }
+        // No atom names a memory anchor (FT-5).
+        PositionAnchor::Memory(_) => false,
     };
     writes || anchored
 }

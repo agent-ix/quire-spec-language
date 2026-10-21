@@ -22,7 +22,9 @@ use qsl_semantics::check::{
 use quire_exact::Value;
 
 use super::access::InstanceAccess;
-use super::identity::{BlockedThread, ProtocolTransition, StepKind, ThreadPath, WaitCause};
+use super::identity::{
+    BlockedThread, CarriedComponent, ProtocolTransition, StepKind, ThreadPath, WaitCause,
+};
 use super::memory::{Access, GatedStep, MemoryModel, SharedCell, Written};
 use super::program::{Cursor, Join, Rest};
 use super::settle::Settled;
@@ -172,8 +174,19 @@ impl<M: MemoryModel> ProtocolSystem<'_, M> {
                 .successors
                 .push((ProtocolTransition::memory(step.identity), next));
         }
+        // ADR-025 MK-1: over a weak `parallel`, each step carries its
+        // post-state's memory component.
+        let weak = self
+            .governing
+            .values()
+            .any(|model| *model != qsl_foundation::MemoryModelName::Sc);
         let mut keyed = Vec::with_capacity(gathered.successors.len());
         for (transition, next) in gathered.successors {
+            let transition = if weak {
+                transition.with_memory(CarriedComponent::of(&next.memory)?)
+            } else {
+                transition
+            };
             keyed.push((jcs(&transition)?, transition, next));
         }
         keyed.sort_by(|left, right| left.0.cmp(&right.0));

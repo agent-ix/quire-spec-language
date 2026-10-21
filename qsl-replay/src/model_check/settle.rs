@@ -200,10 +200,14 @@ pub fn settle_protocol_check(
                     member: MemoryBoundMember::MaxStoreBuffer,
                     value: tso.max_store_buffer(),
                 },
-                reached: matches!(
-                    record.value,
-                    TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached { .. })
-                ),
+                // Reached whenever a store was cut: by the engine's run,
+                // whatever it settled (a `refuted` run too), or by the
+                // closure checker's re-expansion.
+                reached: outcome.stats().bound_limited > 0
+                    || matches!(
+                        record.value,
+                        TerminalValue::Inconclusive(InconclusiveCause::MemoryBoundReached { .. })
+                    ),
             }),
         };
     record

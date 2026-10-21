@@ -339,12 +339,63 @@ pub(crate) struct QueueEvent {
     pub(crate) removal: Removal,
 }
 
+/// A step's post-state memory component in QSpec FR-181's typed canonical
+/// form, as its JCS text (ADR-025 MK-1, FR-227): under `tso`, every store
+/// buffer. It is data for the reader and for replay, which recomputes it;
+/// the post-state digest already binds it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CarriedComponent(String);
+
+impl CarriedComponent {
+    /// The canonical form of `component`.
+    pub(crate) fn of(component: &impl Encode) -> Result<Self, super::ProtocolRefusal> {
+        String::from_utf8(super::steps::jcs(component)?)
+            .map(Self)
+            .map_err(|_| super::ProtocolRefusal::fault("jcs-is-utf-8"))
+    }
+
+    /// A component given as its canonical text, as a counterexample from
+    /// outside may carry one; replay compares it with the recomputed one.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_text(text: impl Into<String>) -> Self {
+        Self(text.into())
+    }
+
+    /// Its JCS text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// The anchor a step's position is observed with (ADR-027 PB-2, ADR-025
+/// MS-2).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PositionAnchor<'a> {
+    /// An `attempt`: its operation's anchor, by the operation's qualified
+    /// name (ADR-018 SM-3).
+    Operation(&'a str),
+    /// Every other protocol step: the `protocol` anchor naming its kind and
+    /// its node, or, for a `duplicate` or `lose`, its channel.
+    Protocol {
+        /// The step kind.
+        step: StepKind,
+        /// The node's static declaration path; `None` for a channel step.
+        node: Option<&'a str>,
+        /// A channel step's channel, by its qualified name.
+        channel: Option<&'a str>,
+    },
+    /// A memory step, such as `flush(b)`: the `memory` anchor naming the
+    /// step.
+    Memory(&'a MemoryStepId),
+}
+
 /// A protocol step's typed canonical transition identity (ADR-027 TS-2,
 /// QSpec FR-426): `{"type":"protocol-transition","step":<kind>,...}` with
 /// exactly the members its kind lists. A `send` step also carries its send
-/// record (PX-1), and a step that took an entry off a queue the removal
-/// PD-4 reads; neither is part of the identity, so two transitions are
-/// equal when their identities are.
+/// record (PX-1), a step that took an entry off a queue the removal PD-4
+/// reads, and a step over a subject with a weak `parallel` its post-state's
+/// memory component (ADR-025 MK-1); none is part of the identity, so two
+/// transitions are equal when their identities are.
 #[derive(Clone, Debug)]
 pub struct ProtocolTransition {
     kind: StepKind,
@@ -353,6 +404,7 @@ pub struct ProtocolTransition {
     members: Members,
     removed: Option<QueueEvent>,
     send_record: Option<SendRecord>,
+    memory: Option<CarriedComponent>,
 }
 
 impl ProtocolTransition {
@@ -376,6 +428,7 @@ impl ProtocolTransition {
             members: Members::Control,
             removed: None,
             send_record: None,
+            memory: None,
         }
     }
 
@@ -389,6 +442,7 @@ impl ProtocolTransition {
             members: Members::Fence { ordering },
             removed: None,
             send_record: None,
+            memory: None,
         }
     }
 
@@ -411,6 +465,7 @@ impl ProtocolTransition {
             },
             removed: None,
             send_record: None,
+            memory: None,
         }
     }
 
@@ -424,6 +479,7 @@ impl ProtocolTransition {
             members: Members::Record { record },
             removed: None,
             send_record: None,
+            memory: None,
         }
     }
 
@@ -442,6 +498,7 @@ impl ProtocolTransition {
             },
             removed: None,
             send_record: None,
+            memory: None,
         }
     }
 
@@ -453,6 +510,7 @@ impl ProtocolTransition {
             members: Members::Memory { identity },
             removed: None,
             send_record: None,
+            memory: None,
         }
     }
 
@@ -481,6 +539,51 @@ impl ProtocolTransition {
     /// other step.
     pub fn send_record(&self) -> Option<&SendRecord> {
         self.send_record.as_ref()
+    }
+
+    /// This step, carrying `component`, its post-state's memory component
+    /// (ADR-025 MK-1).
+    pub(crate) fn with_memory(mut self, component: CarriedComponent) -> Self {
+        self.memory = Some(component);
+        self
+    }
+
+    /// This step carrying `component` as its post-state's memory
+    /// component, or none, as a counterexample from outside may: replay
+    /// refuses one that differs from the recomputed component (FR-227).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn carrying_memory(mut self, component: Option<CarriedComponent>) -> Self {
+        self.memory = component;
+        self
+    }
+
+    /// The post-state's memory component a step over a subject with a weak
+    /// `parallel` carries (ADR-025 MK-1); `None` over a subject whose every
+    /// `parallel` resolves to `sc`.
+    pub fn memory_component(&self) -> Option<&CarriedComponent> {
+        self.memory.as_ref()
+    }
+
+    /// The anchor the step's position is observed with (ADR-027 PB-2,
+    /// ADR-025 MS-2): an attempt's operation anchor, a memory step's
+    /// `memory` anchor naming it, and every other step's `protocol` anchor.
+    pub fn anchor(&self) -> PositionAnchor<'_> {
+        match &self.members {
+            Members::Attempt { operation, .. } => PositionAnchor::Operation(operation),
+            Members::Memory { identity } => PositionAnchor::Memory(identity),
+            Members::Channel { name, .. } => PositionAnchor::Protocol {
+                step: self.kind,
+                node: None,
+                channel: Some(name),
+            },
+            Members::Control | Members::Record { .. } | Members::Fence { .. } => {
+                PositionAnchor::Protocol {
+                    step: self.kind,
+                    node: self.node.as_deref(),
+                    channel: None,
+                }
+            }
+        }
     }
 
     /// The entry this step took off a channel's queue, if any.

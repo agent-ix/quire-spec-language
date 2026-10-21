@@ -650,6 +650,7 @@ fn sum(left: RunStats, right: RunStats) -> RunStats {
         product_edges: left.product_edges.saturating_add(right.product_edges),
         automaton_states: left.automaton_states.saturating_add(right.automaton_states),
         depth: left.depth.max(right.depth),
+        bound_limited: left.bound_limited.saturating_add(right.bound_limited),
     }
 }
 
@@ -1123,6 +1124,7 @@ impl<S: SubjectSystem> Run<'_, S> {
             product_edges: widen(self.edges),
             automaton_states: widen(self.monitor.automaton().state_count()),
             depth: widen(self.nodes.iter().map(|node| node.depth).max().unwrap_or(0)),
+            bound_limited: widen(self.bound_limited.len()),
         }
     }
 
