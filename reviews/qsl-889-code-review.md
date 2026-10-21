@@ -107,3 +107,4 @@ Round 1, reviewed at 9d08ad686 (fix commit 10ee83f10). The reviewer checked each
 | FND-003 | fixed | 10ee83f10. The repetition case is now the admitted reordering `["b", "a"]`. |
 | FND-004 | fixed | 10ee83f10. `qsl_replay::node_occurrence` is the one construction of the triple, used by `ClauseIdentity::resolve` and `author_clause`. qsl-analyze already depends on qsl-replay (A -> 6), so the edge is not new. A method on `TemporalClauseNode` in qsl-semantics would be the more natural owner, but this one is acceptable. |
 | FND-005 | fixed | 10ee83f10. `mod request;` plus `pub use request::{author_clause, RequestRefusal, SubjectIdentity}`. |
+| FND-006 | fixed | 26e38598f. `SubjectContext::new` computes the subject identity (one emission) once; `author_clause` is a method on it and emits nothing. |
