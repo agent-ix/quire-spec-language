@@ -77,3 +77,10 @@ fixing in this PR: FND-001 (medium) and FND-002 (low).
 | --- | --- | --- | --- |
 | FND-001 | medium | The dispatch-path test carries `#[trace("TC-196", "QSpec-FR-151-AC-19", "FR-120-AC-9")]`. A bare `TC-196` binds QSL's own TC-196, `duplicate-backend-registration-refused` (FR-075), which is unrelated. The repo convention for QSpec's case is `QSpec-TC-196`, as in `dispatch_calls.rs` and `inherited_attributes.rs`. `FR-120-AC-9` is the simulator criterion over the `test/orders` fixture, and this test does not exercise it. The matrix therefore credits two QSL criteria that this test does not check. The fix is `#[trace("QSpec-TC-196", "QSpec-FR-151-AC-19")]`, plus a QSL criterion for the dispatch-path order if one is added (see FND-002). | qsl-replay/tests/dispatch_link_compile.rs:1225 |
 | FND-002 | low | FR-120-AC-9 now names only the false-sorts-first case (`pre Aaa { false }` records no finding). FR-120's statement also gives the reverse: an undefined clause that sorts before a false one gives the undecided outcome and one finding. The new test asserts that case in both source orders, but no criterion states it, and no QSL criterion states the dispatch path's name order. The fix is to add both to AC-9 (or a new AC): the undefined clause sorting first records its one finding and the false clause after it is not reached, and the dispatch-path conjunction follows clause name whatever the source order. | spec/functional/FR-120-simulate-a-checked-package-s-state-family.md:572 |
+
+## Dispositions
+
+| FND | outcome | reason |
+| --- | --- | --- |
+| FND-001 | fixed | The dispatch-path test is tagged `QSpec-TC-196`, `QSpec-FR-151-AC-19` and the new `FR-120-AC-15`; it no longer carries bare `TC-196` or `FR-120-AC-9`. |
+| FND-002 | fixed | New FR-120-AC-15 states the reverse order (undefined clause first gives one finding, the false clause is not reached) and the dispatch path's name order in both source orders; the simulator test is tagged to it. |

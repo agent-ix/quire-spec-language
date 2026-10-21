@@ -369,7 +369,7 @@ defines it (QSpec FR-151-AC-17 to AC-19, TC-196 D09 to D11): `own(m)` and
 ascending clause name (UTF-8 bytes) under FR-006's short-circuit, so an
 undefined clause that sorts before a false one makes the precondition
 undefined and the reverse order makes it `false`. The order does not depend on
-source position, source unit or link order. The dispatch path conjoins the own
+source position, source unit or link order (verified for a package of one unit, FR-120-AC-15; see Remaining work). The dispatch path conjoins the own
 clauses through `view_clauses` (`dispatch_link.rs`) and disjoins the result
 with the redefined member's through `effective_terms`
 (`checked_dispatch.rs`). On the spine every operation record's `redefines` is
@@ -575,6 +575,7 @@ identity text of operation `op`.
 | FR-120-AC-12 | A unit whose function body reads `self`, whose invariant reads `result`, whose invariant reads `pre(self.value)`, or whose function calls `reaches`, refuses at S3 with `missing_declaration`/`missing-name`, `wrong_snapshot`/`wrong-anchor`, `wrong_snapshot`/`forbidden-pre-read` or `ill_typed`/`operator-ineligible`, each at the source span of that form, and yields no `CheckedPackage` to simulate. | Test (TC-473) |
 | FR-120-AC-13 | With `spawn()` over a population whose universe has 30 unused keys and each created object's fields ranging over `Int[0, 2]`, `Int[0, 1]` and `Option<Reference<Counter>>`, so the candidate product exceeds 10^9, and `max_candidates` 10, exploration returns `Outcome::Stopped` with `resource_exhausted`/`insufficient-next-charge` after generating at most 11 candidates, and does not allocate the product. | Test (TC-472) |
 | FR-120-AC-14 | `ModelSystem::over_model` over a model identity that the refinement unit does not select (`example/not-selected`) refuses `invalid_runtime_input`/`wrong-role-mapping`; over each of the unit's two selected models it returns a system that reports that model. | Test (TC-1086) |
+| FR-120-AC-15 | Over the `test/orders` fixture of AC-9 with two `pre` clauses on `ready`, one `false` and one undefined (`self.ready()`), the clauses are conjoined in ascending name under short-circuit whatever their source order: with the undefined clause sorting first (`Aaa` undefined, `Zzz` false, in either source order) the application is not enabled and exactly one `ContractUndetermined` is recorded for `Aaa`, the false clause not being reached; with the false clause sorting first (`Aaa` false, `Zzz` undefined) none is recorded. On the dispatch path (`view_clauses`), over `ConfigVersion::size` with the same two clauses, a call of `size` gives the result of the clause that sorts first (undefined for `other`'s precondition when the undefined clause sorts first, undefined for `size`'s own precondition when the false clause does), with equal outcome and charges in both source orders. | Test (TC-472) |
 
 ## Dependencies
 
@@ -606,4 +607,5 @@ identity text of operation `op`.
 
 ## Remaining work
 
-None.
+- QSL-935, split-unit case: QSpec TC-196 D10's variant with a member's own `pre` clauses declared in two linked source units, in both link orders, has no QSL form today. A checked package is one unit (`CheckedPackage::link`), and `view_clauses` reads that unit's clauses only. The order rule is verified for the one-unit case. Remaining work: build the variant when a package can link more than one unit.
+- QSL-935, `absent-key` form: AC-15 uses a nested call whose own precondition is `false` (reason `precondition-false`) as the undefined clause. D10's `lookup` of an absent key (reason `absent-key`) is not built; the ordering and short-circuit it checks do not depend on the reason.

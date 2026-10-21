@@ -1222,7 +1222,7 @@ fn a_clause_function_is_a_known_owner_and_no_fault() {
 /// named first the false one is not reached (the call is undefined for
 /// `other`'s). Swapping only the source order changes neither the outcome nor
 /// the charges.
-#[trace("TC-196", "QSpec-FR-151-AC-19", "FR-120-AC-9")]
+#[trace("QSpec-TC-196", "QSpec-FR-151-AC-19", "FR-120-AC-15")]
 #[test]
 fn own_precondition_clauses_conjoin_in_ascending_name_whatever_the_source_order() {
     let document = package(

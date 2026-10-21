@@ -1712,7 +1712,7 @@ fn an_undecided_precondition_is_a_contract_finding() {
 /// records no finding, the undefined clause after it being neither evaluated
 /// nor reported; an undefined clause that sorts first records its one finding
 /// and the false clause after it is not reached.
-#[trace("TC-472", "FR-120-AC-9")]
+#[trace("TC-472", "FR-120-AC-15")]
 #[test]
 fn precondition_clauses_stop_at_the_first_non_true_clause_in_name_order() {
     let false_clause = |name: &str| format!("pre {name} using v on M::A::ready {{ false }}");
