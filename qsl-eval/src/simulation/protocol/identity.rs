@@ -11,7 +11,7 @@ use quire_canonical::{Encode, Error, Sink, Writer};
 use quire_exact::ObjectReference;
 use quire_semantic_value::model_transition::ModelTransition;
 
-use super::memory::MemoryStepId;
+use super::memory::{MemoryChoice, MemoryStepId};
 use crate::simulation::model::encode::{reference_enc, Enc};
 
 /// One step of a thread's path (QSpec FR-425): for a branch thread, the
@@ -268,6 +268,34 @@ pub enum StepKind {
 }
 
 impl StepKind {
+    /// Whether a step of this kind counts for interval distance (ADR-027
+    /// PB-3, QSpec FR-431): an operation (`attempt`, `cattempt`), an event
+    /// (`event`, and `activate` for a trigger occurrence), a `send` or a
+    /// `receive`. Every other step, `spawn`, `retire`, a `fence` and a memory
+    /// step (a `flush` or a release/acquire choice) included, moves the
+    /// position and not the distance.
+    pub const fn counts(self) -> bool {
+        match self {
+            Self::Attempt
+            | Self::CAttempt
+            | Self::Event
+            | Self::Activate
+            | Self::Send
+            | Self::Receive => true,
+            Self::Duplicate
+            | Self::Lose
+            | Self::Fork
+            | Self::Join
+            | Self::Timeout
+            | Self::Finish
+            | Self::Memory
+            | Self::Fence
+            | Self::CEnd
+            | Self::Spawn
+            | Self::Retire => false,
+        }
+    }
+
     fn text(self) -> &'static str {
         match self {
             Self::Attempt => "attempt",
@@ -301,6 +329,8 @@ enum Members {
         operation: String,
         receiver: Enc,
         arguments: Vec<Enc>,
+        /// `memory_choice`: the message or slot the memory model chose.
+        choice: Option<MemoryChoice>,
     },
     /// No further member.
     Control,
@@ -620,12 +650,21 @@ impl ProtocolTransition {
                 application,
                 receiver,
                 arguments,
+                choice: None,
             },
             removed: None,
             send_record: None,
             memory: None,
             actor: None,
         }
+    }
+
+    /// This attempt, having chosen `choice` (QSpec FR-426 `memory_choice`).
+    pub(crate) fn choosing(mut self, choice: Option<MemoryChoice>) -> Self {
+        if let Members::Attempt { choice: held, .. } = &mut self.members {
+            *held = choice;
+        }
+        self
     }
 
     /// A step of `kind` by `thread` at `node` that binds `record`: an
@@ -837,6 +876,23 @@ impl ProtocolTransition {
         self.memory.as_ref()
     }
 
+    /// This attempt, naming `choice` as its message or slot, as a
+    /// counterexample from outside may: replay refuses a depth the state
+    /// has no message or slot at (FR-227).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn naming(self, choice: Option<MemoryChoice>) -> Self {
+        self.choosing(choice)
+    }
+
+    /// The message or slot an access chose (QSpec FR-426 `memory_choice`);
+    /// `None` for a step whose memory model chooses none.
+    pub fn memory_choice(&self) -> Option<&MemoryChoice> {
+        match &self.members {
+            Members::Attempt { choice, .. } => choice.as_ref(),
+            _ => None,
+        }
+    }
+
     /// The anchor the step's position is observed with (ADR-027 PB-2,
     /// ADR-025 MS-2): an attempt's operation anchor, a memory step's
     /// `memory` anchor naming it, and every other step's `protocol` anchor.
@@ -871,6 +927,11 @@ impl ProtocolTransition {
     /// The step's kind.
     pub fn kind(&self) -> StepKind {
         self.kind
+    }
+
+    /// Whether the step counts for interval distance (ADR-027 PB-3).
+    pub const fn counts(&self) -> bool {
+        self.kind.counts()
     }
 
     /// For a `cattempt` or `cend`, its template's qualified name.
@@ -969,11 +1030,15 @@ impl ProtocolTransition {
                 operation,
                 receiver,
                 arguments,
+                choice,
                 ..
             } => {
                 members.push(("operation", Enc::text(operation.clone())));
                 members.push(("receiver", receiver.clone()));
                 members.push(("arguments", Enc::Array(arguments.clone())));
+                if let Some(choice) = choice {
+                    members.push(("memory_choice", choice.enc()));
+                }
             }
             Members::Control => {}
             Members::Record { record } => members.push(("record", record.clone())),

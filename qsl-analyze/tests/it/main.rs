@@ -29,6 +29,7 @@ mod por_world;
 mod prob_world;
 mod protocol_compensation;
 mod protocol_constructs;
+mod protocol_counted_steps;
 mod protocol_footprints;
 mod protocol_roles;
 mod protocol_system;
@@ -47,6 +48,7 @@ mod refinement_liveness;
 mod refinement_reads;
 mod refinement_replay;
 mod refinement_safety;
+mod release_acquire;
 #[path = "../../../tests/support/ring_world.rs"]
 mod ring_world;
 mod schedulability;

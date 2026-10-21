@@ -132,6 +132,21 @@ pub(super) struct Plan {
 }
 
 impl Plan {
+    /// Whether some operator has an interval, so that the truth of the
+    /// formula depends on how distance is counted (ADR-027 PB-3). A formula
+    /// without one reads the same whether a step counts or not.
+    pub(super) fn measures_distance(&self) -> bool {
+        self.nodes.iter().any(|node| match node {
+            Node::Scan(scan) => scan.window != Window::From { lower: 0 },
+            Node::Constant(_)
+            | Node::Atom
+            | Node::Not(_)
+            | Node::And(..)
+            | Node::Or(..)
+            | Node::Implies(..) => false,
+        })
+    }
+
     pub(super) fn new(formula: &CheckedFormula) -> Result<Self, InternalFault> {
         let mut nodes = Vec::with_capacity(formula.nodes().len());
         let mut atoms = Vec::new();

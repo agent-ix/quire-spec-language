@@ -52,6 +52,10 @@ pub enum UndecidedCause {
     /// ADR-023 HM-7: a hyper item's non-empty `μ_U` is matched by no fair
     /// tuple of universal behaviours (FR-176).
     VacuousMatch,
+    /// ADR-027 PB-3: an interval obligation stays open on a reachable cycle
+    /// of uncounted protocol steps, which a bad-prefix monitor cannot
+    /// refute and EN-1 does not yet settle as a lasso.
+    UncountedLoop,
     /// ADR-027 AE-4: the run completed with no counterexample and at least
     /// one instance-limited state.
     InstanceBoundReached {

@@ -36,7 +36,7 @@ use qsl_semantics::check::{
     Activation, CheckedFormula, CheckedTemporalClause, FormulaNodeId, TemporalProfile,
 };
 
-use crate::automaton::counters::{DeadlineCounter, ExtentCounter};
+use crate::automaton::counters::{DeadlineCounter, Expired, ExtentCounter, Violated};
 use crate::automaton::dnf::Dnf;
 use crate::automaton::error::AutomatonError;
 use crate::automaton::formula::{invariant, lower, FutureKind, Ir, Lowered, Node, NodeId, Window};
@@ -45,6 +45,17 @@ use crate::automaton::letter::{Atom, Guard, Letter};
 use crate::automaton::numbering::Numbering;
 use crate::automaton::past::{Memory, Outcome, Past};
 use crate::automaton::state::StateId;
+
+/// How the steps of a behaviour count for interval distance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Counting {
+    /// Every step counts: a model subject, ADR-018's reading.
+    Every,
+    /// The steps of a protocol subject count by kind (ADR-027 PB-3): the
+    /// letter carries an atom that holds when the step into its position
+    /// does not count.
+    ByKind,
+}
 
 /// Which representation ADR-018 SM-6 gives a property.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,6 +97,7 @@ pub struct PropertyAutomaton {
     atoms: Vec<FormulaNodeId>,
     when: Option<Atom>,
     live: Option<Atom>,
+    uncounted: Option<Atom>,
     /// For each generator of the body's atom symmetry, where it takes each
     /// node the translation uses.
     exchanges: Vec<BTreeMap<NodeId, NodeId>>,
@@ -120,6 +132,14 @@ impl PropertyAutomaton {
     /// `on each` clause.
     pub fn live(&self) -> Option<Atom> {
         self.live
+    }
+
+    /// The atom that holds where the step into the position read does not
+    /// count for interval distance (ADR-027 PB-3). Only an automaton from
+    /// [`translate_counted`] has it, and only for a clause with an interval
+    /// operator; elsewhere every step counts.
+    pub fn uncounted(&self) -> Option<Atom> {
+        self.uncounted
     }
 
     /// The initial state, read before position 0's letter. It is state 0.
@@ -242,6 +262,27 @@ impl PropertyAutomaton {
             .collect()
     }
 
+    /// Whether the reached `state` owes an interval eventuality that only a
+    /// counted step can close (ADR-027 PB-3): a pending `eventually` or
+    /// `until` deadline, or one still waiting out its lower bound. A state
+    /// that owes one and repeats on uncounted steps never discharges it.
+    pub fn owes_eventuality(&self, state: StateId) -> bool {
+        let Some(config) = self.reached.key(state) else {
+            return false;
+        };
+        let deadline = config
+            .counters
+            .values()
+            .any(|counter| matches!(counter, Counter::Deadline(counter) if counter.is_pending()));
+        deadline
+            || config.shifts.keys().any(|core| {
+                matches!(
+                    self.translator.ir.node(*core),
+                    Ok(Node::Future { kind, .. }) if kind.is_eventuality()
+                )
+            })
+    }
+
     /// The number of acceptance sets: one for each unbounded `eventually`
     /// or `until` of the translated formula. A run accepts when it visits
     /// every set infinitely often; with none it is a safety automaton.
@@ -347,6 +388,32 @@ pub fn translate(
         clause.profile(),
         clause.activation(),
         Selection::Clause,
+        Counting::Every,
+        max_states,
+        None,
+    )
+}
+
+/// Translate `clause` for a protocol subject, whose steps count for interval
+/// distance by kind (ADR-027 PB-3) rather than all counting: a clause with an
+/// interval operator reads one more atom of the letter,
+/// [`PropertyAutomaton::uncounted`], which the caller sets for a step that
+/// does not count. A step the automaton reads with that atom false counts,
+/// so the terminal stutter step does.
+///
+/// # Errors
+///
+/// As [`translate`].
+pub fn translate_counted(
+    clause: &CheckedTemporalClause,
+    max_states: u64,
+) -> Result<PropertyAutomaton, AutomatonError> {
+    translate_formula(
+        clause.formula(),
+        clause.profile(),
+        clause.activation(),
+        Selection::Clause,
+        Counting::ByKind,
         max_states,
         None,
     )
@@ -373,6 +440,7 @@ pub fn translate_negation(
         profile,
         Activation::Origin,
         Selection::Negation,
+        Counting::Every,
         max_states,
         symmetry,
     )
@@ -398,6 +466,7 @@ pub fn translate_body(
         profile,
         Activation::Origin,
         Selection::Clause,
+        Counting::Every,
         max_states,
         None,
     )
@@ -417,6 +486,7 @@ fn translate_formula(
     profile: TemporalProfile,
     activation: Activation,
     selection: Selection,
+    counting: Counting,
     max_states: u64,
     symmetry: Option<&AtomSymmetry<'_>>,
 ) -> Result<PropertyAutomaton, AutomatonError> {
@@ -487,7 +557,29 @@ fn translate_formula(
         })
         .transpose()?
         .unwrap_or_default();
-    let translator = Translator { ir, order };
+    let mut intervals = false;
+    for id in &order {
+        match ir.node(*id)? {
+            Node::Future { window, .. } if window != Window::From { lower: 0 } => {
+                intervals = true;
+            }
+            Node::Past { window, .. }
+                if counting == Counting::ByKind && window != Window::From { lower: 0 } =>
+            {
+                return Err(AutomatonError::PastIntervalInCountedSteps);
+            }
+            _ => {}
+        }
+    }
+    let uncounted = match counting {
+        Counting::ByKind if intervals => Some(Atom::new(next_atom)?),
+        Counting::ByKind | Counting::Every => None,
+    };
+    let translator = Translator {
+        ir,
+        order,
+        uncounted,
+    };
     let eventualities: Vec<NodeId> = translator.eventualities()?.into_iter().collect();
     let initial = translator.initial(target)?;
     // The exchanges are offered only when each is an automorphism: it fixes
@@ -511,6 +603,7 @@ fn translate_formula(
         atoms,
         when,
         live,
+        uncounted,
         exchanges,
     })
 }
@@ -610,6 +703,9 @@ enum Task {
 /// One way of satisfying what this position must satisfy.
 #[derive(Clone, Debug)]
 struct Branch {
+    /// Whether the step into the position read counts for interval
+    /// distance.
+    counted: bool,
     /// The letters of this branch.
     cube: Guard,
     todo: Vec<Task>,
@@ -648,6 +744,10 @@ struct Translator {
     ir: Ir,
     /// The nodes the target reaches, in ascending order.
     order: Vec<NodeId>,
+    /// The letter atom that holds where the step into the position read
+    /// does not count; none when every step counts or no interval operator
+    /// measures distance.
+    uncounted: Option<Atom>,
 }
 
 impl Translator {
@@ -712,13 +812,44 @@ impl Translator {
     }
 
     /// Every transition out of `config`: the guard on the letter read at the
-    /// next position and the state it leads to.
+    /// next position and the state it leads to. A clause whose interval
+    /// operators measure counted distance (ADR-027 PB-3) reads the step into
+    /// the position as well, and keeps one transition for both readings
+    /// where they agree.
     fn expand(&self, config: &Config) -> Result<Vec<(Guard, Config)>, AutomatonError> {
         let truths = self.truths(&config.memory)?;
         let memories = Self::memories(&truths);
+        let counted = self.transitions(config, &truths, &memories, true)?;
+        let Some(uncounted) = self.uncounted else {
+            return Ok(counted);
+        };
+        let held = self.transitions(config, &truths, &memories, false)?;
+        if held == counted {
+            return Ok(counted);
+        }
+        Ok(counted
+            .into_iter()
+            .map(|(guard, next)| (guard.forbidding(uncounted), next))
+            .chain(
+                held.into_iter()
+                    .map(|(guard, next)| (guard.requiring(uncounted), next)),
+            )
+            .filter(|(guard, _)| guard.is_satisfiable())
+            .collect())
+    }
+
+    /// The transitions out of `config` when the step into the position read
+    /// `counted` or not.
+    fn transitions(
+        &self,
+        config: &Config,
+        truths: &Truths,
+        memories: &[(Guard, BTreeMap<NodeId, Memory>)],
+        counted: bool,
+    ) -> Result<Vec<(Guard, Config)>, AutomatonError> {
         let mut transitions = Vec::new();
-        for (cube, next) in self.branches(config, &truths)? {
-            for (memory_cube, memory) in &memories {
+        for (cube, next) in self.branches(config, truths, counted)? {
+            for (memory_cube, memory) in memories {
                 let guard = cube.conjoined(*memory_cube);
                 if guard.is_satisfiable() {
                     transitions.push((
@@ -811,8 +942,10 @@ impl Translator {
         &self,
         config: &Config,
         truths: &Truths,
+        counted: bool,
     ) -> Result<Vec<(Guard, Next)>, AutomatonError> {
         let mut start = Branch {
+            counted,
             cube: Guard::always(),
             todo: config.must.iter().map(|id| Task::Assert(*id)).collect(),
             asserted: BTreeSet::new(),
@@ -823,9 +956,14 @@ impl Translator {
         };
         for (core, delays) in &config.shifts {
             for delay in delays {
-                match delay.checked_sub(1) {
-                    None => start.todo.push(Task::Activate(*core)),
-                    Some(remaining) => self.add_shift(&mut start.next, *core, remaining)?,
+                // A step that does not count leaves every delay where it
+                // was.
+                match (counted, delay.checked_sub(1)) {
+                    (false, _) => self.add_shift(&mut start.next, *core, *delay)?,
+                    (true, None) => start.todo.push(Task::Activate(*core)),
+                    (true, Some(remaining)) => {
+                        self.add_shift(&mut start.next, *core, remaining)?;
+                    }
                 }
             }
         }
@@ -1006,6 +1144,11 @@ impl Translator {
         };
         let opens = branch.opens.contains(&id);
         let stored = config.counters.get(&id).copied();
+        let counted = branch.counted;
+        // Where a step may not count (ADR-027 PB-3) a counter that ends
+        // with its window is closed by the next counted step, so a
+        // branch the counter refuses is one that has no run.
+        let exact = self.uncounted.is_some();
         match kind {
             FutureKind::Eventually | FutureKind::Until => {
                 let counter = match stored {
@@ -1013,19 +1156,28 @@ impl Translator {
                     Some(Counter::Deadline(counter)) => counter,
                     Some(Counter::Extent(_)) => return Err(invariant("counter-matches-kind")),
                 };
+                let step = |holds: bool| {
+                    if exact {
+                        counter.step_counted(opens, holds, counted)
+                    } else {
+                        counter.step(opens, holds)
+                    }
+                };
                 let waiting = opens || counter.is_pending();
+                let mut branches = Vec::new();
                 // The operand holds here: the obligations are discharged.
                 let mut claimed = branch.clone();
                 claimed.todo.push(Task::Assert(right));
-                Self::keep(
-                    &mut claimed,
-                    id,
-                    counter.step(opens, true),
-                    Counter::Deadline,
-                )?;
-                let mut branches = vec![claimed];
+                match step(true) {
+                    Ok(held) => {
+                        Self::set(&mut claimed, id, Counter::Deadline(held));
+                        branches.push(claimed);
+                    }
+                    Err(Expired) if exact => {}
+                    Err(Expired) => return Err(invariant("a-held-operand-fails-no-obligation")),
+                }
                 // It does not, and an obligation waits for a later position.
-                if let Ok(aged) = counter.step(opens, false) {
+                if let Ok(aged) = step(false) {
                     if kind == FutureKind::Until && waiting {
                         let guard = left.ok_or_else(|| invariant("until-has-a-left-operand"))?;
                         branch.todo.push(Task::Assert(guard));
@@ -1045,6 +1197,18 @@ impl Translator {
                 if !opens && !counter.is_pending() {
                     return Ok(Progress::Continue(vec![branch]));
                 }
+                let stepped = if exact {
+                    counter.step_counted(opens, true, counted)
+                } else {
+                    counter.step(opens, true)
+                }
+                .map_err(|Violated| invariant("a-held-operand-fails-no-obligation"))?;
+                // A window that ended on the last counted step needs the
+                // operand at no later position that counts.
+                if !counter.requires(opens, counted) {
+                    Self::set(&mut branch, id, Counter::Extent(stepped));
+                    return Ok(Progress::Continue(vec![branch]));
+                }
                 branch.todo.push(Task::Assert(right));
                 let mut released = None;
                 if kind == FutureKind::Release {
@@ -1056,25 +1220,12 @@ impl Translator {
                     released = Some(cleared);
                     self.exclude(&mut branch, guard)?;
                 }
-                Self::keep(&mut branch, id, counter.step(opens, true), Counter::Extent)?;
+                Self::set(&mut branch, id, Counter::Extent(stepped));
                 Ok(Progress::Continue(
                     released.into_iter().chain([branch]).collect(),
                 ))
             }
         }
-    }
-
-    /// Keep the counter `stepped` produced, or refuse the invariant that a
-    /// counter whose operand holds never fails.
-    fn keep<T, E>(
-        branch: &mut Branch,
-        id: NodeId,
-        stepped: Result<T, E>,
-        wrap: fn(T) -> Counter,
-    ) -> Result<(), AutomatonError> {
-        let counter = stepped.map_err(|_| invariant("a-held-operand-fails-no-obligation"))?;
-        Self::set(branch, id, wrap(counter));
-        Ok(())
     }
 
     fn set(branch: &mut Branch, id: NodeId, counter: Counter) {
