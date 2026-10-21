@@ -38,7 +38,7 @@ their owners, and the items `items_from_requirements` writes) is read through
 5. Call `nope`, the empty name, `inc.x` and `1inc`; call a source that does
    not parse; call with a cancelled handle.
 6. Read each record's owner in the checked graph for FR-062's RR-1 to RR-17,
-   for QSpec TC-198 L07's `post Q` unit and for TC-590 step 1's `possible P` unit over the ConfigVersion unit, which yields a `temporal-satisfaction` record.
+   for QSpec TC-198 L07's `post Q` unit and for the temporal clause `Reaches` of TC-842 over the ConfigVersion unit (a `temporal-satisfaction` record in `graph().requirements()`, as `tests/it/temporal_negotiation.rs` reads it); the state-graph claim `possible P` is not used.
 7. Call `add` of FR-062 RR-3 with the arguments `x`, `y` and then `y`, `x`.
 8. Fault arm: in a `qsl-replay` unit test, build a checked package whose
    record map is altered through the crate-internal test support (the same

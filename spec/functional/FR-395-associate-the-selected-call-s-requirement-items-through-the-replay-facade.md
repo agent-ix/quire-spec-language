@@ -123,16 +123,22 @@ package the call ran against; nothing is recomputed.
   has no owner or an owner that names no function of the checked package. The
   owner is a single field, so two owners cannot arise and the facade never
   picks one.
-- **Facade boundary.** The facade SHALL expose the entry and its types at the
-  `qsl_replay` root, where a consumer reaches them, and the root SHALL re-export FR-100's call types that
-  the entry takes or returns (`Call`, `CallArgument`, `CallOutcome`,
-  `CallValue`, `RunRefusal`, `PackageId`, `SpineLimits`, `ObjectEnvironment`
-  and `SuppliedLimits`) beside
-  `run_with_requirements`, `RunWithRequirements`, `CallRequirements` and
-  `CallRequirement`. `qsl_replay::spine` stays internal, a consumer names
-  neither it nor `qsl_semantics`' checked graph (FR-060, T12-A), as for
-  `compile_admitted` (FR-394), and `run` keeps its signature and result
-  (FR-100).
+- **Facade boundary.** The facade SHALL expose the entry and its result
+  types (`run_with_requirements`, `RunWithRequirements`, `CallRequirements`
+  and `CallRequirement`) at the `qsl_replay` root, where a consumer reaches
+  them. The root SHALL also re-export every type of `run`'s signature and
+  result that it does not export today, so that a consumer calls the entry
+  and reads its result without naming `qsl_replay::spine`: `Call`,
+  `CallArgument`, `CallOutcome`, `CallValue`, `CallRefusal` and
+  `CallIncomplete` (the payloads of `CallOutcome::Refused` and
+  `::Incomplete`), `RunRefusal`, `SpineLimits`, `PackageId` (from
+  `qsl_semantics::library`), `ObjectEnvironment` (from `qsl_semantics`' model
+  object environment), `SuppliedLimits` (from `qsl_semantics`' value
+  supplied module) and `Cancel` (with `CancelCause`, from `quire_exact`).
+  `DependencyInput` and `SourceIdentity` are already on the root and are not
+  listed. `qsl_replay::spine` stays internal, a consumer names neither it nor
+  `qsl_semantics`' checked graph (FR-060, T12-A), as for `compile_admitted`
+  (FR-394), and `run` keeps its signature and result (FR-100).
 - **Relation to settlement.** The association settles nothing. Mapping a
   provider's result for an item to a terminal (QSL-655) takes an item by the
   identity this requirement fixes and does not depend on this requirement,
