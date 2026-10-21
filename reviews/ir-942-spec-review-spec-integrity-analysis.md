@@ -53,3 +53,12 @@ Not mergeable until FND-001 is settled: the occurrence key depends on a
 `generated` role use that QSpec FR-322 does not define. FND-002 should be
 fixed in the same PR. The preimage itself matches the owner rulings, QSV
 FR-123, FR-375 and FR-468.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | still-open | Blocked on QSpec #322 (FR-322-AC-88/89, open at dcc70c07d). FR-322 on main still defines `generated` only for compiler-derived nodes. The 6dc640fa4 text matches #322's rule (Initial ordinal 0 with the declaration region, row `i` ordinal `i + 1` with its source-row region, reader refusal `invalid_package`/`invalid-value`), so it resolves when #322 merges and the ADR cites it. |
+| FND-002 | fixed | 6dc640fa4: the O-07 Conversions row says the clause, application and function forms include their occurrence key and the per-step form excludes it; the O-09 Public type row says "These three subject kinds need no separate tag ... The per-step record form below is a fourth subject kind and has an explicit `subject_kind` tag"; the Serialized authority row says per-step content identity excludes both occurrence key and regions. |
+| FND-003 | fixed | 6dc640fa4: FR-146 "Record identity and occurrence dependency" says O-09 defines the content identity and CG FR-015-AC-120 to AC-122 govern digest, carrier and refusals; only the O-07 occurrence key awaits the QSpec FR-322 ruling. |
+| FND-004 | fixed | 6dc640fa4: the ticket pointer is replaced by "CG FR-015-AC-120 through AC-122 specify its acceptance and refusal obligations." |

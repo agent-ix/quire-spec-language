@@ -44,3 +44,12 @@ occurrences"; regions per occurrence), QSV FR-123 Behavior 1, FR-146
 Mergeable on this method's findings once FND-001 and FND-002 are settled;
 FND-003 and FND-004 are wording. The identity design itself has no collision
 or information loss.
+
+## Dispositions
+
+| FND | Outcome | Reason |
+| --- | --- | --- |
+| FND-001 | fixed | 6dc640fa4: "Each generated occurrence has a `source_map` entry: `Initial` names the refinement declaration region, and `Step` names its corresponding authored step-row region." This matches QSpec #322 (initial region = the node's `declaration` occurrence region; step region = its source row's). |
+| FND-002 | fixed | 6dc640fa4: CG refuses an out-of-range row, a duplicate pair, a mismatched owner or role/ordinal at harness setup with `InvalidIdentity` (an existing `KaniErrorCode`) and a typed cause; the IR reader refuses a malformed owner occurrence or `source_map` pair with FR-322's `invalid_package`/`invalid-value`, as QSpec #322 states. A leftover "A package refuses" sentence (line 316) precedes the named actors but no longer leaves the code open. |
+| FND-003 | fixed | 6dc640fa4: "`hypotheses` are supplied by QSL in FR-146's ascending node-key digest order without duplicates; CG preserves that order and does no sorting or deduplication." |
+| FND-004 | fixed | 6dc640fa4: "For a protocol subject, QSpec FR-375-AC-19 places `memory` rows after rows that name a declaration, then breaks ties by the UTF-8 bytes of the alias-free step-class spelling." |
