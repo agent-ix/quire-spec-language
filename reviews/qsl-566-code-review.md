@@ -81,3 +81,4 @@ Disposition pass 1 at head 053b1655e (fix commit 053b1655e). One focused run: `c
 | FND-005 | fixed | 053b1655e: while any SC event is live, every view-moving step (attempt, receive, fence, join) reads and writes the SC graph. Both review litmus programs are fixtures of `every_independent_pair_of_ra_steps_commutes` |
 | FND-006 | fixed | 053b1655e: `sorted` returns `Enc::Unencodable` on an encode error, so the key refuses |
 | FND-007 | fixed | 053b1655e: the forgery flips one message view's depth (`elements[1].view.at`) in step 2's carried JSON, and replay refuses `stale_dependency`/`content-mismatch` |
+| FND-008 | fixed | the FND-001 and FND-002 regression tests are tagged `TC-668` only, no AC they do not test; the fence test is renamed `a_thread_that_fences_twice_still_orders_another_threads_fence`, as no retention rule exists |
