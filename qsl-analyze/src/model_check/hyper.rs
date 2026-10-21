@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! FR-176, FR-177 (ADR-023 HC-1, HC-2, HC-4, HC-8, HM-7; ADR-018 EN-1): the
-//! explicit-state check of a universal hyperproperty (HP-2) by
-//! self-composition and of a forall-exists safety hyperproperty (HP-3) by
-//! witness sets.
+//! FR-176, FR-177, FR-178 (ADR-023 HC-1, HC-2, HC-4, HC-8, HM-7, PA-4; ADR-018
+//! EN-1): the explicit-state check of a universal hyperproperty (HP-2) by
+//! self-composition, of a forall-exists safety hyperproperty (HP-3) by
+//! witness sets and of a projection-aligned universal one (HP-6) by the
+//! projected product.
 //!
 //! [`check_hyper`] decides a `hyper` clause over `behaviours` whose
 //! quantifiers are all `forall` (HP-2), or `forall`s then `exists`s over a
-//! safety body (HP-3). Before any product is built it classifies
+//! safety body (HP-3), or all `forall` with `align skip` over a safety body
+//! (HP-6). Before any product is built it classifies
 //! every root of every subject and explores each distinct subject's reachable
 //! graph once under the request's limits, so a subject that alone reaches a
 //! limit stops the item there (HC-8). It then explores, for each instance of
@@ -60,12 +62,24 @@
 //! of copies that carry fairness is not swapped (`unfair_classes`). A request
 //! that selects a reduction is settled against ADR-023 §5's rows before any
 //! state is expanded (`reductions`).
-//!
+//! An HP-6 clause is explored as a [`ProjectedProduct`]: a state is the tuple
+//! of component states with the body's safety monitor, a skipped step moves one
+//! component alone and a visible step moves them all together on a matched
+//! joint step (PA-4). It has no second phase: its first phase is the scan, in
+//! discovery order, for the first state that is a rejecting monitor state, a
+//! joint position with an undefined letter or a visible move with an undefined
+//! `μ_U`, those states being states of the product, so the engine's
+//! breadth-first order ranks them (HV-8); a refused `μ_U` or contract leaves
+//! the item undecided as before. The counterexample is the first path to a
+//! rejecting state, split into its components' steps, each marked skipped or
+//! visible. Its search horizon `max_depth` counts moves of either kind (PA-5,
+//! HV-3) and is the only form that has one.
 //! Not built here, and refused or absent rather than approximated: the
 //! product-closure certificate (FR-163), so a `Holds` carries none and settles
-//! no `proved`; a search horizon `max_depth` (HV-3); and the facade entry that
-//! replays a counterexample from a recompiled package, which waits for S4 to
-//! emit a hyper clause. The core of that replay is
+//! no `proved`; a search horizon `max_depth` for an HP-2 or HP-3 item (HV-3);
+//! copy-swap and the reductions a request selects for an HP-6 item; and the
+//! facade entry that replays a counterexample from a recompiled package, which
+//! waits for S4 to emit a hyper clause. The core of that replay is
 //! `qsl_replay::replay_hyper_trace_tuple`.
 
 mod lift;
@@ -82,7 +96,8 @@ use qsl_eval::fairness::{
 use qsl_eval::hyper::{
     cartesian, copy_symmetry, ComponentStep, CopySwapInputs, Halt, HyperFinding, HyperInputs,
     HyperLetters, HyperProduct, HyperState, HyperTransition, ParameterBinding, Partner,
-    PartnerStep, Property, StepMatch, WitnessInputs, WitnessProduct,
+    PartnerStep, ProjectedInputs, ProjectedProduct, Property, StepMatch, WitnessInputs,
+    WitnessProduct,
 };
 use qsl_eval::model_subject::ModelSubject;
 use qsl_eval::simulation::model::{
@@ -116,12 +131,16 @@ use super::graph::{
 use super::reduce::Reductions;
 use lift::{through, Lifted};
 
+mod projected;
+
 type HyperGraph = RetainedGraph<HyperState, HyperTransition, HyperFinding>;
 
-/// One EN-1 run over an HP-2 or HP-3 item (FR-176, FR-177 Inputs).
+/// One EN-1 run over an HP-2, HP-3 or HP-6 item (FR-176, FR-177, FR-178
+/// Inputs).
 pub struct HyperCheckRequest<'a> {
     /// The checked clause: lockstep, every quantifier `forall` (HP-2) or
-    /// `forall`s then `exists`s over a safety body (HP-3).
+    /// `forall`s then `exists`s over a safety body (HP-3), or every quantifier
+    /// `forall` aligned on a projection over a safety body (HP-6).
     pub clause: &'a CheckedHyperClause,
     /// One model subject per distinct alias, in the order of
     /// [`CheckedHyperClause::aliases`]. Two variables of one alias range over
@@ -133,6 +152,9 @@ pub struct HyperCheckRequest<'a> {
     pub matcher: &'a dyn StepMatch,
     /// The run's caller-raisable budgets (FR-184).
     pub limits: ModelCheckLimits,
+    /// The search horizon: no counterexample of more moves than this is looked
+    /// for (ADR-023 HV-3). Only an HP-6 item has one.
+    pub max_depth: Option<usize>,
     /// The evaluation meter budget of each atom and each `μ_U` evaluation.
     pub meter: ScalarLimits,
     /// The reductions the request selects. Copy-swap is not among them: the
@@ -144,9 +166,17 @@ pub struct HyperCheckRequest<'a> {
 /// (FR-176, FR-177).
 #[derive(Debug, thiserror::Error)]
 pub enum HyperRefusal {
-    /// The clause is not an HP-2 or HP-3 clause.
-    #[error("EN-1 decides a universal (HP-2) or forall-exists safety (HP-3) hyperproperty here, not {form:?}")]
+    /// The clause is not an HP-2, HP-3 or HP-6 clause.
+    #[error("EN-1 decides a universal (HP-2), forall-exists safety (HP-3) or projection-aligned (HP-6) hyperproperty here, not {form:?}")]
     FormNotDecided {
+        /// The clause's form.
+        form: Option<HyperForm>,
+    },
+    /// The request sets a search horizon on a clause that is not HP-6: the
+    /// horizon of an HP-2 or HP-3 item is a bound on a lasso's length and is
+    /// not built.
+    #[error("a search horizon is built for a projection-aligned (HP-6) item, not {form:?}")]
+    HorizonNotDecided {
         /// The clause's form.
         form: Option<HyperForm>,
     },
@@ -178,7 +208,7 @@ pub enum HyperRefusal {
     },
 }
 
-/// Decide an HP-2 item (FR-176).
+/// Decide an HP-2 (FR-176), HP-3 (FR-177) or HP-6 (FR-178) item.
 ///
 /// # Errors
 ///
@@ -192,9 +222,16 @@ pub fn check_hyper(
     let clause = request.clause;
     if !matches!(
         clause.form(),
-        Some(HyperForm::Universal | HyperForm::ForallExistsSafety)
+        Some(HyperForm::Universal | HyperForm::ForallExistsSafety | HyperForm::ProjectionAligned)
     ) {
         return Err(HyperRefusal::FormNotDecided {
+            form: clause.form().cloned(),
+        }
+        .into());
+    }
+    let projected = matches!(clause.form(), Some(HyperForm::ProjectionAligned));
+    if request.max_depth.is_some() && !projected {
+        return Err(HyperRefusal::HorizonNotDecided {
             form: clause.form().cloned(),
         }
         .into());
@@ -244,6 +281,7 @@ pub fn check_hyper(
         copy,
         slots,
         witness: matches!(clause.form(), Some(HyperForm::ForallExistsSafety)),
+        projected,
         cancel,
     };
     run.decide(&instances)
@@ -419,11 +457,13 @@ enum Ending {
     Stopped(IncompleteCause, Option<ReachedLimit>, Option<u64>),
 }
 
-/// The product of one instance: the self-composition of an HP-2 clause or the
-/// witness-set product of an HP-3 clause.
+/// The product of one instance: the self-composition of an HP-2 clause, the
+/// witness-set product of an HP-3 clause or the projected product of an HP-6
+/// clause.
 enum Built<'r, 's> {
     Universal(HyperProduct<'r, 's>),
     Witness(WitnessProduct<'r, 's>),
+    Projected(ProjectedProduct<'r, 's>),
 }
 
 impl Built<'_, '_> {
@@ -431,6 +471,7 @@ impl Built<'_, '_> {
         match self {
             Self::Universal(product) => product.take_halt(),
             Self::Witness(product) => product.take_halt(),
+            Self::Projected(product) => product.take_halt(),
         }
     }
 
@@ -438,17 +479,28 @@ impl Built<'_, '_> {
         match self {
             Self::Universal(product) => product.automaton(),
             Self::Witness(product) => product.automaton(),
+            Self::Projected(product) => product.automaton(),
+        }
+    }
+
+    /// Whether `transition`, a step of `component`, is skipped; only an HP-6
+    /// clause skips steps.
+    fn skipped(&self, component: usize, transition: &ModelTransition) -> bool {
+        match self {
+            Self::Projected(product) => product.skipped(component, transition),
+            Self::Universal(_) | Self::Witness(_) => false,
         }
     }
 
     /// Whether the product canonicalises under the clause's copy group. It
     /// does not when the clause has none, and not when the swap moves one of
     /// the body's acceptance sets to another: the quotient would not keep
-    /// acceptance, so that product is stored whole.
+    /// acceptance, so that product is stored whole. A projected (HP-6)
+    /// product offers none: its states are not tuples the swap acts on.
     fn offers_symmetry(&self) -> bool {
         match self {
             Self::Universal(product) => product.offered_reductions().symmetry,
-            Self::Witness(_) => false,
+            Self::Witness(_) | Self::Projected(_) => false,
         }
     }
 }
@@ -460,6 +512,8 @@ struct Explored<'r, 's> {
     graph: HyperGraph,
     /// Whether the graph is the quotient by the clause's copy group.
     reduced: bool,
+    /// Whether the search horizon cut the exploration short.
+    bounded: bool,
 }
 
 /// What the first phase found at a state.
@@ -493,12 +547,19 @@ enum Found {
         guard_of: Option<ModelTransition>,
         cause: qsl_eval::temporal::UndefinedCause,
     },
+    /// HP-6: `μ_U` has no value on the visible move that reached the state.
+    MatchAt {
+        conjunct: usize,
+        cause: qsl_eval::temporal::UndefinedCause,
+    },
 }
 
 /// A first-phase finding before its counterexample is built.
 enum Candidate {
     /// An undefined evaluation at a state.
     Found(ProductStateId, Found),
+    /// HP-6: a rejecting monitor state.
+    Rejected(ProductStateId),
     /// A refused contract or `match`.
     Refused(UndecidedCause),
 }
@@ -507,6 +568,9 @@ enum Candidate {
 enum FirstHit {
     Violated(Box<HyperCounterexample>),
     Undecided(UndecidedCause),
+    /// The evaluator that confirms a counterexample ran out of its meter: the
+    /// item is stopped, not decided.
+    Stopped(HyperOutcome),
     /// An undefined evaluation whose counterexample FR-177 cannot state: an
     /// HP-3 clause's universal side where no witness remains to name an
     /// existential path. It ranks as the undefined evaluation it is, so only
@@ -520,6 +584,14 @@ fn sooner(refused: &mut Option<(usize, UndecidedCause)>, depth: usize, cause: Un
     if refused.is_none_or(|(known, _)| depth < known) {
         *refused = Some((depth, cause));
     }
+}
+
+/// The explored instances and the first-phase finding that ranks first.
+struct Ranked<'r, 'a> {
+    explored: Vec<Explored<'r, 'a>>,
+    best: Option<(usize, FirstHit)>,
+    /// Whether the search horizon cut an instance explored before any finding.
+    bounded: bool,
 }
 
 /// The second phase's result for one instance.
@@ -569,6 +641,8 @@ struct Run<'r, 'a> {
     /// Whether the clause is HP-3: its leading `universals` variables are
     /// universal and the rest existential.
     witness: bool,
+    /// Whether the clause is HP-6.
+    projected: bool,
     cancel: &'r Cancel,
 }
 
@@ -611,42 +685,17 @@ impl<'a> Run<'_, 'a> {
         if self.witness {
             return self.decide_witness(instances, totals);
         }
-        let mut explored = Vec::with_capacity(instances.len());
-        let mut best: Option<(usize, FirstHit)> = None;
-        for instance in instances {
-            // FR-126 "Bindings and ranking": a later instance wins only with
-            // a strictly shallower finding, so it is explored only through
-            // the depth that finding would need (every state shallower than
-            // the best is expanded) and not at all past a finding at depth 0.
-            let cap = match best {
-                Some((0, _)) => break,
-                Some((depth, _)) => Some(depth),
-                None => None,
-            };
-            let run = match self.explore(instance, cap, &mut totals)? {
-                Ok(run) => run,
-                Err(outcome) => return Ok(outcome),
-            };
-            if let Some((depth, hit)) = self.first_phase(&run)? {
-                if best.as_ref().is_none_or(|(known, _)| depth < *known) {
-                    best = Some((depth, hit));
-                }
-            }
-            explored.push(run);
+        if self.projected {
+            return self.decide_projected(instances, totals);
         }
-        if let Some((_, hit)) = best {
-            return Ok(match hit {
-                FirstHit::Violated(counterexample) => HyperOutcome::Violated {
-                    counterexample,
-                    stats: totals.stats(),
-                },
-                FirstHit::Undecided(cause) => HyperOutcome::Undecided {
-                    cause,
-                    stats: totals.stats(),
-                },
-                FirstHit::Unstated => return Err(HyperRefusal::NoPartnerPath.into()),
-            });
+        let ranked = match self.rank_instances(instances, None, &mut totals)? {
+            Ok(ranked) => ranked,
+            Err(outcome) => return Ok(outcome),
+        };
+        if let Some((_, hit)) = ranked.best {
+            return Self::finding(hit, &totals);
         }
+        let explored = ranked.explored;
         let mut shortest: Option<(Box<HyperCounterexample>, usize)> = None;
         for run in &explored {
             match self.second_phase(run, &totals)? {
@@ -666,6 +715,66 @@ impl<'a> Run<'_, 'a> {
             });
         }
         self.clean(&explored, &totals)
+    }
+
+    /// Explore each instance and rank their first-phase findings as FR-126
+    /// "Bindings and ranking" does: a later instance wins only with a
+    /// strictly shallower finding, so it is explored only through the depth
+    /// that finding would need (every state shallower than the best is
+    /// expanded) and not at all past a finding at depth 0. `horizon` is the
+    /// search horizon of an instance explored before any finding. `Err` is an
+    /// outcome that ended the run, a stopped exploration or evaluator.
+    fn rank_instances<'x>(
+        &'x self,
+        instances: &'x [Vec<ParameterBinding>],
+        horizon: Option<usize>,
+        totals: &mut Totals,
+    ) -> Result<Result<Ranked<'x, 'a>, HyperOutcome>, ModelCheckRefusal> {
+        let mut explored = Vec::with_capacity(instances.len());
+        let mut best: Option<(usize, FirstHit)> = None;
+        let mut bounded = false;
+        for instance in instances {
+            let cap = match best {
+                Some((0, _)) => break,
+                Some((depth, _)) => Some(depth),
+                None => horizon,
+            };
+            let run = match self.explore(instance, cap, totals)? {
+                Ok(run) => run,
+                Err(outcome) => return Ok(Err(outcome)),
+            };
+            bounded |= best.is_none() && run.bounded;
+            if let Some((depth, hit)) = self.first_phase(&run, totals)? {
+                if let FirstHit::Stopped(outcome) = hit {
+                    return Ok(Err(outcome));
+                }
+                if best.as_ref().is_none_or(|(known, _)| depth < *known) {
+                    best = Some((depth, hit));
+                }
+            }
+            explored.push(run);
+        }
+        Ok(Ok(Ranked {
+            explored,
+            best,
+            bounded,
+        }))
+    }
+
+    /// The outcome of a first-phase finding.
+    fn finding(hit: FirstHit, totals: &Totals) -> Result<HyperOutcome, ModelCheckRefusal> {
+        Ok(match hit {
+            FirstHit::Violated(counterexample) => HyperOutcome::Violated {
+                counterexample,
+                stats: totals.stats(),
+            },
+            FirstHit::Undecided(cause) => HyperOutcome::Undecided {
+                cause,
+                stats: totals.stats(),
+            },
+            FirstHit::Stopped(outcome) => outcome,
+            FirstHit::Unstated => return Err(HyperRefusal::NoPartnerPath.into()),
+        })
     }
 
     /// Decide an HP-3 item (FR-177): for each instance, the first phase's
@@ -701,10 +810,11 @@ impl<'a> Run<'_, 'a> {
                 Ok(run) => run,
                 Err(outcome) => return Ok(outcome),
             };
-            match self.first_phase(&run)? {
+            match self.first_phase(&run, &totals)? {
                 Some((depth, FirstHit::Violated(counterexample))) => {
                     Self::offer(&mut best, depth, 0, Verdict::Violated(counterexample));
                 }
+                Some((_, FirstHit::Stopped(outcome))) => return Ok(outcome),
                 Some((depth, FirstHit::Undecided(cause))) => {
                     Self::offer(&mut best, depth, 1, Verdict::Undecided(cause));
                 }
@@ -928,7 +1038,7 @@ impl<'a> Run<'_, 'a> {
             length -= 1;
         }
         let lifted = self.lift(run, root, &path[..length])?;
-        let traces = self.traces(&lifted, None, None)?;
+        let traces = self.traces(run, &lifted, None, None, false)?;
         let counterexample = HyperCounterexample {
             kind: HyperCounterexampleKind::WitnessExhausted {
                 loop_entry: widen(entry_at),
@@ -1131,7 +1241,21 @@ impl<'a> Run<'_, 'a> {
         let clause = self.request.clause;
         let limits = &self.request.limits;
         let systems = self.slots.iter().map(|slot| &self.systems[*slot]).collect();
-        let built = if self.witness {
+        let built = if self.projected {
+            ProjectedProduct::new(ProjectedInputs {
+                systems,
+                instance,
+                body: clause.body(),
+                profile: clause.profile(),
+                align_skip: clause.align_skip(),
+                letters: self.request.letters,
+                matcher: (!clause.mu_universal().is_empty()).then_some(self.request.matcher),
+                max_automaton_states: limits.max_automaton_states,
+                meter: self.request.meter,
+                cancel: self.cancel,
+            })
+            .map(Built::Projected)
+        } else if self.witness {
             WitnessProduct::new(WitnessInputs {
                 systems,
                 universal: clause.universals(),
@@ -1185,6 +1309,7 @@ impl<'a> Run<'_, 'a> {
         let started = match &mut built {
             Built::Universal(product) => product.start(),
             Built::Witness(product) => product.start(),
+            Built::Projected(product) => product.start(),
         };
         if started.is_err() {
             return self.halted(&built, totals).map(Err);
@@ -1246,6 +1371,7 @@ impl<'a> Run<'_, 'a> {
         let exploration = match &product {
             Built::Universal(product) => self.retained(product, &group, cap, totals)?,
             Built::Witness(product) => self.retained(product, &group, cap, totals)?,
+            Built::Projected(product) => self.retained(product, &group, cap, totals)?,
         };
         let transitions = match &exploration.outcome {
             Outcome::Exhaustive(stats) => stats.transitions,
@@ -1283,8 +1409,8 @@ impl<'a> Run<'_, 'a> {
                 Some(halt) => self.halt_ending(halt)?,
                 None => return Err(fault("a-stopped-expansion-recorded-its-halt")),
             },
-            // The horizon is the ranking cap's: the instance is explored as
-            // far as it can still win.
+            // The horizon is the ranking cap's or the request's: the instance
+            // is explored as far as it can still win or be asked for.
             Outcome::BoundReached { .. } if cap.is_some() => Ending::Complete,
             Outcome::BoundReached { .. } => {
                 return Err(fault("the-product-sets-no-horizon-without-a-cap"));
@@ -1298,6 +1424,7 @@ impl<'a> Run<'_, 'a> {
             product,
             graph: exploration.graph,
             reduced,
+            bounded: matches!(exploration.outcome, Outcome::BoundReached { .. }),
         }))
     }
 
@@ -1323,6 +1450,7 @@ impl<'a> Run<'_, 'a> {
     fn first_phase(
         &self,
         run: &Explored<'_, '_>,
+        totals: &Totals,
     ) -> Result<Option<(usize, FirstHit)>, ModelCheckRefusal> {
         // The candidates rank by depth, an undefined evaluation before a
         // refused one at one depth, then by discovery order: the first state
@@ -1338,13 +1466,12 @@ impl<'a> Run<'_, 'a> {
         };
         for (index, state) in run.graph.states().iter().enumerate() {
             let id = ProductStateId(index);
-            if let Property::Undefined {
-                atom,
-                cause,
-                partner,
-            } = &state.state.property
-            {
-                offer(
+            match &state.state.property {
+                Property::Undefined {
+                    atom,
+                    cause,
+                    partner,
+                } => offer(
                     state.depth,
                     0,
                     Candidate::Found(
@@ -1355,7 +1482,20 @@ impl<'a> Run<'_, 'a> {
                             partner: partner.clone(),
                         },
                     ),
-                );
+                ),
+                Property::MatchUndefined { conjunct, cause } => offer(
+                    state.depth,
+                    0,
+                    Candidate::Found(
+                        id,
+                        Found::MatchAt {
+                            conjunct: *conjunct,
+                            cause: cause.clone(),
+                        },
+                    ),
+                ),
+                Property::Rejected => offer(state.depth, 0, Candidate::Rejected(id)),
+                Property::After(_) | Property::Dead | Property::Witnesses(_) => {}
             }
             let mut refused = None;
             for finding in &state.findings {
@@ -1447,6 +1587,13 @@ impl<'a> Run<'_, 'a> {
             Some((depth, _, Candidate::Refused(cause))) => {
                 Some((depth, FirstHit::Undecided(cause)))
             }
+            Some((depth, _, Candidate::Rejected(id))) => {
+                let hit = match self.confirmed_rejection(run, id, totals)? {
+                    Ok(()) => FirstHit::Violated(Box::new(self.projected_counterexample(run, id)?)),
+                    Err(outcome) => FirstHit::Stopped(outcome),
+                };
+                Some((depth, hit))
+            }
             Some((depth, _, Candidate::Found(id, found))) => {
                 match self.undefined_counterexample(run, id, found) {
                     Ok(counterexample) => {
@@ -1501,12 +1648,16 @@ impl<'a> Run<'_, 'a> {
     /// One trace per variable: the lifted path from its root, then the joint
     /// step `last` when there is one. An HP-3 clause's existential variables
     /// take theirs from `partner`; without one the traces are the universal
-    /// variables' alone.
+    /// variables' alone. A component that does not move in a step has no step
+    /// in it, and a `marked` trace (HP-6) marks each of its steps skipped or
+    /// visible.
     fn traces(
         &self,
+        run: &Explored<'_, '_>,
         lifted: &Lifted,
         last: Option<(&HyperTransition, &[DigestRecord])>,
         partner: Option<&PartnerPath<'_>>,
+        marked: bool,
     ) -> Result<Vec<HyperTrace>, ModelCheckRefusal> {
         let root_state = lifted
             .states
@@ -1520,7 +1671,7 @@ impl<'a> Run<'_, 'a> {
         };
         let mut traces = Vec::with_capacity(count);
         for (component, (variable, alias)) in self.variables().into_iter().take(count).enumerate() {
-            let (initial, steps) = if component < universals {
+            let (initial, steps, marks) = if component < universals {
                 let system = &self.systems[self.slots[component]];
                 let start = system
                     .state_key(&root_state.components[component])
@@ -1537,22 +1688,35 @@ impl<'a> Run<'_, 'a> {
                     .and_then(|index| u32::try_from(index).ok())
                     .ok_or_else(|| fault("a-root-component-is-an-initial-state"))?;
                 let mut steps = Vec::with_capacity(lifted.steps.len() + 1);
+                let mut marks = Vec::new();
                 for (transition, posts) in &lifted.steps {
-                    steps.push(hyper_step(transition, posts, component)?);
+                    if let Some(step) = hyper_step(transition, posts, component)? {
+                        steps.push(step);
+                        if marked {
+                            marks.push(Self::mark(run, component, transition));
+                        }
+                    }
                 }
                 if let Some((transition, posts)) = last {
-                    steps.push(hyper_step(transition, posts, component)?);
+                    if let Some(step) = hyper_step(transition, posts, component)? {
+                        steps.push(step);
+                        if marked {
+                            marks.push(Self::mark(run, component, transition));
+                        }
+                    }
                 }
-                (initial, steps)
+                (initial, steps, marks)
             } else {
                 let path = partner.ok_or_else(|| fault("an-existential-trace-has-a-partner"))?;
-                self.partner_trace(path, component - universals)?
+                let (initial, steps) = self.partner_trace(path, component - universals)?;
+                (initial, steps, Vec::new())
             };
             traces.push(HyperTrace {
                 variable,
                 alias,
                 initial,
                 steps,
+                marks,
             });
         }
         Ok(traces)
@@ -1576,7 +1740,10 @@ impl<'a> Run<'_, 'a> {
                 .get(offset)
                 .zip(posts.get(offset))
                 .ok_or_else(|| fault("a-partner-step-has-a-component-per-variable"))?;
-            steps.push(component_step(step, *post));
+            steps.push(
+                component_step(step, *post)
+                    .ok_or_else(|| fault("a-partner-component-moves-in-lockstep"))?,
+            );
         }
         Ok((initial, steps))
     }
@@ -1619,7 +1786,7 @@ impl<'a> Run<'_, 'a> {
             .last()
             .ok_or_else(|| fault("a-finding-is-at-a-lifted-state"))?;
         let positions = lifted.positions.as_slice();
-        let stem = widen(path.len());
+        let stem = self.position_of(run, &path);
         let variables = self.variables();
         let universals = self.request.clause.universals();
         let mut partner: Option<Rc<Partner>> = None;
@@ -1632,7 +1799,7 @@ impl<'a> Run<'_, 'a> {
             } => {
                 let atom = match &run.product {
                     Built::Universal(product) => product.concrete_atom(atom, positions),
-                    Built::Witness(_) => Some(atom),
+                    Built::Witness(_) | Built::Projected(_) => Some(atom),
                 }
                 .ok_or_else(|| fault("a-copy-permutation-is-an-element-of-the-copy-group"))?;
                 let mut keys = self.digests(state)?;
@@ -1703,6 +1870,15 @@ impl<'a> Run<'_, 'a> {
                     last,
                 )
             }
+            Found::MatchAt { conjunct, cause } => (
+                stem,
+                self.digests(state)?,
+                variables,
+                HyperLocus::Match { conjunct },
+                None,
+                cause,
+                None,
+            ),
             Found::Contract {
                 component,
                 clause,
@@ -1747,9 +1923,11 @@ impl<'a> Run<'_, 'a> {
             ),
         });
         let traces = self.traces(
+            run,
             &lifted,
             last.as_ref().map(|(step, posts)| (step, posts.as_slice())),
             path_of.as_ref(),
+            false,
         )?;
         Ok(HyperCounterexample {
             kind: HyperCounterexampleKind::Undefined(HyperUndefined {
@@ -1992,7 +2170,7 @@ impl<'a> Run<'_, 'a> {
             path.extend(loop_path.iter().copied());
         }
         let lifted = self.lift(run, root, &path)?;
-        let traces = self.traces(&lifted, None, None)?;
+        let traces = self.traces(run, &lifted, None, None, false)?;
         // The positions of the lasso: the stem's states, then the loop's but
         // the last, which is the entry again.
         let sequence: Vec<&HyperState> = lifted
@@ -2064,12 +2242,12 @@ impl<'a> Run<'_, 'a> {
 }
 
 /// A trace's step of `component` in the joint step `transition`, with the
-/// digest of its post-state.
+/// digest of its post-state; `None` when the component does not move in it.
 fn hyper_step(
     transition: &HyperTransition,
     posts: &[DigestRecord],
     component: usize,
-) -> Result<HyperStep, ModelCheckRefusal> {
+) -> Result<Option<HyperStep>, ModelCheckRefusal> {
     let step = transition
         .0
         .get(component)
@@ -2080,14 +2258,16 @@ fn hyper_step(
     Ok(component_step(step, *post))
 }
 
-/// A component's `step` as a trace's step, with the digest of its post-state.
-fn component_step(step: &ComponentStep, post: DigestRecord) -> HyperStep {
+/// A component's `step` as a trace's step, with the digest of its post-state;
+/// `None` for a component that stays.
+fn component_step(step: &ComponentStep, post: DigestRecord) -> Option<HyperStep> {
     match step {
-        ComponentStep::Model(taken) => HyperStep::Model(ModelStep {
+        ComponentStep::Model(taken) => Some(HyperStep::Model(ModelStep {
             transition: taken.clone(),
             post_state: post,
-        }),
-        ComponentStep::Stutter => HyperStep::TerminalStutter,
+        })),
+        ComponentStep::Stutter => Some(HyperStep::TerminalStutter),
+        ComponentStep::Stay => None,
     }
 }
 

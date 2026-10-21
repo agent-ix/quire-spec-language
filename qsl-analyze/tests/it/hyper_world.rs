@@ -75,9 +75,21 @@ pub(crate) enum Vault {
     Terminal,
     /// The contracts as written: the `step` and `reset` contract text.
     Custom(&'static str),
+    /// ADR-023 section 13's vault: a field `busy` and an internal operation
+    /// `mix`. `step(i)` requires `busy = 0`, sets `l = i` and sets `busy` to
+    /// `h`; `mix` requires `busy = 1` and clears it.
+    Busy,
+    /// [`Self::Busy`] whose `step` leaks as [`Self::Leaky`] does:
+    /// `l = (i + h) mod 2`.
+    BusyLeaky,
 }
 
 impl Vault {
+    /// Whether the vault has the `busy` field and the `mix` operation.
+    fn busy(self) -> bool {
+        matches!(self, Self::Busy | Self::BusyLeaky)
+    }
+
     fn contracts(self, reset: bool) -> String {
         if let Self::Custom(text) = self {
             return text.to_owned();
@@ -88,6 +100,18 @@ impl Vault {
             Self::Terminal => {
                 "pre Fresh using v on V::Vault::step { self.l = 0 }\n\
                  post Step using v on V::Vault::step { self.l = i }\n"
+            }
+            Self::Busy => {
+                "pre Idle using v on V::Vault::step { self.busy = 0 }\n\
+                 post Step using v on V::Vault::step { self.l = i and self.busy = self.h }\n\
+                 pre Busy using v on V::Vault::mix { self.busy = 1 }\n\
+                 post Mixed using v on V::Vault::mix { self.busy = 0 }\n"
+            }
+            Self::BusyLeaky => {
+                "pre Idle using v on V::Vault::step { self.busy = 0 }\n\
+                 post Step using v on V::Vault::step { ((i = self.h and self.l = 0) or (i != self.h and self.l = 1)) and self.busy = self.h }\n\
+                 pre Busy using v on V::Vault::mix { self.busy = 1 }\n\
+                 post Mixed using v on V::Vault::mix { self.busy = 0 }\n"
             }
             Self::Custom(_) => unreachable!("returned above"),
         };
@@ -157,10 +181,10 @@ fn field(name: &str) -> Json {
     })
 }
 
-/// An operation of `Vault` with frame `modifies_receiver [l]` (the vault it
-/// is applied to; the same as `modifies [l]` over one vault), taking `i: Bit` when
-/// `input`.
-fn operation(name: &str, input: bool) -> Json {
+/// An operation of `Vault` with frame `modifies_receiver` the fields `modifies`
+/// (the vault it is applied to; the same as `modifies [l]` over one vault),
+/// taking `i: Bit` when `input`.
+fn operation(name: &str, input: bool, modifies: &[&str]) -> Json {
     let identity = ident(&format!("Vault/{name}"));
     let params: Vec<Json> = input
         .then(|| {
@@ -178,13 +202,16 @@ fn operation(name: &str, input: bool) -> Json {
         "identity": identity, "name": name, "params": params, "pre": [], "post": [],
         "origin": {"source": {"sourceIdentity": ident("spec"), "path": "spec.qspec",
             "startLine": 1, "startColumn": 1}},
-        "frame": {"modifies": [], "modifies_receiver": [ident("Vault/l")],
+        "frame": {"modifies": [],
+            "modifies_receiver": modifies.iter().map(|field| ident(&format!("Vault/{field}")))
+                .collect::<Vec<_>>(),
             "creates": [], "deletes": []},
     })
 }
 
-/// The domain package.
-fn document(reset: bool) -> Vec<u8> {
+/// The domain package, with the `busy` field and the `mix` operation when
+/// `busy`.
+fn document(busy: bool, reset: bool) -> Vec<u8> {
     let vault = ident("Vault");
     let constructs: Vec<Json> = [
         ("object_type", meaning::OBJECT_TYPE),
@@ -199,9 +226,18 @@ fn document(reset: bool) -> Vec<u8> {
                 "meaning": meaning}})
     })
     .collect();
-    let mut operations = vec![operation("step", true)];
+    let mut operations = vec![operation(
+        "step",
+        true,
+        if busy { &["l", "busy"] } else { &["l"] },
+    )];
     if reset {
-        operations.push(operation("reset", false));
+        operations.push(operation("reset", false, &["l"]));
+    }
+    let mut fields = vec![field("h"), field("l")];
+    if busy {
+        operations.push(operation("mix", false, &["busy"]));
+        fields.push(field("busy"));
     }
     let population = ident("vaults");
     json!({
@@ -217,7 +253,7 @@ fn document(reset: bool) -> Vec<u8> {
             bit(),
             wire_type(&vault, "object_type", json!({
                 "supertypes": [],
-                "fields": [field("h"), field("l")],
+                "fields": fields,
                 "operations": operations,
                 "relationships": [],
             })),
@@ -311,12 +347,14 @@ fn declarations(documents: &[&[u8]], text: &str) -> PackageDeclarations {
     declarations
 }
 
-/// One snapshot of the vaults `(key, (h, l))`, provisioned in `snapshots`.
+/// One snapshot of the vaults `(key, (h, l))`, provisioned in `snapshots`;
+/// each vault of a busy world has `busy` as its flag.
 fn snapshot(
     document: &[u8],
     snapshots: &mut BTreeMap<[u8; 32], Vec<u8>>,
     name: &str,
     vaults: &[(&str, (i64, i64))],
+    busy: Option<i64>,
 ) -> DocumentRef {
     let digest = *package_input([document]).keys().next().expect("one model");
     let header = json!({"identity": PACKAGE, "version": "1.0.0",
@@ -328,10 +366,14 @@ fn snapshot(
         "observation": "current", "model": header,
         "anchor": {"kind": "initialization", "name": "start"},
         "populations": [{"population": ident("vaults"), "complete": true,
-            "objects": vaults.iter().map(|(key, (h, l))| json!({"key": key,
-                "type": ident("Vault"),
-                "fields": {"h": {"integer": h.to_string()}, "l": {"integer": l.to_string()}}}))
-                .collect::<Vec<_>>()}],
+            "objects": vaults.iter().map(|(key, (h, l))| {
+                let mut fields = json!({"h": {"integer": h.to_string()},
+                    "l": {"integer": l.to_string()}});
+                if let Some(busy) = busy {
+                    fields["busy"] = json!({"integer": busy.to_string()});
+                }
+                json!({"key": key, "type": ident("Vault"), "fields": fields})
+            }).collect::<Vec<_>>()}],
     });
     let bytes = body.to_string().into_bytes();
     let read = quire_canonical::read(&bytes, u64::MAX).expect("JSON fixture");
@@ -358,6 +400,11 @@ pub(crate) fn low_of(state: &ModelSimState, key: &str) -> i64 {
     field_of(state, key, "l")
 }
 
+/// The `busy` of the vault at `state`, for a busy vault.
+pub(crate) fn busy_of(state: &ModelSimState) -> i64 {
+    field_of(state, KEY, "busy")
+}
+
 /// The `h` of the vault at `state`.
 pub(crate) fn high(state: &ModelSimState) -> i64 {
     field_of(state, KEY, "h")
@@ -382,6 +429,8 @@ pub(crate) struct World {
     snapshots: BTreeMap<[u8; 32], Vec<u8>>,
     initial: Vec<DocumentRef>,
     pub(crate) max_candidates: u64,
+    /// The search horizon of an HP-6 run (`max_depth`).
+    pub(crate) max_depth: Option<usize>,
     /// The keys of the universe of `vaults`.
     pub(crate) universe: Vec<String>,
 }
@@ -465,6 +514,25 @@ impl World {
         )
     }
 
+    /// A busy vault (ADR-023 section 13) started from each of `starts`, a
+    /// vault `(h, l, busy)`, and the hyper clause `declaration`.
+    pub(crate) fn busy(vault: Vault, starts: &[(i64, i64, i64)], declaration: &str) -> Self {
+        let snapshots = starts
+            .iter()
+            .map(|(h, l, _)| vec![(KEY, (*h, *l))])
+            .collect();
+        let flags = starts.iter().map(|(_, _, busy)| *busy).collect();
+        Self::assemble(
+            vault,
+            false,
+            snapshots,
+            flags,
+            vec![KEY.to_owned()],
+            false,
+            declaration,
+        )
+    }
+
     fn build(
         vault: Vault,
         reset: bool,
@@ -473,7 +541,30 @@ impl World {
         second: bool,
         declaration: &str,
     ) -> Self {
-        let document = document(reset);
+        Self::assemble(
+            vault,
+            reset,
+            starts,
+            Vec::new(),
+            universe,
+            second,
+            declaration,
+        )
+    }
+
+    /// The world over `starts`, whose snapshot `index` has the flag
+    /// `flags[index]` (0 when `flags` holds none) in a busy vault, with the
+    /// vault again as a second model under alias `N` when `second`.
+    fn assemble(
+        vault: Vault,
+        reset: bool,
+        starts: Vec<Vec<(&str, (i64, i64))>>,
+        flags: Vec<i64>,
+        universe: Vec<String>,
+        second: bool,
+        declaration: &str,
+    ) -> Self {
+        let document = document(vault.busy(), reset);
         let other = second.then(|| other_document(&document));
         let other = other.as_deref();
         let documents: Vec<&[u8]> = std::iter::once(document.as_slice()).chain(other).collect();
@@ -493,7 +584,10 @@ impl World {
         let initial = starts
             .iter()
             .enumerate()
-            .map(|(index, start)| snapshot(&document, &mut snapshots, &format!("s{index}"), start))
+            .map(|(index, start)| {
+                let busy = vault.busy().then(|| flags.get(index).copied().unwrap_or(0));
+                snapshot(&document, &mut snapshots, &format!("s{index}"), start, busy)
+            })
             .collect();
         Self {
             text,
@@ -503,6 +597,7 @@ impl World {
             snapshots,
             initial,
             max_candidates: 1_000_000,
+            max_depth: None,
             universe,
         }
     }
@@ -563,6 +658,7 @@ impl World {
                 limits: ModelCheckLimits::default(),
                 meter: UNLIMITED,
                 reductions,
+                max_depth: self.max_depth,
             },
             &Cancel::new(),
         )
@@ -584,6 +680,7 @@ impl World {
                 letters,
                 matcher,
                 limits,
+                max_depth: self.max_depth,
                 meter: UNLIMITED,
                 reductions: Reductions::default(),
             },
@@ -677,7 +774,7 @@ fn is_step(operation: &str) -> bool {
 
 /// The argument `i` of a `step` label: `Some` exactly when the step is a
 /// `step`, and its integer.
-fn input_of(label: &StepLabel<'_>) -> Option<i64> {
+pub(crate) fn input_of(label: &StepLabel<'_>) -> Option<i64> {
     match label {
         StepLabel::Operation(transition) if is_step(transition.operation()) => {
             let [argument] = transition.arguments() else {
@@ -724,6 +821,30 @@ impl Seams<'_> {
                 }
                 [x, "=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_none(),
                 [x, "!=", "stutter"] if x.ends_with(".step.op") => operation_of(label(x)).is_some(),
+                // The inputs agree where both steps are `step`s (the conjunct is the
+                // parenthesised conditional, which the span reads without them).
+                ["if", present_x, "and", present_y, "then", value_x, "=", value_y, "else", "true"]
+                    if present_x.starts_with("present(")
+                        && present_y.starts_with("present(")
+                        && value_x.starts_with("value(")
+                        && value_y.starts_with("value(") =>
+                {
+                    let variable = |present: &str| {
+                        present
+                            .trim_start_matches("present(")
+                            .split('.')
+                            .next()
+                            .expect("a variable")
+                            .to_owned()
+                    };
+                    match (
+                        input_of(label(&variable(present_x))),
+                        input_of(label(&variable(present_y))),
+                    ) {
+                        (Some(left), Some(right)) => left == right,
+                        _ => true,
+                    }
+                }
                 // The input is 0 where there is one.
                 ["(if", present, "then", value, "else", "0)", "=", "0"]
                     if present.starts_with("present(") && value.starts_with("value(") =>

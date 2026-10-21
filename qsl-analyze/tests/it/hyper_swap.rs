@@ -29,6 +29,7 @@ use qsl_semantics::check::{FormulaNodeId, HyperForm};
 use quire_exact::{Cancel, Incomplete, Meter, Undefined};
 
 use crate::hyper::{inputs, positions, refuted};
+use crate::hyper_projected::{aligned, IDLE};
 use crate::hyper_world::{
     key, low_of, non_interference, Seams, Vault, World, EQUAL_INPUTS, KEY, STARTS,
 };
@@ -1121,4 +1122,47 @@ fn the_key_symmetry_rows_read_the_fairness_granularity_and_the_form() {
             }
         );
     }
+}
+
+/// A projection-aligned (HP-6) clause is stored whole whatever its copy group:
+/// S3 finds `NonInterference` over the busy vault with `align skip` swappable
+/// in `a` and `b`, but the projected product's states are not tuples the swap
+/// acts on, so the run names no reduction and stores the 18 states of the
+/// projected product. A selected reduction is settled by PH-4's row: partial-order
+/// reduction reads "no", key symmetry over one subject reads "yes" and settles
+/// `unsupported`.
+#[trace("TC-599")]
+#[test]
+fn a_projected_clause_is_stored_unreduced() {
+    let world = World::busy(Vault::Busy, &IDLE, &aligned(&[]));
+    assert_eq!(world.clause.form(), Some(&HyperForm::ProjectionAligned));
+    assert!(!world.clause.copy_group().classes.is_empty());
+    let HyperOutcome::Holds { stats } = run(&world) else {
+        panic!("expected the projection to hold, stored whole");
+    };
+    assert_eq!(stats.product_states, 18);
+    assert_eq!(
+        world
+            .run_selecting(Reductions {
+                partial_order: true,
+                ..Reductions::default()
+            })
+            .expect("not refused"),
+        HyperOutcome::Reduction {
+            cause: HyperReductionCause::NotPreserving {
+                reduction: ReductionKind::PartialOrder,
+                form: HyperForm::ProjectionAligned
+            },
+            stats: qsl_replay::RunStats::default()
+        }
+    );
+    assert_eq!(
+        world.run_selecting(symmetry()).expect("not refused"),
+        HyperOutcome::Reduction {
+            cause: HyperReductionCause::Unsupported {
+                reduction: ReductionKind::Symmetry
+            },
+            stats: qsl_replay::RunStats::default()
+        }
+    );
 }

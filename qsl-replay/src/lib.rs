@@ -118,7 +118,8 @@ pub use model_check::graph_settle::{
     StateGraphRecord,
 };
 pub use model_check::hyper_counterexample::{
-    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace, HyperUndefined,
+    HyperCounterexample, HyperCounterexampleKind, HyperLocus, HyperStep, HyperTrace,
+    HyperUndefined, StepMark,
 };
 pub use model_check::hyper_outcome::{HyperOutcome, HyperReductionCause};
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};

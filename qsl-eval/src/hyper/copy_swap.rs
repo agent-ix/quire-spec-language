@@ -176,8 +176,8 @@ impl HyperProduct<'_, '_> {
                 cause: cause.clone(),
                 partner: partner.clone(),
             },
-            Property::Witnesses(_) => {
-                return Err(self.fault("a-self-composition-state-has-no-witness-set"))
+            Property::Witnesses(_) | Property::Rejected | Property::MatchUndefined { .. } => {
+                return Err(self.fault("a-self-composition-state-has-a-self-composition-property"))
             }
         };
         let state = HyperState {

@@ -54,27 +54,32 @@ pub(crate) fn refuted(outcome: HyperOutcome) -> HyperCounterexample {
     }
 }
 
+/// The input `i` of the model step `step`, which must be a `step(i)`.
+pub(crate) fn input(step: &HyperStep) -> i64 {
+    match step {
+        HyperStep::Model(step) => {
+            let [argument] = step.transition.arguments() else {
+                panic!("step takes one input");
+            };
+            argument
+                .split("\"value\":\"")
+                .nth(1)
+                .and_then(|rest| rest.split('"').next())
+                .expect("an integer argument")
+                .parse()
+                .expect("a small input")
+        }
+        HyperStep::TerminalStutter => panic!("the vault has no terminal state"),
+    }
+}
+
 /// The inputs `step(i)` a trace's steps take, by `i`; the steps must all be
 /// model steps of `step`.
 pub(crate) fn inputs(counterexample: &HyperCounterexample, trace: usize) -> Vec<i64> {
     counterexample.traces[trace]
         .steps
         .iter()
-        .map(|step| match step {
-            HyperStep::Model(step) => {
-                let [argument] = step.transition.arguments() else {
-                    panic!("step takes one input");
-                };
-                argument
-                    .split("\"value\":\"")
-                    .nth(1)
-                    .and_then(|rest| rest.split('"').next())
-                    .expect("an integer argument")
-                    .parse()
-                    .expect("a small input")
-            }
-            HyperStep::TerminalStutter => panic!("the vault has no terminal state"),
-        })
+        .map(input)
         .collect()
 }
 
@@ -463,7 +468,7 @@ fn a_subject_without_an_initial_state_or_an_instance_decides_nothing() {
 }
 
 /// A `match` that refuses: the reading of every joint step is `Refused`.
-struct Refusing;
+pub(crate) struct Refusing;
 
 impl StepMatch for Refusing {
     fn universal(
@@ -487,7 +492,7 @@ impl StepMatch for Refusing {
 
 /// A `match` whose evaluation exhausts its meter: it charges a meter that
 /// admits no work.
-struct Exhausted;
+pub(crate) struct Exhausted;
 
 impl StepMatch for Exhausted {
     fn universal(

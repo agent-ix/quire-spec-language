@@ -24,6 +24,8 @@ enum Row {
     Universal,
     /// PH-6: HP-3.
     ForallExistsSafety,
+    /// PH-4: HP-6.
+    Projected,
 }
 
 impl Row {
@@ -31,6 +33,7 @@ impl Row {
         match clause.form() {
             Some(HyperForm::Universal) => Some(Self::Universal),
             Some(HyperForm::ForallExistsSafety) => Some(Self::ForallExistsSafety),
+            Some(HyperForm::ProjectionAligned) => Some(Self::Projected),
             _ => None,
         }
     }
@@ -51,13 +54,13 @@ fn preserves(reduction: ReductionKind, row: Row, clause: &CheckedHyperClause) ->
                         .all(|constraint| constraint.granularity() == FairnessGranularity::Whole)
                 })
         }
-        (ReductionKind::Symmetry, Row::ForallExistsSafety) => one_subject,
+        (ReductionKind::Symmetry, Row::ForallExistsSafety | Row::Projected) => one_subject,
         // Lockstep pairs positions across traces, so no hyper form is
-        // invariant under reordering independent steps (PH-2, PH-6).
+        // invariant under reordering independent steps (PH-2, PH-4, PH-6).
         (ReductionKind::PartialOrder, _) => false,
         // A cut state of HP-3 removes a witness, so a refutation would not be
         // real (PH-6); HP-2's lasso stays real (PH-2).
-        (ReductionKind::StateConstraint, Row::Universal) => true,
+        (ReductionKind::StateConstraint, Row::Universal | Row::Projected) => true,
         (ReductionKind::StateConstraint, Row::ForallExistsSafety) => false,
     }
 }
