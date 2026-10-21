@@ -108,6 +108,7 @@ pub enum Coverage { FiniteSample, Asymptotic }
 | `ConfidenceBeyondPrecision` refusal | `unsupported` | the cause `confidence-beyond-precision` (QSpec FR-331, FR-408 Admission) | none | `Unsupported(cause)` | unsupported |
 | `EveryScheduler`, `MissingConfidence` or `ExactOnlyForm` refusal | `unsupported` | the cause `every-scheduler`, `missing-confidence` or `exact-only-form` | none | `Unsupported(cause)` | unsupported |
 | `Admission` or `RequiresBound` refusal, or `PredicateRefused` refusal | none: the refusal is the caller's to report (FR-106 admission failure, ADR-016 EX-8 disposition, FR-196 `PredicateRefused`) | none | none | no terminal result | none |
+| `Symmetry` refusal (a malformed symmetry declaration, FR-151) | none: the refusal is the caller's `invalid_runtime_input`/`invalid-value` | none | none | no terminal result | none |
 | `NotStatistical` refusal | none: a negotiation outcome, `invalid-request` | diagnostic `invalid_capability`/`not-statistical` (QSpec FR-408 Admission, FR-331) | none | no terminal result | none |
 | `NoTest` refusal | `inconclusive` | `no-initial-state` | none | `Inconclusive(NoInitialState)` (ADR-018 V-6) | inconclusive |
 | `Internal` refusal | `failed` | diagnostic `runtime_invariant`/`established-invariant-broken` | none | `Failed` | failed (ADR-013 O-16 internal failure) |

@@ -16,13 +16,19 @@ use qsl_foundation::InternalFault;
 use qsl_semantics::model::observation::AdmissionFailure;
 use quire_exact::{CancelCause, Integer, Rational};
 
+use crate::proof_result::SymmetryRefusal;
 use crate::UndefinedEvaluation;
 
 mod settle;
+mod witness;
 
 pub use settle::{
     settle_statistical, settle_statistical_refusal, NotStatisticalRequest, StatisticalRecord,
     SubjectLimits, UnsettledRefusal,
+};
+pub use witness::{
+    replay_sampled_witness, SampledParity, SampledWitnessRefusal, SampledWitnessReplay,
+    WitnessReadStop, WitnessReader, WitnessReading, WitnessReplay,
 };
 
 /// How a request decides a claim from its samples (FR-189, FR-190;
@@ -299,6 +305,12 @@ pub struct TestResult {
     /// The interval, for Okamoto and the regenerative method; `None` for
     /// SPRT and for a test that ended before its method decided.
     pub interval: Option<(Rational, Rational)>,
+    /// A quantile claim's empirical nearest-rank `q`-quantile of the
+    /// measures of the activated samples counted (FR-192 "estimate"), the
+    /// `⌈q · n⌉`-th smallest of the `n` counted; censored when that rank
+    /// lies among the censored samples, which exceed every value. `None`
+    /// for any other form and for a test that counted no sample.
+    pub quantile: Option<MeasureValue>,
     /// Samples counted, or cycles closed.
     pub samples: u64,
     /// Samples drawn, or steps taken.
@@ -420,6 +432,8 @@ pub struct StatisticalVerdict {
     pub estimate: Option<Rational>,
     /// The least favourable test's interval.
     pub interval: Option<(Rational, Rational)>,
+    /// The least favourable test's empirical quantile (FR-192).
+    pub quantile: Option<MeasureValue>,
     /// What the verdict rests on.
     pub basis: StatisticalBasis,
     /// What it reproduces from.
@@ -544,6 +558,9 @@ pub enum StatisticalRefusal {
     /// FR-120's admission of the subject's `ModelSystem` failed.
     #[error("the subject's model system did not admit: {0:?}")]
     Admission(Box<AdmissionFailure>),
+    /// A symmetry declaration of the request is malformed (FR-151 "Form").
+    #[error(transparent)]
+    Symmetry(SymmetryRefusal),
     /// The claim's `over` type has an admitting population with no universe
     /// (FR-101), so the subject's tests are not finitely many.
     #[error("the subject has an unbounded population and requires a bound")]

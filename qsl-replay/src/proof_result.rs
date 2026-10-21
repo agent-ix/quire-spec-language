@@ -164,6 +164,58 @@ pub enum SymmetryBrokenCause {
     },
 }
 
+/// Why a symmetry declaration's form refuses the request (FR-151 "Form"):
+/// `invalid_runtime_input`/`invalid-value`, naming the declaration (its
+/// index in the request) and the failing member.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum SymmetryRefusal {
+    /// The population is not declared `symmetric` in the checked package.
+    #[error("invalid_runtime_input/invalid-value: declaration {declaration}: {} is not symmetric", population.node)]
+    NotSymmetric {
+        /// The declaration's index.
+        declaration: usize,
+        /// Its population.
+        population: DeclarationKey,
+    },
+    /// The subject has no universe for the population.
+    #[error("invalid_runtime_input/invalid-value: declaration {declaration}: {} has no universe", population.node)]
+    NoUniverse {
+        /// The declaration's index.
+        declaration: usize,
+        /// Its population.
+        population: DeclarationKey,
+    },
+    /// A class names a key outside the population's universe.
+    #[error("invalid_runtime_input/invalid-value: declaration {declaration}: key {key} is not in the universe")]
+    UnknownKey {
+        /// The declaration's index.
+        declaration: usize,
+        /// The key.
+        key: String,
+    },
+    /// A key appears in two classes of its population, in one declaration
+    /// or across two, or twice in one class.
+    #[error("invalid_runtime_input/invalid-value: declaration {declaration}: key {key} is in two classes")]
+    RepeatedKey {
+        /// The declaration's index.
+        declaration: usize,
+        /// The key.
+        key: String,
+    },
+}
+
+impl SymmetryRefusal {
+    /// The refusal's catalog code: `invalid_runtime_input`.
+    pub fn code(&self) -> Code {
+        Code::InvalidRuntimeInput
+    }
+
+    /// The refusal's catalog cause: `invalid-value`.
+    pub fn cause(&self) -> &'static str {
+        "invalid-value"
+    }
+}
+
 /// ADR-018 PC-1: who stands behind a proved result.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
