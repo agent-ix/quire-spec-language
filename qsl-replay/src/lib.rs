@@ -134,7 +134,7 @@ pub use model_check::hyper_counterexample::{
 pub use model_check::hyper_outcome::{HyperOutcome, HyperReductionCause};
 pub use model_check::hyper_replay::{replay_hyper_trace_tuple, HyperReplay};
 pub use model_check::identity::{ClauseIdentity, ClauseRootRefusal};
-pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem};
+pub use model_check::item::{Instance, ItemRefusal, ModelCheckItem, Translation};
 pub use model_check::limits::{
     ModelCheckLimit, ModelCheckLimits, ReachedLimit, DEFAULT_MAX_AUTOMATON_STATES,
     DEFAULT_MAX_RELATION_TUPLES, DEFAULT_MAX_WALK_STEPS, DEFAULT_MAX_WITNESS_SET,

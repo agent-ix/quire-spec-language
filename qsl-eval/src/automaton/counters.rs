@@ -15,7 +15,8 @@
 //!   (`always`, `release`: the furthest required position subsumes the
 //!   nearer ones).
 //! - A past operator with lower bound 0: [`PastAgeCounter`], the positions
-//!   since the operand last held, saturating past `b`.
+//!   (or, over a protocol subject, the counted steps) since the operand last
+//!   held, saturating past `b`.
 //! - An `[a,*]` occurrence: [`ShiftCounter`] with `a + 1` values, then the
 //!   unbounded operator's own states.
 //! - Any other occurrence keeps its open obligations as a set:
@@ -270,12 +271,23 @@ impl PastAgeCounter {
     /// The counter after one position.
     #[must_use]
     pub fn step(self, operand_holds: bool) -> Self {
+        self.step_counted(operand_holds, true)
+    }
+
+    /// The counter after one position reached by a step that `counted` or
+    /// not (ADR-027 PB-3). An operand that holds resets the age; otherwise
+    /// the age grows by the counted distance of the step, which is nothing
+    /// for a step that does not count.
+    #[must_use]
+    pub fn step_counted(self, operand_holds: bool, counted: bool) -> Self {
         let age = if operand_holds {
             Some(0)
-        } else {
+        } else if counted {
             self.age
                 .and_then(|age| age.checked_add(1))
                 .filter(|age| *age <= self.bound)
+        } else {
+            self.age
         };
         Self { age, ..self }
     }

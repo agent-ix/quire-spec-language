@@ -53,8 +53,18 @@ const DEADLOCK_FREEDOM: &str = "deadlock-freedom";
 /// wraps octets read from a certificate as they arrived: such a key is
 /// unadmitted, and a checker admits it against its own context before it
 /// is used for membership.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AutomatonStateKey(Vec<u8>);
+#[derive(Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AutomatonStateKey(pub(super) Vec<u8>);
+
+impl std::fmt::Debug for AutomatonStateKey {
+    /// The key's octets as text: a key is canonical UTF-8 JSON.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_tuple("AutomatonStateKey")
+            .field(&String::from_utf8_lossy(&self.0))
+            .finish()
+    }
+}
 
 impl AutomatonStateKey {
     /// The octets of a key as a certificate carried them, not yet admitted.
@@ -160,6 +170,15 @@ impl StateContext {
         }
     }
 
+    /// The context's encoding tree and its canonical octets, which an
+    /// admitted key's context must equal.
+    pub(super) fn encoded(&self, max_bytes: u64) -> Result<(Enc, Vec<u8>), KeyRefusal> {
+        let context = self.enc();
+        let octets = quire_canonical::to_vec(&context, Limits::new(max_bytes))
+            .map_err(|_| KeyRefusal::Encoding)?;
+        Ok((context, octets))
+    }
+
     fn enc(&self) -> Enc {
         let root = match &self.root {
             ContextRoot::Clause(occurrence) => Enc::Array(vec![
@@ -237,10 +256,9 @@ pub enum SafetyItem {
     DeadlockFreedom,
 }
 
-/// A clause this module does not translate: it is not `always holds(A)`
-/// under infinite-trace.
+/// A clause this module does not translate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("the clause is not a reachable invariant `always holds(A)` under infinite-trace")]
+#[error("the clause is not a form with a canonical translation: a reachable invariant `always holds(A)` under infinite-trace, or a bounded `eventually[0,u]` or `always[0,u]` over one `holds(A)` on origin")]
 pub struct NotTranslated;
 
 /// Why octets are not admitted as a key of a translation's context, or a key
@@ -340,9 +358,7 @@ impl SafetyTranslation {
 
     fn new(item: SafetyItem, context: &StateContext) -> Result<Self, KeyRefusal> {
         let max_bytes = IdentityLimits::default().input_bytes;
-        let context = context.enc();
-        let context_octets = quire_canonical::to_vec(&context, Limits::new(max_bytes))
-            .map_err(|_| KeyRefusal::Encoding)?;
+        let (context, context_octets) = context.encoded(max_bytes)?;
         Ok(Self {
             item,
             context,
@@ -562,12 +578,12 @@ pub fn invariant_atom(clause: &CheckedTemporalClause) -> Option<FormulaNodeId> {
 }
 
 /// The canonical octets of `node`.
-fn canonical(node: NodeRef<'_>, max_bytes: u64) -> Result<Vec<u8>, KeyRefusal> {
+pub(super) fn canonical(node: NodeRef<'_>, max_bytes: u64) -> Result<Vec<u8>, KeyRefusal> {
     quire_canonical::to_vec(&node, Limits::new(max_bytes)).map_err(|_| KeyRefusal::Encoding)
 }
 
 /// Exactly `N` items, or `None`.
-fn exactly<'d, const N: usize>(
+pub(super) fn exactly<'d, const N: usize>(
     items: impl Iterator<Item = NodeRef<'d>>,
 ) -> Option<[NodeRef<'d>; N]> {
     let items: Vec<NodeRef<'d>> = items.collect();
@@ -575,7 +591,7 @@ fn exactly<'d, const N: usize>(
 }
 
 /// Require `next` to sort strictly after the previous set element.
-fn ascending(previous: &mut Option<Vec<u8>>, next: Vec<u8>) -> Result<(), KeyRefusal> {
+pub(super) fn ascending(previous: &mut Option<Vec<u8>>, next: Vec<u8>) -> Result<(), KeyRefusal> {
     if previous.as_ref().is_some_and(|previous| *previous >= next) {
         return Err(KeyRefusal::Order);
     }
@@ -587,7 +603,7 @@ fn ascending(previous: &mut Option<Vec<u8>>, next: Vec<u8>) -> Result<(), KeyRef
 /// `[1-9][0-9]*`, at most `"18446744073709551615"`. `#[string_edge]`: reads
 /// an imported key's decimal string.
 #[qsl_attrs::string_edge]
-fn decimal(text: &str) -> Result<u64, KeyRefusal> {
+pub(super) fn decimal(text: &str) -> Result<u64, KeyRefusal> {
     let refuse = || KeyRefusal::Decimal(text.to_owned());
     let canonical =
         text == "0" || (text.bytes().all(|byte| byte.is_ascii_digit()) && !text.starts_with('0'));
