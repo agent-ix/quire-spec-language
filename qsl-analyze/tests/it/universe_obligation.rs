@@ -11,26 +11,35 @@
 //! index.
 
 use ix_trace_rs::trace;
-use qsl_analyze::model_check::request::{
-    author_clause, clause_occurrence, RequestRefusal, SubjectIdentity,
-};
+use qsl_analyze::model_check::{author_clause, RequestRefusal, SubjectIdentity};
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::bound::{DomainKey, DomainKind, FiniteBound, ProofBound};
 use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::{BackendId, RequestIndex};
-use qsl_replay::TerminalRecord;
+use qsl_replay::{node_occurrence, TerminalRecord};
 use qsl_route::deadlock::{ItemObligation, ObligationKind};
 use qsl_route::model_request::ModelRequest;
 use qsl_route::request::ExtentClassification;
 
+use crate::counter::CONTRACT;
 use crate::counter::{document, key, subject, UNLIMITED};
-use crate::liveness::{counter, Fixture};
+use crate::liveness::{counter, fixture, Fixture};
 
 fn reaches_two() -> Fixture {
     counter(
         document(false),
         "fair weak each M::Counter::inc;",
         "always eventually holds(c.value = 2)",
+    )
+}
+
+fn fixture_with(body: &str) -> Fixture {
+    fixture(
+        document(false),
+        body,
+        "fair weak each M::Counter::inc;",
+        "always eventually holds(c.value = 2)",
+        &[("c", 0)],
     )
 }
 
@@ -42,6 +51,10 @@ fn over<'a>(fixture: &'a Fixture, keys: &[&str]) -> ModelSubject<'a> {
         keys,
         UNLIMITED,
     )
+}
+
+fn identity(subject: &ModelSubject<'_>) -> SubjectIdentity {
+    SubjectIdentity::of(subject).expect("the package emits")
 }
 
 /// `ReachesTwo` under `fair weak each` over universe `{a, b}` and over `{a,
@@ -67,16 +80,16 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
     assert_eq!([at_two.get(), at_three.get()], [0, 1]);
     // Writing the same obligation again is the same item, whatever order the
     // universe lists its keys in.
-    let again = over(&fixture, &["b", "a", "b"]);
+    let again = over(&fixture, &["b", "a"]);
     assert_eq!(
         author_clause(&mut request, &again, clause).expect("the clause has a record"),
         at_two
     );
     assert_eq!(request.items().len(), 2);
 
-    let occurrence = clause_occurrence(clause);
+    let occurrence = node_occurrence(clause);
     let obligation = |subject: &ModelSubject<'_>| ItemObligation {
-        subject: SubjectIdentity::of(subject),
+        subject: SubjectIdentity::of(subject).expect("the package emits"),
         kind: ObligationKind::Authored(occurrence.clone()),
     };
     assert_ne!(obligation(&two), obligation(&three));
@@ -90,7 +103,7 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
             .map(|keys| keys.iter().cloned().collect::<Vec<_>>())
     };
     assert_eq!(
-        keys(&SubjectIdentity::of(&three)),
+        keys(&identity(&three)),
         Some(vec!["a".to_owned(), "b".to_owned(), "c".to_owned()])
     );
 
@@ -125,7 +138,7 @@ fn two_universes_are_two_obligations_and_each_result_joins_its_own_index() {
 #[test]
 fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_is_refused() {
     let mut fixture = reaches_two();
-    let plain = SubjectIdentity::of(&over(&fixture, &["a", "b"]));
+    let plain = identity(&over(&fixture, &["a", "b"]));
 
     let mut bounded = over(&fixture, &["a", "b"]);
     bounded.proof_bounds.push(
@@ -139,12 +152,38 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
         )
         .expect("a population takes a cardinality bound"),
     );
-    assert_ne!(SubjectIdentity::of(&bounded), plain);
+    assert_ne!(identity(&bounded), plain);
+
+    // The same clause, domain package and initial document over a checked
+    // package whose `post Inc` contract differs is another subject: its
+    // successor relation differs, though the clause's own nodes do not.
+    let rival = fixture_with(&CONTRACT.replace("= 1 }", "= 2 }"));
+    let rival_subject = over(&rival, &["a", "b"]);
+    let [rival_clause] = rival.package.graph().temporal_clauses() else {
+        panic!("one declared clause");
+    };
+    let [clause] = fixture.package.graph().temporal_clauses() else {
+        panic!("one declared clause");
+    };
+    assert_eq!(node_occurrence(rival_clause), node_occurrence(clause));
+    assert_ne!(identity(&rival_subject), plain);
+    let mut shared = ModelRequest::new();
+    let first = author_clause(&mut shared, &over(&fixture, &["a", "b"]), clause).expect("record");
+    let second = author_clause(&mut shared, &rival_subject, rival_clause).expect("record");
+    assert_ne!(first, second);
+
+    // A provision carrying a package the model does not select is the same
+    // subject.
+    let mut provision = fixture.documents.packages.clone();
+    provision.insert([7; 32], b"unselected".to_vec());
+    let mut padded = over(&fixture, &["a", "b"]);
+    padded.simulation.packages = &provision;
+    assert_eq!(identity(&padded), plain);
 
     let second = fixture.documents.start("s1", &[("c", 1)]);
     let mut restarted = over(&fixture, &["a", "b"]);
     restarted.simulation.initial.push(second);
-    assert_ne!(SubjectIdentity::of(&restarted), plain);
+    assert_ne!(identity(&restarted), plain);
 
     // A clause of another package has no record in this subject's package.
     let other = counter(
@@ -161,7 +200,7 @@ fn a_proof_bound_or_an_initial_state_changes_the_identity_and_a_foreign_clause_i
     assert_eq!(
         refusal,
         RequestRefusal::NoRequirementRecord {
-            occurrence: clause_occurrence(foreign)
+            occurrence: node_occurrence(foreign)
         }
     );
     assert!(request.items().is_empty());

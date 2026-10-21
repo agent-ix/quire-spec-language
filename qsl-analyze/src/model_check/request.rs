@@ -14,12 +14,14 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use qsl_eval::model_subject::ModelSubject;
 use qsl_foundation::bound::ProofBound;
-use qsl_foundation::digest::WireNodeId;
 use qsl_foundation::source::provenance::OccurrenceKey;
 use qsl_foundation::RequestIndex;
+use qsl_package::{emit_checked, EmitRefusal};
+use qsl_replay::node_occurrence;
 use qsl_route::deadlock::ModelTemporalItem;
 use qsl_route::model_request::ModelRequest;
 use qsl_semantics::check::TemporalClauseNode;
+use qsl_semantics::library::PackageId;
 use qsl_semantics::model::key::DeclarationKey;
 
 /// An initial state's document, as the identity reads it: the four source
@@ -29,15 +31,18 @@ type InitialState = (String, String, String, String, [u8; 32]);
 /// The identity projection of a [`ModelSubject`] (ADR-013 O-09, FR-336): what
 /// a verdict over the subject holds for.
 ///
-/// It is the initial states, each population's universe, the digests of the
-/// domain packages the subject was admitted against, and the proof bounds.
-/// Order and repetition of any of them are immaterial. The checked package is
-/// named by the item's occurrence (the other half of the obligation
-/// identity), and the expansion limits, meter and observation limits decide
-/// whether a run finishes, never what a finished run holds, so they are no
-/// part of it.
+/// It is the subject's checked package (its canonical `package_id`, which
+/// covers every contract the successor relation reads, not only the clause's
+/// own nodes), the initial states, each population's universe, the digests of
+/// the domain packages the package's model selections name, and the proof
+/// bounds. The order of the initial states and of a universe's keys is
+/// immaterial. The expansion limits, the evaluation meter, the observation
+/// and normalization limits and the snapshot provision decide whether a run
+/// finishes or reads, not what a finished run holds, so they are no part of
+/// it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubjectIdentity {
+    package: PackageId,
     initial: BTreeSet<InitialState>,
     universes: BTreeMap<DeclarationKey, BTreeSet<String>>,
     packages: BTreeSet<[u8; 32]>,
@@ -46,7 +51,12 @@ pub struct SubjectIdentity {
 
 impl SubjectIdentity {
     /// The identity of `subject`.
-    pub fn of(subject: &ModelSubject<'_>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// [`RequestRefusal::Package`] when the subject's checked package has no
+    /// emission, so no canonical identity.
+    pub fn of(subject: &ModelSubject<'_>) -> Result<Self, RequestRefusal> {
         let simulation = &subject.simulation;
         let mut universes: BTreeMap<DeclarationKey, BTreeSet<String>> = BTreeMap::new();
         for universe in &simulation.universes {
@@ -55,7 +65,9 @@ impl SubjectIdentity {
                 .or_default()
                 .extend(universe.keys.iter().cloned());
         }
-        Self {
+        let package = emit_checked(simulation.package)?.package().package_id();
+        Ok(Self {
+            package,
             initial: simulation
                 .initial
                 .iter()
@@ -70,9 +82,15 @@ impl SubjectIdentity {
                 })
                 .collect(),
             universes,
-            packages: simulation.packages.keys().copied().collect(),
+            packages: simulation
+                .package
+                .graph()
+                .model_selections()
+                .iter()
+                .map(|selection| selection.digest)
+                .collect(),
             proof_bounds: subject.proof_bounds.iter().cloned().collect(),
-        }
+        })
     }
 
     /// The key set of `population`'s universe; `None` when the subject
@@ -92,14 +110,9 @@ pub enum RequestRefusal {
         /// The clause's occurrence key.
         occurrence: OccurrenceKey,
     },
-}
-
-/// The occurrence key of `clause`: its checked node and its claim origin.
-pub fn clause_occurrence(clause: &TemporalClauseNode) -> OccurrenceKey {
-    OccurrenceKey::new(
-        WireNodeId::from_digest(*clause.identity().as_bytes()),
-        clause.claim().clone(),
-    )
+    /// The subject's checked package has no canonical identity.
+    #[error(transparent)]
+    Package(#[from] EmitRefusal),
 }
 
 /// Write the item of the checked `clause` node over `subject` into `request` and return its
@@ -115,20 +128,20 @@ pub fn clause_occurrence(clause: &TemporalClauseNode) -> OccurrenceKey {
 /// # Errors
 ///
 /// [`RequestRefusal::NoRequirementRecord`] when the package has no record for
-/// the clause.
+/// the clause; [`RequestRefusal::Package`] when it has no canonical identity.
 pub fn author_clause(
     request: &mut ModelRequest<SubjectIdentity>,
     subject: &ModelSubject<'_>,
     clause: &TemporalClauseNode,
 ) -> Result<RequestIndex, RequestRefusal> {
     let package = subject.simulation.package.graph();
-    let occurrence = clause_occurrence(clause);
+    let occurrence = node_occurrence(clause);
     let record = package.requirements().get(&occurrence).ok_or_else(|| {
         RequestRefusal::NoRequirementRecord {
             occurrence: occurrence.clone(),
         }
     })?;
-    let identity = SubjectIdentity::of(subject);
+    let identity = SubjectIdentity::of(subject)?;
     let item = ModelTemporalItem {
         occurrence: &occurrence,
         subject: &identity,

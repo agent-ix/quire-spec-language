@@ -29,8 +29,9 @@ with no maximum.
 4. Request `ReachesTwo` under `fair weak each` over `{a, b}` and
    `{a, b, c}`; compare obligation identities and the joins of the two
    results.
-5. Change only a proof bound, then only an initial state, of a subject and
-   compare identities; request a clause of another package.
+5. Change only a proof bound, then only an initial state, then only the
+   checked package's `post` contract, of a subject and compare identities;
+   add an unselected package to the provision; request a clause of another package.
 
 Tag the tests `#[trace("TC-846", "FR-336-AC-n")]`.
 
@@ -44,5 +45,6 @@ Tag the tests `#[trace("TC-846", "FR-336-AC-n")]`.
   run.
 - Step 4: identities differ only in the universe; each `proved` joins its
   own request index.
-- Step 5: each change gives a different identity; the foreign clause is
+- Step 5: each change gives a different identity (the package change gives
+  two request indices); the unselected package changes nothing; the foreign clause is
   refused and no item is written.
