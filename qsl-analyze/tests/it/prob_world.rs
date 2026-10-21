@@ -292,6 +292,14 @@ impl World {
         Self::build(model, keys, keys, &[&model.initial], true, false)
     }
 
+    /// As [`Self::symmetric_objects`], with one initial snapshot per entry of
+    /// `initials`; an entry `{"objects": {key: fields}}` gives each object
+    /// its own field values.
+    pub(crate) fn symmetric_with_initials(model: &Model, keys: &[&str], initials: &[Json]) -> Self {
+        let initials: Vec<&Json> = initials.iter().collect();
+        Self::build(model, keys, keys, &initials, true, false)
+    }
+
     fn build(
         model: &Model,
         keys: &[&str],
@@ -361,7 +369,9 @@ impl World {
                 "anchor": {"kind": "initialization", "name": "start"},
                 "populations": [{"population": model.ident(model.population), "complete": true,
                     "objects": live.iter().map(|key| json!({"key": key,
-                        "type": model.ident(model.object), "fields": fields}))
+                        "type": model.ident(model.object),
+                        "fields": fields.get("objects").and_then(|each| each.get(key))
+                            .unwrap_or(fields)}))
                         .collect::<Vec<_>>()}],
             })
             .to_string()

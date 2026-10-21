@@ -9,7 +9,8 @@ use qsl_analyze::statistical::{
     check_statistical, witness_reader, StatisticalRequest, DEFAULT_MAX_WITNESSES,
 };
 use qsl_eval::simulation::model::{ModelSystem, TransitionId};
-use qsl_eval::simulation::SampledDisagreement;
+use qsl_eval::simulation::TransitionSystem;
+use qsl_eval::simulation::{sample_probabilistic, SampledDisagreement};
 use qsl_eval::temporal::UndefinedCause;
 use qsl_foundation::diagnostic::{CatalogCode, UndefinedReason};
 use qsl_foundation::selection::DefinitionRef;
@@ -131,25 +132,53 @@ fn a_kept_witness_replays_and_each_alteration_is_caught() {
     outside.steps[attempt].random[0] = Value::Integer(Integer::from(2_i64));
     let refusal = replay(&world, "Two", &verdict.provenance, &outside)
         .expect_err("2 ms is outside the support");
-    assert_eq!(refusal.catalog_code(), Some(invalid_value()));
+    assert_eq!(refusal.catalog_code(), invalid_value());
 
-    let (seed, parity) = (8_u64..)
-        .take(256)
-        .find_map(|seed| {
-            let mut provenance = verdict.provenance.clone();
-            provenance.seed = seed;
-            match replay(&world, "Two", &provenance, witness) {
-                Ok(SampledWitnessReplay::Inconclusive(parity)) => Some((seed, parity)),
-                _ => None,
-            }
-        })
-        .expect("some seed recomputes another draw");
+    // A seed under which the recomputed attempt step draws `d = 1 ms`, where
+    // the record has another `d`.
+    let system = ModelSystem::new(world.subject().simulation).expect("the subject admits");
+    let ProbScheduler::Workload(name) = &world.claim("Two").scheduler else {
+        panic!("a workload claim");
+    };
+    let workload = world
+        .package
+        .graph()
+        .probabilistic_model()
+        .workload(name)
+        .expect("the workload is declared");
+    let start = system.initial().remove(0);
+    let is_one = |value: Option<&Value>| matches!(value, Some(Value::Integer(integer)) if *integer == Integer::from(1_i64));
+    let found = (8_u64..).take(512).find_map(|seed| {
+        let mut provenance = verdict.provenance.clone();
+        provenance.seed = seed;
+        let Ok(SampledWitnessReplay::Inconclusive(SampledParity::Draw(
+            SampledDisagreement::Step { step },
+        ))) = replay(&world, "Two", &provenance, witness)
+        else {
+            return None;
+        };
+        let at = usize::try_from(step).ok()?;
+        let recorded = witness.steps.get(at)?;
+        let other = sample_probabilistic(
+            &system,
+            workload,
+            &start,
+            &sampler(),
+            seed,
+            witness.trace,
+            u64::try_from(witness.steps.len()).ok()?.saturating_add(1),
+            &Cancel::new(),
+        )
+        .ok()?;
+        let drawn = other.steps.get(at)?;
+        (recorded.random.len() == 2
+            && is_one(drawn.random.first())
+            && !is_one(recorded.random.first()))
+        .then_some(seed)
+    });
     assert!(
-        matches!(
-            parity,
-            SampledParity::Draw(SampledDisagreement::Step { .. })
-        ),
-        "seed {seed}: {parity:?}"
+        found.is_some(),
+        "some seed recomputes d = 1 ms at an attempt"
     );
 
     let mut doubled = witness.clone();
@@ -338,4 +367,57 @@ fn a_long_run_undefined_witness_replays() {
         replay(&world, "Stays", &verdict.provenance, witness),
         Ok(SampledWitnessReplay::Reproduced)
     );
+}
+
+/// FR-193 "Replay": a witness whose test the provenance does not record, or
+/// whose test starts at an initial state the subject lacks, is refused
+/// `invalid_runtime_input`/`invalid-value`, not settled.
+#[trace("TC-628", "FR-193-AC-2")]
+#[test]
+fn a_witness_the_subject_does_not_place_is_refused_with_a_catalog_code() {
+    let world = World::new(&prob_world::service(&p95("Two", 2)));
+    let verdict = decide(&world, "Two", StatisticalMethod::Okamoto, 1);
+    let witness = &verdict.witnesses[0];
+
+    let stray = SampledWitness {
+        test: 9,
+        ..witness.clone()
+    };
+    let refusal = replay(&world, "Two", &verdict.provenance, &stray).expect_err("no test 9");
+    assert_eq!(refusal, SampledWitnessRefusal::UnknownTest { test: 9 });
+    assert_eq!(refusal.catalog_code(), invalid_value());
+
+    let mut provenance = verdict.provenance.clone();
+    provenance.tests[0].initial = 5;
+    let refusal = replay(&world, "Two", &provenance, witness).expect_err("no initial state 5");
+    assert!(matches!(
+        refusal,
+        SampledWitnessRefusal::UnknownInitial { initial: 5, .. }
+    ));
+    assert_eq!(refusal.catalog_code(), invalid_value());
+}
+
+/// Checks FR-193-AC-3's first clause: a `Measure` witness of the `2 ms`
+/// claim converts to the counterexample of the qualitative claim, with its
+/// steps and post digests, as a formula refutation. (Its FR-128 settlement
+/// is STD-250's.)
+#[trace("TC-628", "FR-193-AC-3")]
+#[test]
+fn a_measure_witness_converts_to_a_formula_counterexample() {
+    let world = World::new(&prob_world::service(&p95("Two", 2)));
+    let verdict = decide(&world, "Two", StatisticalMethod::Okamoto, 1);
+    let witness = &verdict.witnesses[0];
+    assert!(matches!(witness.value, WitnessValue::Measure(_)));
+    let counterexample = witness
+        .counterexample(&verdict.provenance)
+        .expect("the provenance places the witness");
+    assert_eq!(counterexample.kind, CounterexampleKind::Formula);
+    assert_eq!(counterexample.prefix.len(), witness.steps.len());
+    for (step, taken) in counterexample.prefix.iter().zip(&witness.steps) {
+        let TransitionId::Operation(transition) = &taken.transition else {
+            panic!("an operation step");
+        };
+        assert_eq!(&step.transition, transition);
+        assert_eq!(step.post_state, taken.post_digest);
+    }
 }

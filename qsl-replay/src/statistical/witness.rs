@@ -144,15 +144,43 @@ pub enum SampledWitnessRefusal {
     Read(WitnessReadStop),
 }
 
+/// `invalid_runtime_input`/`invalid-value`: a witness no subject has.
+const INVALID_VALUE: CatalogCode = CatalogCode::new("invalid_runtime_input", "invalid-value");
+
+/// `runtime_invariant`/`established-invariant-broken`: a stop with no code
+/// of FR-193's own.
+const BROKEN: CatalogCode = CatalogCode::new("runtime_invariant", "established-invariant-broken");
+
 impl SampledWitnessRefusal {
-    /// The catalog code FR-193 names for the refusal: `invalid_runtime_input`
-    /// / `invalid-value` for a value outside its support and for a
-    /// `TotalAboveDrawRange`; `None` for a refusal whose code is its own.
-    pub fn catalog_code(&self) -> Option<CatalogCode> {
+    /// The catalog code of the refusal. A witness the provenance or subject
+    /// does not place, a value outside its support and a
+    /// `TotalAboveDrawRange` are `invalid_runtime_input`/`invalid-value`
+    /// (FR-193 "Replay"); an expansion stop keeps its own code; any other
+    /// stop is a broken invariant.
+    pub fn catalog_code(&self) -> CatalogCode {
         match self {
-            Self::Draw(refusal) => refusal.catalog_code(),
-            Self::UnknownTest { .. } | Self::UnknownInitial { .. } | Self::Read(_) => None,
+            Self::UnknownTest { .. } | Self::UnknownInitial { .. } => INVALID_VALUE,
+            Self::Draw(refusal) => refusal.catalog_code().unwrap_or_else(|| match refusal {
+                SampledReplayRefusal::Sample(stop) => stop_code(stop),
+                SampledReplayRefusal::OutsideSupport { .. } => INVALID_VALUE,
+            }),
+            Self::Read(WitnessReadStop::Sample(stop)) => stop_code(stop),
+            Self::Read(WitnessReadStop::AutomatonStates { .. }) => {
+                CatalogCode::new("resource_exhausted", "insufficient-next-charge")
+            }
+            Self::Read(WitnessReadStop::PredicateRefused(_)) => BROKEN,
         }
+    }
+}
+
+fn stop_code(stop: &SampleStop) -> CatalogCode {
+    match stop {
+        SampleStop::TotalAboveDrawRange(_) => INVALID_VALUE,
+        SampleStop::Expansion(stop) => stop.cause,
+        SampleStop::GeneratorMismatch { .. }
+        | SampleStop::NotMarkov(_)
+        | SampleStop::UndecidedSuccessor
+        | SampleStop::Cancelled(_) => BROKEN,
     }
 }
 

@@ -589,7 +589,9 @@ impl Plan<'_> {
                 Sample::NotActivated => {}
                 Sample::Event(held) | Sample::Measured { holds: held, .. } => {
                     tally.counted += 1;
-                    if let Sample::Measured { value, .. } = &sample {
+                    if let (Sample::Measured { value, .. }, ClaimForm::Quantile) =
+                        (&sample, claim.form())
+                    {
                         tally.measured(value);
                     }
                     if held {

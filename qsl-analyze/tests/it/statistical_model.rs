@@ -22,6 +22,7 @@ use qsl_replay::SymmetryRefusal;
 use qsl_replay::{ClaimPredicate, TerminalValue, UndefinedLocus};
 use qsl_semantics::model::key::DeclarationKey;
 use quire_exact::{Cancel, Integer, Rational, Value};
+use serde_json::json;
 
 use crate::prob_world::{self, World};
 
@@ -569,6 +570,54 @@ fn two_symmetric_servers_run_one_test() {
         StatisticalRefusal::Symmetry(SymmetryRefusal::NotSymmetric { declaration: 0, .. })
     ));
     assert!(settle_statistical_refusal(&refusal).is_err());
+}
+
+/// Checks FR-189-AC-3's symmetry clause across initial states: two initial
+/// states that are images of each other under the class (`a` busy and `b`
+/// idle, then the reverse), with an `over` binding, are four pairs in two
+/// orbits, `(s1, a) ~ (s2, b)` and `(s1, b) ~ (s2, a)`. EN-4 runs `m = 2`
+/// tests, each on the least pair of its orbit, so both start at the same
+/// initial state and differ by binding; without the declaration it runs four.
+#[trace("TC-624", "FR-189-AC-3")]
+#[test]
+fn mirrored_initial_states_merge_into_two_orbits() {
+    let state =
+        |phase: i64| json!({"phase": {"integer": phase.to_string()}, "attempts": {"integer": "0"}});
+    let mirrored = [
+        json!({"objects": {"a": state(1), "b": state(0)}}),
+        json!({"objects": {"a": state(0), "b": state(1)}}),
+    ];
+    let world =
+        World::symmetric_with_initials(&prob_world::service(&busy_claim()), &["a", "b"], &mirrored);
+    let run = |symmetry| {
+        completed(check_statistical(
+            StatisticalRequest {
+                subject: world.subject(),
+                claim: world.claim("Busy"),
+                method: StatisticalMethod::Okamoto,
+                seed: 7,
+                sampler: sampler(),
+                limits: StatisticalLimits::default(),
+                max_witnesses: DEFAULT_MAX_WITNESSES,
+                symmetry,
+            },
+            &Cancel::new(),
+        ))
+    };
+    let merged = run(interchangeable());
+    assert_eq!(merged.basis.tests, 2);
+    assert_eq!(merged.basis.alpha_per_test, ratio(1, 20));
+    let [first, second] = &merged.tests[..] else {
+        panic!("two tests: {:?}", merged.tests);
+    };
+    assert_eq!(first.initial, second.initial);
+    let keys: Vec<&str> = [first, second]
+        .iter()
+        .map(|test| test.binding.as_ref().expect("a binding").key.as_str())
+        .collect();
+    assert_eq!(keys, ["a", "b"]);
+    let plain = run(Vec::new());
+    assert_eq!(plain.basis.tests, 4);
 }
 
 /// FR-189 "Inputs": the sampler is checked by identity before any draw.

@@ -79,6 +79,9 @@ pub struct StatisticalRequest<'a> {
     /// an admitted declaration, when the workload and every random
     /// distribution are invariant under its group, one test runs per orbit
     /// of (initial state, binding) pairs (FR-189 "Tests", ADR-024 RX-1).
+    /// Workload weights are per operation and a support holds no reference
+    /// (S3 refuses a reference literal), so the invariance condition always
+    /// holds today. SYM-4's closure is not checked: only given pairs merge.
     pub symmetry: Vec<SymmetryDeclaration>,
 }
 
@@ -132,7 +135,7 @@ pub fn check_statistical(
         Some(admit(&system, &symmetry).map_err(StatisticalRefusal::Symmetry)?)
     };
     let (shared, mut tests) = open(&system, package, claim, reading, &sampler, cancel)?;
-    if let Some(group) = group.filter(|_| invariant(package)) {
+    if let Some(group) = group {
         tests = orbit_representatives(&system, &group, &shared.initial, tests)?;
     }
     let mut model = ModelSampler {
@@ -200,29 +203,6 @@ fn open<'s, 'a, 'c>(
         cancel,
     };
     Ok((shared, tests))
-}
-
-/// ADR-024 RX-1: whether the workload and every random distribution are
-/// invariant under a permutation of a symmetry class's keys. Workload weights
-/// are per operation, so they are invariant. A random parameter into a
-/// population is invariant when its weights are equal; this takes the
-/// conservative reading that every weight of a support with a reference is
-/// equal, so a run never merges tests that RX-1 would keep apart.
-fn invariant(package: &CheckedPackage) -> bool {
-    package
-        .graph()
-        .probabilistic_model()
-        .random_parameters()
-        .iter()
-        .all(|parameter| {
-            let support = parameter.support();
-            !support
-                .iter()
-                .any(|item| matches!(item.value.0, Value::Reference(_)))
-                || support
-                    .windows(2)
-                    .all(|pair| pair[0].weight == pair[1].weight)
-        })
 }
 
 /// The least key that exchanges with `key` under a transposition fixing the

@@ -2112,3 +2112,47 @@ fn the_violating_side_follows_the_bound_direction() {
         );
     }
 }
+
+/// A tally of `values` and `censored` censored measures.
+fn tally_of(values: &[i64], censored: u64) -> Tally {
+    let mut tally = Tally::new();
+    for value in values {
+        tally.measured(&MeasureValue::Value(ratio(*value, 1)));
+    }
+    for _ in 0..censored {
+        tally.measured(&MeasureValue::Censored);
+    }
+    tally
+}
+
+/// FR-192 "estimate": the nearest-rank quantile is the `⌈q · n⌉`-th
+/// smallest of the `n` counted measures. An exact-integer rank takes that
+/// value and not the next (`q = 1/2`, `n = 4`: the 2nd), a fractional rank
+/// rounds up, a rank past the finite values lands among the censored
+/// samples, which count in `n` and exceed every value, and no sample gives
+/// none.
+#[trace("TC-624")]
+#[test]
+fn the_quantile_is_the_nearest_rank_with_censored_samples_last() {
+    let half = ratio(1, 2);
+    let value = |v: i64| Some(MeasureValue::Value(ratio(v, 1)));
+    // Unsorted input; the 2nd smallest of 4 is 2, not the 3rd.
+    assert_eq!(tally_of(&[3, 1, 4, 2], 0).quantile(&half), value(2));
+    // Repeated values: ⌈0.95 · 20⌉ = 19th smallest.
+    let mut twenty = vec![1; 18];
+    twenty.extend([5, 9]);
+    assert_eq!(tally_of(&twenty, 0).quantile(&ratio(19, 20)), value(5));
+    // ⌈0.3 · 4⌉ = 2 rounds the rank 1.2 up.
+    assert_eq!(tally_of(&[1, 2, 3, 4], 0).quantile(&ratio(3, 10)), value(2));
+    // Two finite and two censored: rank 2 is finite, rank 3 is censored.
+    assert_eq!(tally_of(&[1, 2], 2).quantile(&half), value(2));
+    assert_eq!(
+        tally_of(&[1, 2], 2).quantile(&ratio(3, 4)),
+        Some(MeasureValue::Censored)
+    );
+    assert_eq!(
+        tally_of(&[], 3).quantile(&half),
+        Some(MeasureValue::Censored)
+    );
+    assert_eq!(tally_of(&[], 0).quantile(&half), None);
+}
