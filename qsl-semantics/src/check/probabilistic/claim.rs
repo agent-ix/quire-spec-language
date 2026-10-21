@@ -745,7 +745,10 @@ impl Pass<'_, '_> {
             })
         })?;
         if profile == TemporalProfile::Timed {
-            return Err(refusal(ProbabilisticCause::TimedEventProfile { claim, span }));
+            return Err(refusal(ProbabilisticCause::TimedEventProfile {
+                claim,
+                span,
+            }));
         }
         DefinitionRef::new(CLAUSE_PROFILE_AUTHORITY, profile.identity())
             .map_err(|_| broken("profile-identity-valid"))
