@@ -44,3 +44,12 @@ Plan completion: not assessed
 | --- | --- | --- | --- |
 | FND-001 | medium | `a_punctual_item_settles_unsupported_naming_the_interval` is tagged `FR-235-AC-4`, but it only unit-tests `From<&UnsupportedItem>`, `as_str` and `basis`. AC-4 requires FR-234-AC-3's punctual claim to settle `unsupported`/`PunctualInterval`, and it also has a `Stall` part and a zone-search part. The `From` impl has no production caller, so no disposed item reaches a terminal record. SR-12250 FND-004's settlement gap is still open. The test name and doc also claim "naming the interval", but the wire record drops the span. Fix: drop the `FR-235-AC-4` id (keep `TC-690`, tag `FR-235`) and rename the test, or wire the request writer's disposition into settlement and test that path. | qsl-replay/src/proof_result.rs:1423-1438, 375-383 |
 | FND-002 | medium | Untested lasso branches: (a) a loop with equal stamps, where SR-12265 FND-001's wrong verdict lives; (b) a meter stop during `unrolled` or the tail scan (`Incomplete`); (c) `TraceTooLong` when the copy count overflows `u64`; (d) an undefined atom on a lasso; (e) a bounded `until` whose guard spans the tail. Add at least (a), (b) and (d). | qsl-eval/tests/it/timed_trace.rs:302-425; qsl-eval/src/temporal/timed.rs:329-372, 630-677 |
+
+## Dispositions
+
+Round 1 was reviewed at 8550a71f195b76a9aa5fb3d8b0281cf156e75bd6 (fix commit 8550a71f1). The focused run `cargo test -p qsl-eval --test it timed_trace` passed 13 of 13.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8550a71f1. after: `/// FR-235 V-8, cause only: ... No settlement path exists yet, so this backs no acceptance criterion.` and `#[trace("TC-690", "FR-235")]`. The tag is now honest. The fn name still reads `..._settles_unsupported_naming_the_interval`. That is a leftover naming nit and does not block. |
+| FND-002 | fixed | 8550a71f1. Added tests: `a_tail_scan_reads_every_position_that_shares_a_stamp` (equal stamps, open lower end), `a_timed_lasso_stops_when_the_meter_runs_out` (Incomplete), `a_timed_lasso_refuses_an_unrolling_that_overflows` (TraceTooLong), `an_undefined_atom_on_a_timed_lasso_is_reported_at_its_position`, and `a_bounded_until_reads_its_window_in_the_tail`. The last one's witness lies in an unrolled copy, not the tail proper. Items (a), (b) and (d), which the finding required, are covered. |

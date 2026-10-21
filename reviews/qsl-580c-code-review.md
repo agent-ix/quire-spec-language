@@ -43,3 +43,14 @@ There was one focused run, `locked-build.sh … cargo test -p qsl-eval --test it
 | FND-002 | medium | QSpec FR-331 spells the cause `punctual-interval{locus}`, where `locus` is a checked-package `{node, occurrence}`. `OutcomeItem` emits `punctual-interval` with no locus and drops the span. A record built from this cause would be non-conformant on the wire. Nothing produces it today (FND-001 in SR-12266). The doc comments say "naming the interval", but that is untrue at the wire. Either keep the cause unwired and record the locus as Remaining work on QSL-580, or emit the locus once QSpec's node identity is available. Do not wire settlement before then. | qsl-replay/src/outcome.rs:559-567; qsl-replay/src/proof_result.rs:366-372 |
 | FND-003 | low | The display text of `NonPositiveLoopDelay` reads "a timed lasso's loop has a positive total delay", which is the opposite of the condition it reports. It should read "has no positive total delay". | qsl-eval/src/temporal/outcome.rs:127 |
 | FND-004 | low | The `unrolled` doc says "and two more" but the code adds 3. Neither the module doc nor `unrolled` gives the argument that this many copies settle every node. Fix the doc and state the bound: each past node adds at most `⌈b/D⌉ + 1` periods, and future nodes add none. | qsl-eval/src/temporal/timed.rs:625-629, 664 |
+
+## Dispositions
+
+Round 1 was reviewed at 8550a71f195b76a9aa5fb3d8b0281cf156e75bd6 (fix commit 8550a71f1, after merging main in 52bd7b6c0). The focused run `cargo test -p qsl-eval --test it timed_trace` passed 13 of 13. The first two assertions of the new test are the vectors that failed on the old rule in the review-pass repro run (`Violated(0)`, `Violated(5)`). The new test therefore fails on the old code.
+
+| FND | outcome | sha/reason |
+| --- | --- | --- |
+| FND-001 | fixed | 8550a71f1. after: `in_window = if window.contains(&offset) { in_window + 1 } else { 0 }; if acc == Tri::True \|\| held == Tri::False \|\| in_window >= tail.loop_len { return Ok(acc.flip(dual)); }`, and `covers_a_period` is deleted. Offsets never decrease, so the in-window positions of the tail are contiguous. `loop_len` consecutive ones therefore cover every class, equal stamps and an open lower end included. A bounded window still ends at `!reaches`. Test: `a_tail_scan_reads_every_position_that_shares_a_stamp`. |
+| FND-002 | deferred | The locus needs QSpec FR-331's checked-package `{node, occurrence}`, which S3 does not hold. The cause is documented as unwired, no settlement path produces it, and the locus is remaining work on QSL-580. |
+| FND-003 | fixed | 8550a71f1. after: `#[error("a timed lasso's loop has no positive total delay")]`. |
+| FND-004 | fixed | 8550a71f1. after: the `unrolled` doc states `floor(sum of finite upper bounds / D) + #temporal nodes + 3`. It argues that future nodes add no repetition and each past node adds at most `ceil(b / D) + 1`. |
