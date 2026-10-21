@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The facade's admitted-context entry (FR-394, FR-396): a compiled unit's
-//! emitted package together with the admitted enum, record and tuple key
-//! tables its check retained.
+//! The facade's admitted-context entry (FR-394, FR-396, FR-398): a compiled
+//! unit's emitted package together with the admitted enum, record, tuple and
+//! unit tables its check retained.
 //!
 //! ADR-011 T12, FR-087 and Runtime AD-004 forbid a consumer to build a node
-//! key. A consumer that needs the key of an enum declaration or case, or of a
-//! record or tuple declaration, compiles
-//! through [`compile_admitted`] and looks the key up in the
+//! key. A consumer that needs the key of an enum declaration or case, of a
+//! record or tuple declaration, or the kernel id and conversion relation of a
+//! declared unit, compiles through [`compile_admitted`] and looks it up in the
 //! [`AdmittedContext`] it returns, by the wire node id the emitted package
 //! carries. The context holds the keys the checker minted and nothing else,
 //! so a lookup never creates a key; it finds one or refuses.
@@ -21,7 +21,9 @@ use qsl_semantics::check::{
     CheckedGraph, CheckedTypeNode, CompositeForm, NominalNode, SemanticGraph,
 };
 use qsl_semantics::library::PackageId;
-use quire_exact::{Identifier, NodeKey};
+use quire_exact::{Identifier, NodeKey, UnitId};
+use quire_semantic_value::quantity::{QuantityUnit, UnitTable};
+use quire_semantic_value::unit::NominalUnitForm;
 
 use crate::bounds::ReplayLimits;
 use crate::compile::{recompile_unit, CompiledPackage};
@@ -133,6 +135,94 @@ impl AdmittedComposite {
     }
 }
 
+/// One admitted dimension: the id of its `dimension` node and its qualified
+/// name. Dimensions have no kernel id; a unit names its dimension by this
+/// node id. The table holds the dimensions an admitted unit names, and the
+/// base dimensions those are derived from.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdmittedDimension {
+    node: NodeKey,
+    qualified_name: Vec<Identifier>,
+    base: bool,
+}
+
+impl AdmittedDimension {
+    /// The id of the dimension's node: the wire node id
+    /// [`AdmittedContext::dimension_declaration`] finds it by and
+    /// [`AdmittedUnit::dimension`] names it by.
+    pub fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    /// The declaration's qualified name.
+    pub fn qualified_name(&self) -> &[Identifier] {
+        &self.qualified_name
+    }
+
+    /// Whether the dimension is a base dimension (`dimension Length;`)
+    /// rather than one derived from base dimensions.
+    pub fn is_base(&self) -> bool {
+        self.base
+    }
+}
+
+/// One admitted declared unit: the id of its `unit` node, which a lookup
+/// takes, its kernel [`UnitId`], the id every `ValueType::Quantity` of it,
+/// every quantity value of it and QSL's own checked `Quantity<u>` carry;
+/// with its qualified name, its dimension node and its [`QuantityUnit`].
+///
+/// The node id and the kernel id are different values. The kernel id is
+/// `UnitId::declared` of the node id, a digest under the
+/// `quire.checked-semantic-node/v1` label, so the node id's bytes are not the
+/// kernel id's bytes: a consumer reads this id and never derives one.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdmittedUnit {
+    node: NodeKey,
+    id: UnitId,
+    qualified_name: Vec<Identifier>,
+    dimension: NodeKey,
+    unit: QuantityUnit,
+}
+
+impl AdmittedUnit {
+    /// The id of the unit's node: the wire node id
+    /// [`AdmittedContext::unit_declaration`] finds it by.
+    pub fn node(&self) -> NodeKey {
+        self.node
+    }
+
+    /// The unit's kernel id: the id `ValueType::Quantity` and a kernel
+    /// `Quantity` take for it, equal to the one QSL's checked type
+    /// environment and replay use.
+    pub fn id(&self) -> UnitId {
+        self.id
+    }
+
+    /// The declaration's qualified name.
+    pub fn qualified_name(&self) -> &[Identifier] {
+        &self.qualified_name
+    }
+
+    /// The node id of the unit's dimension ([`AdmittedDimension::node`]).
+    pub fn dimension(&self) -> NodeKey {
+        self.dimension
+    }
+
+    /// The unit as the kernel's quantity operations take it: its normalized
+    /// dimension, canonical root and exact path to it. The `unit` argument
+    /// of `quire_semantic_value::quantity::convert_quantity`.
+    pub fn quantity_unit(&self) -> &QuantityUnit {
+        &self.unit
+    }
+
+    /// Whether a quantity of this unit converts to `target`: the kernel's
+    /// `converts_to` relation, true exactly when the two units have the same
+    /// normalized dimension.
+    pub fn converts_to(&self, target: &Self) -> bool {
+        self.unit.converts_to(&target.unit)
+    }
+}
+
 /// Why an [`AdmittedContext`] lookup found no key.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum AdmittedLookupRefusal {
@@ -159,10 +249,12 @@ pub enum AdmittedLookupRefusal {
         package: PackageId,
     },
     /// The declaration id names a node this package admitted that is not a
-    /// record or tuple declaration (an enum, a union, a scalar type, an
-    /// expression, ...). Only [`AdmittedContext::composite_declaration`]
-    /// refuses so.
-    #[error("wrong_kind: node {declaration} is admitted by this package but is not a record or tuple declaration")]
+    /// declaration of the looked-up kind (for a record or tuple lookup an
+    /// enum, a union, a unit, ...; for a unit lookup a dimension, a record,
+    /// ...). Only [`AdmittedContext::composite_declaration`],
+    /// [`AdmittedContext::unit_declaration`] and
+    /// [`AdmittedContext::dimension_declaration`] refuse so.
+    #[error("wrong_kind: node {declaration} is admitted by this package but is not a declaration of the looked-up kind")]
     WrongKind {
         /// The declaration id looked up.
         declaration: WireNodeId,
@@ -179,9 +271,9 @@ fn unknown_what(declaration: &WireNodeId, case: &Option<Identifier>) -> String {
     }
 }
 
-/// The package context a compile admitted: this package's enum, record and
-/// tuple key tables and the identity of every enum, record and tuple a
-/// dependency admitted.
+/// The package context a compile admitted: this package's enum, record,
+/// tuple, dimension and unit tables and the identity of every enum, record,
+/// tuple, dimension and unit a dependency admitted.
 #[derive(Clone, Debug)]
 pub struct AdmittedContext {
     package: PackageId,
@@ -189,10 +281,17 @@ pub struct AdmittedContext {
     foreign: BTreeMap<[u8; 32], PackageId>,
     composites: BTreeMap<[u8; 32], AdmittedComposite>,
     foreign_composites: BTreeMap<[u8; 32], PackageId>,
-    /// Every other node of this package's checked graph: the ids a
-    /// composite lookup refuses as the wrong kind. One 32-byte id per node,
-    /// so the context grows with the package's graph (FR-396).
-    other_nodes: BTreeSet<[u8; 32]>,
+    units: BTreeMap<[u8; 32], AdmittedUnit>,
+    foreign_units: BTreeMap<[u8; 32], PackageId>,
+    dimensions: BTreeMap<[u8; 32], AdmittedDimension>,
+    foreign_dimensions: BTreeMap<[u8; 32], PackageId>,
+    unit_table: UnitTable,
+    /// Every node of this package's checked graph, and every declared unit
+    /// and dimension (a unit enters the graph only when the package uses
+    /// it): the ids a composite, unit or dimension lookup refuses as the
+    /// wrong kind when it is not of the looked-up kind. One 32-byte id per
+    /// node, so the context grows with the package's graph (FR-396, FR-398).
+    nodes: BTreeSet<[u8; 32]>,
 }
 
 impl AdmittedContext {
@@ -273,19 +372,82 @@ impl AdmittedContext {
         if let Some(admitted) = self.composites.get(&id) {
             return Ok(admitted);
         }
-        Err(if let Some(&package) = self.foreign_composites.get(&id) {
+        Err(self.refusal(declaration, &self.foreign_composites))
+    }
+
+    /// Every unit this package admitted, ascending by node id.
+    pub fn units(&self) -> impl Iterator<Item = &AdmittedUnit> {
+        self.units.values()
+    }
+
+    /// The declared unit the wire node id `declaration` names: its kernel
+    /// [`UnitId`], dimension and conversion data (FR-398).
+    ///
+    /// # Errors
+    ///
+    /// [`AdmittedLookupRefusal::Foreign`] when a dependency admitted it as a
+    /// unit, [`AdmittedLookupRefusal::WrongKind`] when it names another node
+    /// of this package (a dimension, a record, ...), and
+    /// [`AdmittedLookupRefusal::Unknown`] otherwise.
+    pub fn unit_declaration(
+        &self,
+        declaration: WireNodeId,
+    ) -> Result<&AdmittedUnit, AdmittedLookupRefusal> {
+        self.units
+            .get(declaration.as_bytes())
+            .ok_or_else(|| self.refusal(declaration, &self.foreign_units))
+    }
+
+    /// Every dimension an admitted unit of this package names, and the base
+    /// dimensions those derive from, ascending by node id.
+    pub fn dimensions(&self) -> impl Iterator<Item = &AdmittedDimension> {
+        self.dimensions.values()
+    }
+
+    /// The dimension the wire node id `declaration` names.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::unit_declaration`], for a dimension.
+    pub fn dimension_declaration(
+        &self,
+        declaration: WireNodeId,
+    ) -> Result<&AdmittedDimension, AdmittedLookupRefusal> {
+        self.dimensions
+            .get(declaration.as_bytes())
+            .ok_or_else(|| self.refusal(declaration, &self.foreign_dimensions))
+    }
+
+    /// The package's unit table: each admitted unit by its kernel id, the
+    /// table `quire_semantic_value::quantity::UnitTable::resolve` reads a
+    /// quantity's unit from before `convert_quantity` converts it.
+    pub fn unit_table(&self) -> &UnitTable {
+        &self.unit_table
+    }
+
+    /// The refusal for a declaration id none of the looked-up kind's table
+    /// holds: `Foreign` when a dependency admitted it (`foreign`),
+    /// `WrongKind` when it names another node of this package, else
+    /// `Unknown`.
+    fn refusal(
+        &self,
+        declaration: WireNodeId,
+        foreign: &BTreeMap<[u8; 32], PackageId>,
+    ) -> AdmittedLookupRefusal {
+        let id = declaration.as_bytes();
+        if let Some(&package) = foreign.get(id) {
             AdmittedLookupRefusal::Foreign {
                 declaration,
                 package,
             }
-        } else if self.other_nodes.contains(&id) {
+        } else if self.nodes.contains(id) {
             AdmittedLookupRefusal::WrongKind { declaration }
         } else {
             AdmittedLookupRefusal::Unknown {
                 declaration,
                 case: None,
             }
-        })
+        }
     }
 }
 
@@ -448,15 +610,23 @@ pub fn compile_admitted<'a>(
 fn context_of(package: &CheckedPackage, id: PackageId) -> Result<AdmittedContext, InternalFault> {
     let enums = enum_table(package.graph().semantic_graph())?;
     let composites = composite_table(package.graph())?;
-    let other_nodes = package
+    let UnitTables {
+        units,
+        dimensions,
+        table,
+    } = unit_tables(package.graph())?;
+    let nodes = package
         .graph()
         .semantic_graph()
         .nodes()
         .map(|node| *node.key().as_bytes())
-        .filter(|key| !composites.contains_key(key))
+        .chain(units.keys().copied())
+        .chain(dimensions.keys().copied())
         .collect();
     let mut foreign = BTreeMap::new();
     let mut foreign_composites = BTreeMap::new();
+    let mut foreign_units = BTreeMap::new();
+    let mut foreign_dimensions = BTreeMap::new();
     let mut visited = BTreeSet::new();
     let mut pending: Vec<_> = package.dependencies().iter().collect();
     while let Some((&dependency_id, dependency)) = pending.pop() {
@@ -471,6 +641,15 @@ fn context_of(package: &CheckedPackage, id: PackageId) -> Result<AdmittedContext
                 .entry(declaration)
                 .or_insert(dependency_id);
         }
+        let admitted = unit_tables(dependency.graph())?;
+        for declaration in admitted.units.into_keys() {
+            foreign_units.entry(declaration).or_insert(dependency_id);
+        }
+        for declaration in admitted.dimensions.into_keys() {
+            foreign_dimensions
+                .entry(declaration)
+                .or_insert(dependency_id);
+        }
         pending.extend(dependency.dependencies().iter());
     }
     Ok(AdmittedContext {
@@ -479,7 +658,91 @@ fn context_of(package: &CheckedPackage, id: PackageId) -> Result<AdmittedContext
         foreign,
         composites,
         foreign_composites,
-        other_nodes,
+        units,
+        foreign_units,
+        dimensions,
+        foreign_dimensions,
+        unit_table: table,
+        nodes,
+    })
+}
+
+/// A graph's admitted units and dimensions, and the unit table they came
+/// from.
+struct UnitTables {
+    units: BTreeMap<[u8; 32], AdmittedUnit>,
+    dimensions: BTreeMap<[u8; 32], AdmittedDimension>,
+    table: UnitTable,
+}
+
+fn qualified_name(segments: &[String]) -> Result<Vec<Identifier>, InternalFault> {
+    segments
+        .iter()
+        .map(|segment| {
+            Identifier::new(segment)
+                .map_err(|_| InternalFault::new("replay", "admitted-unit-names-are-identifiers"))
+        })
+        .collect()
+}
+
+/// Every declared unit of `graph` and the dimensions they name: the units
+/// from the unit table the checked type environment holds (the table the
+/// checker resolved `Quantity<u>` against, so each [`AdmittedUnit::id`] is the
+/// id the checked signatures carry), the dimensions by walking each unit's
+/// dimension node and its base dimensions through the table's nominal nodes.
+fn unit_tables(graph: &CheckedGraph) -> Result<UnitTables, InternalFault> {
+    let table = graph.scope().types().units().clone();
+    let named = |key: NodeKey| {
+        table
+            .nominal_node(key.as_bytes())
+            .ok_or_else(|| InternalFault::new("replay", "every-admitted-unit-has-a-nominal-node"))
+    };
+    let mut units = BTreeMap::new();
+    let mut pending = Vec::new();
+    for id in table.ids() {
+        let Some(QuantityUnit::Declared(unit)) = table.get(id) else {
+            continue;
+        };
+        pending.push(unit.dimension_node());
+        units.insert(
+            *unit.key().as_bytes(),
+            AdmittedUnit {
+                node: unit.key(),
+                id,
+                qualified_name: qualified_name(
+                    &named(unit.key())?.declaration.qualified_declaration,
+                )?,
+                dimension: unit.dimension_node(),
+                unit: QuantityUnit::Declared(unit.clone()),
+            },
+        );
+    }
+    let mut dimensions = BTreeMap::new();
+    while let Some(key) = pending.pop() {
+        if dimensions.contains_key(key.as_bytes()) {
+            continue;
+        }
+        let nominal = named(key)?;
+        let NominalUnitForm::Dimension { terms } = &nominal.form else {
+            return Err(InternalFault::new(
+                "replay",
+                "every-admitted-unit-dimension-is-a-dimension",
+            ));
+        };
+        pending.extend(terms.iter().map(|(base, _)| *base));
+        dimensions.insert(
+            *key.as_bytes(),
+            AdmittedDimension {
+                node: key,
+                qualified_name: qualified_name(&nominal.declaration.qualified_declaration)?,
+                base: terms.is_empty(),
+            },
+        );
+    }
+    Ok(UnitTables {
+        units,
+        dimensions,
+        table,
     })
 }
 
